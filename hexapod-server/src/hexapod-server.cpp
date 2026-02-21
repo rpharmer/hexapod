@@ -6,6 +6,99 @@
 
 using namespace mn::CppLinuxSerial;
 
+// Concrete class derived from SerialComms defining which communication functions
+class SerialCommsServer : public SerialComms
+{
+public:
+    SerialPort serialport;
+    
+    // constructor
+    SerialCommsServer(const std::string &device, BaudRate baudRate, NumDataBits numDataBits, Parity parity, NumStopBits numStopBits) : serialport(device,baudRate, numDataBits, parity, numStopBits)
+    {}
+
+
+    // functions to send data
+    
+    // send a char (1 byte)
+    void send_char(char data) override
+    {
+      serialport.WriteBytes(&data, sizeof(char));
+    }
+    
+    // send a uint8_t (1 bytes)
+    void send_u8(uint8_t data) override
+    {
+      serialport.WriteBytes(&data, sizeof(uint8_t));
+    }
+    // send a uint16_t (2 bytes)
+    void send_u16(uint16_t data) override
+    {
+      serialport.WriteBytes(&data, sizeof(uint16_t));
+    }
+    // send a uint32_t (4 bytes)
+    void send_u32(uint32_t data) override
+    {
+      serialport.WriteBytes(&data, sizeof(uint32_t));
+    }
+    // send a int16_t  (2 bytes)
+    void send_i16(int16_t data) override
+    {
+      serialport.WriteBytes(&data, sizeof(int16_t));
+    }
+    // send a int32_t  (4 bytes)
+    void send_i32(int32_t data) override
+    {
+      serialport.WriteBytes(&data, sizeof(int32_t));
+    }
+    // send a float    (4 bytes)
+    void send_f32(float data) override
+    {
+      serialport.WriteBytes(&data, sizeof(float));
+    }
+    
+    // functions to recieve data
+    
+    // receive a char (1 byte)
+    int recv_char(char *data) override
+    {
+      return serialport.ReadBytes(data, sizeof(char));
+    }
+    // recieve a uint8_t (1 bytes)
+    int recv_u8(uint8_t *data) override
+    {
+      return serialport.ReadBytes(data, sizeof(uint8_t));
+    }    
+    // recieve a uint16_t (2 bytes)
+    int recv_u16(uint16_t *data) override
+    {
+      return serialport.ReadBytes(data, sizeof(uint16_t));
+    }
+    // recieve a uint32_t (4 bytes)
+    int recv_u32(uint32_t *data) override
+    {
+      *data = 0;
+      return 0;
+    }
+    // recieve a int16_t  (2 bytes)
+    int recv_i16(int16_t *data) override
+    {
+      *data = 0;
+      return 0;
+    }
+    // recieve a int32_t  (4 bytes)
+    int recv_i32(int32_t *data) override
+    {
+      *data = 0;
+      return 0;
+    }
+    // recieve a float    (4 bytes)
+    int recv_f32(float *data) override
+    {
+      *data = 0;
+      return 0;
+    }
+};
+
 int main() {
   
   ///** Test toml **///
@@ -46,76 +139,89 @@ int main() {
   
 	// Create serial port object and open serial port at 115200 baud, 8 data bits, no parity bit, one stop bit (8n1),
 	// and no flow control
-	SerialPort serialPort("/dev/ttyACM0", BaudRate::B_115200, NumDataBits::EIGHT, Parity::NONE, NumStopBits::ONE);
-	serialPort.SetTimeout(100); // Block for up to 100ms to receive data
-	serialPort.Open();
+  
+  SerialCommsServer scs("/dev/ttyACM0", BaudRate::B_115200, NumDataBits::EIGHT, Parity::NONE, NumStopBits::ONE);
+  
+	scs.serialport.SetTimeout(100); // Block for up to 100ms to receive data
+	scs.serialport.Open();
 
+  /* Run tests
 	// Write some ASCII data
 	//serialPort.Write("Hello");
   
-  // Write some chars 
-  /*serialPort.WriteChar('H');
-  serialPort.WriteChar('e');
-  serialPort.WriteChar('l');
-  serialPort.WriteChar('1');
-  serialPort.WriteChar('o');*/
-
-	// Read some data back (will block for up to 100ms due to the SetTimeout(100) call above)
-	/*std::string readData;
-  while(1){
-	serialPort.Read(readData);
-	std::cout << "Read data = \"" << readData << "\"" << std::endl;}*/
+  // Test read write functions
+  char data_c = 'K';
+  char data_ret = 0;
   
-  /*int c = serialPort.ReadChar();
-  while(c > -1)
-  {
-    std::cout<<(char)c;
-    c = serialPort.ReadChar();
-  }*/
-
-  // Send motor calibration data to hexapod
-  /*
-  int testValue = 1502;
-  serialPort.WriteChar('C'); // 'C' for calibration
-  char b0 = get0_7Lsbits(testValue);
-  char b1 = get8_15Lsbits(testValue);
-  serialPort.WriteChar(b0);
-  serialPort.WriteChar(b1);
   
-  int c = serialPort.ReadChar();
-  std::cout<<(char)c;
+  // send char 'K'
+  scs.send_char(data_c);
+  printf("sent char: %d\n", data_c);
   
-  char c0 = serialPort.ReadChar();
-  char c1 = serialPort.ReadChar();
+  // receive char
+  scs.recv_char(&data_ret);
+  printf("received char: %d\n", data_ret);
   
-  int returnedValue = getInt(0, 0, c1, c0);
-  */
-  serialPort.WriteChar(SET_ANGLE_CALIBRATIONS);
-  int c = serialPort.ReadChar();
+  // send char 'E'
+  data_c = 'E';
+  scs.send_char(data_c);
+  printf("sent char: %d\n", data_c);
+  
+  // receive char
+  scs.recv_char(&data_ret);
+  printf("received char: %d\n", data_ret);
+  
+  uint8_t data_c2 = 120;
+  uint8_t data_ret2 = 0;
+  
+  
+  // send uint8_t 'K'
+  scs.send_u8(data_c2);
+  printf("sent uint8_t: %u\n", data_c2);
+  
+  // receive uint8_t
+  scs.recv_u8(&data_ret2);
+  printf("received uint8_t: %u\n", data_ret2);
+  
+  // send uint8_t 'H'
+  data_c2 = 130;
+  scs.send_u8(data_c2);
+  printf("sent uint8_t: %u\n", data_c2);
+  
+  // receive uint8_t
+  scs.recv_u8(&data_ret2);
+  printf("received uint8_t: %u\n", data_ret2);
+  
+  scs.send_u8(SET_ANGLE_CALIBRATIONS);
+  uint8_t c = 0;
+  scs.recv_u8(&c);
+  printf("Z: %u\n", c);
+  c = 38;
+  
+  
+  scs.send_u16(500);
+  uint16_t cc = 0;
+  scs.recv_u16(&cc);
+  printf("ZZ: %u\n", cc);
   
   std::cout<<std::endl;
   std::ios_base::fmtflags f( std::cout.flags() );  // save flags state
-  std::cout << std::hex << "0x" << c << std::endl;
-  std::cout.flags( f );  // restore flags state
+  std::cout << std::hex << "0x" << (int)c << std::endl;
+  std::cout.flags( f );  // restore flags state */
   
   for(auto it = calibs.begin(); it!=calibs.end(); ++it)
   {
-    serialPort.WriteChar(MSB0(std::get<1>(*it)));
-    serialPort.WriteChar(MSB1(std::get<1>(*it)));
-    
-    serialPort.WriteChar(MSB0(std::get<2>(*it)));
-    serialPort.WriteChar(MSB1(std::get<2>(*it)));
-    
-    char c00 = serialPort.ReadChar();
-    char c01 = serialPort.ReadChar();
-      
-    char c10 = serialPort.ReadChar();
-    char c11 = serialPort.ReadChar();
-    
-    //std::cout<<(int)c00<<", "<<(int)c01<<";  "<<(int)c10<<", "<<(int)c11<<std::endl;
-    std::cout<<GETINT(0,0,c01,c00)<<", "<<GETINT(0,0,c11,c10)<<std::endl;
+    uint16_t a = std::get<1>(*it);
+    uint16_t b = std::get<2>(*it);
+    printf("send a: %u,b: %u\n", a, b);
+    scs.send_u16(a);
+    scs.send_u16(b);
+    uint16_t ca = 0;
+    uint16_t cb = 0;
+    scs.recv_u16(&ca);
+    scs.recv_u16(&cb);
+    printf("recv a: %u,b: %u\n", ca, cb);
   }
-
 	// Close the serial port
-	serialPort.Close();
+	scs.serialport.Close();
 }

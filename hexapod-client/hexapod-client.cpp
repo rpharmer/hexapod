@@ -77,7 +77,7 @@ int main() {
   
   stdio_init_all();
   
-    // Set up the sensor addresses with pull downs
+  // Set up the sensor addresses with pull downs
   mux.configure_pulls(servo2040::SENSOR_1_ADDR, false, true);
   mux.configure_pulls(servo2040::SENSOR_2_ADDR, false, true);
   mux.configure_pulls(servo2040::SENSOR_3_ADDR, false, true);
@@ -92,9 +92,6 @@ int main() {
 	gpio_init_mask(A0_GPIO_MASK | A1_GPIO_MASK | A2_GPIO_MASK);
 	gpio_set_dir_masked(A0_GPIO_MASK | A1_GPIO_MASK | A2_GPIO_MASK, GPIO_OUTPUT_MASK); // Set output
 	gpio_put_masked(A0_GPIO_MASK | A1_GPIO_MASK | A2_GPIO_MASK, GPIO_LOW_MASK); // Set LOW
-  
-  
-
   
   // Calibrate servos using default settings
   calibServos(minmaxCalibrations);
@@ -125,12 +122,12 @@ int main() {
   servos.enable_all();
   
   // Test Serial communication
-  /*while(1){
+  while(1){
     int input = getchar_timeout_us(10);
     if(input >= 0 && input <= 255)
       putchar_raw(input);
     //sleep_ms(2);
-  }*/
+  }
   
   
   while(1){
