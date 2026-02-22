@@ -1,103 +1,10 @@
-#include <CppLinuxSerial/SerialPort.hpp>
 #include <toml.hpp>
 #include "hexapod-common.hpp"
 #include "hexapod-server.hpp"
+#include "serialCommsServer.hpp"
 
 
 using namespace mn::CppLinuxSerial;
-
-// Concrete class derived from SerialComms defining which communication functions
-class SerialCommsServer : public SerialComms
-{
-public:
-    SerialPort serialport;
-    
-    // constructor
-    SerialCommsServer(const std::string &device, BaudRate baudRate, NumDataBits numDataBits, Parity parity, NumStopBits numStopBits) : serialport(device,baudRate, numDataBits, parity, numStopBits)
-    {}
-
-
-    // functions to send data
-    
-    // send a char (1 byte)
-    void send_char(char data) override
-    {
-      serialport.WriteBytes(&data, sizeof(char));
-    }
-    
-    // send a uint8_t (1 bytes)
-    void send_u8(uint8_t data) override
-    {
-      serialport.WriteBytes(&data, sizeof(uint8_t));
-    }
-    // send a uint16_t (2 bytes)
-    void send_u16(uint16_t data) override
-    {
-      serialport.WriteBytes(&data, sizeof(uint16_t));
-    }
-    // send a uint32_t (4 bytes)
-    void send_u32(uint32_t data) override
-    {
-      serialport.WriteBytes(&data, sizeof(uint32_t));
-    }
-    // send a int16_t  (2 bytes)
-    void send_i16(int16_t data) override
-    {
-      serialport.WriteBytes(&data, sizeof(int16_t));
-    }
-    // send a int32_t  (4 bytes)
-    void send_i32(int32_t data) override
-    {
-      serialport.WriteBytes(&data, sizeof(int32_t));
-    }
-    // send a float    (4 bytes)
-    void send_f32(float data) override
-    {
-      serialport.WriteBytes(&data, sizeof(float));
-    }
-    
-    // functions to recieve data
-    
-    // receive a char (1 byte)
-    int recv_char(char *data) override
-    {
-      return serialport.ReadBytes(data, sizeof(char));
-    }
-    // recieve a uint8_t (1 bytes)
-    int recv_u8(uint8_t *data) override
-    {
-      return serialport.ReadBytes(data, sizeof(uint8_t));
-    }    
-    // recieve a uint16_t (2 bytes)
-    int recv_u16(uint16_t *data) override
-    {
-      return serialport.ReadBytes(data, sizeof(uint16_t));
-    }
-    // recieve a uint32_t (4 bytes)
-    int recv_u32(uint32_t *data) override
-    {
-      *data = 0;
-      return 0;
-    }
-    // recieve a int16_t  (2 bytes)
-    int recv_i16(int16_t *data) override
-    {
-      *data = 0;
-      return 0;
-    }
-    // recieve a int32_t  (4 bytes)
-    int recv_i32(int32_t *data) override
-    {
-      *data = 0;
-      return 0;
-    }
-    // recieve a float    (4 bytes)
-    int recv_f32(float *data) override
-    {
-      *data = 0;
-      return 0;
-    }
-};
 
 int main() {
   
@@ -139,11 +46,10 @@ int main() {
   
 	// Create serial port object and open serial port at 115200 baud, 8 data bits, no parity bit, one stop bit (8n1),
 	// and no flow control
-  
   SerialCommsServer scs("/dev/ttyACM0", BaudRate::B_115200, NumDataBits::EIGHT, Parity::NONE, NumStopBits::ONE);
   
-	scs.serialport.SetTimeout(100); // Block for up to 100ms to receive data
-	scs.serialport.Open();
+	scs.SetTimeout(100); // Block for up to 100ms to receive data
+	scs.Open();
 
   /* Run tests
 	// Write some ASCII data
@@ -223,5 +129,5 @@ int main() {
     printf("recv a: %u,b: %u\n", ca, cb);
   }
 	// Close the serial port
-	scs.serialport.Close();
+	scs.Close();
 }

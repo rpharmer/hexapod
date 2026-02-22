@@ -18,12 +18,12 @@ pico_sdk_init()
 
 # Add your source files
 add_executable(${NAME}
-    hexapod-client.cpp # <-- Add source files here!
+    hexapod-client.cpp
+    serialCommsClient.cpp # <-- Add source files here!
 )
 
 # Specify the directory containing hexapod-common header files
 target_include_directories(${NAME} PRIVATE /home/volly/pico/hexapod/hexapod-common/include)
-#target_link_directories(${NAME} PRIVATE /home/volly/pico/hexapod/hexapod-common/lib)
 
 # Include required libraries
 # This assumes `pimoroni-pico` is stored alongside your project
@@ -41,8 +41,6 @@ target_link_libraries(${NAME}
     button
     analogmux
     analog # <-- List libraries here!
-    #hexapodcommon
-    #/home/volly/pico/hexapod/hexapod-common/lib/libhexapodcommon.so
 )
 
 # create map/bin/hex file etc.

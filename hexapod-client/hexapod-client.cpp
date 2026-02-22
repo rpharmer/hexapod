@@ -2,6 +2,7 @@
 
 #include "hexapod-common.hpp"
 #include "hexapod-client.hpp"
+#include "serialCommsClient.hpp"
 
 #include "servo2040.hpp"
 #include "button.hpp"
@@ -17,6 +18,7 @@ Press "Boot" to exit the program.
 
 using namespace plasma;
 using namespace servo;
+
 
 // Set up the shared analog inputs
 Analog sen_adc = Analog(servo2040::SHARED_ADC);
@@ -65,6 +67,8 @@ constexpr float BRIGHTNESS = 0.4f;
 // How many times the LEDs will be updated per second
 const uint UPDATES = 50;
 
+// Serial communication class
+SerialCommsClient serial;
 
 // Create the LED bar, using PIO 1 and State Machine 0
 WS2812 led_bar(servo2040::NUM_LEDS, pio1, 0, servo2040::LED_DATA);
@@ -195,10 +199,10 @@ int main() {
 
 void handleSetAngleCommand()
 {
-  int servo = getchar_timeout_us(100);
-  int angleMSB0 = getchar_timeout_us(100);
-  int angleMSB1 = getchar_timeout_us(100);
-  int angle = GETINT(0, 0, angleMSB1, angleMSB0);
+  uint8_t servo;
+  uint16_t angle;
+  serial.recv_u8(&servo);
+  serial.recv_u16(&angle);
   servos.value(servo, angle);
 }
 
@@ -210,25 +214,15 @@ void handleGetAngleCalibCommand()
     float minPulse = cal.first_pulse();
     float maxPulse = cal.last_pulse();
     
-    int min = *(int*)(&minPulse);
-  
-    putchar_raw(MSB0(min));
-    putchar_raw(MSB1(min));
-    putchar_raw(MSB2(min));
-    putchar_raw(MSB3(min));
-    
-    int max = *(int*)(&maxPulse);
-  
-    putchar_raw(MSB0(max));
-    putchar_raw(MSB1(max));
-    putchar_raw(MSB2(max));
-    putchar_raw(MSB3(max));
+    serial.send_f32(minPulse);
+    serial.send_f32(maxPulse);
   }
 }
 
 void handleSetPowerRelayCommand()
 {
-  int relayOpen = getchar_timeout_us(100);
+  uint8_t relayOpen;
+  serial.recv_u8(&relayOpen);
   if(relayOpen == 1)
     gpio_put_masked(A0_GPIO_MASK, GPIO_HIGH_MASK);
   else if(relayOpen == 0)
@@ -242,39 +236,24 @@ void handleGetCurrentCommand()
 {
   mux.select(servo2040::CURRENT_SENSE_ADDR);
   float current = cur_adc.read_current();
-  
-  int cur = *(int*)(&current);
-  
-  putchar_raw(MSB0(cur));
-  putchar_raw(MSB1(cur));
-  putchar_raw(MSB2(cur));
-  putchar_raw(MSB3(cur));
+  serial.send_f32(current);
 }
 void handleGetVoltageCommand()
 {
   mux.select(servo2040::VOLTAGE_SENSE_ADDR);
   float voltage = vol_adc.read_voltage();
   
-  int volt = *(int*)(&voltage);
-  
-  putchar_raw(MSB0(volt));
-  putchar_raw(MSB1(volt));
-  putchar_raw(MSB2(volt));
-  putchar_raw(MSB3(volt));
+  serial.send_f32(voltage);
 }
 void handleGetSensorCommand()
 {
   // get sensor id
-  int sensor = getchar_timeout_us(100);
+  uint8_t sensor;
+  serial.recv_u8(&sensor);
   mux.select(servo2040::SENSOR_1_ADDR + sensor);
   float voltage = sen_adc.read_voltage();
   
-  int volt = *(int*)(&voltage);
-  
-  putchar_raw(MSB0(volt));
-  putchar_raw(MSB1(volt));
-  putchar_raw(MSB2(volt));
-  putchar_raw(MSB3(volt));
+  serial.send_f32(voltage);
 }
 
 void handleCalibCommand()
@@ -282,14 +261,14 @@ void handleCalibCommand()
   float calibs[18][2];
   for (int s =0; s < 18; s++)
   {
-    int c00 = getchar_timeout_us(100);
-    int c01 = getchar_timeout_us(100);
+    uint16_t c00;
+    uint16_t c10;
     
-    int c10 = getchar_timeout_us(100);
-    int c11 = getchar_timeout_us(100);
+    serial.recv_u16(&c00);
+    serial.recv_u16(&c10);
     
-    calibs[s][0] = (float)GETINT(0, 0, c01, c00);
-    calibs[s][1] = (float)GETINT(0, 0, c11, c10);
+    calibs[s][0] = c00;
+    calibs[s][1] = c10;
   }
   calibServos(calibs);
 }
