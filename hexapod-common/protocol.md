@@ -29,4 +29,10 @@ The host will retry handshake protocol (3 attempts with 100ms delay) if it fails
 
 ### `HELLO`
 
+- direction: Server -> Client
+- Value: `HELLO (0x01)`
+- Payload: `PROTOCOL_VERSION (0x01)`, `CAPABILITIES (bitmask)`
+- Response:
+-- Acknowledged: `ACK (0x11)`, `PROTOCOL_VERSION`, `STATUS (0=ok)`, `DEVICE_ID`
+-- asddd
 
