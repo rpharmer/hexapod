@@ -29,7 +29,7 @@ The host will retry handshake protocol (3 attempts with 100ms delay) if it fails
 
 ### `HELLO`
 
-- direction: Server -> Client
+- Direction: Server -> Client
 - Value: `HELLO (0x01)`
 - Payload: `PROTOCOL_VERSION (0x01)`, `CAPABILITIES (bitmask)`
 - Response:
@@ -37,5 +37,18 @@ The host will retry handshake protocol (3 attempts with 100ms delay) if it fails
   Assuming versions match, client is ready and capabilities are available.
   - Not Acknowledged: `NACK (0x12)`, `ERROR_CODE`   
   Sent if versions are mismatched, client isn't available or capabilities can't be met.
-- notes: Server will attempt to retry handshake 3 times, leaving 100ms delay between.
+- Notes: Server will attempt to retry handshake 3 times, leaving 100ms delay between.
+
+### `SET_ANGLE_CALIBRATIONS`
+
+- Direction: Server -> Client
+- Value: `SET_ANGLE_CALIBRATIONS (0x01)`
+- Payload: calib[0][0],calib[0][1],calib[1][0]calib[1][1],..., calib[17][1]    
+calibration values for each of the 18 servos defining min (calib[][0]) and max (calib[][1]) values as `uint16`
+- Response:
+  - Acknowledged: `ACK (0x11)`   
+  On successful transfer and calibration
+  - Not Acknowledged: `NACK (0x12)`, `ERROR_CODE`
+  On error
+- Notes: ???
 
