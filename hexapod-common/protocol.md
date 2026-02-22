@@ -33,9 +33,9 @@ The host will retry handshake protocol (3 attempts with 100ms delay) if it fails
 - Value: `HELLO (0x01)`
 - Payload: `PROTOCOL_VERSION (0x01)`, `CAPABILITIES (bitmask)`
 - Response:
-  - Acknowledged: `ACK (0x11)`, `PROTOCOL_VERSION`, `STATUS (0=ok)`, `DEVICE_ID` 
+  - Acknowledged: `ACK (0x11)`, `PROTOCOL_VERSION`, `STATUS (0=ok)`, `DEVICE_ID`   
   Assuming versions match, client is ready and capabilities are available.
-  - Not Acknowledged: `NACK (0x12)`, `ERROR_CODE` 
+  - Not Acknowledged: `NACK (0x12)`, `ERROR_CODE`   
   Sent if versions are mismatched, client isn't available or capabilities can't be met.
 - notes: Server will attempt to retry handshake 3 times, leaving 100ms delay between.
 
