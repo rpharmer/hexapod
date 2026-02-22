@@ -43,8 +43,8 @@ The host will retry handshake protocol (3 attempts with 100ms delay) if it fails
 
 - Direction: Server -> Client
 - Value: `SET_ANGLE_CALIBRATIONS (0x01)`
-- Payload: calib[0][0],calib[0][1],calib[1][0]calib[1][1],..., calib[17][1]    
-calibration values for each of the 18 servos defining min (calib[][0]) and max (calib[][1]) values as `uint16`
+- Payload: `calib[0][0], calib[0][1], calib[1][0], calib[1][1],..., calib[17][1]`    
+calibration values for each of the 18 servos defining min (`calib[][0]`) and max (`calib[][1]`) values as `uint16`
 - Response:
   - Acknowledged: `ACK (0x11)`   
   On successful transfer and calibration
