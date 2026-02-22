@@ -14,7 +14,7 @@ The host will retry handshake protocol (3 attempts with 100ms delay) if it fails
 
 | Command Byte             | Value | Explantation |
 |--------------------------|-------|--------------|
-| `HELLO`                  | `0x10`|              |
+| `HELLO`                  | `0x10`| Begins handshake protocol |
 | `ACK`                    |       |              |
 | `NACK`                   |       |              |
 | `SET_ANGLE_CALIBRATIONS` |       |              |
