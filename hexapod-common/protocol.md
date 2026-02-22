@@ -12,18 +12,18 @@ The host will retry handshake protocol (3 attempts with 100ms delay) if it fails
 
 ## Communication Protocol
 
-| Command Byte             | Value | Explantation |
-|--------------------------|-------|--------------|
-| `HELLO`                  | `0x10`| Begins handshake protocol |
-| `ACK`                    |       |              |
-| `NACK`                   |       |              |
-| `SET_ANGLE_CALIBRATIONS` |       |              |
-| `SET_TARGET_ANGLE`       |       |              |
-| `SET_POWER_RELAY`        |       |              |
-| `GET_ANGLE_CALIBRATIONS` |       |              |
-| `GET_CURRENT`            |       |              |
-| `GET_VOLTAGE`            |       |              |
-| `GET_SENSOR`             |       |              |
+| Command Byte             | Value | Explantation                                            |
+|--------------------------|-------|---------------------------------------------------------|
+| `HELLO`                  | `0x10`| Begin handshake protocol                                |
+| `ACK`                    | `0x11`| Acknowledged                                            |
+| `NACK`                   | `0x12`| Not Acknowledged                                        |
+| `SET_ANGLE_CALIBRATIONS` | `0x01`| Set angle calibrations using values from server         |
+| `SET_TARGET_ANGLE`       | `0x02`| Set target angle using value from server                |
+| `SET_POWER_RELAY`        | `0x03`| Set power relay state                                   |
+| `GET_ANGLE_CALIBRATIONS` | `0x04`| Get angle calibrations                                  |
+| `GET_CURRENT`            | `0x05`| Get current                                             |
+| `GET_VOLTAGE`            | `0x06`| Get voltage                                             |
+| `GET_SENSOR`             | `0x07`| Get sensor reading                                      |
 
 | Command Byte  | Payload                                            |  Expected return |
 |---------------|----------------------------------------------------|------------------|
