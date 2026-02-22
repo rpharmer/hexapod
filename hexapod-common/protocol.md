@@ -8,6 +8,26 @@ This document defines the protocol for communication between hexapod-server and 
 - Firmware responds with 4 bytes: `ACK (0x11)`, `PROTOCOL_VERSION`, `STATUS (0=ok)`, `DEVICE_ID`.
 - If version mismatches, firmware responds with `NACK (0x12)` and an error code.
 
-The host will retry handshake protocol (3 attempts with 100ms delay) if it fails
+The host will retry handshake protocol (3 attempts with 100ms delay) if it fails.
+
+## Communication Protocol
+
+| Command Byte             | Value | Explantation |
+|--------------------------|-------|--------------|
+| `HELLO`                  | `0x10`|              |
+| `ACK`                    |       |              |
+| `NACK`                   |       |              |
+| `SET_ANGLE_CALIBRATIONS` |       |              |
+| `SET_TARGET_ANGLE`       |       |              |
+| `SET_POWER_RELAY`        |       |              |
+| `GET_ANGLE_CALIBRATIONS` |       |              |
+| `GET_CURRENT`            |       |              |
+| `GET_VOLTAGE`            |       |              |
+| `GET_SENSOR`             |       |              |
+
+| Command Byte  | Payload                                            |  Expected return |
+|---------------|----------------------------------------------------|------------------|
+| `HELLO (0x10)`| `PROTOCOL_VERSION (0x01)`, `CAPABILITIES (bitmask)`| New York         |
+| Bob           | 30                                                 | London           |
 
 
