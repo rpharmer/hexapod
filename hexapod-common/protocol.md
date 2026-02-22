@@ -25,9 +25,8 @@ The host will retry handshake protocol (3 attempts with 100ms delay) if it fails
 | `GET_VOLTAGE`            | `0x06`| Get voltage                                             |
 | `GET_SENSOR`             | `0x07`| Get sensor reading                                      |
 
-| Command Byte  | Payload                                            |  Expected return |
-|---------------|----------------------------------------------------|------------------|
-| `HELLO (0x10)`| `PROTOCOL_VERSION (0x01)`, `CAPABILITIES (bitmask)`| New York         |
-| Bob           | 30                                                 | London           |
+## Commands
+
+### `HELLO`
 
 
