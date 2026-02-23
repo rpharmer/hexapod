@@ -23,7 +23,7 @@ add_executable(${NAME}
 )
 
 # Specify the directory containing hexapod-common header files
-target_include_directories(${NAME} PRIVATE /home/volly/pico/hexapod/hexapod-common/include)
+target_include_directories(${NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/include)
 
 # Include required libraries
 # This assumes `pimoroni-pico` is stored alongside your project
