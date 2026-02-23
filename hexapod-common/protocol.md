@@ -52,3 +52,81 @@ calibration values for each of the 18 servos defining min (`calib[][0]`) and max
   On error
 - Notes: ???
 
+### `SET_TARGET_ANGLE`
+
+- Direction: Server -> Client
+- Value: `SET_TARGET_ANGLE (0x02)`
+- Payload: `servoID, angle`    
+servoID as `uint8` and the corresponding angle as `uint16`
+- Response:
+  - Acknowledged: `ACK (0x11)`   
+  On success
+  - Not Acknowledged: `NACK (0x12)`, `ERROR_CODE`
+  On error
+- Notes: ???
+
+### `SET_POWER_RELAY`
+
+- Direction: Server -> Client
+- Value: `SET_POWER_RELAY (0x03)`
+- Payload: `relayState`    
+sets the state of the power relay `uint8`
+- Response:
+  - Acknowledged: `ACK (0x11)`   
+  On success
+  - Not Acknowledged: `NACK (0x12)`, `ERROR_CODE`
+  On error
+- Notes: ???
+
+### `GET_ANGLE_CALIBRATIONS`
+
+- Direction: Server -> Client
+- Value: `GET_ANGLE_CALIBRATIONS (0x04)`
+- Payload: None    
+requests the current angle calibrations
+- Response:
+  - Acknowledged: `ACK (0x11)` `calib[0][0], calib[0][1], calib[1][0], calib[1][1],..., calib[17][1]`   
+  On success; calibration values for each of the 18 servos defining min (`calib[][0]`) and max (`calib[][1]`) values as `float`
+  - Not Acknowledged: `NACK (0x12)`, `ERROR_CODE`
+  On error
+- Notes: ???
+
+### `GET_CURRENT`
+
+- Direction: Server -> Client
+- Value: `GET_CURRENT (0x05)`
+- Payload: None  
+requests the current value
+- Response:
+  - Acknowledged: `ACK (0x11)`, `currentValue`   
+  On success
+  - Not Acknowledged: `NACK (0x12)`, `ERROR_CODE`
+  On error
+- Notes: ???
+
+### `GET_VOLTAGE`
+
+- Direction: Server -> Client
+- Value: `GET_VOLTAGE (0x06)`
+- Payload: None   
+requests the voltage value
+- Response:
+  - Acknowledged: `ACK (0x11)`, `voltageValue`   
+  On success
+  - Not Acknowledged: `NACK (0x12)`, `ERROR_CODE`
+  On error
+- Notes: ???
+
+### `GET_SENSOR`
+
+- Direction: Server -> Client
+- Value: `GET_SENSOR (0x07)`
+- Payload: `sensorID`   
+requests the value of the sensor
+- Response:
+  - Acknowledged: `ACK (0x11)`, `sensorValue`   
+  On success
+  - Not Acknowledged: `NACK (0x12)`, `ERROR_CODE`
+  On error
+- Notes: ???
+
