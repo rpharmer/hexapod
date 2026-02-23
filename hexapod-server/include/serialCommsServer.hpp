@@ -1,0 +1,61 @@
+#include <CppLinuxSerial/SerialPort.hpp>
+#include "hexapod-common.hpp"
+
+
+using namespace mn::CppLinuxSerial;
+// Concrete class derived from SerialComms defining which communication functions
+class SerialCommsServer : public SerialComms
+{
+private:
+    SerialPort serialport;
+public:
+    
+    // constructor
+    SerialCommsServer(const std::string &device, BaudRate baudRate, NumDataBits numDataBits, Parity parity, NumStopBits numStopBits);
+    // opens COM port for use, must be called before you configure port
+    void Open();
+    // closes COM port
+    void Close();
+    /// \brief      Sets the read timeout (in milliseconds)/blocking mode.
+    /// \details    Only call when state != OPEN. This method manipulates VMIN and VTIME.
+    /// \param      timeout_ms  Set to -1 to infinite timeout, 0 to return immediately with any data (non
+    ///             blocking, or >0 to wait for data for a specified number of milliseconds). Timeout will
+    ///             be rounded to the nearest 100ms (a Linux API restriction). Maximum value limited to
+    ///             25500ms (another Linux API restriction).
+    void SetTimeout(int32_t timeout_ms);
+
+
+    /* functions to send data */
+    
+    // send a char (1 byte)
+    void send_char(char data) override;
+    // send a uint8_t (1 bytes)
+    void send_u8(uint8_t data) override;
+    // send a uint16_t (2 bytes)
+    void send_u16(uint16_t data) override;
+    // send a uint32_t (4 bytes)
+    void send_u32(uint32_t data) override;
+    // send a int16_t  (2 bytes)
+    void send_i16(int16_t data) override;
+    // send a int32_t  (4 bytes)
+    void send_i32(int32_t data) override;
+    // send a float    (4 bytes)
+    void send_f32(float data) override;
+    
+    /* functions to recieve data */
+    
+    // receive a char (1 byte)
+    int recv_char(char *data) override;
+    // recieve a uint8_t (1 bytes)
+    int recv_u8(uint8_t *data) override;
+    // recieve a uint16_t (2 bytes)
+    int recv_u16(uint16_t *data) override;
+    // recieve a uint32_t (4 bytes)
+    int recv_u32(uint32_t *data) override;
+    // recieve a int16_t  (2 bytes)
+    int recv_i16(int16_t *data) override;
+    // recieve a int32_t  (4 bytes)
+    int recv_i32(int32_t *data) override;
+    // recieve a float    (4 bytes)
+    int recv_f32(float *data) override;
+};
