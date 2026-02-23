@@ -115,6 +115,10 @@ int main() {
   std::cout << std::hex << "0x" << (int)c << std::endl;
   std::cout.flags( f );  // restore flags state */
   
+  if(!do_handshake(scs, 0))
+    printf("error\n");
+  
+  
   for(auto it = calibs.begin(); it!=calibs.end(); ++it)
   {
     uint16_t a = std::get<1>(*it);
@@ -130,4 +134,10 @@ int main() {
   }
 	// Close the serial port
 	scs.Close();
+}
+
+
+bool do_handshake(SerialCommsServer& sc, uint8_t requested_caps)
+{
+  return true;
 }

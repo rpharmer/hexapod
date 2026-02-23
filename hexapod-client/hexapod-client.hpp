@@ -15,6 +15,8 @@
 #define GPIO_LOW_MASK		0x00
 
 
+
+void handleHandshake();
 void handleSetAngleCommand();
 void handleGetAngleCalibCommand();
 void handleSetPowerRelayCommand();

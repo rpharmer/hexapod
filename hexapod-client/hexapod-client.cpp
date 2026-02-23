@@ -125,21 +125,27 @@ int main() {
   
   servos.enable_all();
   
-  // Test Serial communication
+  /*// Test Serial communication
   while(1){
     int input = getchar_timeout_us(10);
     if(input >= 0 && input <= 255)
       putchar_raw(input);
-    //sleep_ms(2);
-  }
+  }*/
   
+  // Listen for handshake
   
+  // Process commands
   while(1){
     int input = getchar_timeout_us(10);
     if(input >= 0 && input <= 255)
     {
       switch(input & 0xff)
       {
+        case HELLO:
+        {
+          handleHandshake();
+          break;
+        }
         case SET_ANGLE_CALIBRATIONS:
         {
           handleCalibCommand();
@@ -194,6 +200,11 @@ int main() {
 
   // Sleep a short time so the clear takes effect
   sleep_ms(100);
+}
+
+
+void handleHandshake()
+{
 }
 
 
