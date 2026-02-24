@@ -159,22 +159,37 @@ bool do_handshake(SerialCommsServer& sc, uint8_t requested_caps)
   
   printf("sent: %u, %u, %u\n", HELLO, PROTOCOL_VERSION, requested_caps);
   
-  uint8_t response, version, status, deviceID, errorCode;
-  
-  sc.recv_u8(&response);
+  uint8_t response = 0;
+  uint8_t version = 0;
+  uint8_t status = 0;
+  uint8_t deviceID = 0;
+  uint8_t errorCode = 0;
+
+  if(sc.recv_u8(&response) < 0)
+  {
+    printf("handshake timeout waiting for response\n");
+    return false;
+  }
+
   if(response == NACK)
   {
-    sc.recv_u8(&errorCode);
+    if(sc.recv_u8(&errorCode) < 0)
+    {
+      printf("NACK without error code\n");
+      return false;
+    }
     printf("NACK, Error: %u\n", errorCode);
     return false;
   }
   
   else if(response == ACK)
   {
-    sc.recv_u8(&version);
-    sc.recv_u8(&status);
-    sc.recv_u8(&deviceID);
-    
+    if(sc.recv_u8(&version) < 0 || sc.recv_u8(&status) < 0 || sc.recv_u8(&deviceID) < 0)
+    {
+      printf("malformed ACK response\n");
+      return false;
+    }
+
     printf("recieved %u, %u, %u\n", version, status, deviceID);
     
     if(version != PROTOCOL_VERSION)

@@ -209,10 +209,17 @@ int main() {
 
 bool handleHandshake()
 {
-  uint8_t version, capabilities;
-  serial.recv_u8(&version);
-  serial.recv_u8(&capabilities);
-  
+  uint8_t version = 0;
+  uint8_t capabilities = 0;
+
+  if(serial.recv_u8(&version) < 0 || serial.recv_u8(&capabilities) < 0)
+  {
+    // `NACK (0x12)` and an error code
+    serial.send_u8(NACK);
+    serial.send_u8(TIMEOUT);
+    return false;
+  }
+
   if(version == PROTOCOL_VERSION)
   {
     // `ACK (0x11)`, `PROTOCOL_VERSION`, `STATUS (0=ok)`, `DEVICE_ID`
@@ -222,13 +229,11 @@ bool handleHandshake()
     serial.send_u8(DEVICE_ID);
     return true;
   }
-  else
-  {
-    // `NACK (0x12)` and an error code
-    serial.send_u8(NACK);
-    serial.send_u8(VERSION_MISMATCH);
-    return false;
-  }
+
+  // `NACK (0x12)` and an error code
+  serial.send_u8(NACK);
+  serial.send_u8(VERSION_MISMATCH);
+  return false;
 }
 
 void echoLoop()

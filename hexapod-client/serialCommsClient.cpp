@@ -1,6 +1,19 @@
 #include "pico/stdlib.h"
 #include "serialCommsClient.hpp"
 
+namespace {
+int recv_bytes(char *buffer, size_t len) {
+  for(size_t i = 0; i < len; ++i) {
+    const int ch = getchar_timeout_us(10);
+    if(ch < 0) {
+      return ch;
+    }
+    buffer[i] = static_cast<char>(ch);
+  }
+  return static_cast<int>(len);
+}
+}
+
 
 // constructor
 SerialCommsClient::SerialCommsClient(){}
@@ -71,53 +84,35 @@ void SerialCommsClient::send_f32(float data)
 // receive a char (1 byte)
 int SerialCommsClient::recv_char(char *data)
 {
-  *data = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  return 0;
+  return recv_bytes(data, sizeof(char));
 }
 // recieve a uint8_t (1 bytes)
 int SerialCommsClient::recv_u8(uint8_t *data)
 {
-  *data = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  return 0;
+  return recv_bytes(reinterpret_cast<char*>(data), sizeof(uint8_t));
 }
 // recieve a uint16_t (2 bytes)
 int SerialCommsClient::recv_u16(uint16_t *data)
 {
-  ((char*)data)[0] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  ((char*)data)[1] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  return 0;
+  return recv_bytes(reinterpret_cast<char*>(data), sizeof(uint16_t));
 }
 // recieve a uint32_t (4 bytes)
 int SerialCommsClient::recv_u32(uint32_t *data)
 {
-  ((char*)data)[0] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  ((char*)data)[1] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  ((char*)data)[2] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  ((char*)data)[3] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  return 0;
+  return recv_bytes(reinterpret_cast<char*>(data), sizeof(uint32_t));
 }
 // recieve a int16_t  (2 bytes)
 int SerialCommsClient::recv_i16(int16_t *data)
 {
-  ((char*)data)[0] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  ((char*)data)[1] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  return 0;
+  return recv_bytes(reinterpret_cast<char*>(data), sizeof(int16_t));
 }
 // recieve a int32_t  (4 bytes)
 int SerialCommsClient::recv_i32(int32_t *data)
 {
-  ((char*)data)[0] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  ((char*)data)[1] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  ((char*)data)[2] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  ((char*)data)[3] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  return 0;
+  return recv_bytes(reinterpret_cast<char*>(data), sizeof(int32_t));
 }
 // recieve a float    (4 bytes)
 int SerialCommsClient::recv_f32(float *data)
 {
-  ((char*)data)[0] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  ((char*)data)[1] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  ((char*)data)[2] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  ((char*)data)[3] = *reinterpret_cast<char*>(getchar_timeout_us(10));
-  return 0;
+  return recv_bytes(reinterpret_cast<char*>(data), sizeof(float));
 }
