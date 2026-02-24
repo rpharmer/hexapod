@@ -2,6 +2,8 @@
 #ifndef HEXAPOD_CLIENT_H
 #define HEXAPOD_CLIENT_H
 
+#include <vector>
+
 // client device id
 const uint8_t DEVICE_ID              = 0x01;
 
@@ -20,15 +22,15 @@ const uint32_t GPIO_LOW_MASK		  = 0x00;
 
 
 void echoLoop();
-bool handleHandshake();
-void handleSetAngleCommand();
+void handleHandshake(const std::vector<uint8_t>& payload);
+void handleSetAngleCommand(const std::vector<uint8_t>& payload);
 void handleGetAngleCalibCommand();
-void handleSetPowerRelayCommand();
+void handleSetPowerRelayCommand(const std::vector<uint8_t>& payload);
 void handleGetCurrentCommand();
 void handleGetVoltageCommand();
-void handleGetSensorCommand();
+void handleGetSensorCommand(const std::vector<uint8_t>& payload);
 
-void handleCalibCommand();
+void handleCalibCommand(const std::vector<uint8_t>& payload);
 void calibServos(float calibs[18][2]);
 
 #endif

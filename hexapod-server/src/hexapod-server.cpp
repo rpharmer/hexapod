@@ -1,4 +1,5 @@
 #include <toml.hpp>
+#include <vector>
 #include "hexapod-common.hpp"
 #include "hexapod-server.hpp"
 #include "serialCommsServer.hpp"
@@ -132,19 +133,25 @@ int main() {
     printf("handshake successful\n");
   }
   
-  for(auto it = calibs.begin(); it!=calibs.end(); ++it)
+  std::vector<uint8_t> calibPayload;
+  calibPayload.reserve(calibs.size() * 4);
+  for(const auto& calib : calibs)
   {
-    uint16_t a = std::get<1>(*it);
-    uint16_t b = std::get<2>(*it);
-    printf("send a: %u,b: %u\n", a, b);
-    scs.send_u16(a);
-    scs.send_u16(b);
-    uint16_t ca = 0;
-    uint16_t cb = 0;
-    scs.recv_u16(&ca);
-    scs.recv_u16(&cb);
-    printf("recv a: %u,b: %u\n", ca, cb);
+    const uint16_t minPulse = static_cast<uint16_t>(std::get<1>(calib));
+    const uint16_t maxPulse = static_cast<uint16_t>(std::get<2>(calib));
+    calibPayload.push_back(static_cast<uint8_t>(minPulse & 0xFF));
+    calibPayload.push_back(static_cast<uint8_t>((minPulse >> 8) & 0xFF));
+    calibPayload.push_back(static_cast<uint8_t>(maxPulse & 0xFF));
+    calibPayload.push_back(static_cast<uint8_t>((maxPulse >> 8) & 0xFF));
   }
+
+  scs.send_packet(SET_ANGLE_CALIBRATIONS, calibPayload);
+
+  DecodedPacket response;
+  if(scs.recv_packet(response) && response.cmd == ACK)
+    printf("calibration packet accepted\n");
+  else
+    printf("calibration packet failed\n");
   
 	// Close the serial port
 	scs.Close();
@@ -153,40 +160,38 @@ int main() {
 
 bool do_handshake(SerialCommsServer& sc, uint8_t requested_caps)
 {
-  sc.send_u8(HELLO);
-  sc.send_u8(PROTOCOL_VERSION);
-  sc.send_u8(requested_caps);
-  
-  uint8_t response = 0;
-  uint8_t version = 0;
-  uint8_t status = 0;
-  uint8_t deviceID = 0;
-  uint8_t errorCode = 0;
+  sc.send_packet(HELLO, {PROTOCOL_VERSION, requested_caps});
 
-  if(sc.recv_u8(&response) < 0)
+  DecodedPacket response;
+  if(!sc.recv_packet(response))
   {
     printf("handshake timeout waiting for response\n");
     return false;
   }
 
-  if(response == NACK)
+  if(response.cmd == NACK)
   {
-    if(sc.recv_u8(&errorCode) < 0)
+    if(response.payload.empty())
     {
       printf("NACK without error code\n");
       return false;
     }
+    uint8_t errorCode = response.payload[0];
     printf("NACK, Error: %u\n", errorCode);
     return false;
   }
   
-  else if(response == ACK)
+  else if(response.cmd == ACK)
   {
-    if(sc.recv_u8(&version) < 0 || sc.recv_u8(&status) < 0 || sc.recv_u8(&deviceID) < 0)
+    if(response.payload.size() < 3)
     {
       printf("malformed ACK response\n");
       return false;
     }
+    const uint8_t version = response.payload[0];
+    const uint8_t status = response.payload[1];
+    const uint8_t deviceID = response.payload[2];
+    (void)deviceID;
     
     if(version != PROTOCOL_VERSION)
     {
@@ -202,11 +207,10 @@ bool do_handshake(SerialCommsServer& sc, uint8_t requested_caps)
   }
   else
   {
-    printf("malformed response, recieved: %u\n", response);
+    printf("malformed response, recieved: %u\n", response.cmd);
     return false;
   }
   
   return true;
 }
-
 

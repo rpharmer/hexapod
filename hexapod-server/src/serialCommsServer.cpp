@@ -105,3 +105,23 @@ int SerialCommsServer::recv_f32(float *data)
 {
   return serialport.ReadBytes(data, sizeof(float));
 }
+
+void SerialCommsServer::send_packet(uint8_t cmd, const std::vector<uint8_t>& payload)
+{
+  const std::vector<uint8_t> frame = encodePacket(cmd, payload);
+  serialport.WriteBinary(frame);
+}
+
+bool SerialCommsServer::recv_packet(DecodedPacket& packet)
+{
+  while(true)
+  {
+    if(tryDecodePacket(rxBuffer, packet))
+      return true;
+
+    uint8_t byte = 0;
+    if(recv_u8(&byte) < 0)
+      return false;
+    rxBuffer.push_back(byte);
+  }
+}
