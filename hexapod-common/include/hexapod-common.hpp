@@ -3,6 +3,7 @@
 #define HEXAPOD_COMMON_H
 
 #include <stdint.h>
+#include "framing.hpp"
 
 // protocol version
 const uint8_t PROTOCOL_VERSION       = 0x04;
@@ -50,6 +51,14 @@ public:
     virtual int recv_i16(int16_t*) = 0;  // recieve a int16_t  (2 bytes)
     virtual int recv_i32(int32_t*) = 0;  // recieve a int32_t  (4 bytes)
     virtual int recv_f32(float*) = 0;    // recieve a float    (4 bytes)
+    
+    
+    // framed protocol helpers
+    virtual void send_packet(uint8_t cmd, const std::vector<uint8_t>& payload) = 0;
+    virtual bool recv_packet(DecodedPacket& packet) = 0;
+    
+protected:
+    std::vector<uint8_t> rxBuffer;
 };
 
 #endif // #ifndef HEXAPOD_COMMON_H

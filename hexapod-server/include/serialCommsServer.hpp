@@ -65,11 +65,8 @@ public:
     int recv_f32(float *data) override;
 
     // framed protocol helpers
-    void send_packet(uint8_t cmd, const std::vector<uint8_t>& payload);
-    bool recv_packet(DecodedPacket& packet);
-
-private:
-    std::vector<uint8_t> rxBuffer;
+    void send_packet(uint8_t cmd, const std::vector<uint8_t>& payload) override;
+    bool recv_packet(DecodedPacket& packet) override;
 };
 
 #endif // #ifndef HEXAPOD_COMMS_SERVER_H
