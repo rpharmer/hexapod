@@ -9,8 +9,10 @@ LDFLAGS := -lCppLinuxSerial -ltoml11
 
 SERVER_SRC := $(wildcard src/*.cpp)
 COMMON_SRC := ../hexapod-common/framing.cpp
-SRC := $(SERVER_SRC) $(COMMON_SRC)
-OBJ := $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(SRC))
+
+SERVER_OBJ := $(patsubst src/%.cpp,$(BUILD_DIR)/src/%.o,$(SERVER_SRC))
+COMMON_OBJ := $(addprefix $(BUILD_DIR)/common/,$(notdir $(COMMON_SRC:.cpp=.o)))
+OBJ := $(SERVER_OBJ) $(COMMON_OBJ)
 DEP := $(OBJ:.o=.d)
 
 .PHONY: all debug release clean info
@@ -21,7 +23,11 @@ $(TARGET): $(OBJ)
 	@mkdir -p $(@D)
 	$(CXX) $(OBJ) -o $@ $(LDFLAGS)
 
-$(BUILD_DIR)/%.o: %.cpp
+$(BUILD_DIR)/src/%.o: src/%.cpp
+	@mkdir -p $(@D)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
+
+$(BUILD_DIR)/common/%.o: ../hexapod-common/%.cpp
 	@mkdir -p $(@D)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
 
@@ -38,5 +44,6 @@ clean:
 
 info:
 	@echo "Target: $(TARGET)"
-	@echo "Sources: $(SRC)"
+	@echo "Server sources: $(SERVER_SRC)"
+	@echo "Common sources: $(COMMON_SRC)"
 	@echo "Objects: $(OBJ)"
