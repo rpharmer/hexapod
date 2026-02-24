@@ -119,3 +119,24 @@ int SerialCommsClient::recv_f32(float *data)
 {
   return recv_bytes(reinterpret_cast<char*>(data), sizeof(float));
 }
+
+void SerialCommsClient::send_packet(uint8_t cmd, const std::vector<uint8_t>& payload)
+{
+  const std::vector<uint8_t> frame = encodePacket(cmd, payload);
+  for(uint8_t b : frame)
+    send_u8(b);
+}
+
+bool SerialCommsClient::recv_packet(DecodedPacket& packet)
+{
+  while(true)
+  {
+    if(tryDecodePacket(rxBuffer, packet))
+      return true;
+
+    uint8_t byte = 0;
+    if(recv_u8(&byte) < 0)
+      return false;
+    rxBuffer.push_back(byte);
+  }
+}

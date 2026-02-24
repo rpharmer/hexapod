@@ -129,41 +129,31 @@ int main() {
   // Test Serial communication
   //echoLoop();
   
-  // Listen for handshake
-  while(true)
-  {
-    int input = getchar_timeout_us(100);
-    if(input == HELLO)
-      if(handleHandshake())
-        break;
-  }
-  
-  
-  // Process commands
+  // Process framed commands
   while(1){
-    int input = getchar_timeout_us(1000);
-    if(input >= 0 && input <= 255)
+    DecodedPacket packet;
+    if(serial.recv_packet(packet))
     {
-      switch(input & 0xff)
+      switch(packet.cmd)
       {
         case HELLO:
         {
-          handleHandshake();
+          handleHandshake(packet.payload);
           break;
         }
         case SET_ANGLE_CALIBRATIONS:
         {
-          handleCalibCommand();
+          handleCalibCommand(packet.payload);
           break;
         }
         case SET_TARGET_ANGLE:
         {
-          handleSetAngleCommand();
+          handleSetAngleCommand(packet.payload);
           break;
         }
         case SET_POWER_RELAY:
         {
-          handleSetPowerRelayCommand();
+          handleSetPowerRelayCommand(packet.payload);
           break;
         }
         case GET_ANGLE_CALIBRATIONS:
@@ -183,7 +173,7 @@ int main() {
         }
         case GET_SENSOR:
         {
-          handleGetSensorCommand();
+          handleGetSensorCommand(packet.payload);
           break;
         }
         default:
@@ -208,33 +198,25 @@ int main() {
 }
 
 
-bool handleHandshake()
+void handleHandshake(const std::vector<uint8_t>& payload)
 {
-  uint8_t version = 0;
-  uint8_t capabilities = 0;
-
-  if(serial.recv_u8(&version) < 0 || serial.recv_u8(&capabilities) < 0)
+  if(payload.size() < 2)
   {
-    // `NACK (0x12)` and an error code
-    serial.send_u8(NACK);
-    serial.send_u8(TIMEOUT);
-    return false;
+    serial.send_packet(NACK, {TIMEOUT});
+    return;
   }
+
+  const uint8_t version = payload[0];
+  const uint8_t capabilities = payload[1];
+  (void)capabilities;
 
   if(version == PROTOCOL_VERSION)
   {
-    // `ACK (0x11)`, `PROTOCOL_VERSION`, `STATUS (0=ok)`, `DEVICE_ID`
-    serial.send_u8(ACK);
-    serial.send_u8(PROTOCOL_VERSION);
-    serial.send_u8(STATUS_OK);
-    serial.send_u8(DEVICE_ID);
-    return true;
+    serial.send_packet(ACK, {PROTOCOL_VERSION, STATUS_OK, DEVICE_ID});
+    return;
   }
 
-  // `NACK (0x12)` and an error code
-  serial.send_u8(NACK);
-  serial.send_u8(VERSION_MISMATCH);
-  return false;
+  serial.send_packet(NACK, {VERSION_MISMATCH});
 }
 
 void echoLoop()
@@ -246,80 +228,113 @@ void echoLoop()
   }
 }
 
-void handleSetAngleCommand()
+void handleSetAngleCommand(const std::vector<uint8_t>& payload)
 {
-  uint8_t servo;
-  uint16_t angle;
-  serial.recv_u8(&servo);
-  serial.recv_u16(&angle);
+  if(payload.size() < 3)
+  {
+    serial.send_packet(NACK, {TIMEOUT});
+    return;
+  }
+
+  const uint8_t servo = payload[0];
+  const uint16_t angle = static_cast<uint16_t>(payload[1]) |
+                         (static_cast<uint16_t>(payload[2]) << 8);
   servos.value(servo, angle);
+  serial.send_packet(ACK, {});
 }
 
 void handleGetAngleCalibCommand()
 {
+  std::vector<uint8_t> payload;
+  payload.reserve(18 * 8);
   for (int s =0; s < 18; s++)
   {
     Calibration& cal = servos.calibration(s);
     float minPulse = cal.first_pulse();
     float maxPulse = cal.last_pulse();
-    
-    serial.send_f32(minPulse);
-    serial.send_f32(maxPulse);
+
+    const uint8_t* minBytes = reinterpret_cast<const uint8_t*>(&minPulse);
+    const uint8_t* maxBytes = reinterpret_cast<const uint8_t*>(&maxPulse);
+    payload.insert(payload.end(), minBytes, minBytes + sizeof(float));
+    payload.insert(payload.end(), maxBytes, maxBytes + sizeof(float));
   }
+  serial.send_packet(ACK, payload);
 }
 
-void handleSetPowerRelayCommand()
+void handleSetPowerRelayCommand(const std::vector<uint8_t>& payload)
 {
-  uint8_t relayOpen;
-  serial.recv_u8(&relayOpen);
+  if(payload.empty())
+  {
+    serial.send_packet(NACK, {TIMEOUT});
+    return;
+  }
+
+  const uint8_t relayOpen = payload[0];
   if(relayOpen == 1)
     gpio_put_masked(A0_GPIO_MASK, GPIO_HIGH_MASK);
   else if(relayOpen == 0)
     gpio_put_masked(A0_GPIO_MASK, GPIO_LOW_MASK);
   else
   {
-    return;// An error has occured
+    serial.send_packet(NACK, {TIMEOUT});
+    return;
   }
+  serial.send_packet(ACK, {});
 }
 void handleGetCurrentCommand()
 {
   mux.select(servo2040::CURRENT_SENSE_ADDR);
   float current = cur_adc.read_current();
-  serial.send_f32(current);
+  const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&current);
+  serial.send_packet(ACK, std::vector<uint8_t>(bytes, bytes + sizeof(float)));
 }
 void handleGetVoltageCommand()
 {
   mux.select(servo2040::VOLTAGE_SENSE_ADDR);
   float voltage = vol_adc.read_voltage();
-  
-  serial.send_f32(voltage);
+
+  const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&voltage);
+  serial.send_packet(ACK, std::vector<uint8_t>(bytes, bytes + sizeof(float)));
 }
-void handleGetSensorCommand()
+void handleGetSensorCommand(const std::vector<uint8_t>& payload)
 {
-  // get sensor id
-  uint8_t sensor;
-  serial.recv_u8(&sensor);
+  if(payload.empty())
+  {
+    serial.send_packet(NACK, {TIMEOUT});
+    return;
+  }
+
+  const uint8_t sensor = payload[0];
   mux.select(servo2040::SENSOR_1_ADDR + sensor);
   float voltage = sen_adc.read_voltage();
-  
-  serial.send_f32(voltage);
+
+  const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&voltage);
+  serial.send_packet(ACK, std::vector<uint8_t>(bytes, bytes + sizeof(float)));
 }
 
-void handleCalibCommand()
+void handleCalibCommand(const std::vector<uint8_t>& payload)
 {
+  if(payload.size() < 18 * 4)
+  {
+    serial.send_packet(NACK, {TIMEOUT});
+    return;
+  }
+
   float calibs[18][2];
+  size_t idx = 0;
   for (int s =0; s < 18; s++)
   {
-    uint16_t c00;
-    uint16_t c10;
-    
-    serial.recv_u16(&c00);
-    serial.recv_u16(&c10);
+    const uint16_t c00 = static_cast<uint16_t>(payload[idx]) |
+                         (static_cast<uint16_t>(payload[idx + 1]) << 8);
+    const uint16_t c10 = static_cast<uint16_t>(payload[idx + 2]) |
+                         (static_cast<uint16_t>(payload[idx + 3]) << 8);
+    idx += 4;
     
     calibs[s][0] = c00;
     calibs[s][1] = c10;
   }
   calibServos(calibs);
+  serial.send_packet(ACK, {});
 }
 
 void calibServos(float calibs[18][2])
