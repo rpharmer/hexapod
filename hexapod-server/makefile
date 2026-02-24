@@ -1,54 +1,42 @@
-CXX      := -c++
-CXXFLAGS := -pedantic-errors -Wall -Wextra -Werror
-LDFLAGS  := -L/usr/lib -lstdc++ -lm -lCppLinuxSerial -ltoml11
-# -L../hexapod-common/lib/ -lhexapodcommon
-BUILD    := ./build
-TARGET   := hexapod-server
-INCLUDE  := -Iinclude/ -I../hexapod-common/include/
-SRC      :=                      \
-   $(wildcard src/*.cpp)         \
+CXX := g++
 
-SRC_COMMON  := ../hexapod-common
+BUILD_DIR := build
+TARGET := $(BUILD_DIR)/hexapod-server
 
-OBJECTS  := $(SRC:%.cpp=$(BUILD)/%.o)
-DEPENDENCIES \
-         := $(OBJECTS:.o=.d)
+CXXFLAGS := -std=c++20 -pedantic-errors -Wall -Wextra -Werror
+CPPFLAGS := -Iinclude -I../hexapod-common/include
+LDFLAGS := -lCppLinuxSerial -ltoml11
 
-copy_dir:
-	@echo "Copying $(SRC_COMMON) to ./src ..."
-	@cp -a $(SRC_COMMON)/*.cpp ./src/
+SERVER_SRC := $(wildcard src/*.cpp)
+COMMON_SRC := ../hexapod-common/framing.cpp
+SRC := $(SERVER_SRC) $(COMMON_SRC)
+OBJ := $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(SRC))
+DEP := $(OBJ:.o=.d)
 
-all: copy_dir main
+.PHONY: all debug release clean info
 
-main: $(BUILD)/$(TARGET)
+all: $(TARGET)
 
-$(BUILD)/%.o: %.cpp
+$(TARGET): $(OBJ)
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -MMD -o $@
+	$(CXX) $(OBJ) -o $@ $(LDFLAGS)
 
-$(BUILD)/$(TARGET): $(OBJECTS)
+$(BUILD_DIR)/%.o: %.cpp
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) -o $(BUILD)/$(TARGET) $^ $(LDFLAGS)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
 
--include $(DEPENDENCIES)
+-include $(DEP)
 
-.PHONY: copy_dir all main debug release info list
-
-
-debug: CXXFLAGS += -DDEBUG -g
+debug: CXXFLAGS += -O0 -g -DDEBUG
 debug: all
 
-release: CXXFLAGS += -O2
+release: CXXFLAGS += -O2 -DNDEBUG
 release: all
 
 clean:
-	rm -rf $(BUILD)/*
-
-list:
-	@echo $(shell ls)
+	rm -rf $(BUILD_DIR)
 
 info:
-	@echo "[*] Sources:         ${SRC}         "
-	@echo "[*] Objects:         ${OBJECTS}     "
-	@echo "[*] Dependencies:    ${DEPENDENCIES}"
-                       
+	@echo "Target: $(TARGET)"
+	@echo "Sources: $(SRC)"
+	@echo "Objects: $(OBJ)"
