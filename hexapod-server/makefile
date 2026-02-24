@@ -8,12 +8,19 @@ INCLUDE  := -Iinclude/ -I../hexapod-common/include/
 SRC      :=                      \
    $(wildcard src/*.cpp)         \
 
-SRC      += ../hexapod-common/framing.cpp
+SRC_COMMON  := ../hexapod-common
+
 OBJECTS  := $(SRC:%.cpp=$(BUILD)/%.o)
 DEPENDENCIES \
          := $(OBJECTS:.o=.d)
 
-all: $(BUILD)/$(TARGET)
+copy_dir:
+	@echo "Copying $(SRC_COMMON) to ./src ..."
+	@cp -a $(SRC_COMMON)/*.cpp ./src/
+
+all: copy_dir main
+
+main: $(BUILD)/$(TARGET)
 
 $(BUILD)/%.o: %.cpp
 	@mkdir -p $(@D)
@@ -25,7 +32,7 @@ $(BUILD)/$(TARGET): $(OBJECTS)
 
 -include $(DEPENDENCIES)
 
-.PHONY: all debug release info list
+.PHONY: copy_dir all main debug release info list
 
 
 debug: CXXFLAGS += -DDEBUG -g
