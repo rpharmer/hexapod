@@ -19,6 +19,7 @@ pico_sdk_init()
 # Add your source files
 add_executable(${NAME}
     hexapod-client.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/framing.cpp
     serialCommsClient.cpp # <-- Add source files here!
 )
 

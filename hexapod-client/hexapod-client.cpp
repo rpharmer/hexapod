@@ -1,9 +1,10 @@
-#include "pico/stdlib.h"
+#define TARGET_PICO
 
+#include "pico/stdlib.h"
 #include "hexapod-common.hpp"
 #include "hexapod-client.hpp"
 #include "serialCommsClient.hpp"
-
+#include "framing.hpp"
 #include "servo2040.hpp"
 #include "button.hpp"
 #include "analog.hpp"

@@ -8,6 +8,7 @@ INCLUDE  := -Iinclude/ -I../hexapod-common/include/
 SRC      :=                      \
    $(wildcard src/*.cpp)         \
 
+SRC      += ../hexapod-common/framing.cpp
 OBJECTS  := $(SRC:%.cpp=$(BUILD)/%.o)
 DEPENDENCIES \
          := $(OBJECTS:.o=.d)
