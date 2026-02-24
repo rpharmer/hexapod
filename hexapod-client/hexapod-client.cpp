@@ -126,21 +126,21 @@ int main() {
   servos.enable_all();
   
   // Test Serial communication
+  //echoLoop();
   
   // Listen for handshake
   while(true)
   {
-    int input = getchar_timeout_us(10);
+    int input = getchar_timeout_us(100);
     if(input == HELLO)
       if(handleHandshake())
         break;
   }
   
-  //echoLoop();
   
   // Process commands
   while(1){
-    int input = getchar_timeout_us(10);
+    int input = getchar_timeout_us(1000);
     if(input >= 0 && input <= 255)
     {
       switch(input & 0xff)
@@ -239,7 +239,7 @@ bool handleHandshake()
 void echoLoop()
 {
   while(1){
-    int input = getchar_timeout_us(10);
+    int input = getchar_timeout_us(100);
     if(input >= 0 && input <= 255)
       putchar_raw(input);
   }

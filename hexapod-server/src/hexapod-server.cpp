@@ -157,8 +157,6 @@ bool do_handshake(SerialCommsServer& sc, uint8_t requested_caps)
   sc.send_u8(PROTOCOL_VERSION);
   sc.send_u8(requested_caps);
   
-  printf("sent: %u, %u, %u\n", HELLO, PROTOCOL_VERSION, requested_caps);
-  
   uint8_t response = 0;
   uint8_t version = 0;
   uint8_t status = 0;
@@ -189,8 +187,6 @@ bool do_handshake(SerialCommsServer& sc, uint8_t requested_caps)
       printf("malformed ACK response\n");
       return false;
     }
-
-    printf("recieved %u, %u, %u\n", version, status, deviceID);
     
     if(version != PROTOCOL_VERSION)
     {

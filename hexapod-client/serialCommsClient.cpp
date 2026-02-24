@@ -4,7 +4,7 @@
 namespace {
 int recv_bytes(char *buffer, size_t len) {
   for(size_t i = 0; i < len; ++i) {
-    const int ch = getchar_timeout_us(10);
+    const int ch = getchar_timeout_us(1000);
     if(ch < 0) {
       return ch;
     }
@@ -16,7 +16,10 @@ int recv_bytes(char *buffer, size_t len) {
 
 
 // constructor
-SerialCommsClient::SerialCommsClient(){}
+SerialCommsClient::SerialCommsClient()
+{
+  _timeout_ms = 100;
+}
 // opens COM port for use, must be called before you configure port
 void SerialCommsClient::Open(){}
 // closes COM port
@@ -27,7 +30,7 @@ void SerialCommsClient::Close(){}
 ///             blocking, or >0 to wait for data for a specified number of milliseconds). Timeout will
 ///             be rounded to the nearest 100ms (a Linux API restriction). Maximum value limited to
 ///             25500ms (another Linux API restriction).
-void SerialCommsClient::SetTimeout(int32_t timeout_ms){}
+void SerialCommsClient::SetTimeout(int32_t timeout_ms){_timeout_ms = timeout_ms;}
 
 
 /* functions to send data */

@@ -8,6 +8,8 @@
 // Concrete class derived from SerialComms defining which communication functions
 class SerialCommsClient : public SerialComms
 {
+private:
+  int32_t _timeout_ms;
 public:
     
     // constructor
