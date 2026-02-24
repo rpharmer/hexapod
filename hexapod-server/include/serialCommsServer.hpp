@@ -1,3 +1,7 @@
+// Header guard
+#ifndef HEXAPOD_COMMS_SERVER_H
+#define HEXAPOD_COMMS_SERVER_H
+
 #include <CppLinuxSerial/SerialPort.hpp>
 #include "hexapod-common.hpp"
 
@@ -59,3 +63,5 @@ public:
     // recieve a float    (4 bytes)
     int recv_f32(float *data) override;
 };
+
+#endif // #ifndef HEXAPOD_COMMS_SERVER_H

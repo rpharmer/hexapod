@@ -115,9 +115,22 @@ int main() {
   std::cout << std::hex << "0x" << (int)c << std::endl;
   std::cout.flags( f );  // restore flags state */
   
-  if(!do_handshake(scs, 0))
-    printf("error\n");
+  bool handshakeSuccess = false;
   
+  for(int attempt = 0; attempt < 3 && !handshakeSuccess; attempt++)
+  {
+    handshakeSuccess = do_handshake(scs, 0);
+  }
+  
+  if(!handshakeSuccess)
+  {
+    printf("couldn't etablish handshake, closing\n");
+    return -1;
+  }
+  else
+  {
+    printf("handshake successful\n");
+  }
   
   for(auto it = calibs.begin(); it!=calibs.end(); ++it)
   {
@@ -132,6 +145,7 @@ int main() {
     scs.recv_u16(&cb);
     printf("recv a: %u,b: %u\n", ca, cb);
   }
+  
 	// Close the serial port
 	scs.Close();
 }
@@ -139,5 +153,49 @@ int main() {
 
 bool do_handshake(SerialCommsServer& sc, uint8_t requested_caps)
 {
+  sc.send_u8(HELLO);
+  sc.send_u8(PROTOCOL_VERSION);
+  sc.send_u8(requested_caps);
+  
+  printf("sent: %u, %u, %u\n", HELLO, PROTOCOL_VERSION, requested_caps);
+  
+  uint8_t response, version, status, deviceID, errorCode;
+  
+  sc.recv_u8(&response);
+  if(response == NACK)
+  {
+    sc.recv_u8(&errorCode);
+    printf("NACK, Error: %u\n", errorCode);
+    return false;
+  }
+  
+  else if(response == ACK)
+  {
+    sc.recv_u8(&version);
+    sc.recv_u8(&status);
+    sc.recv_u8(&deviceID);
+    
+    printf("recieved %u, %u, %u\n", version, status, deviceID);
+    
+    if(version != PROTOCOL_VERSION)
+    {
+      printf("version mismatch\n");
+      return false;
+    }
+    if(status != STATUS_OK)
+    {
+      printf("device not ready\n");
+      return false;
+    }
+    return true;
+  }
+  else
+  {
+    printf("malformed response, recieved: %u\n", response);
+    return false;
+  }
+  
   return true;
 }
+
+

@@ -125,14 +125,18 @@ int main() {
   
   servos.enable_all();
   
-  /*// Test Serial communication
-  while(1){
-    int input = getchar_timeout_us(10);
-    if(input >= 0 && input <= 255)
-      putchar_raw(input);
-  }*/
+  // Test Serial communication
   
   // Listen for handshake
+  while(true)
+  {
+    int input = getchar_timeout_us(10);
+    if(input == HELLO)
+      if(handleHandshake())
+        break;
+  }
+  
+  //echoLoop();
   
   // Process commands
   while(1){
@@ -203,10 +207,38 @@ int main() {
 }
 
 
-void handleHandshake()
+bool handleHandshake()
 {
+  uint8_t version, capabilities;
+  serial.recv_u8(&version);
+  serial.recv_u8(&capabilities);
+  
+  if(version == PROTOCOL_VERSION)
+  {
+    // `ACK (0x11)`, `PROTOCOL_VERSION`, `STATUS (0=ok)`, `DEVICE_ID`
+    serial.send_u8(ACK);
+    serial.send_u8(PROTOCOL_VERSION);
+    serial.send_u8(STATUS_OK);
+    serial.send_u8(DEVICE_ID);
+    return true;
+  }
+  else
+  {
+    // `NACK (0x12)` and an error code
+    serial.send_u8(NACK);
+    serial.send_u8(VERSION_MISMATCH);
+    return false;
+  }
 }
 
+void echoLoop()
+{
+  while(1){
+    int input = getchar_timeout_us(10);
+    if(input >= 0 && input <= 255)
+      putchar_raw(input);
+  }
+}
 
 void handleSetAngleCommand()
 {

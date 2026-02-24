@@ -4,17 +4,28 @@
 
 #include <stdint.h>
 
+// protocol version
+const uint8_t PROTOCOL_VERSION       = 0x04;
 
-const uint HELLO                  = 0x10;
-const uint ACK                    = 0x11;
-const uint NACK                   = 0x12;
-const uint SET_ANGLE_CALIBRATIONS = 0x01;
-const uint SET_TARGET_ANGLE       = 0x02;
-const uint SET_POWER_RELAY        = 0x03;
-const uint GET_ANGLE_CALIBRATIONS = 0x04;
-const uint GET_CURRENT            = 0x05;
-const uint GET_VOLTAGE            = 0x06;
-const uint GET_SENSOR             = 0x07;
+// command codes
+const uint8_t HELLO                  = 0x10;
+const uint8_t ACK                    = 0x11;
+const uint8_t NACK                   = 0x12;
+const uint8_t SET_ANGLE_CALIBRATIONS = 0x01;
+const uint8_t SET_TARGET_ANGLE       = 0x02;
+const uint8_t SET_POWER_RELAY        = 0x03;
+const uint8_t GET_ANGLE_CALIBRATIONS = 0x04;
+const uint8_t GET_CURRENT            = 0x05;
+const uint8_t GET_VOLTAGE            = 0x06;
+const uint8_t GET_SENSOR             = 0x07;
+
+// status codes
+const uint8_t STATUS_OK              = 0x00;
+const uint8_t STATUS_BUSY            = 0x01;
+
+// error codes
+const uint8_t TIMEOUT                = 0xA1;
+const uint8_t VERSION_MISMATCH       = 0xA2;
 
 
 /* Abstract base class defining which communication functions must be implemented. Server
