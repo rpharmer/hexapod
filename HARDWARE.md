@@ -17,7 +17,31 @@ The hexapod is 3D printed and I've used the Chipo build from [MakeYourPet](https
 
 ## Electrical Components
 
-I've used a 7.4 (2S) lipo battery. The voltage range is approx 8.4v fully charged and mustn't be discharged below 6v. Due to the wide voltage range it is nessaccary to use a 8A ubec to deliver consistent voltage to the servos. I've used MG996R servos.
+I've used a 7.4 (2S) lipo battery. Due to the wide voltage range it is nessaccary to use a ubec to deliver consistent voltage to the servos. I've used MG996R servos.
+
+### 7.4V (2S) Lipo Battery
+
+The voltage range: is approx 8.4v fully charged and mustn't be discharged below 6v.
+
+- 7.4V Nominal voltage
+- 8.4V Fully charged
+- 6.0V Minimum voltage (do not discharge below this as it can damage the battery)
+
+I've used a 8A UBEC to regulate the voltage from the battery to the servos.
+
+Rated:
+- 8A continous
+- 16A instantaneous
+
+Input voltage
+- 6V Minimum
+- 36V Maximum
+
+Output voltage (selectable using jumper)
+- 5.2V
+- 6.0V
+- 7.4V
+- 8.4V
 
 ### MG996R Servo Specs
 
@@ -29,6 +53,17 @@ Operating Speed:
 - 0.17 sec / 60 degrees (4.8V no load)
 - 0.14 sec / 60 degrees (6.0V no load)
 
-Operating voltage: 4.8 - 7.2V.
+Operating voltage: 4.8V - 7.2V.
 Dimension: 40mm x 19mm x 43mm.
+
+## Servo 2040
+
+<img src ="https://www.kiwi-electronics.com/image/cache/catalog/product/83habfak/servo-2040-2-1600x1066h.jpg" height="300">
+
+This is the powerful servo controller, able to drive 18 servos, read current draw and voltage of the servo power rail, 6 analog sensors used for limit switches on the end of each foot, 6 addressable RGB LEDs suitable for visual feedback, 3 ADC input/output pins (one is used to drive the relay to enable/disable the battery), Serial Wire Debug pins which are used to upload the firmware using OpenOCD. The heart of the servo 2040 board is a Raspberry Pi RP2040 (Dual Arm Cortex M0+ running at up to 133Mhz with 264kB of SRAM) also has 2MB of QSPI flash supporting XiP.
+
+
+
+
+
 
