@@ -15,3 +15,20 @@ The hexapod is 3D printed and I've used the Chipo build from [MakeYourPet](https
   <img src="illustrations/tibia-components.png" height="200" />
 </p>
 
+## Electrical Components
+
+I've used a 7.4 (2S) lipo battery. The voltage range is approx 8.4v fully charged and mustn't be discharged below 6v. Due to the wide voltage range it is nessaccary to use a 8A ubec to deliver consistent voltage to the servos. I've used MG996R servos.
+
+## MG996R Servo Specs
+
+Stall Torque:
+- 13 kg / cm (4.8V)
+- 15 kg / cm (6.0V.
+
+Operating Speed:
+- 0.17 sec / 60 degrees (4.8V no load)
+- 0.14 sec / 60 degrees (6.0V no load)
+
+Operating voltage: 4.8 - 7.2V.
+Dimension: 40mm x 19mm x 43mm.
+
