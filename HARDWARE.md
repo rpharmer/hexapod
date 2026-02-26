@@ -60,8 +60,12 @@ Dimension: 40mm x 19mm x 43mm.
 
 <img src ="https://www.kiwi-electronics.com/image/cache/catalog/product/83habfak/servo-2040-2-1600x1066h.jpg" height="300">
 
-This is the powerful servo controller, able to drive 18 servos, read current draw and voltage of the servo power rail, 6 analog sensors used for limit switches on the end of each foot, 6 addressable RGB LEDs suitable for visual feedback, 3 ADC input/output pins (one is used to drive the relay to enable/disable the battery), Serial Wire Debug pins which are used to upload the firmware using OpenOCD. The heart of the servo 2040 board is a Raspberry Pi RP2040 (Dual Arm Cortex M0+ running at up to 133Mhz with 264kB of SRAM) also has 2MB of QSPI flash supporting XiP.
+This is the powerful servo controller, able to drive 18 servos, read current draw and voltage of the servo power rail, 6 analog sensors used for limit switches on the end of each foot, 6 addressable RGB LEDs suitable for visual feedback, 3 ADC input/output pins (one is used to drive the relay to enable/disable the battery), Serial Wire Debug pins which are used to upload the firmware using OpenOCD. The heart of the servo 2040 board is a Raspberry Pi RP2040 (pico) (Dual Arm Cortex M0+ running at up to 133Mhz with 264kB of SRAM) also has 2MB of QSPI flash supporting XiP.
+A full schematic can be found [here](https://cdn.shopify.com/s/files/1/0174/1800/files/servo2040_schematic.pdf)
+A pdf development guide for the pico can be found [here,](https://cdn.shopify.com/s/files/1/0174/1800/files/servo2040_schematic.pdf) this contains important instructions for flashing the board using OpenOCD.
+I'm using a Raspberry Pi 5 as main board of the hexapod, you will need to use the config file provided [here](https://forums.raspberrypi.com/viewtopic.php?t=362826) for flashing the servo 2040 from a rpi5.
 
+Our firmware is written in c++ under the directory hexapod-client. Pimoroni provides guides to setting up the enviroment for pico development (which applies to the servo 2040 board) and a boiler plate project. Links to these can be found here; [Boilerplate project](https://github.com/pimoroni/pico-boilerplate), [Pico SDK setup instructions](https://github.com/pimoroni/pimoroni-pico/blob/main/setting-up-the-pico-sdk.md), [Servo 2040 example code](https://github.com/pimoroni/pimoroni-pico/tree/main/examples/servo2040) and [Pico example code](https://github.com/raspberrypi/pico-examples?tab=readme-ov-file).
 
 
 
