@@ -100,8 +100,8 @@ The angle between the servo itself and the leg segment when the servo is centere
 - FEMUR_ATTACH_ANGLE 35
 - TIBIA_ATTACH_ANGLE 83
 
-<img src="../illustrations/1000012480.png" size="150">
-<img src="../illustrations/1000012586.png" size="150">
+<img src="../illustrations/1000012480.png" height="300">
+<img src="../illustrations/1000012586.png" height="300">
 
 
 
