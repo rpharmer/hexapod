@@ -57,7 +57,9 @@ Operating voltage: 4.8V - 7.2V.
 Dimension: 40mm x 19mm x 43mm.
 
 ## Wiring Diagram
-<img src="https://github.com/MakeYourPet/hexapod/blob/7d8fc8034d715d1c9373f48281ecfa500c994d8b/wiring-diagram-servo2040.png" height="300">
+<img src="https://github.com/MakeYourPet/hexapod/blob/7d8fc8034d715d1c9373f48281ecfa500c994d8b/wiring-diagram-servo2040.png" height="400">
+
+Place UBEC inline between battery and relay.
 
 ## Servo 2040
 
@@ -69,6 +71,29 @@ A pdf development guide for the pico can be found [here,](https://cdn.shopify.co
 I'm using a Raspberry Pi 5 as main board of the hexapod, you will need to use the config file provided [here](https://forums.raspberrypi.com/viewtopic.php?t=362826) for flashing the servo 2040 from a rpi5.
 
 Our firmware is written in c++ under the directory hexapod-client. Pimoroni provides guides to setting up the enviroment for pico development (which applies to the servo 2040 board) and a boiler plate project. Links to these can be found here; [Boilerplate project](https://github.com/pimoroni/pico-boilerplate), [Pico SDK setup instructions](https://github.com/pimoroni/pimoroni-pico/blob/main/setting-up-the-pico-sdk.md), [Servo 2040 example code](https://github.com/pimoroni/pimoroni-pico/tree/main/examples/servo2040) and [Pico example code](https://github.com/raspberrypi/pico-examples?tab=readme-ov-file).
+
+## Dimensions And Angles
+
+Length of leg segments in millimeters
+COXA_LEN 43
+FEMUR_LEN 60
+TIBIA_LEN 104
+
+Distance between the coxa rotation centers of different legs in millimeters.
+L1_TO_R1 126
+L1_TO_L3 167
+L2_TO_R2 163
+
+The height where the legs connect to the frame.
+LEG_CONNECTION_Z -7
+
+The Z value for the leg endpoints when sitting on a flat surface.
+LEG_SITTING_Z -40
+
+The angle between the servo itself and the leg segment when the servo is centered.
+COXA_ATTACH_ANGLE -8
+FEMUR_ATTACH_ANGLE 35
+TIBIA_ATTACH_ANGLE 83
 
 
 
