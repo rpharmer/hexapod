@@ -57,7 +57,7 @@ Operating voltage: 4.8V - 7.2V.
 Dimension: 40mm x 19mm x 43mm.
 
 ## Wiring Diagram
-<img src="illustrations/wiring-diagram-servo2040.png" height="300">
+<img src="https://github.com/MakeYourPet/hexapod/blob/7d8fc8034d715d1c9373f48281ecfa500c994d8b/wiring-diagram-servo2040.png" height="300">
 
 ## Servo 2040
 
