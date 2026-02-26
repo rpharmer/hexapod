@@ -56,6 +56,9 @@ Operating Speed:
 Operating voltage: 4.8V - 7.2V.
 Dimension: 40mm x 19mm x 43mm.
 
+## Wiring Diagram
+<img src="illustrations/wiring-diagram-servo2040.png" height="300">
+
 ## Servo 2040
 
 <img src ="https://www.kiwi-electronics.com/image/cache/catalog/product/83habfak/servo-2040-2-1600x1066h.jpg" height="300">
