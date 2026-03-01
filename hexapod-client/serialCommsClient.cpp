@@ -120,7 +120,7 @@ int SerialCommsClient::recv_f32(float *data)
   return recv_bytes(reinterpret_cast<char*>(data), sizeof(float));
 }
 
-void SerialCommsClient::send_packet(uint8_t seq, uint8_t cmd, const std::vector<uint8_t>& payload)
+void SerialCommsClient::send_packet(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload)
 {
   const std::vector<uint8_t> frame = encodePacket(seq, cmd, payload);
   for(uint8_t b : frame)

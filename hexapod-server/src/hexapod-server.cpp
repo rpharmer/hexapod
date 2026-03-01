@@ -9,10 +9,10 @@ using namespace mn::CppLinuxSerial;
 
 
 namespace {
-uint8_t next_sequence(uint8_t& seq)
+uint16_t next_sequence(uint16_t& seq)
 {
-  const uint8_t current = seq;
-  seq = static_cast<uint8_t>(seq + 1);
+  const uint16_t current = seq;
+  seq = static_cast<uint16_t>(seq + 1);
   return current;
 }
 }
@@ -127,7 +127,7 @@ int main() {
   std::cout.flags( f );  // restore flags state */
   
   bool handshakeSuccess = false;
-  uint8_t seq = 0;
+  uint16_t seq = 0;
   
   for(int attempt = 0; attempt < 3 && !handshakeSuccess; attempt++)
   {
@@ -156,14 +156,14 @@ int main() {
     calibPayload.push_back(static_cast<uint8_t>((maxPulse >> 8) & 0xFF));
   }
 
-  const uint8_t calibrationSeq = next_sequence(seq);
+  const uint16_t calibrationSeq = next_sequence(seq);
   scs.send_packet(calibrationSeq, SET_ANGLE_CALIBRATIONS, calibPayload);
 
   DecodedPacket response;
   if(!scs.recv_packet(response))
     printf("calibration packet failed: timeout waiting for response\n");
   else if(response.seq != calibrationSeq)
-    printf("calibration packet failed: sequence mismatch (expected %u, got %u)\n", calibrationSeq, response.seq);
+    printf("calibration packet failed: sequence mismatch (expected %u, got %u)\n", static_cast<unsigned>(calibrationSeq), static_cast<unsigned>(response.seq));
   else if(response.cmd == ACK)
     printf("calibration packet accepted\n");
   else
@@ -174,7 +174,7 @@ int main() {
 }
 
 
-bool do_handshake(SerialCommsServer& sc, uint8_t seq, uint8_t requested_caps)
+bool do_handshake(SerialCommsServer& sc, uint16_t seq, uint8_t requested_caps)
 {
   sc.send_packet(seq, HELLO, {PROTOCOL_VERSION, requested_caps});
 
@@ -187,7 +187,7 @@ bool do_handshake(SerialCommsServer& sc, uint8_t seq, uint8_t requested_caps)
 
   if(response.seq != seq)
   {
-    printf("sequence mismatch (expected %u, got %u)\n", seq, response.seq);
+    printf("sequence mismatch (expected %u, got %u)\n", static_cast<unsigned>(seq), static_cast<unsigned>(response.seq));
     return false;
   }
 

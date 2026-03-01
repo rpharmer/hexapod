@@ -4,6 +4,6 @@
 #include "serialCommsServer.hpp"
 
 
-bool do_handshake(SerialCommsServer& sc, uint8_t seq, uint8_t requested_caps);
+bool do_handshake(SerialCommsServer& sc, uint16_t seq, uint8_t requested_caps);
 
 #endif  // #ifndef HEXAPOD_SERVER_HPP

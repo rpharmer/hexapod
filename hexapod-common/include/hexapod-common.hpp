@@ -54,7 +54,7 @@ public:
     
     
     // framed protocol helpers
-    virtual void send_packet(uint8_t seq, uint8_t cmd, const std::vector<uint8_t>& payload) = 0;
+    virtual void send_packet(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload) = 0;
     virtual bool recv_packet(DecodedPacket& packet) = 0;
     
 protected:

@@ -198,7 +198,7 @@ int main() {
 }
 
 
-void handleHandshake(uint8_t seq, const std::vector<uint8_t>& payload)
+void handleHandshake(uint16_t seq, const std::vector<uint8_t>& payload)
 {
   if(payload.size() < 2)
   {
@@ -228,7 +228,7 @@ void echoLoop()
   }
 }
 
-void handleSetAngleCommand(uint8_t seq, const std::vector<uint8_t>& payload)
+void handleSetAngleCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
   if(payload.size() < 3)
   {
@@ -243,7 +243,7 @@ void handleSetAngleCommand(uint8_t seq, const std::vector<uint8_t>& payload)
   serial.send_packet(seq, ACK, {});
 }
 
-void handleGetAngleCalibCommand(uint8_t seq)
+void handleGetAngleCalibCommand(uint16_t seq)
 {
   std::vector<uint8_t> payload;
   payload.reserve(18 * 8);
@@ -261,7 +261,7 @@ void handleGetAngleCalibCommand(uint8_t seq)
   serial.send_packet(seq, ACK, payload);
 }
 
-void handleSetPowerRelayCommand(uint8_t seq, const std::vector<uint8_t>& payload)
+void handleSetPowerRelayCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
   if(payload.empty())
   {
@@ -281,14 +281,14 @@ void handleSetPowerRelayCommand(uint8_t seq, const std::vector<uint8_t>& payload
   }
   serial.send_packet(seq, ACK, {});
 }
-void handleGetCurrentCommand(uint8_t seq)
+void handleGetCurrentCommand(uint16_t seq)
 {
   mux.select(servo2040::CURRENT_SENSE_ADDR);
   float current = cur_adc.read_current();
   const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&current);
   serial.send_packet(seq, ACK, std::vector<uint8_t>(bytes, bytes + sizeof(float)));
 }
-void handleGetVoltageCommand(uint8_t seq)
+void handleGetVoltageCommand(uint16_t seq)
 {
   mux.select(servo2040::VOLTAGE_SENSE_ADDR);
   float voltage = vol_adc.read_voltage();
@@ -296,7 +296,7 @@ void handleGetVoltageCommand(uint8_t seq)
   const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&voltage);
   serial.send_packet(seq, ACK, std::vector<uint8_t>(bytes, bytes + sizeof(float)));
 }
-void handleGetSensorCommand(uint8_t seq, const std::vector<uint8_t>& payload)
+void handleGetSensorCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
   if(payload.empty())
   {
@@ -312,7 +312,7 @@ void handleGetSensorCommand(uint8_t seq, const std::vector<uint8_t>& payload)
   serial.send_packet(seq, ACK, std::vector<uint8_t>(bytes, bytes + sizeof(float)));
 }
 
-void handleCalibCommand(uint8_t seq, const std::vector<uint8_t>& payload)
+void handleCalibCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
   if(payload.size() < 18 * 4)
   {
