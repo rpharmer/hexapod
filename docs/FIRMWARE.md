@@ -7,11 +7,12 @@ This document defines the wire protocol used between `hexapod-server` (host) and
 All messages use a framed packet format:
 
 ```text
-[STX=0x7E][LEN][CMD][PAYLOAD...][CRC16_LO][CRC16_HI][ETX=0x7F]
+[STX=0x7E][LEN][SEQ_LO][SEQ_HI][CMD][PAYLOAD...][CRC16_LO][CRC16_HI][ETX=0x7F]
 ```
 
-- `LEN`: byte count of `CMD + PAYLOAD`.
-- `CRC16`: CRC-CCITT over `LEN + CMD + PAYLOAD`.
+- `LEN`: byte count of `SEQ_LO + SEQ_HI + CMD + PAYLOAD`.
+- `SEQ`: request/response sequence number (`uint16`, little-endian as `SEQ_LO` then `SEQ_HI`) used to correlate replies with commands.
+- `CRC16`: CRC-CCITT over `LEN + SEQ_LO + SEQ_HI + CMD + PAYLOAD`.
 - `STX/ETX`: start/end delimiters.
 
 Reference implementation lives in:
@@ -40,6 +41,7 @@ Both server and client should:
 
 | Command | Value | Direction | Request payload | Response |
 |---|---:|---|---|---|
+| _Sequence handling_ | - | Bidirectional | Every request includes a 2-byte `SEQ` in the frame header. | Every response echoes the same `SEQ` value from the request. |
 | `HELLO` | `0x10` | Server → Client | `version:u8, capabilities:u8` | `ACK(version:u8,status:u8,device_id:u8)` or `NACK(error:u8)` |
 | `SET_ANGLE_CALIBRATIONS` | `0x01` | Server → Client | 18 × `(min:u16, max:u16)` | `ACK` or `NACK(error:u8)` |
 | `SET_TARGET_ANGLE` | `0x02` | Server → Client | `servo_id:u8, angle:u16` | `ACK` or `NACK(error:u8)` |

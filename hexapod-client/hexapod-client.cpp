@@ -138,42 +138,42 @@ int main() {
       {
         case HELLO:
         {
-          handleHandshake(packet.payload);
+          handleHandshake(packet.seq, packet.payload);
           break;
         }
         case SET_ANGLE_CALIBRATIONS:
         {
-          handleCalibCommand(packet.payload);
+          handleCalibCommand(packet.seq, packet.payload);
           break;
         }
         case SET_TARGET_ANGLE:
         {
-          handleSetAngleCommand(packet.payload);
+          handleSetAngleCommand(packet.seq, packet.payload);
           break;
         }
         case SET_POWER_RELAY:
         {
-          handleSetPowerRelayCommand(packet.payload);
+          handleSetPowerRelayCommand(packet.seq, packet.payload);
           break;
         }
         case GET_ANGLE_CALIBRATIONS:
         {
-          handleGetAngleCalibCommand();
+          handleGetAngleCalibCommand(packet.seq);
           break;
         }
         case GET_CURRENT:
         {
-          handleGetCurrentCommand();
+          handleGetCurrentCommand(packet.seq);
           break;
         }
         case GET_VOLTAGE:
         {
-          handleGetVoltageCommand();
+          handleGetVoltageCommand(packet.seq);
           break;
         }
         case GET_SENSOR:
         {
-          handleGetSensorCommand(packet.payload);
+          handleGetSensorCommand(packet.seq, packet.payload);
           break;
         }
         default:
@@ -198,11 +198,11 @@ int main() {
 }
 
 
-void handleHandshake(const std::vector<uint8_t>& payload)
+void handleHandshake(uint16_t seq, const std::vector<uint8_t>& payload)
 {
   if(payload.size() < 2)
   {
-    serial.send_packet(NACK, {TIMEOUT});
+    serial.send_packet(seq, NACK, {TIMEOUT});
     return;
   }
 
@@ -212,11 +212,11 @@ void handleHandshake(const std::vector<uint8_t>& payload)
 
   if(version == PROTOCOL_VERSION)
   {
-    serial.send_packet(ACK, {PROTOCOL_VERSION, STATUS_OK, DEVICE_ID});
+    serial.send_packet(seq, ACK, {PROTOCOL_VERSION, STATUS_OK, DEVICE_ID});
     return;
   }
 
-  serial.send_packet(NACK, {VERSION_MISMATCH});
+  serial.send_packet(seq, NACK, {VERSION_MISMATCH});
 }
 
 void echoLoop()
@@ -228,11 +228,11 @@ void echoLoop()
   }
 }
 
-void handleSetAngleCommand(const std::vector<uint8_t>& payload)
+void handleSetAngleCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
   if(payload.size() < 3)
   {
-    serial.send_packet(NACK, {TIMEOUT});
+    serial.send_packet(seq, NACK, {TIMEOUT});
     return;
   }
 
@@ -240,10 +240,10 @@ void handleSetAngleCommand(const std::vector<uint8_t>& payload)
   const uint16_t angle = static_cast<uint16_t>(payload[1]) |
                          (static_cast<uint16_t>(payload[2]) << 8);
   servos.value(servo, angle);
-  serial.send_packet(ACK, {});
+  serial.send_packet(seq, ACK, {});
 }
 
-void handleGetAngleCalibCommand()
+void handleGetAngleCalibCommand(uint16_t seq)
 {
   std::vector<uint8_t> payload;
   payload.reserve(18 * 8);
@@ -258,14 +258,14 @@ void handleGetAngleCalibCommand()
     payload.insert(payload.end(), minBytes, minBytes + sizeof(float));
     payload.insert(payload.end(), maxBytes, maxBytes + sizeof(float));
   }
-  serial.send_packet(ACK, payload);
+  serial.send_packet(seq, ACK, payload);
 }
 
-void handleSetPowerRelayCommand(const std::vector<uint8_t>& payload)
+void handleSetPowerRelayCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
   if(payload.empty())
   {
-    serial.send_packet(NACK, {TIMEOUT});
+    serial.send_packet(seq, NACK, {TIMEOUT});
     return;
   }
 
@@ -276,31 +276,31 @@ void handleSetPowerRelayCommand(const std::vector<uint8_t>& payload)
     gpio_put_masked(A0_GPIO_MASK, GPIO_LOW_MASK);
   else
   {
-    serial.send_packet(NACK, {TIMEOUT});
+    serial.send_packet(seq, NACK, {TIMEOUT});
     return;
   }
-  serial.send_packet(ACK, {});
+  serial.send_packet(seq, ACK, {});
 }
-void handleGetCurrentCommand()
+void handleGetCurrentCommand(uint16_t seq)
 {
   mux.select(servo2040::CURRENT_SENSE_ADDR);
   float current = cur_adc.read_current();
   const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&current);
-  serial.send_packet(ACK, std::vector<uint8_t>(bytes, bytes + sizeof(float)));
+  serial.send_packet(seq, ACK, std::vector<uint8_t>(bytes, bytes + sizeof(float)));
 }
-void handleGetVoltageCommand()
+void handleGetVoltageCommand(uint16_t seq)
 {
   mux.select(servo2040::VOLTAGE_SENSE_ADDR);
   float voltage = vol_adc.read_voltage();
 
   const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&voltage);
-  serial.send_packet(ACK, std::vector<uint8_t>(bytes, bytes + sizeof(float)));
+  serial.send_packet(seq, ACK, std::vector<uint8_t>(bytes, bytes + sizeof(float)));
 }
-void handleGetSensorCommand(const std::vector<uint8_t>& payload)
+void handleGetSensorCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
   if(payload.empty())
   {
-    serial.send_packet(NACK, {TIMEOUT});
+    serial.send_packet(seq, NACK, {TIMEOUT});
     return;
   }
 
@@ -309,14 +309,14 @@ void handleGetSensorCommand(const std::vector<uint8_t>& payload)
   float voltage = sen_adc.read_voltage();
 
   const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&voltage);
-  serial.send_packet(ACK, std::vector<uint8_t>(bytes, bytes + sizeof(float)));
+  serial.send_packet(seq, ACK, std::vector<uint8_t>(bytes, bytes + sizeof(float)));
 }
 
-void handleCalibCommand(const std::vector<uint8_t>& payload)
+void handleCalibCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
   if(payload.size() < 18 * 4)
   {
-    serial.send_packet(NACK, {TIMEOUT});
+    serial.send_packet(seq, NACK, {TIMEOUT});
     return;
   }
 
@@ -334,7 +334,7 @@ void handleCalibCommand(const std::vector<uint8_t>& payload)
     calibs[s][1] = c10;
   }
   calibServos(calibs);
-  serial.send_packet(ACK, {});
+  serial.send_packet(seq, ACK, {});
 }
 
 void calibServos(float calibs[18][2])
