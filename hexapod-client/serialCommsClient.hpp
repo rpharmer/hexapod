@@ -63,7 +63,7 @@ public:
     int recv_f32(float *data) override;
 
     // framed protocol helpers
-    void send_packet(uint8_t cmd, const std::vector<uint8_t>& payload) override;
+    void send_packet(uint8_t seq, uint8_t cmd, const std::vector<uint8_t>& payload) override;
     bool recv_packet(DecodedPacket& packet) override;
 };
 
