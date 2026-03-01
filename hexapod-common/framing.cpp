@@ -12,16 +12,17 @@ uint16_t crc16_ccitt(const uint8_t* data, size_t len) {
     return crc;
 }
 
-std::vector<uint8_t> encodePacket(uint8_t cmd, const std::vector<uint8_t>& payload) {
+std::vector<uint8_t> encodePacket(uint8_t seq, uint8_t cmd, const std::vector<uint8_t>& payload) {
     std::vector<uint8_t> frame;
-    const uint8_t len = static_cast<uint8_t>(1 + payload.size()); // CMD + PAYLOAD
+    const uint8_t len = static_cast<uint8_t>(2 + payload.size()); // SEQ + CMD + PAYLOAD
 
     frame.push_back(STX);
     frame.push_back(len);
+    frame.push_back(seq);
     frame.push_back(cmd);
     frame.insert(frame.end(), payload.begin(), payload.end());
 
-    const uint16_t crc = crc16_ccitt(&frame[1], static_cast<size_t>(len) + 1); // LEN + CMD + PAYLOAD
+    const uint16_t crc = crc16_ccitt(&frame[1], static_cast<size_t>(len) + 1); // LEN + SEQ + CMD + PAYLOAD
     frame.push_back(static_cast<uint8_t>(crc & 0xFF));
     frame.push_back(static_cast<uint8_t>((crc >> 8) & 0xFF));
     frame.push_back(ETX);
@@ -38,15 +39,15 @@ bool tryDecodePacket(std::vector<uint8_t>& rxBuffer, DecodedPacket& out) {
             continue;
         }
 
-        // Minimum frame: STX LEN CMD CRC1 CRC2 ETX => 6 bytes
-        if (rxBuffer.size() < 6)
+        // Minimum frame: STX LEN SEQ CMD CRC1 CRC2 ETX => 7 bytes
+        if (rxBuffer.size() < 7)
             return false;
 
         const uint8_t len = rxBuffer[1];
         const size_t frameSize = static_cast<size_t>(len) + 5; // STX+LEN + (LEN bytes) + CRC2 + ETX
 
-        if (len == 0) {
-            // Invalid length; drop STX and keep searching.
+        if (len < 2) {
+            // Invalid length; drop STX and keep searching (must include SEQ and CMD).
             rxBuffer.erase(rxBuffer.begin());
             continue;
         }
@@ -69,8 +70,9 @@ bool tryDecodePacket(std::vector<uint8_t>& rxBuffer, DecodedPacket& out) {
             continue;
         }
 
-        out.cmd = rxBuffer[2];
-        out.payload.assign(rxBuffer.begin() + 3, rxBuffer.begin() + 2 + len);
+        out.seq = rxBuffer[2];
+        out.cmd = rxBuffer[3];
+        out.payload.assign(rxBuffer.begin() + 4, rxBuffer.begin() + 2 + len);
 
         // Consume the decoded frame.
         rxBuffer.erase(rxBuffer.begin(), rxBuffer.begin() + frameSize);

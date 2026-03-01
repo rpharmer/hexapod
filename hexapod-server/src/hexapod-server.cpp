@@ -120,7 +120,7 @@ int main() {
   
   for(int attempt = 0; attempt < 3 && !handshakeSuccess; attempt++)
   {
-    handshakeSuccess = do_handshake(scs, 0);
+    handshakeSuccess = do_handshake(scs, static_cast<uint8_t>(attempt), 0);
   }
   
   if(!handshakeSuccess)
@@ -145,10 +145,11 @@ int main() {
     calibPayload.push_back(static_cast<uint8_t>((maxPulse >> 8) & 0xFF));
   }
 
-  scs.send_packet(SET_ANGLE_CALIBRATIONS, calibPayload);
+  const uint8_t calibSeq = 3;
+  scs.send_packet(calibSeq, SET_ANGLE_CALIBRATIONS, calibPayload);
 
   DecodedPacket response;
-  if(scs.recv_packet(response) && response.cmd == ACK)
+  if(scs.recv_packet(response) && response.seq == calibSeq && response.cmd == ACK)
     printf("calibration packet accepted\n");
   else
     printf("calibration packet failed\n");
@@ -158,14 +159,20 @@ int main() {
 }
 
 
-bool do_handshake(SerialCommsServer& sc, uint8_t requested_caps)
+bool do_handshake(SerialCommsServer& sc, uint8_t seq, uint8_t requested_caps)
 {
-  sc.send_packet(HELLO, {PROTOCOL_VERSION, requested_caps});
+  sc.send_packet(seq, HELLO, {PROTOCOL_VERSION, requested_caps});
 
   DecodedPacket response;
   if(!sc.recv_packet(response))
   {
     printf("handshake timeout waiting for response\n");
+    return false;
+  }
+
+  if(response.seq != seq)
+  {
+    printf("unexpected handshake sequence number: %u\n", response.seq);
     return false;
   }
 

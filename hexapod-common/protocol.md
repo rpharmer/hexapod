@@ -7,11 +7,12 @@ This document defines the wire protocol used between `hexapod-server` (host) and
 All messages use a framed packet format:
 
 ```text
-[STX=0x7E][LEN][CMD][PAYLOAD...][CRC16_LO][CRC16_HI][ETX=0x7F]
+[STX=0x7E][LEN][SEQ][CMD][PAYLOAD...][CRC16_LO][CRC16_HI][ETX=0x7F]
 ```
 
-- `LEN`: byte count of `CMD + PAYLOAD`.
-- `CRC16`: CRC-CCITT over `LEN + CMD + PAYLOAD`.
+- `LEN`: byte count of `SEQ + CMD + PAYLOAD`.
+- `SEQ`: packet sequence number (`u8`) assigned by request sender.
+- `CRC16`: CRC-CCITT over `LEN + SEQ + CMD + PAYLOAD`.
 - `STX/ETX`: start/end delimiters.
 
 Reference implementation lives in:
@@ -57,7 +58,7 @@ Both server and client should:
    - `PROTOCOL_VERSION`
    - requested capabilities bitmask
 2. Client validates version.
-3. Client responds with:
+3. Client responds using the same `SEQ` as the request with:
    - `ACK` payload: `PROTOCOL_VERSION, STATUS_OK, DEVICE_ID`, or
    - `NACK` payload: error code (`VERSION_MISMATCH`, etc.)
 4. Server retries up to 3 times if handshake fails or times out.

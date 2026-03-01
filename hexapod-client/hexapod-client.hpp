@@ -22,15 +22,15 @@ const uint32_t GPIO_LOW_MASK		  = 0x00;
 
 
 void echoLoop();
-void handleHandshake(const std::vector<uint8_t>& payload);
-void handleSetAngleCommand(const std::vector<uint8_t>& payload);
-void handleGetAngleCalibCommand();
-void handleSetPowerRelayCommand(const std::vector<uint8_t>& payload);
-void handleGetCurrentCommand();
-void handleGetVoltageCommand();
-void handleGetSensorCommand(const std::vector<uint8_t>& payload);
+void handleHandshake(uint8_t seq, const std::vector<uint8_t>& payload);
+void handleSetAngleCommand(uint8_t seq, const std::vector<uint8_t>& payload);
+void handleGetAngleCalibCommand(uint8_t seq);
+void handleSetPowerRelayCommand(uint8_t seq, const std::vector<uint8_t>& payload);
+void handleGetCurrentCommand(uint8_t seq);
+void handleGetVoltageCommand(uint8_t seq);
+void handleGetSensorCommand(uint8_t seq, const std::vector<uint8_t>& payload);
 
-void handleCalibCommand(const std::vector<uint8_t>& payload);
+void handleCalibCommand(uint8_t seq, const std::vector<uint8_t>& payload);
 void calibServos(float calibs[18][2]);
 
 #endif
