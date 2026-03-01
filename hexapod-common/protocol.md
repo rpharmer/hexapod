@@ -61,10 +61,11 @@ Both server and client should:
 3. Client responds using the same `SEQ` as the request with:
    - `ACK` payload: `PROTOCOL_VERSION, STATUS_OK, DEVICE_ID`, or
    - `NACK` payload: error code (`VERSION_MISMATCH`, etc.)
-4. Server retries up to 3 times if handshake fails or times out.
+4. Server validates the response `SEQ` before accepting it and retries up to 3 times if handshake fails or times out.
 
 ## Implementation notes
 
 - Host implementation uses `SerialCommsServer::send_packet` / `recv_packet`.
 - Firmware implementation uses `SerialCommsClient::send_packet` / `recv_packet`.
 - Both wrappers are built on top of `encodePacket` and `tryDecodePacket` from `hexapod-common`.
+- Response packets should preserve the request `SEQ` so callers can correlate replies.

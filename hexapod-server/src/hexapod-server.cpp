@@ -7,6 +7,15 @@
 
 using namespace mn::CppLinuxSerial;
 
+namespace {
+uint8_t nextPacketSeq(uint8_t& counter)
+{
+  const uint8_t seq = counter;
+  counter = static_cast<uint8_t>(counter + 1);
+  return seq;
+}
+}
+
 int main() {
   
   ///** Test toml **///
@@ -117,10 +126,11 @@ int main() {
   std::cout.flags( f );  // restore flags state */
   
   bool handshakeSuccess = false;
+  uint8_t seqCounter = 0;
   
   for(int attempt = 0; attempt < 3 && !handshakeSuccess; attempt++)
   {
-    handshakeSuccess = do_handshake(scs, static_cast<uint8_t>(attempt), 0);
+    handshakeSuccess = do_handshake(scs, nextPacketSeq(seqCounter), 0);
   }
   
   if(!handshakeSuccess)
@@ -145,14 +155,17 @@ int main() {
     calibPayload.push_back(static_cast<uint8_t>((maxPulse >> 8) & 0xFF));
   }
 
-  const uint8_t calibSeq = 3;
+  const uint8_t calibSeq = nextPacketSeq(seqCounter);
   scs.send_packet(calibSeq, SET_ANGLE_CALIBRATIONS, calibPayload);
 
   DecodedPacket response;
-  if(scs.recv_packet(response) && response.seq == calibSeq && response.cmd == ACK)
+  const bool gotResponse = scs.recv_packet(response);
+  if(gotResponse && response.seq == calibSeq && response.cmd == ACK)
     printf("calibration packet accepted\n");
+  else if(gotResponse)
+    printf("calibration packet failed (seq=%u cmd=%u)\n", response.seq, response.cmd);
   else
-    printf("calibration packet failed\n");
+    printf("calibration packet failed (no response)\n");
   
 	// Close the serial port
 	scs.Close();

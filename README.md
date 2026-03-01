@@ -38,9 +38,9 @@ hexapod/
 1. Server parses `hexapod-server/config.txt` using `toml11`.
 2. Calibration tuples are sorted into expected servo order.
 3. Server opens `/dev/ttyACM0` at `115200` baud.
-4. Server sends handshake bytes: `HELLO`, protocol version, requested capabilities.
-5. Firmware responds with `ACK`/`NACK`.
-6. On successful handshake, server sends calibration min/max pairs (`uint16_t`) for each servo.
+4. Server sends a framed `HELLO` packet with a sequence number, protocol version, and requested capabilities.
+5. Firmware responds with framed `ACK`/`NACK` using the same sequence number.
+6. On successful handshake, server sends framed calibration min/max pairs (`uint16_t`) for each servo and validates the response sequence number.
 
 Protocol constants and message definitions live in:
 
