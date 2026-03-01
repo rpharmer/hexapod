@@ -1,5 +1,7 @@
 #include <toml.hpp>
 #include <vector>
+#include <chrono>
+#include <thread>
 #include "hexapod-common.hpp"
 #include "hexapod-server.hpp"
 #include "serialCommsServer.hpp"
@@ -168,6 +170,17 @@ int main() {
     printf("calibration packet accepted\n");
   else
     printf("calibration packet failed\n");
+
+  for(int heartbeat = 0; heartbeat < 5; ++heartbeat)
+  {
+    const uint16_t heartbeatSeq = next_sequence(seq);
+    if(send_heartbeat(scs, heartbeatSeq))
+      printf("heartbeat %d acknowledged\n", heartbeat + 1);
+    else
+      printf("heartbeat %d failed\n", heartbeat + 1);
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
   
 	// Close the serial port
 	scs.Close();
@@ -236,3 +249,36 @@ bool do_handshake(SerialCommsServer& sc, uint16_t seq, uint8_t requested_caps)
   return true;
 }
 
+
+
+bool send_heartbeat(SerialCommsServer& sc, uint16_t seq)
+{
+  sc.send_packet(seq, HEARTBEAT, {});
+
+  DecodedPacket response;
+  if(!sc.recv_packet(response))
+  {
+    printf("heartbeat timeout waiting for response\n");
+    return false;
+  }
+
+  if(response.seq != seq)
+  {
+    printf("heartbeat sequence mismatch (expected %u, got %u)\n", static_cast<unsigned>(seq), static_cast<unsigned>(response.seq));
+    return false;
+  }
+
+  if(response.cmd != ACK)
+  {
+    printf("heartbeat malformed response, recieved: %u\n", response.cmd);
+    return false;
+  }
+
+  if(!response.payload.empty() && response.payload[0] != STATUS_OK)
+  {
+    printf("heartbeat returned non-ok status: %u\n", response.payload[0]);
+    return false;
+  }
+
+  return true;
+}

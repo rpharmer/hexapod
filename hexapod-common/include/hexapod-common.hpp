@@ -19,6 +19,7 @@ const uint8_t GET_ANGLE_CALIBRATIONS = 0x04;
 const uint8_t GET_CURRENT            = 0x05;
 const uint8_t GET_VOLTAGE            = 0x06;
 const uint8_t GET_SENSOR             = 0x07;
+const uint8_t HEARTBEAT              = 0x08;
 
 // status codes
 const uint8_t STATUS_OK              = 0x00;

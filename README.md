@@ -41,6 +41,7 @@ hexapod/
 4. Server sends handshake bytes: `HELLO`, protocol version, requested capabilities.
 5. Firmware responds with `ACK`/`NACK`.
 6. On successful handshake, server sends calibration min/max pairs (`uint16_t`) for each servo.
+7. Server sends periodic `HEARTBEAT` commands and expects `ACK` responses to verify link health.
 
 Protocol constants and message definitions live in:
 

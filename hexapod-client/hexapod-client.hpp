@@ -30,6 +30,8 @@ void handleGetCurrentCommand(uint16_t seq);
 void handleGetVoltageCommand(uint16_t seq);
 void handleGetSensorCommand(uint16_t seq, const std::vector<uint8_t>& payload);
 
+void handleHeartbeatCommand(uint16_t seq);
+
 void handleCalibCommand(uint16_t seq, const std::vector<uint8_t>& payload);
 void calibServos(float calibs[18][2]);
 
