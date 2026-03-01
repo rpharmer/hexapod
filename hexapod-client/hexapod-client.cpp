@@ -176,6 +176,11 @@ int main() {
           handleGetSensorCommand(packet.seq, packet.payload);
           break;
         }
+        case HEARTBEAT:
+        {
+          handleHeartbeatCommand(packet.seq);
+          break;
+        }
         default:
         {
           break;
@@ -345,4 +350,9 @@ void calibServos(float calibs[18][2])
     cal.apply_two_pairs(calibs[s][0], calibs[s][1], -45.0f, 45.0f);
   }
   return;
+}
+
+void handleHeartbeatCommand(uint16_t seq)
+{
+  serial.send_packet(seq, ACK, {STATUS_OK});
 }
