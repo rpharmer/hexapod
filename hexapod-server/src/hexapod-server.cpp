@@ -19,6 +19,45 @@ uint16_t next_sequence(uint16_t& seq)
 }
 }
 
+// Compile-time mapping table
+struct BaudRateMapEntry {
+    int key;
+    BaudRate rate;
+};
+
+constexpr std::array<BaudRateMapEntry, 20> baudMap {{
+    {0, BaudRate::B_0},
+    {50, BaudRate::B_50},
+    {75, BaudRate::B_75},
+    {110, BaudRate::B_110},
+    {134, BaudRate::B_134},
+    {150, BaudRate::B_150},
+    {200, BaudRate::B_200},
+    {300, BaudRate::B_300},
+    {600, BaudRate::B_600},
+    {1200, BaudRate::B_1200},
+    {1800, BaudRate::B_1800},
+    {2400, BaudRate::B_2400},
+    {4800, BaudRate::B_4800},
+    {9600, BaudRate::B_9600},
+    {19200, BaudRate::B_19200},
+    {38400, BaudRate::B_38400},
+    {57600, BaudRate::B_57600},
+    {115200, BaudRate::B_115200},
+    {230400, BaudRate::B_230400},
+    {460800, BaudRate::B_460800}
+}};
+
+// Compile-time lookup function
+constexpr BaudRate intToBaudRate(int key) {
+    for (auto &entry : baudMap) {
+        if (entry.key == key) {
+            return entry.rate;
+        }
+    }
+    return BaudRate::B_CUSTOM;
+}
+
 int main() {
   
   ///** Test toml **///
@@ -28,6 +67,12 @@ int main() {
     
     // Check that the file is a Hexapod Config File
     assert(root.at("title").as_string() == "Hexapod Config File");
+    
+    std::string serialDevice = toml::find<std::string>(root, "SerialDevice");
+    
+    BaudRate baudRate = intToBaudRate(toml::find<int>(root, "BaudRate"));
+    
+    int timeout = toml::find<int>(root, "Timeout_ms");
     
     auto calibs = toml::find<std::vector<std::tuple<std::string, int, int>>>(root, "MotorCalibrations");
     
@@ -59,9 +104,9 @@ int main() {
   
 	// Create serial port object and open serial port at 115200 baud, 8 data bits, no parity bit, one stop bit (8n1),
 	// and no flow control
-  SerialCommsServer scs("/dev/ttyACM0", BaudRate::B_115200, NumDataBits::EIGHT, Parity::NONE, NumStopBits::ONE);
+  SerialCommsServer scs(serialDevice, baudRate, NumDataBits::EIGHT, Parity::NONE, NumStopBits::ONE);
   
-	scs.SetTimeout(100); // Block for up to 100ms to receive data
+	scs.SetTimeout(timeout); // Block for up to 100ms to receive data
 	scs.Open();
 
   /* Run tests

@@ -1,6 +1,12 @@
 # example.toml
 title = "Hexapod Config File"
 
+SerialDevice = '/dev/ttyACM0'
+
+BaudRate = 115200
+
+Timeout_ms = 100
+
 MotorCalibrations = [
 ["R31", 1031, 2088], #//R31 M41
 ["R32", 1003, 2016], #//R32 M44
