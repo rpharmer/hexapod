@@ -4,6 +4,22 @@
 
 
 using namespace mn::CppLinuxSerial;
+
+BaudRate SerialCommsServer::int_to_baud_rate(int baud)
+{
+  switch (baud)
+  {
+    case 9600: return BaudRate::B_9600;
+    case 19200: return BaudRate::B_19200;
+    case 38400: return BaudRate::B_38400;
+    case 57600: return BaudRate::B_57600;
+    case 115200: return BaudRate::B_115200;
+    case 230400: return BaudRate::B_230400;
+    case 460800: return BaudRate::B_460800;
+    default: return BaudRate::B_CUSTOM;
+  }
+}
+
 // constructor
 SerialCommsServer::SerialCommsServer(const std::string &device, BaudRate baudRate, NumDataBits numDataBits, Parity parity, NumStopBits numStopBits) : serialport(device,baudRate, numDataBits, parity, numStopBits)
 {}
