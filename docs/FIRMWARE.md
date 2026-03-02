@@ -50,6 +50,8 @@ Both server and client should:
 | `GET_CURRENT` | `0x05` | Server → Client | _none_ | `ACK(current:f32)` or `NACK(error:u8)` |
 | `GET_VOLTAGE` | `0x06` | Server → Client | _none_ | `ACK(voltage:f32)` or `NACK(error:u8)` |
 | `GET_SENSOR` | `0x07` | Server → Client | `sensor_id:u8` | `ACK(voltage:f32)` or `NACK(error:u8)` |
+| `SET_JOINT_TARGETS` | `0x13` | Server → Client | 18 × `target_pos_rad:f32` | `ACK` or `NACK(error:u8)` |
+| `GET_FULL_HARDWARE_STATE` | `0x14` | Server → Client | _none_ | `ACK` + 18 × `joint_pos_rad:f32`, 6 × `foot_contact:u8`, `voltage:f32`, `current:f32` or `NACK(error:u8)` |
 
 > Multibyte numeric fields are serialized in little-endian byte order.
 
