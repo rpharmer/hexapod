@@ -8,6 +8,9 @@ This document contains information on the physical Hexapod; physical dimensions,
 
 The hexapod is 3D printed and I've used the Chipo build from [MakeYourPet](https://github.com/MakeYourPet/hexapod/tree/main). It's a fantastic repo containing all the needed 3D parts, parts list for screws, wiring, components, etcs. Easy to follow build instructions including videos and illustrations, wiring diagrams, firmware and an Android app plus some source code to get started.
 
+https://www.printables.com/model/479169-make-your-pet-chipo/files
+https://www.printables.com/model/1021758-servo-limiter/files
+
 <p float="left">
   <img src="../illustrations/front-view.png" height="200" />
   <img src="../illustrations/back-view.png" height="200" />
