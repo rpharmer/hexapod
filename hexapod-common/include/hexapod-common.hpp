@@ -9,9 +9,6 @@
 const uint8_t PROTOCOL_VERSION       = 0x04;
 
 // command codes
-const uint8_t HELLO                  = 0x10;
-const uint8_t ACK                    = 0x11;
-const uint8_t NACK                   = 0x12;
 const uint8_t SET_ANGLE_CALIBRATIONS = 0x01;
 const uint8_t SET_TARGET_ANGLE       = 0x02;
 const uint8_t SET_POWER_RELAY        = 0x03;
@@ -20,6 +17,10 @@ const uint8_t GET_CURRENT            = 0x05;
 const uint8_t GET_VOLTAGE            = 0x06;
 const uint8_t GET_SENSOR             = 0x07;
 const uint8_t HEARTBEAT              = 0x08;
+const uint8_t DIAGNOSTIC             = 0x09;
+const uint8_t HELLO                  = 0x10;
+const uint8_t ACK                    = 0x11;
+const uint8_t NACK                   = 0x12;
 
 // status codes
 const uint8_t STATUS_OK              = 0x00;
@@ -28,6 +29,11 @@ const uint8_t STATUS_BUSY            = 0x01;
 // error codes
 const uint8_t TIMEOUT                = 0xA1;
 const uint8_t VERSION_MISMATCH       = 0xA2;
+const uint8_t INVALID_ARGUMENT       = 0xA3;
+const uint8_t INVALID_PAYLOAD_LENGTH = 0xA4;
+const uint8_t OUT_OF_RANGE_INDEX     = 0xA5;
+const uint8_t UNSUPPORTED_COMMAND    = 0xA6;
+const uint8_t BUSY_NOT_READY         = 0xA7;
 
 
 /* Abstract base class defining which communication functions must be implemented. Server
