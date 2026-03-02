@@ -21,6 +21,9 @@ const uint8_t DIAGNOSTIC             = 0x09;
 const uint8_t HELLO                  = 0x10;
 const uint8_t ACK                    = 0x11;
 const uint8_t NACK                   = 0x12;
+const uint8_t SET_JOINT_TARGETS      = 0x13;
+const uint8_t GET_FULL_HARDWARE_STATE= 0x14;
+
 
 // status codes
 const uint8_t STATUS_OK              = 0x00;
