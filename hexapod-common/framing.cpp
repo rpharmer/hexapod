@@ -84,3 +84,20 @@ bool tryDecodePacket(std::vector<uint8_t>& rxBuffer, DecodedPacket& out) {
     return false;
 }
 
+// Generic inline template to get a specific byte from any integer type
+template <typename T>
+inline uint8_t getByte(T value, size_t index) {
+    static_assert(std::is_integral<T>::value, "T must be an integral type");
+
+    using UnsignedT = typename std::make_unsigned<T>::type;
+
+    // Ensure index is within valid range
+    if (index >= sizeof(T)) {
+        throw std::out_of_range("Byte index out of range");
+    }
+
+    // Shift right by (index * 8) bits and mask to get the desired byte
+    return static_cast<uint8_t>(
+        (static_cast<UnsignedT>(value) >> (index * 8)) & 0xFF
+    );
+}

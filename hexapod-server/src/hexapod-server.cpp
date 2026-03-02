@@ -70,7 +70,8 @@ int main() {
     
     std::string serialDevice = toml::find<std::string>(root, "SerialDevice");
     
-    BaudRate baudRate = intToBaudRate(toml::find<int>(root, "BaudRate"));
+    int baudInt = toml::find<int>(root, "BaudRate");
+    BaudRate baudRate = intToBaudRate(baudInt);
     
     int timeout = toml::find<int>(root, "Timeout_ms");
     
@@ -105,70 +106,11 @@ int main() {
 	// Create serial port object and open serial port at 115200 baud, 8 data bits, no parity bit, one stop bit (8n1),
 	// and no flow control
   SerialCommsServer scs(serialDevice, baudRate, NumDataBits::EIGHT, Parity::NONE, NumStopBits::ONE);
-  
 	scs.SetTimeout(timeout); // Block for up to 100ms to receive data
 	scs.Open();
+  printf("opened Serial Device at: %s at: %d\n", serialDevice.c_str(), baudInt);
 
-  /* Run tests
-	// Write some ASCII data
-	//serialPort.Write("Hello");
-  
-  // Test read write functions
-  char data_c = 'K';
-  char data_ret = 0;
-  
-  
-  // send char 'K'
-  scs.send_char(data_c);
-  printf("sent char: %d\n", data_c);
-  
-  // receive char
-  scs.recv_char(&data_ret);
-  printf("received char: %d\n", data_ret);
-  
-  // send char 'E'
-  data_c = 'E';
-  scs.send_char(data_c);
-  printf("sent char: %d\n", data_c);
-  
-  // receive char
-  scs.recv_char(&data_ret);
-  printf("received char: %d\n", data_ret);
-  
-  uint8_t data_c2 = 120;
-  uint8_t data_ret2 = 0;
-  
-  
-  // send uint8_t 'K'
-  scs.send_u8(data_c2);
-  printf("sent uint8_t: %u\n", data_c2);
-  
-  // receive uint8_t
-  scs.recv_u8(&data_ret2);
-  printf("received uint8_t: %u\n", data_ret2);
-  
-  // send uint8_t 'H'
-  data_c2 = 130;
-  scs.send_u8(data_c2);
-  printf("sent uint8_t: %u\n", data_c2);
-  
-  // receive uint8_t
-  scs.recv_u8(&data_ret2);
-  printf("received uint8_t: %u\n", data_ret2);
-  
-  scs.send_u8(SET_ANGLE_CALIBRATIONS);
-  uint8_t c = 0;
-  scs.recv_u8(&c);
-  printf("Z: %u\n", c);
-  c = 38;
-  
-  
-  scs.send_u16(500);
-  uint16_t cc = 0;
-  scs.recv_u16(&cc);
-  printf("ZZ: %u\n", cc);
-  
-  std::cout<<std::endl;
+  /*std::cout<<std::endl;
   std::ios_base::fmtflags f( std::cout.flags() );  // save flags state
   std::cout << std::hex << "0x" << (int)c << std::endl;
   std::cout.flags( f );  // restore flags state */

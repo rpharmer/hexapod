@@ -4,6 +4,8 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <type_traits> // For std::is_integral, std::make_unsigned
+#include <stdexcept>   // For std::out_of_range
 
 #ifdef TARGET_PICO
 #include <pico/stdlib.h>
@@ -24,5 +26,8 @@ struct DecodedPacket {
 };
 
 bool tryDecodePacket(std::vector<uint8_t>& rxBuffer, DecodedPacket& out);
+
+template <typename T>
+inline uint8_t getByte(T value, size_t index);
 
 #endif
