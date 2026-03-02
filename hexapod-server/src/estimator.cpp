@@ -16,10 +16,12 @@ EstimatedState SimpleEstimator::update(const RawHardwareState& raw)
       jointState.pos_rad = jointRawState.pos_rad;
       
       // this needs to be calculated from the change in angle divided by the time difference
-      jointState.vel_radps = jointRawState.vel_radps;
+      jointState.vel_radps = 0;
     }
   }
   
   est.foot_contacts = raw.foot_contacts;
   est.timestamp_us = raw.timestamp_us;
+  
+  return est;
 }

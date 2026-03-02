@@ -52,12 +52,12 @@ struct LegRawState {
   std::array<JointRawState, kNumJoints> joint_raw_state{};
 };
 
-struct JointTargets {
-  std::array<LegRawState,kNumLegs> leg_raw_states{};
+struct LegState {
+  std::array<JointState, kNumJoints> joint_state{};
 };
 
-struct LegState {
-  std::array<JointState, kNumJoints> joint_raw_state{};
+struct JointTargets {
+  std::array<LegRawState,kNumLegs> leg_raw_states{};
 };
 
 struct BodyTwistState {
