@@ -15,6 +15,8 @@ private:
     SerialPort serialport;
 public:
     
+    static BaudRate int_to_baud_rate(int baud);
+
     // constructor
     SerialCommsServer(const std::string &device, BaudRate baudRate, NumDataBits numDataBits, Parity parity, NumStopBits numStopBits);
     // opens COM port for use, must be called before you configure port

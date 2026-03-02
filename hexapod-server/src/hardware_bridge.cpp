@@ -1,7 +1,6 @@
 #include "hardware_bridge.hpp"
 
 #include <array>
-#include <cstring>
 
 #include <CppLinuxSerial/SerialPort.hpp>
 #include "hexapod-common.hpp"
@@ -12,40 +11,6 @@ namespace {
 constexpr std::size_t kWireJointCount = 18;
 constexpr std::size_t kWireFootContactCount = 6;
 
-BaudRate int_to_baud_rate(int baud)
-{
-    switch (baud)
-    {
-        case 9600: return BaudRate::B_9600;
-        case 19200: return BaudRate::B_19200;
-        case 38400: return BaudRate::B_38400;
-        case 57600: return BaudRate::B_57600;
-        case 115200: return BaudRate::B_115200;
-        case 230400: return BaudRate::B_230400;
-        case 460800: return BaudRate::B_460800;
-        default: return BaudRate::B_CUSTOM;
-    }
-}
-
-template <typename T>
-void append_scalar(std::vector<uint8_t>& buffer, const T value)
-{
-    const auto* begin = reinterpret_cast<const uint8_t*>(&value);
-    buffer.insert(buffer.end(), begin, begin + sizeof(T));
-}
-
-template <typename T>
-bool read_scalar(const std::vector<uint8_t>& payload, std::size_t& offset, T& out)
-{
-    if (offset + sizeof(T) > payload.size())
-    {
-        return false;
-    }
-
-    std::memcpy(&out, payload.data() + offset, sizeof(T));
-    offset += sizeof(T);
-    return true;
-}
 } // namespace
 
 SimpleHardwareBridge::SimpleHardwareBridge(std::string device, int baud_rate, int timeout_ms)
@@ -54,7 +19,7 @@ SimpleHardwareBridge::SimpleHardwareBridge(std::string device, int baud_rate, in
 
 bool SimpleHardwareBridge::init()
 {
-    serialComs_ = std::make_unique<SerialCommsServer>(device_, int_to_baud_rate(baud_rate_), NumDataBits::EIGHT,
+    serialComs_ = std::make_unique<SerialCommsServer>(device_, SerialCommsServer::int_to_baud_rate(baud_rate_), NumDataBits::EIGHT,
                                                       Parity::NONE, NumStopBits::ONE);
     serialComs_->SetTimeout(timeout_ms_);
     serialComs_->Open();
