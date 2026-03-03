@@ -198,6 +198,7 @@ int main() {
         }
         default:
         {
+          serial.send_packet(packet.seq, NACK, {UNSUPPORTED_COMMAND});
           break;
         }
       }
