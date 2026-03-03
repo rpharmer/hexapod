@@ -10,6 +10,9 @@
 #include "analog.hpp"
 #include "analogmux.hpp"
 
+#include <array>
+#include <cstring>
+
 
 /*
 Displays a rotating rainbow pattern on the Servo 2040's onboard LED bar.
@@ -59,6 +62,8 @@ const int NUM_SERVOS = (END_PIN - START_PIN) + 1;
 ServoCluster servos = ServoCluster(pio0, 0, START_PIN, NUM_SERVOS);
 
 
+
+std::array<float, 18> jointTargetPositionsRad{};
 // The speed that the LEDs will cycle at
 const uint SPEED = 5;
 
@@ -179,6 +184,16 @@ int main() {
         case HEARTBEAT:
         {
           handleHeartbeatCommand(packet.seq);
+          break;
+        }
+        case SET_JOINT_TARGETS:
+        {
+          handleSetJointTargetsCommand(packet.seq, packet.payload);
+          break;
+        }
+        case GET_FULL_HARDWARE_STATE:
+        {
+          handleGetFullHardwareStateCommand(packet.seq);
           break;
         }
         default:
@@ -355,4 +370,65 @@ void calibServos(float calibs[18][2])
 void handleHeartbeatCommand(uint16_t seq)
 {
   serial.send_packet(seq, ACK, {STATUS_OK});
+}
+
+
+void handleSetJointTargetsCommand(uint16_t seq, const std::vector<uint8_t>& payload)
+{
+  constexpr size_t expectedPayloadBytes = 18 * sizeof(float);
+  if(payload.size() != expectedPayloadBytes)
+  {
+    serial.send_packet(seq, NACK, {TIMEOUT});
+    return;
+  }
+
+  for (size_t s = 0; s < 18; ++s)
+  {
+    const size_t offset = s * sizeof(float);
+    float targetPosRad = 0.0f;
+    const uint8_t* src = payload.data() + offset;
+    std::memcpy(&targetPosRad, src, sizeof(float));
+
+    Calibration& cal = servos.calibration(static_cast<int>(s));
+    constexpr float kRadToDeg = 57.2957795f;
+    const float targetPosDeg = targetPosRad * kRadToDeg;
+    const uint16_t pulse = static_cast<uint16_t>(cal.value(targetPosDeg));
+    servos.value(static_cast<int>(s), pulse);
+    jointTargetPositionsRad[s] = targetPosRad;
+  }
+
+  serial.send_packet(seq, ACK, {});
+}
+
+void handleGetFullHardwareStateCommand(uint16_t seq)
+{
+  std::vector<uint8_t> payload;
+  payload.reserve((18 * sizeof(float)) + 6 + (2 * sizeof(float)));
+
+  for (int s = 0; s < 18; ++s)
+  {
+    const float currentPosRad = jointTargetPositionsRad[s];
+    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&currentPosRad);
+    payload.insert(payload.end(), bytes, bytes + sizeof(float));
+  }
+
+  for (int sensor = 0; sensor < 6; ++sensor)
+  {
+    mux.select(servo2040::SENSOR_1_ADDR + sensor);
+    const float sensorVoltage = sen_adc.read_voltage();
+    const uint8_t footContact = sensorVoltage > 1.0f ? 1 : 0;
+    payload.push_back(footContact);
+  }
+
+  mux.select(servo2040::VOLTAGE_SENSE_ADDR);
+  const float voltage = vol_adc.read_voltage();
+  const uint8_t* voltageBytes = reinterpret_cast<const uint8_t*>(&voltage);
+  payload.insert(payload.end(), voltageBytes, voltageBytes + sizeof(float));
+
+  mux.select(servo2040::CURRENT_SENSE_ADDR);
+  const float current = cur_adc.read_current();
+  const uint8_t* currentBytes = reinterpret_cast<const uint8_t*>(&current);
+  payload.insert(payload.end(), currentBytes, currentBytes + sizeof(float));
+
+  serial.send_packet(seq, ACK, payload);
 }
