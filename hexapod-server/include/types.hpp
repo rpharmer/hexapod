@@ -49,11 +49,11 @@ struct JointState {
 };
 
 struct LegRawState {
-  std::array<JointRawState, kNumJoints> joint_raw_state{};
+  std::array<JointRawState, kJointsPerLeg> joint_raw_state{};
 };
 
 struct LegState {
-  std::array<JointState, kNumJoints> joint_state{};
+  std::array<JointState, kJointsPerLeg> joint_state{};
 };
 
 struct JointTargets {
