@@ -19,45 +19,6 @@ uint16_t next_sequence(uint16_t& seq)
 }
 }
 
-// Compile-time mapping table
-struct BaudRateMapEntry {
-    int key;
-    BaudRate rate;
-};
-
-constexpr std::array<BaudRateMapEntry, 20> baudMap {{
-    {0, BaudRate::B_0},
-    {50, BaudRate::B_50},
-    {75, BaudRate::B_75},
-    {110, BaudRate::B_110},
-    {134, BaudRate::B_134},
-    {150, BaudRate::B_150},
-    {200, BaudRate::B_200},
-    {300, BaudRate::B_300},
-    {600, BaudRate::B_600},
-    {1200, BaudRate::B_1200},
-    {1800, BaudRate::B_1800},
-    {2400, BaudRate::B_2400},
-    {4800, BaudRate::B_4800},
-    {9600, BaudRate::B_9600},
-    {19200, BaudRate::B_19200},
-    {38400, BaudRate::B_38400},
-    {57600, BaudRate::B_57600},
-    {115200, BaudRate::B_115200},
-    {230400, BaudRate::B_230400},
-    {460800, BaudRate::B_460800}
-}};
-
-// Compile-time lookup function
-constexpr BaudRate intToBaudRate(int key) {
-    for (auto &entry : baudMap) {
-        if (entry.key == key) {
-            return entry.rate;
-        }
-    }
-    return BaudRate::B_CUSTOM;
-}
-
 int main() {
   
   ///** Test toml **///
@@ -71,7 +32,7 @@ int main() {
     std::string serialDevice = toml::find<std::string>(root, "SerialDevice");
     
     int baudInt = toml::find<int>(root, "BaudRate");
-    BaudRate baudRate = intToBaudRate(baudInt);
+    BaudRate baudRate = SerialCommsServer::int_to_baud_rate(baudInt);
     
     int timeout = toml::find<int>(root, "Timeout_ms");
     

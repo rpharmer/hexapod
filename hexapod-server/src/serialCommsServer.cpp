@@ -9,6 +9,19 @@ BaudRate SerialCommsServer::int_to_baud_rate(int baud)
 {
   switch (baud)
   {
+    case 0: return BaudRate::B_0;
+    case 50: return BaudRate::B_50;
+    case 75: return BaudRate::B_75;
+    case 110: return BaudRate::B_110;
+    case 134: return BaudRate::B_134;
+    case 150: return BaudRate::B_150;
+    case 200: return BaudRate::B_200;
+    case 300: return BaudRate::B_300;
+    case 600: return BaudRate::B_600;
+    case 1200: return BaudRate::B_1200;
+    case 1800: return BaudRate::B_1800;
+    case 2400: return BaudRate::B_2400;
+    case 4800: return BaudRate::B_4800;
     case 9600: return BaudRate::B_9600;
     case 19200: return BaudRate::B_19200;
     case 38400: return BaudRate::B_38400;
