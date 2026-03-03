@@ -36,6 +36,11 @@ Both server and client should:
 - Errors:
   - `TIMEOUT = 0xA1`
   - `VERSION_MISMATCH = 0xA2`
+  - `INVALID_ARGUMENT = 0xA3`
+  - `INVALID_PAYLOAD_LENGTH = 0xA4`
+  - `OUT_OF_RANGE_INDEX = 0xA5`
+  - `UNSUPPORTED_COMMAND = 0xA6`
+  - `BUSY_NOT_READY = 0xA7`
 
 ## Command table
 
