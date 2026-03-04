@@ -221,9 +221,9 @@ int main() {
 
 void handleHandshake(uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  if(payload.size() < 2)
+  if(payload.size() != 2)
   {
-    serial.send_packet(seq, NACK, {TIMEOUT});
+    serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
@@ -251,13 +251,19 @@ void echoLoop()
 
 void handleSetAngleCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  if(payload.size() < 3)
+  if(payload.size() != 3)
   {
-    serial.send_packet(seq, NACK, {TIMEOUT});
+    serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
   const uint8_t servo = payload[0];
+  if(servo >= NUM_SERVOS)
+  {
+    serial.send_packet(seq, NACK, {OUT_OF_RANGE_INDEX});
+    return;
+  }
+
   const uint16_t angle = static_cast<uint16_t>(payload[1]) |
                          (static_cast<uint16_t>(payload[2]) << 8);
   servos.value(servo, angle);
@@ -284,9 +290,9 @@ void handleGetAngleCalibCommand(uint16_t seq)
 
 void handleSetPowerRelayCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  if(payload.empty())
+  if(payload.size() != 1)
   {
-    serial.send_packet(seq, NACK, {TIMEOUT});
+    serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
@@ -297,7 +303,7 @@ void handleSetPowerRelayCommand(uint16_t seq, const std::vector<uint8_t>& payloa
     gpio_put_masked(A0_GPIO_MASK, GPIO_LOW_MASK);
   else
   {
-    serial.send_packet(seq, NACK, {TIMEOUT});
+    serial.send_packet(seq, NACK, {INVALID_ARGUMENT});
     return;
   }
   serial.send_packet(seq, ACK, {});
@@ -319,13 +325,19 @@ void handleGetVoltageCommand(uint16_t seq)
 }
 void handleGetSensorCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  if(payload.empty())
+  if(payload.size() != 1)
   {
-    serial.send_packet(seq, NACK, {TIMEOUT});
+    serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
   const uint8_t sensor = payload[0];
+  if(sensor >= 6)
+  {
+    serial.send_packet(seq, NACK, {OUT_OF_RANGE_INDEX});
+    return;
+  }
+
   mux.select(servo2040::SENSOR_1_ADDR + sensor);
   float voltage = sen_adc.read_voltage();
 
@@ -335,9 +347,10 @@ void handleGetSensorCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 
 void handleCalibCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  if(payload.size() < 18 * 4)
+  constexpr size_t expectedPayloadBytes = 18 * 4;
+  if(payload.size() != expectedPayloadBytes)
   {
-    serial.send_packet(seq, NACK, {TIMEOUT});
+    serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
@@ -379,7 +392,7 @@ void handleSetJointTargetsCommand(uint16_t seq, const std::vector<uint8_t>& payl
   constexpr size_t expectedPayloadBytes = 18 * sizeof(float);
   if(payload.size() != expectedPayloadBytes)
   {
-    serial.send_packet(seq, NACK, {TIMEOUT});
+    serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
