@@ -39,6 +39,24 @@ struct Vec3 {
 
 // Structures used for Hexapod
 
+enum class FaultCode : uint8_t {
+    NONE = 0,
+    BUS_TIMEOUT,
+    ESTOP,
+    TIP_OVER,
+    ESTIMATOR_INVALID,
+    MOTOR_FAULT,
+    JOINT_LIMIT,
+    COMMAND_TIMEOUT
+};
+
+struct SafetyState {
+    bool inhibit_motion{true};
+    bool torque_cut{false};
+    FaultCode active_fault{FaultCode::NONE};
+    std::array<bool, kNumLegs> leg_enabled{true, true, true, true, true, true};
+};
+
 struct FootTarget {
     Vec3 pos_body_m{};
     Vec3 vel_body_mps{};
@@ -87,7 +105,7 @@ struct RawHardwareState {
 };
 
 struct EstimatedState {
-  std::array<LegState, kNumLegs> leg_states{};
+  std::array<LegRawState, kNumLegs> leg_states{};
   std::array<bool, kNumLegs> foot_contacts{};
   
   BodyTwistState body_twist_state{};

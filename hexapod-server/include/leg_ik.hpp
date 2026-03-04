@@ -5,11 +5,10 @@
 class LegIK {
 public:
     JointTargets solve(const EstimatedState& est,
-                       const LegTargets& targets,
-                       const SafetyState& safety);
+                       const LegTargets& targets, const SafetyState& safety);
 
 private:
-    bool solveOneLeg(int leg_index, const FootTarget& foot, JointState& j0, JointState& j1, JointState& j2);
+    bool solveOneLeg(const LegRawState& est, LegRawState& out, const FootTarget& foot);
     uint64_t seq_tx_{0};
 
     // Toy geometry

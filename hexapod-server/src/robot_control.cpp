@@ -98,8 +98,8 @@ void RobotControl::controlLoop() {
     while (running_.load()) {
         const auto cycle_start = Clock::now();
 
-        /*const EstimatedState est = estimated_state_.read();
-        const MotionIntent intent = motion_intent_.read();
+        const EstimatedState est = estimated_state_.read();
+        /*const MotionIntent intent = motion_intent_.read();
         const SafetyState safety_state = safety_state_.read();
 
         RobotMode active_mode = intent.requested_mode;
@@ -120,6 +120,8 @@ void RobotControl::controlLoop() {
         st.active_fault = safety_state.active_fault;
         st.loop_counter = ++loop_counter;
         status_.write(st);*/
+
+        (void)est;
 
         sleepUntil(cycle_start, 4000us); // 250 Hz
     }
