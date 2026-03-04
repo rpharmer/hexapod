@@ -39,6 +39,16 @@ struct Vec3 {
 
 // Structures used for Hexapod
 
+struct FootTarget {
+    Vec3 pos_body_m{};
+    Vec3 vel_body_mps{};
+};
+
+struct LegTargets {
+    std::array<FootTarget, kNumLegs> feet{};
+    uint64_t timestamp_us{0};
+};
+
 struct JointRawState {
   double pos_rad {0.0};
 };
