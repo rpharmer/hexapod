@@ -13,8 +13,14 @@ uint16_t crc16_ccitt(const uint8_t* data, size_t len) {
 }
 
 std::vector<uint8_t> encodePacket(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload) {
+    constexpr size_t kHeaderBytesWithoutPayload = 3; // SEQ(2) + CMD
+    constexpr size_t kMaxPayloadSize = 0xFF - kHeaderBytesWithoutPayload;
+    if (payload.size() > kMaxPayloadSize) {
+        throw std::invalid_argument("payload too large for 8-bit packet length");
+    }
+
     std::vector<uint8_t> frame;
-    const uint8_t len = static_cast<uint8_t>(3 + payload.size()); // SEQ(2) + CMD + PAYLOAD
+    const uint8_t len = static_cast<uint8_t>(kHeaderBytesWithoutPayload + payload.size());
 
     frame.push_back(STX);
     frame.push_back(len);
