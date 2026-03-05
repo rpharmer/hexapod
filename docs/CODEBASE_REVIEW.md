@@ -4,108 +4,103 @@
 
 - `README.md`
 - `hexapod-common/include/hexapod-common.hpp`
-- `hexapod-server/src/hexapod-server.cpp`
+- `hexapod-common/include/framing.hpp`
+- `hexapod-common/framing.cpp`
+- `hexapod-server/include/*.hpp`
+- `hexapod-server/src/*.cpp`
 - `hexapod-client/hexapod-client.cpp`
+- `hexapod-client/serialCommsClient.*`
 
-## High-level assessment
+## Executive summary
 
-The repository has a clear split between host (`hexapod-server`), firmware (`hexapod-client`), and shared protocol (`hexapod-common`). The handshake + calibration bootstrap path is implemented end-to-end and appears consistent with protocol constants.
+The repository has a good architecture split (shared protocol, Linux host control stack, embedded firmware), and the framed command protocol is significantly more mature than the older startup-only flow described in parts of the docs. The firmware command handlers now include payload-size and index validation for the main command paths.
 
-At the same time, the code is currently best characterized as a solid prototype: startup communication works, but runtime control and resilience concerns (validation, retry policy, typed error handling, and observability) need to be expanded before this is production-ready for repeated field operation.
+Main remaining risks are less about basic command parsing and more about **runtime robustness** and **operational correctness**:
 
-## Current strengths
+1. host-side runtime is still not exercising the full pipeline end-to-end,
+2. build/reproducibility is currently fragile in clean environments,
+3. a few implementation details can cause subtle protocol/logic bugs under stress.
 
-1. **Good separation of concerns**
-   - Shared constants and packet interfaces live in `hexapod-common`.
-   - Transport-specific serial implementations remain on each side.
+## What is working well
 
-2. **Basic reliability foundations are present**
-   - Sequence numbers are used in request/response flow.
-   - Handshake validates protocol version and status.
-   - Heartbeat command exists and is exercised by the host.
+1. **Clear module boundaries**
+   - `hexapod-common` owns protocol + framing primitives.
+   - `hexapod-client` cleanly maps packets to hardware-facing handlers.
+   - `hexapod-server` is moving toward a layered control stack (`hardware_bridge`, `estimator`, `robot_control`).
 
-3. **Hardware control surface is already broad on firmware**
-   - Calibration set/get, set target angle, relay control, current/voltage/sensor reads, and heartbeat handlers are present.
+2. **Protocol hardening has improved**
+   - Handlers such as `handleHandshake`, `handleSetAngleCommand`, `handleCalibCommand`, and `handleSetJointTargetsCommand` enforce exact payload lengths.
+   - Servo/sensor index checks return explicit NACK errors.
+   - Unsupported commands return a dedicated error code.
 
-## Main gaps and risks
+3. **Control-loop structure is in place on host**
+   - `RobotControl` has dedicated high-rate loops for bus and estimator paths with periodic timing.
+   - Thread lifecycle management (`start`/`stop` + `join`) is present and straightforward.
 
-1. **Validation and bounds safety are incomplete**
-   - Firmware accepts `SET_TARGET_ANGLE` servo index without checking valid range.
-   - Sensor index for `GET_SENSOR` is not range checked.
-   - Host does not validate parsed calibration values (e.g., min < max and within safe pulse range) before transmitting.
+## Key findings and risks
 
-2. **Error semantics are currently too coarse**
-   - `TIMEOUT` is reused for several payload/argument validation failures that are not actual timeouts.
-   - This makes diagnosis harder and complicates automatic recovery behavior on the host side.
+### 1) Documentation and runtime behavior are out of sync (high)
 
-3. **Host runtime behavior is still startup-centric**
-   - Host sends initial calibration and a small fixed heartbeat loop, then exits.
-   - There is no long-lived control loop, state machine, or reconnect strategy suitable for robot runtime.
+`README.md` still documents a host flow centered on handshake + calibration + heartbeat, while `hexapod-server/src/hexapod-server.cpp` currently only parses/sorts calibration and prints it. The newer control-stack components are not wired into `main` yet.
 
-4. **Configuration and deploy ergonomics can improve**
-   - README notes some runtime values are hard-coded in source.
-   - Client README appears boilerplate and does not document project-specific firmware behavior.
+**Impact:** new contributors/operators can follow docs and still not run expected behavior.
 
-5. **Testability and CI maturity are limited**
-   - No obvious protocol unit tests/fuzz tests for framing and command decoding.
-   - No host/firmware contract tests to guard protocol evolution.
+**Recommendation:** either (a) wire the new control stack in `main`, or (b) explicitly mark current `main` as a staging utility and document intended entrypoints.
 
-## Prioritized next steps (near-term)
+### 2) Build is not reproducible in a clean environment (high)
 
-1. **Add strict input validation in firmware command handlers (P0)**
-   - Reject invalid servo IDs and sensor IDs with dedicated error codes.
-   - Validate payload lengths exactly (not only minimum size) where protocol requires fixed-width messages.
+Server build fails immediately without external dependency setup for `CppLinuxSerial` headers.
 
-2. **Harden host calibration pipeline (P0)**
-   - Validate calibration records after TOML parse:
-     - expected count (18),
-     - unique motor labels,
-     - min/max ordering,
-     - pulse bounds.
-   - Fail fast with explicit diagnostics before opening serial.
+**Impact:** onboarding friction; CI cannot be trusted unless toolchain/dependencies are codified.
 
-3. **Introduce explicit protocol error taxonomy (P0)**
-   - Add error codes for invalid argument, invalid payload length, out-of-range index, unsupported command, and busy/not-ready.
-   - Update both host and client to use these consistently.
+**Recommendation:** add explicit dependency installation instructions and/or vendoring/submodule strategy; add CI build checks for host side.
 
-4. **Refactor host into an explicit connection state machine (P1)**
-   - States: disconnected -> opening -> handshake -> calibration sync -> operational -> degraded/recovering.
-   - Include retry backoff and reconnection policy.
+### 3) Potential protocol framing edge cases under long-running streams (medium)
 
-5. **Define a runtime command path on host (P1)**
-   - Expose APIs/CLI to send `SET_TARGET_ANGLE` and query telemetry.
-   - Keep heartbeat as background liveness signal rather than a short startup check.
+The framed receive path appends bytes into `rxBuffer` and relies on `tryDecodePacket` to consume/advance. This is the right shape, but because stream corruption is normal on serial links, decode-recovery behavior should be tested heavily (invalid preambles, truncated CRCs, back-to-back malformed packets).
 
-6. **Add protocol-level tests (P1)**
-   - Unit tests for framing/deframing edge cases and corrupted bytes.
-   - Golden tests for handshake and calibration packets.
+**Impact:** possible memory growth / delayed recovery if decode behavior is imperfect under noisy input.
 
-## Future directions (mid/long-term)
+**Recommendation:** add framing fuzz/unit tests and explicit bounds checks around maximum buffered bytes.
 
-1. **Safety and motion layer**
-   - Add motion-profile generation (ramp/jerk limits) above raw set-angle commands.
-   - Add interlock policies: relay behavior tied to communication health and watchdog expiry.
+### 4) Mixed maturity level in host control pipeline (medium)
 
-2. **Versioned capability negotiation**
-   - Expand HELLO capability bits into a clear feature negotiation system.
-   - Allow host to adapt behavior for older/newer firmware without manual branch logic.
+`RobotControl` scaffolding is good, but several paths are stubbed/commented (`controlLoop`, safety/diagnostics integration, hardware read failure handling).
 
-3. **Observability and diagnosability**
-   - Structured logs on host (command, seq, RTT, error code).
-   - Lightweight diagnostics command on firmware for counters (dropped packets, NACK counts, last error).
+**Impact:** system appears architecturally advanced while behavior remains partially inert.
 
-4. **Protocol evolution strategy**
-   - Add a compatibility matrix in docs.
-   - Require contract tests for any command or payload format changes.
+**Recommendation:** define and implement a minimal operational slice (read -> estimate -> command) with explicit failure handling and telemetry logs.
 
-5. **Developer workflow and quality gates**
-   - Add CI for host build + unit tests.
-   - Add static analysis/linting where practical.
-   - Replace boilerplate client README with project-specific build, flash, and bring-up playbooks.
+### 5) Configuration and constants could be made safer (low/medium)
 
-## Suggested implementation roadmap
+Global protocol constants are currently plain `const uint8_t` in a shared header. Stronger typing (`enum class`) and `constexpr` usage would reduce accidental misuse and improve compile-time behavior.
 
-- **Phase 1 (stability):** input validation, richer errors, calibration checks, command handler hardening.
-- **Phase 2 (operability):** host state machine, reconnect behavior, runtime command/telemetry CLI.
-- **Phase 3 (safety/perf):** motion profiling, watchdog/interlocks, improved diagnostics.
-- **Phase 4 (scale):** CI contract tests, capability negotiation, documented compatibility policy.
+**Impact:** low immediate risk, but grows with protocol complexity.
+
+**Recommendation:** migrate command/status/error codes toward scoped enums and helper conversion utilities.
+
+## Priority action plan
+
+### P0 (do next)
+
+1. Align `README.md` with the actual executable behavior and current architecture.
+2. Make host build reproducible (document/install dependencies, add CI build target).
+3. Add framing parser tests for corruption/recovery and bounded-buffer behavior.
+
+### P1
+
+1. Wire `hexapod-server` `main` into `RobotControl` with a small operational loop.
+2. Implement error/health reporting around hardware read/write failures.
+3. Add integration tests for command round-trips (`HELLO`, calibration sync, joint targets, full hardware state).
+
+### P2
+
+1. Improve protocol typing (`enum class` + helpers).
+2. Expand diagnostics and counters (NACK reasons, parser resync count, link health).
+3. Revisit motion safety invariants (target limits, relay safety policy, watchdog behavior).
+
+## Quick validation notes from this review
+
+- The host build currently fails in this environment due to missing `CppLinuxSerial/SerialPort.hpp`.
+- No behavioral runtime test was performed because host compilation did not complete.
+- Review conclusions above are based on static inspection plus the observed build failure.
