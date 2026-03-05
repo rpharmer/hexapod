@@ -48,8 +48,8 @@ Both server and client should:
 |---|---:|---|---|---|
 | _Sequence handling_ | - | Bidirectional | Every request includes a 2-byte `SEQ` in the frame header. | Every response echoes the same `SEQ` value from the request. |
 | `HELLO` | `0x10` | Server → Client | `version:u8, capabilities:u8` | `ACK(version:u8,status:u8,device_id:u8)` or `NACK(error:u8)` |
-| `SET_ANGLE_CALIBRATIONS` | `0x01` | Server → Client | 18 × `(min:u16, max:u16)` | `ACK` or `NACK(error:u8)` |
-| `SET_TARGET_ANGLE` | `0x02` | Server → Client | `servo_id:u8, angle:u16` | `ACK` or `NACK(error:u8)` |
+| `SET_ANGLE_CALIBRATIONS` | `0x01` | Server → Client | 18 × `(min:f32, max:f32)` | `ACK` or `NACK(error:u8)` |
+| `SET_TARGET_ANGLE` | `0x02` | Server → Client | `servo_id:u8, angle:f32` | `ACK` or `NACK(error:u8)` |
 | `SET_POWER_RELAY` | `0x03` | Server → Client | `relay_state:u8` (`0`/`1`) | `ACK` or `NACK(error:u8)` |
 | `GET_ANGLE_CALIBRATIONS` | `0x04` | Server → Client | _none_ | `ACK` + 18 × `(min:f32, max:f32)` or `NACK(error:u8)` |
 | `GET_CURRENT` | `0x05` | Server → Client | _none_ | `ACK(current:f32)` or `NACK(error:u8)` |
