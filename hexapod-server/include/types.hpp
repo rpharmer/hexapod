@@ -134,3 +134,11 @@ struct TargetBodyState {
   bool valid{false};
   uint64_t timestamp_us{0};
 };
+
+struct ControlStatus {
+    RobotMode active_mode{RobotMode::SAFE_IDLE};
+    bool estimator_valid{false};
+    bool bus_ok{false};
+    FaultCode active_fault{FaultCode::NONE};
+    uint64_t loop_counter{0};
+};

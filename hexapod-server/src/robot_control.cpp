@@ -127,7 +127,7 @@ void RobotControl::controlLoop() {
     }
 }
 
-/*void RobotControl::safetyLoop() {
+void RobotControl::safetyLoop() {
     while (running_.load()) {
         const auto cycle_start = Clock::now();
 
@@ -140,9 +140,9 @@ void RobotControl::controlLoop() {
 
         sleepUntil(cycle_start, 2000us); // 500 Hz
     }
-}*/
+}
 
-/*void RobotControl::diagnosticsLoop() {
+void RobotControl::diagnosticsLoop() {
     while (running_.load()) {
         const auto st = status_.read();
         std::cout
@@ -155,7 +155,7 @@ void RobotControl::controlLoop() {
 
         std::this_thread::sleep_for(500ms);
     }
-}*/
+}
 
 void RobotControl::joinThread(std::thread& t) {
     if (t.joinable()) t.join();
@@ -166,7 +166,7 @@ void RobotControl::sleepUntil(const Clock::time_point& start,
     std::this_thread::sleep_until(start + period);
 }
 
-/*const char* RobotControl::toString(RobotMode mode) {
+const char* RobotControl::toString(RobotMode mode) {
     switch (mode) {
         case RobotMode::SAFE_IDLE: return "SAFE_IDLE";
         case RobotMode::HOMING: return "HOMING";
@@ -175,9 +175,9 @@ void RobotControl::sleepUntil(const Clock::time_point& start,
         case RobotMode::FAULT: return "FAULT";
     }
     return "UNKNOWN";
-}*/
+}
 
-/*const char* RobotControl::toString(FaultCode code) {
+const char* RobotControl::toString(FaultCode code) {
     switch (code) {
         case FaultCode::NONE: return "NONE";
         case FaultCode::BUS_TIMEOUT: return "BUS_TIMEOUT";
@@ -189,4 +189,4 @@ void RobotControl::sleepUntil(const Clock::time_point& start,
         case FaultCode::COMMAND_TIMEOUT: return "COMMAND_TIMEOUT";
     }
     return "UNKNOWN";
-}*/
+}

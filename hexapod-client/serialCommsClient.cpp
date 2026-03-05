@@ -135,7 +135,8 @@ bool SerialCommsClient::recv_packet(DecodedPacket& packet)
       return true;
 
     uint8_t byte = 0;
-    if(recv_u8(&byte) < 0)
+    const int bytes_read = recv_u8(&byte);
+    if(bytes_read <= 0)
       return false;
     rxBuffer.push_back(byte);
   }
