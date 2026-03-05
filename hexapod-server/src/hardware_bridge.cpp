@@ -155,9 +155,9 @@ bool SimpleHardwareBridge::do_handshake(const uint8_t requested_caps)
     return false;
   }
 
-  if(response.seq != seq_)
+  if(response.seq != seq)
   {
-    printf("sequence mismatch (expected %u, got %u)\n", static_cast<unsigned>(seq_), static_cast<unsigned>(response.seq));
+    printf("sequence mismatch (expected %u, got %u)\n", static_cast<unsigned>(seq), static_cast<unsigned>(response.seq));
     return false;
   }
 
@@ -220,7 +220,7 @@ bool SimpleHardwareBridge::send_heartbeat()
 
   if(response.seq != seq_)
   {
-    printf("heartbeat sequence mismatch (expected %u, got %u)\n", static_cast<unsigned>(seq_), static_cast<unsigned>(response.seq));
+    printf("heartbeat sequence mismatch (expected %u, got %u)\n", static_cast<unsigned>(seq), static_cast<unsigned>(response.seq));
     return false;
   }
 
@@ -258,13 +258,22 @@ bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs)
 
   DecodedPacket response;
   if(!serialComs_->recv_packet(response))
+  {
     printf("calibration packet failed: timeout waiting for response\n");
+    return false;
+  }
   else if(response.seq != seq)
+  {
     printf("calibration packet failed: sequence mismatch (expected %u, got %u)\n", static_cast<unsigned>(seq), static_cast<unsigned>(response.seq));
+    return false;
+  }
   else if(response.cmd == ACK)
+  {
     printf("calibration packet accepted\n");
+    return true;
+  }
   else
     printf("calibration packet failed\n");
   
-  return true;
+  return false;
 }

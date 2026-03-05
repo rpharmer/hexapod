@@ -347,25 +347,19 @@ void handleGetSensorCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 
 void handleCalibCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  constexpr size_t expectedPayloadBytes = 18 * 4;
+  constexpr size_t expectedPayloadBytes = 18 * 4 * 2;
   if(payload.size() != expectedPayloadBytes)
   {
     serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
+  size_t offset = 0;
   float calibs[18][2];
-  size_t idx = 0;
   for (int s =0; s < 18; s++)
   {
-    const uint16_t c00 = static_cast<uint16_t>(payload[idx]) |
-                         (static_cast<uint16_t>(payload[idx + 1]) << 8);
-    const uint16_t c10 = static_cast<uint16_t>(payload[idx + 2]) |
-                         (static_cast<uint16_t>(payload[idx + 3]) << 8);
-    idx += 4;
-    
-    calibs[s][0] = c00;
-    calibs[s][1] = c10;
+    read_scalar(payload, offset, calibs[s][0]);
+    read_scalar(payload, offset, calibs[s][1]);
   }
   calibServos(calibs);
   serial.send_packet(seq, ACK, {});
