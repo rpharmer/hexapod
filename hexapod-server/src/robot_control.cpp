@@ -28,8 +28,8 @@ bool RobotControl::init() {
     initial.timestamp_us = now_us();
 
     motion_intent_.write(initial);
-    //status_.write(ControlStatus{});
-    //safety_state_.write(SafetyState{});
+    status_.write(ControlStatus{});
+    safety_state_.write(SafetyState{});
     joint_targets_.write(JointTargets{});
 
     return true;
@@ -40,9 +40,9 @@ void RobotControl::start() {
 
     bus_thread_ = std::thread(&RobotControl::busLoop, this);
     estimator_thread_ = std::thread(&RobotControl::estimatorLoop, this);
-    //control_thread_ = std::thread(&RobotControl::controlLoop, this);
-    //safety_thread_ = std::thread(&RobotControl::safetyLoop, this);
-    //diag_thread_ = std::thread(&RobotControl::diagnosticsLoop, this);
+    control_thread_ = std::thread(&RobotControl::controlLoop, this);
+    safety_thread_ = std::thread(&RobotControl::safetyLoop, this);
+    diag_thread_ = std::thread(&RobotControl::diagnosticsLoop, this);
 }
 
 void RobotControl::stop() {
@@ -50,18 +50,18 @@ void RobotControl::stop() {
 
     joinThread(bus_thread_);
     joinThread(estimator_thread_);
-    //joinThread(control_thread_);
-    //joinThread(safety_thread_);
-    //joinThread(diag_thread_);
+    joinThread(control_thread_);
+    joinThread(safety_thread_);
+    joinThread(diag_thread_);
 }
 
 void RobotControl::setMotionIntent(const MotionIntent& intent) {
     motion_intent_.write(intent);
 }
 
-/*ControlStatus RobotControl::getStatus() const {
+ControlStatus RobotControl::getStatus() const {
     return status_.read();
-}*/
+}
 
 void RobotControl::busLoop() {
     while (running_.load()) {
@@ -99,7 +99,7 @@ void RobotControl::controlLoop() {
         const auto cycle_start = Clock::now();
 
         const EstimatedState est = estimated_state_.read();
-        /*const MotionIntent intent = motion_intent_.read();
+        const MotionIntent intent = motion_intent_.read();
         const SafetyState safety_state = safety_state_.read();
 
         RobotMode active_mode = intent.requested_mode;
@@ -119,7 +119,7 @@ void RobotControl::controlLoop() {
         st.bus_ok = raw_state_.read().bus_ok;
         st.active_fault = safety_state.active_fault;
         st.loop_counter = ++loop_counter;
-        status_.write(st);*/
+        status_.write(st);
 
         (void)est;
 

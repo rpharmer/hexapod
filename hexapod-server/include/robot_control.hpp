@@ -1,10 +1,11 @@
 #pragma once
 
+#include "types.hpp"
 #include "double_buffer.hpp"
 #include "estimator.hpp"
 #include "hardware_bridge.hpp"
+#include "safety_supervisor.hpp"
 #include "leg_ik.hpp"
-#include "types.hpp"
 
 #include <atomic>
 #include <memory>
@@ -41,10 +42,10 @@ private:
     std::unique_ptr<IHardwareBridge> hw_;
     std::unique_ptr<IEstimator> estimator_;
 
-    //GaitScheduler gait_;
-    //BodyController body_;
-    //LegIK ik_;
-    //SafetySupervisor safety_;
+    GaitScheduler gait_;
+    BodyController body_;
+    LegIK ik_;
+    SafetySupervisor safety_;
 
     std::atomic<bool> running_{false};
 
@@ -53,7 +54,7 @@ private:
     DoubleBuffer<MotionIntent> motion_intent_;
     DoubleBuffer<SafetyState> safety_state_;
     DoubleBuffer<JointTargets> joint_targets_;
-    //DoubleBuffer<ControlStatus> status_;
+    DoubleBuffer<ControlStatus> status_;
 
     std::thread bus_thread_;
     std::thread estimator_thread_;
