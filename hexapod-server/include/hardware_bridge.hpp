@@ -33,6 +33,10 @@ private:
     bool decode_full_hardware_state(const std::vector<uint8_t>& payload,
                                     RawHardwareState& out) const;
 
+    bool do_handshake(const uint8_t requested_caps);
+    bool send_heartbeat();
+    bool send_calibrations(const std::vector<float>& calibs);
+  
     std::string device_;
     int baud_rate_;
     int timeout_ms_;

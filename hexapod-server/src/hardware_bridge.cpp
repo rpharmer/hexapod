@@ -142,3 +142,129 @@ bool SimpleHardwareBridge::decode_full_hardware_state(const std::vector<uint8_t>
     out.timestamp_us = now_us();
     return true;
 }
+
+bool SimpleHardwareBridge::do_handshake(const uint8_t requested_caps)
+{
+  const uint16_t seq = next_sequence();
+  serialComs_->send_packet(seq, HELLO, {PROTOCOL_VERSION, requested_caps});
+
+  DecodedPacket response;
+  if(!serialComs_->recv_packet(response))
+  {
+    printf("handshake timeout waiting for response\n");
+    return false;
+  }
+
+  if(response.seq != seq_)
+  {
+    printf("sequence mismatch (expected %u, got %u)\n", static_cast<unsigned>(seq_), static_cast<unsigned>(response.seq));
+    return false;
+  }
+
+  if(response.cmd == NACK)
+  {
+    if(response.payload.empty())
+    {
+      printf("NACK without error code\n");
+      return false;
+    }
+    uint8_t errorCode = response.payload[0];
+    printf("NACK, Error: %u\n", errorCode);
+    return false;
+  }
+  
+  else if(response.cmd == ACK)
+  {
+    if(response.payload.size() < 3)
+    {
+      printf("malformed ACK response\n");
+      return false;
+    }
+    const uint8_t version = response.payload[0];
+    const uint8_t status = response.payload[1];
+    const uint8_t deviceID = response.payload[2];
+    (void)deviceID;
+    
+    if(version != PROTOCOL_VERSION)
+    {
+      printf("version mismatch\n");
+      return false;
+    }
+    if(status != STATUS_OK)
+    {
+      printf("device not ready\n");
+      return false;
+    }
+    return true;
+  }
+  else
+  {
+    printf("malformed response, recieved: %u\n", response.cmd);
+    return false;
+  }
+  
+  return true;
+}
+
+bool SimpleHardwareBridge::send_heartbeat()
+{
+  const uint16_t seq = next_sequence();
+  serialComs_->send_packet(seq, HEARTBEAT, {});
+
+  DecodedPacket response;
+  if(!serialComs_->recv_packet(response))
+  {
+    printf("heartbeat timeout waiting for response\n");
+    return false;
+  }
+
+  if(response.seq != seq_)
+  {
+    printf("heartbeat sequence mismatch (expected %u, got %u)\n", static_cast<unsigned>(seq_), static_cast<unsigned>(response.seq));
+    return false;
+  }
+
+  if(response.cmd != ACK)
+  {
+    printf("heartbeat malformed response, recieved: %u\n", response.cmd);
+    return false;
+  }
+
+  if(!response.payload.empty() && response.payload[0] != STATUS_OK)
+  {
+    printf("heartbeat returned non-ok status: %u\n", response.payload[0]);
+    return false;
+  }
+
+  return true;
+}
+
+bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs)
+{
+  if(calibs.size() != 36)
+  {
+    printf("incorrect calibration size");
+    return false;
+  }
+  
+  std::vector<uint8_t> payload;
+  payload.reserve(36 * sizeof(float));
+  for (float calibValue : calibs){
+    append_scalar(payload, calibValue);
+  }
+  
+  const uint16_t seq = next_sequence();
+  serialComs_->send_packet(seq, SET_ANGLE_CALIBRATIONS, payload);
+
+  DecodedPacket response;
+  if(!serialComs_->recv_packet(response))
+    printf("calibration packet failed: timeout waiting for response\n");
+  else if(response.seq != seq)
+    printf("calibration packet failed: sequence mismatch (expected %u, got %u)\n", static_cast<unsigned>(seq), static_cast<unsigned>(response.seq));
+  else if(response.cmd == ACK)
+    printf("calibration packet accepted\n");
+  else
+    printf("calibration packet failed\n");
+  
+  return true;
+}
