@@ -23,6 +23,14 @@ inline uint64_t now_us() {
         std::chrono::duration_cast<std::chrono::microseconds>(t).count());
 }
 
+enum class RobotMode {
+    SAFE_IDLE,
+    HOMING,
+    STAND,
+    WALK,
+    FAULT
+};
+
 enum class GaitType {
     TRIPOD,
     RIPPLE,
@@ -101,6 +109,13 @@ struct RawHardwareState {
   std::array<bool, kNumLegs> foot_contacts{};
   float voltage{0.0};
   float current{0.0};
+  uint64_t timestamp_us{0};
+};
+
+struct MotionIntent {
+  RobotMode requested_mode{RobotMode::SAFE_IDLE};
+  GaitType gait{GaitType::TRIPOD};
+  BodyTwistState twist{};
   uint64_t timestamp_us{0};
 };
 

@@ -2,16 +2,82 @@
 #include <vector>
 #include <chrono>
 #include <thread>
+#include <atomic>
+#include <csignal>
+#include <memory>
+#include <thread>
 #include "hexapod-common.hpp"
 #include "hexapod-server.hpp"
 #include "serialCommsServer.hpp"
+#include "estimator.hpp"
+#include "hardware_bridge.hpp"
+#include "robot_control.hpp"
 
 
+
+
+using namespace std::chrono_literals;
 using namespace mn::CppLinuxSerial;
 
+
+static std::atomic<bool> g_exit{false};
+
+void signalHandler(int) {
+    g_exit.store(true);
+}
+
+
+
 int main() {
+  std::signal(SIGINT, signalHandler);
+  std::signal(SIGTERM, signalHandler);
+  
   ParsedToml config;
-  tomlParser("config.txt", config);
+  if(!tomlParser("config.txt", config))
+  {
+    return 1;
+  }
+
+  auto hw = std::make_unique<SimpleHardwareBridge>(config.serialDevice, config.baudRate, config.timeout);
+  auto estimator = std::make_unique<SimpleEstimator>();
+  
+  RobotControl robot(std::move(hw), std::move(estimator));
+
+  if (!robot.init()) {
+      return 1;
+  }
+
+  robot.start();
+
+  {
+      MotionIntent cmd{};
+      cmd.requested_mode = RobotMode::STAND;
+      cmd.gait = GaitType::TRIPOD;
+      cmd.twist.body_height_pos_m = 0.20;
+      cmd.twist.body_height_vel_mps = 0;
+      cmd.timestamp_us = now_us();
+      robot.setMotionIntent(cmd);
+  }
+
+  std::this_thread::sleep_for(2s);
+
+  while (!g_exit.load()) {
+      MotionIntent cmd{};
+      cmd.requested_mode = RobotMode::WALK;
+      cmd.gait = GaitType::TRIPOD;
+
+      cmd.twist.twist_pos_rad.x = 0.0;
+      cmd.twist.twist_pos_rad.y = 0.0;
+      cmd.twist.twist_pos_rad.z = 0.0;
+      cmd.twist.body_height_pos_m = 0.20;
+      cmd.timestamp_us = now_us();
+      robot.setMotionIntent(cmd);
+
+      std::this_thread::sleep_for(100ms); // refresh command watchdog
+  }
+
+  robot.stop();
+  return 0;
 }
 
 bool tomlParser(std::string filename, ParsedToml& out)
@@ -40,7 +106,6 @@ bool tomlParser(std::string filename, ParsedToml& out)
     printf("baudRate wasn't a positive valid number or not found\n");
     return false;
   }
-  BaudRate baudRate = SerialCommsServer::int_to_baud_rate(baudInt);
   
   int timeout = toml::find_or<int>(root, "Timeout_ms", -1);
   if(timeout == -1)
@@ -90,7 +155,7 @@ bool tomlParser(std::string filename, ParsedToml& out)
   }
   
   out.serialDevice = serialDevice;
-  out.baudRate = baudRate;
+  out.baudRate = baudInt;
   out.timeout = timeout;
   out.minMaxPulses = calibsF;
   

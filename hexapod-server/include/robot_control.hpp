@@ -21,7 +21,7 @@ public:
     void start();
     void stop();
 
-    //void setMotionIntent(const MotionIntent& intent);
+    void setMotionIntent(const MotionIntent& intent);
     //ControlStatus getStatus() const;
 
 private:
@@ -50,7 +50,7 @@ private:
 
     DoubleBuffer<RawHardwareState> raw_state_;
     DoubleBuffer<EstimatedState> estimated_state_;
-    //DoubleBuffer<MotionIntent> motion_intent_;
+    DoubleBuffer<MotionIntent> motion_intent_;
     //DoubleBuffer<SafetyState> safety_state_;
     DoubleBuffer<JointTargets> joint_targets_;
     //DoubleBuffer<ControlStatus> status_;

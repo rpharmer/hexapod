@@ -7,7 +7,7 @@
 struct ParsedToml
 {
   std::string serialDevice{"/dev/ttyACM0"};
-  BaudRate baudRate{BaudRate::B_115200};
+  int baudRate{115200};
   int timeout{100};
   std::vector<float> minMaxPulses{};
 };

@@ -3,7 +3,7 @@ CXX := g++
 BUILD_DIR := build
 TARGET := $(BUILD_DIR)/hexapod-server
 
-CXXFLAGS := -std=c++20 -pedantic-errors -Wall -Wextra -Werror
+CXXFLAGS := -std=c++20 -pedantic-errors -Wall -Wextra -Werror -pthread
 CPPFLAGS := -Iinclude -I../hexapod-common/include
 LDFLAGS := -lCppLinuxSerial -ltoml11
 

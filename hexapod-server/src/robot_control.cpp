@@ -55,9 +55,9 @@ void RobotControl::stop() {
     //joinThread(diag_thread_);
 }
 
-/*void RobotControl::setMotionIntent(const MotionIntent& intent) {
+void RobotControl::setMotionIntent(const MotionIntent& intent) {
     motion_intent_.write(intent);
-}*/
+}
 
 /*ControlStatus RobotControl::getStatus() const {
     return status_.read();
