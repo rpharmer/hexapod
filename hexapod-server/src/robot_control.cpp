@@ -23,11 +23,11 @@ bool RobotControl::init() {
         return false;
     }
 
-    //MotionIntent initial{};
-    //initial.requested_mode = RobotMode::SAFE_IDLE;
-    //initial.timestamp_us = now_us();
+    MotionIntent initial{};
+    initial.requested_mode = RobotMode::SAFE_IDLE;
+    initial.timestamp_us = now_us();
 
-    //motion_intent_.write(initial);
+    motion_intent_.write(initial);
     //status_.write(ControlStatus{});
     //safety_state_.write(SafetyState{});
     joint_targets_.write(JointTargets{});
