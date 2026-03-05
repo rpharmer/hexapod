@@ -20,12 +20,12 @@ int main() {
     // Check that the file is a Hexapod Config File
     assert(root.at("title").as_string() == "Hexapod Config File");
     
-    std::string serialDevice = toml::find<std::string>(root, "SerialDevice");
+    //std::string serialDevice = toml::find<std::string>(root, "SerialDevice");
     
-    int baudInt = toml::find<int>(root, "BaudRate");
-    BaudRate baudRate = SerialCommsServer::int_to_baud_rate(baudInt);
+    //int baudInt = toml::find<int>(root, "BaudRate");
+    //BaudRate baudRate = SerialCommsServer::int_to_baud_rate(baudInt);
     
-    int timeout = toml::find<int>(root, "Timeout_ms");
+    //int timeout = toml::find<int>(root, "Timeout_ms");
     
     auto calibs = toml::find<std::vector<std::tuple<std::string, int, int>>>(root, "MotorCalibrations");
     
