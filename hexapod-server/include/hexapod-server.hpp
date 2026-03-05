@@ -4,7 +4,14 @@
 #include "serialCommsServer.hpp"
 
 
-bool do_handshake(SerialCommsServer& sc, uint16_t seq, uint8_t requested_caps);
-bool send_heartbeat(SerialCommsServer& sc, uint16_t seq);
+struct ParsedToml
+{
+  std::string serialDevice{"/dev/ttyACM0"};
+  BaudRate baudRate{BaudRate::B_115200};
+  int timeout{100};
+  std::vector<float> minMaxPulses{};
+};
+
+bool tomlParser(std::string filename,  ParsedToml& out);
 
 #endif  // #ifndef HEXAPOD_SERVER_HPP
