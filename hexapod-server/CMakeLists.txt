@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
+find_package(CppLinuxSerial REQUIRED)
 
 project(hexapod-server LANGUAGES CXX)
 
@@ -34,6 +35,5 @@ endif()
 
 target_link_libraries(hexapod-server
     PRIVATE
-        CppLinuxSerial
-        toml11
+        CppLinuxSerial::CppLinuxSerial
 )
