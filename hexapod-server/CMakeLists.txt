@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 include(FetchContent)
 
+# Disable third-party tests when fetching dependencies.
+set(BUILD_TESTING OFF CACHE BOOL "Disable CTest-based tests" FORCE)
+set(BUILD_TESTS OFF CACHE BOOL "Disable project-specific tests" FORCE)
+
 find_package(CppLinuxSerial QUIET)
 find_package(toml11 QUIET)
 
