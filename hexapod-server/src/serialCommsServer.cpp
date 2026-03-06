@@ -2,6 +2,7 @@
 #include "hexapod-common.hpp"
 #include "serialCommsServer.hpp"
 
+#include <cstring>
 
 using namespace mn::CppLinuxSerial;
 
@@ -64,37 +65,37 @@ void SerialCommsServer::SetTimeout(int32_t timeout_ms)
 // send a char (1 byte)
 void SerialCommsServer::send_char(char data)
 {
-  serialport.WriteBytes(&data, sizeof(char));
+  serialport.WriteBinary(std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&data), reinterpret_cast<uint8_t*>(&data) + sizeof(char)));
 }
 // send a uint8_t (1 bytes)
 void SerialCommsServer::send_u8(uint8_t data)
 {
-  serialport.WriteBytes(&data, sizeof(uint8_t));
+  serialport.WriteBinary(std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&data), reinterpret_cast<uint8_t*>(&data) + sizeof(uint8_t)));
 }
 // send a uint16_t (2 bytes)
 void SerialCommsServer::send_u16(uint16_t data)
 {
-  serialport.WriteBytes(&data, sizeof(uint16_t));
+  serialport.WriteBinary(std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&data), reinterpret_cast<uint8_t*>(&data) + sizeof(uint16_t)));
 }
 // send a uint32_t (4 bytes)
 void SerialCommsServer::send_u32(uint32_t data)
 {
-  serialport.WriteBytes(&data, sizeof(uint32_t));
+  serialport.WriteBinary(std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&data), reinterpret_cast<uint8_t*>(&data) + sizeof(uint32_t)));
 }
 // send a int16_t  (2 bytes)
 void SerialCommsServer::send_i16(int16_t data)
 {
-  serialport.WriteBytes(&data, sizeof(int16_t));
+  serialport.WriteBinary(std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&data), reinterpret_cast<uint8_t*>(&data) + sizeof(int16_t)));
 }
 // send a int32_t  (4 bytes)
 void SerialCommsServer::send_i32(int32_t data)
 {
-  serialport.WriteBytes(&data, sizeof(int32_t));
+  serialport.WriteBinary(std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&data), reinterpret_cast<uint8_t*>(&data) + sizeof(int32_t)));
 }
 // send a float    (4 bytes)
 void SerialCommsServer::send_f32(float data)
 {
-  serialport.WriteBytes(&data, sizeof(float));
+  serialport.WriteBinary(std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&data), reinterpret_cast<uint8_t*>(&data) + sizeof(float)));
 }
 
 /* functions to recieve data */
@@ -102,37 +103,65 @@ void SerialCommsServer::send_f32(float data)
 // receive a char (1 byte)
 int SerialCommsServer::recv_char(char *data)
 {
-  return serialport.ReadBytes(data, sizeof(char));
+  std::vector<uint8_t> recv_buffer;
+  serialport.ReadBinary(recv_buffer);
+  if(recv_buffer.size() < sizeof(char)) return 0;
+  std::memcpy(data, recv_buffer.data(), sizeof(char));
+  return sizeof(char);
 }
 // recieve a uint8_t (1 bytes)
 int SerialCommsServer::recv_u8(uint8_t *data)
 {
-  return serialport.ReadBytes(data, sizeof(uint8_t));
+  std::vector<uint8_t> recv_buffer;
+  serialport.ReadBinary(recv_buffer);
+  if(recv_buffer.size() < sizeof(uint8_t)) return 0;
+  std::memcpy(data, recv_buffer.data(), sizeof(uint8_t));
+  return sizeof(uint8_t);
 }    
 // recieve a uint16_t (2 bytes)
 int SerialCommsServer::recv_u16(uint16_t *data)
 {
-  return serialport.ReadBytes(data, sizeof(uint16_t));
+  std::vector<uint8_t> recv_buffer;
+  serialport.ReadBinary(recv_buffer);
+  if(recv_buffer.size() < sizeof(uint16_t)) return 0;
+  std::memcpy(data, recv_buffer.data(), sizeof(uint16_t));
+  return sizeof(uint16_t);
 }
 // recieve a uint32_t (4 bytes)
 int SerialCommsServer::recv_u32(uint32_t *data)
 {
-  return serialport.ReadBytes(data, sizeof(uint32_t));
+  std::vector<uint8_t> recv_buffer;
+  serialport.ReadBinary(recv_buffer);
+  if(recv_buffer.size() < sizeof(uint32_t)) return 0;
+  std::memcpy(data, recv_buffer.data(), sizeof(uint32_t));
+  return sizeof(uint32_t);
 }
 // recieve a int16_t  (2 bytes)
 int SerialCommsServer::recv_i16(int16_t *data)
 {
-  return serialport.ReadBytes(data, sizeof(int16_t));
+  std::vector<uint8_t> recv_buffer;
+  serialport.ReadBinary(recv_buffer);
+  if(recv_buffer.size() < sizeof(int16_t)) return 0;
+  std::memcpy(data, recv_buffer.data(), sizeof(int16_t));
+  return sizeof(int16_t);
 }
 // recieve a int32_t  (4 bytes)
 int SerialCommsServer::recv_i32(int32_t *data)
 {
-  return serialport.ReadBytes(data, sizeof(int32_t));
+  std::vector<uint8_t> recv_buffer;
+  serialport.ReadBinary(recv_buffer);
+  if(recv_buffer.size() < sizeof(int32_t)) return 0;
+  std::memcpy(data, recv_buffer.data(), sizeof(int32_t));
+  return sizeof(int32_t);
 }
 // recieve a float    (4 bytes)
 int SerialCommsServer::recv_f32(float *data)
 {
-  return serialport.ReadBytes(data, sizeof(float));
+  std::vector<uint8_t> recv_buffer;
+  serialport.ReadBinary(recv_buffer);
+  if(recv_buffer.size() < sizeof(float)) return 0;
+  std::memcpy(data, recv_buffer.data(), sizeof(float));
+  return sizeof(float);
 }
 
 void SerialCommsServer::send_packet(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload)
