@@ -1,5 +1,7 @@
 #include "framing.hpp"
 
+#include <algorithm>
+
 
 uint16_t crc16_ccitt(const uint8_t* data, size_t len) {
     uint16_t crc = 0xFFFF;
@@ -39,6 +41,11 @@ std::vector<uint8_t> encodePacket(uint16_t seq, uint8_t cmd, const std::vector<u
 // rxBuffer is a rolling buffer of bytes read from UART.
 // Returns true when one valid packet is decoded and removed from rxBuffer.
 bool tryDecodePacket(std::vector<uint8_t>& rxBuffer, DecodedPacket& out) {
+    if (rxBuffer.size() > MAX_RX_BUFFER_BYTES) {
+        const std::size_t preserved = std::min<std::size_t>(rxBuffer.size(), 8U);
+        rxBuffer.erase(rxBuffer.begin(), rxBuffer.end() - static_cast<std::vector<uint8_t>::difference_type>(preserved));
+    }
+
     while (!rxBuffer.empty()) {
         // Re-sync to STX.
         if (rxBuffer[0] != STX) {

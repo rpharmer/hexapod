@@ -104,3 +104,12 @@ Global protocol constants are currently plain `const uint8_t` in a shared header
 - The host build currently fails in this environment due to missing `CppLinuxSerial/SerialPort.hpp`.
 - No behavioral runtime test was performed because host compilation did not complete.
 - Review conclusions above are based on static inspection plus the observed build failure.
+
+## Applied fix in this pass
+
+- Added a receive-buffer guard in `tryDecodePacket` to cap unbounded growth when malformed or noisy serial data accumulates without yielding a valid frame. When the cap is exceeded, the decoder now keeps only the trailing bytes needed for potential frame recovery.
+- Added shared framing constant `MAX_RX_BUFFER_BYTES` to make this limit explicit and configurable in one place.
+
+### Why this fix
+
+This directly addresses the previously identified medium-risk item around long-running serial corruption and delayed parser recovery by bounding memory usage while preserving resynchronization behavior.
