@@ -1,5 +1,20 @@
 cmake_minimum_required(VERSION 3.16)
-find_package(CppLinuxSerial REQUIRED)
+include(FetchContent)
+
+find_package(CppLinuxSerial QUIET)
+
+if(NOT CppLinuxSerial_FOUND)
+    FetchContent_Declare(
+        CppLinuxSerial
+        GIT_REPOSITORY https://github.com/gbmhunter/CppLinuxSerial.git
+        GIT_TAG v2.8.5
+    )
+    FetchContent_MakeAvailable(CppLinuxSerial)
+
+    if(TARGET CppLinuxSerial AND NOT TARGET CppLinuxSerial::CppLinuxSerial)
+        add_library(CppLinuxSerial::CppLinuxSerial ALIAS CppLinuxSerial)
+    endif()
+endif()
 
 project(hexapod-server LANGUAGES CXX)
 
