@@ -44,8 +44,12 @@ struct Vec3 {
 };
 
 
-
-// Structures used for Hexapod
+struct GaitState {
+    std::array<double, kNumLegs> phase{};
+    std::array<bool, kNumLegs> in_stance{};
+    double stride_phase_rate_hz{1.0};
+    uint64_t timestamp_us{0};
+};
 
 enum class FaultCode : uint8_t {
     NONE = 0,

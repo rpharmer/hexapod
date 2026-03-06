@@ -93,7 +93,7 @@ void RobotControl::estimatorLoop() {
 }
 
 void RobotControl::controlLoop() {
-    //uint64_t loop_counter = 0;
+    uint64_t loop_counter = 0;
 
     while (running_.load()) {
         const auto cycle_start = Clock::now();
@@ -115,8 +115,8 @@ void RobotControl::controlLoop() {
 
         ControlStatus st{};
         st.active_mode = active_mode;
-        st.estimator_valid = est.valid;
-        st.bus_ok = raw_state_.read().bus_ok;
+        //st.estimator_valid = est.valid;
+        //st.bus_ok = raw_state_.read().bus_ok;
         st.active_fault = safety_state.active_fault;
         st.loop_counter = ++loop_counter;
         status_.write(st);

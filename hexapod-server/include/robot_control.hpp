@@ -5,6 +5,8 @@
 #include "estimator.hpp"
 #include "hardware_bridge.hpp"
 #include "safety_supervisor.hpp"
+#include "body_controller.hpp"
+#include "gait_scheduler.hpp"
 #include "leg_ik.hpp"
 
 #include <atomic>
