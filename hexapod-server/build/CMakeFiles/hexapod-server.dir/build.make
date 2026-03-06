@@ -56,7 +56,7 @@ EQUALS = =
 CMAKE_SOURCE_DIR = /home/volly/pico/hexapod/hexapod-server
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/volly/pico/hexapod/hexapod-server/build2
+CMAKE_BINARY_DIR = /home/volly/pico/hexapod/hexapod-server/build
 
 # Include any dependencies generated for this target.
 include CMakeFiles/hexapod-server.dir/depend.make
@@ -72,7 +72,7 @@ include CMakeFiles/hexapod-server.dir/flags.make
 CMakeFiles/hexapod-server.dir/src/body_controller.cpp.o: CMakeFiles/hexapod-server.dir/flags.make
 CMakeFiles/hexapod-server.dir/src/body_controller.cpp.o: /home/volly/pico/hexapod/hexapod-server/src/body_controller.cpp
 CMakeFiles/hexapod-server.dir/src/body_controller.cpp.o: CMakeFiles/hexapod-server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build2/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/hexapod-server.dir/src/body_controller.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/hexapod-server.dir/src/body_controller.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/hexapod-server.dir/src/body_controller.cpp.o -MF CMakeFiles/hexapod-server.dir/src/body_controller.cpp.o.d -o CMakeFiles/hexapod-server.dir/src/body_controller.cpp.o -c /home/volly/pico/hexapod/hexapod-server/src/body_controller.cpp
 
 CMakeFiles/hexapod-server.dir/src/body_controller.cpp.i: cmake_force
@@ -86,7 +86,7 @@ CMakeFiles/hexapod-server.dir/src/body_controller.cpp.s: cmake_force
 CMakeFiles/hexapod-server.dir/src/estimator.cpp.o: CMakeFiles/hexapod-server.dir/flags.make
 CMakeFiles/hexapod-server.dir/src/estimator.cpp.o: /home/volly/pico/hexapod/hexapod-server/src/estimator.cpp
 CMakeFiles/hexapod-server.dir/src/estimator.cpp.o: CMakeFiles/hexapod-server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build2/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/hexapod-server.dir/src/estimator.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/hexapod-server.dir/src/estimator.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/hexapod-server.dir/src/estimator.cpp.o -MF CMakeFiles/hexapod-server.dir/src/estimator.cpp.o.d -o CMakeFiles/hexapod-server.dir/src/estimator.cpp.o -c /home/volly/pico/hexapod/hexapod-server/src/estimator.cpp
 
 CMakeFiles/hexapod-server.dir/src/estimator.cpp.i: cmake_force
@@ -100,7 +100,7 @@ CMakeFiles/hexapod-server.dir/src/estimator.cpp.s: cmake_force
 CMakeFiles/hexapod-server.dir/src/gait_scheduler.cpp.o: CMakeFiles/hexapod-server.dir/flags.make
 CMakeFiles/hexapod-server.dir/src/gait_scheduler.cpp.o: /home/volly/pico/hexapod/hexapod-server/src/gait_scheduler.cpp
 CMakeFiles/hexapod-server.dir/src/gait_scheduler.cpp.o: CMakeFiles/hexapod-server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build2/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/hexapod-server.dir/src/gait_scheduler.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/hexapod-server.dir/src/gait_scheduler.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/hexapod-server.dir/src/gait_scheduler.cpp.o -MF CMakeFiles/hexapod-server.dir/src/gait_scheduler.cpp.o.d -o CMakeFiles/hexapod-server.dir/src/gait_scheduler.cpp.o -c /home/volly/pico/hexapod/hexapod-server/src/gait_scheduler.cpp
 
 CMakeFiles/hexapod-server.dir/src/gait_scheduler.cpp.i: cmake_force
@@ -114,7 +114,7 @@ CMakeFiles/hexapod-server.dir/src/gait_scheduler.cpp.s: cmake_force
 CMakeFiles/hexapod-server.dir/src/hardware_bridge.cpp.o: CMakeFiles/hexapod-server.dir/flags.make
 CMakeFiles/hexapod-server.dir/src/hardware_bridge.cpp.o: /home/volly/pico/hexapod/hexapod-server/src/hardware_bridge.cpp
 CMakeFiles/hexapod-server.dir/src/hardware_bridge.cpp.o: CMakeFiles/hexapod-server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build2/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/hexapod-server.dir/src/hardware_bridge.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/hexapod-server.dir/src/hardware_bridge.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/hexapod-server.dir/src/hardware_bridge.cpp.o -MF CMakeFiles/hexapod-server.dir/src/hardware_bridge.cpp.o.d -o CMakeFiles/hexapod-server.dir/src/hardware_bridge.cpp.o -c /home/volly/pico/hexapod/hexapod-server/src/hardware_bridge.cpp
 
 CMakeFiles/hexapod-server.dir/src/hardware_bridge.cpp.i: cmake_force
@@ -128,7 +128,7 @@ CMakeFiles/hexapod-server.dir/src/hardware_bridge.cpp.s: cmake_force
 CMakeFiles/hexapod-server.dir/src/hexapod-server.cpp.o: CMakeFiles/hexapod-server.dir/flags.make
 CMakeFiles/hexapod-server.dir/src/hexapod-server.cpp.o: /home/volly/pico/hexapod/hexapod-server/src/hexapod-server.cpp
 CMakeFiles/hexapod-server.dir/src/hexapod-server.cpp.o: CMakeFiles/hexapod-server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build2/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/hexapod-server.dir/src/hexapod-server.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/hexapod-server.dir/src/hexapod-server.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/hexapod-server.dir/src/hexapod-server.cpp.o -MF CMakeFiles/hexapod-server.dir/src/hexapod-server.cpp.o.d -o CMakeFiles/hexapod-server.dir/src/hexapod-server.cpp.o -c /home/volly/pico/hexapod/hexapod-server/src/hexapod-server.cpp
 
 CMakeFiles/hexapod-server.dir/src/hexapod-server.cpp.i: cmake_force
@@ -142,7 +142,7 @@ CMakeFiles/hexapod-server.dir/src/hexapod-server.cpp.s: cmake_force
 CMakeFiles/hexapod-server.dir/src/leg_fk.cpp.o: CMakeFiles/hexapod-server.dir/flags.make
 CMakeFiles/hexapod-server.dir/src/leg_fk.cpp.o: /home/volly/pico/hexapod/hexapod-server/src/leg_fk.cpp
 CMakeFiles/hexapod-server.dir/src/leg_fk.cpp.o: CMakeFiles/hexapod-server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build2/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/hexapod-server.dir/src/leg_fk.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/hexapod-server.dir/src/leg_fk.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/hexapod-server.dir/src/leg_fk.cpp.o -MF CMakeFiles/hexapod-server.dir/src/leg_fk.cpp.o.d -o CMakeFiles/hexapod-server.dir/src/leg_fk.cpp.o -c /home/volly/pico/hexapod/hexapod-server/src/leg_fk.cpp
 
 CMakeFiles/hexapod-server.dir/src/leg_fk.cpp.i: cmake_force
@@ -156,7 +156,7 @@ CMakeFiles/hexapod-server.dir/src/leg_fk.cpp.s: cmake_force
 CMakeFiles/hexapod-server.dir/src/leg_ik.cpp.o: CMakeFiles/hexapod-server.dir/flags.make
 CMakeFiles/hexapod-server.dir/src/leg_ik.cpp.o: /home/volly/pico/hexapod/hexapod-server/src/leg_ik.cpp
 CMakeFiles/hexapod-server.dir/src/leg_ik.cpp.o: CMakeFiles/hexapod-server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build2/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/hexapod-server.dir/src/leg_ik.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/hexapod-server.dir/src/leg_ik.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/hexapod-server.dir/src/leg_ik.cpp.o -MF CMakeFiles/hexapod-server.dir/src/leg_ik.cpp.o.d -o CMakeFiles/hexapod-server.dir/src/leg_ik.cpp.o -c /home/volly/pico/hexapod/hexapod-server/src/leg_ik.cpp
 
 CMakeFiles/hexapod-server.dir/src/leg_ik.cpp.i: cmake_force
@@ -170,7 +170,7 @@ CMakeFiles/hexapod-server.dir/src/leg_ik.cpp.s: cmake_force
 CMakeFiles/hexapod-server.dir/src/robot_control.cpp.o: CMakeFiles/hexapod-server.dir/flags.make
 CMakeFiles/hexapod-server.dir/src/robot_control.cpp.o: /home/volly/pico/hexapod/hexapod-server/src/robot_control.cpp
 CMakeFiles/hexapod-server.dir/src/robot_control.cpp.o: CMakeFiles/hexapod-server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build2/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/hexapod-server.dir/src/robot_control.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/hexapod-server.dir/src/robot_control.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/hexapod-server.dir/src/robot_control.cpp.o -MF CMakeFiles/hexapod-server.dir/src/robot_control.cpp.o.d -o CMakeFiles/hexapod-server.dir/src/robot_control.cpp.o -c /home/volly/pico/hexapod/hexapod-server/src/robot_control.cpp
 
 CMakeFiles/hexapod-server.dir/src/robot_control.cpp.i: cmake_force
@@ -184,7 +184,7 @@ CMakeFiles/hexapod-server.dir/src/robot_control.cpp.s: cmake_force
 CMakeFiles/hexapod-server.dir/src/safety_supervisor.cpp.o: CMakeFiles/hexapod-server.dir/flags.make
 CMakeFiles/hexapod-server.dir/src/safety_supervisor.cpp.o: /home/volly/pico/hexapod/hexapod-server/src/safety_supervisor.cpp
 CMakeFiles/hexapod-server.dir/src/safety_supervisor.cpp.o: CMakeFiles/hexapod-server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build2/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object CMakeFiles/hexapod-server.dir/src/safety_supervisor.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object CMakeFiles/hexapod-server.dir/src/safety_supervisor.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/hexapod-server.dir/src/safety_supervisor.cpp.o -MF CMakeFiles/hexapod-server.dir/src/safety_supervisor.cpp.o.d -o CMakeFiles/hexapod-server.dir/src/safety_supervisor.cpp.o -c /home/volly/pico/hexapod/hexapod-server/src/safety_supervisor.cpp
 
 CMakeFiles/hexapod-server.dir/src/safety_supervisor.cpp.i: cmake_force
@@ -198,7 +198,7 @@ CMakeFiles/hexapod-server.dir/src/safety_supervisor.cpp.s: cmake_force
 CMakeFiles/hexapod-server.dir/src/serialCommsServer.cpp.o: CMakeFiles/hexapod-server.dir/flags.make
 CMakeFiles/hexapod-server.dir/src/serialCommsServer.cpp.o: /home/volly/pico/hexapod/hexapod-server/src/serialCommsServer.cpp
 CMakeFiles/hexapod-server.dir/src/serialCommsServer.cpp.o: CMakeFiles/hexapod-server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build2/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building CXX object CMakeFiles/hexapod-server.dir/src/serialCommsServer.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building CXX object CMakeFiles/hexapod-server.dir/src/serialCommsServer.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/hexapod-server.dir/src/serialCommsServer.cpp.o -MF CMakeFiles/hexapod-server.dir/src/serialCommsServer.cpp.o.d -o CMakeFiles/hexapod-server.dir/src/serialCommsServer.cpp.o -c /home/volly/pico/hexapod/hexapod-server/src/serialCommsServer.cpp
 
 CMakeFiles/hexapod-server.dir/src/serialCommsServer.cpp.i: cmake_force
@@ -212,7 +212,7 @@ CMakeFiles/hexapod-server.dir/src/serialCommsServer.cpp.s: cmake_force
 CMakeFiles/hexapod-server.dir/home/volly/pico/hexapod/hexapod-common/framing.cpp.o: CMakeFiles/hexapod-server.dir/flags.make
 CMakeFiles/hexapod-server.dir/home/volly/pico/hexapod/hexapod-common/framing.cpp.o: /home/volly/pico/hexapod/hexapod-common/framing.cpp
 CMakeFiles/hexapod-server.dir/home/volly/pico/hexapod/hexapod-common/framing.cpp.o: CMakeFiles/hexapod-server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build2/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building CXX object CMakeFiles/hexapod-server.dir/home/volly/pico/hexapod/hexapod-common/framing.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/volly/pico/hexapod/hexapod-server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building CXX object CMakeFiles/hexapod-server.dir/home/volly/pico/hexapod/hexapod-common/framing.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/hexapod-server.dir/home/volly/pico/hexapod/hexapod-common/framing.cpp.o -MF CMakeFiles/hexapod-server.dir/home/volly/pico/hexapod/hexapod-common/framing.cpp.o.d -o CMakeFiles/hexapod-server.dir/home/volly/pico/hexapod/hexapod-common/framing.cpp.o -c /home/volly/pico/hexapod/hexapod-common/framing.cpp
 
 CMakeFiles/hexapod-server.dir/home/volly/pico/hexapod/hexapod-common/framing.cpp.i: cmake_force
@@ -253,8 +253,9 @@ hexapod-server: CMakeFiles/hexapod-server.dir/src/serialCommsServer.cpp.o
 hexapod-server: CMakeFiles/hexapod-server.dir/home/volly/pico/hexapod/hexapod-common/framing.cpp.o
 hexapod-server: CMakeFiles/hexapod-server.dir/build.make
 hexapod-server: /usr/local/lib/libCppLinuxSerial.a
+hexapod-server: /usr/local/lib/libtoml11.a
 hexapod-server: CMakeFiles/hexapod-server.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/volly/pico/hexapod/hexapod-server/build2/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Linking CXX executable hexapod-server"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/volly/pico/hexapod/hexapod-server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Linking CXX executable hexapod-server"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/hexapod-server.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
@@ -266,6 +267,6 @@ CMakeFiles/hexapod-server.dir/clean:
 .PHONY : CMakeFiles/hexapod-server.dir/clean
 
 CMakeFiles/hexapod-server.dir/depend:
-	cd /home/volly/pico/hexapod/hexapod-server/build2 && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/volly/pico/hexapod/hexapod-server /home/volly/pico/hexapod/hexapod-server /home/volly/pico/hexapod/hexapod-server/build2 /home/volly/pico/hexapod/hexapod-server/build2 /home/volly/pico/hexapod/hexapod-server/build2/CMakeFiles/hexapod-server.dir/DependInfo.cmake --color=$(COLOR)
+	cd /home/volly/pico/hexapod/hexapod-server/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/volly/pico/hexapod/hexapod-server /home/volly/pico/hexapod/hexapod-server /home/volly/pico/hexapod/hexapod-server/build /home/volly/pico/hexapod/hexapod-server/build /home/volly/pico/hexapod/hexapod-server/build/CMakeFiles/hexapod-server.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/hexapod-server.dir/depend
 

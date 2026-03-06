@@ -3,7 +3,7 @@
 
 # Relative path conversion top directories.
 set(CMAKE_RELATIVE_PATH_TOP_SOURCE "/home/volly/pico/hexapod/hexapod-server")
-set(CMAKE_RELATIVE_PATH_TOP_BINARY "/home/volly/pico/hexapod/hexapod-server/build2")
+set(CMAKE_RELATIVE_PATH_TOP_BINARY "/home/volly/pico/hexapod/hexapod-server/build")
 
 # Force unix paths in dependencies.
 set(CMAKE_FORCE_UNIX_PATHS 1)

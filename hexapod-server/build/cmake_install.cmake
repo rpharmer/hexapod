@@ -50,5 +50,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/volly/pico/hexapod/hexapod-server/build2/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/volly/pico/hexapod/hexapod-server/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
