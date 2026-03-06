@@ -55,8 +55,9 @@ install(FILES
 )
 
 # Write Shell script to flash pico and give it execute permissions
-file(WRITE "${CMAKE_BINARY_DIR}/${FLASH_SCRIPT}" "#!/bin/bash\n\nopenocd -f interface/linuxgpiod-new.cfg -f target/rp2040.cfg -c \"program ${CMAKE_CURRENT_BINARY_DIR}/${NAME}.elf verify reset exit\"\n")
-file(CHMOD "${CMAKE_CURRENT_BINARY_DIR}/${FLASH_SCRIPT}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+set(FLASH_SCRIPT_PATH "${CMAKE_CURRENT_BINARY_DIR}/${FLASH_SCRIPT}")
+file(WRITE "${FLASH_SCRIPT_PATH}" "#!/bin/bash\n\nopenocd -f interface/linuxgpiod-new.cfg -f target/rp2040.cfg -c \"program ${CMAKE_CURRENT_BINARY_DIR}/${NAME}.elf verify reset exit\"\n")
+file(CHMOD "${FLASH_SCRIPT_PATH}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 
 # upload executable to pico
 add_custom_target(
