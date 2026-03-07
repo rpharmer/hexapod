@@ -14,6 +14,24 @@ set(BUILD_TESTS OFF CACHE BOOL "Disable project-specific tests" FORCE)
 find_package(CppLinuxSerial REQUIRED)
 find_package(toml11 REQUIRED)
 
+# Some CppLinuxSerial packages export a non-existent "/CppLinuxSerial" include
+# directory in INTERFACE_INCLUDE_DIRECTORIES, which causes configuration to fail
+# before build begins. Strip any include entries that do not exist so the imported
+# target remains usable across environments.
+get_target_property(CPPLINUXSERIAL_INTERFACE_INCLUDES CppLinuxSerial::CppLinuxSerial INTERFACE_INCLUDE_DIRECTORIES)
+if(CPPLINUXSERIAL_INTERFACE_INCLUDES)
+    set(CPPLINUXSERIAL_VALID_INCLUDES "")
+    foreach(CPPLINUXSERIAL_INCLUDE_DIR IN LISTS CPPLINUXSERIAL_INTERFACE_INCLUDES)
+        if(EXISTS "${CPPLINUXSERIAL_INCLUDE_DIR}")
+            list(APPEND CPPLINUXSERIAL_VALID_INCLUDES "${CPPLINUXSERIAL_INCLUDE_DIR}")
+        endif()
+    endforeach()
+
+    if(CPPLINUXSERIAL_VALID_INCLUDES)
+        set_property(TARGET CppLinuxSerial::CppLinuxSerial PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${CPPLINUXSERIAL_VALID_INCLUDES}")
+    endif()
+endif()
+
 add_executable(hexapod-server
     src/body_controller.cpp
     src/estimator.cpp
