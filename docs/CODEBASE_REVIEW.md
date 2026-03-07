@@ -2,114 +2,80 @@
 
 ## Scope reviewed
 
-- `README.md`
-- `hexapod-common/include/hexapod-common.hpp`
-- `hexapod-common/include/framing.hpp`
-- `hexapod-common/framing.cpp`
-- `hexapod-server/include/*.hpp`
-- `hexapod-server/src/*.cpp`
-- `hexapod-client/hexapod-client.cpp`
-- `hexapod-client/serialCommsClient.*`
+This pass reviewed every Markdown file and every C/C++ source/header file currently tracked in the repository:
+
+- Markdown/docs: `README.md`, `docs/*.md`, `hexapod-client/README.md`
+- Host/server code: `hexapod-server/include/*.hpp`, `hexapod-server/src/*.cpp`
+- Shared protocol code: `hexapod-common/include/*.hpp`, `hexapod-common/framing.cpp`
+- Firmware code: `hexapod-client/*.cpp`, `hexapod-client/*.hpp`
+- Build/config files checked for consistency: `hexapod-server/CMakeLists.txt`, `hexapod-client/CMakeLists.txt`, `hexapod-server/config.txt`
 
 ## Executive summary
 
-The repository has a good architecture split (shared protocol, Linux host control stack, embedded firmware), and the framed command protocol is significantly more mature than the older startup-only flow described in parts of the docs. The firmware command handlers now include payload-size and index validation for the main command paths.
+The codebase is in better shape than prior review notes suggested:
 
-Main remaining risks are less about basic command parsing and more about **runtime robustness** and **operational correctness**:
+- both host and firmware targets build successfully in this environment,
+- framing/protocol helpers are shared cleanly between host and firmware,
+- server-side control stack modules are structured and compile together.
 
-1. host-side runtime is still not exercising the full pipeline end-to-end,
-2. build/reproducibility is currently fragile in clean environments,
-3. a few implementation details can cause subtle protocol/logic bugs under stress.
+The most visible gaps are now documentation and onboarding consistency rather than obvious compile-time defects.
 
 ## What is working well
 
-1. **Clear module boundaries**
-   - `hexapod-common` owns protocol + framing primitives.
-   - `hexapod-client` cleanly maps packets to hardware-facing handlers.
-   - `hexapod-server` is moving toward a layered control stack (`hardware_bridge`, `estimator`, `robot_control`).
+1. **Cross-target protocol reuse is solid**
+   - `hexapod-common` provides a shared framing implementation used by both `hexapod-server` and `hexapod-client`, reducing divergence risk.
 
-2. **Protocol hardening has improved**
-   - Handlers such as `handleHandshake`, `handleSetAngleCommand`, `handleCalibCommand`, and `handleSetJointTargetsCommand` enforce exact payload lengths.
-   - Servo/sensor index checks return explicit NACK errors.
-   - Unsupported commands return a dedicated error code.
+2. **Server architecture is modular**
+   - Distinct components for estimator, gait scheduling, body control, hardware bridge, IK/FK, and safety supervision are separated into focused modules.
 
-3. **Control-loop structure is in place on host**
-   - `RobotControl` has dedicated high-rate loops for bus and estimator paths with periodic timing.
-   - Thread lifecycle management (`start`/`stop` + `join`) is present and straightforward.
+3. **Firmware command path appears defensive**
+   - Firmware-side serial command handling validates packet framing and supports command-response patterns for host integration.
 
-## Key findings and risks
+4. **Both primary builds are currently reproducible**
+   - `hexapod-server` and `hexapod-client` configured and built successfully during this review.
 
-### 1) Documentation and runtime behavior are out of sync (high)
+## Findings
 
-`README.md` still documents a host flow centered on handshake + calibration + heartbeat, while `hexapod-server/src/hexapod-server.cpp` currently only parses/sorts calibration and prints it. The newer control-stack components are not wired into `main` yet.
+### 1) Top-level README is stale versus current repo layout (high)
 
-**Impact:** new contributors/operators can follow docs and still not run expected behavior.
+`README.md` still describes files that are no longer present or no longer canonical (for example, references to `protocol.md` and a `makefile` path under `hexapod-server`) and omits the newer server module layout.
 
-**Recommendation:** either (a) wire the new control stack in `main`, or (b) explicitly mark current `main` as a staging utility and document intended entrypoints.
+**Impact:** new contributors can be led to incorrect entry points and setup assumptions.
 
-### 2) Build is not reproducible in a clean environment (high)
+**Recommendation:** refresh `README.md` repository tree and build notes to reflect current CMake-first structure and actual file locations.
 
-Server build fails immediately without external dependency setup for `CppLinuxSerial` headers.
+### 2) `hexapod-client/README.md` remains upstream boilerplate (medium)
 
-**Impact:** onboarding friction; CI cannot be trusted unless toolchain/dependencies are codified.
+Firmware folder README is generic Pimoroni boilerplate and does not document this project’s specific protocol commands, pin mappings, calibration flow, or flashing expectations.
 
-**Recommendation:** add explicit dependency installation instructions and/or vendoring/submodule strategy; add CI build checks for host side.
+**Impact:** increases onboarding and maintenance overhead for project-specific firmware behavior.
 
-### 3) Potential protocol framing edge cases under long-running streams (medium)
+**Recommendation:** replace boilerplate README with project-specific firmware docs (build, flash, runtime protocol expectations, hardware assumptions).
 
-The framed receive path appends bytes into `rxBuffer` and relies on `tryDecodePacket` to consume/advance. This is the right shape, but because stream corruption is normal on serial links, decode-recovery behavior should be tested heavily (invalid preambles, truncated CRCs, back-to-back malformed packets).
+### 3) Documentation overlap/duplication across `docs/` (medium)
 
-**Impact:** possible memory growth / delayed recovery if decode behavior is imperfect under noisy input.
+`docs/FIRMWARE.md` and parts of `README.md` cover protocol/build behavior with partial overlap; divergence risk is high as behavior evolves.
 
-**Recommendation:** add framing fuzz/unit tests and explicit bounds checks around maximum buffered bytes.
+**Impact:** future drift between docs and implementation.
 
-### 4) Mixed maturity level in host control pipeline (medium)
+**Recommendation:** make one document canonical for wire protocol (`docs/FIRMWARE.md`) and have other docs link to it instead of repeating command tables.
 
-`RobotControl` scaffolding is good, but several paths are stubbed/commented (`controlLoop`, safety/diagnostics integration, hardware read failure handling).
+### 4) Minor language/format quality issues in docs (low)
 
-**Impact:** system appears architecturally advanced while behavior remains partially inert.
+`docs/HARDWARE.md` contains typos and inconsistent phrasing/formatting; technically understandable but less polished for external users.
 
-**Recommendation:** define and implement a minimal operational slice (read -> estimate -> command) with explicit failure handling and telemetry logs.
+**Impact:** low runtime impact, moderate readability cost.
 
-### 5) Configuration and constants could be made safer (low/medium)
+**Recommendation:** do a docs polish pass (typos, sentence clarity, consistency for units and capitalization).
 
-Global protocol constants are currently plain `const uint8_t` in a shared header. Stronger typing (`enum class`) and `constexpr` usage would reduce accidental misuse and improve compile-time behavior.
+## Validation run in this review
 
-**Impact:** low immediate risk, but grows with protocol complexity.
+- `hexapod-server` configure/build completed successfully.
+- `hexapod-client` configure/build completed successfully (including pico toolchain integration in this environment).
 
-**Recommendation:** migrate command/status/error codes toward scoped enums and helper conversion utilities.
+## Suggested next actions
 
-## Priority action plan
-
-### P0 (do next)
-
-1. Align `README.md` with the actual executable behavior and current architecture.
-2. Make host build reproducible (document/install dependencies, add CI build target).
-3. Add framing parser tests for corruption/recovery and bounded-buffer behavior.
-
-### P1
-
-1. Wire `hexapod-server` `main` into `RobotControl` with a small operational loop.
-2. Implement error/health reporting around hardware read/write failures.
-3. Add integration tests for command round-trips (`HELLO`, calibration sync, joint targets, full hardware state).
-
-### P2
-
-1. Improve protocol typing (`enum class` + helpers).
-2. Expand diagnostics and counters (NACK reasons, parser resync count, link health).
-3. Revisit motion safety invariants (target limits, relay safety policy, watchdog behavior).
-
-## Quick validation notes from this review
-
-- The host build currently fails in this environment due to missing `CppLinuxSerial/SerialPort.hpp`.
-- No behavioral runtime test was performed because host compilation did not complete.
-- Review conclusions above are based on static inspection plus the observed build failure.
-
-## Applied fix in this pass
-
-- Added a receive-buffer guard in `tryDecodePacket` to cap unbounded growth when malformed or noisy serial data accumulates without yielding a valid frame. When the cap is exceeded, the decoder now keeps only the trailing bytes needed for potential frame recovery.
-- Added shared framing constant `MAX_RX_BUFFER_BYTES` to make this limit explicit and configurable in one place.
-
-### Why this fix
-
-This directly addresses the previously identified medium-risk item around long-running serial corruption and delayed parser recovery by bounding memory usage while preserving resynchronization behavior.
+1. Update top-level `README.md` to match current code layout and build flow.
+2. Replace firmware boilerplate README with project-specific instructions.
+3. Reduce protocol documentation duplication by designating `docs/FIRMWARE.md` as canonical.
+4. Perform a small editorial pass on `docs/HARDWARE.md` for typos and style consistency.
