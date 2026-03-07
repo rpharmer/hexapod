@@ -16,10 +16,10 @@ uint16_t crc16_ccitt(const uint8_t* data, size_t len) {
 
 std::vector<uint8_t> encodePacket(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload) {
     constexpr size_t kHeaderBytesWithoutPayload = 3; // SEQ(2) + CMD
-    constexpr size_t kMaxPayloadSize = 0xFF - kHeaderBytesWithoutPayload;
-    if (payload.size() > kMaxPayloadSize) {
-        throw std::invalid_argument("payload too large for 8-bit packet length");
-    }
+    //constexpr size_t kMaxPayloadSize = 0xFF - kHeaderBytesWithoutPayload;
+    //if (payload.size() > kMaxPayloadSize) {
+    //    throw std::invalid_argument("payload too large for 8-bit packet length");
+    //}
 
     std::vector<uint8_t> frame;
     const uint8_t len = static_cast<uint8_t>(kHeaderBytesWithoutPayload + payload.size());
@@ -98,8 +98,8 @@ bool tryDecodePacket(std::vector<uint8_t>& rxBuffer, DecodedPacket& out) {
 }
 
 // Generic inline template to get a specific byte from any integer type
-template <typename T>
-inline uint8_t getByte(T value, size_t index) {
+/*template <typename T>
+inline uint8_t getByte(T value, size_t index){
     static_assert(std::is_integral<T>::value, "T must be an integral type");
 
     using UnsignedT = typename std::make_unsigned<T>::type;
@@ -113,4 +113,4 @@ inline uint8_t getByte(T value, size_t index) {
     return static_cast<uint8_t>(
         (static_cast<UnsignedT>(value) >> (index * 8)) & 0xFF
     );
-}
+}*/

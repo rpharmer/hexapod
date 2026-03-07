@@ -49,7 +49,7 @@ inline bool read_scalar(const std::vector<uint8_t>& payload, std::size_t& offset
     return true;
 }
 
-template <typename T>
-inline uint8_t getByte(T value, size_t index);
+//template <typename T>
+//inline uint8_t getByte(T value, size_t index);
 
 #endif

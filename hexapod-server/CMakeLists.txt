@@ -8,28 +8,6 @@ set(BUILD_TESTS OFF CACHE BOOL "Disable project-specific tests" FORCE)
 find_package(CppLinuxSerial QUIET)
 find_package(toml11 QUIET)
 
-if(NOT CppLinuxSerial_FOUND)
-    FetchContent_Declare(
-        CppLinuxSerial
-        GIT_REPOSITORY https://github.com/gbmhunter/CppLinuxSerial.git
-        GIT_TAG v2.8.5
-    )
-    FetchContent_MakeAvailable(CppLinuxSerial)
-
-    if(TARGET CppLinuxSerial AND NOT TARGET CppLinuxSerial::CppLinuxSerial)
-        add_library(CppLinuxSerial::CppLinuxSerial ALIAS CppLinuxSerial)
-    endif()
-endif()
-
-if(NOT toml11_FOUND)
-    FetchContent_Declare(
-        toml11
-        GIT_REPOSITORY https://github.com/ToruNiina/toml11.git
-        GIT_TAG v4.4.0
-    )
-    FetchContent_MakeAvailable(toml11)
-endif()
-
 project(hexapod-server LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
