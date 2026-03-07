@@ -97,7 +97,7 @@ cmake ..
 cmake --build .
 ```
 
-Setup SDKs/dependencies only in `hexapod-client/build` (without building `hexapod-client`):
+Run setup/prebuild in `hexapod-client/build` (this now prebuilds SDK/tool dependencies and firmware object files):
 
 ```bash
 cd hexapod-client
@@ -105,10 +105,19 @@ cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON
 cmake --build build --target setup-sdks
 ```
 
-Build `hexapod-client.elf` after setup/prebuild is complete:
+Build `hexapod-client.elf` after setup/prebuild is complete (typically incremental/no-op if setup already ran):
 
 ```bash
 cd hexapod-client
+cmake --build build --target hexapod-client
+```
+
+Quick verification flow (prebuild/setup + compile):
+
+```bash
+cd hexapod-client
+cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON
+cmake --build build --target setup-sdks
 cmake --build build --target hexapod-client
 ```
 
