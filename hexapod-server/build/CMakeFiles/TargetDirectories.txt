@@ -1,0 +1,3 @@
+/home/volly/pico/hexapod/hexapod-server/build/CMakeFiles/hexapod-server.dir
+/home/volly/pico/hexapod/hexapod-server/build/CMakeFiles/edit_cache.dir
+/home/volly/pico/hexapod/hexapod-server/build/CMakeFiles/rebuild_cache.dir
