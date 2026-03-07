@@ -105,6 +105,13 @@ cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON
 cmake --build build --target setup-sdks
 ```
 
+Build `hexapod-client.elf` after setup/prebuild is complete:
+
+```bash
+cd hexapod-client
+cmake --build build --target hexapod-client
+```
+
 Flash:
 
 - Copy generated `.uf2` to Pico mass-storage device, or
