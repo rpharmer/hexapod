@@ -63,6 +63,9 @@ Build:
 
 ```bash
 cd hexapod-server
+mkdir build
+cd build
+cmake ..
 make
 ```
 
