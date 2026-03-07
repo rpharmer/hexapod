@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.12)
 # Change your executable name to something creative!
 set(NAME hexapod-client) # <-- Name your project/executable here!
 set(FLASH_SCRIPT program-pico.sh)
-option(HEXAPOD_CLIENT_SETUP_SDKS_ONLY "Populate/prebuild SDK dependencies without building firmware" OFF)
+option(HEXAPOD_CLIENT_SETUP_SDKS_ONLY "Populate/prebuild SDK dependencies and firmware object files" OFF)
 
 include(pico_sdk_import.cmake)
 include(pimoroni_pico_import.cmake)
@@ -73,6 +73,7 @@ add_custom_target(
 )
 
 set(HEXAPOD_CLIENT_SETUP_DEPENDENCIES
+    ${NAME}
     pimoroni_i2c
     servo2040
     button
