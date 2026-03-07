@@ -123,6 +123,15 @@ cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF
 cmake --build build --target hexapod-client
 ```
 
+Quick verification flow (prebuild/setup + compile):
+
+```bash
+cd hexapod-client
+cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON
+cmake --build build --target setup-sdks
+cmake --build build --target hexapod-client
+```
+
 Flash:
 
 - Copy generated `.uf2` to Pico mass-storage device, or
