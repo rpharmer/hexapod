@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.12)
 # Change your executable name to something creative!
 set(NAME hexapod-client) # <-- Name your project/executable here!
 set(FLASH_SCRIPT program-pico.sh)
-
+option(HEXAPOD_CLIENT_SETUP_SDKS_ONLY "Populate/prebuild SDK dependencies without building firmware" OFF)
 
 include(pico_sdk_import.cmake)
 include(pimoroni_pico_import.cmake)
@@ -16,8 +16,14 @@ set(CMAKE_CXX_STANDARD 17)
 # Initialize the SDK
 pico_sdk_init()
 
+set(HEXAPOD_CLIENT_EXCLUDE_FROM_ALL)
+if (HEXAPOD_CLIENT_SETUP_SDKS_ONLY)
+    set(HEXAPOD_CLIENT_EXCLUDE_FROM_ALL EXCLUDE_FROM_ALL)
+    message(STATUS "HEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON: firmware target will be configured but excluded from default build")
+endif ()
+
 # Add your source files
-add_executable(${NAME}
+add_executable(${NAME} ${HEXAPOD_CLIENT_EXCLUDE_FROM_ALL}
     hexapod-client.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/framing.cpp
     serialCommsClient.cpp # <-- Add source files here!
@@ -64,6 +70,25 @@ add_custom_target(
     program-pico
     COMMAND "${CMAKE_CURRENT_BINARY_DIR}/${FLASH_SCRIPT}"
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+set(HEXAPOD_CLIENT_SETUP_DEPENDENCIES
+    pimoroni_i2c
+    servo2040
+    button
+    analogmux
+    analog
+)
+if (TARGET pioasmBuild)
+    list(APPEND HEXAPOD_CLIENT_SETUP_DEPENDENCIES pioasmBuild)
+endif ()
+if (TARGET picotoolBuild)
+    list(APPEND HEXAPOD_CLIENT_SETUP_DEPENDENCIES picotoolBuild)
+endif ()
+
+add_custom_target(setup-sdks
+    DEPENDS ${HEXAPOD_CLIENT_SETUP_DEPENDENCIES}
+    COMMENT "Populate and prebuild SDK/tool dependencies required by ${NAME}."
 )
 
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
