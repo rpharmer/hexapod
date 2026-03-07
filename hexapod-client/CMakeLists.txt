@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.12)
 # Change your executable name to something creative!
 set(NAME hexapod-client) # <-- Name your project/executable here!
 set(FLASH_SCRIPT program-pico.sh)
-option(HEXAPOD_CLIENT_SETUP_SDKS_ONLY "Populate/prebuild SDK dependencies without building firmware" OFF)
+option(HEXAPOD_CLIENT_SETUP_SDKS_ONLY "Populate/prebuild SDK and Pimoroni dependency objects without compiling project firmware sources" OFF)
 
 include(pico_sdk_import.cmake)
 include(pimoroni_pico_import.cmake)
@@ -17,16 +17,22 @@ set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
 set(HEXAPOD_CLIENT_EXCLUDE_FROM_ALL)
+set(HEXAPOD_CLIENT_SOURCES
+    hexapod-client.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/framing.cpp
+    serialCommsClient.cpp # <-- Add source files here!
+)
 if (HEXAPOD_CLIENT_SETUP_SDKS_ONLY)
     set(HEXAPOD_CLIENT_EXCLUDE_FROM_ALL EXCLUDE_FROM_ALL)
-    message(STATUS "HEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON: firmware target will be configured but excluded from default build")
+    message(STATUS "HEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON: prebuild dependency objects for ${NAME} without compiling project firmware sources")
+    set(HEXAPOD_CLIENT_SETUP_STUB "${CMAKE_CURRENT_BINARY_DIR}/hexapod-client-setup-stub.cpp")
+    file(WRITE "${HEXAPOD_CLIENT_SETUP_STUB}" "int main() { return 0; }\n")
+    set(HEXAPOD_CLIENT_SOURCES "${HEXAPOD_CLIENT_SETUP_STUB}")
 endif ()
 
 # Add your source files
 add_executable(${NAME} ${HEXAPOD_CLIENT_EXCLUDE_FROM_ALL}
-    hexapod-client.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/framing.cpp
-    serialCommsClient.cpp # <-- Add source files here!
+    ${HEXAPOD_CLIENT_SOURCES}
 )
 
 # Specify the directory containing hexapod-common header files
@@ -73,6 +79,7 @@ add_custom_target(
 )
 
 set(HEXAPOD_CLIENT_SETUP_DEPENDENCIES
+    ${NAME}
     pimoroni_i2c
     servo2040
     button

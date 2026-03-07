@@ -97,7 +97,7 @@ cmake ..
 cmake --build .
 ```
 
-Setup SDKs/dependencies only in `hexapod-client/build` (without building `hexapod-client`):
+Run setup/prebuild in `hexapod-client/build` (this prebuilds Pico SDK/Pimoroni dependency objects for `hexapod-client` without compiling project firmware sources):
 
 ```bash
 cd hexapod-client
@@ -105,10 +105,21 @@ cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON
 cmake --build build --target setup-sdks
 ```
 
-Build `hexapod-client.elf` after setup/prebuild is complete:
+Build `hexapod-client.elf` after setup/prebuild is complete (reconfigure with `HEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF` first):
 
 ```bash
 cd hexapod-client
+cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF
+cmake --build build --target hexapod-client
+```
+
+Quick verification flow (setup prebuild, then full firmware compile):
+
+```bash
+cd hexapod-client
+cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON
+cmake --build build --target setup-sdks
+cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF
 cmake --build build --target hexapod-client
 ```
 
