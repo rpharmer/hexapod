@@ -1,3 +1,0 @@
-[submodule "hexapod-server/CppLinuxSerial"]
-	path = hexapod-server/CppLinuxSerial
-	url = https://github.com/gbmhunter/CppLinuxSerial.git
