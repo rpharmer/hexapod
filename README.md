@@ -97,16 +97,6 @@ cmake ..
 cmake --build .
 ```
 
-Setup SDKs only (skip creating/building the firmware target):
-
-```bash
-cd hexapod-client
-mkdir -p build-sdk-setup
-cd build-sdk-setup
-cmake -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON ..
-cmake --build . --target setup-sdks
-```
-
 Flash:
 
 - Copy generated `.uf2` to Pico mass-storage device, or
