@@ -113,6 +113,7 @@ void RobotControl::controlLoop() {
 
         joint_targets_.write(joint_targets);
 
+<<<<<<< HEAD
         ControlStatus st{};
         st.active_mode = active_mode;
         st.estimator_valid = (est.timestamp_us != 0);
@@ -120,6 +121,15 @@ void RobotControl::controlLoop() {
         st.active_fault = safety_state.active_fault;
         st.loop_counter = ++loop_counter;
         status_.write(st);
+=======
+        ControlStatus st{};
+        st.active_mode = active_mode;
+        //st.estimator_valid = est.valid;
+        st.bus_ok = raw_state_.read().bus_ok;
+        st.active_fault = safety_state.active_fault;
+        st.loop_counter = ++loop_counter;
+        status_.write(st);
+>>>>>>> 6d415ad (detect if serial communication fails on server side and set bus_ok to false)
 
         (void)est;
 
