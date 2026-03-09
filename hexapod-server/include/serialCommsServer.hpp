@@ -2,6 +2,7 @@
 #ifndef HEXAPOD_COMMS_SERVER_H
 #define HEXAPOD_COMMS_SERVER_H
 
+#include <cstddef>
 #include <CppLinuxSerial/SerialPort.hpp>
 #include "hexapod-common.hpp"
 #include "framing.hpp"
@@ -13,6 +14,10 @@ class SerialCommsServer : public SerialComms
 {
 private:
     SerialPort serialport;
+    std::vector<uint8_t> readBuffer;
+
+    int recv_bytes(void *data, std::size_t size);
+    void refill_read_buffer();
 public:
     
     static BaudRate int_to_baud_rate(int baud);
