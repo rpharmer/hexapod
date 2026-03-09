@@ -1,83 +1,161 @@
-# Pico C++ Boilerplate Project <!-- omit in toc -->
+# hexapod-client
 
-This project is intended as a starting point for working with the Pico SDK and Pimoroni Libraries in C++.
+Firmware for the **Pimoroni Servo 2040** that drives the hexapod’s 18 servos, reads onboard analog channels/sensors, controls a power relay pin, and exchanges framed packets with `hexapod-server` over USB serial.
 
-- [Before you start](#before-you-start)
-- [Preparing your build environment](#preparing-your-build-environment)
-- [Grab the Pimoroni libraries](#grab-the-pimoroni-libraries)
-- [Clone this boilerplate](#clone-this-boilerplate)
-- [Prepare Visual Studio Code](#prepare-visual-studio-code)
-- [Prepare your project](#prepare-your-project)
-- [Pick your LICENSE](#pick-your-license)
+## What this firmware does
 
-## Before you start
+- Initializes Servo 2040 peripherals and an 18-channel `ServoCluster`.
+- Applies per-servo pulse-width calibration for all joints.
+- Waits for a USB-serial host connection (with LED status animation while waiting).
+- Processes framed protocol commands defined in `hexapod-common`.
+- Supports both low-level and higher-level hardware queries (including a full hardware snapshot).
 
-It's easier if you make a `pico` directory or similar in which you keep the SDK, Pimoroni Libraries and your projects alongside each other. This makes it easier to include libraries.
+Primary source files:
 
-## Preparing your build environment
+- `hexapod-client.cpp`: main loop, command handlers, hardware I/O.
+- `serialCommsClient.cpp/.hpp`: USB serial transport implementation for the framed protocol.
+- `../hexapod-common/framing.cpp` and `../hexapod-common/include/hexapod-common.hpp`: shared framing + protocol constants.
 
-Install build requirements:
+## Repository assumptions
+
+This project expects the following layout (sibling directories):
+
+```text
+<workspace>/
+├── pico-sdk/
+├── pimoroni-pico/
+└── hexapod/
+    └── hexapod-client/
+```
+
+`pico_sdk_import.cmake` and `pimoroni_pico_import.cmake` are configured with this layout in mind.
+
+## Prerequisites
+
+Install build tools:
 
 ```bash
 sudo apt update
-sudo apt install cmake gcc-arm-none-eabi build-essential
+sudo apt install -y cmake gcc-arm-none-eabi build-essential
 ```
 
-And the Pico SDK:
+Clone SDK dependencies (if not already installed):
 
-```
+```bash
 git clone https://github.com/raspberrypi/pico-sdk
-cd pico-sdk
-git submodule update --init
-export PICO_SDK_PATH=`pwd`
-cd ../
-```
+git -C pico-sdk submodule update --init
 
-The `PICO_SDK_PATH` set above will only last the duration of your session.
-
-You should should ensure your `PICO_SDK_PATH` environment variable is set by `~/.profile`:
-
-```
-export PICO_SDK_PATH="/path/to/pico-sdk"
-```
-
-## Grab the Pimoroni libraries
-
-```
 git clone https://github.com/pimoroni/pimoroni-pico
 ```
 
-## Clone this boilerplate
+Set SDK path (recommended):
 
+```bash
+export PICO_SDK_PATH="/absolute/path/to/pico-sdk"
 ```
-git clone https://github.com/pimoroni/pico-boilerplate
-cd pico-boilerplate
+
+## Build
+
+From `hexapod-client/`:
+
+### 1) Optional dependency prebuild
+
+This mode is useful to populate/prebuild SDK and Pimoroni dependency objects without compiling firmware sources.
+
+```bash
+cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON
+cmake --build build --target setup-sdks
 ```
 
-If you have not or don't want to set `PICO_SDK_PATH` you can edit `.vscode/settings.json` to pass the path directly to CMake.
+### 2) Full firmware build
 
-## Prepare Visual Studio Code
+```bash
+cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF
+cmake --build build --target hexapod-client
+```
 
-Open VS Code and hit `Ctrl+Shift+P`.
+Build outputs are generated under `build/`, including:
 
-Type `Install` and select `Extensions: Install Extensions`.
+- `hexapod-client.elf`
+- `hexapod-client.uf2`
+- `hexapod-client.hex`
 
-Make sure you install:
+## Flashing
 
-1. C/C++
-2. CMake
-3. CMake Tools
-4. Cortex-Debug (optional: for debugging via a Picoprobe or Pi GPIO)
-5. Markdown All in One (recommended: for preparing your own README.md)
+### UF2 drag-and-drop
 
-## Prepare your project
+1. Hold BOOTSEL while connecting the Pico/Servo 2040.
+2. A mass-storage device appears.
+3. Copy `build/hexapod-client.uf2` to that device.
 
-Edit `CMakeLists.txt` and follow the instructions, you should make sure you:
+### OpenOCD custom target
 
-1. edit your project name
-2. include the libraries you need
-2. link the libraries to your project
+A convenience target is generated:
 
-## Pick your LICENSE
+```bash
+cmake --build build --target program-pico
+```
 
-We've included a copy of BSD 3-Clause License to match that used in Raspberry Pi's Pico SDK and Pico Examples. You should review this and check it's appropriate for your project before publishing your code.
+This executes the generated `build/program-pico.sh` script, which invokes OpenOCD with RP2040 config files. Ensure your local OpenOCD setup and interface config (`interface/linuxgpiod-new.cfg`) are available.
+
+## Runtime behavior
+
+At startup the firmware:
+
+1. Initializes stdio over USB.
+2. Configures analog mux pull settings for six sensor inputs.
+3. Initializes and calibrates all 18 servos.
+4. Displays a rotating LED animation until USB serial is connected.
+5. Enables all servos and enters packet-processing loop.
+
+## Protocol overview
+
+All command/status/error IDs and protocol version are shared in:
+
+- `../hexapod-common/include/hexapod-common.hpp`
+
+Notable commands handled by this firmware:
+
+- `HELLO`
+- `SET_ANGLE_CALIBRATIONS`
+- `SET_TARGET_ANGLE`
+- `SET_JOINT_TARGETS`
+- `SET_POWER_RELAY`
+- `GET_ANGLE_CALIBRATIONS`
+- `GET_CURRENT`
+- `GET_VOLTAGE`
+- `GET_SENSOR`
+- `GET_FULL_HARDWARE_STATE`
+- `HEARTBEAT`
+
+### Payload notes
+
+- **Calibration upload** expects `18 * 2 * sizeof(float)` bytes.
+- **Joint target upload** expects `18 * sizeof(float)` bytes, each target in radians.
+- **Full hardware state response** returns:
+  - 18 floats (last commanded joint targets, radians)
+  - 6 foot-contact bytes (derived from sensor voltage threshold)
+  - battery voltage (float)
+  - current draw (float)
+
+## Hardware mapping notes
+
+- Servo channels: `SERVO_1`..`SERVO_18` (Servo 2040 pin mapping).
+- Relay control pin mask uses `A0` (`GPIO26`) in `hexapod-client.hpp`.
+- Shared ADC + analog mux are used for voltage/current/sensor reads.
+
+## Troubleshooting
+
+- **CMake cannot find Pico SDK**
+  - Confirm `PICO_SDK_PATH` is set correctly, or update `pico_sdk_import.cmake` path assumptions.
+- **Pimoroni libs not found**
+  - Ensure `pimoroni-pico` exists at expected sibling path.
+- **No serial handshake**
+  - Verify USB cable/data path, correct host serial device, and protocol version match.
+- **Unexpected servo behavior**
+  - Re-check calibration payload ordering and units (radians for joint targets, pulse mapping done on-device).
+
+## Related docs
+
+- Root project overview: `../README.md`
+- Shared protocol definitions: `../hexapod-common/include/hexapod-common.hpp`
