@@ -145,13 +145,12 @@ bool tomlParser(std::string filename, ParsedToml& out)
      });
   
   std::vector<float> calibsF;
-  calibsF.reserve(36 * sizeof(float));
+  calibsF.reserve(36);
   
-  int index = 0;
   for(auto it = calibs.begin(); it!=calibs.end(); ++it)
   {
-    calibsF[index++] = std::get<1>(*it); // min pulse value
-    calibsF[index++] = std::get<2>(*it); // max pulse value
+    calibsF.push_back(static_cast<float>(std::get<1>(*it))); // min pulse value
+    calibsF.push_back(static_cast<float>(std::get<2>(*it))); // max pulse value
   }
   
   out.serialDevice = serialDevice;
