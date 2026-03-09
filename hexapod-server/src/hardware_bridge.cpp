@@ -24,6 +24,16 @@ bool SimpleHardwareBridge::init()
     serialComs_->SetTimeout(timeout_ms_);
     serialComs_->Open();
 
+    if (!do_handshake(0))
+    {
+        return false;
+    }
+
+    if (!send_heartbeat())
+    {
+        return false;
+    }
+
     initialized_ = true;
     return true;
 }
@@ -31,6 +41,11 @@ bool SimpleHardwareBridge::init()
 bool SimpleHardwareBridge::read(RawHardwareState& out)
 {
     if (!initialized_ || !serialComs_)
+    {
+        return false;
+    }
+
+    if (!send_heartbeat())
     {
         return false;
     }
@@ -218,7 +233,7 @@ bool SimpleHardwareBridge::send_heartbeat()
     return false;
   }
 
-  if(response.seq != seq_)
+  if(response.seq != seq)
   {
     printf("heartbeat sequence mismatch (expected %u, got %u)\n", static_cast<unsigned>(seq), static_cast<unsigned>(response.seq));
     return false;
