@@ -68,9 +68,9 @@ void RobotControl::busLoop() {
         const auto cycle_start = Clock::now();
 
         RawHardwareState raw{};
-        /*if (!hw_->read(raw)) {
+        if (!hw_->read(raw)) {
             raw.bus_ok = false;
-        }*/
+        }
         raw_state_.write(raw);
 
         const JointTargets cmd = joint_targets_.read();
