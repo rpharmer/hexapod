@@ -4,8 +4,8 @@ This repository contains host and firmware code for a serial-controlled hexapod 
 
 ## Components
 
-- **`hexapod-server/`**: Linux host application that loads servo calibration data from `config.txt`, performs a serial handshake, and streams calibration values to the microcontroller.
-- **`hexapod-client/`**: Raspberry Pi Pico + Pimoroni Servo 2040 firmware that controls servos/IO and communicates over USB serial.
+- **`hexapod-server/`**: Linux host application that controls hexapod robot. It loads servo calibration data from `config.txt`, performs a serial handshake, and streams calibration values to the microcontroller and then sends/receives packets to/from hexapod-client.
+- **`hexapod-client/`**: Pimoroni Servo 2040 (based on Raspberry Pi Pico) firmware that controls servos/IO and communicates over USB serial.
 - **`hexapod-common/`**: Shared protocol constants and abstract serial interface declarations.
 
 ## Repository layout
@@ -13,24 +13,52 @@ This repository contains host and firmware code for a serial-controlled hexapod 
 ```text
 hexapod/
 ├── README.md
+├── docs/
+│   ├── CODEBASE_REVIEW.md
+│   ├── FIRMWARE.md
+│   └── HARDWARE.md
 ├── hexapod-common/
-│   ├── include/hexapod-common.hpp
-│   └── protocol.md
+│   ├── include/
+│   │   ├── framing.hpp
+│   │   └── hexapod-common.hpp
+│   └── framing.cpp
 ├── hexapod-server/
 │   ├── config.txt
 │   ├── include/
+│   │   ├── body_controller.hpp
+│   │   ├── double_buffer.hpp
+│   │   ├── estimator.hpp
+│   │   ├── gait_scheduler.hpp
+│   │   ├── hardware_bridge.hpp
 │   │   ├── hexapod-server.hpp
-│   │   └── serialCommsServer.hpp
+│   │   ├── leg_fk.hpp
+│   │   ├── leg_ik.hpp
+│   │   ├── robot_control.hpp
+│   │   ├── safety_supervisor.hpp
+│   │   ├── serialCommsServer.hpp
+│   │   ├── toml.hpp.tmp
+│   │   └── types.hpp
 │   ├── src/
+│   │   ├── body_controller.cpp
+│   │   ├── estimator.cpp
+│   │   ├── gait_scheduler.cpp
+│   │   ├── hardware_bridge.cpp
 │   │   ├── hexapod-server.cpp
+│   │   ├── leg_fk.cpp
+│   │   ├── leg_ik.cpp
+│   │   ├── robot_control.cpp
+│   │   ├── safety_supervisor.cpp
 │   │   └── serialCommsServer.cpp
-│   └── makefile
+│   └── CMakeLists.txt
 └── hexapod-client/
     ├── CMakeLists.txt
     ├── hexapod-client.cpp
     ├── hexapod-client.hpp
     ├── serialCommsClient.cpp
-    └── serialCommsClient.hpp
+    ├── serialCommsClient.hpp
+    ├── pimoroni_pico_import.cmake
+    ├── pico_sdk_import.cmake
+    └── README.md
 ```
 
 ## Current communication flow
@@ -76,9 +104,7 @@ cd hexapod-server
 ./build/hexapod-server
 ```
 
-> Note: serial port path and timeout are currently hard-coded in `hexapod-server/src/hexapod-server.cpp`.
-
-### Client firmware (Pico + Servo 2040)
+### Client firmware (Servo 2040(Pico))
 
 Prerequisites:
 
@@ -88,14 +114,6 @@ Prerequisites:
 - ARM GCC toolchain (`gcc-arm-none-eabi`)
 
 Build:
-
-```bash
-cd hexapod-client
-mkdir -p build
-cd build
-cmake ..
-cmake --build .
-```
 
 Run setup/prebuild in `hexapod-client/build` (this prebuilds Pico SDK/Pimoroni dependency objects for `hexapod-client` without compiling project firmware sources):
 
@@ -139,8 +157,6 @@ Flash:
 
 ## Notes and limitations
 
-- The server currently focuses on handshake + calibration transfer in `main`; higher-level runtime control commands are not yet implemented there.
-- `hexapod-common/protocol.md` describes additional commands beyond the calibration startup path currently exercised by `hexapod-server`.
 - `hexapod-client/README.md` is still the upstream Pico boilerplate README and may not reflect project-specific behavior.
 
 ## Safety
