@@ -114,7 +114,7 @@ struct RawHardwareState {
   float voltage{0.0};
   float current{0.0};
   uint64_t timestamp_us{0};
-  bool bus_ok{false};
+  bool bus_ok{true};
 };
 
 struct MotionIntent {

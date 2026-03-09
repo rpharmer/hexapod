@@ -42,7 +42,8 @@ bool SimpleHardwareBridge::read(RawHardwareState& out)
 {
     if (!initialized_ || !serialComs_)
     {
-        return false;
+      printf("either hardware bridge or serial coms not initialised\n");
+      return false;
     }
 
     if (!send_heartbeat())
@@ -54,13 +55,25 @@ bool SimpleHardwareBridge::read(RawHardwareState& out)
     serialComs_->send_packet(seq, GET_FULL_HARDWARE_STATE, {});
 
     DecodedPacket response;
-    if (!serialComs_->recv_packet(response) || response.seq != seq || response.cmd != ACK)
+    if (!serialComs_->recv_packet(response))
     {
-        return false;
+      printf("timeout waiting for response to GET_FULL_HARDWARE_STATE\n");
+      return false;
+    }
+    if (response.seq != seq)
+    {
+      printf("incorrect seq recieved for GET_FULL_HARDWARE_STATE\n");
+      return false;
+    }
+    if (response.cmd != ACK)
+    {
+      printf("GET_FULL_HARDWARE_STATE not acknowledged\n");
+      return false;
     }
 
     if (!decode_full_hardware_state(response.payload, out))
     {
+      printf("error decoding hardware state response");
         return false;
     }
 
