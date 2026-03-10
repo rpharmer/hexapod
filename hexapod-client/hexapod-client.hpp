@@ -31,6 +31,8 @@ void handleGetVoltageCommand(uint16_t seq);
 void handleGetSensorCommand(uint16_t seq, const std::vector<uint8_t>& payload);
 void handleSetJointTargetsCommand(uint16_t seq, const std::vector<uint8_t>& payload);
 void handleGetFullHardwareStateCommand(uint16_t seq);
+void handleSetServosEnabledCommand(uint16_t seq, const std::vector<uint8_t>& payload);
+void handleGetServosEnabledCommand(uint16_t seq);
 
 void handleHeartbeatCommand(uint16_t seq);
 

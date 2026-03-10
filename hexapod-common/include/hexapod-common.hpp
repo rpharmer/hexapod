@@ -23,6 +23,8 @@ const uint8_t ACK                    = 0x11;
 const uint8_t NACK                   = 0x12;
 const uint8_t SET_JOINT_TARGETS      = 0x13;
 const uint8_t GET_FULL_HARDWARE_STATE= 0x14;
+const uint8_t SET_SERVOS_ENABLED     = 0x15;
+const uint8_t GET_SERVOS_ENABLED     = 0x16;
 
 
 // status codes

@@ -19,9 +19,12 @@ bool RobotControl::init() {
         return false;
     }
     if (!hw_->init()) {
-        std::cerr << "Hardware init failed\n";
+        std::cerr << "Hardware Bridge init failed\n";
         return false;
     }
+
+    // bringup sequence
+    
 
     MotionIntent initial{};
     initial.requested_mode = RobotMode::SAFE_IDLE;
@@ -120,8 +123,6 @@ void RobotControl::controlLoop() {
         st.active_fault = safety_state.active_fault;
         st.loop_counter = ++loop_counter;
         status_.write(st);
-
-        (void)est;
 
         sleepUntil(cycle_start, 4000us); // 250 Hz
     }

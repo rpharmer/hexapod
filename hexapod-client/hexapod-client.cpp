@@ -196,6 +196,16 @@ int main() {
           handleGetFullHardwareStateCommand(packet.seq);
           break;
         }
+        case SET_SERVOS_ENABLED:
+        {
+          handleSetServosEnabledCommand(packet.seq, packet.payload);
+          break;
+        }
+        case GET_FULL_HARDWARE_STATE:
+        {
+          handleGetServosEnabledCommand(packet.seq);
+          break;
+        }
         default:
         {
           serial.send_packet(packet.seq, NACK, {UNSUPPORTED_COMMAND});
@@ -438,5 +448,41 @@ void handleGetFullHardwareStateCommand(uint16_t seq)
   const uint8_t* currentBytes = reinterpret_cast<const uint8_t*>(&current);
   payload.insert(payload.end(), currentBytes, currentBytes + sizeof(float));
 
+  serial.send_packet(seq, ACK, payload);
+}
+
+void handleSetServosEnabledCommand(uint16_t seq, const std::vector<uint8_t>& payload)
+{
+  constexpr size_t expectedPayloadBytes = 18 * sizeof(bool);
+  if(payload.size() != expectedPayloadBytes)
+  {
+    serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
+    return;
+  }
+  
+  size_t offset = 0;
+  for(int s = 0; s < NUM_SERVOS; s++)
+  {
+    bool servoEnabled;
+    read_scalar(payload, offset, servoEnabled);
+    if(servoEnabled)
+      enable(s);
+    else
+      disable(s);
+  }
+  
+  serial.send_packet(seq, ACK, {});
+}
+
+void handleGetServosEnabledCommand(uint16_t seq)
+{
+  std::vector<uint8_t> payload;
+  payload.reserve(18 * sizeof(bool));
+  
+  for(int s = 0; s < NUM_SERVOS; s++)
+  {
+    append_scalar(payload, is_enabled(s));
+  }
+  
   serial.send_packet(seq, ACK, payload);
 }
