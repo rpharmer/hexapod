@@ -108,6 +108,12 @@ The angle between the servo itself and the leg segment when the servo is centere
   <img src="../illustrations/1000012586.png" height="300">
 </P>
 
+```
+$$
+\displaystyle\sum_{k=3}^5 k^2=3^2 + 4^2 + 5^2 =50
+$$
+```
+
 
 
 
