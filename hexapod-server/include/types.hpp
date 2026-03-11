@@ -5,6 +5,17 @@
 #include <chrono>
 #include <cstdint>
 
+// ============================================================
+// Constants / utility
+// ============================================================
+constexpr double kPi = 3.14159265358979323846;
+
+double deg2rad(double deg);
+double rad2deg(double rad);
+double clamp(double value, double lo, double hi);
+
+// ============================================================
+
 constexpr int COXA = 0;
 constexpr int FEMUR = 1;
 constexpr int TIBIA = 2;
@@ -41,7 +52,29 @@ struct Vec3 {
     double x{0.0};
     double y{0.0};
     double z{0.0};
+    
+    Vec3 operator+(const Vec3& other) const;
+    Vec3 operator-(const Vec3& other) const;
+    Vec3 operator*(double s) const;
 };
+
+// ============================================================
+// Basic 3x3 matrix for rotations
+// ============================================================
+struct Mat3 {
+    double m[3][3]{};
+
+    static Mat3 identity();
+    static Mat3 rotX(double roll);
+    static Mat3 rotY(double pitch);
+    static Mat3 rotZ(double yaw);
+
+    Mat3 transpose() const;
+
+    Vec3 operator*(const Vec3& v) const;
+    Mat3 operator*(const Mat3& other) const;
+};
+
 
 
 struct GaitState {
@@ -104,8 +137,8 @@ struct BodyTwistState {
   Vec3 twist_pos_rad{};
   Vec3 twist_vel_radps{};
   
-  double body_height_pos_m{0.0};
-  double body_height_vel_mps{0.0};
+  Vec3 body_trans_m{};
+  Vec3 body_trans_mps{};
 };
 
 struct RawHardwareState {

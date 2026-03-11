@@ -23,9 +23,6 @@ bool RobotControl::init() {
         return false;
     }
 
-    // bringup sequence
-    
-
     MotionIntent initial{};
     initial.requested_mode = RobotMode::SAFE_IDLE;
     initial.timestamp_us = now_us();
@@ -109,6 +106,9 @@ void RobotControl::controlLoop() {
         if (safety_state.active_fault != FaultCode::NONE) {
             active_mode = RobotMode::FAULT;
         }
+
+        // test standing by making gait_ a dummy, body_ will then ignore it
+        // allowing us to test the body_ and ik_ methods.
 
         const GaitState gait_state = gait_.update(est, intent, safety_state);
         const LegTargets leg_targets = body_.update(est, intent, gait_state, safety_state);

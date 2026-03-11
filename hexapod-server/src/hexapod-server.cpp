@@ -53,8 +53,12 @@ int main() {
       MotionIntent cmd{};
       cmd.requested_mode = RobotMode::STAND;
       cmd.gait = GaitType::TRIPOD;
-      cmd.twist.body_height_pos_m = 0.20;
-      cmd.twist.body_height_vel_mps = 0;
+      cmd.twist.body_trans_m.x = 0.00;
+      cmd.twist.body_trans_m.y = 0.00;
+      cmd.twist.body_trans_m.z = 0.20;
+      cmd.twist.body_trans_mps.x = 0.00;
+      cmd.twist.body_trans_mps.y = 0.00;
+      cmd.twist.body_trans_mps.z = 0.00;
       cmd.timestamp_us = now_us();
       robot.setMotionIntent(cmd);
   }
@@ -69,7 +73,12 @@ int main() {
       cmd.twist.twist_pos_rad.x = 0.0;
       cmd.twist.twist_pos_rad.y = 0.0;
       cmd.twist.twist_pos_rad.z = 0.0;
-      cmd.twist.body_height_pos_m = 0.20;
+      cmd.twist.body_trans_m.x = 0.00;
+      cmd.twist.body_trans_m.y = 0.00;
+      cmd.twist.body_trans_m.z = 0.20;
+      cmd.twist.body_trans_mps.x = 0.00;
+      cmd.twist.body_trans_mps.y = 0.00;
+      cmd.twist.body_trans_mps.z = 0.00;
       cmd.timestamp_us = now_us();
       robot.setMotionIntent(cmd);
 
