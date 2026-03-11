@@ -108,11 +108,10 @@ The angle between the servo itself and the leg segment when the servo is centere
   <img src="../illustrations/1000012586.png" height="300">
 </P>
 
+```math
+\left( \sum_{k=1}^n a_k b_k \right)^2 \leq \left( \sum_{k=1}^n a_k^2 \right) \left( \sum_{k=1}^n b_k^2 \right)
 ```
-$$
-\displaystyle\sum_{k=3}^5 k^2=3^2 + 4^2 + 5^2 =50
-$$
-```
+
 
 
 
