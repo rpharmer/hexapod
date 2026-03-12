@@ -43,6 +43,7 @@ add_executable(hexapod-server
     src/robot_control.cpp
     src/safety_supervisor.cpp
     src/serialCommsServer.cpp
+    src/types.cpp
     ../hexapod-common/framing.cpp
 )
 

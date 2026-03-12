@@ -4,25 +4,18 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include "hexapod-common.hpp"
 
 // ============================================================
 // Constants / utility
 // ============================================================
 constexpr double kPi = 3.14159265358979323846;
 
-inline double deg2rad(double deg) {
-    return deg * kPi / 180.0;
-}
+double deg2rad(double deg);
 
-inline double rad2deg(double rad) {
-    return rad * 180.0 / kPi;
-}
+double rad2deg(double rad);
 
-inline double clamp(double value, double lo, double hi) {
-    if (value < lo) return lo;
-    if (value > hi) return hi;
-    return value;
-}
+double clamp(double value, double lo, double hi);
 
 // ============================================================
 
@@ -189,4 +182,58 @@ struct ControlStatus {
     bool bus_ok{false};
     FaultCode active_fault{FaultCode::NONE};
     uint64_t loop_counter{0};
+};
+
+// ============================================================
+// Servo calibration
+// ------------------------------------------------------------
+// Servos usually need:
+//
+//   servo = sign * joint + offset
+//
+// This handles:
+//   - left/right mirroring
+//   - horn offsets
+//   - installation differences/variations
+// ============================================================
+struct ServoCalibration {
+    double coxaOffset{0.0};
+    double femurOffset{0.0};
+    double tibiaOffset{0.0};
+
+    double coxaSign{1.0};
+    double femurSign{1.0};
+    double tibiaSign{1.0};
+
+    // Convert joint angles to servo angles
+    LegRawState toServoAngles(const LegRawState& leg) const;
+    LegState toServoAngles(const LegState& leg) const;
+    
+    // Convert servo angles to joint angles
+    LegRawState toJointAngles(const LegRawState& leg) const;
+    LegState toJointAngles(const LegState& leg) const;
+};
+
+// ============================================================
+// Leg geometry
+// ============================================================
+struct LegGeometry {
+    LegID legID;
+
+    Vec3 bodyCoxaOffset;  // Coxa joint location in body frame
+    double mountAngle{0.0};
+
+    double coxaLength{0.0};   // L1
+    double femurLength{0.0};  // L2
+    double tibiaLength{0.0};  // L3
+
+    ServoCalibration servo;
+};
+
+// ============================================================
+// Leg geometry
+// ============================================================
+struct HexapodGeometry {
+  std::array<LegGeometry, kNumLegs> legGeometry{};
+  double comToBottom {0.04};
 };

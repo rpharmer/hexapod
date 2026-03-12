@@ -1,4 +1,5 @@
 #include "leg_ik.hpp"
+#include "types.hpp"
 
 #include <cmath>
 
