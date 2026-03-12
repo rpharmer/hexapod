@@ -201,9 +201,14 @@ int main() {
           handleSetServosEnabledCommand(packet.seq, packet.payload);
           break;
         }
-        case GET_FULL_HARDWARE_STATE:
+        case GET_SERVOS_ENABLED:
         {
           handleGetServosEnabledCommand(packet.seq);
+          break;
+        }
+        case SET_SERVOS_TO_MID:
+        {
+          handleSetServosToMidCommand(packet.seq);
           break;
         }
         default:
@@ -425,7 +430,7 @@ void handleGetFullHardwareStateCommand(uint16_t seq)
 
   for (int s = 0; s < 18; ++s)
   {
-    const float currentPosRad = jointTargetPositionsRad[s];
+    const float currentPosRad = servos.value(s);
     const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&currentPosRad);
     payload.insert(payload.end(), bytes, bytes + sizeof(float));
   }
@@ -466,9 +471,9 @@ void handleSetServosEnabledCommand(uint16_t seq, const std::vector<uint8_t>& pay
     bool servoEnabled;
     read_scalar(payload, offset, servoEnabled);
     if(servoEnabled)
-      enable(s);
+      servos.enable(s);
     else
-      disable(s);
+      servos.disable(s);
   }
   
   serial.send_packet(seq, ACK, {});
@@ -481,8 +486,16 @@ void handleGetServosEnabledCommand(uint16_t seq)
   
   for(int s = 0; s < NUM_SERVOS; s++)
   {
-    append_scalar(payload, is_enabled(s));
+    append_scalar(payload, servos.is_enabled(s));
   }
   
   serial.send_packet(seq, ACK, payload);
+}
+
+
+void handleSetServosToMidCommand(uint16_t seq)
+{
+  servos.all_to_mid();
+  
+  serial.send_packet(seq, ACK, {});
 }

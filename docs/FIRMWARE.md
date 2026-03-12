@@ -59,6 +59,7 @@ Both server and client should:
 | `GET_FULL_HARDWARE_STATE` | `0x14` | Server → Client | _none_ | `ACK` + 18 × `joint_pos_rad:f32`, 6 × `foot_contact:u8`, `voltage:f32`, `current:f32` or `NACK(error:u8)` |
 | `SET_SERVOS_ENABLED` | `0x15` | Server → Client | 18 × `enable:bool` | `ACK` or `NACK(error:u8)` |
 | `GET_SERVOS_ENABLED` | `0x16` | Server → Client | _none_ | `ACK` + 18 × `enable:bool` or `NACK(error:u8)` |
+| `SET_SERVOS_TO_MID` | `0x17` | Server → Client | _none_ | `ACK` or `NACK(error:u8)` |
 
 > Multibyte numeric fields are serialized in little-endian byte order.
 

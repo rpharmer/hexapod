@@ -25,6 +25,7 @@ const uint8_t SET_JOINT_TARGETS      = 0x13;
 const uint8_t GET_FULL_HARDWARE_STATE= 0x14;
 const uint8_t SET_SERVOS_ENABLED     = 0x15;
 const uint8_t GET_SERVOS_ENABLED     = 0x16;
+const uint8_t SET_SERVOS_TO_MID      = 0x17;
 
 
 // status codes

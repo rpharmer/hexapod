@@ -33,6 +33,7 @@ void handleSetJointTargetsCommand(uint16_t seq, const std::vector<uint8_t>& payl
 void handleGetFullHardwareStateCommand(uint16_t seq);
 void handleSetServosEnabledCommand(uint16_t seq, const std::vector<uint8_t>& payload);
 void handleGetServosEnabledCommand(uint16_t seq);
+void handleSetServosToMidCommand(uint16_t seq);
 
 void handleHeartbeatCommand(uint16_t seq);
 
