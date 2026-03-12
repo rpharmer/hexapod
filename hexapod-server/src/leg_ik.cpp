@@ -11,13 +11,7 @@ JointTargets LegIK::solve(const EstimatedState& est,
   
   // for each leg; solve IK
   for(int legID = 0; legID < kNumLegs; legID++){
-    // if right hand leg
-    if (legID%2 == 0) {
-      solveOneLeg(est.leg_states[legID], joints.leg_raw_states[legID], targets.feet[legID]);
-    }
-    else { //if left hand leg
-      solveOneLeg(est.leg_states[legID], joints.leg_raw_states[legID], targets.feet[legID]);
-    }
+    solveOneLeg(est.leg_states[legID], joints.leg_raw_states[legID], targets.feet[legID]);
   }
   (void)safety;
   return joints;
@@ -40,22 +34,26 @@ JointTargets LegIK::solve(const EstimatedState& est,
 bool LegIK::solveOneLeg(const LegRawState& est, LegRawState& out, const FootTarget& foot){
   
   (void)est;
-  struct leg {
-    double coxaLength = 1;
-    double femurLength = 1;
-    double tibiaLength = 1;
-  } leg;
+  LegGeometry leg {
+    LegID::R3,
+    {0,0,0},
+    1,
+    1,
+    1,
+    0.5,
+    {}
+  };
   
-  /// Shift origin from body center to this leg's coxa mount
-  //Vec3 relativeToCoxa = footBody - leg.bodyCoxaOffset;
+  // Shift origin from body center to this leg's coxa mount
+  Vec3 relativeToCoxa = foot.pos_body_m - leg.bodyCoxaOffset;
 
-  /// Rotate into the leg's local frame
-  //Mat3 R_leg = Mat3::rotZ(-leg.mountAngle);
-  //Vec3 footLeg = R_leg * relativeToCoxa;
+  // Rotate into the leg's local frame
+  Mat3 R_leg = Mat3::rotZ(-leg.mountAngle);
+  Vec3 footLeg = R_leg * relativeToCoxa;
   
-  const double x = foot.pos_body_m.x;
-  const double y = foot.pos_body_m.y;
-  const double z = foot.pos_body_m.z;
+  const double x = footLeg.x;
+  const double y = footLeg.y;
+  const double z = footLeg.z;
   
   
   // --------------------------------------------------------
@@ -115,7 +113,7 @@ bool LegIK::solveOneLeg(const LegRawState& est, LegRawState& out, const FootTarg
   out.joint_raw_state[0].pos_rad = q1;
   out.joint_raw_state[1].pos_rad = q2;
   out.joint_raw_state[2].pos_rad = q3;
-  //result.servo = leg.servo.toServoAngles(result.joint);
+  out = leg.servo.toServoAngles(out);
 
   return true;
 }

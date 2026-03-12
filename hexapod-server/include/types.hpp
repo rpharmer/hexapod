@@ -235,5 +235,5 @@ struct LegGeometry {
 // ============================================================
 struct HexapodGeometry {
   std::array<LegGeometry, kNumLegs> legGeometry{};
-  double comToBottom {0.04};
+  double toBottom {0.04};
 };
