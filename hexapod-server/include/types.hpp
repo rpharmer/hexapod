@@ -10,9 +10,19 @@
 // ============================================================
 constexpr double kPi = 3.14159265358979323846;
 
-double deg2rad(double deg);
-double rad2deg(double rad);
-double clamp(double value, double lo, double hi);
+inline double deg2rad(double deg) {
+    return deg * kPi / 180.0;
+}
+
+inline double rad2deg(double rad) {
+    return rad * 180.0 / kPi;
+}
+
+inline double clamp(double value, double lo, double hi) {
+    if (value < lo) return lo;
+    if (value > hi) return hi;
+    return value;
+}
 
 // ============================================================
 

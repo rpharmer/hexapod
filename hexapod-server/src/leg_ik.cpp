@@ -1,8 +1,12 @@
 #include "leg_ik.hpp"
 
+#include <cmath>
+
 JointTargets LegIK::solve(const EstimatedState& est,
                        const LegTargets& targets, const SafetyState& safety){
   JointTargets joints{};
+  
+  //
   
   // for each leg; solve IK
   for(int legID = 0; legID < kNumLegs; legID++){
@@ -18,8 +22,99 @@ JointTargets LegIK::solve(const EstimatedState& est,
   return joints;
 }
 
+
+// ------------------------------------------------------------
+// Leg IK
+//
+// Solve:
+//   q1 = coxa yaw
+//   q2 = femur pitch
+//   q3 = tibia pitch
+//
+// Assumes leg frame uses:
+//   x = forward from leg mount
+//   y = sideways
+//   z = up
+// ------------------------------------------------------------
 bool LegIK::solveOneLeg(const LegRawState& est, LegRawState& out, const FootTarget& foot){
-  out = est;
-  (void)foot;
+  
+  (void)est;
+  struct leg {
+    double coxaLength = 1;
+    double femurLength = 1;
+    double tibiaLength = 1;
+  } leg;
+  
+  /// Shift origin from body center to this leg's coxa mount
+  //Vec3 relativeToCoxa = footBody - leg.bodyCoxaOffset;
+
+  /// Rotate into the leg's local frame
+  //Mat3 R_leg = Mat3::rotZ(-leg.mountAngle);
+  //Vec3 footLeg = R_leg * relativeToCoxa;
+  
+  const double x = foot.pos_body_m.x;
+  const double y = foot.pos_body_m.y;
+  const double z = foot.pos_body_m.z;
+  
+  
+  // --------------------------------------------------------
+  // 1) Coxa angle
+  // --------------------------------------------------------
+  double q1 = std::atan2(y, x);
+
+  // Horizontal distance from coxa axis to foot
+  const double r = std::hypot(x, y);
+
+  // Effective horizontal distance for femur+tibia plane
+  const double rho = r - leg.coxaLength;
+
+  // 2D distance from femur joint to foot
+  const double d = std::hypot(rho, z);
+
+  const double minReach = std::fabs(leg.femurLength - leg.tibiaLength);
+  const double maxReach = leg.femurLength + leg.tibiaLength;
+
+  if (d < minReach || d > maxReach) {
+      //result.reachable = false;
+      return false;
+  }
+  
+  // --------------------------------------------------------
+  // 2) Tibia angle by law of cosines
+  // --------------------------------------------------------
+  double D =
+      (rho * rho + z * z
+       - leg.femurLength * leg.femurLength
+       - leg.tibiaLength * leg.tibiaLength)
+      / (2.0 * leg.femurLength * leg.tibiaLength);
+
+  double Dclamped = clamp(D, -1.0, 1.0);
+  if (std::fabs(Dclamped - D) > 1e-9) {
+      //result.clamped = true;
+      return false;
+  }
+
+  // Choose one branch consistently.
+  // Switch the sign of sqrt(...) if your knee bends the wrong way.
+  double q3 = std::atan2(
+      -std::sqrt(std::max(0.0, 1.0 - Dclamped * Dclamped)),
+      Dclamped
+  );
+  
+  // --------------------------------------------------------
+  // 3) Femur angle
+  // --------------------------------------------------------
+  double q2 =
+      std::atan2(z, rho) -
+      std::atan2(
+          leg.tibiaLength * std::sin(q3),
+          leg.femurLength + leg.tibiaLength * std::cos(q3)
+      );
+
+  out.joint_raw_state[0].pos_rad = q1;
+  out.joint_raw_state[1].pos_rad = q2;
+  out.joint_raw_state[2].pos_rad = q3;
+  //result.servo = leg.servo.toServoAngles(result.joint);
+
   return true;
 }
