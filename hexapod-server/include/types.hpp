@@ -231,9 +231,44 @@ struct LegGeometry {
 };
 
 // ============================================================
-// Leg geometry
+// Hexapod geometry
 // ============================================================
 struct HexapodGeometry {
   std::array<LegGeometry, kNumLegs> legGeometry{};
-  double toBottom {0.04};
+  double toBottom {0.04}; // change to vec3 (centre of mass)
 };
+
+// Hexapod frame of reference
+/*
+
+             5    front  4       * legId - legName  - localYaxisAngle |
+              \   head  /        *  0    - R3       - (135 + 8)       | 143
+               *---*---*         *  1    - L3       - (225 - 8)       | 217
+              /    |    \        *  2    - R2       -  90             | 90
+             /     |     \       *  3    - L2       -  270            | 270
+         3 -*-----cog-----*- 2   *  4    - R1       - (45  - 8)       | 37
+             \     |     /       *  5    - L1       - (315 + 8)       | 323
+              \    |    /
+               *---*---*          ^ hexapodY
+              /  back   \         |
+             1           0        *---> hexapodX
+                                 /
+                                * hexapodZ
+                                
+                                localAxisAngle is angle between forward vector (hexapodY) 
+                                and local leg axis
+                                hexapodZ points up (positive from ground to hexapod)
+                                
+                                * legId |      leg mount point (m)   |   
+                                *   0   | ( 0.063,  -0.0835, -0.007) |
+                                *   1   | (-0.063,  -0.0835, -0.007) |
+                                *   2   | ( 0.0815,       0, -0.007) |
+                                *   3   | (-0.0815,       0, -0.007) |
+                                *   4   | ( 0.063,   0.0835, -0.007) |
+                                *   5   | (-0.063,   0.0835, -0.007) |
+                                
+                                centre of body is (0,0,0)
+                                when on flat surface, centre of body is 40mm above ground
+
+*/
+

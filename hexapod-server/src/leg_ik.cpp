@@ -11,21 +11,19 @@ LegIK::LegIK() {
   constexpr std::array<LegID, kNumLegs> leg_ids{
       LegID::R3, LegID::L3, LegID::R2, LegID::L2, LegID::R1, LegID::L1};
 
-  const std::array<double, kNumLegs> mount_angles{
-      -3.0 * kPi / 4.0, 3.0 * kPi / 4.0, -kPi, kPi, -kPi / 4.0,
-      kPi / 4.0};
+  const std::array<double, kNumLegs> mount_angles_deg{
+      143.0, 217.0, 90.0, 270.0, 37.0, 323.0};
 
-  constexpr std::array<Vec3, kNumLegs> coxa_offsets{{
-      {-0.040, -0.063, -0.007},
-      {-0.040, 0.063, -0.007},
-      {0.000, -0.0815, -0.007},
-      {0.000, 0.0815, -0.007},
-      {0.127, -0.063, -0.007},
-      {0.127, 0.063, -0.007},
-  }};
+  constexpr std::array<Vec3, kNumLegs> coxa_offsets{
+    {0.063,   -0.0835, -0.007},
+    {-0.063,  -0.0835, -0.007},
+    { 0.0815,       0, -0.007},
+    {-0.0815,       0, -0.007},
+    { 0.063,   0.0835, -0.007},
+    {-0.063,   0.0835, -0.007}
+  };
 
-  constexpr std::array<double, kNumLegs> coxa_attach_deg{-8.0, 8.0, -8.0,
-                                                          8.0, -8.0, 8.0};
+  constexpr double coxa_attach_deg = 0;
   constexpr std::array<double, kNumLegs> femur_attach_deg{35.0, -35.0, 35.0,
                                                            -35.0, 35.0, -35.0};
   constexpr std::array<double, kNumLegs> tibia_attach_deg{83.0, -83.0, 83.0,
@@ -38,12 +36,12 @@ LegIK::LegIK() {
     auto& leg_geo = hexGeo.legGeometry[leg];
     leg_geo.legID = leg_ids[leg];
     leg_geo.bodyCoxaOffset = coxa_offsets[leg];
-    leg_geo.mountAngle = mount_angles[leg];
+    leg_geo.mountAngle = deg2rad(mount_angles_deg[leg]);
     leg_geo.coxaLength = coxa_len;
     leg_geo.femurLength = femur_len;
     leg_geo.tibiaLength = tibia_len;
 
-    leg_geo.servo.coxaOffset = deg2rad(coxa_attach_deg[leg]);
+    leg_geo.servo.coxaOffset = deg2rad(coxa_attach_deg);
     leg_geo.servo.femurOffset = deg2rad(femur_attach_deg[leg]);
     leg_geo.servo.tibiaOffset = deg2rad(tibia_attach_deg[leg]);
     leg_geo.servo.coxaSign = side_sign[leg];
@@ -81,6 +79,7 @@ bool LegIK::solveOneLeg(const LegRawState& est,
                         const LegGeometry& leg) {
   (void)est;
 
+  // Transform foot target coordinates so they are relative to Coxa mount
   const Vec3 relativeToCoxa = foot.pos_body_m - leg.bodyCoxaOffset;
   const Mat3 R_leg = Mat3::rotZ(-leg.mountAngle);
   const Vec3 footLeg = R_leg * relativeToCoxa;
@@ -89,9 +88,18 @@ bool LegIK::solveOneLeg(const LegRawState& est,
   const double y = footLeg.y;
   const double z = footLeg.z;
 
+  // --------------------------------------------------------
+  // 1) Coxa angle
+  // --------------------------------------------------------
   const double q1 = std::atan2(y, x);
+  
+  // Horizontal distance from coxa axis to foot
   const double r = std::hypot(x, y);
+  
+  // Effective horizontal distance for femur+tibia plane
   const double rho = r - leg.coxaLength;
+  
+  // 2D distance from femur joint to foot
   const double d = std::hypot(rho, z);
 
   const double minReach = std::fabs(leg.femurLength - leg.tibiaLength);
@@ -101,6 +109,9 @@ bool LegIK::solveOneLeg(const LegRawState& est,
     return false;
   }
 
+  // --------------------------------------------------------
+  // 2) Tibia angle by law of cosines
+  // --------------------------------------------------------
   const double D =
       (rho * rho + z * z - leg.femurLength * leg.femurLength -
        leg.tibiaLength * leg.tibiaLength) /
@@ -111,9 +122,14 @@ bool LegIK::solveOneLeg(const LegRawState& est,
     return false;
   }
 
+  // Choose one branch consistently.
+  // Switch the sign of sqrt(...) if your knee bends the wrong way.
   const double q3 =
       std::atan2(-std::sqrt(std::max(0.0, 1.0 - Dclamped * Dclamped)), Dclamped);
 
+  // --------------------------------------------------------
+  // 3) Femur angle
+  // --------------------------------------------------------
   const double q2 =
       std::atan2(z, rho) -
       std::atan2(leg.tibiaLength * std::sin(q3),
