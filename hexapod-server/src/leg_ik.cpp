@@ -14,14 +14,14 @@ LegIK::LegIK() {
   const std::array<double, kNumLegs> mount_angles_deg{
       143.0, 217.0, 90.0, 270.0, 37.0, 323.0};
 
-  constexpr std::array<Vec3, kNumLegs> coxa_offsets{
+  constexpr std::array<Vec3, kNumLegs> coxa_offsets{{
     {0.063,   -0.0835, -0.007},
     {-0.063,  -0.0835, -0.007},
     { 0.0815,       0, -0.007},
     {-0.0815,       0, -0.007},
     { 0.063,   0.0835, -0.007},
     {-0.063,   0.0835, -0.007}
-  };
+  }};
 
   constexpr double coxa_attach_deg = 0;
   constexpr std::array<double, kNumLegs> femur_attach_deg{35.0, -35.0, 35.0,
