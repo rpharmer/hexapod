@@ -86,6 +86,8 @@ The server expects a TOML file with:
 - `MotorCalibrations` with exactly **18** entries:
   - tuple format: `["<JointID>", <min_pulse>, <max_pulse>]`
   - joint IDs follow the shared protocol ordering (e.g., `R31`, `L13`)
+  - must include each joint key exactly once (no missing/duplicate entries)
+  - pulse bounds must satisfy `500 <= min_pulse < max_pulse <= 2500`
 
 Example:
 

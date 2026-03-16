@@ -8,6 +8,7 @@
 #include <thread>
 #include <algorithm>
 #include <array>
+#include <set>
 #include "hexapod-common.hpp"
 #include "hexapod-server.hpp"
 #include "serialCommsServer.hpp"
@@ -93,6 +94,15 @@ int main() {
 
 bool tomlParser(std::string filename, ParsedToml& out)
 {
+  static constexpr int kExpectedJointCount = 18;
+  static constexpr int kMinServoPulse = 500;
+  static constexpr int kMaxServoPulse = 2500;
+  static const std::array<std::string, kExpectedJointCount> kExpectedJointOrder = {
+    "R31", "R32", "R33", "L31", "L32", "L33",
+    "R21", "R22", "R23", "L21", "L22", "L23",
+    "R11", "R12", "R13", "L11", "L12", "L13"
+  };
+
   try
   {
     // select TOML version at runtime (optional)
@@ -106,9 +116,9 @@ bool tomlParser(std::string filename, ParsedToml& out)
     }
     
     std::string serialDevice = toml::find_or<std::string>(root, "SerialDevice", "Error");
-    if(serialDevice == "Error")
+    if(serialDevice == "Error" || serialDevice.empty())
     {
-      printf("SerialDevice definition not found\n");
+      printf("SerialDevice definition not found or empty\n");
       return false;
     }
     
@@ -132,9 +142,9 @@ bool tomlParser(std::string filename, ParsedToml& out)
       printf("MotorCalibrations wasn't valid or not found\n");
       return false;
     }
-    if(calibs.size() != 18)
+    if(calibs.size() != kExpectedJointCount)
     {
-      printf("invalid number of MotorCalibrations, expected 18\n");
+      printf("invalid number of MotorCalibrations, expected %d\n", kExpectedJointCount);
       return false;
     }
 
@@ -145,6 +155,9 @@ bool tomlParser(std::string filename, ParsedToml& out)
              (key[1] >= '1' && key[1] <= '3') &&
              (key[2] >= '1' && key[2] <= '3');
     };
+
+    std::set<std::string> seen_keys;
+    std::set<std::string> expected_keys(kExpectedJointOrder.begin(), kExpectedJointOrder.end());
 
     for(const auto& calib : calibs)
     {
@@ -157,9 +170,33 @@ bool tomlParser(std::string filename, ParsedToml& out)
         printf("invalid motor key '%s' in MotorCalibrations\n", key.c_str());
         return false;
       }
-      if(min_pulse > max_pulse)
+      if(!expected_keys.contains(key))
       {
-        printf("invalid pulse bounds for '%s': min > max\n", key.c_str());
+        printf("unexpected motor key '%s' in MotorCalibrations\n", key.c_str());
+        return false;
+      }
+      if(!seen_keys.insert(key).second)
+      {
+        printf("duplicate motor key '%s' in MotorCalibrations\n", key.c_str());
+        return false;
+      }
+      if(min_pulse >= max_pulse)
+      {
+        printf("invalid pulse bounds for '%s': min must be < max\n", key.c_str());
+        return false;
+      }
+      if(min_pulse < kMinServoPulse || max_pulse > kMaxServoPulse)
+      {
+        printf("invalid pulse bounds for '%s': must be within [%d, %d]\n", key.c_str(), kMinServoPulse, kMaxServoPulse);
+        return false;
+      }
+    }
+
+    for(const auto& expected_key : expected_keys)
+    {
+      if(!seen_keys.contains(expected_key))
+      {
+        printf("missing motor key '%s' in MotorCalibrations\n", expected_key.c_str());
         return false;
       }
     }
