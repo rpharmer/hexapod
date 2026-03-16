@@ -35,15 +35,15 @@ The following builds were executed successfully in this environment:
 - The top-level `README.md` now reflects the CMake-based build flow and current repository layout.
 - A minor follow-up would be to keep command duplication low between `README.md` and `docs/FIRMWARE.md` by designating one canonical source for firmware build/flash details.
 
-### 3) Cleanup candidate: `hexapod-server/include/toml.hpp.tmp`
+### 3) TOML header ambiguity: resolved
 
-- `hexapod-server` uses system/package `toml11` (`find_package(toml11 REQUIRED)` and `#include <toml.hpp>`), while the repository also contains `hexapod-server/include/toml.hpp.tmp`.
-- The `*.tmp` header does not appear to be referenced by build configuration and looks like a leftover vendored snapshot.
+- `hexapod-server` uses system/package `toml11` (`find_package(toml11 REQUIRED)` and `#include <toml.hpp>`).
+- `hexapod-server/include/toml.hpp.tmp` is not present, eliminating the earlier ambiguity around a potential vendored snapshot.
 
-**Recommendation:** remove `hexapod-server/include/toml.hpp.tmp` (or document exactly why it must remain) to reduce confusion about which TOML implementation is authoritative.
+**Recommendation:** keep this state and document external `toml11` as the sole TOML source of truth.
 
 ## Suggested next actions
 
 1. Keep the current build verification commands in CI (or script them) to preserve the reproducibility confirmed in this review.
-2. Resolve `toml.hpp.tmp` ambiguity by deleting the file or adding an explicit note in docs/comments.
+2. Keep external `toml11` as the sole TOML dependency path and avoid reintroducing vendored temporary headers.
 3. Continue consolidating firmware documentation to one canonical protocol/build reference.

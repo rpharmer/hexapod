@@ -36,7 +36,6 @@ hexapod/
 │   │   ├── robot_control.hpp
 │   │   ├── safety_supervisor.hpp
 │   │   ├── serialCommsServer.hpp
-│   │   ├── toml.hpp.tmp
 │   │   └── types.hpp
 │   ├── src/
 │   │   ├── body_controller.cpp

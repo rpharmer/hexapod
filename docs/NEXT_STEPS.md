@@ -4,15 +4,11 @@ This plan turns the current codebase into a safer, more testable, and easier-to-
 
 ## 1) Immediate fixes (high impact, low effort)
 
-1. **Remove `toml.hpp.tmp` ambiguity in server includes**
-   - Action: delete `hexapod-server/include/toml.hpp.tmp` or add a clear reason why it exists.
-   - Why: server already depends on external `toml11`; stale vendored artifacts can cause confusion.
-
-2. **Establish one canonical firmware build reference**
+1. **Establish one canonical firmware build reference**
    - Action: keep exact build/flash details in one place (`docs/FIRMWARE.md`) and link from `README.md`.
    - Why: avoids drift between duplicated command blocks.
 
-3. **Document a default runbook for bring-up**
+2. **Document a default runbook for bring-up**
    - Action: add a short “power-on checklist” for serial path, config validation, and safe shutdown.
    - Why: makes first boot and field recovery safer and faster.
 
@@ -79,7 +75,6 @@ This plan turns the current codebase into a safer, more testable, and easier-to-
 ## 5) Suggested execution order (30/60/90 day view)
 
 - **Next 30 days**
-  - Remove `toml.hpp.tmp` ambiguity.
   - Consolidate docs for firmware commands.
   - Add startup config validation and clearer failure messages.
 
