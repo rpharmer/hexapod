@@ -1,81 +1,49 @@
 # Codebase Review: Hexapod
 
-## Scope reviewed
+## Review scope
 
-This pass reviewed every Markdown file and every C/C++ source/header file currently tracked in the repository:
+This review focused on build health and a light static code/documentation pass across:
 
-- Markdown/docs: `README.md`, `docs/*.md`, `hexapod-client/README.md`
-- Host/server code: `hexapod-server/include/*.hpp`, `hexapod-server/src/*.cpp`
-- Shared protocol code: `hexapod-common/include/*.hpp`, `hexapod-common/framing.cpp`
-- Firmware code: `hexapod-client/*.cpp`, `hexapod-client/*.hpp`
-- Build/config files checked for consistency: `hexapod-server/CMakeLists.txt`, `hexapod-client/CMakeLists.txt`, `hexapod-server/config.txt`
+- `hexapod-server/` (host application and build configuration)
+- `hexapod-client/` (firmware and Pico/Pimoroni build configuration)
+- `hexapod-common/` (shared framing/protocol helpers)
+- repository documentation in `README.md` and `docs/`
 
-## Executive summary
+## Build verification
 
-The codebase is in better shape than prior review notes suggested:
+The following builds were executed successfully in this environment:
 
-- both host and firmware targets build successfully in this environment,
-- framing/protocol helpers are shared cleanly between host and firmware,
-- server-side control stack modules are structured and compile together.
+1. Server configure + build
+   - `cmake -S hexapod-server -B hexapod-server/build`
+   - `cmake --build hexapod-server/build -j4`
+2. Client SDK dependency prebuild
+   - `cmake -S hexapod-client -B hexapod-client/build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON`
+   - `cmake --build hexapod-client/build --target setup-sdks -j4`
+3. Client full firmware build
+   - `cmake -S hexapod-client -B hexapod-client/build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF`
+   - `cmake --build hexapod-client/build --target hexapod-client -j4`
 
-The most visible gaps are now documentation and onboarding consistency rather than obvious compile-time defects.
+## Review findings
 
-## What is working well
+### 1) Build and integration status: healthy
 
-1. **Cross-target protocol reuse is solid**
-   - `hexapod-common` provides a shared framing implementation used by both `hexapod-server` and `hexapod-client`, reducing divergence risk.
+- Both top-level deliverables (`hexapod-server` and `hexapod-client`) configured and compiled successfully.
+- Shared framing code in `hexapod-common/framing.cpp` compiles into both targets cleanly, indicating protocol helper reuse is wired correctly.
 
-2. **Server architecture is modular**
-   - Distinct components for estimator, gait scheduling, body control, hardware bridge, IK/FK, and safety supervision are separated into focused modules.
+### 2) Documentation quality has improved, but can still be tightened
 
-3. **Firmware command path appears defensive**
-   - Firmware-side serial command handling validates packet framing and supports command-response patterns for host integration.
+- The top-level `README.md` now reflects the CMake-based build flow and current repository layout.
+- A minor follow-up would be to keep command duplication low between `README.md` and `docs/FIRMWARE.md` by designating one canonical source for firmware build/flash details.
 
-4. **Both primary builds are currently reproducible**
-   - `hexapod-server` and `hexapod-client` configured and built successfully during this review.
+### 3) Cleanup candidate: `hexapod-server/include/toml.hpp.tmp`
 
-## Findings
+- `hexapod-server` uses system/package `toml11` (`find_package(toml11 REQUIRED)` and `#include <toml.hpp>`), while the repository also contains `hexapod-server/include/toml.hpp.tmp`.
+- The `*.tmp` header does not appear to be referenced by build configuration and looks like a leftover vendored snapshot.
 
-### 1) Top-level README is stale versus current repo layout (high)
-
-`README.md` still describes files that are no longer present or no longer canonical (for example, references to `protocol.md` and a `makefile` path under `hexapod-server`) and omits the newer server module layout.
-
-**Impact:** new contributors can be led to incorrect entry points and setup assumptions.
-
-**Recommendation:** refresh `README.md` repository tree and build notes to reflect current CMake-first structure and actual file locations.
-
-### 2) `hexapod-client/README.md` remains upstream boilerplate (medium)
-
-Firmware folder README is generic Pimoroni boilerplate and does not document this project’s specific protocol commands, pin mappings, calibration flow, or flashing expectations.
-
-**Impact:** increases onboarding and maintenance overhead for project-specific firmware behavior.
-
-**Recommendation:** replace boilerplate README with project-specific firmware docs (build, flash, runtime protocol expectations, hardware assumptions).
-
-### 3) Documentation overlap/duplication across `docs/` (medium)
-
-`docs/FIRMWARE.md` and parts of `README.md` cover protocol/build behavior with partial overlap; divergence risk is high as behavior evolves.
-
-**Impact:** future drift between docs and implementation.
-
-**Recommendation:** make one document canonical for wire protocol (`docs/FIRMWARE.md`) and have other docs link to it instead of repeating command tables.
-
-### 4) Minor language/format quality issues in docs (low)
-
-`docs/HARDWARE.md` contains typos and inconsistent phrasing/formatting; technically understandable but less polished for external users.
-
-**Impact:** low runtime impact, moderate readability cost.
-
-**Recommendation:** do a docs polish pass (typos, sentence clarity, consistency for units and capitalization).
-
-## Validation run in this review
-
-- `hexapod-server` configure/build completed successfully.
-- `hexapod-client` configure/build completed successfully (including pico toolchain integration in this environment).
+**Recommendation:** remove `hexapod-server/include/toml.hpp.tmp` (or document exactly why it must remain) to reduce confusion about which TOML implementation is authoritative.
 
 ## Suggested next actions
 
-1. Update top-level `README.md` to match current code layout and build flow.
-2. Replace firmware boilerplate README with project-specific instructions.
-3. Reduce protocol documentation duplication by designating `docs/FIRMWARE.md` as canonical.
-4. Perform a small editorial pass on `docs/HARDWARE.md` for typos and style consistency.
+1. Keep the current build verification commands in CI (or script them) to preserve the reproducibility confirmed in this review.
+2. Resolve `toml.hpp.tmp` ambiguity by deleting the file or adding an explicit note in docs/comments.
+3. Continue consolidating firmware documentation to one canonical protocol/build reference.
