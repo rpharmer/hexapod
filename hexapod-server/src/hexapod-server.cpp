@@ -40,7 +40,7 @@ int main() {
     return 1;
   }
 
-  auto hw = std::make_unique<SimpleHardwareBridge>(config.serialDevice, config.baudRate, config.timeout);
+  auto hw = std::make_unique<SimpleHardwareBridge>(config.serialDevice, config.baudRate, config.timeout, config.minMaxPulses);
   auto estimator = std::make_unique<SimpleEstimator>();
   
   RobotControl robot(std::move(hw), std::move(estimator));

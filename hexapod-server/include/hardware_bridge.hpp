@@ -19,7 +19,8 @@ class SimpleHardwareBridge final : public IHardwareBridge {
 public:
     explicit SimpleHardwareBridge(std::string device = "/dev/ttyACM0",
                                   int baud_rate = 115200,
-                                  int timeout_ms = 100);
+                                  int timeout_ms = 100,
+                                  std::vector<float> calibrations = {});
 
     bool init() override;
     bool read(RawHardwareState& out) override;
@@ -40,6 +41,7 @@ private:
     std::string device_;
     int baud_rate_;
     int timeout_ms_;
+    std::vector<float> calibrations_;
     uint16_t seq_{0};
     bool initialized_{false};
 
