@@ -76,6 +76,10 @@ Protocol constants and message definitions live in:
 - `hexapod-common/include/hexapod-common.hpp`
 - `hexapod-common/protocol.md`
 
+## Project planning
+
+- See `docs/NEXT_STEPS.md` for a prioritized roadmap of fixes, reliability work, and longer-term improvements.
+
 ## Build instructions
 
 ### Server (Linux)
