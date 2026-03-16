@@ -13,8 +13,8 @@ constexpr std::size_t kWireFootContactCount = 6;
 
 } // namespace
 
-SimpleHardwareBridge::SimpleHardwareBridge(std::string device, int baud_rate, int timeout_ms)
-    : device_(std::move(device)), baud_rate_(baud_rate), timeout_ms_(timeout_ms)
+SimpleHardwareBridge::SimpleHardwareBridge(std::string device, int baud_rate, int timeout_ms, std::vector<float> calibrations)
+    : device_(std::move(device)), baud_rate_(baud_rate), timeout_ms_(timeout_ms), calibrations_(std::move(calibrations))
 {}
 
 bool SimpleHardwareBridge::init()
@@ -30,6 +30,11 @@ bool SimpleHardwareBridge::init()
     }
 
     if (!send_heartbeat())
+    {
+        return false;
+    }
+
+    if (!calibrations_.empty() && !send_calibrations(calibrations_))
     {
         return false;
     }
