@@ -47,3 +47,23 @@ The following builds were executed successfully in this environment:
 1. Keep the current build verification commands in CI (or script them) to preserve the reproducibility confirmed in this review.
 2. Keep external `toml11` as the sole TOML dependency path and avoid reintroducing vendored temporary headers.
 3. Continue consolidating firmware documentation to one canonical protocol/build reference.
+
+## Refactoring opportunities (full codebase pass)
+
+1. `hexapod-server/src/hexapod-server.cpp`
+   - Consolidate repeated `MotionIntent` initialization into a helper to reduce duplication and keep defaults consistent.
+   - Keep include lists tidy (e.g., remove duplicate `#include <thread>`).
+
+2. `hexapod-client/hexapod-client.cpp`
+   - Move large global hardware setup/calibration state into a small module or struct to reduce global mutable state and simplify testability.
+   - Split packet command handling switch into command-specific handlers grouped by feature area (power, sensing, motion).
+
+3. `hexapod-server/src/body_controller.cpp` and `hexapod-server/src/gait_scheduler.cpp`
+   - Remove or gate large commented-out logic blocks once replacement behavior is finalized to keep active control flow clear.
+   - Replace placeholder constants (e.g., fixed speed magnitude) with explicit TODO-marked parameters.
+
+4. `hexapod-common/include/hexapod-common.hpp`
+   - Prefer `constexpr` constants and `enum class` values for protocol codes to improve type safety and avoid global mutable symbols.
+
+5. `hexapod-client/serialCommsClient.cpp` / `hexapod-server/src/serialCommsServer.cpp`
+   - Reduce repeated send/receive scalar wrappers by centralizing around common byte-span helper functions.

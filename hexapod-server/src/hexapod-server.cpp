@@ -5,7 +5,6 @@
 #include <atomic>
 #include <csignal>
 #include <memory>
-#include <thread>
 #include <algorithm>
 #include <array>
 #include <set>
@@ -24,6 +23,22 @@ using namespace mn::CppLinuxSerial;
 
 
 static std::atomic<bool> g_exit{false};
+
+namespace {
+
+MotionIntent buildMotionIntent(RobotMode mode, GaitType gait, double body_height_m)
+{
+  MotionIntent cmd{};
+  cmd.requested_mode = mode;
+  cmd.gait = gait;
+  cmd.twist.twist_pos_rad = {0.0, 0.0, 0.0};
+  cmd.twist.body_trans_m = {0.00, 0.00, body_height_m};
+  cmd.twist.body_trans_mps = {0.00, 0.00, 0.00};
+  cmd.timestamp_us = now_us();
+  return cmd;
+}
+
+} // namespace
 
 void signalHandler(int) {
     g_exit.store(true);
@@ -52,38 +67,12 @@ int main() {
 
   robot.start();
 
-  {
-      MotionIntent cmd{};
-      cmd.requested_mode = RobotMode::STAND;
-      cmd.gait = GaitType::TRIPOD;
-      cmd.twist.body_trans_m.x = 0.00;
-      cmd.twist.body_trans_m.y = 0.00;
-      cmd.twist.body_trans_m.z = 0.20;
-      cmd.twist.body_trans_mps.x = 0.00;
-      cmd.twist.body_trans_mps.y = 0.00;
-      cmd.twist.body_trans_mps.z = 0.00;
-      cmd.timestamp_us = now_us();
-      robot.setMotionIntent(cmd);
-  }
+  robot.setMotionIntent(buildMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.20));
 
   std::this_thread::sleep_for(2s);
 
   while (!g_exit.load()) {
-      MotionIntent cmd{};
-      cmd.requested_mode = RobotMode::WALK;
-      cmd.gait = GaitType::TRIPOD;
-
-      cmd.twist.twist_pos_rad.x = 0.0;
-      cmd.twist.twist_pos_rad.y = 0.0;
-      cmd.twist.twist_pos_rad.z = 0.0;
-      cmd.twist.body_trans_m.x = 0.00;
-      cmd.twist.body_trans_m.y = 0.00;
-      cmd.twist.body_trans_m.z = 0.20;
-      cmd.twist.body_trans_mps.x = 0.00;
-      cmd.twist.body_trans_mps.y = 0.00;
-      cmd.twist.body_trans_mps.z = 0.00;
-      cmd.timestamp_us = now_us();
-      robot.setMotionIntent(cmd);
+      robot.setMotionIntent(buildMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.20));
 
       std::this_thread::sleep_for(100ms); // refresh command watchdog
   }
