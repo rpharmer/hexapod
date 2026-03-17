@@ -125,11 +125,13 @@ AsyncLogger::AsyncLogger(
     std::size_t maxQueueSize)
     : name_(std::move(name)),
       minLevel_(minLevel),
+      worker_(),
       maxQueueSize_(maxQueueSize),
       droppedMessages_(0),
       stopRequested_(false),
-      workerRunning_(true),
-      worker_(&AsyncLogger::WorkerLoop, this) {}
+      workerRunning_(true) {
+    worker_ = std::thread(&AsyncLogger::WorkerLoop, this);
+}
 
 AsyncLogger::~AsyncLogger() {
     Stop();
@@ -250,7 +252,13 @@ void AsyncLogger::WorkerLoop() {
               if (sink) {
                   sink->Write(msg.level, msg.loggerName, msg.text, msg.location);
               }
-          }
+            }
+
+            std::lock_guard<std::mutex> lock(mutex_);
+            workerBusy_ = false;
+            if (queue_.empty()) {
+                drainedCv_.notify_all();
+            }
         }
     }
 
@@ -258,6 +266,7 @@ void AsyncLogger::WorkerLoop() {
     {
       std::lock_guard<std::mutex> lock(mutex_);
       workerBusy_ = false;
+      sinksCopy = sinks_;
       if (queue_.empty()) {
           drainedCv_.notify_all();
       }
@@ -269,3 +278,5 @@ void AsyncLogger::WorkerLoop() {
         }
     }
 }
+
+} // namespace logging
