@@ -24,7 +24,8 @@ enum class CommandCode : uint8_t {
   GET_FULL_HARDWARE_STATE = 0x14,
   SET_SERVOS_ENABLED = 0x15,
   GET_SERVOS_ENABLED = 0x16,
-  SET_SERVOS_TO_MID = 0x17
+  SET_SERVOS_TO_MID = 0x17,
+  KILL = 0x18
 };
 
 enum class StatusCode : uint8_t {
@@ -64,6 +65,7 @@ inline constexpr uint8_t GET_FULL_HARDWARE_STATE = as_u8(CommandCode::GET_FULL_H
 inline constexpr uint8_t SET_SERVOS_ENABLED = as_u8(CommandCode::SET_SERVOS_ENABLED);
 inline constexpr uint8_t GET_SERVOS_ENABLED = as_u8(CommandCode::GET_SERVOS_ENABLED);
 inline constexpr uint8_t SET_SERVOS_TO_MID = as_u8(CommandCode::SET_SERVOS_TO_MID);
+inline constexpr uint8_t KILL = as_u8(CommandCode::KILL);
 
 inline constexpr uint8_t STATUS_OK = as_u8(StatusCode::OK);
 inline constexpr uint8_t STATUS_BUSY = as_u8(StatusCode::BUSY);

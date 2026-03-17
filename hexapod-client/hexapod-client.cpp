@@ -195,6 +195,10 @@ int main() {
       else if(dispatchPowerCommand(packet) || dispatchSensingCommand(packet) || dispatchMotionCommand(packet))
       {
       }
+      else if(packet.cmd == KILL)
+      {
+        break;
+      }
       else
       {
         g_firmware.serial.send_packet(packet.seq, NACK, {UNSUPPORTED_COMMAND});
@@ -203,7 +207,7 @@ int main() {
   }
   
   // Disable servos
-  g_firmware.servos.enable_all();
+  g_firmware.servos.disable_all();
 
   // Turn off power relay
   gpio_put_masked(A0_GPIO_MASK, GPIO_LOW_MASK);

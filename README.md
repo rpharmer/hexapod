@@ -73,7 +73,7 @@ hexapod/
 Protocol constants and message definitions live in:
 
 - `hexapod-common/include/hexapod-common.hpp`
-- `hexapod-common/protocol.md`
+- `docs/FIRMWARE.md`
 
 ## Project planning
 
@@ -143,24 +143,10 @@ cmake --build build --target setup-sdks
 cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF
 cmake --build build --target hexapod-client
 ```
-
-Quick verification flow (prebuild/setup + compile):
-
-```bash
-cd hexapod-client
-cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON
-cmake --build build --target setup-sdks
-cmake --build build --target hexapod-client
-```
-
 Flash:
 
 - Copy generated `.uf2` to Pico mass-storage device, or
 - Use project-specific flash target/tooling when configured in your local environment.
-
-## Notes and limitations
-
-- `hexapod-client/README.md` is still the upstream Pico boilerplate README and may not reflect project-specific behavior.
 
 ## Safety
 
