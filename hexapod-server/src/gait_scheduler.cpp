@@ -36,12 +36,9 @@ GaitState GaitScheduler::update(const EstimatedState&,
     const double dt = static_cast<double>(now - last_update_us_) * 1e-6;
     last_update_us_ = now;
 
-    // Simple speed-dependent step frequency.
-    /*const double speed_mag =
-        std::sqrt(intent.twist.vx_mps * intent.twist.vx_mps +
-                  intent.twist.vy_mps * intent.twist.vy_mps) +
-        std::abs(intent.twist.wz_radps) * 0.1;*/
-    const double speed_mag = 0.01;   
+    // TODO(gait): replace fallback speed estimate with measured command magnitude.
+    constexpr double kFallbackSpeedMag = 0.01;
+    const double speed_mag = kFallbackSpeedMag;
 
     const double step_hz = std::clamp(0.5 + 2.0 * speed_mag, 0.5, 2.5);
     out.stride_phase_rate_hz = step_hz;

@@ -2,6 +2,7 @@
 #include "serialCommsClient.hpp"
 
 namespace {
+
 int recv_bytes(char *buffer, size_t len) {
   for(size_t i = 0; i < len; ++i) {
     const int ch = getchar_timeout_us(1000);
@@ -12,7 +13,16 @@ int recv_bytes(char *buffer, size_t len) {
   }
   return static_cast<int>(len);
 }
+
+template <typename T>
+void send_scalar(T data) {
+  const char *bytes = reinterpret_cast<const char*>(&data);
+  for(size_t i = 0; i < sizeof(T); ++i) {
+    putchar_raw(bytes[i]);
+  }
 }
+
+} // namespace
 
 
 // constructor
@@ -38,48 +48,37 @@ void SerialCommsClient::SetTimeout(int32_t timeout_ms){_timeout_ms = timeout_ms;
 // send a char (1 byte)
 void SerialCommsClient::send_char(char data)
 {
-  putchar_raw(data);
+  send_scalar(data);
 }
 // send a uint8_t (1 bytes)
 void SerialCommsClient::send_u8(uint8_t data)
 {
-  putchar_raw(*reinterpret_cast<char*>(&data));
+  send_scalar(data);
 }
 // send a uint16_t (2 bytes)
 void SerialCommsClient::send_u16(uint16_t data)
 {
-  putchar_raw(reinterpret_cast<char*>(&data)[0]);
-  putchar_raw(reinterpret_cast<char*>(&data)[1]);
+  send_scalar(data);
 }
 // send a uint32_t (4 bytes)
 void SerialCommsClient::send_u32(uint32_t data)
 {
-  putchar_raw(reinterpret_cast<char*>(&data)[0]);
-  putchar_raw(reinterpret_cast<char*>(&data)[1]);
-  putchar_raw(reinterpret_cast<char*>(&data)[2]);
-  putchar_raw(reinterpret_cast<char*>(&data)[3]);
+  send_scalar(data);
 }
 // send a int16_t  (2 bytes)
 void SerialCommsClient::send_i16(int16_t data)
 {
-  putchar_raw(reinterpret_cast<char*>(&data)[0]);
-  putchar_raw(reinterpret_cast<char*>(&data)[1]);
+  send_scalar(data);
 }
 // send a int32_t  (4 bytes)
 void SerialCommsClient::send_i32(int32_t data)
 {
-  putchar_raw(reinterpret_cast<char*>(&data)[0]);
-  putchar_raw(reinterpret_cast<char*>(&data)[1]);
-  putchar_raw(reinterpret_cast<char*>(&data)[2]);
-  putchar_raw(reinterpret_cast<char*>(&data)[3]);
+  send_scalar(data);
 }
 // send a float    (4 bytes)
 void SerialCommsClient::send_f32(float data)
 {
-  putchar_raw(reinterpret_cast<char*>(&data)[0]);
-  putchar_raw(reinterpret_cast<char*>(&data)[1]);
-  putchar_raw(reinterpret_cast<char*>(&data)[2]);
-  putchar_raw(reinterpret_cast<char*>(&data)[3]);
+  send_scalar(data);
 }
 
 /* functions to recieve data */
