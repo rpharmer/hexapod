@@ -2,68 +2,60 @@
 
 ## Review scope
 
-This review focused on build health and a light static code/documentation pass across:
+This review re-examined the current repository state across:
 
-- `hexapod-server/` (host application and build configuration)
-- `hexapod-client/` (firmware and Pico/Pimoroni build configuration)
-- `hexapod-common/` (shared framing/protocol helpers)
-- repository documentation in `README.md` and `docs/`
+- `hexapod-server/` (host runtime, config parsing, control loop orchestration)
+- `hexapod-client/` (Servo 2040 firmware and command handlers)
+- `hexapod-common/` (wire framing/protocol helpers)
+- top-level documentation (`README.md`, `docs/`)
 
 ## Build verification
 
-The following builds were executed successfully in this environment:
+The following builds were run in this environment and completed successfully:
 
 1. Server configure + build
    - `cmake -S hexapod-server -B hexapod-server/build`
    - `cmake --build hexapod-server/build -j4`
-2. Client SDK dependency prebuild
+2. Client SDK setup target
    - `cmake -S hexapod-client -B hexapod-client/build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON`
    - `cmake --build hexapod-client/build --target setup-sdks -j4`
 3. Client full firmware build
    - `cmake -S hexapod-client -B hexapod-client/build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF`
    - `cmake --build hexapod-client/build --target hexapod-client -j4`
 
-## Review findings
+## Findings
 
-### 1) Build and integration status: healthy
+### 1) Build health: good
 
-- Both top-level deliverables (`hexapod-server` and `hexapod-client`) configured and compiled successfully.
-- Shared framing code in `hexapod-common/framing.cpp` compiles into both targets cleanly, indicating protocol helper reuse is wired correctly.
+- Server and firmware builds are green, and shared framing code compiles into both targets.
+- Existing CMake flow is reproducible from a clean configure/build sequence.
 
-### 2) Documentation quality has improved, but can still be tightened
+### 2) Runtime architecture status: functional skeleton with intentional placeholders
 
-- The top-level `README.md` now reflects the CMake-based build flow and current repository layout.
-- A minor follow-up would be to keep command duplication low between `README.md` and `docs/FIRMWARE.md` by designating one canonical source for firmware build/flash details.
+- `RobotControl` currently acts as the central orchestrator for lifecycle, periodic loop execution, command integration, and diagnostic/status publishing.
+- `BodyController::update()` is still a placeholder returning default leg targets.
+- `GaitScheduler::update()` still uses a fallback speed magnitude constant rather than command-derived speed.
 
-### 3) TOML header ambiguity: resolved
+These are reasonable for an incremental bring-up stage, but they remain the most important gaps for motion behavior quality.
 
-- `hexapod-server` uses system/package `toml11` (`find_package(toml11 REQUIRED)` and `#include <toml.hpp>`).
-- `hexapod-server/include/toml.hpp.tmp` is not present, eliminating the earlier ambiguity around a potential vendored snapshot.
+### 3) Configuration and protocol handling quality: improved and mostly consistent
 
-**Recommendation:** keep this state and document external `toml11` as the sole TOML source of truth.
+- Server TOML parsing validates required keys, calibration key format, key uniqueness, expected cardinality, and pulse bounds before startup.
+- Framing/transport RX buffer caps are aligned (`1024` bytes for both generic and transport limits).
 
-## Suggested next actions
+### 4) Documentation drift still present
 
-1. Keep the current build verification commands in CI (or script them) to preserve the reproducibility confirmed in this review.
-2. Keep external `toml11` as the sole TOML dependency path and avoid reintroducing vendored temporary headers.
-3. Continue consolidating firmware documentation to one canonical protocol/build reference.
+- Top-level `README.md` references `hexapod-common/protocol.md`, which does not exist in the repository.
+- `README.md` contains two overlapping “quick verification flow” blocks for client firmware builds.
 
-## Refactoring opportunities (full codebase pass)
+### 5) Firmware lifecycle cleanup issue
 
-1. `hexapod-server/src/hexapod-server.cpp`
-   - Consolidate repeated `MotionIntent` initialization into a helper to reduce duplication and keep defaults consistent.
-   - Keep include lists tidy (e.g., remove duplicate `#include <thread>`).
+- `hexapod-client` has an infinite command loop (`while(1)`) followed by cleanup code that is never reached.
+- The unreachable cleanup section currently calls `enable_all()` in the “Disable servos” comment block, indicating a likely intended `disable_all()` path once shutdown handling is introduced.
 
-2. `hexapod-client/hexapod-client.cpp`
-   - Move large global hardware setup/calibration state into a small module or struct to reduce global mutable state and simplify testability.
-   - Split packet command handling switch into command-specific handlers grouped by feature area (power, sensing, motion).
+## Recommended near-term actions
 
-3. `hexapod-server/src/body_controller.cpp` and `hexapod-server/src/gait_scheduler.cpp`
-   - Remove or gate large commented-out logic blocks once replacement behavior is finalized to keep active control flow clear.
-   - Replace placeholder constants (e.g., fixed speed magnitude) with explicit TODO-marked parameters.
-
-4. `hexapod-common/include/hexapod-common.hpp`
-   - Prefer `constexpr` constants and `enum class` values for protocol codes to improve type safety and avoid global mutable symbols.
-
-5. `hexapod-client/serialCommsClient.cpp` / `hexapod-server/src/serialCommsServer.cpp`
-   - Reduce repeated send/receive scalar wrappers by centralizing around common byte-span helper functions.
+1. Keep the current build commands as baseline CI checks.
+2. Implement a graceful firmware shutdown/exit path (or remove dead cleanup code until supported).
+3. Resolve top-level documentation drift (missing protocol file reference and duplicated quick-verify block).
+4. Prioritize replacing placeholder body-control and fallback gait speed behavior to improve motion fidelity.
