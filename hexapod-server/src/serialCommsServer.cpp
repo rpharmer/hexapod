@@ -2,10 +2,10 @@
 #include "hexapod-common.hpp"
 #include "serialCommsServer.hpp"
 #include "serial_scalar_io.hpp"
+#include "logger.hpp"
 
 #include <cstddef>
 #include <cstring>
-#include <iostream>
 
 using namespace mn::CppLinuxSerial;
 
@@ -19,7 +19,9 @@ void trim_rx_buffer(std::vector<uint8_t>& buffer, const std::size_t max_bytes)
 
   const std::size_t overflow = buffer.size() - max_bytes;
   buffer.erase(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(overflow));
-  std::cerr << "[SerialCommsServer] RX buffer overflow: dropped " << overflow << " bytes\n";
+  if (auto logger = logging::GetDefaultLogger()) {
+    LOG_WARN(logger, "[SerialCommsServer] RX buffer overflow: dropped ", overflow, " bytes");
+  }
 }
 
 

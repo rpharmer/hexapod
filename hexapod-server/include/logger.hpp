@@ -151,6 +151,10 @@ private:
     bool workerBusy_ = false;
 };
 
+
+void SetDefaultLogger(std::shared_ptr<AsyncLogger> logger);
+std::shared_ptr<AsyncLogger> GetDefaultLogger();
+
 } // namespace logging
 
 #define LOG_SOURCE_LOCATION ::logging::SourceLocation{__FILE__, __LINE__, __func__}
