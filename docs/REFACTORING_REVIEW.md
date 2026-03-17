@@ -1,6 +1,6 @@
 # Refactoring Review
 
-This document captures a full-pass refactoring scan across the repository's production C++ code (`hexapod-common/`, `hexapod-server/`, and `hexapod-client/`) with suggested next actions.
+This document captures an updated refactoring scan across the repository's production C++ code (`hexapod-common/`, `hexapod-server/`, and `hexapod-client/`) and verifies prior recommendations against the current codebase.
 
 ## Scope reviewed
 
@@ -8,79 +8,75 @@ This document captures a full-pass refactoring scan across the repository's prod
 - Server runtime, control, kinematics, and safety code in `hexapod-server/`
 - Pico client firmware and serial transport in `hexapod-client/`
 
-## Newly identified opportunities (latest pass)
+## Validation of previous review items
 
-1. **Deduplicate scalar serialization helpers between client/server transports**
-   - Both `SerialCommsClient` and `SerialCommsServer` implement nearly identical per-type send/receive wrappers and internal scalar byte helpers.
-   - Recommendation: introduce a shared transport utility header for scalar read/write primitives and use thin adapters for platform-specific IO.
+### Addressed since the previous pass
 
-2. **Bound packet RX buffers in streaming decode loops**
-   - `recv_packet()` on both client and server continuously appends bytes until a frame can be decoded, with no explicit cap for persistent malformed traffic.
-   - Recommendation: add a maximum RX buffer policy (drop oldest bytes or hard reset) and surface an overflow diagnostic.
+1. **Scalar serialization helpers are now shared**
+   - Client and server transports now route scalar read/write through `hexapod-common/include/serial_scalar_io.hpp`.
+   - Remaining work is mostly call-site cleanup (optional), not duplicated byte-pack logic.
 
-3. **Replace linear-time read-buffer erasure in server serial path**
-   - Server receive logic consumes data with `std::vector::erase(begin, begin + n)`, which shifts remaining bytes on each packet read.
-   - Recommendation: move to a ring buffer or head-indexed deque-like approach to reduce copy churn under sustained traffic.
+2. **RX buffer growth is now bounded in packet receive loops**
+   - Both client and server `recv_packet()` paths apply max-buffer trimming while accumulating framed bytes.
+   - Server-side trim path also emits an overflow diagnostic.
 
-4. **Unify gait phase-offset mapping logic**
-   - `GaitScheduler::update()` contains a per-leg `switch` with repeated formulas and implicit gait tables.
-   - Recommendation: extract gait phase-offset tables/policies into data-driven configuration so gait variants can be added without branching changes.
+3. **Server serial receive path no longer does per-read front erases**
+   - The server now uses a `readBufferHead` cursor and only clears/reset when consumed, avoiding repeated linear shifts on each scalar receive.
 
-5. **Consolidate repeated per-leg fallback assignment in IK solve path**
-   - `LegIK::solve()` assigns estimated leg state as fallback in two separate conditions (`solveOneLeg` failure and leg-disabled safety).
-   - Recommendation: centralize fallback policy (e.g., helper or early guard) so future fallback behavior changes stay consistent.
+4. **Gait phase offset mapping has been extracted to table-driven constants**
+   - `GaitScheduler` now uses named phase-offset arrays and a selector helper instead of per-leg switch logic.
 
-## High-priority refactoring opportunities
+5. **IK fallback assignment has been centralized**
+   - `LegIK::solve()` now applies a unified fallback condition with a shared helper for estimated-leg fallback behavior.
 
-1. **Unify timing/rate configuration constants**
-   - Multiple control loops and watchdog checks embed period or timeout constants inline.
-   - Recommendation: centralize loop rates and timeout values in a dedicated configuration module for easier tuning and testability.
+## Current high-priority refactoring opportunities
 
-2. **Reduce ownership of hard-coded geometry constants in constructors**
-   - Kinematics code initializes robot geometry from embedded literal values.
-   - Recommendation: move geometry tables and calibration values into config structures loaded at startup so hardware variants are easier to support.
+1. **Reduce repeated scalar send wrappers in transports**
+   - While low-level serialization is shared, each transport still contains many near-identical `send_*` wrappers with duplicated lambda bodies.
+   - Recommendation: introduce a tiny internal helper per transport (e.g., `write_bytes`) and route all `send_*` wrappers through it.
 
-3. **Extract fault-priority policy in safety logic**
-   - Status: partially addressed by explicit fault-priority handling in `SafetySupervisor`; broader policy/config externalization remains open.
-   - Recommendation: keep priority ordering explicit and move it into an auditable/configurable policy definition.
+2. **Fix inconsistent RX buffer limit policy between framing and transport layers**
+   - `framing.cpp` enforces `MAX_RX_BUFFER_BYTES = 1024`, while client/server transport loops trim to 4096 bytes.
+   - Recommendation: centralize buffer limits (single source of truth) and define ownership of truncation policy.
 
-4. **Encapsulate repetitive leg iteration logic**
-   - IK/control paths repeatedly iterate over `kNumLegs` while applying similar per-leg fallbacks.
-   - Recommendation: extract reusable helpers for map/transform/fallback patterns over leg arrays.
+3. **Externalize geometry configuration instead of compile-time constants**
+   - `defaultHexapodGeometry()` still embeds robot dimensions, mount angles, and servo offsets as compile-time literals.
+   - Recommendation: load geometry/calibration from configuration files to support hardware variants without rebuild.
 
-## Medium-priority refactoring opportunities
+4. **Split `RobotControl` orchestration responsibilities**
+   - `RobotControl` still owns thread lifecycle, loop scheduling, status aggregation, and domain coordination in one class.
+   - Recommendation: extract loop runner/scheduler concerns from control-domain composition for easier testability.
 
-1. **Strengthen typed units for angles and timestamps**
-   - Current code uses raw `double` and `uint64_t` in many interfaces.
-   - Recommendation: introduce lightweight wrappers/aliases for units (rad, deg, microseconds) to reduce accidental misuse.
+## Current medium-priority refactoring opportunities
 
-2. **Split large orchestration classes by responsibility**
-   - `RobotControl` coordinates threads, IO, control, and diagnostics.
-   - Recommendation: extract scheduler/thread orchestration from control decision logic for easier testing and reduced coupling.
+1. **Tighten typed units for time and angular values**
+   - `std::chrono` usage has improved for loop periods, but interfaces still widely exchange raw `uint64_t` timestamps and `double` angles.
+   - Recommendation: incrementally introduce stronger aliases/wrappers at API boundaries.
 
-3. **Normalize logging strategy**
-   - Console output is currently inline and ad hoc.
-   - Recommendation: route logs through a shared logging abstraction with log levels and optional structured fields.
+2. **Normalize diagnostics/logging strategy**
+   - Logging remains a mix of `std::cout`, `std::cerr`, and `printf` across modules.
+   - Recommendation: add a shared logging abstraction with levels and optional component tags.
 
-4. **Consolidate protocol framing validation paths**
-   - Shared framing code can benefit from a single validation entrypoint and richer error reporting.
-   - Recommendation: return explicit decode/validation status enums and map them to diagnostics consistently.
+3. **Clarify safety policy extensibility**
+   - Fault prioritization is explicit in `SafetySupervisor`, but policy is still hardcoded in the class.
+   - Recommendation: move fault ranking and trip policy into a data-driven policy table/config when additional faults are introduced.
 
-## Low-priority cleanup opportunities
+4. **Retire stale fields and placeholders**
+   - Example: `LegIK` includes an apparently unused `seq_tx_` member; `BodyController::update()` remains mostly placeholder logic.
+   - Recommendation: remove dead fields and add milestone-linked TODO ownership for intentional placeholders.
 
-1. **Formatting and naming consistency**
-   - Minor inconsistencies in spacing and local variable naming styles are present.
+## Current low-priority cleanup opportunities
 
-2. **Explicitly document default/placeholder behavior**
-   - Some components intentionally contain placeholder behavior (especially in early gait/control stages).
-   - Recommendation: mark these with `TODO(owner/date)` style comments tied to milestone docs.
+1. **File hygiene and formatting consistency**
+   - A few files still show inconsistent newline/formatting patterns.
 
-## Immediate change included with this review
+2. **Comment modernization**
+   - Some comments are historical or exploratory and can be tightened to current behavior.
 
-As part of this pass, `SafetySupervisor` was lightly refactored to improve readability:
+## Suggested execution order
 
-- promoted safety thresholds/timeouts to internal named constants,
-- extracted command staleness logic to a helper,
-- removed redundant state field re-initialization and clarified unused input handling.
-
-This was a structural readability refactor and keeps the same public interface.
+1. Unify/centralize RX buffer limit policy (`framing` + transport).
+2. Simplify transport `send_*` wrappers to reduce copy-paste surface.
+3. Break out `RobotControl` orchestration helpers and add targeted tests.
+4. Move geometry to runtime configuration and validate with startup checks.
+5. Apply typed-unit wrappers and logging abstraction incrementally.
