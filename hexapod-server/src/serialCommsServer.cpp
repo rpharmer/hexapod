@@ -1,7 +1,6 @@
 #include <CppLinuxSerial/SerialPort.hpp>
 #include "hexapod-common.hpp"
 #include "serialCommsServer.hpp"
-#include "serial_scalar_io.hpp"
 #include "logger.hpp"
 
 #include <cstddef>
@@ -81,65 +80,6 @@ void SerialCommsServer::SetTimeout(int32_t timeout_ms)
 }
 
 
-void SerialCommsServer::write_bytes(const uint8_t* bytes, std::size_t size)
-{
-  serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
-}
-
-/* functions to send data */
-
-// send a char (1 byte)
-void SerialCommsServer::send_char(char data)
-{
-  serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
-    write_bytes(bytes, size);
-  });
-}
-// send a uint8_t (1 bytes)
-void SerialCommsServer::send_u8(uint8_t data)
-{
-  serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
-    write_bytes(bytes, size);
-  });
-}
-// send a uint16_t (2 bytes)
-void SerialCommsServer::send_u16(uint16_t data)
-{
-  serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
-    write_bytes(bytes, size);
-  });
-}
-// send a uint32_t (4 bytes)
-void SerialCommsServer::send_u32(uint32_t data)
-{
-  serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
-    write_bytes(bytes, size);
-  });
-}
-// send a int16_t  (2 bytes)
-void SerialCommsServer::send_i16(int16_t data)
-{
-  serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
-    write_bytes(bytes, size);
-  });
-}
-// send a int32_t  (4 bytes)
-void SerialCommsServer::send_i32(int32_t data)
-{
-  serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
-    write_bytes(bytes, size);
-  });
-}
-// send a float    (4 bytes)
-void SerialCommsServer::send_f32(float data)
-{
-  serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
-    write_bytes(bytes, size);
-  });
-}
-
-/* functions to recieve data */
-
 void SerialCommsServer::refill_read_buffer()
 {
   if (readBufferHead < readBuffer.size())
@@ -183,41 +123,6 @@ int SerialCommsServer::recv_bytes(void *data, std::size_t size)
 }
 
 
-// receive a char (1 byte)
-int SerialCommsServer::recv_char(char *data)
-{
-  return recv_bytes(data, sizeof(char));
-}
-// recieve a uint8_t (1 bytes)
-int SerialCommsServer::recv_u8(uint8_t *data)
-{
-  return recv_bytes(data, sizeof(uint8_t));
-}    
-// recieve a uint16_t (2 bytes)
-int SerialCommsServer::recv_u16(uint16_t *data)
-{
-  return recv_bytes(data, sizeof(uint16_t));
-}
-// recieve a uint32_t (4 bytes)
-int SerialCommsServer::recv_u32(uint32_t *data)
-{
-  return recv_bytes(data, sizeof(uint32_t));
-}
-// recieve a int16_t  (2 bytes)
-int SerialCommsServer::recv_i16(int16_t *data)
-{
-  return recv_bytes(data, sizeof(int16_t));
-}
-// recieve a int32_t  (4 bytes)
-int SerialCommsServer::recv_i32(int32_t *data)
-{
-  return recv_bytes(data, sizeof(int32_t));
-}
-// recieve a float    (4 bytes)
-int SerialCommsServer::recv_f32(float *data)
-{
-  return recv_bytes(data, sizeof(float));
-}
 
 void SerialCommsServer::send_packet(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload)
 {
@@ -233,7 +138,7 @@ bool SerialCommsServer::recv_packet(DecodedPacket& packet)
       return true;
 
     uint8_t byte = 0;
-    const int bytes_read = recv_u8(&byte);
+    const int bytes_read = recv_bytes(&byte, sizeof(byte));
     if(bytes_read <= 0)
       return false;
     rxBuffer.push_back(byte);
