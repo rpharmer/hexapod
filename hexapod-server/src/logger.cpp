@@ -1,4 +1,4 @@
-#include "logger.h"
+#include "logger.hpp"
 
 #include <chrono>
 #include <ctime>
@@ -178,7 +178,7 @@ void AsyncLogger::Log(
 void AsyncLogger::Flush() {
     std::unique_lock<std::mutex> lock(mutex_);
     drainedCv_.wait(lock, [this]() {
-        return queue_.empty();
+        return queue_.empty() && !workerBusy_;
     });
 
     auto sinksCopy = sinks_;
@@ -223,7 +223,7 @@ void AsyncLogger::WorkerLoop() {
         std::vector<std::shared_ptr<LogSink>> sinksCopy;
 
         {
-            std::unique_lock<std::mutex> lock(mutex_);
+          std::unique_lock<std::mutex> lock(mutex_);
             cv_.wait(lock, [this]() {
                 return stopRequested_ || !queue_.empty();
             });
@@ -234,6 +234,7 @@ void AsyncLogger::WorkerLoop() {
                 break;
             }
 
+            workerBusy_ = true;
             msg = std::move(queue_.front());
             queue_.pop_front();
             sinksCopy = sinks_;
@@ -246,17 +247,20 @@ void AsyncLogger::WorkerLoop() {
 
         if (hasMessage) {
             for (const auto& sink : sinksCopy) {
-                if (sink) {
-                    sink->Write(msg.level, msg.loggerName, msg.text, msg.location);
-                }
-            }
+              if (sink) {
+                  sink->Write(msg.level, msg.loggerName, msg.text, msg.location);
+              }
+          }
         }
     }
 
     std::vector<std::shared_ptr<LogSink>> sinksCopy;
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        sinksCopy = sinks_;
+      std::lock_guard<std::mutex> lock(mutex_);
+      workerBusy_ = false;
+      if (queue_.empty()) {
+          drainedCv_.notify_all();
+      }
     }
 
     for (const auto& sink : sinksCopy) {

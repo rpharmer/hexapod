@@ -147,6 +147,8 @@ private:
     std::size_t droppedMessages_;
     bool stopRequested_;
     bool workerRunning_;
+    
+    bool workerBusy_ = false;
 };
 
 } // namespace logging
