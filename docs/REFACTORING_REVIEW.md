@@ -13,7 +13,7 @@ This document is an updated refactoring pass across the repository's production 
 ### Confirmed addressed
 
 1. **Scalar serialization helpers are shared**
-   - Client and server scalar read/write paths both use `serial_scalar_io` helpers.
+   - Client and server scalar read/write paths both use shared `read_scalar` helpers in `framing.hpp`.
 
 2. **RX buffer growth is bounded in packet receive loops**
    - Both client/server packet receive loops trim accumulated RX buffers using the shared transport limit constant.
@@ -36,6 +36,9 @@ This document is an updated refactoring pass across the repository's production 
 2. **`LegIK` stale field note is obsolete**
    - Previous note referenced an unused `seq_tx_` field.
    - `LegIK` no longer contains that field.
+
+3. **Unused `serial_scalar_io.hpp` removed**
+   - The standalone scalar serial I/O header had no remaining in-repo consumers and was removed.
 
 ## Current high-priority refactoring opportunities
 
