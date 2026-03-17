@@ -15,7 +15,5 @@ private:
                         LegRawState& out,
                         const FootTarget& foot,
                         const LegGeometry& leg);
-    uint64_t seq_tx_{0};
-
     HexapodGeometry hexGeo;
 };
