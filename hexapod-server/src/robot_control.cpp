@@ -1,5 +1,7 @@
 #include "robot_control.hpp"
 
+#include "control_config.hpp"
+
 #include <chrono>
 #include <iostream>
 
@@ -76,7 +78,7 @@ void RobotControl::busLoop() {
         const JointTargets cmd = joint_targets_.read();
         (void)hw_->write(cmd);
 
-        sleepUntil(cycle_start, 2000us); // 500 Hz
+        sleepUntil(cycle_start, control_config::kBusLoopPeriod);
     }
 }
 
@@ -88,7 +90,7 @@ void RobotControl::estimatorLoop() {
         const EstimatedState est = estimator_->update(raw);
         estimated_state_.write(est);
 
-        sleepUntil(cycle_start, 2000us); // 500 Hz
+        sleepUntil(cycle_start, control_config::kEstimatorLoopPeriod);
     }
 }
 
@@ -124,7 +126,7 @@ void RobotControl::controlLoop() {
         st.loop_counter = ++loop_counter;
         status_.write(st);
 
-        sleepUntil(cycle_start, 4000us); // 250 Hz
+        sleepUntil(cycle_start, control_config::kControlLoopPeriod);
     }
 }
 
@@ -139,7 +141,7 @@ void RobotControl::safetyLoop() {
         const SafetyState s = safety_.evaluate(raw, est, intent);
         safety_state_.write(s);
 
-        sleepUntil(cycle_start, 2000us); // 500 Hz
+        sleepUntil(cycle_start, control_config::kSafetyLoopPeriod);
     }
 }
 
@@ -154,7 +156,7 @@ void RobotControl::diagnosticsLoop() {
             << " loops=" << st.loop_counter
             << "\n";
 
-        std::this_thread::sleep_for(500ms);
+        std::this_thread::sleep_for(control_config::kDiagnosticsPeriod);
     }
 }
 

@@ -1,5 +1,7 @@
 #include "gait_scheduler.hpp"
 
+#include "control_config.hpp"
+
 #include <algorithm>
 
 double GaitScheduler::wrap01(double x) const {
@@ -37,8 +39,7 @@ GaitState GaitScheduler::update(const EstimatedState&,
     last_update_us_ = now;
 
     // TODO(gait): replace fallback speed estimate with measured command magnitude.
-    constexpr double kFallbackSpeedMag = 0.01;
-    const double speed_mag = kFallbackSpeedMag;
+    const double speed_mag = control_config::kFallbackSpeedMag;
 
     const double step_hz = std::clamp(0.5 + 2.0 * speed_mag, 0.5, 2.5);
     out.stride_phase_rate_hz = step_hz;

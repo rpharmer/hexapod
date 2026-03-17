@@ -9,5 +9,8 @@ public:
                          const MotionIntent& intent);
 
 private:
+    static int faultPriority(FaultCode code);
+    static bool shouldReplaceFault(FaultCode current, FaultCode candidate);
+
     void trip(SafetyState& s, FaultCode code, bool torque_cut);
 };
