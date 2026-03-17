@@ -1,82 +1,90 @@
 # Refactoring Review
 
-This document captures an updated refactoring scan across the repository's production C++ code (`hexapod-common/`, `hexapod-server/`, and `hexapod-client/`) and verifies prior recommendations against the current codebase.
+This document is an updated refactoring pass across the repository's production C++ code and a validation of prior refactoring notes against the current files.
 
 ## Scope reviewed
 
-- Shared protocol and framing utilities in `hexapod-common/`
-- Server runtime, control, kinematics, and safety code in `hexapod-server/`
-- Pico client firmware and serial transport in `hexapod-client/`
+- Shared protocol/framing utilities in `hexapod-common/`
+- Server runtime/control/kinematics/safety in `hexapod-server/`
+- Pico client firmware + serial transport in `hexapod-client/`
 
-## Validation of previous review items
+## Validation of prior review items (current status)
 
-### Addressed since the previous pass
+### Confirmed addressed
 
-1. **Scalar serialization helpers are now shared**
-   - Client and server transports now route scalar read/write through `hexapod-common/include/serial_scalar_io.hpp`.
-   - Remaining work is mostly call-site cleanup (optional), not duplicated byte-pack logic.
+1. **Scalar serialization helpers are shared**
+   - Client and server scalar read/write paths both use `serial_scalar_io` helpers.
 
-2. **RX buffer growth is now bounded in packet receive loops**
-   - Both client and server `recv_packet()` paths apply max-buffer trimming while accumulating framed bytes.
-   - Server-side trim path also emits an overflow diagnostic.
+2. **RX buffer growth is bounded in packet receive loops**
+   - Both client/server packet receive loops trim accumulated RX buffers using the shared transport limit constant.
 
-3. **Server serial receive path no longer does per-read front erases**
-   - The server now uses a `readBufferHead` cursor and only clears/reset when consumed, avoiding repeated linear shifts on each scalar receive.
+3. **Server serial receive path avoids per-read front erases**
+   - Server receive now uses `readBufferHead` and only clears when fully consumed.
 
-4. **Gait phase offset mapping has been extracted to table-driven constants**
-   - `GaitScheduler` now uses named phase-offset arrays and a selector helper instead of per-leg switch logic.
+4. **Gait phase offset mapping is table-driven**
+   - `GaitScheduler` uses named phase-offset arrays and a gait selector helper.
 
-5. **IK fallback assignment has been centralized**
-   - `LegIK::solve()` now applies a unified fallback condition with a shared helper for estimated-leg fallback behavior.
+5. **IK fallback assignment is centralized**
+   - `LegIK::solve()` uses one fallback condition and `apply_estimated_leg_fallback()`.
+
+### Corrected from the previous review (stale findings)
+
+1. **Framing vs transport RX limits are no longer inconsistent**
+   - Previous note claimed `framing` and transport limits differed (`1024` vs `4096`).
+   - Current code defines both `MAX_RX_BUFFER_BYTES` and `MAX_TRANSPORT_RX_BUFFER_BYTES` as `1024` in `framing.hpp`.
+
+2. **`LegIK` stale field note is obsolete**
+   - Previous note referenced an unused `seq_tx_` field.
+   - `LegIK` no longer contains that field.
 
 ## Current high-priority refactoring opportunities
 
-1. **Reduce repeated scalar send wrappers in transports**
-   - While low-level serialization is shared, each transport still contains many near-identical `send_*` wrappers with duplicated lambda bodies.
-   - Recommendation: introduce a tiny internal helper per transport (e.g., `write_bytes`) and route all `send_*` wrappers through it.
+1. **Remove repeated server `send_*` lambda wrappers**
+   - `SerialCommsServer::send_*` methods are near-identical and all forward to `write_bytes`.
+   - Recommendation: add a small templated/member helper so each `send_*` is one-line and no repeated lambdas are needed.
 
-2. **Fix inconsistent RX buffer limit policy between framing and transport layers**
-   - `framing.cpp` enforces `MAX_RX_BUFFER_BYTES = 1024`, while client/server transport loops trim to 4096 bytes.
-   - Recommendation: centralize buffer limits (single source of truth) and define ownership of truncation policy.
+2. **Fix transport write allocation in server path**
+   - `SerialCommsServer::write_bytes()` constructs a new `std::vector<uint8_t>` for every write call.
+   - Recommendation: if library API allows, reuse a buffer or batch writes to reduce allocation churn.
 
-3. **Externalize geometry configuration instead of compile-time constants**
-   - `defaultHexapodGeometry()` still embeds robot dimensions, mount angles, and servo offsets as compile-time literals.
-   - Recommendation: load geometry/calibration from configuration files to support hardware variants without rebuild.
+3. **Split `RobotControl` orchestration responsibilities**
+   - `RobotControl` still owns thread lifecycle, loop timing, coordination, status aggregation, and diagnostics output.
+   - Recommendation: extract loop runner/scheduler + status/reporting concerns into dedicated units to improve testability.
 
-4. **Split `RobotControl` orchestration responsibilities**
-   - `RobotControl` still owns thread lifecycle, loop scheduling, status aggregation, and domain coordination in one class.
-   - Recommendation: extract loop runner/scheduler concerns from control-domain composition for easier testability.
+4. **Externalize geometry/calibration configuration**
+   - `defaultHexapodGeometry()` still embeds dimensions, mount angles, and servo offsets in compile-time literals.
+   - Recommendation: load geometry/calibration from config to support hardware variants without rebuild.
 
 ## Current medium-priority refactoring opportunities
 
-1. **Tighten typed units for time and angular values**
-   - `std::chrono` usage has improved for loop periods, but interfaces still widely exchange raw `uint64_t` timestamps and `double` angles.
-   - Recommendation: incrementally introduce stronger aliases/wrappers at API boundaries.
+1. **Tighten typed units around timestamps and angles**
+   - Internal loops use `std::chrono` for periods, but interfaces still rely heavily on raw `uint64_t timestamp_us` and `double` angles.
+   - Recommendation: add stronger aliases/wrappers at API boundaries.
 
-2. **Normalize diagnostics/logging strategy**
-   - Logging remains a mix of `std::cout`, `std::cerr`, and `printf` across modules.
-   - Recommendation: add a shared logging abstraction with levels and optional component tags.
+2. **Normalize logging/diagnostics strategy**
+   - Code still mixes `std::cout` and `std::cerr` directly across modules.
+   - Recommendation: introduce a shared logging abstraction with levels/component tags.
 
-3. **Clarify safety policy extensibility**
-   - Fault prioritization is explicit in `SafetySupervisor`, but policy is still hardcoded in the class.
-   - Recommendation: move fault ranking and trip policy into a data-driven policy table/config when additional faults are introduced.
+3. **Make safety policy data-driven as checks expand**
+   - `SafetySupervisor` fault priorities and trip policy are encoded directly in methods.
+   - Recommendation: move ranking/policy to a table/config once more fault sources are added.
 
-4. **Retire stale fields and placeholders**
-   - Example: `LegIK` includes an apparently unused `seq_tx_` member; `BodyController::update()` remains mostly placeholder logic.
-   - Recommendation: remove dead fields and add milestone-linked TODO ownership for intentional placeholders.
+4. **Track placeholder controller milestones explicitly**
+   - `BodyController::update()` is intentionally placeholder logic with TODO comments and unused inputs.
+   - Recommendation: tie TODOs to milestone IDs/issues and remove placeholders once replacement lands.
 
 ## Current low-priority cleanup opportunities
 
-1. **File hygiene and formatting consistency**
-   - A few files still show inconsistent newline/formatting patterns.
+1. **Header hygiene in `framing.hpp`**
+   - Includes and commented legacy snippets can be trimmed (`stdio.h`, older commented template helpers).
 
-2. **Comment modernization**
-   - Some comments are historical or exploratory and can be tightened to current behavior.
+2. **Comment and formatting consistency**
+   - Several files still contain historical comments or inconsistent spacing/newline style.
 
 ## Suggested execution order
 
-1. Unify/centralize RX buffer limit policy (`framing` + transport).
-2. Simplify transport `send_*` wrappers to reduce copy-paste surface.
-3. Break out `RobotControl` orchestration helpers and add targeted tests.
-4. Move geometry to runtime configuration and validate with startup checks.
-5. Apply typed-unit wrappers and logging abstraction incrementally.
+1. Reduce server transport wrapper duplication + write allocation overhead.
+2. Split `RobotControl` loop orchestration/reporting concerns.
+3. Externalize geometry/calibration loading and validate startup checks.
+4. Introduce typed-unit wrappers incrementally at control API boundaries.
+5. Consolidate logging and clean low-priority header/comment hygiene.
