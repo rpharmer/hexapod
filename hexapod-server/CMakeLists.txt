@@ -32,18 +32,10 @@ if(CPPLINUXSERIAL_INTERFACE_INCLUDES)
     endif()
 endif()
 
+file(GLOB HEXAPOD_SERVER_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+
 add_executable(hexapod-server
-    src/body_controller.cpp
-    src/estimator.cpp
-    src/gait_scheduler.cpp
-    src/hardware_bridge.cpp
-    src/hexapod-server.cpp
-    src/leg_fk.cpp
-    src/leg_ik.cpp
-    src/robot_control.cpp
-    src/safety_supervisor.cpp
-    src/serialCommsServer.cpp
-    src/types.cpp
+    ${HEXAPOD_SERVER_SOURCES}
     ../hexapod-common/framing.cpp
 )
 
