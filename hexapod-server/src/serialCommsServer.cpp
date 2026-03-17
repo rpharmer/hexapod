@@ -6,6 +6,18 @@
 
 using namespace mn::CppLinuxSerial;
 
+
+namespace {
+
+template <typename T>
+void write_scalar(SerialPort& serialport, T data)
+{
+  const auto* begin = reinterpret_cast<const uint8_t*>(&data);
+  serialport.WriteBinary(std::vector<uint8_t>(begin, begin + sizeof(T)));
+}
+
+} // namespace
+
 BaudRate SerialCommsServer::int_to_baud_rate(int baud)
 {
   switch (baud)
@@ -65,37 +77,37 @@ void SerialCommsServer::SetTimeout(int32_t timeout_ms)
 // send a char (1 byte)
 void SerialCommsServer::send_char(char data)
 {
-  serialport.WriteBinary(std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&data), reinterpret_cast<uint8_t*>(&data) + sizeof(char)));
+  write_scalar(serialport, data);
 }
 // send a uint8_t (1 bytes)
 void SerialCommsServer::send_u8(uint8_t data)
 {
-  serialport.WriteBinary(std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&data), reinterpret_cast<uint8_t*>(&data) + sizeof(uint8_t)));
+  write_scalar(serialport, data);
 }
 // send a uint16_t (2 bytes)
 void SerialCommsServer::send_u16(uint16_t data)
 {
-  serialport.WriteBinary(std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&data), reinterpret_cast<uint8_t*>(&data) + sizeof(uint16_t)));
+  write_scalar(serialport, data);
 }
 // send a uint32_t (4 bytes)
 void SerialCommsServer::send_u32(uint32_t data)
 {
-  serialport.WriteBinary(std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&data), reinterpret_cast<uint8_t*>(&data) + sizeof(uint32_t)));
+  write_scalar(serialport, data);
 }
 // send a int16_t  (2 bytes)
 void SerialCommsServer::send_i16(int16_t data)
 {
-  serialport.WriteBinary(std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&data), reinterpret_cast<uint8_t*>(&data) + sizeof(int16_t)));
+  write_scalar(serialport, data);
 }
 // send a int32_t  (4 bytes)
 void SerialCommsServer::send_i32(int32_t data)
 {
-  serialport.WriteBinary(std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&data), reinterpret_cast<uint8_t*>(&data) + sizeof(int32_t)));
+  write_scalar(serialport, data);
 }
 // send a float    (4 bytes)
 void SerialCommsServer::send_f32(float data)
 {
-  serialport.WriteBinary(std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&data), reinterpret_cast<uint8_t*>(&data) + sizeof(float)));
+  write_scalar(serialport, data);
 }
 
 /* functions to recieve data */
