@@ -19,6 +19,7 @@ private:
 
     int recv_bytes(void *data, std::size_t size);
     void refill_read_buffer();
+    void write_bytes(const uint8_t* bytes, std::size_t size);
 public:
     
     static BaudRate int_to_baud_rate(int baud);

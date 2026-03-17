@@ -17,6 +17,7 @@
 constexpr uint8_t STX = 0x7E;
 constexpr uint8_t ETX = 0x7F;
 constexpr std::size_t MAX_RX_BUFFER_BYTES = 1024;
+constexpr std::size_t MAX_TRANSPORT_RX_BUFFER_BYTES = 1024;
 
 uint16_t crc16_ccitt(const uint8_t* data, size_t len);
 std::vector<uint8_t> encodePacket(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload);

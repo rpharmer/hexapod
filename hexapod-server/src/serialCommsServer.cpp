@@ -12,9 +12,6 @@ using namespace mn::CppLinuxSerial;
 
 namespace {
 
-constexpr std::size_t kMaxReadBufferBytes = 4096;
-constexpr std::size_t kMaxRxBufferBytes = 4096;
-
 void trim_rx_buffer(std::vector<uint8_t>& buffer, const std::size_t max_bytes)
 {
   if (buffer.size() <= max_bytes)
@@ -24,6 +21,7 @@ void trim_rx_buffer(std::vector<uint8_t>& buffer, const std::size_t max_bytes)
   buffer.erase(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(overflow));
   std::cerr << "[SerialCommsServer] RX buffer overflow: dropped " << overflow << " bytes\n";
 }
+
 
 } // namespace
 
@@ -81,55 +79,60 @@ void SerialCommsServer::SetTimeout(int32_t timeout_ms)
 }
 
 
+void SerialCommsServer::write_bytes(const uint8_t* bytes, std::size_t size)
+{
+  serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
+}
+
 /* functions to send data */
 
 // send a char (1 byte)
 void SerialCommsServer::send_char(char data)
 {
   serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
-    serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
+    write_bytes(bytes, size);
   });
 }
 // send a uint8_t (1 bytes)
 void SerialCommsServer::send_u8(uint8_t data)
 {
   serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
-    serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
+    write_bytes(bytes, size);
   });
 }
 // send a uint16_t (2 bytes)
 void SerialCommsServer::send_u16(uint16_t data)
 {
   serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
-    serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
+    write_bytes(bytes, size);
   });
 }
 // send a uint32_t (4 bytes)
 void SerialCommsServer::send_u32(uint32_t data)
 {
   serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
-    serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
+    write_bytes(bytes, size);
   });
 }
 // send a int16_t  (2 bytes)
 void SerialCommsServer::send_i16(int16_t data)
 {
   serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
-    serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
+    write_bytes(bytes, size);
   });
 }
 // send a int32_t  (4 bytes)
 void SerialCommsServer::send_i32(int32_t data)
 {
   serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
-    serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
+    write_bytes(bytes, size);
   });
 }
 // send a float    (4 bytes)
 void SerialCommsServer::send_f32(float data)
 {
   serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
-    serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
+    write_bytes(bytes, size);
   });
 }
 
@@ -151,7 +154,7 @@ void SerialCommsServer::refill_read_buffer()
     return;
 
   readBuffer.insert(readBuffer.end(), recv_buffer.begin(), recv_buffer.end());
-  trim_rx_buffer(readBuffer, kMaxReadBufferBytes);
+  trim_rx_buffer(readBuffer, MAX_TRANSPORT_RX_BUFFER_BYTES);
   if (readBufferHead > readBuffer.size())
     readBufferHead = readBuffer.size();
 }
@@ -232,6 +235,6 @@ bool SerialCommsServer::recv_packet(DecodedPacket& packet)
     if(bytes_read <= 0)
       return false;
     rxBuffer.push_back(byte);
-    trim_rx_buffer(rxBuffer, kMaxRxBufferBytes);
+    trim_rx_buffer(rxBuffer, MAX_TRANSPORT_RX_BUFFER_BYTES);
   }
 }
