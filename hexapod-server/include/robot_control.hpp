@@ -5,9 +5,7 @@
 #include "estimator.hpp"
 #include "hardware_bridge.hpp"
 #include "safety_supervisor.hpp"
-#include "body_controller.hpp"
-#include "gait_scheduler.hpp"
-#include "leg_ik.hpp"
+#include "control_pipeline.hpp"
 #include "logger.hpp"
 
 #include <atomic>
@@ -37,19 +35,13 @@ private:
     void diagnosticsLoop();
 
     static void joinThread(std::thread& t);
-    static void sleepUntil(const Clock::time_point& start,
-                           std::chrono::microseconds period);
-    static const char* toString(RobotMode mode);
-    static const char* toString(FaultCode code);
 
 private:
     std::unique_ptr<IHardwareBridge> hw_;
     std::unique_ptr<IEstimator> estimator_;
     std::shared_ptr<logging::AsyncLogger> logger_;
 
-    GaitScheduler gait_;
-    BodyController body_;
-    LegIK ik_;
+    ControlPipeline pipeline_;
     SafetySupervisor safety_;
 
     std::atomic<bool> running_{false};

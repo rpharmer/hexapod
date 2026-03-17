@@ -1,9 +1,10 @@
 #include "robot_control.hpp"
 
 #include "control_config.hpp"
+#include "loop_timing.hpp"
+#include "status_reporter.hpp"
 
 #include <chrono>
-#include <iostream>
 
 using namespace std::chrono_literals;
 
@@ -91,7 +92,7 @@ void RobotControl::busLoop() {
         const JointTargets cmd = joint_targets_.read();
         (void)hw_->write(cmd);
 
-        sleepUntil(cycle_start, control_config::kBusLoopPeriod);
+        loop_timing::sleepUntil(cycle_start, control_config::kBusLoopPeriod);
     }
 }
 
@@ -103,7 +104,7 @@ void RobotControl::estimatorLoop() {
         const EstimatedState est = estimator_->update(raw);
         estimated_state_.write(est);
 
-        sleepUntil(cycle_start, control_config::kEstimatorLoopPeriod);
+        loop_timing::sleepUntil(cycle_start, control_config::kEstimatorLoopPeriod);
     }
 }
 
@@ -116,30 +117,19 @@ void RobotControl::controlLoop() {
         const EstimatedState est = estimated_state_.read();
         const MotionIntent intent = motion_intent_.read();
         const SafetyState safety_state = safety_state_.read();
+        const bool bus_ok = raw_state_.read().bus_ok;
 
-        RobotMode active_mode = intent.requested_mode;
-        if (safety_state.active_fault != FaultCode::NONE) {
-            active_mode = RobotMode::FAULT;
-        }
+        const PipelineStepResult result = pipeline_.runStep(
+            est,
+            intent,
+            safety_state,
+            bus_ok,
+            ++loop_counter);
 
-        // test standing by making gait_ a dummy, body_ will then ignore it
-        // allowing us to test the body_ and ik_ methods.
+        joint_targets_.write(result.joint_targets);
+        status_.write(result.status);
 
-        const GaitState gait_state = gait_.update(est, intent, safety_state);
-        const LegTargets leg_targets = body_.update(est, intent, gait_state, safety_state);
-        const JointTargets joint_targets = ik_.solve(est, leg_targets, safety_state);
-
-        joint_targets_.write(joint_targets);
-
-        ControlStatus st{};
-        st.active_mode = active_mode;
-        st.estimator_valid = (est.timestamp_us != 0);
-        st.bus_ok = raw_state_.read().bus_ok;
-        st.active_fault = safety_state.active_fault;
-        st.loop_counter = ++loop_counter;
-        status_.write(st);
-
-        sleepUntil(cycle_start, control_config::kControlLoopPeriod);
+        loop_timing::sleepUntil(cycle_start, control_config::kControlLoopPeriod);
     }
 }
 
@@ -154,22 +144,14 @@ void RobotControl::safetyLoop() {
         const SafetyState s = safety_.evaluate(raw, est, intent);
         safety_state_.write(s);
 
-        sleepUntil(cycle_start, control_config::kSafetyLoopPeriod);
+        loop_timing::sleepUntil(cycle_start, control_config::kSafetyLoopPeriod);
     }
 }
 
 void RobotControl::diagnosticsLoop() {
     while (running_.load()) {
         const auto st = status_.read();
-        if (logger_) {
-            LOG_INFO(
-                logger_,
-                "[diag] mode=", toString(st.active_mode),
-                " est=", (st.estimator_valid ? "ok" : "bad"),
-                " bus=", (st.bus_ok ? "ok" : "bad"),
-                " fault=", toString(st.active_fault),
-                " loops=", st.loop_counter);
-        }
+        status_reporter::logStatus(logger_, st);
 
         std::this_thread::sleep_for(control_config::kDiagnosticsPeriod);
     }
@@ -179,33 +161,3 @@ void RobotControl::joinThread(std::thread& t) {
     if (t.joinable()) t.join();
 }
 
-void RobotControl::sleepUntil(const Clock::time_point& start,
-                              std::chrono::microseconds period) {
-    std::this_thread::sleep_until(start + period);
-}
-
-const char* RobotControl::toString(RobotMode mode) {
-    switch (mode) {
-        case RobotMode::SAFE_IDLE: return "SAFE_IDLE";
-        case RobotMode::HOMING: return "HOMING";
-        case RobotMode::STAND: return "STAND";
-        case RobotMode::WALK: return "WALK";
-        case RobotMode::FAULT: return "FAULT";
-    }
-    return "UNKNOWN";
-}
-
-const char* RobotControl::toString(FaultCode code) {
-    switch (code) {
-        case FaultCode::NONE: return "NONE";
-        case FaultCode::BUS_TIMEOUT: return "BUS_TIMEOUT";
-        case FaultCode::ESTOP: return "ESTOP";
-        case FaultCode::TIP_OVER: return "TIP_OVER";
-        case FaultCode::ESTIMATOR_INVALID: return "ESTIMATOR_INVALID";
-        case FaultCode::MOTOR_FAULT: return "MOTOR_FAULT";
-        case FaultCode::JOINT_LIMIT: return "JOINT_LIMIT";
-        case FaultCode::COMMAND_TIMEOUT: return "COMMAND_TIMEOUT";
-    }
-    return "UNKNOWN";
-
-}
