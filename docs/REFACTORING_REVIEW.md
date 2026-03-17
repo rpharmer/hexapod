@@ -8,6 +8,28 @@ This document captures a full-pass refactoring scan across the repository's prod
 - Server runtime, control, kinematics, and safety code in `hexapod-server/`
 - Pico client firmware and serial transport in `hexapod-client/`
 
+## Newly identified opportunities (latest pass)
+
+1. **Deduplicate scalar serialization helpers between client/server transports**
+   - Both `SerialCommsClient` and `SerialCommsServer` implement nearly identical per-type send/receive wrappers and internal scalar byte helpers.
+   - Recommendation: introduce a shared transport utility header for scalar read/write primitives and use thin adapters for platform-specific IO.
+
+2. **Bound packet RX buffers in streaming decode loops**
+   - `recv_packet()` on both client and server continuously appends bytes until a frame can be decoded, with no explicit cap for persistent malformed traffic.
+   - Recommendation: add a maximum RX buffer policy (drop oldest bytes or hard reset) and surface an overflow diagnostic.
+
+3. **Replace linear-time read-buffer erasure in server serial path**
+   - Server receive logic consumes data with `std::vector::erase(begin, begin + n)`, which shifts remaining bytes on each packet read.
+   - Recommendation: move to a ring buffer or head-indexed deque-like approach to reduce copy churn under sustained traffic.
+
+4. **Unify gait phase-offset mapping logic**
+   - `GaitScheduler::update()` contains a per-leg `switch` with repeated formulas and implicit gait tables.
+   - Recommendation: extract gait phase-offset tables/policies into data-driven configuration so gait variants can be added without branching changes.
+
+5. **Consolidate repeated per-leg fallback assignment in IK solve path**
+   - `LegIK::solve()` assigns estimated leg state as fallback in two separate conditions (`solveOneLeg` failure and leg-disabled safety).
+   - Recommendation: centralize fallback policy (e.g., helper or early guard) so future fallback behavior changes stay consistent.
+
 ## High-priority refactoring opportunities
 
 1. **Unify timing/rate configuration constants**
@@ -19,8 +41,8 @@ This document captures a full-pass refactoring scan across the repository's prod
    - Recommendation: move geometry tables and calibration values into config structures loaded at startup so hardware variants are easier to support.
 
 3. **Extract fault-priority policy in safety logic**
-   - Safety checks currently run sequentially and can overwrite previously-set faults.
-   - Recommendation: introduce explicit fault-priority handling (e.g., first-fault-wins or severity ordering) to make behavior deterministic and auditable.
+   - Status: partially addressed by explicit fault-priority handling in `SafetySupervisor`; broader policy/config externalization remains open.
+   - Recommendation: keep priority ordering explicit and move it into an auditable/configurable policy definition.
 
 4. **Encapsulate repetitive leg iteration logic**
    - IK/control paths repeatedly iterate over `kNumLegs` while applying similar per-leg fallbacks.
