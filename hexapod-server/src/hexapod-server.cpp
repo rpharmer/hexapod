@@ -14,11 +14,12 @@
 #include "estimator.hpp"
 #include "hardware_bridge.hpp"
 #include "robot_control.hpp"
+#include "control_config.hpp"
 
 
 
 
-using namespace std::chrono_literals;
+
 using namespace mn::CppLinuxSerial;
 
 
@@ -69,12 +70,12 @@ int main() {
 
   robot.setMotionIntent(buildMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.20));
 
-  std::this_thread::sleep_for(2s);
+  std::this_thread::sleep_for(control_config::kStandSettlingDelay);
 
   while (!g_exit.load()) {
       robot.setMotionIntent(buildMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.20));
 
-      std::this_thread::sleep_for(100ms); // refresh command watchdog
+      std::this_thread::sleep_for(control_config::kCommandRefreshPeriod); // refresh command watchdog
   }
 
   robot.stop();

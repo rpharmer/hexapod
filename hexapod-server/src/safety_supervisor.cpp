@@ -1,24 +1,42 @@
 #include "safety_supervisor.hpp"
 
+#include "control_config.hpp"
+
 #include <cmath>
 
 namespace {
-constexpr double kMaxTiltRad = 0.70;
-constexpr uint64_t kCommandTimeoutUs = 300000; // 300 ms
 
 bool isIntentStale(const MotionIntent& intent) {
     if (intent.timestamp_us == 0) {
         return true;
     }
 
-    return (now_us() - intent.timestamp_us) > kCommandTimeoutUs;
+    return (now_us() - intent.timestamp_us) > control_config::kCommandTimeoutUs;
 }
+
 } // namespace
 
+int SafetySupervisor::faultPriority(FaultCode code) {
+    switch (code) {
+        case FaultCode::NONE: return 0;
+        case FaultCode::COMMAND_TIMEOUT: return 10;
+        case FaultCode::TIP_OVER: return 100;
+        default: return 50;
+    }
+}
+
+bool SafetySupervisor::shouldReplaceFault(FaultCode current, FaultCode candidate) {
+    return faultPriority(candidate) > faultPriority(current);
+}
+
 void SafetySupervisor::trip(SafetyState& s, FaultCode code, bool torque_cut) {
+    if (!shouldReplaceFault(s.active_fault, code)) {
+        return;
+    }
+
     s.active_fault = code;
     s.inhibit_motion = true;
-    s.torque_cut = torque_cut;
+    s.torque_cut = s.torque_cut || torque_cut;
 }
 
 SafetyState SafetySupervisor::evaluate(const RawHardwareState& raw,
@@ -28,8 +46,8 @@ SafetyState SafetySupervisor::evaluate(const RawHardwareState& raw,
 
     SafetyState s{};
 
-    if (std::abs(est.body_twist_state.twist_pos_rad.x) > kMaxTiltRad ||
-        std::abs(est.body_twist_state.twist_pos_rad.y) > kMaxTiltRad) {
+    if (std::abs(est.body_twist_state.twist_pos_rad.x) > control_config::kMaxTiltRad ||
+        std::abs(est.body_twist_state.twist_pos_rad.y) > control_config::kMaxTiltRad) {
         trip(s, FaultCode::TIP_OVER, true);
     }
 

@@ -1,10 +1,11 @@
 #pragma once
 
 #include "types.hpp"
+#include "geometry_config.hpp"
 
 class LegIK {
 public:
-    LegIK();
+    explicit LegIK(HexapodGeometry geometry = defaultHexapodGeometry());
 
     JointTargets solve(const EstimatedState& est,
                        const LegTargets& targets, const SafetyState& safety);
