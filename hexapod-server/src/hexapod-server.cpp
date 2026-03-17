@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <array>
 #include <set>
+#include <iostream>
+
+#include "logger.hpp"
 #include "hexapod-common.hpp"
 #include "hexapod-server.hpp"
 #include "serialCommsServer.hpp"
@@ -21,6 +24,7 @@
 
 
 using namespace mn::CppLinuxSerial;
+using namespace logging;
 
 
 static std::atomic<bool> g_exit{false};
@@ -51,6 +55,19 @@ int main() {
   std::signal(SIGINT, signalHandler);
   std::signal(SIGTERM, signalHandler);
   
+  auto logger = std::make_shared<AsyncLogger>("app", LogLevel::Debug, 10000);
+  logger->AddSink(std::make_shared<ConsoleSink>());
+  logger->AddSink(std::make_shared<FileSink>("app.log"));
+  
+  std::vector<std::thread> threads;
+  for (int t = 0; t < 4; ++t) {
+      threads.emplace_back([logger, t]() {
+          for (int i = 0; i < 100; ++i) {
+              LOG_DEBUG(logger, "worker=", t, " message=", i);
+          }
+      });
+  }
+  
   ParsedToml config;
   if(!tomlParser("config.txt", config))
   {
@@ -79,6 +96,17 @@ int main() {
   }
 
   robot.stop();
+  
+  for (auto& thread : threads) {
+    thread.join();
+  }
+  
+  LOG_WARN(logger, "All workers joined");
+  LOG_ERROR(logger, "Dropped messages=", logger->DroppedMessageCount());
+
+  logger->Flush();
+  logger->Stop();
+  
   return 0;
 }
 
