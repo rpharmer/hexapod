@@ -58,6 +58,7 @@ int main() {
   auto logger = std::make_shared<AsyncLogger>("app", LogLevel::Debug, 10000);
   logger->AddSink(std::make_shared<ConsoleSink>());
   logger->AddSink(std::make_shared<FileSink>("app.log"));
+  SetDefaultLogger(logger);
   
   ParsedToml config;
   if(!tomlParser("config.txt", config))
@@ -68,7 +69,7 @@ int main() {
   auto hw = std::make_unique<SimpleHardwareBridge>(config.serialDevice, config.baudRate, config.timeout, config.minMaxPulses);
   auto estimator = std::make_unique<SimpleEstimator>();
   
-  RobotControl robot(std::move(hw), std::move(estimator));
+  RobotControl robot(std::move(hw), std::move(estimator), logger);
 
   if (!robot.init()) {
       return 1;
@@ -87,10 +88,6 @@ int main() {
   }
 
   robot.stop();
-  
-  for (auto& thread : threads) {
-    thread.join();
-  }
   
   LOG_WARN(logger, "All workers joined");
   LOG_ERROR(logger, "Dropped messages=", logger->DroppedMessageCount());
@@ -120,40 +117,40 @@ bool tomlParser(std::string filename, ParsedToml& out)
     // Check that the file is a Hexapod Config File
     if(root.at("title").as_string() != "Hexapod Config File")
     {
-      printf("incorrect config header. expected \"Hexapod Config File\"\n");
+      if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "incorrect config header. expected \"Hexapod Config File\""); }
       return false;
     }
     
     std::string serialDevice = toml::find_or<std::string>(root, "SerialDevice", "Error");
     if(serialDevice == "Error" || serialDevice.empty())
     {
-      printf("SerialDevice definition not found or empty\n");
+      if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "SerialDevice definition not found or empty"); }
       return false;
     }
     
     int baudInt = toml::find_or<int>(root, "BaudRate", -1);
     if(baudInt <= 0)
     {
-      printf("baudRate wasn't a positive valid number or not found\n");
+      if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "baudRate wasn't a positive valid number or not found"); }
       return false;
     }
     
     int timeout = toml::find_or<int>(root, "Timeout_ms", -1);
     if(timeout <= 0)
     {
-      printf("timeout wasn't a positive valid number or not found\n");
+      if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "timeout wasn't a positive valid number or not found"); }
       return false;
     }
     
     auto calibs = toml::find_or<std::vector<std::tuple<std::string, int, int>>>(root, "MotorCalibrations", {});
     if(calibs.empty())
     {
-      printf("MotorCalibrations wasn't valid or not found\n");
+      if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "MotorCalibrations wasn't valid or not found"); }
       return false;
     }
     if(calibs.size() != kExpectedJointCount)
     {
-      printf("invalid number of MotorCalibrations, expected %d\n", kExpectedJointCount);
+      if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "invalid number of MotorCalibrations, expected ", kExpectedJointCount); }
       return false;
     }
 
@@ -176,27 +173,27 @@ bool tomlParser(std::string filename, ParsedToml& out)
 
       if(!is_calibration_key_valid(key))
       {
-        printf("invalid motor key '%s' in MotorCalibrations\n", key.c_str());
+        if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "invalid motor key '", key, "' in MotorCalibrations"); }
         return false;
       }
       if(!expected_keys.contains(key))
       {
-        printf("unexpected motor key '%s' in MotorCalibrations\n", key.c_str());
+        if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "unexpected motor key '", key, "' in MotorCalibrations"); }
         return false;
       }
       if(!seen_keys.insert(key).second)
       {
-        printf("duplicate motor key '%s' in MotorCalibrations\n", key.c_str());
+        if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "duplicate motor key '", key, "' in MotorCalibrations"); }
         return false;
       }
       if(min_pulse >= max_pulse)
       {
-        printf("invalid pulse bounds for '%s': min must be < max\n", key.c_str());
+        if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "invalid pulse bounds for '", key, "': min must be < max"); }
         return false;
       }
       if(min_pulse < kMinServoPulse || max_pulse > kMaxServoPulse)
       {
-        printf("invalid pulse bounds for '%s': must be within [%d, %d]\n", key.c_str(), kMinServoPulse, kMaxServoPulse);
+        if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "invalid pulse bounds for '", key, "': must be within [", kMinServoPulse, ", ", kMaxServoPulse, "]"); }
         return false;
       }
     }
@@ -205,7 +202,7 @@ bool tomlParser(std::string filename, ParsedToml& out)
     {
       if(!seen_keys.contains(expected_key))
       {
-        printf("missing motor key '%s' in MotorCalibrations\n", expected_key.c_str());
+        if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "missing motor key '", expected_key, "' in MotorCalibrations"); }
         return false;
       }
     }
@@ -250,7 +247,7 @@ bool tomlParser(std::string filename, ParsedToml& out)
   }
   catch(const std::exception& ex)
   {
-    printf("failed to parse '%s': %s\n", filename.c_str(), ex.what());
+    if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "failed to parse '", filename, "': ", ex.what()); }
     return false;
   }
 }

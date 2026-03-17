@@ -5,9 +5,13 @@
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
+#include <utility>
 
 namespace logging {
 namespace {
+
+std::mutex g_defaultLoggerMutex;
+std::shared_ptr<AsyncLogger> g_defaultLogger;
 
 std::string CurrentTimestamp() {
     using namespace std::chrono;
@@ -117,6 +121,17 @@ void FileSink::Flush() {
     if (file_.is_open()) {
         file_.flush();
     }
+}
+
+
+void SetDefaultLogger(std::shared_ptr<AsyncLogger> logger) {
+    std::lock_guard<std::mutex> lock(g_defaultLoggerMutex);
+    g_defaultLogger = std::move(logger);
+}
+
+std::shared_ptr<AsyncLogger> GetDefaultLogger() {
+    std::lock_guard<std::mutex> lock(g_defaultLoggerMutex);
+    return g_defaultLogger;
 }
 
 AsyncLogger::AsyncLogger(

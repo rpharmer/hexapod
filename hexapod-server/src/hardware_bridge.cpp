@@ -5,6 +5,7 @@
 
 #include <CppLinuxSerial/SerialPort.hpp>
 #include "hexapod-common.hpp"
+#include "logger.hpp"
 
 using namespace mn::CppLinuxSerial;
 
@@ -48,7 +49,7 @@ bool SimpleHardwareBridge::read(RawHardwareState& out)
 {
     if (!initialized_ || !serialComs_)
     {
-      printf("either hardware bridge or serial coms not initialised\n");
+      if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "either hardware bridge or serial coms not initialised"); }
       return false;
     }
 
@@ -63,23 +64,23 @@ bool SimpleHardwareBridge::read(RawHardwareState& out)
     DecodedPacket response;
     if (!serialComs_->recv_packet(response))
     {
-      printf("timeout waiting for response to GET_FULL_HARDWARE_STATE\n");
+      if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "timeout waiting for response to GET_FULL_HARDWARE_STATE"); }
       return false;
     }
     if (response.seq != seq)
     {
-      printf("incorrect seq recieved for GET_FULL_HARDWARE_STATE\n");
+      if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "incorrect seq recieved for GET_FULL_HARDWARE_STATE"); }
       return false;
     }
     if (response.cmd != ACK)
     {
-      printf("GET_FULL_HARDWARE_STATE not acknowledged\n");
+      if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "GET_FULL_HARDWARE_STATE not acknowledged"); }
       return false;
     }
 
     if (!decode_full_hardware_state(response.payload, out))
     {
-      printf("error decoding hardware state response");
+      if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "error decoding hardware state response"); }
         return false;
     }
 
@@ -256,9 +257,13 @@ bool SimpleHardwareBridge::parse_ack_or_nack(const DecodedPacket& response,
 {
     if (response.seq != expected_seq)
     {
-        std::printf("sequence mismatch (expected %u, got %u)\n",
-                    static_cast<unsigned>(expected_seq),
-                    static_cast<unsigned>(response.seq));
+        if (auto logger = logging::GetDefaultLogger()) {
+            LOG_ERROR(logger, "sequence mismatch (expected ",
+                      static_cast<unsigned>(expected_seq),
+                      ", got ",
+                      static_cast<unsigned>(response.seq),
+                      ")");
+        }
         return false;
     }
 
@@ -275,16 +280,16 @@ bool SimpleHardwareBridge::parse_ack_or_nack(const DecodedPacket& response,
     {
         if (!response.payload.empty())
         {
-            std::printf("NACK, error: %u\n", static_cast<unsigned>(response.payload[0]));
+            if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "NACK, error: ", static_cast<unsigned>(response.payload[0])); }
         }
         else
         {
-            std::printf("NACK without error code\n");
+            if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "NACK without error code"); }
         }
         return false;
     }
 
-    std::printf("unexpected response cmd: %u\n", static_cast<unsigned>(response.cmd));
+    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "unexpected response cmd: ", static_cast<unsigned>(response.cmd)); }
     return false;
 }
 
@@ -306,7 +311,7 @@ bool SimpleHardwareBridge::send_command_and_expect_ack_payload(uint8_t cmd,
     DecodedPacket response;
     if (!serialComs_->recv_packet(response))
     {
-        std::printf("timeout waiting for response to cmd: %u\n", static_cast<unsigned>(cmd));
+        if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "timeout waiting for response to cmd: ", static_cast<unsigned>(cmd)); }
         return false;
     }
 
@@ -381,13 +386,13 @@ bool SimpleHardwareBridge::do_handshake(const uint8_t requested_caps)
   DecodedPacket response;
   if(!serialComs_->recv_packet(response))
   {
-    printf("handshake timeout waiting for response\n");
+    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "handshake timeout waiting for response"); }
     return false;
   }
 
   if(response.seq != seq)
   {
-    printf("sequence mismatch (expected %u, got %u)\n", static_cast<unsigned>(seq), static_cast<unsigned>(response.seq));
+    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "sequence mismatch (expected ", static_cast<unsigned>(seq), ", got ", static_cast<unsigned>(response.seq), ")"); }
     return false;
   }
 
@@ -395,11 +400,11 @@ bool SimpleHardwareBridge::do_handshake(const uint8_t requested_caps)
   {
     if(response.payload.empty())
     {
-      printf("NACK without error code\n");
+      if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "NACK without error code"); }
       return false;
     }
     uint8_t errorCode = response.payload[0];
-    printf("NACK, Error: %u\n", errorCode);
+    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "NACK, Error: ", errorCode); }
     return false;
   }
   
@@ -407,7 +412,7 @@ bool SimpleHardwareBridge::do_handshake(const uint8_t requested_caps)
   {
     if(response.payload.size() < 3)
     {
-      printf("malformed ACK response\n");
+      if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "malformed ACK response"); }
       return false;
     }
     const uint8_t version = response.payload[0];
@@ -417,19 +422,19 @@ bool SimpleHardwareBridge::do_handshake(const uint8_t requested_caps)
     
     if(version != PROTOCOL_VERSION)
     {
-      printf("version mismatch\n");
+      if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "version mismatch"); }
       return false;
     }
     if(status != STATUS_OK)
     {
-      printf("device not ready\n");
+      if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "device not ready"); }
       return false;
     }
     return true;
   }
   else
   {
-    printf("malformed response, recieved: %u\n", response.cmd);
+    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "malformed response, recieved: ", response.cmd); }
     return false;
   }
   
@@ -444,25 +449,25 @@ bool SimpleHardwareBridge::send_heartbeat()
   DecodedPacket response;
   if(!serialComs_->recv_packet(response))
   {
-    printf("heartbeat timeout waiting for response\n");
+    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "heartbeat timeout waiting for response"); }
     return false;
   }
 
   if(response.seq != seq)
   {
-    printf("heartbeat sequence mismatch (expected %u, got %u)\n", static_cast<unsigned>(seq), static_cast<unsigned>(response.seq));
+    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "heartbeat sequence mismatch (expected ", static_cast<unsigned>(seq), ", got ", static_cast<unsigned>(response.seq), ")"); }
     return false;
   }
 
   if(response.cmd != ACK)
   {
-    printf("heartbeat malformed response, recieved: %u\n", response.cmd);
+    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "heartbeat malformed response, recieved: ", response.cmd); }
     return false;
   }
 
   if(!response.payload.empty() && response.payload[0] != STATUS_OK)
   {
-    printf("heartbeat returned non-ok status: %u\n", response.payload[0]);
+    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "heartbeat returned non-ok status: ", response.payload[0]); }
     return false;
   }
 
@@ -473,7 +478,7 @@ bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs)
 {
   if(calibs.size() != 36)
   {
-    printf("incorrect calibration size");
+    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "incorrect calibration size"); }
     return false;
   }
   
@@ -489,21 +494,23 @@ bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs)
   DecodedPacket response;
   if(!serialComs_->recv_packet(response))
   {
-    printf("calibration packet failed: timeout waiting for response\n");
+    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "calibration packet failed: timeout waiting for response"); }
     return false;
   }
   else if(response.seq != seq)
   {
-    printf("calibration packet failed: sequence mismatch (expected %u, got %u)\n", static_cast<unsigned>(seq), static_cast<unsigned>(response.seq));
+    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "calibration packet failed: sequence mismatch (expected ", static_cast<unsigned>(seq), ", got ", static_cast<unsigned>(response.seq), ")"); }
     return false;
   }
   else if(response.cmd == ACK)
   {
-    printf("calibration packet accepted\n");
+    if (auto logger = logging::GetDefaultLogger()) { LOG_INFO(logger, "calibration packet accepted"); }
     return true;
   }
   else
-    printf("calibration packet failed\n");
-  
+  {
+    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "calibration packet failed"); }
+  }
+
   return false;
 }

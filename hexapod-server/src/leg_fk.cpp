@@ -1,6 +1,7 @@
 #include "leg_fk.hpp"
 
 #include <cmath>
+#include "logger.hpp"
 
 // ------------------------------------------------------------
 // Forward kinematics in LEG frame
@@ -39,7 +40,7 @@ LegTargets LegFK::solve(const RawHardwareState& raw, const SafetyState& safety)
     LegRawState legState = raw.leg_states[leg];
     if(!solveOneLeg(legState, out.feet[leg], hexGeo.legGeometry[leg]))
     {
-      printf("forward kinematics invalid\n");
+      if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "forward kinematics invalid"); }
     }
   }
   

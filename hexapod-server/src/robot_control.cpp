@@ -8,8 +8,9 @@
 using namespace std::chrono_literals;
 
 RobotControl::RobotControl(std::unique_ptr<IHardwareBridge> hw,
-                           std::unique_ptr<IEstimator> estimator)
-    : hw_(std::move(hw)), estimator_(std::move(estimator)) {}
+                           std::unique_ptr<IEstimator> estimator,
+                           std::shared_ptr<logging::AsyncLogger> logger)
+    : hw_(std::move(hw)), estimator_(std::move(estimator)), logger_(std::move(logger)) {}
 
 RobotControl::~RobotControl() {
     stop();
@@ -17,11 +18,15 @@ RobotControl::~RobotControl() {
 
 bool RobotControl::init() {
     if (!hw_ || !estimator_) {
-        std::cerr << "Missing components\n";
+        if (logger_) {
+            LOG_ERROR(logger_, "Missing components");
+        }
         return false;
     }
     if (!hw_->init()) {
-        std::cerr << "Hardware Bridge init failed\n";
+        if (logger_) {
+            LOG_ERROR(logger_, "Hardware Bridge init failed");
+        }
         return false;
     }
 
@@ -40,6 +45,10 @@ bool RobotControl::init() {
 void RobotControl::start() {
     if (running_.exchange(true)) return;
 
+    if (logger_) {
+        LOG_INFO(logger_, "Starting robot control loops");
+    }
+
     bus_thread_ = std::thread(&RobotControl::busLoop, this);
     estimator_thread_ = std::thread(&RobotControl::estimatorLoop, this);
     control_thread_ = std::thread(&RobotControl::controlLoop, this);
@@ -49,6 +58,10 @@ void RobotControl::start() {
 
 void RobotControl::stop() {
     if (!running_.exchange(false)) return;
+
+    if (logger_) {
+        LOG_INFO(logger_, "Stopping robot control loops");
+    }
 
     joinThread(bus_thread_);
     joinThread(estimator_thread_);
@@ -148,13 +161,15 @@ void RobotControl::safetyLoop() {
 void RobotControl::diagnosticsLoop() {
     while (running_.load()) {
         const auto st = status_.read();
-        std::cout
-            << "[diag] mode=" << toString(st.active_mode)
-            << " est=" << (st.estimator_valid ? "ok" : "bad")
-            << " bus=" << (st.bus_ok ? "ok" : "bad")
-            << " fault=" << toString(st.active_fault)
-            << " loops=" << st.loop_counter
-            << "\n";
+        if (logger_) {
+            LOG_INFO(
+                logger_,
+                "[diag] mode=", toString(st.active_mode),
+                " est=", (st.estimator_valid ? "ok" : "bad"),
+                " bus=", (st.bus_ok ? "ok" : "bad"),
+                " fault=", toString(st.active_fault),
+                " loops=", st.loop_counter);
+        }
 
         std::this_thread::sleep_for(control_config::kDiagnosticsPeriod);
     }

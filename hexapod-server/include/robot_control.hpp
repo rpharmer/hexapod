@@ -8,6 +8,7 @@
 #include "body_controller.hpp"
 #include "gait_scheduler.hpp"
 #include "leg_ik.hpp"
+#include "logger.hpp"
 
 #include <atomic>
 #include <memory>
@@ -16,7 +17,8 @@
 class RobotControl {
 public:
     RobotControl(std::unique_ptr<IHardwareBridge> hw,
-                 std::unique_ptr<IEstimator> estimator);
+                 std::unique_ptr<IEstimator> estimator,
+                 std::shared_ptr<logging::AsyncLogger> logger);
 
     ~RobotControl();
 
@@ -43,6 +45,7 @@ private:
 private:
     std::unique_ptr<IHardwareBridge> hw_;
     std::unique_ptr<IEstimator> estimator_;
+    std::shared_ptr<logging::AsyncLogger> logger_;
 
     GaitScheduler gait_;
     BodyController body_;
