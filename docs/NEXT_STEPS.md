@@ -1,70 +1,74 @@
 # Next Steps, Fixes, and Improvements
 
-This roadmap reflects the current repository state after a fresh build and codebase review.
+This roadmap is refreshed based on the current code review and successful server/firmware builds.
 
-## 1) Immediate fixes (high impact, low effort)
+## 1) Immediate priorities (highest leverage)
 
-1. **Fix top-level documentation drift**
-   - Update `README.md` to remove/replace the non-existent `hexapod-common/protocol.md` reference.
-   - Keep one canonical “quick verification flow” block for client firmware build commands.
+1. **Implement real body control policy**
+   - Replace `BodyController::update()` placeholder outputs with stance/swing target generation.
+   - Add constraints and saturation checks before IK.
 
-2. **Define firmware shutdown behavior**
-   - Add an explicit exit condition for the firmware command loop.
-   - Make post-loop cleanup reachable and correct (`disable` vs `enable` behavior should match comments and intended safety policy).
+2. **Make gait rate command-driven**
+   - Replace fallback speed magnitude in `GaitScheduler` with values derived from `MotionIntent`.
+   - Validate smooth ramping and mode transitions (`STAND` ↔ `WALK`).
 
-3. **Document bring-up + recovery runbook**
-   - Add a short operator checklist for serial connection, handshake validation, servo enable sequencing, and safe stop.
+3. **Start splitting firmware monolith**
+   - Extract command dispatch and command handler groups from `hexapod-client.cpp`.
+   - Keep behavior unchanged while reducing file-level coupling.
 
 ## 2) Reliability and safety hardening
 
 1. **Protocol framing regression tests**
-   - Add tests for truncated packets, invalid CRC, malformed length fields, and unknown command handling.
+   - Cover CRC failures, truncated payloads, invalid lengths, and unsupported commands.
 
-2. **Handshake/link-health scenario tests**
-   - Add tests for retry behavior, timeout handling, and out-of-sequence responses.
+2. **Link-health scenario tests**
+   - Test heartbeat timeout and recovery behavior.
+   - Test out-of-sequence packets and malformed handshake payloads.
 
-3. **Safety policy expansion**
-   - Add explicit handling and tests for stale heartbeat windows, repeated serial timeouts, and estimator/controller divergence thresholds.
+3. **Explicit firmware runtime states**
+   - Introduce state tracking for boot, waiting-for-host, active, and stopping.
+   - Ensure kill/stop behavior is deterministic and observable.
 
-## 3) Motion/control quality improvements
+## 3) Architecture and maintainability
 
-1. **Replace body-controller placeholder output**
-   - Implement stance/swing placement policy and validate output ranges against kinematic constraints.
+1. **Refactor `RobotControl` into smaller units**
+   - Separate loop scheduling from control computation and diagnostics publication.
 
-2. **Replace fallback gait speed estimate**
-   - Drive stride-rate from command/state inputs rather than static fallback constants.
+2. **Externalize geometry/calibration configuration**
+   - Move hardcoded geometry defaults to config with schema/version checks.
 
-3. **Tighten control interfaces with stronger typing**
-   - Introduce aliases/wrappers for timestamps and angular units at module boundaries.
+3. **Tighten module contracts**
+   - Use stronger types/aliases for units and timestamps across estimator/control/IK boundaries.
 
-## 4) Architecture and maintainability
+## 4) Documentation and developer workflow
 
-1. **Decompose `hexapod-client.cpp`**
-   - Split hardware initialization, command dispatch, and command handlers into focused files/modules.
+1. **Condense README command sections**
+   - Keep one concise server flow and one concise client flow with setup/full-build variants.
 
-2. **Decompose `RobotControl` orchestration**
-   - Separate loop scheduling, state coordination, and reporting/diagnostics responsibilities.
+2. **Add a short operator runbook**
+   - Include startup sequence, handshake expectations, and safe-stop actions.
 
-3. **Externalize geometry/calibration configuration**
-   - Move hardcoded geometry defaults into configuration files with schema/version checks.
+3. **Define baseline CI checks**
+   - At minimum: server build, client setup-sdks target, and full client firmware build.
 
-## 5) Suggested 30/60/90 day plan
+## Suggested 30/60/90 day plan
 
 - **Next 30 days**
-  - Resolve README drift and firmware shutdown semantics.
-  - Add basic framing error-path tests.
+  - Land body-controller and gait-rate logic improvements.
+  - Begin `hexapod-client.cpp` split without behavior changes.
 
 - **Next 60 days**
-  - Land body-controller and gait-speed improvements.
-  - Introduce CI checks for server build, client build, and framing tests.
+  - Add protocol/safety regression tests.
+  - Introduce explicit firmware runtime states.
 
 - **Next 90 days**
-  - Complete client/robot-control decomposition.
-  - Finalize config schema versioning for geometry/calibration data.
+  - Complete `RobotControl` decomposition.
+  - Ship config externalization for geometry/calibration defaults.
 
 ## Definition of done for roadmap items
 
-- Each completed item includes:
-  - reproducible build/test verification,
-  - relevant documentation updates,
-  - explicit safety impact note (what risk is reduced, added, or unchanged).
+Each completed item should include:
+
+- reproducible build/test evidence,
+- updated documentation,
+- explicit safety impact note (risk reduced/unchanged/introduced).
