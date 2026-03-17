@@ -1,6 +1,6 @@
 # Refactoring Review
 
-This document captures an updated refactoring pass based on the current repository state.
+This document captures an updated refactoring pass against the current repository state.
 
 ## Scope reviewed
 
@@ -8,74 +8,63 @@ This document captures an updated refactoring pass based on the current reposito
 - Server runtime/control/kinematics/safety in `hexapod-server/`
 - Pico firmware + serial command handling in `hexapod-client/`
 
-## Validation of previously reported items
+## Status of previously tracked items
 
 ### Confirmed still true
 
-1. **Shared scalar framing helpers are in use**
-   - Client/server encode/decode paths both use common framing helpers from `hexapod-common`.
+1. **Shared framing helpers are consistently used**
+   - Client/server packet encode/decode paths continue to rely on `hexapod-common` framing helpers.
 
-2. **RX buffer growth is bounded**
-   - Both client and server trim transport RX buffers with `MAX_TRANSPORT_RX_BUFFER_BYTES`.
+2. **Transport RX growth is bounded**
+   - RX buffers remain capped by transport framing limits.
 
-3. **Server serial receive avoids repeated front erases**
-   - Server receive path still uses `readBufferHead` and clears only when fully consumed.
+3. **Server receive path avoids repeated vector front erases**
+   - The read-head approach remains in place.
 
 4. **Gait phase mapping is table-driven**
-   - `GaitScheduler` uses phase-offset arrays selected by gait type.
+   - `GaitScheduler` still selects offsets via gait-specific arrays.
 
-### Corrected / no longer priority findings
+### Updated from previous review
 
-1. **Server send wrappers duplication is no longer an active issue**
-   - Current server serial transport exposes a single `send_packet` implementation that writes encoded frames directly.
+1. **Firmware cleanup is now reachable**
+   - `hexapod-client.cpp` breaks from the command loop on `KILL` and executes cleanup.
+   - Cleanup behavior now disables servos before shutdown.
 
-2. **Framing vs transport buffer mismatch is resolved**
-   - Buffer limits remain aligned at `1024` bytes.
+2. **README protocol reference drift is resolved**
+   - The top-level README now points to existing files for protocol details.
 
 ## Current high-priority refactoring opportunities
 
-1. **Split firmware monolith (`hexapod-client.cpp`)**
-   - The firmware file still combines board initialization, command routing, protocol handling, and device I/O logic.
-   - Recommendation: extract command handlers and hardware adapters into focused translation units.
+1. **Decompose firmware monolith (`hexapod-client.cpp`)**
+   - The file still combines hardware setup, transport loop, command dispatch, and handlers.
+   - Suggested split: `firmware_boot.cpp`, `command_dispatch.cpp`, `power_commands.cpp`, `sensing_commands.cpp`, `motion_commands.cpp`.
 
-2. **Implement explicit firmware shutdown semantics**
-   - Infinite receive loop currently leaves cleanup code unreachable.
-   - Recommendation: add a stop condition and make cleanup behavior intentional and testable.
+2. **Decompose `RobotControl` responsibilities**
+   - `RobotControl` still owns loop timing, IO coordination, safety interaction, and diagnostics.
+   - Suggested split: scheduler/timing, control pipeline, and status reporting modules.
 
-3. **Break down `RobotControl` responsibilities**
-   - `RobotControl` continues to own thread lifecycle, loop timing, coordination, and status emission.
-   - Recommendation: separate loop scheduling, command arbitration, and reporting.
+3. **Replace placeholder control policies**
+   - `BodyController::update()` is still a pass-through/default output stub.
+   - `GaitScheduler::update()` still uses fallback speed magnitude.
 
-4. **Externalize geometry/calibration defaults**
-   - `defaultHexapodGeometry()` still hardcodes body dimensions, mount angles, and sign conventions.
-   - Recommendation: load geometry/calibration from config to support hardware variants without rebuilds.
+4. **Externalize geometry/config defaults**
+   - Hardcoded geometry assumptions remain in code rather than versioned config.
 
 ## Medium-priority opportunities
 
-1. **Replace placeholder control logic**
-   - `BodyController::update()` currently returns default targets and explicitly ignores inputs.
+1. **Strengthen typed interfaces at module boundaries**
+   - Introduce stronger units/types for angles, rates, and timestamps.
 
-2. **Use command-driven gait speed estimation**
-   - `GaitScheduler::update()` still relies on fallback speed constants.
+2. **Unify logging patterns**
+   - Keep diagnostics through logger abstractions and avoid mixed direct stream output.
 
-3. **Consolidate logging strategy boundaries**
-   - Logging infrastructure exists, but direct stream usage and mixed logging styles still appear across modules.
-
-4. **Fix documentation/source-of-truth alignment**
-   - The top-level README references a non-existent protocol file and duplicates a firmware quick-verify flow.
-
-## Low-priority cleanup opportunities
-
-1. **Comment hygiene and dead-code trimming**
-   - Remove outdated comments and unreachable sections once shutdown behavior is implemented.
-
-2. **Minor include/style consistency pass**
-   - Normalize include ordering and formatting in touched files as part of future behavior changes.
+3. **Targeted tests around protocol and safety transitions**
+   - Add malformed frame tests and command-timeout safety behavior tests.
 
 ## Suggested execution order
 
-1. Refactor firmware monolith + add explicit shutdown path.
-2. Split `RobotControl` orchestration/reporting responsibilities.
-3. Replace placeholder body controller and fallback gait-speed logic.
-4. Externalize geometry/calibration configuration.
-5. Clean up docs/style/dead code.
+1. Split `hexapod-client.cpp` into focused translation units.
+2. Break `RobotControl` into pipeline + scheduling/reporting responsibilities.
+3. Replace body-controller and gait-speed placeholders with command-driven logic.
+4. Move geometry/calibration defaults into validated configuration.
+5. Add focused protocol/safety regression tests.
