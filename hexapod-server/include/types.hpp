@@ -185,6 +185,19 @@ struct ControlStatus {
 };
 
 // ============================================================
+// BodyPose
+// ============================================================
+struct BodyPose {
+  Vec3 position{0.0, 0.0, 0.0};
+  
+  double yaw{0.0};
+  double pitch{0.0};
+  double roll{0.0};
+  
+  Mat3 rotationBodyToWorld() const;
+};
+
+// ============================================================
 // Servo calibration
 // ------------------------------------------------------------
 // Servos usually need:

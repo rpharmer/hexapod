@@ -30,10 +30,19 @@
 
 LegTargets LegFK::solve(const RawHardwareState& raw, const SafetyState& safety)
 {
-  (void)raw;
   (void)safety;
   
   LegTargets out{};
+  
+  for(int leg = 0; leg < kNumLegs; leg++)
+  {
+    LegRawState legState = raw.leg_states[leg];
+    if(!solveOneLeg(legState, out.feet[leg], hexGeo.legGeometry[leg]))
+    {
+      printf("forward kinematics invalid\n");
+    }
+  }
+  
   return out;
 }
                        
@@ -70,3 +79,50 @@ bool LegFK::solveOneLeg(const LegRawState& est, FootTarget& out,
   return true;
 }
 
+// ------------------------------------------------------------
+// Forward kinematics in BODY frame
+//
+// Steps:
+//   1) Compute foot in leg-local frame.
+//   2) Rotate by +mountAngle into body orientation.
+//   3) Add the coxa mount position in body frame.
+// ------------------------------------------------------------
+FootTarget LegFK::footInBodyFrame(const LegRawState& est, const LegGeometry& leg){
+
+  FootTarget footLeg{};
+
+  // Foot in the leg's own local frame
+  solveOneLeg(est, footLeg, leg);
+
+  // Leg frame -> body frame
+  const Mat3 R_body_from_leg = Mat3::rotZ(leg.mountAngle);
+  const Vec3 footRelativeToCoxa = R_body_from_leg * footLeg.pos_body_m;
+
+  // Shift from coxa origin to body origin
+  const Vec3 footBody = leg.bodyCoxaOffset + footRelativeToCoxa;
+  FootTarget out{};
+  out.pos_body_m = footBody;
+
+  return out;
+}
+
+// ------------------------------------------------------------
+// Forward kinematics in WORLD frame
+//
+// Steps:
+//   1) Compute foot in body frame.
+//   2) Rotate BODY -> WORLD.
+//   3) Add body world position.
+// ------------------------------------------------------------
+FootTarget LegFK::footInWorldFrame(const LegRawState& est, const BodyPose& bodyPose,
+                             const LegGeometry& leg){
+  const Vec3 footBody = footInBodyFrame(est, leg).pos_body_m;
+
+  // BODY -> WORLD
+  const Mat3 R_bw = bodyPose.rotationBodyToWorld();
+
+  FootTarget out{};
+  out.pos_body_m = bodyPose.position + (R_bw * footBody);
+  
+  return out;
+}

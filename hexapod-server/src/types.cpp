@@ -108,6 +108,13 @@ Mat3 Mat3::operator*(const Mat3& other) const {
 }
 
 // ============================================================
+// BodyPose
+// ============================================================
+Mat3 BodyPose::rotationBodyToWorld() const {
+    return Mat3::rotZ(yaw) * Mat3::rotY(pitch) * Mat3::rotX(roll);
+}
+
+// ============================================================
 // ServoCalibration
 // ============================================================
 LegRawState ServoCalibration::toServoAngles(const LegRawState& leg) const {
