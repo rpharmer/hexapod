@@ -1,94 +1,70 @@
 # Next Steps, Fixes, and Improvements
 
-This plan turns the current codebase into a safer, more testable, and easier-to-operate platform.
+This roadmap reflects the current repository state after a fresh build and codebase review.
 
 ## 1) Immediate fixes (high impact, low effort)
 
-1. **Establish one canonical firmware build reference**
-   - Action: keep exact build/flash details in one place (`docs/FIRMWARE.md`) and link from `README.md`.
-   - Why: avoids drift between duplicated command blocks.
+1. **Fix top-level documentation drift**
+   - Update `README.md` to remove/replace the non-existent `hexapod-common/protocol.md` reference.
+   - Keep one canonical “quick verification flow” block for client firmware build commands.
 
-2. **Document a default runbook for bring-up**
-   - Action: add a short “power-on checklist” for serial path, config validation, and safe shutdown.
-   - Why: makes first boot and field recovery safer and faster.
+2. **Define firmware shutdown behavior**
+   - Add an explicit exit condition for the firmware command loop.
+   - Make post-loop cleanup reachable and correct (`disable` vs `enable` behavior should match comments and intended safety policy).
+
+3. **Document bring-up + recovery runbook**
+   - Add a short operator checklist for serial connection, handshake validation, servo enable sequencing, and safe stop.
 
 ## 2) Reliability and safety hardening
 
-1. **Protocol-level resiliency tests**
-   - Add unit tests for framing edge-cases:
-     - truncated frame
-     - invalid CRC/checksum
-     - unknown command IDs
-     - duplicate/out-of-order sequence handling (if used)
-   - Outcome: reduces regressions in host↔firmware communication.
+1. **Protocol framing regression tests**
+   - Add tests for truncated packets, invalid CRC, malformed length fields, and unknown command handling.
 
-2. **Stricter calibration/config validation**
-   - Validate all joint ranges and relationships (`min < max`, mechanical limits, servo index completeness).
-   - Fail fast at startup with actionable error messages.
-   - Outcome: prevents unsafe motion due to malformed config.
+2. **Handshake/link-health scenario tests**
+   - Add tests for retry behavior, timeout handling, and out-of-sequence responses.
 
-3. **Safety supervisor coverage expansion**
-   - Add explicit handling for:
-     - stale heartbeat
-     - serial timeout bursts
-     - estimator/controller divergence thresholds
-   - Outcome: clear and deterministic transition to safe state.
+3. **Safety policy expansion**
+   - Add explicit handling and tests for stale heartbeat windows, repeated serial timeouts, and estimator/controller divergence thresholds.
 
-## 3) Developer experience improvements
+## 3) Motion/control quality improvements
 
-1. **Add a single top-level verification script**
-   - Example: `scripts/verify.sh` to run formatting/lint/build checks for server+client.
-   - Outcome: repeatable local checks and easy CI reuse.
+1. **Replace body-controller placeholder output**
+   - Implement stance/swing placement policy and validate output ranges against kinematic constraints.
 
-2. **CI baseline**
-   - Add GitHub Actions (or equivalent) for:
-     - server configure/build
-     - client SDK setup + firmware build
-     - framing/unit tests
-   - Outcome: catches integration breakage before merge.
+2. **Replace fallback gait speed estimate**
+   - Drive stride-rate from command/state inputs rather than static fallback constants.
 
-3. **Tooling consistency**
-   - Add `.clang-format` and apply formatting in touched C++ files.
-   - Add a brief style section to docs to keep naming/include ordering consistent.
+3. **Tighten control interfaces with stronger typing**
+   - Introduce aliases/wrappers for timestamps and angular units at module boundaries.
 
 ## 4) Architecture and maintainability
 
-1. **Define module contracts in docs**
-   - For each major server subsystem (`estimator`, `gait_scheduler`, `robot_control`, `hardware_bridge`), document:
-     - inputs/outputs
-     - update rate assumptions
-     - ownership/lifecycle
-   - Outcome: lowers onboarding cost and design ambiguity.
+1. **Decompose `hexapod-client.cpp`**
+   - Split hardware initialization, command dispatch, and command handlers into focused files/modules.
 
-2. **Protocol spec completion**
-   - Ensure one authoritative protocol doc includes:
-     - packet formats
-     - versioning strategy
-     - backward compatibility expectations
-     - recovery semantics after link reset
-   - Outcome: safer future evolution and easier tooling interop.
+2. **Decompose `RobotControl` orchestration**
+   - Separate loop scheduling, state coordination, and reporting/diagnostics responsibilities.
 
-3. **Configuration schema versioning**
-   - Add `config_version` and migration notes.
-   - Outcome: cleaner upgrades and less accidental breakage.
+3. **Externalize geometry/calibration configuration**
+   - Move hardcoded geometry defaults into configuration files with schema/version checks.
 
-## 5) Suggested execution order (30/60/90 day view)
+## 5) Suggested 30/60/90 day plan
 
 - **Next 30 days**
-  - Consolidate docs for firmware commands.
-  - Add startup config validation and clearer failure messages.
+  - Resolve README drift and firmware shutdown semantics.
+  - Add basic framing error-path tests.
 
 - **Next 60 days**
-  - Add framing unit tests and safety-supervisor scenario tests.
-  - Introduce top-level verify script and CI baseline.
+  - Land body-controller and gait-speed improvements.
+  - Introduce CI checks for server build, client build, and framing tests.
 
 - **Next 90 days**
-  - Finalize protocol spec/versioning policy.
-  - Expand architecture docs and config migration strategy.
+  - Complete client/robot-control decomposition.
+  - Finalize config schema versioning for geometry/calibration data.
 
-## Definition of done for this roadmap
+## Definition of done for roadmap items
 
-- Any new feature or fix includes:
-  - test or scripted verification,
-  - documentation update,
-  - explicit safety impact note.
+- Each completed item includes:
+  - reproducible build/test verification,
+  - relevant documentation updates,
+  - explicit safety impact note (what risk is reduced, added, or unchanged).

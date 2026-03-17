@@ -1,93 +1,81 @@
 # Refactoring Review
 
-This document is an updated refactoring pass across the repository's production C++ code and a validation of prior refactoring notes against the current files.
+This document captures an updated refactoring pass based on the current repository state.
 
 ## Scope reviewed
 
-- Shared protocol/framing utilities in `hexapod-common/`
+- Shared framing/protocol utilities in `hexapod-common/`
 - Server runtime/control/kinematics/safety in `hexapod-server/`
-- Pico client firmware + serial transport in `hexapod-client/`
+- Pico firmware + serial command handling in `hexapod-client/`
 
-## Validation of prior review items (current status)
+## Validation of previously reported items
 
-### Confirmed addressed
+### Confirmed still true
 
-1. **Scalar serialization helpers are shared**
-   - Client and server scalar read/write paths both use shared `read_scalar` helpers in `framing.hpp`.
+1. **Shared scalar framing helpers are in use**
+   - Client/server encode/decode paths both use common framing helpers from `hexapod-common`.
 
-2. **RX buffer growth is bounded in packet receive loops**
-   - Both client/server packet receive loops trim accumulated RX buffers using the shared transport limit constant.
+2. **RX buffer growth is bounded**
+   - Both client and server trim transport RX buffers with `MAX_TRANSPORT_RX_BUFFER_BYTES`.
 
-3. **Server serial receive path avoids per-read front erases**
-   - Server receive now uses `readBufferHead` and only clears when fully consumed.
+3. **Server serial receive avoids repeated front erases**
+   - Server receive path still uses `readBufferHead` and clears only when fully consumed.
 
-4. **Gait phase offset mapping is table-driven**
-   - `GaitScheduler` uses named phase-offset arrays and a gait selector helper.
+4. **Gait phase mapping is table-driven**
+   - `GaitScheduler` uses phase-offset arrays selected by gait type.
 
-5. **IK fallback assignment is centralized**
-   - `LegIK::solve()` uses one fallback condition and `apply_estimated_leg_fallback()`.
+### Corrected / no longer priority findings
 
-### Corrected from the previous review (stale findings)
+1. **Server send wrappers duplication is no longer an active issue**
+   - Current server serial transport exposes a single `send_packet` implementation that writes encoded frames directly.
 
-1. **Framing vs transport RX limits are no longer inconsistent**
-   - Previous note claimed `framing` and transport limits differed (`1024` vs `4096`).
-   - Current code defines both `MAX_RX_BUFFER_BYTES` and `MAX_TRANSPORT_RX_BUFFER_BYTES` as `1024` in `framing.hpp`.
-
-2. **`LegIK` stale field note is obsolete**
-   - Previous note referenced an unused `seq_tx_` field.
-   - `LegIK` no longer contains that field.
-
-3. **Unused `serial_scalar_io.hpp` removed**
-   - The standalone scalar serial I/O header had no remaining in-repo consumers and was removed.
+2. **Framing vs transport buffer mismatch is resolved**
+   - Buffer limits remain aligned at `1024` bytes.
 
 ## Current high-priority refactoring opportunities
 
-1. **Remove repeated server `send_*` lambda wrappers**
-   - `SerialCommsServer::send_*` methods are near-identical and all forward to `write_bytes`.
-   - Recommendation: add a small templated/member helper so each `send_*` is one-line and no repeated lambdas are needed.
+1. **Split firmware monolith (`hexapod-client.cpp`)**
+   - The firmware file still combines board initialization, command routing, protocol handling, and device I/O logic.
+   - Recommendation: extract command handlers and hardware adapters into focused translation units.
 
-2. **Fix transport write allocation in server path**
-   - `SerialCommsServer::write_bytes()` constructs a new `std::vector<uint8_t>` for every write call.
-   - Recommendation: if library API allows, reuse a buffer or batch writes to reduce allocation churn.
+2. **Implement explicit firmware shutdown semantics**
+   - Infinite receive loop currently leaves cleanup code unreachable.
+   - Recommendation: add a stop condition and make cleanup behavior intentional and testable.
 
-3. **Split `RobotControl` orchestration responsibilities**
-   - `RobotControl` still owns thread lifecycle, loop timing, coordination, status aggregation, and diagnostics output.
-   - Recommendation: extract loop runner/scheduler + status/reporting concerns into dedicated units to improve testability.
+3. **Break down `RobotControl` responsibilities**
+   - `RobotControl` continues to own thread lifecycle, loop timing, coordination, and status emission.
+   - Recommendation: separate loop scheduling, command arbitration, and reporting.
 
-4. **Externalize geometry/calibration configuration**
-   - `defaultHexapodGeometry()` still embeds dimensions, mount angles, and servo offsets in compile-time literals.
-   - Recommendation: load geometry/calibration from config to support hardware variants without rebuild.
+4. **Externalize geometry/calibration defaults**
+   - `defaultHexapodGeometry()` still hardcodes body dimensions, mount angles, and sign conventions.
+   - Recommendation: load geometry/calibration from config to support hardware variants without rebuilds.
 
-## Current medium-priority refactoring opportunities
+## Medium-priority opportunities
 
-1. **Tighten typed units around timestamps and angles**
-   - Internal loops use `std::chrono` for periods, but interfaces still rely heavily on raw `uint64_t timestamp_us` and `double` angles.
-   - Recommendation: add stronger aliases/wrappers at API boundaries.
+1. **Replace placeholder control logic**
+   - `BodyController::update()` currently returns default targets and explicitly ignores inputs.
 
-2. **Normalize logging/diagnostics strategy**
-   - Code still mixes `std::cout` and `std::cerr` directly across modules.
-   - Recommendation: introduce a shared logging abstraction with levels/component tags.
+2. **Use command-driven gait speed estimation**
+   - `GaitScheduler::update()` still relies on fallback speed constants.
 
-3. **Make safety policy data-driven as checks expand**
-   - `SafetySupervisor` fault priorities and trip policy are encoded directly in methods.
-   - Recommendation: move ranking/policy to a table/config once more fault sources are added.
+3. **Consolidate logging strategy boundaries**
+   - Logging infrastructure exists, but direct stream usage and mixed logging styles still appear across modules.
 
-4. **Track placeholder controller milestones explicitly**
-   - `BodyController::update()` is intentionally placeholder logic with TODO comments and unused inputs.
-   - Recommendation: tie TODOs to milestone IDs/issues and remove placeholders once replacement lands.
+4. **Fix documentation/source-of-truth alignment**
+   - The top-level README references a non-existent protocol file and duplicates a firmware quick-verify flow.
 
-## Current low-priority cleanup opportunities
+## Low-priority cleanup opportunities
 
-1. **Header hygiene in `framing.hpp`**
-   - Includes and commented legacy snippets can be trimmed (`stdio.h`, older commented template helpers).
+1. **Comment hygiene and dead-code trimming**
+   - Remove outdated comments and unreachable sections once shutdown behavior is implemented.
 
-2. **Comment and formatting consistency**
-   - Several files still contain historical comments or inconsistent spacing/newline style.
+2. **Minor include/style consistency pass**
+   - Normalize include ordering and formatting in touched files as part of future behavior changes.
 
 ## Suggested execution order
 
-1. Reduce server transport wrapper duplication + write allocation overhead.
-2. Split `RobotControl` loop orchestration/reporting concerns.
-3. Externalize geometry/calibration loading and validate startup checks.
-4. Introduce typed-unit wrappers incrementally at control API boundaries.
-5. Consolidate logging and clean low-priority header/comment hygiene.
+1. Refactor firmware monolith + add explicit shutdown path.
+2. Split `RobotControl` orchestration/reporting responsibilities.
+3. Replace placeholder body controller and fallback gait-speed logic.
+4. Externalize geometry/calibration configuration.
+5. Clean up docs/style/dead code.
