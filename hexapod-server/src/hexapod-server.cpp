@@ -59,15 +59,6 @@ int main() {
   logger->AddSink(std::make_shared<ConsoleSink>());
   logger->AddSink(std::make_shared<FileSink>("app.log"));
   
-  std::vector<std::thread> threads;
-  for (int t = 0; t < 4; ++t) {
-      threads.emplace_back([logger, t]() {
-          for (int i = 0; i < 100; ++i) {
-              LOG_DEBUG(logger, "worker=", t, " message=", i);
-          }
-      });
-  }
-  
   ParsedToml config;
   if(!tomlParser("config.txt", config))
   {
