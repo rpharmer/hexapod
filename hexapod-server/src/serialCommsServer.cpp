@@ -1,19 +1,28 @@
 #include <CppLinuxSerial/SerialPort.hpp>
 #include "hexapod-common.hpp"
 #include "serialCommsServer.hpp"
+#include "serial_scalar_io.hpp"
 
+#include <cstddef>
 #include <cstring>
+#include <iostream>
 
 using namespace mn::CppLinuxSerial;
 
 
 namespace {
 
-template <typename T>
-void write_scalar(SerialPort& serialport, T data)
+constexpr std::size_t kMaxReadBufferBytes = 4096;
+constexpr std::size_t kMaxRxBufferBytes = 4096;
+
+void trim_rx_buffer(std::vector<uint8_t>& buffer, const std::size_t max_bytes)
 {
-  const auto* begin = reinterpret_cast<const uint8_t*>(&data);
-  serialport.WriteBinary(std::vector<uint8_t>(begin, begin + sizeof(T)));
+  if (buffer.size() <= max_bytes)
+    return;
+
+  const std::size_t overflow = buffer.size() - max_bytes;
+  buffer.erase(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(overflow));
+  std::cerr << "[SerialCommsServer] RX buffer overflow: dropped " << overflow << " bytes\n";
 }
 
 } // namespace
@@ -77,63 +86,94 @@ void SerialCommsServer::SetTimeout(int32_t timeout_ms)
 // send a char (1 byte)
 void SerialCommsServer::send_char(char data)
 {
-  write_scalar(serialport, data);
+  serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
+    serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
+  });
 }
 // send a uint8_t (1 bytes)
 void SerialCommsServer::send_u8(uint8_t data)
 {
-  write_scalar(serialport, data);
+  serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
+    serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
+  });
 }
 // send a uint16_t (2 bytes)
 void SerialCommsServer::send_u16(uint16_t data)
 {
-  write_scalar(serialport, data);
+  serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
+    serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
+  });
 }
 // send a uint32_t (4 bytes)
 void SerialCommsServer::send_u32(uint32_t data)
 {
-  write_scalar(serialport, data);
+  serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
+    serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
+  });
 }
 // send a int16_t  (2 bytes)
 void SerialCommsServer::send_i16(int16_t data)
 {
-  write_scalar(serialport, data);
+  serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
+    serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
+  });
 }
 // send a int32_t  (4 bytes)
 void SerialCommsServer::send_i32(int32_t data)
 {
-  write_scalar(serialport, data);
+  serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
+    serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
+  });
 }
 // send a float    (4 bytes)
 void SerialCommsServer::send_f32(float data)
 {
-  write_scalar(serialport, data);
+  serial_scalar_io::write_scalar(data, [this](const uint8_t* bytes, std::size_t size) {
+    serialport.WriteBinary(std::vector<uint8_t>(bytes, bytes + size));
+  });
 }
 
 /* functions to recieve data */
 
 void SerialCommsServer::refill_read_buffer()
 {
-  if(!readBuffer.empty())
+  if (readBufferHead < readBuffer.size())
     return;
+
+  if (!readBuffer.empty()) {
+    readBuffer.clear();
+    readBufferHead = 0;
+  }
 
   std::vector<uint8_t> recv_buffer;
   serialport.ReadBinary(recv_buffer);
-  if(!recv_buffer.empty())
-    readBuffer.insert(readBuffer.end(), recv_buffer.begin(), recv_buffer.end());
+  if (recv_buffer.empty())
+    return;
+
+  readBuffer.insert(readBuffer.end(), recv_buffer.begin(), recv_buffer.end());
+  trim_rx_buffer(readBuffer, kMaxReadBufferBytes);
+  if (readBufferHead > readBuffer.size())
+    readBufferHead = readBuffer.size();
 }
 
 int SerialCommsServer::recv_bytes(void *data, std::size_t size)
 {
-  if(size == 0)
+  if (size == 0)
     return 0;
 
   refill_read_buffer();
-  if(readBuffer.size() < size)
+  const std::size_t available = readBuffer.size() - readBufferHead;
+  if (available < size)
     return 0;
 
-  std::memcpy(data, readBuffer.data(), size);
-  readBuffer.erase(readBuffer.begin(), readBuffer.begin() + static_cast<std::ptrdiff_t>(size));
+  std::memcpy(data, readBuffer.data() + readBufferHead, size);
+  readBufferHead += size;
+
+  if (readBufferHead == readBuffer.size()) {
+    readBuffer.clear();
+    readBufferHead = 0;
+  }
+
   return static_cast<int>(size);
 }
 
@@ -192,5 +232,6 @@ bool SerialCommsServer::recv_packet(DecodedPacket& packet)
     if(bytes_read <= 0)
       return false;
     rxBuffer.push_back(byte);
+    trim_rx_buffer(rxBuffer, kMaxRxBufferBytes);
   }
 }

@@ -1,5 +1,8 @@
 #include "pico/stdlib.h"
 #include "serialCommsClient.hpp"
+#include "serial_scalar_io.hpp"
+
+#include <cstddef>
 
 namespace {
 
@@ -14,13 +17,17 @@ int recv_bytes(char *buffer, size_t len) {
   return static_cast<int>(len);
 }
 
-template <typename T>
-void send_scalar(T data) {
-  const char *bytes = reinterpret_cast<const char*>(&data);
-  for(size_t i = 0; i < sizeof(T); ++i) {
-    putchar_raw(bytes[i]);
+constexpr std::size_t kMaxRxBufferBytes = 4096;
+
+void trim_rx_buffer(std::vector<uint8_t>& buffer, const std::size_t max_bytes) {
+  if (buffer.size() <= max_bytes) {
+    return;
   }
+
+  const std::size_t overflow = buffer.size() - max_bytes;
+  buffer.erase(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(overflow));
 }
+
 
 } // namespace
 
@@ -48,37 +55,65 @@ void SerialCommsClient::SetTimeout(int32_t timeout_ms){_timeout_ms = timeout_ms;
 // send a char (1 byte)
 void SerialCommsClient::send_char(char data)
 {
-  send_scalar(data);
+  serial_scalar_io::write_scalar(data, [](const uint8_t* bytes, std::size_t size) {
+    for (std::size_t i = 0; i < size; ++i) {
+      putchar_raw(static_cast<char>(bytes[i]));
+    }
+  });
 }
 // send a uint8_t (1 bytes)
 void SerialCommsClient::send_u8(uint8_t data)
 {
-  send_scalar(data);
+  serial_scalar_io::write_scalar(data, [](const uint8_t* bytes, std::size_t size) {
+    for (std::size_t i = 0; i < size; ++i) {
+      putchar_raw(static_cast<char>(bytes[i]));
+    }
+  });
 }
 // send a uint16_t (2 bytes)
 void SerialCommsClient::send_u16(uint16_t data)
 {
-  send_scalar(data);
+  serial_scalar_io::write_scalar(data, [](const uint8_t* bytes, std::size_t size) {
+    for (std::size_t i = 0; i < size; ++i) {
+      putchar_raw(static_cast<char>(bytes[i]));
+    }
+  });
 }
 // send a uint32_t (4 bytes)
 void SerialCommsClient::send_u32(uint32_t data)
 {
-  send_scalar(data);
+  serial_scalar_io::write_scalar(data, [](const uint8_t* bytes, std::size_t size) {
+    for (std::size_t i = 0; i < size; ++i) {
+      putchar_raw(static_cast<char>(bytes[i]));
+    }
+  });
 }
 // send a int16_t  (2 bytes)
 void SerialCommsClient::send_i16(int16_t data)
 {
-  send_scalar(data);
+  serial_scalar_io::write_scalar(data, [](const uint8_t* bytes, std::size_t size) {
+    for (std::size_t i = 0; i < size; ++i) {
+      putchar_raw(static_cast<char>(bytes[i]));
+    }
+  });
 }
 // send a int32_t  (4 bytes)
 void SerialCommsClient::send_i32(int32_t data)
 {
-  send_scalar(data);
+  serial_scalar_io::write_scalar(data, [](const uint8_t* bytes, std::size_t size) {
+    for (std::size_t i = 0; i < size; ++i) {
+      putchar_raw(static_cast<char>(bytes[i]));
+    }
+  });
 }
 // send a float    (4 bytes)
 void SerialCommsClient::send_f32(float data)
 {
-  send_scalar(data);
+  serial_scalar_io::write_scalar(data, [](const uint8_t* bytes, std::size_t size) {
+    for (std::size_t i = 0; i < size; ++i) {
+      putchar_raw(static_cast<char>(bytes[i]));
+    }
+  });
 }
 
 /* functions to recieve data */
@@ -86,37 +121,37 @@ void SerialCommsClient::send_f32(float data)
 // receive a char (1 byte)
 int SerialCommsClient::recv_char(char *data)
 {
-  return recv_bytes(data, sizeof(char));
+  return serial_scalar_io::read_scalar(recv_bytes, data);
 }
 // recieve a uint8_t (1 bytes)
 int SerialCommsClient::recv_u8(uint8_t *data)
 {
-  return recv_bytes(reinterpret_cast<char*>(data), sizeof(uint8_t));
+  return serial_scalar_io::read_scalar(recv_bytes, data);
 }
 // recieve a uint16_t (2 bytes)
 int SerialCommsClient::recv_u16(uint16_t *data)
 {
-  return recv_bytes(reinterpret_cast<char*>(data), sizeof(uint16_t));
+  return serial_scalar_io::read_scalar(recv_bytes, data);
 }
 // recieve a uint32_t (4 bytes)
 int SerialCommsClient::recv_u32(uint32_t *data)
 {
-  return recv_bytes(reinterpret_cast<char*>(data), sizeof(uint32_t));
+  return serial_scalar_io::read_scalar(recv_bytes, data);
 }
 // recieve a int16_t  (2 bytes)
 int SerialCommsClient::recv_i16(int16_t *data)
 {
-  return recv_bytes(reinterpret_cast<char*>(data), sizeof(int16_t));
+  return serial_scalar_io::read_scalar(recv_bytes, data);
 }
 // recieve a int32_t  (4 bytes)
 int SerialCommsClient::recv_i32(int32_t *data)
 {
-  return recv_bytes(reinterpret_cast<char*>(data), sizeof(int32_t));
+  return serial_scalar_io::read_scalar(recv_bytes, data);
 }
 // recieve a float    (4 bytes)
 int SerialCommsClient::recv_f32(float *data)
 {
-  return recv_bytes(reinterpret_cast<char*>(data), sizeof(float));
+  return serial_scalar_io::read_scalar(recv_bytes, data);
 }
 
 void SerialCommsClient::send_packet(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload)
@@ -138,5 +173,6 @@ bool SerialCommsClient::recv_packet(DecodedPacket& packet)
     if(bytes_read <= 0)
       return false;
     rxBuffer.push_back(byte);
+    trim_rx_buffer(rxBuffer, kMaxRxBufferBytes);
   }
 }

@@ -15,6 +15,7 @@ class SerialCommsServer : public SerialComms
 private:
     SerialPort serialport;
     std::vector<uint8_t> readBuffer;
+    std::size_t readBufferHead = 0;
 
     int recv_bytes(void *data, std::size_t size);
     void refill_read_buffer();

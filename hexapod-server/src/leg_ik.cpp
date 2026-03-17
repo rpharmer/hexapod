@@ -3,6 +3,17 @@
 
 #include <cmath>
 
+namespace {
+
+void apply_estimated_leg_fallback(const EstimatedState& est,
+                                  JointTargets& joints,
+                                  int legID)
+{
+  joints.leg_raw_states[legID] = est.leg_states[legID];
+}
+
+} // namespace
+
 LegIK::LegIK(HexapodGeometry geometry) : hexGeo(geometry) {}
 
 
@@ -16,11 +27,9 @@ JointTargets LegIK::solve(const EstimatedState& est,
                                     joints.leg_raw_states[legID],
                                     targets.feet[legID],
                                     hexGeo.legGeometry[legID]);
-    if (!solved) {
-      joints.leg_raw_states[legID] = est.leg_states[legID];
-    }
-    if (!safety.leg_enabled[legID]) {
-      joints.leg_raw_states[legID] = est.leg_states[legID];
+    const bool use_fallback = !solved || !safety.leg_enabled[legID];
+    if (use_fallback) {
+      apply_estimated_leg_fallback(est, joints, legID);
     }
   }
 
