@@ -3,6 +3,29 @@
 #include "control_config.hpp"
 
 #include <algorithm>
+#include <array>
+
+namespace {
+
+constexpr std::array<double, kNumLegs> kTripodPhaseOffsets = {0.0, 0.5, 0.0, 0.5, 0.0, 0.5};
+constexpr std::array<double, kNumLegs> kRipplePhaseOffsets = {0.0, 1.0 / 6.0, 2.0 / 6.0, 3.0 / 6.0, 4.0 / 6.0, 5.0 / 6.0};
+constexpr std::array<double, kNumLegs> kWavePhaseOffsets = {0.0, 1.0 / 6.0, 2.0 / 6.0, 3.0 / 6.0, 4.0 / 6.0, 5.0 / 6.0};
+
+const std::array<double, kNumLegs>& gait_phase_offsets(const GaitType gait)
+{
+    switch (gait) {
+        case GaitType::TRIPOD:
+            return kTripodPhaseOffsets;
+        case GaitType::RIPPLE:
+            return kRipplePhaseOffsets;
+        case GaitType::WAVE:
+            return kWavePhaseOffsets;
+    }
+
+    return kTripodPhaseOffsets;
+}
+
+} // namespace
 
 double GaitScheduler::wrap01(double x) const {
     while (x >= 1.0) x -= 1.0;
@@ -46,22 +69,9 @@ GaitState GaitScheduler::update(const EstimatedState&,
 
     phase_accum_ = wrap01(phase_accum_ + dt * step_hz);
 
+    const std::array<double, kNumLegs>& phase_offsets = gait_phase_offsets(intent.gait);
     for (int leg = 0; leg < kNumLegs; ++leg) {
-        double offset = 0.0;
-
-        switch (intent.gait) {
-            case GaitType::TRIPOD:
-                offset = (leg % 2 == 0) ? 0.0 : 0.5;
-                break;
-            case GaitType::RIPPLE:
-                offset = leg / 6.0;
-                break;
-            case GaitType::WAVE:
-                offset = leg / 6.0;
-                break;
-        }
-
-        const double p = wrap01(phase_accum_ + offset);
+        const double p = wrap01(phase_accum_ + phase_offsets[leg]);
         out.phase[leg] = p;
 
         // 0.0..0.5 stance, 0.5..1.0 swing
