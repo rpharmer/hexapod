@@ -123,25 +123,6 @@ enum class LegJointID : uint8_t {
 class SerialComms
 {
 public:
-    // functions to send data
-    virtual void send_char(char) = 0;    // send a char     (1 byte)
-    virtual void send_u8(uint8_t) = 0;   // send a uint8_t  (1 byte)
-    virtual void send_u16(uint16_t) = 0; // send a uint16_t (2 bytes)
-    virtual void send_u32(uint32_t) = 0; // send a uint32_t (4 bytes)
-    virtual void send_i16(int16_t) = 0;  // send a int16_t  (2 bytes)
-    virtual void send_i32(int32_t) = 0;  // send a int32_t  (4 bytes)
-    virtual void send_f32(float) = 0;    // send a float    (4 bytes)
-    
-    // functions to recieve data
-    virtual int recv_char(char*) = 0;    // recieve a char     (1 byte) 
-    virtual int recv_u8(uint8_t*) = 0;   // recieve a uint8_t  (1 bytes)
-    virtual int recv_u16(uint16_t*) = 0; // recieve a uint16_t (2 bytes)
-    virtual int recv_u32(uint32_t*) = 0; // recieve a uint32_t (4 bytes)
-    virtual int recv_i16(int16_t*) = 0;  // recieve a int16_t  (2 bytes)
-    virtual int recv_i32(int32_t*) = 0;  // recieve a int32_t  (4 bytes)
-    virtual int recv_f32(float*) = 0;    // recieve a float    (4 bytes)
-    
-    
     // framed protocol helpers
     virtual void send_packet(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload) = 0;
     virtual bool recv_packet(DecodedPacket& packet) = 0;

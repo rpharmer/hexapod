@@ -1,20 +1,18 @@
-// Header guard
-#ifndef HEXAPOD_COMMS_H
-#define HEXAPOD_COMMS_H
+#ifndef HEXAPOD_COMMS_CLIENT_H
+#define HEXAPOD_COMMS_CLIENT_H
 
+#include <stdint.h>
 #include "hexapod-common.hpp"
-#include "framing.hpp"
-
 
 // Concrete class derived from SerialComms defining which communication functions
 class SerialCommsClient : public SerialComms
 {
 private:
-  int32_t _timeout_ms;
+    int32_t _timeout_ms;
 public:
-    
     // constructor
     SerialCommsClient();
+
     // opens COM port for use, must be called before you configure port
     void Open();
     // closes COM port
@@ -26,41 +24,6 @@ public:
     ///             be rounded to the nearest 100ms (a Linux API restriction). Maximum value limited to
     ///             25500ms (another Linux API restriction).
     void SetTimeout(int32_t timeout_ms);
-
-
-    /* functions to send data */
-    
-    // send a char (1 byte)
-    void send_char(char data) override;
-    // send a uint8_t (1 bytes)
-    void send_u8(uint8_t data) override;
-    // send a uint16_t (2 bytes)
-    void send_u16(uint16_t data) override;
-    // send a uint32_t (4 bytes)
-    void send_u32(uint32_t data) override;
-    // send a int16_t  (2 bytes)
-    void send_i16(int16_t data) override;
-    // send a int32_t  (4 bytes)
-    void send_i32(int32_t data) override;
-    // send a float    (4 bytes)
-    void send_f32(float data) override;
-    
-    /* functions to recieve data */
-    
-    // receive a char (1 byte)
-    int recv_char(char *data) override;
-    // recieve a uint8_t (1 bytes)
-    int recv_u8(uint8_t *data) override;
-    // recieve a uint16_t (2 bytes)
-    int recv_u16(uint16_t *data) override;
-    // recieve a uint32_t (4 bytes)
-    int recv_u32(uint32_t *data) override;
-    // recieve a int16_t  (2 bytes)
-    int recv_i16(int16_t *data) override;
-    // recieve a int32_t  (4 bytes)
-    int recv_i32(int32_t *data) override;
-    // recieve a float    (4 bytes)
-    int recv_f32(float *data) override;
 
     // framed protocol helpers
     void send_packet(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload) override;
