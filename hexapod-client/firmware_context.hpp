@@ -6,6 +6,7 @@
 #include "analog.hpp"
 #include "analogmux.hpp"
 #include "serialCommsClient.hpp"
+#include "hexapod-client.hpp"
 
 #include <array>
 
@@ -35,6 +36,8 @@ struct FirmwareContext {
   SerialCommsClient serial{};
   WS2812 led_bar{servo2040::NUM_LEDS, pio1, 0, servo2040::LED_DATA};
   Button user_sw{servo2040::USER_SW};
+  
+  HexapodState state{HexapodState::OFF};
 };
 
 FirmwareContext& firmware();

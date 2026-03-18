@@ -71,14 +71,27 @@ bool dispatchMotionCommand(const DecodedPacket& packet)
 
 void runCommandLoop()
 {
+  firmware().state = HexapodState::WAITING_FOR_HOST;
   while(1)
   {
     DecodedPacket packet;
     if(firmware().serial.recv_packet(packet))
     {
-      if(packet.cmd == HELLO)
+      if(firmware().state != HexapodState::ACTIVE)
       {
-        handleHandshake(packet.seq, packet.payload);
+        if(packet.cmd == HELLO)
+        {
+          handleHandshake(packet.seq, packet.payload);
+          firmware().state = HexapodState::ACTIVE;
+        }
+        else
+        {
+          continue;
+        }
+      }
+      else if(packet.cmd == HELLO)
+      {
+        firmware().serial.send_packet(packet.seq, NACK, {ALREADY_PAIRED});
       }
       else if(packet.cmd == HEARTBEAT)
       {

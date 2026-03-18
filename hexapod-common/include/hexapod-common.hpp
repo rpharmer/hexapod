@@ -40,7 +40,8 @@ enum class ErrorCode : uint8_t {
   INVALID_PAYLOAD_LENGTH = 0xA4,
   OUT_OF_RANGE_INDEX = 0xA5,
   UNSUPPORTED_COMMAND = 0xA6,
-  BUSY_NOT_READY = 0xA7
+  BUSY_NOT_READY = 0xA7,
+  ALREADY_PAIRED = 0xA8
 };
 
 constexpr uint8_t as_u8(CommandCode code) { return static_cast<uint8_t>(code); }
@@ -77,6 +78,7 @@ inline constexpr uint8_t INVALID_PAYLOAD_LENGTH = as_u8(ErrorCode::INVALID_PAYLO
 inline constexpr uint8_t OUT_OF_RANGE_INDEX = as_u8(ErrorCode::OUT_OF_RANGE_INDEX);
 inline constexpr uint8_t UNSUPPORTED_COMMAND = as_u8(ErrorCode::UNSUPPORTED_COMMAND);
 inline constexpr uint8_t BUSY_NOT_READY = as_u8(ErrorCode::BUSY_NOT_READY);
+inline constexpr uint8_t ALREADY_PAIRED = as_u8(ErrorCode::ALREADY_PAIRED);
 
 // enum to map joints to ints
 // [R/L] is Right/ Left handside from point of view of robot

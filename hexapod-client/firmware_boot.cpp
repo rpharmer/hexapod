@@ -56,6 +56,7 @@ void showWaitForUsbAnimation()
 
 void initializeHardware()
 {
+  firmware().state = HexapodState::BOOT;
   stdio_init_all();
   configureSensorAddressPulls();
 
@@ -70,10 +71,12 @@ void initializeHardware()
 
 void shutdownHardware()
 {
+  firmware().state = HexapodState::STOPPING;
   firmware().servos.disable_all();
   gpio_put_masked(A0_GPIO_MASK, GPIO_LOW_MASK);
   firmware().led_bar.clear();
   sleep_ms(100);
+  firmware().state = HexapodState::OFF;
 }
 
 } // namespace

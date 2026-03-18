@@ -20,7 +20,13 @@ const uint32_t GPIO_INPUT_MASK		= 0x00;
 const uint32_t GPIO_HIGH_MASK		  = 0xFFFFFFFF;
 const uint32_t GPIO_LOW_MASK		  = 0x00;
 
-
+enum class HexapodState : uint8_t {
+  BOOT = 0,
+  WAITING_FOR_HOST = 1,
+  ACTIVE = 2,
+  STOPPING = 3,
+  OFF = 4
+};
 
 void echoLoop();
 void runCommandLoop();
