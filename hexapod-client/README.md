@@ -1,24 +1,40 @@
 # hexapod-client
 
-Firmware for the **Pimoroni Servo 2040** that drives the hexapod’s 18 servos, reads onboard analog channels/sensors, controls a power relay pin, and exchanges framed packets with `hexapod-server` over USB serial.
+Firmware for the **Pimoroni Servo 2040** that drives the hexapod’s 18 servos, reads onboard analog/sensor channels, controls a power relay pin, and exchanges framed packets with `hexapod-server` over USB serial.
 
 ## What this firmware does
 
 - Initializes Servo 2040 peripherals and an 18-channel `ServoCluster`.
-- Applies per-servo pulse-width calibration for all joints.
-- Waits for a USB-serial host connection (with LED status animation while waiting).
-- Processes framed protocol commands defined in `hexapod-common`.
-- Supports both low-level and higher-level hardware queries (including a full hardware snapshot).
+- Applies per-servo pulse-width calibration data.
+- Waits for USB serial host availability with LED status animation.
+- Enforces host handshake state before accepting active control commands.
+- Processes framed protocol commands from `hexapod-common`.
+- Supports both low-level and full-snapshot hardware queries.
 
-Primary source files:
+## Source map
 
-- `hexapod-client.cpp`: main loop, command handlers, hardware I/O.
-- `serialCommsClient.cpp/.hpp`: USB serial transport implementation for the framed protocol.
-- `../hexapod-common/framing.cpp` and `../hexapod-common/include/hexapod-common.hpp`: shared framing + protocol constants.
+- `firmware_boot.cpp`: hardware bring-up/teardown and handshake helpers.
+- `command_dispatch.cpp`: runtime command loop + domain dispatch.
+- `motion_commands.cpp`: calibration and joint-target write handlers.
+- `sensing_commands.cpp`: sensor/current/voltage/full-state handlers.
+- `power_commands.cpp`: relay and servo-enable handlers.
+- `firmware_context.cpp/.hpp`: shared firmware state and hardware objects.
+- `serialCommsClient.cpp/.hpp`: USB serial transport used by framed protocol.
+- `../hexapod-common/framing.cpp` + `../hexapod-common/include/hexapod-common.hpp`: shared framing/protocol constants.
+
+## Firmware runtime states
+
+The firmware uses explicit lifecycle states:
+
+- `BOOT`
+- `WAITING_FOR_HOST`
+- `ACTIVE`
+- `STOPPING`
+- `OFF`
 
 ## Repository assumptions
 
-This project expects the following layout (sibling directories):
+Expected sibling layout:
 
 ```text
 <workspace>/
@@ -28,7 +44,7 @@ This project expects the following layout (sibling directories):
     └── hexapod-client/
 ```
 
-`pico_sdk_import.cmake` and `pimoroni_pico_import.cmake` are configured with this layout in mind.
+`pico_sdk_import.cmake` and `pimoroni_pico_import.cmake` assume this by default.
 
 ## Prerequisites
 
@@ -39,7 +55,7 @@ sudo apt update
 sudo apt install -y cmake gcc-arm-none-eabi build-essential
 ```
 
-Clone SDK dependencies (if not already installed):
+Clone SDK dependencies if needed:
 
 ```bash
 git clone https://github.com/raspberrypi/pico-sdk
@@ -60,8 +76,6 @@ From `hexapod-client/`:
 
 ### 1) Optional dependency prebuild
 
-This mode is useful to populate/prebuild SDK and Pimoroni dependency objects without compiling firmware sources.
-
 ```bash
 cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON
 cmake --build build --target setup-sdks
@@ -74,7 +88,7 @@ cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF
 cmake --build build --target hexapod-client
 ```
 
-Build outputs are generated under `build/`, including:
+Build outputs under `build/` include:
 
 - `hexapod-client.elf`
 - `hexapod-client.uf2`
@@ -88,74 +102,60 @@ Build outputs are generated under `build/`, including:
 2. A mass-storage device appears.
 3. Copy `build/hexapod-client.uf2` to that device.
 
-### OpenOCD custom target
-
-A convenience target is generated:
+### OpenOCD helper target
 
 ```bash
 cmake --build build --target program-pico
 ```
 
-This executes the generated `build/program-pico.sh` script, which invokes OpenOCD with RP2040 config files. Ensure your local OpenOCD setup and interface config (`interface/linuxgpiod-new.cfg`) are available.
-
-## Runtime behavior
-
-At startup the firmware:
-
-1. Initializes stdio over USB.
-2. Configures analog mux pull settings for six sensor inputs.
-3. Initializes and calibrates all 18 servos.
-4. Displays a rotating LED animation until USB serial is connected.
-5. Enables all servos and enters packet-processing loop.
+This invokes generated script `build/program-pico.sh`.
 
 ## Protocol overview
 
-All command/status/error IDs and protocol version are shared in:
+Shared command IDs and protocol constants live in:
 
 - `../hexapod-common/include/hexapod-common.hpp`
 
-Notable commands handled by this firmware:
+Notable handled commands include:
 
 - `HELLO`
+- `HEARTBEAT`
+- `KILL`
 - `SET_ANGLE_CALIBRATIONS`
 - `SET_TARGET_ANGLE`
 - `SET_JOINT_TARGETS`
 - `SET_POWER_RELAY`
+- `SET_SERVOS_ENABLED`
+- `GET_SERVOS_ENABLED`
+- `SET_SERVOS_TO_MID`
 - `GET_ANGLE_CALIBRATIONS`
 - `GET_CURRENT`
 - `GET_VOLTAGE`
 - `GET_SENSOR`
 - `GET_FULL_HARDWARE_STATE`
-- `HEARTBEAT`
 
 ### Payload notes
 
-- **Calibration upload** expects `18 * 2 * sizeof(float)` bytes.
-- **Joint target upload** expects `18 * sizeof(float)` bytes, each target in radians.
-- **Full hardware state response** returns:
+- Calibration upload expects `18 * 2 * sizeof(float)` bytes.
+- Joint target upload expects `18 * sizeof(float)` bytes (radians).
+- Full hardware state response includes:
   - 18 floats (last commanded joint targets, radians)
-  - 6 foot-contact bytes (derived from sensor voltage threshold)
+  - 6 foot-contact bytes
   - battery voltage (float)
   - current draw (float)
-
-## Hardware mapping notes
-
-- Servo channels: `SERVO_1`..`SERVO_18` (Servo 2040 pin mapping).
-- Relay control pin mask uses `A0` (`GPIO26`) in `hexapod-client.hpp`.
-- Shared ADC + analog mux are used for voltage/current/sensor reads.
 
 ## Troubleshooting
 
 - **CMake cannot find Pico SDK**
-  - Confirm `PICO_SDK_PATH` is set correctly, or update `pico_sdk_import.cmake` path assumptions.
+  - Confirm `PICO_SDK_PATH` or update `pico_sdk_import.cmake` assumptions.
 - **Pimoroni libs not found**
-  - Ensure `pimoroni-pico` exists at expected sibling path.
+  - Ensure `pimoroni-pico` exists in expected sibling path.
 - **No serial handshake**
-  - Verify USB cable/data path, correct host serial device, and protocol version match.
+  - Verify cable/data path, host serial device, and protocol version alignment.
 - **Unexpected servo behavior**
-  - Re-check calibration payload ordering and units (radians for joint targets, pulse mapping done on-device).
+  - Re-check calibration payload ordering and joint-target units (radians).
 
 ## Related docs
 
-- Root project overview: `../README.md`
+- Root overview: `../README.md`
 - Shared protocol definitions: `../hexapod-common/include/hexapod-common.hpp`
