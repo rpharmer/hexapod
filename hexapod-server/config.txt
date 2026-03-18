@@ -38,3 +38,22 @@ StandSettlingDelayMs = 2000
 MaxTiltRad = 0.70
 CommandTimeoutUs = 300000
 FallbackSpeedMag = 0.01
+
+[Geometry]
+CoxaLengthM = 0.043
+FemurLengthM = 0.060
+TibiaLengthM = 0.104
+BodyToBottomM = 0.040
+CoxaAttachDeg = 0.0
+MountAnglesDeg = [143.0, 217.0, 90.0, 270.0, 37.0, 323.0]
+CoxaOffsetsM = [
+  [0.063, -0.0835, -0.007],
+  [-0.063, -0.0835, -0.007],
+  [0.0815, 0.0, -0.007],
+  [-0.0815, 0.0, -0.007],
+  [0.063, 0.0835, -0.007],
+  [-0.063, 0.0835, -0.007]
+]
+FemurAttachDeg = [35.0, -35.0, 35.0, -35.0, 35.0, -35.0]
+TibiaAttachDeg = [83.0, -83.0, 83.0, -83.0, 83.0, -83.0]
+SideSign = [1.0, -1.0, 1.0, -1.0, 1.0, -1.0]

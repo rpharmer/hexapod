@@ -4,7 +4,11 @@
 
 #include <array>
 
-inline HexapodGeometry defaultHexapodGeometry() {
+struct ParsedToml;
+
+namespace geometry_config {
+
+inline HexapodGeometry buildDefaultHexapodGeometry() {
     HexapodGeometry geometry{};
 
     constexpr double coxa_len = 0.043;
@@ -54,4 +58,18 @@ inline HexapodGeometry defaultHexapodGeometry() {
 
     geometry.toBottom = 0.040;
     return geometry;
+}
+
+extern HexapodGeometry kHexapodGeometry;
+
+void loadFromParsedToml(const ParsedToml& config);
+
+inline const HexapodGeometry& activeHexapodGeometry() {
+    return kHexapodGeometry;
+}
+
+} // namespace geometry_config
+
+inline HexapodGeometry defaultHexapodGeometry() {
+    return geometry_config::activeHexapodGeometry();
 }

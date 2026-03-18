@@ -18,6 +18,7 @@
 #include "hardware_bridge.hpp"
 #include "robot_control.hpp"
 #include "control_config.hpp"
+#include "geometry_config.hpp"
 
 
 
@@ -67,6 +68,7 @@ int main() {
   }
 
   control_config::loadFromParsedToml(config);
+  geometry_config::loadFromParsedToml(config);
 
   auto hw = std::make_unique<SimpleHardwareBridge>(config.serialDevice, config.baudRate, config.timeout, config.minMaxPulses);
   auto estimator = std::make_unique<SimpleEstimator>();
@@ -110,6 +112,8 @@ bool tomlParser(std::string filename, ParsedToml& out)
     "R21", "R22", "R23", "L21", "L22", "L23",
     "R11", "R12", "R13", "L11", "L12", "L13"
   };
+
+  const HexapodGeometry default_geometry = geometry_config::buildDefaultHexapodGeometry();
 
   auto parse_int_with_fallback = [](const toml::value& root,
                                     const std::string& key,
@@ -160,39 +164,103 @@ bool tomlParser(std::string filename, ParsedToml& out)
     return value;
   };
 
+  auto parse_double_list_with_fallback = [](const toml::value& root,
+                                            const std::string& key,
+                                            const std::vector<double>& defaults,
+                                            std::size_t expected_size,
+                                            double min_value,
+                                            double max_value) {
+    const std::vector<double> values = toml::find_or<std::vector<double>>(root, key, defaults);
+    if (values.size() != expected_size) {
+      if (auto logger = GetDefaultLogger()) {
+        LOG_WARN(logger, "invalid geometry list size for ", key, ": expected ",
+                 expected_size, ", got ", values.size(), ", using defaults");
+      }
+      return defaults;
+    }
+
+    for (std::size_t i = 0; i < values.size(); ++i) {
+      if (values[i] < min_value || values[i] > max_value) {
+        if (auto logger = GetDefaultLogger()) {
+          LOG_WARN(logger, "invalid geometry value for ", key, "[", i, "] = ",
+                   values[i], ", using defaults");
+        }
+        return defaults;
+      }
+    }
+    return values;
+  };
+
+  auto parse_vec3_list_with_fallback = [](const toml::value& root,
+                                          const std::string& key,
+                                          const std::vector<Vec3>& defaults,
+                                          std::size_t expected_size,
+                                          double min_value,
+                                          double max_value) {
+    const std::vector<std::array<double, 3>> raw =
+        toml::find_or<std::vector<std::array<double, 3>>>(root, key, {});
+
+    if (raw.empty()) {
+      return defaults;
+    }
+
+    if (raw.size() != expected_size) {
+      if (auto logger = GetDefaultLogger()) {
+        LOG_WARN(logger, "invalid geometry list size for ", key, ": expected ",
+                 expected_size, ", got ", raw.size(), ", using defaults");
+      }
+      return defaults;
+    }
+
+    std::vector<Vec3> parsed;
+    parsed.reserve(raw.size());
+    for (std::size_t i = 0; i < raw.size(); ++i) {
+      const auto& row = raw[i];
+      for (std::size_t axis = 0; axis < row.size(); ++axis) {
+        if (row[axis] < min_value || row[axis] > max_value) {
+          if (auto logger = GetDefaultLogger()) {
+            LOG_WARN(logger, "invalid geometry value for ", key, "[", i, "][",
+                     axis, "] = ", row[axis], ", using defaults");
+          }
+          return defaults;
+        }
+      }
+      parsed.push_back(Vec3{row[0], row[1], row[2]});
+    }
+    return parsed;
+  };
+
   try
   {
-    // select TOML version at runtime (optional)
     auto root = toml::parse(filename, toml::spec::v(1,1,0));
-    
-    // Check that the file is a Hexapod Config File
+
     if(root.at("title").as_string() != "Hexapod Config File")
     {
       if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "incorrect config header. expected \"Hexapod Config File\""); }
       return false;
     }
-    
+
     std::string serialDevice = toml::find_or<std::string>(root, "SerialDevice", "Error");
     if(serialDevice == "Error" || serialDevice.empty())
     {
       if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "SerialDevice definition not found or empty"); }
       return false;
     }
-    
+
     int baudInt = toml::find_or<int>(root, "BaudRate", -1);
     if(baudInt <= 0)
     {
       if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "baudRate wasn't a positive valid number or not found"); }
       return false;
     }
-    
+
     int timeout = toml::find_or<int>(root, "Timeout_ms", -1);
     if(timeout <= 0)
     {
       if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "timeout wasn't a positive valid number or not found"); }
       return false;
     }
-    
+
     auto calibs = toml::find_or<std::vector<std::tuple<std::string, int, int>>>(root, "MotorCalibrations", {});
     if(calibs.empty())
     {
@@ -257,8 +325,7 @@ bool tomlParser(std::string filename, ParsedToml& out)
         return false;
       }
     }
-    
-    // sort calibration data to correct motor order
+
     std::sort(calibs.begin(), calibs.end(),
     [](const std::tuple<std::string, int, int>& a,
        const std::tuple<std::string, int, int>& b) -> bool
@@ -279,16 +346,35 @@ bool tomlParser(std::string filename, ParsedToml& out)
 
          return sort_key_a > sort_key_b;
        });
-  
-  std::vector<float> calibsF;
-  calibsF.reserve(36);
-  
-  for(auto it = calibs.begin(); it!=calibs.end(); ++it)
-  {
-    calibsF.push_back(static_cast<float>(std::get<1>(*it))); // min pulse value
-    calibsF.push_back(static_cast<float>(std::get<2>(*it))); // max pulse value
-  }
-  
+
+    std::vector<float> calibsF;
+    calibsF.reserve(36);
+
+    for(const auto& calib : calibs)
+    {
+      calibsF.push_back(static_cast<float>(std::get<1>(calib)));
+      calibsF.push_back(static_cast<float>(std::get<2>(calib)));
+    }
+
+    std::vector<double> default_mount_angles;
+    std::vector<Vec3> default_coxa_offsets;
+    std::vector<double> default_femur_attach;
+    std::vector<double> default_tibia_attach;
+    std::vector<double> default_side_sign;
+    default_mount_angles.reserve(kNumLegs);
+    default_coxa_offsets.reserve(kNumLegs);
+    default_femur_attach.reserve(kNumLegs);
+    default_tibia_attach.reserve(kNumLegs);
+    default_side_sign.reserve(kNumLegs);
+
+    for (const auto& leg : default_geometry.legGeometry) {
+      default_mount_angles.push_back(rad2deg(leg.mountAngle));
+      default_coxa_offsets.push_back(leg.bodyCoxaOffset);
+      default_femur_attach.push_back(rad2deg(leg.servo.femurOffset));
+      default_tibia_attach.push_back(rad2deg(leg.servo.tibiaOffset));
+      default_side_sign.push_back(leg.servo.femurSign);
+    }
+
     out.serialDevice = serialDevice;
     out.baudRate = baudInt;
     out.timeout = timeout;
@@ -314,6 +400,18 @@ bool tomlParser(std::string filename, ParsedToml& out)
                                                    control_config::kDefaultCommandTimeoutUs, 10000, 2000000);
     out.fallbackSpeedMag = parse_double_with_fallback(root, "Tuning.FallbackSpeedMag",
                                                       control_config::kDefaultFallbackSpeedMag, 0.0, 1.0);
+
+    out.coxaLengthM = parse_double_with_fallback(root, "Geometry.CoxaLengthM", default_geometry.legGeometry[0].coxaLength, 0.005, 0.30);
+    out.femurLengthM = parse_double_with_fallback(root, "Geometry.FemurLengthM", default_geometry.legGeometry[0].femurLength, 0.005, 0.30);
+    out.tibiaLengthM = parse_double_with_fallback(root, "Geometry.TibiaLengthM", default_geometry.legGeometry[0].tibiaLength, 0.005, 0.40);
+    out.bodyToBottomM = parse_double_with_fallback(root, "Geometry.BodyToBottomM", default_geometry.toBottom, 0.005, 0.30);
+    out.coxaAttachDeg = parse_double_with_fallback(root, "Geometry.CoxaAttachDeg", rad2deg(default_geometry.legGeometry[0].servo.coxaOffset), -180.0, 180.0);
+
+    out.mountAnglesDeg = parse_double_list_with_fallback(root, "Geometry.MountAnglesDeg", default_mount_angles, kNumLegs, -360.0, 360.0);
+    out.femurAttachDeg = parse_double_list_with_fallback(root, "Geometry.FemurAttachDeg", default_femur_attach, kNumLegs, -180.0, 180.0);
+    out.tibiaAttachDeg = parse_double_list_with_fallback(root, "Geometry.TibiaAttachDeg", default_tibia_attach, kNumLegs, -180.0, 180.0);
+    out.sideSign = parse_double_list_with_fallback(root, "Geometry.SideSign", default_side_sign, kNumLegs, -1.0, 1.0);
+    out.coxaOffsetsM = parse_vec3_list_with_fallback(root, "Geometry.CoxaOffsetsM", default_coxa_offsets, kNumLegs, -0.30, 0.30);
 
     return true;
   }
