@@ -2,6 +2,7 @@
 #ifndef HEXAPOD_SERVER_HPP
 #define HEXAPOD_SERVER_HPP
 #include "serialCommsServer.hpp"
+#include "types.hpp"
 
 
 struct ParsedToml
@@ -21,6 +22,17 @@ struct ParsedToml
   double maxTiltRad{0.70};
   uint64_t commandTimeoutUs{300000};
   double fallbackSpeedMag{0.01};
+
+  double coxaLengthM{0.043};
+  double femurLengthM{0.060};
+  double tibiaLengthM{0.104};
+  std::vector<double> mountAnglesDeg{};
+  std::vector<Vec3> coxaOffsetsM{};
+  double coxaAttachDeg{0.0};
+  std::vector<double> femurAttachDeg{};
+  std::vector<double> tibiaAttachDeg{};
+  std::vector<double> sideSign{};
+  double bodyToBottomM{0.040};
 };
 
 bool tomlParser(std::string filename,  ParsedToml& out);
