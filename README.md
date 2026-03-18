@@ -51,7 +51,13 @@ hexapod/
 │   └── CMakeLists.txt
 └── hexapod-client/
     ├── CMakeLists.txt
-    ├── hexapod-client.cpp
+    ├── firmware_boot.cpp
+    ├── firmware_context.cpp
+    ├── firmware_context.hpp
+    ├── command_dispatch.cpp
+    ├── power_commands.cpp
+    ├── sensing_commands.cpp
+    ├── motion_commands.cpp
     ├── hexapod-client.hpp
     ├── serialCommsClient.cpp
     ├── serialCommsClient.hpp

@@ -2,6 +2,7 @@
 #ifndef HEXAPOD_CLIENT_H
 #define HEXAPOD_CLIENT_H
 
+#include <cstdint>
 #include <vector>
 
 // client device id
@@ -22,6 +23,7 @@ const uint32_t GPIO_LOW_MASK		  = 0x00;
 
 
 void echoLoop();
+void runCommandLoop();
 void handleHandshake(uint16_t seq, const std::vector<uint8_t>& payload);
 void handleSetAngleCommand(uint16_t seq, const std::vector<uint8_t>& payload);
 void handleGetAngleCalibCommand(uint16_t seq);
