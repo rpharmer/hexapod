@@ -66,6 +66,8 @@ int main() {
     return 1;
   }
 
+  control_config::loadFromParsedToml(config);
+
   auto hw = std::make_unique<SimpleHardwareBridge>(config.serialDevice, config.baudRate, config.timeout, config.minMaxPulses);
   auto estimator = std::make_unique<SimpleEstimator>();
   
@@ -107,6 +109,55 @@ bool tomlParser(std::string filename, ParsedToml& out)
     "R31", "R32", "R33", "L31", "L32", "L33",
     "R21", "R22", "R23", "L21", "L22", "L23",
     "R11", "R12", "R13", "L11", "L12", "L13"
+  };
+
+  auto parse_int_with_fallback = [](const toml::value& root,
+                                    const std::string& key,
+                                    int default_value,
+                                    int min_value,
+                                    int max_value) {
+    int value = toml::find_or<int>(root, key, default_value);
+    if (value < min_value || value > max_value) {
+      if (auto logger = GetDefaultLogger()) {
+        LOG_WARN(logger, "invalid tuning value for ", key, "=", value,
+                 ", using default ", default_value);
+      }
+      return default_value;
+    }
+    return value;
+  };
+
+  auto parse_u64_with_fallback = [](const toml::value& root,
+                                    const std::string& key,
+                                    uint64_t default_value,
+                                    uint64_t min_value,
+                                    uint64_t max_value) {
+    const int64_t raw_value = toml::find_or<int64_t>(root, key, static_cast<int64_t>(default_value));
+    if (raw_value < static_cast<int64_t>(min_value) ||
+        raw_value > static_cast<int64_t>(max_value)) {
+      if (auto logger = GetDefaultLogger()) {
+        LOG_WARN(logger, "invalid tuning value for ", key, "=", raw_value,
+                 ", using default ", default_value);
+      }
+      return default_value;
+    }
+    return static_cast<uint64_t>(raw_value);
+  };
+
+  auto parse_double_with_fallback = [](const toml::value& root,
+                                       const std::string& key,
+                                       double default_value,
+                                       double min_value,
+                                       double max_value) {
+    double value = toml::find_or<double>(root, key, default_value);
+    if (value < min_value || value > max_value) {
+      if (auto logger = GetDefaultLogger()) {
+        LOG_WARN(logger, "invalid tuning value for ", key, "=", value,
+                 ", using default ", default_value);
+      }
+      return default_value;
+    }
+    return value;
   };
 
   try
@@ -242,7 +293,28 @@ bool tomlParser(std::string filename, ParsedToml& out)
     out.baudRate = baudInt;
     out.timeout = timeout;
     out.minMaxPulses = calibsF;
-    
+
+    out.busLoopPeriodUs = parse_int_with_fallback(root, "Tuning.BusLoopPeriodUs",
+                                                  control_config::kDefaultBusLoopPeriodUs, 500, 50000);
+    out.estimatorLoopPeriodUs = parse_int_with_fallback(root, "Tuning.EstimatorLoopPeriodUs",
+                                                        control_config::kDefaultEstimatorLoopPeriodUs, 500, 50000);
+    out.controlLoopPeriodUs = parse_int_with_fallback(root, "Tuning.ControlLoopPeriodUs",
+                                                      control_config::kDefaultControlLoopPeriodUs, 500, 50000);
+    out.safetyLoopPeriodUs = parse_int_with_fallback(root, "Tuning.SafetyLoopPeriodUs",
+                                                     control_config::kDefaultSafetyLoopPeriodUs, 500, 50000);
+    out.diagnosticsPeriodMs = parse_int_with_fallback(root, "Tuning.DiagnosticsPeriodMs",
+                                                      control_config::kDefaultDiagnosticsPeriodMs, 100, 10000);
+    out.commandRefreshPeriodMs = parse_int_with_fallback(root, "Tuning.CommandRefreshPeriodMs",
+                                                         control_config::kDefaultCommandRefreshPeriodMs, 10, 1000);
+    out.standSettlingDelayMs = parse_int_with_fallback(root, "Tuning.StandSettlingDelayMs",
+                                                       control_config::kDefaultStandSettlingDelayMs, 0, 10000);
+    out.maxTiltRad = parse_double_with_fallback(root, "Tuning.MaxTiltRad",
+                                                control_config::kDefaultMaxTiltRad, 0.1, 1.5);
+    out.commandTimeoutUs = parse_u64_with_fallback(root, "Tuning.CommandTimeoutUs",
+                                                   control_config::kDefaultCommandTimeoutUs, 10000, 2000000);
+    out.fallbackSpeedMag = parse_double_with_fallback(root, "Tuning.FallbackSpeedMag",
+                                                      control_config::kDefaultFallbackSpeedMag, 0.0, 1.0);
+
     return true;
   }
   catch(const std::exception& ex)

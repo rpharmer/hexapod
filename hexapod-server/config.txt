@@ -26,3 +26,15 @@ MotorCalibrations = [
 ["L11", 1031, 1998], #//L11 M39
 ["L12", 951,  1978], #//L12 M30
 ["L13", 1035, 2027]] #//L13 M15
+
+[Tuning]
+BusLoopPeriodUs = 2000
+EstimatorLoopPeriodUs = 2000
+ControlLoopPeriodUs = 4000
+SafetyLoopPeriodUs = 2000
+DiagnosticsPeriodMs = 500
+CommandRefreshPeriodMs = 100
+StandSettlingDelayMs = 2000
+MaxTiltRad = 0.70
+CommandTimeoutUs = 300000
+FallbackSpeedMag = 0.01
