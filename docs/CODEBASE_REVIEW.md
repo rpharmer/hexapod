@@ -2,21 +2,21 @@
 
 ## Review scope
 
-This review was refreshed against the current repository state for:
+This refresh covered the current repository layout and implementation status for:
 
-- `hexapod-server/` (host runtime and control orchestration)
-- `hexapod-client/` (Servo 2040 firmware and serial command handling)
-- `hexapod-common/` (framing/protocol helpers)
-- top-level docs (`README.md`, `docs/`)
+- `hexapod-server/` (host-side control orchestration and serial bridge)
+- `hexapod-client/` (Servo 2040 firmware runtime and command handlers)
+- `hexapod-common/` (shared framing/protocol code)
+- planning docs in `docs/`
 
-## Build verification (current run)
+## Build verification (executed in this review)
 
-The following commands were executed successfully during this review:
+The following checks were run successfully:
 
 1. Server configure + build
    - `cmake -S hexapod-server -B hexapod-server/build`
    - `cmake --build hexapod-server/build -j4`
-2. Client SDK setup/prebuild
+2. Client SDK setup target
    - `cmake -S hexapod-client -B hexapod-client/build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON`
    - `cmake --build hexapod-client/build --target setup-sdks -j4`
 3. Client full firmware build
@@ -25,36 +25,36 @@ The following commands were executed successfully during this review:
 
 ## Findings
 
-### 1) Build health: good
+### 1) Overall build health: good
 
-- Both server and firmware builds are green in this environment.
-- Shared framing code compiles into both targets without extra patching.
+- Server and firmware both compile cleanly in the current environment.
+- Shared framing implementation builds into both targets without special-case patches.
 
-### 2) Runtime architecture: stable skeleton, key motion logic still placeholder
+### 2) Architecture: noticeably improved modularity
 
-- `RobotControl` remains the central orchestrator for bus, estimator, control, safety, and diagnostics loops.
-- `BodyController::update()` still returns default outputs with TODO comments and intentionally unused inputs.
-- `GaitScheduler::update()` still uses `kFallbackSpeedMag` instead of command-derived speed.
+- Firmware startup and runtime are now split across focused files (`firmware_boot.cpp`, `command_dispatch.cpp`, and command-domain handlers), which reduces coupling compared to a monolithic loop file.
+- Server control flow already has a pipeline split (`ControlPipeline`, `StatusReporter`, loop timing helpers), improving readability and future testability.
+- Firmware now tracks explicit lifecycle states (`BOOT`, `WAITING_FOR_HOST`, `ACTIVE`, `STOPPING`, `OFF`) and applies them in main/control-loop flow.
 
-### 3) Firmware command loop and shutdown semantics: improved but still basic
+### 3) Control logic maturity: still placeholder in key areas
 
-- Firmware now exits the command loop on `KILL`, and post-loop cleanup is reachable.
-- Cleanup behavior now disables servos and powers down outputs before exit, which aligns with safety intent.
-- There is still no broader lifecycle/state machine around startup/armed/stopped modes.
+- `BodyController::update()` still returns default/empty leg targets and does not yet implement stance/swing generation.
+- `GaitScheduler::update()` still derives cadence from a fallback constant (`kFallbackSpeedMag`) instead of command-derived magnitude.
 
-### 4) Configuration/protocol handling: generally consistent
+### 4) Safety/reliability posture: solid baseline, limited validation depth
 
-- Server-side config parsing and validation are robust for calibration inputs and key/cardinality checks.
-- Framing and transport buffer bounds remain aligned.
+- Safety supervision and fault propagation are wired through the server loop and status path.
+- Firmware performs handshake gating and command categorization correctly, including `HELLO`, `HEARTBEAT`, and `KILL` handling.
+- There is still little automated regression coverage for malformed packets, CRC failures, timeout behavior, and mode transitions.
 
-### 5) Documentation status: improved, minor consolidation opportunities remain
+### 5) Documentation state: mostly aligned
 
-- The top-level README now points to existing protocol/documentation locations.
-- Build instructions are usable as written, though the client section could be further condensed to reduce repetition.
+- README and planning docs reflect current split architecture and build flow.
+- Remaining opportunity is to tie roadmap items more directly to measurable acceptance checks (tests and runtime traces).
 
 ## Recommended near-term actions
 
-1. Replace placeholder control logic (`BodyController`, gait speed input path).
-2. Add command/heartbeat error-path tests (CRC, malformed payload, timeout, unsupported command).
-3. Introduce explicit runtime states for firmware bring-up/armed/stop behavior.
-4. Keep server/client builds as baseline CI checks.
+1. Implement non-placeholder body control and command-driven gait cadence.
+2. Add protocol + safety regression tests (CRC, payload size, unsupported command, heartbeat timeout).
+3. Add lightweight CI for server build, client setup target, and full client firmware build.
+4. Define acceptance metrics for control behavior changes (e.g., mode transition timing, gait phase continuity).

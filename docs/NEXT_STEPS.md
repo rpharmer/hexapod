@@ -1,74 +1,74 @@
 # Next Steps, Fixes, and Improvements
 
-This roadmap is refreshed based on the current code review and successful server/firmware builds.
+This roadmap is refreshed from the current repository state and latest local build verification.
 
 ## 1) Immediate priorities (highest leverage)
 
-1. **Implement real body control policy**
-   - Replace `BodyController::update()` placeholder outputs with stance/swing target generation.
-   - Add constraints and saturation checks before IK.
+1. **Implement real body control output generation**
+   - Replace placeholder `BodyController::update()` behavior with stance/swing foot target logic.
+   - Add saturation and safety-aware clamping before IK.
 
-2. **Make gait rate command-driven**
-   - Replace fallback speed magnitude in `GaitScheduler` with values derived from `MotionIntent`.
-   - Validate smooth ramping and mode transitions (`STAND` ↔ `WALK`).
+2. **Make gait cadence command-driven**
+   - Replace fallback speed magnitude in `GaitScheduler` with command-derived motion intent magnitude.
+   - Ensure smooth transitions between `SAFE_IDLE`, `STAND`, and `WALK`.
 
-3. **Start splitting firmware monolith**
-   - Extract command dispatch and command handler groups from `hexapod-client.cpp`.
-   - Keep behavior unchanged while reducing file-level coupling.
+3. **Define behavior-level acceptance tests for control loop changes**
+   - Add deterministic checks for gait phase progression, mode transition behavior, and command timeout response.
 
 ## 2) Reliability and safety hardening
 
-1. **Protocol framing regression tests**
-   - Cover CRC failures, truncated payloads, invalid lengths, and unsupported commands.
+1. **Protocol/framing regression tests**
+   - Cover CRC mismatches, invalid payload lengths, truncated frames, and unsupported commands.
 
-2. **Link-health scenario tests**
-   - Test heartbeat timeout and recovery behavior.
-   - Test out-of-sequence packets and malformed handshake payloads.
+2. **Link-health and recovery testing**
+   - Validate heartbeat timeout faulting and recovery flow.
+   - Validate repeated `HELLO` behavior after activation and malformed handshake payload handling.
 
-3. **Explicit firmware runtime states**
-   - Introduce state tracking for boot, waiting-for-host, active, and stopping.
-   - Ensure kill/stop behavior is deterministic and observable.
+3. **Safety fault observability improvements**
+   - Add structured logging/telemetry fields for fault source and transition timestamps.
 
 ## 3) Architecture and maintainability
 
-1. **Refactor `RobotControl` into smaller units**
-   - Separate loop scheduling from control computation and diagnostics publication.
+1. **Continue `RobotControl` decomposition**
+   - Separate thread/loop execution concerns from orchestration state ownership.
 
-2. **Externalize geometry/calibration configuration**
-   - Move hardcoded geometry defaults to config with schema/version checks.
+2. **Externalize geometry and tunables**
+   - Move hardcoded geometry/control constants into versioned configuration with validation.
 
-3. **Tighten module contracts**
-   - Use stronger types/aliases for units and timestamps across estimator/control/IK boundaries.
+3. **Type-safety pass at module boundaries**
+   - Introduce stronger types or wrappers for units (angles, rates, durations, timestamps).
 
-## 4) Documentation and developer workflow
+## 4) Documentation and workflow
 
-1. **Condense README command sections**
-   - Keep one concise server flow and one concise client flow with setup/full-build variants.
+1. **Add a concise operator runbook**
+   - Document startup order, expected handshake behavior, and safe-stop process.
 
-2. **Add a short operator runbook**
-   - Include startup sequence, handshake expectations, and safe-stop actions.
+2. **Set up baseline CI checks**
+   - Server build.
+   - Client `setup-sdks` target.
+   - Full client firmware build.
 
-3. **Define baseline CI checks**
-   - At minimum: server build, client setup-sdks target, and full client firmware build.
+3. **Add change-impact templates for control logic PRs**
+   - Require test evidence and safety impact notes for behavior-affecting changes.
 
-## Suggested 30/60/90 day plan
+## Suggested 30/60/90-day plan
 
 - **Next 30 days**
-  - Land body-controller and gait-rate logic improvements.
-  - Begin `hexapod-client.cpp` split without behavior changes.
+  - Implement body controller policy and command-driven gait cadence.
+  - Add first protocol framing regression tests.
 
 - **Next 60 days**
-  - Add protocol/safety regression tests.
-  - Introduce explicit firmware runtime states.
+  - Add link-health recovery and safety transition tests.
+  - Start `RobotControl` loop-runner extraction.
 
 - **Next 90 days**
-  - Complete `RobotControl` decomposition.
-  - Ship config externalization for geometry/calibration defaults.
+  - Externalize geometry/tuning config with validation.
+  - Complete unit-typed API tightening for estimator/control/IK boundaries.
 
 ## Definition of done for roadmap items
 
 Each completed item should include:
 
-- reproducible build/test evidence,
-- updated documentation,
+- reproducible build/test command output,
+- documentation updates for behavior changes,
 - explicit safety impact note (risk reduced/unchanged/introduced).
