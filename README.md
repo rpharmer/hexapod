@@ -4,9 +4,9 @@ This repository contains host and firmware code for a serial-controlled hexapod 
 
 ## Components
 
-- **`hexapod-server/`**: Linux host application that controls hexapod robot. It loads servo calibration data from `config.txt`, performs a serial handshake, and streams calibration values to the microcontroller and then sends/receives packets to/from hexapod-client.
-- **`hexapod-client/`**: Pimoroni Servo 2040 (based on Raspberry Pi Pico) firmware that controls servos/IO and communicates over USB serial.
-- **`hexapod-common/`**: Shared protocol constants and abstract serial interface declarations.
+- **`hexapod-server/`**: Linux host application that loads configuration/calibrations, performs serial handshake with firmware, runs multi-loop control + safety logic, and exchanges framed packets with the microcontroller.
+- **`hexapod-client/`**: Pimoroni Servo 2040 (RP2040) firmware that initializes hardware, enforces host handshake state, drives 18 servos, and serves sensing/power/motion commands over USB serial.
+- **`hexapod-common/`**: Shared protocol constants and framing utilities used by server and firmware.
 
 ## Repository layout
 
@@ -15,6 +15,8 @@ hexapod/
 ├── README.md
 ├── docs/
 │   ├── CODEBASE_REVIEW.md
+│   ├── REFACTORING_REVIEW.md
+│   ├── NEXT_STEPS.md
 │   ├── FIRMWARE.md
 │   └── HARDWARE.md
 ├── hexapod-common/
@@ -25,65 +27,41 @@ hexapod/
 ├── hexapod-server/
 │   ├── config.txt
 │   ├── include/
-│   │   ├── body_controller.hpp
-│   │   ├── double_buffer.hpp
-│   │   ├── estimator.hpp
-│   │   ├── gait_scheduler.hpp
-│   │   ├── hardware_bridge.hpp
-│   │   ├── hexapod-server.hpp
-│   │   ├── leg_fk.hpp
-│   │   ├── leg_ik.hpp
-│   │   ├── robot_control.hpp
-│   │   ├── safety_supervisor.hpp
-│   │   ├── serialCommsServer.hpp
-│   │   └── types.hpp
 │   ├── src/
-│   │   ├── body_controller.cpp
-│   │   ├── estimator.cpp
-│   │   ├── gait_scheduler.cpp
-│   │   ├── hardware_bridge.cpp
-│   │   ├── hexapod-server.cpp
-│   │   ├── leg_fk.cpp
-│   │   ├── leg_ik.cpp
-│   │   ├── robot_control.cpp
-│   │   ├── safety_supervisor.cpp
-│   │   └── serialCommsServer.cpp
-│   └── CMakeLists.txt
+│   └── README.md
 └── hexapod-client/
-    ├── CMakeLists.txt
     ├── firmware_boot.cpp
+    ├── command_dispatch.cpp
+    ├── motion_commands.cpp
+    ├── sensing_commands.cpp
+    ├── power_commands.cpp
     ├── firmware_context.cpp
     ├── firmware_context.hpp
-    ├── command_dispatch.cpp
-    ├── power_commands.cpp
-    ├── sensing_commands.cpp
-    ├── motion_commands.cpp
-    ├── hexapod-client.hpp
     ├── serialCommsClient.cpp
     ├── serialCommsClient.hpp
-    ├── pimoroni_pico_import.cmake
-    ├── pico_sdk_import.cmake
     └── README.md
 ```
 
 ## Current communication flow
 
-1. Server parses `hexapod-server/config.txt` using `toml11`.
-2. Calibration tuples are sorted into expected servo order.
-3. Server opens `/dev/ttyACM0` at `115200` baud.
-4. Server sends handshake bytes: `HELLO`, protocol version, requested capabilities.
-5. Firmware responds with `ACK`/`NACK`.
-6. On successful handshake, server sends calibration min/max pairs (`uint16_t`) for each servo.
-7. Server sends periodic `HEARTBEAT` commands and expects `ACK` responses to verify link health.
+1. Server parses `hexapod-server/config.txt`.
+2. Server opens the configured serial device (default workflow often uses `/dev/ttyACM0` at `115200`).
+3. Server sends `HELLO` with protocol version + capability byte.
+4. Firmware responds with `ACK` or `NACK`.
+5. Server uploads calibration pairs for each servo.
+6. Server uses heartbeat + command traffic (`SET_JOINT_TARGETS`, sensing requests, etc.) while firmware is active.
 
-Protocol constants and message definitions live in:
+Protocol constants and framing are shared in:
 
 - `hexapod-common/include/hexapod-common.hpp`
+- `hexapod-common/include/framing.hpp`
 - `docs/FIRMWARE.md`
 
 ## Project planning
 
-- See `docs/NEXT_STEPS.md` for a prioritized roadmap of fixes, reliability work, and longer-term improvements.
+- `docs/CODEBASE_REVIEW.md`
+- `docs/REFACTORING_REVIEW.md`
+- `docs/NEXT_STEPS.md`
 
 ## Build instructions
 
@@ -91,19 +69,17 @@ Protocol constants and message definitions live in:
 
 Prerequisites:
 
-- C++17-capable compiler
+- C++20-capable compiler
+- CMake 3.16+
 - `CppLinuxSerial`
 - `toml11`
-- `make`
 
 Build:
 
 ```bash
 cd hexapod-server
-mkdir build
-cd build
-cmake ..
-make
+cmake -S . -B build
+cmake --build build -j
 ```
 
 Run:
@@ -113,7 +89,7 @@ cd hexapod-server
 ./build/hexapod-server
 ```
 
-### Client firmware (Servo 2040(Pico))
+### Client firmware (Servo 2040 / Pico)
 
 Prerequisites:
 
@@ -122,9 +98,7 @@ Prerequisites:
 - CMake 3.12+
 - ARM GCC toolchain (`gcc-arm-none-eabi`)
 
-Build:
-
-Run setup/prebuild in `hexapod-client/build` (this prebuilds Pico SDK/Pimoroni dependency objects for `hexapod-client` without compiling project firmware sources):
+Build setup target:
 
 ```bash
 cd hexapod-client
@@ -132,7 +106,7 @@ cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON
 cmake --build build --target setup-sdks
 ```
 
-Build `hexapod-client.elf` after setup/prebuild is complete (reconfigure with `HEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF` first):
+Build firmware target:
 
 ```bash
 cd hexapod-client
@@ -140,21 +114,12 @@ cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF
 cmake --build build --target hexapod-client
 ```
 
-Quick verification flow (setup prebuild, then full firmware compile):
-
-```bash
-cd hexapod-client
-cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON
-cmake --build build --target setup-sdks
-cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF
-cmake --build build --target hexapod-client
-```
 Flash:
 
 - Copy generated `.uf2` to Pico mass-storage device, or
-- Use project-specific flash target/tooling when configured in your local environment.
+- Use your environment's OpenOCD/programming flow if configured.
 
 ## Safety
 
 - Validate calibration bounds before powering servos to avoid mechanical overtravel.
-- Verify relay default state and power sequencing before full system bring-up.
+- Verify relay default state and power sequencing before full-system bring-up.

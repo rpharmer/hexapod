@@ -2,59 +2,65 @@
 
 ## Review scope
 
-This refresh covered the current repository layout and implementation status for:
+This review pass covered:
 
-- `hexapod-server/` (host-side control orchestration and serial bridge)
-- `hexapod-client/` (Servo 2040 firmware runtime and command handlers)
-- `hexapod-common/` (shared framing/protocol code)
-- planning docs in `docs/`
+- `hexapod-server/` (host control loops, safety, hardware bridge)
+- `hexapod-client/` (Servo 2040 firmware boot, dispatch, command handlers)
+- `hexapod-common/` (framing/protocol utilities)
+- top-level and component README files for documentation alignment
 
-## Build verification (executed in this review)
+## Build and verification checks run
 
-The following checks were run successfully:
+All commands below were executed in this review window:
 
-1. Server configure + build
-   - `cmake -S hexapod-server -B hexapod-server/build`
-   - `cmake --build hexapod-server/build -j4`
-2. Client SDK setup target
-   - `cmake -S hexapod-client -B hexapod-client/build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON`
-   - `cmake --build hexapod-client/build --target setup-sdks -j4`
-3. Client full firmware build
-   - `cmake -S hexapod-client -B hexapod-client/build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF`
-   - `cmake --build hexapod-client/build --target hexapod-client -j4`
+1. `cmake -S hexapod-server -B hexapod-server/build`
+2. `cmake --build hexapod-server/build -j4`
+3. `cmake -S hexapod-client -B hexapod-client/build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON`
+4. `cmake --build hexapod-client/build --target setup-sdks -j4`
+5. `cmake -S hexapod-client -B hexapod-client/build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF`
+6. `cmake --build hexapod-client/build --target hexapod-client -j4`
 
-## Findings
+## Current-state findings
 
-### 1) Overall build health: good
+### 1) Build posture
 
-- Server and firmware both compile cleanly in the current environment.
-- Shared framing implementation builds into both targets without special-case patches.
+- Server and firmware both build successfully in the current environment.
+- Shared framing/protocol code in `hexapod-common/` integrates cleanly with both binaries.
 
-### 2) Architecture: noticeably improved modularity
+### 2) Architecture and code organization
 
-- Firmware startup and runtime are now split across focused files (`firmware_boot.cpp`, `command_dispatch.cpp`, and command-domain handlers), which reduces coupling compared to a monolithic loop file.
-- Server control flow already has a pipeline split (`ControlPipeline`, `StatusReporter`, loop timing helpers), improving readability and future testability.
-- Firmware now tracks explicit lifecycle states (`BOOT`, `WAITING_FOR_HOST`, `ACTIVE`, `STOPPING`, `OFF`) and applies them in main/control-loop flow.
+- Firmware-side decomposition is now clear and maintainable:
+  - `firmware_boot.cpp` handles bring-up/teardown,
+  - `command_dispatch.cpp` routes commands,
+  - command families are split into `power_commands.cpp`, `sensing_commands.cpp`, and `motion_commands.cpp`.
+- Server-side loop and control orchestration separation is improved:
+  - `RobotControl` owns runtime loops,
+  - `ControlPipeline` encapsulates per-step controller chaining,
+  - `StatusReporter` handles periodic status output.
 
-### 3) Control logic maturity: still placeholder in key areas
+### 3) Behavior completeness gaps
 
-- `BodyController::update()` still returns default/empty leg targets and does not yet implement stance/swing generation.
-- `GaitScheduler::update()` still derives cadence from a fallback constant (`kFallbackSpeedMag`) instead of command-derived magnitude.
+- `BodyController::update()` is still a placeholder (returns default `LegTargets`; no stance/swing target generation).
+- `GaitScheduler::update()` still computes cadence from fallback speed (`kFallbackSpeedMag`) rather than command-derived magnitude.
+- Current control behavior therefore exercises infrastructure flow but not finalized locomotion policy.
 
-### 4) Safety/reliability posture: solid baseline, limited validation depth
+### 4) Safety and protocol handling
 
-- Safety supervision and fault propagation are wired through the server loop and status path.
-- Firmware performs handshake gating and command categorization correctly, including `HELLO`, `HEARTBEAT`, and `KILL` handling.
-- There is still little automated regression coverage for malformed packets, CRC failures, timeout behavior, and mode transitions.
+- Safety fault evaluation is wired (`TIP_OVER`, `COMMAND_TIMEOUT`, `SAFE_IDLE` inhibit path), with priority handling in `SafetySupervisor`.
+- Firmware command-loop gating around handshake is robust at a baseline level (pre-active command rejection, repeated `HELLO` handling, heartbeat and kill handling).
+- Remaining risk: no automated regression suite for malformed framing, CRC mismatch, payload-length edge cases, and heartbeat-timeout recovery.
 
-### 5) Documentation state: mostly aligned
+### 5) Documentation alignment
 
-- README and planning docs reflect current split architecture and build flow.
-- Remaining opportunity is to tie roadmap items more directly to measurable acceptance checks (tests and runtime traces).
+- Planning docs exist and are useful, but some README sections were stale relative to the current split firmware/server architecture.
+- This review refresh includes README updates so project layout and behavior descriptions match current source organization.
 
 ## Recommended near-term actions
 
-1. Implement non-placeholder body control and command-driven gait cadence.
-2. Add protocol + safety regression tests (CRC, payload size, unsupported command, heartbeat timeout).
-3. Add lightweight CI for server build, client setup target, and full client firmware build.
-4. Define acceptance metrics for control behavior changes (e.g., mode transition timing, gait phase continuity).
+1. Implement non-placeholder body controller outputs and command-driven gait speed.
+2. Add protocol/safety regression tests around malformed frames, invalid lengths, unsupported commands, and timeout paths.
+3. Add lightweight CI coverage for:
+   - server configure/build,
+   - firmware SDK setup target,
+   - firmware full compile target.
+4. Keep documentation synchronized with architectural changes (especially when file ownership and loop responsibilities move).

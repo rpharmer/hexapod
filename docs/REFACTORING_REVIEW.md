@@ -1,50 +1,56 @@
 # Refactoring Review
 
-This document updates refactoring status based on the current codebase.
+This review summarizes refactoring progress and remaining high-impact work based on the current repository state.
 
 ## Scope reviewed
 
-- `hexapod-common/` framing/protocol utilities
-- `hexapod-server/` control runtime modules
-- `hexapod-client/` firmware boot/dispatch/command handlers
+- `hexapod-common/` framing and protocol helpers
+- `hexapod-server/` loop orchestration + control pipeline modules
+- `hexapod-client/` firmware startup, command dispatch, and command handlers
 
-## Refactoring progress snapshot
+## Progress snapshot
 
-### Completed / in good shape
+### Completed / materially improved
 
-1. **Firmware monolith decomposition is complete at file level**
-   - Boot and lifecycle behavior live in `firmware_boot.cpp`.
-   - Command routing is centralized in `command_dispatch.cpp`.
-   - Command families are separated into `power_commands.cpp`, `sensing_commands.cpp`, and `motion_commands.cpp`.
+1. **Firmware monolith split is complete at file-responsibility level**
+   - Boot/shutdown responsibilities: `firmware_boot.cpp`
+   - Packet routing and host-state gatekeeping: `command_dispatch.cpp`
+   - Domain handlers:
+     - power: `power_commands.cpp`
+     - sensing: `sensing_commands.cpp`
+     - motion/calibration: `motion_commands.cpp`
 
-2. **Server control responsibilities are partially separated**
-   - `RobotControl` runs loops and owns orchestration.
-   - `ControlPipeline` now encapsulates gait/body/IK sequencing for each control step.
-   - `StatusReporter` isolates periodic diagnostic formatting/log output.
+2. **Server pipeline modularity improved**
+   - `ControlPipeline` now groups gait/body/IK execution and status synthesis.
+   - `StatusReporter` isolates diagnostics formatting/output concerns.
+   - Control-loop timing utilities are centralized in `loop_timing`.
 
-3. **Runtime state representation improved on firmware side**
-   - Firmware uses explicit `HexapodState` transitions (`BOOT` → `WAITING_FOR_HOST` → `ACTIVE` → `STOPPING` → `OFF`).
+3. **State modeling is clearer on firmware**
+   - Explicit lifecycle states (`BOOT`, `WAITING_FOR_HOST`, `ACTIVE`, `STOPPING`, `OFF`) improve readability and future testability of transitions.
 
-### Still high-value refactoring targets
+## Remaining high-value refactoring targets
 
-1. **Replace placeholder controllers with actual policy**
-   - `BodyController` still returns default `LegTargets` and ignores inputs.
-   - `GaitScheduler` still uses fallback speed magnitude rather than command-derived speed.
+1. **Replace behavior placeholders with policy implementations**
+   - `BodyController` still returns defaults and does not consume control inputs.
+   - `GaitScheduler` still uses fallback speed magnitude instead of command-derived motion intensity.
 
-2. **Further reduce `RobotControl` coupling**
-   - The class still owns thread lifecycle, buffers, and direct loop implementations in one unit.
-   - A next split could isolate loop runners or scheduling adapters from lifecycle management.
+2. **Further decompose `RobotControl` runtime ownership**
+   - `RobotControl` still owns thread lifecycle, loop bodies, and shared-state plumbing in one class.
+   - Next split candidate: extract loop runners/schedulers from lifecycle orchestration.
 
-3. **Strengthen contract boundaries and units**
-   - More explicit unit-safe types (angles, angular rates, timestamps) would reduce accidental mixing across estimator/gait/IK boundaries.
+3. **Tighten boundary contracts and unit semantics**
+   - Add stronger types/wrappers for angles, rates, and durations to reduce cross-module unit mistakes.
 
-4. **Externalize geometry and runtime tunables**
-   - Static constants are still embedded in code paths that would benefit from validated config-backed parameters.
+4. **Move tunables toward validated config**
+   - Runtime geometry/control constants should be externalized where practical, with schema/version validation and defaults.
 
-## Recommended refactoring sequence
+5. **Backstop refactors with regression tests**
+   - Add focused tests for framing decode/encode errors, command routing edges, and safety transition behavior before larger structural changes.
 
-1. Implement body controller + gait speed path (highest behavior impact).
-2. Extract loop execution concerns out of `RobotControl` into focused loop-runner components.
-3. Introduce stronger type aliases/wrappers for units and timing.
-4. Move geometry/tuning constants to validated config with defaults and version checks.
-5. Add regression tests around protocol errors and safety transitions to preserve behavior during refactors.
+## Suggested refactoring sequence
+
+1. Implement body controller and command-driven gait cadence.
+2. Add regression coverage for protocol + safety transitions.
+3. Split `RobotControl` into orchestration + loop-runner components.
+4. Introduce stronger unit-typed interfaces across estimator/gait/IK paths.
+5. Externalize/configure tunables with validation and compatibility checks.
