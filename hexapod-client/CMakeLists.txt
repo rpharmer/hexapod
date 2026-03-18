@@ -18,7 +18,12 @@ pico_sdk_init()
 
 set(HEXAPOD_CLIENT_EXCLUDE_FROM_ALL)
 set(HEXAPOD_CLIENT_SOURCES
-    hexapod-client.cpp
+    firmware_boot.cpp
+    firmware_context.cpp
+    command_dispatch.cpp
+    power_commands.cpp
+    sensing_commands.cpp
+    motion_commands.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/framing.cpp
     serialCommsClient.cpp # <-- Add source files here!
 )

@@ -1,0 +1,100 @@
+#include "hexapod-common.hpp"
+#include "hexapod-client.hpp"
+#include "firmware_context.hpp"
+
+namespace {
+
+bool dispatchPowerCommand(const DecodedPacket& packet)
+{
+  switch(packet.cmd)
+  {
+    case SET_POWER_RELAY:
+      handleSetPowerRelayCommand(packet.seq, packet.payload);
+      return true;
+    case SET_SERVOS_ENABLED:
+      handleSetServosEnabledCommand(packet.seq, packet.payload);
+      return true;
+    case GET_SERVOS_ENABLED:
+      handleGetServosEnabledCommand(packet.seq);
+      return true;
+    case SET_SERVOS_TO_MID:
+      handleSetServosToMidCommand(packet.seq);
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool dispatchSensingCommand(const DecodedPacket& packet)
+{
+  switch(packet.cmd)
+  {
+    case GET_ANGLE_CALIBRATIONS:
+      handleGetAngleCalibCommand(packet.seq);
+      return true;
+    case GET_CURRENT:
+      handleGetCurrentCommand(packet.seq);
+      return true;
+    case GET_VOLTAGE:
+      handleGetVoltageCommand(packet.seq);
+      return true;
+    case GET_SENSOR:
+      handleGetSensorCommand(packet.seq, packet.payload);
+      return true;
+    case GET_FULL_HARDWARE_STATE:
+      handleGetFullHardwareStateCommand(packet.seq);
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool dispatchMotionCommand(const DecodedPacket& packet)
+{
+  switch(packet.cmd)
+  {
+    case SET_ANGLE_CALIBRATIONS:
+      handleCalibCommand(packet.seq, packet.payload);
+      return true;
+    case SET_TARGET_ANGLE:
+      handleSetAngleCommand(packet.seq, packet.payload);
+      return true;
+    case SET_JOINT_TARGETS:
+      handleSetJointTargetsCommand(packet.seq, packet.payload);
+      return true;
+    default:
+      return false;
+  }
+}
+
+} // namespace
+
+void runCommandLoop()
+{
+  while(1)
+  {
+    DecodedPacket packet;
+    if(firmware().serial.recv_packet(packet))
+    {
+      if(packet.cmd == HELLO)
+      {
+        handleHandshake(packet.seq, packet.payload);
+      }
+      else if(packet.cmd == HEARTBEAT)
+      {
+        handleHeartbeatCommand(packet.seq);
+      }
+      else if(dispatchPowerCommand(packet) || dispatchSensingCommand(packet) || dispatchMotionCommand(packet))
+      {
+      }
+      else if(packet.cmd == KILL)
+      {
+        break;
+      }
+      else
+      {
+        firmware().serial.send_packet(packet.seq, NACK, {UNSUPPORTED_COMMAND});
+      }
+    }
+  }
+}
