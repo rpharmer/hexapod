@@ -1,70 +1,50 @@
 # Refactoring Review
 
-This document captures an updated refactoring pass against the current repository state.
+This document updates refactoring status based on the current codebase.
 
 ## Scope reviewed
 
-- Shared framing/protocol utilities in `hexapod-common/`
-- Server runtime/control/kinematics/safety in `hexapod-server/`
-- Pico firmware + serial command handling in `hexapod-client/`
+- `hexapod-common/` framing/protocol utilities
+- `hexapod-server/` control runtime modules
+- `hexapod-client/` firmware boot/dispatch/command handlers
 
-## Status of previously tracked items
+## Refactoring progress snapshot
 
-### Confirmed still true
+### Completed / in good shape
 
-1. **Shared framing helpers are consistently used**
-   - Client/server packet encode/decode paths continue to rely on `hexapod-common` framing helpers.
+1. **Firmware monolith decomposition is complete at file level**
+   - Boot and lifecycle behavior live in `firmware_boot.cpp`.
+   - Command routing is centralized in `command_dispatch.cpp`.
+   - Command families are separated into `power_commands.cpp`, `sensing_commands.cpp`, and `motion_commands.cpp`.
 
-2. **Transport RX growth is bounded**
-   - RX buffers remain capped by transport framing limits.
+2. **Server control responsibilities are partially separated**
+   - `RobotControl` runs loops and owns orchestration.
+   - `ControlPipeline` now encapsulates gait/body/IK sequencing for each control step.
+   - `StatusReporter` isolates periodic diagnostic formatting/log output.
 
-3. **Server receive path avoids repeated vector front erases**
-   - The read-head approach remains in place.
+3. **Runtime state representation improved on firmware side**
+   - Firmware uses explicit `HexapodState` transitions (`BOOT` → `WAITING_FOR_HOST` → `ACTIVE` → `STOPPING` → `OFF`).
 
-4. **Gait phase mapping is table-driven**
-   - `GaitScheduler` still selects offsets via gait-specific arrays.
+### Still high-value refactoring targets
 
-### Updated from previous review
+1. **Replace placeholder controllers with actual policy**
+   - `BodyController` still returns default `LegTargets` and ignores inputs.
+   - `GaitScheduler` still uses fallback speed magnitude rather than command-derived speed.
 
-1. **Firmware cleanup is now reachable**
-   - `hexapod-client.cpp` breaks from the command loop on `KILL` and executes cleanup.
-   - Cleanup behavior now disables servos before shutdown.
+2. **Further reduce `RobotControl` coupling**
+   - The class still owns thread lifecycle, buffers, and direct loop implementations in one unit.
+   - A next split could isolate loop runners or scheduling adapters from lifecycle management.
 
-2. **README protocol reference drift is resolved**
-   - The top-level README now points to existing files for protocol details.
+3. **Strengthen contract boundaries and units**
+   - More explicit unit-safe types (angles, angular rates, timestamps) would reduce accidental mixing across estimator/gait/IK boundaries.
 
-## Current high-priority refactoring opportunities
+4. **Externalize geometry and runtime tunables**
+   - Static constants are still embedded in code paths that would benefit from validated config-backed parameters.
 
-1. **Decompose firmware monolith (`hexapod-client.cpp`)**
-   - The file still combines hardware setup, transport loop, command dispatch, and handlers.
-   - Suggested split: `firmware_boot.cpp`, `command_dispatch.cpp`, `power_commands.cpp`, `sensing_commands.cpp`, `motion_commands.cpp`.
+## Recommended refactoring sequence
 
-2. **Decompose `RobotControl` responsibilities**
-   - `RobotControl` still owns loop timing, IO coordination, safety interaction, and diagnostics.
-   - Suggested split: scheduler/timing, control pipeline, and status reporting modules.
-
-3. **Replace placeholder control policies**
-   - `BodyController::update()` is still a pass-through/default output stub.
-   - `GaitScheduler::update()` still uses fallback speed magnitude.
-
-4. **Externalize geometry/config defaults**
-   - Hardcoded geometry assumptions remain in code rather than versioned config.
-
-## Medium-priority opportunities
-
-1. **Strengthen typed interfaces at module boundaries**
-   - Introduce stronger units/types for angles, rates, and timestamps.
-
-2. **Unify logging patterns**
-   - Keep diagnostics through logger abstractions and avoid mixed direct stream output.
-
-3. **Targeted tests around protocol and safety transitions**
-   - Add malformed frame tests and command-timeout safety behavior tests.
-
-## Suggested execution order
-
-1. Split `hexapod-client.cpp` into focused translation units.
-2. Break `RobotControl` into pipeline + scheduling/reporting responsibilities.
-3. Replace body-controller and gait-speed placeholders with command-driven logic.
-4. Move geometry/calibration defaults into validated configuration.
-5. Add focused protocol/safety regression tests.
+1. Implement body controller + gait speed path (highest behavior impact).
+2. Extract loop execution concerns out of `RobotControl` into focused loop-runner components.
+3. Introduce stronger type aliases/wrappers for units and timing.
+4. Move geometry/tuning constants to validated config with defaults and version checks.
+5. Add regression tests around protocol errors and safety transitions to preserve behavior during refactors.
