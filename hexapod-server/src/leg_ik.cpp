@@ -60,13 +60,13 @@ bool LegIK::solveOneLeg(const LegRawState& est,
   const double r = std::hypot(x, y);
   
   // Effective horizontal distance for femur+tibia plane
-  const double rho = r - leg.coxaLength;
+  const double rho = r - leg.coxaLength.value;
   
   // 2D distance from femur joint to foot
   const double d = std::hypot(rho, z);
 
-  const double minReach = std::fabs(leg.femurLength - leg.tibiaLength);
-  const double maxReach = leg.femurLength + leg.tibiaLength;
+  const double minReach = std::fabs(leg.femurLength.value - leg.tibiaLength.value);
+  const double maxReach = leg.femurLength.value + leg.tibiaLength.value;
 
   if (d < minReach || d > maxReach) {
     return false;
@@ -76,9 +76,9 @@ bool LegIK::solveOneLeg(const LegRawState& est,
   // 2) Tibia angle by law of cosines
   // --------------------------------------------------------
   const double D =
-      (rho * rho + z * z - leg.femurLength * leg.femurLength -
-       leg.tibiaLength * leg.tibiaLength) /
-      (2.0 * leg.femurLength * leg.tibiaLength);
+      (rho * rho + z * z - leg.femurLength.value * leg.femurLength.value -
+       leg.tibiaLength.value * leg.tibiaLength.value) /
+      (2.0 * leg.femurLength.value * leg.tibiaLength.value);
 
   const double Dclamped = clamp(D, -1.0, 1.0);
   if (std::fabs(Dclamped - D) > 1e-9) {
@@ -95,8 +95,8 @@ bool LegIK::solveOneLeg(const LegRawState& est,
   // --------------------------------------------------------
   const double q2 =
       std::atan2(z, rho) -
-      std::atan2(leg.tibiaLength * std::sin(q3),
-                 leg.femurLength + leg.tibiaLength * std::cos(q3));
+      std::atan2(leg.tibiaLength.value * std::sin(q3),
+                 leg.femurLength.value + leg.tibiaLength.value * std::cos(q3));
 
   out.joint_raw_state[0].pos_rad = AngleRad{q1};
   out.joint_raw_state[1].pos_rad = AngleRad{q2};

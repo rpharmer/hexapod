@@ -17,9 +17,9 @@ void loadFromParsedToml(const ParsedToml& config) {
         leg_geo.legID = leg_ids[leg];
         leg_geo.mountAngle = AngleRad{deg2rad(config.mountAnglesDeg[leg])};
         leg_geo.bodyCoxaOffset = config.coxaOffsetsM[leg];
-        leg_geo.coxaLength = config.coxaLengthM;
-        leg_geo.femurLength = config.femurLengthM;
-        leg_geo.tibiaLength = config.tibiaLengthM;
+        leg_geo.coxaLength = LengthM{config.coxaLengthM};
+        leg_geo.femurLength = LengthM{config.femurLengthM};
+        leg_geo.tibiaLength = LengthM{config.tibiaLengthM};
 
         leg_geo.servo.coxaOffset = AngleRad{deg2rad(config.coxaAttachDeg)};
         leg_geo.servo.femurOffset = AngleRad{deg2rad(config.femurAttachDeg[leg])};
@@ -29,7 +29,7 @@ void loadFromParsedToml(const ParsedToml& config) {
         leg_geo.servo.tibiaSign = config.sideSign[leg];
     }
 
-    geometry.toBottom = config.bodyToBottomM;
+    geometry.toBottom = LengthM{config.bodyToBottomM};
     kHexapodGeometry = geometry;
 }
 

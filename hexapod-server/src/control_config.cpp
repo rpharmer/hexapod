@@ -12,9 +12,9 @@ std::chrono::milliseconds kDiagnosticsPeriod{kDefaultDiagnosticsPeriodMs};
 std::chrono::milliseconds kCommandRefreshPeriod{kDefaultCommandRefreshPeriodMs};
 std::chrono::milliseconds kStandSettlingDelay{kDefaultStandSettlingDelayMs};
 
-double kMaxTiltRad = kDefaultMaxTiltRad;
+AngleRad kMaxTiltRad = kDefaultMaxTiltRad;
 uint64_t kCommandTimeoutUs = kDefaultCommandTimeoutUs;
-double kFallbackSpeedMag = kDefaultFallbackSpeedMag;
+LinearRateMps kFallbackSpeedMag = kDefaultFallbackSpeedMag;
 
 void loadFromParsedToml(const ParsedToml& config) {
     kBusLoopPeriod = std::chrono::microseconds{config.busLoopPeriodUs};
@@ -25,9 +25,9 @@ void loadFromParsedToml(const ParsedToml& config) {
     kCommandRefreshPeriod = std::chrono::milliseconds{config.commandRefreshPeriodMs};
     kStandSettlingDelay = std::chrono::milliseconds{config.standSettlingDelayMs};
 
-    kMaxTiltRad = config.maxTiltRad;
+    kMaxTiltRad = AngleRad{config.maxTiltRad};
     kCommandTimeoutUs = config.commandTimeoutUs;
-    kFallbackSpeedMag = config.fallbackSpeedMag;
+    kFallbackSpeedMag = LinearRateMps{config.fallbackSpeedMag};
 }
 
 } // namespace control_config
