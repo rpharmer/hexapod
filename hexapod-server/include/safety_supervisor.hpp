@@ -2,6 +2,9 @@
 
 #include "types.hpp"
 
+#include <array>
+#include <cstdint>
+
 class SafetySupervisor {
 public:
     SafetyState evaluate(const RawHardwareState& raw,
@@ -9,8 +12,28 @@ public:
                          const MotionIntent& intent);
 
 private:
+    static constexpr DurationUs kRecoveryHoldTimeUs{500000};
+    static constexpr std::size_t kFaultCodeCount =
+        static_cast<std::size_t>(FaultCode::COMMAND_TIMEOUT) + 1;
+
+    struct FaultDecision {
+        FaultCode code{FaultCode::NONE};
+        bool torque_cut{false};
+    };
+
     static int faultPriority(FaultCode code);
     static bool shouldReplaceFault(FaultCode current, FaultCode candidate);
+    static std::size_t faultIndex(FaultCode code);
+    static bool canAttemptClear(const MotionIntent& intent);
+    static FaultDecision evaluateCurrentFault(const RawHardwareState& raw,
+                                              const EstimatedState& est,
+                                              const MotionIntent& intent);
 
-    void trip(SafetyState& s, FaultCode code, bool torque_cut);
+    void trip(FaultCode code, bool torque_cut, TimePointUs timestamp_us);
+    void clearActiveFault();
+
+    SafetyState state_{};
+    TimePointUs recovery_started_at_us_{};
+    std::array<uint32_t, kFaultCodeCount> trip_counts_{};
+    std::array<TimePointUs, kFaultCodeCount> last_trip_timestamps_{};
 };

@@ -32,20 +32,26 @@ bool SafetySupervisor::shouldReplaceFault(FaultCode current, FaultCode candidate
     return faultPriority(candidate) > faultPriority(current);
 }
 
-void SafetySupervisor::trip(SafetyState& s, FaultCode code, bool torque_cut) {
-    if (!shouldReplaceFault(s.active_fault, code)) {
-        return;
-    }
-
-    s.active_fault = code;
-    s.inhibit_motion = true;
-    s.torque_cut = s.torque_cut || torque_cut;
+std::size_t SafetySupervisor::faultIndex(FaultCode code) {
+    return static_cast<std::size_t>(code);
 }
 
-SafetyState SafetySupervisor::evaluate(const RawHardwareState& raw,
-                                       const EstimatedState& est,
-                                       const MotionIntent& intent) {
-    SafetyState s{};
+bool SafetySupervisor::canAttemptClear(const MotionIntent& intent) {
+    return intent.requested_mode == RobotMode::SAFE_IDLE && !isIntentStale(intent);
+}
+
+SafetySupervisor::FaultDecision SafetySupervisor::evaluateCurrentFault(const RawHardwareState& raw,
+                                                                       const EstimatedState& est,
+                                                                       const MotionIntent& intent) {
+    FaultDecision decision{};
+
+    const auto consider_fault = [&](FaultCode code, bool torque_cut) {
+        if (shouldReplaceFault(decision.code, code)) {
+            decision.code = code;
+            decision.torque_cut = torque_cut;
+        }
+    };
+
     int contact_count = 0;
     for (bool foot_contact : raw.foot_contacts) {
         if (foot_contact) {
@@ -54,31 +60,90 @@ SafetyState SafetySupervisor::evaluate(const RawHardwareState& raw,
     }
 
     if (!raw.bus_ok) {
-        trip(s, FaultCode::BUS_TIMEOUT, true);
+        consider_fault(FaultCode::BUS_TIMEOUT, true);
     }
 
     if (raw.voltage < control_config::kMinBusVoltageV ||
         raw.current > control_config::kMaxBusCurrentA) {
-        trip(s, FaultCode::MOTOR_FAULT, true);
+        consider_fault(FaultCode::MOTOR_FAULT, true);
     }
 
     if (contact_count < control_config::kMinFootContacts ||
         contact_count > control_config::kMaxFootContacts) {
-        trip(s, FaultCode::ESTIMATOR_INVALID, false);
+        consider_fault(FaultCode::ESTIMATOR_INVALID, false);
     }
 
     if (std::abs(est.body_twist_state.twist_pos_rad.x) > control_config::kMaxTiltRad.value ||
         std::abs(est.body_twist_state.twist_pos_rad.y) > control_config::kMaxTiltRad.value) {
-        trip(s, FaultCode::TIP_OVER, true);
+        consider_fault(FaultCode::TIP_OVER, true);
     }
 
     if (isIntentStale(intent)) {
-        trip(s, FaultCode::COMMAND_TIMEOUT, false);
+        consider_fault(FaultCode::COMMAND_TIMEOUT, false);
     }
 
-    if (intent.requested_mode == RobotMode::SAFE_IDLE) {
-        s.inhibit_motion = true;
+    return decision;
+}
+
+void SafetySupervisor::trip(FaultCode code, bool torque_cut, TimePointUs timestamp_us) {
+    if (!shouldReplaceFault(state_.active_fault, code)) {
+        return;
     }
 
-    return s;
+    state_.active_fault = code;
+    state_.fault_lifecycle = FaultLifecycle::LATCHED;
+    state_.inhibit_motion = true;
+    state_.torque_cut = state_.torque_cut || torque_cut;
+
+    const std::size_t idx = faultIndex(code);
+    if (idx < trip_counts_.size()) {
+        ++trip_counts_[idx];
+        last_trip_timestamps_[idx] = timestamp_us;
+        state_.active_fault_trip_count = trip_counts_[idx];
+        state_.active_fault_last_trip_us = timestamp_us;
+    }
+
+    recovery_started_at_us_ = TimePointUs{};
+}
+
+void SafetySupervisor::clearActiveFault() {
+    state_.active_fault = FaultCode::NONE;
+    state_.fault_lifecycle = FaultLifecycle::ACTIVE;
+    state_.active_fault_trip_count = 0;
+    state_.active_fault_last_trip_us = TimePointUs{};
+    state_.torque_cut = false;
+    recovery_started_at_us_ = TimePointUs{};
+}
+
+SafetyState SafetySupervisor::evaluate(const RawHardwareState& raw,
+                                       const EstimatedState& est,
+                                       const MotionIntent& intent) {
+    const TimePointUs now = now_us();
+    const FaultDecision fault = evaluateCurrentFault(raw, est, intent);
+
+    if (fault.code != FaultCode::NONE) {
+        trip(fault.code, fault.torque_cut, now);
+    } else if (state_.active_fault != FaultCode::NONE) {
+        if (!canAttemptClear(intent)) {
+            state_.fault_lifecycle = FaultLifecycle::LATCHED;
+            recovery_started_at_us_ = TimePointUs{};
+        } else if (state_.fault_lifecycle != FaultLifecycle::RECOVERING ||
+                   recovery_started_at_us_.isZero()) {
+            state_.fault_lifecycle = FaultLifecycle::RECOVERING;
+            recovery_started_at_us_ = now;
+        } else if ((now - recovery_started_at_us_) > kRecoveryHoldTimeUs) {
+            clearActiveFault();
+        }
+    } else {
+        state_.fault_lifecycle = FaultLifecycle::ACTIVE;
+    }
+
+    state_.inhibit_motion =
+        (state_.active_fault != FaultCode::NONE) || (intent.requested_mode == RobotMode::SAFE_IDLE);
+
+    if (state_.active_fault == FaultCode::NONE) {
+        state_.torque_cut = false;
+    }
+
+    return state_;
 }
