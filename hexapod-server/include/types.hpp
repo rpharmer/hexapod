@@ -11,34 +11,58 @@
 // ============================================================
 constexpr double kPi = 3.14159265358979323846;
 
-struct AngleRad {
+template <typename Tag>
+struct UnitValue {
     double value{0.0};
 
-    constexpr AngleRad() = default;
-    explicit constexpr AngleRad(double radians) : value(radians) {}
+    constexpr UnitValue() = default;
+    explicit constexpr UnitValue(double raw) : value(raw) {}
+
+    constexpr UnitValue operator+(UnitValue rhs) const {
+        return UnitValue{value + rhs.value};
+    }
+
+    constexpr UnitValue operator-(UnitValue rhs) const {
+        return UnitValue{value - rhs.value};
+    }
+
+    constexpr UnitValue operator*(double scalar) const {
+        return UnitValue{value * scalar};
+    }
+
+    constexpr UnitValue operator/(double scalar) const {
+        return UnitValue{value / scalar};
+    }
+
+    constexpr UnitValue& operator+=(UnitValue rhs) {
+        value += rhs.value;
+        return *this;
+    }
+
+    constexpr UnitValue& operator-=(UnitValue rhs) {
+        value -= rhs.value;
+        return *this;
+    }
 };
 
-struct AngularRateRadPerSec {
-    double value{0.0};
+template <typename Tag>
+constexpr UnitValue<Tag> operator*(double scalar, UnitValue<Tag> unit) {
+    return unit * scalar;
+}
 
-    constexpr AngularRateRadPerSec() = default;
-    explicit constexpr AngularRateRadPerSec(double radians_per_second)
-        : value(radians_per_second) {}
-};
+struct AngleRadTag {};
+struct AngularRateRadPerSecTag {};
+struct FrequencyHzTag {};
+struct DurationSecTag {};
+struct LengthMTag {};
+struct LinearRateMpsTag {};
 
-struct FrequencyHz {
-    double value{0.0};
-
-    constexpr FrequencyHz() = default;
-    explicit constexpr FrequencyHz(double hertz) : value(hertz) {}
-};
-
-struct DurationSec {
-    double value{0.0};
-
-    constexpr DurationSec() = default;
-    explicit constexpr DurationSec(double seconds) : value(seconds) {}
-};
+using AngleRad = UnitValue<AngleRadTag>;
+using AngularRateRadPerSec = UnitValue<AngularRateRadPerSecTag>;
+using FrequencyHz = UnitValue<FrequencyHzTag>;
+using DurationSec = UnitValue<DurationSecTag>;
+using LengthM = UnitValue<LengthMTag>;
+using LinearRateMps = UnitValue<LinearRateMpsTag>;
 
 double deg2rad(double deg);
 double rad2deg(AngleRad rad);
@@ -220,9 +244,9 @@ struct ControlStatus {
 struct BodyPose {
   Vec3 position{0.0, 0.0, 0.0};
   
-  double yaw{0.0};
-  double pitch{0.0};
-  double roll{0.0};
+  AngleRad yaw{};
+  AngleRad pitch{};
+  AngleRad roll{};
   
   Mat3 rotationBodyToWorld() const;
 };
@@ -266,9 +290,9 @@ struct LegGeometry {
     Vec3 bodyCoxaOffset;  // Coxa joint location in body frame
     AngleRad mountAngle{};
 
-    double coxaLength{0.0};   // L1
-    double femurLength{0.0};  // L2
-    double tibiaLength{0.0};  // L3
+    LengthM coxaLength{};   // L1
+    LengthM femurLength{};  // L2
+    LengthM tibiaLength{};  // L3
 
     ServoCalibration servo;
 };
@@ -278,7 +302,7 @@ struct LegGeometry {
 // ============================================================
 struct HexapodGeometry {
   std::array<LegGeometry, kNumLegs> legGeometry{};
-  double toBottom {0.04}; // change to vec3 (centre of mass)
+  LengthM toBottom{LengthM{0.04}}; // change to vec3 (centre of mass)
 };
 
 // Hexapod frame of reference

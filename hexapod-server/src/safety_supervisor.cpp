@@ -46,8 +46,8 @@ SafetyState SafetySupervisor::evaluate(const RawHardwareState& raw,
 
     SafetyState s{};
 
-    if (std::abs(est.body_twist_state.twist_pos_rad.x) > control_config::kMaxTiltRad ||
-        std::abs(est.body_twist_state.twist_pos_rad.y) > control_config::kMaxTiltRad) {
+    if (std::abs(est.body_twist_state.twist_pos_rad.x) > control_config::kMaxTiltRad.value ||
+        std::abs(est.body_twist_state.twist_pos_rad.y) > control_config::kMaxTiltRad.value) {
         trip(s, FaultCode::TIP_OVER, true);
     }
 

@@ -58,16 +58,16 @@ bool LegFK::solveOneLeg(const LegRawState& est, FootTarget& out,
 
   // Effective reach of the femur+tibia chain in the leg plane
   const double rho =
-      leg.femurLength * std::cos(q2) +
-      leg.tibiaLength * std::cos(q2 + q3);
+      leg.femurLength.value * std::cos(q2) +
+      leg.tibiaLength.value * std::cos(q2 + q3);
 
   // Vertical position in the leg plane
   const double z =
-      leg.femurLength * std::sin(q2) +
-      leg.tibiaLength * std::sin(q2 + q3);
+      leg.femurLength.value * std::sin(q2) +
+      leg.tibiaLength.value * std::sin(q2 + q3);
 
   // Total radial distance from coxa axis to foot
-  const double r = leg.coxaLength + rho;
+  const double r = leg.coxaLength.value + rho;
 
   // Rotate radial distance by coxa yaw into x/y
   const double x = r * std::cos(q1);

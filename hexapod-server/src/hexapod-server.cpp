@@ -419,16 +419,16 @@ bool tomlParser(std::string filename, ParsedToml& out)
     out.standSettlingDelayMs = parse_int_with_fallback(root, "Tuning.StandSettlingDelayMs",
                                                        control_config::kDefaultStandSettlingDelayMs, 0, 10000);
     out.maxTiltRad = parse_double_with_fallback(root, "Tuning.MaxTiltRad",
-                                                control_config::kDefaultMaxTiltRad, 0.1, 1.5);
+                                                control_config::kDefaultMaxTiltRad.value, 0.1, 1.5);
     out.commandTimeoutUs = parse_u64_with_fallback(root, "Tuning.CommandTimeoutUs",
                                                    control_config::kDefaultCommandTimeoutUs, 10000, 2000000);
     out.fallbackSpeedMag = parse_double_with_fallback(root, "Tuning.FallbackSpeedMag",
-                                                      control_config::kDefaultFallbackSpeedMag, 0.0, 1.0);
+                                                      control_config::kDefaultFallbackSpeedMag.value, 0.0, 1.0);
 
-    out.coxaLengthM = parse_double_with_fallback(root, "Geometry.CoxaLengthM", default_geometry.legGeometry[0].coxaLength, 0.005, 0.30);
-    out.femurLengthM = parse_double_with_fallback(root, "Geometry.FemurLengthM", default_geometry.legGeometry[0].femurLength, 0.005, 0.30);
-    out.tibiaLengthM = parse_double_with_fallback(root, "Geometry.TibiaLengthM", default_geometry.legGeometry[0].tibiaLength, 0.005, 0.40);
-    out.bodyToBottomM = parse_double_with_fallback(root, "Geometry.BodyToBottomM", default_geometry.toBottom, 0.005, 0.30);
+    out.coxaLengthM = parse_double_with_fallback(root, "Geometry.CoxaLengthM", default_geometry.legGeometry[0].coxaLength.value, 0.005, 0.30);
+    out.femurLengthM = parse_double_with_fallback(root, "Geometry.FemurLengthM", default_geometry.legGeometry[0].femurLength.value, 0.005, 0.30);
+    out.tibiaLengthM = parse_double_with_fallback(root, "Geometry.TibiaLengthM", default_geometry.legGeometry[0].tibiaLength.value, 0.005, 0.40);
+    out.bodyToBottomM = parse_double_with_fallback(root, "Geometry.BodyToBottomM", default_geometry.toBottom.value, 0.005, 0.30);
     out.coxaAttachDeg = parse_double_with_fallback(root, "Geometry.CoxaAttachDeg", rad2deg(default_geometry.legGeometry[0].servo.coxaOffset), -180.0, 180.0);
 
     out.mountAnglesDeg = parse_double_list_with_fallback(root, "Geometry.MountAnglesDeg", default_mount_angles, kNumLegs, -360.0, 360.0);

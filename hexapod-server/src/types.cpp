@@ -115,7 +115,7 @@ Mat3 Mat3::operator*(const Mat3& other) const {
 // BodyPose
 // ============================================================
 Mat3 BodyPose::rotationBodyToWorld() const {
-    return Mat3::rotZ(yaw) * Mat3::rotY(pitch) * Mat3::rotX(roll);
+    return Mat3::rotZ(yaw.value) * Mat3::rotY(pitch.value) * Mat3::rotX(roll.value);
 }
 
 // ============================================================

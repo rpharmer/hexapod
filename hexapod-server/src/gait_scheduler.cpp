@@ -62,7 +62,7 @@ GaitState GaitScheduler::update(const EstimatedState&,
     last_update_us_ = now;
 
     // TODO(gait): replace fallback speed estimate with measured command magnitude.
-    const double speed_mag = control_config::kFallbackSpeedMag;
+    const double speed_mag = control_config::kFallbackSpeedMag.value;
 
     const double step_hz = std::clamp(0.5 + 2.0 * speed_mag, 0.5, 2.5);
     const FrequencyHz step_rate_hz{step_hz};

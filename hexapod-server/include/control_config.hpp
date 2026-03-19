@@ -3,6 +3,8 @@
 #include <chrono>
 #include <cstdint>
 
+#include "types.hpp"
+
 struct ParsedToml;
 
 namespace control_config {
@@ -14,9 +16,9 @@ inline constexpr int kDefaultSafetyLoopPeriodUs = 2000;
 inline constexpr int kDefaultDiagnosticsPeriodMs = 500;
 inline constexpr int kDefaultCommandRefreshPeriodMs = 100;
 inline constexpr int kDefaultStandSettlingDelayMs = 2000;
-inline constexpr double kDefaultMaxTiltRad = 0.70;
+inline constexpr AngleRad kDefaultMaxTiltRad{0.70};
 inline constexpr uint64_t kDefaultCommandTimeoutUs = 300000;
-inline constexpr double kDefaultFallbackSpeedMag = 0.01;
+inline constexpr LinearRateMps kDefaultFallbackSpeedMag{0.01};
 
 extern std::chrono::microseconds kBusLoopPeriod;
 extern std::chrono::microseconds kEstimatorLoopPeriod;
@@ -26,9 +28,9 @@ extern std::chrono::milliseconds kDiagnosticsPeriod;
 extern std::chrono::milliseconds kCommandRefreshPeriod;
 extern std::chrono::milliseconds kStandSettlingDelay;
 
-extern double kMaxTiltRad;
+extern AngleRad kMaxTiltRad;
 extern uint64_t kCommandTimeoutUs;
-extern double kFallbackSpeedMag;
+extern LinearRateMps kFallbackSpeedMag;
 
 void loadFromParsedToml(const ParsedToml& config);
 
