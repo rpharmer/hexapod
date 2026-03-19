@@ -14,6 +14,10 @@ double rad2deg(double rad) {
     return rad * 180.0 / kPi;
 }
 
+double rad2deg(AngleRad rad) {
+    return rad2deg(rad.value);
+}
+
 double clamp(double value, double lo, double hi) {
     if (value < lo) return lo;
     if (value > hi) return hi;
@@ -118,55 +122,55 @@ Mat3 BodyPose::rotationBodyToWorld() const {
 // ServoCalibration
 // ============================================================
 LegRawState ServoCalibration::toServoAngles(const LegRawState& leg) const {
-    const double coxaAngle = leg.joint_raw_state[0].pos_rad;
-    const double femurAngle = leg.joint_raw_state[1].pos_rad;
-    const double tibiaAngle = leg.joint_raw_state[2].pos_rad;
+    const double coxaAngle = leg.joint_raw_state[0].pos_rad.value;
+    const double femurAngle = leg.joint_raw_state[1].pos_rad.value;
+    const double tibiaAngle = leg.joint_raw_state[2].pos_rad.value;
     
     LegRawState legServos{};
     
-    legServos.joint_raw_state[0].pos_rad = coxaSign * coxaAngle + coxaOffset;
-    legServos.joint_raw_state[1].pos_rad = femurSign * femurAngle + femurOffset;
-    legServos.joint_raw_state[2].pos_rad = tibiaSign * tibiaAngle + tibiaOffset;
+    legServos.joint_raw_state[0].pos_rad = AngleRad{coxaSign * coxaAngle + coxaOffset.value};
+    legServos.joint_raw_state[1].pos_rad = AngleRad{femurSign * femurAngle + femurOffset.value};
+    legServos.joint_raw_state[2].pos_rad = AngleRad{tibiaSign * tibiaAngle + tibiaOffset.value};
     
     return legServos;
 }
 LegState ServoCalibration::toServoAngles(const LegState& leg) const {
-    const double coxaAngle = leg.joint_state[0].pos_rad;
-    const double femurAngle = leg.joint_state[1].pos_rad;
-    const double tibiaAngle = leg.joint_state[2].pos_rad;
+    const double coxaAngle = leg.joint_state[0].pos_rad.value;
+    const double femurAngle = leg.joint_state[1].pos_rad.value;
+    const double tibiaAngle = leg.joint_state[2].pos_rad.value;
     
     LegState legServos{};
     
-    legServos.joint_state[0].pos_rad = coxaSign * coxaAngle + coxaOffset;
-    legServos.joint_state[1].pos_rad = femurSign * femurAngle + femurOffset;
-    legServos.joint_state[2].pos_rad = tibiaSign * tibiaAngle + tibiaOffset;
+    legServos.joint_state[0].pos_rad = AngleRad{coxaSign * coxaAngle + coxaOffset.value};
+    legServos.joint_state[1].pos_rad = AngleRad{femurSign * femurAngle + femurOffset.value};
+    legServos.joint_state[2].pos_rad = AngleRad{tibiaSign * tibiaAngle + tibiaOffset.value};
     
     return legServos;
 }
 
 LegRawState ServoCalibration::toJointAngles(const LegRawState& leg) const {
-    const double coxaAngle = leg.joint_raw_state[0].pos_rad;
-    const double femurAngle = leg.joint_raw_state[1].pos_rad;
-    const double tibiaAngle = leg.joint_raw_state[2].pos_rad;
+    const double coxaAngle = leg.joint_raw_state[0].pos_rad.value;
+    const double femurAngle = leg.joint_raw_state[1].pos_rad.value;
+    const double tibiaAngle = leg.joint_raw_state[2].pos_rad.value;
     
     LegRawState legServos{};
     
-    legServos.joint_raw_state[0].pos_rad = coxaSign * coxaAngle - coxaOffset;
-    legServos.joint_raw_state[1].pos_rad = femurSign * femurAngle - femurOffset;
-    legServos.joint_raw_state[2].pos_rad = tibiaSign * tibiaAngle - tibiaOffset;
+    legServos.joint_raw_state[0].pos_rad = AngleRad{coxaSign * coxaAngle - coxaOffset.value};
+    legServos.joint_raw_state[1].pos_rad = AngleRad{femurSign * femurAngle - femurOffset.value};
+    legServos.joint_raw_state[2].pos_rad = AngleRad{tibiaSign * tibiaAngle - tibiaOffset.value};
     
     return legServos;
 }
 LegState ServoCalibration::toJointAngles(const LegState& leg) const {
-    const double coxaAngle = leg.joint_state[0].pos_rad;
-    const double femurAngle = leg.joint_state[1].pos_rad;
-    const double tibiaAngle = leg.joint_state[2].pos_rad;
+    const double coxaAngle = leg.joint_state[0].pos_rad.value;
+    const double femurAngle = leg.joint_state[1].pos_rad.value;
+    const double tibiaAngle = leg.joint_state[2].pos_rad.value;
     
     LegState legServos{};
     
-    legServos.joint_state[0].pos_rad = coxaSign * coxaAngle - coxaOffset;
-    legServos.joint_state[1].pos_rad = femurSign * femurAngle - femurOffset;
-    legServos.joint_state[2].pos_rad = tibiaSign * tibiaAngle - tibiaOffset;
+    legServos.joint_state[0].pos_rad = AngleRad{coxaSign * coxaAngle - coxaOffset.value};
+    legServos.joint_state[1].pos_rad = AngleRad{femurSign * femurAngle - femurOffset.value};
+    legServos.joint_state[2].pos_rad = AngleRad{tibiaSign * tibiaAngle - tibiaOffset.value};
     
     return legServos;
 }

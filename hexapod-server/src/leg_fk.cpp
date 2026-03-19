@@ -52,9 +52,9 @@ bool LegFK::solveOneLeg(const LegRawState& est, FootTarget& out,
                         const LegGeometry& leg)
 {
   const std::array<JointRawState, kJointsPerLeg> joints = est.joint_raw_state;
-  const double q1 = joints[0].pos_rad;
-  const double q2 = joints[1].pos_rad;
-  const double q3 = joints[2].pos_rad;
+  const double q1 = joints[0].pos_rad.value;
+  const double q2 = joints[1].pos_rad.value;
+  const double q3 = joints[2].pos_rad.value;
 
   // Effective reach of the femur+tibia chain in the leg plane
   const double rho =
@@ -96,7 +96,7 @@ FootTarget LegFK::footInBodyFrame(const LegRawState& est, const LegGeometry& leg
   solveOneLeg(est, footLeg, leg);
 
   // Leg frame -> body frame
-  const Mat3 R_body_from_leg = Mat3::rotZ(leg.mountAngle);
+  const Mat3 R_body_from_leg = Mat3::rotZ(leg.mountAngle.value);
   const Vec3 footRelativeToCoxa = R_body_from_leg * footLeg.pos_body_m;
 
   // Shift from coxa origin to body origin

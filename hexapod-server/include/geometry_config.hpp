@@ -43,14 +43,14 @@ inline HexapodGeometry buildDefaultHexapodGeometry() {
         auto& leg_geo = geometry.legGeometry[leg];
         leg_geo.legID = leg_ids[leg];
         leg_geo.bodyCoxaOffset = coxa_offsets[leg];
-        leg_geo.mountAngle = deg2rad(mount_angles_deg[leg]);
+        leg_geo.mountAngle = AngleRad{deg2rad(mount_angles_deg[leg])};
         leg_geo.coxaLength = coxa_len;
         leg_geo.femurLength = femur_len;
         leg_geo.tibiaLength = tibia_len;
 
-        leg_geo.servo.coxaOffset = deg2rad(coxa_attach_deg);
-        leg_geo.servo.femurOffset = deg2rad(femur_attach_deg[leg]);
-        leg_geo.servo.tibiaOffset = deg2rad(tibia_attach_deg[leg]);
+        leg_geo.servo.coxaOffset = AngleRad{deg2rad(coxa_attach_deg)};
+        leg_geo.servo.femurOffset = AngleRad{deg2rad(femur_attach_deg[leg])};
+        leg_geo.servo.tibiaOffset = AngleRad{deg2rad(tibia_attach_deg[leg])};
         leg_geo.servo.coxaSign = side_sign[leg];
         leg_geo.servo.femurSign = side_sign[leg];
         leg_geo.servo.tibiaSign = side_sign[leg];

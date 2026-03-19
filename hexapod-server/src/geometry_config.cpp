@@ -15,15 +15,15 @@ void loadFromParsedToml(const ParsedToml& config) {
     for (int leg = 0; leg < kNumLegs; ++leg) {
         auto& leg_geo = geometry.legGeometry[leg];
         leg_geo.legID = leg_ids[leg];
-        leg_geo.mountAngle = deg2rad(config.mountAnglesDeg[leg]);
+        leg_geo.mountAngle = AngleRad{deg2rad(config.mountAnglesDeg[leg])};
         leg_geo.bodyCoxaOffset = config.coxaOffsetsM[leg];
         leg_geo.coxaLength = config.coxaLengthM;
         leg_geo.femurLength = config.femurLengthM;
         leg_geo.tibiaLength = config.tibiaLengthM;
 
-        leg_geo.servo.coxaOffset = deg2rad(config.coxaAttachDeg);
-        leg_geo.servo.femurOffset = deg2rad(config.femurAttachDeg[leg]);
-        leg_geo.servo.tibiaOffset = deg2rad(config.tibiaAttachDeg[leg]);
+        leg_geo.servo.coxaOffset = AngleRad{deg2rad(config.coxaAttachDeg)};
+        leg_geo.servo.femurOffset = AngleRad{deg2rad(config.femurAttachDeg[leg])};
+        leg_geo.servo.tibiaOffset = AngleRad{deg2rad(config.tibiaAttachDeg[leg])};
         leg_geo.servo.coxaSign = config.sideSign[leg];
         leg_geo.servo.femurSign = config.sideSign[leg];
         leg_geo.servo.tibiaSign = config.sideSign[leg];

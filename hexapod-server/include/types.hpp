@@ -11,7 +11,37 @@
 // ============================================================
 constexpr double kPi = 3.14159265358979323846;
 
+struct AngleRad {
+    double value{0.0};
+
+    constexpr AngleRad() = default;
+    explicit constexpr AngleRad(double radians) : value(radians) {}
+};
+
+struct AngularRateRadPerSec {
+    double value{0.0};
+
+    constexpr AngularRateRadPerSec() = default;
+    explicit constexpr AngularRateRadPerSec(double radians_per_second)
+        : value(radians_per_second) {}
+};
+
+struct FrequencyHz {
+    double value{0.0};
+
+    constexpr FrequencyHz() = default;
+    explicit constexpr FrequencyHz(double hertz) : value(hertz) {}
+};
+
+struct DurationSec {
+    double value{0.0};
+
+    constexpr DurationSec() = default;
+    explicit constexpr DurationSec(double seconds) : value(seconds) {}
+};
+
 double deg2rad(double deg);
+double rad2deg(AngleRad rad);
 
 double rad2deg(double rad);
 
@@ -83,7 +113,7 @@ struct Mat3 {
 struct GaitState {
     std::array<double, kNumLegs> phase{};
     std::array<bool, kNumLegs> in_stance{};
-    double stride_phase_rate_hz{1.0};
+    FrequencyHz stride_phase_rate_hz{FrequencyHz{1.0}};
     uint64_t timestamp_us{0};
 };
 
@@ -116,12 +146,12 @@ struct LegTargets {
 };
 
 struct JointRawState {
-  double pos_rad {0.0};
+  AngleRad pos_rad{};
 };
 
 struct JointState {
-  double pos_rad {0.0};
-  double vel_radps {0.0};
+  AngleRad pos_rad{};
+  AngularRateRadPerSec vel_radps{};
 };
 
 struct LegRawState {
@@ -210,9 +240,9 @@ struct BodyPose {
 //   - installation differences/variations
 // ============================================================
 struct ServoCalibration {
-    double coxaOffset{0.0};
-    double femurOffset{0.0};
-    double tibiaOffset{0.0};
+    AngleRad coxaOffset{};
+    AngleRad femurOffset{};
+    AngleRad tibiaOffset{};
 
     double coxaSign{1.0};
     double femurSign{1.0};
@@ -234,7 +264,7 @@ struct LegGeometry {
     LegID legID;
 
     Vec3 bodyCoxaOffset;  // Coxa joint location in body frame
-    double mountAngle{0.0};
+    AngleRad mountAngle{};
 
     double coxaLength{0.0};   // L1
     double femurLength{0.0};  // L2

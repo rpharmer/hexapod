@@ -44,7 +44,7 @@ bool LegIK::solveOneLeg(const LegRawState& est,
 
   // Transform foot target coordinates so they are relative to Coxa mount
   const Vec3 relativeToCoxa = foot.pos_body_m - leg.bodyCoxaOffset;
-  const Mat3 R_leg = Mat3::rotZ(-leg.mountAngle);
+  const Mat3 R_leg = Mat3::rotZ(-leg.mountAngle.value);
   const Vec3 footLeg = R_leg * relativeToCoxa;
 
   const double x = footLeg.x;
@@ -98,9 +98,9 @@ bool LegIK::solveOneLeg(const LegRawState& est,
       std::atan2(leg.tibiaLength * std::sin(q3),
                  leg.femurLength + leg.tibiaLength * std::cos(q3));
 
-  out.joint_raw_state[0].pos_rad = q1;
-  out.joint_raw_state[1].pos_rad = q2;
-  out.joint_raw_state[2].pos_rad = q3;
+  out.joint_raw_state[0].pos_rad = AngleRad{q1};
+  out.joint_raw_state[1].pos_rad = AngleRad{q2};
+  out.joint_raw_state[2].pos_rad = AngleRad{q3};
   out = leg.servo.toServoAngles(out);
 
   return true;
