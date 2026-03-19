@@ -6,11 +6,11 @@
 #include "hardware_bridge.hpp"
 #include "safety_supervisor.hpp"
 #include "control_pipeline.hpp"
+#include "loop_executor.hpp"
 #include "logger.hpp"
 
 #include <atomic>
 #include <memory>
-#include <thread>
 
 class RobotControl {
 public:
@@ -28,13 +28,11 @@ public:
     ControlStatus getStatus() const;
 
 private:
-    void busLoop();
-    void estimatorLoop();
-    void controlLoop();
-    void safetyLoop();
-    void diagnosticsLoop();
-
-    static void joinThread(std::thread& t);
+    void busStep();
+    void estimatorStep();
+    void controlStep();
+    void safetyStep();
+    void diagnosticsStep();
 
 private:
     std::unique_ptr<IHardwareBridge> hw_;
@@ -43,8 +41,10 @@ private:
 
     ControlPipeline pipeline_;
     SafetySupervisor safety_;
+    LoopExecutor loops_;
 
     std::atomic<bool> running_{false};
+    std::atomic<uint64_t> control_loop_counter_{0};
 
     DoubleBuffer<RawHardwareState> raw_state_;
     DoubleBuffer<EstimatedState> estimated_state_;
@@ -52,10 +52,4 @@ private:
     DoubleBuffer<SafetyState> safety_state_;
     DoubleBuffer<JointTargets> joint_targets_;
     DoubleBuffer<ControlStatus> status_;
-
-    std::thread bus_thread_;
-    std::thread estimator_thread_;
-    std::thread control_thread_;
-    std::thread safety_thread_;
-    std::thread diag_thread_;
 };
