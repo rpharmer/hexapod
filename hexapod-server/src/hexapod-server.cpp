@@ -104,6 +104,9 @@ int main() {
 
 bool tomlParser(std::string filename, ParsedToml& out)
 {
+  static constexpr const char* kExpectedConfigTitle = "Hexapod Config File";
+  static constexpr const char* kExpectedConfigSchema = "hexapod.server.config";
+  static constexpr int kExpectedConfigSchemaVersion = 1;
   static constexpr int kExpectedJointCount = 18;
   static constexpr int kMinServoPulse = 500;
   static constexpr int kMaxServoPulse = 2500;
@@ -234,9 +237,30 @@ bool tomlParser(std::string filename, ParsedToml& out)
   {
     auto root = toml::parse(filename, toml::spec::v(1,1,0));
 
-    if(root.at("title").as_string() != "Hexapod Config File")
+    if(root.at("title").as_string() != kExpectedConfigTitle)
     {
-      if (auto logger = GetDefaultLogger()) { LOG_ERROR(logger, "incorrect config header. expected \"Hexapod Config File\""); }
+      if (auto logger = GetDefaultLogger()) {
+        LOG_ERROR(logger, "incorrect config header. expected \"", kExpectedConfigTitle, "\"");
+      }
+      return false;
+    }
+
+    const std::string schema = toml::find_or<std::string>(root, "Schema", "");
+    if(schema != kExpectedConfigSchema)
+    {
+      if (auto logger = GetDefaultLogger()) {
+        LOG_ERROR(logger, "invalid Schema '", schema, "'. expected '", kExpectedConfigSchema, "'");
+      }
+      return false;
+    }
+
+    const int schema_version = toml::find_or<int>(root, "SchemaVersion", -1);
+    if(schema_version != kExpectedConfigSchemaVersion)
+    {
+      if (auto logger = GetDefaultLogger()) {
+        LOG_ERROR(logger, "unsupported SchemaVersion=", schema_version,
+                  ". expected ", kExpectedConfigSchemaVersion);
+      }
       return false;
     }
 

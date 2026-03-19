@@ -1,5 +1,7 @@
 # example.toml
 title = "Hexapod Config File"
+Schema = "hexapod.server.config"
+SchemaVersion = 1
 
 SerialDevice = '/dev/ttyACM0'
 
