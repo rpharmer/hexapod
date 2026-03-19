@@ -3,9 +3,24 @@
 #define HEXAPOD_COMMON_H
 
 #include <stdint.h>
+#include <cstddef>
 #include "framing.hpp"
 
 inline constexpr uint8_t PROTOCOL_VERSION = 0x04;
+inline constexpr std::size_t kProtocolLegCount = 6;
+inline constexpr std::size_t kProtocolJointsPerLeg = 3;
+inline constexpr std::size_t kProtocolJointCount = kProtocolLegCount * kProtocolJointsPerLeg;
+inline constexpr std::size_t kProtocolFootSensorCount = kProtocolLegCount;
+inline constexpr std::size_t kProtocolCalibrationPairsPerJoint = 2;
+
+inline constexpr std::size_t kProtocolJointTargetsPayloadBytes =
+    kProtocolJointCount * sizeof(float);
+inline constexpr std::size_t kProtocolServoEnablePayloadBytes =
+    kProtocolJointCount * sizeof(uint8_t);
+inline constexpr std::size_t kProtocolCalibrationsPayloadBytes =
+    kProtocolJointCount * kProtocolCalibrationPairsPerJoint * sizeof(float);
+inline constexpr std::size_t kProtocolFullStatePayloadBytes =
+    (kProtocolJointCount * sizeof(float)) + kProtocolFootSensorCount + (2 * sizeof(float));
 
 enum class CommandCode : uint8_t {
   SET_ANGLE_CALIBRATIONS = 0x01,

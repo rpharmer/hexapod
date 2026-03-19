@@ -32,7 +32,7 @@ void handleSetAngleCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 
 void handleCalibCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  constexpr size_t expectedPayloadBytes = 18 * 4 * 2;
+  constexpr size_t expectedPayloadBytes = kProtocolCalibrationsPayloadBytes;
   if(payload.size() != expectedPayloadBytes)
   {
     firmware().serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
@@ -40,8 +40,8 @@ void handleCalibCommand(uint16_t seq, const std::vector<uint8_t>& payload)
   }
 
   size_t offset = 0;
-  float calibs[18][2];
-  for (int s =0; s < 18; s++)
+  float calibs[kProtocolJointCount][kProtocolCalibrationPairsPerJoint];
+  for (std::size_t s = 0; s < kProtocolJointCount; ++s)
   {
     read_scalar(payload, offset, calibs[s][0]);
     read_scalar(payload, offset, calibs[s][1]);
@@ -50,11 +50,11 @@ void handleCalibCommand(uint16_t seq, const std::vector<uint8_t>& payload)
   firmware().serial.send_packet(seq, ACK, {});
 }
 
-void calibServos(float calibs[18][2])
+void calibServos(float calibs[kProtocolJointCount][kProtocolCalibrationPairsPerJoint])
 {
-  for (int s =0; s < 18; s++)
+  for (std::size_t s = 0; s < kProtocolJointCount; ++s)
   {
-    Calibration& cal = firmware().servos.calibration(s);
+    Calibration& cal = firmware().servos.calibration(static_cast<int>(s));
     cal.apply_two_pairs(calibs[s][0], calibs[s][1], -45.0f, 45.0f);
   }
   return;
@@ -62,14 +62,14 @@ void calibServos(float calibs[18][2])
 
 void handleSetJointTargetsCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  constexpr size_t expectedPayloadBytes = 18 * sizeof(float);
+  constexpr size_t expectedPayloadBytes = kProtocolJointTargetsPayloadBytes;
   if(payload.size() != expectedPayloadBytes)
   {
     firmware().serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
-  for (size_t s = 0; s < 18; ++s)
+  for (std::size_t s = 0; s < kProtocolJointCount; ++s)
   {
     const size_t offset = s * sizeof(float);
     float targetPosRad = 0.0f;

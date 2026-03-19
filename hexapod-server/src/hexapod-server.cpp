@@ -107,7 +107,7 @@ bool tomlParser(std::string filename, ParsedToml& out)
   static constexpr const char* kExpectedConfigTitle = "Hexapod Config File";
   static constexpr const char* kExpectedConfigSchema = "hexapod.server.config";
   static constexpr int kExpectedConfigSchemaVersion = 1;
-  static constexpr int kExpectedJointCount = 18;
+  static constexpr int kExpectedJointCount = static_cast<int>(kProtocolJointCount);
   static constexpr int kMinServoPulse = 500;
   static constexpr int kMaxServoPulse = 2500;
   static const std::array<std::string, kExpectedJointCount> kExpectedJointOrder = {
@@ -372,7 +372,7 @@ bool tomlParser(std::string filename, ParsedToml& out)
        });
 
     std::vector<float> calibsF;
-    calibsF.reserve(36);
+    calibsF.reserve(kProtocolJointCount * kProtocolCalibrationPairsPerJoint);
 
     for(const auto& calib : calibs)
     {
