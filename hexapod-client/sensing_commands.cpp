@@ -5,10 +5,10 @@
 void handleGetAngleCalibCommand(uint16_t seq)
 {
   std::vector<uint8_t> payload;
-  payload.reserve(18 * 8);
-  for (int s =0; s < 18; s++)
+  payload.reserve(kProtocolCalibrationsPayloadBytes);
+  for (std::size_t s = 0; s < kProtocolJointCount; ++s)
   {
-    Calibration& cal = firmware().servos.calibration(s);
+    Calibration& cal = firmware().servos.calibration(static_cast<int>(s));
     float minPulse = cal.first_pulse();
     float maxPulse = cal.last_pulse();
 
@@ -46,7 +46,7 @@ void handleGetSensorCommand(uint16_t seq, const std::vector<uint8_t>& payload)
   }
 
   const uint8_t sensor = payload[0];
-  if(sensor >= 6)
+  if(sensor >= kProtocolFootSensorCount)
   {
     firmware().serial.send_packet(seq, NACK, {OUT_OF_RANGE_INDEX});
     return;
@@ -62,18 +62,18 @@ void handleGetSensorCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 void handleGetFullHardwareStateCommand(uint16_t seq)
 {
   std::vector<uint8_t> payload;
-  payload.reserve((18 * sizeof(float)) + 6 + (2 * sizeof(float)));
+  payload.reserve(kProtocolFullStatePayloadBytes);
 
-  for (int s = 0; s < 18; ++s)
+  for (std::size_t s = 0; s < kProtocolJointCount; ++s)
   {
-    const float currentPosRad = firmware().servos.value(s);
+    const float currentPosRad = firmware().servos.value(static_cast<int>(s));
     const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&currentPosRad);
     payload.insert(payload.end(), bytes, bytes + sizeof(float));
   }
 
-  for (int sensor = 0; sensor < 6; ++sensor)
+  for (std::size_t sensor = 0; sensor < kProtocolFootSensorCount; ++sensor)
   {
-    firmware().mux.select(servo2040::SENSOR_1_ADDR + sensor);
+    firmware().mux.select(servo2040::SENSOR_1_ADDR + static_cast<int>(sensor));
     const float sensorVoltage = firmware().sen_adc.read_voltage();
     const uint8_t footContact = sensorVoltage > 1.0f ? 1 : 0;
     payload.push_back(footContact);

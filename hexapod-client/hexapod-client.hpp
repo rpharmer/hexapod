@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <vector>
+#include "hexapod-common.hpp"
 
 // client device id
 const uint8_t DEVICE_ID              = 0x01;
@@ -46,6 +47,6 @@ void handleSetServosToMidCommand(uint16_t seq);
 void handleHeartbeatCommand(uint16_t seq);
 
 void handleCalibCommand(uint16_t seq, const std::vector<uint8_t>& payload);
-void calibServos(float calibs[18][2]);
+void calibServos(float calibs[kProtocolJointCount][kProtocolCalibrationPairsPerJoint]);
 
 #endif
