@@ -424,6 +424,21 @@ bool tomlParser(std::string filename, ParsedToml& out)
                                                    control_config::kDefaultCommandTimeoutUs.value, 10000, 2000000);
     out.fallbackSpeedMag = parse_double_with_fallback(root, "Tuning.FallbackSpeedMag",
                                                       control_config::kDefaultFallbackSpeedMag.value, 0.0, 1.0);
+    out.minBusVoltageV = parse_double_with_fallback(root, "Tuning.MinBusVoltageV",
+                                                    control_config::kDefaultMinBusVoltageV, 5.0, 24.0);
+    out.maxBusCurrentA = parse_double_with_fallback(root, "Tuning.MaxBusCurrentA",
+                                                    control_config::kDefaultMaxBusCurrentA, 0.1, 120.0);
+    out.minFootContacts = parse_int_with_fallback(root, "Tuning.MinFootContacts",
+                                                  control_config::kDefaultMinFootContacts, 0, kNumLegs);
+    out.maxFootContacts = parse_int_with_fallback(root, "Tuning.MaxFootContacts",
+                                                  control_config::kDefaultMaxFootContacts, 0, kNumLegs);
+    if (out.minFootContacts > out.maxFootContacts) {
+      if (auto logger = GetDefaultLogger()) {
+        LOG_WARN(logger, "Tuning.MinFootContacts > Tuning.MaxFootContacts, using defaults");
+      }
+      out.minFootContacts = control_config::kDefaultMinFootContacts;
+      out.maxFootContacts = control_config::kDefaultMaxFootContacts;
+    }
 
     out.coxaLengthM = parse_double_with_fallback(root, "Geometry.CoxaLengthM", default_geometry.legGeometry[0].coxaLength.value, 0.005, 0.30);
     out.femurLengthM = parse_double_with_fallback(root, "Geometry.FemurLengthM", default_geometry.legGeometry[0].femurLength.value, 0.005, 0.30);

@@ -19,6 +19,10 @@ inline constexpr int kDefaultStandSettlingDelayMs = 2000;
 inline constexpr AngleRad kDefaultMaxTiltRad{0.70};
 inline constexpr DurationUs kDefaultCommandTimeoutUs{300000};
 inline constexpr LinearRateMps kDefaultFallbackSpeedMag{0.01};
+inline constexpr float kDefaultMinBusVoltageV{10.5f};
+inline constexpr float kDefaultMaxBusCurrentA{25.0f};
+inline constexpr int kDefaultMinFootContacts{0};
+inline constexpr int kDefaultMaxFootContacts{kNumLegs};
 
 extern std::chrono::microseconds kBusLoopPeriod;
 extern std::chrono::microseconds kEstimatorLoopPeriod;
@@ -31,6 +35,10 @@ extern std::chrono::milliseconds kStandSettlingDelay;
 extern AngleRad kMaxTiltRad;
 extern DurationUs kCommandTimeoutUs;
 extern LinearRateMps kFallbackSpeedMag;
+extern float kMinBusVoltageV;
+extern float kMaxBusCurrentA;
+extern int kMinFootContacts;
+extern int kMaxFootContacts;
 
 void loadFromParsedToml(const ParsedToml& config);
 
