@@ -95,8 +95,8 @@ void runCommandLoop()
       {
         if(packet.cmd == HELLO)
         {
-          handleHandshake(packet.seq, packet.payload);
-          firmware().state = HexapodState::ACTIVE;
+          if(handleHandshake(packet.seq, packet.payload))
+            firmware().state = HexapodState::ACTIVE;
         }
         else
         {

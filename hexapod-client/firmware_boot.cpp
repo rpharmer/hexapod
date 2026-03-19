@@ -88,12 +88,12 @@ int main()
   shutdownHardware();
 }
 
-void handleHandshake(uint16_t seq, const std::vector<uint8_t>& payload)
+bool handleHandshake(uint16_t seq, const std::vector<uint8_t>& payload)
 {
   if(payload.size() != 2)
   {
     firmware().serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
-    return;
+    return false;
   }
 
   const uint8_t version = payload[0];
@@ -103,10 +103,11 @@ void handleHandshake(uint16_t seq, const std::vector<uint8_t>& payload)
   if(version == PROTOCOL_VERSION)
   {
     firmware().serial.send_packet(seq, ACK, {PROTOCOL_VERSION, STATUS_OK, DEVICE_ID});
-    return;
+    return true;
   }
 
   firmware().serial.send_packet(seq, NACK, {VERSION_MISMATCH});
+  return false;
 }
 
 void echoLoop()

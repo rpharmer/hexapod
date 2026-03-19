@@ -30,7 +30,7 @@ enum class HexapodState : uint8_t {
 
 void echoLoop();
 void runCommandLoop();
-void handleHandshake(uint16_t seq, const std::vector<uint8_t>& payload);
+bool handleHandshake(uint16_t seq, const std::vector<uint8_t>& payload);
 void handleSetAngleCommand(uint16_t seq, const std::vector<uint8_t>& payload);
 void handleGetAngleCalibCommand(uint16_t seq);
 void handleSetPowerRelayCommand(uint16_t seq, const std::vector<uint8_t>& payload);
