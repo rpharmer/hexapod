@@ -40,6 +40,10 @@ StandSettlingDelayMs = 2000
 MaxTiltRad = 0.70
 CommandTimeoutUs = 300000
 FallbackSpeedMag = 0.01
+MinBusVoltageV = 10.5
+MaxBusCurrentA = 25.0
+MinFootContacts = 0
+MaxFootContacts = 6
 
 [Geometry]
 CoxaLengthM = 0.043

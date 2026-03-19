@@ -22,6 +22,10 @@ struct ParsedToml
   double maxTiltRad{0.70};
   uint64_t commandTimeoutUs{300000};
   double fallbackSpeedMag{0.01};
+  double minBusVoltageV{10.5};
+  double maxBusCurrentA{25.0};
+  int minFootContacts{0};
+  int maxFootContacts{kNumLegs};
 
   double coxaLengthM{0.043};
   double femurLengthM{0.060};

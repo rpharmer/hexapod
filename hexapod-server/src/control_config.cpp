@@ -15,6 +15,10 @@ std::chrono::milliseconds kStandSettlingDelay{kDefaultStandSettlingDelayMs};
 AngleRad kMaxTiltRad = kDefaultMaxTiltRad;
 DurationUs kCommandTimeoutUs = kDefaultCommandTimeoutUs;
 LinearRateMps kFallbackSpeedMag = kDefaultFallbackSpeedMag;
+float kMinBusVoltageV = kDefaultMinBusVoltageV;
+float kMaxBusCurrentA = kDefaultMaxBusCurrentA;
+int kMinFootContacts = kDefaultMinFootContacts;
+int kMaxFootContacts = kDefaultMaxFootContacts;
 
 void loadFromParsedToml(const ParsedToml& config) {
     kBusLoopPeriod = std::chrono::microseconds{config.busLoopPeriodUs};
@@ -28,6 +32,10 @@ void loadFromParsedToml(const ParsedToml& config) {
     kMaxTiltRad = AngleRad{config.maxTiltRad};
     kCommandTimeoutUs = DurationUs{config.commandTimeoutUs};
     kFallbackSpeedMag = LinearRateMps{config.fallbackSpeedMag};
+    kMinBusVoltageV = static_cast<float>(config.minBusVoltageV);
+    kMaxBusCurrentA = static_cast<float>(config.maxBusCurrentA);
+    kMinFootContacts = config.minFootContacts;
+    kMaxFootContacts = config.maxFootContacts;
 }
 
 } // namespace control_config
