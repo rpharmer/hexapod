@@ -175,10 +175,19 @@ enum class FaultCode : uint8_t {
     COMMAND_TIMEOUT
 };
 
+enum class FaultLifecycle : uint8_t {
+    ACTIVE = 0,
+    LATCHED,
+    RECOVERING
+};
+
 struct SafetyState {
     bool inhibit_motion{true};
     bool torque_cut{false};
     FaultCode active_fault{FaultCode::NONE};
+    FaultLifecycle fault_lifecycle{FaultLifecycle::ACTIVE};
+    uint32_t active_fault_trip_count{0};
+    TimePointUs active_fault_last_trip_us{};
     std::array<bool, kNumLegs> leg_enabled{true, true, true, true, true, true};
 };
 
