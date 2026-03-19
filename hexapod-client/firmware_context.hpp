@@ -26,13 +26,13 @@ struct FirmwareContext {
   static constexpr int END_PIN = servo2040::SERVO_18;
   static constexpr int NUM_SERVOS = (END_PIN - START_PIN) + 1;
 
-  float minmaxCalibrations[18][2] =
+  float minmaxCalibrations[kProtocolJointCount][kProtocolCalibrationPairsPerJoint] =
     {{1031, 2088}, {1003, 2016}, {958, 1990}, {941, 2022}, {986, 2039}, {958, 1988},
      {1007, 2048}, {976, 2019}, {1057, 2090}, {993, 2015}, {1011, 2013}, {956, 2000},
      {1040, 2055}, {983, 2057}, {959, 1995}, {1031, 1998}, {951, 1978}, {1035, 2027}};
 
   ServoCluster servos{pio0, 0, START_PIN, NUM_SERVOS};
-  std::array<float, 18> jointTargetPositionsRad{};
+  std::array<float, kProtocolJointCount> jointTargetPositionsRad{};
   SerialCommsClient serial{};
   WS2812 led_bar{servo2040::NUM_LEDS, pio1, 0, servo2040::LED_DATA};
   Button user_sw{servo2040::USER_SW};

@@ -26,7 +26,7 @@ void handleSetPowerRelayCommand(uint16_t seq, const std::vector<uint8_t>& payloa
 
 void handleSetServosEnabledCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  constexpr size_t expectedPayloadBytes = 18 * sizeof(bool);
+  constexpr size_t expectedPayloadBytes = kProtocolServoEnablePayloadBytes;
   if(payload.size() != expectedPayloadBytes)
   {
     firmware().serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
@@ -50,7 +50,7 @@ void handleSetServosEnabledCommand(uint16_t seq, const std::vector<uint8_t>& pay
 void handleGetServosEnabledCommand(uint16_t seq)
 {
   std::vector<uint8_t> payload;
-  payload.reserve(18 * sizeof(bool));
+  payload.reserve(kProtocolServoEnablePayloadBytes);
 
   for(int s = 0; s < FirmwareContext::NUM_SERVOS; s++)
   {

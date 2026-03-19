@@ -9,12 +9,6 @@
 
 using namespace mn::CppLinuxSerial;
 
-namespace {
-constexpr std::size_t kWireJointCount = 18;
-constexpr std::size_t kWireFootContactCount = 6;
-
-} // namespace
-
 SimpleHardwareBridge::SimpleHardwareBridge(std::string device, int baud_rate, int timeout_ms, std::vector<float> calibrations)
     : device_(std::move(device)), baud_rate_(baud_rate), timeout_ms_(timeout_ms), calibrations_(std::move(calibrations))
 {}
@@ -134,7 +128,8 @@ bool SimpleHardwareBridge::get_angle_calibrations(std::vector<float>& out_calibs
         return false;
     }
 
-    constexpr std::size_t kExpectedCalibCount = 36;
+    constexpr std::size_t kExpectedCalibCount =
+        kProtocolJointCount * kProtocolCalibrationPairsPerJoint;
     constexpr std::size_t kExpectedPayloadBytes = kExpectedCalibCount * sizeof(float);
     if (payload.size() != kExpectedPayloadBytes)
     {
@@ -321,7 +316,7 @@ bool SimpleHardwareBridge::send_command_and_expect_ack_payload(uint8_t cmd,
 std::vector<uint8_t> SimpleHardwareBridge::encode_joint_targets(const JointTargets& in) const
 {
     std::vector<uint8_t> payload;
-    payload.reserve(kWireJointCount * sizeof(float));
+    payload.reserve(kProtocolJointTargetsPayloadBytes);
 
     for (const auto& leg : in.leg_raw_states)
     {
@@ -353,7 +348,7 @@ bool SimpleHardwareBridge::decode_full_hardware_state(const std::vector<uint8_t>
         }
     }
 
-    for (std::size_t i = 0; i < kWireFootContactCount; ++i)
+    for (std::size_t i = 0; i < kProtocolFootSensorCount; ++i)
     {
         uint8_t contact = 0;
         if (!read_scalar(payload, offset, contact))
@@ -476,14 +471,14 @@ bool SimpleHardwareBridge::send_heartbeat()
 
 bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs)
 {
-  if(calibs.size() != 36)
+  if(calibs.size() != (kProtocolJointCount * kProtocolCalibrationPairsPerJoint))
   {
     if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "incorrect calibration size"); }
     return false;
   }
   
   std::vector<uint8_t> payload;
-  payload.reserve(36 * sizeof(float));
+  payload.reserve(kProtocolCalibrationsPayloadBytes);
   for (float calibValue : calibs){
     append_scalar(payload, calibValue);
   }
