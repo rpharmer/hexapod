@@ -2,6 +2,46 @@
 
 This roadmap is refreshed from the current codebase and a fresh local configure/build pass.
 
+## Status check (March 19, 2026)
+
+Legend: ✅ complete, 🟡 partial/in progress, ❌ not started.
+
+### 1) Immediate priorities (highest leverage)
+
+1. **Implement real foot-target generation in `BodyController`** — ❌
+   - `BodyController::update()` is still a placeholder and explicitly marked TODO.
+2. **Make gait cadence command-driven in `GaitScheduler`** — ❌
+   - `GaitScheduler::update()` still uses `control_config::kFallbackSpeedMag` and is marked TODO.
+3. **Add behavior-level control loop checks** — ❌
+   - No automated behavior tests are present for phase continuity or timeout/inhibit propagation.
+
+### 2) Reliability and safety hardening
+
+1. **Protocol/framing regression coverage** — ❌
+   - No dedicated regression tests found for CRC, malformed payloads, unsupported commands, or sequence mismatch paths.
+2. **Link-health recovery checks** — ❌
+   - Runtime timeout/recovery logic exists, but no automated recovery test coverage was found.
+3. **Improve fault observability** — 🟡
+   - Fault states are logged and surfaced, but structured source metadata/timestamped transition records are still limited.
+
+### 3) Architecture and maintainability
+
+1. **Continue `RobotControl` decomposition** — 🟡
+   - `ControlPipeline` and `LoopExecutor` extraction exists, but `RobotControl` still owns broad orchestration responsibilities.
+2. **Externalize control/geometry tunables** — 🟡
+   - Significant tunables are loaded from config with fallback validation; further schema/versioning hardening remains.
+3. **Increase type safety at module boundaries** — ❌
+   - Core interfaces still rely on primitive `double`/integer values for units at many boundaries.
+
+### 4) Documentation and workflow
+
+1. **Keep READMEs synchronized with architecture changes** — 🟡
+   - Current READMEs are mostly aligned; this should remain part of each architecture-affecting change.
+2. **Add baseline CI checks** — ❌
+   - No CI pipeline/configuration files were found in the repository.
+3. **Add change-impact template for control PRs** — ❌
+   - No PR template/checklist artifact found for behavior + safety impact requirements.
+
 ## 1) Immediate priorities (highest leverage)
 
 1. **Implement real foot-target generation in `BodyController`**
