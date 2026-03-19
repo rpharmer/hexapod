@@ -327,7 +327,7 @@ std::vector<uint8_t> SimpleHardwareBridge::encode_joint_targets(const JointTarge
     {
         for (int j = 0; j < kJointsPerLeg; ++j)
         {
-            const float pos_rad = static_cast<float>(leg.joint_raw_state[j].pos_rad);
+            const float pos_rad = static_cast<float>(leg.joint_raw_state[j].pos_rad.value);
             append_scalar(payload, pos_rad);
         }
     }
@@ -349,7 +349,7 @@ bool SimpleHardwareBridge::decode_full_hardware_state(const std::vector<uint8_t>
             {
                 return false;
             }
-            leg.joint_raw_state[j].pos_rad = pos_rad;
+            leg.joint_raw_state[j].pos_rad = AngleRad{pos_rad};
         }
     }
 

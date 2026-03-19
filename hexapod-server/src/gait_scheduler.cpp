@@ -58,16 +58,17 @@ GaitState GaitScheduler::update(const EstimatedState&,
         last_update_us_ = now;
     }
 
-    const double dt = static_cast<double>(now - last_update_us_) * 1e-6;
+    const DurationSec dt{static_cast<double>(now - last_update_us_) * 1e-6};
     last_update_us_ = now;
 
     // TODO(gait): replace fallback speed estimate with measured command magnitude.
     const double speed_mag = control_config::kFallbackSpeedMag;
 
     const double step_hz = std::clamp(0.5 + 2.0 * speed_mag, 0.5, 2.5);
-    out.stride_phase_rate_hz = step_hz;
+    const FrequencyHz step_rate_hz{step_hz};
+    out.stride_phase_rate_hz = step_rate_hz;
 
-    phase_accum_ = wrap01(phase_accum_ + dt * step_hz);
+    phase_accum_ = wrap01(phase_accum_ + dt.value * step_rate_hz.value);
 
     const std::array<double, kNumLegs>& phase_offsets = gait_phase_offsets(intent.gait);
     for (int leg = 0; leg < kNumLegs; ++leg) {
