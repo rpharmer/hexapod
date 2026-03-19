@@ -53,12 +53,12 @@ GaitState GaitScheduler::update(const EstimatedState&,
         return out;
     }
 
-    const uint64_t now = out.timestamp_us;
-    if (last_update_us_ == 0) {
+    const TimePointUs now = out.timestamp_us;
+    if (last_update_us_.isZero()) {
         last_update_us_ = now;
     }
 
-    const DurationSec dt{static_cast<double>(now - last_update_us_) * 1e-6};
+    const DurationSec dt{static_cast<double>((now - last_update_us_).value) * 1e-6};
     last_update_us_ = now;
 
     // TODO(gait): replace fallback speed estimate with measured command magnitude.

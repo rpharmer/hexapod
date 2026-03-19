@@ -17,7 +17,7 @@ inline constexpr int kDefaultDiagnosticsPeriodMs = 500;
 inline constexpr int kDefaultCommandRefreshPeriodMs = 100;
 inline constexpr int kDefaultStandSettlingDelayMs = 2000;
 inline constexpr AngleRad kDefaultMaxTiltRad{0.70};
-inline constexpr uint64_t kDefaultCommandTimeoutUs = 300000;
+inline constexpr DurationUs kDefaultCommandTimeoutUs{300000};
 inline constexpr LinearRateMps kDefaultFallbackSpeedMag{0.01};
 
 extern std::chrono::microseconds kBusLoopPeriod;
@@ -29,7 +29,7 @@ extern std::chrono::milliseconds kCommandRefreshPeriod;
 extern std::chrono::milliseconds kStandSettlingDelay;
 
 extern AngleRad kMaxTiltRad;
-extern uint64_t kCommandTimeoutUs;
+extern DurationUs kCommandTimeoutUs;
 extern LinearRateMps kFallbackSpeedMag;
 
 void loadFromParsedToml(const ParsedToml& config);

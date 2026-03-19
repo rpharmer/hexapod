@@ -16,7 +16,7 @@ PipelineStepResult ControlPipeline::runStep(const EstimatedState& estimated,
 
     ControlStatus status{};
     status.active_mode = active_mode;
-    status.estimator_valid = (estimated.timestamp_us != 0);
+    status.estimator_valid = !estimated.timestamp_us.isZero();
     status.bus_ok = bus_ok;
     status.active_fault = safety_state.active_fault;
     status.loop_counter = loop_counter;

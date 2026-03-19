@@ -85,10 +85,33 @@ constexpr int kNumJoints = kNumLegs * kJointsPerLeg;
 
 using Clock = std::chrono::steady_clock;
 
-inline uint64_t now_us() {
+struct TimePointUs {
+    uint64_t value{0};
+
+    constexpr bool isZero() const { return value == 0; }
+};
+
+struct DurationUs {
+    uint64_t value{0};
+};
+
+inline TimePointUs now_us() {
     const auto t = Clock::now().time_since_epoch();
-    return static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::microseconds>(t).count());
+    return TimePointUs{
+        static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(t).count())
+    };
+}
+
+inline DurationUs operator-(TimePointUs lhs, TimePointUs rhs) {
+    if (lhs.value <= rhs.value) {
+        return DurationUs{};
+    }
+    return DurationUs{lhs.value - rhs.value};
+}
+
+inline bool operator>(DurationUs lhs, DurationUs rhs) {
+    return lhs.value > rhs.value;
 }
 
 enum class RobotMode {
@@ -138,7 +161,7 @@ struct GaitState {
     std::array<double, kNumLegs> phase{};
     std::array<bool, kNumLegs> in_stance{};
     FrequencyHz stride_phase_rate_hz{FrequencyHz{1.0}};
-    uint64_t timestamp_us{0};
+    TimePointUs timestamp_us{};
 };
 
 enum class FaultCode : uint8_t {
@@ -166,7 +189,7 @@ struct FootTarget {
 
 struct LegTargets {
     std::array<FootTarget, kNumLegs> feet{};
-    uint64_t timestamp_us{0};
+    TimePointUs timestamp_us{};
 };
 
 struct JointRawState {
@@ -203,7 +226,7 @@ struct RawHardwareState {
   std::array<bool, kNumLegs> foot_contacts{};
   float voltage{0.0};
   float current{0.0};
-  uint64_t timestamp_us{0};
+  TimePointUs timestamp_us{};
   bool bus_ok{true};
 };
 
@@ -211,7 +234,7 @@ struct MotionIntent {
   RobotMode requested_mode{RobotMode::SAFE_IDLE};
   GaitType gait{GaitType::TRIPOD};
   BodyTwistState twist{};
-  uint64_t timestamp_us{0};
+  TimePointUs timestamp_us{};
 };
 
 struct EstimatedState {
@@ -219,7 +242,7 @@ struct EstimatedState {
   std::array<bool, kNumLegs> foot_contacts{};
   
   BodyTwistState body_twist_state{};
-  uint64_t timestamp_us{0};
+  TimePointUs timestamp_us{};
 };
 
 struct TargetBodyState {
@@ -227,7 +250,7 @@ struct TargetBodyState {
   std::array<bool, kNumLegs> foot_contacts{};
   BodyTwistState body_twist_state{};
   bool valid{false};
-  uint64_t timestamp_us{0};
+  TimePointUs timestamp_us{};
 };
 
 struct ControlStatus {

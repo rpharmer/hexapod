@@ -421,7 +421,7 @@ bool tomlParser(std::string filename, ParsedToml& out)
     out.maxTiltRad = parse_double_with_fallback(root, "Tuning.MaxTiltRad",
                                                 control_config::kDefaultMaxTiltRad.value, 0.1, 1.5);
     out.commandTimeoutUs = parse_u64_with_fallback(root, "Tuning.CommandTimeoutUs",
-                                                   control_config::kDefaultCommandTimeoutUs, 10000, 2000000);
+                                                   control_config::kDefaultCommandTimeoutUs.value, 10000, 2000000);
     out.fallbackSpeedMag = parse_double_with_fallback(root, "Tuning.FallbackSpeedMag",
                                                       control_config::kDefaultFallbackSpeedMag.value, 0.0, 1.0);
 

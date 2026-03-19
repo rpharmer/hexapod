@@ -7,7 +7,7 @@
 namespace {
 
 bool isIntentStale(const MotionIntent& intent) {
-    if (intent.timestamp_us == 0) {
+    if (intent.timestamp_us.isZero()) {
         return true;
     }
 

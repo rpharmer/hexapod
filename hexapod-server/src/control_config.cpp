@@ -13,7 +13,7 @@ std::chrono::milliseconds kCommandRefreshPeriod{kDefaultCommandRefreshPeriodMs};
 std::chrono::milliseconds kStandSettlingDelay{kDefaultStandSettlingDelayMs};
 
 AngleRad kMaxTiltRad = kDefaultMaxTiltRad;
-uint64_t kCommandTimeoutUs = kDefaultCommandTimeoutUs;
+DurationUs kCommandTimeoutUs = kDefaultCommandTimeoutUs;
 LinearRateMps kFallbackSpeedMag = kDefaultFallbackSpeedMag;
 
 void loadFromParsedToml(const ParsedToml& config) {
@@ -26,7 +26,7 @@ void loadFromParsedToml(const ParsedToml& config) {
     kStandSettlingDelay = std::chrono::milliseconds{config.standSettlingDelayMs};
 
     kMaxTiltRad = AngleRad{config.maxTiltRad};
-    kCommandTimeoutUs = config.commandTimeoutUs;
+    kCommandTimeoutUs = DurationUs{config.commandTimeoutUs};
     kFallbackSpeedMag = LinearRateMps{config.fallbackSpeedMag};
 }
 
