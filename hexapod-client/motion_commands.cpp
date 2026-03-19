@@ -13,15 +13,19 @@ void handleSetAngleCommand(uint16_t seq, const std::vector<uint8_t>& payload)
     return;
   }
 
-  const uint8_t servo = payload[0];
+  size_t offset = 0;
+  uint8_t servo;
+  read_scalar(payload, offset, servo);
+  
   if(servo >= FirmwareContext::NUM_SERVOS)
   {
     firmware().serial.send_packet(seq, NACK, {OUT_OF_RANGE_INDEX});
     return;
   }
 
-  const uint16_t angle = static_cast<uint16_t>(payload[1]) |
-                         (static_cast<uint16_t>(payload[2]) << 8);
+  float angle;
+  read_scalar(payload, offset, angle);
+  
   firmware().servos.value(servo, angle);
   firmware().serial.send_packet(seq, ACK, {});
 }
