@@ -92,6 +92,8 @@ Stop with `Ctrl+C`.
 Expected TOML fields:
 
 - `title = "Hexapod Config File"`
+- `Schema = "hexapod.server.config"`
+- `SchemaVersion = 1`
 - `SerialDevice` (e.g., `/dev/ttyACM0`)
 - `BaudRate` (e.g., `115200`)
 - `Timeout_ms`
