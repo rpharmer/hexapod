@@ -1,115 +1,84 @@
 # Next Steps, Fixes, and Improvements
 
-This roadmap is refreshed from the current codebase and a fresh local configure/build pass.
+This roadmap was refreshed against the current repository state and is intended to guide implementation, test coverage, and release-readiness work for the next quarter.
 
 ## Status check (March 19, 2026)
 
 Legend: ✅ complete, 🟡 partial/in progress, ❌ not started.
 
-### 1) Immediate priorities (highest leverage)
-
-1. **Implement real foot-target generation in `BodyController`** — ❌
-   - `BodyController::update()` is still a placeholder and explicitly marked TODO.
-2. **Make gait cadence command-driven in `GaitScheduler`** — ❌
-   - `GaitScheduler::update()` still uses `control_config::kFallbackSpeedMag` and is marked TODO.
-3. **Add behavior-level control loop checks** — ❌
-   - No automated behavior tests are present for phase continuity or timeout/inhibit propagation.
-
-### 2) Reliability and safety hardening
-
-1. **Protocol/framing regression coverage** — ❌
-   - No dedicated regression tests found for CRC, malformed payloads, unsupported commands, or sequence mismatch paths.
-2. **Link-health recovery checks** — ❌
-   - Runtime timeout/recovery logic exists, but no automated recovery test coverage was found.
-3. **Improve fault observability** — 🟡
-   - Fault states are logged and surfaced, but structured source metadata/timestamped transition records are still limited.
-
-### 3) Architecture and maintainability
-
-1. **Continue `RobotControl` decomposition** — 🟡
-   - `ControlPipeline` and `LoopExecutor` extraction exists, but `RobotControl` still owns broad orchestration responsibilities.
-2. **Externalize control/geometry tunables** — 🟡
-   - Significant tunables are loaded from config with fallback validation; further schema/versioning hardening remains.
-3. **Increase type safety at module boundaries** — ❌
-   - Core interfaces still rely on primitive `double`/integer values for units at many boundaries.
-
-### 4) Documentation and workflow
-
-1. **Keep READMEs synchronized with architecture changes** — 🟡
-   - Current READMEs are mostly aligned; this should remain part of each architecture-affecting change.
-2. **Add baseline CI checks** — ❌
-   - No CI pipeline/configuration files were found in the repository.
-3. **Add change-impact template for control PRs** — ❌
-   - No PR template/checklist artifact found for behavior + safety impact requirements.
-
 ## 1) Immediate priorities (highest leverage)
 
-1. **Implement real foot-target generation in `BodyController`**
+1. **Implement real foot-target generation in `BodyController`** — ❌
+   - `BodyController::update()` remains placeholder/TODO-driven.
    - Replace default-output behavior with stance/swing target generation.
-   - Apply motion/safety-aware clamping before IK.
-   - Define minimum acceptance checks (e.g., deterministic stance height and swing trajectory continuity).
+   - Apply motion and safety-aware clamping before IK.
+   - Acceptance checks: deterministic stance height and swing trajectory continuity.
 
-2. **Make gait cadence command-driven in `GaitScheduler`**
+2. **Make gait cadence command-driven in `GaitScheduler`** — ❌
+   - `GaitScheduler::update()` still relies on `control_config::kFallbackSpeedMag`.
    - Replace fallback speed estimate with command-derived motion magnitude.
    - Smooth mode transitions (`SAFE_IDLE` ↔ `STAND` ↔ `WALK`) to avoid abrupt phase-rate changes.
 
-3. **Add behavior-level control loop checks**
-   - Validate gait phase progression continuity and transition behavior.
-   - Validate command timeout handling and safety inhibit propagation.
+3. **Add behavior-level control loop checks** — ❌
+   - Add automated checks for gait phase progression continuity.
+   - Validate timeout/inhibit propagation through behavior transitions.
 
 ## 2) Reliability and safety hardening
 
-1. **Protocol/framing regression coverage**
-   - CRC mismatch handling.
-   - Invalid/truncated payload handling.
-   - Unsupported command behavior.
-   - Sequence mismatch behavior.
+1. **Protocol/framing regression coverage** — ❌
+   - Add tests for CRC mismatch handling.
+   - Add tests for invalid/truncated payload handling.
+   - Add tests for unsupported command and sequence-mismatch behavior.
 
-2. **Link-health recovery checks**
-   - Heartbeat timeout to fault transition.
-   - Recovery/re-handshake behavior after link interruption.
+2. **Link-health recovery checks** — ❌
+   - Add heartbeat-timeout → fault transition coverage.
+   - Add post-interruption recovery and re-handshake checks.
 
-3. **Improve fault observability**
-   - Include structured fault source + timestamp fields in status logs.
-   - Record transition events for easier post-run diagnostics.
+3. **Improve fault observability** — 🟡
+   - Fault state surfacing exists but still needs richer structured metadata.
+   - Add source-tagged + timestamped transition records for diagnostics.
 
 ## 3) Architecture and maintainability
 
-1. **Continue `RobotControl` decomposition**
-   - Separate thread/loop execution mechanics from control-state orchestration.
+1. **Continue `RobotControl` decomposition** — 🟡
+   - `ControlPipeline`/`LoopExecutor` extraction exists.
+   - Remaining step: narrow `RobotControl` orchestration scope.
 
-2. **Externalize control/geometry tunables**
-   - Move hardcoded constants to validated config with defaults and compatibility checks.
+2. **Externalize control/geometry tunables** — 🟡
+   - Config-driven tunables exist with fallback validation.
+   - Remaining step: stronger schema/versioning and compatibility guards.
 
-3. **Increase type safety at module boundaries**
+3. **Increase type safety at module boundaries** — ❌
    - Introduce stronger unit abstractions for angles, rates, and timing values.
 
 ## 4) Documentation and workflow
 
-1. **Keep READMEs synchronized with architecture changes**
-   - Ensure top-level and component READMEs reflect current file layout and flow ownership.
+1. **Keep READMEs synchronized with architecture changes** — 🟡
+   - Mostly aligned now; enforce this as a required part of architecture-impacting changes.
 
-2. **Add baseline CI checks**
-   - `hexapod-server` configure/build.
-   - `hexapod-client` SDK setup target.
-   - `hexapod-client` full firmware compile target.
+2. **Add baseline CI checks** — ❌
+   - Add CI for:
+     - `hexapod-server` configure/build,
+     - `hexapod-client` SDK setup target,
+     - `hexapod-client` full firmware compile target.
 
-3. **Add change-impact template for control PRs**
-   - Require: behavior summary, test evidence, and safety impact statement.
+3. **Add change-impact template for control PRs** — ❌
+   - Require behavior summary, test evidence, and safety-impact statement.
 
-## Suggested 30/60/90-day execution
+## Suggested execution timeline (anchored to calendar dates)
 
-- **Next 30 days**
-  - Implement body controller policy and command-derived gait cadence.
-  - Add first protocol regression tests (payload/CRC/unsupported command paths).
+- **By April 30, 2026**
+  - Implement body-controller targeting policy.
+  - Implement command-derived gait cadence.
+  - Land first protocol regression tests (CRC/payload/unsupported-command paths).
 
-- **Next 60 days**
-  - Add heartbeat timeout/recovery tests.
-  - Begin `RobotControl` loop-runner extraction.
+- **By June 30, 2026**
+  - Add heartbeat timeout + recovery regression checks.
+  - Continue `RobotControl` decomposition of loop/run mechanics.
 
-- **Next 90 days**
-  - Externalize tunables with validation/versioning.
-  - Tighten unit-typed boundaries across estimator/control/IK modules.
+- **By September 30, 2026**
+  - Externalize remaining tunables with schema/version checks.
+  - Improve unit-typed boundaries across estimator/control/IK interfaces.
 
 ## Definition of done for roadmap items
 
