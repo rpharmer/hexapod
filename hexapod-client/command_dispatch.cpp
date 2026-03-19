@@ -1,8 +1,18 @@
+#include "pico/stdlib.h"
 #include "hexapod-common.hpp"
 #include "hexapod-client.hpp"
 #include "firmware_context.hpp"
 
 namespace {
+
+constexpr int64_t HOST_LIVENESS_TIMEOUT_US = 2000000;
+
+void transitionToHostDisconnectedSafeState()
+{
+  firmware().servos.disable_all();
+  gpio_put_masked(A0_GPIO_MASK, GPIO_LOW_MASK);
+  firmware().state = HexapodState::WAITING_FOR_HOST;
+}
 
 bool dispatchPowerCommand(const DecodedPacket& packet)
 {
@@ -72,11 +82,15 @@ bool dispatchMotionCommand(const DecodedPacket& packet)
 void runCommandLoop()
 {
   firmware().state = HexapodState::WAITING_FOR_HOST;
+  absolute_time_t lastHostActivity = get_absolute_time();
+
   while(1)
   {
     DecodedPacket packet;
     if(firmware().serial.recv_packet(packet))
     {
+      lastHostActivity = get_absolute_time();
+
       if(firmware().state != HexapodState::ACTIVE)
       {
         if(packet.cmd == HELLO)
@@ -108,6 +122,15 @@ void runCommandLoop()
       {
         firmware().serial.send_packet(packet.seq, NACK, {UNSUPPORTED_COMMAND});
       }
+
+      continue;
+    }
+
+    if(firmware().state == HexapodState::ACTIVE &&
+       absolute_time_diff_us(lastHostActivity, get_absolute_time()) > HOST_LIVENESS_TIMEOUT_US)
+    {
+      transitionToHostDisconnectedSafeState();
+      lastHostActivity = get_absolute_time();
     }
   }
 }
