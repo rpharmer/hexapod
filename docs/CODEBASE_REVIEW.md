@@ -1,17 +1,17 @@
 # Codebase Review: Hexapod
 
-## Review scope
+## Review scope (2026-03-19)
 
-This review pass covered:
+This pass reviewed:
 
-- `hexapod-server/` (host control loops, safety, hardware bridge)
-- `hexapod-client/` (Servo 2040 firmware boot, dispatch, command handlers)
-- `hexapod-common/` (framing/protocol utilities)
-- top-level and component README files for documentation alignment
+- `hexapod-server/` control/runtime orchestration and safety flow.
+- `hexapod-client/` firmware lifecycle + command dispatch.
+- `hexapod-common/` framing/protocol shared layer.
+- Documentation consistency against current implementation.
 
 ## Build and verification checks run
 
-All commands below were executed in this review window:
+Commands executed during this review:
 
 1. `cmake -S hexapod-server -B hexapod-server/build`
 2. `cmake --build hexapod-server/build -j4`
@@ -20,47 +20,49 @@ All commands below were executed in this review window:
 5. `cmake -S hexapod-client -B hexapod-client/build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF`
 6. `cmake --build hexapod-client/build --target hexapod-client -j4`
 
+Result: all six commands completed successfully in the current environment.
+
 ## Current-state findings
 
-### 1) Build posture
+### 1) Build posture and module boundaries
 
-- Server and firmware both build successfully in the current environment.
-- Shared framing/protocol code in `hexapod-common/` integrates cleanly with both binaries.
+- Server and firmware both configure and compile cleanly.
+- Shared framing code integrates cleanly into both binaries.
+- The current split between runtime orchestration (`RobotControl`/`RobotRuntime`) and per-step control pipeline (`ControlPipeline`) is clear and maintainable.
 
-### 2) Architecture and code organization
+### 2) Firmware command-loop behavior
 
-- Firmware-side decomposition is now clear and maintainable:
-  - `firmware_boot.cpp` handles bring-up/teardown,
-  - `command_dispatch.cpp` routes commands,
-  - command families are split into `power_commands.cpp`, `sensing_commands.cpp`, and `motion_commands.cpp`.
-- Server-side loop and control orchestration separation is improved:
-  - `RobotControl` owns runtime loops,
-  - `ControlPipeline` encapsulates per-step controller chaining,
-  - `StatusReporter` handles periodic status output.
+- Firmware startup/dispatch structure is coherent and easier to reason about than a single monolithic loop.
+- Host pairing gate is explicit: firmware only transitions to `ACTIVE` after `HELLO`.
+- Behavior for repeated `HELLO`, unsupported commands, and `KILL` is explicit and deterministic.
 
-### 3) Behavior completeness gaps
+### 3) Control behavior completeness gaps
 
-- `BodyController::update()` is still a placeholder (returns default `LegTargets`; no stance/swing target generation).
-- `GaitScheduler::update()` still computes cadence from fallback speed (`kFallbackSpeedMag`) rather than command-derived magnitude.
-- Current control behavior therefore exercises infrastructure flow but not finalized locomotion policy.
+Two known placeholders still block “real gaited walking” quality:
 
-### 4) Safety and protocol handling
+- `BodyController::update()` currently returns default `LegTargets` and does not yet implement stance/swing foot-placement policy.
+- `GaitScheduler::update()` still derives cadence from fallback constant `kFallbackSpeedMag` rather than command-derived intent magnitude.
 
-- Safety fault evaluation is wired (`TIP_OVER`, `COMMAND_TIMEOUT`, `SAFE_IDLE` inhibit path), with priority handling in `SafetySupervisor`.
-- Firmware command-loop gating around handshake is robust at a baseline level (pre-active command rejection, repeated `HELLO` handling, heartbeat and kill handling).
-- Remaining risk: no automated regression suite for malformed framing, CRC mismatch, payload-length edge cases, and heartbeat-timeout recovery.
+### 4) Safety posture
 
-### 5) Documentation alignment
+- Safety checks for tip-over and stale command input are wired and prioritized.
+- `SAFE_IDLE` motion inhibition is in place.
+- Remaining risk: safety/protocol behavior is primarily validated by manual/runtime testing; there is no automated regression suite covering malformed packets, boundary payload lengths, or timeout-recovery scenarios.
 
-- Planning docs exist and are useful, but some README sections were stale relative to the current split firmware/server architecture.
-- This review refresh includes README updates so project layout and behavior descriptions match current source organization.
+### 5) Documentation and maintainability
+
+- Existing docs are generally aligned with current architecture.
+- The most important remaining doc risk is drift as control behavior evolves from placeholder policy to real gait policy; this should be updated in lockstep with controller implementation PRs.
 
 ## Recommended near-term actions
 
-1. Implement non-placeholder body controller outputs and command-driven gait speed.
-2. Add protocol/safety regression tests around malformed frames, invalid lengths, unsupported commands, and timeout paths.
-3. Add lightweight CI coverage for:
+1. Implement real body target generation in `BodyController` and command-driven cadence in `GaitScheduler`.
+2. Add focused regression tests for:
+   - framing decode/CRC/length edge cases,
+   - command dispatch error paths,
+   - safety transitions (`COMMAND_TIMEOUT`, `TIP_OVER`, `SAFE_IDLE`).
+3. Add CI checks to preserve today’s build health for:
    - server configure/build,
    - firmware SDK setup target,
-   - firmware full compile target.
-4. Keep documentation synchronized with architectural changes (especially when file ownership and loop responsibilities move).
+   - firmware full firmware build target.
+4. Keep docs updated with each control-policy iteration to avoid architecture/behavior drift.
