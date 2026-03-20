@@ -1,7 +1,10 @@
 #include "leg_fk.hpp"
 
 #include <cmath>
+#include "geometry_config.hpp"
 #include "logger.hpp"
+
+LegFK::LegFK() : hexGeo(defaultHexapodGeometry()) {}
 
 // ------------------------------------------------------------
 // Forward kinematics in LEG frame

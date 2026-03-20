@@ -1,5 +1,6 @@
 #pragma once
 
+#include "geometry_config.hpp"
 #include "types.hpp"
 
 class BodyController {
@@ -10,12 +11,7 @@ public:
                       const SafetyState& safety);
 
 private:
-    std::array<Vec3, kNumLegs> nominal_stance_ {{
-        {+0.20, +0.14, -0.20},
-        { 0.00, +0.16, -0.20},
-        {-0.20, +0.14, -0.20},
-        {+0.20, -0.14, -0.20},
-        { 0.00, -0.16, -0.20},
-        {-0.20, -0.14, -0.20}
-    }};
+    std::array<Vec3, kNumLegs> nominalStance() const;
+
+    HexapodGeometry geometry_{defaultHexapodGeometry()};
 };
