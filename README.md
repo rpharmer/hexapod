@@ -7,6 +7,7 @@ Monorepo for a serial-controlled hexapod robot, containing Linux host control so
 - **`hexapod-server/`** — Linux host application that loads robot config/calibrations, owns real-time control loops, and communicates with firmware over framed serial packets.
 - **`hexapod-client/`** — Pimoroni Servo 2040 (RP2040) firmware that drives 18 servos, enforces host handshake/lifecycle state, and serves sensing + power commands.
 - **`hexapod-common/`** — Shared protocol IDs, constants, and framing helpers used by both sides.
+- **`docs/`** — Architecture notes, protocol details, hardware references, and maintenance roadmap.
 
 ## Repository layout
 
@@ -26,8 +27,10 @@ hexapod/
 │   └── framing.cpp
 ├── hexapod-server/
 │   ├── config.txt
+│   ├── config.sim.txt
 │   ├── include/
 │   ├── src/
+│   ├── scenarios/
 │   └── README.md
 └── hexapod-client/
     ├── firmware_boot.cpp
@@ -45,7 +48,7 @@ hexapod/
 ## End-to-end communication flow
 
 1. Server parses `hexapod-server/config.txt`.
-2. Server opens the serial device (commonly `/dev/ttyACM0`, `115200`).
+2. Server opens the serial device (commonly `/dev/ttyACM0` at `115200`).
 3. Server sends `HELLO` with protocol metadata.
 4. Firmware responds with `ACK` or `NACK`.
 5. Server uploads calibration pairs for all 18 joints.
@@ -80,14 +83,16 @@ cmake --build build --target hexapod-client
 
 Flash by copying `hexapod-client/build/hexapod-client.uf2` to the board in BOOTSEL mode.
 
-## Development notes
+## Documentation map
 
-- Start with subsystem READMEs for local build/run details.
-- Update `hexapod-server/config.txt` carefully: calibration ordering and bounds must stay valid.
-- Validate safety behavior (relay default state, servo enable sequencing, E-stop path) before full-body motion testing.
+- `docs/FIRMWARE.md` — wire protocol framing, constants, and command payloads.
+- `docs/HARDWARE.md` — mechanical/electrical build reference and dimensions.
+- `docs/CODEBASE_REVIEW.md` — architecture strengths, risks, and recommendations.
+- `docs/REFACTORING_REVIEW.md` — concrete refactor plan with acceptance criteria.
+- `docs/NEXT_STEPS.md` — staged execution roadmap.
 
-## Project planning docs
+## Safety notes
 
-- `docs/CODEBASE_REVIEW.md`
-- `docs/REFACTORING_REVIEW.md`
-- `docs/NEXT_STEPS.md`
+- Validate relay defaults, servo enable sequencing, and emergency stop behavior before full-body motion testing.
+- Start with the robot unloaded and low-amplitude commands after calibration changes.
+- Prefer simulator mode (`hexapod-server/config.sim.txt`) for early control-policy validation.
