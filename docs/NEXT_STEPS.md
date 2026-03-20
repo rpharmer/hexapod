@@ -1,19 +1,31 @@
 # Next Steps (2026-03-20)
 
-## Immediate (this sprint)
+## Sprint 0 (immediate unblock)
 
-- Introduce immutable `ControlConfig` and thread it through runtime constructors.
-- Add a test-enabled CMake preset and CI `ctest` lane.
-- Refactor host transport into a single transaction helper.
+1. Fix `hexapod-server` compile failures in `RobotRuntime`/scenario code.
+2. Submit a stabilization patch that compiles cleanly with current `-Werror` flags.
+3. Re-run baseline build and publish exact command outputs in PR.
 
-## Near-term (next 1-2 sprints)
+## Sprint 1 (reliability hardening)
 
-- Add stream sample IDs and freshness gates in control loop.
-- Add strict scenario schema validation and malformed input tests.
-- Add telemetry counters/histograms for loop jitter and command latency.
+1. Add explicit freshness contract (timestamp + sample_id policy) across runtime streams.
+2. Add tests for stale estimator and stale intent behavior.
+3. Add structured control-loop timing and stale-input metrics.
 
-## Longer-term
+## Sprint 2 (workflow quality)
 
-- De-singleton firmware command handlers.
-- Evaluate deterministic single-tick pipeline coordinator with async bus integration.
-- Add hardware-in-the-loop nightly suite with selected scenarios.
+1. Make test-enabled builds first-class (`cmake` preset + CI lane).
+2. Update server README to recommend test-enabled default commands.
+3. Enforce test execution on merge path.
+
+## Sprint 3 (protocol and firmware maintainability)
+
+1. Normalize host transaction handling and protocol error mapping.
+2. Add scenario strict-validation mode/linter for authoring safety.
+3. Reduce firmware singleton coupling and improve handler unit-test seams.
+
+## Ongoing guardrails
+
+- Track build breakage rate and mean time to restore green.
+- Track loop jitter and stale-input event rates over scenario runs.
+- Track transport error rates by command and NACK reason.
