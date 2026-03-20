@@ -1,4 +1,5 @@
 #include "hexapod-common.hpp"
+#include "protocol_codec.hpp"
 #include "hexapod-client.hpp"
 #include "firmware_context.hpp"
 #include "framing.hpp"
@@ -33,12 +34,16 @@ void handleSetServosEnabledCommand(uint16_t seq, const std::vector<uint8_t>& pay
     return;
   }
 
-  size_t offset = 0;
+  protocol::ServoEnabled enabled{};
+  if (!protocol::decode_servo_enabled(payload, enabled))
+  {
+    firmware().serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
+    return;
+  }
+
   for(int s = 0; s < FirmwareContext::NUM_SERVOS; s++)
   {
-    bool servoEnabled;
-    read_scalar(payload, offset, servoEnabled);
-    if(servoEnabled)
+    if(enabled[static_cast<std::size_t>(s)] != 0)
       firmware().servos.enable(s);
     else
       firmware().servos.disable(s);
@@ -49,15 +54,14 @@ void handleSetServosEnabledCommand(uint16_t seq, const std::vector<uint8_t>& pay
 
 void handleGetServosEnabledCommand(uint16_t seq)
 {
-  std::vector<uint8_t> payload;
-  payload.reserve(kProtocolServoEnablePayloadBytes);
+  protocol::ServoEnabled enabled{};
 
   for(int s = 0; s < FirmwareContext::NUM_SERVOS; s++)
   {
-    append_scalar(payload, firmware().servos.is_enabled(s));
+    enabled[static_cast<std::size_t>(s)] = firmware().servos.is_enabled(s) ? 1 : 0;
   }
 
-  firmware().serial.send_packet(seq, ACK, payload);
+  firmware().serial.send_packet(seq, ACK, protocol::encode_servo_enabled(enabled));
 }
 
 void handleSetServosToMidCommand(uint16_t seq)
@@ -69,5 +73,6 @@ void handleSetServosToMidCommand(uint16_t seq)
 
 void handleHeartbeatCommand(uint16_t seq)
 {
-  firmware().serial.send_packet(seq, ACK, {STATUS_OK});
+  const protocol::HelloAck heartbeat{PROTOCOL_VERSION, STATUS_OK, DEVICE_ID};
+  firmware().serial.send_packet(seq, ACK, protocol::encode_hello_ack(heartbeat));
 }

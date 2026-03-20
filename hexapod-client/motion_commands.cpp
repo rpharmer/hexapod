@@ -1,4 +1,5 @@
 #include "hexapod-common.hpp"
+#include "protocol_codec.hpp"
 #include "hexapod-client.hpp"
 #include "firmware_context.hpp"
 #include "framing.hpp"
@@ -39,13 +40,21 @@ void handleCalibCommand(uint16_t seq, const std::vector<uint8_t>& payload)
     return;
   }
 
-  size_t offset = 0;
+  protocol::Calibrations calibrations{};
+  if (!protocol::decode_calibrations(payload, calibrations))
+  {
+    firmware().serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
+    return;
+  }
+
   float calibs[kProtocolJointCount][kProtocolCalibrationPairsPerJoint];
+  std::size_t calib_idx = 0;
   for (std::size_t s = 0; s < kProtocolJointCount; ++s)
   {
-    read_scalar(payload, offset, calibs[s][0]);
-    read_scalar(payload, offset, calibs[s][1]);
+    calibs[s][0] = calibrations[calib_idx++];
+    calibs[s][1] = calibrations[calib_idx++];
   }
+
   calibServos(calibs);
   firmware().serial.send_packet(seq, ACK, {});
 }
@@ -69,15 +78,17 @@ void handleSetJointTargetsCommand(uint16_t seq, const std::vector<uint8_t>& payl
     return;
   }
 
-  size_t offset = 0;
+  protocol::JointTargets target_positions{};
+  if (!protocol::decode_joint_targets(payload, target_positions))
+  {
+    firmware().serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
+    return;
+  }
+
   for (std::size_t s = 0; s < kProtocolJointCount; ++s)
   {
-    float targetPosRad = 0.0f;
-    read_scalar(payload, offset, targetPosRad);
-
-    Calibration& cal = firmware().servos.calibration(static_cast<int>(s));
-    firmware().servos.value(static_cast<int>(s), targetPosRad);
-    firmware().jointTargetPositionsRad[s] = targetPosRad;
+    firmware().servos.value(static_cast<int>(s), target_positions[s]);
+    firmware().jointTargetPositionsRad[s] = target_positions[s];
   }
 
   firmware().serial.send_packet(seq, ACK, {});

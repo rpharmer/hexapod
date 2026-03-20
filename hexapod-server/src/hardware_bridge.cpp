@@ -5,6 +5,7 @@
 
 #include <CppLinuxSerial/SerialPort.hpp>
 #include "hexapod-common.hpp"
+#include "protocol_codec.hpp"
 #include "logger.hpp"
 
 using namespace mn::CppLinuxSerial;
@@ -128,26 +129,13 @@ bool SimpleHardwareBridge::get_angle_calibrations(std::vector<float>& out_calibs
         return false;
     }
 
-    constexpr std::size_t kExpectedCalibCount =
-        kProtocolJointCount * kProtocolCalibrationPairsPerJoint;
-    constexpr std::size_t kExpectedPayloadBytes = kExpectedCalibCount * sizeof(float);
-    if (payload.size() != kExpectedPayloadBytes)
+    protocol::Calibrations calibrations{};
+    if (!protocol::decode_calibrations(payload, calibrations))
     {
         return false;
     }
 
-    out_calibs.clear();
-    out_calibs.reserve(kExpectedCalibCount);
-    std::size_t offset = 0;
-    for (std::size_t i = 0; i < kExpectedCalibCount; ++i)
-    {
-        float value = 0.0f;
-        if (!read_scalar(payload, offset, value))
-        {
-            return false;
-        }
-        out_calibs.push_back(value);
-    }
+    out_calibs.assign(calibrations.begin(), calibrations.end());
     return true;
 }
 
@@ -159,8 +147,14 @@ bool SimpleHardwareBridge::get_current(float& out_current)
         return false;
     }
 
-    std::size_t offset = 0;
-    return read_scalar(payload, offset, out_current) && offset == payload.size();
+    protocol::ScalarFloat current{};
+    if (!protocol::decode_scalar_float(payload, current))
+    {
+        return false;
+    }
+
+    out_current = current.value;
+    return true;
 }
 
 bool SimpleHardwareBridge::get_voltage(float& out_voltage)
@@ -171,8 +165,14 @@ bool SimpleHardwareBridge::get_voltage(float& out_voltage)
         return false;
     }
 
-    std::size_t offset = 0;
-    return read_scalar(payload, offset, out_voltage) && offset == payload.size();
+    protocol::ScalarFloat voltage{};
+    if (!protocol::decode_scalar_float(payload, voltage))
+    {
+        return false;
+    }
+
+    out_voltage = voltage.value;
+    return true;
 }
 
 bool SimpleHardwareBridge::get_sensor(uint8_t sensor_id, float& out_voltage)
@@ -187,8 +187,14 @@ bool SimpleHardwareBridge::get_sensor(uint8_t sensor_id, float& out_voltage)
         return false;
     }
 
-    std::size_t offset = 0;
-    return read_scalar(response_payload, offset, out_voltage) && offset == response_payload.size();
+    protocol::ScalarFloat sensor_voltage{};
+    if (!protocol::decode_scalar_float(response_payload, sensor_voltage))
+    {
+        return false;
+    }
+
+    out_voltage = sensor_voltage.value;
+    return true;
 }
 
 bool SimpleHardwareBridge::send_diagnostic(const std::vector<uint8_t>& payload,
@@ -199,14 +205,13 @@ bool SimpleHardwareBridge::send_diagnostic(const std::vector<uint8_t>& payload,
 
 bool SimpleHardwareBridge::set_servos_enabled(const std::array<bool, kNumJoints>& enabled)
 {
-    std::vector<uint8_t> payload;
-    payload.reserve(enabled.size() * sizeof(uint8_t));
-    for (bool state : enabled)
+    protocol::ServoEnabled payload{};
+    for (std::size_t i = 0; i < enabled.size(); ++i)
     {
-        append_scalar(payload, static_cast<uint8_t>(state ? 1 : 0));
+        payload[i] = enabled[i] ? 1 : 0;
     }
 
-    return send_command_and_expect_ack(SET_SERVOS_ENABLED, payload);
+    return send_command_and_expect_ack(SET_SERVOS_ENABLED, protocol::encode_servo_enabled(payload));
 }
 
 bool SimpleHardwareBridge::get_servos_enabled(std::array<bool, kNumJoints>& enabled)
@@ -217,14 +222,15 @@ bool SimpleHardwareBridge::get_servos_enabled(std::array<bool, kNumJoints>& enab
         return false;
     }
 
-    if (payload.size() != enabled.size())
+    protocol::ServoEnabled states{};
+    if (!protocol::decode_servo_enabled(payload, states))
     {
         return false;
     }
 
     for (std::size_t i = 0; i < enabled.size(); ++i)
     {
-        enabled[i] = (payload[i] != 0);
+        enabled[i] = (states[i] != 0);
     }
 
     return true;
@@ -315,60 +321,45 @@ bool SimpleHardwareBridge::send_command_and_expect_ack_payload(uint8_t cmd,
 
 std::vector<uint8_t> SimpleHardwareBridge::encode_joint_targets(const JointTargets& in) const
 {
-    std::vector<uint8_t> payload;
-    payload.reserve(kProtocolJointTargetsPayloadBytes);
+    protocol::JointTargets target_positions{};
 
+    std::size_t idx = 0;
     for (const auto& leg : in.leg_raw_states)
     {
         for (int j = 0; j < kJointsPerLeg; ++j)
         {
-            const float pos_rad = static_cast<float>(leg.joint_raw_state[j].pos_rad.value);
-            append_scalar(payload, pos_rad);
+            target_positions[idx++] = static_cast<float>(leg.joint_raw_state[j].pos_rad.value);
         }
     }
 
-    return payload;
+    return protocol::encode_joint_targets(target_positions);
 }
 
 bool SimpleHardwareBridge::decode_full_hardware_state(const std::vector<uint8_t>& payload,
                                                       RawHardwareState& out) const
 {
-    std::size_t offset = 0;
+    protocol::FullHardwareState decoded{};
+    if (!protocol::decode_full_hardware_state(payload, decoded))
+    {
+        return false;
+    }
 
+    std::size_t idx = 0;
     for (auto& leg : out.leg_states)
     {
         for (int j = 0; j < kJointsPerLeg; ++j)
         {
-            float pos_rad = 0.0f;
-            if (!read_scalar(payload, offset, pos_rad))
-            {
-                return false;
-            }
-            leg.joint_raw_state[j].pos_rad = AngleRad{pos_rad};
+            leg.joint_raw_state[j].pos_rad = AngleRad{decoded.joint_positions_rad[idx++]};
         }
     }
 
     for (std::size_t i = 0; i < kProtocolFootSensorCount; ++i)
     {
-        uint8_t contact = 0;
-        if (!read_scalar(payload, offset, contact))
-        {
-            return false;
-        }
-        out.foot_contacts[i] = (contact != 0);
+        out.foot_contacts[i] = (decoded.foot_contacts[i] != 0);
     }
 
-    if (!read_scalar(payload, offset, out.voltage) ||
-        !read_scalar(payload, offset, out.current))
-    {
-        return false;
-    }
-
-    if (offset != payload.size())
-    {
-        return false;
-    }
-
+    out.voltage = decoded.voltage;
+    out.current = decoded.current;
     out.timestamp_us = now_us();
     return true;
 }
@@ -376,7 +367,8 @@ bool SimpleHardwareBridge::decode_full_hardware_state(const std::vector<uint8_t>
 bool SimpleHardwareBridge::do_handshake(const uint8_t requested_caps)
 {
   const uint16_t seq = next_sequence();
-  serialComs_->send_packet(seq, HELLO, {PROTOCOL_VERSION, requested_caps});
+  const protocol::HelloRequest request{PROTOCOL_VERSION, requested_caps};
+  serialComs_->send_packet(seq, HELLO, protocol::encode_hello_request(request));
 
   DecodedPacket response;
   if(!serialComs_->recv_packet(response))
@@ -405,22 +397,19 @@ bool SimpleHardwareBridge::do_handshake(const uint8_t requested_caps)
   
   else if(response.cmd == ACK)
   {
-    if(response.payload.size() < 3)
+    protocol::HelloAck ack{};
+    if(!protocol::decode_hello_ack(response.payload, ack))
     {
       if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "malformed ACK response"); }
       return false;
     }
-    const uint8_t version = response.payload[0];
-    const uint8_t status = response.payload[1];
-    const uint8_t deviceID = response.payload[2];
-    (void)deviceID;
-    
-    if(version != PROTOCOL_VERSION)
+
+    if(ack.version != PROTOCOL_VERSION)
     {
       if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "version mismatch"); }
       return false;
     }
-    if(status != STATUS_OK)
+    if(ack.status != STATUS_OK)
     {
       if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "device not ready"); }
       return false;
@@ -460,9 +449,16 @@ bool SimpleHardwareBridge::send_heartbeat()
     return false;
   }
 
-  if(!response.payload.empty() && response.payload[0] != STATUS_OK)
+  protocol::HelloAck heartbeat{};
+  if (!protocol::decode_hello_ack(response.payload, heartbeat))
   {
-    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "heartbeat returned non-ok status: ", response.payload[0]); }
+    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "heartbeat malformed payload"); }
+    return false;
+  }
+
+  if(heartbeat.status != STATUS_OK)
+  {
+    if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "heartbeat returned non-ok status: ", heartbeat.status); }
     return false;
   }
 
@@ -477,14 +473,14 @@ bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs)
     return false;
   }
   
-  std::vector<uint8_t> payload;
-  payload.reserve(kProtocolCalibrationsPayloadBytes);
-  for (float calibValue : calibs){
-    append_scalar(payload, calibValue);
+  protocol::Calibrations payload{};
+  for (std::size_t i = 0; i < calibs.size(); ++i)
+  {
+    payload[i] = calibs[i];
   }
   
   const uint16_t seq = next_sequence();
-  serialComs_->send_packet(seq, SET_ANGLE_CALIBRATIONS, payload);
+  serialComs_->send_packet(seq, SET_ANGLE_CALIBRATIONS, protocol::encode_calibrations(payload));
 
   DecodedPacket response;
   if(!serialComs_->recv_packet(response))
