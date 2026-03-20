@@ -92,4 +92,8 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_servo_calibration_unified_conversion tests/test_servo_calibration_unified_conversion.cpp)
     target_link_libraries(test_servo_calibration_unified_conversion PRIVATE hexapod_server_core)
     add_test(NAME servo_calibration_unified_conversion COMMAND test_servo_calibration_unified_conversion)
+
+    add_executable(test_motion_intent_through_ik_fk tests/test_motion_intent_through_ik_fk.cpp)
+    target_link_libraries(test_motion_intent_through_ik_fk PRIVATE hexapod_server_core)
+    add_test(NAME motion_intent_through_ik_fk_chain COMMAND test_motion_intent_through_ik_fk)
 endif()
