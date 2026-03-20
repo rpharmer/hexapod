@@ -1,6 +1,7 @@
 #include "hardware_bridge.hpp"
 
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <utility>
 
@@ -20,6 +21,20 @@ constexpr DurationUs kHeartbeatIdleIntervalUs{150000};
 
 class TransportSession {
 public:
+    enum class OutcomeClass : uint8_t {
+        Success,
+        Nack,
+        Timeout,
+        RetryExhausted,
+        ProtocolError
+    };
+
+    struct CommandOutcome {
+        OutcomeClass outcome_class{OutcomeClass::ProtocolError};
+        std::vector<uint8_t> ack_payload{};
+        uint8_t nack_code{0};
+    };
+
     TransportSession(IPacketEndpoint& endpoint,
                      DurationUs link_timeout,
                      DurationUs heartbeat_interval)
@@ -43,17 +58,16 @@ public:
         return true;
     }
 
-    bool wait_for_ack(uint16_t seq, std::vector<uint8_t>* ack_payload = nullptr) {
+    CommandOutcome wait_for_ack(uint16_t seq) {
         DecodedPacket response;
         if (!recv(response)) {
-            return false;
+            return CommandOutcome{OutcomeClass::Timeout, {}, 0};
         }
-        return parse_ack_or_nack(response, seq, ack_payload);
+        return parse_ack_or_nack(response, seq);
     }
 
-    bool parse_ack_or_nack(const DecodedPacket& response,
-                           uint16_t expected_seq,
-                           std::vector<uint8_t>* ack_payload = nullptr) const {
+    CommandOutcome parse_ack_or_nack(const DecodedPacket& response,
+                                     uint16_t expected_seq) const {
         if (response.seq != expected_seq) {
             if (auto logger = logging::GetDefaultLogger()) {
                 LOG_ERROR(logger,
@@ -63,33 +77,31 @@ public:
                           static_cast<unsigned>(response.seq),
                           ")");
             }
-            return false;
+            return CommandOutcome{OutcomeClass::ProtocolError, {}, 0};
         }
 
         if (response.cmd == ACK) {
-            if (ack_payload) {
-                *ack_payload = response.payload;
-            }
-            return true;
+            return CommandOutcome{OutcomeClass::Success, response.payload, 0};
         }
 
         if (response.cmd == NACK) {
+            const uint8_t nack_code = response.payload.empty() ? 0 : response.payload[0];
             if (!response.payload.empty()) {
                 if (auto logger = logging::GetDefaultLogger()) {
-                    LOG_ERROR(logger, "NACK, error: ", static_cast<unsigned>(response.payload[0]));
+                    LOG_ERROR(logger, "NACK, error: ", static_cast<unsigned>(nack_code));
                 }
             } else {
                 if (auto logger = logging::GetDefaultLogger()) {
                     LOG_ERROR(logger, "NACK without error code");
                 }
             }
-            return false;
+            return CommandOutcome{OutcomeClass::Nack, {}, nack_code};
         }
 
         if (auto logger = logging::GetDefaultLogger()) {
             LOG_ERROR(logger, "unexpected response cmd: ", static_cast<unsigned>(response.cmd));
         }
-        return false;
+        return CommandOutcome{OutcomeClass::ProtocolError, {}, 0};
     }
 
     bool has_link_timed_out(TimePointUs now) const {
@@ -195,47 +207,143 @@ public:
 
 class CommandClient {
 public:
+    struct RetryPolicy {
+        int max_attempts{3};
+    };
+
     explicit CommandClient(TransportSession& transport)
         : transport_(transport) {}
 
+    void set_retry_policy(const RetryPolicy& retry_policy) {
+        retry_policy_ = retry_policy;
+    }
+
     bool send_command_and_expect_ack(uint8_t cmd, const std::vector<uint8_t>& payload = {}) {
-        if (!transact(cmd, payload, nullptr)) {
-            if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger,
-                          "command failed (cmd=",
-                          static_cast<unsigned>(cmd),
-                          ", expected=ACK)");
-            }
-            return false;
-        }
-        return true;
+        return transact(cmd, payload, nullptr).outcome_class == TransportSession::OutcomeClass::Success;
     }
 
     bool send_command_and_expect_ack_payload(uint8_t cmd,
                                              const std::vector<uint8_t>& payload,
                                              std::vector<uint8_t>& ack_payload) {
-        if (!transact(cmd, payload, &ack_payload)) {
-            if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger,
-                          "command failed (cmd=",
-                          static_cast<unsigned>(cmd),
-                          ", expected=ACK payload)");
+        return transact(cmd, payload, &ack_payload).outcome_class == TransportSession::OutcomeClass::Success;
+    }
+
+    TransportSession::CommandOutcome transact(uint8_t cmd,
+                                              const std::vector<uint8_t>& payload,
+                                              std::vector<uint8_t>* ack_payload) {
+        const int max_attempts = (retry_policy_.max_attempts > 0) ? retry_policy_.max_attempts : 1;
+        const auto start = std::chrono::steady_clock::now();
+        TransportSession::CommandOutcome last_outcome{TransportSession::OutcomeClass::ProtocolError, {}, 0};
+        uint16_t seq = 0;
+        int attempts_used = 0;
+
+        for (int attempt = 1; attempt <= max_attempts; ++attempt) {
+            seq = transport_.next_sequence();
+            ++attempts_used;
+            transport_.send(seq, cmd, payload);
+            last_outcome = transport_.wait_for_ack(seq);
+            if (last_outcome.outcome_class == TransportSession::OutcomeClass::Success) {
+                break;
             }
-            return false;
+            if (last_outcome.outcome_class == TransportSession::OutcomeClass::Nack) {
+                break;
+            }
         }
-        return true;
+
+        if (last_outcome.outcome_class != TransportSession::OutcomeClass::Success &&
+            last_outcome.outcome_class != TransportSession::OutcomeClass::Nack &&
+            attempts_used >= max_attempts) {
+            last_outcome.outcome_class = TransportSession::OutcomeClass::RetryExhausted;
+        }
+
+        const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - start).count();
+        if (auto logger = logging::GetDefaultLogger()) {
+            LOG_INFO(logger,
+                     "telemetry command=",
+                     command_name(cmd),
+                     " seq=",
+                     static_cast<unsigned>(seq),
+                     " latency_us=",
+                     elapsed,
+                     " outcome=",
+                     outcome_to_text(last_outcome.outcome_class),
+                     " attempts=",
+                     attempts_used);
+            if (last_outcome.outcome_class != TransportSession::OutcomeClass::Success) {
+                LOG_WARN(logger,
+                         "command_failure command=",
+                         command_name(cmd),
+                         " domain_error=",
+                         domain_error_for_outcome(last_outcome.outcome_class),
+                         " nack_code=",
+                         static_cast<unsigned>(last_outcome.nack_code));
+            }
+        }
+
+        if (last_outcome.outcome_class == TransportSession::OutcomeClass::Success && ack_payload) {
+            *ack_payload = last_outcome.ack_payload;
+        }
+
+        return last_outcome;
     }
 
 private:
-    bool transact(uint8_t cmd,
-                  const std::vector<uint8_t>& payload,
-                  std::vector<uint8_t>* ack_payload) {
-        const uint16_t seq = transport_.next_sequence();
-        transport_.send(seq, cmd, payload);
-        return transport_.wait_for_ack(seq, ack_payload);
+    static const char* outcome_to_text(TransportSession::OutcomeClass outcome) {
+        switch (outcome) {
+            case TransportSession::OutcomeClass::Success:
+                return "success";
+            case TransportSession::OutcomeClass::Nack:
+                return "nack";
+            case TransportSession::OutcomeClass::Timeout:
+                return "timeout";
+            case TransportSession::OutcomeClass::RetryExhausted:
+                return "retry_exhausted";
+            case TransportSession::OutcomeClass::ProtocolError:
+                return "protocol_error";
+        }
+        return "protocol_error";
+    }
+
+    static const char* command_name(uint8_t cmd) {
+        switch (cmd) {
+            case HELLO: return "HELLO";
+            case HEARTBEAT: return "HEARTBEAT";
+            case GET_FULL_HARDWARE_STATE: return "GET_FULL_HARDWARE_STATE";
+            case SET_JOINT_TARGETS: return "SET_JOINT_TARGETS";
+            case SET_TARGET_ANGLE: return "SET_TARGET_ANGLE";
+            case SET_POWER_RELAY: return "SET_POWER_RELAY";
+            case SET_ANGLE_CALIBRATIONS: return "SET_ANGLE_CALIBRATIONS";
+            case GET_ANGLE_CALIBRATIONS: return "GET_ANGLE_CALIBRATIONS";
+            case GET_CURRENT: return "GET_CURRENT";
+            case GET_VOLTAGE: return "GET_VOLTAGE";
+            case GET_SENSOR: return "GET_SENSOR";
+            case DIAGNOSTIC: return "DIAGNOSTIC";
+            case SET_SERVOS_ENABLED: return "SET_SERVOS_ENABLED";
+            case GET_SERVOS_ENABLED: return "GET_SERVOS_ENABLED";
+            case SET_SERVOS_TO_MID: return "SET_SERVOS_TO_MID";
+            default: return "UNKNOWN";
+        }
+    }
+
+    static const char* domain_error_for_outcome(TransportSession::OutcomeClass outcome) {
+        switch (outcome) {
+            case TransportSession::OutcomeClass::Success:
+                return "none";
+            case TransportSession::OutcomeClass::Nack:
+                return "device_rejected";
+            case TransportSession::OutcomeClass::Timeout:
+                return "response_timeout";
+            case TransportSession::OutcomeClass::RetryExhausted:
+                return "retry_exhausted";
+            case TransportSession::OutcomeClass::ProtocolError:
+                return "protocol_violation";
+        }
+        return "protocol_violation";
     }
 
     TransportSession& transport_;
+    RetryPolicy retry_policy_{};
 };
 
 HandshakeClient::HandshakeClient(TransportSession& transport, CommandClient& command_client)
@@ -561,12 +669,20 @@ bool SimpleHardwareBridge::request_ack(uint8_t cmd,
         return false;
     }
 
-    if (command_client_->send_command_and_expect_ack(cmd, payload)) {
+    const auto outcome = command_client_->transact(cmd, payload, nullptr);
+    if (outcome.outcome_class == TransportSession::OutcomeClass::Success) {
         return true;
     }
 
     if (auto logger = logging::GetDefaultLogger()) {
-        LOG_ERROR(logger, "command ", command_name, " failed (ACK expected)");
+        LOG_ERROR(logger,
+                  "command ",
+                  command_name,
+                  " failed (outcome=",
+                  static_cast<unsigned>(outcome.outcome_class),
+                  ", nack_code=",
+                  static_cast<unsigned>(outcome.nack_code),
+                  ")");
     }
     return false;
 }
@@ -583,12 +699,20 @@ bool SimpleHardwareBridge::request_ack_payload(uint8_t cmd,
         return false;
     }
 
-    if (command_client_->send_command_and_expect_ack_payload(cmd, payload, out_payload)) {
+    const auto outcome = command_client_->transact(cmd, payload, &out_payload);
+    if (outcome.outcome_class == TransportSession::OutcomeClass::Success) {
         return true;
     }
 
     if (auto logger = logging::GetDefaultLogger()) {
-        LOG_ERROR(logger, "command ", command_name, " failed (ACK payload expected)");
+        LOG_ERROR(logger,
+                  "command ",
+                  command_name,
+                  " failed (outcome=",
+                  static_cast<unsigned>(outcome.outcome_class),
+                  ", nack_code=",
+                  static_cast<unsigned>(outcome.nack_code),
+                  ")");
     }
     return false;
 }
