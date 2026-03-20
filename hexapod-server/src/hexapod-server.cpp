@@ -1,4 +1,5 @@
 #include <vector>
+#include <algorithm>
 #include <chrono>
 #include <thread>
 #include <atomic>
@@ -12,6 +13,7 @@
 #include "serialCommsServer.hpp"
 #include "estimator.hpp"
 #include "hardware_bridge.hpp"
+#include "sim_hardware_bridge.hpp"
 #include "robot_control.hpp"
 #include "control_config.hpp"
 #include "geometry_config.hpp"
@@ -33,6 +35,27 @@ MotionIntent buildMotionIntent(RobotMode mode, GaitType gait, double body_height
   cmd.twist.body_trans_mps = {0.00, 0.00, 0.00};
   cmd.timestamp_us = now_us();
   return cmd;
+}
+
+std::unique_ptr<IHardwareBridge> makeHardwareBridge(const ParsedToml& config)
+{
+  if (config.runtimeMode == "sim") {
+    SimHardwareFaultToggles sim_faults{};
+    sim_faults.nominal_voltage = static_cast<float>(config.simInitialVoltageV);
+    sim_faults.nominal_current = static_cast<float>(config.simInitialCurrentA);
+    sim_faults.drop_bus = config.simDropBus;
+    sim_faults.low_voltage = config.simLowVoltage;
+    sim_faults.high_current = config.simHighCurrent;
+    sim_faults.low_voltage_value = std::max(0.0f, sim_faults.nominal_voltage * 0.5f);
+    sim_faults.high_current_value = std::max(sim_faults.nominal_current * 2.0f, sim_faults.nominal_current + 1.0f);
+
+    const double read_period_s = 1.0 / std::max(config.simResponseRateHz, 1.0);
+    return std::make_unique<SimHardwareBridge>(
+        sim_faults, DurationSec{read_period_s}, DurationSec{0.08});
+  }
+
+  return std::make_unique<SimpleHardwareBridge>(config.serialDevice, config.baudRate,
+                                                config.timeout, config.minMaxPulses);
 }
 
 } // namespace
@@ -60,8 +83,9 @@ int main()
   control_config::loadFromParsedToml(config);
   geometry_config::loadFromParsedToml(config);
 
-  auto hw = std::make_unique<SimpleHardwareBridge>(config.serialDevice, config.baudRate,
-                                                    config.timeout, config.minMaxPulses);
+  LOG_INFO(logger, "Runtime.Mode=", config.runtimeMode);
+
+  auto hw = makeHardwareBridge(config);
   auto estimator = std::make_unique<SimpleEstimator>();
 
   RobotControl robot(std::move(hw), std::move(estimator), logger);

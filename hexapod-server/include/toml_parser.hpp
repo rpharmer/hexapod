@@ -14,7 +14,8 @@ public:
 
 private:
   bool validateSchemaHeader(const toml::value& root) const;
-  bool parseTransportConfig(const toml::value& root, ParsedToml& out) const;
+  bool parseRuntimeConfig(const toml::value& root, ParsedToml& out) const;
+  bool parseTransportConfig(const toml::value& root, ParsedToml& out, bool required) const;
   bool parseCalibrationConfig(const toml::value& root, ParsedToml& out) const;
   void parseTuningConfig(const toml::value& root, ParsedToml& out) const;
   void parseGeometryConfig(const toml::value& root, ParsedToml& out) const;
