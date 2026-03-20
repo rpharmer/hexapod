@@ -2,6 +2,7 @@
 
 #include "pico/stdlib.h"
 #include "hexapod-common.hpp"
+#include "protocol_codec.hpp"
 #include "hexapod-client.hpp"
 #include "firmware_context.hpp"
 
@@ -90,25 +91,17 @@ int main()
 
 bool handleHandshake(uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  if(payload.size() != 2)
+  protocol::HelloRequest request{};
+  if(!protocol::decode_hello_request(payload, request))
   {
     firmware().serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return false;
   }
 
-
-  size_t offset = 0;
-  uint8_t version;
-  uint8_t capabilities;
-  
-  read_scalar(payload, offset, version);
-  read_scalar(payload, offset, capabilities);
-  
-  (void)capabilities;
-
-  if(version == PROTOCOL_VERSION)
+  if(request.version == PROTOCOL_VERSION)
   {
-    firmware().serial.send_packet(seq, ACK, {PROTOCOL_VERSION, STATUS_OK, DEVICE_ID});
+    const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, DEVICE_ID};
+    firmware().serial.send_packet(seq, ACK, protocol::encode_hello_ack(ack));
     return true;
   }
 
