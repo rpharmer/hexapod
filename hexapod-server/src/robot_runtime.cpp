@@ -33,7 +33,10 @@ bool RobotRuntime::init() {
     initial.requested_mode = RobotMode::SAFE_IDLE;
     initial.timestamp_us = now_us();
 
-    motion_intent_.write(initial);
+    motion_intent_.write(StreamSample<MotionIntent>{
+        initial,
+        intent_sample_id_.fetch_add(1) + 1,
+        initial.timestamp_us});
     status_.write(ControlStatus{});
     safety_state_.write(SafetyState{});
     joint_targets_.write(JointTargets{});
@@ -51,16 +54,22 @@ void RobotRuntime::busStep() {
     if (!hw_->read(raw)) {
         raw.bus_ok = false;
     }
-    raw_state_.write(raw);
+    raw_state_.write(StreamSample<RawHardwareState>{
+        raw,
+        raw_sample_id_.fetch_add(1) + 1,
+        now_us()});
 
     const JointTargets cmd = joint_targets_.read();
     (void)hw_->write(cmd);
 }
 
 void RobotRuntime::estimatorStep() {
-    const RawHardwareState raw = raw_state_.read();
-    const EstimatedState est = estimator_->update(raw);
-    estimated_state_.write(est);
+    const StreamSample<RawHardwareState> raw = raw_state_.read();
+    const EstimatedState est = estimator_->update(raw.value);
+    estimated_state_.write(StreamSample<EstimatedState>{
+        est,
+        estimator_sample_id_.fetch_add(1) + 1,
+        now_us()});
 }
 
 void RobotRuntime::controlStep() {
@@ -80,7 +89,33 @@ void RobotRuntime::controlStep() {
     const EstimatedState est = estimated_state_.read();
     const MotionIntent intent = motion_intent_.read();
     const SafetyState safety_state = safety_state_.read();
-    const bool bus_ok = raw_state_.read().bus_ok;
+    const bool bus_ok = raw_state_.read().value.bus_ok;
+
+    const bool estimator_fresh =
+        (!est_sample.timestamp_us.isZero()) &&
+        ((now - est_sample.timestamp_us).value <= config_.freshness.max_estimator_age_us.value);
+    const bool intent_fresh =
+        (!intent_sample.timestamp_us.isZero()) &&
+        ((now - intent_sample.timestamp_us).value <= config_.freshness.max_intent_age_us.value);
+
+    if (!intent_fresh) {
+        stale_intent_count_.fetch_add(1);
+    }
+    if (!estimator_fresh) {
+        stale_estimator_count_.fetch_add(1);
+    }
+
+    if (!estimator_fresh || !intent_fresh) {
+        ControlStatus status{};
+        status.active_mode = RobotMode::SAFE_IDLE;
+        status.estimator_valid = estimator_fresh;
+        status.bus_ok = bus_ok;
+        status.active_fault = estimator_fresh ? FaultCode::COMMAND_TIMEOUT : FaultCode::ESTIMATOR_INVALID;
+        status.loop_counter = control_loop_counter_.fetch_add(1) + 1;
+        status_.write(status);
+        joint_targets_.write(JointTargets{});
+        return;
+    }
 
     if (!intent.timestamp_us.isZero() && ((now - intent.timestamp_us) > config_.safety.command_timeout_us)) {
         stale_intent_count_.fetch_add(1);
@@ -98,9 +133,9 @@ void RobotRuntime::controlStep() {
 }
 
 void RobotRuntime::safetyStep() {
-    const RawHardwareState raw = raw_state_.read();
-    const EstimatedState est = estimated_state_.read();
-    const MotionIntent intent = motion_intent_.read();
+    const RawHardwareState raw = raw_state_.read().value;
+    const EstimatedState est = estimated_state_.read().value;
+    const MotionIntent intent = motion_intent_.read().value;
 
     const SafetyState s = safety_.evaluate(raw, est, intent);
     safety_state_.write(s);
@@ -126,7 +161,14 @@ void RobotRuntime::diagnosticsStep() {
 }
 
 void RobotRuntime::setMotionIntent(const MotionIntent& intent) {
-    motion_intent_.write(intent);
+    MotionIntent stamped_intent = intent;
+    if (stamped_intent.timestamp_us.isZero()) {
+        stamped_intent.timestamp_us = now_us();
+    }
+    motion_intent_.write(StreamSample<MotionIntent>{
+        stamped_intent,
+        intent_sample_id_.fetch_add(1) + 1,
+        stamped_intent.timestamp_us});
 }
 
 bool RobotRuntime::setSimFaultToggles(const SimHardwareFaultToggles& toggles) {

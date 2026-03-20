@@ -1,5 +1,7 @@
 #include "control_config.hpp"
 
+#include <algorithm>
+
 #include "hexapod-server.hpp"
 
 namespace control_config {
