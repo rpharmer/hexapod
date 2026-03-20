@@ -7,10 +7,19 @@
 
 struct ParsedToml
 {
+  std::string runtimeMode{"serial"};
+
   std::string serialDevice{"/dev/ttyACM0"};
   int baudRate{115200};
   int timeout{100};
   std::vector<float> minMaxPulses{};
+
+  double simInitialVoltageV{12.0};
+  double simInitialCurrentA{1.0};
+  double simResponseRateHz{50.0};
+  bool simDropBus{false};
+  bool simLowVoltage{false};
+  bool simHighCurrent{false};
 
   int busLoopPeriodUs{2000};
   int estimatorLoopPeriodUs{2000};

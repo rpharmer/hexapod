@@ -3,6 +3,14 @@ title = "Hexapod Config File"
 Schema = "hexapod.server.config"
 SchemaVersion = 1
 
+Runtime.Mode = "serial" # "serial" or "sim"
+Runtime.Sim.InitialVoltageV = 12.0
+Runtime.Sim.InitialCurrentA = 1.0
+Runtime.Sim.ResponseRateHz = 50.0
+Runtime.Sim.DropBus = false
+Runtime.Sim.LowVoltage = false
+Runtime.Sim.HighCurrent = false
+
 SerialDevice = '/dev/ttyACM0'
 
 BaudRate = 115200
