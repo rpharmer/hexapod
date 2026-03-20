@@ -127,6 +127,12 @@ int SerialCommsServer::recv_bytes(void *data, std::size_t size)
 void SerialCommsServer::send_packet(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload)
 {
   const std::vector<uint8_t> frame = encodePacket(seq, cmd, payload);
+  if (frame.empty()) {
+    if (auto logger = logging::GetDefaultLogger()) {
+      LOG_WARN(logger, "[SerialCommsServer] send_packet dropped: payload too large for protocol LEN field");
+    }
+    return;
+  }
   serialport.WriteBinary(frame);
 }
 
