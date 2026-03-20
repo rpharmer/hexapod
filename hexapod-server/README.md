@@ -175,6 +175,39 @@ Expected TOML fields:
   - no duplicates or missing joint IDs
   - `500 <= min_pulse < max_pulse <= 2500`
 
+### Stream freshness contract
+
+Control-stage decisions are accepted only when **both** estimator and intent streams satisfy the same freshness contract:
+
+- timestamp rule: timestamp must be present (`timestamp_us != 0`) when `*RequireTimestamp=true`
+- sample-id rule: sample id must be present (`sample_id != 0`) when `*RequireSampleId=true`
+- monotonicity rule: sample id must never move backward (non-decreasing) across accepted/rejected samples when
+  `*RequireMonotonicSampleId=true`
+- age rule: `(now - timestamp_us) <= *MaxAgeUs`
+
+If either stream violates the contract at the control boundary:
+
+- control output is gated to `SAFE_IDLE`
+- joint targets are zeroed
+- `ControlStatus.active_fault` becomes:
+  - `ESTIMATOR_INVALID` when estimator stream is invalid/stale
+  - `COMMAND_TIMEOUT` when only intent stream is invalid/stale
+- runtime diagnostics increment stale/invalid counters and emit structured freshness logs.
+
+Runtime tuning keys for the contract:
+
+- `Tuning.EstimatorMaxAgeUs`
+- `Tuning.IntentMaxAgeUs`
+- `Tuning.EstimatorRequireTimestamp`
+- `Tuning.EstimatorRequireSampleId`
+- `Tuning.EstimatorRequireMonotonicSampleId`
+- `Tuning.IntentRequireTimestamp`
+- `Tuning.IntentRequireSampleId`
+- `Tuning.IntentRequireMonotonicSampleId`
+
+> Operator policy: keep freshness max ages aligned with `Tuning.CommandTimeoutUs` unless you intentionally want
+> different control-gating vs. safety-latching behavior.
+
 ## Control pipeline
 
 Per control step, `ControlPipeline` performs:

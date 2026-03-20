@@ -24,6 +24,16 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.safety.max_foot_contacts = config.maxFootContacts;
 
     parsed.gait.fallback_speed_mag = LinearRateMps{config.fallbackSpeedMag};
+
+    parsed.freshness.estimator.max_allowed_age_us = DurationUs{config.estimatorMaxAgeUs};
+    parsed.freshness.estimator.require_timestamp = config.estimatorRequireTimestamp;
+    parsed.freshness.estimator.require_nonzero_sample_id = config.estimatorRequireSampleId;
+    parsed.freshness.estimator.require_monotonic_sample_id = config.estimatorRequireMonotonicSampleId;
+
+    parsed.freshness.intent.max_allowed_age_us = DurationUs{config.intentMaxAgeUs};
+    parsed.freshness.intent.require_timestamp = config.intentRequireTimestamp;
+    parsed.freshness.intent.require_nonzero_sample_id = config.intentRequireSampleId;
+    parsed.freshness.intent.require_monotonic_sample_id = config.intentRequireMonotonicSampleId;
     return parsed;
 }
 
