@@ -167,6 +167,103 @@ bool test_explicit_nack_behavior_for_command_methods() {
     return expect(sent.back().cmd == SET_POWER_RELAY, "last packet should be SET_POWER_RELAY");
 }
 
+bool test_timeout_retry_then_success() {
+    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
+    FakePacketEndpoint* endpoint_view = nullptr;
+    SimpleHardwareBridge* bridge = nullptr;
+
+    bool dropped_once = false;
+    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
+                                     [&dropped_once](const DecodedPacket& request) {
+                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
+                                             const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
+                                             return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                         }
+                                         if (request.cmd == SET_POWER_RELAY) {
+                                             if (!dropped_once) {
+                                                 dropped_once = true;
+                                                 return std::vector<DecodedPacket>{};
+                                             }
+                                             return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
+                                         }
+                                         return std::vector<DecodedPacket>{};
+                                     });
+
+    if (!expect(init_ok, "init should succeed before timeout retry test")) {
+        return false;
+    }
+
+    if (!expect(bridge->set_power_relay(true), "set_power_relay should succeed after a retried timeout")) {
+        return false;
+    }
+
+    const auto& sent = endpoint_view->sent_packets();
+    return expect(sent.size() == 4, "expected HELLO, HEARTBEAT, and two SET_POWER_RELAY attempts");
+}
+
+bool test_timeout_retry_exhausted() {
+    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
+    FakePacketEndpoint* endpoint_view = nullptr;
+    SimpleHardwareBridge* bridge = nullptr;
+
+    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
+                                     [](const DecodedPacket& request) {
+                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
+                                             const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
+                                             return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                         }
+                                         if (request.cmd == SET_POWER_RELAY) {
+                                             return std::vector<DecodedPacket>{};
+                                         }
+                                         return std::vector<DecodedPacket>{};
+                                     });
+
+    if (!expect(init_ok, "init should succeed before retry exhausted test")) {
+        return false;
+    }
+
+    if (!expect(!bridge->set_power_relay(true), "set_power_relay should fail when all retries timeout")) {
+        return false;
+    }
+
+    const auto& sent = endpoint_view->sent_packets();
+    return expect(sent.size() == 5, "expected HELLO, HEARTBEAT, and three SET_POWER_RELAY attempts");
+}
+
+bool test_protocol_error_retried_and_succeeds() {
+    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
+    FakePacketEndpoint* endpoint_view = nullptr;
+    SimpleHardwareBridge* bridge = nullptr;
+
+    bool sent_bad_seq = false;
+    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
+                                     [&sent_bad_seq](const DecodedPacket& request) {
+                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
+                                             const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
+                                             return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                         }
+                                         if (request.cmd == SET_POWER_RELAY) {
+                                             if (!sent_bad_seq) {
+                                                 sent_bad_seq = true;
+                                                 return std::vector<DecodedPacket>{{static_cast<uint16_t>(request.seq + 1), ACK, {}}};
+                                             }
+                                             return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
+                                         }
+                                         return std::vector<DecodedPacket>{};
+                                     });
+
+    if (!expect(init_ok, "init should succeed before protocol error retry test")) {
+        return false;
+    }
+
+    if (!expect(bridge->set_power_relay(true), "set_power_relay should succeed after protocol error retry")) {
+        return false;
+    }
+
+    const auto& sent = endpoint_view->sent_packets();
+    return expect(sent.size() == 4, "expected HELLO, HEARTBEAT, and two SET_POWER_RELAY attempts");
+}
+
 }  // namespace
 
 int main() {
@@ -183,6 +280,18 @@ int main() {
     }
 
     if (!test_explicit_nack_behavior_for_command_methods()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!test_timeout_retry_then_success()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!test_timeout_retry_exhausted()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!test_protocol_error_retried_and_succeeds()) {
         return EXIT_FAILURE;
     }
 
