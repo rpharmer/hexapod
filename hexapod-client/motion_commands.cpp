@@ -7,7 +7,7 @@
 
 void handleSetAngleCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  if(payload.size() != 3)
+  if(payload.size() != (sizeof(uint8_t) + sizeof(float))
   {
     firmware().serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
@@ -69,18 +69,14 @@ void handleSetJointTargetsCommand(uint16_t seq, const std::vector<uint8_t>& payl
     return;
   }
 
+  size_t offset = 0;
   for (std::size_t s = 0; s < kProtocolJointCount; ++s)
   {
-    const size_t offset = s * sizeof(float);
     float targetPosRad = 0.0f;
-    const uint8_t* src = payload.data() + offset;
-    std::memcpy(&targetPosRad, src, sizeof(float));
+    read_scalar(payload, offset, targetPosRad);
 
     Calibration& cal = firmware().servos.calibration(static_cast<int>(s));
-    constexpr float kRadToDeg = 57.2957795f;
-    const float targetPosDeg = targetPosRad * kRadToDeg;
-    const uint16_t pulse = static_cast<uint16_t>(cal.value(targetPosDeg));
-    firmware().servos.value(static_cast<int>(s), pulse);
+    firmware().servos.value(static_cast<int>(s), targetPosRad);
     firmware().jointTargetPositionsRad[s] = targetPosRad;
   }
 

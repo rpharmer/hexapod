@@ -96,8 +96,14 @@ bool handleHandshake(uint16_t seq, const std::vector<uint8_t>& payload)
     return false;
   }
 
-  const uint8_t version = payload[0];
-  const uint8_t capabilities = payload[1];
+
+  size_t offset = 0;
+  uint8_t version;
+  uint8_t capabilities;
+  
+  read_scalar(payload, offset, version);
+  read_scalar(payload, offset, capabilities);
+  
   (void)capabilities;
 
   if(version == PROTOCOL_VERSION)
