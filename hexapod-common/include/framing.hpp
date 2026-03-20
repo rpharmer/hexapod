@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <cstddef>
 #include <cstring>
 #include <type_traits> // For std::is_integral, std::make_unsigned
 #include <stdexcept>   // For std::out_of_range
@@ -32,6 +33,18 @@ struct DecodedPacket {
 };
 
 bool tryDecodePacket(std::vector<uint8_t>& rxBuffer, DecodedPacket& out);
+
+inline std::size_t trim_rx_buffer(std::vector<uint8_t>& buffer, const std::size_t max_bytes)
+{
+    if (buffer.size() <= max_bytes)
+    {
+        return 0;
+    }
+
+    const std::size_t overflow = buffer.size() - max_bytes;
+    buffer.erase(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(overflow));
+    return overflow;
+}
 
 template <typename T>
 inline void append_scalar(std::vector<uint8_t>& buffer, const T value)

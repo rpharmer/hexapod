@@ -22,16 +22,6 @@ void write_bytes(const uint8_t* bytes, std::size_t size) {
   }
 }
 
-void trim_rx_buffer(std::vector<uint8_t>& buffer, const std::size_t max_bytes) {
-  if (buffer.size() <= max_bytes) {
-    return;
-  }
-
-  const std::size_t overflow = buffer.size() - max_bytes;
-  buffer.erase(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(overflow));
-}
-
-
 } // namespace
 
 
