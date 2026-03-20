@@ -11,6 +11,7 @@
 #include "types.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 
 class RobotRuntime {
@@ -42,6 +43,10 @@ private:
     SafetySupervisor safety_;
 
     std::atomic<uint64_t> control_loop_counter_{0};
+    std::atomic<uint64_t> control_dt_sum_us_{0};
+    std::atomic<uint64_t> control_jitter_max_us_{0};
+    std::atomic<uint64_t> stale_intent_count_{0};
+    TimePointUs last_control_step_us_{};
 
     DoubleBuffer<RawHardwareState> raw_state_;
     DoubleBuffer<EstimatedState> estimated_state_;

@@ -1,6 +1,7 @@
 #include "scenario_driver.hpp"
 
 #include "logger.hpp"
+#include "motion_intent_utils.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -152,7 +153,7 @@ bool ScenarioDriver::run(RobotControl& robot, const ScenarioDefinition& scenario
             const ScenarioEvent& event = scenario.events[event_idx];
 
             if (event.motion.enabled) {
-                current_intent = buildMotionIntent(event.motion);
+                current_intent = makeMotionIntent(event.motion);
                 robot.setMotionIntent(current_intent);
                 if (logger) {
                     LOG_INFO(logger, "Scenario event @", event.at_ms, "ms mode update");

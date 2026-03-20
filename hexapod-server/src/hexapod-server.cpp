@@ -17,6 +17,7 @@
 #include "robot_control.hpp"
 #include "control_config.hpp"
 #include "geometry_config.hpp"
+#include "motion_intent_utils.hpp"
 #include "scenario_driver.hpp"
 
 using namespace mn::CppLinuxSerial;
@@ -25,18 +26,6 @@ using namespace logging;
 static std::atomic<bool> g_exit{false};
 
 namespace {
-
-MotionIntent buildMotionIntent(RobotMode mode, GaitType gait, double body_height_m)
-{
-  MotionIntent cmd{};
-  cmd.requested_mode = mode;
-  cmd.gait = gait;
-  cmd.twist.twist_pos_rad = {0.0, 0.0, 0.0};
-  cmd.twist.body_trans_m = {0.00, 0.00, body_height_m};
-  cmd.twist.body_trans_mps = {0.00, 0.00, 0.00};
-  cmd.timestamp_us = now_us();
-  return cmd;
-}
 
 std::unique_ptr<IHardwareBridge> makeHardwareBridge(const ParsedToml& config)
 {
@@ -126,12 +115,12 @@ int main(int argc, char** argv)
       return 1;
     }
   } else {
-    robot.setMotionIntent(buildMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.20));
+    robot.setMotionIntent(makeMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.20));
 
     std::this_thread::sleep_for(control_cfg.loop_timing.stand_settling_delay);
 
     while (!g_exit.load()) {
-      robot.setMotionIntent(buildMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.20));
+      robot.setMotionIntent(makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.20));
 
       std::this_thread::sleep_for(control_cfg.loop_timing.command_refresh_period); // refresh command watchdog
     }

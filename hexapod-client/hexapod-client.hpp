@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <vector>
 #include "hexapod-common.hpp"
+struct FirmwareContext;
 
 // client device id
 const uint8_t DEVICE_ID              = 0x01;
@@ -33,20 +34,34 @@ void echoLoop();
 void runCommandLoop();
 bool handleHandshake(uint16_t seq, const std::vector<uint8_t>& payload);
 void handleSetAngleCommand(uint16_t seq, const std::vector<uint8_t>& payload);
+void handleSetAngleCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload);
 void handleGetAngleCalibCommand(uint16_t seq);
+void handleGetAngleCalibCommand(FirmwareContext& ctx, uint16_t seq);
 void handleSetPowerRelayCommand(uint16_t seq, const std::vector<uint8_t>& payload);
+void handleSetPowerRelayCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload);
 void handleGetCurrentCommand(uint16_t seq);
+void handleGetCurrentCommand(FirmwareContext& ctx, uint16_t seq);
 void handleGetVoltageCommand(uint16_t seq);
+void handleGetVoltageCommand(FirmwareContext& ctx, uint16_t seq);
 void handleGetSensorCommand(uint16_t seq, const std::vector<uint8_t>& payload);
+void handleGetSensorCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload);
 void handleSetJointTargetsCommand(uint16_t seq, const std::vector<uint8_t>& payload);
+void handleSetJointTargetsCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload);
 void handleGetFullHardwareStateCommand(uint16_t seq);
+void handleGetFullHardwareStateCommand(FirmwareContext& ctx, uint16_t seq);
 void handleSetServosEnabledCommand(uint16_t seq, const std::vector<uint8_t>& payload);
+void handleSetServosEnabledCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload);
 void handleGetServosEnabledCommand(uint16_t seq);
+void handleGetServosEnabledCommand(FirmwareContext& ctx, uint16_t seq);
 void handleSetServosToMidCommand(uint16_t seq);
+void handleSetServosToMidCommand(FirmwareContext& ctx, uint16_t seq);
 
 void handleHeartbeatCommand(uint16_t seq);
+void handleHeartbeatCommand(FirmwareContext& ctx, uint16_t seq);
 
 void handleCalibCommand(uint16_t seq, const std::vector<uint8_t>& payload);
+void handleCalibCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload);
 void calibServos(float calibs[kProtocolJointCount][kProtocolCalibrationPairsPerJoint]);
+void calibServos(FirmwareContext& ctx, float calibs[kProtocolJointCount][kProtocolCalibrationPairsPerJoint]);
 
 #endif
