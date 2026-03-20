@@ -1,15 +1,16 @@
-# Hexapod Hardware
+# Hexapod Hardware Reference
 
 <img src="../illustrations/yellow2.png" height="300" />
 
-This document contains information on the physical Hexapod; physical dimensions, hardware, components, controller board, pinouts, etc.
+This document captures the mechanical and electrical reference data for the physical hexapod build.
 
-## Hexapod Mechanical Parts
+## Mechanical build
 
-The hexapod is 3D printed and I've used the Chipo build from [MakeYourPet](https://github.com/MakeYourPet/hexapod/tree/main). It's a fantastic repo containing all the needed 3D parts, parts list for screws, wiring, components, etcs. Easy to follow build instructions including videos and illustrations, wiring diagrams, firmware and an Android app plus some source code to get started.
+The chassis is based on the Chipo design from MakeYourPet:
 
-https://www.printables.com/model/479169-make-your-pet-chipo/files
-https://www.printables.com/model/1021758-servo-limiter/files
+- GitHub build reference: <https://github.com/MakeYourPet/hexapod/tree/main>
+- Printables model files: <https://www.printables.com/model/479169-make-your-pet-chipo/files>
+- Servo limiter files: <https://www.printables.com/model/1021758-servo-limiter/files>
 
 <p float="left">
   <img src="../illustrations/front-view.png" height="200" />
@@ -18,103 +19,95 @@ https://www.printables.com/model/1021758-servo-limiter/files
   <img src="../illustrations/tibia-components.png" height="200" />
 </p>
 
-## Electrical Components
+## Electrical components
 
-I've used a 7.4 (2S) lipo battery. Due to the wide voltage range it is nessaccary to use a ubec to deliver consistent voltage to the servos. I've used MG996R servos.
+### Battery and regulator
 
-### 7.4V (2S) Lipo Battery
+A 2S LiPo is used for the primary supply rail:
 
-The voltage range:
+- Nominal voltage: `7.4 V`
+- Fully charged: `8.4 V`
+- Minimum recommended cutoff: `6.0 V`
 
-- 7.4V Nominal voltage
-- 8.4V Fully charged
-- 6.0V Minimum voltage (do not discharge below this as it can damage the battery)
+Use a UBEC inline between battery and relay to provide stable servo voltage.
 
-I've used a 8A UBEC to regulate the voltage from the battery to the servos.
+Example UBEC ratings used in this build:
 
-Rated:
-- 8A continous
-- 16A instantaneous
+- Continuous current: `8 A`
+- Peak current: `16 A`
+- Input range: `6 V` to `36 V`
+- Selectable output: `5.2 V`, `6.0 V`, `7.4 V`, `8.4 V`
 
-Input voltage
-- 6V Minimum
-- 36V Maximum
+### Servos (MG996R)
 
-Output voltage (selectable using jumper)
-- 5.2V
-- 6.0V
-- 7.4V
-- 8.4V
+Published values (model/vendor dependent):
 
-### MG996R Servo Specs
+- Stall torque:
+  - `13 kg·cm` at `4.8 V`
+  - `15 kg·cm` at `6.0 V`
+- Speed:
+  - `0.17 s / 60°` at `4.8 V` (no load)
+  - `0.14 s / 60°` at `6.0 V` (no load)
+- Operating range: `4.8 V` to `7.2 V`
+- Dimensions: `40 x 19 x 43 mm`
 
-Stall Torque:
-- 13 kg / cm (4.8V)
-- 15 kg / cm (6.0V.
+## Wiring
 
-Operating Speed:
-- 0.17 sec / 60 degrees (4.8V no load)
-- 0.14 sec / 60 degrees (6.0V no load)
+Reference wiring diagram:
 
-Operating voltage: 4.8V - 7.2V.
-Dimension: 40mm x 19mm x 43mm.
-
-## Wiring Diagram
 <img src="https://github.com/MakeYourPet/hexapod/blob/7d8fc8034d715d1c9373f48281ecfa500c994d8b/wiring-diagram-servo2040.png" height="400">
 
-Place UBEC inline between battery and relay.
+Integration reminder: place UBEC inline between battery output and relay/servo power path.
 
-## Servo 2040
+## Controller board (Servo 2040)
 
-<img src ="https://www.kiwi-electronics.com/image/cache/catalog/product/83habfak/servo-2040-2-1600x1066h.jpg" height="300">
+<img src="https://www.kiwi-electronics.com/image/cache/catalog/product/83habfak/servo-2040-2-1600x1066h.jpg" height="300">
 
-This is the powerful servo controller, able to drive 18 servos, read current draw and voltage of the servo power rail, 6 analog sensors used for limit switches on the end of each foot, 6 addressable RGB LEDs suitable for visual feedback, 3 ADC input/output pins (one is used to drive the relay to enable/disable the battery), Serial Wire Debug pins which are used to upload the firmware using OpenOCD. The heart of the servo 2040 board is a Raspberry Pi RP2040 (pico) (Dual Arm Cortex M0+ running at up to 133Mhz with 264kB of SRAM) also has 2MB of QSPI flash supporting XiP.
-A full schematic can be found [here](https://cdn.shopify.com/s/files/1/0174/1800/files/servo2040_schematic.pdf)
-A pdf development guide for the pico can be found [here,](https://files.waveshare.com/upload/3/30/Getting_started_with_pico.pdf) this contains important instructions for flashing the board using OpenOCD.
-I'm using a Raspberry Pi 5 as main board of the hexapod, you will need to use the config file provided [here](https://forums.raspberrypi.com/viewtopic.php?t=362826) for flashing the servo 2040 from a rpi5.
+Servo 2040 capabilities used by this project:
 
-Our firmware is written in c++ under the directory hexapod-client. Pimoroni provides guides to setting up the enviroment for pico development (which applies to the servo 2040 board) and a boiler plate project. Links to these can be found here; [Boilerplate project](https://github.com/pimoroni/pico-boilerplate), [Pico SDK setup instructions](https://github.com/pimoroni/pimoroni-pico/blob/main/setting-up-the-pico-sdk.md), [Servo 2040 example code](https://github.com/pimoroni/pimoroni-pico/tree/main/examples/servo2040) and [Pico example code](https://github.com/raspberrypi/pico-examples?tab=readme-ov-file).
+- 18 servo outputs
+- rail current and voltage monitoring
+- 6 analog sensor inputs (used for foot contacts)
+- 6 RGB LEDs for state indication
+- GPIO/ADC pins (one is used for relay control)
+- SWD interface for OpenOCD flashing
 
-## Dimensions And Angles
+Useful links:
 
-Length of leg segments in millimeters
+- Schematic: <https://cdn.shopify.com/s/files/1/0174/1800/files/servo2040_schematic.pdf>
+- RP2040 getting started guide: <https://files.waveshare.com/upload/3/30/Getting_started_with_pico.pdf>
+- Raspberry Pi 5 OpenOCD config discussion: <https://forums.raspberrypi.com/viewtopic.php?t=362826>
+- Pico boilerplate: <https://github.com/pimoroni/pico-boilerplate>
+- Pimoroni Pico SDK setup: <https://github.com/pimoroni/pimoroni-pico/blob/main/setting-up-the-pico-sdk.md>
+- Servo 2040 examples: <https://github.com/pimoroni/pimoroni-pico/tree/main/examples/servo2040>
+- Raspberry Pi Pico examples: <https://github.com/raspberrypi/pico-examples>
 
-- COXA_LEN 43
-- FEMUR_LEN 60
-- TIBIA_LEN 104
+## Geometry constants
 
-Distance between the coxa rotation centers of different legs in millimeters.
+Leg segment lengths (mm):
 
-- L1_TO_R1 126
-- L1_TO_L3 167
-- L2_TO_R2 163
+- `COXA_LEN = 43`
+- `FEMUR_LEN = 60`
+- `TIBIA_LEN = 104`
 
-The height where the legs connect to the frame.
+Offsets between coxa rotation centers (mm):
 
-- LEG_CONNECTION_Z -7
+- `L1_TO_R1 = 126`
+- `L1_TO_L3 = 167`
+- `L2_TO_R2 = 163`
 
-The Z value for the leg endpoints when sitting on a flat surface.
+Frame and sit-height references:
 
-- LEG_SITTING_Z -40
+- `LEG_CONNECTION_Z = -7`
+- `LEG_SITTING_Z = -40`
 
-The angle between the servo itself and the leg segment when the servo is centered.
+Servo attachment angle offsets (degrees):
 
-- COXA_ATTACH_ANGLE -8
-- FEMUR_ATTACH_ANGLE 35
-- TIBIA_ATTACH_ANGLE 83
+- `COXA_ATTACH_ANGLE = -8`
+- `FEMUR_ATTACH_ANGLE = 35`
+- `TIBIA_ATTACH_ANGLE = 83`
 
 <p float="left">
   <img src="../illustrations/1000012480.png" height="300">
   <img src="../illustrations/1000012586.png" height="300">
-</P>
-
-```math
-\left( \sum_{k=1}^n a_k b_k \right)^2 \leq \left( \sum_{k=1}^n a_k^2 \right) \left( \sum_{k=1}^n b_k^2 \right)
-```
-
-
-
-
-
-
-
+</p>

@@ -5,14 +5,14 @@ Linux host-side control process for the hexapod robot. It connects to firmware o
 ## Responsibilities
 
 - Load serial and calibration settings from `config.txt`.
-- Construct serial-backed hardware bridge (`SimpleHardwareBridge`).
+- Construct a serial-backed hardware bridge (`SimpleHardwareBridge`).
 - Execute `RobotControl` loops:
   - bus loop (500 Hz)
   - estimator loop (500 Hz)
   - safety loop (500 Hz)
   - control loop (250 Hz)
   - diagnostics loop (2 Hz)
-- Emit `MotionIntent` updates while monitoring health/fault state.
+- Emit `MotionIntent` updates while monitoring health and fault state.
 
 ## Directory layout
 
@@ -20,6 +20,7 @@ Linux host-side control process for the hexapod robot. It connects to firmware o
 hexapod-server/
 ├── CMakeLists.txt
 ├── config.txt
+├── config.sim.txt
 ├── README.md
 ├── include/
 │   ├── body_controller.hpp
@@ -40,24 +41,9 @@ hexapod-server/
 │   ├── serialCommsServer.hpp
 │   ├── status_reporter.hpp
 │   └── types.hpp
-└── src/
-    ├── body_controller.cpp
-    ├── control_config.cpp
-    ├── control_pipeline.cpp
-    ├── estimator.cpp
-    ├── gait_scheduler.cpp
-    ├── geometry_config.cpp
-    ├── hardware_bridge.cpp
-    ├── hexapod-server.cpp
-    ├── leg_fk.cpp
-    ├── leg_ik.cpp
-    ├── logger.cpp
-    ├── loop_timing.cpp
-    ├── robot_control.cpp
-    ├── safety_supervisor.cpp
-    ├── serialCommsServer.cpp
-    ├── status_reporter.cpp
-    └── types.cpp
+├── src/
+├── scenarios/
+└── tests/
 ```
 
 ## Build
@@ -85,27 +71,26 @@ cd hexapod-server
 
 Stop with `Ctrl+C`.
 
-
 ## Offline simulation/testing
 
-Use offline mode when you want deterministic control/safety validation without a physical robot.
+Use offline mode for deterministic control/safety validation without physical robot hardware.
 
-### 1) Required config flags for simulator mode
+### 1) Enable simulator mode
 
-Set the runtime mode to `sim` in `config.txt` (or copy `config.sim.txt` over `config.txt` before running):
+Set `Runtime.Mode = "sim"` in `config.txt`, or copy `config.sim.txt` over `config.txt`:
 
 - `Runtime.Mode = "sim"` (required)
-- Optional simulator tuning under `Runtime.Sim.*`:
+- Optional tuning under `Runtime.Sim.*`:
   - `InitialVoltageV`
   - `InitialCurrentA`
   - `ResponseRateHz`
-  - `DropBus`, `LowVoltage`, `HighCurrent` (fault injection toggles; keep `false` for baseline runs)
+  - `DropBus`, `LowVoltage`, `HighCurrent` (fault injection toggles)
 
-> Note: scenarios call `setSimFaultToggles(...)` and will fail if runtime mode is not `sim`.
+> Scenario runs call `setSimFaultToggles(...)` and require simulator mode.
 
 ### 2) Execute scenario runs
 
-Baseline scenarios are in `hexapod-server/scenarios/`:
+Baseline scenarios in `hexapod-server/scenarios/`:
 
 - `01_nominal_stand_walk.toml`
 - `02_command_timeout_fallback.toml`
@@ -122,7 +107,7 @@ cmake --build build -j
 ./build/hexapod-server --scenario scenarios/01_nominal_stand_walk.toml
 ```
 
-Run all baseline scenarios in a loop:
+Run all scenarios:
 
 ```bash
 cd hexapod-server
@@ -133,9 +118,9 @@ for s in scenarios/*.toml; do
 done
 ```
 
-### 3) Run tests (including newly added tests)
+### 3) Run tests
 
-Tests are built only when `HEXAPOD_SERVER_BUILD_TESTS=ON` is enabled:
+Tests are built only when `HEXAPOD_SERVER_BUILD_TESTS=ON`:
 
 ```bash
 cd hexapod-server
@@ -144,7 +129,7 @@ cmake --build build-tests -j
 ctest --test-dir build-tests --output-on-failure
 ```
 
-To run one new test binary directly:
+Run one test binary directly:
 
 ```bash
 ./build-tests/test_robot_runtime_loop
@@ -152,28 +137,19 @@ To run one new test binary directly:
 
 ### 4) Log markers for pass/fail interpretation
 
-When reading console/app logs for scenario runs:
+Healthy run indicators:
 
-- **Healthy run indicators**
-  - `Runtime.Mode=sim`
-  - `Running scenario: <name>`
-  - repeated `Scenario event @<N>ms mode update` entries (for scenarios with mode events)
-  - process exits with status `0`
-- **Failure indicators**
-  - `Failed to load scenario file '<path>'`
-  - `Scenario driver requires sim runtime (SimHardwareBridge)`
-  - any `LOG_ERROR(...)` line during scenario execution
-  - non-zero process exit status
+- `Runtime.Mode=sim`
+- `Running scenario: <name>`
+- expected scenario event logs
+- process exits with status `0`
 
-For unit tests, failures print `FAIL: <message>` and return non-zero.
+Failure indicators:
 
-### Troubleshooting (offline mode)
-
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| `Scenario driver requires sim runtime (SimHardwareBridge)` | `Runtime.Mode` is still `serial` | Set `Runtime.Mode = "sim"` in active config, then rerun. |
-| `Failed to load scenario file '...'` | Wrong/missing scenario path or invalid TOML | Confirm file path from `hexapod-server/` and validate scenario TOML syntax/keys. |
-| Scenario assertions are flaky due to timing | Test assumes exact wall-clock timing under CPU load | Prefer pass/fail checks based on mode/fault transitions and log markers, not exact timestamps. |
+- `Failed to load scenario file '<path>'`
+- `Scenario driver requires sim runtime (SimHardwareBridge)`
+- `LOG_ERROR(...)` entries during execution
+- non-zero process exit status
 
 ## Configuration (`config.txt`)
 
@@ -182,8 +158,8 @@ Expected TOML fields:
 - `title = "Hexapod Config File"`
 - `Schema = "hexapod.server.config"`
 - `SchemaVersion = 1`
-- `SerialDevice` (example: `/dev/ttyACM0`)
-- `BaudRate` (example: `115200`)
+- `SerialDevice` (for example `/dev/ttyACM0`)
+- `BaudRate` (for example `115200`)
 - `Timeout_ms`
 - `MotorCalibrations` with exactly 18 entries:
   - format: `["<JointID>", <min_pulse>, <max_pulse>]`
@@ -199,13 +175,13 @@ Per control step, `ControlPipeline` performs:
 3. `LegIK::solve(...)`
 4. control status synthesis (`ControlStatus`)
 
-`SafetySupervisor` runs independently in the safety loop. Cross-loop data exchange uses `DoubleBuffer<T>`.
+`SafetySupervisor` runs independently in the safety loop. Cross-loop exchange uses `DoubleBuffer<T>`.
 
 ## Protocol bridge notes
 
 - Shared wire constants: `../hexapod-common/include/hexapod-common.hpp`.
 - `SimpleHardwareBridge::write()` sends `SET_JOINT_TARGETS` and expects `ACK`.
-- `SimpleHardwareBridge::read()` requests `GET_FULL_HARDWARE_STATE` and decodes joint targets, contacts, voltage, and current.
+- `SimpleHardwareBridge::read()` requests `GET_FULL_HARDWARE_STATE` and decodes joints, contacts, voltage, and current.
 
 ## Troubleshooting
 
@@ -215,6 +191,6 @@ Per control step, `ControlPipeline` performs:
 
 ## Safety checklist
 
-- Keep the robot mechanically unloaded during initial bring-up after calibration edits.
+- Keep robot mechanically unloaded during initial bring-up after calibration edits.
 - Validate E-stop path and relay defaults before enabling walking gaits.
 - Start with low-amplitude commands when testing new hardware changes.

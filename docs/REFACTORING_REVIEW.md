@@ -1,110 +1,119 @@
 # Refactoring Plan (Detailed)
 
-## 1) Control/Safety Testability Refactor
+## 1) Control/Safety testability refactor
 
 ### Goal
 Create deterministic, host-only tests for safety and control policy without requiring hardware.
 
 ### Current pain points
-- Safety behavior is stateful and timing-dependent.
-- No explicit seams for time injection in supervisor logic.
+
+- Safety behavior is stateful and timing dependent.
+- Time injection seams are limited in supervisor logic.
 
 ### Proposed changes
+
 1. Inject a clock provider interface into safety and control modules.
 2. Add pure decision helpers for fault evaluation and lifecycle transitions.
-3. Build table-driven tests for all fault precedence and recovery pathways.
+3. Build table-driven tests for fault precedence and recovery pathways.
 
 ### Acceptance criteria
-- `SafetySupervisor` test suite covers all `FaultCode` branches.
-- Recovery timer behavior is tested with deterministic synthetic timestamps.
-- CI can run tests without serial/hardware dependencies.
+
+- `SafetySupervisor` tests cover all `FaultCode` branches.
+- Recovery timers are validated using deterministic timestamps.
+- Tests run in CI without serial or hardware dependencies.
 
 ---
 
-## 2) Serial Protocol Call-Site Consolidation
+## 2) Serial protocol call-site consolidation
 
 ### Goal
-Reduce repetitive command boilerplate in `SimpleHardwareBridge` and improve consistency.
+Reduce repetitive command boilerplate in `SimpleHardwareBridge` and enforce consistent error handling.
 
 ### Current pain points
-- Repeated command-send + ack + decode patterns.
-- Per-command logging and failure handling diverges.
+
+- Repeated send + wait + decode patterns across commands.
+- Per-command logging and failure paths diverge.
 
 ### Proposed changes
-1. Add generic helper functions inside bridge layer:
-   - `bool requestAck(uint8_t cmd, span<const uint8_t> payload)`
-   - `template <typename T> bool requestDecoded(uint8_t cmd, Decoder<T>, T& out)`
-2. Convert existing command methods to use helpers.
-3. Centralize error mapping for NACK/status mismatches.
+
+1. Keep generic bridge helpers (`request_ack`, `request_ack_payload`, `request_decoded`) as the single path.
+2. Migrate remaining direct command logic to those helpers.
+3. Centralize NACK/timeout/status error mapping.
 
 ### Acceptance criteria
-- At least 40% reduction in repetitive command code in `hardware_bridge.cpp`.
-- Uniform error messages include command name and sequence context.
+
+- Significant reduction in duplicated command code in `hardware_bridge.cpp`.
+- Uniform failures include command name and sequence context.
 
 ### Implementation notes (2026-03-20)
-- Added `SimpleHardwareBridge` helpers:
-  - `request_ack(...)`
-  - `request_ack_payload(...)`
-  - `request_decoded(...)`
-- Migrated command call sites (`read`, `write`, `get_*`, servo commands, and diagnostics)
-  to use the shared helpers.
-- Consolidated command failure/decode logging so failures now consistently include the
-  command name and expected response type.
+
+- Added `SimpleHardwareBridge` helper primitives for ACK-only, ACK+payload, and typed decode flows.
+- Migrated command call sites (`read`, `write`, scalar sensors, servo commands, diagnostics).
+- Consolidated decode/error logging with consistent command-context formatting.
 
 ---
 
-## 3) Data Type Unification for Joint/Leg State
+## 3) Data type unification for joint/leg state
 
 ### Goal
-Cut duplicate conversion logic and enforce stronger invariants for state transformations.
+Reduce duplicate conversion logic and enforce stronger invariants for state transformations.
 
 ### Current pain points
-- Similar structs (`LegRawState`, `LegState`) and parallel conversion functions increase maintenance cost.
+
+- Similar structs (`LegRawState`, `LegState`) and parallel conversions increase maintenance cost.
 
 ### Proposed changes
-1. Introduce shared joint-array primitive (e.g., `JointArray<T, kJointsPerLeg>`).
-2. Create named wrappers for semantic contexts (raw servo, kinematic, estimated).
+
+1. Introduce a shared joint-array primitive (for example `JointArray<T, kJointsPerLeg>`).
+2. Use named wrappers for semantic contexts (raw servo, kinematic, estimated).
 3. Replace duplicated calibration conversion functions with one generic implementation.
 
 ### Acceptance criteria
-- Conversion functions in `types.cpp` reduced to one implementation per direction.
-- No behavior regression in existing integration behavior (validated by sim/unit tests).
+
+- `types.cpp` conversion logic is reduced to one implementation per direction.
+- No behavior regression in integration/simulation results.
 
 ---
 
-## 4) Loop Timing Instrumentation
+## 4) Loop timing instrumentation
 
 ### Goal
-Make real-time loop behavior observable and diagnosable.
+Make runtime loop behavior observable and diagnosable.
 
 ### Current pain points
-- No overrun/jitter counters per loop task.
+
+- No comprehensive overrun/jitter counters by loop.
 
 ### Proposed changes
-1. Extend `LoopExecutor::Task` with task name.
-2. Track execution duration and overrun count in a thread-safe metrics store.
-3. Emit periodic diagnostics summary (bus/estimator/control/safety/diagnostics loops).
+
+1. Extend `LoopExecutor::Task` with stable task naming.
+2. Track execution duration and overrun counts in thread-safe metrics.
+3. Emit periodic diagnostics summary for all loops.
 
 ### Acceptance criteria
-- Runtime log includes per-loop rate, average runtime, and overrun count.
-- Control regressions can be identified from logs alone.
+
+- Runtime logs include loop rate, average runtime, and overrun count.
+- Control regressions are diagnosable from logs without hardware traces.
 
 ---
 
-## 5) Config Parser Hardening
+## 5) Config parser hardening
 
 ### Goal
 Improve parser maintainability and schema evolution readiness.
 
 ### Current pain points
+
 - String-key lookups are repetitive and easy to drift.
-- Partial warnings/errors are spread across several helper lambdas.
+- Validation diagnostics are split across helper lambdas.
 
 ### Proposed changes
+
 1. Add typed extraction utilities with consistent diagnostics.
 2. Move expected key descriptors into a static schema map.
-3. Add config validation report object (errors + warnings) returned to caller.
+3. Return a config validation report object (errors + warnings).
 
 ### Acceptance criteria
-- Single-pass validation output summarizes all invalid keys and ranges.
-- Parser behavior is covered by fixture-based tests (valid + invalid configs).
+
+- Single-pass validation summarizes all invalid keys/ranges.
+- Parser behavior is covered by fixture-based tests for valid + invalid configs.

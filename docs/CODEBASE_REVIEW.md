@@ -4,136 +4,130 @@
 
 This review covers:
 
-- `hexapod-server/` host control runtime (threading, control loop orchestration, safety, serial bridge)
+- `hexapod-server/` host control runtime (threading, control-loop orchestration, safety, serial bridge)
 - `hexapod-client/` RP2040 firmware command loop and transport
 - `hexapod-common/` framing/protocol contracts
-- Documentation and repository hygiene gaps that impact maintainability
+- repository documentation and maintainability gaps
 
-## Executive Summary
+## Executive summary
 
-The project has a strong architectural skeleton (clear host/firmware/common split, explicit control loop periods, protocol framing reuse), but maintainability and correctness risks concentrate in three areas:
+The codebase has a strong architectural foundation (clear host/firmware/common split and reusable framing), but maintainability and correctness risks still cluster in a few areas:
 
-1. **Safety/control semantics are clear but under-tested**: core behavior is encoded in code paths without automated regression tests.
-2. **Protocol handling is mostly robust but repetitive**: duplicated ACK/NACK, sequence, payload-validation, and command routing logic can drift over time.
-3. **Configuration and observability are functional but brittle**: globals and stringly-typed config fields increase hidden coupling.
+1. **Safety/control semantics are clear but under-tested.**
+2. **Protocol handling is robust but repetitive across call sites.**
+3. **Configuration and observability are functional but still brittle.**
 
-## What Is Working Well
+## What is working well
 
 ### 1) Clear modular boundaries
 
-- The monorepo cleanly separates host runtime, firmware, and shared protocol assets.
-- The server’s runtime loop decomposition (`bus`, `estimator`, `control`, `safety`, `diagnostics`) is explicit and easy to reason about.
+- Runtime responsibilities are cleanly separated across host, firmware, and shared protocol modules.
+- Server loop decomposition (`bus`, `estimator`, `control`, `safety`, `diagnostics`) is explicit.
 
-### 2) Strong protocol lifecycle shape
+### 2) Strong protocol lifecycle
 
-- Handshake and heartbeat are modeled as first-class behavior in the server transport stack.
-- Firmware enforces explicit state transitions (`WAITING_FOR_HOST` → `ACTIVE`) and host-liveness timeout fallback.
+- Handshake and heartbeat are first-class behavior in host transport.
+- Firmware enforces lifecycle transitions (`WAITING_FOR_HOST` → `ACTIVE`) and host-liveness timeout handling.
 
 ### 3) Safety-first defaults
 
-- Safety supervisor latches faults and uses recovery hold semantics.
-- Firmware host-disconnect path actively disables servos and power relay GPIO mask.
+- Safety supervisor latches faults and enforces recovery hold semantics.
+- Firmware disconnect handling disables servos and drops relay outputs.
 
-## Key Risks and Refactoring Opportunities
+## Key risks and refactoring opportunities
 
-## A. Data model duplication and weak invariants
+### A. Data model duplication and weak invariants
 
-### Findings
+**Findings**
 
-- Domain types for joint and leg state are split across `JointRawState`, `JointState`, `LegRawState`, `LegState`, and `JointTargets`, with partial overlap and repetitive conversion code paths.
-- `ServoCalibration` contains near-duplicate transform logic for both `LegRawState` and `LegState`.
-- The same semantic entity (angle) is represented in both strongly typed wrappers and plain `double/float` payload paths.
+- Overlapping domain types (`JointRawState`, `JointState`, `LegRawState`, `LegState`, `JointTargets`) duplicate semantics.
+- Calibration transforms are repeated for structurally similar state containers.
+- The same conceptual quantity (joint angle) appears in both wrapped and primitive forms.
 
-### Impact
+**Impact**
 
-- Increased bug surface when modifying kinematics or calibration logic.
-- Harder unit-test coverage due to repeated implementations.
+- Higher change risk when evolving kinematics/calibration code.
+- Harder to build concise unit tests for transformation behavior.
 
-### Refactoring Opportunity
+**Opportunity**
 
-- Introduce a single internal representation for kinematics-space and transport-space leg state, with thin adapters at boundaries.
-- Collapse calibration transforms to a templated helper (or compile-time indexed utility) that maps joint arrays once.
+- Use a unified internal representation for kinematic-space and transport-space leg state.
+- Keep thin adapters at boundaries instead of duplicating conversion logic.
 
-## B. Runtime concurrency model is simple but coarse-grained
+### B. Runtime concurrency is simple but coarse-grained
 
-### Findings
+**Findings**
 
-- `DoubleBuffer<T>` uses one mutex and value copy on every read/write.
-- `RobotRuntime::busStep()` reads/writes hardware state and command state with no explicit time synchronization marker beyond per-struct timestamps.
-- `LoopExecutor` runs independent periodic threads without overrun accounting or jitter statistics.
+- `DoubleBuffer<T>` currently uses one mutex and copies on each read/write.
+- Cross-loop synchronization relies mostly on timestamps inside data structures.
+- Loop threads lack consolidated overrun/jitter reporting.
 
-### Impact
+**Impact**
 
-- Potential timing drift goes unobserved.
-- High-copy data movement can become costly as telemetry grows.
+- Timing drift can go undetected in long runs.
+- Copy overhead can grow with telemetry payload size.
 
-### Refactoring Opportunity
+**Opportunity**
 
-- Upgrade `DoubleBuffer` to support lock-free index swap for trivially copyable payloads or use a reader/writer strategy.
-- Add per-loop timing metrics (last duration, moving average, overrun count) and emit in diagnostics.
-- Introduce a monotonic sequence counter per produced frame (`raw`, `estimated`, `control`) to track staleness explicitly.
+- Add lock-free index swap (where safe) or reader/writer strategies.
+- Emit per-loop runtime metrics (last duration, moving average, overrun count).
+- Add monotonic frame sequence counters to track staleness.
 
-## C. Serial bridge and command handling repetition
+### C. Serial bridge and dispatch repetition
 
-### Findings
+**Findings**
 
-- Server bridge contains repeated send/wait/decode patterns (`get_current`, `get_voltage`, `get_sensor`, etc.).
-- Firmware dispatch table is clean, but routing wrappers and payload policies are manually managed, increasing maintenance load as protocol grows.
-- Error logging text has minor inconsistencies/typos (e.g., “recieved”, “initialised”), signaling lack of lint/static checks.
+- Host bridge has repeated send/wait/decode logic for scalar and sensor queries.
+- Firmware dispatch is organized but still manually managed per command.
+- Error wording is inconsistent in some log paths.
 
-### Impact
+**Impact**
 
-- Higher risk of inconsistent behavior across commands.
-- Harder onboarding for adding new command IDs safely.
+- Inconsistent behavior is more likely as command surface area grows.
+- Onboarding new command IDs remains higher effort than needed.
 
-### Refactoring Opportunity
+**Opportunity**
 
-- Introduce generic request helpers:
-  - `request_ack(cmd, payload)`
-  - `request_decode<T>(cmd, payload, decoder)`
-- Move command metadata (ID, payload policy, handler, capabilities) to a shared declarative table and generate router glue where possible.
-- Add spellcheck/lint pass for log/user-facing messages.
+- Continue consolidating request helpers (`request_ack`, `request_decode<T>` style APIs).
+- Move command metadata toward declarative tables for routing and payload validation.
+- Add lightweight linting/spellcheck for logs and docs.
 
-## D. Safety and control logic need explicit test harnesses
+### D. Safety and control need stronger automated validation
 
-### Findings
+**Findings**
 
-- Safety decision matrix (bus timeout, motor bounds, foot contacts, tip-over, command staleness) is implemented in `SafetySupervisor` with no visible automated tests.
-- Gait/body controller files contain TODO markers for key motion policy behavior.
+- Safety decision logic is sophisticated but only partially regression-tested.
+- Control/gait modules still contain policy TODOs.
 
-### Impact
+**Impact**
 
-- Regressions in high-risk safety behavior may only appear in hardware-in-loop testing.
+- High-risk regressions may appear only in hardware-in-loop runs.
 
-### Refactoring Opportunity
+**Opportunity**
 
-- Add host-side deterministic tests for:
-  - fault priority ordering,
-  - latch/recovery lifecycle,
-  - command timeout behavior,
-  - safe-idle inhibit and torque-cut transitions.
-- Add property-style tests for IK/FK sanity envelopes (reachable workspace bounds, inversion consistency).
+- Expand deterministic host-side tests for fault precedence and latch/recovery behavior.
+- Add IK/FK property-style checks for workspace and inversion consistency.
 
-## E. Configuration and docs alignment gaps
+### E. Config/doc alignment and schema evolution
 
-### Findings
+**Findings**
 
-- Root `README.md` references planning docs that were not present before this review update.
-- Config parsing currently depends on precise key spelling and nested dotted keys, but schema evolution tooling is minimal.
+- Config parser behavior depends on exact key spelling and nested key conventions.
+- Schema migration/error reporting patterns are still minimal.
 
-### Impact
+**Impact**
 
-- Documentation drift and config fragility during iterative development.
+- Config drift can cause runtime surprises during iterative development.
 
-### Refactoring Opportunity
+**Opportunity**
 
-- Establish configuration schema evolution guide (versioned migration rules).
-- Validate key presence with grouped “required/optional/deprecated” reporting in a single parser pass.
+- Introduce schema descriptors and grouped required/optional/deprecated reporting.
+- Keep docs synchronized with runtime schema changes in the same PR.
 
-## Suggested Priority Order
+## Suggested priority order
 
-1. **Safety test harness + deterministic unit tests** (highest risk reduction).
-2. **Serial command helper abstraction** (largest repetitive code reduction).
-3. **Loop observability instrumentation** (enables performance tuning and fault triage).
-4. **Type model consolidation for leg/joint/calibration transforms** (long-term maintainability).
-5. **Config/documentation hardening** (developer experience and onboarding).
+1. **Safety test harness expansion** (highest risk reduction)
+2. **Protocol helper abstraction completion** (largest repetitive code reduction)
+3. **Loop observability instrumentation** (supports performance triage)
+4. **Type model consolidation for state/calibration paths** (maintainability)
+5. **Config schema/documentation hardening** (developer experience)

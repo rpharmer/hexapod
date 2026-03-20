@@ -1,44 +1,49 @@
 # Next Steps Roadmap
 
+Roadmap for executing the review recommendations in manageable phases.
+
 ## Phase 0 (Immediate: 1–2 days)
 
-1. **Establish review baseline in version control**
-   - Keep this review and roadmap in-repo.
+1. **Lock in documentation baseline**
+   - Keep review, refactor plan, and roadmap versioned in-repo.
 2. **Add lightweight code-quality guardrails**
-   - Enable `-Wall -Wextra -Wconversion` for host build where feasible.
-   - Add formatting/lint command to contributor workflow.
+   - Enable `-Wall -Wextra -Wconversion` where practical (especially host build).
+   - Add a formatting/lint command to contributor workflow.
 3. **Fix low-risk hygiene issues**
-   - Correct logging typos and normalize terminology (`received`, `initialized`).
+   - Normalize log terminology and typo cleanup (`received`, `initialized`, etc.).
 
 ## Phase 1 (Short term: 1–2 weeks)
 
-1. **Safety regression test harness**
-   - Table-driven test cases for fault ordering and recovery hold behavior.
+1. **Safety regression harness**
+   - Table-driven tests for fault ordering, latching, and recovery hold behavior.
 2. **Protocol call-site deduplication**
-   - Introduce bridge helper APIs and migrate scalar/sensor/calibration commands.
+   - Continue migrating bridge command handlers to shared request/decode helpers.
 3. **Loop diagnostics MVP**
-   - Track loop execution time and overruns; print summary every diagnostics period.
+   - Capture loop execution timing and overrun counters.
 
 ## Phase 2 (Medium term: 2–4 weeks)
 
-1. **Type model refactor for leg/joint state**
-   - Unify raw vs processed joint containers and conversion logic.
+1. **Joint/leg type model refactor**
+   - Unify raw vs processed containers and reduce duplicate conversion code.
 2. **Config parser hardening**
-   - Create schema descriptors and test fixtures for valid/invalid examples.
+   - Define schema descriptors and test fixtures for valid/invalid configs.
 3. **Control/gait TODO burn-down**
-   - Implement and test stance/swing foot placement policy and fallback speed estimator.
+   - Implement and validate stance/swing policy and conservative fallback behavior.
 
 ## Phase 3 (Longer term: 1–2 months)
 
-1. **Simulation-first validation path**
-   - Add a host-side simulated hardware bridge to validate control and safety behavior without robot hardware.
+1. **Simulation-first validation flow**
+   - Expand simulated hardware coverage for control/safety regression testing.
 2. **Protocol compatibility strategy**
-   - Add explicit protocol feature flags/capabilities negotiation in handshake.
+   - Add explicit feature/capability negotiation patterns in handshake.
 3. **Operational readiness improvements**
-   - Add structured status snapshots (JSON or compact binary log) for post-run analysis.
+   - Emit structured status snapshots (JSON or compact binary) for post-run analysis.
 
 ## Suggested ownership split
 
-- **Runtime/Safety owner**: safety supervisor tests, loop metrics, command timeout policy.
-- **Protocol/Comms owner**: bridge helper APIs, ACK/NACK consistency, firmware route metadata.
-- **Config/DevEx owner**: parser schema utilities, contributor tooling, docs synchronization.
+- **Runtime/Safety owner**
+  - Safety tests, loop metrics, timeout policy.
+- **Protocol/Comms owner**
+  - ACK/NACK consistency, command metadata, bridge helper APIs.
+- **Config/DevEx owner**
+  - Parser schema evolution, tooling, and docs synchronization.
