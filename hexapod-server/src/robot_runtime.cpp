@@ -44,10 +44,6 @@ bool RobotRuntime::init() {
     control_dt_sum_us_.store(0);
     control_jitter_max_us_.store(0);
     stale_intent_count_.store(0);
-    stale_estimator_count_.store(0);
-    raw_sample_id_.store(0);
-    estimator_sample_id_.store(0);
-    intent_sample_id_.store(1);
     last_control_step_us_ = TimePointUs{};
 
     return true;
@@ -90,10 +86,8 @@ void RobotRuntime::controlStep() {
     }
     last_control_step_us_ = now;
 
-    const StreamSample<EstimatedState> est_sample = estimated_state_.read();
-    const StreamSample<MotionIntent> intent_sample = motion_intent_.read();
-    const EstimatedState est = est_sample.value;
-    const MotionIntent intent = intent_sample.value;
+    const EstimatedState est = estimated_state_.read();
+    const MotionIntent intent = motion_intent_.read();
     const SafetyState safety_state = safety_state_.read();
     const bool bus_ok = raw_state_.read().value.bus_ok;
 
@@ -121,6 +115,10 @@ void RobotRuntime::controlStep() {
         status_.write(status);
         joint_targets_.write(JointTargets{});
         return;
+    }
+
+    if (!intent.timestamp_us.isZero() && ((now - intent.timestamp_us) > config_.safety.command_timeout_us)) {
+        stale_intent_count_.fetch_add(1);
     }
 
     const PipelineStepResult result = pipeline_.runStep(
@@ -158,9 +156,7 @@ void RobotRuntime::diagnosticsStep() {
                  " max_control_jitter_us=",
                  control_jitter_max_us_.load(),
                  " stale_intent_events=",
-                 stale_intent_count_.load(),
-                 " stale_estimator_events=",
-                 stale_estimator_count_.load());
+                 stale_intent_count_.load());
     }
 }
 

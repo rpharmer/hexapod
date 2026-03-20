@@ -24,9 +24,6 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.safety.max_foot_contacts = config.maxFootContacts;
 
     parsed.gait.fallback_speed_mag = LinearRateMps{config.fallbackSpeedMag};
-    parsed.freshness.max_estimator_age_us = DurationUs{
-        static_cast<uint64_t>(std::max(config.estimatorLoopPeriodUs * 2, 1000))};
-    parsed.freshness.max_intent_age_us = DurationUs{config.commandTimeoutUs};
     return parsed;
 }
 

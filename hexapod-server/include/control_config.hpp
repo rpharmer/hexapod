@@ -47,16 +47,10 @@ struct GaitConfig {
     LinearRateMps fallback_speed_mag{kDefaultFallbackSpeedMag};
 };
 
-struct FreshnessConfig {
-    DurationUs max_estimator_age_us{DurationUs{static_cast<uint64_t>(kDefaultEstimatorLoopPeriodUs * 2)}};
-    DurationUs max_intent_age_us{kDefaultCommandTimeoutUs};
-};
-
 struct ControlConfig {
     LoopTimingConfig loop_timing{};
     SafetyConfig safety{};
     GaitConfig gait{};
-    FreshnessConfig freshness{};
 };
 
 ControlConfig fromParsedToml(const ParsedToml& config);
