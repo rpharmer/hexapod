@@ -1,223 +1,195 @@
 # Codebase Review (2026-03-20)
 
-## Scope and approach
+## Scope
 
-This review covers architecture, code quality, runtime safety, testability, and maintainability across:
+This review covers architecture, runtime behavior, test/build health, and maintainability for:
 
 - `hexapod-server/`
 - `hexapod-client/`
 - `hexapod-common/`
 
-I built the server target and ran CTest discovery to verify baseline build health and test wiring.
+I did a static review of core modules and ran a server build to validate baseline health.
 
 ## Executive summary
 
-The codebase is in a **good functional shape** with clear subsystem boundaries (transport, runtime loop, estimator, safety, control pipeline) and a practical simulation path (`SimHardwareBridge`) that reduces hardware coupling risk.
+The monorepo has a **solid architectural direction** (clear split between host, firmware, and shared protocol), but current branch health is **red** due to an incomplete refactor in `RobotRuntime` that breaks compilation.
 
-The biggest improvement opportunities are:
+### Overall assessment
 
-1. **Configuration and state ownership**: mutable global config values are runtime-singleton style and not strongly scoped.
-2. **Threaded loop scheduling and freshness semantics**: periodic loops are independent but there is no explicit data age/sequence contract between producers and consumers.
-3. **Protocol + command handling duplication**: both host and firmware include repeated handshake/ACK/NACK and command routing logic that should be normalized.
-4. **Testing ergonomics**: tests exist but are not built unless a specific CMake option is enabled, and default workflows currently discover zero tests.
-5. **Observability**: good logging exists, but there are no exported metrics/traces for loop jitter, stale intent rates, or command latency distributions.
+- **Architecture:** Good boundaries and sensible module decomposition.
+- **Operational risk:** Medium-high until compile break and temporal-contract gaps are resolved.
+- **Test confidence:** Medium-low because default configuration does not build tests.
+- **Refactoring readiness:** High (code is already modular enough for incremental hardening).
+
+---
 
 ## What is working well
 
-### 1) Clear layered control path on server
+### 1) Clean host/firmware/common separation
 
-The server flow (`RobotControl` -> `RobotRuntime` -> `ControlPipeline`) is straightforward and easy to reason about. The separation between bus, estimator, control, safety, and diagnostics steps is clean and sets up future scheduler changes well.
+The monorepo layout and protocol sharing are well structured, with the host runtime (`hexapod-server`), firmware command plane (`hexapod-client`), and framing/protocol constants (`hexapod-common`) separated in a maintainable way.
 
-### 2) Practical safety foundation
+### 2) Runtime modules are conceptually well-factored
 
-`SafetySupervisor` already centralizes fault ranking, latching, and controlled recovery hold-time behavior, including stale-intent protection and bus/power checks.
+The server control stack separates orchestration (`RobotControl`), runtime stage execution (`RobotRuntime`), loop scheduling (`LoopExecutor`), control-policy (`ControlPipeline`), and fault handling (`SafetySupervisor`). This is a strong base for deterministic improvements.
 
-### 3) Useful simulation hooks
+### 3) Firmware command routing is table-driven
 
-`ScenarioDriver` + `SimHardwareBridge` provide a valuable integration harness for non-hardware testing and fault injection.
+The firmware dispatcher uses a command route table with payload policies and handler indirection, which is a good pattern for extending protocol coverage with lower regression risk.
 
-### 4) Shared protocol codec discipline
+### 4) Scenario support improves offline validation
 
-`hexapod-common` and `protocol_codec.hpp` style usage give a good base for interface consistency across host and firmware.
+Scenario loading and simulated fault toggles are practical and useful for non-hardware validation workflows.
 
-## Refactoring opportunities (prioritized)
+---
 
-## P0 (high impact)
+## Critical findings (high priority)
 
-### A) Replace mutable global runtime config with explicit injected config
+## F1 — Build is currently broken in `hexapod-server`
 
-**Current pattern**
+A direct configure/build run fails in `robot_runtime.cpp` and `scenario_driver.cpp`.
 
-`control_config` stores mutable globals (`kBusLoopPeriod`, `kCommandTimeoutUs`, etc.) and mutates them through `loadFromParsedToml`. This tightly couples runtime behavior to global process state.
+### Evidence
 
-**Problems**
+`cmake -S hexapod-server -B hexapod-server/build && cmake --build hexapod-server/build -j` fails with:
 
-- Harder test isolation (tests can leak config mutations across cases).
-- Harder future multi-robot/multi-instance support in one process.
-- Hidden dependency graph (functions depend on global config but signatures do not show it).
+- missing members: `intent_sample_id_`, `raw_sample_id_`, `estimator_sample_id_`, `stale_estimator_count_`
+- use of `config_.freshness` even though `ControlConfig` has no `freshness`
+- type mismatches where `DoubleBuffer<T>` holds `T` but code reads `StreamSample<T>`
+- undefined identifiers `est_sample` / `intent_sample`
+- unused function warning escalated to error (`buildMotionIntent` in `scenario_driver.cpp`)
 
-**Refactor direction**
+### Root cause (inference)
 
-- Introduce immutable `ControlConfig` + `SafetyConfig` value objects.
-- Parse TOML directly into those objects.
-- Inject config into `RobotControl` / `RobotRuntime` / `SafetySupervisor` / loop scheduler at construction.
+`RobotRuntime` appears partially migrated to stream-sampled freshness semantics, but header/state declarations and config schema were not completed. The resulting hybrid state cannot compile.
 
-**Expected outcome**
+### Recommendation
 
-- Better determinism and testability.
-- Cleaner dependency boundaries and easier simulation matrix testing.
+Reconcile `RobotRuntime` and `ControlConfig` in one atomic change:
 
-### B) Add explicit freshness/sequence contracts between runtime stages
+1. Either revert to plain `T` buffers immediately (short-term stabilization), or
+2. Complete migration to `StreamSample<T>` buffers + freshness config fields + counters.
 
-**Current pattern**
+Do not keep mixed semantics in tree.
 
-`DoubleBuffer<T>` provides lock-based latest-value exchange, but stages (`busStep`, `estimatorStep`, `controlStep`, `safetyStep`) run in independent periodic threads without a sequence-id or per-stage age policy.
+## F2 — Temporal contracts are under-specified even before the failed refactor
 
-**Problems**
+`LoopExecutor` runs bus/estimator/control/safety/diagnostics loops as independent periodic threads. Without explicit stage sequence/epoch contracts, control can consume mixed-age data.
 
-- Control step can consume mixed-epoch data (e.g., newest intent + older estimated state).
-- Hard to detect stale producer failure except by heuristic checks in safety.
+### Risk
 
-**Refactor direction**
+- Harder causality during fault triage.
+- Stale input handling becomes heuristic rather than deterministic.
 
-- Extend shared state with monotonically increasing `sample_id` and `timestamp_us` per stream.
-- Add `FreshnessPolicy` checks in control step (e.g., max estimator age, max intent age).
-- Optionally migrate to single tick coordinator (deterministic pipeline) while keeping bus I/O async.
+### Recommendation
 
-**Expected outcome**
+Introduce explicit sample metadata and freshness policies (or move to a single coordinator tick with async I/O isolation).
 
-- Stronger temporal correctness and simpler fault diagnosis.
+## F3 — Tests are opt-in, easy to skip unintentionally
 
-### C) Normalize command/ACK/NACK transport semantics into a shared transaction layer
+`HEXAPOD_SERVER_BUILD_TESTS` defaults to `OFF`, so standard build instructions can pass while running zero tests.
 
-**Current pattern**
+### Risk
 
-`hardware_bridge.cpp` has duplicated response validation logic (handshake, heartbeat, generic command ACK parsing). Firmware side command routing also repeats payload checks and ACK/NACK scaffolding.
+Merge-time confidence is weaker than it appears.
 
-**Problems**
+### Recommendation
 
-- Duplicate protocol edge-case handling.
-- Risk of drift in error responses across commands.
+Provide a default test-enabled preset/CI lane and make it the documented path.
 
-**Refactor direction**
+---
 
-- Extract reusable host-side `PacketTransaction` helper with uniform timeout/retry/seq validation.
-- Add firmware command descriptor table with shared payload validators and common respond helpers.
-- Define command-specific error enums mapped to protocol NACK codes in one place.
+## Medium-priority maintainability findings
 
-**Expected outcome**
+## F4 — Transport transactions are still fragmented
 
-- Smaller defect surface in serial protocol handling.
-- Easier expansion of command set.
+`hardware_bridge.cpp` centralizes some ACK/NACK handling with `TransportSession`/`CommandClient`, but command-specific behaviors remain scattered and error-mapping is still ad-hoc.
 
-## P1 (medium impact)
+### Recommendation
 
-### D) Improve test defaults and CI predictability
+Define a single transaction/result model for host command execution with:
 
-**Current pattern**
+- standardized timeout/retry policy,
+- canonical protocol error mapping,
+- structured telemetry fields (cmd, seq, latency, outcome).
 
-CMake only builds tests when `HEXAPOD_SERVER_BUILD_TESTS=ON`; default workflows discover no tests.
+## F5 — Firmware state is still globally singleton-scoped
 
-**Problems**
+`firmware_context.cpp` exposes global mutable state through `firmware()`.
 
-- Easy to assume tests ran when they did not.
-- Reduces confidence in merge-time checks.
+### Risk
 
-**Refactor direction**
+- Reduced command-handler testability.
+- Hidden dependencies in command functions.
 
-- Add CI profile/build preset with tests enabled by default.
-- Update README server instructions with explicit test build command.
-- Add `ctest` smoke target in CI.
+### Recommendation
 
-### E) Strengthen scenario validation and schema
+Pass `FirmwareContext&` through handler surfaces and keep singleton usage only at boot/wiring boundary.
 
-**Current pattern**
+## F6 — Scenario parser is permissive in ways that can hide authoring mistakes
 
-Scenario parsing is permissive; invalid modes/gaits generally fall back to defaults.
+Scenario parsing validates key enums, but still defaults many fields silently. This is practical but can conceal malformed inputs in larger test matrices.
 
-**Problems**
+### Recommendation
 
-- Silent fallback can hide scenario authoring mistakes.
+Add strict mode / linter mode for scenario schema validation and unknown-key detection.
 
-**Refactor direction**
+---
 
-- Add strict schema validation with explicit errors on unknown enums.
-- Add scenario lint command (offline check).
+## Refactoring opportunities (ordered backlog)
 
-### F) Consolidate duplicated motion-intent builders
+### P0 (stabilization)
 
-Both `hexapod-server.cpp` and `scenario_driver.cpp` define similar motion intent construction helpers.
+1. **Fix compile break in `RobotRuntime` migration** (F1).
+2. **Define canonical runtime freshness contract** (F2).
+3. **Enable test-on-by-default profile in docs + CI** (F3).
 
-**Refactor direction**
+### P1 (reliability)
 
-- Move intent-building helpers into a shared utility in server core.
+4. **Unify host transaction outcomes and error taxonomy** (F4).
+5. **Add structured runtime metrics (loop jitter, freshness violations, transport RTT)**.
+6. **Add scenario strict-validation path and tests** (F6).
 
-## P2 (incremental polish)
+### P2 (design hardening)
 
-### G) Improve firmware state ownership and test seams
+7. **De-singleton firmware command surfaces** (F5).
+8. **Consolidate intent-building and remove dead helper paths**.
+9. **Add static analysis/lint gates for unused functions and naming consistency**.
 
-**Current pattern**
+---
 
-Firmware uses a process-wide singleton `FirmwareContext` (`firmware()` global accessor).
+## Suggested KPIs
 
-**Problems**
+Track these as part of runtime hardening:
 
-- Hard to unit test command handlers without global state coupling.
+- Build health (main branch compile success rate).
+- Tests executed per CI run (count + pass rate).
+- Control-loop average and P99 jitter.
+- Freshness violations per minute (intent/estimator).
+- Transport command latency P50/P95/P99.
+- Fault trip counts by `FaultCode`, plus mean clear time.
 
-**Refactor direction**
+---
 
-- Introduce handler interfaces/functions parameterized by `FirmwareContext&`.
-- Keep singleton only at boot boundary.
+## Immediate next steps (recommended sequencing)
 
-### H) Naming and typo consistency pass
+1. **Emergency stabilization PR**
+   - Resolve `RobotRuntime` compile mismatch.
+   - Remove/guard dead helper triggering `-Werror` failure.
 
-There are recurring typo strings (`recieved`) and mixed naming styles.
+2. **Runtime contract PR**
+   - Add explicit freshness fields to config/types.
+   - Add unit tests for stale estimator/intent behavior.
 
-**Refactor direction**
+3. **Build/test workflow PR**
+   - Add test-enabled preset as standard.
+   - Update docs to lead with test build path.
 
-- Apply lint/static analysis plus low-risk consistency cleanup.
+4. **Transport and observability PR**
+   - Normalize command outcome model.
+   - Emit structured counters/histograms.
 
-## Recommended next steps (execution plan)
+5. **Firmware seam PR**
+   - Reduce singleton coupling in command handlers.
 
-### Next 2 weeks
-
-1. **Config injection epic (P0-A)**
-   - Add immutable config structs.
-   - Thread through constructors.
-   - Remove mutable globals from control/safety paths.
-
-2. **Testing workflow hardening (P1-D)**
-   - Add test-enabled build preset.
-   - Add CI `cmake --preset` + `ctest` lane.
-   - Document local commands in `hexapod-server/README.md`.
-
-3. **Protocol transaction helper (P0-C, part 1)**
-   - Host-side first: unify ACK/NACK parsing for all command paths.
-
-### 2–6 weeks
-
-4. **Freshness/epoch contracts (P0-B)**
-   - Add sample IDs and stale detection telemetry.
-   - Gate control output if inputs violate age policy.
-
-5. **Scenario strict validation (P1-E)**
-   - Define accepted schema, enforce unknown-key/enum failure.
-   - Add scenario unit tests for malformed files.
-
-6. **Firmware handler refactor seams (P2-G)**
-   - Dependency-inject context into command handlers.
-   - Keep behavior unchanged.
-
-## Suggested KPIs to track
-
-- Control loop deadline miss rate (%).
-- Mean/P99 control-loop jitter.
-- Intent staleness events per minute.
-- Command round-trip latency P50/P95/P99.
-- Fault trip counts by type and clear success rate.
-- Scenario run determinism (reproducible fault timelines in sim).
-
-## Validation run notes
-
-- Server builds cleanly with default options.
-- `ctest` currently discovers no tests unless test option is enabled.
+This order restores branch health first, then raises reliability and maintainability with minimal disruption.
