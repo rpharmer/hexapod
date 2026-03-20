@@ -20,23 +20,23 @@ constexpr DurationUs kHeartbeatIdleIntervalUs{150000};
 
 class TransportSession {
 public:
-    TransportSession(SerialCommsServer& serial,
+    TransportSession(IPacketEndpoint& endpoint,
                      DurationUs link_timeout,
                      DurationUs heartbeat_interval)
-        : serial_(serial), link_timeout_(link_timeout), heartbeat_interval_(heartbeat_interval) {}
+        : endpoint_(endpoint), link_timeout_(link_timeout), heartbeat_interval_(heartbeat_interval) {}
 
     uint16_t next_sequence() {
         return seq_++;
     }
 
     bool send(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload) {
-        serial_.send_packet(seq, cmd, payload);
+        endpoint_.send_packet(seq, cmd, payload);
         mark_transfer();
         return true;
     }
 
     bool recv(DecodedPacket& packet) {
-        if (!serial_.recv_packet(packet)) {
+        if (!endpoint_.recv_packet(packet)) {
             return false;
         }
         mark_transfer();
@@ -115,11 +115,28 @@ private:
         last_transfer_us_ = now_us();
     }
 
-    SerialCommsServer& serial_;
+    IPacketEndpoint& endpoint_;
     DurationUs link_timeout_{};
     DurationUs heartbeat_interval_{};
     uint16_t seq_{0};
     TimePointUs last_transfer_us_{};
+};
+
+class SerialPacketEndpoint final : public IPacketEndpoint {
+public:
+    explicit SerialPacketEndpoint(SerialCommsServer& serial)
+        : serial_(serial) {}
+
+    void send_packet(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload) override {
+        serial_.send_packet(seq, cmd, payload);
+    }
+
+    bool recv_packet(DecodedPacket& packet) override {
+        return serial_.recv_packet(packet);
+    }
+
+private:
+    SerialCommsServer& serial_;
 };
 
 class HandshakeClient {
@@ -336,18 +353,32 @@ SimpleHardwareBridge::SimpleHardwareBridge(std::string device,
       timeout_ms_(timeout_ms),
       calibrations_(std::move(calibrations)) {}
 
+SimpleHardwareBridge::SimpleHardwareBridge(std::unique_ptr<IPacketEndpoint> endpoint,
+                                           int timeout_ms,
+                                           std::vector<float> calibrations)
+    : timeout_ms_(timeout_ms),
+      calibrations_(std::move(calibrations)),
+      packet_endpoint_(std::move(endpoint)) {}
+
 SimpleHardwareBridge::~SimpleHardwareBridge() = default;
 
 bool SimpleHardwareBridge::init() {
-    serialComs_ = std::make_unique<SerialCommsServer>(device_,
-                                                      SerialCommsServer::int_to_baud_rate(baud_rate_),
-                                                      NumDataBits::EIGHT,
-                                                      Parity::NONE,
-                                                      NumStopBits::ONE);
-    serialComs_->SetTimeout(timeout_ms_);
-    serialComs_->Open();
+    if (!packet_endpoint_) {
+        serialComs_ = std::make_unique<SerialCommsServer>(device_,
+                                                          SerialCommsServer::int_to_baud_rate(baud_rate_),
+                                                          NumDataBits::EIGHT,
+                                                          Parity::NONE,
+                                                          NumStopBits::ONE);
+        serialComs_->SetTimeout(timeout_ms_);
+        serialComs_->Open();
+        packet_endpoint_ = std::make_unique<SerialPacketEndpoint>(*serialComs_);
+    }
 
-    transport_ = std::make_unique<TransportSession>(*serialComs_, kLinkTimeoutUs, kHeartbeatIdleIntervalUs);
+    if (!packet_endpoint_) {
+        return false;
+    }
+
+    transport_ = std::make_unique<TransportSession>(*packet_endpoint_, kLinkTimeoutUs, kHeartbeatIdleIntervalUs);
     handshake_ = std::make_unique<HandshakeClient>(*transport_);
     codec_ = std::make_unique<HardwareStateCodec>();
     command_client_ = std::make_unique<CommandClient>(*transport_);
@@ -389,7 +420,7 @@ bool SimpleHardwareBridge::ensure_link() {
 }
 
 bool SimpleHardwareBridge::read(RawHardwareState& out) {
-    if (!initialized_ || !serialComs_ || !codec_) {
+    if (!initialized_ || !packet_endpoint_ || !codec_) {
         if (auto logger = logging::GetDefaultLogger()) {
             LOG_ERROR(logger, "either hardware bridge or serial coms not initialised");
         }
@@ -408,7 +439,7 @@ bool SimpleHardwareBridge::read(RawHardwareState& out) {
 }
 
 bool SimpleHardwareBridge::write(const JointTargets& in) {
-    if (!initialized_ || !serialComs_ || !codec_) {
+    if (!initialized_ || !packet_endpoint_ || !codec_) {
         return false;
     }
 

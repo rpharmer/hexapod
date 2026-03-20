@@ -84,4 +84,8 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_control_pipeline_sanity tests/test_control_pipeline_sanity.cpp)
     target_link_libraries(test_control_pipeline_sanity PRIVATE hexapod_server_core)
     add_test(NAME control_pipeline_output_sanity COMMAND test_control_pipeline_sanity)
+
+    add_executable(test_hardware_bridge_transport tests/test_hardware_bridge_transport.cpp)
+    target_link_libraries(test_hardware_bridge_transport PRIVATE hexapod_server_core)
+    add_test(NAME hardware_bridge_transport_behavior COMMAND test_hardware_bridge_transport)
 endif()
