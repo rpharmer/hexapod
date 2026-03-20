@@ -45,8 +45,16 @@ struct ScenarioDefinition {
 
 class ScenarioDriver {
 public:
+    enum class ValidationMode {
+        Permissive,
+        Strict,
+    };
+
     static bool loadFromToml(const std::string& path, ScenarioDefinition& out,
                              std::string& error);
+
+    static bool loadFromToml(const std::string& path, ScenarioDefinition& out,
+                             std::string& error, ValidationMode mode);
 
     static bool run(RobotControl& robot, const ScenarioDefinition& scenario,
                     std::shared_ptr<logging::AsyncLogger> logger);

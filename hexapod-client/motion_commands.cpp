@@ -31,10 +31,6 @@ void handleSetAngleCommand(FirmwareContext& ctx, uint16_t seq, const std::vector
   ctx.serial.send_packet(seq, ACK, {});
 }
 
-void handleSetAngleCommand(uint16_t seq, const std::vector<uint8_t>& payload)
-{
-  handleSetAngleCommand(firmware(), seq, payload);
-}
 
 void handleCalibCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
@@ -64,10 +60,6 @@ void handleCalibCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<ui
   ctx.serial.send_packet(seq, ACK, {});
 }
 
-void handleCalibCommand(uint16_t seq, const std::vector<uint8_t>& payload)
-{
-  handleCalibCommand(firmware(), seq, payload);
-}
 
 void calibServos(FirmwareContext& ctx, float calibs[kProtocolJointCount][kProtocolCalibrationPairsPerJoint])
 {
@@ -109,7 +101,3 @@ void handleSetJointTargetsCommand(FirmwareContext& ctx, uint16_t seq, const std:
   ctx.serial.send_packet(seq, ACK, {});
 }
 
-void handleSetJointTargetsCommand(uint16_t seq, const std::vector<uint8_t>& payload)
-{
-  handleSetJointTargetsCommand(firmware(), seq, payload);
-}

@@ -1,6 +1,7 @@
 #include "pico/stdlib.h"
 #include "hexapod-common.hpp"
 #include "hexapod-client.hpp"
+#include "command_router.hpp"
 #include "firmware_context.hpp"
 
 #include <array>
@@ -10,42 +11,17 @@ namespace {
 
 constexpr int64_t HOST_LIVENESS_TIMEOUT_US = 2000000;
 
-void transitionToHostDisconnectedSafeState()
+void transitionToHostDisconnectedSafeState(FirmwareContext& ctx)
 {
-  FirmwareContext& ctx = firmware();
   ctx.servos.disable_all();
   gpio_put_masked(A0_GPIO_MASK, GPIO_LOW_MASK);
   ctx.state = HexapodState::WAITING_FOR_HOST;
 }
 
-enum class PayloadPolicyType : uint8_t
+void respondInvalidPayloadLength(FirmwareContext& ctx, uint16_t seq)
 {
-  Any,
-  ExactBytes
-};
-
-struct PayloadPolicy
-{
-  PayloadPolicyType type;
-  std::size_t expectedBytes;
-
-  bool accepts(std::size_t payloadBytes) const
-  {
-    if(type == PayloadPolicyType::Any)
-      return true;
-
-    return payloadBytes == expectedBytes;
-  }
-};
-
-using RoutedHandler = void (*)(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload);
-
-struct CommandRoute
-{
-  uint8_t cmd;
-  PayloadPolicy payloadPolicy;
-  RoutedHandler handler;
-};
+  ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
+}
 
 void handleGetAngleCalibRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>&)
 {
@@ -122,33 +98,6 @@ constexpr std::array<CommandRoute, 12> COMMAND_ROUTES{{
     {SET_JOINT_TARGETS, {PayloadPolicyType::ExactBytes, kProtocolJointTargetsPayloadBytes}, handleSetJointTargetsRouted},
 }};
 
-const CommandRoute* findRoute(uint8_t cmd)
-{
-  for(const CommandRoute& route : COMMAND_ROUTES)
-  {
-    if(route.cmd == cmd)
-      return &route;
-  }
-
-  return nullptr;
-}
-
-bool dispatchCommand(FirmwareContext& ctx, const DecodedPacket& packet)
-{
-  const CommandRoute* route = findRoute(packet.cmd);
-  if(route == nullptr)
-    return false;
-
-  if(!route->payloadPolicy.accepts(packet.payload.size()))
-  {
-    ctx.serial.send_packet(packet.seq, NACK, {INVALID_PAYLOAD_LENGTH});
-    return true;
-  }
-
-  route->handler(ctx, packet.seq, packet.payload);
-  return true;
-}
-
 } // namespace
 
 void runCommandLoop()
@@ -168,7 +117,7 @@ void runCommandLoop()
       {
         if(packet.cmd == HELLO)
         {
-          if(handleHandshake(packet.seq, packet.payload))
+          if(handleHandshake(ctx, packet.seq, packet.payload))
             ctx.state = HexapodState::ACTIVE;
         }
         else
@@ -184,7 +133,7 @@ void runCommandLoop()
       {
         handleHeartbeatCommand(ctx, packet.seq);
       }
-      else if(dispatchCommand(ctx, packet))
+      else if(dispatchCommand(ctx, packet, COMMAND_ROUTES.data(), COMMAND_ROUTES.size(), respondInvalidPayloadLength))
       {
       }
       else if(packet.cmd == KILL)
@@ -202,7 +151,7 @@ void runCommandLoop()
     if(ctx.state == HexapodState::ACTIVE &&
        absolute_time_diff_us(lastHostActivity, get_absolute_time()) > HOST_LIVENESS_TIMEOUT_US)
     {
-      transitionToHostDisconnectedSafeState();
+      transitionToHostDisconnectedSafeState(ctx);
       lastHostActivity = get_absolute_time();
     }
   }

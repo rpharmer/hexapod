@@ -87,24 +87,39 @@ int main(int argc, char** argv)
   robot.start();
 
   bool run_default_loop = true;
+  bool lint_scenario_only = false;
+  ScenarioDriver::ValidationMode scenario_validation_mode = ScenarioDriver::ValidationMode::Permissive;
   std::string scenario_file;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
     if (arg == "--scenario" && i + 1 < argc) {
       scenario_file = argv[++i];
       run_default_loop = false;
+    } else if (arg == "--scenario-strict") {
+      scenario_validation_mode = ScenarioDriver::ValidationMode::Strict;
+    } else if (arg == "--scenario-lint") {
+      lint_scenario_only = true;
+      scenario_validation_mode = ScenarioDriver::ValidationMode::Strict;
     }
   }
 
   if (!run_default_loop) {
     ScenarioDefinition scenario{};
     std::string scenario_error;
-    if (!ScenarioDriver::loadFromToml(scenario_file, scenario, scenario_error)) {
+    if (!ScenarioDriver::loadFromToml(scenario_file, scenario, scenario_error, scenario_validation_mode)) {
       LOG_ERROR(logger, "Failed to load scenario file '", scenario_file, "': ", scenario_error);
       robot.stop();
       logger->Flush();
       logger->Stop();
       return 1;
+    }
+
+    if (lint_scenario_only) {
+      LOG_INFO(logger, "Scenario lint passed: ", scenario_file);
+      robot.stop();
+      logger->Flush();
+      logger->Stop();
+      return 0;
     }
 
     LOG_INFO(logger, "Running scenario: ", scenario.name);

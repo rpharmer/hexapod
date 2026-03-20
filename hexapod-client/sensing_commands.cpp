@@ -17,10 +17,6 @@ void handleGetAngleCalibCommand(FirmwareContext& ctx, uint16_t seq)
   ctx.serial.send_packet(seq, ACK, protocol::encode_calibrations(calibrations));
 }
 
-void handleGetAngleCalibCommand(uint16_t seq)
-{
-  handleGetAngleCalibCommand(firmware(), seq);
-}
 
 void handleGetCurrentCommand(FirmwareContext& ctx, uint16_t seq)
 {
@@ -29,10 +25,6 @@ void handleGetCurrentCommand(FirmwareContext& ctx, uint16_t seq)
   ctx.serial.send_packet(seq, ACK, protocol::encode_scalar_float(current));
 }
 
-void handleGetCurrentCommand(uint16_t seq)
-{
-  handleGetCurrentCommand(firmware(), seq);
-}
 
 void handleGetVoltageCommand(FirmwareContext& ctx, uint16_t seq)
 {
@@ -41,10 +33,6 @@ void handleGetVoltageCommand(FirmwareContext& ctx, uint16_t seq)
   ctx.serial.send_packet(seq, ACK, protocol::encode_scalar_float(voltage));
 }
 
-void handleGetVoltageCommand(uint16_t seq)
-{
-  handleGetVoltageCommand(firmware(), seq);
-}
 
 void handleGetSensorCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
@@ -72,10 +60,6 @@ void handleGetSensorCommand(FirmwareContext& ctx, uint16_t seq, const std::vecto
   ctx.serial.send_packet(seq, ACK, protocol::encode_scalar_float(voltage));
 }
 
-void handleGetSensorCommand(uint16_t seq, const std::vector<uint8_t>& payload)
-{
-  handleGetSensorCommand(firmware(), seq, payload);
-}
 
 void handleGetFullHardwareStateCommand(FirmwareContext& ctx, uint16_t seq)
 {
@@ -102,7 +86,3 @@ void handleGetFullHardwareStateCommand(FirmwareContext& ctx, uint16_t seq)
   ctx.serial.send_packet(seq, ACK, protocol::encode_full_hardware_state(state));
 }
 
-void handleGetFullHardwareStateCommand(uint16_t seq)
-{
-  handleGetFullHardwareStateCommand(firmware(), seq);
-}

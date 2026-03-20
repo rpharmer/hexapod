@@ -91,21 +91,26 @@ int main()
 
 bool handleHandshake(uint16_t seq, const std::vector<uint8_t>& payload)
 {
+  return handleHandshake(firmware(), seq, payload);
+}
+
+bool handleHandshake(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
+{
   protocol::HelloRequest request{};
   if(!protocol::decode_hello_request(payload, request))
   {
-    firmware().serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
+    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return false;
   }
 
   if(request.version == PROTOCOL_VERSION)
   {
     const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, DEVICE_ID};
-    firmware().serial.send_packet(seq, ACK, protocol::encode_hello_ack(ack));
+    ctx.serial.send_packet(seq, ACK, protocol::encode_hello_ack(ack));
     return true;
   }
 
-  firmware().serial.send_packet(seq, NACK, {VERSION_MISMATCH});
+  ctx.serial.send_packet(seq, NACK, {VERSION_MISMATCH});
   return false;
 }
 

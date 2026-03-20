@@ -25,10 +25,6 @@ void handleSetPowerRelayCommand(FirmwareContext& ctx, uint16_t seq, const std::v
   ctx.serial.send_packet(seq, ACK, {});
 }
 
-void handleSetPowerRelayCommand(uint16_t seq, const std::vector<uint8_t>& payload)
-{
-  handleSetPowerRelayCommand(firmware(), seq, payload);
-}
 
 void handleSetServosEnabledCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
@@ -57,10 +53,6 @@ void handleSetServosEnabledCommand(FirmwareContext& ctx, uint16_t seq, const std
   ctx.serial.send_packet(seq, ACK, {});
 }
 
-void handleSetServosEnabledCommand(uint16_t seq, const std::vector<uint8_t>& payload)
-{
-  handleSetServosEnabledCommand(firmware(), seq, payload);
-}
 
 void handleGetServosEnabledCommand(FirmwareContext& ctx, uint16_t seq)
 {
@@ -74,10 +66,6 @@ void handleGetServosEnabledCommand(FirmwareContext& ctx, uint16_t seq)
   ctx.serial.send_packet(seq, ACK, protocol::encode_servo_enabled(enabled));
 }
 
-void handleGetServosEnabledCommand(uint16_t seq)
-{
-  handleGetServosEnabledCommand(firmware(), seq);
-}
 
 void handleSetServosToMidCommand(FirmwareContext& ctx, uint16_t seq)
 {
@@ -86,10 +74,6 @@ void handleSetServosToMidCommand(FirmwareContext& ctx, uint16_t seq)
   ctx.serial.send_packet(seq, ACK, {});
 }
 
-void handleSetServosToMidCommand(uint16_t seq)
-{
-  handleSetServosToMidCommand(firmware(), seq);
-}
 
 void handleHeartbeatCommand(FirmwareContext& ctx, uint16_t seq)
 {
@@ -97,7 +81,3 @@ void handleHeartbeatCommand(FirmwareContext& ctx, uint16_t seq)
   ctx.serial.send_packet(seq, ACK, protocol::encode_hello_ack(heartbeat));
 }
 
-void handleHeartbeatCommand(uint16_t seq)
-{
-  handleHeartbeatCommand(firmware(), seq);
-}
