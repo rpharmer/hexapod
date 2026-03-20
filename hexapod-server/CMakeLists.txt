@@ -7,6 +7,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(HEXAPOD_SERVER_BUILD_TESTS "Build hexapod-server unit tests" OFF)
+
 # Disable third-party tests when fetching dependencies.
 set(BUILD_TESTING OFF CACHE BOOL "Disable CTest-based tests" FORCE)
 set(BUILD_TESTS OFF CACHE BOOL "Disable project-specific tests" FORCE)
@@ -33,26 +35,53 @@ if(CPPLINUXSERIAL_INTERFACE_INCLUDES)
 endif()
 
 file(GLOB HEXAPOD_SERVER_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+set(HEXAPOD_SERVER_MAIN_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/hexapod-server.cpp")
+list(REMOVE_ITEM HEXAPOD_SERVER_SOURCES "${HEXAPOD_SERVER_MAIN_SOURCE}")
 
-add_executable(hexapod-server
+add_library(hexapod_server_core
     ${HEXAPOD_SERVER_SOURCES}
     ../hexapod-common/framing.cpp
 )
 
-target_include_directories(hexapod-server
-    PRIVATE
+target_include_directories(hexapod_server_core
+    PUBLIC
         include
         ../hexapod-common/include
 )
 
 if(MSVC)
-    target_compile_options(hexapod-server PRIVATE /W4 /WX)
+    target_compile_options(hexapod_server_core PRIVATE /W4 /WX)
 else()
-    target_compile_options(hexapod-server PRIVATE -pedantic-errors -Wall -Wextra -Werror -pthread)
+    target_compile_options(hexapod_server_core PRIVATE -pedantic-errors -Wall -Wextra -Werror -pthread)
 endif()
 
-target_link_libraries(hexapod-server
-    PRIVATE
+target_link_libraries(hexapod_server_core
+    PUBLIC
         CppLinuxSerial::CppLinuxSerial
         toml11::toml11
 )
+
+add_executable(hexapod-server
+    ${HEXAPOD_SERVER_MAIN_SOURCE}
+)
+
+target_link_libraries(hexapod-server
+    PRIVATE
+        hexapod_server_core
+)
+
+if(HEXAPOD_SERVER_BUILD_TESTS)
+    enable_testing()
+
+    add_executable(test_robot_runtime_loop tests/test_robot_runtime_loop.cpp)
+    target_link_libraries(test_robot_runtime_loop PRIVATE hexapod_server_core)
+    add_test(NAME robot_runtime_loop_behavior COMMAND test_robot_runtime_loop)
+
+    add_executable(test_safety_supervisor_faults tests/test_safety_supervisor_faults.cpp)
+    target_link_libraries(test_safety_supervisor_faults PRIVATE hexapod_server_core)
+    add_test(NAME safety_supervisor_transitions COMMAND test_safety_supervisor_faults)
+
+    add_executable(test_control_pipeline_sanity tests/test_control_pipeline_sanity.cpp)
+    target_link_libraries(test_control_pipeline_sanity PRIVATE hexapod_server_core)
+    add_test(NAME control_pipeline_output_sanity COMMAND test_control_pipeline_sanity)
+endif()
