@@ -8,6 +8,7 @@
 
 #include "types.hpp"
 #include "serialCommsServer.hpp"
+#include "logger.hpp"
 
 class IHardwareBridge {
 public:
@@ -48,6 +49,41 @@ public:
     bool set_servos_to_mid();
 
 private:
+    bool request_ack(uint8_t cmd,
+                     const std::vector<uint8_t>& payload,
+                     const char* command_name);
+
+    template <typename T, typename Decoder>
+    bool request_decoded(uint8_t cmd,
+                         const std::vector<uint8_t>& payload,
+                         Decoder&& decoder,
+                         T& out,
+                         const char* command_name) {
+        std::vector<uint8_t> response_payload;
+        if (!request_ack_payload(cmd, payload, response_payload, command_name)) {
+            return false;
+        }
+
+        if (!decoder(response_payload, out)) {
+            if (auto logger = logging::GetDefaultLogger()) {
+                LOG_ERROR(logger,
+                          "command ",
+                          command_name,
+                          " decode failed (payload_size=",
+                          static_cast<unsigned>(response_payload.size()),
+                          ")");
+            }
+            return false;
+        }
+
+        return true;
+    }
+
+    bool request_ack_payload(uint8_t cmd,
+                             const std::vector<uint8_t>& payload,
+                             std::vector<uint8_t>& out_payload,
+                             const char* command_name);
+
     bool ensure_link();
     bool send_calibrations(const std::vector<float>& calibs);
   

@@ -41,6 +41,16 @@ Reduce repetitive command boilerplate in `SimpleHardwareBridge` and improve cons
 - At least 40% reduction in repetitive command code in `hardware_bridge.cpp`.
 - Uniform error messages include command name and sequence context.
 
+### Implementation notes (2026-03-20)
+- Added `SimpleHardwareBridge` helpers:
+  - `request_ack(...)`
+  - `request_ack_payload(...)`
+  - `request_decoded(...)`
+- Migrated command call sites (`read`, `write`, `get_*`, servo commands, and diagnostics)
+  to use the shared helpers.
+- Consolidated command failure/decode logging so failures now consistently include the
+  command name and expected response type.
+
 ---
 
 ## 3) Data Type Unification for Joint/Leg State
