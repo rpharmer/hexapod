@@ -37,6 +37,17 @@ std::optional<GaitType> parseGait(const std::string& gait) {
     return std::nullopt;
 }
 
+MotionIntent buildMotionIntent(const ScenarioMotionIntent& motion) {
+    MotionIntent cmd{};
+    cmd.requested_mode = motion.mode;
+    cmd.gait = motion.gait;
+    cmd.twist.twist_pos_rad = {0.0, 0.0, 0.0};
+    cmd.twist.body_trans_m = {0.0, 0.0, motion.body_height_m};
+    cmd.twist.body_trans_mps = {0.0, 0.0, 0.0};
+    cmd.timestamp_us = now_us();
+    return cmd;
+}
+
 std::optional<std::array<bool, kNumLegs>> buildContacts(const ScenarioSensorOverrides& sensors) {
     if (sensors.clear_contacts) {
         return std::nullopt;
