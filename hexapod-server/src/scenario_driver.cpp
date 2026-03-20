@@ -4,32 +4,36 @@
 
 #include <algorithm>
 #include <chrono>
+#include <optional>
 #include <thread>
 #include <toml.hpp>
 
 namespace {
 
-RobotMode parseRobotMode(const std::string& mode) {
+std::optional<RobotMode> parseRobotMode(const std::string& mode) {
     if (mode == "SAFE_IDLE") {
-        return RobotMode::SAFE_IDLE;
+        return {RobotMode::SAFE_IDLE};
     }
     if (mode == "STAND") {
-        return RobotMode::STAND;
+        return {RobotMode::STAND};
     }
     if (mode == "WALK") {
-        return RobotMode::WALK;
+        return {RobotMode::WALK};
     }
-    return RobotMode::SAFE_IDLE;
+    return std::nullopt;
 }
 
-GaitType parseGait(const std::string& gait) {
+std::optional<GaitType> parseGait(const std::string& gait) {
+    if (gait == "TRIPOD") {
+        return {GaitType::TRIPOD};
+    }
     if (gait == "RIPPLE") {
-        return GaitType::RIPPLE;
+        return {GaitType::RIPPLE};
     }
     if (gait == "WAVE") {
-        return GaitType::WAVE;
+        return {GaitType::WAVE};
     }
-    return GaitType::TRIPOD;
+    return std::nullopt;
 }
 
 MotionIntent buildMotionIntent(const ScenarioMotionIntent& motion) {
@@ -71,9 +75,22 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
 
             const std::string mode = toml::find_or<std::string>(event_value, "mode", "");
             if (!mode.empty()) {
+                const auto parsed_mode = parseRobotMode(mode);
+                if (!parsed_mode.has_value()) {
+                    error = "invalid scenario mode '" + mode + "'";
+                    return false;
+                }
+
+                const std::string gait = toml::find_or<std::string>(event_value, "gait", "TRIPOD");
+                const auto parsed_gait = parseGait(gait);
+                if (!parsed_gait.has_value()) {
+                    error = "invalid scenario gait '" + gait + "'";
+                    return false;
+                }
+
                 event.motion.enabled = true;
-                event.motion.mode = parseRobotMode(mode);
-                event.motion.gait = parseGait(toml::find_or<std::string>(event_value, "gait", "TRIPOD"));
+                event.motion.mode = *parsed_mode;
+                event.motion.gait = *parsed_gait;
                 event.motion.body_height_m = toml::find_or<double>(event_value, "body_height_m", 0.20);
             }
 
@@ -95,6 +112,10 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
                 event.sensors.clear_contacts = toml::find_or<bool>(sensors, "clear_contacts", false);
                 if (!event.sensors.clear_contacts) {
                     const auto contacts = toml::find_or<std::vector<bool>>(sensors, "contacts", {});
+                    if (!contacts.empty() && contacts.size() != kNumLegs) {
+                        error = "scenario sensors.contacts must contain exactly " + std::to_string(kNumLegs) + " values";
+                        return false;
+                    }
                     if (contacts.size() == kNumLegs) {
                         for (int i = 0; i < kNumLegs; ++i) {
                             event.sensors.contacts[static_cast<std::size_t>(i)] = contacts[static_cast<std::size_t>(i)];

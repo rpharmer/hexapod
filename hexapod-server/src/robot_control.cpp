@@ -2,8 +2,11 @@
 
 RobotControl::RobotControl(std::unique_ptr<IHardwareBridge> hw,
                            std::unique_ptr<IEstimator> estimator,
-                           std::shared_ptr<logging::AsyncLogger> logger)
-    : runtime_(std::move(hw), std::move(estimator), logger), logger_(std::move(logger)) {}
+                           std::shared_ptr<logging::AsyncLogger> logger,
+                           control_config::ControlConfig config)
+    : config_(config),
+      runtime_(std::move(hw), std::move(estimator), logger, config_),
+      logger_(std::move(logger)) {}
 
 RobotControl::~RobotControl() {
     stop();
@@ -22,11 +25,11 @@ void RobotControl::start() {
 
     loops_.start(
         {
-            {control_config::kBusLoopPeriod, [this]() { runtime_.busStep(); }},
-            {control_config::kEstimatorLoopPeriod, [this]() { runtime_.estimatorStep(); }},
-            {control_config::kControlLoopPeriod, [this]() { runtime_.controlStep(); }},
-            {control_config::kSafetyLoopPeriod, [this]() { runtime_.safetyStep(); }},
-            {control_config::kDiagnosticsPeriod, [this]() { runtime_.diagnosticsStep(); }},
+            {config_.loop_timing.bus_loop_period, [this]() { runtime_.busStep(); }},
+            {config_.loop_timing.estimator_loop_period, [this]() { runtime_.estimatorStep(); }},
+            {config_.loop_timing.control_loop_period, [this]() { runtime_.controlStep(); }},
+            {config_.loop_timing.safety_loop_period, [this]() { runtime_.safetyStep(); }},
+            {config_.loop_timing.diagnostics_period, [this]() { runtime_.diagnosticsStep(); }},
         },
         running_);
 }

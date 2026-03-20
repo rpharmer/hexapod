@@ -81,7 +81,7 @@ int main(int argc, char** argv)
     return 1;
   }
 
-  control_config::loadFromParsedToml(config);
+  const control_config::ControlConfig control_cfg = control_config::fromParsedToml(config);
   geometry_config::loadFromParsedToml(config);
 
   LOG_INFO(logger, "Runtime.Mode=", config.runtimeMode);
@@ -89,7 +89,7 @@ int main(int argc, char** argv)
   auto hw = makeHardwareBridge(config);
   auto estimator = std::make_unique<SimpleEstimator>();
 
-  RobotControl robot(std::move(hw), std::move(estimator), logger);
+  RobotControl robot(std::move(hw), std::move(estimator), logger, control_cfg);
 
   if (!robot.init()) {
     return 1;
@@ -128,12 +128,12 @@ int main(int argc, char** argv)
   } else {
     robot.setMotionIntent(buildMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.20));
 
-    std::this_thread::sleep_for(control_config::kStandSettlingDelay);
+    std::this_thread::sleep_for(control_cfg.loop_timing.stand_settling_delay);
 
     while (!g_exit.load()) {
       robot.setMotionIntent(buildMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.20));
 
-      std::this_thread::sleep_for(control_config::kCommandRefreshPeriod); // refresh command watchdog
+      std::this_thread::sleep_for(control_cfg.loop_timing.command_refresh_period); // refresh command watchdog
     }
   }
 

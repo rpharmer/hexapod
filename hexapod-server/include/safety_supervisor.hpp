@@ -1,5 +1,6 @@
 #pragma once
 
+#include "control_config.hpp"
 #include "types.hpp"
 
 #include <array>
@@ -7,6 +8,8 @@
 
 class SafetySupervisor {
 public:
+    explicit SafetySupervisor(control_config::SafetyConfig config = {});
+
     SafetyState evaluate(const RawHardwareState& raw,
                          const EstimatedState& est,
                          const MotionIntent& intent);
@@ -24,14 +27,15 @@ private:
     static int faultPriority(FaultCode code);
     static bool shouldReplaceFault(FaultCode current, FaultCode candidate);
     static std::size_t faultIndex(FaultCode code);
-    static bool canAttemptClear(const MotionIntent& intent);
-    static FaultDecision evaluateCurrentFault(const RawHardwareState& raw,
-                                              const EstimatedState& est,
-                                              const MotionIntent& intent);
+    bool canAttemptClear(const MotionIntent& intent) const;
+    FaultDecision evaluateCurrentFault(const RawHardwareState& raw,
+                                       const EstimatedState& est,
+                                       const MotionIntent& intent) const;
 
     void trip(FaultCode code, bool torque_cut, TimePointUs timestamp_us);
     void clearActiveFault();
 
+    control_config::SafetyConfig config_{};
     SafetyState state_{};
     TimePointUs recovery_started_at_us_{};
     std::array<uint32_t, kFaultCodeCount> trip_counts_{};
