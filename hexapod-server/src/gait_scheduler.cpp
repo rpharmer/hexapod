@@ -27,6 +27,9 @@ const std::array<double, kNumLegs>& gait_phase_offsets(const GaitType gait)
 
 } // namespace
 
+GaitScheduler::GaitScheduler(control_config::GaitConfig config)
+    : config_(config) {}
+
 double GaitScheduler::wrap01(double x) const {
     while (x >= 1.0) x -= 1.0;
     while (x < 0.0) x += 1.0;
@@ -62,7 +65,7 @@ GaitState GaitScheduler::update(const EstimatedState&,
     last_update_us_ = now;
 
     // TODO(gait): replace fallback speed estimate with measured command magnitude.
-    const double speed_mag = control_config::kFallbackSpeedMag.value;
+    const double speed_mag = config_.fallback_speed_mag.value;
 
     const double step_hz = std::clamp(0.5 + 2.0 * speed_mag, 0.5, 2.5);
     const FrequencyHz step_rate_hz{step_hz};

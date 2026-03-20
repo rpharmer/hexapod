@@ -114,6 +114,13 @@ inline bool operator>(DurationUs lhs, DurationUs rhs) {
     return lhs.value > rhs.value;
 }
 
+template <typename T>
+struct StreamSample {
+    T value{};
+    uint64_t sample_id{0};
+    TimePointUs timestamp_us{};
+};
+
 enum class RobotMode {
     SAFE_IDLE,
     HOMING,

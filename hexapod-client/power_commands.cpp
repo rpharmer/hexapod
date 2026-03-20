@@ -4,11 +4,11 @@
 #include "firmware_context.hpp"
 #include "framing.hpp"
 
-void handleSetPowerRelayCommand(uint16_t seq, const std::vector<uint8_t>& payload)
+void handleSetPowerRelayCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
   if(payload.size() != 1)
   {
-    firmware().serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
+    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
@@ -19,60 +19,85 @@ void handleSetPowerRelayCommand(uint16_t seq, const std::vector<uint8_t>& payloa
     gpio_put_masked(A0_GPIO_MASK, GPIO_LOW_MASK);
   else
   {
-    firmware().serial.send_packet(seq, NACK, {INVALID_ARGUMENT});
+    ctx.serial.send_packet(seq, NACK, {INVALID_ARGUMENT});
     return;
   }
-  firmware().serial.send_packet(seq, ACK, {});
+  ctx.serial.send_packet(seq, ACK, {});
 }
 
-void handleSetServosEnabledCommand(uint16_t seq, const std::vector<uint8_t>& payload)
+void handleSetPowerRelayCommand(uint16_t seq, const std::vector<uint8_t>& payload)
+{
+  handleSetPowerRelayCommand(firmware(), seq, payload);
+}
+
+void handleSetServosEnabledCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
   constexpr size_t expectedPayloadBytes = kProtocolServoEnablePayloadBytes;
   if(payload.size() != expectedPayloadBytes)
   {
-    firmware().serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
+    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
   protocol::ServoEnabled enabled{};
   if (!protocol::decode_servo_enabled(payload, enabled))
   {
-    firmware().serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
+    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
   for(int s = 0; s < FirmwareContext::NUM_SERVOS; s++)
   {
     if(enabled[static_cast<std::size_t>(s)] != 0)
-      firmware().servos.enable(s);
+      ctx.servos.enable(s);
     else
-      firmware().servos.disable(s);
+      ctx.servos.disable(s);
   }
 
-  firmware().serial.send_packet(seq, ACK, {});
+  ctx.serial.send_packet(seq, ACK, {});
 }
 
-void handleGetServosEnabledCommand(uint16_t seq)
+void handleSetServosEnabledCommand(uint16_t seq, const std::vector<uint8_t>& payload)
+{
+  handleSetServosEnabledCommand(firmware(), seq, payload);
+}
+
+void handleGetServosEnabledCommand(FirmwareContext& ctx, uint16_t seq)
 {
   protocol::ServoEnabled enabled{};
 
   for(int s = 0; s < FirmwareContext::NUM_SERVOS; s++)
   {
-    enabled[static_cast<std::size_t>(s)] = firmware().servos.is_enabled(s) ? 1 : 0;
+    enabled[static_cast<std::size_t>(s)] = ctx.servos.is_enabled(s) ? 1 : 0;
   }
 
-  firmware().serial.send_packet(seq, ACK, protocol::encode_servo_enabled(enabled));
+  ctx.serial.send_packet(seq, ACK, protocol::encode_servo_enabled(enabled));
+}
+
+void handleGetServosEnabledCommand(uint16_t seq)
+{
+  handleGetServosEnabledCommand(firmware(), seq);
+}
+
+void handleSetServosToMidCommand(FirmwareContext& ctx, uint16_t seq)
+{
+  ctx.servos.all_to_mid();
+
+  ctx.serial.send_packet(seq, ACK, {});
 }
 
 void handleSetServosToMidCommand(uint16_t seq)
 {
-  firmware().servos.all_to_mid();
+  handleSetServosToMidCommand(firmware(), seq);
+}
 
-  firmware().serial.send_packet(seq, ACK, {});
+void handleHeartbeatCommand(FirmwareContext& ctx, uint16_t seq)
+{
+  const protocol::HelloAck heartbeat{PROTOCOL_VERSION, STATUS_OK, DEVICE_ID};
+  ctx.serial.send_packet(seq, ACK, protocol::encode_hello_ack(heartbeat));
 }
 
 void handleHeartbeatCommand(uint16_t seq)
 {
-  const protocol::HelloAck heartbeat{PROTOCOL_VERSION, STATUS_OK, DEVICE_ID};
-  firmware().serial.send_packet(seq, ACK, protocol::encode_hello_ack(heartbeat));
+  handleHeartbeatCommand(firmware(), seq);
 }

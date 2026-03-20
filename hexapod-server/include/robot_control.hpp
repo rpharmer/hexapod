@@ -12,7 +12,8 @@ class RobotControl {
 public:
     RobotControl(std::unique_ptr<IHardwareBridge> hw,
                  std::unique_ptr<IEstimator> estimator,
-                 std::shared_ptr<logging::AsyncLogger> logger);
+                 std::shared_ptr<logging::AsyncLogger> logger,
+                 control_config::ControlConfig config = {});
 
     ~RobotControl();
 
@@ -25,6 +26,7 @@ public:
     ControlStatus getStatus() const;
 
 private:
+    control_config::ControlConfig config_;
     RobotRuntime runtime_;
     std::shared_ptr<logging::AsyncLogger> logger_;
     LoopExecutor loops_;

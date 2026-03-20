@@ -1,41 +1,33 @@
 #include "control_config.hpp"
 
+#include <algorithm>
+
 #include "hexapod-server.hpp"
 
 namespace control_config {
 
-std::chrono::microseconds kBusLoopPeriod{kDefaultBusLoopPeriodUs};
-std::chrono::microseconds kEstimatorLoopPeriod{kDefaultEstimatorLoopPeriodUs};
-std::chrono::microseconds kControlLoopPeriod{kDefaultControlLoopPeriodUs};
-std::chrono::microseconds kSafetyLoopPeriod{kDefaultSafetyLoopPeriodUs};
-std::chrono::milliseconds kDiagnosticsPeriod{kDefaultDiagnosticsPeriodMs};
-std::chrono::milliseconds kCommandRefreshPeriod{kDefaultCommandRefreshPeriodMs};
-std::chrono::milliseconds kStandSettlingDelay{kDefaultStandSettlingDelayMs};
+ControlConfig fromParsedToml(const ParsedToml& config) {
+    ControlConfig parsed{};
+    parsed.loop_timing.bus_loop_period = std::chrono::microseconds{config.busLoopPeriodUs};
+    parsed.loop_timing.estimator_loop_period = std::chrono::microseconds{config.estimatorLoopPeriodUs};
+    parsed.loop_timing.control_loop_period = std::chrono::microseconds{config.controlLoopPeriodUs};
+    parsed.loop_timing.safety_loop_period = std::chrono::microseconds{config.safetyLoopPeriodUs};
+    parsed.loop_timing.diagnostics_period = std::chrono::milliseconds{config.diagnosticsPeriodMs};
+    parsed.loop_timing.command_refresh_period = std::chrono::milliseconds{config.commandRefreshPeriodMs};
+    parsed.loop_timing.stand_settling_delay = std::chrono::milliseconds{config.standSettlingDelayMs};
 
-AngleRad kMaxTiltRad = kDefaultMaxTiltRad;
-DurationUs kCommandTimeoutUs = kDefaultCommandTimeoutUs;
-LinearRateMps kFallbackSpeedMag = kDefaultFallbackSpeedMag;
-float kMinBusVoltageV = kDefaultMinBusVoltageV;
-float kMaxBusCurrentA = kDefaultMaxBusCurrentA;
-int kMinFootContacts = kDefaultMinFootContacts;
-int kMaxFootContacts = kDefaultMaxFootContacts;
+    parsed.safety.max_tilt_rad = AngleRad{config.maxTiltRad};
+    parsed.safety.command_timeout_us = DurationUs{config.commandTimeoutUs};
+    parsed.safety.min_bus_voltage_v = static_cast<float>(config.minBusVoltageV);
+    parsed.safety.max_bus_current_a = static_cast<float>(config.maxBusCurrentA);
+    parsed.safety.min_foot_contacts = config.minFootContacts;
+    parsed.safety.max_foot_contacts = config.maxFootContacts;
 
-void loadFromParsedToml(const ParsedToml& config) {
-    kBusLoopPeriod = std::chrono::microseconds{config.busLoopPeriodUs};
-    kEstimatorLoopPeriod = std::chrono::microseconds{config.estimatorLoopPeriodUs};
-    kControlLoopPeriod = std::chrono::microseconds{config.controlLoopPeriodUs};
-    kSafetyLoopPeriod = std::chrono::microseconds{config.safetyLoopPeriodUs};
-    kDiagnosticsPeriod = std::chrono::milliseconds{config.diagnosticsPeriodMs};
-    kCommandRefreshPeriod = std::chrono::milliseconds{config.commandRefreshPeriodMs};
-    kStandSettlingDelay = std::chrono::milliseconds{config.standSettlingDelayMs};
-
-    kMaxTiltRad = AngleRad{config.maxTiltRad};
-    kCommandTimeoutUs = DurationUs{config.commandTimeoutUs};
-    kFallbackSpeedMag = LinearRateMps{config.fallbackSpeedMag};
-    kMinBusVoltageV = static_cast<float>(config.minBusVoltageV);
-    kMaxBusCurrentA = static_cast<float>(config.maxBusCurrentA);
-    kMinFootContacts = config.minFootContacts;
-    kMaxFootContacts = config.maxFootContacts;
+    parsed.gait.fallback_speed_mag = LinearRateMps{config.fallbackSpeedMag};
+    parsed.freshness.max_estimator_age_us = DurationUs{
+        static_cast<uint64_t>(std::max(config.estimatorLoopPeriodUs * 2, 1000))};
+    parsed.freshness.max_intent_age_us = DurationUs{config.commandTimeoutUs};
+    return parsed;
 }
 
 } // namespace control_config
