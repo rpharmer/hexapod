@@ -85,6 +85,20 @@ cd hexapod-server
 
 Stop with `Ctrl+C`.
 
+Run deterministic simulation scenarios:
+
+```bash
+cd hexapod-server
+./build/hexapod-server --scenario scenarios/01_nominal_stand_walk.toml
+```
+
+Baseline scenarios live under `hexapod-server/scenarios/`:
+
+- `01_nominal_stand_walk.toml`
+- `02_command_timeout_fallback.toml`
+- `03_power_fault_triggers.toml`
+- `04_contact_loss_edge_cases.toml`
+
 ## Configuration (`config.txt`)
 
 Expected TOML fields:

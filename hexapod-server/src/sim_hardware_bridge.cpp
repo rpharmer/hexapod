@@ -10,6 +10,7 @@ SimHardwareBridge::SimHardwareBridge(SimHardwareFaultToggles fault_toggles,
       response_time_constant_(response_time_constant) {}
 
 bool SimHardwareBridge::init() {
+    std::lock_guard<std::mutex> lock(mutex_);
     state_ = RawHardwareState{};
     commanded_targets_ = JointTargets{};
 
@@ -28,6 +29,7 @@ bool SimHardwareBridge::init() {
 }
 
 bool SimHardwareBridge::read(RawHardwareState& out) {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (!initialized_) {
         return false;
     }
@@ -59,12 +61,18 @@ bool SimHardwareBridge::read(RawHardwareState& out) {
 }
 
 bool SimHardwareBridge::write(const JointTargets& in) {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (!initialized_) {
         return false;
     }
 
     commanded_targets_ = in;
     return !fault_toggles_.drop_bus;
+}
+
+void SimHardwareBridge::setFaultToggles(const SimHardwareFaultToggles& fault_toggles) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    fault_toggles_ = fault_toggles;
 }
 
 double SimHardwareBridge::clamp01(double value) {

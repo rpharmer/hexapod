@@ -17,6 +17,7 @@
 #include "robot_control.hpp"
 #include "control_config.hpp"
 #include "geometry_config.hpp"
+#include "scenario_driver.hpp"
 
 using namespace mn::CppLinuxSerial;
 using namespace logging;
@@ -65,7 +66,7 @@ void signalHandler(int)
   g_exit.store(true);
 }
 
-int main()
+int main(int argc, char** argv)
 {
   std::signal(SIGINT, signalHandler);
   std::signal(SIGTERM, signalHandler);
@@ -96,14 +97,44 @@ int main()
 
   robot.start();
 
-  robot.setMotionIntent(buildMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.20));
+  bool run_default_loop = true;
+  std::string scenario_file;
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if (arg == "--scenario" && i + 1 < argc) {
+      scenario_file = argv[++i];
+      run_default_loop = false;
+    }
+  }
 
-  std::this_thread::sleep_for(control_config::kStandSettlingDelay);
+  if (!run_default_loop) {
+    ScenarioDefinition scenario{};
+    std::string scenario_error;
+    if (!ScenarioDriver::loadFromToml(scenario_file, scenario, scenario_error)) {
+      LOG_ERROR(logger, "Failed to load scenario file '", scenario_file, "': ", scenario_error);
+      robot.stop();
+      logger->Flush();
+      logger->Stop();
+      return 1;
+    }
 
-  while (!g_exit.load()) {
-    robot.setMotionIntent(buildMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.20));
+    LOG_INFO(logger, "Running scenario: ", scenario.name);
+    if (!ScenarioDriver::run(robot, scenario, logger)) {
+      robot.stop();
+      logger->Flush();
+      logger->Stop();
+      return 1;
+    }
+  } else {
+    robot.setMotionIntent(buildMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.20));
 
-    std::this_thread::sleep_for(control_config::kCommandRefreshPeriod); // refresh command watchdog
+    std::this_thread::sleep_for(control_config::kStandSettlingDelay);
+
+    while (!g_exit.load()) {
+      robot.setMotionIntent(buildMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.20));
+
+      std::this_thread::sleep_for(control_config::kCommandRefreshPeriod); // refresh command watchdog
+    }
   }
 
   robot.stop();

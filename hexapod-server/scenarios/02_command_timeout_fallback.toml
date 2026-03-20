@@ -1,0 +1,16 @@
+name = "command_timeout_fallback"
+duration_ms = 4000
+tick_ms = 20
+refresh_motion_intent = false
+
+[[events]]
+at_ms = 0
+mode = "STAND"
+gait = "TRIPOD"
+body_height_m = 0.20
+
+[[events]]
+at_ms = 500
+mode = "WALK"
+gait = "TRIPOD"
+body_height_m = 0.20

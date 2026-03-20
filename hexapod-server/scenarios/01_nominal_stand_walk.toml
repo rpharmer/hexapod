@@ -1,0 +1,28 @@
+name = "nominal_stand_walk"
+duration_ms = 7000
+tick_ms = 20
+refresh_motion_intent = true
+
+[[events]]
+at_ms = 0
+mode = "SAFE_IDLE"
+gait = "TRIPOD"
+body_height_m = 0.18
+
+[[events]]
+at_ms = 1000
+mode = "STAND"
+gait = "TRIPOD"
+body_height_m = 0.20
+
+[[events]]
+at_ms = 3000
+mode = "WALK"
+gait = "TRIPOD"
+body_height_m = 0.20
+
+[[events]]
+at_ms = 5500
+mode = "WALK"
+gait = "RIPPLE"
+body_height_m = 0.20
