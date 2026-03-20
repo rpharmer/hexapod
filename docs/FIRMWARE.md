@@ -11,18 +11,20 @@ All messages use a framed packet format:
 ```
 
 - `LEN`: byte count of `SEQ_LO + SEQ_HI + CMD + PAYLOAD`.
-- `SEQ`: request/response sequence number (`uint16`, little-endian as `SEQ_LO` then `SEQ_HI`) used to correlate replies with commands.
+- `SEQ`: request/response sequence number (`uint16`, little-endian as `SEQ_LO` then `SEQ_HI`) used to correlate replies with requests.
 - `CRC16`: CRC-CCITT over `LEN + SEQ_LO + SEQ_HI + CMD + PAYLOAD`.
 - `STX/ETX`: start/end delimiters.
 
-Reference implementation lives in:
+Reference implementation:
+
 - `hexapod-common/include/framing.hpp`
 - `hexapod-common/framing.cpp`
 
-Both server and client should:
+Decoder behavior on both host and firmware:
+
 1. Append incoming bytes to a rolling RX buffer.
 2. Repeatedly call `tryDecodePacket(rxBuffer, packet)`.
-3. On parse errors (`LEN`, `CRC`, or `ETX` invalid), decoder drops bytes and re-syncs to next `STX`.
+3. On parse errors (`LEN`, `CRC`, or `ETX` invalid), decoder drops bytes and re-syncs to the next `STX`.
 
 ## Common constants
 
@@ -65,17 +67,15 @@ Both server and client should:
 
 ## Handshake sequence
 
-1. Server sends framed `HELLO` request with payload:
-   - `PROTOCOL_VERSION`
-   - requested capabilities bitmask
-2. Client validates version.
-3. Client responds with:
+1. Server sends framed `HELLO` request with payload `PROTOCOL_VERSION` and capability flags.
+2. Client validates version compatibility and readiness.
+3. Client responds with either:
    - `ACK` payload: `PROTOCOL_VERSION, STATUS_OK, DEVICE_ID`, or
-   - `NACK` payload: error code (`VERSION_MISMATCH`, etc.)
-4. Server retries up to 3 times if handshake fails or times out.
+   - `NACK` payload with an error code (for example `VERSION_MISMATCH`).
+4. Server retries up to three times if handshake fails or times out.
 
 ## Implementation notes
 
 - Host implementation uses `SerialCommsServer::send_packet` / `recv_packet`.
 - Firmware implementation uses `SerialCommsClient::send_packet` / `recv_packet`.
-- Both wrappers are built on top of `encodePacket` and `tryDecodePacket` from `hexapod-common`.
+- Both wrappers use `encodePacket` and `tryDecodePacket` from `hexapod-common`.
