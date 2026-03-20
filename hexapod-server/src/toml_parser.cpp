@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <set>
 #include <tuple>
 #include <vector>
@@ -34,7 +35,10 @@ bool TomlParser::parse(const std::string& filename, ParsedToml& out) const
     if (!validateSchemaHeader(root)) {
       return false;
     }
-    if (!parseTransportConfig(root, out)) {
+    if (!parseRuntimeConfig(root, out)) {
+      return false;
+    }
+    if (!parseTransportConfig(root, out, out.runtimeMode == "serial")) {
       return false;
     }
     if (!parseCalibrationConfig(root, out)) {
@@ -81,26 +85,71 @@ bool TomlParser::validateSchemaHeader(const toml::value& root) const
   return true;
 }
 
-bool TomlParser::parseTransportConfig(const toml::value& root, ParsedToml& out) const
+bool TomlParser::parseRuntimeConfig(const toml::value& root, ParsedToml& out) const
 {
-  std::string serialDevice = toml::find_or<std::string>(root, "SerialDevice", "Error");
-  if (serialDevice == "Error" || serialDevice.empty()) {
+  std::string mode = toml::find_or<std::string>(root, "Runtime", "Mode", "serial");
+  std::transform(mode.begin(), mode.end(), mode.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  if (mode != "serial" && mode != "sim") {
     if (auto logger = GetDefaultLogger()) {
-      LOG_ERROR(logger, "SerialDevice definition not found or empty");
+      LOG_ERROR(logger, "Runtime.Mode must be 'serial' or 'sim', got '", mode, "'");
     }
     return false;
   }
+  out.runtimeMode = mode;
 
-  const int baudInt = toml::find_or<int>(root, "BaudRate", -1);
-  if (baudInt <= 0) {
+  auto parse_double_with_fallback = [](double value, const std::string& key,
+                                       double default_value, double min_value, double max_value) {
+    if (value < min_value || value > max_value) {
+      if (auto logger = GetDefaultLogger()) {
+        LOG_WARN(logger, "invalid runtime value for ", key, "=", value, ", using default ",
+                 default_value);
+      }
+      return default_value;
+    }
+    return value;
+  };
+
+  out.simInitialVoltageV = parse_double_with_fallback(
+      toml::find_or<double>(root, "Runtime", "Sim", "InitialVoltageV", 12.0),
+      "Runtime.Sim.InitialVoltageV", 12.0, 0.0, 32.0);
+  out.simInitialCurrentA = parse_double_with_fallback(
+      toml::find_or<double>(root, "Runtime", "Sim", "InitialCurrentA", 1.0),
+      "Runtime.Sim.InitialCurrentA", 1.0, 0.0, 200.0);
+  out.simResponseRateHz = parse_double_with_fallback(
+      toml::find_or<double>(root, "Runtime", "Sim", "ResponseRateHz", 50.0),
+      "Runtime.Sim.ResponseRateHz", 50.0, 1.0, 2000.0);
+  out.simDropBus = toml::find_or<bool>(root, "Runtime", "Sim", "DropBus", false);
+  out.simLowVoltage = toml::find_or<bool>(root, "Runtime", "Sim", "LowVoltage", false);
+  out.simHighCurrent = toml::find_or<bool>(root, "Runtime", "Sim", "HighCurrent", false);
+  return true;
+}
+
+bool TomlParser::parseTransportConfig(const toml::value& root, ParsedToml& out, bool required) const
+{
+  std::string serialDevice = toml::find_or<std::string>(root, "SerialDevice", "");
+  if (serialDevice.empty()) {
+    if (!required) {
+      serialDevice = out.serialDevice;
+    } else {
+      if (auto logger = GetDefaultLogger()) {
+        LOG_ERROR(logger, "SerialDevice definition not found or empty");
+      }
+      return false;
+    }
+  }
+
+  const int baudInt = toml::find_or<int>(root, "BaudRate", out.baudRate);
+  if (baudInt <= 0 && required) {
     if (auto logger = GetDefaultLogger()) {
       LOG_ERROR(logger, "baudRate wasn't a positive valid number or not found");
     }
     return false;
   }
+  const int baudRate = baudInt > 0 ? baudInt : out.baudRate;
 
-  const int timeout = toml::find_or<int>(root, "Timeout_ms", -1);
-  if (timeout <= 0) {
+  const int timeout = toml::find_or<int>(root, "Timeout_ms", out.timeout);
+  if (timeout <= 0 && required) {
     if (auto logger = GetDefaultLogger()) {
       LOG_ERROR(logger, "timeout wasn't a positive valid number or not found");
     }
@@ -108,8 +157,8 @@ bool TomlParser::parseTransportConfig(const toml::value& root, ParsedToml& out) 
   }
 
   out.serialDevice = serialDevice;
-  out.baudRate = baudInt;
-  out.timeout = timeout;
+  out.baudRate = baudRate;
+  out.timeout = timeout > 0 ? timeout : out.timeout;
   return true;
 }
 
