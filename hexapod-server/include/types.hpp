@@ -242,6 +242,7 @@ struct RawHardwareState {
   std::array<bool, kNumLegs> foot_contacts{};
   float voltage{0.0};
   float current{0.0};
+  uint64_t sample_id{0};
   TimePointUs timestamp_us{};
   bool bus_ok{true};
 };
@@ -250,6 +251,7 @@ struct MotionIntent {
   RobotMode requested_mode{RobotMode::SAFE_IDLE};
   GaitType gait{GaitType::TRIPOD};
   BodyTwistState twist{};
+  uint64_t sample_id{0};
   TimePointUs timestamp_us{};
 };
 
@@ -258,6 +260,7 @@ struct EstimatedState {
   std::array<bool, kNumLegs> foot_contacts{};
   
   BodyTwistState body_twist_state{};
+  uint64_t sample_id{0};
   TimePointUs timestamp_us{};
 };
 

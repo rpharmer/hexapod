@@ -301,6 +301,11 @@ void TomlParser::parseTuningConfig(const toml::value& root, ParsedToml& out) con
     return value;
   };
 
+  auto parse_bool_with_fallback = [](const toml::value& cfg_root, const std::string& key,
+                                     bool default_value) {
+    return toml::find_or<bool>(cfg_root, key, default_value);
+  };
+
   out.busLoopPeriodUs = parse_int_with_fallback(root, "Tuning.BusLoopPeriodUs",
                                                 control_config::kDefaultBusLoopPeriodUs, 500, 50000);
   out.estimatorLoopPeriodUs =
@@ -326,6 +331,24 @@ void TomlParser::parseTuningConfig(const toml::value& root, ParsedToml& out) con
   out.commandTimeoutUs =
       parse_u64_with_fallback(root, "Tuning.CommandTimeoutUs",
                               control_config::kDefaultCommandTimeoutUs.value, 10000, 2000000);
+  out.estimatorMaxAgeUs =
+      parse_u64_with_fallback(root, "Tuning.EstimatorMaxAgeUs",
+                              control_config::kDefaultEstimatorMaxAgeUs.value, 1000, 2000000);
+  out.intentMaxAgeUs =
+      parse_u64_with_fallback(root, "Tuning.IntentMaxAgeUs",
+                              control_config::kDefaultIntentMaxAgeUs.value, 1000, 2000000);
+  out.estimatorRequireTimestamp =
+      parse_bool_with_fallback(root, "Tuning.EstimatorRequireTimestamp", true);
+  out.estimatorRequireSampleId =
+      parse_bool_with_fallback(root, "Tuning.EstimatorRequireSampleId", true);
+  out.estimatorRequireMonotonicSampleId =
+      parse_bool_with_fallback(root, "Tuning.EstimatorRequireMonotonicSampleId", true);
+  out.intentRequireTimestamp =
+      parse_bool_with_fallback(root, "Tuning.IntentRequireTimestamp", true);
+  out.intentRequireSampleId =
+      parse_bool_with_fallback(root, "Tuning.IntentRequireSampleId", true);
+  out.intentRequireMonotonicSampleId =
+      parse_bool_with_fallback(root, "Tuning.IntentRequireMonotonicSampleId", true);
   out.fallbackSpeedMag =
       parse_double_with_fallback(root, "Tuning.FallbackSpeedMag",
                                  control_config::kDefaultFallbackSpeedMag.value, 0.0, 1.0);

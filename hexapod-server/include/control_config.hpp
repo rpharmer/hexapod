@@ -18,6 +18,8 @@ inline constexpr int kDefaultCommandRefreshPeriodMs = 100;
 inline constexpr int kDefaultStandSettlingDelayMs = 2000;
 inline constexpr AngleRad kDefaultMaxTiltRad{0.70};
 inline constexpr DurationUs kDefaultCommandTimeoutUs{300000};
+inline constexpr DurationUs kDefaultEstimatorMaxAgeUs{300000};
+inline constexpr DurationUs kDefaultIntentMaxAgeUs{300000};
 inline constexpr LinearRateMps kDefaultFallbackSpeedMag{0.01};
 inline constexpr float kDefaultMinBusVoltageV{10.5f};
 inline constexpr float kDefaultMaxBusCurrentA{25.0f};
@@ -47,10 +49,31 @@ struct GaitConfig {
     LinearRateMps fallback_speed_mag{kDefaultFallbackSpeedMag};
 };
 
+struct StreamFreshnessConfig {
+    DurationUs max_allowed_age_us{kDefaultCommandTimeoutUs};
+    bool require_timestamp{true};
+    bool require_nonzero_sample_id{true};
+    bool require_monotonic_sample_id{true};
+};
+
+struct FreshnessConfig {
+    StreamFreshnessConfig estimator{
+        kDefaultEstimatorMaxAgeUs,
+        true,
+        true,
+        true};
+    StreamFreshnessConfig intent{
+        kDefaultIntentMaxAgeUs,
+        true,
+        true,
+        true};
+};
+
 struct ControlConfig {
     LoopTimingConfig loop_timing{};
     SafetyConfig safety{};
     GaitConfig gait{};
+    FreshnessConfig freshness{};
 };
 
 ControlConfig fromParsedToml(const ParsedToml& config);

@@ -30,6 +30,14 @@ struct ParsedToml
   int standSettlingDelayMs{2000};
   double maxTiltRad{0.70};
   uint64_t commandTimeoutUs{300000};
+  uint64_t estimatorMaxAgeUs{300000};
+  uint64_t intentMaxAgeUs{300000};
+  bool estimatorRequireTimestamp{true};
+  bool estimatorRequireSampleId{true};
+  bool estimatorRequireMonotonicSampleId{true};
+  bool intentRequireTimestamp{true};
+  bool intentRequireSampleId{true};
+  bool intentRequireMonotonicSampleId{true};
   double fallbackSpeedMag{0.01};
   double minBusVoltageV{10.5};
   double maxBusCurrentA{25.0};
