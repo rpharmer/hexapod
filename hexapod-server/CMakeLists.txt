@@ -88,4 +88,8 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_hardware_bridge_transport tests/test_hardware_bridge_transport.cpp)
     target_link_libraries(test_hardware_bridge_transport PRIVATE hexapod_server_core)
     add_test(NAME hardware_bridge_transport_behavior COMMAND test_hardware_bridge_transport)
+
+    add_executable(test_servo_calibration_unified_conversion tests/test_servo_calibration_unified_conversion.cpp)
+    target_link_libraries(test_servo_calibration_unified_conversion PRIVATE hexapod_server_core)
+    add_test(NAME servo_calibration_unified_conversion COMMAND test_servo_calibration_unified_conversion)
 endif()
