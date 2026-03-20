@@ -85,19 +85,95 @@ cd hexapod-server
 
 Stop with `Ctrl+C`.
 
-Run deterministic simulation scenarios:
 
-```bash
-cd hexapod-server
-./build/hexapod-server --scenario scenarios/01_nominal_stand_walk.toml
-```
+## Offline simulation/testing
 
-Baseline scenarios live under `hexapod-server/scenarios/`:
+Use offline mode when you want deterministic control/safety validation without a physical robot.
+
+### 1) Required config flags for simulator mode
+
+Set the runtime mode to `sim` in `config.txt` (or copy `config.sim.txt` over `config.txt` before running):
+
+- `Runtime.Mode = "sim"` (required)
+- Optional simulator tuning under `Runtime.Sim.*`:
+  - `InitialVoltageV`
+  - `InitialCurrentA`
+  - `ResponseRateHz`
+  - `DropBus`, `LowVoltage`, `HighCurrent` (fault injection toggles; keep `false` for baseline runs)
+
+> Note: scenarios call `setSimFaultToggles(...)` and will fail if runtime mode is not `sim`.
+
+### 2) Execute scenario runs
+
+Baseline scenarios are in `hexapod-server/scenarios/`:
 
 - `01_nominal_stand_walk.toml`
 - `02_command_timeout_fallback.toml`
 - `03_power_fault_triggers.toml`
 - `04_contact_loss_edge_cases.toml`
+
+Run one scenario:
+
+```bash
+cd hexapod-server
+cp config.sim.txt config.txt
+cmake -S . -B build
+cmake --build build -j
+./build/hexapod-server --scenario scenarios/01_nominal_stand_walk.toml
+```
+
+Run all baseline scenarios in a loop:
+
+```bash
+cd hexapod-server
+cp config.sim.txt config.txt
+for s in scenarios/*.toml; do
+  echo "=== Running $s ==="
+  ./build/hexapod-server --scenario "$s" || break
+done
+```
+
+### 3) Run tests (including newly added tests)
+
+Tests are built only when `HEXAPOD_SERVER_BUILD_TESTS=ON` is enabled:
+
+```bash
+cd hexapod-server
+cmake -S . -B build-tests -DHEXAPOD_SERVER_BUILD_TESTS=ON
+cmake --build build-tests -j
+ctest --test-dir build-tests --output-on-failure
+```
+
+To run one new test binary directly:
+
+```bash
+./build-tests/test_robot_runtime_loop
+```
+
+### 4) Log markers for pass/fail interpretation
+
+When reading console/app logs for scenario runs:
+
+- **Healthy run indicators**
+  - `Runtime.Mode=sim`
+  - `Running scenario: <name>`
+  - repeated `Scenario event @<N>ms mode update` entries (for scenarios with mode events)
+  - process exits with status `0`
+- **Failure indicators**
+  - `Failed to load scenario file '<path>'`
+  - `Scenario driver requires sim runtime (SimHardwareBridge)`
+  - any `LOG_ERROR(...)` line during scenario execution
+  - non-zero process exit status
+
+For unit tests, failures print `FAIL: <message>` and return non-zero.
+
+### Troubleshooting (offline mode)
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `Scenario driver requires sim runtime (SimHardwareBridge)` | `Runtime.Mode` is still `serial` | Set `Runtime.Mode = "sim"` in active config, then rerun. |
+| `Failed to load scenario file '...'` | Wrong/missing scenario path or invalid TOML | Confirm file path from `hexapod-server/` and validate scenario TOML syntax/keys. |
+| Scenario assertions are flaky due to timing | Test assumes exact wall-clock timing under CPU load | Prefer pass/fail checks based on mode/fault transitions and log markers, not exact timestamps. |
 
 ## Configuration (`config.txt`)
 
