@@ -23,10 +23,20 @@ class HandshakeClient;
 class HardwareStateCodec;
 class CommandClient;
 
+class IPacketEndpoint {
+public:
+    virtual ~IPacketEndpoint() = default;
+    virtual void send_packet(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload) = 0;
+    virtual bool recv_packet(DecodedPacket& packet) = 0;
+};
+
 class SimpleHardwareBridge final : public IHardwareBridge {
 public:
     explicit SimpleHardwareBridge(std::string device = "/dev/ttyACM0",
                                   int baud_rate = 115200,
+                                  int timeout_ms = 100,
+                                  std::vector<float> calibrations = {});
+    explicit SimpleHardwareBridge(std::unique_ptr<IPacketEndpoint> endpoint,
                                   int timeout_ms = 100,
                                   std::vector<float> calibrations = {});
     ~SimpleHardwareBridge() override;
@@ -98,6 +108,7 @@ private:
     JointTargets last_written_{};
 
     std::unique_ptr<SerialCommsServer> serialComs_{};
+    std::unique_ptr<IPacketEndpoint> packet_endpoint_{};
     std::unique_ptr<TransportSession> transport_;
     std::unique_ptr<HandshakeClient> handshake_;
     std::unique_ptr<HardwareStateCodec> codec_;
