@@ -8,24 +8,6 @@
 
 using namespace mn::CppLinuxSerial;
 
-
-namespace {
-
-void trim_rx_buffer(std::vector<uint8_t>& buffer, const std::size_t max_bytes)
-{
-  if (buffer.size() <= max_bytes)
-    return;
-
-  const std::size_t overflow = buffer.size() - max_bytes;
-  buffer.erase(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(overflow));
-  if (auto logger = logging::GetDefaultLogger()) {
-    LOG_WARN(logger, "[SerialCommsServer] RX buffer overflow: dropped ", overflow, " bytes");
-  }
-}
-
-
-} // namespace
-
 BaudRate SerialCommsServer::int_to_baud_rate(int baud)
 {
   switch (baud)
@@ -96,7 +78,12 @@ void SerialCommsServer::refill_read_buffer()
     return;
 
   readBuffer.insert(readBuffer.end(), recv_buffer.begin(), recv_buffer.end());
-  trim_rx_buffer(readBuffer, MAX_TRANSPORT_RX_BUFFER_BYTES);
+  const std::size_t read_buffer_overflow = trim_rx_buffer(readBuffer, MAX_TRANSPORT_RX_BUFFER_BYTES);
+  if (read_buffer_overflow > 0) {
+    if (auto logger = logging::GetDefaultLogger()) {
+      LOG_WARN(logger, "[SerialCommsServer] RX buffer overflow: dropped ", read_buffer_overflow, " bytes");
+    }
+  }
   if (readBufferHead > readBuffer.size())
     readBufferHead = readBuffer.size();
 }
@@ -148,6 +135,11 @@ bool SerialCommsServer::recv_packet(DecodedPacket& packet)
     if(bytes_read <= 0)
       return false;
     rxBuffer.push_back(byte);
-    trim_rx_buffer(rxBuffer, MAX_TRANSPORT_RX_BUFFER_BYTES);
+    const std::size_t rx_buffer_overflow = trim_rx_buffer(rxBuffer, MAX_TRANSPORT_RX_BUFFER_BYTES);
+    if (rx_buffer_overflow > 0) {
+      if (auto logger = logging::GetDefaultLogger()) {
+        LOG_WARN(logger, "[SerialCommsServer] RX buffer overflow: dropped ", rx_buffer_overflow, " bytes");
+      }
+    }
   }
 }
