@@ -6,6 +6,7 @@
 #include "hardware_bridge.hpp"
 #include "logger.hpp"
 #include "safety_supervisor.hpp"
+#include "sim_hardware_bridge.hpp"
 #include "types.hpp"
 
 #include <atomic>
@@ -26,6 +27,7 @@ public:
     void diagnosticsStep();
 
     void setMotionIntent(const MotionIntent& intent);
+    bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
     ControlStatus getStatus() const;
 
 private:

@@ -86,6 +86,16 @@ void RobotRuntime::setMotionIntent(const MotionIntent& intent) {
     motion_intent_.write(intent);
 }
 
+bool RobotRuntime::setSimFaultToggles(const SimHardwareFaultToggles& toggles) {
+    auto* sim_hw = dynamic_cast<SimHardwareBridge*>(hw_.get());
+    if (sim_hw == nullptr) {
+        return false;
+    }
+
+    sim_hw->setFaultToggles(toggles);
+    return true;
+}
+
 ControlStatus RobotRuntime::getStatus() const {
     return status_.read();
 }

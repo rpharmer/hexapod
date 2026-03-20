@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <mutex>
 #include <optional>
 
 #include "hardware_bridge.hpp"
@@ -27,6 +28,7 @@ public:
     bool init() override;
     bool read(RawHardwareState& out) override;
     bool write(const JointTargets& in) override;
+    void setFaultToggles(const SimHardwareFaultToggles& fault_toggles);
 
 private:
     static double clamp01(double value);
@@ -36,6 +38,7 @@ private:
     DurationSec response_time_constant_{};
 
     bool initialized_{false};
+    mutable std::mutex mutex_{};
     RawHardwareState state_{};
     JointTargets commanded_targets_{};
 };

@@ -45,6 +45,10 @@ void RobotControl::setMotionIntent(const MotionIntent& intent) {
     runtime_.setMotionIntent(intent);
 }
 
+bool RobotControl::setSimFaultToggles(const SimHardwareFaultToggles& toggles) {
+    return runtime_.setSimFaultToggles(toggles);
+}
+
 ControlStatus RobotControl::getStatus() const {
     return runtime_.getStatus();
 }

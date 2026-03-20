@@ -21,6 +21,7 @@ public:
     void stop();
 
     void setMotionIntent(const MotionIntent& intent);
+    bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
     ControlStatus getStatus() const;
 
 private:
