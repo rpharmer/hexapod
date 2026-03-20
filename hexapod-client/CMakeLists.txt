@@ -20,6 +20,7 @@ set(HEXAPOD_CLIENT_EXCLUDE_FROM_ALL)
 set(HEXAPOD_CLIENT_SOURCES
     firmware_boot.cpp
     firmware_context.cpp
+    command_router.cpp
     command_dispatch.cpp
     power_commands.cpp
     sensing_commands.cpp

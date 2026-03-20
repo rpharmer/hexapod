@@ -64,6 +64,58 @@ events = [
                   "invalid contacts length should fail with explicit error");
 }
 
+bool test_unknown_key_permissive_vs_strict() {
+    const std::string path = "/tmp/scenario_unknown_key.toml";
+    if (!writeScenarioFile(path, R"(
+name = "unknown-key"
+duration_ms = 100
+tick_ms = 20
+events = [
+  { at_ms = 0, mode = "WALK", gait = "TRIPOD", typo_key = 1 }
+]
+)")) {
+        return false;
+    }
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    const bool permissive_ok =
+        ScenarioDriver::loadFromToml(path, scenario, error, ScenarioDriver::ValidationMode::Permissive);
+    const bool strict_ok =
+        ScenarioDriver::loadFromToml(path, scenario, error, ScenarioDriver::ValidationMode::Strict);
+    std::remove(path.c_str());
+
+    return expect(permissive_ok, "permissive mode should accept unknown keys") &&
+           expect(!strict_ok && error.find("unknown key") != std::string::npos,
+                  "strict mode should reject unknown keys");
+}
+
+bool test_invalid_combination_permissive_vs_strict() {
+    const std::string path = "/tmp/scenario_invalid_combo.toml";
+    if (!writeScenarioFile(path, R"(
+name = "invalid-combo"
+duration_ms = 100
+tick_ms = 20
+events = [
+  { at_ms = 0, gait = "TRIPOD", body_height_m = 0.25 }
+]
+)")) {
+        return false;
+    }
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    const bool permissive_ok =
+        ScenarioDriver::loadFromToml(path, scenario, error, ScenarioDriver::ValidationMode::Permissive);
+    const bool strict_ok =
+        ScenarioDriver::loadFromToml(path, scenario, error, ScenarioDriver::ValidationMode::Strict);
+    std::remove(path.c_str());
+
+    return expect(permissive_ok, "permissive mode should allow partial motion fields") &&
+           expect(!strict_ok && error.find("without mode") != std::string::npos,
+                  "strict mode should reject gait/body_height without mode");
+}
+
 } // namespace
 
 int main() {
@@ -71,6 +123,12 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!test_invalid_contacts_size_rejected()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_unknown_key_permissive_vs_strict()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_invalid_combination_permissive_vs_strict()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
