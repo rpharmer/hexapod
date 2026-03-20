@@ -7,7 +7,7 @@
 
 void handleSetAngleCommand(uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  if(payload.size() != (sizeof(uint8_t) + sizeof(float))
+  if(payload.size() != (sizeof(uint8_t) + sizeof(float)))
   {
     firmware().serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
