@@ -3,6 +3,9 @@
 #include "hexapod-client.hpp"
 #include "firmware_context.hpp"
 
+#include <array>
+#include <cstddef>
+
 namespace {
 
 constexpr int64_t HOST_LIVENESS_TIMEOUT_US = 2000000;
@@ -14,67 +17,105 @@ void transitionToHostDisconnectedSafeState()
   firmware().state = HexapodState::WAITING_FOR_HOST;
 }
 
-bool dispatchPowerCommand(const DecodedPacket& packet)
+enum class PayloadPolicyType : uint8_t
 {
-  switch(packet.cmd)
+  Any,
+  ExactBytes
+};
+
+struct PayloadPolicy
+{
+  PayloadPolicyType type;
+  std::size_t expectedBytes;
+
+  bool accepts(std::size_t payloadBytes) const
   {
-    case SET_POWER_RELAY:
-      handleSetPowerRelayCommand(packet.seq, packet.payload);
+    if(type == PayloadPolicyType::Any)
       return true;
-    case SET_SERVOS_ENABLED:
-      handleSetServosEnabledCommand(packet.seq, packet.payload);
-      return true;
-    case GET_SERVOS_ENABLED:
-      handleGetServosEnabledCommand(packet.seq);
-      return true;
-    case SET_SERVOS_TO_MID:
-      handleSetServosToMidCommand(packet.seq);
-      return true;
-    default:
-      return false;
+
+    return payloadBytes == expectedBytes;
   }
+};
+
+using RoutedHandler = void (*)(uint16_t seq, const std::vector<uint8_t>& payload);
+
+struct CommandRoute
+{
+  uint8_t cmd;
+  PayloadPolicy payloadPolicy;
+  RoutedHandler handler;
+};
+
+void handleGetAngleCalibRouted(uint16_t seq, const std::vector<uint8_t>&)
+{
+  handleGetAngleCalibCommand(seq);
 }
 
-bool dispatchSensingCommand(const DecodedPacket& packet)
+void handleGetCurrentRouted(uint16_t seq, const std::vector<uint8_t>&)
 {
-  switch(packet.cmd)
-  {
-    case GET_ANGLE_CALIBRATIONS:
-      handleGetAngleCalibCommand(packet.seq);
-      return true;
-    case GET_CURRENT:
-      handleGetCurrentCommand(packet.seq);
-      return true;
-    case GET_VOLTAGE:
-      handleGetVoltageCommand(packet.seq);
-      return true;
-    case GET_SENSOR:
-      handleGetSensorCommand(packet.seq, packet.payload);
-      return true;
-    case GET_FULL_HARDWARE_STATE:
-      handleGetFullHardwareStateCommand(packet.seq);
-      return true;
-    default:
-      return false;
-  }
+  handleGetCurrentCommand(seq);
 }
 
-bool dispatchMotionCommand(const DecodedPacket& packet)
+void handleGetVoltageRouted(uint16_t seq, const std::vector<uint8_t>&)
 {
-  switch(packet.cmd)
+  handleGetVoltageCommand(seq);
+}
+
+void handleGetFullHardwareStateRouted(uint16_t seq, const std::vector<uint8_t>&)
+{
+  handleGetFullHardwareStateCommand(seq);
+}
+
+void handleGetServosEnabledRouted(uint16_t seq, const std::vector<uint8_t>&)
+{
+  handleGetServosEnabledCommand(seq);
+}
+
+void handleSetServosToMidRouted(uint16_t seq, const std::vector<uint8_t>&)
+{
+  handleSetServosToMidCommand(seq);
+}
+
+constexpr std::array<CommandRoute, 12> COMMAND_ROUTES{{
+    {SET_POWER_RELAY, {PayloadPolicyType::ExactBytes, 1}, handleSetPowerRelayCommand},
+    {SET_SERVOS_ENABLED, {PayloadPolicyType::ExactBytes, kProtocolServoEnablePayloadBytes}, handleSetServosEnabledCommand},
+    {GET_SERVOS_ENABLED, {PayloadPolicyType::ExactBytes, 0}, handleGetServosEnabledRouted},
+    {SET_SERVOS_TO_MID, {PayloadPolicyType::ExactBytes, 0}, handleSetServosToMidRouted},
+    {GET_ANGLE_CALIBRATIONS, {PayloadPolicyType::ExactBytes, 0}, handleGetAngleCalibRouted},
+    {GET_CURRENT, {PayloadPolicyType::ExactBytes, 0}, handleGetCurrentRouted},
+    {GET_VOLTAGE, {PayloadPolicyType::ExactBytes, 0}, handleGetVoltageRouted},
+    {GET_SENSOR, {PayloadPolicyType::ExactBytes, 1}, handleGetSensorCommand},
+    {GET_FULL_HARDWARE_STATE, {PayloadPolicyType::ExactBytes, 0}, handleGetFullHardwareStateRouted},
+    {SET_ANGLE_CALIBRATIONS, {PayloadPolicyType::ExactBytes, kProtocolCalibrationsPayloadBytes}, handleCalibCommand},
+    {SET_TARGET_ANGLE, {PayloadPolicyType::ExactBytes, sizeof(uint8_t) + sizeof(float)}, handleSetAngleCommand},
+    {SET_JOINT_TARGETS, {PayloadPolicyType::ExactBytes, kProtocolJointTargetsPayloadBytes}, handleSetJointTargetsCommand},
+}};
+
+const CommandRoute* findRoute(uint8_t cmd)
+{
+  for(const CommandRoute& route : COMMAND_ROUTES)
   {
-    case SET_ANGLE_CALIBRATIONS:
-      handleCalibCommand(packet.seq, packet.payload);
-      return true;
-    case SET_TARGET_ANGLE:
-      handleSetAngleCommand(packet.seq, packet.payload);
-      return true;
-    case SET_JOINT_TARGETS:
-      handleSetJointTargetsCommand(packet.seq, packet.payload);
-      return true;
-    default:
-      return false;
+    if(route.cmd == cmd)
+      return &route;
   }
+
+  return nullptr;
+}
+
+bool dispatchCommand(const DecodedPacket& packet)
+{
+  const CommandRoute* route = findRoute(packet.cmd);
+  if(route == nullptr)
+    return false;
+
+  if(!route->payloadPolicy.accepts(packet.payload.size()))
+  {
+    firmware().serial.send_packet(packet.seq, NACK, {INVALID_PAYLOAD_LENGTH});
+    return true;
+  }
+
+  route->handler(packet.seq, packet.payload);
+  return true;
 }
 
 } // namespace
@@ -111,7 +152,7 @@ void runCommandLoop()
       {
         handleHeartbeatCommand(packet.seq);
       }
-      else if(dispatchPowerCommand(packet) || dispatchSensingCommand(packet) || dispatchMotionCommand(packet))
+      else if(dispatchCommand(packet))
       {
       }
       else if(packet.cmd == KILL)
