@@ -33,10 +33,7 @@ bool RobotRuntime::init() {
     initial.requested_mode = RobotMode::SAFE_IDLE;
     initial.timestamp_us = now_us();
 
-    motion_intent_.write(StreamSample<MotionIntent>{
-        initial,
-        intent_sample_id_.fetch_add(1) + 1,
-        initial.timestamp_us});
+    motion_intent_.write(initial);
     status_.write(ControlStatus{});
     safety_state_.write(SafetyState{});
     joint_targets_.write(JointTargets{});
@@ -44,6 +41,7 @@ bool RobotRuntime::init() {
     control_dt_sum_us_.store(0);
     control_jitter_max_us_.store(0);
     stale_intent_count_.store(0);
+    stale_estimator_count_.store(0);
     last_control_step_us_ = TimePointUs{};
 
     return true;
@@ -54,22 +52,16 @@ void RobotRuntime::busStep() {
     if (!hw_->read(raw)) {
         raw.bus_ok = false;
     }
-    raw_state_.write(StreamSample<RawHardwareState>{
-        raw,
-        raw_sample_id_.fetch_add(1) + 1,
-        now_us()});
+    raw_state_.write(raw);
 
     const JointTargets cmd = joint_targets_.read();
     (void)hw_->write(cmd);
 }
 
 void RobotRuntime::estimatorStep() {
-    const StreamSample<RawHardwareState> raw = raw_state_.read();
-    const EstimatedState est = estimator_->update(raw.value);
-    estimated_state_.write(StreamSample<EstimatedState>{
-        est,
-        estimator_sample_id_.fetch_add(1) + 1,
-        now_us()});
+    const RawHardwareState raw = raw_state_.read();
+    const EstimatedState est = estimator_->update(raw);
+    estimated_state_.write(est);
 }
 
 void RobotRuntime::controlStep() {
@@ -89,14 +81,14 @@ void RobotRuntime::controlStep() {
     const EstimatedState est = estimated_state_.read();
     const MotionIntent intent = motion_intent_.read();
     const SafetyState safety_state = safety_state_.read();
-    const bool bus_ok = raw_state_.read().value.bus_ok;
+    const bool bus_ok = raw_state_.read().bus_ok;
 
     const bool estimator_fresh =
-        (!est_sample.timestamp_us.isZero()) &&
-        ((now - est_sample.timestamp_us).value <= config_.freshness.max_estimator_age_us.value);
+        (!est.timestamp_us.isZero()) &&
+        ((now - est.timestamp_us).value <= config_.safety.command_timeout_us.value);
     const bool intent_fresh =
-        (!intent_sample.timestamp_us.isZero()) &&
-        ((now - intent_sample.timestamp_us).value <= config_.freshness.max_intent_age_us.value);
+        (!intent.timestamp_us.isZero()) &&
+        ((now - intent.timestamp_us).value <= config_.safety.command_timeout_us.value);
 
     if (!intent_fresh) {
         stale_intent_count_.fetch_add(1);
@@ -117,10 +109,6 @@ void RobotRuntime::controlStep() {
         return;
     }
 
-    if (!intent.timestamp_us.isZero() && ((now - intent.timestamp_us) > config_.safety.command_timeout_us)) {
-        stale_intent_count_.fetch_add(1);
-    }
-
     const PipelineStepResult result = pipeline_.runStep(
         est,
         intent,
@@ -133,9 +121,9 @@ void RobotRuntime::controlStep() {
 }
 
 void RobotRuntime::safetyStep() {
-    const RawHardwareState raw = raw_state_.read().value;
-    const EstimatedState est = estimated_state_.read().value;
-    const MotionIntent intent = motion_intent_.read().value;
+    const RawHardwareState raw = raw_state_.read();
+    const EstimatedState est = estimated_state_.read();
+    const MotionIntent intent = motion_intent_.read();
 
     const SafetyState s = safety_.evaluate(raw, est, intent);
     safety_state_.write(s);
@@ -156,7 +144,9 @@ void RobotRuntime::diagnosticsStep() {
                  " max_control_jitter_us=",
                  control_jitter_max_us_.load(),
                  " stale_intent_events=",
-                 stale_intent_count_.load());
+                 stale_intent_count_.load(),
+                 " stale_estimator_events=",
+                 stale_estimator_count_.load());
     }
 }
 
@@ -165,10 +155,7 @@ void RobotRuntime::setMotionIntent(const MotionIntent& intent) {
     if (stamped_intent.timestamp_us.isZero()) {
         stamped_intent.timestamp_us = now_us();
     }
-    motion_intent_.write(StreamSample<MotionIntent>{
-        stamped_intent,
-        intent_sample_id_.fetch_add(1) + 1,
-        stamped_intent.timestamp_us});
+    motion_intent_.write(stamped_intent);
 }
 
 bool RobotRuntime::setSimFaultToggles(const SimHardwareFaultToggles& toggles) {
