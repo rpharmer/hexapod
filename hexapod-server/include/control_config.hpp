@@ -24,22 +24,35 @@ inline constexpr float kDefaultMaxBusCurrentA{25.0f};
 inline constexpr int kDefaultMinFootContacts{0};
 inline constexpr int kDefaultMaxFootContacts{kNumLegs};
 
-extern std::chrono::microseconds kBusLoopPeriod;
-extern std::chrono::microseconds kEstimatorLoopPeriod;
-extern std::chrono::microseconds kControlLoopPeriod;
-extern std::chrono::microseconds kSafetyLoopPeriod;
-extern std::chrono::milliseconds kDiagnosticsPeriod;
-extern std::chrono::milliseconds kCommandRefreshPeriod;
-extern std::chrono::milliseconds kStandSettlingDelay;
+struct LoopTimingConfig {
+    std::chrono::microseconds bus_loop_period{std::chrono::microseconds{kDefaultBusLoopPeriodUs}};
+    std::chrono::microseconds estimator_loop_period{std::chrono::microseconds{kDefaultEstimatorLoopPeriodUs}};
+    std::chrono::microseconds control_loop_period{std::chrono::microseconds{kDefaultControlLoopPeriodUs}};
+    std::chrono::microseconds safety_loop_period{std::chrono::microseconds{kDefaultSafetyLoopPeriodUs}};
+    std::chrono::milliseconds diagnostics_period{std::chrono::milliseconds{kDefaultDiagnosticsPeriodMs}};
+    std::chrono::milliseconds command_refresh_period{std::chrono::milliseconds{kDefaultCommandRefreshPeriodMs}};
+    std::chrono::milliseconds stand_settling_delay{std::chrono::milliseconds{kDefaultStandSettlingDelayMs}};
+};
 
-extern AngleRad kMaxTiltRad;
-extern DurationUs kCommandTimeoutUs;
-extern LinearRateMps kFallbackSpeedMag;
-extern float kMinBusVoltageV;
-extern float kMaxBusCurrentA;
-extern int kMinFootContacts;
-extern int kMaxFootContacts;
+struct SafetyConfig {
+    AngleRad max_tilt_rad{kDefaultMaxTiltRad};
+    DurationUs command_timeout_us{kDefaultCommandTimeoutUs};
+    float min_bus_voltage_v{kDefaultMinBusVoltageV};
+    float max_bus_current_a{kDefaultMaxBusCurrentA};
+    int min_foot_contacts{kDefaultMinFootContacts};
+    int max_foot_contacts{kDefaultMaxFootContacts};
+};
 
-void loadFromParsedToml(const ParsedToml& config);
+struct GaitConfig {
+    LinearRateMps fallback_speed_mag{kDefaultFallbackSpeedMag};
+};
+
+struct ControlConfig {
+    LoopTimingConfig loop_timing{};
+    SafetyConfig safety{};
+    GaitConfig gait{};
+};
+
+ControlConfig fromParsedToml(const ParsedToml& config);
 
 } // namespace control_config

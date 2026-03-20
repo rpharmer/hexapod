@@ -139,124 +139,18 @@ private:
     SerialCommsServer& serial_;
 };
 
+class CommandClient;
+
 class HandshakeClient {
 public:
-    explicit HandshakeClient(TransportSession& transport)
-        : transport_(transport) {}
+    HandshakeClient(TransportSession& transport, CommandClient& command_client);
 
-    bool establish_link(uint8_t requested_caps) {
-        const uint16_t seq = transport_.next_sequence();
-        const protocol::HelloRequest request{PROTOCOL_VERSION, requested_caps};
-        transport_.send(seq, HELLO, protocol::encode_hello_request(request));
-
-        DecodedPacket response;
-        if (!transport_.recv(response)) {
-            if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger, "handshake timeout waiting for response");
-            }
-            return false;
-        }
-
-        if (response.seq != seq) {
-            if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger,
-                          "sequence mismatch (expected ",
-                          static_cast<unsigned>(seq),
-                          ", got ",
-                          static_cast<unsigned>(response.seq),
-                          ")");
-            }
-            return false;
-        }
-
-        if (response.cmd != ACK) {
-            if (response.cmd == NACK && !response.payload.empty()) {
-                if (auto logger = logging::GetDefaultLogger()) {
-                    LOG_ERROR(logger, "NACK, Error: ", static_cast<unsigned>(response.payload[0]));
-                }
-            } else if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger, "malformed response, recieved: ", static_cast<unsigned>(response.cmd));
-            }
-            return false;
-        }
-
-        protocol::HelloAck ack{};
-        if (!protocol::decode_hello_ack(response.payload, ack)) {
-            if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger, "malformed ACK response");
-            }
-            return false;
-        }
-
-        if (ack.version != PROTOCOL_VERSION) {
-            if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger, "version mismatch");
-            }
-            return false;
-        }
-
-        if (ack.status != STATUS_OK) {
-            if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger, "device not ready");
-            }
-            return false;
-        }
-
-        transport_.reset_activity();
-        return true;
-    }
-
-    bool send_heartbeat() {
-        const uint16_t seq = transport_.next_sequence();
-        transport_.send(seq, HEARTBEAT, {});
-
-        DecodedPacket response;
-        if (!transport_.recv(response)) {
-            if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger, "heartbeat timeout waiting for response");
-            }
-            return false;
-        }
-
-        if (response.seq != seq) {
-            if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger,
-                          "heartbeat sequence mismatch (expected ",
-                          static_cast<unsigned>(seq),
-                          ", got ",
-                          static_cast<unsigned>(response.seq),
-                          ")");
-            }
-            return false;
-        }
-
-        if (response.cmd != ACK) {
-            if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger, "heartbeat malformed response, recieved: ", static_cast<unsigned>(response.cmd));
-            }
-            return false;
-        }
-
-        protocol::HelloAck heartbeat{};
-        if (!protocol::decode_hello_ack(response.payload, heartbeat)) {
-            if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger, "heartbeat malformed payload");
-            }
-            return false;
-        }
-
-        if (heartbeat.status != STATUS_OK) {
-            if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger, "heartbeat returned non-ok status: ", static_cast<unsigned>(heartbeat.status));
-            }
-            return false;
-        }
-
-        return true;
-    }
+    bool establish_link(uint8_t requested_caps);
+    bool send_heartbeat();
 
 private:
     TransportSession& transport_;
+    CommandClient& command_client_;
 };
 
 class HardwareStateCodec {
@@ -305,44 +199,111 @@ public:
         : transport_(transport) {}
 
     bool send_command_and_expect_ack(uint8_t cmd, const std::vector<uint8_t>& payload = {}) {
-        const uint16_t seq = transport_.next_sequence();
-        transport_.send(seq, cmd, payload);
-        const bool ok = transport_.wait_for_ack(seq);
-        if (!ok) {
+        if (!transact(cmd, payload, nullptr)) {
             if (auto logger = logging::GetDefaultLogger()) {
                 LOG_ERROR(logger,
                           "command failed (cmd=",
                           static_cast<unsigned>(cmd),
-                          ", seq=",
-                          static_cast<unsigned>(seq),
                           ", expected=ACK)");
             }
+            return false;
         }
-        return ok;
+        return true;
     }
 
     bool send_command_and_expect_ack_payload(uint8_t cmd,
                                              const std::vector<uint8_t>& payload,
                                              std::vector<uint8_t>& ack_payload) {
-        const uint16_t seq = transport_.next_sequence();
-        transport_.send(seq, cmd, payload);
-        const bool ok = transport_.wait_for_ack(seq, &ack_payload);
-        if (!ok) {
+        if (!transact(cmd, payload, &ack_payload)) {
             if (auto logger = logging::GetDefaultLogger()) {
                 LOG_ERROR(logger,
                           "command failed (cmd=",
                           static_cast<unsigned>(cmd),
-                          ", seq=",
-                          static_cast<unsigned>(seq),
                           ", expected=ACK payload)");
             }
+            return false;
         }
-        return ok;
+        return true;
     }
 
 private:
+    bool transact(uint8_t cmd,
+                  const std::vector<uint8_t>& payload,
+                  std::vector<uint8_t>* ack_payload) {
+        const uint16_t seq = transport_.next_sequence();
+        transport_.send(seq, cmd, payload);
+        return transport_.wait_for_ack(seq, ack_payload);
+    }
+
     TransportSession& transport_;
 };
+
+HandshakeClient::HandshakeClient(TransportSession& transport, CommandClient& command_client)
+    : transport_(transport), command_client_(command_client) {}
+
+bool HandshakeClient::establish_link(uint8_t requested_caps) {
+    const protocol::HelloRequest request{PROTOCOL_VERSION, requested_caps};
+    std::vector<uint8_t> ack_payload;
+    if (!command_client_.send_command_and_expect_ack_payload(
+            HELLO, protocol::encode_hello_request(request), ack_payload)) {
+        if (auto logger = logging::GetDefaultLogger()) {
+            LOG_ERROR(logger, "handshake failed");
+        }
+        return false;
+    }
+
+    protocol::HelloAck ack{};
+    if (!protocol::decode_hello_ack(ack_payload, ack)) {
+        if (auto logger = logging::GetDefaultLogger()) {
+            LOG_ERROR(logger, "malformed ACK response");
+        }
+        return false;
+    }
+
+    if (ack.version != PROTOCOL_VERSION) {
+        if (auto logger = logging::GetDefaultLogger()) {
+            LOG_ERROR(logger, "version mismatch");
+        }
+        return false;
+    }
+
+    if (ack.status != STATUS_OK) {
+        if (auto logger = logging::GetDefaultLogger()) {
+            LOG_ERROR(logger, "device not ready");
+        }
+        return false;
+    }
+
+    transport_.reset_activity();
+    return true;
+}
+
+bool HandshakeClient::send_heartbeat() {
+    std::vector<uint8_t> ack_payload;
+    if (!command_client_.send_command_and_expect_ack_payload(HEARTBEAT, {}, ack_payload)) {
+        if (auto logger = logging::GetDefaultLogger()) {
+            LOG_ERROR(logger, "heartbeat failed");
+        }
+        return false;
+    }
+
+    protocol::HelloAck heartbeat{};
+    if (!protocol::decode_hello_ack(ack_payload, heartbeat)) {
+        if (auto logger = logging::GetDefaultLogger()) {
+            LOG_ERROR(logger, "heartbeat malformed payload");
+        }
+        return false;
+    }
+
+    if (heartbeat.status != STATUS_OK) {
+        if (auto logger = logging::GetDefaultLogger()) {
+            LOG_ERROR(logger, "heartbeat returned non-ok status: ", static_cast<unsigned>(heartbeat.status));
+        }
+        return false;
+    }
+
+    return true;
+}
 
 SimpleHardwareBridge::SimpleHardwareBridge(std::string device,
                                            int baud_rate,
@@ -379,9 +340,9 @@ bool SimpleHardwareBridge::init() {
     }
 
     transport_ = std::make_unique<TransportSession>(*packet_endpoint_, kLinkTimeoutUs, kHeartbeatIdleIntervalUs);
-    handshake_ = std::make_unique<HandshakeClient>(*transport_);
     codec_ = std::make_unique<HardwareStateCodec>();
     command_client_ = std::make_unique<CommandClient>(*transport_);
+    handshake_ = std::make_unique<HandshakeClient>(*transport_, *command_client_);
 
     if (!handshake_->establish_link(0)) {
         return false;

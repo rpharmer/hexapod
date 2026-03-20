@@ -1,6 +1,7 @@
 #pragma once
 
 #include "control_pipeline.hpp"
+#include "control_config.hpp"
 #include "double_buffer.hpp"
 #include "estimator.hpp"
 #include "hardware_bridge.hpp"
@@ -16,7 +17,8 @@ class RobotRuntime {
 public:
     RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
                  std::unique_ptr<IEstimator> estimator,
-                 std::shared_ptr<logging::AsyncLogger> logger);
+                 std::shared_ptr<logging::AsyncLogger> logger,
+                 control_config::ControlConfig config = {});
 
     bool init();
 
@@ -34,6 +36,7 @@ private:
     std::unique_ptr<IHardwareBridge> hw_;
     std::unique_ptr<IEstimator> estimator_;
     std::shared_ptr<logging::AsyncLogger> logger_;
+    control_config::ControlConfig config_;
 
     ControlPipeline pipeline_;
     SafetySupervisor safety_;

@@ -1,20 +1,21 @@
 #include "safety_supervisor.hpp"
 
-#include "control_config.hpp"
-
 #include <cmath>
 
 namespace {
 
-bool isIntentStale(const MotionIntent& intent) {
+bool isIntentStale(const MotionIntent& intent, const control_config::SafetyConfig& config) {
     if (intent.timestamp_us.isZero()) {
         return true;
     }
 
-    return (now_us() - intent.timestamp_us) > control_config::kCommandTimeoutUs;
+    return (now_us() - intent.timestamp_us) > config.command_timeout_us;
 }
 
 } // namespace
+
+SafetySupervisor::SafetySupervisor(control_config::SafetyConfig config)
+    : config_(config) {}
 
 int SafetySupervisor::faultPriority(FaultCode code) {
     switch (code) {
@@ -36,13 +37,13 @@ std::size_t SafetySupervisor::faultIndex(FaultCode code) {
     return static_cast<std::size_t>(code);
 }
 
-bool SafetySupervisor::canAttemptClear(const MotionIntent& intent) {
-    return intent.requested_mode == RobotMode::SAFE_IDLE && !isIntentStale(intent);
+bool SafetySupervisor::canAttemptClear(const MotionIntent& intent) const {
+    return intent.requested_mode == RobotMode::SAFE_IDLE && !isIntentStale(intent, config_);
 }
 
 SafetySupervisor::FaultDecision SafetySupervisor::evaluateCurrentFault(const RawHardwareState& raw,
                                                                        const EstimatedState& est,
-                                                                       const MotionIntent& intent) {
+                                                                       const MotionIntent& intent) const {
     FaultDecision decision{};
 
     const auto consider_fault = [&](FaultCode code, bool torque_cut) {
@@ -63,22 +64,22 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateCurrentFault(const Raw
         consider_fault(FaultCode::BUS_TIMEOUT, true);
     }
 
-    if (raw.voltage < control_config::kMinBusVoltageV ||
-        raw.current > control_config::kMaxBusCurrentA) {
+    if (raw.voltage < config_.min_bus_voltage_v ||
+        raw.current > config_.max_bus_current_a) {
         consider_fault(FaultCode::MOTOR_FAULT, true);
     }
 
-    if (contact_count < control_config::kMinFootContacts ||
-        contact_count > control_config::kMaxFootContacts) {
+    if (contact_count < config_.min_foot_contacts ||
+        contact_count > config_.max_foot_contacts) {
         consider_fault(FaultCode::ESTIMATOR_INVALID, false);
     }
 
-    if (std::abs(est.body_twist_state.twist_pos_rad.x) > control_config::kMaxTiltRad.value ||
-        std::abs(est.body_twist_state.twist_pos_rad.y) > control_config::kMaxTiltRad.value) {
+    if (std::abs(est.body_twist_state.twist_pos_rad.x) > config_.max_tilt_rad.value ||
+        std::abs(est.body_twist_state.twist_pos_rad.y) > config_.max_tilt_rad.value) {
         consider_fault(FaultCode::TIP_OVER, true);
     }
 
-    if (isIntentStale(intent)) {
+    if (isIntentStale(intent, config_)) {
         consider_fault(FaultCode::COMMAND_TIMEOUT, false);
     }
 

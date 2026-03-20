@@ -1,6 +1,7 @@
 #pragma once
 
 #include "body_controller.hpp"
+#include "control_config.hpp"
 #include "gait_scheduler.hpp"
 #include "leg_ik.hpp"
 #include "types.hpp"
@@ -12,6 +13,8 @@ struct PipelineStepResult {
 
 class ControlPipeline {
 public:
+    explicit ControlPipeline(control_config::GaitConfig config = {});
+
     PipelineStepResult runStep(const EstimatedState& estimated,
                                const MotionIntent& intent,
                                const SafetyState& safety_state,

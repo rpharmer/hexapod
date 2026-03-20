@@ -4,8 +4,14 @@
 
 RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
                            std::unique_ptr<IEstimator> estimator,
-                           std::shared_ptr<logging::AsyncLogger> logger)
-    : hw_(std::move(hw)), estimator_(std::move(estimator)), logger_(std::move(logger)) {}
+                           std::shared_ptr<logging::AsyncLogger> logger,
+                           control_config::ControlConfig config)
+    : hw_(std::move(hw)),
+      estimator_(std::move(estimator)),
+      logger_(std::move(logger)),
+      config_(config),
+      pipeline_(config_.gait),
+      safety_(config_.safety) {}
 
 bool RobotRuntime::init() {
     if (!hw_ || !estimator_) {
