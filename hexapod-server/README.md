@@ -120,7 +120,16 @@ done
 
 ### 3) Run tests
 
-Tests are built only when `HEXAPOD_SERVER_BUILD_TESTS=ON`:
+Recommended (preset-based) workflow:
+
+```bash
+cd hexapod-server
+cmake --preset tests
+cmake --build --preset tests -j
+ctest --preset tests
+```
+
+Equivalent explicit configure/build commands:
 
 ```bash
 cd hexapod-server

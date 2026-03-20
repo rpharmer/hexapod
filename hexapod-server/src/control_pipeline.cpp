@@ -1,5 +1,8 @@
 #include "control_pipeline.hpp"
 
+ControlPipeline::ControlPipeline(control_config::GaitConfig config)
+    : gait_(config) {}
+
 PipelineStepResult ControlPipeline::runStep(const EstimatedState& estimated,
                                             const MotionIntent& intent,
                                             const SafetyState& safety_state,

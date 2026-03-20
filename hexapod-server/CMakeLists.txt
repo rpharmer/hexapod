@@ -96,4 +96,8 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_motion_intent_through_ik_fk tests/test_motion_intent_through_ik_fk.cpp)
     target_link_libraries(test_motion_intent_through_ik_fk PRIVATE hexapod_server_core)
     add_test(NAME motion_intent_through_ik_fk_chain COMMAND test_motion_intent_through_ik_fk)
+
+    add_executable(test_scenario_driver_validation tests/test_scenario_driver_validation.cpp)
+    target_link_libraries(test_scenario_driver_validation PRIVATE hexapod_server_core)
+    add_test(NAME scenario_driver_validation COMMAND test_scenario_driver_validation)
 endif()

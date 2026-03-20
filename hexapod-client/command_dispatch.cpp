@@ -12,9 +12,10 @@ constexpr int64_t HOST_LIVENESS_TIMEOUT_US = 2000000;
 
 void transitionToHostDisconnectedSafeState()
 {
-  firmware().servos.disable_all();
+  FirmwareContext& ctx = firmware();
+  ctx.servos.disable_all();
   gpio_put_masked(A0_GPIO_MASK, GPIO_LOW_MASK);
-  firmware().state = HexapodState::WAITING_FOR_HOST;
+  ctx.state = HexapodState::WAITING_FOR_HOST;
 }
 
 enum class PayloadPolicyType : uint8_t
@@ -37,7 +38,7 @@ struct PayloadPolicy
   }
 };
 
-using RoutedHandler = void (*)(uint16_t seq, const std::vector<uint8_t>& payload);
+using RoutedHandler = void (*)(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload);
 
 struct CommandRoute
 {
@@ -46,49 +47,79 @@ struct CommandRoute
   RoutedHandler handler;
 };
 
-void handleGetAngleCalibRouted(uint16_t seq, const std::vector<uint8_t>&)
+void handleGetAngleCalibRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>&)
 {
-  handleGetAngleCalibCommand(seq);
+  handleGetAngleCalibCommand(ctx, seq);
 }
 
-void handleGetCurrentRouted(uint16_t seq, const std::vector<uint8_t>&)
+void handleGetCurrentRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>&)
 {
-  handleGetCurrentCommand(seq);
+  handleGetCurrentCommand(ctx, seq);
 }
 
-void handleGetVoltageRouted(uint16_t seq, const std::vector<uint8_t>&)
+void handleGetVoltageRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>&)
 {
-  handleGetVoltageCommand(seq);
+  handleGetVoltageCommand(ctx, seq);
 }
 
-void handleGetFullHardwareStateRouted(uint16_t seq, const std::vector<uint8_t>&)
+void handleGetFullHardwareStateRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>&)
 {
-  handleGetFullHardwareStateCommand(seq);
+  handleGetFullHardwareStateCommand(ctx, seq);
 }
 
-void handleGetServosEnabledRouted(uint16_t seq, const std::vector<uint8_t>&)
+void handleGetServosEnabledRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>&)
 {
-  handleGetServosEnabledCommand(seq);
+  handleGetServosEnabledCommand(ctx, seq);
 }
 
-void handleSetServosToMidRouted(uint16_t seq, const std::vector<uint8_t>&)
+void handleSetServosToMidRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>&)
 {
-  handleSetServosToMidCommand(seq);
+  handleSetServosToMidCommand(ctx, seq);
+}
+
+void handleSetPowerRelayRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
+{
+  handleSetPowerRelayCommand(ctx, seq, payload);
+}
+
+void handleSetServosEnabledRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
+{
+  handleSetServosEnabledCommand(ctx, seq, payload);
+}
+
+void handleGetSensorRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
+{
+  handleGetSensorCommand(ctx, seq, payload);
+}
+
+void handleCalibRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
+{
+  handleCalibCommand(ctx, seq, payload);
+}
+
+void handleSetAngleRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
+{
+  handleSetAngleCommand(ctx, seq, payload);
+}
+
+void handleSetJointTargetsRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
+{
+  handleSetJointTargetsCommand(ctx, seq, payload);
 }
 
 constexpr std::array<CommandRoute, 12> COMMAND_ROUTES{{
-    {SET_POWER_RELAY, {PayloadPolicyType::ExactBytes, 1}, handleSetPowerRelayCommand},
-    {SET_SERVOS_ENABLED, {PayloadPolicyType::ExactBytes, kProtocolServoEnablePayloadBytes}, handleSetServosEnabledCommand},
+    {SET_POWER_RELAY, {PayloadPolicyType::ExactBytes, 1}, handleSetPowerRelayRouted},
+    {SET_SERVOS_ENABLED, {PayloadPolicyType::ExactBytes, kProtocolServoEnablePayloadBytes}, handleSetServosEnabledRouted},
     {GET_SERVOS_ENABLED, {PayloadPolicyType::ExactBytes, 0}, handleGetServosEnabledRouted},
     {SET_SERVOS_TO_MID, {PayloadPolicyType::ExactBytes, 0}, handleSetServosToMidRouted},
     {GET_ANGLE_CALIBRATIONS, {PayloadPolicyType::ExactBytes, 0}, handleGetAngleCalibRouted},
     {GET_CURRENT, {PayloadPolicyType::ExactBytes, 0}, handleGetCurrentRouted},
     {GET_VOLTAGE, {PayloadPolicyType::ExactBytes, 0}, handleGetVoltageRouted},
-    {GET_SENSOR, {PayloadPolicyType::ExactBytes, 1}, handleGetSensorCommand},
+    {GET_SENSOR, {PayloadPolicyType::ExactBytes, 1}, handleGetSensorRouted},
     {GET_FULL_HARDWARE_STATE, {PayloadPolicyType::ExactBytes, 0}, handleGetFullHardwareStateRouted},
-    {SET_ANGLE_CALIBRATIONS, {PayloadPolicyType::ExactBytes, kProtocolCalibrationsPayloadBytes}, handleCalibCommand},
-    {SET_TARGET_ANGLE, {PayloadPolicyType::ExactBytes, sizeof(uint8_t) + sizeof(float)}, handleSetAngleCommand},
-    {SET_JOINT_TARGETS, {PayloadPolicyType::ExactBytes, kProtocolJointTargetsPayloadBytes}, handleSetJointTargetsCommand},
+    {SET_ANGLE_CALIBRATIONS, {PayloadPolicyType::ExactBytes, kProtocolCalibrationsPayloadBytes}, handleCalibRouted},
+    {SET_TARGET_ANGLE, {PayloadPolicyType::ExactBytes, sizeof(uint8_t) + sizeof(float)}, handleSetAngleRouted},
+    {SET_JOINT_TARGETS, {PayloadPolicyType::ExactBytes, kProtocolJointTargetsPayloadBytes}, handleSetJointTargetsRouted},
 }};
 
 const CommandRoute* findRoute(uint8_t cmd)
@@ -102,7 +133,7 @@ const CommandRoute* findRoute(uint8_t cmd)
   return nullptr;
 }
 
-bool dispatchCommand(const DecodedPacket& packet)
+bool dispatchCommand(FirmwareContext& ctx, const DecodedPacket& packet)
 {
   const CommandRoute* route = findRoute(packet.cmd);
   if(route == nullptr)
@@ -110,11 +141,11 @@ bool dispatchCommand(const DecodedPacket& packet)
 
   if(!route->payloadPolicy.accepts(packet.payload.size()))
   {
-    firmware().serial.send_packet(packet.seq, NACK, {INVALID_PAYLOAD_LENGTH});
+    ctx.serial.send_packet(packet.seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return true;
   }
 
-  route->handler(packet.seq, packet.payload);
+  route->handler(ctx, packet.seq, packet.payload);
   return true;
 }
 
@@ -127,17 +158,18 @@ void runCommandLoop()
 
   while(1)
   {
+    FirmwareContext& ctx = firmware();
     DecodedPacket packet;
-    if(firmware().serial.recv_packet(packet))
+    if(ctx.serial.recv_packet(packet))
     {
       lastHostActivity = get_absolute_time();
 
-      if(firmware().state != HexapodState::ACTIVE)
+      if(ctx.state != HexapodState::ACTIVE)
       {
         if(packet.cmd == HELLO)
         {
           if(handleHandshake(packet.seq, packet.payload))
-            firmware().state = HexapodState::ACTIVE;
+            ctx.state = HexapodState::ACTIVE;
         }
         else
         {
@@ -146,13 +178,13 @@ void runCommandLoop()
       }
       else if(packet.cmd == HELLO)
       {
-        firmware().serial.send_packet(packet.seq, NACK, {ALREADY_PAIRED});
+        ctx.serial.send_packet(packet.seq, NACK, {ALREADY_PAIRED});
       }
       else if(packet.cmd == HEARTBEAT)
       {
-        handleHeartbeatCommand(packet.seq);
+        handleHeartbeatCommand(ctx, packet.seq);
       }
-      else if(dispatchCommand(packet))
+      else if(dispatchCommand(ctx, packet))
       {
       }
       else if(packet.cmd == KILL)
@@ -161,13 +193,13 @@ void runCommandLoop()
       }
       else
       {
-        firmware().serial.send_packet(packet.seq, NACK, {UNSUPPORTED_COMMAND});
+        ctx.serial.send_packet(packet.seq, NACK, {UNSUPPORTED_COMMAND});
       }
 
       continue;
     }
 
-    if(firmware().state == HexapodState::ACTIVE &&
+    if(ctx.state == HexapodState::ACTIVE &&
        absolute_time_diff_us(lastHostActivity, get_absolute_time()) > HOST_LIVENESS_TIMEOUT_US)
     {
       transitionToHostDisconnectedSafeState();
