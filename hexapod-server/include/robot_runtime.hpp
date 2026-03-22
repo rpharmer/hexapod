@@ -30,6 +30,7 @@ public:
     void diagnosticsStep();
 
     void setMotionIntent(const MotionIntent& intent);
+    void setMotionIntentForTest(const MotionIntent& intent);
     bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
     ControlStatus getStatus() const;
 
