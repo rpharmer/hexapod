@@ -1,15 +1,17 @@
 #pragma once
+#include <atomic>
+#include <linux/input.h>
+#include <map>
+#include <mutex>
 #include <string>
 #include <thread>
-#include <atomic>
-#include <map>
-#include <linux/input.h>
+
 #include "event_queue.hpp"
 #include "xbox_controller_event.hpp"
 
 class XboxController {
 public:
-    XboxController(const std::string& devicePath);
+    explicit XboxController(const std::string& devicePath);
     ~XboxController();
 
     bool start();
@@ -18,15 +20,15 @@ public:
     EventQueue<XboxEvent>& getQueue() { return queue; }
 
     // Read current stick states
-    int getLeftX()  const { return leftX; }
-    int getLeftY()  const { return leftY; }
-    float getLeftMag() const { return leftMag; }
-    float getLeftAng() const { return leftAng; }
+    int getLeftX() const;
+    int getLeftY() const;
+    float getLeftMag() const;
+    float getLeftAng() const;
 
-    int getRightX() const { return rightX; }
-    int getRightY() const { return rightY; }
-    float getRightMag() const { return rightMag; }
-    float getRightAng() const { return rightAng; }
+    int getRightX() const;
+    int getRightY() const;
+    float getRightMag() const;
+    float getRightAng() const;
 
     void setRadialDeadzone(const std::string& stick, int dz);
 
@@ -49,10 +51,16 @@ private:
     std::map<std::string, int> rawAxis;
     std::map<std::string, int> radialDZ;
 
-    // Stick state
-    int leftX, leftY;
-    float leftMag, leftAng;
+    mutable std::mutex stickStateMutex;
 
-    int rightX, rightY;
-    float rightMag, rightAng;
+    // Stick state
+    int leftX;
+    int leftY;
+    float leftMag;
+    float leftAng;
+
+    int rightX;
+    int rightY;
+    float rightMag;
+    float rightAng;
 };

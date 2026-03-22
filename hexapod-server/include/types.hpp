@@ -230,10 +230,16 @@ struct JointTargets {
 };
 
 struct BodyTwistState {
+  // Body orientation setpoint in radians as {roll, pitch, yaw}.
   Vec3 twist_pos_rad{};
+  // Body angular velocity setpoint in rad/s as {roll_rate, pitch_rate, yaw_rate}.
   Vec3 twist_vel_radps{};
-  
+
+  // Body translation setpoint relative to nominal stance in meters as {x, y, z}.
+  // x/y represent lean offsets; z is vertical body-height offset used by the current controller.
+  // (0, 0, 0) is the nominal stance translation.
   Vec3 body_trans_m{};
+  // Body translation velocity setpoint in m/s as {x_rate, y_rate, z_rate}.
   Vec3 body_trans_mps{};
 };
 

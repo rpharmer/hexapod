@@ -1,24 +1,27 @@
-#include <vector>
 #include <algorithm>
-#include <chrono>
-#include <thread>
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <memory>
+#include <optional>
+#include <string>
+#include <thread>
+#include <vector>
 
-#include "logger.hpp"
+#include "control_config.hpp"
+#include "estimator.hpp"
+#include "geometry_config.hpp"
+#include "hardware_bridge.hpp"
 #include "hexapod-common.hpp"
 #include "hexapod-server.hpp"
-#include "toml_parser.hpp"
-#include "serialCommsServer.hpp"
-#include "estimator.hpp"
-#include "hardware_bridge.hpp"
-#include "sim_hardware_bridge.hpp"
-#include "robot_control.hpp"
-#include "control_config.hpp"
-#include "geometry_config.hpp"
+#include "logger.hpp"
 #include "motion_intent_utils.hpp"
+#include "robot_control.hpp"
 #include "scenario_driver.hpp"
+#include "serialCommsServer.hpp"
+#include "sim_hardware_bridge.hpp"
+#include "toml_parser.hpp"
+#include "xbox_controller.hpp"
 
 using namespace mn::CppLinuxSerial;
 using namespace logging;
@@ -46,6 +49,36 @@ std::unique_ptr<IHardwareBridge> makeHardwareBridge(const ParsedToml& config)
 
   return std::make_unique<SimpleHardwareBridge>(config.serialDevice, config.baudRate,
                                                 config.timeout, config.minMaxPulses);
+}
+
+MotionIntent makeControllerMotionIntent(const XboxController& controller,
+                                        RobotMode mode,
+                                        GaitType gait,
+                                        double body_height_m)
+{
+  MotionIntent cmd = makeMotionIntent(mode, gait, body_height_m);
+
+  const double left_x = static_cast<double>(controller.getLeftX()) / 32767.0;
+  const double left_y = static_cast<double>(controller.getLeftY()) / 32767.0;
+  const double right_x = static_cast<double>(controller.getRightX()) / 32767.0;
+
+  // NOTE:
+  // MotionIntent does not currently expose desired gait velocity/heading fields.
+  // We therefore map controller axes to body pose offsets:
+  //   - left stick => body lean setpoint (x/y translation)
+  //   - right stick => body roll/pitch angle setpoints
+  // This keeps intent semantics aligned with BodyTwistState as currently defined.
+  constexpr double kMaxBodyLeanM = 0.03;
+  constexpr double kMaxTiltRad = 0.30;
+
+  const double right_y = static_cast<double>(controller.getRightY()) / 32767.0;
+
+  cmd.twist.body_trans_m = Vec3{left_y * kMaxBodyLeanM, left_x * kMaxBodyLeanM, body_height_m};
+  cmd.twist.body_trans_mps = Vec3{};
+  cmd.twist.twist_pos_rad = Vec3{right_x * kMaxTiltRad, right_y * kMaxTiltRad, 0.0};
+  cmd.twist.twist_vel_radps = Vec3{};
+
+  return cmd;
 }
 
 } // namespace
@@ -84,12 +117,11 @@ int main(int argc, char** argv)
     return 1;
   }
 
-  robot.start();
-
   bool run_default_loop = true;
   bool lint_scenario_only = false;
   ScenarioDriver::ValidationMode scenario_validation_mode = ScenarioDriver::ValidationMode::Permissive;
   std::string scenario_file;
+  std::string xbox_device;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
     if (arg == "--scenario" && i + 1 < argc) {
@@ -100,8 +132,12 @@ int main(int argc, char** argv)
     } else if (arg == "--scenario-lint") {
       lint_scenario_only = true;
       scenario_validation_mode = ScenarioDriver::ValidationMode::Strict;
+    } else if (arg == "--xbox-device" && i + 1 < argc) {
+      xbox_device = argv[++i];
     }
   }
+
+  robot.start();
 
   if (!run_default_loop) {
     ScenarioDefinition scenario{};
@@ -130,14 +166,50 @@ int main(int argc, char** argv)
       return 1;
     }
   } else {
-    robot.setMotionIntent(makeMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.20));
+    std::optional<XboxController> controller;
+    if (!xbox_device.empty()) {
+      controller.emplace(xbox_device);
+      if (!controller->start()) {
+        LOG_WARN(logger, "Xbox controller unavailable at ", xbox_device, ", using fallback command loop");
+        controller.reset();
+      } else {
+        LOG_INFO(logger, "Xbox controller enabled from device ", xbox_device);
+      }
+    }
 
+    RobotMode mode = RobotMode::STAND;
+    GaitType gait = GaitType::TRIPOD;
+
+    robot.setMotionIntent(makeMotionIntent(mode, gait, 0.20));
     std::this_thread::sleep_for(control_cfg.loop_timing.stand_settling_delay);
 
     while (!g_exit.load()) {
-      robot.setMotionIntent(makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.20));
+      if (controller.has_value()) {
+        while (auto ev = controller->getQueue().pop()) {
+          if (ev->type != XboxEvent::Type::Button || ev->value == 0) {
+            continue;
+          }
+          if (ev->name == "A") {
+            mode = RobotMode::WALK;
+          } else if (ev->name == "B") {
+            mode = RobotMode::STAND;
+          } else if (ev->name == "X") {
+            gait = GaitType::RIPPLE;
+          } else if (ev->name == "Y") {
+            gait = GaitType::TRIPOD;
+          }
+        }
+
+        robot.setMotionIntent(makeControllerMotionIntent(*controller, mode, gait, 0.20));
+      } else {
+        robot.setMotionIntent(makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.20));
+      }
 
       std::this_thread::sleep_for(control_cfg.loop_timing.command_refresh_period); // refresh command watchdog
+    }
+
+    if (controller.has_value()) {
+      controller->stop();
     }
   }
 
