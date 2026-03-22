@@ -58,24 +58,21 @@ MotionIntent makeControllerMotionIntent(const XboxController& controller,
 {
   MotionIntent cmd = makeMotionIntent(mode, gait, body_height_m);
 
-  const double left_x = static_cast<double>(controller.getLeftX()) / 32767.0;
-  const double left_y = static_cast<double>(controller.getLeftY()) / 32767.0;
+  constexpr double kMaxCommandSpeedMps = 0.25;
+  constexpr double kMaxYawRad = 0.45;
+  constexpr double kBodyHeightAdjustRangeM = 0.08;
+
   const double right_x = static_cast<double>(controller.getRightX()) / 32767.0;
+  const double lt = static_cast<double>(controller.getLeftTrigger()) / 1023.0;
+  const double rt = static_cast<double>(controller.getRightTrigger()) / 1023.0;
 
-  // NOTE:
-  // MotionIntent does not currently expose desired gait velocity/heading fields.
-  // We therefore map controller axes to body pose offsets:
-  //   - left stick => body lean setpoint (x/y translation)
-  //   - right stick => body roll/pitch angle setpoints
-  // This keeps intent semantics aligned with BodyTwistState as currently defined.
-  constexpr double kMaxBodyLeanM = 0.03;
-  constexpr double kMaxTiltRad = 0.30;
+  cmd.speed_mps = LinearRateMps{controller.getLeftMag() * kMaxCommandSpeedMps};
+  cmd.heading_rad = AngleRad{static_cast<double>(controller.getLeftAng())};
 
-  const double right_y = static_cast<double>(controller.getRightY()) / 32767.0;
-
-  cmd.twist.body_trans_m = Vec3{left_y * kMaxBodyLeanM, left_x * kMaxBodyLeanM, body_height_m};
+  const double body_height_cmd = body_height_m + (rt - lt) * kBodyHeightAdjustRangeM;
+  cmd.twist.body_trans_m = Vec3{0.0, 0.0, std::clamp(body_height_cmd, 0.10, 0.35)};
   cmd.twist.body_trans_mps = Vec3{};
-  cmd.twist.twist_pos_rad = Vec3{right_x * kMaxTiltRad, right_y * kMaxTiltRad, 0.0};
+  cmd.twist.twist_pos_rad = Vec3{0.0, 0.0, right_x * kMaxYawRad};
   cmd.twist.twist_vel_radps = Vec3{};
 
   return cmd;

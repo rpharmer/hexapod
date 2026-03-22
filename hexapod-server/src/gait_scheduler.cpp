@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace {
 
@@ -64,8 +65,10 @@ GaitState GaitScheduler::update(const EstimatedState&,
     const DurationSec dt{static_cast<double>((now - last_update_us_).value) * 1e-6};
     last_update_us_ = now;
 
-    // TODO(gait): replace fallback speed estimate with measured command magnitude.
-    const double speed_mag = config_.fallback_speed_mag.value;
+    constexpr double kNominalMaxSpeedMps = 0.25;
+    const double commanded_speed = std::abs(intent.speed_mps.value);
+    const double normalized_command = std::clamp(commanded_speed / kNominalMaxSpeedMps, 0.0, 1.0);
+    const double speed_mag = std::max(normalized_command, config_.fallback_speed_mag.value);
 
     const double step_hz = std::clamp(0.5 + 2.0 * speed_mag, 0.5, 2.5);
     const FrequencyHz step_rate_hz{step_hz};

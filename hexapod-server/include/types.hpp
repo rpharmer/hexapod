@@ -236,7 +236,7 @@ struct BodyTwistState {
   Vec3 twist_vel_radps{};
 
   // Body translation setpoint relative to nominal stance in meters as {x, y, z}.
-  // x/y represent lean offsets; z is vertical body-height offset used by the current controller.
+  // x/y are planar body translation offsets; z is vertical body-height setpoint.
   // (0, 0, 0) is the nominal stance translation.
   Vec3 body_trans_m{};
   // Body translation velocity setpoint in m/s as {x_rate, y_rate, z_rate}.
@@ -256,6 +256,9 @@ struct RawHardwareState {
 struct MotionIntent {
   RobotMode requested_mode{RobotMode::SAFE_IDLE};
   GaitType gait{GaitType::TRIPOD};
+  // Planar walk command magnitude in m/s and heading in body frame radians.
+  LinearRateMps speed_mps{};
+  AngleRad heading_rad{};
   BodyTwistState twist{};
   uint64_t sample_id{0};
   TimePointUs timestamp_us{};

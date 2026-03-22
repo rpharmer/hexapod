@@ -16,7 +16,9 @@ XboxController::XboxController(const std::string& devicePath)
       rightX(0),
       rightY(0),
       rightMag(0),
-      rightAng(0) {
+      rightAng(0),
+      leftTrigger(0),
+      rightTrigger(0) {
     buttonMap = {
         {304, "A"},      {305, "B"},       {307, "X"},       {308, "Y"},
         {310, "LB"},     {311, "RB"},      {314, "Back"},    {315, "Start"},
@@ -33,6 +35,7 @@ XboxController::XboxController(const std::string& devicePath)
 
     rawAxis["LX"] = rawAxis["LY"] = 0;
     rawAxis["RX"] = rawAxis["RY"] = 0;
+    rawAxis["LT"] = rawAxis["RT"] = 0;
 }
 
 XboxController::~XboxController() {
@@ -77,6 +80,17 @@ float XboxController::getRightMag() const {
 float XboxController::getRightAng() const {
     std::lock_guard<std::mutex> lock(stickStateMutex);
     return rightAng;
+}
+
+
+int XboxController::getLeftTrigger() const {
+    std::lock_guard<std::mutex> lock(stickStateMutex);
+    return leftTrigger;
+}
+
+int XboxController::getRightTrigger() const {
+    std::lock_guard<std::mutex> lock(stickStateMutex);
+    return rightTrigger;
 }
 
 void XboxController::setRadialDeadzone(const std::string& stick, int dz) {
@@ -204,6 +218,12 @@ void XboxController::processEvent(const input_event& ev) {
 
         if (axis == "RX" || axis == "RY") {
             updateStick("R");
+        }
+
+        if (axis == "LT" || axis == "RT") {
+            std::lock_guard<std::mutex> lock(stickStateMutex);
+            leftTrigger = rawAxis["LT"];
+            rightTrigger = rawAxis["RT"];
         }
     }
 }
