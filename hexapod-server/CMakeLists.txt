@@ -104,4 +104,8 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_scenario_driver_validation tests/test_scenario_driver_validation.cpp)
     target_link_libraries(test_scenario_driver_validation PRIVATE hexapod_server_core)
     add_test(NAME scenario_driver_validation COMMAND test_scenario_driver_validation)
+
+    add_executable(test_simple_estimator_ground_plane tests/test_simple_estimator_ground_plane.cpp)
+    target_link_libraries(test_simple_estimator_ground_plane PRIVATE hexapod_server_core)
+    add_test(NAME simple_estimator_ground_plane COMMAND test_simple_estimator_ground_plane)
 endif()
