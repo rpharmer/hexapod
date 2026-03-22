@@ -1,0 +1,147 @@
+#include "xbox_controller.hpp"
+#include <fcntl.h>
+#include <unistd.h>
+#include <iostream>
+#include <cmath>
+
+XboxController::XboxController(const std::string& devicePath)
+    : device(devicePath), fd(-1), running(false),
+      leftX(0), leftY(0), leftMag(0), leftAng(0),
+      rightX(0), rightY(0), rightMag(0), rightAng(0)
+{
+    buttonMap = {
+        {304, "A"}, {305, "B"}, {307, "X"}, {308, "Y"},
+        {310, "LB"}, {311, "RB"},
+        {314, "Back"}, {315, "Start"}, {316, "Guide"},
+        {317, "LStick"}, {318, "RStick"}
+    };
+
+    axisMap = {
+        {0, "LX"}, {1, "LY"},
+        {2, "LT"}, {5, "RT"},
+        {3, "RX"}, {4, "RY"},
+        {16, "DPadX"}, {17, "DPadY"}
+    };
+
+    radialDZ["L"] = 8000;
+    radialDZ["R"] = 8000;
+
+    rawAxis["LX"] = rawAxis["LY"] = 0;
+    rawAxis["RX"] = rawAxis["RY"] = 0;
+}
+
+XboxController::~XboxController() {
+    stop();
+}
+
+void XboxController::setRadialDeadzone(const std::string& stick, int dz) {
+    radialDZ[stick] = dz;
+}
+
+bool XboxController::start() {
+    fd = open(device.c_str(), O_RDONLY | O_NONBLOCK);
+    if (fd < 0) {
+        std::cerr << "Failed to open " << device << "\n";
+        return false;
+    }
+
+    running = true;
+    worker = std::thread(&XboxController::eventLoop, this);
+    return true;
+}
+
+void XboxController::stop() {
+    if (running) {
+        running = false;
+        if (worker.joinable())
+            worker.join();
+    }
+
+    if (fd >= 0) {
+        close(fd);
+        fd = -1;
+    }
+}
+
+void XboxController::eventLoop() {
+    input_event ev;
+
+    while (running) {
+        ssize_t n = read(fd, &ev, sizeof(ev));
+
+        if (n == sizeof(ev)) {
+            processEvent(ev);
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+    }
+}
+
+void XboxController::updateStick(const std::string& stick) {
+    std::string ax = (stick == "L") ? "LX" : "RX";
+    std::string ay = (stick == "L") ? "LY" : "RY";
+
+    int x = rawAxis[ax];
+    int y = rawAxis[ay];
+
+    float r = std::sqrt(float(x*x + y*y));
+    float dz = float(radialDZ[stick]);
+
+    if (r < dz) {
+        if (stick == "L") {
+            leftX = leftY = 0;
+            leftMag = 0;
+            leftAng = 0;
+        } else {
+            rightX = rightY = 0;
+            rightMag = 0;
+            rightAng = 0;
+        }
+        return;
+    }
+
+    float rNorm = (r - dz) / (32767.0f - dz);
+    if (rNorm < 0) rNorm = 0;
+    if (rNorm > 1) rNorm = 1;
+
+    float scale = rNorm / r;
+
+    int fx = int(x * scale);
+    int fy = int(y * scale);
+
+    float ang = std::atan2(float(y), float(x));
+
+    if (stick == "L") {
+        leftX = fx;
+        leftY = fy;
+        leftMag = rNorm;
+        leftAng = ang;
+    } else {
+        rightX = fx;
+        rightY = fy;
+        rightMag = rNorm;
+        rightAng = ang;
+    }
+}
+
+void XboxController::processEvent(const input_event& ev) {
+    if (ev.type == EV_KEY && buttonMap.count(ev.code)) {
+        XboxEvent e;
+        e.type = XboxEvent::Type::Button;
+        e.name = buttonMap[ev.code];
+        e.value = ev.value;
+        queue.push(e);
+        return;
+    }
+
+    if (ev.type == EV_ABS && axisMap.count(ev.code)) {
+        std::string axis = axisMap[ev.code];
+        rawAxis[axis] = ev.value;
+
+        if (axis == "LX" || axis == "LY")
+            updateStick("L");
+
+        if (axis == "RX" || axis == "RY")
+            updateStick("R");
+    }
+}
