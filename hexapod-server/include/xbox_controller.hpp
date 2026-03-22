@@ -1,72 +1,11 @@
 #pragma once
-#include <atomic>
-#include <linux/input.h>
-#include <map>
-#include <mutex>
+
 #include <string>
-#include <thread>
 
-#include "event_queue.hpp"
-#include "xbox_controller_event.hpp"
+#include "evdev_gamepad_controller.hpp"
 
-class XboxController {
+class XboxController : public EvdevGamepadController {
 public:
-    explicit XboxController(const std::string& devicePath);
-    ~XboxController();
-
-    bool start();
-    void stop();
-
-    EventQueue<XboxEvent>& getQueue() { return queue; }
-
-    // Read current stick states
-    float getLeftX() const;
-    float getLeftY() const;
-    float getLeftMag() const;
-    float getLeftAng() const;
-
-    float getRightX() const;
-    float getRightY() const;
-    float getRightMag() const;
-    float getRightAng() const;
-
-    int getLeftTrigger() const;
-    int getRightTrigger() const;
-
-    void setRadialDeadzone(const std::string& stick, int dz);
-
-private:
-    void eventLoop();
-    void processEvent(const input_event& ev);
-
-    void updateStick(const std::string& stick);
-
-    int fd;
-    std::string device;
-    std::thread worker;
-    std::atomic<bool> running;
-
-    EventQueue<XboxEvent> queue;
-
-    std::map<int, std::string> buttonMap;
-    std::map<int, std::string> axisMap;
-
-    std::map<std::string, int> rawAxis;
-    std::map<std::string, int> radialDZ;
-
-    mutable std::mutex stickStateMutex;
-
-    // Stick state
-    float leftX;
-    float leftY;
-    float leftMag;
-    float leftAng;
-
-    float rightX;
-    float rightY;
-    float rightMag;
-    float rightAng;
-
-    int leftTrigger;
-    int rightTrigger;
+    explicit XboxController(const std::string& devicePath)
+        : EvdevGamepadController(devicePath, makeXboxGamepadMapping()) {}
 };
