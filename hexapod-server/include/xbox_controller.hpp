@@ -20,13 +20,13 @@ public:
     EventQueue<XboxEvent>& getQueue() { return queue; }
 
     // Read current stick states
-    int getLeftX() const;
-    int getLeftY() const;
+    float getLeftX() const;
+    float getLeftY() const;
     float getLeftMag() const;
     float getLeftAng() const;
 
-    int getRightX() const;
-    int getRightY() const;
+    float getRightX() const;
+    float getRightY() const;
     float getRightMag() const;
     float getRightAng() const;
 
@@ -57,13 +57,13 @@ private:
     mutable std::mutex stickStateMutex;
 
     // Stick state
-    int leftX;
-    int leftY;
+    float leftX;
+    float leftY;
     float leftMag;
     float leftAng;
 
-    int rightX;
-    int rightY;
+    float rightX;
+    float rightY;
     float rightMag;
     float rightAng;
 

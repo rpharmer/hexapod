@@ -62,7 +62,7 @@ MotionIntent makeControllerMotionIntent(const XboxController& controller,
   constexpr double kMaxYawRad = 0.45;
   constexpr double kBodyHeightAdjustRangeM = 0.08;
 
-  const double right_x = static_cast<double>(controller.getRightX()) / 32767.0;
+  const double right_x = static_cast<double>(controller.getRightX());
   const double lt = static_cast<double>(controller.getLeftTrigger()) / 1023.0;
   const double rt = static_cast<double>(controller.getRightTrigger()) / 1023.0;
 
