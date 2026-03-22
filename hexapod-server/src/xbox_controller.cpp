@@ -9,12 +9,12 @@ XboxController::XboxController(const std::string& devicePath)
     : fd(-1),
       device(devicePath),
       running(false),
-      leftX(0),
-      leftY(0),
+      leftX(0.0f),
+      leftY(0.0f),
       leftMag(0),
       leftAng(0),
-      rightX(0),
-      rightY(0),
+      rightX(0.0f),
+      rightY(0.0f),
       rightMag(0),
       rightAng(0),
       leftTrigger(0),
@@ -42,12 +42,12 @@ XboxController::~XboxController() {
     stop();
 }
 
-int XboxController::getLeftX() const {
+float XboxController::getLeftX() const {
     std::lock_guard<std::mutex> lock(stickStateMutex);
     return leftX;
 }
 
-int XboxController::getLeftY() const {
+float XboxController::getLeftY() const {
     std::lock_guard<std::mutex> lock(stickStateMutex);
     return leftY;
 }
@@ -62,12 +62,12 @@ float XboxController::getLeftAng() const {
     return leftAng;
 }
 
-int XboxController::getRightX() const {
+float XboxController::getRightX() const {
     std::lock_guard<std::mutex> lock(stickStateMutex);
     return rightX;
 }
 
-int XboxController::getRightY() const {
+float XboxController::getRightY() const {
     std::lock_guard<std::mutex> lock(stickStateMutex);
     return rightY;
 }
@@ -153,11 +153,11 @@ void XboxController::updateStick(const std::string& stick) {
 
     if (r < dz) {
         if (stick == "L") {
-            leftX = leftY = 0;
+            leftX = leftY = 0.0f;
             leftMag = 0;
             leftAng = 0;
         } else {
-            rightX = rightY = 0;
+            rightX = rightY = 0.0f;
             rightMag = 0;
             rightAng = 0;
         }
@@ -174,8 +174,8 @@ void XboxController::updateStick(const std::string& stick) {
 
     const float scale = rNorm / r;
 
-    const int fx = static_cast<int>(x * scale);
-    const int fy = static_cast<int>(y * scale);
+    const float fx = static_cast<float>(x) * scale;
+    const float fy = static_cast<float>(y) * scale;
 
     const float ang = std::atan2(static_cast<float>(y), static_cast<float>(x));
 

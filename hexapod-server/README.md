@@ -85,7 +85,9 @@ Button mappings in controller mode:
 - `X` => RIPPLE gait
 - `Y` => TRIPOD gait
 - Left stick => walk heading + speed (`heading_rad`, `speed_mps`)
+  - stick axes (`LX`,`LY`) are radial-deadzone filtered and normalized to `[-1, 1]` for downstream consumers
 - Right stick X => body yaw setpoint (`twist_pos_rad.z`)
+  - stick axis (`RX`) is radial-deadzone filtered and normalized to `[-1, 1]` before yaw scaling
 - Triggers (`LT`/`RT`) => body height down/up (`body_trans_m.z`)
 
 
