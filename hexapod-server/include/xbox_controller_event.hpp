@@ -3,10 +3,11 @@
 
 struct XboxEvent {
     enum class Type {
-        Button
+        Button,
+        Axis
     };
 
-    Type type;
+    Type type{Type::Button};
     std::string name;
-    int value;
+    int value{0};
 };

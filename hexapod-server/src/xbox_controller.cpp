@@ -1,26 +1,31 @@
 #include "xbox_controller.hpp"
-#include <fcntl.h>
-#include <unistd.h>
-#include <iostream>
+
 #include <cmath>
+#include <fcntl.h>
+#include <iostream>
+#include <unistd.h>
 
 XboxController::XboxController(const std::string& devicePath)
-    : device(devicePath), fd(-1), running(false),
-      leftX(0), leftY(0), leftMag(0), leftAng(0),
-      rightX(0), rightY(0), rightMag(0), rightAng(0)
-{
+    : fd(-1),
+      device(devicePath),
+      running(false),
+      leftX(0),
+      leftY(0),
+      leftMag(0),
+      leftAng(0),
+      rightX(0),
+      rightY(0),
+      rightMag(0),
+      rightAng(0) {
     buttonMap = {
-        {304, "A"}, {305, "B"}, {307, "X"}, {308, "Y"},
-        {310, "LB"}, {311, "RB"},
-        {314, "Back"}, {315, "Start"}, {316, "Guide"},
-        {317, "LStick"}, {318, "RStick"}
+        {304, "A"},      {305, "B"},       {307, "X"},       {308, "Y"},
+        {310, "LB"},     {311, "RB"},      {314, "Back"},    {315, "Start"},
+        {316, "Guide"},  {317, "LStick"},  {318, "RStick"},
     };
 
     axisMap = {
-        {0, "LX"}, {1, "LY"},
-        {2, "LT"}, {5, "RT"},
-        {3, "RX"}, {4, "RY"},
-        {16, "DPadX"}, {17, "DPadY"}
+        {0, "LX"},    {1, "LY"},    {2, "LT"},    {5, "RT"},
+        {3, "RX"},    {4, "RY"},    {16, "DPadX"}, {17, "DPadY"},
     };
 
     radialDZ["L"] = 8000;
@@ -32,6 +37,46 @@ XboxController::XboxController(const std::string& devicePath)
 
 XboxController::~XboxController() {
     stop();
+}
+
+int XboxController::getLeftX() const {
+    std::lock_guard<std::mutex> lock(stickStateMutex);
+    return leftX;
+}
+
+int XboxController::getLeftY() const {
+    std::lock_guard<std::mutex> lock(stickStateMutex);
+    return leftY;
+}
+
+float XboxController::getLeftMag() const {
+    std::lock_guard<std::mutex> lock(stickStateMutex);
+    return leftMag;
+}
+
+float XboxController::getLeftAng() const {
+    std::lock_guard<std::mutex> lock(stickStateMutex);
+    return leftAng;
+}
+
+int XboxController::getRightX() const {
+    std::lock_guard<std::mutex> lock(stickStateMutex);
+    return rightX;
+}
+
+int XboxController::getRightY() const {
+    std::lock_guard<std::mutex> lock(stickStateMutex);
+    return rightY;
+}
+
+float XboxController::getRightMag() const {
+    std::lock_guard<std::mutex> lock(stickStateMutex);
+    return rightMag;
+}
+
+float XboxController::getRightAng() const {
+    std::lock_guard<std::mutex> lock(stickStateMutex);
+    return rightAng;
 }
 
 void XboxController::setRadialDeadzone(const std::string& stick, int dz) {
@@ -53,8 +98,9 @@ bool XboxController::start() {
 void XboxController::stop() {
     if (running) {
         running = false;
-        if (worker.joinable())
+        if (worker.joinable()) {
             worker.join();
+        }
     }
 
     if (fd >= 0) {
@@ -69,7 +115,7 @@ void XboxController::eventLoop() {
     while (running) {
         ssize_t n = read(fd, &ev, sizeof(ev));
 
-        if (n == sizeof(ev)) {
+        if (n == static_cast<ssize_t>(sizeof(ev))) {
             processEvent(ev);
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -78,14 +124,18 @@ void XboxController::eventLoop() {
 }
 
 void XboxController::updateStick(const std::string& stick) {
-    std::string ax = (stick == "L") ? "LX" : "RX";
-    std::string ay = (stick == "L") ? "LY" : "RY";
+    const std::string ax = (stick == "L") ? "LX" : "RX";
+    const std::string ay = (stick == "L") ? "LY" : "RY";
 
-    int x = rawAxis[ax];
-    int y = rawAxis[ay];
+    const int x = rawAxis[ax];
+    const int y = rawAxis[ay];
 
-    float r = std::sqrt(float(x*x + y*y));
-    float dz = float(radialDZ[stick]);
+    const double x_d = static_cast<double>(x);
+    const double y_d = static_cast<double>(y);
+    const float r = static_cast<float>(std::sqrt((x_d * x_d) + (y_d * y_d)));
+    const float dz = static_cast<float>(radialDZ[stick]);
+
+    std::lock_guard<std::mutex> lock(stickStateMutex);
 
     if (r < dz) {
         if (stick == "L") {
@@ -101,15 +151,19 @@ void XboxController::updateStick(const std::string& stick) {
     }
 
     float rNorm = (r - dz) / (32767.0f - dz);
-    if (rNorm < 0) rNorm = 0;
-    if (rNorm > 1) rNorm = 1;
+    if (rNorm < 0) {
+        rNorm = 0;
+    }
+    if (rNorm > 1) {
+        rNorm = 1;
+    }
 
-    float scale = rNorm / r;
+    const float scale = rNorm / r;
 
-    int fx = int(x * scale);
-    int fy = int(y * scale);
+    const int fx = static_cast<int>(x * scale);
+    const int fy = static_cast<int>(y * scale);
 
-    float ang = std::atan2(float(y), float(x));
+    const float ang = std::atan2(static_cast<float>(y), static_cast<float>(x));
 
     if (stick == "L") {
         leftX = fx;
@@ -135,13 +189,21 @@ void XboxController::processEvent(const input_event& ev) {
     }
 
     if (ev.type == EV_ABS && axisMap.count(ev.code)) {
-        std::string axis = axisMap[ev.code];
+        const std::string axis = axisMap[ev.code];
         rawAxis[axis] = ev.value;
 
-        if (axis == "LX" || axis == "LY")
-            updateStick("L");
+        XboxEvent e;
+        e.type = XboxEvent::Type::Axis;
+        e.name = axis;
+        e.value = ev.value;
+        queue.push(e);
 
-        if (axis == "RX" || axis == "RY")
+        if (axis == "LX" || axis == "LY") {
+            updateStick("L");
+        }
+
+        if (axis == "RX" || axis == "RY") {
             updateStick("R");
+        }
     }
 }

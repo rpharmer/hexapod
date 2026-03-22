@@ -71,6 +71,23 @@ cd hexapod-server
 
 Stop with `Ctrl+C`.
 
+Controller-driven loop (optional):
+
+```bash
+cd hexapod-server
+./build/hexapod-server --xbox-device /dev/input/eventX
+```
+
+Button mappings in controller mode:
+
+- `A` => WALK
+- `B` => STAND
+- `X` => RIPPLE gait
+- `Y` => TRIPOD gait
+- Left stick => body lean setpoint (`body_trans_m` x/y)
+- Right stick => roll/pitch angle setpoints (`twist_pos_rad.x/.y`)
+
+
 ## Offline simulation/testing
 
 Use offline mode for deterministic control/safety validation without physical robot hardware.
