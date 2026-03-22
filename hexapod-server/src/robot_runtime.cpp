@@ -245,6 +245,10 @@ void RobotRuntime::setMotionIntent(const MotionIntent& intent) {
     motion_intent_.write(stamped_intent);
 }
 
+void RobotRuntime::setMotionIntentForTest(const MotionIntent& intent) {
+    motion_intent_.write(intent);
+}
+
 bool RobotRuntime::setSimFaultToggles(const SimHardwareFaultToggles& toggles) {
     auto* sim_hw = dynamic_cast<SimHardwareBridge*>(hw_.get());
     if (sim_hw == nullptr) {
