@@ -43,21 +43,38 @@ LegTargets BodyController::update(const EstimatedState& est,
         !safety.inhibit_motion &&
         !safety.torque_cut;
 
+    const double heading = intent.heading_rad.value;
+    const Vec3 step_dir{std::cos(heading), std::sin(heading), 0.0};
+    const double yaw_cmd = intent.twist.twist_pos_rad.z;
+    const Mat3 yaw_rotation = Mat3::rotZ(yaw_cmd);
+
+    double commanded_body_height_m = intent.twist.body_trans_m.z;
+    if (commanded_body_height_m <= 1e-6) {
+        commanded_body_height_m = kDefaultBodyHeightM;
+    }
+
     for (int leg = 0; leg < kNumLegs; ++leg) {
         Vec3 target = nominal[leg];
+
+        // Apply commanded body-height offset around the nominal stance height.
+        target.z += commanded_body_height_m - kDefaultBodyHeightM;
+
         if (walking) {
             const double phase = clamp01(gait.phase[leg]);
             if (gait.in_stance[leg]) {
                 const double stance_alpha = clamp01(phase / 0.5);
-                const double x_delta = (0.5 - stance_alpha) * kStepLengthM;
-                target.x += x_delta;
+                const double step_delta = (0.5 - stance_alpha) * kStepLengthM;
+                target = target + (step_dir * step_delta);
             } else {
                 const double swing_alpha = clamp01((phase - 0.5) / 0.5);
-                const double x_delta = (swing_alpha - 0.5) * kStepLengthM;
-                target.x += x_delta;
+                const double step_delta = (swing_alpha - 0.5) * kStepLengthM;
+                target = target + (step_dir * step_delta);
                 target.z += std::sin(kPi * swing_alpha) * kSwingHeightM;
             }
         }
+
+        // Apply commanded body yaw by rotating each foot target in body frame.
+        target = yaw_rotation * target;
 
         out.feet[leg].pos_body_m = target;
         out.feet[leg].vel_body_mps = Vec3{};

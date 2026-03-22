@@ -30,6 +30,9 @@ public:
     float getRightMag() const;
     float getRightAng() const;
 
+    int getLeftTrigger() const;
+    int getRightTrigger() const;
+
     void setRadialDeadzone(const std::string& stick, int dz);
 
 private:
@@ -63,4 +66,7 @@ private:
     int rightY;
     float rightMag;
     float rightAng;
+
+    int leftTrigger;
+    int rightTrigger;
 };

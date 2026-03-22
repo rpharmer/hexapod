@@ -113,7 +113,7 @@ events = [
 
     return expect(permissive_ok, "permissive mode should allow partial motion fields") &&
            expect(!strict_ok && error.find("without mode") != std::string::npos,
-                  "strict mode should reject gait/body_height without mode");
+                  "strict mode should reject motion fields without mode");
 }
 
 } // namespace

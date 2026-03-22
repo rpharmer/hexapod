@@ -11,6 +11,9 @@ struct ScenarioMotionIntent {
     RobotMode mode{RobotMode::SAFE_IDLE};
     GaitType gait{GaitType::TRIPOD};
     double body_height_m{0.20};
+    double speed_mps{0.0};
+    double heading_rad{0.0};
+    double yaw_rad{0.0};
 };
 
 struct ScenarioSensorOverrides {

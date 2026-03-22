@@ -84,8 +84,9 @@ Button mappings in controller mode:
 - `B` => STAND
 - `X` => RIPPLE gait
 - `Y` => TRIPOD gait
-- Left stick => body lean setpoint (`body_trans_m` x/y)
-- Right stick => roll/pitch angle setpoints (`twist_pos_rad.x/.y`)
+- Left stick => walk heading + speed (`heading_rad`, `speed_mps`)
+- Right stick X => body yaw setpoint (`twist_pos_rad.z`)
+- Triggers (`LT`/`RT`) => body height down/up (`body_trans_m.z`)
 
 
 ## Offline simulation/testing
