@@ -21,6 +21,8 @@
 #include "serialCommsServer.hpp"
 #include "sim_hardware_bridge.hpp"
 #include "toml_parser.hpp"
+#include "control_device.hpp"
+#include "evdev_gamepad_controller.hpp"
 #include "xbox_controller.hpp"
 
 using namespace mn::CppLinuxSerial;
@@ -51,7 +53,7 @@ std::unique_ptr<IHardwareBridge> makeHardwareBridge(const ParsedToml& config)
                                                 config.timeout, config.minMaxPulses);
 }
 
-MotionIntent makeControllerMotionIntent(const XboxController& controller,
+MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
                                         RobotMode mode,
                                         GaitType gait,
                                         double body_height_m)
@@ -118,7 +120,7 @@ int main(int argc, char** argv)
   bool lint_scenario_only = false;
   ScenarioDriver::ValidationMode scenario_validation_mode = ScenarioDriver::ValidationMode::Permissive;
   std::string scenario_file;
-  std::string xbox_device;
+  std::string controller_device;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
     if (arg == "--scenario" && i + 1 < argc) {
@@ -129,8 +131,8 @@ int main(int argc, char** argv)
     } else if (arg == "--scenario-lint") {
       lint_scenario_only = true;
       scenario_validation_mode = ScenarioDriver::ValidationMode::Strict;
-    } else if (arg == "--xbox-device" && i + 1 < argc) {
-      xbox_device = argv[++i];
+    } else if ((arg == "--xbox-device" || arg == "--controller-device") && i + 1 < argc) {
+      controller_device = argv[++i];
     }
   }
 
@@ -163,14 +165,14 @@ int main(int argc, char** argv)
       return 1;
     }
   } else {
-    std::optional<XboxController> controller;
-    if (!xbox_device.empty()) {
-      controller.emplace(xbox_device);
+    std::unique_ptr<IControlDevice> controller;
+    if (!controller_device.empty()) {
+      controller = std::make_unique<EvdevGamepadController>(controller_device, makeGenericGamepadMapping());
       if (!controller->start()) {
-        LOG_WARN(logger, "Xbox controller unavailable at ", xbox_device, ", using fallback command loop");
+        LOG_WARN(logger, "Controller unavailable at ", controller_device, ", using fallback command loop");
         controller.reset();
       } else {
-        LOG_INFO(logger, "Xbox controller enabled from device ", xbox_device);
+        LOG_INFO(logger, "Controller enabled from device ", controller_device);
       }
     }
 
@@ -181,9 +183,9 @@ int main(int argc, char** argv)
     std::this_thread::sleep_for(control_cfg.loop_timing.stand_settling_delay);
 
     while (!g_exit.load()) {
-      if (controller.has_value()) {
+      if (controller != nullptr) {
         while (auto ev = controller->getQueue().pop()) {
-          if (ev->type != XboxEvent::Type::Button || ev->value == 0) {
+          if (ev->type != ControllerEvent::Type::Button || ev->value == 0) {
             continue;
           }
           if (ev->name == "A") {
@@ -205,7 +207,7 @@ int main(int argc, char** argv)
       std::this_thread::sleep_for(control_cfg.loop_timing.command_refresh_period); // refresh command watchdog
     }
 
-    if (controller.has_value()) {
+    if (controller != nullptr) {
       controller->stop();
     }
   }
