@@ -4,6 +4,15 @@
 #include "firmware_context.hpp"
 #include "payload_decode.hpp"
 
+namespace {
+
+void nackInvalidPayloadLength(FirmwareContext& ctx, uint16_t seq, payload::DecodeStatus)
+{
+  ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
+}
+
+} // namespace
+
 void handleGetAngleCalibCommand(FirmwareContext& ctx, uint16_t seq)
 {
   protocol::Calibrations calibrations{};
@@ -38,9 +47,12 @@ void handleGetVoltageCommand(FirmwareContext& ctx, uint16_t seq)
 void handleGetSensorCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
   uint8_t sensor = 0;
-  if(!payload::decode_scalar_exact(payload, sensor))
+  if(!payload::decode_scalar_exact_or_report(payload,
+                                             sensor,
+                                             [&](payload::DecodeStatus status) {
+                                               nackInvalidPayloadLength(ctx, seq, status);
+                                             }))
   {
-    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
   if(sensor >= kProtocolFootSensorCount)

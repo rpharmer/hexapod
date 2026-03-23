@@ -172,7 +172,7 @@ bool SimpleHardwareBridge::read(RawHardwareState& out) {
     const auto decode_state = [this](const std::vector<uint8_t>& payload, RawHardwareState& decoded) {
         return codec_->decode_full_hardware_state(payload, decoded);
     };
-    if (!request_decoded(GET_FULL_HARDWARE_STATE, {}, decode_state, out, "GET_FULL_HARDWARE_STATE")) {
+    if (!request_decoded(GET_FULL_HARDWARE_STATE, {}, decode_state, out)) {
         return false;
     }
 
@@ -189,7 +189,7 @@ bool SimpleHardwareBridge::write(const JointTargets& in) {
         return false;
     }
 
-    if (!request_ack(SET_JOINT_TARGETS, codec_->encode_joint_targets(in), "SET_JOINT_TARGETS")) {
+    if (!request_ack(SET_JOINT_TARGETS, codec_->encode_joint_targets(in))) {
         return false;
     }
 
@@ -241,11 +241,11 @@ bool SimpleHardwareBridge::set_target_angle(uint8_t servo_id, float angle) {
     payload.reserve(sizeof(uint8_t) + sizeof(float));
     append_scalar(payload, servo_id);
     append_scalar(payload, angle);
-    return request_ack(SET_TARGET_ANGLE, payload, "SET_TARGET_ANGLE");
+    return request_ack(SET_TARGET_ANGLE, payload);
 }
 
 bool SimpleHardwareBridge::set_power_relay(bool enabled) {
-    return request_ack(SET_POWER_RELAY, {static_cast<uint8_t>(enabled ? 1 : 0)}, "SET_POWER_RELAY");
+    return request_ack(SET_POWER_RELAY, {static_cast<uint8_t>(enabled ? 1 : 0)});
 }
 
 bool SimpleHardwareBridge::get_angle_calibrations(std::vector<float>& out_calibs) {
@@ -256,8 +256,7 @@ bool SimpleHardwareBridge::get_angle_calibrations(std::vector<float>& out_calibs
     if (!request_decoded(GET_ANGLE_CALIBRATIONS,
                          {},
                          decode_calibrations,
-                         calibrations,
-                         "GET_ANGLE_CALIBRATIONS")) {
+                         calibrations)) {
         return false;
     }
 
@@ -267,7 +266,7 @@ bool SimpleHardwareBridge::get_angle_calibrations(std::vector<float>& out_calibs
 
 bool SimpleHardwareBridge::get_current(float& out_current) {
     protocol::ScalarFloat current{};
-    if (!request_decoded(GET_CURRENT, {}, decodeScalarFloatPayload, current, "GET_CURRENT")) {
+    if (!request_decoded(GET_CURRENT, {}, decodeScalarFloatPayload, current)) {
         return false;
     }
 
@@ -277,7 +276,7 @@ bool SimpleHardwareBridge::get_current(float& out_current) {
 
 bool SimpleHardwareBridge::get_voltage(float& out_voltage) {
     protocol::ScalarFloat voltage{};
-    if (!request_decoded(GET_VOLTAGE, {}, decodeScalarFloatPayload, voltage, "GET_VOLTAGE")) {
+    if (!request_decoded(GET_VOLTAGE, {}, decodeScalarFloatPayload, voltage)) {
         return false;
     }
 
@@ -292,7 +291,7 @@ bool SimpleHardwareBridge::get_sensor(uint8_t sensor_id, float& out_voltage) {
 
     protocol::ScalarFloat sensor_voltage{};
     if (!request_decoded(
-            GET_SENSOR, request_payload, decodeScalarFloatPayload, sensor_voltage, "GET_SENSOR")) {
+            GET_SENSOR, request_payload, decodeScalarFloatPayload, sensor_voltage)) {
         return false;
     }
 
@@ -302,7 +301,7 @@ bool SimpleHardwareBridge::get_sensor(uint8_t sensor_id, float& out_voltage) {
 
 bool SimpleHardwareBridge::send_diagnostic(const std::vector<uint8_t>& payload,
                                            std::vector<uint8_t>& response_payload) {
-    return request_ack_payload(DIAGNOSTIC, payload, response_payload, "DIAGNOSTIC");
+    return request_ack_payload(DIAGNOSTIC, payload, response_payload);
 }
 
 bool SimpleHardwareBridge::set_servos_enabled(const std::array<bool, kNumJoints>& enabled) {
@@ -311,7 +310,7 @@ bool SimpleHardwareBridge::set_servos_enabled(const std::array<bool, kNumJoints>
         payload[i] = enabled[i] ? 1 : 0;
     }
 
-    return request_ack(SET_SERVOS_ENABLED, protocol::encode_servo_enabled(payload), "SET_SERVOS_ENABLED");
+    return request_ack(SET_SERVOS_ENABLED, protocol::encode_servo_enabled(payload));
 }
 
 bool SimpleHardwareBridge::get_servos_enabled(std::array<bool, kNumJoints>& enabled) {
@@ -319,7 +318,7 @@ bool SimpleHardwareBridge::get_servos_enabled(std::array<bool, kNumJoints>& enab
     const auto decode_servo_state = [](const std::vector<uint8_t>& payload, protocol::ServoEnabled& decoded) {
         return protocol::decode_servo_enabled(payload, decoded);
     };
-    if (!request_decoded(GET_SERVOS_ENABLED, {}, decode_servo_state, states, "GET_SERVOS_ENABLED")) {
+    if (!request_decoded(GET_SERVOS_ENABLED, {}, decode_servo_state, states)) {
         return false;
     }
 
@@ -331,7 +330,7 @@ bool SimpleHardwareBridge::get_servos_enabled(std::array<bool, kNumJoints>& enab
 }
 
 bool SimpleHardwareBridge::set_servos_to_mid() {
-    return request_ack(SET_SERVOS_TO_MID, {}, "SET_SERVOS_TO_MID");
+    return request_ack(SET_SERVOS_TO_MID, {});
 }
 
 bool SimpleHardwareBridge::get_led_info(bool& present, uint8_t& count) {
@@ -339,7 +338,7 @@ bool SimpleHardwareBridge::get_led_info(bool& present, uint8_t& count) {
     const auto decode_led_info = [](const std::vector<uint8_t>& payload, protocol::LedInfo& decoded) {
         return protocol::decode_led_info(payload, decoded);
     };
-    if (!request_decoded(GET_LED_INFO, {}, decode_led_info, info, "GET_LED_INFO")) {
+    if (!request_decoded(GET_LED_INFO, {}, decode_led_info, info)) {
         return false;
     }
 
@@ -355,7 +354,7 @@ bool SimpleHardwareBridge::set_led_colors(
         payload[i] = colors[i];
     }
 
-    return request_ack(SET_LED_COLORS, protocol::encode_led_colors(payload), "SET_LED_COLORS");
+    return request_ack(SET_LED_COLORS, protocol::encode_led_colors(payload));
 }
 
 bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs) {
@@ -371,9 +370,7 @@ bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs) {
         payload[i] = calibs[i];
     }
 
-    if (!request_ack(SET_ANGLE_CALIBRATIONS,
-                     protocol::encode_calibrations(payload),
-                     "SET_ANGLE_CALIBRATIONS")) {
+    if (!request_ack(SET_ANGLE_CALIBRATIONS, protocol::encode_calibrations(payload))) {
         if (auto logger = logging::GetDefaultLogger()) {
             LOG_ERROR(logger, "calibration packet failed");
         }
@@ -387,22 +384,19 @@ bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs) {
 }
 
 bool SimpleHardwareBridge::request_ack(uint8_t cmd,
-                                       const std::vector<uint8_t>& payload,
-                                       const char* command_name) {
-    return request_transaction(cmd, payload, nullptr, command_name);
+                                       const std::vector<uint8_t>& payload) {
+    return request_transaction(cmd, payload, nullptr);
 }
 
 bool SimpleHardwareBridge::request_ack_payload(uint8_t cmd,
                                                const std::vector<uint8_t>& payload,
-                                               std::vector<uint8_t>& out_payload,
-                                               const char* command_name) {
-    return request_transaction(cmd, payload, &out_payload, command_name);
+                                               std::vector<uint8_t>& out_payload) {
+    return request_transaction(cmd, payload, &out_payload);
 }
 
 bool SimpleHardwareBridge::request_transaction(uint8_t cmd,
                                                const std::vector<uint8_t>& payload,
-                                               std::vector<uint8_t>* out_payload,
-                                               const char* command_name) {
+                                               std::vector<uint8_t>* out_payload) {
     if (!command_client_) {
         return false;
     }
@@ -417,6 +411,6 @@ bool SimpleHardwareBridge::request_transaction(uint8_t cmd,
     }
 
     const std::size_t payload_size = (out_payload != nullptr) ? out_payload->size() : 0;
-    logCommandFailure(command_name, outcome.outcome_class, outcome.nack_code, payload_size);
+    logCommandFailure(command_name(cmd), outcome.outcome_class, outcome.nack_code, payload_size);
     return false;
 }

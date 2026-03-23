@@ -1,5 +1,29 @@
 ## Detailed Plan
 
+### Progress snapshot (updated March 23, 2026)
+
+- ✅ **Phase 1:** Substantially complete in current tree (shared bridge transaction/decode helpers, freshness gate extraction, focused freshness edge tests present in `hexapod-server/tests`).
+- 🔄 **Phase 2:** In progress.
+  - ✅ Route-wrapper boilerplate reduction completed.
+  - ✅ Shared decode/NACK helper path applied across motion/sensing/power handlers.
+  - ⚠️ Host-facing malformed-payload checks expanded; server-side CTest integration exists, but equivalent client-side automation path still needs wiring.
+- 🔄 **Phase 3:** Partially started.
+  - ✅ Shared command metadata source now exists in `hexapod-common`.
+  - ✅ Host command-name lookup now uses shared metadata-driven mapping.
+  - ✅ Firmware route payload policies now derive from shared metadata contracts.
+  - ✅ Added compile-time/runtime drift checks for firmware-dispatch coverage and payload-contract alignment.
+  - ⚠️ Additional end-to-end runtime coverage across all command paths is still needed.
+- ⏳ **Phase 4:** Not yet started (design spike + staged implementation still pending).
+
+### Remaining priority points to address next
+
+1. **Phase 2.3 test execution path**
+   - Ensure host-facing malformed payload checks run in CI/build defaults (not only via ad-hoc execution).
+2. **Phase 3.3 consistency validation depth**
+   - Expand beyond metadata/dispatch contract checks into end-to-end transport-path assertions for every command category.
+3. **Phase 4 design spike + safety workflow**
+   - Implement guided probe mode skeleton, telemetry schema extensions, and abort interlocks before fitting/calibration rollout.
+
 ### Phase 1 — Core maintainability and safety logic hardening (Week 1)
 
 1. **Refactor server command transaction/decode duplication**

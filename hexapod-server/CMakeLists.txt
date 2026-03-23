@@ -144,4 +144,8 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_calibration_probe_fit tests/test_calibration_probe_fit.cpp)
     target_link_libraries(test_calibration_probe_fit PRIVATE hexapod_server_core)
     add_test(NAME calibration_probe_fit COMMAND test_calibration_probe_fit)
+
+    add_executable(test_protocol_command_metadata tests/test_protocol_command_metadata.cpp)
+    target_link_libraries(test_protocol_command_metadata PRIVATE hexapod_server_core)
+    add_test(NAME protocol_command_metadata COMMAND test_protocol_command_metadata)
 endif()

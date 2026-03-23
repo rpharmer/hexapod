@@ -1,6 +1,7 @@
 #include "hexapod-client.hpp"
 #include "firmware_context.hpp"
 #include "protocol_codec.hpp"
+#include "framing.hpp"
 
 #include <cmath>
 #include <cstdlib>
@@ -56,6 +57,41 @@ bool test_set_joint_targets_valid_ack_and_updates_positions()
   }
 
   return true;
+}
+
+bool test_set_target_angle_payload_and_range_validation()
+{
+  FirmwareContext ctx{};
+
+  handleSetAngleCommand(ctx, 15, {1});
+  if(!expect_last_packet(ctx, 15, NACK))
+    return false;
+  if(!expect(last_packet(ctx)->payload[0] == INVALID_PAYLOAD_LENGTH,
+             "expected invalid length nack for malformed set-angle payload"))
+    return false;
+
+  std::vector<uint8_t> out_of_range_payload;
+  append_scalar(out_of_range_payload, static_cast<uint8_t>(FirmwareContext::NUM_SERVOS));
+  append_scalar(out_of_range_payload, 0.3f);
+  handleSetAngleCommand(ctx, 16, out_of_range_payload);
+  if(!expect_last_packet(ctx, 16, NACK))
+    return false;
+  if(!expect(last_packet(ctx)->payload[0] == OUT_OF_RANGE_INDEX,
+             "expected out-of-range nack for invalid servo index"))
+    return false;
+
+  std::vector<uint8_t> valid_payload;
+  append_scalar(valid_payload, static_cast<uint8_t>(3));
+  append_scalar(valid_payload, -0.45f);
+  handleSetAngleCommand(ctx, 17, valid_payload);
+  if(!expect_last_packet(ctx, 17, ACK))
+    return false;
+  if(!expect(std::fabs(ctx.jointTargetPositionsRad[3] - (-0.45f)) < 1e-6f,
+             "expected set-angle command to update joint target"))
+    return false;
+
+  return expect(std::fabs(ctx.servos.value(3) - (-0.45f)) < 1e-6f,
+                "expected set-angle command to update servo target");
 }
 
 bool test_handshake_enables_software_angle_feedback_when_requested()
@@ -184,8 +220,15 @@ bool test_get_sensor_invalid_payload_and_out_of_range()
   if(!expect(last_packet(ctx)->payload[0] == INVALID_PAYLOAD_LENGTH, "expected invalid length nack"))
     return false;
 
-  handleGetSensorCommand(ctx, 23, {kProtocolFootSensorCount});
+  handleGetSensorCommand(ctx, 23, {1, 2});
   if(!expect_last_packet(ctx, 23, NACK))
+    return false;
+  if(!expect(last_packet(ctx)->payload[0] == INVALID_PAYLOAD_LENGTH,
+             "expected invalid length nack for oversized sensor payload"))
+    return false;
+
+  handleGetSensorCommand(ctx, 24, {kProtocolFootSensorCount});
+  if(!expect_last_packet(ctx, 24, NACK))
     return false;
 
   return expect(last_packet(ctx)->payload[0] == OUT_OF_RANGE_INDEX, "expected out of range nack");
@@ -280,6 +323,8 @@ int main()
   if(!test_get_full_hardware_state_uses_software_angle_feedback_fallback())
     return EXIT_FAILURE;
   if(!test_set_joint_targets_valid_ack_and_updates_positions())
+    return EXIT_FAILURE;
+  if(!test_set_target_angle_payload_and_range_validation())
     return EXIT_FAILURE;
   if(!test_set_joint_targets_invalid_payload_length_nack())
     return EXIT_FAILURE;

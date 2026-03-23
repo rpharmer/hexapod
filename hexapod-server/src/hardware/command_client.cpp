@@ -99,26 +99,7 @@ const char* CommandClient::outcome_to_text(TransportSession::OutcomeClass outcom
 }
 
 const char* CommandClient::command_name(uint8_t cmd) {
-    switch (cmd) {
-        case HELLO: return "HELLO";
-        case HEARTBEAT: return "HEARTBEAT";
-        case GET_FULL_HARDWARE_STATE: return "GET_FULL_HARDWARE_STATE";
-        case SET_JOINT_TARGETS: return "SET_JOINT_TARGETS";
-        case SET_TARGET_ANGLE: return "SET_TARGET_ANGLE";
-        case SET_POWER_RELAY: return "SET_POWER_RELAY";
-        case SET_ANGLE_CALIBRATIONS: return "SET_ANGLE_CALIBRATIONS";
-        case GET_ANGLE_CALIBRATIONS: return "GET_ANGLE_CALIBRATIONS";
-        case GET_CURRENT: return "GET_CURRENT";
-        case GET_VOLTAGE: return "GET_VOLTAGE";
-        case GET_SENSOR: return "GET_SENSOR";
-        case DIAGNOSTIC: return "DIAGNOSTIC";
-        case SET_SERVOS_ENABLED: return "SET_SERVOS_ENABLED";
-        case GET_SERVOS_ENABLED: return "GET_SERVOS_ENABLED";
-        case SET_SERVOS_TO_MID: return "SET_SERVOS_TO_MID";
-        case GET_LED_INFO: return "GET_LED_INFO";
-        case SET_LED_COLORS: return "SET_LED_COLORS";
-        default: return "UNKNOWN";
-    }
+    return ::command_name(cmd);
 }
 
 const char* CommandClient::domain_error_for_outcome(TransportSession::OutcomeClass outcome) {
