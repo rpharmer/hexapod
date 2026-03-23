@@ -100,6 +100,34 @@ bool runServoCalibrationProbe(const std::shared_ptr<AsyncLogger>& logger)
   return true;
 }
 
+bool runServoSpeedCalibrationProbe(const std::shared_ptr<AsyncLogger>& logger)
+{
+  const std::vector<ServoDynamicsSample> samples{};
+  const LegServoDynamicsFitResult result = fitLegServoDynamicsFromSamples(samples);
+
+  bool fit_success = true;
+  for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+    fit_success = fit_success && result.positive_direction[joint].success &&
+                  result.negative_direction[joint].success;
+  }
+
+  if (!fit_success) {
+    LOG_WARN(logger,
+             "calibration.servo_speed_fit failed: insufficient dynamics samples. "
+             "Collect command/measurement time-series before running.");
+    return false;
+  }
+
+  for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+    LOG_INFO(logger, "calibration.servo_speed_fit success: joint=", joint,
+             " +tau_s=", result.positive_direction[joint].tau_s,
+             " +vmax_radps=", result.positive_direction[joint].vmax_radps,
+             " -tau_s=", result.negative_direction[joint].tau_s,
+             " -vmax_radps=", result.negative_direction[joint].vmax_radps);
+  }
+  return true;
+}
+
 MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
                                         const InteractiveControllerState& state)
 {
@@ -274,6 +302,8 @@ int InteractiveRunner::run(RobotControl& robot,
             runHeightDetectionProbe(logger);
           } else if (ev->name == "X") {
             runServoCalibrationProbe(logger);
+          } else if (ev->name == "LB") {
+            runServoSpeedCalibrationProbe(logger);
           } else if (ev->name == "Y") {
             runHeightDetectionProbe(logger);
             runServoCalibrationProbe(logger);
