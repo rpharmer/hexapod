@@ -108,4 +108,8 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_simple_estimator_ground_plane tests/test_simple_estimator_ground_plane.cpp)
     target_link_libraries(test_simple_estimator_ground_plane PRIVATE hexapod_server_core)
     add_test(NAME simple_estimator_ground_plane COMMAND test_simple_estimator_ground_plane)
+
+    add_executable(test_transport_components tests/test_transport_components.cpp)
+    target_link_libraries(test_transport_components PRIVATE hexapod_server_core)
+    add_test(NAME transport_components COMMAND test_transport_components)
 endif()
