@@ -1,31 +1,20 @@
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <csignal>
 #include <memory>
-#include <optional>
 #include <string>
-#include <thread>
-#include <vector>
 
 #include "control_config.hpp"
 #include "estimator.hpp"
 #include "geometry_config.hpp"
 #include "hardware_bridge.hpp"
-#include "hexapod-common.hpp"
 #include "hexapod-server.hpp"
 #include "logger.hpp"
-#include "motion_intent_utils.hpp"
+#include "mode_runners.hpp"
 #include "robot_control.hpp"
-#include "scenario_driver.hpp"
-#include "serialCommsServer.hpp"
 #include "sim_hardware_bridge.hpp"
 #include "toml_parser.hpp"
-#include "control_device.hpp"
-#include "evdev_gamepad_controller.hpp"
-#include "xbox_controller.hpp"
 
-using namespace mn::CppLinuxSerial;
 using namespace logging;
 
 static std::atomic<bool> g_exit{false};
@@ -42,42 +31,16 @@ std::unique_ptr<IHardwareBridge> makeHardwareBridge(const ParsedToml& config)
     sim_faults.low_voltage = config.simLowVoltage;
     sim_faults.high_current = config.simHighCurrent;
     sim_faults.low_voltage_value = std::max(0.0f, sim_faults.nominal_voltage * 0.5f);
-    sim_faults.high_current_value = std::max(sim_faults.nominal_current * 2.0f, sim_faults.nominal_current + 1.0f);
+    sim_faults.high_current_value =
+        std::max(sim_faults.nominal_current * 2.0f, sim_faults.nominal_current + 1.0f);
 
     const double read_period_s = 1.0 / std::max(config.simResponseRateHz, 1.0);
-    return std::make_unique<SimHardwareBridge>(
-        sim_faults, DurationSec{read_period_s}, DurationSec{0.08});
+    return std::make_unique<SimHardwareBridge>(sim_faults, DurationSec{read_period_s},
+                                               DurationSec{0.08});
   }
 
   return std::make_unique<SimpleHardwareBridge>(config.serialDevice, config.baudRate,
                                                 config.timeout, config.minMaxPulses);
-}
-
-MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
-                                        RobotMode mode,
-                                        GaitType gait,
-                                        double body_height_m)
-{
-  MotionIntent cmd = makeMotionIntent(mode, gait, body_height_m);
-
-  constexpr double kMaxCommandSpeedMps = 0.25;
-  constexpr double kMaxYawRad = 0.45;
-  constexpr double kBodyHeightAdjustRangeM = 0.08;
-
-  const double right_x = static_cast<double>(controller.getRightX());
-  const double lt = static_cast<double>(controller.getLeftTrigger()) / 1023.0;
-  const double rt = static_cast<double>(controller.getRightTrigger()) / 1023.0;
-
-  cmd.speed_mps = LinearRateMps{controller.getLeftMag() * kMaxCommandSpeedMps};
-  cmd.heading_rad = AngleRad{static_cast<double>(controller.getLeftAng())};
-
-  const double body_height_cmd = body_height_m + (rt - lt) * kBodyHeightAdjustRangeM;
-  cmd.twist.body_trans_m = Vec3{0.0, 0.0, std::clamp(body_height_cmd, 0.10, 0.35)};
-  cmd.twist.body_trans_mps = Vec3{};
-  cmd.twist.twist_pos_rad = Vec3{0.0, 0.0, right_x * kMaxYawRad};
-  cmd.twist.twist_vel_radps = Vec3{};
-
-  return cmd;
 }
 
 } // namespace
@@ -105,122 +68,42 @@ int main(int argc, char** argv)
   const control_config::ControlConfig control_cfg = control_config::fromParsedToml(config);
   geometry_config::loadFromParsedToml(config);
 
+  CliOptions options;
+  std::string cli_error;
+  if (!parseCliOptions(argc, argv, options, cli_error)) {
+    LOG_ERROR(logger, "CLI error: ", cli_error);
+    return 1;
+  }
+
   LOG_INFO(logger, "Runtime.Mode=", config.runtimeMode);
 
   auto hw = makeHardwareBridge(config);
   auto estimator = std::make_unique<SimpleEstimator>();
-
   RobotControl robot(std::move(hw), std::move(estimator), logger, control_cfg);
 
   if (!robot.init()) {
     return 1;
   }
 
-  bool run_default_loop = true;
-  bool lint_scenario_only = false;
-  ScenarioDriver::ValidationMode scenario_validation_mode = ScenarioDriver::ValidationMode::Permissive;
-  std::string scenario_file;
-  std::string controller_device;
-  for (int i = 1; i < argc; ++i) {
-    const std::string arg = argv[i];
-    if (arg == "--scenario" && i + 1 < argc) {
-      scenario_file = argv[++i];
-      run_default_loop = false;
-    } else if (arg == "--scenario-strict") {
-      scenario_validation_mode = ScenarioDriver::ValidationMode::Strict;
-    } else if (arg == "--scenario-lint") {
-      lint_scenario_only = true;
-      scenario_validation_mode = ScenarioDriver::ValidationMode::Strict;
-    } else if ((arg == "--xbox-device" || arg == "--controller-device") && i + 1 < argc) {
-      controller_device = argv[++i];
-    }
-  }
-
   robot.start();
 
-  if (!run_default_loop) {
-    ScenarioDefinition scenario{};
-    std::string scenario_error;
-    if (!ScenarioDriver::loadFromToml(scenario_file, scenario, scenario_error, scenario_validation_mode)) {
-      LOG_ERROR(logger, "Failed to load scenario file '", scenario_file, "': ", scenario_error);
-      robot.stop();
-      logger->Flush();
-      logger->Stop();
-      return 1;
-    }
-
-    if (lint_scenario_only) {
-      LOG_INFO(logger, "Scenario lint passed: ", scenario_file);
-      robot.stop();
-      logger->Flush();
-      logger->Stop();
-      return 0;
-    }
-
-    LOG_INFO(logger, "Running scenario: ", scenario.name);
-    if (!ScenarioDriver::run(robot, scenario, logger)) {
-      robot.stop();
-      logger->Flush();
-      logger->Stop();
-      return 1;
-    }
+  int runner_rc = 0;
+  if (options.mode == ServerMode::Scenario) {
+    const ScenarioRunner runner;
+    runner_rc = runner.run(robot, options, logger);
   } else {
-    std::unique_ptr<IControlDevice> controller;
-    if (!controller_device.empty()) {
-      controller = std::make_unique<EvdevGamepadController>(controller_device, makeGenericGamepadMapping());
-      if (!controller->start()) {
-        LOG_WARN(logger, "Controller unavailable at ", controller_device, ", using fallback command loop");
-        controller.reset();
-      } else {
-        LOG_INFO(logger, "Controller enabled from device ", controller_device);
-      }
-    }
-
-    RobotMode mode = RobotMode::STAND;
-    GaitType gait = GaitType::TRIPOD;
-
-    robot.setMotionIntent(makeMotionIntent(mode, gait, 0.20));
-    std::this_thread::sleep_for(control_cfg.loop_timing.stand_settling_delay);
-
-    while (!g_exit.load()) {
-      if (controller != nullptr) {
-        while (auto ev = controller->getQueue().pop()) {
-          if (ev->type != ControllerEvent::Type::Button || ev->value == 0) {
-            continue;
-          }
-          if (ev->name == "A") {
-            mode = RobotMode::WALK;
-          } else if (ev->name == "B") {
-            mode = RobotMode::STAND;
-          } else if (ev->name == "X") {
-            gait = GaitType::RIPPLE;
-          } else if (ev->name == "Y") {
-            gait = GaitType::TRIPOD;
-          }
-        }
-
-        robot.setMotionIntent(makeControllerMotionIntent(*controller, mode, gait, 0.20));
-      } else {
-        robot.setMotionIntent(makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.20));
-      }
-
-      std::this_thread::sleep_for(control_cfg.loop_timing.command_refresh_period); // refresh command watchdog
-    }
-
-    if (controller != nullptr) {
-      controller->stop();
-    }
+    const InteractiveRunner runner;
+    runner_rc = runner.run(robot, options, control_cfg, logger, g_exit);
   }
 
   robot.stop();
-
   LOG_WARN(logger, "All workers joined");
   LOG_ERROR(logger, "Dropped messages=", logger->DroppedMessageCount());
 
   logger->Flush();
   logger->Stop();
 
-  return 0;
+  return runner_rc;
 }
 
 bool tomlParser(std::string filename, ParsedToml& out)

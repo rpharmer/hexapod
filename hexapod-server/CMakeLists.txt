@@ -109,6 +109,14 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_simple_estimator_ground_plane PRIVATE hexapod_server_core)
     add_test(NAME simple_estimator_ground_plane COMMAND test_simple_estimator_ground_plane)
 
+
+    add_executable(test_toml_parser_sections tests/test_toml_parser_sections.cpp)
+    target_link_libraries(test_toml_parser_sections PRIVATE hexapod_server_core)
+    add_test(NAME toml_parser_sections COMMAND test_toml_parser_sections)
+
+    add_executable(test_cli_mode_selection tests/test_cli_mode_selection.cpp)
+    target_link_libraries(test_cli_mode_selection PRIVATE hexapod_server_core)
+    add_test(NAME cli_mode_selection COMMAND test_cli_mode_selection)
     add_executable(test_transport_components tests/test_transport_components.cpp)
     target_link_libraries(test_transport_components PRIVATE hexapod_server_core)
     add_test(NAME transport_components COMMAND test_transport_components)
