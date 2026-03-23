@@ -45,8 +45,14 @@ LegTargets BodyController::update(const EstimatedState& est,
 
     const double heading = intent.heading_rad.value;
     const Vec3 step_dir{std::cos(heading), std::sin(heading), 0.0};
+    const double roll_cmd = intent.twist.twist_pos_rad.x;
+    const double pitch_cmd = intent.twist.twist_pos_rad.y;
     const double yaw_cmd = intent.twist.twist_pos_rad.z;
-    const Mat3 yaw_rotation = Mat3::rotZ(yaw_cmd);
+    const Mat3 body_rotation = Mat3::rotZ(yaw_cmd) * Mat3::rotY(pitch_cmd) * Mat3::rotX(roll_cmd);
+    const Vec3 planar_body_offset = Vec3{
+        intent.twist.body_trans_m.x,
+        intent.twist.body_trans_m.y,
+        0.0};
 
     double commanded_body_height_m = intent.twist.body_trans_m.z;
     if (commanded_body_height_m <= 1e-6) {
@@ -58,6 +64,7 @@ LegTargets BodyController::update(const EstimatedState& est,
 
         // Apply commanded body-height offset around the nominal stance height.
         target.z += commanded_body_height_m - kDefaultBodyHeightM;
+        target = target - planar_body_offset;
 
         if (walking) {
             const double phase = clamp01(gait.phase[leg]);
@@ -73,8 +80,8 @@ LegTargets BodyController::update(const EstimatedState& est,
             }
         }
 
-        // Apply commanded body yaw by rotating each foot target in body frame.
-        target = yaw_rotation * target;
+        // Apply commanded body orientation by rotating each foot target in body frame.
+        target = body_rotation * target;
 
         out.feet[leg].pos_body_m = target;
         out.feet[leg].vel_body_mps = Vec3{};

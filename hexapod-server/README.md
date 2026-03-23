@@ -95,15 +95,34 @@ cd hexapod-server
 
 Button mappings in controller mode:
 
-- `A` => WALK
-- `B` => STAND
-- `X` => RIPPLE gait
-- `Y` => TRIPOD gait
+- `A` => cycle controller mode:
+  1) heading-walk mode
+  2) body-pose mode
+  3) calibration mode
+
+### 1) Heading-walk mode
+
 - Left stick => walk heading + speed (`heading_rad`, `speed_mps`)
-  - stick axes (`LX`,`LY`) are radial-deadzone filtered and normalized to `[-1, 1]` for downstream consumers
-- Right stick X => body yaw setpoint (`twist_pos_rad.z`)
-  - stick axis (`RX`) is radial-deadzone filtered and normalized to `[-1, 1]` before yaw scaling
-- Triggers (`LT`/`RT`) => body height down/up (`body_trans_m.z`)
+  - stick axes (`LX`,`LY`) are radial-deadzone filtered and normalized to `[-1, 1]` for downstream consumers.
+- Right stick => facing yaw setpoint (`twist_pos_rad.z`) from stick angle.
+  - when right-stick magnitude is above threshold, the current stick direction becomes the robot facing direction.
+- Triggers (`LT`/`RT`) => body height down/up (`body_trans_m.z`).
+- `X` => RIPPLE gait.
+- `Y` => TRIPOD gait.
+
+### 2) Body-pose mode
+
+- Left stick => body XY translation relative to the support legs (`body_trans_m.x/.y`).
+- Right stick => body roll/pitch (`twist_pos_rad.x/.y`).
+- Triggers (`LT`/`RT`) => body yaw (`twist_pos_rad.z`).
+- `LB` / `RB` => increment/decrement body height (`body_trans_m.z`).
+- `B` => reset body translation and rotation to neutral.
+
+### 3) Calibration mode
+
+- `B` => run base-height detection probe entrypoint.
+- `X` => run servo calibration probe entrypoint.
+- `Y` => run both probe entrypoints.
 
 
 ## Offline simulation/testing
