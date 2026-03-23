@@ -5,6 +5,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -766,6 +767,132 @@ bool test_send_diagnostic_success_and_nack() {
                   "send_diagnostic NACK case should preserve outbound payload shape");
 }
 
+bool test_ensure_link_heartbeat_due_sends_heartbeat_then_command() {
+    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
+    FakePacketEndpoint* endpoint_view = nullptr;
+    SimpleHardwareBridge* bridge = nullptr;
+
+    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
+                                     [](const DecodedPacket& request) {
+                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
+                                             const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
+                                             return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                         }
+                                         if (request.cmd == SET_POWER_RELAY) {
+                                             return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
+                                         }
+                                         return std::vector<DecodedPacket>{};
+                                     });
+    if (!expect(init_ok, "init should succeed before heartbeat-due ensure_link case")) {
+        return false;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(170));
+
+    if (!expect(bridge->set_power_relay(true),
+                "set_power_relay should succeed when ensure_link sends idle heartbeat")) {
+        return false;
+    }
+
+    const auto& sent = endpoint_view->sent_packets();
+    if (!expect(sent.size() == 4,
+                "expected HELLO, HEARTBEAT, ensure_link HEARTBEAT, then SET_POWER_RELAY")) {
+        return false;
+    }
+    if (!expect(sent[2].cmd == HEARTBEAT, "third packet should be ensure_link HEARTBEAT")) {
+        return false;
+    }
+    return expect(sent[3].cmd == SET_POWER_RELAY, "fourth packet should be SET_POWER_RELAY");
+}
+
+bool test_ensure_link_timeout_reestablishes_then_command_succeeds() {
+    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
+    FakePacketEndpoint* endpoint_view = nullptr;
+    SimpleHardwareBridge* bridge = nullptr;
+
+    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
+                                     [](const DecodedPacket& request) {
+                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
+                                             const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
+                                             return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                         }
+                                         if (request.cmd == SET_POWER_RELAY) {
+                                             return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
+                                         }
+                                         return std::vector<DecodedPacket>{};
+                                     });
+    if (!expect(init_ok, "init should succeed before timeout re-establish ensure_link case")) {
+        return false;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(550));
+
+    if (!expect(bridge->set_power_relay(true),
+                "set_power_relay should succeed after timeout-triggered re-establish")) {
+        return false;
+    }
+
+    const auto& sent = endpoint_view->sent_packets();
+    if (!expect(sent.size() == 4,
+                "expected HELLO, HEARTBEAT, re-establish HELLO, then SET_POWER_RELAY")) {
+        return false;
+    }
+    if (!expect(sent[2].cmd == HELLO, "third packet should be timeout-triggered HELLO")) {
+        return false;
+    }
+    return expect(sent[3].cmd == SET_POWER_RELAY, "fourth packet should be SET_POWER_RELAY");
+}
+
+bool test_ensure_link_timeout_reestablish_failure_returns_false() {
+    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
+    FakePacketEndpoint* endpoint_view = nullptr;
+    SimpleHardwareBridge* bridge = nullptr;
+
+    bool first_hello = true;
+    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
+                                     [&first_hello](const DecodedPacket& request) {
+                                         if (request.cmd == HELLO) {
+                                             if (first_hello) {
+                                                 first_hello = false;
+                                                 const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
+                                                 return std::vector<DecodedPacket>{
+                                                     {request.seq, ACK, protocol::encode_hello_ack(ack)}
+                                                 };
+                                             }
+                                             return std::vector<DecodedPacket>{{request.seq, NACK, {BUSY_NOT_READY}}};
+                                         }
+                                         if (request.cmd == HEARTBEAT) {
+                                             const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
+                                             return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                         }
+                                         if (request.cmd == SET_POWER_RELAY) {
+                                             return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
+                                         }
+                                         return std::vector<DecodedPacket>{};
+                                     });
+    if (!expect(init_ok, "init should succeed before re-establish failure ensure_link case")) {
+        return false;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(550));
+
+    if (!expect(!bridge->set_power_relay(true),
+                "set_power_relay should fail when timeout re-establish handshake fails")) {
+        return false;
+    }
+
+    const auto& sent = endpoint_view->sent_packets();
+    if (!expect(sent.size() == 3,
+                "expected only HELLO, HEARTBEAT, and failed timeout re-establish HELLO")) {
+        return false;
+    }
+    if (!expect(sent[2].cmd == HELLO, "third packet should be failed timeout re-establish HELLO")) {
+        return false;
+    }
+    return expect(sent.back().cmd != SET_POWER_RELAY,
+                  "SET_POWER_RELAY should not be sent when ensure_link fails");
+}
+
 }  // namespace
 
 int main() {
@@ -814,6 +941,18 @@ int main() {
     }
 
     if (!test_send_diagnostic_success_and_nack()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!test_ensure_link_heartbeat_due_sends_heartbeat_then_command()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!test_ensure_link_timeout_reestablishes_then_command_succeeds()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!test_ensure_link_timeout_reestablish_failure_returns_false()) {
         return EXIT_FAILURE;
     }
 
