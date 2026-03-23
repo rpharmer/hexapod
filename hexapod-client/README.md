@@ -91,6 +91,15 @@ Typical artifacts under `build/`:
 - `hexapod-client.uf2`
 - `hexapod-client.hex`
 
+Clean rebuild when switching SDK locations or CMake cache settings:
+
+```bash
+cd hexapod-client
+rm -rf build
+cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF
+cmake --build build --target hexapod-client
+```
+
 ## Flashing
 
 ### UF2 drag-and-drop
@@ -134,6 +143,7 @@ Payload shape expectations:
 - **Pimoroni libraries missing**: confirm `pimoroni-pico` sibling checkout.
 - **No serial handshake**: verify USB data cable, host serial device path, and protocol version.
 - **Unexpected servo motion**: validate calibration ordering/ranges and radian-based command inputs.
+- **Board repeatedly re-enumerates USB**: check power budget (servo rail brownout) and isolate from high-load servo startup during bring-up.
 
 ## Related docs
 

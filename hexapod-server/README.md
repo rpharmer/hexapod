@@ -62,6 +62,14 @@ cmake -S . -B build
 cmake --build build -j
 ```
 
+Build with tests enabled:
+
+```bash
+cd hexapod-server
+cmake -S . -B build-tests -DHEXAPOD_SERVER_BUILD_TESTS=ON
+cmake --build build-tests -j
+```
+
 ## Run
 
 ```bash
@@ -70,6 +78,13 @@ cd hexapod-server
 ```
 
 Stop with `Ctrl+C`.
+
+Run with an explicit config file:
+
+```bash
+cd hexapod-server
+./build/hexapod-server --config config.txt
+```
 
 Controller-driven loop (optional):
 
@@ -163,6 +178,12 @@ Run one test binary directly:
 ```bash
 ./build-tests/test_robot_runtime_loop
 ```
+
+Useful focused test binaries:
+
+- `./build-tests/test_control_pipeline_sanity`
+- `./build-tests/test_safety_supervisor_faults`
+- `./build-tests/test_motion_intent_through_ik_fk`
 
 ### 4) Log markers for pass/fail interpretation
 
