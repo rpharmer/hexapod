@@ -122,6 +122,7 @@ Button mappings in controller mode:
 
 - `B` => run base-height detection probe entrypoint.
 - `X` => run servo calibration probe entrypoint.
+- `LB` => run servo speed calibration probe entrypoint.
 - `Y` => run both probe entrypoints.
 
 
