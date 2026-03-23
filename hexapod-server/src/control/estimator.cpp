@@ -168,10 +168,12 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
             const DurationUs dt_us = raw.timestamp_us - last_twist_timestamp_;
             if (dt_us.value > 0) {
                 const double dt_s = static_cast<double>(dt_us.value) * 1e-6;
-                est.body_twist_state.twist_vel_radps =
-                    (est.body_twist_state.twist_pos_rad - last_twist_pos_rad_) * (1.0 / dt_s);
-                est.body_twist_state.body_trans_mps =
-                    (est.body_twist_state.body_trans_m - last_body_trans_m_) * (1.0 / dt_s);
+                const Vec3 twist_delta =
+                    static_cast<Vec3>(est.body_twist_state.twist_pos_rad) - last_twist_pos_rad_;
+                const Vec3 body_trans_delta =
+                    static_cast<Vec3>(est.body_twist_state.body_trans_m) - last_body_trans_m_;
+                est.body_twist_state.twist_vel_radps = AngularVelocityRadPerSec3{twist_delta * (1.0 / dt_s)};
+                est.body_twist_state.body_trans_mps = VelocityMps3{body_trans_delta * (1.0 / dt_s)};
             }
         }
 

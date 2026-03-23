@@ -1,91 +1,22 @@
 #pragma once
 
-#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+
 #include "hexapod-common.hpp"
-
-// ============================================================
-// Constants / utility
-// ============================================================
-constexpr double kPi = 3.14159265358979323846;
-
-template <typename Tag>
-struct UnitValue {
-    double value{0.0};
-
-    constexpr UnitValue() = default;
-    explicit constexpr UnitValue(double raw) : value(raw) {}
-
-    constexpr UnitValue operator+(UnitValue rhs) const {
-        return UnitValue{value + rhs.value};
-    }
-
-    constexpr UnitValue operator-(UnitValue rhs) const {
-        return UnitValue{value - rhs.value};
-    }
-
-    constexpr UnitValue operator*(double scalar) const {
-        return UnitValue{value * scalar};
-    }
-
-    constexpr UnitValue operator/(double scalar) const {
-        return UnitValue{value / scalar};
-    }
-
-    constexpr UnitValue& operator+=(UnitValue rhs) {
-        value += rhs.value;
-        return *this;
-    }
-
-    constexpr UnitValue& operator-=(UnitValue rhs) {
-        value -= rhs.value;
-        return *this;
-    }
-};
-
-template <typename Tag>
-constexpr UnitValue<Tag> operator*(double scalar, UnitValue<Tag> unit) {
-    return unit * scalar;
-}
-
-struct AngleRadTag {};
-struct AngularRateRadPerSecTag {};
-struct FrequencyHzTag {};
-struct DurationSecTag {};
-struct LengthMTag {};
-struct LinearRateMpsTag {};
-
-using AngleRad = UnitValue<AngleRadTag>;
-using AngularRateRadPerSec = UnitValue<AngularRateRadPerSecTag>;
-using FrequencyHz = UnitValue<FrequencyHzTag>;
-using DurationSec = UnitValue<DurationSecTag>;
-using LengthM = UnitValue<LengthMTag>;
-using LinearRateMps = UnitValue<LinearRateMpsTag>;
-
-double deg2rad(double deg);
-double rad2deg(AngleRad rad);
-
-double rad2deg(double rad);
-
-double clamp(double value, double lo, double hi);
-inline double clamp01(double value) {
-    return std::clamp(value, 0.0, 1.0);
-}
+#include "kinematics/math_types.hpp"
 
 // ============================================================
 
-constexpr int COXA = 0;
-constexpr int FEMUR = 1;
-constexpr int TIBIA = 2;
+constexpr int COXA = static_cast<int>(LegJointID::Coxa);
+constexpr int FEMUR = static_cast<int>(LegJointID::Femur);
+constexpr int TIBIA = static_cast<int>(LegJointID::Tibia);
 
-
-
-constexpr int kNumLegs = 6;
-constexpr int kJointsPerLeg = 3;
-constexpr int kNumJoints = kNumLegs * kJointsPerLeg;
+constexpr int kNumLegs = static_cast<int>(kProtocolLegCount);
+constexpr int kJointsPerLeg = static_cast<int>(kProtocolJointsPerLeg);
+constexpr int kNumJoints = static_cast<int>(kProtocolJointCount);
 
 using Clock = std::chrono::steady_clock;
 
@@ -139,38 +70,6 @@ enum class GaitType {
     WAVE
 };
 
-struct Vec3 {
-    double x{0.0};
-    double y{0.0};
-    double z{0.0};
-    
-    Vec3 operator+(const Vec3& other) const;
-    Vec3 operator-(const Vec3& other) const;
-    Vec3 operator*(double s) const;
-};
-
-Vec3 cross(const Vec3& lhs, const Vec3& rhs);
-double vecNorm(const Vec3& v);
-
-// ============================================================
-// Basic 3x3 matrix for rotations
-// ============================================================
-struct Mat3 {
-    double m[3][3]{};
-
-    static Mat3 identity();
-    static Mat3 rotX(double roll);
-    static Mat3 rotY(double pitch);
-    static Mat3 rotZ(double yaw);
-
-    Mat3 transpose() const;
-
-    Vec3 operator*(const Vec3& v) const;
-    Mat3 operator*(const Mat3& other) const;
-};
-
-
-
 struct GaitState {
     std::array<double, kNumLegs> phase{};
     std::array<bool, kNumLegs> in_stance{};
@@ -206,8 +105,8 @@ struct SafetyState {
 };
 
 struct FootTarget {
-    Vec3 pos_body_m{};
-    Vec3 vel_body_mps{};
+    PositionM3 pos_body_m{};
+    VelocityMps3 vel_body_mps{};
 };
 
 struct LegTargets {
@@ -230,16 +129,16 @@ struct JointTargets {
 
 struct BodyTwistState {
   // Body orientation setpoint in radians as {roll, pitch, yaw}.
-  Vec3 twist_pos_rad{};
+  EulerAnglesRad3 twist_pos_rad{};
   // Body angular velocity setpoint in rad/s as {roll_rate, pitch_rate, yaw_rate}.
-  Vec3 twist_vel_radps{};
+  AngularVelocityRadPerSec3 twist_vel_radps{};
 
   // Body translation setpoint relative to nominal stance in meters as {x, y, z}.
   // x/y are planar body translation offsets; z is vertical body-height setpoint.
   // (0, 0, 0) is the nominal stance translation.
-  Vec3 body_trans_m{};
+  PositionM3 body_trans_m{};
   // Body translation velocity setpoint in m/s as {x_rate, y_rate, z_rate}.
-  Vec3 body_trans_mps{};
+  VelocityMps3 body_trans_mps{};
 };
 
 struct MotionIntent {
@@ -282,7 +181,7 @@ struct ControlStatus {
 // BodyPose
 // ============================================================
 struct BodyPose {
-  Vec3 position{0.0, 0.0, 0.0};
+  PositionM3 position{0.0, 0.0, 0.0};
   
   AngleRad yaw{};
   AngleRad pitch{};
@@ -335,7 +234,7 @@ struct ServoJointDynamics {
 struct LegGeometry {
     LegID legID;
 
-    Vec3 bodyCoxaOffset;  // Coxa joint location in body frame
+    PositionM3 bodyCoxaOffset{};  // Coxa joint location in body frame
     AngleRad mountAngle{};
 
     LengthM coxaLength{};   // L1
