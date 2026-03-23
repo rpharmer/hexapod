@@ -215,13 +215,12 @@ struct LegTargets {
     TimePointUs timestamp_us{};
 };
 
-struct JointPositionState {
+struct JointRawState {
   AngleRad pos_rad{};
 };
 
-struct JointRawState : JointPositionState {};
-
-struct JointState : JointPositionState {
+struct JointState {
+  AngleRad pos_rad{};
   AngularRateRadPerSec vel_radps{};
 };
 
@@ -235,12 +234,6 @@ struct LegState {
 
 struct JointTargets {
   std::array<LegRawState,kNumLegs> leg_raw_states{};
-};
-
-template <typename LegStateT>
-struct LegContactState {
-  std::array<LegStateT, kNumLegs> leg_states{};
-  std::array<bool, kNumLegs> foot_contacts{};
 };
 
 struct BodyTwistState {
@@ -257,7 +250,9 @@ struct BodyTwistState {
   Vec3 body_trans_mps{};
 };
 
-struct RawHardwareState : LegContactState<LegRawState> {
+struct RawHardwareState {
+  std::array<LegRawState, kNumLegs> leg_states{};
+  std::array<bool, kNumLegs> foot_contacts{};
   float voltage{0.0};
   float current{0.0};
   uint64_t sample_id{0};
@@ -276,13 +271,17 @@ struct MotionIntent {
   TimePointUs timestamp_us{};
 };
 
-struct EstimatedState : LegContactState<LegState> {
+struct EstimatedState {
+  std::array<LegState, kNumLegs> leg_states{};
+  std::array<bool, kNumLegs> foot_contacts{};
   BodyTwistState body_twist_state{};
   uint64_t sample_id{0};
   TimePointUs timestamp_us{};
 };
 
-struct TargetBodyState : LegContactState<LegState> {
+struct TargetBodyState {
+  std::array<LegState, kNumLegs> leg_states{};
+  std::array<bool, kNumLegs> foot_contacts{};
   BodyTwistState body_twist_state{};
   bool valid{false};
   TimePointUs timestamp_us{};
