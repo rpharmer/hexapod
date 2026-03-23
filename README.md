@@ -83,6 +83,34 @@ cmake --build build --target hexapod-client
 
 Flash by copying `hexapod-client/build/hexapod-client.uf2` to the board in BOOTSEL mode.
 
+## Development workflow
+
+Use this loop when iterating on protocol/control changes that affect both host and firmware:
+
+1. Update protocol IDs/payloads in `hexapod-common/include/hexapod-common.hpp`.
+2. Update firmware handlers in `hexapod-client/*_commands.cpp`.
+3. Update host-side transport/control consumers in `hexapod-server/src/*`.
+4. Run server tests in simulator mode before hardware testing.
+
+Suggested verification commands:
+
+```bash
+cd hexapod-server
+cmake --preset tests
+cmake --build --preset tests -j
+ctest --preset tests --output-on-failure
+```
+
+Then run a scenario sweep:
+
+```bash
+cd hexapod-server
+cp config.sim.txt config.txt
+for s in scenarios/*.toml; do
+  ./build/hexapod-server --scenario "$s" || break
+done
+```
+
 ## Documentation map
 
 - `docs/FIRMWARE.md` — wire protocol framing, constants, and command payloads.
@@ -96,3 +124,4 @@ Flash by copying `hexapod-client/build/hexapod-client.uf2` to the board in BOOTS
 - Validate relay defaults, servo enable sequencing, and emergency stop behavior before full-body motion testing.
 - Start with the robot unloaded and low-amplitude commands after calibration changes.
 - Prefer simulator mode (`hexapod-server/config.sim.txt`) for early control-policy validation.
+- Keep one hand on power disconnect / E-stop whenever first exercising new gait or calibration logic on hardware.
