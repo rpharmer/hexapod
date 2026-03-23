@@ -132,4 +132,8 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_freshness_policy tests/test_freshness_policy.cpp)
     target_link_libraries(test_freshness_policy PRIVATE hexapod_server_core)
     add_test(NAME freshness_policy COMMAND test_freshness_policy)
+
+    add_executable(test_robot_runtime_freshness_gate_matrix tests/test_robot_runtime_freshness_gate_matrix.cpp)
+    target_link_libraries(test_robot_runtime_freshness_gate_matrix PRIVATE hexapod_server_core)
+    add_test(NAME robot_runtime_freshness_gate_matrix COMMAND test_robot_runtime_freshness_gate_matrix)
 endif()
