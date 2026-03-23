@@ -1,10 +1,13 @@
 #include "mode_runners.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <thread>
 
+#include "calibration_probe.hpp"
 #include "control_device.hpp"
 #include "evdev_gamepad_controller.hpp"
+#include "geometry_config.hpp"
 #include "motion_intent_utils.hpp"
 #include "xbox_controller.hpp"
 
@@ -12,28 +15,152 @@ using namespace logging;
 
 namespace {
 
-MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
-                                        RobotMode mode,
-                                        GaitType gait,
-                                        double body_height_m)
+enum class ControllerInputMode
 {
-  MotionIntent cmd = makeMotionIntent(mode, gait, body_height_m);
+  HeadingWalk = 0,
+  BodyPose = 1,
+  Calibration = 2,
+};
+
+const char* controllerInputModeName(ControllerInputMode mode)
+{
+  switch (mode) {
+    case ControllerInputMode::HeadingWalk:
+      return "heading_walk";
+    case ControllerInputMode::BodyPose:
+      return "body_pose";
+    case ControllerInputMode::Calibration:
+      return "calibration";
+    default:
+      return "unknown";
+  }
+}
+
+ControllerInputMode nextControllerInputMode(ControllerInputMode mode)
+{
+  switch (mode) {
+    case ControllerInputMode::HeadingWalk:
+      return ControllerInputMode::BodyPose;
+    case ControllerInputMode::BodyPose:
+      return ControllerInputMode::Calibration;
+    case ControllerInputMode::Calibration:
+      return ControllerInputMode::HeadingWalk;
+    default:
+      return ControllerInputMode::HeadingWalk;
+  }
+}
+
+struct InteractiveControllerState
+{
+  ControllerInputMode input_mode{ControllerInputMode::HeadingWalk};
+  RobotMode walk_mode{RobotMode::WALK};
+  GaitType gait{GaitType::TRIPOD};
+  double walk_body_height_m{0.20};
+  double walk_facing_yaw_rad{0.0};
+  bool walk_facing_valid{false};
+
+  double body_height_m{0.20};
+};
+
+bool runHeightDetectionProbe(const std::shared_ptr<AsyncLogger>& logger)
+{
+  const HexapodGeometry& geometry = geometry_config::activeHexapodGeometry();
+  const std::vector<BaseClearanceSample> samples{};
+  const BaseClearanceEstimateResult result =
+      estimateToBottomFromSynchronousLift(geometry, samples);
+  if (!result.success) {
+    LOG_WARN(logger,
+             "calibration.height_detection failed: no lift transition detected. "
+             "Collect probe samples before running.");
+    return false;
+  }
+
+  LOG_INFO(logger, "calibration.height_detection success: to_bottom_m=",
+           result.estimated_to_bottom_m.value,
+           " ground_plane_height_m=", result.ground_plane_height_m);
+  return true;
+}
+
+bool runServoCalibrationProbe(const std::shared_ptr<AsyncLogger>& logger)
+{
+  const HexapodGeometry& geometry = geometry_config::activeHexapodGeometry();
+  const LegGeometry& leg = geometry.legGeometry[0];
+  const std::vector<CalibrationTouchSample> samples{};
+  const CalibrationLegFitResult result = fitServoCalibrationFromTouches(leg, samples);
+  if (!result.success) {
+    LOG_WARN(logger,
+             "calibration.servo_fit failed: insufficient contact samples. "
+             "Collect touch samples before running.");
+    return false;
+  }
+
+  LOG_INFO(logger, "calibration.servo_fit success: delta_rad=[",
+           result.coxa_delta.value, ", ", result.femur_delta.value, ", ",
+           result.tibia_delta.value, "]");
+  return true;
+}
+
+MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
+                                        const InteractiveControllerState& state)
+{
+  MotionIntent cmd = makeMotionIntent(state.walk_mode, state.gait, state.walk_body_height_m);
 
   constexpr double kMaxCommandSpeedMps = 0.25;
-  constexpr double kMaxYawRad = 0.45;
+  constexpr double kMaxWalkYawRad = 0.90;
+  constexpr double kMaxBodyTranslateXYM = 0.08;
+  constexpr double kMaxBodyRollPitchRad = 0.40;
+  constexpr double kMaxBodyYawRad = 0.60;
   constexpr double kBodyHeightAdjustRangeM = 0.08;
+  constexpr double kMinBodyHeightM = 0.10;
+  constexpr double kMaxBodyHeightM = 0.35;
 
+  const double left_x = static_cast<double>(controller.getLeftX());
+  const double left_y = static_cast<double>(controller.getLeftY());
+  const double right_mag = static_cast<double>(controller.getRightMag());
+  const double right_ang = static_cast<double>(controller.getRightAng());
   const double right_x = static_cast<double>(controller.getRightX());
+  const double right_y = static_cast<double>(controller.getRightY());
   const double lt = static_cast<double>(controller.getLeftTrigger()) / 1023.0;
   const double rt = static_cast<double>(controller.getRightTrigger()) / 1023.0;
 
-  cmd.speed_mps = LinearRateMps{controller.getLeftMag() * kMaxCommandSpeedMps};
-  cmd.heading_rad = AngleRad{static_cast<double>(controller.getLeftAng())};
+  if (state.input_mode == ControllerInputMode::HeadingWalk) {
+    cmd.speed_mps = LinearRateMps{controller.getLeftMag() * kMaxCommandSpeedMps};
+    cmd.heading_rad = AngleRad{static_cast<double>(controller.getLeftAng())};
 
-  const double body_height_cmd = body_height_m + (rt - lt) * kBodyHeightAdjustRangeM;
-  cmd.twist.body_trans_m = Vec3{0.0, 0.0, std::clamp(body_height_cmd, 0.10, 0.35)};
+    const double body_height_cmd = state.walk_body_height_m + (rt - lt) * kBodyHeightAdjustRangeM;
+    cmd.twist.body_trans_m = Vec3{0.0, 0.0, std::clamp(body_height_cmd, kMinBodyHeightM, kMaxBodyHeightM)};
+    cmd.twist.body_trans_mps = Vec3{};
+    const double facing_yaw_rad =
+        state.walk_facing_valid ? state.walk_facing_yaw_rad : (right_x * kMaxWalkYawRad);
+    cmd.twist.twist_pos_rad = Vec3{0.0, 0.0, facing_yaw_rad};
+    cmd.twist.twist_vel_radps = Vec3{};
+    return cmd;
+  }
+
+  if (state.input_mode == ControllerInputMode::BodyPose) {
+    cmd.speed_mps = LinearRateMps{0.0};
+    cmd.heading_rad = AngleRad{0.0};
+    cmd.twist.body_trans_m = Vec3{
+        -left_y * kMaxBodyTranslateXYM,
+        left_x * kMaxBodyTranslateXYM,
+        std::clamp(state.body_height_m, kMinBodyHeightM, kMaxBodyHeightM)};
+    cmd.twist.body_trans_mps = Vec3{};
+    cmd.twist.twist_pos_rad = Vec3{
+        right_x * kMaxBodyRollPitchRad,
+        -right_y * kMaxBodyRollPitchRad,
+        std::clamp(rt - lt, -1.0, 1.0) * kMaxBodyYawRad};
+    cmd.twist.twist_vel_radps = Vec3{};
+    return cmd;
+  }
+
+  (void)right_mag;
+  (void)right_ang;
+  cmd.requested_mode = RobotMode::STAND;
+  cmd.speed_mps = LinearRateMps{0.0};
+  cmd.heading_rad = AngleRad{0.0};
+  cmd.twist.body_trans_m = Vec3{0.0, 0.0, state.walk_body_height_m};
   cmd.twist.body_trans_mps = Vec3{};
-  cmd.twist.twist_pos_rad = Vec3{0.0, 0.0, right_x * kMaxYawRad};
+  cmd.twist.twist_pos_rad = Vec3{};
   cmd.twist.twist_vel_radps = Vec3{};
 
   return cmd;
@@ -111,10 +238,9 @@ int InteractiveRunner::run(RobotControl& robot,
     }
   }
 
-  RobotMode mode = RobotMode::STAND;
-  GaitType gait = GaitType::TRIPOD;
+  InteractiveControllerState state{};
 
-  robot.setMotionIntent(makeMotionIntent(mode, gait, 0.20));
+  robot.setMotionIntent(makeMotionIntent(RobotMode::STAND, state.gait, state.walk_body_height_m));
   std::this_thread::sleep_for(control_cfg.loop_timing.stand_settling_delay);
 
   while (!exit_flag.load()) {
@@ -123,18 +249,56 @@ int InteractiveRunner::run(RobotControl& robot,
         if (ev->type != ControllerEvent::Type::Button || ev->value == 0) {
           continue;
         }
+
         if (ev->name == "A") {
-          mode = RobotMode::WALK;
-        } else if (ev->name == "B") {
-          mode = RobotMode::STAND;
-        } else if (ev->name == "X") {
-          gait = GaitType::RIPPLE;
+          state.input_mode = nextControllerInputMode(state.input_mode);
+          LOG_INFO(logger, "Controller mode switched to ",
+                   controllerInputModeName(state.input_mode));
+          continue;
+        }
+
+        if (state.input_mode == ControllerInputMode::BodyPose) {
+          if (ev->name == "B") {
+            state.body_height_m = 0.20;
+            LOG_INFO(logger, "Body pose offsets reset to neutral");
+          } else if (ev->name == "LB") {
+            state.body_height_m = std::clamp(state.body_height_m + 0.01, 0.10, 0.35);
+          } else if (ev->name == "RB") {
+            state.body_height_m = std::clamp(state.body_height_m - 0.01, 0.10, 0.35);
+          }
+          continue;
+        }
+
+        if (state.input_mode == ControllerInputMode::Calibration) {
+          if (ev->name == "B") {
+            runHeightDetectionProbe(logger);
+          } else if (ev->name == "X") {
+            runServoCalibrationProbe(logger);
+          } else if (ev->name == "Y") {
+            runHeightDetectionProbe(logger);
+            runServoCalibrationProbe(logger);
+          }
+          continue;
+        }
+
+        if (ev->name == "X") {
+          state.gait = GaitType::RIPPLE;
         } else if (ev->name == "Y") {
-          gait = GaitType::TRIPOD;
+          state.gait = GaitType::TRIPOD;
         }
       }
 
-      robot.setMotionIntent(makeControllerMotionIntent(*controller, mode, gait, 0.20));
+      if (state.input_mode == ControllerInputMode::HeadingWalk) {
+        if (controller->getRightMag() > 0.20f) {
+          state.walk_facing_yaw_rad = static_cast<double>(controller->getRightAng());
+          state.walk_facing_valid = true;
+        }
+        state.walk_mode = RobotMode::WALK;
+      } else {
+        state.walk_mode = RobotMode::STAND;
+      }
+
+      robot.setMotionIntent(makeControllerMotionIntent(*controller, state));
     } else {
       robot.setMotionIntent(makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.20));
     }
