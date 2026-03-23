@@ -136,4 +136,8 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_robot_runtime_freshness_gate_matrix tests/test_robot_runtime_freshness_gate_matrix.cpp)
     target_link_libraries(test_robot_runtime_freshness_gate_matrix PRIVATE hexapod_server_core)
     add_test(NAME robot_runtime_freshness_gate_matrix COMMAND test_robot_runtime_freshness_gate_matrix)
+
+    add_executable(test_calibration_probe_fit tests/test_calibration_probe_fit.cpp)
+    target_link_libraries(test_calibration_probe_fit PRIVATE hexapod_server_core)
+    add_test(NAME calibration_probe_fit COMMAND test_calibration_probe_fit)
 endif()
