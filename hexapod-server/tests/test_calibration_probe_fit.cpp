@@ -233,6 +233,153 @@ bool test_estimate_to_bottom_requires_clear_transition() {
     return true;
 }
 
+ServoDynamicsSample makeDynamicsSample(double t,
+                                       const LegRawState& command,
+                                       const LegRawState& measured) {
+    ServoDynamicsSample sample{};
+    sample.time_s = t;
+    sample.command_servo_angles = command;
+    sample.measured_servo_angles = measured;
+    return sample;
+}
+
+bool test_fit_servo_dynamics_recovers_tau_and_vmax() {
+    constexpr double dt = 0.01;
+    constexpr double tau = 0.12;
+    constexpr double vmax = 4.0;
+
+    std::vector<ServoDynamicsSample> samples{};
+    samples.reserve(220);
+
+    LegRawState measured = makeJointState(0.0, 0.0, 0.0);
+    for (int i = 0; i < 220; ++i) {
+        const double t = static_cast<double>(i) * dt;
+        const double q_cmd = (i < 100) ? 0.95 : -0.85;
+        LegRawState command = makeJointState(q_cmd, q_cmd, q_cmd);
+
+        for (int j = 0; j < kJointsPerLeg; ++j) {
+            const double q_prev = measured.joint_raw_state[j].pos_rad.value;
+            const double err = q_cmd - q_prev;
+            const double dq = std::clamp(err / tau, -vmax, vmax);
+            measured.joint_raw_state[j].pos_rad = AngleRad{q_prev + dq * dt};
+        }
+
+        samples.push_back(makeDynamicsSample(t, command, measured));
+    }
+
+    ServoDynamicsFitOptions options{};
+    options.min_samples = 20;
+    const LegServoDynamicsFitResult fit = fitLegServoDynamicsFromSamples(samples, options);
+
+    for (int j = 0; j < kJointsPerLeg; ++j) {
+        if (!expect(fit.positive_direction[j].success, "positive-direction dynamics fit should succeed")) {
+            return false;
+        }
+        if (!expect(fit.negative_direction[j].success, "negative-direction dynamics fit should succeed")) {
+            return false;
+        }
+        if (!expect(std::abs(fit.positive_direction[j].tau_s - tau) < 0.03,
+                    "positive-direction tau should match synthetic model")) {
+            return false;
+        }
+        if (!expect(std::abs(fit.negative_direction[j].tau_s - tau) < 0.03,
+                    "negative-direction tau should match synthetic model")) {
+            return false;
+        }
+        if (!expect(std::abs(fit.positive_direction[j].vmax_radps - vmax) < 0.35,
+                    "positive-direction vmax should match synthetic model")) {
+            return false;
+        }
+        if (!expect(std::abs(fit.negative_direction[j].vmax_radps - vmax) < 0.35,
+                    "negative-direction vmax should match synthetic model")) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+ProbeDestinationSample makeDestinationSample(double t, double x, bool contact) {
+    ProbeDestinationSample sample{};
+    sample.time_s = t;
+    sample.foot_position_body = Vec3{x, 0.0, 0.0};
+    sample.target_position_body = Vec3{0.0, 0.0, 0.0};
+    sample.foot_contact = contact;
+    return sample;
+}
+
+bool test_destination_requires_contact_and_position() {
+    std::vector<ProbeDestinationSample> samples{};
+    samples.push_back(makeDestinationSample(0.00, 0.030, false));
+    samples.push_back(makeDestinationSample(0.05, 0.015, true));
+    samples.push_back(makeDestinationSample(0.10, 0.002, true));
+    samples.push_back(makeDestinationSample(0.15, 0.001, true));
+
+    ProbeDestinationOptions options{};
+    options.position_tolerance_m = 0.003;
+    options.contact_debounce_samples = 2;
+    options.timeout_s = 0.5;
+    const ProbeDestinationResult result =
+        evaluateProbeDestinationReached(samples, options);
+
+    if (!expect(result.reached, "destination should be reached with in-position + debounced contact")) {
+        return false;
+    }
+    if (!expect(result.status == ProbeDestinationStatus::Reached,
+                "status should be reached")) {
+        return false;
+    }
+
+    return true;
+}
+
+bool test_destination_detects_early_contact() {
+    std::vector<ProbeDestinationSample> samples{};
+    samples.push_back(makeDestinationSample(0.00, 0.030, false));
+    samples.push_back(makeDestinationSample(0.05, 0.025, true));
+    samples.push_back(makeDestinationSample(0.10, 0.020, true));
+    samples.push_back(makeDestinationSample(0.20, 0.005, true));
+
+    ProbeDestinationOptions options{};
+    options.position_tolerance_m = 0.003;
+    options.contact_debounce_samples = 2;
+    options.timeout_s = 0.5;
+    const ProbeDestinationResult result =
+        evaluateProbeDestinationReached(samples, options);
+
+    if (!expect(!result.reached, "early contact should not report reached")) {
+        return false;
+    }
+    if (!expect(result.status == ProbeDestinationStatus::EarlyContact,
+                "status should classify early contact")) {
+        return false;
+    }
+    return true;
+}
+
+bool test_destination_timeout_without_contact() {
+    std::vector<ProbeDestinationSample> samples{};
+    samples.push_back(makeDestinationSample(0.00, 0.030, false));
+    samples.push_back(makeDestinationSample(0.25, 0.002, false));
+    samples.push_back(makeDestinationSample(0.55, 0.001, false));
+
+    ProbeDestinationOptions options{};
+    options.position_tolerance_m = 0.003;
+    options.contact_debounce_samples = 2;
+    options.timeout_s = 0.5;
+    const ProbeDestinationResult result =
+        evaluateProbeDestinationReached(samples, options);
+
+    if (!expect(!result.reached, "timeout without contact should not be reached")) {
+        return false;
+    }
+    if (!expect(result.status == ProbeDestinationStatus::TimeoutNoContact,
+                "status should classify timeout with geometric reach but no contact")) {
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -246,6 +393,18 @@ int main() {
         return 1;
     }
     if (!test_estimate_to_bottom_requires_clear_transition()) {
+        return 1;
+    }
+    if (!test_fit_servo_dynamics_recovers_tau_and_vmax()) {
+        return 1;
+    }
+    if (!test_destination_requires_contact_and_position()) {
+        return 1;
+    }
+    if (!test_destination_detects_early_contact()) {
+        return 1;
+    }
+    if (!test_destination_timeout_without_contact()) {
         return 1;
     }
 

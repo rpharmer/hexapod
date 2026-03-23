@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 
 namespace {
 
@@ -85,6 +86,14 @@ double clampedDelta(double candidate, double limit_abs) {
     return std::clamp(candidate, -limit_abs, limit_abs);
 }
 
+double legJoint(const LegRawState& leg_state, int joint) {
+    return leg_state.joint_raw_state[joint].pos_rad.value;
+}
+
+double norm(const Vec3& v) {
+    return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
 Vec3 computeFootWorldFromServoAngles(const LegRawState& servo_angles,
                                      const LegGeometry& leg_geometry,
                                      const BodyPose& body_pose) {
@@ -126,6 +135,99 @@ double meanContactPlaneHeight(const BaseClearanceSample& sample,
     }
 
     return sum_height / static_cast<double>(used_contacts);
+}
+
+SingleJointDynamicsFit fitSingleJointDirection(
+    const std::vector<ServoDynamicsSample>& samples,
+    int joint,
+    bool positive_direction,
+    const ServoDynamicsFitOptions& options) {
+    SingleJointDynamicsFit fit{};
+    if (samples.size() < 2) {
+        return fit;
+    }
+
+    std::vector<std::pair<double, double>> err_and_velocity{};
+    err_and_velocity.reserve(samples.size() - 1);
+    double vmax_observed = 0.0;
+
+    for (std::size_t i = 1; i < samples.size(); ++i) {
+        const double dt = samples[i].time_s - samples[i - 1].time_s;
+        if (dt < options.min_dt_s) {
+            continue;
+        }
+
+        const double measured_prev = legJoint(samples[i - 1].measured_servo_angles, joint);
+        const double measured_now = legJoint(samples[i].measured_servo_angles, joint);
+        const double commanded_now = legJoint(samples[i].command_servo_angles, joint);
+        const double velocity = (measured_now - measured_prev) / dt;
+        const double err = commanded_now - measured_prev;
+
+        if (std::abs(err) < options.min_err_rad) {
+            continue;
+        }
+
+        if (positive_direction && velocity <= 0.0) {
+            continue;
+        }
+        if (!positive_direction && velocity >= 0.0) {
+            continue;
+        }
+
+        vmax_observed = std::max(vmax_observed, std::abs(velocity));
+        err_and_velocity.emplace_back(err, velocity);
+    }
+
+    if (static_cast<int>(err_and_velocity.size()) < options.min_samples ||
+        vmax_observed <= 0.0) {
+        return fit;
+    }
+
+    const double unsat_v = options.unsaturated_velocity_fraction * vmax_observed;
+    double err_sq_sum = 0.0;
+    double err_vel_sum = 0.0;
+    int used = 0;
+
+    for (const auto& [err, vel] : err_and_velocity) {
+        if (std::abs(vel) >= unsat_v) {
+            continue;
+        }
+        err_sq_sum += err * err;
+        err_vel_sum += err * vel;
+        ++used;
+    }
+
+    if (used < options.min_samples || err_sq_sum <= 1e-12) {
+        return fit;
+    }
+
+    const double k = err_vel_sum / err_sq_sum; // dq = k * err
+    if (!std::isfinite(k) || std::abs(k) <= 1e-9) {
+        return fit;
+    }
+
+    fit.success = true;
+    fit.tau_s = 1.0 / std::abs(k);
+    fit.vmax_radps = vmax_observed;
+    fit.used_samples = used;
+    return fit;
+}
+
+bool hasDebouncedContact(const std::vector<ProbeDestinationSample>& samples,
+                         std::size_t index,
+                         int debounce_samples) {
+    if (debounce_samples <= 1) {
+        return samples[index].foot_contact;
+    }
+    if (index + 1 < static_cast<std::size_t>(debounce_samples)) {
+        return false;
+    }
+    for (int k = 0; k < debounce_samples; ++k) {
+        if (!samples[index - static_cast<std::size_t>(k)].foot_contact) {
+            return false;
+        }
+    }
+    return true;
 }
 
 } // namespace
@@ -269,5 +371,82 @@ BaseClearanceEstimateResult estimateToBottomFromSynchronousLift(
         return result;
     }
 
+    return result;
+}
+
+LegServoDynamicsFitResult fitLegServoDynamicsFromSamples(
+    const std::vector<ServoDynamicsSample>& samples,
+    const ServoDynamicsFitOptions& options) {
+    LegServoDynamicsFitResult result{};
+    for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+        result.positive_direction[joint] =
+            fitSingleJointDirection(samples, joint, true, options);
+        result.negative_direction[joint] =
+            fitSingleJointDirection(samples, joint, false, options);
+    }
+    return result;
+}
+
+ProbeDestinationResult evaluateProbeDestinationReached(
+    const std::vector<ProbeDestinationSample>& samples,
+    const ProbeDestinationOptions& options) {
+    ProbeDestinationResult result{};
+    if (samples.empty()) {
+        return result;
+    }
+
+    const double start_time = samples.front().time_s;
+    const double timeout_time = start_time + options.timeout_s;
+    double contact_rise_time = -1.0;
+
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        const ProbeDestinationSample& sample = samples[i];
+        const bool debounced = hasDebouncedContact(samples, i, options.contact_debounce_samples);
+        const bool in_position =
+            norm(sample.foot_position_body - sample.target_position_body) <=
+            options.position_tolerance_m;
+
+        if (debounced && contact_rise_time < 0.0) {
+            contact_rise_time = sample.time_s;
+        }
+
+        if (debounced && !in_position) {
+            result.status = ProbeDestinationStatus::EarlyContact;
+            result.decision_time_s = sample.time_s;
+            result.contact_rise_time_s = contact_rise_time;
+            result.contact_debounced = true;
+            result.in_position = false;
+            return result;
+        }
+
+        if (debounced && in_position) {
+            result.status = ProbeDestinationStatus::Reached;
+            result.reached = true;
+            result.decision_time_s = sample.time_s;
+            result.contact_rise_time_s = contact_rise_time;
+            result.contact_debounced = true;
+            result.in_position = true;
+            return result;
+        }
+
+        if (sample.time_s >= timeout_time) {
+            result.status = in_position ? ProbeDestinationStatus::TimeoutNoContact
+                                        : ProbeDestinationStatus::TimeoutNoProgress;
+            result.decision_time_s = sample.time_s;
+            result.contact_rise_time_s = contact_rise_time;
+            result.contact_debounced = debounced;
+            result.in_position = in_position;
+            return result;
+        }
+    }
+
+    const ProbeDestinationSample& last = samples.back();
+    result.status = ProbeDestinationStatus::NotReached;
+    result.decision_time_s = last.time_s;
+    result.contact_rise_time_s = contact_rise_time;
+    result.contact_debounced = false;
+    result.in_position =
+        norm(last.foot_position_body - last.target_position_body) <=
+        options.position_tolerance_m;
     return result;
 }
