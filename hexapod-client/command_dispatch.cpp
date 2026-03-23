@@ -23,79 +23,31 @@ void respondInvalidPayloadLength(FirmwareContext& ctx, uint16_t seq)
   ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
 }
 
-void handleGetAngleCalibRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>&)
+template <void (*Handler)(FirmwareContext&, uint16_t)>
+void routeNoPayload(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>&)
 {
-  handleGetAngleCalibCommand(ctx, seq);
+  Handler(ctx, seq);
 }
 
-void handleGetCurrentRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>&)
+template <void (*Handler)(FirmwareContext&, uint16_t, const std::vector<uint8_t>&)>
+void routeWithPayload(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  handleGetCurrentCommand(ctx, seq);
-}
-
-void handleGetVoltageRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>&)
-{
-  handleGetVoltageCommand(ctx, seq);
-}
-
-void handleGetFullHardwareStateRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>&)
-{
-  handleGetFullHardwareStateCommand(ctx, seq);
-}
-
-void handleGetServosEnabledRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>&)
-{
-  handleGetServosEnabledCommand(ctx, seq);
-}
-
-void handleSetServosToMidRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>&)
-{
-  handleSetServosToMidCommand(ctx, seq);
-}
-
-void handleSetPowerRelayRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
-{
-  handleSetPowerRelayCommand(ctx, seq, payload);
-}
-
-void handleSetServosEnabledRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
-{
-  handleSetServosEnabledCommand(ctx, seq, payload);
-}
-
-void handleGetSensorRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
-{
-  handleGetSensorCommand(ctx, seq, payload);
-}
-
-void handleCalibRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
-{
-  handleCalibCommand(ctx, seq, payload);
-}
-
-void handleSetAngleRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
-{
-  handleSetAngleCommand(ctx, seq, payload);
-}
-
-void handleSetJointTargetsRouted(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
-{
-  handleSetJointTargetsCommand(ctx, seq, payload);
+  Handler(ctx, seq, payload);
 }
 
 constexpr std::array<CommandRoute, 12> COMMAND_ROUTES{{
-    {SET_POWER_RELAY, {PayloadPolicyType::ExactBytes, 1}, handleSetPowerRelayRouted},
-    {SET_SERVOS_ENABLED, {PayloadPolicyType::ExactBytes, kProtocolServoEnablePayloadBytes}, handleSetServosEnabledRouted},
-    {GET_SERVOS_ENABLED, {PayloadPolicyType::ExactBytes, 0}, handleGetServosEnabledRouted},
-    {SET_SERVOS_TO_MID, {PayloadPolicyType::ExactBytes, 0}, handleSetServosToMidRouted},
-    {GET_ANGLE_CALIBRATIONS, {PayloadPolicyType::ExactBytes, 0}, handleGetAngleCalibRouted},
-    {GET_CURRENT, {PayloadPolicyType::ExactBytes, 0}, handleGetCurrentRouted},
-    {GET_VOLTAGE, {PayloadPolicyType::ExactBytes, 0}, handleGetVoltageRouted},
-    {GET_SENSOR, {PayloadPolicyType::ExactBytes, 1}, handleGetSensorRouted},
-    {GET_FULL_HARDWARE_STATE, {PayloadPolicyType::ExactBytes, 0}, handleGetFullHardwareStateRouted},
-    {SET_ANGLE_CALIBRATIONS, {PayloadPolicyType::ExactBytes, kProtocolCalibrationsPayloadBytes}, handleCalibRouted},
-    {SET_TARGET_ANGLE, {PayloadPolicyType::ExactBytes, sizeof(uint8_t) + sizeof(float)}, handleSetAngleRouted},
-    {SET_JOINT_TARGETS, {PayloadPolicyType::ExactBytes, kProtocolJointTargetsPayloadBytes}, handleSetJointTargetsRouted},
+    {SET_POWER_RELAY, {PayloadPolicyType::ExactBytes, 1}, routeWithPayload<handleSetPowerRelayCommand>},
+    {SET_SERVOS_ENABLED, {PayloadPolicyType::ExactBytes, kProtocolServoEnablePayloadBytes}, routeWithPayload<handleSetServosEnabledCommand>},
+    {GET_SERVOS_ENABLED, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetServosEnabledCommand>},
+    {SET_SERVOS_TO_MID, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleSetServosToMidCommand>},
+    {GET_ANGLE_CALIBRATIONS, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetAngleCalibCommand>},
+    {GET_CURRENT, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetCurrentCommand>},
+    {GET_VOLTAGE, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetVoltageCommand>},
+    {GET_SENSOR, {PayloadPolicyType::ExactBytes, 1}, routeWithPayload<handleGetSensorCommand>},
+    {GET_FULL_HARDWARE_STATE, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetFullHardwareStateCommand>},
+    {SET_ANGLE_CALIBRATIONS, {PayloadPolicyType::ExactBytes, kProtocolCalibrationsPayloadBytes}, routeWithPayload<handleCalibCommand>},
+    {SET_TARGET_ANGLE, {PayloadPolicyType::ExactBytes, sizeof(uint8_t) + sizeof(float)}, routeWithPayload<handleSetAngleCommand>},
+    {SET_JOINT_TARGETS, {PayloadPolicyType::ExactBytes, kProtocolJointTargetsPayloadBytes}, routeWithPayload<handleSetJointTargetsCommand>},
 }};
 
 } // namespace
