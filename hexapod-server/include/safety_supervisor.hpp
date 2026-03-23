@@ -8,11 +8,21 @@
 
 class SafetySupervisor {
 public:
+    struct FreshnessInputs {
+        bool estimator_valid{true};
+        bool intent_valid{true};
+    };
+
     explicit SafetySupervisor(control_config::SafetyConfig config = {});
 
     SafetyState evaluate(const RawHardwareState& raw,
                          const EstimatedState& est,
                          const MotionIntent& intent);
+
+    SafetyState evaluate(const RawHardwareState& raw,
+                         const EstimatedState& est,
+                         const MotionIntent& intent,
+                         FreshnessInputs freshness);
 
 private:
     static constexpr DurationUs kRecoveryHoldTimeUs{500000};
@@ -27,10 +37,11 @@ private:
     static int faultPriority(FaultCode code);
     static bool shouldReplaceFault(FaultCode current, FaultCode candidate);
     static std::size_t faultIndex(FaultCode code);
-    bool canAttemptClear(const MotionIntent& intent) const;
+    bool canAttemptClear(const MotionIntent& intent, const FreshnessInputs& freshness) const;
     FaultDecision evaluateCurrentFault(const RawHardwareState& raw,
                                        const EstimatedState& est,
-                                       const MotionIntent& intent) const;
+                                       const MotionIntent& intent,
+                                       const FreshnessInputs& freshness) const;
 
     void trip(FaultCode code, bool torque_cut, TimePointUs timestamp_us);
     void clearActiveFault();

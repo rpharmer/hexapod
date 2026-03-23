@@ -2,20 +2,14 @@
 
 #include <cmath>
 
-namespace {
-
-bool isIntentStale(const MotionIntent& intent, const control_config::SafetyConfig& config) {
-    if (intent.timestamp_us.isZero()) {
-        return true;
-    }
-
-    return (now_us() - intent.timestamp_us) > config.command_timeout_us;
-}
-
-} // namespace
-
 SafetySupervisor::SafetySupervisor(control_config::SafetyConfig config)
     : config_(config) {}
+
+SafetyState SafetySupervisor::evaluate(const RawHardwareState& raw,
+                                       const EstimatedState& est,
+                                       const MotionIntent& intent) {
+    return evaluate(raw, est, intent, FreshnessInputs{true, true});
+}
 
 int SafetySupervisor::faultPriority(FaultCode code) {
     switch (code) {
@@ -37,13 +31,15 @@ std::size_t SafetySupervisor::faultIndex(FaultCode code) {
     return static_cast<std::size_t>(code);
 }
 
-bool SafetySupervisor::canAttemptClear(const MotionIntent& intent) const {
-    return intent.requested_mode == RobotMode::SAFE_IDLE && !isIntentStale(intent, config_);
+bool SafetySupervisor::canAttemptClear(const MotionIntent& intent,
+                                       const FreshnessInputs& freshness) const {
+    return intent.requested_mode == RobotMode::SAFE_IDLE && freshness.intent_valid;
 }
 
 SafetySupervisor::FaultDecision SafetySupervisor::evaluateCurrentFault(const RawHardwareState& raw,
                                                                        const EstimatedState& est,
-                                                                       const MotionIntent& intent) const {
+                                                                       const MotionIntent&,
+                                                                       const FreshnessInputs& freshness) const {
     FaultDecision decision{};
 
     const auto consider_fault = [&](FaultCode code, bool torque_cut) {
@@ -79,7 +75,11 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateCurrentFault(const Raw
         consider_fault(FaultCode::TIP_OVER, true);
     }
 
-    if (isIntentStale(intent, config_)) {
+    if (!freshness.estimator_valid) {
+        consider_fault(FaultCode::ESTIMATOR_INVALID, false);
+    }
+
+    if (!freshness.intent_valid) {
         consider_fault(FaultCode::COMMAND_TIMEOUT, false);
     }
 
@@ -118,14 +118,15 @@ void SafetySupervisor::clearActiveFault() {
 
 SafetyState SafetySupervisor::evaluate(const RawHardwareState& raw,
                                        const EstimatedState& est,
-                                       const MotionIntent& intent) {
+                                       const MotionIntent& intent,
+                                       FreshnessInputs freshness) {
     const TimePointUs now = now_us();
-    const FaultDecision fault = evaluateCurrentFault(raw, est, intent);
+    const FaultDecision fault = evaluateCurrentFault(raw, est, intent, freshness);
 
     if (fault.code != FaultCode::NONE) {
         trip(fault.code, fault.torque_cut, now);
     } else if (state_.active_fault != FaultCode::NONE) {
-        if (!canAttemptClear(intent)) {
+        if (!canAttemptClear(intent, freshness)) {
             state_.fault_lifecycle = FaultLifecycle::LATCHED;
             recovery_started_at_us_ = TimePointUs{};
         } else if (state_.fault_lifecycle != FaultLifecycle::RECOVERING ||
