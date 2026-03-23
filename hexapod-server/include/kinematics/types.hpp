@@ -253,30 +253,21 @@ struct MotionIntent {
   TimePointUs timestamp_us{};
 };
 
-struct RawHardwareState {
+struct RobotState {
   std::array<LegState, kNumLegs> leg_states{};
   std::array<bool, kNumLegs> foot_contacts{};
-  float voltage{0.0};
-  float current{0.0};
-  uint64_t sample_id{0};
-  TimePointUs timestamp_us{};
+  BodyTwistState body_twist_state{};
+  float voltage{0.0f};
+  float current{0.0f};
   bool bus_ok{true};
-};
-
-struct EstimatedState {
-  std::array<LegState, kNumLegs> leg_states{};
-  std::array<bool, kNumLegs> foot_contacts{};
-  BodyTwistState body_twist_state{};
+  bool valid{false};
   uint64_t sample_id{0};
   TimePointUs timestamp_us{};
-};
 
-struct TargetBodyState {
-  std::array<LegState, kNumLegs> leg_states{};
-  std::array<bool, kNumLegs> foot_contacts{};
-  BodyTwistState body_twist_state{};
-  bool valid{false};
-  TimePointUs timestamp_us{};
+  // Optional-field validity flags for context-specific usage.
+  bool has_body_twist_state{false};
+  bool has_power_state{false};
+  bool has_valid_flag{false};
 };
 
 struct ControlStatus {

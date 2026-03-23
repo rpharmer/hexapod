@@ -128,7 +128,7 @@ bool test_retry_exhaustion_and_nack_mapping() {
 
 bool test_hardware_state_codec_decode_failure_for_malformed_payload() {
     HardwareStateCodec codec;
-    RawHardwareState state{};
+    RobotState state{};
 
     const std::vector<uint8_t> malformed_payload{0x01, 0x02, 0x03};
     return expect(!codec.decode_full_hardware_state(malformed_payload, state),

@@ -7,7 +7,7 @@ class LegIK {
 public:
     explicit LegIK(HexapodGeometry geometry = defaultHexapodGeometry());
 
-    JointTargets solve(const EstimatedState& est,
+    JointTargets solve(const RobotState& est,
                        const LegTargets& targets, const SafetyState& safety);
 
 private:

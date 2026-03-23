@@ -5,7 +5,7 @@
 class LegFK {
 public:
   LegFK();
-  LegTargets solve(const RawHardwareState& raw, const SafetyState& safety);
+  LegTargets solve(const RobotState& raw, const SafetyState& safety);
   FootTarget footInBodyFrame(const LegState& est, const LegGeometry& leg);
   FootTarget footInWorldFrame(const LegState& est, const BodyPose& bodyPose,
                              const LegGeometry& leg);

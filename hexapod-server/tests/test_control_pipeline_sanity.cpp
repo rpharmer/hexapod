@@ -30,7 +30,7 @@ bool allFinite(const JointTargets& targets) {
 int main() {
     ControlPipeline pipeline;
 
-    EstimatedState estimated{};
+    RobotState estimated{};
     estimated.timestamp_us = now_us();
 
     MotionIntent walk_intent{};

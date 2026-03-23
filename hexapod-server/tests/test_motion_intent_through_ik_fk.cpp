@@ -34,7 +34,7 @@ bool finiteJointTargets(const JointTargets& targets) {
 
 bool gaitSchedulerRespondsToWalkIntent() {
     GaitScheduler gait;
-    EstimatedState est{};
+    RobotState est{};
     MotionIntent walk{};
     walk.requested_mode = RobotMode::WALK;
     walk.gait = GaitType::TRIPOD;
@@ -59,7 +59,7 @@ bool gaitSchedulerRespondsToWalkIntent() {
 
 bool bodyControllerUsesGaitState() {
     BodyController body;
-    EstimatedState est{};
+    RobotState est{};
     MotionIntent walk{};
     walk.requested_mode = RobotMode::WALK;
 
@@ -88,7 +88,7 @@ bool ikFkChainTracksBodyTargets() {
     LegIK ik(geometry);
     LegFK fk;
 
-    EstimatedState est{};
+    RobotState est{};
     est.timestamp_us = now_us();
 
     SafetyState safety{};
@@ -122,7 +122,7 @@ bool ikFkChainTracksBodyTargets() {
 bool controlPipelineProducesStableOutputs() {
     ControlPipeline pipeline;
 
-    EstimatedState estimated{};
+    RobotState estimated{};
     estimated.timestamp_us = now_us();
 
     MotionIntent walk_intent{};

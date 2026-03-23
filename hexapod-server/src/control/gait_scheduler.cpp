@@ -37,7 +37,7 @@ double GaitScheduler::wrap01(double x) const {
     return x;
 }
 
-GaitState GaitScheduler::update(const EstimatedState&,
+GaitState GaitScheduler::update(const RobotState&,
                                 const MotionIntent& intent,
                                 const SafetyState& safety) {
     GaitState out{};

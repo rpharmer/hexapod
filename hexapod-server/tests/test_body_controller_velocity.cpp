@@ -22,7 +22,7 @@ bool nearlyEqual(double lhs, double rhs, double eps = 1e-6) {
 
 int main() {
     BodyController controller{};
-    EstimatedState est{};
+    RobotState est{};
     SafetyState safety{};
     safety.inhibit_motion = false;
     safety.torque_cut = false;

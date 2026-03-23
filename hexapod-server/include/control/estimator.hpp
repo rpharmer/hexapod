@@ -7,12 +7,12 @@
 class IEstimator {
 public:
     virtual ~IEstimator() = default;
-    virtual EstimatedState update(const RawHardwareState& raw) = 0;
+    virtual RobotState update(const RobotState& raw) = 0;
 };
 
 class SimpleEstimator final : public IEstimator {
 public:
-    EstimatedState update(const RawHardwareState& raw) override;
+    RobotState update(const RobotState& raw) override;
 
 private:
     static constexpr uint64_t kContactMemoryWindowUs = 250000;

@@ -99,8 +99,8 @@ bool solveGroundPlane(const std::array<Vec3, kNumLegs>& points,
 
 } // namespace
 
-EstimatedState SimpleEstimator::update(const RawHardwareState& raw) {
-    EstimatedState est{};
+RobotState SimpleEstimator::update(const RobotState& raw) {
+    RobotState est{};
 
     est.foot_contacts = raw.foot_contacts;
     est.sample_id = raw.sample_id;

@@ -5,8 +5,8 @@
 SafetySupervisor::SafetySupervisor(control_config::SafetyConfig config)
     : config_(config) {}
 
-SafetyState SafetySupervisor::evaluate(const RawHardwareState& raw,
-                                       const EstimatedState& est,
+SafetyState SafetySupervisor::evaluate(const RobotState& raw,
+                                       const RobotState& est,
                                        const MotionIntent& intent) {
     return evaluate(raw, est, intent, FreshnessInputs{true, true});
 }
@@ -36,8 +36,8 @@ bool SafetySupervisor::canAttemptClear(const MotionIntent& intent,
     return intent.requested_mode == RobotMode::SAFE_IDLE && freshness.intent_valid;
 }
 
-SafetySupervisor::FaultDecision SafetySupervisor::evaluateCurrentFault(const RawHardwareState& raw,
-                                                                       const EstimatedState& est,
+SafetySupervisor::FaultDecision SafetySupervisor::evaluateCurrentFault(const RobotState& raw,
+                                                                       const RobotState& est,
                                                                        const MotionIntent&,
                                                                        const FreshnessInputs& freshness) const {
     FaultDecision decision{};
@@ -116,8 +116,8 @@ void SafetySupervisor::clearActiveFault() {
     recovery_started_at_us_ = TimePointUs{};
 }
 
-SafetyState SafetySupervisor::evaluate(const RawHardwareState& raw,
-                                       const EstimatedState& est,
+SafetyState SafetySupervisor::evaluate(const RobotState& raw,
+                                       const RobotState& est,
                                        const MotionIntent& intent,
                                        FreshnessInputs freshness) {
     const TimePointUs now = now_us();

@@ -15,7 +15,7 @@ class ControlPipeline {
 public:
     explicit ControlPipeline(control_config::GaitConfig config = {});
 
-    PipelineStepResult runStep(const EstimatedState& estimated,
+    PipelineStepResult runStep(const RobotState& estimated,
                                const MotionIntent& intent,
                                const SafetyState& safety_state,
                                bool bus_ok,

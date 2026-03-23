@@ -5,7 +5,7 @@
 
 class BodyController {
 public:
-    LegTargets update(const EstimatedState& est,
+    LegTargets update(const RobotState& est,
                       const MotionIntent& intent,
                       const GaitState& gait,
                       const SafetyState& safety);

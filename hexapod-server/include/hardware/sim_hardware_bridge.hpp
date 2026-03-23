@@ -26,7 +26,7 @@ public:
     ~SimHardwareBridge() override = default;
 
     bool init() override;
-    bool read(RawHardwareState& out) override;
+    bool read(RobotState& out) override;
     bool write(const JointTargets& in) override;
     void setFaultToggles(const SimHardwareFaultToggles& fault_toggles);
 
@@ -37,6 +37,6 @@ private:
 
     bool initialized_{false};
     mutable std::mutex mutex_{};
-    RawHardwareState state_{};
+    RobotState state_{};
     JointTargets commanded_targets_{};
 };
