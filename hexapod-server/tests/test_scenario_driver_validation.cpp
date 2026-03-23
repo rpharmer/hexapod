@@ -116,6 +116,140 @@ events = [
                   "strict mode should reject motion fields without mode");
 }
 
+bool test_strict_invalid_gait_rejected() {
+    const std::string path = "/tmp/scenario_invalid_gait_strict.toml";
+    if (!writeScenarioFile(path, R"(
+name = "invalid-gait-strict"
+duration_ms = 100
+tick_ms = 20
+events = [
+  { at_ms = 0, mode = "WALK", gait = "HOPPING" }
+]
+)")) {
+        return false;
+    }
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    const bool ok =
+        ScenarioDriver::loadFromToml(path, scenario, error, ScenarioDriver::ValidationMode::Strict);
+    std::remove(path.c_str());
+    return expect(!ok && error.find("invalid scenario gait") != std::string::npos,
+                  "strict mode should reject invalid gait");
+}
+
+bool test_strict_low_voltage_value_non_positive_rejected() {
+    const std::string path = "/tmp/scenario_low_voltage_non_positive_strict.toml";
+    if (!writeScenarioFile(path, R"(
+name = "low-voltage-non-positive-strict"
+duration_ms = 100
+tick_ms = 20
+events = [
+  { at_ms = 0, faults = { low_voltage = true, low_voltage_value_v = 0.0 } }
+]
+)")) {
+        return false;
+    }
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    const bool ok =
+        ScenarioDriver::loadFromToml(path, scenario, error, ScenarioDriver::ValidationMode::Strict);
+    std::remove(path.c_str());
+    return expect(!ok && error.find("faults.low_voltage_value_v must be > 0") != std::string::npos,
+                  "strict mode should reject non-positive low_voltage_value_v");
+}
+
+bool test_strict_high_current_value_non_positive_rejected() {
+    const std::string path = "/tmp/scenario_high_current_non_positive_strict.toml";
+    if (!writeScenarioFile(path, R"(
+name = "high-current-non-positive-strict"
+duration_ms = 100
+tick_ms = 20
+events = [
+  { at_ms = 0, faults = { high_current = true, high_current_value_a = -1.0 } }
+]
+)")) {
+        return false;
+    }
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    const bool ok =
+        ScenarioDriver::loadFromToml(path, scenario, error, ScenarioDriver::ValidationMode::Strict);
+    std::remove(path.c_str());
+    return expect(!ok && error.find("faults.high_current_value_a must be > 0") != std::string::npos,
+                  "strict mode should reject non-positive high_current_value_a");
+}
+
+bool test_strict_low_voltage_value_requires_low_voltage_enabled() {
+    const std::string path = "/tmp/scenario_low_voltage_requires_flag_strict.toml";
+    if (!writeScenarioFile(path, R"(
+name = "low-voltage-requires-flag-strict"
+duration_ms = 100
+tick_ms = 20
+events = [
+  { at_ms = 0, faults = { low_voltage = false, low_voltage_value_v = 5.5 } }
+]
+)")) {
+        return false;
+    }
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    const bool ok =
+        ScenarioDriver::loadFromToml(path, scenario, error, ScenarioDriver::ValidationMode::Strict);
+    std::remove(path.c_str());
+    return expect(!ok && error.find("requires low_voltage=true") != std::string::npos,
+                  "strict mode should require low_voltage=true when low_voltage_value_v is provided");
+}
+
+bool test_strict_high_current_value_requires_high_current_enabled() {
+    const std::string path = "/tmp/scenario_high_current_requires_flag_strict.toml";
+    if (!writeScenarioFile(path, R"(
+name = "high-current-requires-flag-strict"
+duration_ms = 100
+tick_ms = 20
+events = [
+  { at_ms = 0, faults = { high_current = false, high_current_value_a = 12.0 } }
+]
+)")) {
+        return false;
+    }
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    const bool ok =
+        ScenarioDriver::loadFromToml(path, scenario, error, ScenarioDriver::ValidationMode::Strict);
+    std::remove(path.c_str());
+    return expect(!ok && error.find("requires high_current=true") != std::string::npos,
+                  "strict mode should require high_current=true when high_current_value_a is provided");
+}
+
+bool test_strict_clear_contacts_with_contacts_rejected() {
+    const std::string path = "/tmp/scenario_clear_contacts_with_contacts_strict.toml";
+    if (!writeScenarioFile(path, R"(
+name = "clear-contacts-with-contacts-strict"
+duration_ms = 100
+tick_ms = 20
+events = [
+  { at_ms = 0, sensors = { clear_contacts = true, contacts = [true, false, true, false, true, false] } }
+]
+)")) {
+        return false;
+    }
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    const bool ok =
+        ScenarioDriver::loadFromToml(path, scenario, error, ScenarioDriver::ValidationMode::Strict);
+    std::remove(path.c_str());
+    return expect(!ok &&
+                      error.find("contacts cannot be provided when clear_contacts=true") !=
+                          std::string::npos,
+                  "strict mode should reject contacts when clear_contacts=true");
+}
+
 } // namespace
 
 int main() {
@@ -129,6 +263,24 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!test_invalid_combination_permissive_vs_strict()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_strict_invalid_gait_rejected()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_strict_low_voltage_value_non_positive_rejected()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_strict_high_current_value_non_positive_rejected()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_strict_low_voltage_value_requires_low_voltage_enabled()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_strict_high_current_value_requires_high_current_enabled()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_strict_clear_contacts_with_contacts_rejected()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
