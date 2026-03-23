@@ -20,6 +20,28 @@ namespace {
 constexpr DurationUs kLinkTimeoutUs{500000};
 constexpr DurationUs kHeartbeatIdleIntervalUs{150000};
 
+void logCommandFailure(const char* command_name,
+                       TransportSession::OutcomeClass outcome_class,
+                       uint8_t nack_code,
+                       std::size_t response_payload_size) {
+    if (auto logger = logging::GetDefaultLogger()) {
+        LOG_ERROR(logger,
+                  "command ",
+                  command_name,
+                  " failed (outcome=",
+                  static_cast<unsigned>(outcome_class),
+                  ", nack_code=",
+                  static_cast<unsigned>(nack_code),
+                  ", payload_size=",
+                  static_cast<unsigned>(response_payload_size),
+                  ")");
+    }
+}
+
+bool decodeScalarFloatPayload(const std::vector<uint8_t>& payload, protocol::ScalarFloat& decoded) {
+    return protocol::decode_scalar_float(payload, decoded);
+}
+
 }  // namespace
 
 class SerialPacketEndpoint final : public IPacketEndpoint {
@@ -181,10 +203,7 @@ bool SimpleHardwareBridge::get_angle_calibrations(std::vector<float>& out_calibs
 
 bool SimpleHardwareBridge::get_current(float& out_current) {
     protocol::ScalarFloat current{};
-    const auto decode_scalar = [](const std::vector<uint8_t>& payload, protocol::ScalarFloat& decoded) {
-        return protocol::decode_scalar_float(payload, decoded);
-    };
-    if (!request_decoded(GET_CURRENT, {}, decode_scalar, current, "GET_CURRENT")) {
+    if (!request_decoded(GET_CURRENT, {}, decodeScalarFloatPayload, current, "GET_CURRENT")) {
         return false;
     }
 
@@ -194,10 +213,7 @@ bool SimpleHardwareBridge::get_current(float& out_current) {
 
 bool SimpleHardwareBridge::get_voltage(float& out_voltage) {
     protocol::ScalarFloat voltage{};
-    const auto decode_scalar = [](const std::vector<uint8_t>& payload, protocol::ScalarFloat& decoded) {
-        return protocol::decode_scalar_float(payload, decoded);
-    };
-    if (!request_decoded(GET_VOLTAGE, {}, decode_scalar, voltage, "GET_VOLTAGE")) {
+    if (!request_decoded(GET_VOLTAGE, {}, decodeScalarFloatPayload, voltage, "GET_VOLTAGE")) {
         return false;
     }
 
@@ -211,10 +227,8 @@ bool SimpleHardwareBridge::get_sensor(uint8_t sensor_id, float& out_voltage) {
     append_scalar(request_payload, sensor_id);
 
     protocol::ScalarFloat sensor_voltage{};
-    const auto decode_scalar = [](const std::vector<uint8_t>& payload, protocol::ScalarFloat& decoded) {
-        return protocol::decode_scalar_float(payload, decoded);
-    };
-    if (!request_decoded(GET_SENSOR, request_payload, decode_scalar, sensor_voltage, "GET_SENSOR")) {
+    if (!request_decoded(
+            GET_SENSOR, request_payload, decodeScalarFloatPayload, sensor_voltage, "GET_SENSOR")) {
         return false;
     }
 
@@ -287,35 +301,19 @@ bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs) {
 bool SimpleHardwareBridge::request_ack(uint8_t cmd,
                                        const std::vector<uint8_t>& payload,
                                        const char* command_name) {
-    if (!command_client_) {
-        return false;
-    }
-
-    if (!ensure_link()) {
-        return false;
-    }
-
-    const auto outcome = command_client_->transact(cmd, payload, nullptr);
-    if (outcome.outcome_class == TransportSession::OutcomeClass::Success) {
-        return true;
-    }
-
-    if (auto logger = logging::GetDefaultLogger()) {
-        LOG_ERROR(logger,
-                  "command ",
-                  command_name,
-                  " failed (outcome=",
-                  static_cast<unsigned>(outcome.outcome_class),
-                  ", nack_code=",
-                  static_cast<unsigned>(outcome.nack_code),
-                  ")");
-    }
-    return false;
+    return request_transaction(cmd, payload, nullptr, command_name);
 }
 
 bool SimpleHardwareBridge::request_ack_payload(uint8_t cmd,
                                                const std::vector<uint8_t>& payload,
                                                std::vector<uint8_t>& out_payload,
+                                               const char* command_name) {
+    return request_transaction(cmd, payload, &out_payload, command_name);
+}
+
+bool SimpleHardwareBridge::request_transaction(uint8_t cmd,
+                                               const std::vector<uint8_t>& payload,
+                                               std::vector<uint8_t>* out_payload,
                                                const char* command_name) {
     if (!command_client_) {
         return false;
@@ -325,20 +323,12 @@ bool SimpleHardwareBridge::request_ack_payload(uint8_t cmd,
         return false;
     }
 
-    const auto outcome = command_client_->transact(cmd, payload, &out_payload);
+    const auto outcome = command_client_->transact(cmd, payload, out_payload);
     if (outcome.outcome_class == TransportSession::OutcomeClass::Success) {
         return true;
     }
 
-    if (auto logger = logging::GetDefaultLogger()) {
-        LOG_ERROR(logger,
-                  "command ",
-                  command_name,
-                  " failed (outcome=",
-                  static_cast<unsigned>(outcome.outcome_class),
-                  ", nack_code=",
-                  static_cast<unsigned>(outcome.nack_code),
-                  ")");
-    }
+    const std::size_t payload_size = (out_payload != nullptr) ? out_payload->size() : 0;
+    logCommandFailure(command_name, outcome.outcome_class, outcome.nack_code, payload_size);
     return false;
 }

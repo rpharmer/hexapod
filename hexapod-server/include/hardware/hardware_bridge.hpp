@@ -93,6 +93,10 @@ private:
                              const std::vector<uint8_t>& payload,
                              std::vector<uint8_t>& out_payload,
                              const char* command_name);
+    bool request_transaction(uint8_t cmd,
+                             const std::vector<uint8_t>& payload,
+                             std::vector<uint8_t>* out_payload,
+                             const char* command_name);
 
     bool ensure_link();
     bool send_calibrations(const std::vector<float>& calibs);

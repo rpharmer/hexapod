@@ -1,8 +1,71 @@
 #include "robot_runtime.hpp"
 
 #include <algorithm>
+#include <atomic>
 
 #include "status_reporter.hpp"
+
+namespace {
+
+void updateControlTimingMetrics(const control_config::ControlConfig& config,
+                                TimePointUs now,
+                                TimePointUs& last_control_step_us,
+                                std::atomic<uint64_t>& control_dt_sum_us,
+                                std::atomic<uint64_t>& control_jitter_max_us) {
+    if (last_control_step_us.isZero()) {
+        last_control_step_us = now;
+        return;
+    }
+
+    const uint64_t dt_us = static_cast<uint64_t>((now - last_control_step_us).value);
+    control_dt_sum_us.fetch_add(dt_us);
+    const uint64_t target_us = static_cast<uint64_t>(config.loop_timing.control_loop_period.count());
+    const uint64_t jitter_us = (dt_us > target_us) ? (dt_us - target_us) : (target_us - dt_us);
+    uint64_t current_max = control_jitter_max_us.load();
+    while (jitter_us > current_max &&
+           !control_jitter_max_us.compare_exchange_weak(current_max, jitter_us)) {
+    }
+    last_control_step_us = now;
+}
+
+ControlStatus makeFreshnessGateRejectedStatus(bool estimator_fresh,
+                                              bool bus_ok,
+                                              std::atomic<uint64_t>& control_loop_counter) {
+    ControlStatus status{};
+    status.active_mode = RobotMode::SAFE_IDLE;
+    status.estimator_valid = estimator_fresh;
+    status.bus_ok = bus_ok;
+    status.active_fault = estimator_fresh ? FaultCode::COMMAND_TIMEOUT : FaultCode::ESTIMATOR_INVALID;
+    status.loop_counter = control_loop_counter.fetch_add(1) + 1;
+    return status;
+}
+
+void maybeLogFreshnessGateReject(const std::shared_ptr<logging::AsyncLogger>& logger,
+                                 bool estimator_fresh,
+                                 bool intent_fresh,
+                                 const FreshnessPolicy::Evaluation& freshness,
+                                 const EstimatedState& est,
+                                 const MotionIntent& intent) {
+    if (!logger) {
+        return;
+    }
+
+    LOG_WARN(logger,
+             "runtime.freshness_gate_reject estimator_valid=",
+             estimator_fresh ? 1 : 0,
+             " intent_valid=",
+             intent_fresh ? 1 : 0,
+             " est_age_us=",
+             freshness.estimator.age_us,
+             " intent_age_us=",
+             freshness.intent.age_us,
+             " est_sample_id=",
+             est.sample_id,
+             " intent_sample_id=",
+             intent.sample_id);
+}
+
+} // namespace
 
 RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
                            std::unique_ptr<IEstimator> estimator,
@@ -75,17 +138,7 @@ void RobotRuntime::estimatorStep() {
 
 void RobotRuntime::controlStep() {
     const TimePointUs now = now_us();
-    if (!last_control_step_us_.isZero()) {
-        const uint64_t dt_us = static_cast<uint64_t>((now - last_control_step_us_).value);
-        control_dt_sum_us_.fetch_add(dt_us);
-        const uint64_t target_us = static_cast<uint64_t>(config_.loop_timing.control_loop_period.count());
-        const uint64_t jitter_us = (dt_us > target_us) ? (dt_us - target_us) : (target_us - dt_us);
-        uint64_t current_max = control_jitter_max_us_.load();
-        while (jitter_us > current_max &&
-               !control_jitter_max_us_.compare_exchange_weak(current_max, jitter_us)) {
-        }
-    }
-    last_control_step_us_ = now;
+    updateControlTimingMetrics(config_, now, last_control_step_us_, control_dt_sum_us_, control_jitter_max_us_);
 
     const EstimatedState est = estimated_state_.read();
     const MotionIntent intent = motion_intent_.read();
@@ -104,27 +157,10 @@ void RobotRuntime::controlStep() {
     }
 
     if (!estimator_fresh || !intent_fresh) {
-        if (logger_) {
-            LOG_WARN(logger_,
-                     "runtime.freshness_gate_reject estimator_valid=",
-                     estimator_fresh ? 1 : 0,
-                     " intent_valid=",
-                     intent_fresh ? 1 : 0,
-                     " est_age_us=",
-                     latest_freshness_.estimator.age_us,
-                     " intent_age_us=",
-                     latest_freshness_.intent.age_us,
-                     " est_sample_id=",
-                     est.sample_id,
-                     " intent_sample_id=",
-                     intent.sample_id);
-        }
-        ControlStatus status{};
-        status.active_mode = RobotMode::SAFE_IDLE;
-        status.estimator_valid = estimator_fresh;
-        status.bus_ok = bus_ok;
-        status.active_fault = estimator_fresh ? FaultCode::COMMAND_TIMEOUT : FaultCode::ESTIMATOR_INVALID;
-        status.loop_counter = control_loop_counter_.fetch_add(1) + 1;
+        maybeLogFreshnessGateReject(
+            logger_, estimator_fresh, intent_fresh, latest_freshness_, est, intent);
+        const ControlStatus status = makeFreshnessGateRejectedStatus(
+            estimator_fresh, bus_ok, control_loop_counter_);
         status_.write(status);
         joint_targets_.write(JointTargets{});
         return;
