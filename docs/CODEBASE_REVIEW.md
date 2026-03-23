@@ -2,7 +2,7 @@
 
 ## Executive summary
 
-The codebase is in good operational health: boundaries between host runtime (`hexapod-server`), firmware (`hexapod-client`), and protocol (`hexapod-common`) are clear, and the host test suite is broad and currently passing (14/14).
+The codebase is in good operational health: boundaries between host runtime (`hexapod-server`), firmware (`hexapod-client`), and protocol (`hexapod-common`) are clear, and the host test suite is broad and currently passing (16/16).
 
 The highest-value improvements are maintainability refactors that preserve behavior while reducing duplicated logic and decision-surface complexity:
 
@@ -26,7 +26,14 @@ Validation commands run:
 - `cd hexapod-server && cmake --build --preset tests -j`
 - `cd hexapod-server && ctest --preset tests --output-on-failure`
 
-Result: **14/14 tests passing**.
+Result: **16/16 tests passing**.
+
+Additional scope confirmation for this review pass:
+
+- Reviewed repository documentation set (`README.md`, `docs/*.md`, component READMEs).
+- Reviewed server code tree (`hexapod-server/include`, `hexapod-server/src`, `hexapod-server/tests`).
+- Reviewed firmware code tree (`hexapod-client/*.cpp`, `hexapod-client/*.hpp`, firmware tests).
+- Reviewed shared protocol/framing layer (`hexapod-common/include`, `hexapod-common/framing.cpp`).
 
 ---
 
