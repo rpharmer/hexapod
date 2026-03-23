@@ -68,6 +68,9 @@ void handleGetServosEnabledCommand(FirmwareContext& ctx, uint16_t seq)
 void handleSetServosToMidCommand(FirmwareContext& ctx, uint16_t seq)
 {
   ctx.servos.all_to_mid();
+  for (float& position_rad : ctx.jointTargetPositionsRad) {
+    position_rad = 0.0f;
+  }
 
   ctx.serial.send_packet(seq, ACK, {});
 }
@@ -78,4 +81,3 @@ void handleHeartbeatCommand(FirmwareContext& ctx, uint16_t seq)
   const protocol::HelloAck heartbeat{PROTOCOL_VERSION, STATUS_OK, DEVICE_ID};
   ctx.serial.send_packet(seq, ACK, protocol::encode_hello_ack(heartbeat));
 }
-

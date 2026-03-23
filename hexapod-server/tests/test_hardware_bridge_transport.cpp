@@ -80,6 +80,15 @@ bool test_successful_handshake_and_heartbeat() {
     if (!expect(sent[0].cmd == HELLO, "first packet should be HELLO")) {
         return false;
     }
+    protocol::HelloRequest hello{};
+    if (!expect(protocol::decode_hello_request(sent[0].payload, hello),
+                "HELLO payload should decode as hello request")) {
+        return false;
+    }
+    if (!expect((hello.capabilities & CAPABILITY_ANGULAR_FEEDBACK) != 0,
+                "HELLO should request ANGULAR_FEEDBACK capability")) {
+        return false;
+    }
 
     if (!expect(sent[1].cmd == HEARTBEAT, "second packet should be HEARTBEAT")) {
         return false;

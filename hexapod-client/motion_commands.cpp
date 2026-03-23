@@ -24,6 +24,7 @@ void handleSetAngleCommand(FirmwareContext& ctx, uint16_t seq, const std::vector
   }
 
   ctx.servos.value(servo, angle);
+  ctx.jointTargetPositionsRad[servo] = angle;
   ctx.serial.send_packet(seq, ACK, {});
 }
 

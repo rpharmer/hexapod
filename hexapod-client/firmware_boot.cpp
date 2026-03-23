@@ -15,6 +15,7 @@ constexpr float BRIGHTNESS = 0.4f;
 
 // How many times the LEDs will be updated per second
 constexpr uint UPDATES = 50;
+constexpr bool kHardwareAngleFeedbackAvailable = false;
 
 void configureSensorAddressPulls(FirmwareContext& ctx)
 {
@@ -106,6 +107,9 @@ bool handleHandshake(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8
 
   if(request.version == PROTOCOL_VERSION)
   {
+    ctx.requestedCapabilities = request.capabilities;
+    ctx.softwareAngleFeedbackEstimatorEnabled =
+      ((request.capabilities & CAPABILITY_ANGULAR_FEEDBACK) != 0) && !kHardwareAngleFeedbackAvailable;
     const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, DEVICE_ID};
     ctx.serial.send_packet(seq, ACK, protocol::encode_hello_ack(ack));
     return true;

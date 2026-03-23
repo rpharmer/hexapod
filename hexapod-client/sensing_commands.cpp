@@ -61,7 +61,9 @@ void handleGetFullHardwareStateCommand(FirmwareContext& ctx, uint16_t seq)
 
   for (std::size_t s = 0; s < kProtocolJointCount; ++s)
   {
-    state.joint_positions_rad[s] = ctx.servos.value(static_cast<int>(s));
+    state.joint_positions_rad[s] = ctx.softwareAngleFeedbackEstimatorEnabled
+      ? ctx.jointTargetPositionsRad[s]
+      : ctx.servos.value(static_cast<int>(s));
   }
 
   for (std::size_t sensor = 0; sensor < kProtocolFootSensorCount; ++sensor)
@@ -79,4 +81,3 @@ void handleGetFullHardwareStateCommand(FirmwareContext& ctx, uint16_t seq)
 
   ctx.serial.send_packet(seq, ACK, protocol::encode_full_hardware_state(state));
 }
-

@@ -39,6 +39,8 @@ struct FirmwareContext {
 
   ServoCluster servos{pio0, 0, START_PIN, NUM_SERVOS};
   std::array<float, kProtocolJointCount> jointTargetPositionsRad{};
+  uint8_t requestedCapabilities{0};
+  bool softwareAngleFeedbackEstimatorEnabled{false};
   SerialCommsClient serial{};
   WS2812 led_bar{servo2040::NUM_LEDS, pio1, 0, servo2040::LED_DATA};
   Button user_sw{servo2040::USER_SW};
@@ -153,6 +155,8 @@ struct FirmwareContext {
   float minmaxCalibrations[kProtocolJointCount][kProtocolCalibrationPairsPerJoint]{};
   ServoCluster servos{};
   std::array<float, kProtocolJointCount> jointTargetPositionsRad{};
+  uint8_t requestedCapabilities{0};
+  bool softwareAngleFeedbackEstimatorEnabled{false};
   SerialCommsClient serial{};
   WS2812 led_bar{};
   Button user_sw{};
