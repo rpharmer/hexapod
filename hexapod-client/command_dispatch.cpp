@@ -35,11 +35,13 @@ void routeWithPayload(FirmwareContext& ctx, uint16_t seq, const std::vector<uint
   Handler(ctx, seq, payload);
 }
 
-constexpr std::array<CommandRoute, 12> COMMAND_ROUTES{{
+constexpr std::array<CommandRoute, 14> COMMAND_ROUTES{{
     {SET_POWER_RELAY, {PayloadPolicyType::ExactBytes, 1}, routeWithPayload<handleSetPowerRelayCommand>},
     {SET_SERVOS_ENABLED, {PayloadPolicyType::ExactBytes, kProtocolServoEnablePayloadBytes}, routeWithPayload<handleSetServosEnabledCommand>},
     {GET_SERVOS_ENABLED, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetServosEnabledCommand>},
     {SET_SERVOS_TO_MID, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleSetServosToMidCommand>},
+    {GET_LED_INFO, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetLedInfoCommand>},
+    {SET_LED_COLORS, {PayloadPolicyType::ExactBytes, kProtocolLedColorsPayloadBytes}, routeWithPayload<handleSetLedColorsCommand>},
     {GET_ANGLE_CALIBRATIONS, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetAngleCalibCommand>},
     {GET_CURRENT, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetCurrentCommand>},
     {GET_VOLTAGE, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetVoltageCommand>},

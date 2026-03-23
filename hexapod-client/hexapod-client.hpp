@@ -45,6 +45,8 @@ void handleGetFullHardwareStateCommand(FirmwareContext& ctx, uint16_t seq);
 void handleSetServosEnabledCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload);
 void handleGetServosEnabledCommand(FirmwareContext& ctx, uint16_t seq);
 void handleSetServosToMidCommand(FirmwareContext& ctx, uint16_t seq);
+void handleGetLedInfoCommand(FirmwareContext& ctx, uint16_t seq);
+void handleSetLedColorsCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload);
 
 void handleHeartbeatCommand(FirmwareContext& ctx, uint16_t seq);
 

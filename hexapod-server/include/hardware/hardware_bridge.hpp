@@ -57,6 +57,8 @@ public:
     bool set_servos_enabled(const std::array<bool, kNumJoints>& enabled);
     bool get_servos_enabled(std::array<bool, kNumJoints>& enabled);
     bool set_servos_to_mid();
+    bool get_led_info(bool& present, uint8_t& count);
+    bool set_led_colors(const std::array<uint8_t, kProtocolLedColorsPayloadBytes>& colors);
 
 private:
     bool request_ack(uint8_t cmd,

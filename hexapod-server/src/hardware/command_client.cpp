@@ -115,6 +115,8 @@ const char* CommandClient::command_name(uint8_t cmd) {
         case SET_SERVOS_ENABLED: return "SET_SERVOS_ENABLED";
         case GET_SERVOS_ENABLED: return "GET_SERVOS_ENABLED";
         case SET_SERVOS_TO_MID: return "SET_SERVOS_TO_MID";
+        case GET_LED_INFO: return "GET_LED_INFO";
+        case SET_LED_COLORS: return "SET_LED_COLORS";
         default: return "UNKNOWN";
     }
 }

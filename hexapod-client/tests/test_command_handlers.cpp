@@ -238,6 +238,39 @@ bool test_set_servos_enabled_valid_and_invalid_payloads()
                 "expected invalid length nack for malformed servo enable payload");
 }
 
+bool test_get_led_info_and_set_led_colors()
+{
+  FirmwareContext ctx{};
+  handleGetLedInfoCommand(ctx, 51);
+  if(!expect_last_packet(ctx, 51, ACK))
+    return false;
+
+  protocol::LedInfo info{};
+  if(!expect(protocol::decode_led_info(last_packet(ctx)->payload, info), "expected decodable LED info payload"))
+    return false;
+  if(!expect(info.present == 1, "expected LED presence flag"))
+    return false;
+  if(!expect(info.count == kProtocolLedCount, "expected LED count"))
+    return false;
+
+  protocol::LedColors colors{};
+  for(std::size_t i = 0; i < colors.size(); ++i)
+    colors[i] = static_cast<uint8_t>(i + 1);
+
+  handleSetLedColorsCommand(ctx, 52, protocol::encode_led_colors(colors));
+  if(!expect_last_packet(ctx, 52, ACK))
+    return false;
+
+  if(!expect(ctx.led_bar.rgb == colors, "expected LED color buffer update"))
+    return false;
+
+  handleSetLedColorsCommand(ctx, 53, std::vector<uint8_t>{0x10, 0x20});
+  if(!expect_last_packet(ctx, 53, NACK))
+    return false;
+  return expect(last_packet(ctx)->payload[0] == INVALID_PAYLOAD_LENGTH,
+                "expected invalid length nack for malformed LED payload");
+}
+
 } // namespace
 
 int main()
@@ -261,6 +294,8 @@ int main()
   if(!test_set_power_relay_ack_and_nacks())
     return EXIT_FAILURE;
   if(!test_set_servos_enabled_valid_and_invalid_payloads())
+    return EXIT_FAILURE;
+  if(!test_get_led_info_and_set_led_colors())
     return EXIT_FAILURE;
 
   return EXIT_SUCCESS;
