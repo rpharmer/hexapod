@@ -531,3 +531,8 @@
 [2026-03-20 00:42:29.969] [INFO] [app] Stopping robot control loops (/home/volly/pico/hexapod/hexapod-server/src/robot_control.cpp:38, stop)
 [2026-03-20 00:42:30.068] [WARN] [app] All workers joined (/home/volly/pico/hexapod/hexapod-server/src/hexapod-server.cpp:87, main)
 [2026-03-20 00:42:30.068] [ERROR] [app] Dropped messages=0 (/home/volly/pico/hexapod/hexapod-server/src/hexapod-server.cpp:88, main)
+[2026-03-23 01:27:32.323] [INFO] [app] Runtime.Mode=serial (/home/volly/pico/hexapod/hexapod-server/src/hexapod-server.cpp:78, main)
+[2026-03-23 01:27:32.325] [INFO] [app] telemetry command=HELLO seq=0 latency_us=1026 outcome=success attempts=1 (/home/volly/pico/hexapod/hexapod-server/src/command_client.cpp:56, transact)
+[2026-03-23 01:27:32.326] [INFO] [app] telemetry command=HEARTBEAT seq=1 latency_us=983 outcome=success attempts=1 (/home/volly/pico/hexapod/hexapod-server/src/command_client.cpp:56, transact)
+[2026-03-23 01:27:32.326] [ERROR] [app] heartbeat malformed payload (/home/volly/pico/hexapod/hexapod-server/src/handshake_client.cpp:63, send_heartbeat)
+[2026-03-23 01:27:32.326] [ERROR] [app] Hardware Bridge init failed (/home/volly/pico/hexapod/hexapod-server/src/robot_runtime.cpp:28, init)
