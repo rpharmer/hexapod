@@ -1,13 +1,13 @@
 # Hexapod
 
-Monorepo for a serial-controlled hexapod robot, containing Linux host control software, Servo 2040 firmware, and shared wire protocol definitions.
+Monorepo for a serial-controlled hexapod robot, containing Linux host control software, Servo 2040 firmware, and shared protocol definitions.
 
 ## Components
 
-- **`hexapod-server/`** — Linux host application that loads robot config/calibrations, owns real-time control loops, and communicates with firmware over framed serial packets.
-- **`hexapod-client/`** — Pimoroni Servo 2040 (RP2040) firmware that drives 18 servos, enforces host handshake/lifecycle state, and serves sensing + power commands.
-- **`hexapod-common/`** — Shared protocol IDs, constants, and framing helpers used by both sides.
-- **`docs/`** — Architecture notes, protocol details, hardware references, and maintenance roadmap.
+- **`hexapod-server/`** — Linux host application that loads calibration/configuration, runs real-time control loops, and communicates with firmware over framed serial packets.
+- **`hexapod-client/`** — Pimoroni Servo 2040 (RP2040) firmware that drives 18 servos, handles handshake/lifecycle state, and serves sensing + power commands.
+- **`hexapod-common/`** — shared protocol constants, IDs, and framing helpers used by both host and firmware.
+- **`docs/`** — hardware and firmware deep-dive notes.
 
 ## Repository layout
 
@@ -15,33 +15,34 @@ Monorepo for a serial-controlled hexapod robot, containing Linux host control so
 hexapod/
 ├── README.md
 ├── docs/
-│   ├── CODEBASE_REVIEW.md
-│   ├── REFACTORING_REVIEW.md
-│   ├── NEXT_STEPS.md
 │   ├── FIRMWARE.md
 │   └── HARDWARE.md
 ├── hexapod-common/
 │   ├── include/
 │   │   ├── framing.hpp
-│   │   └── hexapod-common.hpp
+│   │   ├── hexapod-common.hpp
+│   │   └── protocol_codec.hpp
 │   └── framing.cpp
 ├── hexapod-server/
+│   ├── CMakeLists.txt
+│   ├── CMakePresets.json
 │   ├── config.txt
 │   ├── config.sim.txt
 │   ├── include/
-│   ├── src/
 │   ├── scenarios/
+│   ├── src/
+│   ├── tests/
 │   └── README.md
 └── hexapod-client/
+    ├── CMakeLists.txt
     ├── firmware_boot.cpp
     ├── command_dispatch.cpp
+    ├── command_router.cpp
     ├── motion_commands.cpp
     ├── sensing_commands.cpp
     ├── power_commands.cpp
-    ├── firmware_context.cpp
-    ├── firmware_context.hpp
     ├── serialCommsClient.cpp
-    ├── serialCommsClient.hpp
+    ├── tests/
     └── README.md
 ```
 
@@ -52,7 +53,7 @@ hexapod/
 3. Server sends `HELLO` with protocol metadata.
 4. Firmware responds with `ACK` or `NACK`.
 5. Server uploads calibration pairs for all 18 joints.
-6. Runtime loop uses heartbeat + motion/sensing commands (`SET_JOINT_TARGETS`, `GET_FULL_HARDWARE_STATE`, etc.).
+6. Runtime loop exchanges heartbeat, motion, power, and sensing commands.
 
 Protocol source of truth:
 
@@ -88,7 +89,7 @@ Flash by copying `hexapod-client/build/hexapod-client.uf2` to the board in BOOTS
 Use this loop when iterating on protocol/control changes that affect both host and firmware:
 
 1. Update protocol IDs/payloads in `hexapod-common/include/hexapod-common.hpp`.
-2. Update firmware handlers in `hexapod-client/*_commands.cpp`.
+2. Update firmware handlers in `hexapod-client/*commands*.cpp` / router code.
 3. Update host-side transport/control consumers in `hexapod-server/src/*`.
 4. Run server tests in simulator mode before hardware testing.
 
@@ -101,7 +102,7 @@ cmake --build --preset tests -j
 ctest --preset tests --output-on-failure
 ```
 
-Then run a scenario sweep:
+Then run a scenario sweep in simulator mode:
 
 ```bash
 cd hexapod-server
@@ -113,7 +114,9 @@ done
 
 ## Documentation map
 
-- `docs/FIRMWARE.md` — wire protocol framing, constants, and command payloads.
+- `hexapod-server/README.md` — host runtime architecture, simulation flow, and test commands.
+- `hexapod-client/README.md` — firmware build/flash workflow and protocol command handling notes.
+- `docs/FIRMWARE.md` — wire protocol framing, constants, and payload definitions.
 - `docs/HARDWARE.md` — mechanical/electrical build reference and dimensions.
 
 ## Safety notes
