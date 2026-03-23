@@ -277,3 +277,27 @@ Per control step, `ControlPipeline` performs:
 - Keep robot mechanically unloaded during initial bring-up after calibration edits.
 - Validate E-stop path and relay defaults before enabling walking gaits.
 - Start with low-amplitude commands when testing new hardware changes.
+
+
+## In-depth review (March 2026)
+
+### Refactoring opportunities
+
+1. **Extract a reusable command transaction layer in `SimpleHardwareBridge`**
+   Multiple bridge methods follow the same pattern: ensure link, transact, decode/convert, log on failure. A typed command API would reduce duplication and centralize retry/policy behavior.
+2. **Decompose `RobotRuntime::controlStep()` into pure decision units**
+   The method currently handles timing metrics, freshness validation, stale counters, safety fallback, status emission, and target output. Splitting these concerns would make behavior easier to reason about and test.
+3. **Unify logging ownership in transport classes**
+   Some paths use injected loggers while others call `GetDefaultLogger()`. Standardizing logger injection across runtime/transport layers would simplify structured diagnostics.
+4. **Move protocol constants/assumptions behind strongly typed config objects**
+   Expected calibration sizes, command payload assumptions, and threshold values appear in multiple files. Centralizing these in config/protocol traits reduces drift risk.
+5. **Improve simulation parity checks**
+   Sim mode is strong, but additional assertion-based parity tests (sim vs. serial command outcomes) would harden protocol changes before hardware runs.
+
+### Recommended next steps
+
+- Introduce `CommandRequest<TResponse>` abstractions for bridge operations and migrate one command at a time.
+- Add unit tests covering each freshness reject path (`estimator invalid`, `intent stale`, both stale) using extracted pure functions.
+- Refactor transport/bridge constructors to accept explicit logger references and remove default-global fallback where possible.
+- Add property-style tests for calibration payload encoding/decoding boundaries.
+- Add a CI scenario matrix that runs all simulator scenarios plus focused transport tests.

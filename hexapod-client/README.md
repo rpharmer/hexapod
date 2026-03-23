@@ -150,3 +150,24 @@ Payload shape expectations:
 - Root overview: `../README.md`
 - Shared protocol constants: `../hexapod-common/include/hexapod-common.hpp`
 - Wire protocol details: `../docs/FIRMWARE.md`
+
+
+## In-depth review (March 2026)
+
+### Refactoring opportunities
+
+1. **Collapse command forwarding wrappers in `command_dispatch.cpp`**
+   The file defines many helper wrappers that only forward `(ctx, seq, payload)` into existing handlers. This can be replaced with direct route bindings (or a small adapter utility) to reduce maintenance overhead.
+2. **Consolidate payload decode + NACK behavior**
+   Motion/sensing handlers each manually decode payloads and emit `INVALID_PAYLOAD_LENGTH` or range-check NACKs. A shared decode-and-validate utility would reduce repeated branches and keep protocol responses uniform.
+3. **Reduce coupling in `FirmwareContext`**
+   `FirmwareContext` currently aggregates transport, servo cluster, ADC, mux, LEDs, and state in one struct. Splitting hardware drivers from session/protocol state would improve testability and future board portability.
+4. **Externalize host-liveness/sensor thresholds into config constants**
+   Timeout and threshold constants are hard-coded in runtime handlers. Exposing these as protocol/config constants avoids hidden behavior drift.
+
+### Recommended next steps
+
+- Add a route macro/helper to register command handlers directly (with payload policy) and remove forwarding wrappers.
+- Introduce a shared `decode_or_nack(...)` helper used by all command domains.
+- Create a `HardwareIO` sub-struct and keep protocol/session fields in a lighter `FirmwareSession` structure.
+- Add host-side integration tests that assert firmware NACK behavior for invalid payload lengths and indices.
