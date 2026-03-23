@@ -13,12 +13,12 @@ public:
   bool parse(const std::string& filename, ParsedToml& out) const;
 
 private:
-  bool validateSchemaHeader(const toml::value& root) const;
-  bool parseRuntimeConfig(const toml::value& root, ParsedToml& out) const;
-  bool parseTransportConfig(const toml::value& root, ParsedToml& out, bool required) const;
-  bool parseCalibrationConfig(const toml::value& root, ParsedToml& out) const;
-  void parseTuningConfig(const toml::value& root, ParsedToml& out) const;
-  void parseGeometryConfig(const toml::value& root, ParsedToml& out) const;
+  bool parseSchemaHeaderSection(const toml::value& root) const;
+  bool parseRuntimeSection(const toml::value& root, ParsedToml& out) const;
+  bool parseTransportSection(const toml::value& root, ParsedToml& out, bool required) const;
+  bool parseCalibrationsSection(const toml::value& root, ParsedToml& out) const;
+  void parseTuningSection(const toml::value& root, ParsedToml& out) const;
+  void parseGeometrySection(const toml::value& root, ParsedToml& out) const;
 };
 
 #endif // TOML_PARSER_HPP
