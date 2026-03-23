@@ -15,8 +15,8 @@ bool expect(bool condition, const char* message) {
 }
 
 bool allFinite(const JointTargets& targets) {
-    for (const auto& leg : targets.leg_raw_states) {
-        for (const auto& joint : leg.joint_raw_state) {
+    for (const auto& leg : targets.leg_states) {
+        for (const auto& joint : leg.joint_state) {
             if (!std::isfinite(joint.pos_rad.value)) {
                 return false;
             }

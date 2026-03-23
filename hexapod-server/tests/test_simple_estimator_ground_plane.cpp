@@ -21,9 +21,9 @@ RawHardwareState makeNeutralRaw(uint64_t sample_id, uint64_t timestamp_us) {
     raw.foot_contacts = {true, true, true, true, true, true};
 
     for (auto& leg : raw.leg_states) {
-        leg.joint_raw_state[COXA].pos_rad = AngleRad{0.0};
-        leg.joint_raw_state[FEMUR].pos_rad = AngleRad{0.0};
-        leg.joint_raw_state[TIBIA].pos_rad = AngleRad{0.0};
+        leg.joint_state[COXA].pos_rad = AngleRad{0.0};
+        leg.joint_state[FEMUR].pos_rad = AngleRad{0.0};
+        leg.joint_state[TIBIA].pos_rad = AngleRad{0.0};
     }
 
     return raw;
@@ -50,7 +50,7 @@ int main() {
     no_contact_recent.sample_id = 2;
     no_contact_recent.timestamp_us = TimePointUs{1'100'000};
     no_contact_recent.foot_contacts = {false, false, false, false, false, false};
-    no_contact_recent.leg_states[0].joint_raw_state[COXA].pos_rad = AngleRad{0.1};
+    no_contact_recent.leg_states[0].joint_state[COXA].pos_rad = AngleRad{0.1};
 
     const EstimatedState recent_est = estimator.update(no_contact_recent);
     if (!expect(recent_est.body_twist_state.body_trans_m.z > 0.0,

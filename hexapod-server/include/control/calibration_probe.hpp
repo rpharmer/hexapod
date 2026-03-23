@@ -6,7 +6,7 @@
 #include "types.hpp"
 
 struct CalibrationTouchSample {
-    LegRawState servo_angles{};
+    LegState servo_angles{};
     BodyPose body_pose{};
     bool contact{true};
 };
@@ -38,7 +38,7 @@ CalibrationLegFitResult fitServoCalibrationFromTouches(
     const CalibrationFitOptions& options = CalibrationFitOptions{});
 
 struct BaseClearanceSample {
-    std::array<LegRawState, kNumLegs> servo_angles{};
+    std::array<LegState, kNumLegs> servo_angles{};
     BodyPose body_pose{};
     std::array<bool, kNumLegs> foot_contacts{};
 };
@@ -62,8 +62,8 @@ BaseClearanceEstimateResult estimateToBottomFromSynchronousLift(
 
 struct ServoDynamicsSample {
     double time_s{0.0};
-    LegRawState command_servo_angles{};
-    LegRawState measured_servo_angles{};
+    LegState command_servo_angles{};
+    LegState measured_servo_angles{};
 };
 
 struct SingleJointDynamicsFit {

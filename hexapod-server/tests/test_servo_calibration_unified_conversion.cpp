@@ -30,46 +30,46 @@ int main() {
     calibration.femurSign = -3.0; // normalized to -1
     calibration.tibiaSign = std::numeric_limits<double>::quiet_NaN(); // normalized to +1
 
-    LegRawState joint_raw{};
-    joint_raw.joint_raw_state[0].pos_rad = AngleRad{0.5};
-    joint_raw.joint_raw_state[1].pos_rad = AngleRad{-0.25};
-    joint_raw.joint_raw_state[2].pos_rad = AngleRad{1.1};
+    LegState joint_raw{};
+    joint_raw.joint_state[0].pos_rad = AngleRad{0.5};
+    joint_raw.joint_state[1].pos_rad = AngleRad{-0.25};
+    joint_raw.joint_state[2].pos_rad = AngleRad{1.1};
 
-    const LegRawState servo_raw = calibration.toServoAngles(joint_raw);
-    if (!expect(near(servo_raw.joint_raw_state[0].pos_rad.value, 0.75),
+    const LegState servo_raw = calibration.toServoAngles(joint_raw);
+    if (!expect(near(servo_raw.joint_state[0].pos_rad.value, 0.75),
                 "coxa raw conversion should apply normalized sign and offset") ||
-        !expect(near(servo_raw.joint_raw_state[1].pos_rad.value, -0.15),
+        !expect(near(servo_raw.joint_state[1].pos_rad.value, -0.15),
                 "femur raw conversion should apply normalized sign and offset") ||
-        !expect(near(servo_raw.joint_raw_state[2].pos_rad.value, 1.2),
+        !expect(near(servo_raw.joint_state[2].pos_rad.value, 1.2),
                 "tibia raw conversion should treat non-finite sign as +1")) {
         return EXIT_FAILURE;
     }
 
-    const LegRawState joint_raw_from_servo = calibration.toJointAngles(servo_raw);
-    if (!expect(near(joint_raw_from_servo.joint_raw_state[0].pos_rad.value, 0.5),
+    const LegState joint_raw_from_servo = calibration.toJointAngles(servo_raw);
+    if (!expect(near(joint_raw_from_servo.joint_state[0].pos_rad.value, 0.5),
                 "coxa raw decode should preserve existing conversion semantics") ||
-        !expect(near(joint_raw_from_servo.joint_raw_state[1].pos_rad.value, 0.55),
+        !expect(near(joint_raw_from_servo.joint_state[1].pos_rad.value, 0.55),
                 "femur raw decode should preserve existing conversion semantics") ||
-        !expect(near(joint_raw_from_servo.joint_raw_state[2].pos_rad.value, 1.1),
+        !expect(near(joint_raw_from_servo.joint_state[2].pos_rad.value, 1.1),
                 "tibia raw decode should preserve existing conversion semantics")) {
         return EXIT_FAILURE;
     }
 
     LegState joint_state{};
     for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-        joint_state.joint_state[joint].pos_rad = joint_raw.joint_raw_state[joint].pos_rad;
+        joint_state.joint_state[joint].pos_rad = joint_raw.joint_state[joint].pos_rad;
         joint_state.joint_state[joint].vel_radps = AngularRateRadPerSec{1.23};
     }
 
     const LegState servo_state = calibration.toServoAngles(joint_state);
     if (!expect(near(servo_state.joint_state[0].pos_rad.value,
-                     servo_raw.joint_raw_state[0].pos_rad.value),
+                     servo_raw.joint_state[0].pos_rad.value),
                 "raw/state coxa conversion paths should stay equivalent") ||
         !expect(near(servo_state.joint_state[1].pos_rad.value,
-                     servo_raw.joint_raw_state[1].pos_rad.value),
+                     servo_raw.joint_state[1].pos_rad.value),
                 "raw/state femur conversion paths should stay equivalent") ||
         !expect(near(servo_state.joint_state[2].pos_rad.value,
-                     servo_raw.joint_raw_state[2].pos_rad.value),
+                     servo_raw.joint_state[2].pos_rad.value),
                 "raw/state tibia conversion paths should stay equivalent")) {
         return EXIT_FAILURE;
     }

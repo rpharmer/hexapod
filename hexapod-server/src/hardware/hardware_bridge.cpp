@@ -199,8 +199,8 @@ void SimpleHardwareBridge::synthesizeJointFeedback(RawHardwareState& out) {
     const HexapodGeometry& geometry = geometry_config::activeHexapodGeometry();
     for (int leg = 0; leg < kNumLegs; ++leg) {
         for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-            AngleRad& simulated = state_.leg_states[leg].joint_raw_state[joint].pos_rad;
-            const AngleRad target = last_written_.leg_raw_states[leg].joint_raw_state[joint].pos_rad;
+            AngleRad& simulated = state_.leg_states[leg].joint_state[joint].pos_rad;
+            const AngleRad target = last_written_.leg_states[leg].joint_state[joint].pos_rad;
             const double error = target.value - simulated.value;
             const ServoJointDynamics& dyn = geometry.legGeometry[leg].servoDynamics[joint];
             const ServoDirectionDynamics& direction =
@@ -217,7 +217,7 @@ void SimpleHardwareBridge::synthesizeJointFeedback(RawHardwareState& out) {
             }
 
             simulated.value += delta;
-            out.leg_states[leg].joint_raw_state[joint].pos_rad = simulated;
+            out.leg_states[leg].joint_state[joint].pos_rad = simulated;
         }
     }
 }

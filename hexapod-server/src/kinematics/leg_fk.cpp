@@ -40,7 +40,7 @@ LegTargets LegFK::solve(const RawHardwareState& raw, const SafetyState& safety)
   
   for(int leg = 0; leg < kNumLegs; leg++)
   {
-    LegRawState legState = raw.leg_states[leg];
+    LegState legState = raw.leg_states[leg];
     if(!solveOneLeg(legState, out.feet[leg], hexGeo.legGeometry[leg]))
     {
       if (auto logger = logging::GetDefaultLogger()) { LOG_ERROR(logger, "forward kinematics invalid"); }
@@ -51,10 +51,10 @@ LegTargets LegFK::solve(const RawHardwareState& raw, const SafetyState& safety)
 }
                        
                        
-bool LegFK::solveOneLeg(const LegRawState& est, FootTarget& out,
+bool LegFK::solveOneLeg(const LegState& est, FootTarget& out,
                         const LegGeometry& leg)
 {
-  const std::array<JointRawState, kJointsPerLeg> joints = est.joint_raw_state;
+  const std::array<JointState, kJointsPerLeg> joints = est.joint_state;
   const double q1 = joints[0].pos_rad.value;
   const double q2 = joints[1].pos_rad.value;
   const double q3 = joints[2].pos_rad.value;
@@ -91,7 +91,7 @@ bool LegFK::solveOneLeg(const LegRawState& est, FootTarget& out,
 //   2) Rotate by +mountAngle into body orientation.
 //   3) Add the coxa mount position in body frame.
 // ------------------------------------------------------------
-FootTarget LegFK::footInBodyFrame(const LegRawState& est, const LegGeometry& leg){
+FootTarget LegFK::footInBodyFrame(const LegState& est, const LegGeometry& leg){
 
   FootTarget footLeg{};
 
@@ -118,7 +118,7 @@ FootTarget LegFK::footInBodyFrame(const LegRawState& est, const LegGeometry& leg
 //   2) Rotate BODY -> WORLD.
 //   3) Add body world position.
 // ------------------------------------------------------------
-FootTarget LegFK::footInWorldFrame(const LegRawState& est, const BodyPose& bodyPose,
+FootTarget LegFK::footInWorldFrame(const LegState& est, const BodyPose& bodyPose,
                              const LegGeometry& leg){
   const Vec3 footBody = footInBodyFrame(est, leg).pos_body_m;
 

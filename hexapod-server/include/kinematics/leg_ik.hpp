@@ -12,7 +12,7 @@ public:
 
 private:
     bool solveOneLeg(const LegState& est,
-                        LegRawState& out,
+                        LegState& out,
                         const FootTarget& foot,
                         const LegGeometry& leg);
     HexapodGeometry hexGeo;
