@@ -34,8 +34,8 @@ if(CPPLINUXSERIAL_INTERFACE_INCLUDES)
     endif()
 endif()
 
-file(GLOB HEXAPOD_SERVER_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
-set(HEXAPOD_SERVER_MAIN_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/hexapod-server.cpp")
+file(GLOB_RECURSE HEXAPOD_SERVER_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+set(HEXAPOD_SERVER_MAIN_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/app/hexapod-server.cpp")
 list(REMOVE_ITEM HEXAPOD_SERVER_SOURCES "${HEXAPOD_SERVER_MAIN_SOURCE}")
 
 add_library(hexapod_server_core
@@ -46,6 +46,14 @@ add_library(hexapod_server_core
 target_include_directories(hexapod_server_core
     PUBLIC
         include
+        include/app
+        include/config
+        include/control
+        include/hardware
+        include/input
+        include/kinematics
+        include/scenario
+        include/utils
         ../hexapod-common/include
 )
 
