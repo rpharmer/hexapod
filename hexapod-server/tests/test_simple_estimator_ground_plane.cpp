@@ -50,10 +50,13 @@ int main() {
     no_contact_recent.sample_id = 2;
     no_contact_recent.timestamp_us = TimePointUs{1'100'000};
     no_contact_recent.foot_contacts = {false, false, false, false, false, false};
+    no_contact_recent.leg_states[0].joint_raw_state[COXA].pos_rad = AngleRad{0.1};
 
     const EstimatedState recent_est = estimator.update(no_contact_recent);
     if (!expect(recent_est.body_twist_state.body_trans_m.z > 0.0,
-                "recently touching feet should still support a ground estimate")) {
+                "recently touching feet should still support a ground estimate") ||
+        !expect(std::abs(recent_est.leg_states[0].joint_state[COXA].vel_radps.value - 1.0) < 1e-6,
+                "joint velocity should be estimated from position delta over dt")) {
         return EXIT_FAILURE;
     }
 

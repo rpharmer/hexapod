@@ -37,7 +37,12 @@ public:
             last_.sample_id = raw.sample_id;
             last_.timestamp_us = raw.timestamp_us;
             last_.foot_contacts = raw.foot_contacts;
-            last_.leg_states = raw.leg_states;
+            for (int leg = 0; leg < kNumLegs; ++leg) {
+                for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+                    last_.leg_states[leg].joint_state[joint].pos_rad =
+                        raw.leg_states[leg].joint_raw_state[joint].pos_rad;
+                }
+            }
         }
         return last_;
     }

@@ -9,7 +9,10 @@ void apply_estimated_leg_fallback(const EstimatedState& est,
                                   JointTargets& joints,
                                   int legID)
 {
-  joints.leg_raw_states[legID] = est.leg_states[legID];
+  for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+    joints.leg_raw_states[legID].joint_raw_state[joint].pos_rad =
+        est.leg_states[legID].joint_state[joint].pos_rad;
+  }
 }
 
 } // namespace
@@ -36,7 +39,7 @@ JointTargets LegIK::solve(const EstimatedState& est,
   return joints;
 }
 
-bool LegIK::solveOneLeg(const LegRawState& est,
+bool LegIK::solveOneLeg(const LegState& est,
                         LegRawState& out,
                         const FootTarget& foot,
                         const LegGeometry& leg) {

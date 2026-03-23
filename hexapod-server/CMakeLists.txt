@@ -117,6 +117,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_simple_estimator_ground_plane PRIVATE hexapod_server_core)
     add_test(NAME simple_estimator_ground_plane COMMAND test_simple_estimator_ground_plane)
 
+    add_executable(test_body_controller_velocity tests/test_body_controller_velocity.cpp)
+    target_link_libraries(test_body_controller_velocity PRIVATE hexapod_server_core)
+    add_test(NAME body_controller_velocity COMMAND test_body_controller_velocity)
+
 
     add_executable(test_toml_parser_sections tests/test_toml_parser_sections.cpp)
     target_link_libraries(test_toml_parser_sections PRIVATE hexapod_server_core)
