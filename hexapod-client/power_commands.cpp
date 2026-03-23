@@ -78,6 +78,7 @@ void handleSetServosToMidCommand(FirmwareContext& ctx, uint16_t seq)
 
 void handleHeartbeatCommand(FirmwareContext& ctx, uint16_t seq)
 {
-  const protocol::HelloAck heartbeat{PROTOCOL_VERSION, STATUS_OK, DEVICE_ID};
+  const uint8_t granted_caps = kHardwareAngleFeedbackAvailable ? CAPABILITY_ANGULAR_FEEDBACK : 0;
+  const protocol::HelloAck heartbeat{PROTOCOL_VERSION, STATUS_OK, DEVICE_ID, granted_caps};
   ctx.serial.send_packet(seq, ACK, protocol::encode_hello_ack(heartbeat));
 }

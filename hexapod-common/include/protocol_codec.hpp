@@ -19,6 +19,7 @@ struct HelloAck {
   uint8_t version{};
   uint8_t status{};
   uint8_t device_id{};
+  uint8_t capabilities{CAPABILITY_ANGULAR_FEEDBACK};
 };
 
 struct ScalarFloat {
@@ -54,10 +55,11 @@ inline bool decode_hello_request(const std::vector<uint8_t>& payload, HelloReque
 
 inline std::vector<uint8_t> encode_hello_ack(const HelloAck& in) {
   std::vector<uint8_t> payload;
-  payload.reserve(3);
+  payload.reserve(4);
   append_scalar(payload, in.version);
   append_scalar(payload, in.status);
   append_scalar(payload, in.device_id);
+  append_scalar(payload, in.capabilities);
   return payload;
 }
 
@@ -65,6 +67,17 @@ inline bool decode_hello_ack(const std::vector<uint8_t>& payload, HelloAck& out)
   std::size_t offset = 0;
   if (!read_scalar(payload, offset, out.version) || !read_scalar(payload, offset, out.status) ||
       !read_scalar(payload, offset, out.device_id)) {
+    return false;
+  }
+
+  // Newer protocol revisions include granted capabilities in HELLO/HEARTBEAT ACK.
+  // For compatibility with older firmware, treat the field as optional.
+  if (offset == payload.size()) {
+    out.capabilities = CAPABILITY_ANGULAR_FEEDBACK;
+    return true;
+  }
+
+  if (!read_scalar(payload, offset, out.capabilities)) {
     return false;
   }
   return offset == payload.size();
