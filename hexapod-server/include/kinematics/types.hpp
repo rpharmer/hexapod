@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -70,6 +71,9 @@ double rad2deg(AngleRad rad);
 double rad2deg(double rad);
 
 double clamp(double value, double lo, double hi);
+inline double clamp01(double value) {
+    return std::clamp(value, 0.0, 1.0);
+}
 
 // ============================================================
 
@@ -145,6 +149,9 @@ struct Vec3 {
     Vec3 operator*(double s) const;
 };
 
+Vec3 cross(const Vec3& lhs, const Vec3& rhs);
+double vecNorm(const Vec3& v);
+
 // ============================================================
 // Basic 3x3 matrix for rotations
 // ============================================================
@@ -208,12 +215,13 @@ struct LegTargets {
     TimePointUs timestamp_us{};
 };
 
-struct JointRawState {
+struct JointPositionState {
   AngleRad pos_rad{};
 };
 
-struct JointState {
-  AngleRad pos_rad{};
+struct JointRawState : JointPositionState {};
+
+struct JointState : JointPositionState {
   AngularRateRadPerSec vel_radps{};
 };
 
@@ -227,6 +235,12 @@ struct LegState {
 
 struct JointTargets {
   std::array<LegRawState,kNumLegs> leg_raw_states{};
+};
+
+template <typename LegStateT>
+struct LegContactState {
+  std::array<LegStateT, kNumLegs> leg_states{};
+  std::array<bool, kNumLegs> foot_contacts{};
 };
 
 struct BodyTwistState {
@@ -243,9 +257,7 @@ struct BodyTwistState {
   Vec3 body_trans_mps{};
 };
 
-struct RawHardwareState {
-  std::array<LegRawState, kNumLegs> leg_states{};
-  std::array<bool, kNumLegs> foot_contacts{};
+struct RawHardwareState : LegContactState<LegRawState> {
   float voltage{0.0};
   float current{0.0};
   uint64_t sample_id{0};
@@ -264,18 +276,13 @@ struct MotionIntent {
   TimePointUs timestamp_us{};
 };
 
-struct EstimatedState {
-  std::array<LegState, kNumLegs> leg_states{};
-  std::array<bool, kNumLegs> foot_contacts{};
-  
+struct EstimatedState : LegContactState<LegState> {
   BodyTwistState body_twist_state{};
   uint64_t sample_id{0};
   TimePointUs timestamp_us{};
 };
 
-struct TargetBodyState {
-  std::array<LegState, kNumLegs> leg_states{};
-  std::array<bool, kNumLegs> foot_contacts{};
+struct TargetBodyState : LegContactState<LegState> {
   BodyTwistState body_twist_state{};
   bool valid{false};
   TimePointUs timestamp_us{};

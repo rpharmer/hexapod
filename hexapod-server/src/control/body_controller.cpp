@@ -9,18 +9,6 @@ constexpr double kStepLengthM = 0.06;
 constexpr double kSwingHeightM = 0.03;
 constexpr double kDefaultBodyHeightM = 0.20;
 
-double clamp01(double value) {
-    return std::clamp(value, 0.0, 1.0);
-}
-
-Vec3 cross(const Vec3& lhs, const Vec3& rhs) {
-    return Vec3{
-        lhs.y * rhs.z - lhs.z * rhs.y,
-        lhs.z * rhs.x - lhs.x * rhs.z,
-        lhs.x * rhs.y - lhs.y * rhs.x,
-    };
-}
-
 } // namespace
 
 std::array<Vec3, kNumLegs> BodyController::nominalStance() const {

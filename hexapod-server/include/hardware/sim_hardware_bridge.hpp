@@ -31,8 +31,6 @@ public:
     void setFaultToggles(const SimHardwareFaultToggles& fault_toggles);
 
 private:
-    static double clamp01(double value);
-
     SimHardwareFaultToggles fault_toggles_{};
     DurationSec read_cycle_period_{};
     DurationSec response_time_constant_{};

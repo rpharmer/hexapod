@@ -74,13 +74,3 @@ void SimHardwareBridge::setFaultToggles(const SimHardwareFaultToggles& fault_tog
     std::lock_guard<std::mutex> lock(mutex_);
     fault_toggles_ = fault_toggles;
 }
-
-double SimHardwareBridge::clamp01(double value) {
-    if (value < 0.0) {
-        return 0.0;
-    }
-    if (value > 1.0) {
-        return 1.0;
-    }
-    return value;
-}
