@@ -85,6 +85,49 @@ double clampedDelta(double candidate, double limit_abs) {
     return std::clamp(candidate, -limit_abs, limit_abs);
 }
 
+Vec3 computeFootWorldFromServoAngles(const LegRawState& servo_angles,
+                                     const LegGeometry& leg_geometry,
+                                     const BodyPose& body_pose) {
+    const Vec3 foot_body =
+        computeFootInBodyFromServoAngles(servo_angles, leg_geometry, leg_geometry.servo);
+    const Mat3 body_to_world = body_pose.rotationBodyToWorld();
+    return body_pose.position + (body_to_world * foot_body);
+}
+
+int countContacts(const std::array<bool, kNumLegs>& contacts) {
+    int count = 0;
+    for (bool contact : contacts) {
+        if (contact) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+double meanContactPlaneHeight(const BaseClearanceSample& sample,
+                              const HexapodGeometry& geometry,
+                              int& used_contacts) {
+    double sum_height = 0.0;
+    used_contacts = 0;
+
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        if (!sample.foot_contacts[leg]) {
+            continue;
+        }
+
+        const Vec3 foot_world = computeFootWorldFromServoAngles(
+            sample.servo_angles[leg], geometry.legGeometry[leg], sample.body_pose);
+        sum_height += foot_world.z;
+        ++used_contacts;
+    }
+
+    if (used_contacts == 0) {
+        return 0.0;
+    }
+
+    return sum_height / static_cast<double>(used_contacts);
+}
+
 } // namespace
 
 CalibrationLegFitResult fitServoCalibrationFromTouches(
@@ -184,6 +227,47 @@ CalibrationLegFitResult fitServoCalibrationFromTouches(
     result.tibia_delta = AngleRad{result.fitted_calibration.tibiaOffset.value -
                                   result.initial_calibration.tibiaOffset.value};
     result.success = result.rms_error_after_m < result.rms_error_before_m;
+
+    return result;
+}
+
+BaseClearanceEstimateResult estimateToBottomFromSynchronousLift(
+    const HexapodGeometry& geometry,
+    const std::vector<BaseClearanceSample>& samples,
+    const BaseClearanceEstimateOptions& options) {
+    BaseClearanceEstimateResult result{};
+    if (samples.size() < 2) {
+        return result;
+    }
+
+    const int min_contacts_before_loss = std::max(
+        1, static_cast<int>(std::ceil(options.min_contact_fraction_before_loss *
+                                      static_cast<double>(kNumLegs))));
+
+    for (std::size_t i = 0; i + 1 < samples.size(); ++i) {
+        const BaseClearanceSample& before = samples[i];
+        const BaseClearanceSample& after = samples[i + 1];
+
+        const int contacts_before = countContacts(before.foot_contacts);
+        const int contacts_after = countContacts(after.foot_contacts);
+        if (contacts_before < min_contacts_before_loss || contacts_after != 0) {
+            continue;
+        }
+
+        int used_contacts = 0;
+        const double plane_height_m = meanContactPlaneHeight(before, geometry, used_contacts);
+        if (used_contacts < min_contacts_before_loss) {
+            continue;
+        }
+
+        result.success = true;
+        result.transition_index = static_cast<int>(i + 1);
+        result.contact_legs_before_loss = contacts_before;
+        result.ground_plane_height_m = plane_height_m;
+        result.estimated_to_bottom_m =
+            LengthM{after.body_pose.position.z - plane_height_m};
+        return result;
+    }
 
     return result;
 }

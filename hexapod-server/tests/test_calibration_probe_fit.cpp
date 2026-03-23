@@ -41,6 +41,60 @@ CalibrationTouchSample makeTouchSample(const LegGeometry& leg,
     return sample;
 }
 
+BodyPose makeLevelPoseAtHeight(double z_m) {
+    BodyPose pose{};
+    pose.position = Vec3{0.0, 0.0, z_m};
+    pose.roll = AngleRad{0.0};
+    pose.pitch = AngleRad{0.0};
+    pose.yaw = AngleRad{0.0};
+    return pose;
+}
+
+BaseClearanceSample makeBaseClearanceSample(const HexapodGeometry& geometry,
+                                            const BodyPose& pose,
+                                            const std::array<bool, kNumLegs>& contacts) {
+    LegFK fk{};
+    BaseClearanceSample sample{};
+    sample.body_pose = pose;
+    sample.foot_contacts = contacts;
+
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        const LegGeometry& leg_geometry = geometry.legGeometry[leg];
+        const Vec3 mount = leg_geometry.bodyCoxaOffset;
+        const double q1 = std::atan2(-mount.y, -mount.x) - leg_geometry.mountAngle.value;
+        const LegRawState joint = makeJointState(q1, -0.72, 1.05);
+        sample.servo_angles[leg] = leg_geometry.servo.toServoAngles(joint);
+
+        if (contacts[leg]) {
+            const Vec3 foot_body = fk.footInBodyFrame(joint, leg_geometry).pos_body_m;
+            sample.body_pose.position.z = -foot_body.z;
+        }
+    }
+
+    return sample;
+}
+
+double meanContactHeight(const BaseClearanceSample& sample,
+                         const HexapodGeometry& geometry) {
+    LegFK fk{};
+    double sum = 0.0;
+    int count = 0;
+
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        if (!sample.foot_contacts[leg]) {
+            continue;
+        }
+        const LegRawState joint =
+            geometry.legGeometry[leg].servo.toJointAngles(sample.servo_angles[leg]);
+        const Vec3 foot_body =
+            fk.footInBodyFrame(joint, geometry.legGeometry[leg]).pos_body_m;
+        sum += sample.body_pose.position.z + foot_body.z;
+        ++count;
+    }
+
+    return count > 0 ? (sum / static_cast<double>(count)) : 0.0;
+}
+
 bool test_fit_improves_surface_touch_error() {
     HexapodGeometry geometry = geometry_config::buildDefaultHexapodGeometry();
     LegGeometry leg = geometry.legGeometry[0];
@@ -123,6 +177,62 @@ bool test_requires_minimum_contact_samples() {
     return true;
 }
 
+bool test_estimate_to_bottom_from_contact_loss_transition() {
+    HexapodGeometry geometry = geometry_config::buildDefaultHexapodGeometry();
+
+    const std::array<bool, kNumLegs> all_contact{true, true, true, true, true, true};
+    const std::array<bool, kNumLegs> no_contact{false, false, false, false, false, false};
+
+    BaseClearanceSample before =
+        makeBaseClearanceSample(geometry, makeLevelPoseAtHeight(0.06), all_contact);
+    const double plane_height = meanContactHeight(before, geometry);
+
+    BaseClearanceSample after = makeBaseClearanceSample(
+        geometry,
+        makeLevelPoseAtHeight(geometry.toBottom.value + plane_height),
+        no_contact);
+
+    std::vector<BaseClearanceSample> samples{};
+    samples.push_back(before);
+    samples.push_back(after);
+
+    const BaseClearanceEstimateResult result =
+        estimateToBottomFromSynchronousLift(geometry, samples);
+
+    if (!expect(result.success, "to-bottom estimate should succeed")) {
+        return false;
+    }
+    if (!expect(result.transition_index == 1,
+                "transition index should point to the first all-off-ground sample")) {
+        return false;
+    }
+    if (!expect(std::abs(result.estimated_to_bottom_m.value - geometry.toBottom.value) < 1e-4,
+                "estimated to-bottom should match geometry")) {
+        return false;
+    }
+
+    return true;
+}
+
+bool test_estimate_to_bottom_requires_clear_transition() {
+    const HexapodGeometry geometry = geometry_config::buildDefaultHexapodGeometry();
+    const std::array<bool, kNumLegs> all_contact{true, true, true, true, true, true};
+    std::vector<BaseClearanceSample> samples{};
+    samples.push_back(
+        makeBaseClearanceSample(geometry, makeLevelPoseAtHeight(0.06), all_contact));
+    samples.push_back(
+        makeBaseClearanceSample(geometry, makeLevelPoseAtHeight(0.055), all_contact));
+
+    const BaseClearanceEstimateResult result =
+        estimateToBottomFromSynchronousLift(geometry, samples);
+
+    if (!expect(!result.success, "to-bottom estimate should fail without a loss-of-contact transition")) {
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -130,6 +240,12 @@ int main() {
         return 1;
     }
     if (!test_requires_minimum_contact_samples()) {
+        return 1;
+    }
+    if (!test_estimate_to_bottom_from_contact_loss_transition()) {
+        return 1;
+    }
+    if (!test_estimate_to_bottom_requires_clear_transition()) {
         return 1;
     }
 

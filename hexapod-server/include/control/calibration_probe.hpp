@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <vector>
 
 #include "types.hpp"
@@ -35,3 +36,26 @@ CalibrationLegFitResult fitServoCalibrationFromTouches(
     const LegGeometry& leg_geometry,
     const std::vector<CalibrationTouchSample>& samples,
     const CalibrationFitOptions& options = CalibrationFitOptions{});
+
+struct BaseClearanceSample {
+    std::array<LegRawState, kNumLegs> servo_angles{};
+    BodyPose body_pose{};
+    std::array<bool, kNumLegs> foot_contacts{};
+};
+
+struct BaseClearanceEstimateOptions {
+    double min_contact_fraction_before_loss{0.66};
+};
+
+struct BaseClearanceEstimateResult {
+    bool success{false};
+    int transition_index{-1};
+    int contact_legs_before_loss{0};
+    double ground_plane_height_m{0.0};
+    LengthM estimated_to_bottom_m{};
+};
+
+BaseClearanceEstimateResult estimateToBottomFromSynchronousLift(
+    const HexapodGeometry& geometry,
+    const std::vector<BaseClearanceSample>& samples,
+    const BaseClearanceEstimateOptions& options = BaseClearanceEstimateOptions{});
