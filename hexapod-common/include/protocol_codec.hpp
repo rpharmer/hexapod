@@ -26,9 +26,15 @@ struct ScalarFloat {
   float value{};
 };
 
+struct LedInfo {
+  uint8_t present{};
+  uint8_t count{};
+};
+
 using JointTargets = std::array<float, kProtocolJointCount>;
 using ServoEnabled = std::array<uint8_t, kProtocolJointCount>;
 using Calibrations = std::array<float, kProtocolJointCount * kProtocolCalibrationPairsPerJoint>;
+using LedColors = std::array<uint8_t, kProtocolLedColorsPayloadBytes>;
 
 struct FullHardwareState {
   JointTargets joint_positions_rad{};
@@ -98,6 +104,22 @@ inline bool decode_scalar_float(const std::vector<uint8_t>& payload, ScalarFloat
   return offset == payload.size();
 }
 
+inline std::vector<uint8_t> encode_led_info(const LedInfo& in) {
+  std::vector<uint8_t> payload;
+  payload.reserve(2);
+  append_scalar(payload, in.present);
+  append_scalar(payload, in.count);
+  return payload;
+}
+
+inline bool decode_led_info(const std::vector<uint8_t>& payload, LedInfo& out) {
+  std::size_t offset = 0;
+  if (!read_scalar(payload, offset, out.present) || !read_scalar(payload, offset, out.count)) {
+    return false;
+  }
+  return offset == payload.size();
+}
+
 inline std::vector<uint8_t> encode_joint_targets(const JointTargets& in) {
   std::vector<uint8_t> payload;
   payload.reserve(kProtocolJointTargetsPayloadBytes);
@@ -130,6 +152,25 @@ inline bool decode_servo_enabled(const std::vector<uint8_t>& payload, ServoEnabl
   std::size_t offset = 0;
   for (uint8_t& enabled : out) {
     if (!read_scalar(payload, offset, enabled)) {
+      return false;
+    }
+  }
+  return offset == payload.size();
+}
+
+inline std::vector<uint8_t> encode_led_colors(const LedColors& in) {
+  std::vector<uint8_t> payload;
+  payload.reserve(kProtocolLedColorsPayloadBytes);
+  for (uint8_t value : in) {
+    append_scalar(payload, value);
+  }
+  return payload;
+}
+
+inline bool decode_led_colors(const std::vector<uint8_t>& payload, LedColors& out) {
+  std::size_t offset = 0;
+  for (uint8_t& value : out) {
+    if (!read_scalar(payload, offset, value)) {
       return false;
     }
   }

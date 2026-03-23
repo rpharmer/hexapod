@@ -31,6 +31,7 @@ struct FirmwareContext {
   static constexpr int START_PIN = servo2040::SERVO_1;
   static constexpr int END_PIN = servo2040::SERVO_18;
   static constexpr int NUM_SERVOS = (END_PIN - START_PIN) + 1;
+  static constexpr std::size_t NUM_LEDS = servo2040::NUM_LEDS;
 
   float minmaxCalibrations[kProtocolJointCount][kProtocolCalibrationPairsPerJoint] =
     {{1031, 2088}, {1003, 2016}, {958, 1990}, {941, 2022}, {986, 2039}, {958, 1988},
@@ -54,6 +55,7 @@ namespace servo2040 {
 constexpr int SENSOR_1_ADDR = 0;
 constexpr int CURRENT_SENSE_ADDR = 10;
 constexpr int VOLTAGE_SENSE_ADDR = 11;
+constexpr std::size_t NUM_LEDS = kProtocolLedCount;
 }
 
 inline void gpio_put_masked(uint32_t, uint32_t) {}
@@ -137,16 +139,25 @@ struct SerialCommsClient {
 };
 
 struct WS2812 {
+  std::array<uint8_t, kProtocolLedColorsPayloadBytes> rgb{};
+
   void start() {}
   void clear() {}
   void set_hsv(std::size_t, float, float, float) {}
-  void set_rgb(std::size_t, float, float, float) {}
+  void set_rgb(std::size_t index, float r, float g, float b)
+  {
+    const std::size_t offset = index * kProtocolLedColorChannels;
+    rgb[offset] = static_cast<uint8_t>(r);
+    rgb[offset + 1] = static_cast<uint8_t>(g);
+    rgb[offset + 2] = static_cast<uint8_t>(b);
+  }
 };
 
 struct Button {};
 
 struct FirmwareContext {
   static constexpr int NUM_SERVOS = static_cast<int>(kProtocolJointCount);
+  static constexpr std::size_t NUM_LEDS = servo2040::NUM_LEDS;
 
   Analog sen_adc{};
   Analog vol_adc{};

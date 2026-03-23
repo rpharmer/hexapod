@@ -334,6 +334,30 @@ bool SimpleHardwareBridge::set_servos_to_mid() {
     return request_ack(SET_SERVOS_TO_MID, {}, "SET_SERVOS_TO_MID");
 }
 
+bool SimpleHardwareBridge::get_led_info(bool& present, uint8_t& count) {
+    protocol::LedInfo info{};
+    const auto decode_led_info = [](const std::vector<uint8_t>& payload, protocol::LedInfo& decoded) {
+        return protocol::decode_led_info(payload, decoded);
+    };
+    if (!request_decoded(GET_LED_INFO, {}, decode_led_info, info, "GET_LED_INFO")) {
+        return false;
+    }
+
+    present = (info.present != 0);
+    count = info.count;
+    return true;
+}
+
+bool SimpleHardwareBridge::set_led_colors(
+    const std::array<uint8_t, kProtocolLedColorsPayloadBytes>& colors) {
+    protocol::LedColors payload{};
+    for (std::size_t i = 0; i < colors.size(); ++i) {
+        payload[i] = colors[i];
+    }
+
+    return request_ack(SET_LED_COLORS, protocol::encode_led_colors(payload), "SET_LED_COLORS");
+}
+
 bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs) {
     if (calibs.size() != (kProtocolJointCount * kProtocolCalibrationPairsPerJoint)) {
         if (auto logger = logging::GetDefaultLogger()) {

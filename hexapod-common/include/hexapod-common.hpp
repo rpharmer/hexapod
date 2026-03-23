@@ -12,6 +12,10 @@ inline constexpr std::size_t kProtocolJointsPerLeg = 3;
 inline constexpr std::size_t kProtocolJointCount = kProtocolLegCount * kProtocolJointsPerLeg;
 inline constexpr std::size_t kProtocolFootSensorCount = kProtocolLegCount;
 inline constexpr std::size_t kProtocolCalibrationPairsPerJoint = 2;
+inline constexpr std::size_t kProtocolLedColorChannels = 3;
+inline constexpr std::size_t kProtocolLedCount = 6;
+inline constexpr std::size_t kProtocolLedColorsPayloadBytes =
+    kProtocolLedCount * kProtocolLedColorChannels * sizeof(uint8_t);
 
 inline constexpr std::size_t kProtocolJointTargetsPayloadBytes =
     kProtocolJointCount * sizeof(float);
@@ -40,7 +44,9 @@ enum class CommandCode : uint8_t {
   SET_SERVOS_ENABLED = 0x15,
   GET_SERVOS_ENABLED = 0x16,
   SET_SERVOS_TO_MID = 0x17,
-  KILL = 0x18
+  KILL = 0x18,
+  GET_LED_INFO = 0x19,
+  SET_LED_COLORS = 0x1A
 };
 
 enum class StatusCode : uint8_t {
@@ -87,6 +93,8 @@ inline constexpr uint8_t SET_SERVOS_ENABLED = as_u8(CommandCode::SET_SERVOS_ENAB
 inline constexpr uint8_t GET_SERVOS_ENABLED = as_u8(CommandCode::GET_SERVOS_ENABLED);
 inline constexpr uint8_t SET_SERVOS_TO_MID = as_u8(CommandCode::SET_SERVOS_TO_MID);
 inline constexpr uint8_t KILL = as_u8(CommandCode::KILL);
+inline constexpr uint8_t GET_LED_INFO = as_u8(CommandCode::GET_LED_INFO);
+inline constexpr uint8_t SET_LED_COLORS = as_u8(CommandCode::SET_LED_COLORS);
 
 inline constexpr uint8_t STATUS_OK = as_u8(StatusCode::OK);
 inline constexpr uint8_t STATUS_BUSY = as_u8(StatusCode::BUSY);

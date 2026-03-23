@@ -5,6 +5,10 @@
 #include "framing.hpp"
 #include "payload_decode.hpp"
 
+static_assert(FirmwareContext::NUM_LEDS == kProtocolLedCount,
+              "Protocol LED count must match firmware LED hardware count");
+constexpr bool kHardwareAngleFeedbackAvailable = false;
+
 void handleSetPowerRelayCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
   uint8_t relayOpen = 0;
@@ -70,6 +74,37 @@ void handleSetServosToMidCommand(FirmwareContext& ctx, uint16_t seq)
   ctx.servos.all_to_mid();
   for (float& position_rad : ctx.jointTargetPositionsRad) {
     position_rad = 0.0f;
+  }
+
+  ctx.serial.send_packet(seq, ACK, {});
+}
+
+void handleGetLedInfoCommand(FirmwareContext& ctx, uint16_t seq)
+{
+  const protocol::LedInfo info{1, static_cast<uint8_t>(kProtocolLedCount)};
+  ctx.serial.send_packet(seq, ACK, protocol::encode_led_info(info));
+}
+
+void handleSetLedColorsCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
+{
+  protocol::LedColors colors{};
+  const auto status = payload::expect_payload(payload,
+                                              kProtocolLedColorsPayloadBytes,
+                                              colors,
+                                              protocol::decode_led_colors);
+  if(status != payload::DecodeStatus::Ok)
+  {
+    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
+    return;
+  }
+
+  for(std::size_t led_index = 0; led_index < kProtocolLedCount; ++led_index)
+  {
+    const std::size_t offset = led_index * kProtocolLedColorChannels;
+    ctx.led_bar.set_rgb(led_index,
+                        static_cast<float>(colors[offset]),
+                        static_cast<float>(colors[offset + 1]),
+                        static_cast<float>(colors[offset + 2]));
   }
 
   ctx.serial.send_packet(seq, ACK, {});
