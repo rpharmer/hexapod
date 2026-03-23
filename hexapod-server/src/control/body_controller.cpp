@@ -13,6 +13,14 @@ double clamp01(double value) {
     return std::clamp(value, 0.0, 1.0);
 }
 
+Vec3 cross(const Vec3& lhs, const Vec3& rhs) {
+    return Vec3{
+        lhs.y * rhs.z - lhs.z * rhs.y,
+        lhs.z * rhs.x - lhs.x * rhs.z,
+        lhs.x * rhs.y - lhs.y * rhs.x,
+    };
+}
+
 } // namespace
 
 std::array<Vec3, kNumLegs> BodyController::nominalStance() const {
@@ -61,30 +69,42 @@ LegTargets BodyController::update(const EstimatedState& est,
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
         Vec3 target = nominal[leg];
+        Vec3 target_vel = Vec3{};
 
         // Apply commanded body-height offset around the nominal stance height.
         target.z += commanded_body_height_m - kDefaultBodyHeightM;
         target = target - planar_body_offset;
+        target_vel = target_vel - intent.twist.body_trans_mps;
 
         if (walking) {
             const double phase = clamp01(gait.phase[leg]);
+            const double phase_rate = std::max(gait.stride_phase_rate_hz.value, 0.0);
             if (gait.in_stance[leg]) {
                 const double stance_alpha = clamp01(phase / 0.5);
                 const double step_delta = (0.5 - stance_alpha) * kStepLengthM;
+                const double step_vel = -2.0 * phase_rate * kStepLengthM;
                 target = target + (step_dir * step_delta);
+                target_vel = target_vel + (step_dir * step_vel);
             } else {
                 const double swing_alpha = clamp01((phase - 0.5) / 0.5);
                 const double step_delta = (swing_alpha - 0.5) * kStepLengthM;
+                const double step_vel = 2.0 * phase_rate * kStepLengthM;
+                const double swing_z_vel =
+                    std::cos(kPi * swing_alpha) * kPi * 2.0 * phase_rate * kSwingHeightM;
                 target = target + (step_dir * step_delta);
                 target.z += std::sin(kPi * swing_alpha) * kSwingHeightM;
+                target_vel = target_vel + (step_dir * step_vel);
+                target_vel.z += swing_z_vel;
             }
         }
 
         // Apply commanded body orientation by rotating each foot target in body frame.
         target = body_rotation * target;
+        target_vel = body_rotation * target_vel;
+        target_vel = target_vel + cross(intent.twist.twist_vel_radps, target);
 
         out.feet[leg].pos_body_m = target;
-        out.feet[leg].vel_body_mps = Vec3{};
+        out.feet[leg].vel_body_mps = target_vel;
     }
 
     return out;

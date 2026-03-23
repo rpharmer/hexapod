@@ -11,7 +11,7 @@ public:
                        const LegTargets& targets, const SafetyState& safety);
 
 private:
-    bool solveOneLeg(const LegRawState& est,
+    bool solveOneLeg(const LegState& est,
                         LegRawState& out,
                         const FootTarget& foot,
                         const LegGeometry& leg);

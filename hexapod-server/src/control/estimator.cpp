@@ -102,10 +102,37 @@ bool solveGroundPlane(const std::array<Vec3, kNumLegs>& points,
 EstimatedState SimpleEstimator::update(const RawHardwareState& raw) {
     EstimatedState est{};
 
-    est.leg_states = raw.leg_states;
     est.foot_contacts = raw.foot_contacts;
     est.sample_id = raw.sample_id;
     est.timestamp_us = raw.timestamp_us;
+    est.body_twist_state.body_trans_mps = Vec3{};
+
+    if (!last_leg_timestamp_.isZero()) {
+        const DurationUs dt_us = raw.timestamp_us - last_leg_timestamp_;
+        if (dt_us.value > 0) {
+            const double inv_dt_s = 1e6 / static_cast<double>(dt_us.value);
+            for (int leg = 0; leg < kNumLegs; ++leg) {
+                for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+                    const AngleRad current = raw.leg_states[leg].joint_raw_state[joint].pos_rad;
+                    const AngleRad previous = last_leg_states_[leg].joint_raw_state[joint].pos_rad;
+                    est.leg_states[leg].joint_state[joint].pos_rad = current;
+                    est.leg_states[leg].joint_state[joint].vel_radps =
+                        AngularRateRadPerSec{(current.value - previous.value) * inv_dt_s};
+                }
+            }
+        }
+    }
+
+    if (last_leg_timestamp_.isZero() || raw.timestamp_us.value <= last_leg_timestamp_.value) {
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+                est.leg_states[leg].joint_state[joint].pos_rad =
+                    raw.leg_states[leg].joint_raw_state[joint].pos_rad;
+            }
+        }
+    }
+    last_leg_states_ = raw.leg_states;
+    last_leg_timestamp_ = raw.timestamp_us;
 
     const HexapodGeometry& geometry = geometry_config::activeHexapodGeometry();
     std::array<Vec3, kNumLegs> support_points_body_m{};
@@ -143,11 +170,14 @@ EstimatedState SimpleEstimator::update(const RawHardwareState& raw) {
                 const double dt_s = static_cast<double>(dt_us.value) * 1e-6;
                 est.body_twist_state.twist_vel_radps =
                     (est.body_twist_state.twist_pos_rad - last_twist_pos_rad_) * (1.0 / dt_s);
+                est.body_twist_state.body_trans_mps =
+                    (est.body_twist_state.body_trans_m - last_body_trans_m_) * (1.0 / dt_s);
             }
         }
 
         last_twist_timestamp_ = raw.timestamp_us;
         last_twist_pos_rad_ = est.body_twist_state.twist_pos_rad;
+        last_body_trans_m_ = est.body_twist_state.body_trans_m;
     }
 
     return est;

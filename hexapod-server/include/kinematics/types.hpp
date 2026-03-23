@@ -265,7 +265,7 @@ struct MotionIntent {
 };
 
 struct EstimatedState {
-  std::array<LegRawState, kNumLegs> leg_states{};
+  std::array<LegState, kNumLegs> leg_states{};
   std::array<bool, kNumLegs> foot_contacts{};
   
   BodyTwistState body_twist_state{};
