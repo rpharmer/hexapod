@@ -53,7 +53,8 @@ bool testHigherPriorityFaultWins() {
     raw.bus_ok = false;
     est.body_twist_state.twist_pos_rad.x = 2.0; // clearly above default tilt limit
 
-    const SafetyState state = supervisor.evaluate(raw, est, intentNow(RobotMode::WALK));
+    const SafetyState state = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
     return expect(state.active_fault == FaultCode::TIP_OVER,
                   "simultaneous bus + tip-over should keep higher-priority TIP_OVER") &&
            expect(state.torque_cut, "tip-over should request torque cut");
@@ -65,13 +66,15 @@ bool testLatchedRemainsWhenIntentNotSafeIdle() {
     EstimatedState est = nominalEstimated();
 
     raw.bus_ok = false;
-    const SafetyState latched = supervisor.evaluate(raw, est, intentNow(RobotMode::WALK));
+    const SafetyState latched = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
     if (!expect(latched.active_fault == FaultCode::BUS_TIMEOUT, "bus fault should latch BUS_TIMEOUT")) {
         return false;
     }
 
     raw.bus_ok = true;
-    const SafetyState held = supervisor.evaluate(raw, est, intentNow(RobotMode::WALK));
+    const SafetyState held = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
     return expect(held.active_fault == FaultCode::BUS_TIMEOUT,
                   "fault should remain BUS_TIMEOUT after hardware clears") &&
            expect(held.fault_lifecycle == FaultLifecycle::LATCHED,
@@ -84,13 +87,15 @@ bool testLatchedRemainsWhenIntentStale() {
     EstimatedState est = nominalEstimated();
 
     raw.bus_ok = false;
-    const SafetyState latched = supervisor.evaluate(raw, est, intentNow(RobotMode::WALK));
+    const SafetyState latched = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
     if (!expect(latched.active_fault == FaultCode::BUS_TIMEOUT, "bus fault should latch before stale-intent check")) {
         return false;
     }
 
     raw.bus_ok = true;
-    const SafetyState held = supervisor.evaluate(raw, est, staleIntent(RobotMode::SAFE_IDLE));
+    const SafetyState held = supervisor.evaluate(
+        raw, est, staleIntent(RobotMode::SAFE_IDLE), SafetySupervisor::FreshnessInputs{true, false});
     return expect(held.active_fault == FaultCode::BUS_TIMEOUT,
                   "fault should remain BUS_TIMEOUT with stale SAFE_IDLE intent") &&
            expect(held.fault_lifecycle == FaultLifecycle::LATCHED,
@@ -103,33 +108,38 @@ bool testRecoveryRequiresBothConditionsAndHoldTime() {
     EstimatedState est = nominalEstimated();
 
     raw.bus_ok = false;
-    const SafetyState latched = supervisor.evaluate(raw, est, intentNow(RobotMode::WALK));
+    const SafetyState latched = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
     if (!expect(latched.active_fault == FaultCode::BUS_TIMEOUT, "bus fault should latch for recovery test")) {
         return false;
     }
 
     raw.bus_ok = true;
 
-    const SafetyState not_safe_idle = supervisor.evaluate(raw, est, intentNow(RobotMode::WALK));
+    const SafetyState not_safe_idle = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
     if (!expect(not_safe_idle.fault_lifecycle == FaultLifecycle::LATCHED,
                 "recovery must not start until mode is SAFE_IDLE")) {
         return false;
     }
 
-    const SafetyState stale_safe_idle = supervisor.evaluate(raw, est, staleIntent(RobotMode::SAFE_IDLE));
+    const SafetyState stale_safe_idle = supervisor.evaluate(
+        raw, est, staleIntent(RobotMode::SAFE_IDLE), SafetySupervisor::FreshnessInputs{true, false});
     if (!expect(stale_safe_idle.fault_lifecycle == FaultLifecycle::LATCHED,
                 "recovery must not start with stale SAFE_IDLE intent")) {
         return false;
     }
 
-    const SafetyState recovering = supervisor.evaluate(raw, est, intentNow(RobotMode::SAFE_IDLE));
+    const SafetyState recovering = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::SAFE_IDLE), SafetySupervisor::FreshnessInputs{true, true});
     if (!expect(recovering.fault_lifecycle == FaultLifecycle::RECOVERING,
                 "recovery should start only with SAFE_IDLE + fresh intent")) {
         return false;
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(550));
-    const SafetyState cleared = supervisor.evaluate(raw, est, intentNow(RobotMode::SAFE_IDLE));
+    const SafetyState cleared = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::SAFE_IDLE), SafetySupervisor::FreshnessInputs{true, true});
     return expect(cleared.active_fault == FaultCode::NONE,
                   "fault should clear after recovery hold time") &&
            expect(cleared.fault_lifecycle == FaultLifecycle::ACTIVE,

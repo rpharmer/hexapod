@@ -13,7 +13,8 @@ RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
       logger_(std::move(logger)),
       config_(config),
       pipeline_(config_.gait),
-      safety_(config_.safety) {}
+      safety_(config_.safety),
+      freshness_policy_(config_.freshness) {}
 
 bool RobotRuntime::init() {
     if (!hw_ || !estimator_) {
@@ -45,16 +46,8 @@ bool RobotRuntime::init() {
     stale_estimator_count_.store(0);
     raw_sample_seq_.store(0);
     intent_sample_seq_.store(1);
-    last_estimator_sample_id_ = 0;
-    last_intent_sample_id_ = 0;
-    estimator_diag_.stale_age_count.store(0);
-    estimator_diag_.missing_timestamp_count.store(0);
-    estimator_diag_.invalid_sample_id_count.store(0);
-    estimator_diag_.non_monotonic_sample_id_count.store(0);
-    intent_diag_.stale_age_count.store(0);
-    intent_diag_.missing_timestamp_count.store(0);
-    intent_diag_.invalid_sample_id_count.store(0);
-    intent_diag_.non_monotonic_sample_id_count.store(0);
+    freshness_policy_.reset();
+    latest_freshness_ = {};
     last_control_step_us_ = TimePointUs{};
 
     return true;
@@ -99,48 +92,9 @@ void RobotRuntime::controlStep() {
     const SafetyState safety_state = safety_state_.read();
     const bool bus_ok = raw_state_.read().bus_ok;
 
-    const auto evaluate_freshness = [&](TimePointUs timestamp_us,
-                                        uint64_t sample_id,
-                                        uint64_t& last_sample_id,
-                                        const control_config::StreamFreshnessConfig& freshness,
-                                        StreamDiagnostics& diagnostics) {
-        bool valid = true;
-        if (freshness.require_timestamp && timestamp_us.isZero()) {
-            diagnostics.missing_timestamp_count.fetch_add(1);
-            valid = false;
-        }
-        if (!timestamp_us.isZero() &&
-            ((now - timestamp_us).value > freshness.max_allowed_age_us.value)) {
-            diagnostics.stale_age_count.fetch_add(1);
-            valid = false;
-        }
-        if (freshness.require_nonzero_sample_id && sample_id == 0) {
-            diagnostics.invalid_sample_id_count.fetch_add(1);
-            valid = false;
-        }
-        if (freshness.require_monotonic_sample_id && sample_id != 0 &&
-            last_sample_id != 0 && sample_id < last_sample_id) {
-            diagnostics.non_monotonic_sample_id_count.fetch_add(1);
-            valid = false;
-        }
-        if (sample_id != 0) {
-            last_sample_id = sample_id;
-        }
-        return valid;
-    };
-
-    const bool estimator_fresh = evaluate_freshness(
-        est.timestamp_us,
-        est.sample_id,
-        last_estimator_sample_id_,
-        config_.freshness.estimator,
-        estimator_diag_);
-    const bool intent_fresh = evaluate_freshness(
-        intent.timestamp_us,
-        intent.sample_id,
-        last_intent_sample_id_,
-        config_.freshness.intent,
-        intent_diag_);
+    latest_freshness_ = freshness_policy_.evaluate(now, est, intent);
+    const bool estimator_fresh = latest_freshness_.estimator.valid;
+    const bool intent_fresh = latest_freshness_.intent.valid;
 
     if (!intent_fresh) {
         stale_intent_count_.fetch_add(1);
@@ -157,9 +111,9 @@ void RobotRuntime::controlStep() {
                      " intent_valid=",
                      intent_fresh ? 1 : 0,
                      " est_age_us=",
-                     est.timestamp_us.isZero() ? 0 : (now - est.timestamp_us).value,
+                     latest_freshness_.estimator.age_us,
                      " intent_age_us=",
-                     intent.timestamp_us.isZero() ? 0 : (now - intent.timestamp_us).value,
+                     latest_freshness_.intent.age_us,
                      " est_sample_id=",
                      est.sample_id,
                      " intent_sample_id=",
@@ -191,8 +145,13 @@ void RobotRuntime::safetyStep() {
     const RawHardwareState raw = raw_state_.read();
     const EstimatedState est = estimated_state_.read();
     const MotionIntent intent = motion_intent_.read();
+    const TimePointUs now = now_us();
+    latest_freshness_ = freshness_policy_.evaluate(now, est, intent, false);
 
-    const SafetyState s = safety_.evaluate(raw, est, intent);
+    const SafetySupervisor::FreshnessInputs freshness_inputs{
+        latest_freshness_.estimator.valid,
+        latest_freshness_.intent.valid};
+    const SafetyState s = safety_.evaluate(raw, est, intent, freshness_inputs);
     safety_state_.write(s);
 }
 
@@ -200,6 +159,8 @@ void RobotRuntime::diagnosticsStep() {
     const auto st = status_.read();
     status_reporter::logStatus(logger_, st);
     if (logger_) {
+        const auto& estimator_diag = freshness_policy_.estimatorDiagnostics();
+        const auto& intent_diag = freshness_policy_.intentDiagnostics();
         const uint64_t loops = control_loop_counter_.load();
         const uint64_t dt_sum_us = control_dt_sum_us_.load();
         const uint64_t avg_dt_us = (loops > 1) ? (dt_sum_us / (loops - 1)) : 0;
@@ -215,21 +176,21 @@ void RobotRuntime::diagnosticsStep() {
                  " stale_estimator_events=",
                  stale_estimator_count_.load(),
                  " estimator_diag={stale_age:",
-                 estimator_diag_.stale_age_count.load(),
+                 estimator_diag.stale_age_count,
                  ",missing_ts:",
-                 estimator_diag_.missing_timestamp_count.load(),
+                 estimator_diag.missing_timestamp_count,
                  ",invalid_sample:",
-                 estimator_diag_.invalid_sample_id_count.load(),
+                 estimator_diag.invalid_sample_id_count,
                  ",non_monotonic_sample:",
-                 estimator_diag_.non_monotonic_sample_id_count.load(),
+                 estimator_diag.non_monotonic_sample_id_count,
                  "} intent_diag={stale_age:",
-                 intent_diag_.stale_age_count.load(),
+                 intent_diag.stale_age_count,
                  ",missing_ts:",
-                 intent_diag_.missing_timestamp_count.load(),
+                 intent_diag.missing_timestamp_count,
                  ",invalid_sample:",
-                 intent_diag_.invalid_sample_id_count.load(),
+                 intent_diag.invalid_sample_id_count,
                  ",non_monotonic_sample:",
-                 intent_diag_.non_monotonic_sample_id_count.load(),
+                 intent_diag.non_monotonic_sample_id_count,
                  "}");
     }
 }

@@ -112,4 +112,8 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_transport_components tests/test_transport_components.cpp)
     target_link_libraries(test_transport_components PRIVATE hexapod_server_core)
     add_test(NAME transport_components COMMAND test_transport_components)
+
+    add_executable(test_freshness_policy tests/test_freshness_policy.cpp)
+    target_link_libraries(test_freshness_policy PRIVATE hexapod_server_core)
+    add_test(NAME freshness_policy COMMAND test_freshness_policy)
 endif()
