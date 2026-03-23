@@ -242,16 +242,6 @@ struct BodyTwistState {
   Vec3 body_trans_mps{};
 };
 
-struct RawHardwareState {
-  std::array<LegState, kNumLegs> leg_states{};
-  std::array<bool, kNumLegs> foot_contacts{};
-  float voltage{0.0};
-  float current{0.0};
-  uint64_t sample_id{0};
-  TimePointUs timestamp_us{};
-  bool bus_ok{true};
-};
-
 struct MotionIntent {
   RobotMode requested_mode{RobotMode::SAFE_IDLE};
   GaitType gait{GaitType::TRIPOD};
@@ -261,6 +251,16 @@ struct MotionIntent {
   BodyTwistState twist{};
   uint64_t sample_id{0};
   TimePointUs timestamp_us{};
+};
+
+struct RawHardwareState {
+  std::array<LegState, kNumLegs> leg_states{};
+  std::array<bool, kNumLegs> foot_contacts{};
+  float voltage{0.0};
+  float current{0.0};
+  uint64_t sample_id{0};
+  TimePointUs timestamp_us{};
+  bool bus_ok{true};
 };
 
 struct EstimatedState {
