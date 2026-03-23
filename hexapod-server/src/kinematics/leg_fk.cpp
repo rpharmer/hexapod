@@ -32,7 +32,7 @@ LegFK::LegFK() : hexGeo(defaultHexapodGeometry()) {}
 // in solveOneLeg(), assuming the same axis conventions.
 // ------------------------------------------------------------
 
-LegTargets LegFK::solve(const RawHardwareState& raw, const SafetyState& safety)
+LegTargets LegFK::solve(const RobotState& raw, const SafetyState& safety)
 {
   (void)safety;
   

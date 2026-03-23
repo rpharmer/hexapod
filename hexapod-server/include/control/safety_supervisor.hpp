@@ -15,12 +15,12 @@ public:
 
     explicit SafetySupervisor(control_config::SafetyConfig config = {});
 
-    SafetyState evaluate(const RawHardwareState& raw,
-                         const EstimatedState& est,
+    SafetyState evaluate(const RobotState& raw,
+                         const RobotState& est,
                          const MotionIntent& intent);
 
-    SafetyState evaluate(const RawHardwareState& raw,
-                         const EstimatedState& est,
+    SafetyState evaluate(const RobotState& raw,
+                         const RobotState& est,
                          const MotionIntent& intent,
                          FreshnessInputs freshness);
 
@@ -38,8 +38,8 @@ private:
     static bool shouldReplaceFault(FaultCode current, FaultCode candidate);
     static std::size_t faultIndex(FaultCode code);
     bool canAttemptClear(const MotionIntent& intent, const FreshnessInputs& freshness) const;
-    FaultDecision evaluateCurrentFault(const RawHardwareState& raw,
-                                       const EstimatedState& est,
+    FaultDecision evaluateCurrentFault(const RobotState& raw,
+                                       const RobotState& est,
                                        const MotionIntent& intent,
                                        const FreshnessInputs& freshness) const;
 

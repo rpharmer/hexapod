@@ -15,8 +15,8 @@ bool expect(bool condition, const char* message) {
     return true;
 }
 
-RawHardwareState nominalRaw() {
-    RawHardwareState raw{};
+RobotState nominalRaw() {
+    RobotState raw{};
     raw.timestamp_us = now_us();
     raw.bus_ok = true;
     raw.voltage = 12.0f;
@@ -25,8 +25,8 @@ RawHardwareState nominalRaw() {
     return raw;
 }
 
-EstimatedState nominalEstimated() {
-    EstimatedState est{};
+RobotState nominalEstimated() {
+    RobotState est{};
     est.timestamp_us = now_us();
     return est;
 }
@@ -47,8 +47,8 @@ MotionIntent staleIntent(RobotMode mode) {
 
 bool testHigherPriorityFaultWins() {
     SafetySupervisor supervisor;
-    RawHardwareState raw = nominalRaw();
-    EstimatedState est = nominalEstimated();
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
 
     raw.bus_ok = false;
     est.body_twist_state.twist_pos_rad.x = 2.0; // clearly above default tilt limit
@@ -62,8 +62,8 @@ bool testHigherPriorityFaultWins() {
 
 bool testLatchedRemainsWhenIntentNotSafeIdle() {
     SafetySupervisor supervisor;
-    RawHardwareState raw = nominalRaw();
-    EstimatedState est = nominalEstimated();
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
 
     raw.bus_ok = false;
     const SafetyState latched = supervisor.evaluate(
@@ -83,8 +83,8 @@ bool testLatchedRemainsWhenIntentNotSafeIdle() {
 
 bool testLatchedRemainsWhenIntentStale() {
     SafetySupervisor supervisor;
-    RawHardwareState raw = nominalRaw();
-    EstimatedState est = nominalEstimated();
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
 
     raw.bus_ok = false;
     const SafetyState latched = supervisor.evaluate(
@@ -104,8 +104,8 @@ bool testLatchedRemainsWhenIntentStale() {
 
 bool testRecoveryRequiresBothConditionsAndHoldTime() {
     SafetySupervisor supervisor;
-    RawHardwareState raw = nominalRaw();
-    EstimatedState est = nominalEstimated();
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
 
     raw.bus_ok = false;
     const SafetyState latched = supervisor.evaluate(

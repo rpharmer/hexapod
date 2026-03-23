@@ -55,8 +55,8 @@ private:
     FreshnessPolicy::Evaluation latest_freshness_{};
     TimePointUs last_control_step_us_{};
 
-    DoubleBuffer<RawHardwareState> raw_state_;
-    DoubleBuffer<EstimatedState> estimated_state_;
+    DoubleBuffer<RobotState> raw_state_;
+    DoubleBuffer<RobotState> estimated_state_;
     DoubleBuffer<MotionIntent> motion_intent_;
     DoubleBuffer<SafetyState> safety_state_;
     DoubleBuffer<JointTargets> joint_targets_;

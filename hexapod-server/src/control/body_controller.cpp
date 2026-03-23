@@ -24,7 +24,7 @@ std::array<Vec3, kNumLegs> BodyController::nominalStance() const {
     return nominal;
 }
 
-LegTargets BodyController::update(const EstimatedState& est,
+LegTargets BodyController::update(const RobotState& est,
                                   const MotionIntent& intent,
                                   const GaitState& gait,
                                   const SafetyState& safety) {

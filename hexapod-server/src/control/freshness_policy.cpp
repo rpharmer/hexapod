@@ -11,7 +11,7 @@ void FreshnessPolicy::reset() {
 }
 
 FreshnessPolicy::Evaluation FreshnessPolicy::evaluate(TimePointUs now,
-                                                      const EstimatedState& est,
+                                                      const RobotState& est,
                                                       const MotionIntent& intent,
                                                       bool update_tracking) {
     uint64_t estimator_last_sample_id = last_estimator_sample_id_;

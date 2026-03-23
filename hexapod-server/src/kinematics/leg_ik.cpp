@@ -5,7 +5,7 @@
 
 namespace {
 
-void apply_estimated_leg_fallback(const EstimatedState& est,
+void apply_estimated_leg_fallback(const RobotState& est,
                                   JointTargets& joints,
                                   int legID)
 {
@@ -20,7 +20,7 @@ void apply_estimated_leg_fallback(const EstimatedState& est,
 LegIK::LegIK(HexapodGeometry geometry) : hexGeo(geometry) {}
 
 
-JointTargets LegIK::solve(const EstimatedState& est,
+JointTargets LegIK::solve(const RobotState& est,
                           const LegTargets& targets,
                           const SafetyState& safety) {
   JointTargets joints{};

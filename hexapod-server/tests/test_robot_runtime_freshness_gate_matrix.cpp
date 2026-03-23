@@ -20,9 +20,9 @@ bool expect(bool condition, const std::string& message) {
 
 class ScriptedEstimator final : public IEstimator {
 public:
-    void enqueue(const EstimatedState& sample) { queue_.push_back(sample); }
+    void enqueue(const RobotState& sample) { queue_.push_back(sample); }
 
-    EstimatedState update(const RawHardwareState& raw) override {
+    RobotState update(const RobotState& raw) override {
         if (!queue_.empty()) {
             last_ = queue_.front();
             queue_.erase(queue_.begin());
@@ -37,8 +37,8 @@ public:
     }
 
 private:
-    std::vector<EstimatedState> queue_{};
-    EstimatedState last_{};
+    std::vector<RobotState> queue_{};
+    RobotState last_{};
 };
 
 control_config::ControlConfig strictFreshnessConfig() {
@@ -48,8 +48,8 @@ control_config::ControlConfig strictFreshnessConfig() {
     return cfg;
 }
 
-EstimatedState makeEstimatorSample(uint64_t sample_id, TimePointUs timestamp_us) {
-    EstimatedState est{};
+RobotState makeEstimatorSample(uint64_t sample_id, TimePointUs timestamp_us) {
+    RobotState est{};
     est.sample_id = sample_id;
     est.timestamp_us = timestamp_us;
     return est;

@@ -17,7 +17,7 @@ std::vector<uint8_t> HardwareStateCodec::encode_joint_targets(const JointTargets
 }
 
 bool HardwareStateCodec::decode_full_hardware_state(const std::vector<uint8_t>& payload,
-                                                    RawHardwareState& out) const {
+                                                    RobotState& out) const {
     protocol::FullHardwareState decoded{};
     if (!protocol::decode_full_hardware_state(payload, decoded)) {
         return false;

@@ -11,7 +11,7 @@ SimHardwareBridge::SimHardwareBridge(SimHardwareFaultToggles fault_toggles,
 
 bool SimHardwareBridge::init() {
     std::lock_guard<std::mutex> lock(mutex_);
-    state_ = RawHardwareState{};
+    state_ = RobotState{};
     commanded_targets_ = JointTargets{};
 
     state_.voltage = fault_toggles_.low_voltage ? fault_toggles_.low_voltage_value
@@ -28,7 +28,7 @@ bool SimHardwareBridge::init() {
     return true;
 }
 
-bool SimHardwareBridge::read(RawHardwareState& out) {
+bool SimHardwareBridge::read(RobotState& out) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!initialized_) {
         return false;

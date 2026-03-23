@@ -117,7 +117,7 @@ bool SimpleHardwareBridge::init() {
         return false;
     }
 
-    state_ = RawHardwareState{};
+    state_ = RobotState{};
     last_written_ = JointTargets{};
     software_feedback_enabled_ = !handshake_->has_capability(CAPABILITY_ANGULAR_FEEDBACK);
     last_software_feedback_timestamp_ = TimePointUs{};
@@ -151,7 +151,7 @@ bool SimpleHardwareBridge::ensure_link() {
     return true;
 }
 
-bool SimpleHardwareBridge::read(RawHardwareState& out) {
+bool SimpleHardwareBridge::read(RobotState& out) {
     if (!initialized_ || !packet_endpoint_ || !codec_) {
         if (auto logger = logging::GetDefaultLogger()) {
             LOG_ERROR(logger, "either hardware bridge or serial coms not initialised");
@@ -159,7 +159,7 @@ bool SimpleHardwareBridge::read(RawHardwareState& out) {
         return false;
     }
 
-    const auto decode_state = [this](const std::vector<uint8_t>& payload, RawHardwareState& decoded) {
+    const auto decode_state = [this](const std::vector<uint8_t>& payload, RobotState& decoded) {
         return codec_->decode_full_hardware_state(payload, decoded);
     };
     if (!request_decoded(GET_FULL_HARDWARE_STATE, {}, decode_state, out)) {
@@ -187,7 +187,7 @@ bool SimpleHardwareBridge::write(const JointTargets& in) {
     return true;
 }
 
-void SimpleHardwareBridge::synthesizeJointFeedback(RawHardwareState& out) {
+void SimpleHardwareBridge::synthesizeJointFeedback(RobotState& out) {
     const TimePointUs current_ts = out.timestamp_us;
     DurationSec dt_s = kSoftwareFeedbackDefaultDtSec;
     if (!last_software_feedback_timestamp_.isZero() && current_ts.value > last_software_feedback_timestamp_.value) {

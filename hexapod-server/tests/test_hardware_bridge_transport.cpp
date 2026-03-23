@@ -141,7 +141,7 @@ bool test_malformed_ack_payload_handling() {
         return false;
     }
 
-    RawHardwareState out{};
+    RobotState out{};
     return expect(!bridge->read(out), "read should fail for malformed ACK payload");
 }
 
@@ -951,7 +951,7 @@ bool test_read_falls_back_to_software_joint_estimate_without_angular_feedback() 
         return false;
     }
 
-    RawHardwareState first{};
+    RobotState first{};
     if (!expect(bridge->read(first), "first read should succeed")) {
         geometry_config::kHexapodGeometry = geometry_before;
         return false;
@@ -977,7 +977,7 @@ bool test_read_falls_back_to_software_joint_estimate_without_angular_feedback() 
         return false;
     }
 
-    RawHardwareState second{};
+    RobotState second{};
     if (!expect(bridge->read(second), "second read should succeed")) {
         geometry_config::kHexapodGeometry = geometry_before;
         return false;

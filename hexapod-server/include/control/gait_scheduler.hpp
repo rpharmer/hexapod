@@ -7,7 +7,7 @@ class GaitScheduler {
 public:
     explicit GaitScheduler(control_config::GaitConfig config = {});
 
-    GaitState update(const EstimatedState& est, const MotionIntent& intent, const SafetyState& safety);
+    GaitState update(const RobotState& est, const MotionIntent& intent, const SafetyState& safety);
 
 private:
     control_config::GaitConfig config_{};

@@ -33,7 +33,7 @@ public:
     void reset();
 
     Evaluation evaluate(TimePointUs now,
-                        const EstimatedState& est,
+                        const RobotState& est,
                         const MotionIntent& intent,
                         bool update_tracking = true);
 

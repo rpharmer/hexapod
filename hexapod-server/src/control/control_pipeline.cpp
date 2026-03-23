@@ -3,7 +3,7 @@
 ControlPipeline::ControlPipeline(control_config::GaitConfig config)
     : gait_(config) {}
 
-PipelineStepResult ControlPipeline::runStep(const EstimatedState& estimated,
+PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
                                             const MotionIntent& intent,
                                             const SafetyState& safety_state,
                                             bool bus_ok,

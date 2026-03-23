@@ -44,7 +44,7 @@ void maybeLogFreshnessGateReject(const std::shared_ptr<logging::AsyncLogger>& lo
                                  bool estimator_fresh,
                                  bool intent_fresh,
                                  const FreshnessPolicy::Evaluation& freshness,
-                                 const EstimatedState& est,
+                                 const RobotState& est,
                                  const MotionIntent& intent) {
     if (!logger) {
         return;
@@ -117,7 +117,7 @@ bool RobotRuntime::init() {
 }
 
 void RobotRuntime::busStep() {
-    RawHardwareState raw{};
+    RobotState raw{};
     if (!hw_->read(raw)) {
         raw.bus_ok = false;
     }
@@ -131,8 +131,8 @@ void RobotRuntime::busStep() {
 }
 
 void RobotRuntime::estimatorStep() {
-    const RawHardwareState raw = raw_state_.read();
-    const EstimatedState est = estimator_->update(raw);
+    const RobotState raw = raw_state_.read();
+    const RobotState est = estimator_->update(raw);
     estimated_state_.write(est);
 }
 
@@ -140,7 +140,7 @@ void RobotRuntime::controlStep() {
     const TimePointUs now = now_us();
     updateControlTimingMetrics(config_, now, last_control_step_us_, control_dt_sum_us_, control_jitter_max_us_);
 
-    const EstimatedState est = estimated_state_.read();
+    const RobotState est = estimated_state_.read();
     const MotionIntent intent = motion_intent_.read();
     const SafetyState safety_state = safety_state_.read();
     const bool bus_ok = raw_state_.read().bus_ok;
@@ -178,8 +178,8 @@ void RobotRuntime::controlStep() {
 }
 
 void RobotRuntime::safetyStep() {
-    const RawHardwareState raw = raw_state_.read();
-    const EstimatedState est = estimated_state_.read();
+    const RobotState raw = raw_state_.read();
+    const RobotState est = estimated_state_.read();
     const MotionIntent intent = motion_intent_.read();
     const TimePointUs now = now_us();
     latest_freshness_ = freshness_policy_.evaluate(now, est, intent, false);

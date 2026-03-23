@@ -31,7 +31,7 @@ bool testNonMonotonicSampleIds() {
     policy.reset();
 
     const TimePointUs now{50'000};
-    EstimatedState est_good{};
+    RobotState est_good{};
     est_good.sample_id = 10;
     est_good.timestamp_us = TimePointUs{49'500};
 
@@ -45,7 +45,7 @@ bool testNonMonotonicSampleIds() {
         return false;
     }
 
-    EstimatedState est_bad = est_good;
+    RobotState est_bad = est_good;
     est_bad.sample_id = 9;
     MotionIntent intent_bad = intent_good;
     intent_bad.sample_id = 9;
@@ -61,7 +61,7 @@ bool testMissingTimestamps() {
     FreshnessPolicy policy(strictFreshnessConfig());
     policy.reset();
 
-    EstimatedState est{};
+    RobotState est{};
     est.sample_id = 42;
     est.timestamp_us = TimePointUs{};
 
@@ -82,7 +82,7 @@ bool testBoundaryAgeThresholds() {
 
     const TimePointUs now{200'000};
 
-    EstimatedState est_just_valid{};
+    RobotState est_just_valid{};
     est_just_valid.sample_id = 1;
     est_just_valid.timestamp_us = TimePointUs{199'000}; // age == 1000us
     MotionIntent intent_just_valid{};
@@ -99,7 +99,7 @@ bool testBoundaryAgeThresholds() {
         return false;
     }
 
-    EstimatedState est_just_stale = est_just_valid;
+    RobotState est_just_stale = est_just_valid;
     est_just_stale.sample_id = 2;
     est_just_stale.timestamp_us = TimePointUs{198'999}; // age == 1001us
     MotionIntent intent_just_stale = intent_just_valid;
