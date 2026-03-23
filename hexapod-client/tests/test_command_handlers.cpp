@@ -58,6 +58,52 @@ bool test_set_joint_targets_valid_ack_and_updates_positions()
   return true;
 }
 
+bool test_handshake_enables_software_angle_feedback_when_requested()
+{
+  FirmwareContext ctx{};
+  const protocol::HelloRequest request{PROTOCOL_VERSION, CAPABILITY_ANGULAR_FEEDBACK};
+
+  const bool ok = handleHandshake(ctx, 9, protocol::encode_hello_request(request));
+  if(!expect(ok, "expected handshake success"))
+    return false;
+  if(!expect_last_packet(ctx, 9, ACK))
+    return false;
+
+  return expect(ctx.softwareAngleFeedbackEstimatorEnabled,
+                "expected software angle feedback estimator to be enabled");
+}
+
+bool test_get_full_hardware_state_uses_software_angle_feedback_fallback()
+{
+  FirmwareContext ctx{};
+  ctx.softwareAngleFeedbackEstimatorEnabled = true;
+  for(std::size_t i = 0; i < kProtocolJointCount; ++i)
+  {
+    ctx.jointTargetPositionsRad[i] = 0.2f * static_cast<float>(i);
+    ctx.servos.value(static_cast<int>(i), -0.25f);
+  }
+
+  handleGetFullHardwareStateCommand(ctx, 24);
+
+  if(!expect_last_packet(ctx, 24, ACK))
+    return false;
+
+  protocol::FullHardwareState decoded{};
+  const auto* packet = last_packet(ctx);
+  if(!expect(protocol::decode_full_hardware_state(packet->payload, decoded),
+             "expected full hardware state payload"))
+    return false;
+
+  for(std::size_t i = 0; i < kProtocolJointCount; ++i)
+  {
+    if(!expect(std::fabs(decoded.joint_positions_rad[i] - ctx.jointTargetPositionsRad[i]) < 1e-6f,
+               "expected fallback joint position from estimator target"))
+      return false;
+  }
+
+  return true;
+}
+
 bool test_set_joint_targets_invalid_payload_length_nack()
 {
   FirmwareContext ctx{};
@@ -196,6 +242,10 @@ bool test_set_servos_enabled_valid_and_invalid_payloads()
 
 int main()
 {
+  if(!test_handshake_enables_software_angle_feedback_when_requested())
+    return EXIT_FAILURE;
+  if(!test_get_full_hardware_state_uses_software_angle_feedback_fallback())
+    return EXIT_FAILURE;
   if(!test_set_joint_targets_valid_ack_and_updates_positions())
     return EXIT_FAILURE;
   if(!test_set_joint_targets_invalid_payload_length_nack())

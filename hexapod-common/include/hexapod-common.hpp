@@ -59,9 +59,14 @@ enum class ErrorCode : uint8_t {
   ALREADY_PAIRED = 0xA8
 };
 
+enum class CapabilityFlag : uint8_t {
+  ANGULAR_FEEDBACK = (1u << 0)
+};
+
 constexpr uint8_t as_u8(CommandCode code) { return static_cast<uint8_t>(code); }
 constexpr uint8_t as_u8(StatusCode code) { return static_cast<uint8_t>(code); }
 constexpr uint8_t as_u8(ErrorCode code) { return static_cast<uint8_t>(code); }
+constexpr uint8_t as_u8(CapabilityFlag capability) { return static_cast<uint8_t>(capability); }
 
 // Backward-compatible aliases for existing call sites.
 inline constexpr uint8_t SET_ANGLE_CALIBRATIONS = as_u8(CommandCode::SET_ANGLE_CALIBRATIONS);
@@ -94,6 +99,7 @@ inline constexpr uint8_t OUT_OF_RANGE_INDEX = as_u8(ErrorCode::OUT_OF_RANGE_INDE
 inline constexpr uint8_t UNSUPPORTED_COMMAND = as_u8(ErrorCode::UNSUPPORTED_COMMAND);
 inline constexpr uint8_t BUSY_NOT_READY = as_u8(ErrorCode::BUSY_NOT_READY);
 inline constexpr uint8_t ALREADY_PAIRED = as_u8(ErrorCode::ALREADY_PAIRED);
+inline constexpr uint8_t CAPABILITY_ANGULAR_FEEDBACK = as_u8(CapabilityFlag::ANGULAR_FEEDBACK);
 
 // enum to map joints to ints
 // [R/L] is Right/ Left handside from point of view of robot

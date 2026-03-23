@@ -19,6 +19,7 @@ namespace {
 
 constexpr DurationUs kLinkTimeoutUs{500000};
 constexpr DurationUs kHeartbeatIdleIntervalUs{150000};
+constexpr uint8_t kRequestedCapabilities = CAPABILITY_ANGULAR_FEEDBACK;
 
 void logCommandFailure(const char* command_name,
                        TransportSession::OutcomeClass outcome_class,
@@ -100,7 +101,7 @@ bool SimpleHardwareBridge::init() {
     command_client_ = std::make_unique<CommandClient>(*transport_);
     handshake_ = std::make_unique<HandshakeClient>(*transport_, *command_client_);
 
-    if (!handshake_->establish_link(0)) {
+    if (!handshake_->establish_link(kRequestedCapabilities)) {
         return false;
     }
 
@@ -126,7 +127,7 @@ bool SimpleHardwareBridge::ensure_link() {
         if (auto logger = logging::GetDefaultLogger()) {
             LOG_WARN(logger, "link timed out; attempting re-establish");
         }
-        return handshake_->establish_link(0);
+        return handshake_->establish_link(kRequestedCapabilities);
     }
 
     if (transport_->heartbeat_due(now)) {
