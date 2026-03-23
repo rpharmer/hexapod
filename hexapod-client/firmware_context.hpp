@@ -1,14 +1,20 @@
 #ifndef FIRMWARE_CONTEXT_HPP
 #define FIRMWARE_CONTEXT_HPP
 
+#include "hexapod-client.hpp"
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+#ifndef HEXAPOD_CLIENT_HOST_TEST
+
 #include "servo2040.hpp"
 #include "button.hpp"
 #include "analog.hpp"
 #include "analogmux.hpp"
 #include "serialCommsClient.hpp"
-#include "hexapod-client.hpp"
-
-#include <array>
 
 using namespace plasma;
 using namespace servo;
@@ -36,9 +42,124 @@ struct FirmwareContext {
   SerialCommsClient serial{};
   WS2812 led_bar{servo2040::NUM_LEDS, pio1, 0, servo2040::LED_DATA};
   Button user_sw{servo2040::USER_SW};
-  
+
   HexapodState state{HexapodState::OFF};
 };
+
+#else
+
+namespace servo2040 {
+constexpr int SENSOR_1_ADDR = 0;
+constexpr int CURRENT_SENSE_ADDR = 10;
+constexpr int VOLTAGE_SENSE_ADDR = 11;
+}
+
+inline void gpio_put_masked(uint32_t, uint32_t) {}
+
+struct Calibration {
+  float first{0.0f};
+  float last{0.0f};
+
+  void apply_two_pairs(float first_pulse, float last_pulse, float, float)
+  {
+    first = first_pulse;
+    last = last_pulse;
+  }
+
+  float first_pulse() const { return first; }
+  float last_pulse() const { return last; }
+};
+
+struct ServoCluster {
+  std::array<float, kProtocolJointCount> values{};
+  std::array<uint8_t, kProtocolJointCount> enabled{};
+  std::array<Calibration, kProtocolJointCount> calibrations{};
+
+  void value(int idx, float val) { values[static_cast<std::size_t>(idx)] = val; }
+  float value(int idx) const { return values[static_cast<std::size_t>(idx)]; }
+  Calibration& calibration(int idx) { return calibrations[static_cast<std::size_t>(idx)]; }
+
+  void enable(int idx) { enabled[static_cast<std::size_t>(idx)] = 1; }
+  void disable(int idx) { enabled[static_cast<std::size_t>(idx)] = 0; }
+  bool is_enabled(int idx) const { return enabled[static_cast<std::size_t>(idx)] != 0; }
+
+  void all_to_mid()
+  {
+    for(float& value_ref : values)
+      value_ref = 0.0f;
+  }
+
+  void disable_all()
+  {
+    for(uint8_t& enabled_ref : enabled)
+      enabled_ref = 0;
+  }
+
+  void enable_all()
+  {
+    for(uint8_t& enabled_ref : enabled)
+      enabled_ref = 1;
+  }
+};
+
+struct Analog {
+  float voltage{0.0f};
+  float current{0.0f};
+
+  float read_voltage() const { return voltage; }
+  float read_current() const { return current; }
+};
+
+struct AnalogMux {
+  int selected{-1};
+
+  void select(int addr) { selected = addr; }
+  void configure_pulls(int, bool, bool) {}
+};
+
+struct SerialCommsClient {
+  struct SentPacket {
+    uint16_t seq;
+    uint8_t cmd;
+    std::vector<uint8_t> payload;
+  };
+
+  std::vector<SentPacket> sent_packets{};
+
+  void send_packet(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload)
+  {
+    sent_packets.push_back(SentPacket{seq, cmd, payload});
+  }
+
+  bool recv_packet(DecodedPacket&) { return false; }
+};
+
+struct WS2812 {
+  void start() {}
+  void clear() {}
+  void set_hsv(std::size_t, float, float, float) {}
+  void set_rgb(std::size_t, float, float, float) {}
+};
+
+struct Button {};
+
+struct FirmwareContext {
+  static constexpr int NUM_SERVOS = static_cast<int>(kProtocolJointCount);
+
+  Analog sen_adc{};
+  Analog vol_adc{};
+  Analog cur_adc{};
+  AnalogMux mux{};
+  float minmaxCalibrations[kProtocolJointCount][kProtocolCalibrationPairsPerJoint]{};
+  ServoCluster servos{};
+  std::array<float, kProtocolJointCount> jointTargetPositionsRad{};
+  SerialCommsClient serial{};
+  WS2812 led_bar{};
+  Button user_sw{};
+  HexapodState state{HexapodState::OFF};
+};
+
+#endif
 
 FirmwareContext& firmware();
 

@@ -3,16 +3,17 @@
 #include "hexapod-client.hpp"
 #include "firmware_context.hpp"
 #include "framing.hpp"
+#include "payload_decode.hpp"
 
 void handleSetPowerRelayCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  if(payload.size() != 1)
+  uint8_t relayOpen = 0;
+  if(!payload::decode_scalar_exact(payload, relayOpen))
   {
     ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
-  const uint8_t relayOpen = payload[0];
   if(relayOpen == 1)
     gpio_put_masked(A0_GPIO_MASK, GPIO_HIGH_MASK);
   else if(relayOpen == 0)
@@ -28,15 +29,12 @@ void handleSetPowerRelayCommand(FirmwareContext& ctx, uint16_t seq, const std::v
 
 void handleSetServosEnabledCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  constexpr size_t expectedPayloadBytes = kProtocolServoEnablePayloadBytes;
-  if(payload.size() != expectedPayloadBytes)
-  {
-    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
-    return;
-  }
-
   protocol::ServoEnabled enabled{};
-  if (!protocol::decode_servo_enabled(payload, enabled))
+  const auto status = payload::expect_payload(payload,
+                                              kProtocolServoEnablePayloadBytes,
+                                              enabled,
+                                              protocol::decode_servo_enabled);
+  if(status != payload::DecodeStatus::Ok)
   {
     ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;

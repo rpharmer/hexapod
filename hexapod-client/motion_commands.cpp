@@ -3,30 +3,26 @@
 #include "hexapod-client.hpp"
 #include "firmware_context.hpp"
 #include "framing.hpp"
+#include "payload_decode.hpp"
 
 #include <cstring>
 
 void handleSetAngleCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  if(payload.size() != (sizeof(uint8_t) + sizeof(float)))
+  uint8_t servo = 0;
+  float angle = 0.0f;
+  if(!payload::decode_two_scalars_exact(payload, servo, angle))
   {
     ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
-  size_t offset = 0;
-  uint8_t servo;
-  read_scalar(payload, offset, servo);
-  
   if(servo >= FirmwareContext::NUM_SERVOS)
   {
     ctx.serial.send_packet(seq, NACK, {OUT_OF_RANGE_INDEX});
     return;
   }
 
-  float angle;
-  read_scalar(payload, offset, angle);
-  
   ctx.servos.value(servo, angle);
   ctx.serial.send_packet(seq, ACK, {});
 }
@@ -34,15 +30,12 @@ void handleSetAngleCommand(FirmwareContext& ctx, uint16_t seq, const std::vector
 
 void handleCalibCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  constexpr size_t expectedPayloadBytes = kProtocolCalibrationsPayloadBytes;
-  if(payload.size() != expectedPayloadBytes)
-  {
-    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
-    return;
-  }
-
   protocol::Calibrations calibrations{};
-  if (!protocol::decode_calibrations(payload, calibrations))
+  const auto status = payload::expect_payload(payload,
+                                              kProtocolCalibrationsPayloadBytes,
+                                              calibrations,
+                                              protocol::decode_calibrations);
+  if(status != payload::DecodeStatus::Ok)
   {
     ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
@@ -71,22 +64,14 @@ void calibServos(FirmwareContext& ctx, float calibs[kProtocolJointCount][kProtoc
   return;
 }
 
-void calibServos(float calibs[kProtocolJointCount][kProtocolCalibrationPairsPerJoint])
-{
-  calibServos(firmware(), calibs);
-}
-
 void handleSetJointTargetsCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  constexpr size_t expectedPayloadBytes = kProtocolJointTargetsPayloadBytes;
-  if(payload.size() != expectedPayloadBytes)
-  {
-    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
-    return;
-  }
-
   protocol::JointTargets target_positions{};
-  if (!protocol::decode_joint_targets(payload, target_positions))
+  const auto status = payload::expect_payload(payload,
+                                              kProtocolJointTargetsPayloadBytes,
+                                              target_positions,
+                                              protocol::decode_joint_targets);
+  if(status != payload::DecodeStatus::Ok)
   {
     ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
@@ -100,4 +85,3 @@ void handleSetJointTargetsCommand(FirmwareContext& ctx, uint16_t seq, const std:
 
   ctx.serial.send_packet(seq, ACK, {});
 }
-

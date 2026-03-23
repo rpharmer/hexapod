@@ -16,14 +16,14 @@ constexpr float BRIGHTNESS = 0.4f;
 // How many times the LEDs will be updated per second
 constexpr uint UPDATES = 50;
 
-void configureSensorAddressPulls()
+void configureSensorAddressPulls(FirmwareContext& ctx)
 {
-  firmware().mux.configure_pulls(servo2040::SENSOR_1_ADDR, false, true);
-  firmware().mux.configure_pulls(servo2040::SENSOR_2_ADDR, false, true);
-  firmware().mux.configure_pulls(servo2040::SENSOR_3_ADDR, false, true);
-  firmware().mux.configure_pulls(servo2040::SENSOR_4_ADDR, false, true);
-  firmware().mux.configure_pulls(servo2040::SENSOR_5_ADDR, false, true);
-  firmware().mux.configure_pulls(servo2040::SENSOR_6_ADDR, false, true);
+  ctx.mux.configure_pulls(servo2040::SENSOR_1_ADDR, false, true);
+  ctx.mux.configure_pulls(servo2040::SENSOR_2_ADDR, false, true);
+  ctx.mux.configure_pulls(servo2040::SENSOR_3_ADDR, false, true);
+  ctx.mux.configure_pulls(servo2040::SENSOR_4_ADDR, false, true);
+  ctx.mux.configure_pulls(servo2040::SENSOR_5_ADDR, false, true);
+  ctx.mux.configure_pulls(servo2040::SENSOR_6_ADDR, false, true);
 }
 
 void initializeRelayAddressLines()
@@ -33,7 +33,7 @@ void initializeRelayAddressLines()
   gpio_put_masked(A0_GPIO_MASK | A1_GPIO_MASK | A2_GPIO_MASK, GPIO_LOW_MASK);
 }
 
-void showWaitForUsbAnimation()
+void showWaitForUsbAnimation(FirmwareContext& ctx)
 {
   float offset = 0.0f;
   while(!stdio_usb_connected())
@@ -43,7 +43,7 @@ void showWaitForUsbAnimation()
     for(auto i = 0u; i < servo2040::NUM_LEDS; i++)
     {
       float hue = (float)i / (float)servo2040::NUM_LEDS;
-      firmware().led_bar.set_hsv(i, hue + offset, 1.0f, BRIGHTNESS);
+      ctx.led_bar.set_hsv(i, hue + offset, 1.0f, BRIGHTNESS);
     }
 
     sleep_ms(1000 / UPDATES);
@@ -51,42 +51,43 @@ void showWaitForUsbAnimation()
 
   for(auto i = 0u; i < servo2040::NUM_LEDS; i++)
   {
-    firmware().led_bar.set_rgb(i, 0.0f, 127.0f, 0.0f);
+    ctx.led_bar.set_rgb(i, 0.0f, 127.0f, 0.0f);
   }
 }
 
-void initializeHardware()
+void initializeHardware(FirmwareContext& ctx)
 {
-  firmware().state = HexapodState::BOOT;
+  ctx.state = HexapodState::BOOT;
   stdio_init_all();
-  configureSensorAddressPulls();
+  configureSensorAddressPulls(ctx);
 
-  firmware().servos.init();
+  ctx.servos.init();
   initializeRelayAddressLines();
-  calibServos(firmware().minmaxCalibrations);
+  calibServos(ctx, ctx.minmaxCalibrations);
 
-  firmware().led_bar.start();
-  showWaitForUsbAnimation();
-  firmware().servos.enable_all();
+  ctx.led_bar.start();
+  showWaitForUsbAnimation(ctx);
+  ctx.servos.enable_all();
 }
 
-void shutdownHardware()
+void shutdownHardware(FirmwareContext& ctx)
 {
-  firmware().state = HexapodState::STOPPING;
-  firmware().servos.disable_all();
+  ctx.state = HexapodState::STOPPING;
+  ctx.servos.disable_all();
   gpio_put_masked(A0_GPIO_MASK, GPIO_LOW_MASK);
-  firmware().led_bar.clear();
+  ctx.led_bar.clear();
   sleep_ms(100);
-  firmware().state = HexapodState::OFF;
+  ctx.state = HexapodState::OFF;
 }
 
 } // namespace
 
 int main()
 {
-  initializeHardware();
+  FirmwareContext& ctx = firmware();
+  initializeHardware(ctx);
   runCommandLoop();
-  shutdownHardware();
+  shutdownHardware(ctx);
 }
 
 bool handleHandshake(uint16_t seq, const std::vector<uint8_t>& payload)

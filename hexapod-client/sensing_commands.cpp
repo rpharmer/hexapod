@@ -2,6 +2,7 @@
 #include "protocol_codec.hpp"
 #include "hexapod-client.hpp"
 #include "firmware_context.hpp"
+#include "payload_decode.hpp"
 
 void handleGetAngleCalibCommand(FirmwareContext& ctx, uint16_t seq)
 {
@@ -36,15 +37,8 @@ void handleGetVoltageCommand(FirmwareContext& ctx, uint16_t seq)
 
 void handleGetSensorCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  if(payload.size() != 1)
-  {
-    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
-    return;
-  }
-
   uint8_t sensor = 0;
-  std::size_t offset = 0;
-  if(!read_scalar(payload, offset, sensor) || offset != payload.size())
+  if(!payload::decode_scalar_exact(payload, sensor))
   {
     ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;

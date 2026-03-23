@@ -49,7 +49,6 @@ void handleSetServosToMidCommand(FirmwareContext& ctx, uint16_t seq);
 void handleHeartbeatCommand(FirmwareContext& ctx, uint16_t seq);
 
 void handleCalibCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload);
-void calibServos(float calibs[kProtocolJointCount][kProtocolCalibrationPairsPerJoint]);
 void calibServos(FirmwareContext& ctx, float calibs[kProtocolJointCount][kProtocolCalibrationPairsPerJoint]);
 
 #endif
