@@ -47,16 +47,6 @@ bool decodeScalarFloatPayload(const std::vector<uint8_t>& payload, protocol::Sca
     return protocol::decode_scalar_float(payload, decoded);
 }
 
-double clamp01(double value) {
-    if (value < 0.0) {
-        return 0.0;
-    }
-    if (value > 1.0) {
-        return 1.0;
-    }
-    return value;
-}
-
 }  // namespace
 
 class SerialPacketEndpoint final : public IPacketEndpoint {

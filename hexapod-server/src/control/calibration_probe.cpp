@@ -90,10 +90,6 @@ double legJoint(const LegRawState& leg_state, int joint) {
     return leg_state.joint_raw_state[joint].pos_rad.value;
 }
 
-double norm(const Vec3& v) {
-    return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-}
-
 Vec3 computeFootWorldFromServoAngles(const LegRawState& servo_angles,
                                      const LegGeometry& leg_geometry,
                                      const BodyPose& body_pose) {
@@ -403,7 +399,7 @@ ProbeDestinationResult evaluateProbeDestinationReached(
         const ProbeDestinationSample& sample = samples[i];
         const bool debounced = hasDebouncedContact(samples, i, options.contact_debounce_samples);
         const bool in_position =
-            norm(sample.foot_position_body - sample.target_position_body) <=
+            vecNorm(sample.foot_position_body - sample.target_position_body) <=
             options.position_tolerance_m;
 
         if (debounced && contact_rise_time < 0.0) {
@@ -446,7 +442,7 @@ ProbeDestinationResult evaluateProbeDestinationReached(
     result.contact_rise_time_s = contact_rise_time;
     result.contact_debounced = false;
     result.in_position =
-        norm(last.foot_position_body - last.target_position_body) <=
+        vecNorm(last.foot_position_body - last.target_position_body) <=
         options.position_tolerance_m;
     return result;
 }
