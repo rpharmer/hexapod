@@ -2,193 +2,236 @@
 
 ## Executive summary
 
-The repository is in a healthy state overall: architecture boundaries are clear, protocol ownership is centralized in `hexapod-common`, and host-side tests are extensive and currently green.
+The codebase is in good operational health: boundaries between host runtime (`hexapod-server`), firmware (`hexapod-client`), and protocol (`hexapod-common`) are clear, and the host test suite is broad and currently passing (14/14).
 
-The strongest improvement opportunities are not correctness bugs, but **maintainability and scaling risks**:
+The highest-value improvements are maintainability refactors that preserve behavior while reducing duplicated logic and decision-surface complexity:
 
-1. **Server transport API duplication** in `SimpleHardwareBridge`.
-2. **Control-step responsibility overload** in `RobotRuntime::controlStep`.
-3. **Firmware dispatch wrapper boilerplate** in `command_dispatch.cpp`.
-4. **Protocol metadata duplication** across host/firmware command-name and payload policies.
-5. **Docs drift** at repo root (`README.md` references missing docs).
-
----
-
-## Review scope and method
-
-- Read core architecture and runtime flow docs (`README.md`, `hexapod-server/README.md`, `hexapod-client/README.md`).
-- Inspected high-churn/control-critical implementation files in host runtime, transport, and firmware command dispatch.
-- Built and ran host tests via CMake presets to validate current baseline.
+1. **Decompose `RobotRuntime::controlStep`** into pure decisions plus side-effect orchestration.
+2. **Unify host command transaction/decode patterns** in `SimpleHardwareBridge`.
+3. **Consolidate command metadata** (names + payload contracts) into one protocol-owned source.
+4. **Reduce firmware dispatch wrappers and centralize payload/NACK helpers**.
+5. **Add explicit resilience tests around retry policy and stale-stream transitions**.
 
 ---
 
-## What is working well
+## Review method
 
-### 1) Separation of concerns is explicit
+- Read architecture and workflow docs at root and component level.
+- Inspected key runtime and transport files in server/firmware paths.
+- Verified baseline by running server test preset and full `ctest` suite.
 
-- `hexapod-server` cleanly separates transport, estimation, safety, control pipeline, and diagnostics responsibilities.
-- `hexapod-common` is a single source for command IDs/constants used on both sides.
-- Simulator support and scenario files provide an effective risk-reduction path before hardware motion.
+Validation commands run:
 
-### 2) Host regression suite is meaningful
+- `cd hexapod-server && cmake --preset tests`
+- `cd hexapod-server && cmake --build --preset tests -j`
+- `cd hexapod-server && ctest --preset tests --output-on-failure`
 
-- 13 server tests compile and pass with a broad spread (runtime loop, transport components, parser sections, safety transitions, freshness policy).
-- This gives good confidence for refactors in host-side control/transport layers.
-
-### 3) Freshness/timeout safety posture is thoughtful
-
-- Runtime uses freshness contracts (timestamp/sample monotonicity/age) and hard-gates control output to SAFE_IDLE on stale data.
-- This is exactly the kind of guardrail expected in robot safety loops.
+Result: **14/14 tests passing**.
 
 ---
 
-## Refactoring opportunities
+## Strengths worth preserving
 
-## A) Consolidate server command transaction helpers (high impact)
+### 1) Architectural layering is explicit and practical
 
-### Observations
+- Runtime stages (`busStep`, `estimatorStep`, `controlStep`, `safetyStep`, `diagnosticsStep`) are separated and easy to reason about at a high level.
+- Command transport responsibilities are separated between `TransportSession`, `CommandClient`, handshake, and bridge APIs.
+- Shared protocol constants are centralized in `hexapod-common`, reducing host/firmware drift risk.
 
-`SimpleHardwareBridge` has repeated request/decode patterns (`get_current`, `get_voltage`, `get_sensor`, calibration paths, servo state paths) that differ mostly by command ID and decode function.
+### 2) Freshness gating is safety-oriented
 
-### Risk
+- Control gates outputs when estimator or intent freshness fails.
+- Runtime logs both gate rejects and periodic metrics (stale counts, jitter, diagnostics counters).
 
-- Boilerplate encourages drift in logging, error taxonomy, and retry behavior.
-- Feature additions require touching many callsites.
+### 3) Firmware route table is declarative
 
-### Recommendation
-
-Introduce a typed command helper layer (for example `CommandTraits<TCmd>` + `execute<TCmd>(...)`) that standardizes:
-
-- command ID
-- request payload encoding
-- response decode contract
-- failure log labels
-
-### Acceptance criteria
-
-- At least 5 existing command methods migrated.
-- Error log format becomes uniform for all command paths.
-- Existing transport tests remain green.
+- Firmware command dispatch uses compile-time route declarations with payload policy contracts.
+- Dispatch behavior is easier to inspect than ad-hoc command branching.
 
 ---
 
-## B) Split `RobotRuntime::controlStep` into pure decision stages (high impact)
+## Refactoring opportunities (ranked)
 
-### Observations
+## P0 — Split `RobotRuntime::controlStep` into testable decision units
 
-`controlStep` currently performs loop timing metrics, freshness evaluation, stale counters, fail-safe status synthesis, and normal pipeline execution in one method.
+### Evidence
 
-### Risk
+`controlStep` currently blends:
 
-- Hard to reason about correctness of each branch.
-- Test setup for edge cases is heavier than needed.
+- timing metrics updates,
+- state reads,
+- freshness evaluation,
+- stale counters,
+- status construction for stale paths,
+- pipeline invocation,
+- write-back side effects.
 
-### Recommendation
+### Why this matters
 
-Extract pure helpers, e.g.:
+- One function currently carries multiple reasons to change (timing policy, freshness policy, status semantics, command emission).
+- Edge-case tests need broad fixture setup instead of directly testing pure decision logic.
 
-- `compute_loop_timing_metrics(...)`
-- `evaluate_freshness_gate(...)`
-- `build_fail_safe_status(...)`
-- `run_nominal_control(...)`
+### Refactor direction
 
-Keep side effects (buffer writes/logging/counters) in a thin orchestration shell.
+Extract helpers such as:
 
-### Acceptance criteria
+- `evaluate_control_gate(now, est, intent)` -> pure gate decision + diagnostics reason.
+- `build_stale_status(...)` -> pure status synthesis.
+- `emit_nominal_or_safe_idle(...)` -> side-effects only.
 
-- Control gate logic has dedicated unit tests with stale estimator/intent matrices.
-- `controlStep` body reduced significantly (target: <120 lines).
+### Success criteria
 
----
-
-## C) Remove firmware route forwarding wrappers (medium impact)
-
-### Observations
-
-`hexapod-client/command_dispatch.cpp` defines many thin `*Routed` functions that simply forward to handlers.
-
-### Risk
-
-- Adds noisy maintenance overhead for every command addition.
-- Easy to miss route/payload consistency updates.
-
-### Recommendation
-
-Adopt a small adapter utility (or overload set) so routes can bind directly to existing handler signatures where possible.
-
-### Acceptance criteria
-
-- Forwarding wrappers reduced by >70%.
-- Route table remains compile-time constant.
-- Existing command-router tests still pass.
+- `controlStep` becomes an orchestration shell with minimal branching.
+- New unit tests cover stale estimator / stale intent / both stale matrix at decision-helper level.
+- No behavior regressions in `test_robot_runtime_freshness_gate_matrix`.
 
 ---
 
-## D) Centralize protocol command metadata (medium impact)
+## P0 — Introduce typed command helpers in `SimpleHardwareBridge`
 
-### Observations
+### Evidence
 
-Command identity and semantics are repeated in multiple places:
+Bridge methods like `get_current`, `get_voltage`, `get_sensor`, `get_angle_calibrations`, and servo-state commands repeat the same request/decode/fail pattern with minor variations.
 
-- `CommandClient::command_name(...)` switch on host.
-- Firmware `COMMAND_ROUTES` payload policies.
+### Why this matters
 
-### Risk
+- Repetition invites inconsistency in error handling, labels, and future retry-policy evolution.
+- Adding new commands remains more expensive than necessary.
 
-- Inconsistent updates when new commands are introduced.
-- Debug logs and payload validation may drift from protocol definition.
+### Refactor direction
 
-### Recommendation
+Create a thin templated helper API:
 
-Create a shared command metadata registry in `hexapod-common` (X-macro/table) to generate:
+- `request_ack(cmd, payload, label)` (already present; keep)
+- `request_decoded<T>(cmd, payload, decoder, out, label)` (expand usage + shared decode adapters)
+- Optional `CommandTraits<Cmd>` for command id, label, payload schema, decoder type.
 
-- command name map
-- optional default payload policy hints
-- docs/test vectors
+### Success criteria
 
-### Acceptance criteria
-
-- One source of truth for command names.
-- Host logging and firmware route declarations consume generated/derived metadata.
+- Most scalar/query command methods collapse to one-liners.
+- Uniform logging fields for all failures (`command`, `outcome`, `nack_code`, `payload_size`).
+- Existing hardware bridge tests continue to pass.
 
 ---
 
-## E) Fix documentation drift (quick win)
+## P1 — Single source for command metadata across host + firmware
 
-### Observations
+### Evidence
 
-Root `README.md` references `docs/REFACTORING_REVIEW.md` and `docs/NEXT_STEPS.md`, which were missing before this review artifact update.
+- Host `CommandClient::command_name` has a switch table.
+- Firmware command route table separately defines payload expectations.
+- Protocol definitions exist in `hexapod-common`, but metadata is not fully centralized.
 
-### Recommendation
+### Why this matters
 
-Keep roadmap docs versioned and explicitly date-stamped so root references stay accurate.
+- New command introduction requires multi-file synchronized edits.
+- Logging labels/payload contracts can drift from protocol ID definitions.
+
+### Refactor direction
+
+Adopt a shared metadata table (e.g., X-macro) in `hexapod-common` with, at minimum:
+
+- command id
+- canonical command name
+- default payload policy (if applicable)
+
+Use it to derive host name lookup and firmware payload policy declarations where feasible.
+
+### Success criteria
+
+- One authoritative command-name source.
+- Consistency test fails if metadata and IDs drift.
 
 ---
 
-## Priority roadmap
+## P1 — Simplify firmware dispatch adapters and payload-error paths
 
-1. **P0 (this week):** Refactor A + B (transport helper unification and control-step split).
-2. **P1 (next):** Refactor C + D (firmware route simplification + protocol metadata centralization).
-3. **P2:** Expand host/firmware cross-integration tests for invalid payload and NACK behavior.
-4. **P3:** Add lightweight architectural decision records (ADRs) for protocol schema evolution and runtime safety policy.
+### Evidence
+
+`command_dispatch.cpp` uses wrapper templates (`routeNoPayload`, `routeWithPayload`) and a local invalid-payload responder while each domain handler still performs additional decode/error branching.
+
+### Why this matters
+
+- Still some boilerplate overhead for adding/adjusting commands.
+- NACK policy consistency can degrade over time if decode checks diverge.
+
+### Refactor direction
+
+- Keep route table shape, but standardize decode+NACK helper utilities shared by motion/sensing/power handlers.
+- Consider a small handler adapter that returns typed decode results with explicit error codes.
+
+### Success criteria
+
+- Fewer hand-written payload-length/parse branches in handlers.
+- NACK codes for decode failures are uniform and test-covered.
 
 ---
 
-## Suggested tracking metrics
+## P2 — Improve resilience and observability tests
 
-- **Complexity:** LOC/function for `controlStep` and `hardware_bridge.cpp`.
-- **Reliability:** count of command failure logs by outcome class.
-- **Velocity:** lines touched per new command introduction.
-- **Safety:** stale-intent and stale-estimator event rates per runtime hour.
+### Evidence
+
+Current tests are strong for control and transport basics, but there is room for targeted resilience cases:
+
+- retry-exhausted behavior under repeated transport timeouts,
+- heartbeat/link re-establish edge cases,
+- stale-stream counters/log cadence checks.
+
+### Refactor direction
+
+Add focused tests around:
+
+- `CommandClient::transact` retry transitions,
+- `SimpleHardwareBridge::ensure_link` timeout/heartbeat paths,
+- diagnostics counter monotonicity under synthetic stale inputs.
+
+### Success criteria
+
+- Explicit tests for timeout -> retry_exhausted mapping.
+- Link timeout recovery behavior covered by deterministic mocks.
 
 ---
 
-## Validation run during review
+## Suggested implementation roadmap
 
-Executed in `hexapod-server/`:
+### Week 1 (highest impact)
 
-- `cmake --preset tests`
-- `cmake --build --preset tests -j`
-- `ctest --preset tests --output-on-failure`
+1. `RobotRuntime` control-step decomposition + tests.
+2. `SimpleHardwareBridge` typed decode/helper consolidation.
 
-All commands completed successfully with 13/13 tests passing.
+### Week 2
+
+1. Shared command metadata table in `hexapod-common`.
+2. Host `command_name` migration to shared source.
+3. Firmware route metadata alignment where practical.
+
+### Week 3
+
+1. Firmware decode/NACK helper consolidation.
+2. Resilience/telemetry test additions.
+3. Documentation refresh with “adding a command” checklist.
+
+---
+
+## Risks and mitigations
+
+- **Risk:** behavioral regressions in safety gating while decomposing control logic.
+  - **Mitigation:** lock behavior with existing freshness matrix tests before refactor and expand matrix coverage first.
+
+- **Risk:** template-heavy command helper abstractions hurt readability.
+  - **Mitigation:** prefer a small traits table + straightforward wrappers; avoid deep metaprogramming.
+
+- **Risk:** metadata unification touches host + firmware simultaneously.
+  - **Mitigation:** migrate in two phases: generate host name map first, then route payload contracts.
+
+---
+
+## Immediate next steps (actionable)
+
+1. Create a short design note for `controlStep` decomposition boundaries and invariants.
+2. Add two new failing tests first:
+   - retry exhausted after N timeouts,
+   - stale estimator + stale intent status precedence.
+3. Refactor one vertical slice (`get_current`, `get_voltage`, `get_sensor`) to prove bridge helper design before bulk migration.
+4. Add a metadata prototype in `hexapod-common` that only drives host `command_name` to validate approach with minimal risk.
+
