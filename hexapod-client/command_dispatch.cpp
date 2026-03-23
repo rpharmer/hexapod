@@ -6,8 +6,12 @@
 
 #include <array>
 #include <cstddef>
+#include <type_traits>
 
 namespace {
+
+template <typename>
+constexpr bool kAlwaysFalse = false;
 
 constexpr int64_t HOST_LIVENESS_TIMEOUT_US = 2000000;
 
@@ -23,34 +27,93 @@ void respondInvalidPayloadLength(FirmwareContext& ctx, uint16_t seq)
   ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
 }
 
-template <void (*Handler)(FirmwareContext&, uint16_t)>
-void routeNoPayload(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>&)
+constexpr PayloadPolicy exactPayloadPolicyFromMetadata(uint8_t cmd)
 {
-  Handler(ctx, seq);
+  const CommandMetadata* metadata = find_command_metadata(cmd);
+  return (metadata != nullptr)
+      ? PayloadPolicy{metadata->exact_payload_size ? PayloadPolicyType::ExactBytes : PayloadPolicyType::Any,
+                      metadata->payload_bytes}
+      : PayloadPolicy{PayloadPolicyType::Any, 0};
 }
 
-template <void (*Handler)(FirmwareContext&, uint16_t, const std::vector<uint8_t>&)>
-void routeWithPayload(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
+template <auto Handler>
+void routeCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
-  Handler(ctx, seq, payload);
+  if constexpr(std::is_invocable_v<decltype(Handler), FirmwareContext&, uint16_t, const std::vector<uint8_t>&>)
+  {
+    Handler(ctx, seq, payload);
+  }
+  else if constexpr(std::is_invocable_v<decltype(Handler), FirmwareContext&, uint16_t>)
+  {
+    (void)payload;
+    Handler(ctx, seq);
+  }
+  else
+  {
+    static_assert(kAlwaysFalse<decltype(Handler)>,
+                  "Unsupported command handler signature. Expected (ctx, seq) or (ctx, seq, payload).");
+  }
 }
 
 constexpr std::array<CommandRoute, 14> COMMAND_ROUTES{{
-    {SET_POWER_RELAY, {PayloadPolicyType::ExactBytes, 1}, routeWithPayload<handleSetPowerRelayCommand>},
-    {SET_SERVOS_ENABLED, {PayloadPolicyType::ExactBytes, kProtocolServoEnablePayloadBytes}, routeWithPayload<handleSetServosEnabledCommand>},
-    {GET_SERVOS_ENABLED, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetServosEnabledCommand>},
-    {SET_SERVOS_TO_MID, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleSetServosToMidCommand>},
-    {GET_LED_INFO, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetLedInfoCommand>},
-    {SET_LED_COLORS, {PayloadPolicyType::ExactBytes, kProtocolLedColorsPayloadBytes}, routeWithPayload<handleSetLedColorsCommand>},
-    {GET_ANGLE_CALIBRATIONS, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetAngleCalibCommand>},
-    {GET_CURRENT, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetCurrentCommand>},
-    {GET_VOLTAGE, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetVoltageCommand>},
-    {GET_SENSOR, {PayloadPolicyType::ExactBytes, 1}, routeWithPayload<handleGetSensorCommand>},
-    {GET_FULL_HARDWARE_STATE, {PayloadPolicyType::ExactBytes, 0}, routeNoPayload<handleGetFullHardwareStateCommand>},
-    {SET_ANGLE_CALIBRATIONS, {PayloadPolicyType::ExactBytes, kProtocolCalibrationsPayloadBytes}, routeWithPayload<handleCalibCommand>},
-    {SET_TARGET_ANGLE, {PayloadPolicyType::ExactBytes, sizeof(uint8_t) + sizeof(float)}, routeWithPayload<handleSetAngleCommand>},
-    {SET_JOINT_TARGETS, {PayloadPolicyType::ExactBytes, kProtocolJointTargetsPayloadBytes}, routeWithPayload<handleSetJointTargetsCommand>},
+    {SET_POWER_RELAY, exactPayloadPolicyFromMetadata(SET_POWER_RELAY), routeCommand<handleSetPowerRelayCommand>},
+    {SET_SERVOS_ENABLED, exactPayloadPolicyFromMetadata(SET_SERVOS_ENABLED), routeCommand<handleSetServosEnabledCommand>},
+    {GET_SERVOS_ENABLED, exactPayloadPolicyFromMetadata(GET_SERVOS_ENABLED), routeCommand<handleGetServosEnabledCommand>},
+    {SET_SERVOS_TO_MID, exactPayloadPolicyFromMetadata(SET_SERVOS_TO_MID), routeCommand<handleSetServosToMidCommand>},
+    {GET_LED_INFO, exactPayloadPolicyFromMetadata(GET_LED_INFO), routeCommand<handleGetLedInfoCommand>},
+    {SET_LED_COLORS, exactPayloadPolicyFromMetadata(SET_LED_COLORS), routeCommand<handleSetLedColorsCommand>},
+    {GET_ANGLE_CALIBRATIONS, exactPayloadPolicyFromMetadata(GET_ANGLE_CALIBRATIONS), routeCommand<handleGetAngleCalibCommand>},
+    {GET_CURRENT, exactPayloadPolicyFromMetadata(GET_CURRENT), routeCommand<handleGetCurrentCommand>},
+    {GET_VOLTAGE, exactPayloadPolicyFromMetadata(GET_VOLTAGE), routeCommand<handleGetVoltageCommand>},
+    {GET_SENSOR, exactPayloadPolicyFromMetadata(GET_SENSOR), routeCommand<handleGetSensorCommand>},
+    {GET_FULL_HARDWARE_STATE, exactPayloadPolicyFromMetadata(GET_FULL_HARDWARE_STATE), routeCommand<handleGetFullHardwareStateCommand>},
+    {SET_ANGLE_CALIBRATIONS, exactPayloadPolicyFromMetadata(SET_ANGLE_CALIBRATIONS), routeCommand<handleCalibCommand>},
+    {SET_TARGET_ANGLE, exactPayloadPolicyFromMetadata(SET_TARGET_ANGLE), routeCommand<handleSetAngleCommand>},
+    {SET_JOINT_TARGETS, exactPayloadPolicyFromMetadata(SET_JOINT_TARGETS), routeCommand<handleSetJointTargetsCommand>},
 }};
+
+constexpr bool routesMatchSharedCommandMetadata()
+{
+  std::size_t route_count_from_metadata = 0;
+  for(const CommandMetadata& metadata : kCommandMetadata)
+  {
+    if(!metadata.handled_by_firmware_dispatch)
+      continue;
+
+    ++route_count_from_metadata;
+    bool found_route = false;
+    for(const CommandRoute& route : COMMAND_ROUTES)
+    {
+      if(route.cmd == metadata.id)
+      {
+        found_route = true;
+        break;
+      }
+    }
+    if(!found_route)
+      return false;
+  }
+
+  if(route_count_from_metadata != COMMAND_ROUTES.size())
+    return false;
+
+  for(const CommandRoute& route : COMMAND_ROUTES)
+  {
+    const CommandMetadata* metadata = find_command_metadata(route.cmd);
+    if(metadata == nullptr || !metadata->handled_by_firmware_dispatch)
+      return false;
+
+    if(route.payloadPolicy.type == PayloadPolicyType::ExactBytes)
+    {
+      if(!metadata->exact_payload_size || metadata->payload_bytes != route.payloadPolicy.expectedBytes)
+        return false;
+    }
+  }
+  return true;
+}
+
+static_assert(routesMatchSharedCommandMetadata(),
+              "Firmware route payload policies must stay aligned with shared command metadata.");
 
 } // namespace
 

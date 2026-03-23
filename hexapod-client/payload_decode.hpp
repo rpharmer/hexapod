@@ -4,6 +4,7 @@
 #include "framing.hpp"
 
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 namespace payload {
@@ -14,6 +15,16 @@ enum class DecodeStatus
   InvalidLength,
   Malformed
 };
+
+template <typename OnDecodeFailure>
+bool decode_or_report(DecodeStatus status, OnDecodeFailure&& onDecodeFailure)
+{
+  if(status == DecodeStatus::Ok)
+    return true;
+
+  onDecodeFailure(status);
+  return false;
+}
 
 template <typename T, typename Decoder>
 DecodeStatus expect_payload(const std::vector<uint8_t>& payload,
@@ -44,6 +55,40 @@ bool decode_two_scalars_exact(const std::vector<uint8_t>& payload, A& a, B& b)
   return read_scalar(payload, offset, a) &&
          read_scalar(payload, offset, b) &&
          offset == payload.size();
+}
+
+template <typename T, typename Decoder, typename OnDecodeFailure>
+bool expect_payload_or_report(const std::vector<uint8_t>& payload,
+                              std::size_t expected_size,
+                              T& out,
+                              Decoder decoder,
+                              OnDecodeFailure&& onDecodeFailure)
+{
+  return decode_or_report(expect_payload(payload, expected_size, out, decoder),
+                          std::forward<OnDecodeFailure>(onDecodeFailure));
+}
+
+template <typename T, typename OnDecodeFailure>
+bool decode_scalar_exact_or_report(const std::vector<uint8_t>& payload,
+                                   T& out,
+                                   OnDecodeFailure&& onDecodeFailure)
+{
+  const DecodeStatus status = decode_scalar_exact(payload, out)
+      ? DecodeStatus::Ok
+      : DecodeStatus::InvalidLength;
+  return decode_or_report(status, std::forward<OnDecodeFailure>(onDecodeFailure));
+}
+
+template <typename A, typename B, typename OnDecodeFailure>
+bool decode_two_scalars_exact_or_report(const std::vector<uint8_t>& payload,
+                                        A& a,
+                                        B& b,
+                                        OnDecodeFailure&& onDecodeFailure)
+{
+  const DecodeStatus status = decode_two_scalars_exact(payload, a, b)
+      ? DecodeStatus::Ok
+      : DecodeStatus::InvalidLength;
+  return decode_or_report(status, std::forward<OnDecodeFailure>(onDecodeFailure));
 }
 
 } // namespace payload

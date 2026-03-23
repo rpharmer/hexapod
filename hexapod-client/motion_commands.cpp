@@ -7,13 +7,26 @@
 
 #include <cstring>
 
+namespace {
+
+void nackInvalidPayloadLength(FirmwareContext& ctx, uint16_t seq, payload::DecodeStatus)
+{
+  ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
+}
+
+} // namespace
+
 void handleSetAngleCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
   uint8_t servo = 0;
   float angle = 0.0f;
-  if(!payload::decode_two_scalars_exact(payload, servo, angle))
+  if(!payload::decode_two_scalars_exact_or_report(payload,
+                                                  servo,
+                                                  angle,
+                                                  [&](payload::DecodeStatus status) {
+                                                    nackInvalidPayloadLength(ctx, seq, status);
+                                                  }))
   {
-    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
@@ -32,13 +45,14 @@ void handleSetAngleCommand(FirmwareContext& ctx, uint16_t seq, const std::vector
 void handleCalibCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
   protocol::Calibrations calibrations{};
-  const auto status = payload::expect_payload(payload,
-                                              kProtocolCalibrationsPayloadBytes,
-                                              calibrations,
-                                              protocol::decode_calibrations);
-  if(status != payload::DecodeStatus::Ok)
+  if(!payload::expect_payload_or_report(payload,
+                                        kProtocolCalibrationsPayloadBytes,
+                                        calibrations,
+                                        protocol::decode_calibrations,
+                                        [&](payload::DecodeStatus status) {
+                                          nackInvalidPayloadLength(ctx, seq, status);
+                                        }))
   {
-    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
@@ -68,13 +82,14 @@ void calibServos(FirmwareContext& ctx, float calibs[kProtocolJointCount][kProtoc
 void handleSetJointTargetsCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
   protocol::JointTargets target_positions{};
-  const auto status = payload::expect_payload(payload,
-                                              kProtocolJointTargetsPayloadBytes,
-                                              target_positions,
-                                              protocol::decode_joint_targets);
-  if(status != payload::DecodeStatus::Ok)
+  if(!payload::expect_payload_or_report(payload,
+                                        kProtocolJointTargetsPayloadBytes,
+                                        target_positions,
+                                        protocol::decode_joint_targets,
+                                        [&](payload::DecodeStatus status) {
+                                          nackInvalidPayloadLength(ctx, seq, status);
+                                        }))
   {
-    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 

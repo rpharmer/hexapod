@@ -9,12 +9,24 @@ static_assert(FirmwareContext::NUM_LEDS == kProtocolLedCount,
               "Protocol LED count must match firmware LED hardware count");
 constexpr bool kHardwareAngleFeedbackAvailable = false;
 
+namespace {
+
+void nackInvalidPayloadLength(FirmwareContext& ctx, uint16_t seq, payload::DecodeStatus)
+{
+  ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
+}
+
+} // namespace
+
 void handleSetPowerRelayCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
   uint8_t relayOpen = 0;
-  if(!payload::decode_scalar_exact(payload, relayOpen))
+  if(!payload::decode_scalar_exact_or_report(payload,
+                                             relayOpen,
+                                             [&](payload::DecodeStatus status) {
+                                               nackInvalidPayloadLength(ctx, seq, status);
+                                             }))
   {
-    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
@@ -34,13 +46,14 @@ void handleSetPowerRelayCommand(FirmwareContext& ctx, uint16_t seq, const std::v
 void handleSetServosEnabledCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
   protocol::ServoEnabled enabled{};
-  const auto status = payload::expect_payload(payload,
-                                              kProtocolServoEnablePayloadBytes,
-                                              enabled,
-                                              protocol::decode_servo_enabled);
-  if(status != payload::DecodeStatus::Ok)
+  if(!payload::expect_payload_or_report(payload,
+                                        kProtocolServoEnablePayloadBytes,
+                                        enabled,
+                                        protocol::decode_servo_enabled,
+                                        [&](payload::DecodeStatus status) {
+                                          nackInvalidPayloadLength(ctx, seq, status);
+                                        }))
   {
-    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 
@@ -88,13 +101,14 @@ void handleGetLedInfoCommand(FirmwareContext& ctx, uint16_t seq)
 void handleSetLedColorsCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>& payload)
 {
   protocol::LedColors colors{};
-  const auto status = payload::expect_payload(payload,
-                                              kProtocolLedColorsPayloadBytes,
-                                              colors,
-                                              protocol::decode_led_colors);
-  if(status != payload::DecodeStatus::Ok)
+  if(!payload::expect_payload_or_report(payload,
+                                        kProtocolLedColorsPayloadBytes,
+                                        colors,
+                                        protocol::decode_led_colors,
+                                        [&](payload::DecodeStatus status) {
+                                          nackInvalidPayloadLength(ctx, seq, status);
+                                        }))
   {
-    ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
     return;
   }
 

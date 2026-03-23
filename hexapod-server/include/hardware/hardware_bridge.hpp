@@ -62,17 +62,15 @@ public:
 
 private:
     bool request_ack(uint8_t cmd,
-                     const std::vector<uint8_t>& payload,
-                     const char* command_name);
+                     const std::vector<uint8_t>& payload);
 
     template <typename T, typename Decoder>
     bool request_decoded(uint8_t cmd,
                          const std::vector<uint8_t>& payload,
                          Decoder&& decoder,
-                         T& out,
-                         const char* command_name) {
+                         T& out) {
         std::vector<uint8_t> response_payload;
-        if (!request_ack_payload(cmd, payload, response_payload, command_name)) {
+        if (!request_ack_payload(cmd, payload, response_payload)) {
             return false;
         }
 
@@ -80,7 +78,7 @@ private:
             if (auto logger = logging::GetDefaultLogger()) {
                 LOG_ERROR(logger,
                           "command ",
-                          command_name,
+                          command_name(cmd),
                           " decode failed (payload_size=",
                           static_cast<unsigned>(response_payload.size()),
                           ")");
@@ -93,12 +91,10 @@ private:
 
     bool request_ack_payload(uint8_t cmd,
                              const std::vector<uint8_t>& payload,
-                             std::vector<uint8_t>& out_payload,
-                             const char* command_name);
+                             std::vector<uint8_t>& out_payload);
     bool request_transaction(uint8_t cmd,
                              const std::vector<uint8_t>& payload,
-                             std::vector<uint8_t>* out_payload,
-                             const char* command_name);
+                             std::vector<uint8_t>* out_payload);
 
     bool ensure_link();
     bool send_calibrations(const std::vector<float>& calibs);
