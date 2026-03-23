@@ -6,10 +6,10 @@
 
 namespace {
 
-Vec3 computeFootInBodyFrame(const LegRawState& leg_state, const LegGeometry& leg_geometry) {
-    const double q1 = leg_state.joint_raw_state[COXA].pos_rad.value;
-    const double q2 = leg_state.joint_raw_state[FEMUR].pos_rad.value;
-    const double q3 = leg_state.joint_raw_state[TIBIA].pos_rad.value;
+Vec3 computeFootInBodyFrame(const LegState& leg_state, const LegGeometry& leg_geometry) {
+    const double q1 = leg_state.joint_state[COXA].pos_rad.value;
+    const double q2 = leg_state.joint_state[FEMUR].pos_rad.value;
+    const double q3 = leg_state.joint_state[TIBIA].pos_rad.value;
 
     const double rho = leg_geometry.femurLength.value * std::cos(q2) +
                        leg_geometry.tibiaLength.value * std::cos(q2 + q3);
@@ -113,8 +113,8 @@ EstimatedState SimpleEstimator::update(const RawHardwareState& raw) {
             const double inv_dt_s = 1e6 / static_cast<double>(dt_us.value);
             for (int leg = 0; leg < kNumLegs; ++leg) {
                 for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-                    const AngleRad current = raw.leg_states[leg].joint_raw_state[joint].pos_rad;
-                    const AngleRad previous = last_leg_states_[leg].joint_raw_state[joint].pos_rad;
+                    const AngleRad current = raw.leg_states[leg].joint_state[joint].pos_rad;
+                    const AngleRad previous = last_leg_states_[leg].joint_state[joint].pos_rad;
                     est.leg_states[leg].joint_state[joint].pos_rad = current;
                     est.leg_states[leg].joint_state[joint].vel_radps =
                         AngularRateRadPerSec{(current.value - previous.value) * inv_dt_s};
@@ -127,7 +127,7 @@ EstimatedState SimpleEstimator::update(const RawHardwareState& raw) {
         for (int leg = 0; leg < kNumLegs; ++leg) {
             for (int joint = 0; joint < kJointsPerLeg; ++joint) {
                 est.leg_states[leg].joint_state[joint].pos_rad =
-                    raw.leg_states[leg].joint_raw_state[joint].pos_rad;
+                    raw.leg_states[leg].joint_state[joint].pos_rad;
             }
         }
     }

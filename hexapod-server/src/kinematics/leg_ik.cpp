@@ -10,7 +10,7 @@ void apply_estimated_leg_fallback(const EstimatedState& est,
                                   int legID)
 {
   for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-    joints.leg_raw_states[legID].joint_raw_state[joint].pos_rad =
+    joints.leg_states[legID].joint_state[joint].pos_rad =
         est.leg_states[legID].joint_state[joint].pos_rad;
   }
 }
@@ -27,7 +27,7 @@ JointTargets LegIK::solve(const EstimatedState& est,
 
   for (int legID = 0; legID < kNumLegs; legID++) {
     const bool solved = solveOneLeg(est.leg_states[legID],
-                                    joints.leg_raw_states[legID],
+                                    joints.leg_states[legID],
                                     targets.feet[legID],
                                     hexGeo.legGeometry[legID]);
     const bool use_fallback = !solved || !safety.leg_enabled[legID];
@@ -40,7 +40,7 @@ JointTargets LegIK::solve(const EstimatedState& est,
 }
 
 bool LegIK::solveOneLeg(const LegState& est,
-                        LegRawState& out,
+                        LegState& out,
                         const FootTarget& foot,
                         const LegGeometry& leg) {
   (void)est;
@@ -101,9 +101,9 @@ bool LegIK::solveOneLeg(const LegState& est,
       std::atan2(leg.tibiaLength.value * std::sin(q3),
                  leg.femurLength.value + leg.tibiaLength.value * std::cos(q3));
 
-  out.joint_raw_state[0].pos_rad = AngleRad{q1};
-  out.joint_raw_state[1].pos_rad = AngleRad{q2};
-  out.joint_raw_state[2].pos_rad = AngleRad{q3};
+  out.joint_state[0].pos_rad = AngleRad{q1};
+  out.joint_state[1].pos_rad = AngleRad{q2};
+  out.joint_state[2].pos_rad = AngleRad{q3};
   out = leg.servo.toServoAngles(out);
 
   return true;

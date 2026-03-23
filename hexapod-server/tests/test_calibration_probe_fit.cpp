@@ -17,17 +17,17 @@ bool expect(bool condition, const char* message) {
     return true;
 }
 
-LegRawState makeJointState(double coxa, double femur, double tibia) {
-    LegRawState joint{};
-    joint.joint_raw_state[COXA].pos_rad = AngleRad{coxa};
-    joint.joint_raw_state[FEMUR].pos_rad = AngleRad{femur};
-    joint.joint_raw_state[TIBIA].pos_rad = AngleRad{tibia};
+LegState makeJointState(double coxa, double femur, double tibia) {
+    LegState joint{};
+    joint.joint_state[COXA].pos_rad = AngleRad{coxa};
+    joint.joint_state[FEMUR].pos_rad = AngleRad{femur};
+    joint.joint_state[TIBIA].pos_rad = AngleRad{tibia};
     return joint;
 }
 
 CalibrationTouchSample makeTouchSample(const LegGeometry& leg,
                                        const ServoCalibration& true_cal,
-                                       const LegRawState& joint_true) {
+                                       const LegState& joint_true) {
     LegFK fk{};
     CalibrationTouchSample sample{};
     sample.contact = true;
@@ -62,7 +62,7 @@ BaseClearanceSample makeBaseClearanceSample(const HexapodGeometry& geometry,
         const LegGeometry& leg_geometry = geometry.legGeometry[leg];
         const Vec3 mount = leg_geometry.bodyCoxaOffset;
         const double q1 = std::atan2(-mount.y, -mount.x) - leg_geometry.mountAngle.value;
-        const LegRawState joint = makeJointState(q1, -0.72, 1.05);
+        const LegState joint = makeJointState(q1, -0.72, 1.05);
         sample.servo_angles[leg] = leg_geometry.servo.toServoAngles(joint);
 
         if (contacts[leg]) {
@@ -84,7 +84,7 @@ double meanContactHeight(const BaseClearanceSample& sample,
         if (!sample.foot_contacts[leg]) {
             continue;
         }
-        const LegRawState joint =
+        const LegState joint =
             geometry.legGeometry[leg].servo.toJointAngles(sample.servo_angles[leg]);
         const Vec3 foot_body =
             fk.footInBodyFrame(joint, geometry.legGeometry[leg]).pos_body_m;
@@ -101,7 +101,7 @@ bool test_fit_improves_surface_touch_error() {
 
     ServoCalibration true_cal = leg.servo;
 
-    std::vector<LegRawState> joint_states{
+    std::vector<LegState> joint_states{
         makeJointState(0.1, -0.75, 1.0),
         makeJointState(0.25, -0.68, 0.93),
         makeJointState(-0.2, -0.82, 1.08),
@@ -112,7 +112,7 @@ bool test_fit_improves_surface_touch_error() {
 
     std::vector<CalibrationTouchSample> samples{};
     samples.reserve(joint_states.size());
-    for (const LegRawState& state : joint_states) {
+    for (const LegState& state : joint_states) {
         samples.push_back(makeTouchSample(leg, true_cal, state));
     }
 
@@ -234,8 +234,8 @@ bool test_estimate_to_bottom_requires_clear_transition() {
 }
 
 ServoDynamicsSample makeDynamicsSample(double t,
-                                       const LegRawState& command,
-                                       const LegRawState& measured) {
+                                       const LegState& command,
+                                       const LegState& measured) {
     ServoDynamicsSample sample{};
     sample.time_s = t;
     sample.command_servo_angles = command;
@@ -251,17 +251,17 @@ bool test_fit_servo_dynamics_recovers_tau_and_vmax() {
     std::vector<ServoDynamicsSample> samples{};
     samples.reserve(220);
 
-    LegRawState measured = makeJointState(0.0, 0.0, 0.0);
+    LegState measured = makeJointState(0.0, 0.0, 0.0);
     for (int i = 0; i < 220; ++i) {
         const double t = static_cast<double>(i) * dt;
         const double q_cmd = (i < 100) ? 0.95 : -0.85;
-        LegRawState command = makeJointState(q_cmd, q_cmd, q_cmd);
+        LegState command = makeJointState(q_cmd, q_cmd, q_cmd);
 
         for (int j = 0; j < kJointsPerLeg; ++j) {
-            const double q_prev = measured.joint_raw_state[j].pos_rad.value;
+            const double q_prev = measured.joint_state[j].pos_rad.value;
             const double err = q_cmd - q_prev;
             const double dq = std::clamp(err / tau, -vmax, vmax);
-            measured.joint_raw_state[j].pos_rad = AngleRad{q_prev + dq * dt};
+            measured.joint_state[j].pos_rad = AngleRad{q_prev + dq * dt};
         }
 
         samples.push_back(makeDynamicsSample(t, command, measured));

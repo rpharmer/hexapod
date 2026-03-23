@@ -22,8 +22,8 @@ bool expect(bool condition, const char* message) {
 }
 
 bool finiteJointTargets(const JointTargets& targets) {
-    for (const auto& leg : targets.leg_raw_states) {
-        for (const auto& joint : leg.joint_raw_state) {
+    for (const auto& leg : targets.leg_states) {
+        for (const auto& joint : leg.joint_state) {
             if (!std::isfinite(joint.pos_rad.value)) {
                 return false;
             }
@@ -97,18 +97,18 @@ bool ikFkChainTracksBodyTargets() {
 
     LegTargets body_targets{};
     for (int leg = 0; leg < kNumLegs; ++leg) {
-        LegRawState known_joint{};
-        known_joint.joint_raw_state[0].pos_rad = AngleRad{0.15};
-        known_joint.joint_raw_state[1].pos_rad = AngleRad{-0.25};
-        known_joint.joint_raw_state[2].pos_rad = AngleRad{-0.85};
+        LegState known_joint{};
+        known_joint.joint_state[0].pos_rad = AngleRad{0.15};
+        known_joint.joint_state[1].pos_rad = AngleRad{-0.25};
+        known_joint.joint_state[2].pos_rad = AngleRad{-0.85};
         body_targets.feet[leg] = fk.footInBodyFrame(known_joint, geometry.legGeometry[leg]);
     }
 
     const JointTargets joints = ik.solve(est, body_targets, safety);
 
     constexpr int kReferenceLeg = 0;
-    const LegRawState joint_frame =
-        geometry.legGeometry[kReferenceLeg].servo.toJointAngles(joints.leg_raw_states[kReferenceLeg]);
+    const LegState joint_frame =
+        geometry.legGeometry[kReferenceLeg].servo.toJointAngles(joints.leg_states[kReferenceLeg]);
     const FootTarget fk_body = fk.footInBodyFrame(joint_frame, geometry.legGeometry[kReferenceLeg]);
     const Vec3 diff = fk_body.pos_body_m - body_targets.feet[kReferenceLeg].pos_body_m;
     const double err = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);

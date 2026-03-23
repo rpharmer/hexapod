@@ -40,7 +40,7 @@ public:
             for (int leg = 0; leg < kNumLegs; ++leg) {
                 for (int joint = 0; joint < kJointsPerLeg; ++joint) {
                     last_.leg_states[leg].joint_state[joint].pos_rad =
-                        raw.leg_states[leg].joint_raw_state[joint].pos_rad;
+                        raw.leg_states[leg].joint_state[joint].pos_rad;
                 }
             }
         }

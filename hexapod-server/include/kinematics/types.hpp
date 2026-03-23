@@ -215,17 +215,9 @@ struct LegTargets {
     TimePointUs timestamp_us{};
 };
 
-struct JointRawState {
-  AngleRad pos_rad{};
-};
-
 struct JointState {
   AngleRad pos_rad{};
   AngularRateRadPerSec vel_radps{};
-};
-
-struct LegRawState {
-  std::array<JointRawState, kJointsPerLeg> joint_raw_state{};
 };
 
 struct LegState {
@@ -233,7 +225,7 @@ struct LegState {
 };
 
 struct JointTargets {
-  std::array<LegRawState,kNumLegs> leg_raw_states{};
+  std::array<LegState,kNumLegs> leg_states{};
 };
 
 struct BodyTwistState {
@@ -251,7 +243,7 @@ struct BodyTwistState {
 };
 
 struct RawHardwareState {
-  std::array<LegRawState, kNumLegs> leg_states{};
+  std::array<LegState, kNumLegs> leg_states{};
   std::array<bool, kNumLegs> foot_contacts{};
   float voltage{0.0};
   float current{0.0};
@@ -330,11 +322,9 @@ struct ServoCalibration {
     double tibiaSign{1.0};
 
     // Convert joint angles to servo angles
-    LegRawState toServoAngles(const LegRawState& leg) const;
     LegState toServoAngles(const LegState& leg) const;
     
     // Convert servo angles to joint angles
-    LegRawState toJointAngles(const LegRawState& leg) const;
     LegState toJointAngles(const LegState& leg) const;
 };
 

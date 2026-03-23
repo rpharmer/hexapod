@@ -945,7 +945,7 @@ bool test_read_falls_back_to_software_joint_estimate_without_angular_feedback() 
     }
 
     JointTargets command{};
-    command.leg_raw_states[0].joint_raw_state[COXA].pos_rad = AngleRad{0.8};
+    command.leg_states[0].joint_state[COXA].pos_rad = AngleRad{0.8};
     if (!expect(bridge->write(command), "write should succeed before software feedback fallback read")) {
         geometry_config::kHexapodGeometry = geometry_before;
         return false;
@@ -956,17 +956,17 @@ bool test_read_falls_back_to_software_joint_estimate_without_angular_feedback() 
         geometry_config::kHexapodGeometry = geometry_before;
         return false;
     }
-    if (!expect(first.leg_states[0].joint_raw_state[COXA].pos_rad.value > 0.0,
+    if (!expect(first.leg_states[0].joint_state[COXA].pos_rad.value > 0.0,
                 "software feedback should move estimate toward commanded target")) {
         geometry_config::kHexapodGeometry = geometry_before;
         return false;
     }
-    if (!expect(first.leg_states[0].joint_raw_state[COXA].pos_rad.value < 0.35,
+    if (!expect(first.leg_states[0].joint_state[COXA].pos_rad.value < 0.35,
                 "software feedback should be handshake-driven and not use reported angular telemetry")) {
         geometry_config::kHexapodGeometry = geometry_before;
         return false;
     }
-    if (!expect(first.leg_states[0].joint_raw_state[COXA].pos_rad.value <= 2e-4,
+    if (!expect(first.leg_states[0].joint_state[COXA].pos_rad.value <= 2e-4,
                 "software feedback should respect geometry servo dynamics vmax")) {
         geometry_config::kHexapodGeometry = geometry_before;
         return false;
@@ -982,8 +982,8 @@ bool test_read_falls_back_to_software_joint_estimate_without_angular_feedback() 
         geometry_config::kHexapodGeometry = geometry_before;
         return false;
     }
-    const bool progressed = expect(second.leg_states[0].joint_raw_state[COXA].pos_rad.value >=
-                                       first.leg_states[0].joint_raw_state[COXA].pos_rad.value,
+    const bool progressed = expect(second.leg_states[0].joint_state[COXA].pos_rad.value >=
+                                       first.leg_states[0].joint_state[COXA].pos_rad.value,
                                    "software estimate should progress toward command over successive reads");
     geometry_config::kHexapodGeometry = geometry_before;
     return progressed;

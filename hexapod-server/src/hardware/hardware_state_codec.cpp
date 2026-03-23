@@ -7,9 +7,9 @@ std::vector<uint8_t> HardwareStateCodec::encode_joint_targets(const JointTargets
     protocol::JointTargets target_positions{};
 
     std::size_t idx = 0;
-    for (const auto& leg : in.leg_raw_states) {
+    for (const auto& leg : in.leg_states) {
         for (int j = 0; j < kJointsPerLeg; ++j) {
-            target_positions[idx++] = static_cast<float>(leg.joint_raw_state[j].pos_rad.value);
+            target_positions[idx++] = static_cast<float>(leg.joint_state[j].pos_rad.value);
         }
     }
 
@@ -26,7 +26,7 @@ bool HardwareStateCodec::decode_full_hardware_state(const std::vector<uint8_t>& 
     std::size_t idx = 0;
     for (auto& leg : out.leg_states) {
         for (int j = 0; j < kJointsPerLeg; ++j) {
-            leg.joint_raw_state[j].pos_rad = AngleRad{decoded.joint_positions_rad[idx++]};
+            leg.joint_state[j].pos_rad = AngleRad{decoded.joint_positions_rad[idx++]};
         }
     }
 

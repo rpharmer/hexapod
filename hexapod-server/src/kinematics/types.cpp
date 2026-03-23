@@ -8,24 +8,13 @@ template <typename LegStateT>
 AngleRad leg_joint_angle_at(const LegStateT& leg, std::size_t idx);
 
 template <>
-AngleRad leg_joint_angle_at<LegRawState>(const LegRawState& leg,
-                                         std::size_t idx) {
-    return leg.joint_raw_state[idx].pos_rad;
-}
-
-template <>
-AngleRad leg_joint_angle_at<LegState>(const LegState& leg, std::size_t idx) {
+AngleRad leg_joint_angle_at<LegState>(const LegState& leg,
+                                      std::size_t idx) {
     return leg.joint_state[idx].pos_rad;
 }
 
 template <typename LegStateT>
 void set_leg_joint_angle_at(LegStateT& leg, std::size_t idx, AngleRad angle);
-
-template <>
-void set_leg_joint_angle_at<LegRawState>(LegRawState& leg, std::size_t idx,
-                                         AngleRad angle) {
-    leg.joint_raw_state[idx].pos_rad = angle;
-}
 
 template <>
 void set_leg_joint_angle_at<LegState>(LegState& leg, std::size_t idx,
@@ -197,16 +186,10 @@ Mat3 BodyPose::rotationBodyToWorld() const {
 // ============================================================
 // ServoCalibration
 // ============================================================
-LegRawState ServoCalibration::toServoAngles(const LegRawState& leg) const {
-    return convert_leg_angles(*this, leg, true);
-}
 LegState ServoCalibration::toServoAngles(const LegState& leg) const {
     return convert_leg_angles(*this, leg, true);
 }
 
-LegRawState ServoCalibration::toJointAngles(const LegRawState& leg) const {
-    return convert_leg_angles(*this, leg, false);
-}
 LegState ServoCalibration::toJointAngles(const LegState& leg) const {
     return convert_leg_angles(*this, leg, false);
 }

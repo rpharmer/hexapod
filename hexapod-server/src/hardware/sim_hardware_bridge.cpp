@@ -40,8 +40,8 @@ bool SimHardwareBridge::read(RawHardwareState& out) {
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
         for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-            AngleRad& simulated = state_.leg_states[leg].joint_raw_state[joint].pos_rad;
-            const AngleRad target = commanded_targets_.leg_raw_states[leg].joint_raw_state[joint].pos_rad;
+            AngleRad& simulated = state_.leg_states[leg].joint_state[joint].pos_rad;
+            const AngleRad target = commanded_targets_.leg_states[leg].joint_state[joint].pos_rad;
             simulated.value += alpha * (target.value - simulated.value);
         }
     }

@@ -7,14 +7,14 @@
 
 namespace {
 
-Vec3 computeFootInBodyFromServoAngles(const LegRawState& servo_angles,
+Vec3 computeFootInBodyFromServoAngles(const LegState& servo_angles,
                                       const LegGeometry& leg_geometry,
                                       const ServoCalibration& calibration) {
     LegGeometry model_leg = leg_geometry;
     model_leg.servo = calibration;
 
-    const LegRawState joint_angles = model_leg.servo.toJointAngles(servo_angles);
-    const std::array<JointRawState, kJointsPerLeg> joints = joint_angles.joint_raw_state;
+    const LegState joint_angles = model_leg.servo.toJointAngles(servo_angles);
+    const std::array<JointState, kJointsPerLeg> joints = joint_angles.joint_state;
 
     const double q1 = joints[COXA].pos_rad.value;
     const double q2 = joints[FEMUR].pos_rad.value;
@@ -86,11 +86,11 @@ double clampedDelta(double candidate, double limit_abs) {
     return std::clamp(candidate, -limit_abs, limit_abs);
 }
 
-double legJoint(const LegRawState& leg_state, int joint) {
-    return leg_state.joint_raw_state[joint].pos_rad.value;
+double legJoint(const LegState& leg_state, int joint) {
+    return leg_state.joint_state[joint].pos_rad.value;
 }
 
-Vec3 computeFootWorldFromServoAngles(const LegRawState& servo_angles,
+Vec3 computeFootWorldFromServoAngles(const LegState& servo_angles,
                                      const LegGeometry& leg_geometry,
                                      const BodyPose& body_pose) {
     const Vec3 foot_body =
