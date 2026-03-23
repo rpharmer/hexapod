@@ -44,6 +44,7 @@ bool HandshakeClient::establish_link(uint8_t requested_caps) {
         return false;
     }
 
+    negotiated_capabilities_ = ack.capabilities;
     transport_.reset_activity();
     return true;
 }
@@ -72,5 +73,14 @@ bool HandshakeClient::send_heartbeat() {
         return false;
     }
 
+    negotiated_capabilities_ = heartbeat.capabilities;
     return true;
+}
+
+bool HandshakeClient::has_capability(uint8_t capability) const {
+    return (negotiated_capabilities_ & capability) != 0;
+}
+
+uint8_t HandshakeClient::negotiated_capabilities() const {
+    return negotiated_capabilities_;
 }

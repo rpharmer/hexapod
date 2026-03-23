@@ -108,9 +108,10 @@ bool handleHandshake(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8
   if(request.version == PROTOCOL_VERSION)
   {
     ctx.requestedCapabilities = request.capabilities;
+    const uint8_t granted_caps = kHardwareAngleFeedbackAvailable ? CAPABILITY_ANGULAR_FEEDBACK : 0;
     ctx.softwareAngleFeedbackEstimatorEnabled =
       ((request.capabilities & CAPABILITY_ANGULAR_FEEDBACK) != 0) && !kHardwareAngleFeedbackAvailable;
-    const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, DEVICE_ID};
+    const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, DEVICE_ID, granted_caps};
     ctx.serial.send_packet(seq, ACK, protocol::encode_hello_ack(ack));
     return true;
   }

@@ -332,6 +332,16 @@ struct ServoCalibration {
     LegState toJointAngles(const LegState& leg) const;
 };
 
+struct ServoDirectionDynamics {
+    double tau_s{0.08};
+    double vmax_radps{8.0};
+};
+
+struct ServoJointDynamics {
+    ServoDirectionDynamics positive_direction{};
+    ServoDirectionDynamics negative_direction{};
+};
+
 // ============================================================
 // Leg geometry
 // ============================================================
@@ -346,6 +356,7 @@ struct LegGeometry {
     LengthM tibiaLength{};  // L3
 
     ServoCalibration servo;
+    std::array<ServoJointDynamics, kJointsPerLeg> servoDynamics{};
 };
 
 // ============================================================
@@ -389,4 +400,3 @@ struct HexapodGeometry {
                                 when on flat surface, centre of body is 40mm above ground
 
 */
-

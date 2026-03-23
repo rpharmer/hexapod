@@ -100,6 +100,7 @@ private:
 
     bool ensure_link();
     bool send_calibrations(const std::vector<float>& calibs);
+    void synthesizeJointFeedback(RawHardwareState& out);
   
     std::string device_;
     int baud_rate_;
@@ -110,6 +111,8 @@ private:
 
     RawHardwareState state_{};
     JointTargets last_written_{};
+    bool software_feedback_enabled_{false};
+    TimePointUs last_software_feedback_timestamp_{};
 
     std::unique_ptr<SerialCommsServer> serialComs_{};
     std::unique_ptr<IPacketEndpoint> packet_endpoint_{};

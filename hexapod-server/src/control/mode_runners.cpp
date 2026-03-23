@@ -125,6 +125,18 @@ bool runServoSpeedCalibrationProbe(const std::shared_ptr<AsyncLogger>& logger)
              " -tau_s=", result.negative_direction[joint].tau_s,
              " -vmax_radps=", result.negative_direction[joint].vmax_radps);
   }
+
+  for (int leg = 0; leg < kNumLegs; ++leg) {
+    for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+      auto& joint_dynamics = geometry_config::kHexapodGeometry.legGeometry[leg].servoDynamics[joint];
+      joint_dynamics.positive_direction.tau_s = result.positive_direction[joint].tau_s;
+      joint_dynamics.positive_direction.vmax_radps = result.positive_direction[joint].vmax_radps;
+      joint_dynamics.negative_direction.tau_s = result.negative_direction[joint].tau_s;
+      joint_dynamics.negative_direction.vmax_radps = result.negative_direction[joint].vmax_radps;
+    }
+  }
+
+  LOG_INFO(logger, "calibration.servo_speed_fit applied to active geometry dynamics profile");
   return true;
 }
 

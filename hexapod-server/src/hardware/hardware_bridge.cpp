@@ -1,11 +1,14 @@
 #include "hardware_bridge.hpp"
 
 #include <array>
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <utility>
 
 #include <CppLinuxSerial/SerialPort.hpp>
 #include "command_client.hpp"
+#include "geometry_config.hpp"
 #include "handshake_client.hpp"
 #include "hardware_state_codec.hpp"
 #include "hexapod-common.hpp"
@@ -20,6 +23,7 @@ namespace {
 constexpr DurationUs kLinkTimeoutUs{500000};
 constexpr DurationUs kHeartbeatIdleIntervalUs{150000};
 constexpr uint8_t kRequestedCapabilities = CAPABILITY_ANGULAR_FEEDBACK;
+constexpr DurationSec kSoftwareFeedbackDefaultDtSec{0.002};
 
 void logCommandFailure(const char* command_name,
                        TransportSession::OutcomeClass outcome_class,
@@ -41,6 +45,16 @@ void logCommandFailure(const char* command_name,
 
 bool decodeScalarFloatPayload(const std::vector<uint8_t>& payload, protocol::ScalarFloat& decoded) {
     return protocol::decode_scalar_float(payload, decoded);
+}
+
+double clamp01(double value) {
+    if (value < 0.0) {
+        return 0.0;
+    }
+    if (value > 1.0) {
+        return 1.0;
+    }
+    return value;
 }
 
 }  // namespace
@@ -113,6 +127,16 @@ bool SimpleHardwareBridge::init() {
         return false;
     }
 
+    state_ = RawHardwareState{};
+    last_written_ = JointTargets{};
+    software_feedback_enabled_ = !handshake_->has_capability(CAPABILITY_ANGULAR_FEEDBACK);
+    last_software_feedback_timestamp_ = TimePointUs{};
+    if (software_feedback_enabled_) {
+        if (auto logger = logging::GetDefaultLogger()) {
+            LOG_WARN(logger,
+                     "peer did not grant ANGULAR_FEEDBACK at handshake; enabling software joint feedback estimate");
+        }
+    }
     initialized_ = true;
     return true;
 }
@@ -152,6 +176,10 @@ bool SimpleHardwareBridge::read(RawHardwareState& out) {
         return false;
     }
 
+    if (software_feedback_enabled_) {
+        synthesizeJointFeedback(out);
+    }
+
     state_ = out;
     return true;
 }
@@ -167,6 +195,41 @@ bool SimpleHardwareBridge::write(const JointTargets& in) {
 
     last_written_ = in;
     return true;
+}
+
+void SimpleHardwareBridge::synthesizeJointFeedback(RawHardwareState& out) {
+    const TimePointUs current_ts = out.timestamp_us;
+    DurationSec dt_s = kSoftwareFeedbackDefaultDtSec;
+    if (!last_software_feedback_timestamp_.isZero() && current_ts.value > last_software_feedback_timestamp_.value) {
+        dt_s = DurationSec{static_cast<double>((current_ts - last_software_feedback_timestamp_).value) * 1e-6};
+    }
+    last_software_feedback_timestamp_ = current_ts;
+
+    const double dt = std::max(dt_s.value, 0.0);
+    const HexapodGeometry& geometry = geometry_config::activeHexapodGeometry();
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+            AngleRad& simulated = state_.leg_states[leg].joint_raw_state[joint].pos_rad;
+            const AngleRad target = last_written_.leg_raw_states[leg].joint_raw_state[joint].pos_rad;
+            const double error = target.value - simulated.value;
+            const ServoJointDynamics& dyn = geometry.legGeometry[leg].servoDynamics[joint];
+            const ServoDirectionDynamics& direction =
+                (error >= 0.0) ? dyn.positive_direction : dyn.negative_direction;
+
+            const double tau = direction.tau_s;
+            const double alpha = (tau <= 0.0) ? 1.0 : clamp01(1.0 - std::exp(-dt / tau));
+            double delta = alpha * error;
+
+            const double vmax = std::max(direction.vmax_radps, 0.0);
+            const double max_delta = vmax * dt;
+            if (max_delta > 0.0) {
+                delta = std::clamp(delta, -max_delta, max_delta);
+            }
+
+            simulated.value += delta;
+            out.leg_states[leg].joint_raw_state[joint].pos_rad = simulated;
+        }
+    }
 }
 
 bool SimpleHardwareBridge::set_angle_calibrations(const std::vector<float>& calibs) {
