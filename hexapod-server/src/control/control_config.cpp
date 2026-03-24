@@ -34,6 +34,12 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.freshness.intent.require_timestamp = config.intentRequireTimestamp;
     parsed.freshness.intent.require_nonzero_sample_id = config.intentRequireSampleId;
     parsed.freshness.intent.require_monotonic_sample_id = config.intentRequireMonotonicSampleId;
+
+    parsed.telemetry.enabled = config.telemetryEnabled;
+    parsed.telemetry.host = config.telemetryHost;
+    parsed.telemetry.port = config.telemetryPort;
+    parsed.telemetry.publish_rate_hz = config.telemetryPublishRateHz;
+    parsed.telemetry.geometry_resend_interval_sec = config.telemetryGeometryResendIntervalSec;
     return parsed;
 }
 

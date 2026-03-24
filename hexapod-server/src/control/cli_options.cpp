@@ -1,5 +1,7 @@
 #include "cli_options.hpp"
 
+#include <cstdlib>
+
 bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error)
 {
   const auto consumeRequiredValue = [&](int& index, const std::string& option, const std::string& reason) -> const char* {
@@ -8,6 +10,39 @@ bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error)
       return nullptr;
     }
     return argv[++index];
+  };
+  const auto consumeDoubleValue = [&](int& index,
+                                      const std::string& option,
+                                      const std::string& reason,
+                                      double& parsed) -> bool {
+    const char* value = consumeRequiredValue(index, option, reason);
+    if (value == nullptr) {
+      return false;
+    }
+    char* end = nullptr;
+    const double converted = std::strtod(value, &end);
+    if (end == value || (end != nullptr && *end != '\0')) {
+      error = option + " requires " + reason;
+      return false;
+    }
+    parsed = converted;
+    return true;
+  };
+
+  const auto consumeIntValue = [&](int& index,
+                                   const std::string& option,
+                                   const std::string& reason,
+                                   int& parsed) -> bool {
+    double as_double = 0.0;
+    if (!consumeDoubleValue(index, option, reason, as_double)) {
+      return false;
+    }
+    if (static_cast<int>(as_double) != as_double) {
+      error = option + " requires " + reason;
+      return false;
+    }
+    parsed = static_cast<int>(as_double);
+    return true;
   };
 
   for (int i = 1; i < argc; ++i) {
@@ -45,6 +80,34 @@ bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error)
       out.logFilePath = argv[++i];
     } else if (arg == "--console-only") {
       out.consoleOnlyLogging = true;
+    } else if (arg == "--telemetry-enable") {
+      out.telemetryEnabledOverride = true;
+    } else if (arg == "--telemetry-disable") {
+      out.telemetryEnabledOverride = false;
+    } else if (arg == "--telemetry-host") {
+      const char* value = consumeRequiredValue(i, arg, "a host");
+      if (value == nullptr) {
+        return false;
+      }
+      out.telemetryHostOverride = std::string(value);
+    } else if (arg == "--telemetry-port") {
+      int value = 0;
+      if (!consumeIntValue(i, arg, "an integer port", value)) {
+        return false;
+      }
+      out.telemetryPortOverride = value;
+    } else if (arg == "--telemetry-publish-hz") {
+      double value = 0.0;
+      if (!consumeDoubleValue(i, arg, "a numeric Hz value", value)) {
+        return false;
+      }
+      out.telemetryPublishRateHzOverride = value;
+    } else if (arg == "--telemetry-geometry-resend-sec") {
+      double value = 0.0;
+      if (!consumeDoubleValue(i, arg, "a numeric seconds value", value)) {
+        return false;
+      }
+      out.telemetryGeometryResendIntervalSecOverride = value;
     } else {
       if (arg.rfind("--", 0) == 0) {
         error = "Unknown option: " + arg;

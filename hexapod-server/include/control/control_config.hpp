@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <string>
 
 #include "types.hpp"
 
@@ -69,11 +70,20 @@ struct FreshnessConfig {
         true};
 };
 
+struct TelemetryConfig {
+    bool enabled{false};
+    std::string host{"127.0.0.1"};
+    int port{9870};
+    double publish_rate_hz{30.0};
+    double geometry_resend_interval_sec{1.0};
+};
+
 struct ControlConfig {
     LoopTimingConfig loop_timing{};
     SafetyConfig safety{};
     GaitConfig gait{};
     FreshnessConfig freshness{};
+    TelemetryConfig telemetry{};
 };
 
 ControlConfig fromParsedToml(const ParsedToml& config);

@@ -24,6 +24,11 @@ struct ParsedToml
 
   std::string logFilePath{"app.log"};
   bool logToFile{true};
+  bool telemetryEnabled{false};
+  std::string telemetryHost{"127.0.0.1"};
+  int telemetryPort{9870};
+  double telemetryPublishRateHz{30.0};
+  double telemetryGeometryResendIntervalSec{1.0};
 
   int busLoopPeriodUs{2000};
   int estimatorLoopPeriodUs{2000};
