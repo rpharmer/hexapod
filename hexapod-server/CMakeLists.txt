@@ -152,4 +152,8 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_command_flow_integration tests/test_command_flow_integration.cpp)
     target_link_libraries(test_command_flow_integration PRIVATE hexapod_server_core)
     add_test(NAME command_flow_integration COMMAND test_command_flow_integration)
+    
+    add_executable(test_loop_executor_timing tests/test_loop_executor_timing.cpp)
+    target_link_libraries(test_loop_executor_timing PRIVATE hexapod_server_core)
+    add_test(NAME loop_executor_timing COMMAND test_loop_executor_timing)
 endif()

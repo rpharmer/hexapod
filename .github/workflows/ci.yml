@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  server-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure server tests
+        run: cmake --preset tests
+        working-directory: hexapod-server
+      - name: Build server tests
+        run: cmake --build --preset tests -j
+        working-directory: hexapod-server
+      - name: Run server tests
+        run: ctest --preset tests --output-on-failure
+        working-directory: hexapod-server
+
+  client-host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure client host tests
+        run: cmake --preset host-tests
+        working-directory: hexapod-client
+      - name: Build client host tests
+        run: cmake --build --preset host-tests -j
+        working-directory: hexapod-client
+      - name: Run client host tests
+        run: ctest --preset host-tests --output-on-failure
+        working-directory: hexapod-client

@@ -15,7 +15,15 @@ public:
         std::function<void()> step;
     };
 
-    LoopExecutor() = default;
+    struct TimingDependencies {
+        std::function<Clock::time_point()> now{};
+        std::function<void(const Clock::time_point&, const std::atomic<bool>&)> sleep_until{};
+
+        static TimingDependencies realtime();
+    };
+
+    LoopExecutor();
+    explicit LoopExecutor(TimingDependencies timing);
     ~LoopExecutor();
 
     LoopExecutor(const LoopExecutor&) = delete;
@@ -25,8 +33,9 @@ public:
     void stop();
 
 private:
-    static void runTask(Task task, std::atomic<bool>& running_flag);
+    void runTask(Task task, std::atomic<bool>& running_flag) const;
     static void joinThread(std::thread& thread);
 
     std::vector<std::thread> threads_;
+    TimingDependencies timing_{};
 };
