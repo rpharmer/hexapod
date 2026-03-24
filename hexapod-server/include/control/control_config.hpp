@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <string>
 
 #include "types.hpp"
 
@@ -16,6 +17,9 @@ inline constexpr int kDefaultSafetyLoopPeriodUs = 2000;
 inline constexpr int kDefaultDiagnosticsPeriodMs = 500;
 inline constexpr int kDefaultCommandRefreshPeriodMs = 100;
 inline constexpr int kDefaultStandSettlingDelayMs = 2000;
+inline constexpr int kDefaultTelemetryPublishPeriodMs = 50;
+inline constexpr int kDefaultTelemetryGeometryRefreshPeriodMs = 2000;
+inline constexpr int kDefaultTelemetryUdpPort = 9870;
 inline constexpr AngleRad kDefaultMaxTiltRad{0.70};
 inline constexpr DurationUs kDefaultCommandTimeoutUs{300000};
 inline constexpr DurationUs kDefaultEstimatorMaxAgeUs{300000};
@@ -69,11 +73,21 @@ struct FreshnessConfig {
         true};
 };
 
+
+struct TelemetryConfig {
+    bool enabled{false};
+    std::string udp_host{"127.0.0.1"};
+    int udp_port{kDefaultTelemetryUdpPort};
+    std::chrono::milliseconds publish_period{std::chrono::milliseconds{kDefaultTelemetryPublishPeriodMs}};
+    std::chrono::milliseconds geometry_refresh_period{std::chrono::milliseconds{kDefaultTelemetryGeometryRefreshPeriodMs}};
+};
+
 struct ControlConfig {
     LoopTimingConfig loop_timing{};
     SafetyConfig safety{};
     GaitConfig gait{};
     FreshnessConfig freshness{};
+    TelemetryConfig telemetry{};
 };
 
 ControlConfig fromParsedToml(const ParsedToml& config);

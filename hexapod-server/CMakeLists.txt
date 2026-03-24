@@ -110,6 +110,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/safety_supervisor.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/servo_dynamics_fit.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/status_reporter.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/telemetry_publisher.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/touch_residuals.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/visualiser_telemetry.cpp"
 

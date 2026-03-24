@@ -11,6 +11,7 @@
 #include "runtime_freshness_gate.hpp"
 #include "runtime_timing_metrics.hpp"
 #include "safety_supervisor.hpp"
+#include "telemetry_publisher.hpp"
 #include "sim_hardware_bridge.hpp"
 #include "types.hpp"
 
@@ -23,9 +24,11 @@ public:
     RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
                  std::unique_ptr<IEstimator> estimator,
                  std::shared_ptr<logging::AsyncLogger> logger,
-                 control_config::ControlConfig config = {});
+                 control_config::ControlConfig config = {},
+                 std::unique_ptr<telemetry::ITelemetryPublisher> telemetry_publisher = telemetry::makeNoopTelemetryPublisher());
 
     bool init();
+    void startTelemetry();
 
     void busStep();
     void estimatorStep();
@@ -43,6 +46,7 @@ private:
     std::unique_ptr<IEstimator> estimator_;
     std::shared_ptr<logging::AsyncLogger> logger_;
     control_config::ControlConfig config_;
+    std::unique_ptr<telemetry::ITelemetryPublisher> telemetry_publisher_;
 
     ControlPipeline pipeline_;
     SafetySupervisor safety_;
@@ -65,4 +69,7 @@ private:
     DoubleBuffer<SafetyState> safety_state_;
     DoubleBuffer<JointTargets> joint_targets_;
     DoubleBuffer<ControlStatus> status_;
+
+    TimePointUs next_telemetry_publish_at_{};
+    TimePointUs next_geometry_refresh_at_{};
 };

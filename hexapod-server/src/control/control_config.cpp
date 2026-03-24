@@ -34,6 +34,13 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.freshness.intent.require_timestamp = config.intentRequireTimestamp;
     parsed.freshness.intent.require_nonzero_sample_id = config.intentRequireSampleId;
     parsed.freshness.intent.require_monotonic_sample_id = config.intentRequireMonotonicSampleId;
+
+    parsed.telemetry.enabled = config.telemetryEnabled;
+    parsed.telemetry.udp_host = config.telemetryUdpHost;
+    parsed.telemetry.udp_port = config.telemetryUdpPort;
+    parsed.telemetry.publish_period = std::chrono::milliseconds{config.telemetryPublishPeriodMs};
+    parsed.telemetry.geometry_refresh_period = std::chrono::milliseconds{config.telemetryGeometryRefreshPeriodMs};
+
     return parsed;
 }
 
