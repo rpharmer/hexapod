@@ -109,6 +109,16 @@ This single command runs, in order (fail-fast):
 
 Each section prints clear markers so CI and local runs can quickly identify where failures occur.
 
+## Visualiser telemetry smoke flow
+
+You can also run an end-to-end visualiser smoke test from repository root:
+
+```bash
+python scripts/visualiser_smoke.py
+```
+
+This script launches the visualiser backend, injects a canonical UDP telemetry packet, and asserts the WebSocket state frame includes expected geometry, angles, and timestamp fields.
+
 ## Development workflow
 
 Use this loop when iterating on protocol/control changes that affect both host and firmware:

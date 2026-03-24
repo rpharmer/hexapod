@@ -110,6 +110,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/safety_supervisor.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/servo_dynamics_fit.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/status_reporter.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/telemetry_json.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/touch_residuals.cpp"
 
     # hardware
@@ -279,6 +280,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_protocol_command_metadata tests/test_protocol_command_metadata.cpp)
     target_link_libraries(test_protocol_command_metadata PRIVATE hexapod_server_core)
     add_test(NAME protocol_command_metadata COMMAND test_protocol_command_metadata)
+
+    add_executable(test_telemetry_json_serialization tests/test_telemetry_json_serialization.cpp)
+    target_link_libraries(test_telemetry_json_serialization PRIVATE hexapod_server_core)
+    add_test(NAME telemetry_json_serialization COMMAND test_telemetry_json_serialization)
 
 
     add_executable(test_bridge_link_manager tests/test_bridge_link_manager.cpp)
