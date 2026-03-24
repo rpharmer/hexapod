@@ -12,6 +12,15 @@ class CommandClient;
 
 class BridgeCommandApi {
 public:
+    struct ResultMetadata {
+        BridgeError error{BridgeError::None};
+        BridgeFailurePhase phase{BridgeFailurePhase::None};
+        BridgeFailureDomain domain{BridgeFailureDomain::None};
+        bool retryable{false};
+        uint8_t command_code{0};
+        uint8_t nack_code{0};
+    };
+
     explicit BridgeCommandApi(CommandClient& command_client);
 
     // Migration note: bool methods remain for compatibility. New call sites should
@@ -24,6 +33,7 @@ public:
     BridgeError request_ack_payload_with_error(CommandCode cmd,
                                                const std::vector<uint8_t>& payload,
                                                std::vector<uint8_t>& out_payload);
+    ResultMetadata last_result_metadata() const;
 
     template <typename T, typename Decoder>
     bool request_decoded(CommandCode cmd,
@@ -57,6 +67,10 @@ public:
 
         if (!decoder(response_payload, out)) {
             log_decode_failure(static_cast<CommandCode>(cmd), response_payload.size());
+            last_result_.error = BridgeError::ProtocolFailure;
+            last_result_.phase = BridgeFailurePhase::CommandDecode;
+            last_result_.domain = BridgeFailureDomain::CommandProtocol;
+            last_result_.retryable = false;
             return BridgeError::ProtocolFailure;
         }
 
@@ -82,4 +96,5 @@ private:
     static void log_decode_failure(CommandCode cmd, std::size_t response_payload_size);
 
     CommandClient& command_client_;
+    ResultMetadata last_result_{};
 };

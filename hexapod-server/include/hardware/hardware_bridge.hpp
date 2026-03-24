@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,7 @@ public:
     virtual bool init() = 0;
     virtual bool read(RobotState& out) = 0;
     virtual bool write(const JointTargets& in) = 0;
+    virtual std::optional<struct BridgeCommandResultMetadata> last_bridge_result() const;
 };
 
 // Typed command/bridge error taxonomy for migration away from bool-only APIs.
@@ -34,6 +36,34 @@ enum class BridgeError : uint8_t {
     ProtocolFailure,
     Timeout,
     Unsupported,
+};
+
+enum class BridgeFailurePhase : uint8_t {
+    None = 0,
+    Readiness,
+    CapabilityNegotiation,
+    CommandTransport,
+    CommandResponse,
+    CommandDecode,
+    CommandExecution,
+    Initialization,
+};
+
+enum class BridgeFailureDomain : uint8_t {
+    None = 0,
+    CapabilityProtocol,
+    TransportLink,
+    CommandProtocol,
+};
+
+struct BridgeCommandResultMetadata {
+    BridgeError error{BridgeError::None};
+    BridgeFailurePhase phase{BridgeFailurePhase::None};
+    BridgeFailureDomain domain{BridgeFailureDomain::None};
+    bool retryable{false};
+    uint8_t command_code{0};
+    uint8_t requested_capabilities{0};
+    uint8_t negotiated_capabilities{0};
 };
 
 class IPacketEndpoint {
@@ -75,15 +105,20 @@ public:
     bool get_led_info(bool& present, uint8_t& count);
     bool set_led_colors(const std::array<uint8_t, kProtocolLedColorsPayloadBytes>& colors);
     BridgeError last_error() const;
+    std::optional<BridgeCommandResultMetadata> last_bridge_result() const override;
 
 private:
     bool complete_command(const char* command_name, BridgeError error, const char* reason = nullptr);
     BridgeError requireReady(const char* command_name, bool require_estimator = false);
     BridgeError withCommandApi(const char* command_name,
+                               CommandCode command_code,
                                const std::function<BridgeError(BridgeCommandApi&)>& action,
                                bool require_estimator = false);
     BridgeError send_calibrations_result(const std::vector<float>& calibs);
     static const char* bridge_error_to_text(BridgeError error);
+    static const char* bridge_phase_to_text(BridgeFailurePhase phase);
+    static const char* bridge_domain_to_text(BridgeFailureDomain domain);
+    void set_last_result(const BridgeCommandResultMetadata& metadata);
 
     std::string device_;
     int baud_rate_;
@@ -98,4 +133,9 @@ private:
     std::unique_ptr<BridgeCommandApi> command_api_;
     std::unique_ptr<JointFeedbackEstimator> feedback_estimator_;
     BridgeError last_error_{BridgeError::None};
+    BridgeCommandResultMetadata last_result_{};
 };
+
+inline std::optional<BridgeCommandResultMetadata> IHardwareBridge::last_bridge_result() const {
+    return std::nullopt;
+}

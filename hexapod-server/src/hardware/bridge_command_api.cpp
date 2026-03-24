@@ -9,6 +9,10 @@
 BridgeCommandApi::BridgeCommandApi(CommandClient& command_client)
     : command_client_(command_client) {}
 
+BridgeCommandApi::ResultMetadata BridgeCommandApi::last_result_metadata() const {
+    return last_result_;
+}
+
 bool BridgeCommandApi::request_ack(CommandCode cmd,
                                    const std::vector<uint8_t>& payload) {
     return request_ack_with_error(cmd, payload) == BridgeError::None;
@@ -34,8 +38,11 @@ BridgeError BridgeCommandApi::request_ack_payload_with_error(CommandCode cmd,
 BridgeError BridgeCommandApi::request_transaction(CommandCode cmd,
                                                   const std::vector<uint8_t>& payload,
                                                   std::vector<uint8_t>* out_payload) {
+    last_result_ = ResultMetadata{};
+    last_result_.command_code = as_u8(cmd);
     const auto outcome = command_client_.transact(static_cast<CommandCode>(cmd), payload, out_payload);
     if (outcome.outcome_class == TransportSession::OutcomeClass::Success) {
+        last_result_.error = BridgeError::None;
         return BridgeError::None;
     }
 
@@ -44,7 +51,30 @@ BridgeError BridgeCommandApi::request_transaction(CommandCode cmd,
                         outcome.outcome_class,
                         outcome.nack_code,
                         payload_size);
-    return map_outcome_to_bridge_error(outcome);
+    const BridgeError error = map_outcome_to_bridge_error(outcome);
+    last_result_.error = error;
+    last_result_.nack_code = outcome.nack_code;
+    switch (outcome.outcome_class) {
+        case TransportSession::OutcomeClass::Success:
+            break;
+        case TransportSession::OutcomeClass::Nack:
+            last_result_.phase = BridgeFailurePhase::CommandResponse;
+            last_result_.domain = BridgeFailureDomain::CommandProtocol;
+            last_result_.retryable = false;
+            break;
+        case TransportSession::OutcomeClass::Timeout:
+        case TransportSession::OutcomeClass::RetryExhausted:
+            last_result_.phase = BridgeFailurePhase::CommandTransport;
+            last_result_.domain = BridgeFailureDomain::TransportLink;
+            last_result_.retryable = true;
+            break;
+        case TransportSession::OutcomeClass::ProtocolError:
+            last_result_.phase = BridgeFailurePhase::CommandResponse;
+            last_result_.domain = BridgeFailureDomain::CommandProtocol;
+            last_result_.retryable = true;
+            break;
+    }
+    return error;
 }
 
 BridgeError BridgeCommandApi::map_outcome_to_bridge_error(
