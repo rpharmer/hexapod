@@ -1,280 +1,9 @@
-#include "hardware_bridge.hpp"
+#include "hardware_bridge_transport_test_helpers.hpp"
 
-#include <cstdlib>
-#include <deque>
-#include <functional>
-#include <iostream>
-#include <memory>
-#include <thread>
-#include <utility>
-#include <vector>
+#include <array>
 
-#include "hexapod-common.hpp"
-#include "geometry_config.hpp"
-#include "geometry_profile_service.hpp"
-#include "protocol_codec.hpp"
-
+namespace hardware_bridge_transport_test {
 namespace {
-
-using ResponseBuilder = std::function<std::vector<DecodedPacket>(const DecodedPacket&)>;
-
-class FakePacketEndpoint final : public IPacketEndpoint {
-public:
-    explicit FakePacketEndpoint(ResponseBuilder response_builder)
-        : response_builder_(std::move(response_builder)) {}
-
-    void send_packet(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload) override {
-        DecodedPacket request{seq, cmd, payload};
-        sent_packets_.push_back(request);
-        const auto responses = response_builder_(request);
-        for (const auto& response : responses) {
-            queued_responses_.push_back(response);
-        }
-    }
-
-    bool recv_packet(DecodedPacket& packet) override {
-        if (queued_responses_.empty()) {
-            return false;
-        }
-        packet = queued_responses_.front();
-        queued_responses_.pop_front();
-        return true;
-    }
-
-    const std::vector<DecodedPacket>& sent_packets() const {
-        return sent_packets_;
-    }
-
-private:
-    ResponseBuilder response_builder_;
-    std::deque<DecodedPacket> queued_responses_;
-    std::vector<DecodedPacket> sent_packets_;
-};
-
-bool expect(bool condition, const char* message) {
-    if (!condition) {
-        std::cerr << "FAIL: " << message << '\n';
-        return false;
-    }
-    return true;
-}
-
-bool test_successful_handshake_and_heartbeat() {
-    auto endpoint = std::make_unique<FakePacketEndpoint>([](const DecodedPacket& request) {
-        if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-            const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-            return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
-        }
-        return std::vector<DecodedPacket>{};
-    });
-    auto* endpoint_view = endpoint.get();
-
-    SimpleHardwareBridge bridge(std::move(endpoint));
-    if (!expect(bridge.init(), "bridge init should succeed with valid HELLO + HEARTBEAT ACKs")) {
-        return false;
-    }
-
-    const auto& sent = endpoint_view->sent_packets();
-    if (!expect(sent.size() == 2, "init should send HELLO and HEARTBEAT packets")) {
-        return false;
-    }
-
-    if (!expect(sent[0].cmd == HELLO, "first packet should be HELLO")) {
-        return false;
-    }
-    protocol::HelloRequest hello{};
-    if (!expect(protocol::decode_hello_request(sent[0].payload, hello),
-                "HELLO payload should decode as hello request")) {
-        return false;
-    }
-    if (!expect((hello.capabilities & CAPABILITY_ANGULAR_FEEDBACK) != 0,
-                "HELLO should request ANGULAR_FEEDBACK capability")) {
-        return false;
-    }
-
-    if (!expect(sent[1].cmd == HEARTBEAT, "second packet should be HEARTBEAT")) {
-        return false;
-    }
-
-    return true;
-}
-
-bool test_sequence_mismatch_rejected() {
-    auto endpoint = std::make_unique<FakePacketEndpoint>([](const DecodedPacket& request) {
-        if (request.cmd == HELLO) {
-            const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-            return std::vector<DecodedPacket>{{static_cast<uint16_t>(request.seq + 1), ACK, protocol::encode_hello_ack(ack)}};
-        }
-        return std::vector<DecodedPacket>{};
-    });
-
-    SimpleHardwareBridge bridge(std::move(endpoint));
-    return expect(!bridge.init(), "init should fail when HELLO ACK sequence does not match");
-}
-
-bool init_bridge(FakePacketEndpoint*& endpoint_view, SimpleHardwareBridge*& bridge_view,
-                 std::unique_ptr<SimpleHardwareBridge>& bridge_owner,
-                 ResponseBuilder response_builder) {
-    auto endpoint = std::make_unique<FakePacketEndpoint>(std::move(response_builder));
-    endpoint_view = endpoint.get();
-    bridge_owner = std::make_unique<SimpleHardwareBridge>(std::move(endpoint));
-    bridge_view = bridge_owner.get();
-    return bridge_view->init();
-}
-
-bool test_malformed_ack_payload_handling() {
-    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
-    FakePacketEndpoint* ignored_endpoint = nullptr;
-    SimpleHardwareBridge* bridge = nullptr;
-
-    const bool init_ok = init_bridge(ignored_endpoint, bridge, bridge_owner,
-                                     [](const DecodedPacket& request) {
-                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                             const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
-                                         }
-                                         if (request.cmd == GET_FULL_HARDWARE_STATE) {
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, {0x42}}};
-                                         }
-                                         return std::vector<DecodedPacket>{};
-                                     });
-    if (!expect(init_ok, "init should succeed before malformed payload test")) {
-        return false;
-    }
-
-    RobotState out{};
-    return expect(!bridge->read(out), "read should fail for malformed ACK payload");
-}
-
-bool test_explicit_nack_behavior_for_command_methods() {
-    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
-    FakePacketEndpoint* endpoint_view = nullptr;
-    SimpleHardwareBridge* bridge = nullptr;
-
-    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
-                                     [](const DecodedPacket& request) {
-                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                             const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
-                                         }
-                                         if (request.cmd == SET_POWER_RELAY) {
-                                             return std::vector<DecodedPacket>{{request.seq, NACK, {INVALID_ARGUMENT}}};
-                                         }
-                                         return std::vector<DecodedPacket>{};
-                                     });
-
-    if (!expect(init_ok, "init should succeed before NACK test")) {
-        return false;
-    }
-
-    if (!expect(!bridge->set_power_relay(true), "set_power_relay should fail on explicit NACK")) {
-        return false;
-    }
-
-    const auto& sent = endpoint_view->sent_packets();
-    if (!expect(sent.size() == 3, "bridge should send HELLO, HEARTBEAT, then SET_POWER_RELAY")) {
-        return false;
-    }
-
-    return expect(sent.back().cmd == SET_POWER_RELAY, "last packet should be SET_POWER_RELAY");
-}
-
-bool test_timeout_retry_then_success() {
-    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
-    FakePacketEndpoint* endpoint_view = nullptr;
-    SimpleHardwareBridge* bridge = nullptr;
-
-    bool dropped_once = false;
-    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
-                                     [&dropped_once](const DecodedPacket& request) {
-                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                             const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
-                                         }
-                                         if (request.cmd == SET_POWER_RELAY) {
-                                             if (!dropped_once) {
-                                                 dropped_once = true;
-                                                 return std::vector<DecodedPacket>{};
-                                             }
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
-                                         }
-                                         return std::vector<DecodedPacket>{};
-                                     });
-
-    if (!expect(init_ok, "init should succeed before timeout retry test")) {
-        return false;
-    }
-
-    if (!expect(bridge->set_power_relay(true), "set_power_relay should succeed after a retried timeout")) {
-        return false;
-    }
-
-    const auto& sent = endpoint_view->sent_packets();
-    return expect(sent.size() == 4, "expected HELLO, HEARTBEAT, and two SET_POWER_RELAY attempts");
-}
-
-bool test_timeout_retry_exhausted() {
-    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
-    FakePacketEndpoint* endpoint_view = nullptr;
-    SimpleHardwareBridge* bridge = nullptr;
-
-    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
-                                     [](const DecodedPacket& request) {
-                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                             const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
-                                         }
-                                         if (request.cmd == SET_POWER_RELAY) {
-                                             return std::vector<DecodedPacket>{};
-                                         }
-                                         return std::vector<DecodedPacket>{};
-                                     });
-
-    if (!expect(init_ok, "init should succeed before retry exhausted test")) {
-        return false;
-    }
-
-    if (!expect(!bridge->set_power_relay(true), "set_power_relay should fail when all retries timeout")) {
-        return false;
-    }
-
-    const auto& sent = endpoint_view->sent_packets();
-    return expect(sent.size() == 5, "expected HELLO, HEARTBEAT, and three SET_POWER_RELAY attempts");
-}
-
-bool test_protocol_error_retried_and_succeeds() {
-    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
-    FakePacketEndpoint* endpoint_view = nullptr;
-    SimpleHardwareBridge* bridge = nullptr;
-
-    bool sent_bad_seq = false;
-    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
-                                     [&sent_bad_seq](const DecodedPacket& request) {
-                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                             const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
-                                         }
-                                         if (request.cmd == SET_POWER_RELAY) {
-                                             if (!sent_bad_seq) {
-                                                 sent_bad_seq = true;
-                                                 return std::vector<DecodedPacket>{{static_cast<uint16_t>(request.seq + 1), ACK, {}}};
-                                             }
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
-                                         }
-                                         return std::vector<DecodedPacket>{};
-                                     });
-
-    if (!expect(init_ok, "init should succeed before protocol error retry test")) {
-        return false;
-    }
-
-    if (!expect(bridge->set_power_relay(true), "set_power_relay should succeed after protocol error retry")) {
-        return false;
-    }
-
-    const auto& sent = endpoint_view->sent_packets();
-    return expect(sent.size() == 4, "expected HELLO, HEARTBEAT, and two SET_POWER_RELAY attempts");
-}
 
 bool test_set_target_angle_success_and_nack() {
     std::unique_ptr<SimpleHardwareBridge> success_bridge_owner;
@@ -284,8 +13,7 @@ bool test_set_target_angle_success_and_nack() {
     const bool success_init = init_bridge(success_endpoint, success_bridge, success_bridge_owner,
                                           [](const DecodedPacket& request) {
                                               if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                                  const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                                  return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                                  return ok_hello_ack(request);
                                               }
                                               if (request.cmd == SET_TARGET_ANGLE) {
                                                   return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
@@ -343,8 +71,7 @@ bool test_set_target_angle_success_and_nack() {
     const bool nack_init = init_bridge(nack_endpoint, nack_bridge, nack_bridge_owner,
                                        [](const DecodedPacket& request) {
                                            if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                               const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                               return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                               return ok_hello_ack(request);
                                            }
                                            if (request.cmd == SET_TARGET_ANGLE) {
                                                return std::vector<DecodedPacket>{{request.seq, NACK, {INVALID_ARGUMENT}}};
@@ -380,8 +107,7 @@ bool test_set_and_get_angle_calibrations_success_and_failures() {
     const bool success_init = init_bridge(success_endpoint, success_bridge, success_bridge_owner,
                                           [&expected_calibrations](const DecodedPacket& request) {
                                               if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                                  const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                                  return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                                  return ok_hello_ack(request);
                                               }
                                               if (request.cmd == SET_ANGLE_CALIBRATIONS) {
                                                   return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
@@ -441,8 +167,7 @@ bool test_set_and_get_angle_calibrations_success_and_failures() {
     const bool set_nack_init = init_bridge(set_nack_endpoint, set_nack_bridge, set_nack_bridge_owner,
                                            [](const DecodedPacket& request) {
                                                if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                                   const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                                   return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                                   return ok_hello_ack(request);
                                                }
                                                if (request.cmd == SET_ANGLE_CALIBRATIONS) {
                                                    return std::vector<DecodedPacket>{{request.seq, NACK, {INVALID_PAYLOAD_LENGTH}}};
@@ -467,8 +192,7 @@ bool test_set_and_get_angle_calibrations_success_and_failures() {
     const bool get_malformed_init = init_bridge(get_malformed_endpoint, get_malformed_bridge, get_malformed_bridge_owner,
                                                 [](const DecodedPacket& request) {
                                                     if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                                        const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                                        return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                                        return ok_hello_ack(request);
                                                     }
                                                     if (request.cmd == GET_ANGLE_CALIBRATIONS) {
                                                         return std::vector<DecodedPacket>{{request.seq, ACK, {0x01, 0x02}}};
@@ -494,8 +218,7 @@ bool test_scalar_getters_success_and_malformed_payloads() {
     const bool success_init = init_bridge(success_endpoint, success_bridge, success_bridge_owner,
                                           [](const DecodedPacket& request) {
                                               if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                                  const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                                  return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                                  return ok_hello_ack(request);
                                               }
                                               if (request.cmd == GET_CURRENT) {
                                                   return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_scalar_float({4.5f})}};
@@ -560,8 +283,7 @@ bool test_scalar_getters_success_and_malformed_payloads() {
     const bool malformed_init = init_bridge(malformed_endpoint, malformed_bridge, malformed_bridge_owner,
                                             [](const DecodedPacket& request) {
                                                 if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                                    const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                                    return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                                    return ok_hello_ack(request);
                                                 }
                                                 if (request.cmd == GET_CURRENT || request.cmd == GET_VOLTAGE || request.cmd == GET_SENSOR) {
                                                     return std::vector<DecodedPacket>{{request.seq, ACK, {0xAA}}};
@@ -601,8 +323,7 @@ bool test_servo_enable_roundtrip_success_and_failures() {
     const bool success_init = init_bridge(success_endpoint, success_bridge, success_bridge_owner,
                                           [](const DecodedPacket& request) {
                                               if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                                  const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                                  return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                                  return ok_hello_ack(request);
                                               }
                                               if (request.cmd == SET_SERVOS_ENABLED) {
                                                   return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
@@ -653,8 +374,7 @@ bool test_servo_enable_roundtrip_success_and_failures() {
     const bool set_nack_init = init_bridge(set_nack_endpoint, set_nack_bridge, set_nack_bridge_owner,
                                            [](const DecodedPacket& request) {
                                                if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                                   const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                                   return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                                   return ok_hello_ack(request);
                                                }
                                                if (request.cmd == SET_SERVOS_ENABLED) {
                                                    return std::vector<DecodedPacket>{{request.seq, NACK, {BUSY_NOT_READY}}};
@@ -679,8 +399,7 @@ bool test_servo_enable_roundtrip_success_and_failures() {
     const bool get_malformed_init = init_bridge(get_malformed_endpoint, get_malformed_bridge, get_malformed_bridge_owner,
                                                 [](const DecodedPacket& request) {
                                                     if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                                        const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                                        return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                                        return ok_hello_ack(request);
                                                     }
                                                     if (request.cmd == GET_SERVOS_ENABLED) {
                                                         return std::vector<DecodedPacket>{{request.seq, ACK, {0x01, 0x00}}};
@@ -709,8 +428,7 @@ bool test_send_diagnostic_success_and_nack() {
     const bool success_init = init_bridge(success_endpoint, success_bridge, success_bridge_owner,
                                           [&diagnostic_response](const DecodedPacket& request) {
                                               if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                                  const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                                  return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                                  return ok_hello_ack(request);
                                               }
                                               if (request.cmd == DIAGNOSTIC) {
                                                   return std::vector<DecodedPacket>{{request.seq, ACK, diagnostic_response}};
@@ -749,8 +467,7 @@ bool test_send_diagnostic_success_and_nack() {
     const bool nack_init = init_bridge(nack_endpoint, nack_bridge, nack_bridge_owner,
                                        [](const DecodedPacket& request) {
                                            if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                               const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                               return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                               return ok_hello_ack(request);
                                            }
                                            if (request.cmd == DIAGNOSTIC) {
                                                return std::vector<DecodedPacket>{{request.seq, NACK, {UNSUPPORTED_COMMAND}}};
@@ -778,235 +495,6 @@ bool test_send_diagnostic_success_and_nack() {
                   "send_diagnostic NACK case should preserve outbound payload shape");
 }
 
-bool test_ensure_link_heartbeat_due_sends_heartbeat_then_command() {
-    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
-    FakePacketEndpoint* endpoint_view = nullptr;
-    SimpleHardwareBridge* bridge = nullptr;
-
-    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
-                                     [](const DecodedPacket& request) {
-                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                             const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
-                                         }
-                                         if (request.cmd == SET_POWER_RELAY) {
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
-                                         }
-                                         return std::vector<DecodedPacket>{};
-                                     });
-    if (!expect(init_ok, "init should succeed before heartbeat-due ensure_link case")) {
-        return false;
-    }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(170));
-
-    if (!expect(bridge->set_power_relay(true),
-                "set_power_relay should succeed when ensure_link sends idle heartbeat")) {
-        return false;
-    }
-
-    const auto& sent = endpoint_view->sent_packets();
-    if (!expect(sent.size() == 4,
-                "expected HELLO, HEARTBEAT, ensure_link HEARTBEAT, then SET_POWER_RELAY")) {
-        return false;
-    }
-    if (!expect(sent[2].cmd == HEARTBEAT, "third packet should be ensure_link HEARTBEAT")) {
-        return false;
-    }
-    return expect(sent[3].cmd == SET_POWER_RELAY, "fourth packet should be SET_POWER_RELAY");
-}
-
-bool test_ensure_link_timeout_reestablishes_then_command_succeeds() {
-    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
-    FakePacketEndpoint* endpoint_view = nullptr;
-    SimpleHardwareBridge* bridge = nullptr;
-
-    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
-                                     [](const DecodedPacket& request) {
-                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                             const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
-                                         }
-                                         if (request.cmd == SET_POWER_RELAY) {
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
-                                         }
-                                         return std::vector<DecodedPacket>{};
-                                     });
-    if (!expect(init_ok, "init should succeed before timeout re-establish ensure_link case")) {
-        return false;
-    }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(550));
-
-    if (!expect(bridge->set_power_relay(true),
-                "set_power_relay should succeed after timeout-triggered re-establish")) {
-        return false;
-    }
-
-    const auto& sent = endpoint_view->sent_packets();
-    if (!expect(sent.size() == 4,
-                "expected HELLO, HEARTBEAT, re-establish HELLO, then SET_POWER_RELAY")) {
-        return false;
-    }
-    if (!expect(sent[2].cmd == HELLO, "third packet should be timeout-triggered HELLO")) {
-        return false;
-    }
-    return expect(sent[3].cmd == SET_POWER_RELAY, "fourth packet should be SET_POWER_RELAY");
-}
-
-bool test_ensure_link_timeout_reestablish_failure_returns_false() {
-    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
-    FakePacketEndpoint* endpoint_view = nullptr;
-    SimpleHardwareBridge* bridge = nullptr;
-
-    bool first_hello = true;
-    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
-                                     [&first_hello](const DecodedPacket& request) {
-                                         if (request.cmd == HELLO) {
-                                             if (first_hello) {
-                                                 first_hello = false;
-                                                 const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                                 return std::vector<DecodedPacket>{
-                                                     {request.seq, ACK, protocol::encode_hello_ack(ack)}
-                                                 };
-                                             }
-                                             return std::vector<DecodedPacket>{{request.seq, NACK, {BUSY_NOT_READY}}};
-                                         }
-                                         if (request.cmd == HEARTBEAT) {
-                                             const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
-                                         }
-                                         if (request.cmd == SET_POWER_RELAY) {
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
-                                         }
-                                         return std::vector<DecodedPacket>{};
-                                     });
-    if (!expect(init_ok, "init should succeed before re-establish failure ensure_link case")) {
-        return false;
-    }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(550));
-
-    if (!expect(!bridge->set_power_relay(true),
-                "set_power_relay should fail when timeout re-establish handshake fails")) {
-        return false;
-    }
-
-    const auto& sent = endpoint_view->sent_packets();
-    if (!expect(sent.size() == 3,
-                "expected only HELLO, HEARTBEAT, and failed timeout re-establish HELLO")) {
-        return false;
-    }
-    if (!expect(sent[2].cmd == HELLO, "third packet should be failed timeout re-establish HELLO")) {
-        return false;
-    }
-    return expect(sent.back().cmd != SET_POWER_RELAY,
-                  "SET_POWER_RELAY should not be sent when ensure_link fails");
-}
-
-bool test_read_falls_back_to_software_joint_estimate_without_angular_feedback() {
-    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
-    FakePacketEndpoint* endpoint_view = nullptr;
-    SimpleHardwareBridge* bridge = nullptr;
-
-    const HexapodGeometry geometry_before = geometry_config::activeHexapodGeometry();
-    HexapodGeometry modified_geometry = geometry_before;
-    for (int leg = 0; leg < kNumLegs; ++leg) {
-        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-            auto& dyn = modified_geometry.legGeometry[leg].servoDynamics[joint];
-            dyn.positive_direction.tau_s = 0.08;
-            dyn.negative_direction.tau_s = 0.08;
-            dyn.positive_direction.vmax_radps = 0.05;
-            dyn.negative_direction.vmax_radps = 0.05;
-        }
-    }
-
-    std::string geometry_error;
-    if (!geometry_profile_service::preview(modified_geometry, &geometry_error) ||
-        !geometry_profile_service::apply(&geometry_error)) {
-        std::cerr << "FAIL: failed to apply geometry test profile: " << geometry_error << "\n";
-        return false;
-    }
-
-    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
-                                     [](const DecodedPacket& request) {
-                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                             const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01, 0x00};
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
-                                         }
-                                         if (request.cmd == SET_JOINT_TARGETS) {
-                                             return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
-                                         }
-                                         if (request.cmd == GET_FULL_HARDWARE_STATE) {
-                                             protocol::FullHardwareState raw{};
-                                             raw.joint_positions_rad[0] = 0.35f;
-                                             raw.voltage = 12.3f;
-                                             raw.current = 1.1f;
-                                             return std::vector<DecodedPacket>{
-                                                 {request.seq, ACK, protocol::encode_full_hardware_state(raw)}
-                                             };
-                                         }
-                                         return std::vector<DecodedPacket>{};
-                                     });
-    if (!expect(init_ok, "init should succeed before software feedback fallback test")) {
-        geometry_profile_service::preview(geometry_before);
-        geometry_profile_service::apply();
-        return false;
-    }
-
-    JointTargets command{};
-    command.leg_states[0].joint_state[COXA].pos_rad = AngleRad{0.8};
-    if (!expect(bridge->write(command), "write should succeed before software feedback fallback read")) {
-        geometry_profile_service::preview(geometry_before);
-        geometry_profile_service::apply();
-        return false;
-    }
-
-    RobotState first{};
-    if (!expect(bridge->read(first), "first read should succeed")) {
-        geometry_profile_service::preview(geometry_before);
-        geometry_profile_service::apply();
-        return false;
-    }
-    if (!expect(first.leg_states[0].joint_state[COXA].pos_rad.value > 0.0,
-                "software feedback should move estimate toward commanded target")) {
-        geometry_profile_service::preview(geometry_before);
-        geometry_profile_service::apply();
-        return false;
-    }
-    if (!expect(first.leg_states[0].joint_state[COXA].pos_rad.value < 0.35,
-                "software feedback should be handshake-driven and not use reported angular telemetry")) {
-        geometry_profile_service::preview(geometry_before);
-        geometry_profile_service::apply();
-        return false;
-    }
-    if (!expect(first.leg_states[0].joint_state[COXA].pos_rad.value <= 2e-4,
-                "software feedback should respect geometry servo dynamics vmax")) {
-        geometry_profile_service::preview(geometry_before);
-        geometry_profile_service::apply();
-        return false;
-    }
-    if (!expect(first.voltage > 0.0f && first.current > 0.0f,
-                "fallback should preserve non-angular telemetry from device")) {
-        geometry_profile_service::preview(geometry_before);
-        geometry_profile_service::apply();
-        return false;
-    }
-
-    RobotState second{};
-    if (!expect(bridge->read(second), "second read should succeed")) {
-        geometry_profile_service::preview(geometry_before);
-        geometry_profile_service::apply();
-        return false;
-    }
-    const bool progressed = expect(second.leg_states[0].joint_state[COXA].pos_rad.value >=
-                                       first.leg_states[0].joint_state[COXA].pos_rad.value,
-                                   "software estimate should progress toward command over successive reads");
-    geometry_profile_service::preview(geometry_before);
-    geometry_profile_service::apply();
-    return progressed;
-}
-
 bool test_led_info_and_led_color_commands() {
     std::unique_ptr<SimpleHardwareBridge> success_bridge_owner;
     FakePacketEndpoint* success_endpoint = nullptr;
@@ -1014,8 +502,7 @@ bool test_led_info_and_led_color_commands() {
     const bool success_init = init_bridge(success_endpoint, success_bridge, success_bridge_owner,
                                           [](const DecodedPacket& request) {
                                               if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                                  const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                                  return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                                  return ok_hello_ack(request);
                                               }
                                               if (request.cmd == GET_LED_INFO) {
                                                   return std::vector<DecodedPacket>{
@@ -1069,10 +556,7 @@ bool test_led_info_and_led_color_commands() {
     const bool malformed_init = init_bridge(malformed_endpoint, malformed_bridge, malformed_bridge_owner,
                                             [](const DecodedPacket& request) {
                                                 if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                                    const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                                    return std::vector<DecodedPacket>{
-                                                        {request.seq, ACK, protocol::encode_hello_ack(ack)}
-                                                    };
+                                                    return ok_hello_ack(request);
                                                 }
                                                 if (request.cmd == GET_LED_INFO) {
                                                     return std::vector<DecodedPacket>{{request.seq, ACK, {0x01}}};
@@ -1093,8 +577,7 @@ bool test_led_info_and_led_color_commands() {
     const bool nack_init = init_bridge(nack_endpoint, nack_bridge, nack_bridge_owner,
                                        [](const DecodedPacket& request) {
                                            if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
-                                               const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x01};
-                                               return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
+                                               return ok_hello_ack(request);
                                            }
                                            if (request.cmd == SET_LED_COLORS) {
                                                return std::vector<DecodedPacket>{{request.seq, NACK, {BUSY_NOT_READY}}};
@@ -1110,73 +593,23 @@ bool test_led_info_and_led_color_commands() {
 
 }  // namespace
 
-int main() {
-    if (!test_successful_handshake_and_heartbeat()) {
-        return EXIT_FAILURE;
-    }
-
-    if (!test_sequence_mismatch_rejected()) {
-        return EXIT_FAILURE;
-    }
-
-    if (!test_malformed_ack_payload_handling()) {
-        return EXIT_FAILURE;
-    }
-
-    if (!test_explicit_nack_behavior_for_command_methods()) {
-        return EXIT_FAILURE;
-    }
-
-    if (!test_timeout_retry_then_success()) {
-        return EXIT_FAILURE;
-    }
-
-    if (!test_timeout_retry_exhausted()) {
-        return EXIT_FAILURE;
-    }
-
-    if (!test_protocol_error_retried_and_succeeds()) {
-        return EXIT_FAILURE;
-    }
-
+bool run_command_tests() {
     if (!test_set_target_angle_success_and_nack()) {
-        return EXIT_FAILURE;
+        return false;
     }
-
     if (!test_set_and_get_angle_calibrations_success_and_failures()) {
-        return EXIT_FAILURE;
+        return false;
     }
-
     if (!test_scalar_getters_success_and_malformed_payloads()) {
-        return EXIT_FAILURE;
+        return false;
     }
-
     if (!test_servo_enable_roundtrip_success_and_failures()) {
-        return EXIT_FAILURE;
+        return false;
     }
-
     if (!test_send_diagnostic_success_and_nack()) {
-        return EXIT_FAILURE;
+        return false;
     }
-
-    if (!test_ensure_link_heartbeat_due_sends_heartbeat_then_command()) {
-        return EXIT_FAILURE;
-    }
-
-    if (!test_ensure_link_timeout_reestablishes_then_command_succeeds()) {
-        return EXIT_FAILURE;
-    }
-
-    if (!test_ensure_link_timeout_reestablish_failure_returns_false()) {
-        return EXIT_FAILURE;
-    }
-
-    if (!test_read_falls_back_to_software_joint_estimate_without_angular_feedback()) {
-        return EXIT_FAILURE;
-    }
-    if (!test_led_info_and_led_color_commands()) {
-        return EXIT_FAILURE;
-    }
-
-    return EXIT_SUCCESS;
+    return test_led_info_and_led_color_commands();
 }
+
+}  // namespace hardware_bridge_transport_test
