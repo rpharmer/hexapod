@@ -1,12 +1,14 @@
 #include "command_client.hpp"
 
 #include <chrono>
+#include <utility>
 
 #include "hexapod-common.hpp"
 #include "logger.hpp"
 
-CommandClient::CommandClient(TransportSession& transport)
-    : transport_(transport) {}
+CommandClient::CommandClient(TransportSession& transport,
+                           std::shared_ptr<logging::AsyncLogger> logger)
+    : transport_(transport), logger_(std::move(logger)) {}
 
 void CommandClient::set_retry_policy(const RetryPolicy& retry_policy) {
     retry_policy_ = retry_policy;
@@ -52,8 +54,8 @@ TransportSession::CommandOutcome CommandClient::transact(uint8_t cmd,
 
     const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - start).count();
-    if (auto logger = logging::GetDefaultLogger()) {
-        LOG_INFO(logger,
+    if (logger_) {
+        LOG_INFO(logger_,
                  "telemetry command=",
                  command_name(cmd),
                  " seq=",
@@ -65,7 +67,7 @@ TransportSession::CommandOutcome CommandClient::transact(uint8_t cmd,
                  " attempts=",
                  attempts_used);
         if (last_outcome.outcome_class != TransportSession::OutcomeClass::Success) {
-            LOG_WARN(logger,
+            LOG_WARN(logger_,
                      "command_failure command=",
                      command_name(cmd),
                      " domain_error=",

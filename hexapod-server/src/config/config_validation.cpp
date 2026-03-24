@@ -13,11 +13,12 @@ int parseIntWithFallback(const toml::value& root,
                          int default_value,
                          int min_value,
                          int max_value,
-                         const std::string& section)
+                         const std::string& section,
+                         std::shared_ptr<logging::AsyncLogger> logger)
 {
   const int value = toml::find_or<int>(root, key, default_value);
   if (value < min_value || value > max_value) {
-    if (auto logger = GetDefaultLogger()) {
+    if (logger) {
       LOG_WARN(logger, "invalid ", section, " value for ", key, "=", value, ", using default ",
                default_value);
     }
@@ -31,12 +32,13 @@ uint64_t parseU64WithFallback(const toml::value& root,
                               uint64_t default_value,
                               uint64_t min_value,
                               uint64_t max_value,
-                              const std::string& section)
+                              const std::string& section,
+                              std::shared_ptr<logging::AsyncLogger> logger)
 {
   const int64_t raw_value = toml::find_or<int64_t>(root, key, static_cast<int64_t>(default_value));
   if (raw_value < static_cast<int64_t>(min_value) ||
       raw_value > static_cast<int64_t>(max_value)) {
-    if (auto logger = GetDefaultLogger()) {
+    if (logger) {
       LOG_WARN(logger, "invalid ", section, " value for ", key, "=", raw_value,
                ", using default ", default_value);
     }
@@ -50,11 +52,12 @@ double parseDoubleWithFallback(const toml::value& root,
                                double default_value,
                                double min_value,
                                double max_value,
-                               const std::string& section)
+                               const std::string& section,
+                               std::shared_ptr<logging::AsyncLogger> logger)
 {
   const double value = toml::find_or<double>(root, key, default_value);
   if (value < min_value || value > max_value) {
-    if (auto logger = GetDefaultLogger()) {
+    if (logger) {
       LOG_WARN(logger, "invalid ", section, " value for ", key, "=", value, ", using default ",
                default_value);
     }
@@ -76,11 +79,12 @@ std::vector<double> parseDoubleListWithFallback(const toml::value& root,
                                                 std::size_t expected_size,
                                                 double min_value,
                                                 double max_value,
-                                                const std::string& section)
+                                                const std::string& section,
+                                                std::shared_ptr<logging::AsyncLogger> logger)
 {
   const std::vector<double> values = toml::find_or<std::vector<double>>(root, key, defaults);
   if (values.size() != expected_size) {
-    if (auto logger = GetDefaultLogger()) {
+    if (logger) {
       LOG_WARN(logger, "invalid ", section, " list size for ", key, ": expected ", expected_size,
                ", got ", values.size(), ", using defaults");
     }
@@ -89,7 +93,7 @@ std::vector<double> parseDoubleListWithFallback(const toml::value& root,
 
   for (std::size_t i = 0; i < values.size(); ++i) {
     if (values[i] < min_value || values[i] > max_value) {
-      if (auto logger = GetDefaultLogger()) {
+      if (logger) {
         LOG_WARN(logger, "invalid ", section, " value for ", key, "[", i, "] = ", values[i],
                  ", using defaults");
       }
@@ -105,7 +109,8 @@ std::vector<Vec3> parseVec3ListWithFallback(const toml::value& root,
                                             std::size_t expected_size,
                                             double min_value,
                                             double max_value,
-                                            const std::string& section)
+                                            const std::string& section,
+                                            std::shared_ptr<logging::AsyncLogger> logger)
 {
   const std::vector<std::array<double, 3>> raw =
       toml::find_or<std::vector<std::array<double, 3>>>(root, key, {});
@@ -115,7 +120,7 @@ std::vector<Vec3> parseVec3ListWithFallback(const toml::value& root,
   }
 
   if (raw.size() != expected_size) {
-    if (auto logger = GetDefaultLogger()) {
+    if (logger) {
       LOG_WARN(logger, "invalid ", section, " list size for ", key, ": expected ", expected_size,
                ", got ", raw.size(), ", using defaults");
     }
@@ -128,7 +133,7 @@ std::vector<Vec3> parseVec3ListWithFallback(const toml::value& root,
     const auto& row = raw[i];
     for (std::size_t axis = 0; axis < row.size(); ++axis) {
       if (row[axis] < min_value || row[axis] > max_value) {
-        if (auto logger = GetDefaultLogger()) {
+        if (logger) {
           LOG_WARN(logger, "invalid ", section, " value for ", key, "[", i, "][", axis,
                    "] = ", row[axis], ", using defaults");
         }

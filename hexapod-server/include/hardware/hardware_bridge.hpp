@@ -35,10 +35,12 @@ public:
     explicit SimpleHardwareBridge(std::string device = "/dev/ttyACM0",
                                   int baud_rate = 115200,
                                   int timeout_ms = 100,
-                                  std::vector<float> calibrations = {});
+                                  std::vector<float> calibrations = {},
+                                  std::shared_ptr<logging::AsyncLogger> logger = nullptr);
     explicit SimpleHardwareBridge(std::unique_ptr<IPacketEndpoint> endpoint,
                                   int timeout_ms = 100,
-                                  std::vector<float> calibrations = {});
+                                  std::vector<float> calibrations = {},
+                                  std::shared_ptr<logging::AsyncLogger> logger = nullptr);
     ~SimpleHardwareBridge() override;
 
     bool init() override;
@@ -75,8 +77,8 @@ private:
         }
 
         if (!decoder(response_payload, out)) {
-            if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger,
+            if (logger_) {
+                LOG_ERROR(logger_,
                           "command ",
                           command_name(cmd),
                           " decode failed (payload_size=",
@@ -111,6 +113,7 @@ private:
     JointTargets last_written_{};
     bool software_feedback_enabled_{false};
     TimePointUs last_software_feedback_timestamp_{};
+    std::shared_ptr<logging::AsyncLogger> logger_{};
 
     std::unique_ptr<SerialCommsServer> serialComs_{};
     std::unique_ptr<IPacketEndpoint> packet_endpoint_{};

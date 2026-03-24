@@ -10,13 +10,15 @@ using namespace logging;
 
 namespace runtime_section_parser {
 
-bool parseRuntimeSection(const toml::value& root, ParsedToml& out)
+bool parseRuntimeSection(const toml::value& root,
+                       ParsedToml& out,
+                       std::shared_ptr<logging::AsyncLogger> logger)
 {
   std::string mode = toml::find_or<std::string>(root, "Runtime", "Mode", "serial");
   std::transform(mode.begin(), mode.end(), mode.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   if (mode != "serial" && mode != "sim") {
-    if (auto logger = GetDefaultLogger()) {
+    if (logger) {
       LOG_ERROR(logger, "[runtime] Runtime.Mode must be 'serial' or 'sim', got '", mode, "'");
     }
     return false;
@@ -24,11 +26,11 @@ bool parseRuntimeSection(const toml::value& root, ParsedToml& out)
   out.runtimeMode = mode;
 
   out.simInitialVoltageV = config_validation::parseDoubleWithFallback(
-      root, "Runtime.Sim.InitialVoltageV", 12.0, 0.0, 32.0, "runtime");
+      root, "Runtime.Sim.InitialVoltageV", 12.0, 0.0, 32.0, "runtime", logger);
   out.simInitialCurrentA = config_validation::parseDoubleWithFallback(
-      root, "Runtime.Sim.InitialCurrentA", 1.0, 0.0, 200.0, "runtime");
+      root, "Runtime.Sim.InitialCurrentA", 1.0, 0.0, 200.0, "runtime", logger);
   out.simResponseRateHz = config_validation::parseDoubleWithFallback(
-      root, "Runtime.Sim.ResponseRateHz", 50.0, 1.0, 2000.0, "runtime");
+      root, "Runtime.Sim.ResponseRateHz", 50.0, 1.0, 2000.0, "runtime", logger);
   out.simDropBus = toml::find_or<bool>(root, "Runtime", "Sim", "DropBus", false);
   out.simLowVoltage = toml::find_or<bool>(root, "Runtime", "Sim", "LowVoltage", false);
   out.simHighCurrent = toml::find_or<bool>(root, "Runtime", "Sim", "HighCurrent", false);

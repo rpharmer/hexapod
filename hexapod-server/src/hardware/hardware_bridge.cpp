@@ -25,11 +25,12 @@ constexpr DurationUs kHeartbeatIdleIntervalUs{150000};
 constexpr uint8_t kRequestedCapabilities = CAPABILITY_ANGULAR_FEEDBACK;
 constexpr DurationSec kSoftwareFeedbackDefaultDtSec{0.002};
 
-void logCommandFailure(const char* command_name,
+void logCommandFailure(const std::shared_ptr<logging::AsyncLogger>& logger,
+                       const char* command_name,
                        TransportSession::OutcomeClass outcome_class,
                        uint8_t nack_code,
                        std::size_t response_payload_size) {
-    if (auto logger = logging::GetDefaultLogger()) {
+    if (logger) {
         LOG_ERROR(logger,
                   "command ",
                   command_name,
@@ -69,17 +70,21 @@ private:
 SimpleHardwareBridge::SimpleHardwareBridge(std::string device,
                                            int baud_rate,
                                            int timeout_ms,
-                                           std::vector<float> calibrations)
+                                           std::vector<float> calibrations,
+                                           std::shared_ptr<logging::AsyncLogger> logger)
     : device_(std::move(device)),
       baud_rate_(baud_rate),
       timeout_ms_(timeout_ms),
-      calibrations_(std::move(calibrations)) {}
+      calibrations_(std::move(calibrations)),
+      logger_(std::move(logger)) {}
 
 SimpleHardwareBridge::SimpleHardwareBridge(std::unique_ptr<IPacketEndpoint> endpoint,
                                            int timeout_ms,
-                                           std::vector<float> calibrations)
+                                           std::vector<float> calibrations,
+                                           std::shared_ptr<logging::AsyncLogger> logger)
     : timeout_ms_(timeout_ms),
       calibrations_(std::move(calibrations)),
+      logger_(std::move(logger)),
       packet_endpoint_(std::move(endpoint)) {}
 
 SimpleHardwareBridge::~SimpleHardwareBridge() = default;
@@ -90,7 +95,8 @@ bool SimpleHardwareBridge::init() {
                                                           SerialCommsServer::int_to_baud_rate(baud_rate_),
                                                           NumDataBits::EIGHT,
                                                           Parity::NONE,
-                                                          NumStopBits::ONE);
+                                                          NumStopBits::ONE,
+                                                          logger_);
         serialComs_->SetTimeout(timeout_ms_);
         serialComs_->Open();
         packet_endpoint_ = std::make_unique<SerialPacketEndpoint>(*serialComs_);
@@ -100,10 +106,10 @@ bool SimpleHardwareBridge::init() {
         return false;
     }
 
-    transport_ = std::make_unique<TransportSession>(*packet_endpoint_, kLinkTimeoutUs, kHeartbeatIdleIntervalUs);
+    transport_ = std::make_unique<TransportSession>(*packet_endpoint_, kLinkTimeoutUs, kHeartbeatIdleIntervalUs, logger_);
     codec_ = std::make_unique<HardwareStateCodec>();
-    command_client_ = std::make_unique<CommandClient>(*transport_);
-    handshake_ = std::make_unique<HandshakeClient>(*transport_, *command_client_);
+    command_client_ = std::make_unique<CommandClient>(*transport_, logger_);
+    handshake_ = std::make_unique<HandshakeClient>(*transport_, *command_client_, logger_);
 
     if (!handshake_->establish_link(kRequestedCapabilities)) {
         return false;
@@ -122,8 +128,8 @@ bool SimpleHardwareBridge::init() {
     software_feedback_enabled_ = !handshake_->has_capability(CAPABILITY_ANGULAR_FEEDBACK);
     last_software_feedback_timestamp_ = TimePointUs{};
     if (software_feedback_enabled_) {
-        if (auto logger = logging::GetDefaultLogger()) {
-            LOG_WARN(logger,
+        if (logger_) {
+            LOG_WARN(logger_,
                      "peer did not grant ANGULAR_FEEDBACK at handshake; enabling software joint feedback estimate");
         }
     }
@@ -138,8 +144,8 @@ bool SimpleHardwareBridge::ensure_link() {
 
     const TimePointUs now = now_us();
     if (transport_->has_link_timed_out(now)) {
-        if (auto logger = logging::GetDefaultLogger()) {
-            LOG_WARN(logger, "link timed out; attempting re-establish");
+        if (logger_) {
+            LOG_WARN(logger_, "link timed out; attempting re-establish");
         }
         return handshake_->establish_link(kRequestedCapabilities);
     }
@@ -153,8 +159,8 @@ bool SimpleHardwareBridge::ensure_link() {
 
 bool SimpleHardwareBridge::read(RobotState& out) {
     if (!initialized_ || !packet_endpoint_ || !codec_) {
-        if (auto logger = logging::GetDefaultLogger()) {
-            LOG_ERROR(logger, "either hardware bridge or serial coms not initialised");
+        if (logger_) {
+            LOG_ERROR(logger_, "either hardware bridge or serial coms not initialised");
         }
         return false;
     }
@@ -349,8 +355,8 @@ bool SimpleHardwareBridge::set_led_colors(
 
 bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs) {
     if (calibs.size() != (kProtocolJointCount * kProtocolCalibrationPairsPerJoint)) {
-        if (auto logger = logging::GetDefaultLogger()) {
-            LOG_ERROR(logger, "incorrect calibration size");
+        if (logger_) {
+            LOG_ERROR(logger_, "incorrect calibration size");
         }
         return false;
     }
@@ -361,14 +367,14 @@ bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs) {
     }
 
     if (!request_ack(SET_ANGLE_CALIBRATIONS, protocol::encode_calibrations(payload))) {
-        if (auto logger = logging::GetDefaultLogger()) {
-            LOG_ERROR(logger, "calibration packet failed");
+        if (logger_) {
+            LOG_ERROR(logger_, "calibration packet failed");
         }
         return false;
     }
 
-    if (auto logger = logging::GetDefaultLogger()) {
-        LOG_INFO(logger, "calibration packet accepted");
+    if (logger_) {
+        LOG_INFO(logger_, "calibration packet accepted");
     }
     return true;
 }
@@ -401,6 +407,6 @@ bool SimpleHardwareBridge::request_transaction(uint8_t cmd,
     }
 
     const std::size_t payload_size = (out_payload != nullptr) ? out_payload->size() : 0;
-    logCommandFailure(command_name(cmd), outcome.outcome_class, outcome.nack_code, payload_size);
+    logCommandFailure(logger_, command_name(cmd), outcome.outcome_class, outcome.nack_code, payload_size);
     return false;
 }

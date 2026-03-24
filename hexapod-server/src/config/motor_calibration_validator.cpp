@@ -31,10 +31,11 @@ namespace motor_calibration_validator {
 
 bool validateAndNormalize(const std::vector<CalibrationRow>& raw_calibrations,
                           std::vector<float>& out_min_max_pulses,
-                          const std::string& section_context)
+                          const std::string& section_context,
+                          std::shared_ptr<logging::AsyncLogger> logger)
 {
   if (raw_calibrations.size() != kExpectedJointCount) {
-    if (auto logger = GetDefaultLogger()) {
+    if (logger) {
       LOG_ERROR(logger, "[", section_context,
                 "] invalid number of MotorCalibrations, expected ", kExpectedJointCount,
                 ", got ", raw_calibrations.size());
@@ -52,35 +53,35 @@ bool validateAndNormalize(const std::vector<CalibrationRow>& raw_calibrations,
     const int max_pulse = std::get<2>(calib);
 
     if (!isCalibrationKeyValid(key)) {
-      if (auto logger = GetDefaultLogger()) {
+      if (logger) {
         LOG_ERROR(logger, "[", section_context,
                   "] invalid motor key '", key, "' in MotorCalibrations");
       }
       return false;
     }
     if (!expected_keys.contains(key)) {
-      if (auto logger = GetDefaultLogger()) {
+      if (logger) {
         LOG_ERROR(logger, "[", section_context,
                   "] unexpected motor key '", key, "' in MotorCalibrations");
       }
       return false;
     }
     if (!seen_keys.insert(key).second) {
-      if (auto logger = GetDefaultLogger()) {
+      if (logger) {
         LOG_ERROR(logger, "[", section_context,
                   "] duplicate motor key '", key, "' in MotorCalibrations");
       }
       return false;
     }
     if (min_pulse >= max_pulse) {
-      if (auto logger = GetDefaultLogger()) {
+      if (logger) {
         LOG_ERROR(logger, "[", section_context,
                   "] invalid pulse bounds for '", key, "': min must be < max");
       }
       return false;
     }
     if (min_pulse < kMinServoPulse || max_pulse > kMaxServoPulse) {
-      if (auto logger = GetDefaultLogger()) {
+      if (logger) {
         LOG_ERROR(logger, "[", section_context, "] invalid pulse bounds for '", key,
                   "': must be within [", kMinServoPulse, ", ", kMaxServoPulse, "]");
       }
@@ -90,7 +91,7 @@ bool validateAndNormalize(const std::vector<CalibrationRow>& raw_calibrations,
 
   for (const auto& expected_key : expected_keys) {
     if (!seen_keys.contains(expected_key)) {
-      if (auto logger = GetDefaultLogger()) {
+      if (logger) {
         LOG_ERROR(logger, "[", section_context,
                   "] missing motor key '", expected_key, "' in MotorCalibrations");
       }

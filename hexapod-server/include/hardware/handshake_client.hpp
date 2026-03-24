@@ -1,15 +1,19 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 
 #include "hexapod-common.hpp"
+#include "logger.hpp"
 
 class TransportSession;
 class CommandClient;
 
 class HandshakeClient {
 public:
-    HandshakeClient(TransportSession& transport, CommandClient& command_client);
+    HandshakeClient(TransportSession& transport,
+                    CommandClient& command_client,
+                    std::shared_ptr<logging::AsyncLogger> logger = nullptr);
 
     bool establish_link(uint8_t requested_caps);
     bool send_heartbeat();
@@ -19,5 +23,6 @@ public:
 private:
     TransportSession& transport_;
     CommandClient& command_client_;
+    std::shared_ptr<logging::AsyncLogger> logger_{};
     uint8_t negotiated_capabilities_{CAPABILITY_ANGULAR_FEEDBACK};
 };

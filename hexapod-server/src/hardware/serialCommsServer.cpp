@@ -1,10 +1,9 @@
 #include <CppLinuxSerial/SerialPort.hpp>
 #include "hexapod-common.hpp"
 #include "serialCommsServer.hpp"
-#include "logger.hpp"
-
 #include <cstddef>
 #include <cstring>
+#include <utility>
 
 using namespace mn::CppLinuxSerial;
 
@@ -37,7 +36,14 @@ BaudRate SerialCommsServer::int_to_baud_rate(int baud)
 }
 
 // constructor
-SerialCommsServer::SerialCommsServer(const std::string &device, BaudRate baudRate, NumDataBits numDataBits, Parity parity, NumStopBits numStopBits) : serialport(device,baudRate, numDataBits, parity, numStopBits)
+SerialCommsServer::SerialCommsServer(const std::string &device,
+                                   BaudRate baudRate,
+                                   NumDataBits numDataBits,
+                                   Parity parity,
+                                   NumStopBits numStopBits,
+                                   std::shared_ptr<logging::AsyncLogger> logger)
+    : serialport(device, baudRate, numDataBits, parity, numStopBits),
+      logger_(std::move(logger))
 {}
 
 // opens COM port for use, must be called before you configure port
@@ -80,8 +86,8 @@ void SerialCommsServer::refill_read_buffer()
   readBuffer.insert(readBuffer.end(), recv_buffer.begin(), recv_buffer.end());
   const std::size_t read_buffer_overflow = trim_rx_buffer(readBuffer, MAX_TRANSPORT_RX_BUFFER_BYTES);
   if (read_buffer_overflow > 0) {
-    if (auto logger = logging::GetDefaultLogger()) {
-      LOG_WARN(logger, "[SerialCommsServer] RX buffer overflow: dropped ", read_buffer_overflow, " bytes");
+    if (logger_) {
+      LOG_WARN(logger_, "[SerialCommsServer] RX buffer overflow: dropped ", read_buffer_overflow, " bytes");
     }
   }
   if (readBufferHead > readBuffer.size())
@@ -115,8 +121,8 @@ void SerialCommsServer::send_packet(uint16_t seq, uint8_t cmd, const std::vector
 {
   const std::vector<uint8_t> frame = encodePacket(seq, cmd, payload);
   if (frame.empty()) {
-    if (auto logger = logging::GetDefaultLogger()) {
-      LOG_WARN(logger, "[SerialCommsServer] send_packet dropped: payload too large for protocol LEN field");
+    if (logger_) {
+      LOG_WARN(logger_, "[SerialCommsServer] send_packet dropped: payload too large for protocol LEN field");
     }
     return;
   }
@@ -137,8 +143,8 @@ bool SerialCommsServer::recv_packet(DecodedPacket& packet)
     rxBuffer.push_back(byte);
     const std::size_t rx_buffer_overflow = trim_rx_buffer(rxBuffer, MAX_TRANSPORT_RX_BUFFER_BYTES);
     if (rx_buffer_overflow > 0) {
-      if (auto logger = logging::GetDefaultLogger()) {
-        LOG_WARN(logger, "[SerialCommsServer] RX buffer overflow: dropped ", rx_buffer_overflow, " bytes");
+      if (logger_) {
+        LOG_WARN(logger_, "[SerialCommsServer] RX buffer overflow: dropped ", rx_buffer_overflow, " bytes");
       }
     }
   }

@@ -3,9 +3,11 @@
 #define HEXAPOD_COMMS_SERVER_H
 
 #include <cstddef>
+#include <memory>
 #include <CppLinuxSerial/SerialPort.hpp>
 #include "hexapod-common.hpp"
 #include "framing.hpp"
+#include "logger.hpp"
 
 
 using namespace mn::CppLinuxSerial;
@@ -16,6 +18,7 @@ private:
     SerialPort serialport;
     std::vector<uint8_t> readBuffer;
     std::size_t readBufferHead = 0;
+    std::shared_ptr<logging::AsyncLogger> logger_{};
 
     int recv_bytes(void *data, std::size_t size);
     void refill_read_buffer();
@@ -24,7 +27,12 @@ public:
     static BaudRate int_to_baud_rate(int baud);
 
     // constructor
-    SerialCommsServer(const std::string &device, BaudRate baudRate, NumDataBits numDataBits, Parity parity, NumStopBits numStopBits);
+    SerialCommsServer(const std::string &device,
+                      BaudRate baudRate,
+                      NumDataBits numDataBits,
+                      Parity parity,
+                      NumStopBits numStopBits,
+                      std::shared_ptr<logging::AsyncLogger> logger = nullptr);
     // opens COM port for use, must be called before you configure port
     void Open();
     // closes COM port

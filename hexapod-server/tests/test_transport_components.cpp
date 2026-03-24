@@ -2,6 +2,8 @@
 #include <deque>
 #include <functional>
 #include <iostream>
+#include <memory>
+#include <string>
 #include <vector>
 
 #include "command_client.hpp"
@@ -11,6 +13,7 @@
 #include "hexapod-common.hpp"
 #include "protocol_codec.hpp"
 #include "transport_session.hpp"
+#include "logger.hpp"
 
 namespace {
 
@@ -49,6 +52,33 @@ private:
     std::vector<DecodedPacket> sent_packets_;
 };
 
+class CollectingSink final : public logging::LogSink {
+public:
+    void Write(logging::LogLevel,
+               std::string_view,
+               std::string_view message,
+               const logging::SourceLocation&) override {
+        messages.emplace_back(message);
+    }
+
+    std::vector<std::string> messages;
+};
+
+std::shared_ptr<logging::AsyncLogger> makeTestLogger(const std::shared_ptr<CollectingSink>& sink) {
+    auto logger = std::make_shared<logging::AsyncLogger>("test-transport", logging::LogLevel::Trace, 1024);
+    logger->AddSink(sink);
+    return logger;
+}
+
+bool containsMessage(const std::vector<std::string>& messages, const std::string& needle) {
+    for (const auto& message : messages) {
+        if (message.find(needle) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool expect(bool condition, const char* message) {
     if (!condition) {
         std::cerr << "FAIL: " << message << '\n';
@@ -58,6 +88,8 @@ bool expect(bool condition, const char* message) {
 }
 
 bool test_handshake_failure_then_recovery() {
+    const auto sink = std::make_shared<CollectingSink>();
+    const auto logger = makeTestLogger(sink);
     bool first_hello = true;
     FakePacketEndpoint endpoint([&first_hello](const DecodedPacket& request) {
         if (request.cmd == HELLO) {
@@ -71,9 +103,9 @@ bool test_handshake_failure_then_recovery() {
         return std::vector<DecodedPacket>{};
     });
 
-    TransportSession transport(endpoint, DurationUs{500000}, DurationUs{150000});
-    CommandClient command_client(transport);
-    HandshakeClient handshake(transport, command_client);
+    TransportSession transport(endpoint, DurationUs{500000}, DurationUs{150000}, logger);
+    CommandClient command_client(transport, logger);
+    HandshakeClient handshake(transport, command_client, logger);
 
     if (!expect(!handshake.establish_link(0), "first HELLO should fail with NACK")) {
         return false;
@@ -83,17 +115,22 @@ bool test_handshake_failure_then_recovery() {
     }
 
     const auto& sent = endpoint.sent_packets();
-    return expect(sent.size() == 2 && sent[0].cmd == HELLO && sent[1].cmd == HELLO,
-                  "handshake recovery should send HELLO twice");
+    const bool ok = expect(sent.size() == 2 && sent[0].cmd == HELLO && sent[1].cmd == HELLO,
+                           "handshake recovery should send HELLO twice");
+    logger->Flush();
+    logger->Stop();
+    return ok;
 }
 
 bool test_retry_exhaustion_and_nack_mapping() {
+    const auto sink = std::make_shared<CollectingSink>();
+    const auto logger = makeTestLogger(sink);
     FakePacketEndpoint timeout_endpoint([](const DecodedPacket&) {
         return std::vector<DecodedPacket>{};
     });
 
-    TransportSession timeout_transport(timeout_endpoint, DurationUs{500000}, DurationUs{150000});
-    CommandClient timeout_client(timeout_transport);
+    TransportSession timeout_transport(timeout_endpoint, DurationUs{500000}, DurationUs{150000}, logger);
+    CommandClient timeout_client(timeout_transport, logger);
 
     const auto timeout_outcome = timeout_client.transact(SET_POWER_RELAY, {1}, nullptr);
     if (!expect(timeout_outcome.outcome_class == TransportSession::OutcomeClass::RetryExhausted,
@@ -109,8 +146,8 @@ bool test_retry_exhaustion_and_nack_mapping() {
         return std::vector<DecodedPacket>{{request.seq, NACK, {INVALID_ARGUMENT}}};
     });
 
-    TransportSession nack_transport(nack_endpoint, DurationUs{500000}, DurationUs{150000});
-    CommandClient nack_client(nack_transport);
+    TransportSession nack_transport(nack_endpoint, DurationUs{500000}, DurationUs{150000}, logger);
+    CommandClient nack_client(nack_transport, logger);
     const auto nack_outcome = nack_client.transact(SET_POWER_RELAY, {1}, nullptr);
 
     if (!expect(nack_outcome.outcome_class == TransportSession::OutcomeClass::Nack,
@@ -122,8 +159,15 @@ bool test_retry_exhaustion_and_nack_mapping() {
         return false;
     }
 
-    return expect(nack_endpoint.sent_packets().size() == 1,
-                  "NACK should stop retries immediately");
+    if (!expect(nack_endpoint.sent_packets().size() == 1,
+                "NACK should stop retries immediately")) {
+        return false;
+    }
+
+    logger->Flush();
+    const bool has_failure_log = containsMessage(sink->messages, "command_failure");
+    logger->Stop();
+    return expect(has_failure_log, "error-path logging should remain available for command failures");
 }
 
 bool test_hardware_state_codec_decode_failure_for_malformed_payload() {
