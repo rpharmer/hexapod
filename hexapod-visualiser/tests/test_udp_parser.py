@@ -22,10 +22,13 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(set(payload.keys()), {"type", "geometry", "angles_deg", "timestamp_ms"})
         self.assertEqual(list(payload["angles_deg"].keys()), ["LF", "LM", "LR", "RF", "RM", "RR"])
 
-    def test_udp_protocol_merges_partial_updates(self):
+    def test_udp_protocol_merges_partial_updates_with_schema_gate(self):
         state = server.TelemetryState()
         updates = []
-        protocol = server.UdpTelemetryProtocol(state, lambda: updates.append(state.to_payload()))
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(
+            state, diagnostics, lambda: updates.append(state.to_payload())
+        )
 
         protocol.datagram_received(
             b'{"schema_version": 1, "geometry": {"coxa": 41.5}, "timestamp_ms": 1000}',
@@ -42,9 +45,26 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.timestamp_ms, 1001)
         self.assertEqual(state.angles_deg["RM"], [0.0, 10.0, -25.0])
 
-    def test_udp_protocol_ignores_malformed_and_invalid_leg_payloads(self):
+    def test_udp_protocol_schema_gate_ignores_missing_and_incompatible_versions(self):
         state = server.TelemetryState()
         protocol = server.UdpTelemetryProtocol(state, lambda: None)
+
+        before = state.to_payload()
+        protocol.datagram_received(
+            b'{"angles_deg": {"LF": [1, 2, 3]}, "geometry": {"coxa": 41.5}, "timestamp_ms": 1002}',
+            ("127.0.0.1", 9000),
+        )
+        protocol.datagram_received(
+            b'{"schema_version": 2, "angles_deg": {"LF": [3, 4, 5]}, "geometry": {"coxa": 47}, "timestamp_ms": 1003}',
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertEqual(state.to_payload(), before)
+
+    def test_udp_protocol_schema_gate_keeps_parser_safe_for_malformed_json(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
 
         before = state.to_payload()
         protocol.datagram_received(b"not-json", ("127.0.0.1", 9000))
@@ -84,6 +104,32 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(loop.create_task_calls, 1)
         self.assertEqual(scheduler.update_notifications, 1000)
         self.assertGreaterEqual(scheduler.coalesced_notifications, 999)
+        
+    def test_frontend_contract_does_not_expect_optional_status_badges(self):
+        static_dir = pathlib.Path(__file__).resolve().parents[1] / "static"
+        app_js = (static_dir / "app.js").read_text(encoding="utf-8")
+        index_html = (static_dir / "index.html").read_text(encoding="utf-8")
+
+        for field in (
+            "active_mode",
+            "active_fault",
+            "bus_ok",
+            "estimator_valid",
+            "loop_counter",
+            "voltage",
+            "current",
+        ):
+            self.assertNotIn(f"payload.{field}", app_js)
+            self.assertNotIn(f"telemetry.{field}", app_js)
+
+        for badge_id in (
+            "badge-mode",
+            "badge-fault",
+            "badge-bus",
+            "badge-estimator",
+            "status-badges",
+        ):
+            self.assertNotIn(badge_id, index_html)
 
 
 if __name__ == "__main__":

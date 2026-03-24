@@ -63,6 +63,7 @@ Required:
 Optional:
 - `type` (`"geometry"` recommended)
 - any subset of geometry fields can be sent as partial update, but producer should send complete geometry at startup.
+- `timestamp_ms` (accepted if present; not required for geometry updates).
 
 ### Joints payload
 
@@ -75,6 +76,29 @@ Optional:
 - `timestamp_ms` (recommended)
 
 Consumer only applies per-leg updates where value is a numeric 3-element joint array and leg key is one of `LF/LM/LR/RF/RM/RR`.
+
+## Browser payload contract (`server.py -> static/app.js`)
+
+WebSocket payloads emitted by `TelemetryState.to_payload` currently include **only**:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `type` | string | yes | always `"state"` |
+| `geometry` | object | yes | dictionary of geometry values in mm |
+| `angles_deg` | object | yes | leg-key map to 3-element numeric arrays |
+| `timestamp_ms` | integer or `null` | yes | `null` until a timestamp arrives |
+
+The following fields are **not part of the current payload contract** and must not be required by the UI:
+
+- `active_mode`
+- `active_fault`
+- `bus_ok`
+- `estimator_valid`
+- `loop_counter`
+- `voltage`
+- `current`
+
+If those fields are added by producer telemetry in the future, this document and both `server.py` + `app.js` must be updated together.
 
 ## Backward compatibility expectations
 

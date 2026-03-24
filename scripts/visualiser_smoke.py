@@ -27,7 +27,12 @@ def wait_for_port(host: str, port: int, timeout_s: float = 8.0) -> None:
     raise TimeoutError(f"Timed out waiting for {host}:{port}")
 
 
-async def receive_state(host: str, http_port: int, timeout_s: float = 5.0) -> dict:
+async def receive_state(
+    host: str,
+    http_port: int,
+    timeout_s: float = 5.0,
+    expected_timestamp_ms: int | None = None,
+) -> dict:
     ws_url = f"ws://{host}:{http_port}/ws"
     async with ClientSession() as session:
         async with session.ws_connect(ws_url, heartbeat=10) as ws:
@@ -37,7 +42,8 @@ async def receive_state(host: str, http_port: int, timeout_s: float = 5.0) -> di
                 if msg.type == WSMsgType.TEXT:
                     payload = json.loads(msg.data)
                     if isinstance(payload, dict) and payload.get("type") == "state":
-                        return payload
+                        if expected_timestamp_ms is None or payload.get("timestamp_ms") == expected_timestamp_ms:
+                            return payload
                 elif msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSED, WSMsgType.ERROR):
                     break
     raise RuntimeError("Did not receive state payload from websocket")
@@ -87,15 +93,36 @@ def send_canonical_udp_packet(host: str, udp_port: int, timestamp_ms: int) -> No
         sock.sendto(json.dumps(payload).encode("utf-8"), (host, udp_port))
 
 
+def expected_timestamp_from_fixture(fixture_path: Path) -> int:
+    latest_timestamp = None
+    with fixture_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            row = json.loads(line)
+            datagram = row.get("datagram")
+            if isinstance(datagram, dict) and isinstance(datagram.get("timestamp_ms"), int):
+                latest_timestamp = int(datagram["timestamp_ms"])
+    if latest_timestamp is None:
+        raise ValueError(f"No datagram with timestamp_ms in fixture: {fixture_path}")
+    return latest_timestamp
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--http-port", type=int, default=18080)
     parser.add_argument("--udp-port", type=int, default=19870)
+    parser.add_argument("--mode", choices=("replay", "direct"), default="replay")
+    parser.add_argument(
+        "--fixture",
+        default="scripts/fixtures/visualiser_smoke.ndjson",
+        help="NDJSON fixture used by replay mode",
+    )
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
     server_py = repo_root / "hexapod-visualiser" / "server.py"
+    replay_script = repo_root / "scripts" / "replay_udp_telemetry.py"
+    fixture_path = repo_root / args.fixture
 
     env = dict(os.environ)
     env.setdefault("PYTHONUNBUFFERED", "1")
@@ -109,20 +136,58 @@ def main() -> int:
         text=True,
     )
 
+    replay_proc: subprocess.Popen[str] | None = None
     try:
         wait_for_port(args.host, args.http_port)
-        ts = int(time.time() * 1000)
-        send_canonical_udp_packet(args.host, args.udp_port, ts)
-        state = asyncio.run(receive_state(args.host, args.http_port, timeout_s=6.0))
+
+        if args.mode == "replay":
+            expected_ts = expected_timestamp_from_fixture(fixture_path)
+            replay_proc = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(replay_script),
+                    "--input",
+                    str(fixture_path),
+                    "--host",
+                    args.host,
+                    "--port",
+                    str(args.udp_port),
+                    "--speed",
+                    "50",
+                ],
+                cwd=str(repo_root),
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        else:
+            expected_ts = int(time.time() * 1000)
+            send_canonical_udp_packet(args.host, args.udp_port, expected_ts)
+
+        state = asyncio.run(
+            receive_state(
+                args.host,
+                args.http_port,
+                timeout_s=6.0,
+                expected_timestamp_ms=expected_ts,
+            )
+        )
         validate_payload(state)
 
-        if state.get("timestamp_ms") != ts:
+        if state.get("timestamp_ms") != expected_ts:
             raise AssertionError(
-                f"timestamp mismatch: expected {ts}, got {state.get('timestamp_ms')}"
+                f"timestamp mismatch: expected {expected_ts}, got {state.get('timestamp_ms')}"
             )
-        print("PASS: visualiser smoke test verified websocket state fields")
+        print(f"PASS: visualiser smoke test verified websocket update ({args.mode} mode)")
         return 0
     finally:
+        if replay_proc is not None:
+            try:
+                replay_proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                replay_proc.terminate()
+
         proc.terminate()
         try:
             proc.wait(timeout=3)

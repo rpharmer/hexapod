@@ -31,31 +31,33 @@
       #status { font-size: 0.9rem; opacity: 0.9; }
       #status.stale { color: #fbbf24 !important; }
 
-      #telemetry-panel {
-        display: grid;
-        gap: 0.45rem;
-        justify-items: end;
-        min-width: 22rem;
-      }
-
-      .badge-row {
+      #view-controls {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.4rem;
-        justify-content: flex-end;
+        gap: 0.35rem;
       }
 
-      .badge {
+      .view-button {
         font-size: 0.72rem;
         border: 1px solid #374151;
         background: #1f2937;
         color: #d1d5db;
-        padding: 0.15rem 0.45rem;
-        border-radius: 999px;
+        padding: 0.2rem 0.55rem;
+        border-radius: 0.45rem;
+        cursor: pointer;
       }
-      .badge.good { border-color: #065f46; background: #064e3b; color: #a7f3d0; }
-      .badge.bad { border-color: #7f1d1d; background: #7f1d1d55; color: #fecaca; }
-      .badge.warn { border-color: #92400e; background: #92400e55; color: #fde68a; }
+
+      .view-button:hover {
+        border-color: #60a5fa;
+        color: #bfdbfe;
+      }
+
+      #telemetry-panel {
+        display: grid;
+        gap: 0.45rem;
+        justify-items: end;
+        min-width: 20rem;
+      }
 
       #rolling-metrics {
         display: flex;
@@ -68,7 +70,7 @@
       }
 
       #meta { font-size: 0.85rem; opacity: 0.8; text-align: right; }
-      canvas { width: 100%; height: 100%; display: block; }
+      canvas { width: 100%; height: 100%; display: block; touch-action: none; }
     </style>
   </head>
   <body>
@@ -76,14 +78,14 @@
       <div class="header-left">
         <strong>Hexapod Visualiser</strong>
         <div id="status">Connecting...</div>
+        <div id="view-controls" aria-label="Camera view controls">
+          <button class="view-button" type="button" data-view="top">Top</button>
+          <button class="view-button" type="button" data-view="front">Front</button>
+          <button class="view-button" type="button" data-view="side">Side</button>
+          <button class="view-button" type="button" data-view="reset">Reset View</button>
+        </div>
       </div>
       <div id="telemetry-panel">
-        <div id="status-badges" class="badge-row">
-          <span id="badge-mode" class="badge">mode: n/a</span>
-          <span id="badge-fault" class="badge">fault: n/a</span>
-          <span id="badge-bus" class="badge">bus: n/a</span>
-          <span id="badge-estimator" class="badge">estimator: n/a</span>
-        </div>
         <div id="rolling-metrics"></div>
         <div id="meta"></div>
       </div>
