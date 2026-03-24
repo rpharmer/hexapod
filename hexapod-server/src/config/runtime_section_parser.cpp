@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <vector>
 
 #include "config_validation.hpp"
 #include "logger.hpp"
@@ -10,35 +11,152 @@ using namespace logging;
 
 namespace runtime_section_parser {
 
-bool parseRuntimeSection(const toml::value& root,
-                       ParsedToml& out,
-                       std::shared_ptr<logging::AsyncLogger> logger)
+namespace {
+
+enum class ValueType
 {
-  std::string mode = toml::find_or<std::string>(root, "Runtime", "Mode", "serial");
+  String,
+  Bool,
+  Double,
+};
+
+struct ScalarDescriptor
+{
+  std::string key;
+  ValueType type;
+  bool required;
+  bool has_bounds;
+  double min_value;
+  double max_value;
+  std::string default_string;
+  bool default_bool;
+  double default_double;
+};
+
+constexpr double kNoBoundsMin = 0.0;
+constexpr double kNoBoundsMax = 0.0;
+
+bool hasValue(const toml::value& root, const std::string& dotted_key)
+{
+  const toml::value* current = &root;
+  std::size_t start = 0;
+  while (start <= dotted_key.size()) {
+    const std::size_t dot = dotted_key.find('.', start);
+    const std::string key =
+        dot == std::string::npos ? dotted_key.substr(start) : dotted_key.substr(start, dot - start);
+    if (!current->is_table()) {
+      return false;
+    }
+    const auto& table = current->as_table();
+    const auto it = table.find(key);
+    if (it == table.end()) {
+      return false;
+    }
+    current = &(it->second);
+    if (dot == std::string::npos) {
+      break;
+    }
+    start = dot + 1;
+  }
+  return true;
+}
+
+template <typename T>
+T findOrByPath(const toml::value& root, const std::string& dotted_key, const T& default_value)
+{
+  const toml::value* current = &root;
+  std::size_t start = 0;
+  while (start <= dotted_key.size()) {
+    const std::size_t dot = dotted_key.find('.', start);
+    const std::string key =
+        dot == std::string::npos ? dotted_key.substr(start) : dotted_key.substr(start, dot - start);
+    if (!current->is_table()) {
+      return default_value;
+    }
+    const auto& table = current->as_table();
+    const auto it = table.find(key);
+    if (it == table.end()) {
+      return default_value;
+    }
+    current = &(it->second);
+    if (dot == std::string::npos) {
+      break;
+    }
+    start = dot + 1;
+  }
+
+  try {
+    return toml::get<T>(*current);
+  } catch (const std::exception&) {
+    return default_value;
+  }
+}
+
+} // namespace
+
+bool parseRuntimeSection(const toml::value& root,
+                         ParsedToml& out,
+                         std::shared_ptr<logging::AsyncLogger> logger,
+                         std::vector<config_validation::ConfigDiagnostic>* diagnostics)
+{
+  const std::vector<ScalarDescriptor> schema = {
+      {"Runtime.Mode", ValueType::String, true, false, kNoBoundsMin, kNoBoundsMax, "serial", false, 0.0},
+      {"Runtime.Sim.InitialVoltageV", ValueType::Double, false, true, 0.0, 32.0, "", false, 12.0},
+      {"Runtime.Sim.InitialCurrentA", ValueType::Double, false, true, 0.0, 200.0, "", false, 1.0},
+      {"Runtime.Sim.ResponseRateHz", ValueType::Double, false, true, 1.0, 2000.0, "", false, 50.0},
+      {"Runtime.Sim.DropBus", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.Sim.LowVoltage", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.Sim.HighCurrent", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.Log.FilePath", ValueType::String, false, false, kNoBoundsMin, kNoBoundsMax, "app.log", false, 0.0},
+      {"Runtime.Log.EnableFile", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", true, 0.0},
+  };
+
+  const auto* mode_desc = &schema[0];
+  if (mode_desc->required && !hasValue(root, mode_desc->key)) {
+    config_validation::emitDiagnostic(diagnostics, "runtime", mode_desc->key, "missing_required",
+                                      "missing required key, using default");
+  }
+  std::string mode = findOrByPath<std::string>(root, mode_desc->key, mode_desc->default_string);
   std::transform(mode.begin(), mode.end(), mode.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   if (mode != "serial" && mode != "sim") {
+    const std::string message = "Runtime.Mode must be 'serial' or 'sim'";
     if (logger) {
       LOG_ERROR(logger, "[runtime] Runtime.Mode must be 'serial' or 'sim', got '", mode, "'");
     }
+    config_validation::emitDiagnostic(
+        diagnostics, "runtime", "Runtime.Mode", "invalid_enum",
+        message + ", got '" + mode + "'");
     return false;
   }
   out.runtimeMode = mode;
 
+  const auto* initial_voltage_desc = &schema[1];
   out.simInitialVoltageV = config_validation::parseDoubleWithFallback(
-      root, "Runtime.Sim.InitialVoltageV", 12.0, 0.0, 32.0, "runtime", logger);
+      root, initial_voltage_desc->key, initial_voltage_desc->default_double,
+      initial_voltage_desc->min_value, initial_voltage_desc->max_value, "runtime", logger,
+      diagnostics);
+  const auto* initial_current_desc = &schema[2];
   out.simInitialCurrentA = config_validation::parseDoubleWithFallback(
-      root, "Runtime.Sim.InitialCurrentA", 1.0, 0.0, 200.0, "runtime", logger);
+      root, initial_current_desc->key, initial_current_desc->default_double,
+      initial_current_desc->min_value, initial_current_desc->max_value, "runtime", logger,
+      diagnostics);
+  const auto* response_rate_desc = &schema[3];
   out.simResponseRateHz = config_validation::parseDoubleWithFallback(
-      root, "Runtime.Sim.ResponseRateHz", 50.0, 1.0, 2000.0, "runtime", logger);
-  out.simDropBus = toml::find_or<bool>(root, "Runtime", "Sim", "DropBus", false);
-  out.simLowVoltage = toml::find_or<bool>(root, "Runtime", "Sim", "LowVoltage", false);
-  out.simHighCurrent = toml::find_or<bool>(root, "Runtime", "Sim", "HighCurrent", false);
+      root, response_rate_desc->key, response_rate_desc->default_double,
+      response_rate_desc->min_value, response_rate_desc->max_value, "runtime", logger,
+      diagnostics);
+  out.simDropBus = findOrByPath<bool>(root, schema[4].key, schema[4].default_bool);
+  out.simLowVoltage = findOrByPath<bool>(root, schema[5].key, schema[5].default_bool);
+  out.simHighCurrent = findOrByPath<bool>(root, schema[6].key, schema[6].default_bool);
 
-  out.logFilePath = toml::find_or<std::string>(root, "Runtime", "Log", "FilePath", "app.log");
-  out.logToFile = toml::find_or<bool>(root, "Runtime", "Log", "EnableFile", true);
+  out.logFilePath = findOrByPath<std::string>(root, schema[7].key, schema[7].default_string);
+  out.logToFile = findOrByPath<bool>(root, schema[8].key, schema[8].default_bool);
   if (out.logToFile && out.logFilePath.empty()) {
     out.logFilePath = "app.log";
+    config_validation::emitDiagnostic(diagnostics, "runtime", "Runtime.Log.FilePath",
+                                      "empty_value",
+                                      "Runtime.Log.FilePath was empty, using default app.log");
     if (logger) {
       LOG_WARN(logger, "[runtime] Runtime.Log.FilePath was empty, using default app.log");
     }
