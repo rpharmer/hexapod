@@ -1,224 +1,152 @@
-# Codebase Review (2026-03-24)
+# Codebase Review (updated 2026-03-24)
 
 ## Scope
 
-This review focused on:
+This refreshed review reflects the **current** repository state as of March 24, 2026 and covers:
 
-- `hexapod-server` runtime/control/hardware boundary
-- `hexapod-client` command dispatch integration with shared protocol metadata
-- `hexapod-common` protocol definitions shared by both binaries
-- test topology and maintainability characteristics
+- `hexapod-server` runtime/control/hardware boundaries
+- `hexapod-client` command routing and host-test coverage
+- `hexapod-common` protocol/type contracts used by both binaries
+- test topology, quality gates, and maintainability pressure points
 
-Validation baseline was `./scripts/verify.sh` from repo root.
+Validation baseline for this review: `./scripts/verify.sh` from repo root.
+
+---
 
 ## High-level assessment
 
-The repository has strong engineering fundamentals:
+The codebase is in a healthy and more mature state than earlier snapshots.
 
-- clear monorepo boundaries (`server`, `client`, `common`)
-- a shared protocol contract in `hexapod-common`
-- broad automated coverage and deterministic simulator scenarios
-- production-oriented runtime instrumentation (freshness diagnostics, loop timing metrics)
+### What is now working well
 
-Primary opportunities are now **maintainability and scaling**:
+1. **Runtime decomposition has landed**
+   - `RobotRuntime` now orchestrates dedicated helpers (`RuntimeFreshnessGate`, `RuntimeTimingMetrics`, `RuntimeDiagnosticsReporter`) instead of embedding all concerns in one loop body.
+2. **Hardware bridge command plumbing is centralized**
+   - `SimpleHardwareBridge` uses shared helpers (`requireReady`, `withCommandApi`, `log_command_failure`) to reduce duplicated guard/dispatch logic.
+3. **Bridge transport test topology is already modularized**
+   - test coverage is split into handshake/commands/failures/capabilities files plus a shared test main.
+4. **Operational shutdown logging semantics are cleaner**
+   - successful teardown reports INFO-level summaries and only escalates severity on failure conditions.
+5. **Quality gates are strong and currently green**
+   - full verify pipeline (server tests, client host-tests, scenario smoke) passed.
 
-1. reducing repetitive command-bridge logic
-2. decomposing large orchestration classes/files
-3. simplifying oversized integration-style tests through reusable fixtures
-4. tightening protocol typing to reduce legacy uint8 command aliases over time
-5. improving operational signal quality in logs/exit semantics
+### Current strategic pressure points
+
+The repository is now less blocked by basic structure and more by **consistency and long-term hardening**:
+
+1. protocol typing migration completion (`uint8_t` compatibility surface still broad)
+2. reducing remaining high-LOC “god files” in bridge command tests and hardware bridge implementation
+3. tightening command/error observability so call sites can react programmatically (not only boolean + logs)
+4. minimizing drift risk between scenario validation and unit-test invariants
 
 ---
 
-## Detailed findings and refactoring opportunities
+## Detailed findings (current state)
 
-### 1) Hardware bridge has repeated precondition + link checks
+### 1) Runtime modularization is complete enough to be considered a success
 
-`SimpleHardwareBridge` repeats nearly identical guards in most public methods:
+`RobotRuntime` is now largely orchestration-focused and delegates freshness/timing/diagnostics behavior to extracted components.
 
-- init/object readiness checks
-- `ensure_link(kRequestedCapabilities)` checks
-- command_api null checks
+**Why this matters now**
+- lower coupling in the control loop
+- clearer boundaries for unit testing and future performance work
+- easier to reason about freshness gating independently of reporting
 
-This pattern appears across command methods such as `set_power_relay`, `get_current`, `get_voltage`, `get_sensor`, LED/servo methods, etc.
+**Follow-on opportunity**
+- Continue this pattern for any future cross-cutting additions (e.g., structured trace events) instead of pushing logic back into `RobotRuntime`.
 
-**Impact**
+---
 
-- high copy/paste surface for future behavior changes
-- inconsistent logging behavior risk (some paths log, many quietly return false)
-- harder to add cross-cutting concerns (telemetry, retries, error taxonomy)
+### 2) Hardware bridge guard/dispatch duplication is significantly reduced
+
+`SimpleHardwareBridge` now uses centralized precondition and execution helpers, which is a clear maintainability improvement.
+
+**What improved**
+- consistent link-establishment and command API checks
+- uniform failure logging path keyed by command name
+- less per-command boilerplate
+
+**Remaining gap**
+- the external contract is still mostly `bool` return values, which limits machine-readable error handling.
 
 **Refactoring direction**
-
-- introduce a private helper such as:
-  - `bool requireReady(bool need_feedback_estimator = false)`
-  - `template<typename F> bool withCommandApi(F&& fn)` to centralize link+null checks
-- standardize failure logging through one utility that includes command name and reason
-- optionally return richer error type internally (enum/class) and map to bool at interface boundary for incremental adoption
+- introduce an internal `BridgeError` enum/class and adapt outward-facing API incrementally (e.g., optional `last_error`, or typed overloads) while keeping existing call sites stable.
 
 ---
 
-### 2) `RobotRuntime` combines many responsibilities in one class
+### 3) Test topology has improved, but one file remains comparatively heavy
 
-`RobotRuntime` currently owns and coordinates:
-
-- hardware IO loop behavior
-- estimator integration
-- control pipeline gating
-- safety freshness evaluation
-- diagnostics/timing metrics and log emission
-- intent stamping/sample sequencing
-
-This is solid functionally, but it increases coupling between real-time logic and observability/state bookkeeping.
+The old monolithic bridge transport test file has already been split into domain files (good outcome). However, the commands test file is still relatively large.
 
 **Impact**
-
-- harder to reason about behavioral changes in one loop without touching others
-- increased risk of regression from mixed concerns
-- difficult to performance-profile hot path independent of diagnostics concerns
+- the current split is much better for ownership and merge flow
+- remaining size concentration can still slow focused edits around command behavior
 
 **Refactoring direction**
-
-- split into composable helpers:
-  - `RuntimeFreshnessGate` (evaluation + stale counters + reject status generation)
-  - `RuntimeTimingMetrics` (dt/jitter tracking)
-  - `RuntimeDiagnosticsReporter` (status + structured metrics logging)
-- keep `RobotRuntime` as orchestration shell calling these components
-- preserve existing public API to avoid broad call-site changes
+- consider a secondary split in `test_hardware_bridge_transport_commands.cpp` by command families (power/sensor/servo/led/calibration)
+- keep the shared harness and naming stable to preserve CI discoverability
 
 ---
 
-### 3) Large integration test file should be modularized
+### 4) Protocol typing remains in a transitional state
 
-`hexapod-server/tests/test_hardware_bridge_transport.cpp` is very large and mixes many concerns in one translation unit (handshake, retries, malformed payloads, calibration, led, servos, diagnostics, capabilities).
+The common protocol layer includes strongly typed command enums, but compatibility constants/aliases are still present for broad call-site support.
 
 **Impact**
-
-- slower comprehension and slower targeted iteration
-- larger compile units
-- more fragile merge conflict surface
+- internal code can still bypass stronger types in some edges
+- type-level intent is partially diluted at API boundaries
 
 **Refactoring direction**
-
-- split test file by behavior domains:
-  - `test_hardware_bridge_handshake.cpp`
-  - `test_hardware_bridge_commands.cpp`
-  - `test_hardware_bridge_failures.cpp`
-- extract shared fake endpoint and helper assertions into a tiny local test utility header
-- keep current test naming for CI continuity via CTest labels
+- continue incremental migration toward enum-first APIs in client/server command interfaces
+- leave compatibility wrappers only where external/protocol-facing constraints require them
 
 ---
 
-### 4) Shared protocol header is in a transitional typing state
+### 5) Ops signal quality improved and should now be preserved by policy
 
-`hexapod-common/include/hexapod-common.hpp` defines strong enums (`CommandCode`, etc.) but still exports broad legacy `uint8_t` aliases for compatibility.
+Shutdown log severity behavior now aligns with successful execution paths (INFO for success, ERROR for real failure).
 
 **Impact**
+- fewer false-positive alerts
+- faster triage by severity
 
-- call sites can still accidentally pass arbitrary bytes where command enums are expected
-- limits compile-time safety and discoverability
-
-**Refactoring direction**
-
-- phase migration toward enum-based APIs in host and firmware transport layers
-- add overloads taking `CommandCode` and keep legacy `uint8_t` wrappers temporarily
-- after migration, shrink alias surface to only externally required protocol constants
+**Next hardening step**
+- codify this expectation in tests or log-contract checks so severity regressions are caught automatically.
 
 ---
 
-### 5) Runtime logging semantics can be clarified for ops
+## Recommended next steps (re-prioritized for current state)
 
-Scenario smoke logs show both:
+### Phase 1 (1-2 days): consistency + observability hardening
 
-- `All workers joined` as WARN
-- `Dropped messages=0` as ERROR
+1. Add a typed bridge error surface (`BridgeError`) behind existing bool APIs.
+2. Add a small test/assertion around shutdown log severity contract.
+3. Document command failure categories in `hardware_bridge` module docs/comments.
 
-even in successful completion.
+### Phase 2 (2-3 days): test decomposition follow-through
 
-**Impact**
+1. Split `test_hardware_bridge_transport_commands.cpp` by command family.
+2. Keep shared harness entry points and CTest naming stable.
+3. Measure compile-time impact before/after split.
 
-- can produce false-positive alerting/noise in log pipelines
-- obscures real fault triage when operators scan by severity
+### Phase 3 (2-4 days): protocol type migration completion
 
-**Refactoring direction**
+1. Inventory remaining raw/legacy command-id usage.
+2. Convert internal call sites to typed command enums.
+3. Restrict raw command constants to compatibility seams only.
 
-- make graceful shutdown informational when exit code is success
-- only emit error severity for non-zero dropped-message counts or real shutdown faults
-- add a short `shutdown_summary` log line with explicit success/failure state
+### Phase 4 (ongoing): drift prevention
 
----
-
-## Recommended next steps (prioritized)
-
-### Phase 1 (1-2 days): low-risk maintainability wins
-
-1. Add bridge precondition helper + central failure reason logging in `SimpleHardwareBridge`.
-2. Reclassify shutdown log severities and add explicit success summary.
-3. Add test utility helpers for bridge transport tests (without splitting yet).
-
-### Phase 2 (2-4 days): structural decomposition
-
-1. Extract freshness/timing/diagnostics helper components from `RobotRuntime`.
-2. Keep exact behavior and existing tests green.
-3. Add unit tests specifically for extracted components to improve isolation.
-
-### Phase 3 (2-3 days): protocol type-hardening migration
-
-1. Add strongly-typed command overloads in command client/router APIs.
-2. Update server/client call sites incrementally.
-3. Deprecate broad legacy aliases once all internal usages are migrated.
-
-### Phase 4 (1-2 days): test topology cleanup
-
-1. Split `test_hardware_bridge_transport.cpp` into domain-oriented files.
-2. Introduce fixture utility header for fake endpoint + packet helpers.
-3. Keep scenario-level integration tests as final confidence layer.
+1. Add a lightweight architecture note on current module boundaries (`runtime helpers`, `bridge command stack`, `scenario validation`).
+2. Track “largest translation unit LOC” and “typed command API adoption” as simple maintenance metrics.
 
 ---
 
+## Validation performed for this updated review
 
-## Implementation map (file-level)
+- Full repository verification via `./scripts/verify.sh`.
+  - Server build + 25/25 tests passed.
+  - Client host build + 2/2 tests passed.
+  - Scenario smoke (`01_nominal_stand_walk.toml`) passed with successful shutdown summary.
 
-To make the recommendations easier to execute, this map ties each refactor track to concrete files and likely seams:
-
-- **Bridge preconditions/logging consolidation**
-  - `hexapod-server/src/hardware/hardware_bridge.cpp`
-  - `hexapod-server/include/hardware/hardware_bridge.hpp`
-  - optional shared helper for failures in `hexapod-server/include/utils/logger.hpp`
-- **Runtime decomposition (`RobotRuntime`)**
-  - `hexapod-server/src/control/robot_runtime.cpp`
-  - `hexapod-server/include/control/robot_runtime.hpp`
-  - new helper units under `hexapod-server/include/control/` and `hexapod-server/src/control/`
-- **Protocol type hardening**
-  - `hexapod-common/include/hexapod-common.hpp`
-  - `hexapod-server/include/hardware/command_client.hpp`
-  - `hexapod-client/command_router.hpp` and command dispatch call sites
-- **Bridge transport test modularization**
-  - split `hexapod-server/tests/test_hardware_bridge_transport.cpp`
-  - add shared test fixture helpers in `hexapod-server/tests/` (local-only headers)
-
-### Suggested acceptance checks per phase
-
-- `./scripts/verify.sh` remains green at each phase boundary.
-- For the bridge precondition refactor, no change in command-level pass/fail behavior in existing transport tests.
-- For `RobotRuntime` extraction, preserve existing loop timing and freshness gate behavior (validated by current runtime/freshness tests).
-- For protocol hardening, all internal call sites compile without relying on raw `uint8_t` command identifiers.
-
-## Suggested objective metrics to track refactor progress
-
-- `SimpleHardwareBridge` repeated readiness guard count (target: near-zero duplicates)
-- `RobotRuntime` LOC and method count (target: meaningful reduction via extracted helpers)
-- largest single test translation unit LOC (target: < 500)
-- number of call sites using raw `uint8_t` command constants (target: trending toward zero internally)
-- ratio of WARN/ERROR logs during successful scenario completion (target: zero false positives)
-
----
-
-## Validation performed for this review
-
-- full repository verification via `./scripts/verify.sh`
-  - server tests passed
-  - firmware host tests passed
-  - scenario smoke passed
-
-No behavioral code changes were applied in this review document update.
+This review supersedes prior recommendations that were already implemented (runtime helper extraction, bridge precondition centralization, test-file split, and shutdown severity cleanup).
