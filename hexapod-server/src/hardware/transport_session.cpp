@@ -19,8 +19,8 @@ uint16_t TransportSession::next_sequence() {
     return seq_++;
 }
 
-bool TransportSession::send(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload) {
-    endpoint_.send_packet(seq, cmd, payload);
+bool TransportSession::send(uint16_t seq, CommandCode cmd, const std::vector<uint8_t>& payload) {
+    endpoint_.send_packet(seq, as_u8(cmd), payload);
     mark_transfer();
     return true;
 }
@@ -56,11 +56,11 @@ TransportSession::CommandOutcome TransportSession::parse_ack_or_nack(
         return CommandOutcome{OutcomeClass::ProtocolError, {}, 0};
     }
 
-    if (response.cmd == ACK) {
+    if (response.cmd == as_u8(CommandCode::ACK)) {
         return CommandOutcome{OutcomeClass::Success, response.payload, 0};
     }
 
-    if (response.cmd == NACK) {
+    if (response.cmd == as_u8(CommandCode::NACK)) {
         const uint8_t nack_code = response.payload.empty() ? 0 : response.payload[0];
         if (!response.payload.empty()) {
             if (logger_) {

@@ -32,7 +32,7 @@ public:
                      std::shared_ptr<logging::AsyncLogger> logger = nullptr);
 
     uint16_t next_sequence();
-    bool send(uint16_t seq, uint8_t cmd, const std::vector<uint8_t>& payload);
+    bool send(uint16_t seq, CommandCode cmd, const std::vector<uint8_t>& payload);
     bool recv(DecodedPacket& packet);
     CommandOutcome wait_for_ack(uint16_t seq);
     CommandOutcome parse_ack_or_nack(const DecodedPacket& response,

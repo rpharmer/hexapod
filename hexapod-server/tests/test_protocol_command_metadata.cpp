@@ -59,6 +59,18 @@ bool test_metadata_payload_contracts_match_protocol_constants()
                   "SET_LED_COLORS contract mismatch");
 }
 
+
+bool test_known_raw_ids_parse_to_typed_commands()
+{
+    CommandCode parsed = CommandCode::HELLO;
+    return expect(try_parse_command_code(as_u8(CommandCode::SET_POWER_RELAY), parsed) &&
+                      parsed == CommandCode::SET_POWER_RELAY,
+                  "expected SET_POWER_RELAY raw ID to parse to typed enum") &&
+           expect(try_parse_command_code(as_u8(CommandCode::GET_LED_INFO), parsed) &&
+                      parsed == CommandCode::GET_LED_INFO,
+                  "expected GET_LED_INFO raw ID to parse to typed enum");
+}
+
 bool test_unknown_command_maps_to_unknown_name()
 {
     CommandCode parsed = CommandCode::HELLO;
@@ -97,6 +109,9 @@ int main()
         return EXIT_FAILURE;
     }
     if (!test_metadata_payload_contracts_match_protocol_constants()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_known_raw_ids_parse_to_typed_commands()) {
         return EXIT_FAILURE;
     }
     if (!test_unknown_command_maps_to_unknown_name()) {

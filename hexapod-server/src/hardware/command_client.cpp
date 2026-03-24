@@ -36,7 +36,7 @@ TransportSession::CommandOutcome CommandClient::transact(CommandCode cmd,
     for (int attempt = 1; attempt <= max_attempts; ++attempt) {
         seq = transport_.next_sequence();
         ++attempts_used;
-        transport_.send(seq, as_u8(cmd), payload);
+        transport_.send(seq, cmd, payload);
         last_outcome = transport_.wait_for_ack(seq);
         if (last_outcome.outcome_class == TransportSession::OutcomeClass::Success) {
             break;

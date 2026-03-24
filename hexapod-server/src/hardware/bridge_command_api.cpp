@@ -14,17 +14,7 @@ bool BridgeCommandApi::request_ack(CommandCode cmd,
     return request_ack_with_error(cmd, payload) == BridgeError::None;
 }
 
-bool BridgeCommandApi::request_ack(uint8_t cmd,
-                                   const std::vector<uint8_t>& payload) {
-    return request_ack_with_error(cmd, payload) == BridgeError::None;
-}
-
 BridgeError BridgeCommandApi::request_ack_with_error(CommandCode cmd,
-                                                     const std::vector<uint8_t>& payload) {
-    return request_ack_with_error(as_u8(cmd), payload);
-}
-
-BridgeError BridgeCommandApi::request_ack_with_error(uint8_t cmd,
                                                      const std::vector<uint8_t>& payload) {
     return request_transaction(cmd, payload, nullptr);
 }
@@ -35,25 +25,13 @@ bool BridgeCommandApi::request_ack_payload(CommandCode cmd,
     return request_ack_payload_with_error(cmd, payload, out_payload) == BridgeError::None;
 }
 
-bool BridgeCommandApi::request_ack_payload(uint8_t cmd,
-                                           const std::vector<uint8_t>& payload,
-                                           std::vector<uint8_t>& out_payload) {
-    return request_ack_payload_with_error(cmd, payload, out_payload) == BridgeError::None;
-}
-
 BridgeError BridgeCommandApi::request_ack_payload_with_error(CommandCode cmd,
-                                                             const std::vector<uint8_t>& payload,
-                                                             std::vector<uint8_t>& out_payload) {
-    return request_ack_payload_with_error(as_u8(cmd), payload, out_payload);
-}
-
-BridgeError BridgeCommandApi::request_ack_payload_with_error(uint8_t cmd,
                                                              const std::vector<uint8_t>& payload,
                                                              std::vector<uint8_t>& out_payload) {
     return request_transaction(cmd, payload, &out_payload);
 }
 
-BridgeError BridgeCommandApi::request_transaction(uint8_t cmd,
+BridgeError BridgeCommandApi::request_transaction(CommandCode cmd,
                                                   const std::vector<uint8_t>& payload,
                                                   std::vector<uint8_t>* out_payload) {
     const auto outcome = command_client_.transact(static_cast<CommandCode>(cmd), payload, out_payload);
@@ -75,10 +53,10 @@ BridgeError BridgeCommandApi::map_outcome_to_bridge_error(
         case TransportSession::OutcomeClass::Success:
             return BridgeError::None;
         case TransportSession::OutcomeClass::Nack:
-            if (outcome.nack_code == UNSUPPORTED_COMMAND) {
+            if (outcome.nack_code == as_u8(ErrorCode::UNSUPPORTED_COMMAND)) {
                 return BridgeError::Unsupported;
             }
-            if (outcome.nack_code == BUSY_NOT_READY) {
+            if (outcome.nack_code == as_u8(ErrorCode::BUSY_NOT_READY)) {
                 return BridgeError::NotReady;
             }
             return BridgeError::ProtocolFailure;

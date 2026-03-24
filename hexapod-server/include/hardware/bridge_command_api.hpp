@@ -17,19 +17,11 @@ public:
     // Migration note: bool methods remain for compatibility. New call sites should
     // prefer *_with_error variants so failures can be classified via BridgeError.
     bool request_ack(CommandCode cmd, const std::vector<uint8_t>& payload);
-    bool request_ack(uint8_t cmd, const std::vector<uint8_t>& payload);
     BridgeError request_ack_with_error(CommandCode cmd, const std::vector<uint8_t>& payload);
-    BridgeError request_ack_with_error(uint8_t cmd, const std::vector<uint8_t>& payload);
     bool request_ack_payload(CommandCode cmd,
                              const std::vector<uint8_t>& payload,
                              std::vector<uint8_t>& out_payload);
-    bool request_ack_payload(uint8_t cmd,
-                             const std::vector<uint8_t>& payload,
-                             std::vector<uint8_t>& out_payload);
     BridgeError request_ack_payload_with_error(CommandCode cmd,
-                                               const std::vector<uint8_t>& payload,
-                                               std::vector<uint8_t>& out_payload);
-    BridgeError request_ack_payload_with_error(uint8_t cmd,
                                                const std::vector<uint8_t>& payload,
                                                std::vector<uint8_t>& out_payload);
 
@@ -50,17 +42,9 @@ public:
 
         return true;
     }
-    
-    template <typename T, typename Decoder>
-    BridgeError request_decoded_with_error(CommandCode cmd,
-                                           const std::vector<uint8_t>& payload,
-                                           Decoder&& decoder,
-                                           T& out) {
-        return request_decoded_with_error(as_u8(cmd), payload, std::forward<Decoder>(decoder), out);
-    }
 
     template <typename T, typename Decoder>
-    BridgeError request_decoded_with_error(uint8_t cmd,
+    BridgeError request_decoded_with_error(CommandCode cmd,
                                            const std::vector<uint8_t>& payload,
                                            Decoder&& decoder,
                                            T& out) {
@@ -79,8 +63,14 @@ public:
         return BridgeError::None;
     }
 
+    template <typename T, typename Decoder>
+    BridgeError request_decoded_with_error(uint8_t,
+                                           const std::vector<uint8_t>&,
+                                           Decoder&&,
+                                           T&) = delete;
+
 private:
-    BridgeError request_transaction(uint8_t cmd,
+    BridgeError request_transaction(CommandCode cmd,
                                     const std::vector<uint8_t>& payload,
                                     std::vector<uint8_t>* out_payload);
     static BridgeError map_outcome_to_bridge_error(const TransportSession::CommandOutcome& outcome);
