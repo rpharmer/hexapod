@@ -3,6 +3,7 @@
 #include "types.hpp"
 
 #include <array>
+#include <string>
 
 struct ParsedToml;
 
@@ -63,6 +64,9 @@ inline HexapodGeometry buildDefaultHexapodGeometry() {
 extern HexapodGeometry kHexapodGeometry;
 
 void loadFromParsedToml(const ParsedToml& config);
+void writeToParsedToml(ParsedToml& config,
+                       const HexapodGeometry& geometry = kHexapodGeometry);
+std::string geometrySectionToml(const HexapodGeometry& geometry = kHexapodGeometry);
 
 inline const HexapodGeometry& activeHexapodGeometry() {
     return kHexapodGeometry;
