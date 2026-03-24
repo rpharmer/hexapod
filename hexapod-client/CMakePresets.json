@@ -1,0 +1,49 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 16,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Default firmware",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "HEXAPOD_CLIENT_SETUP_SDKS_ONLY": "OFF",
+        "HEXAPOD_CLIENT_ENABLE_HOST_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "host-tests",
+      "displayName": "Host tests",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-host-tests",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "HEXAPOD_CLIENT_ENABLE_HOST_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default"
+    },
+    {
+      "name": "host-tests",
+      "configurePreset": "host-tests"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "host-tests",
+      "configurePreset": "host-tests",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

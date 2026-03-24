@@ -4,14 +4,52 @@ cmake_minimum_required(VERSION 3.12)
 set(NAME hexapod-client) # <-- Name your project/executable here!
 set(FLASH_SCRIPT program-pico.sh)
 option(HEXAPOD_CLIENT_SETUP_SDKS_ONLY "Populate/prebuild SDK and Pimoroni dependency objects without compiling project firmware sources" OFF)
+option(HEXAPOD_CLIENT_ENABLE_HOST_TESTS "Build native host tests under hexapod-client/tests and register them with CTest" OFF)
 
-include(pico_sdk_import.cmake)
-include(pimoroni_pico_import.cmake)
-
-# Gooey boilerplate
 project(${NAME} C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
+
+if (HEXAPOD_CLIENT_ENABLE_HOST_TESTS)
+    enable_testing()
+
+    set(HEXAPOD_CLIENT_HOST_TEST_COMMON_SOURCES
+        command_router.cpp
+        firmware_context.cpp
+        motion_commands.cpp
+        sensing_commands.cpp
+        power_commands.cpp
+        firmware_boot.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/framing.cpp
+    )
+
+    add_executable(hexapod-client-test-command-router
+        tests/test_command_router.cpp
+        command_router.cpp
+    )
+    target_compile_definitions(hexapod-client-test-command-router PRIVATE HEXAPOD_CLIENT_HOST_TEST=1)
+    target_include_directories(hexapod-client-test-command-router PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/include
+    )
+    add_test(NAME hexapod-client.command_router COMMAND hexapod-client-test-command-router)
+
+    add_executable(hexapod-client-test-command-handlers
+        tests/test_command_handlers.cpp
+        ${HEXAPOD_CLIENT_HOST_TEST_COMMON_SOURCES}
+    )
+    target_compile_definitions(hexapod-client-test-command-handlers PRIVATE HEXAPOD_CLIENT_HOST_TEST=1)
+    target_include_directories(hexapod-client-test-command-handlers PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/include
+    )
+    add_test(NAME hexapod-client.command_handlers COMMAND hexapod-client-test-command-handlers)
+
+    return()
+endif ()
+
+include(pico_sdk_import.cmake)
+include(pimoroni_pico_import.cmake)
 
 # Initialize the SDK
 pico_sdk_init()

@@ -84,6 +84,15 @@ cmake --build build --target hexapod-client
 
 Flash by copying `hexapod-client/build/hexapod-client.uf2` to the board in BOOTSEL mode.
 
+### Firmware host tests (native)
+
+```bash
+cd hexapod-client
+cmake --preset host-tests
+cmake --build --preset host-tests -j
+ctest --preset host-tests --output-on-failure
+```
+
 ## Development workflow
 
 Use this loop when iterating on protocol/control changes that affect both host and firmware:
@@ -100,6 +109,13 @@ cd hexapod-server
 cmake --preset tests
 cmake --build --preset tests -j
 ctest --preset tests --output-on-failure
+```
+
+```bash
+cd hexapod-client
+cmake --preset host-tests
+cmake --build --preset host-tests -j
+ctest --preset host-tests --output-on-failure
 ```
 
 Then run a scenario sweep in simulator mode:
