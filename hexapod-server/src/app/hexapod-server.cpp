@@ -61,20 +61,23 @@ int main(int argc, char** argv)
   logger->AddSink(std::make_shared<FileSink>("app.log"));
   SetDefaultLogger(logger);
 
-  ParsedToml config;
-  if (!tomlParser("config.txt", config)) {
-    return 1;
-  }
-
-  const control_config::ControlConfig control_cfg = control_config::fromParsedToml(config);
-  geometry_config::loadFromParsedToml(config);
-
   CliOptions options;
   std::string cli_error;
   if (!parseCliOptions(argc, argv, options, cli_error)) {
     LOG_ERROR(logger, "CLI error: ", cli_error);
     return 1;
   }
+
+  const std::string effectiveConfigPath =
+      options.configFile.empty() ? std::string("config.txt") : options.configFile;
+
+  ParsedToml config;
+  if (!tomlParser(effectiveConfigPath, config)) {
+    return 1;
+  }
+
+  const control_config::ControlConfig control_cfg = control_config::fromParsedToml(config);
+  geometry_config::loadFromParsedToml(config);
 
   LOG_INFO(logger, "Runtime.Mode=", config.runtimeMode);
 
