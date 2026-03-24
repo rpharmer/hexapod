@@ -21,6 +21,14 @@ bool decodeScalarFloatPayload(const std::vector<uint8_t>& payload, protocol::Sca
     return protocol::decode_scalar_float(payload, decoded);
 }
 
+std::shared_ptr<logging::AsyncLogger> resolveLogger(
+    const std::shared_ptr<logging::AsyncLogger>& logger) {
+    if (logger) {
+        return logger;
+    }
+    return logging::GetDefaultLogger();
+}
+
 }  // namespace
 
 SimpleHardwareBridge::SimpleHardwareBridge(std::string device,
@@ -40,8 +48,8 @@ SimpleHardwareBridge::SimpleHardwareBridge(std::unique_ptr<IPacketEndpoint> endp
                                            std::shared_ptr<logging::AsyncLogger> logger)
     : timeout_ms_(timeout_ms),
       calibrations_(std::move(calibrations)),
-      logger_(std::move(logger)),
-      packet_endpoint_(std::move(endpoint)) {}
+      packet_endpoint_(std::move(endpoint)),
+      logger_(std::move(logger)) {}
 
 SimpleHardwareBridge::~SimpleHardwareBridge() = default;
 
@@ -338,8 +346,8 @@ bool SimpleHardwareBridge::set_led_colors(
 
 bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs) {
     if (calibs.size() != (kProtocolJointCount * kProtocolCalibrationPairsPerJoint)) {
-        if (logger_) {
-            LOG_ERROR(logger_, "incorrect calibration size");
+        if (auto logger = resolveLogger(logger_)) {
+            LOG_ERROR(logger, "incorrect calibration size");
         }
         return false;
     }
@@ -357,14 +365,14 @@ bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs) {
     }
 
     if (!command_api_->request_ack(SET_ANGLE_CALIBRATIONS, protocol::encode_calibrations(payload))) {
-        if (auto logger = logging::GetDefaultLogger()) {
+        if (auto logger = resolveLogger(logger_)) {
             LOG_ERROR(logger, "calibration packet failed");
         }
         return false;
     }
 
-    if (logger_) {
-        LOG_INFO(logger_, "calibration packet accepted");
+    if (auto logger = resolveLogger(logger_)) {
+        LOG_INFO(logger, "calibration packet accepted");
     }
     return true;
 }

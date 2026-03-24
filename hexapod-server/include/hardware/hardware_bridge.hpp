@@ -12,6 +12,10 @@ class BridgeCommandApi;
 class BridgeLinkManager;
 class JointFeedbackEstimator;
 
+namespace logging {
+class AsyncLogger;
+}
+
 class IHardwareBridge {
 public:
     virtual ~IHardwareBridge() = default;
@@ -69,6 +73,7 @@ private:
     bool initialized_{false};
 
     std::unique_ptr<IPacketEndpoint> packet_endpoint_{};
+    std::shared_ptr<logging::AsyncLogger> logger_{};
 
     std::unique_ptr<BridgeLinkManager> link_manager_;
     std::unique_ptr<BridgeCommandApi> command_api_;
