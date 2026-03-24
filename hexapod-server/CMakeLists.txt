@@ -148,4 +148,8 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_protocol_command_metadata tests/test_protocol_command_metadata.cpp)
     target_link_libraries(test_protocol_command_metadata PRIVATE hexapod_server_core)
     add_test(NAME protocol_command_metadata COMMAND test_protocol_command_metadata)
+
+    add_executable(test_command_flow_integration tests/test_command_flow_integration.cpp)
+    target_link_libraries(test_command_flow_integration PRIVATE hexapod_server_core)
+    add_test(NAME command_flow_integration COMMAND test_command_flow_integration)
 endif()
