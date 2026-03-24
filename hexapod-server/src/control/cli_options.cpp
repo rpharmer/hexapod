@@ -4,7 +4,13 @@ bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error)
 {
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
-    if (arg == "--scenario") {
+    if (arg == "--config") {
+      if (i + 1 >= argc || std::string(argv[i + 1]).rfind("--", 0) == 0) {
+        error = "--config requires a file path";
+        return false;
+      }
+      out.configFile = argv[++i];
+    } else if (arg == "--scenario") {
       if (i + 1 >= argc) {
         error = "--scenario requires a file path";
         return false;

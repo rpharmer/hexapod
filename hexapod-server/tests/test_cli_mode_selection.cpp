@@ -83,6 +83,53 @@ bool testControllerDeviceOption()
                 "controller-device should be persisted");
 }
 
+bool testConfigOptionPersistsPath()
+{
+  std::vector<std::string> args{"hexapod-server", "--config", "custom-config.txt"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(ok, "config CLI should parse") &&
+         expect(options.configFile == "custom-config.txt", "config path should be persisted");
+}
+
+bool testConfigOptionRequiresValue()
+{
+  std::vector<std::string> args{"hexapod-server", "--config", "--scenario", "scenario.toml"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "config without explicit value should fail") &&
+         expect(error.find("--config") != std::string::npos,
+                "missing config value error should mention --config");
+}
+
+bool testConfigWithScenarioAndControllerOptions()
+{
+  std::vector<std::string> args{"hexapod-server",
+                                "--config",
+                                "custom-config.txt",
+                                "--scenario",
+                                "scenarios/test.toml",
+                                "--xbox-device",
+                                "/dev/input/js2"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(ok, "config + scenario + controller CLI should parse") &&
+         expect(options.mode == ServerMode::Scenario, "scenario flag should set scenario mode") &&
+         expect(options.configFile == "custom-config.txt", "config path should be persisted") &&
+         expect(options.scenarioFile == "scenarios/test.toml", "scenario path should be persisted") &&
+         expect(options.controllerDevice == "/dev/input/js2",
+                "controller device should be persisted");
+}
+
 } // namespace
 
 int main()
@@ -91,6 +138,9 @@ int main()
   testScenarioModeSelection();
   testScenarioLintRequiresScenarioFile();
   testControllerDeviceOption();
+  testConfigOptionPersistsPath();
+  testConfigOptionRequiresValue();
+  testConfigWithScenarioAndControllerOptions();
 
   if (g_failures != 0) {
     std::cerr << g_failures << " test(s) failed\n";

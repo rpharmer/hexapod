@@ -16,6 +16,7 @@ struct CliOptions
   ServerMode mode{ServerMode::Interactive};
   ScenarioDriver::ValidationMode scenarioValidationMode{ScenarioDriver::ValidationMode::Permissive};
   bool lintScenarioOnly{false};
+  std::string configFile{"config.txt"};
   std::string scenarioFile;
   std::string controllerDevice;
 };
