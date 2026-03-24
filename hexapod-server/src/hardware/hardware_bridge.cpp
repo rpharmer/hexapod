@@ -6,12 +6,18 @@
 #include "bridge_link_manager.hpp"
 #include "command_client.hpp"
 #include "hardware_state_codec.hpp"
+#include "hexapod-common.hpp"
 #include "joint_feedback_estimator.hpp"
 #include "logger.hpp"
+#include "protocol_codec.hpp"
 
 namespace {
 
 constexpr uint8_t kRequestedCapabilities = CAPABILITY_ANGULAR_FEEDBACK;
+
+bool decodeScalarFloatPayload(const std::vector<uint8_t>& payload, protocol::ScalarFloat& decoded) {
+    return protocol::decode_scalar_float(payload, decoded);
+}
 
 std::shared_ptr<logging::AsyncLogger> resolveLogger(
     const std::shared_ptr<logging::AsyncLogger>& logger) {
@@ -189,12 +195,17 @@ BridgeError SimpleHardwareBridge::last_error() const {
     return last_error_;
 }
 
+std::optional<BridgeCommandResultMetadata> SimpleHardwareBridge::last_bridge_result() const {
+    return last_result_;
+}
+
 bool SimpleHardwareBridge::run_ack_command(const char* command_name,
                                            CommandCode command_code,
                                            const std::vector<uint8_t>& payload,
                                            bool require_estimator) {
     const BridgeError command_error = withCommandApi(
         command_name,
+        command_code,
         [command_code, &payload](BridgeCommandApi& api) {
             return api.request_ack_with_error(command_code, payload);
         },
@@ -211,6 +222,7 @@ bool SimpleHardwareBridge::run_decoded_command(const char* command_name,
                                                bool require_estimator) {
     const BridgeError command_error = withCommandApi(
         command_name,
+        command_code,
         [&request_payload, command_code, &decoder, &decoded](BridgeCommandApi& api) {
             return api.request_decoded_with_error(
                 command_code, request_payload, std::forward<Decoder>(decoder), decoded);
