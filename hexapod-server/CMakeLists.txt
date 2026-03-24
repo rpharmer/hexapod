@@ -198,6 +198,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_shutdown_summary_logging PRIVATE hexapod_server_core)
     add_test(NAME shutdown_summary_logging COMMAND test_shutdown_summary_logging)
 
+    add_executable(test_runtime_teardown_logging tests/test_runtime_teardown_logging.cpp)
+    target_link_libraries(test_runtime_teardown_logging PRIVATE hexapod_server_core)
+    add_test(NAME runtime_teardown_logging COMMAND test_runtime_teardown_logging)
+
     add_executable(test_geometry_profile_service tests/test_geometry_profile_service.cpp)
     target_link_libraries(test_geometry_profile_service PRIVATE hexapod_server_core)
     add_test(NAME geometry_profile_service COMMAND test_geometry_profile_service)
