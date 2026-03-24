@@ -24,14 +24,17 @@ class TelemetryParserTests(unittest.TestCase):
     def test_udp_protocol_merges_partial_updates(self):
         state = server.TelemetryState()
         updates = []
-        protocol = server.UdpTelemetryProtocol(state, lambda: updates.append(state.to_payload()))
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(
+            state, diagnostics, lambda: updates.append(state.to_payload())
+        )
 
         protocol.datagram_received(
-            b'{"geometry": {"coxa": 41.5}, "timestamp_ms": 1000}',
+            b'{"schema_version": 1, "geometry": {"coxa": 41.5}, "timestamp_ms": 1000}',
             ("127.0.0.1", 9000),
         )
         protocol.datagram_received(
-            b'{"type":"joints", "angles_deg": {"LF": [1, 2, 3]}, "timestamp_ms": 1001}',
+            b'{"schema_version": 1, "type":"joints", "angles_deg": {"LF": [1, 2, 3]}, "timestamp_ms": 1001}',
             ("127.0.0.1", 9000),
         )
 
@@ -43,16 +46,17 @@ class TelemetryParserTests(unittest.TestCase):
 
     def test_udp_protocol_ignores_malformed_and_invalid_leg_payloads(self):
         state = server.TelemetryState()
-        protocol = server.UdpTelemetryProtocol(state, lambda: None)
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
 
         before = state.to_payload()
         protocol.datagram_received(b"not-json", ("127.0.0.1", 9000))
         protocol.datagram_received(
-            b'{"angles_deg": {"LF": [1, 2], "RM": [9, 8, "bad"]}}',
+            b'{"schema_version": 1, "angles_deg": {"LF": [1, 2], "RM": [9, 8, "bad"]}}',
             ("127.0.0.1", 9000),
         )
         protocol.datagram_received(
-            b'{"geometry": {"coxa": true, "femur": 77}}',
+            b'{"schema_version": 1, "geometry": {"coxa": true, "femur": 77}}',
             ("127.0.0.1", 9000),
         )
 

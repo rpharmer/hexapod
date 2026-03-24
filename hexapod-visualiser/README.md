@@ -22,6 +22,53 @@ In another terminal, run the sample data stream:
 python simulate_telemetry.py --host 127.0.0.1 --port 9870 --hz 30
 ```
 
+## Operational diagnostics
+
+The backend now emits structured logs with a consistent prefix:
+
+- Prefix: `[visualiser]`
+- Required fields: `level=<...> event=<...>`
+- Additional context fields are logged as key/value pairs (for example: UDP source address, schema mismatch details, active client count).
+
+### Counters tracked
+
+- `udp_received`: total UDP datagrams received by the server.
+- `udp_rejected`: UDP datagrams rejected due to invalid JSON, non-object payloads, or schema mismatch.
+- `ws_clients_connected`: current number of active WebSocket clients.
+- `ws_send_failures`: number of WebSocket broadcast send failures.
+- `last_udp_update_utc`: UTC timestamp of the most recent accepted UDP update that changed state.
+
+### Periodic stats logs
+
+By default, a periodic structured `event=periodic_stats` line is emitted every 30 seconds.
+
+- Change interval: `--stats-log-interval <seconds>`
+- Disable periodic logs: `--stats-log-interval 0`
+
+### Health / metrics endpoint
+
+The server exposes a lightweight JSON diagnostics endpoint.
+
+- Default path: `/healthz`
+- Change path: `--metrics-path /metrics`
+
+Example response shape:
+
+```json
+{
+  "status": "ok",
+  "telemetry_timestamp_ms": 1712345678901,
+  "generated_at_utc": "2026-03-24T00:00:00.000000Z",
+  "diagnostics": {
+    "udp_received": 1200,
+    "udp_rejected": 3,
+    "ws_clients_connected": 1,
+    "ws_send_failures": 0,
+    "last_udp_update_utc": "2026-03-24T00:00:00.000000Z"
+  }
+}
+```
+
 ## Telemetry format (UDP JSON)
 
 You can send partial updates or full state.
