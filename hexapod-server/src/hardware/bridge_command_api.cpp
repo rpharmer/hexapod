@@ -56,13 +56,16 @@ BridgeError BridgeCommandApi::request_ack_payload_with_error(uint8_t cmd,
 BridgeError BridgeCommandApi::request_transaction(uint8_t cmd,
                                                   const std::vector<uint8_t>& payload,
                                                   std::vector<uint8_t>* out_payload) {
-    const auto outcome = command_client_.transact(cmd, payload, out_payload);
+    const auto outcome = command_client_.transact(static_cast<CommandCode>(cmd), payload, out_payload);
     if (outcome.outcome_class == TransportSession::OutcomeClass::Success) {
         return BridgeError::None;
     }
 
     const std::size_t payload_size = (out_payload != nullptr) ? out_payload->size() : 0;
-    log_command_failure(cmd, outcome.outcome_class, outcome.nack_code, payload_size);
+    log_command_failure(static_cast<CommandCode>(cmd),
+                        outcome.outcome_class,
+                        outcome.nack_code,
+                        payload_size);
     return map_outcome_to_bridge_error(outcome);
 }
 

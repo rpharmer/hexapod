@@ -3,6 +3,30 @@
 namespace hardware_bridge_transport_test {
 namespace {
 
+bool test_not_ready_error_before_init() {
+    auto endpoint = std::make_unique<FakePacketEndpoint>(
+        [](const DecodedPacket&) { return std::vector<DecodedPacket>{}; });
+    SimpleHardwareBridge bridge(std::move(endpoint));
+
+    if (!expect(!bridge.set_power_relay(true), "set_power_relay should fail before init")) {
+        return false;
+    }
+    return expect(bridge.last_error() == BridgeError::NotReady,
+                  "calling command APIs before init should map to BridgeError::NotReady");
+}
+
+bool test_transport_failure_during_init() {
+    auto endpoint = std::make_unique<FakePacketEndpoint>(
+        [](const DecodedPacket&) { return std::vector<DecodedPacket>{}; });
+    SimpleHardwareBridge bridge(std::move(endpoint), /*timeout_ms=*/5);
+
+    if (!expect(!bridge.init(), "init should fail when transport never responds")) {
+        return false;
+    }
+    return expect(bridge.last_error() == BridgeError::TransportFailure,
+                  "init handshake timeout should map to BridgeError::TransportFailure");
+}
+
 bool test_malformed_ack_payload_handling() {
     std::unique_ptr<SimpleHardwareBridge> bridge_owner;
     FakePacketEndpoint* ignored_endpoint = nullptr;
@@ -194,6 +218,12 @@ bool test_unsupported_command_maps_to_unsupported_error() {
 }  // namespace
 
 bool run_failure_and_corruption_tests() {
+    if (!test_not_ready_error_before_init()) {
+        return false;
+    }
+    if (!test_transport_failure_during_init()) {
+        return false;
+    }
     if (!test_malformed_ack_payload_handling()) {
         return false;
     }

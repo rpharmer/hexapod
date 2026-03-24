@@ -72,7 +72,7 @@ public:
         }
 
         if (!decoder(response_payload, out)) {
-            log_decode_failure(cmd, response_payload.size());
+            log_decode_failure(static_cast<CommandCode>(cmd), response_payload.size());
             return BridgeError::ProtocolFailure;
         }
 
