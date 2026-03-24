@@ -1,0 +1,49 @@
+#pragma once
+
+#include <cstdint>
+#include <vector>
+
+#include "transport_session.hpp"
+
+class CommandClient;
+
+class BridgeCommandApi {
+public:
+    explicit BridgeCommandApi(CommandClient& command_client);
+
+    bool request_ack(uint8_t cmd, const std::vector<uint8_t>& payload);
+    bool request_ack_payload(uint8_t cmd,
+                             const std::vector<uint8_t>& payload,
+                             std::vector<uint8_t>& out_payload);
+
+    template <typename T, typename Decoder>
+    bool request_decoded(uint8_t cmd,
+                         const std::vector<uint8_t>& payload,
+                         Decoder&& decoder,
+                         T& out) {
+        std::vector<uint8_t> response_payload;
+        if (!request_ack_payload(cmd, payload, response_payload)) {
+            return false;
+        }
+
+        if (!decoder(response_payload, out)) {
+            log_decode_failure(cmd, response_payload.size());
+            return false;
+        }
+
+        return true;
+    }
+
+private:
+    bool request_transaction(uint8_t cmd,
+                             const std::vector<uint8_t>& payload,
+                             std::vector<uint8_t>* out_payload);
+
+    static void log_command_failure(uint8_t cmd,
+                                    TransportSession::OutcomeClass outcome_class,
+                                    uint8_t nack_code,
+                                    std::size_t response_payload_size);
+    static void log_decode_failure(uint8_t cmd, std::size_t response_payload_size);
+
+    CommandClient& command_client_;
+};
