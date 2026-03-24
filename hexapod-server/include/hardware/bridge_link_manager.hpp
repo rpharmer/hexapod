@@ -15,6 +15,20 @@ class CommandClient;
 
 class BridgeLinkManager {
 public:
+    enum class EnsureLinkFailure : uint8_t {
+        None = 0,
+        CapabilityNegotiation,
+        TransportLink,
+    };
+
+    struct EnsureLinkResult {
+        bool ok{false};
+        EnsureLinkFailure failure{EnsureLinkFailure::TransportLink};
+        bool link_timed_out{false};
+        bool heartbeat_due{false};
+        uint8_t negotiated_capabilities{0};
+    };
+
     ~BridgeLinkManager();
     BridgeLinkManager(std::string device,
                       int baud_rate,
@@ -25,9 +39,11 @@ public:
 
     bool init(uint8_t requested_capabilities);
     bool ensure_link(uint8_t requested_capabilities);
+    EnsureLinkResult ensure_link_with_status(uint8_t requested_capabilities);
 
     bool has_capability(uint8_t capability) const;
     bool is_initialized() const;
+    uint8_t negotiated_capabilities() const;
 
     HardwareStateCodec* codec() const;
     CommandClient* command_client() const;

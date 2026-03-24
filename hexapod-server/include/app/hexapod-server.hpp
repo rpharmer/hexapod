@@ -3,6 +3,7 @@
 #define HEXAPOD_SERVER_HPP
 #include "serialCommsServer.hpp"
 #include "types.hpp"
+#include "config_validation.hpp"
 
 
 struct ParsedToml
@@ -61,6 +62,7 @@ struct ParsedToml
   std::vector<Vec3> servoDynamicsPositiveVmaxRadps{};
   std::vector<Vec3> servoDynamicsNegativeTauS{};
   std::vector<Vec3> servoDynamicsNegativeVmaxRadps{};
+  std::vector<config_validation::ConfigDiagnostic> diagnostics{};
 };
 
 bool tomlParser(std::string filename,  ParsedToml& out);

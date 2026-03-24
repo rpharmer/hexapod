@@ -32,6 +32,10 @@ bool test_scalar_getters_success_and_malformed_payloads() {
     if (!expect(success_bridge->get_current(current), "get_current should succeed with scalar ACK")) {
         return false;
     }
+    if (!expect(success_bridge->last_error() == BridgeError::None,
+                "get_current success should clear last_error")) {
+        return false;
+    }
     if (!expect(success_bridge->get_voltage(voltage), "get_voltage should succeed with scalar ACK")) {
         return false;
     }
@@ -86,6 +90,10 @@ bool test_scalar_getters_success_and_malformed_payloads() {
     }
     if (!expect(!malformed_bridge->get_current(current),
                 "get_current should fail for malformed scalar ACK payload")) {
+        return false;
+    }
+    if (!expect(malformed_bridge->last_error() == BridgeError::ProtocolFailure,
+                "get_current malformed payload should map to protocol failure")) {
         return false;
     }
     if (!expect(!malformed_bridge->get_voltage(voltage),

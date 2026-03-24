@@ -1,5 +1,8 @@
 #include "hardware_bridge_transport_test_helpers.hpp"
 
+#include <chrono>
+#include <thread>
+
 namespace hardware_bridge_transport_test {
 namespace {
 
@@ -50,6 +53,14 @@ bool test_malformed_ack_payload_handling() {
     if (!expect(!bridge->read(out), "read should fail for malformed ACK payload")) {
         return false;
     }
+    const auto metadata = bridge->last_bridge_result();
+    if (!expect(metadata.has_value(), "malformed payload failure should expose bridge metadata")) {
+        return false;
+    }
+    if (!expect(metadata->phase == BridgeFailurePhase::CommandDecode,
+                "malformed ACK payload should classify failure phase as command decode")) {
+        return false;
+    }
     return expect(bridge->last_error() == BridgeError::ProtocolFailure,
                   "malformed ACK payload should map to BridgeError::ProtocolFailure");
 }
@@ -79,6 +90,18 @@ bool test_explicit_nack_behavior_for_command_methods() {
     }
     if (!expect(bridge->last_error() == BridgeError::ProtocolFailure,
                 "explicit NACK should map to BridgeError::ProtocolFailure")) {
+        return false;
+    }
+    const auto metadata = bridge->last_bridge_result();
+    if (!expect(metadata.has_value(), "explicit NACK should expose bridge metadata")) {
+        return false;
+    }
+    if (!expect(metadata->phase == BridgeFailurePhase::CommandResponse,
+                "explicit NACK should classify as command response failure")) {
+        return false;
+    }
+    if (!expect(metadata->domain == BridgeFailureDomain::CommandProtocol,
+                "explicit NACK should classify as command protocol domain")) {
         return false;
     }
 
@@ -145,6 +168,18 @@ bool test_timeout_retry_exhausted() {
     }
     if (!expect(bridge->last_error() == BridgeError::Timeout,
                 "retry exhaustion should map to BridgeError::Timeout")) {
+        return false;
+    }
+    const auto metadata = bridge->last_bridge_result();
+    if (!expect(metadata.has_value(), "retry exhaustion should expose bridge metadata")) {
+        return false;
+    }
+    if (!expect(metadata->phase == BridgeFailurePhase::CommandTransport,
+                "retry exhaustion should classify as command transport failure")) {
+        return false;
+    }
+    if (!expect(metadata->domain == BridgeFailureDomain::TransportLink,
+                "retry exhaustion should classify as transport/link domain")) {
         return false;
     }
 
@@ -215,6 +250,56 @@ bool test_unsupported_command_maps_to_unsupported_error() {
                   "UNSUPPORTED_COMMAND should map to BridgeError::Unsupported");
 }
 
+bool test_capability_negotiation_failure_classification() {
+    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
+    FakePacketEndpoint* endpoint_view = nullptr;
+    SimpleHardwareBridge* bridge = nullptr;
+
+    bool first_hello = true;
+    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
+                                     [&first_hello](const DecodedPacket& request) {
+                                         if (request.cmd == HELLO) {
+                                             if (first_hello) {
+                                                 first_hello = false;
+                                                 return ok_hello_ack(request);
+                                             }
+                                             return std::vector<DecodedPacket>{{request.seq, NACK, {BUSY_NOT_READY}}};
+                                         }
+                                         if (request.cmd == HEARTBEAT) {
+                                             return ok_hello_ack(request);
+                                         }
+                                         if (request.cmd == SET_POWER_RELAY) {
+                                             return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
+                                         }
+                                         return std::vector<DecodedPacket>{};
+                                     });
+    if (!expect(init_ok, "init should succeed before capability negotiation classification test")) {
+        return false;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(550));
+
+    if (!expect(!bridge->set_power_relay(true),
+                "set_power_relay should fail when timeout re-establish handshake fails")) {
+        return false;
+    }
+    if (!expect(bridge->last_error() == BridgeError::ProtocolFailure,
+                "re-establish handshake failure should map to BridgeError::ProtocolFailure")) {
+        return false;
+    }
+
+    const auto metadata = bridge->last_bridge_result();
+    if (!expect(metadata.has_value(), "capability negotiation failure should expose bridge metadata")) {
+        return false;
+    }
+    if (!expect(metadata->phase == BridgeFailurePhase::CapabilityNegotiation,
+                "re-establish handshake failure should classify as capability negotiation")) {
+        return false;
+    }
+    return expect(metadata->domain == BridgeFailureDomain::CapabilityProtocol,
+                  "re-establish handshake failure should classify as capability/protocol domain");
+}
+
 }  // namespace
 
 bool run_failure_and_corruption_tests() {
@@ -239,7 +324,10 @@ bool run_failure_and_corruption_tests() {
     if (!test_protocol_error_retried_and_succeeds()) {
         return false;
     }
-    return test_unsupported_command_maps_to_unsupported_error();
+    if (!test_unsupported_command_maps_to_unsupported_error()) {
+        return false;
+    }
+    return test_capability_negotiation_failure_classification();
 }
 
 }  // namespace hardware_bridge_transport_test

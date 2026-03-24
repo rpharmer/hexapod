@@ -63,15 +63,82 @@ if(CPPLINUXSERIAL_INTERFACE_INCLUDES)
     endif()
 endif()
 
-file(GLOB_RECURSE HEXAPOD_SERVER_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
-list(APPEND HEXAPOD_SERVER_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/cli_options.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/interactive_input_mapper.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/interactive_calibration_actions.cpp"
-)
-list(REMOVE_DUPLICATES HEXAPOD_SERVER_SOURCES)
 set(HEXAPOD_SERVER_MAIN_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/app/hexapod-server.cpp")
-list(REMOVE_ITEM HEXAPOD_SERVER_SOURCES "${HEXAPOD_SERVER_MAIN_SOURCE}")
+
+# Keep this list explicit so target composition is deterministic and reviewable.
+# When adding a new src/*.cpp file, append it to the subsystem block below and
+# keep the entry sorted within that block.
+set(HEXAPOD_SERVER_SOURCES
+    # app
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/app/runtime_teardown.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/app/shutdown_summary.cpp"
+
+    # config
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/config/calibrations_section_parser.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/config/config_validation.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/config/geometry_config.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/config/geometry_section_parser.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/config/motor_calibration_validator.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/config/runtime_section_parser.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/config/toml_parser.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/config/transport_section_parser.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/config/tuning_section_parser.cpp"
+
+    # control
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/body_controller.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/calibration_probe.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/cli_options.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/control_config.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/control_pipeline.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/estimator.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/freshness_policy.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/gait_scheduler.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/geometry_profile_service.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/interactive_calibration_actions.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/interactive_input_mapper.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/loop_executor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/loop_timing.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/mode_runners.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/motion_intent_utils.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/plane_estimation.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/probe_contact_logic.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/robot_control.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/robot_runtime.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime_diagnostics_reporter.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime_freshness_gate.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime_timing_metrics.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/safety_supervisor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/servo_dynamics_fit.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/status_reporter.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/touch_residuals.cpp"
+
+    # hardware
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/bridge_command_api.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/bridge_link_manager.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/command_client.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/handshake_client.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/hardware_bridge.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/hardware_state_codec.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/joint_feedback_estimator.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/serialCommsServer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/sim_hardware_bridge.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/transport_session.cpp"
+
+    # input
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/input/evdev_gamepad_controller.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/input/virtual_gamepad_controller.cpp"
+
+    # kinematics
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/kinematics/leg_fk.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/kinematics/leg_ik.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/kinematics/types.cpp"
+
+    # scenario
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/scenario/scenario_driver.cpp"
+
+    # utils
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/logger.cpp"
+)
 
 add_library(hexapod_server_core
     ${HEXAPOD_SERVER_SOURCES}
