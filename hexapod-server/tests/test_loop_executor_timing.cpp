@@ -26,12 +26,12 @@ public:
         return now_;
     }
 
-    void sleepUntil(const Clock::time_point& deadline, const std::atomic<bool>& running) {
+    void sleepUntil(const Clock::time_point& deadline, const LoopExecutor::CancellationToken& stop_token) {
         std::unique_lock<std::mutex> lock(mutex_);
-        while (now_ < deadline && running.load()) {
-            cv_.wait(lock);
+        while (now_ < deadline && !stop_token.stopRequested()) {
+            cv_.wait_for(lock, std::chrono::milliseconds(1));
         }
-        if (now_ < deadline && !running.load()) {
+        if (now_ < deadline && stop_token.stopRequested()) {
             ++cancelled_waits_;
         }
     }
@@ -70,8 +70,8 @@ bool testCadenceWithFakeTicker() {
 
     LoopExecutor executor({
         .now = [&ticker]() { return ticker.now(); },
-        .sleep_until = [&ticker](const Clock::time_point& deadline, const std::atomic<bool>& running_flag) {
-            ticker.sleepUntil(deadline, running_flag);
+        .sleep_until = [&ticker](const Clock::time_point& deadline, const LoopExecutor::CancellationToken& stop_token) {
+            ticker.sleepUntil(deadline, stop_token);
         },
     });
 
@@ -121,8 +121,8 @@ bool testCancellationLatencyWithoutClockAdvance() {
 
     LoopExecutor executor({
         .now = [&ticker]() { return ticker.now(); },
-        .sleep_until = [&ticker](const Clock::time_point& deadline, const std::atomic<bool>& running_flag) {
-            ticker.sleepUntil(deadline, running_flag);
+        .sleep_until = [&ticker](const Clock::time_point& deadline, const LoopExecutor::CancellationToken& stop_token) {
+            ticker.sleepUntil(deadline, stop_token);
         },
     });
 
@@ -159,8 +159,8 @@ bool testCleanShutdownWithQueuedWork() {
 
     LoopExecutor executor({
         .now = [&ticker]() { return ticker.now(); },
-        .sleep_until = [&ticker](const Clock::time_point& deadline, const std::atomic<bool>& running_flag) {
-            ticker.sleepUntil(deadline, running_flag);
+        .sleep_until = [&ticker](const Clock::time_point& deadline, const LoopExecutor::CancellationToken& stop_token) {
+            ticker.sleepUntil(deadline, stop_token);
         },
     });
 
@@ -197,6 +197,97 @@ bool testCleanShutdownWithQueuedWork() {
            expect(queued == 2, "queued work should remain after clean shutdown");
 }
 
+bool testOverrunAccountingAndDeterministicScheduling() {
+    constexpr auto kPeriod = std::chrono::milliseconds(10);
+    ControlledTicker ticker{};
+    std::atomic<bool> running{true};
+    std::atomic<int> iteration_index{0};
+    std::mutex telemetry_mutex{};
+    std::condition_variable telemetry_cv{};
+    std::vector<LoopExecutor::IterationTelemetry> telemetry{};
+
+    LoopExecutor executor({
+        .now = [&ticker]() { return ticker.now(); },
+        .sleep_until = [&ticker](const Clock::time_point& deadline, const LoopExecutor::CancellationToken& stop_token) {
+            ticker.sleepUntil(deadline, stop_token);
+        },
+    });
+
+    executor.start({LoopExecutor::Task{
+                       .period = std::chrono::duration_cast<std::chrono::microseconds>(kPeriod),
+                       .step = [&ticker, &iteration_index]() {
+                           const int iteration = iteration_index.fetch_add(1);
+                           if (iteration == 0) {
+                               ticker.advance(std::chrono::milliseconds(27));
+                               return;
+                           }
+                           ticker.advance(std::chrono::milliseconds(12));
+                       },
+                       .on_iteration =
+                           [&](const LoopExecutor::IterationTelemetry& sample) {
+                               {
+                                   std::scoped_lock<std::mutex> lock(telemetry_mutex);
+                                   telemetry.push_back(sample);
+                               }
+                               telemetry_cv.notify_all();
+                           },
+                   }},
+                   running);
+
+    {
+        std::unique_lock<std::mutex> lock(telemetry_mutex);
+        telemetry_cv.wait(lock, [&telemetry]() { return !telemetry.empty(); });
+    }
+    ticker.advance(std::chrono::milliseconds(3));
+    {
+        std::unique_lock<std::mutex> lock(telemetry_mutex);
+        telemetry_cv.wait(lock, [&telemetry]() { return telemetry.size() >= 3; });
+    }
+
+    running.store(false);
+    ticker.wakeAll();
+    executor.stop();
+
+    const auto first_start = std::chrono::duration_cast<std::chrono::microseconds>(
+        telemetry[0].cycle_start.time_since_epoch());
+    const auto second_start = std::chrono::duration_cast<std::chrono::microseconds>(
+        telemetry[1].cycle_start.time_since_epoch());
+    const auto delta = second_start - first_start;
+
+    return expect(telemetry[0].overruns == 1, "27ms work on 10ms period should count one missed period") &&
+           expect(delta == std::chrono::microseconds{30'000},
+                  "overrun scheduling should resume at the next 30ms-aligned boundary") &&
+           expect(telemetry[2].cycle_start == telemetry[1].cycle_finish,
+                  "near-deadline path should restart immediately without extra sleep");
+}
+
+bool testStopLatencyBoundWithSlowTask() {
+    using namespace std::chrono_literals;
+    std::atomic<bool> running{true};
+    std::atomic<bool> entered_step{false};
+
+    LoopExecutor executor{};
+    executor.start({LoopExecutor::Task{
+                       .period = std::chrono::microseconds{200'000},
+                       .step = [&]() {
+                           entered_step.store(true);
+                           std::this_thread::sleep_for(40ms);
+                       },
+                   }},
+                   running);
+
+    while (!entered_step.load()) {
+        std::this_thread::yield();
+    }
+
+    const auto stop_start = std::chrono::steady_clock::now();
+    running.store(false);
+    executor.stop();
+    const auto stop_elapsed = std::chrono::steady_clock::now() - stop_start;
+
+    return expect(stop_elapsed < 90ms, "stop latency should remain bounded by in-flight step execution");
+}
+
 }  // namespace
 
 int main() {
@@ -207,6 +298,12 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!testCleanShutdownWithQueuedWork()) {
+        return EXIT_FAILURE;
+    }
+    if (!testOverrunAccountingAndDeterministicScheduling()) {
+        return EXIT_FAILURE;
+    }
+    if (!testStopLatencyBoundWithSlowTask()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
