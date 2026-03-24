@@ -1,10 +1,14 @@
 cmake_minimum_required(VERSION 3.12)
 
-# Change your executable name to something creative!
-set(NAME hexapod-client) # <-- Name your project/executable here!
+set(NAME hexapod-client)
 set(FLASH_SCRIPT program-pico.sh)
 option(HEXAPOD_CLIENT_SETUP_SDKS_ONLY "Populate/prebuild SDK and Pimoroni dependency objects without compiling project firmware sources" OFF)
 option(HEXAPOD_CLIENT_ENABLE_HOST_TESTS "Build native host tests under hexapod-client/tests and register them with CTest" OFF)
+
+if (NOT HEXAPOD_CLIENT_ENABLE_HOST_TESTS)
+    include(pico_sdk_import.cmake)
+    include(pimoroni_pico_import.cmake)
+endif()
 
 project(${NAME} C CXX ASM)
 set(CMAKE_C_STANDARD 11)
@@ -46,12 +50,8 @@ if (HEXAPOD_CLIENT_ENABLE_HOST_TESTS)
     add_test(NAME hexapod-client.command_handlers COMMAND hexapod-client-test-command-handlers)
 
     return()
-endif ()
+endif()
 
-include(pico_sdk_import.cmake)
-include(pimoroni_pico_import.cmake)
-
-# Initialize the SDK
 pico_sdk_init()
 
 set(HEXAPOD_CLIENT_EXCLUDE_FROM_ALL)
