@@ -128,7 +128,13 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_control_pipeline_sanity PRIVATE hexapod_server_core)
     add_test(NAME control_pipeline_output_sanity COMMAND test_control_pipeline_sanity)
 
-    add_executable(test_hardware_bridge_transport tests/test_hardware_bridge_transport.cpp)
+    add_executable(test_hardware_bridge_transport
+        tests/test_hardware_bridge_transport_main.cpp
+        tests/test_hardware_bridge_transport_handshake.cpp
+        tests/test_hardware_bridge_transport_failures.cpp
+        tests/test_hardware_bridge_transport_commands.cpp
+        tests/test_hardware_bridge_transport_capabilities.cpp
+    )
     target_link_libraries(test_hardware_bridge_transport PRIVATE hexapod_server_core)
     add_test(NAME hardware_bridge_transport_behavior COMMAND test_hardware_bridge_transport)
 
