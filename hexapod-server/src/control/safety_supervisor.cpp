@@ -36,19 +36,78 @@ bool SafetySupervisor::canAttemptClear(const MotionIntent& intent,
     return intent.requested_mode == RobotMode::SAFE_IDLE && freshness.intent_valid;
 }
 
+SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
+    const RobotState& raw,
+    const RobotState& est,
+    const MotionIntent&,
+    const FreshnessInputs& freshness,
+    int contact_count) const {
+    const std::array<FaultRule, 6> rules{{
+        FaultRule{
+            .is_triggered = [&](void) {
+                return !freshness.intent_valid;
+            },
+            .fault = FaultCode::COMMAND_TIMEOUT,
+            .torque_cut = false,
+        },
+        FaultRule{
+            .is_triggered = [&](void) {
+                return contact_count < config_.min_foot_contacts ||
+                       contact_count > config_.max_foot_contacts;
+            },
+            .fault = FaultCode::ESTIMATOR_INVALID,
+            .torque_cut = false,
+        },
+        FaultRule{
+            .is_triggered = [&](void) {
+                return !freshness.estimator_valid;
+            },
+            .fault = FaultCode::ESTIMATOR_INVALID,
+            .torque_cut = false,
+        },
+        FaultRule{
+            .is_triggered = [&](void) {
+                return !raw.bus_ok;
+            },
+            .fault = FaultCode::BUS_TIMEOUT,
+            .torque_cut = true,
+        },
+        FaultRule{
+            .is_triggered = [&](void) {
+                return raw.voltage < config_.min_bus_voltage_v ||
+                       raw.current > config_.max_bus_current_a;
+            },
+            .fault = FaultCode::MOTOR_FAULT,
+            .torque_cut = true,
+        },
+        FaultRule{
+            .is_triggered = [&](void) {
+                return std::abs(est.body_twist_state.twist_pos_rad.x) > config_.max_tilt_rad.value ||
+                       std::abs(est.body_twist_state.twist_pos_rad.y) > config_.max_tilt_rad.value;
+            },
+            .fault = FaultCode::TIP_OVER,
+            .torque_cut = true,
+        },
+    }};
+
+    FaultDecision decision{};
+    for (const FaultRule& rule : rules) {
+        if (!rule.is_triggered()) {
+            continue;
+        }
+        if (shouldReplaceFault(decision.code, rule.fault)) {
+            decision.code = rule.fault;
+            decision.torque_cut = rule.torque_cut;
+        }
+    }
+
+    return decision;
+}
+
 SafetySupervisor::FaultDecision SafetySupervisor::evaluateCurrentFault(const RobotState& raw,
                                                                        const RobotState& est,
-                                                                       const MotionIntent&,
+                                                                       const MotionIntent& intent,
                                                                        const FreshnessInputs& freshness) const {
-    FaultDecision decision{};
-
-    const auto consider_fault = [&](FaultCode code, bool torque_cut) {
-        if (shouldReplaceFault(decision.code, code)) {
-            decision.code = code;
-            decision.torque_cut = torque_cut;
-        }
-    };
-
     int contact_count = 0;
     for (bool foot_contact : raw.foot_contacts) {
         if (foot_contact) {
@@ -56,34 +115,7 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateCurrentFault(const Rob
         }
     }
 
-    if (!raw.bus_ok) {
-        consider_fault(FaultCode::BUS_TIMEOUT, true);
-    }
-
-    if (raw.voltage < config_.min_bus_voltage_v ||
-        raw.current > config_.max_bus_current_a) {
-        consider_fault(FaultCode::MOTOR_FAULT, true);
-    }
-
-    if (contact_count < config_.min_foot_contacts ||
-        contact_count > config_.max_foot_contacts) {
-        consider_fault(FaultCode::ESTIMATOR_INVALID, false);
-    }
-
-    if (std::abs(est.body_twist_state.twist_pos_rad.x) > config_.max_tilt_rad.value ||
-        std::abs(est.body_twist_state.twist_pos_rad.y) > config_.max_tilt_rad.value) {
-        consider_fault(FaultCode::TIP_OVER, true);
-    }
-
-    if (!freshness.estimator_valid) {
-        consider_fault(FaultCode::ESTIMATOR_INVALID, false);
-    }
-
-    if (!freshness.intent_valid) {
-        consider_fault(FaultCode::COMMAND_TIMEOUT, false);
-    }
-
-    return decision;
+    return evaluateFaultRules(raw, est, intent, freshness, contact_count);
 }
 
 void SafetySupervisor::trip(FaultCode code, bool torque_cut, TimePointUs timestamp_us) {

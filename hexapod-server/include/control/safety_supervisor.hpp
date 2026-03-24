@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 
 class SafetySupervisor {
 public:
@@ -34,10 +35,30 @@ private:
         bool torque_cut{false};
     };
 
+    // Fault checks are expressed as an ordered rule model.
+    //
+    // Update policy in one place by editing the ordered rules in
+    // evaluateFaultRules(): each rule defines a trigger condition,
+    // resulting fault code, and torque-cut policy.
+    //
+    // Ordering is low->high precedence (matching faultPriority), and
+    // each triggered rule can override the current decision only when its
+    // fault has a higher priority than the current selection.
+    struct FaultRule {
+        std::function<bool()> is_triggered;
+        FaultCode fault{FaultCode::NONE};
+        bool torque_cut{false};
+    };
+
     static int faultPriority(FaultCode code);
     static bool shouldReplaceFault(FaultCode current, FaultCode candidate);
     static std::size_t faultIndex(FaultCode code);
     bool canAttemptClear(const MotionIntent& intent, const FreshnessInputs& freshness) const;
+    FaultDecision evaluateFaultRules(const RobotState& raw,
+                                     const RobotState& est,
+                                     const MotionIntent& intent,
+                                     const FreshnessInputs& freshness,
+                                     int contact_count) const;
     FaultDecision evaluateCurrentFault(const RobotState& raw,
                                        const RobotState& est,
                                        const MotionIntent& intent,

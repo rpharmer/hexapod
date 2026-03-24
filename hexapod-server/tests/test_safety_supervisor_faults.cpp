@@ -60,6 +60,57 @@ bool testHigherPriorityFaultWins() {
            expect(state.torque_cut, "tip-over should request torque cut");
 }
 
+bool testRulePrecedenceAcrossAllFaultTriggers() {
+    SafetySupervisor supervisor;
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+
+    raw.bus_ok = false;
+    raw.voltage = 1.0f;
+    raw.current = 999.0f;
+    raw.foot_contacts = {false, false, false, false, false, false};
+    est.body_twist_state.twist_pos_rad.x = 2.0;
+
+    const SafetyState state = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{false, false});
+
+    return expect(state.active_fault == FaultCode::TIP_OVER,
+                  "when every trigger is active, highest-precedence TIP_OVER should win") &&
+           expect(state.torque_cut,
+                  "highest-precedence TIP_OVER should keep torque cut enabled");
+}
+
+bool testEstimatorBeatsCommandTimeoutWithoutTorqueCut() {
+    SafetySupervisor supervisor;
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+
+    raw.foot_contacts = {false, false, false, false, false, false};
+
+    const SafetyState state = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{false, false});
+
+    return expect(state.active_fault == FaultCode::ESTIMATOR_INVALID,
+                  "ESTIMATOR_INVALID should beat lower-precedence COMMAND_TIMEOUT") &&
+           expect(!state.torque_cut,
+                  "estimator and command timeout faults should not request torque cut");
+}
+
+bool testMotorFaultTorqueCut() {
+    SafetySupervisor supervisor;
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+
+    raw.current = 999.0f;
+
+    const SafetyState state = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+
+    return expect(state.active_fault == FaultCode::MOTOR_FAULT,
+                  "over-current should produce MOTOR_FAULT") &&
+           expect(state.torque_cut, "MOTOR_FAULT should request torque cut");
+}
+
 bool testLatchedRemainsWhenIntentNotSafeIdle() {
     SafetySupervisor supervisor;
     RobotState raw = nominalRaw();
@@ -150,6 +201,9 @@ bool testRecoveryRequiresBothConditionsAndHoldTime() {
 
 int main() {
     if (!testHigherPriorityFaultWins() ||
+        !testRulePrecedenceAcrossAllFaultTriggers() ||
+        !testEstimatorBeatsCommandTimeoutWithoutTorqueCut() ||
+        !testMotorFaultTorqueCut() ||
         !testLatchedRemainsWhenIntentNotSafeIdle() ||
         !testLatchedRemainsWhenIntentStale() ||
         !testRecoveryRequiresBothConditionsAndHoldTime()) {
