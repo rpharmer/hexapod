@@ -2,6 +2,7 @@ import importlib.util
 import pathlib
 import sys
 import unittest
+from types import SimpleNamespace
 
 
 SERVER_PATH = pathlib.Path(__file__).resolve().parents[1] / "server.py"
@@ -27,11 +28,11 @@ class TelemetryParserTests(unittest.TestCase):
         protocol = server.UdpTelemetryProtocol(state, lambda: updates.append(state.to_payload()))
 
         protocol.datagram_received(
-            b'{"geometry": {"coxa": 41.5}, "timestamp_ms": 1000}',
+            b'{"schema_version": 1, "geometry": {"coxa": 41.5}, "timestamp_ms": 1000}',
             ("127.0.0.1", 9000),
         )
         protocol.datagram_received(
-            b'{"type":"joints", "angles_deg": {"LF": [1, 2, 3]}, "timestamp_ms": 1001}',
+            b'{"schema_version": 1, "type":"joints", "angles_deg": {"LF": [1, 2, 3]}, "timestamp_ms": 1001}',
             ("127.0.0.1", 9000),
         )
 
@@ -48,11 +49,11 @@ class TelemetryParserTests(unittest.TestCase):
         before = state.to_payload()
         protocol.datagram_received(b"not-json", ("127.0.0.1", 9000))
         protocol.datagram_received(
-            b'{"angles_deg": {"LF": [1, 2], "RM": [9, 8, "bad"]}}',
+            b'{"schema_version": 1, "angles_deg": {"LF": [1, 2], "RM": [9, 8, "bad"]}}',
             ("127.0.0.1", 9000),
         )
         protocol.datagram_received(
-            b'{"geometry": {"coxa": true, "femur": 77}}',
+            b'{"schema_version": 1, "geometry": {"coxa": true, "femur": 77}}',
             ("127.0.0.1", 9000),
         )
 
@@ -60,6 +61,29 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.angles_deg["RM"], before["angles_deg"]["RM"])
         self.assertEqual(state.geometry["coxa"], before["geometry"]["coxa"])
         self.assertEqual(state.geometry["femur"], 77.0)
+
+    def test_high_frequency_datagrams_do_not_create_unbounded_tasks(self):
+        class FakeLoop:
+            def __init__(self):
+                self.create_task_calls = 0
+
+            def create_task(self, coro):
+                self.create_task_calls += 1
+                coro.close()
+                return SimpleNamespace(done=lambda: False)
+
+        state = server.TelemetryState()
+        loop = FakeLoop()
+        scheduler = server.CoalescingUpdateScheduler(loop, lambda: None, publish_hz=25.0)
+        protocol = server.UdpTelemetryProtocol(state, scheduler.notify_update)
+
+        payload = b'{"schema_version": 1, "type":"joints", "angles_deg": {"LF": [1, 2, 3]}, "timestamp_ms": 1001}'
+        for _ in range(1000):
+            protocol.datagram_received(payload, ("127.0.0.1", 9000))
+
+        self.assertEqual(loop.create_task_calls, 1)
+        self.assertEqual(scheduler.update_notifications, 1000)
+        self.assertGreaterEqual(scheduler.coalesced_notifications, 999)
 
 
 if __name__ == "__main__":
