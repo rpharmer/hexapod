@@ -1,4 +1,6 @@
 #include "calibration_probe.hpp"
+#include "plane_estimation.hpp"
+#include "touch_residuals.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -177,6 +179,30 @@ bool test_requires_minimum_contact_samples() {
     return true;
 }
 
+bool test_touch_residual_filtering_and_rms_behavior() {
+    HexapodGeometry geometry = geometry_config::buildDefaultHexapodGeometry();
+    const LegGeometry leg = geometry.legGeometry[0];
+
+    std::vector<CalibrationTouchSample> samples(4);
+    samples[0].contact = true;
+    samples[1].contact = false;
+    samples[2].contact = true;
+    samples[3].contact = false;
+
+    const std::vector<const CalibrationTouchSample*> filtered = filterContactSamples(samples);
+    if (!expect(filtered.size() == 2, "contact filter should keep only contact samples")) {
+        return false;
+    }
+
+    const std::vector<const CalibrationTouchSample*> empty{};
+    const double rms = computeTouchResidualRms(empty, leg, leg.servo, 0.0);
+    if (!expect(std::abs(rms) < 1e-12, "empty residual set should have zero RMS")) {
+        return false;
+    }
+
+    return true;
+}
+
 bool test_estimate_to_bottom_from_contact_loss_transition() {
     HexapodGeometry geometry = geometry_config::buildDefaultHexapodGeometry();
 
@@ -227,6 +253,32 @@ bool test_estimate_to_bottom_requires_clear_transition() {
         estimateToBottomFromSynchronousLift(geometry, samples);
 
     if (!expect(!result.success, "to-bottom estimate should fail without a loss-of-contact transition")) {
+        return false;
+    }
+
+    return true;
+}
+
+bool test_plane_estimation_counts_and_requires_contact() {
+    const HexapodGeometry geometry = geometry_config::buildDefaultHexapodGeometry();
+    const std::array<bool, kNumLegs> contacts{true, false, true, false, false, false};
+    const BaseClearanceSample sample =
+        makeBaseClearanceSample(geometry, makeLevelPoseAtHeight(0.05), contacts);
+
+    if (!expect(countContacts(sample.foot_contacts) == 2,
+                "contact counter should match true flags")) {
+        return false;
+    }
+
+    BaseClearanceSample no_contact = sample;
+    no_contact.foot_contacts = {false, false, false, false, false, false};
+    int used_contacts = -1;
+    const double plane_height = meanContactPlaneHeight(no_contact, geometry, used_contacts);
+    if (!expect(used_contacts == 0, "plane estimate should report zero used contacts")) {
+        return false;
+    }
+    if (!expect(std::abs(plane_height) < 1e-12,
+                "plane estimate with zero contacts should be zero")) {
         return false;
     }
 
@@ -389,10 +441,16 @@ int main() {
     if (!test_requires_minimum_contact_samples()) {
         return 1;
     }
+    if (!test_touch_residual_filtering_and_rms_behavior()) {
+        return 1;
+    }
     if (!test_estimate_to_bottom_from_contact_loss_transition()) {
         return 1;
     }
     if (!test_estimate_to_bottom_requires_clear_transition()) {
+        return 1;
+    }
+    if (!test_plane_estimation_counts_and_requires_contact()) {
         return 1;
     }
     if (!test_fit_servo_dynamics_recovers_tau_and_vmax()) {
