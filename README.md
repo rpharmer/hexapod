@@ -150,6 +150,7 @@ done
 - `hexapod-client/README.md` — firmware build/flash workflow and protocol command handling notes.
 - `docs/FIRMWARE.md` — wire protocol framing, constants, and payload definitions.
 - `docs/HARDWARE.md` — mechanical/electrical build reference and dimensions.
+- `docs/EXTENDING_IO_AND_HARDWARE.md` — how to add new control input devices and hardware bridge backends.
 
 ## Safety notes
 
