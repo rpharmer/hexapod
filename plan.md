@@ -133,6 +133,7 @@
 2. Track command-failure and freshness-stale counters over longer runs.
 3. Keep docs synchronized with each completed phase.
 4. Use conservative hardware bring-up (low amplitude, unloaded, supervised power cutoff).
+5. Use `./scripts/verify.sh` as the default root quality gate entrypoint for CI and pre-merge checks.
 
 ---
 
