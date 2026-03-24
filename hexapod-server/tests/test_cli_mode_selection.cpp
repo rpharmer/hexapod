@@ -212,6 +212,32 @@ bool testConfigOptionRequiresValue()
                 "missing config value error should mention --config");
 }
 
+bool testScenarioOptionRequiresExplicitValue()
+{
+  std::vector<std::string> args{"hexapod-server", "--scenario", "--scenario-strict"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "scenario without explicit value should fail") &&
+         expect(error.find("--scenario") != std::string::npos,
+                "missing scenario value error should mention --scenario");
+}
+
+bool testControllerDeviceOptionRequiresExplicitValue()
+{
+  std::vector<std::string> args{"hexapod-server", "--xbox-device", "--scenario-lint"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "controller-device without explicit value should fail") &&
+         expect(error.find("--xbox-device") != std::string::npos,
+                "missing controller-device value error should mention option name");
+}
+
 bool testConfigWithScenarioAndControllerOptions()
 {
   std::vector<std::string> args{"hexapod-server",
@@ -252,6 +278,8 @@ int main()
   testControllerDeviceOptionRequiresValueAtEndOfArgv();
   testConfigOptionPersistsPath();
   testConfigOptionRequiresValue();
+  testScenarioOptionRequiresExplicitValue();
+  testControllerDeviceOptionRequiresExplicitValue();
   testConfigWithScenarioAndControllerOptions();
 
   if (g_failures != 0) {
