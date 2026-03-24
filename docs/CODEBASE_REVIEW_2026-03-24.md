@@ -16,6 +16,16 @@ The most valuable next refactors are **structural** rather than correctness fixe
 4. Improve parser maintainability by splitting section-level parsing and table validation.
 5. Expand integration coverage around interactive runtime paths that currently mix IO + behavior logic.
 
+### Delta since the 2026-03-23 review
+
+The repo has already closed part of the prior review backlog:
+
+- interactive CLI parsing and calibration behavior are no longer concentrated in `mode_runners.cpp`; they now live in dedicated units (`cli_options.cpp`, `interactive_input_mapper.cpp`, `interactive_calibration_actions.cpp`),
+- server test coverage increased from 17 to 19 tests in this environment,
+- firmware host tests are now discoverable in CTest (2/2 passing in this environment).
+
+Given those improvements, the remaining highest-leverage work is now concentrated in hardware bridge transaction ergonomics, parser decomposition, and loop cancellation determinism.
+
 ---
 
 ## Scope and review method
@@ -190,9 +200,9 @@ Expand timing tests to include:
 
 ### Sprint 1 (1 week)
 
-1. Split `mode_runners.cpp` into CLI parsing + interactive reducer + calibration action adapters.
-2. Add tests for controller-event-to-action mapping.
-3. Keep behavior identical with golden log/test assertions.
+1. Add tests for controller-event-to-action mapping and interactive calibration action routing.
+2. Keep behavior identical with golden log/test assertions.
+3. Begin extracting an event reducer so controller event interpretation remains side-effect free.
 
 ### Sprint 2 (1–2 weeks)
 
