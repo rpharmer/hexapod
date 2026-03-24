@@ -1,25 +1,17 @@
 #include "hardware_bridge.hpp"
 
-#include <array>
 #include <utility>
 
 #include "bridge_command_api.hpp"
 #include "bridge_link_manager.hpp"
 #include "command_client.hpp"
-#include "geometry_config.hpp"
 #include "hardware_state_codec.hpp"
-#include "hexapod-common.hpp"
 #include "joint_feedback_estimator.hpp"
 #include "logger.hpp"
-#include "protocol_codec.hpp"
 
 namespace {
 
 constexpr uint8_t kRequestedCapabilities = CAPABILITY_ANGULAR_FEEDBACK;
-
-bool decodeScalarFloatPayload(const std::vector<uint8_t>& payload, protocol::ScalarFloat& decoded) {
-    return protocol::decode_scalar_float(payload, decoded);
-}
 
 std::shared_ptr<logging::AsyncLogger> resolveLogger(
     const std::shared_ptr<logging::AsyncLogger>& logger) {
