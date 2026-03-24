@@ -87,3 +87,54 @@ From repository root, run a smoke test that:
 ```bash
 python scripts/visualiser_smoke.py
 ```
+
+
+## Capture and replay workflow
+
+Use capture tooling from repository root (`scripts/`) to record raw UDP JSON traffic and replay it against the visualiser.
+
+### Capture UDP datagrams to NDJSON
+
+```bash
+python scripts/capture_udp_telemetry.py \
+  --host 0.0.0.0 \
+  --port 9870 \
+  --output scripts/fixtures/session.ndjson
+```
+
+Useful options:
+- `--max-frames N`: stop capture after `N` packets.
+
+Each NDJSON line contains capture timestamps (`captured_at_unix_ms` / `captured_at_unix_ns`), source address, raw payload text, and decoded JSON (`datagram`).
+
+### Replay captured frames with timing control
+
+```bash
+python scripts/replay_udp_telemetry.py \
+  --input scripts/fixtures/session.ndjson \
+  --host 127.0.0.1 \
+  --port 9870 \
+  --speed 1.0
+```
+
+Useful replay options:
+- `--speed`: timing scale (`1.0` = original capture timing, `2.0` = 2x faster, `0.5` = slower).
+- `--loop`: repeat capture continuously.
+- `--start-offset-s`: skip to an offset from the beginning of the recording.
+- `--host` / `--port`: destination visualiser endpoint.
+
+### Smoke check path (fixture replay + WebSocket assertion)
+
+Run from repository root:
+
+```bash
+python scripts/visualiser_smoke.py --mode replay
+```
+
+This starts the visualiser server, replays `scripts/fixtures/visualiser_smoke.ndjson`, and validates that a matching WebSocket `state` update is observed.
+
+You can still use direct single-packet mode:
+
+```bash
+python scripts/visualiser_smoke.py --mode direct
+```
