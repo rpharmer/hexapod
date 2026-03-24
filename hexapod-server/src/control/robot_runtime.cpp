@@ -30,13 +30,13 @@ void updateControlTimingMetrics(const control_config::ControlConfig& config,
 
 ControlStatus makeFreshnessGateRejectedStatus(bool estimator_fresh,
                                               bool bus_ok,
-                                              std::atomic<uint64_t>& control_loop_counter) {
+                                              uint64_t loop_counter) {
     ControlStatus status{};
     status.active_mode = RobotMode::SAFE_IDLE;
     status.estimator_valid = estimator_fresh;
     status.bus_ok = bus_ok;
     status.active_fault = estimator_fresh ? FaultCode::COMMAND_TIMEOUT : FaultCode::ESTIMATOR_INVALID;
-    status.loop_counter = control_loop_counter.fetch_add(1) + 1;
+    status.loop_counter = loop_counter;
     return status;
 }
 
@@ -145,24 +145,17 @@ void RobotRuntime::controlStep() {
     const SafetyState safety_state = safety_state_.read();
     const bool bus_ok = raw_state_.read().bus_ok;
 
-    latest_freshness_ = freshness_policy_.evaluate(now, est, intent);
-    const bool estimator_fresh = latest_freshness_.estimator.valid;
-    const bool intent_fresh = latest_freshness_.intent.valid;
+    const FreshnessPolicy::Evaluation freshness = evaluateFreshnessSnapshot(
+        FreshnessEvaluationMode::StrictControl, now, est, intent);
+    recordFreshnessMetrics(FreshnessEvaluationMode::StrictControl, freshness);
 
-    if (!intent_fresh) {
-        stale_intent_count_.fetch_add(1);
-    }
-    if (!estimator_fresh) {
-        stale_estimator_count_.fetch_add(1);
-    }
-
-    if (!estimator_fresh || !intent_fresh) {
+    const uint64_t loop_counter = control_loop_counter_.fetch_add(1) + 1;
+    const ControlDecision decision = computeControlDecision(freshness, bus_ok, loop_counter);
+    if (!decision.allow_pipeline) {
         maybeLogFreshnessGateReject(
-            logger_, estimator_fresh, intent_fresh, latest_freshness_, est, intent);
-        const ControlStatus status = makeFreshnessGateRejectedStatus(
-            estimator_fresh, bus_ok, control_loop_counter_);
-        status_.write(status);
-        joint_targets_.write(JointTargets{});
+            logger_, freshness.estimator.valid, freshness.intent.valid, freshness, est, intent);
+        status_.write(decision.status);
+        joint_targets_.write(decision.joint_targets);
         return;
     }
 
@@ -171,7 +164,7 @@ void RobotRuntime::controlStep() {
         intent,
         safety_state,
         bus_ok,
-        control_loop_counter_.fetch_add(1) + 1);
+        loop_counter);
 
     joint_targets_.write(result.joint_targets);
     status_.write(result.status);
@@ -182,13 +175,59 @@ void RobotRuntime::safetyStep() {
     const RobotState est = estimated_state_.read();
     const MotionIntent intent = motion_intent_.read();
     const TimePointUs now = now_us();
-    latest_freshness_ = freshness_policy_.evaluate(now, est, intent, false);
+    const FreshnessPolicy::Evaluation freshness = evaluateFreshnessSnapshot(
+        FreshnessEvaluationMode::SafetyLenient, now, est, intent);
+    recordFreshnessMetrics(FreshnessEvaluationMode::SafetyLenient, freshness);
 
     const SafetySupervisor::FreshnessInputs freshness_inputs{
-        latest_freshness_.estimator.valid,
-        latest_freshness_.intent.valid};
+        freshness.estimator.valid,
+        freshness.intent.valid};
     const SafetyState s = safety_.evaluate(raw, est, intent, freshness_inputs);
     safety_state_.write(s);
+}
+
+FreshnessPolicy::Evaluation RobotRuntime::evaluateFreshnessSnapshot(FreshnessEvaluationMode mode,
+                                                                    TimePointUs now,
+                                                                    const RobotState& est,
+                                                                    const MotionIntent& intent) {
+    const bool update_tracking = (mode == FreshnessEvaluationMode::StrictControl);
+    latest_freshness_ = freshness_policy_.evaluate(now, est, intent, update_tracking);
+    return latest_freshness_;
+}
+
+void RobotRuntime::recordFreshnessMetrics(FreshnessEvaluationMode mode,
+                                          const FreshnessPolicy::Evaluation& freshness) {
+    if (mode != FreshnessEvaluationMode::StrictControl) {
+        return;
+    }
+
+    if (!freshness.intent.valid) {
+        stale_intent_count_.fetch_add(1);
+    }
+    if (!freshness.estimator.valid) {
+        stale_estimator_count_.fetch_add(1);
+    }
+}
+
+RobotRuntime::ControlDecision RobotRuntime::computeControlDecision(
+    const FreshnessPolicy::Evaluation& freshness,
+    bool bus_ok,
+    uint64_t loop_counter) const {
+    const bool estimator_fresh = freshness.estimator.valid;
+    const bool intent_fresh = freshness.intent.valid;
+    if (estimator_fresh && intent_fresh) {
+        return ControlDecision{
+            .allow_pipeline = true,
+            .status = {},
+            .joint_targets = {},
+        };
+    }
+
+    return ControlDecision{
+        .allow_pipeline = false,
+        .status = makeFreshnessGateRejectedStatus(estimator_fresh, bus_ok, loop_counter),
+        .joint_targets = JointTargets{},
+    };
 }
 
 void RobotRuntime::diagnosticsStep() {

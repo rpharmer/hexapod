@@ -36,6 +36,27 @@ public:
     ControlStatus getStatus() const;
 
 private:
+    enum class FreshnessEvaluationMode {
+        StrictControl,
+        SafetyLenient,
+    };
+
+    struct ControlDecision {
+        bool allow_pipeline{false};
+        ControlStatus status{};
+        JointTargets joint_targets{};
+    };
+
+    FreshnessPolicy::Evaluation evaluateFreshnessSnapshot(FreshnessEvaluationMode mode,
+                                                          TimePointUs now,
+                                                          const RobotState& est,
+                                                          const MotionIntent& intent);
+    void recordFreshnessMetrics(FreshnessEvaluationMode mode,
+                                const FreshnessPolicy::Evaluation& freshness);
+    ControlDecision computeControlDecision(const FreshnessPolicy::Evaluation& freshness,
+                                           bool bus_ok,
+                                           uint64_t loop_counter) const;
+
     std::unique_ptr<IHardwareBridge> hw_;
     std::unique_ptr<IEstimator> estimator_;
     std::shared_ptr<logging::AsyncLogger> logger_;
