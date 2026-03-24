@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -47,25 +48,67 @@ class TelemetryState:
         }
 
 
+@dataclass
+class Diagnostics:
+    udp_received: int = 0
+    udp_rejected: int = 0
+    ws_clients_connected: int = 0
+    ws_send_failures: int = 0
+    last_udp_update_utc: str | None = None
+
+    def mark_udp_update(self) -> None:
+        self.last_udp_update_utc = _utc_now_iso()
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "udp_received": self.udp_received,
+            "udp_rejected": self.udp_rejected,
+            "ws_clients_connected": self.ws_clients_connected,
+            "ws_send_failures": self.ws_send_failures,
+            "last_udp_update_utc": self.last_udp_update_utc,
+        }
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def log_event(level: str, event: str, **context: Any) -> None:
+    pairs = " ".join(f"{key}={value!r}" for key, value in sorted(context.items()))
+    suffix = f" {pairs}" if pairs else ""
+    print(f"[visualiser] level={level} event={event}{suffix}")
+
+
 class UdpTelemetryProtocol(asyncio.DatagramProtocol):
-    def __init__(self, state: TelemetryState, on_update):
+    def __init__(self, state: TelemetryState, diagnostics: Diagnostics, on_update):
         self.state = state
+        self.diagnostics = diagnostics
         self.on_update = on_update
 
     def datagram_received(self, data: bytes, addr):
+        self.diagnostics.udp_received += 1
         try:
             message = json.loads(data.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
+            self.diagnostics.udp_rejected += 1
+            log_event("warning", "udp_rejected", reason="invalid_json", addr=addr)
             return
 
         if not isinstance(message, dict):
+            self.diagnostics.udp_rejected += 1
+            log_event("warning", "udp_rejected", reason="payload_not_object", addr=addr)
             return
 
         schema_version = message.get("schema_version")
         if schema_version != EXPECTED_SCHEMA_VERSION:
-            print(
-                f"[visualiser] warning: ignoring UDP payload with incompatible schema_version="
-                f"{schema_version!r} from {addr}; expected {EXPECTED_SCHEMA_VERSION}"
+            self.diagnostics.udp_rejected += 1
+            log_event(
+                "warning",
+                "udp_rejected",
+                reason="schema_version_mismatch",
+                received_schema=schema_version,
+                expected_schema=EXPECTED_SCHEMA_VERSION,
+                addr=addr,
             )
             return
 
@@ -111,6 +154,7 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
             changed = True
 
         if changed:
+            self.diagnostics.mark_udp_update()
             self.on_update()
 
 
@@ -118,14 +162,16 @@ def _is_number(value: Any) -> bool:
     return isinstance(value, (float, int)) and not isinstance(value, bool)
 
 
-async def start_udp_listener(loop, state: TelemetryState, port: int, on_update):
+async def start_udp_listener(
+    loop, state: TelemetryState, diagnostics: Diagnostics, port: int, on_update
+):
     await loop.create_datagram_endpoint(
-        lambda: UdpTelemetryProtocol(state, on_update),
+        lambda: UdpTelemetryProtocol(state, diagnostics, on_update),
         local_addr=("0.0.0.0", port),
     )
 
 
-async def make_app(state: TelemetryState) -> web.Application:
+async def make_app(state: TelemetryState, diagnostics: Diagnostics, metrics_path: str) -> web.Application:
     app = web.Application()
     clients: set[web.WebSocketResponse] = set()
 
@@ -138,9 +184,11 @@ async def make_app(state: TelemetryState) -> web.Application:
             try:
                 await client.send_str(payload)
             except ConnectionResetError:
+                diagnostics.ws_send_failures += 1
                 stale_clients.append(client)
         for client in stale_clients:
             clients.discard(client)
+        diagnostics.ws_clients_connected = len(clients)
 
     app["broadcast_state"] = broadcast_state
 
@@ -153,6 +201,8 @@ async def make_app(state: TelemetryState) -> web.Application:
         ws = web.WebSocketResponse(heartbeat=10)
         await ws.prepare(request)
         clients.add(ws)
+        diagnostics.ws_clients_connected = len(clients)
+        log_event("info", "ws_connected", client_count=diagnostics.ws_clients_connected)
 
         await ws.send_str(json.dumps(state.to_payload()))
 
@@ -163,10 +213,23 @@ async def make_app(state: TelemetryState) -> web.Application:
                 break
 
         clients.discard(ws)
+        diagnostics.ws_clients_connected = len(clients)
+        log_event("info", "ws_disconnected", client_count=diagnostics.ws_clients_connected)
         return ws
+
+    async def metrics_handler(_: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "status": "ok",
+                "telemetry_timestamp_ms": state.timestamp_ms,
+                "generated_at_utc": _utc_now_iso(),
+                "diagnostics": diagnostics.snapshot(),
+            }
+        )
 
     app.router.add_get("/", index)
     app.router.add_get("/ws", ws_handler)
+    app.router.add_get(metrics_path, metrics_handler)
     app.router.add_static("/", static_dir, show_index=True)
     return app
 
@@ -175,10 +238,23 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description="Hexapod visualiser UDP -> WebSocket bridge")
     parser.add_argument("--http-port", type=int, default=8080, help="HTTP/WebSocket port")
     parser.add_argument("--udp-port", type=int, default=9870, help="UDP telemetry input port")
+    parser.add_argument(
+        "--metrics-path",
+        type=str,
+        default="/healthz",
+        help="HTTP path for lightweight diagnostics JSON endpoint",
+    )
+    parser.add_argument(
+        "--stats-log-interval",
+        type=float,
+        default=30.0,
+        help="Seconds between periodic diagnostics logs (0 disables periodic logs)",
+    )
     args = parser.parse_args()
 
     state = TelemetryState()
-    app = await make_app(state)
+    diagnostics = Diagnostics()
+    app = await make_app(state, diagnostics, args.metrics_path)
 
     async def on_update_async() -> None:
         await app["broadcast_state"]()
@@ -186,14 +262,29 @@ async def main() -> None:
     def on_update() -> None:
         asyncio.create_task(on_update_async())
 
-    await start_udp_listener(asyncio.get_running_loop(), state, args.udp_port, on_update)
+    await start_udp_listener(asyncio.get_running_loop(), state, diagnostics, args.udp_port, on_update)
 
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", args.http_port)
     await site.start()
 
-    print(f"Visualiser running: http://localhost:{args.http_port} | UDP input: {args.udp_port}")
+    async def periodic_stats_logger() -> None:
+        if args.stats_log_interval <= 0:
+            return
+        while True:
+            await asyncio.sleep(args.stats_log_interval)
+            log_event("info", "periodic_stats", **diagnostics.snapshot())
+
+    asyncio.create_task(periodic_stats_logger())
+    log_event(
+        "info",
+        "startup",
+        http_url=f"http://localhost:{args.http_port}",
+        udp_port=args.udp_port,
+        metrics_path=args.metrics_path,
+        stats_log_interval=args.stats_log_interval,
+    )
     await asyncio.Event().wait()
 
 

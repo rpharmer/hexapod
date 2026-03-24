@@ -24,7 +24,10 @@ class TelemetryParserTests(unittest.TestCase):
     def test_udp_protocol_merges_partial_updates_with_schema_gate(self):
         state = server.TelemetryState()
         updates = []
-        protocol = server.UdpTelemetryProtocol(state, lambda: updates.append(state.to_payload()))
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(
+            state, diagnostics, lambda: updates.append(state.to_payload())
+        )
 
         protocol.datagram_received(
             b'{"schema_version": 1, "geometry": {"coxa": 41.5}, "timestamp_ms": 1000}',
@@ -59,7 +62,8 @@ class TelemetryParserTests(unittest.TestCase):
 
     def test_udp_protocol_schema_gate_keeps_parser_safe_for_malformed_json(self):
         state = server.TelemetryState()
-        protocol = server.UdpTelemetryProtocol(state, lambda: None)
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
 
         before = state.to_payload()
         protocol.datagram_received(b"not-json", ("127.0.0.1", 9000))
