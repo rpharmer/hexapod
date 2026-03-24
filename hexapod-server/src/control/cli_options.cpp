@@ -32,8 +32,11 @@ bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error)
       out.scenarioValidationMode = ScenarioDriver::ValidationMode::Strict;
       out.mode = ServerMode::Scenario;
     } else if (arg == "--xbox-device" || arg == "--controller-device") {
-      error = arg + " requires a device path";
-      return false;
+      const char* value = consumeRequiredValue(i, arg, "a device path");
+      if (value == nullptr) {
+        return false;
+      }
+      out.controllerDevice = value;
     } else if (arg == "--log-file") {
       if (i + 1 >= argc || std::string(argv[i + 1]).rfind("--", 0) == 0) {
         error = "--log-file requires a file path";
@@ -42,11 +45,6 @@ bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error)
       out.logFilePath = argv[++i];
     } else if (arg == "--console-only") {
       out.consoleOnlyLogging = true;
-      const char* value = consumeRequiredValue(i, arg, "a device path");
-      if (value == nullptr) {
-        return false;
-      }
-      out.controllerDevice = value;
     } else {
       if (arg.rfind("--", 0) == 0) {
         error = "Unknown option: " + arg;
