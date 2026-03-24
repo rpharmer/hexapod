@@ -14,7 +14,7 @@
 #include "logger.hpp"
 #include "mode_runners.hpp"
 #include "robot_control.hpp"
-#include "shutdown_summary.hpp"
+#include "runtime_teardown.hpp"
 #include "sim_hardware_bridge.hpp"
 #include "toml_parser.hpp"
 
@@ -135,31 +135,7 @@ int main(int argc, char** argv)
     runner_rc = runner.run(robot, options, control_cfg, logger, g_exit);
   }
 
-  bool teardown_ok = true;
-  try {
-    robot.stop();
-  } catch (const std::exception& ex) {
-    teardown_ok = false;
-    LOG_ERROR(logger, "Robot teardown failed: ", ex.what());
-  } catch (...) {
-    teardown_ok = false;
-    LOG_ERROR(logger, "Robot teardown failed: unknown exception");
-  }
-
-  if (teardown_ok) {
-    LOG_INFO(logger, "All workers joined");
-  } else {
-    LOG_ERROR(logger, "All workers joined: false");
-  }
-
-  const std::size_t dropped_messages = logger->DroppedMessageCount();
-  if (dropped_messages > 0) {
-    LOG_ERROR(logger, "Dropped messages=", dropped_messages);
-  } else {
-    LOG_INFO(logger, "Dropped messages=", dropped_messages);
-  }
-
-  app::logShutdownSummary(logger, teardown_ok, dropped_messages, runner_rc);
+  app::runRuntimeTeardown(logger, [&robot]() { robot.stop(); }, runner_rc);
 
   logger->Flush();
   logger->Stop();
