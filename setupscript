@@ -1,0 +1,43 @@
+cd ..
+git clone https://github.com/ToruNiina/toml11
+cd toml11
+git submodule update --init --recursive
+cmake -B ./build/
+cmake --build ./build/
+cmake --install ./build/
+cd ..
+git clone https://github.com/gbmhunter/CppLinuxSerial
+cd CppLinuxSerial
+mkdir build
+cd build
+cmake .. -DBUILD_TESTS=FALSE
+make
+sudo make install
+cd /workspace/
+mkdir pico
+cd pico
+git clone https://github.com/raspberrypi/pico-sdk
+cd pico-sdk
+git submodule update --init
+cd ../
+sudo apt update
+sudo apt install -y cmake gcc-arm-none-eabi build-essential
+git clone https://github.com/pimoroni/pimoroni-pico.git
+cd pimoroni-pico
+git submodule update --init
+mkdir build
+cd /workspace/hexapod/
+cd hexapod-server
+cmake -S . -B build
+cmake --build build -j
+cd /workspace/hexapod/hexapod-client
+cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON
+cmake --build build --target setup-sdks
+cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF
+
+
+enviroment variables:
+
+PICO_SDK_PATH    /workspace/pico/pico-sdk
+PIMORONI_PICO_PATH    /workspace/pico/pimoroni-pico
+
