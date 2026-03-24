@@ -13,11 +13,19 @@ void parseGeometrySection(const toml::value& root, ParsedToml& out)
   std::vector<double> default_femur_attach;
   std::vector<double> default_tibia_attach;
   std::vector<double> default_side_sign;
+  std::vector<Vec3> default_positive_tau_s;
+  std::vector<Vec3> default_positive_vmax_radps;
+  std::vector<Vec3> default_negative_tau_s;
+  std::vector<Vec3> default_negative_vmax_radps;
   default_mount_angles.reserve(kNumLegs);
   default_coxa_offsets.reserve(kNumLegs);
   default_femur_attach.reserve(kNumLegs);
   default_tibia_attach.reserve(kNumLegs);
   default_side_sign.reserve(kNumLegs);
+  default_positive_tau_s.reserve(kNumLegs);
+  default_positive_vmax_radps.reserve(kNumLegs);
+  default_negative_tau_s.reserve(kNumLegs);
+  default_negative_vmax_radps.reserve(kNumLegs);
 
   for (const auto& leg : default_geometry.legGeometry) {
     default_mount_angles.push_back(rad2deg(leg.mountAngle));
@@ -25,6 +33,22 @@ void parseGeometrySection(const toml::value& root, ParsedToml& out)
     default_femur_attach.push_back(rad2deg(leg.servo.femurOffset));
     default_tibia_attach.push_back(rad2deg(leg.servo.tibiaOffset));
     default_side_sign.push_back(leg.servo.femurSign);
+    default_positive_tau_s.push_back(
+        Vec3{leg.servoDynamics[COXA].positive_direction.tau_s,
+             leg.servoDynamics[FEMUR].positive_direction.tau_s,
+             leg.servoDynamics[TIBIA].positive_direction.tau_s});
+    default_positive_vmax_radps.push_back(
+        Vec3{leg.servoDynamics[COXA].positive_direction.vmax_radps,
+             leg.servoDynamics[FEMUR].positive_direction.vmax_radps,
+             leg.servoDynamics[TIBIA].positive_direction.vmax_radps});
+    default_negative_tau_s.push_back(
+        Vec3{leg.servoDynamics[COXA].negative_direction.tau_s,
+             leg.servoDynamics[FEMUR].negative_direction.tau_s,
+             leg.servoDynamics[TIBIA].negative_direction.tau_s});
+    default_negative_vmax_radps.push_back(
+        Vec3{leg.servoDynamics[COXA].negative_direction.vmax_radps,
+             leg.servoDynamics[FEMUR].negative_direction.vmax_radps,
+             leg.servoDynamics[TIBIA].negative_direction.vmax_radps});
   }
 
   out.coxaLengthM = config_validation::parseDoubleWithFallback(
@@ -52,6 +76,18 @@ void parseGeometrySection(const toml::value& root, ParsedToml& out)
       root, "Geometry.SideSign", default_side_sign, kNumLegs, -1.0, 1.0, "geometry");
   out.coxaOffsetsM = config_validation::parseVec3ListWithFallback(
       root, "Geometry.CoxaOffsetsM", default_coxa_offsets, kNumLegs, -0.30, 0.30, "geometry");
+  out.servoDynamicsPositiveTauS = config_validation::parseVec3ListWithFallback(
+      root, "Geometry.ServoDynamicsPositiveTauS", default_positive_tau_s, kNumLegs, 0.0, 2.0,
+      "geometry");
+  out.servoDynamicsPositiveVmaxRadps = config_validation::parseVec3ListWithFallback(
+      root, "Geometry.ServoDynamicsPositiveVmaxRadps", default_positive_vmax_radps, kNumLegs, 0.0,
+      30.0, "geometry");
+  out.servoDynamicsNegativeTauS = config_validation::parseVec3ListWithFallback(
+      root, "Geometry.ServoDynamicsNegativeTauS", default_negative_tau_s, kNumLegs, 0.0, 2.0,
+      "geometry");
+  out.servoDynamicsNegativeVmaxRadps = config_validation::parseVec3ListWithFallback(
+      root, "Geometry.ServoDynamicsNegativeVmaxRadps", default_negative_vmax_radps, kNumLegs, 0.0,
+      30.0, "geometry");
 }
 
 } // namespace geometry_section_parser

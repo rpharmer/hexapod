@@ -54,6 +54,10 @@ struct ParsedToml
   std::vector<double> tibiaAttachDeg{};
   std::vector<double> sideSign{};
   double bodyToBottomM{0.040};
+  std::vector<Vec3> servoDynamicsPositiveTauS{};
+  std::vector<Vec3> servoDynamicsPositiveVmaxRadps{};
+  std::vector<Vec3> servoDynamicsNegativeTauS{};
+  std::vector<Vec3> servoDynamicsNegativeVmaxRadps{};
 };
 
 bool tomlParser(std::string filename,  ParsedToml& out);

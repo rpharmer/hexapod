@@ -1,4 +1,5 @@
 #include "control_config.hpp"
+#include "geometry_config.hpp"
 #include "hexapod-server.hpp"
 #include "toml_parser.hpp"
 
@@ -284,6 +285,53 @@ bool testBaselineConfigParity()
                 "default timeout parity should match config.sim.txt baseline");
 }
 
+bool testGeometryDynamicsLoadedFromParsedConfig()
+{
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(configPath("config.txt"), parsed), "config.txt should parse")) {
+    return false;
+  }
+  if (!expect(parsed.servoDynamicsPositiveTauS.size() == kNumLegs,
+              "servo dynamics tau should be populated per leg")) {
+    return false;
+  }
+  if (!expect(parsed.servoDynamicsNegativeVmaxRadps.size() == kNumLegs,
+              "servo dynamics vmax should be populated per leg")) {
+    return false;
+  }
+  parsed.servoDynamicsPositiveTauS[0] = Vec3{0.11, 0.12, 0.13};
+  parsed.servoDynamicsNegativeVmaxRadps[0] = Vec3{6.1, 6.2, 6.3};
+
+  geometry_config::loadFromParsedToml(parsed);
+  const HexapodGeometry& geometry = geometry_config::activeHexapodGeometry();
+
+  return expect(near(geometry.legGeometry[0].servoDynamics[COXA].positive_direction.tau_s, 0.11),
+                "coxa positive tau should load from parsed config") &&
+         expect(near(geometry.legGeometry[0].servoDynamics[FEMUR].positive_direction.tau_s, 0.12),
+                "femur positive tau should load from parsed config") &&
+         expect(near(geometry.legGeometry[0].servoDynamics[TIBIA].negative_direction.vmax_radps,
+                     6.3),
+                "tibia negative vmax should load from parsed config");
+}
+
+bool testGeometryCanBeWrittenBackToParsedConfig()
+{
+  HexapodGeometry geometry = geometry_config::buildDefaultHexapodGeometry();
+  geometry.legGeometry[0].servoDynamics[COXA].positive_direction.tau_s = 0.14;
+  geometry.legGeometry[1].servoDynamics[FEMUR].negative_direction.vmax_radps = 5.5;
+
+  ParsedToml out{};
+  geometry_config::writeToParsedToml(out, geometry);
+
+  return expect(near(out.servoDynamicsPositiveTauS[0].x, 0.14),
+                "writeToParsedToml should export positive tau") &&
+         expect(near(out.servoDynamicsNegativeVmaxRadps[1].y, 5.5),
+                "writeToParsedToml should export negative vmax") &&
+         expect(near(out.coxaLengthM, geometry.legGeometry[0].coxaLength.value),
+                "writeToParsedToml should export geometry dimensions");
+}
+
 } // namespace
 
 int main()
@@ -295,6 +343,8 @@ int main()
   testCalibrationNormalizationStableForShuffledTable();
   testSimModeTransportOptional();
   testBaselineConfigParity();
+  testGeometryDynamicsLoadedFromParsedConfig();
+  testGeometryCanBeWrittenBackToParsedConfig();
 
   if (g_failures != 0) {
     std::cerr << g_failures << " test(s) failed\n";
