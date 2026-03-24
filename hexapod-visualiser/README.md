@@ -66,3 +66,24 @@ Leg keys expected: `LF`, `LM`, `LR`, `RF`, `RM`, `RR`.
 From the server loop, serialize latest geometry once at startup, then send joint angles each control cycle as UDP datagrams to the visualiser host/port.
 
 This keeps visualisation decoupled from control timing and avoids adding heavy UI dependencies into the control process.
+
+## Parser tests
+
+Run parser/merge behavior tests for `TelemetryState` + `UdpTelemetryProtocol`:
+
+```bash
+cd hexapod-visualiser
+python -m unittest tests/test_udp_parser.py
+```
+
+## End-to-end smoke flow
+
+From repository root, run a smoke test that:
+
+1. starts the visualiser backend,
+2. sends a canonical UDP telemetry packet,
+3. verifies WebSocket state contains expected fields.
+
+```bash
+python scripts/visualiser_smoke.py
+```
