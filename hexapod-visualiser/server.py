@@ -33,6 +33,58 @@ DEFAULT_GEOMETRY = {
 }
 
 
+class CoalescingUpdateScheduler:
+    """Coalesces update notifications and publishes at a bounded rate."""
+
+    def __init__(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        publish_coro,
+        *,
+        publish_hz: float = 25.0,
+        log_every: int = 200,
+    ):
+        self.loop = loop
+        self.publish_coro = publish_coro
+        self.publish_interval_s = 1.0 / publish_hz
+        self.log_every = log_every
+
+        self._dirty = False
+        self._runner_task: asyncio.Task | None = None
+
+        self.update_notifications = 0
+        self.publish_cycles = 0
+        self.coalesced_notifications = 0
+
+    def notify_update(self) -> None:
+        self.update_notifications += 1
+        if self._dirty:
+            self.coalesced_notifications += 1
+            self._maybe_log_coalescing()
+        self._dirty = True
+
+        if self._runner_task is None or self._runner_task.done():
+            self._runner_task = self.loop.create_task(self._run())
+
+    def _maybe_log_coalescing(self) -> None:
+        if self.coalesced_notifications and self.coalesced_notifications % self.log_every == 0:
+            print(
+                "[visualiser] info: coalesced notifications="
+                f"{self.coalesced_notifications}, publish_cycles={self.publish_cycles}, "
+                f"notifications={self.update_notifications}"
+            )
+
+    async def _run(self) -> None:
+        try:
+            while self._dirty:
+                self._dirty = False
+                await self.publish_coro()
+                self.publish_cycles += 1
+                await asyncio.sleep(self.publish_interval_s)
+        finally:
+            self._runner_task = None
+
+
 @dataclass
 class TelemetryState:
     geometry: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_GEOMETRY))
@@ -259,9 +311,13 @@ async def main() -> None:
     async def on_update_async() -> None:
         await app["broadcast_state"]()
 
-    def on_update() -> None:
-        asyncio.create_task(on_update_async())
+    update_scheduler = CoalescingUpdateScheduler(
+        asyncio.get_running_loop(),
+        on_update_async,
+        publish_hz=25.0,
+    )
 
+    await start_udp_listener(asyncio.get_running_loop(), state, args.udp_port, update_scheduler.notify_update)
     await start_udp_listener(asyncio.get_running_loop(), state, diagnostics, args.udp_port, on_update)
 
     runner = web.AppRunner(app)
