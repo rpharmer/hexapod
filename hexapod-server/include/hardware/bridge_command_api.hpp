@@ -14,24 +14,12 @@ public:
     explicit BridgeCommandApi(CommandClient& command_client);
 
     bool request_ack(CommandCode cmd, const std::vector<uint8_t>& payload);
-    bool request_ack(uint8_t cmd, const std::vector<uint8_t>& payload);
     bool request_ack_payload(CommandCode cmd,
-                             const std::vector<uint8_t>& payload,
-                             std::vector<uint8_t>& out_payload);
-    bool request_ack_payload(uint8_t cmd,
                              const std::vector<uint8_t>& payload,
                              std::vector<uint8_t>& out_payload);
 
     template <typename T, typename Decoder>
     bool request_decoded(CommandCode cmd,
-                         const std::vector<uint8_t>& payload,
-                         Decoder&& decoder,
-                         T& out) {
-        return request_decoded(as_u8(cmd), payload, std::forward<Decoder>(decoder), out);
-    }
-
-    template <typename T, typename Decoder>
-    bool request_decoded(uint8_t cmd,
                          const std::vector<uint8_t>& payload,
                          Decoder&& decoder,
                          T& out) {
@@ -49,15 +37,15 @@ public:
     }
 
 private:
-    bool request_transaction(uint8_t cmd,
+    bool request_transaction(CommandCode cmd,
                              const std::vector<uint8_t>& payload,
                              std::vector<uint8_t>* out_payload);
 
-    static void log_command_failure(uint8_t cmd,
+    static void log_command_failure(CommandCode cmd,
                                     TransportSession::OutcomeClass outcome_class,
                                     uint8_t nack_code,
                                     std::size_t response_payload_size);
-    static void log_decode_failure(uint8_t cmd, std::size_t response_payload_size);
+    static void log_decode_failure(CommandCode cmd, std::size_t response_payload_size);
 
     CommandClient& command_client_;
 };

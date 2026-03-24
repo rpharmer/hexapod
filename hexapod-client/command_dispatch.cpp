@@ -129,10 +129,12 @@ void runCommandLoop()
     if(ctx.serial.recv_packet(packet))
     {
       lastHostActivity = get_absolute_time();
+      CommandCode command = CommandCode::HELLO;
+      const bool has_known_command = try_parse_command_code(packet.cmd, command);
 
       if(ctx.state != HexapodState::ACTIVE)
       {
-        if(packet.cmd == as_u8(CommandCode::HELLO))
+        if(has_known_command && command == CommandCode::HELLO)
         {
           if(handleHandshake(ctx, packet.seq, packet.payload))
             ctx.state = HexapodState::ACTIVE;
@@ -142,24 +144,37 @@ void runCommandLoop()
           continue;
         }
       }
-      else if(packet.cmd == as_u8(CommandCode::HELLO))
-      {
-        ctx.serial.send_packet(packet.seq, as_u8(CommandCode::NACK), {ALREADY_PAIRED});
-      }
-      else if(packet.cmd == as_u8(CommandCode::HEARTBEAT))
-      {
-        handleHeartbeatCommand(ctx, packet.seq);
-      }
-      else if(dispatchCommand(ctx, packet, COMMAND_ROUTES.data(), COMMAND_ROUTES.size(), respondInvalidPayloadLength))
-      {
-      }
-      else if(packet.cmd == as_u8(CommandCode::KILL))
-      {
-        break;
-      }
       else
       {
-        ctx.serial.send_packet(packet.seq, as_u8(CommandCode::NACK), {UNSUPPORTED_COMMAND});
+        if(!has_known_command)
+        {
+          ctx.serial.send_packet(packet.seq, as_u8(CommandCode::NACK), {UNSUPPORTED_COMMAND});
+          continue;
+        }
+
+        switch(command)
+        {
+          case CommandCode::HELLO:
+            ctx.serial.send_packet(packet.seq, as_u8(CommandCode::NACK), {ALREADY_PAIRED});
+            break;
+          case CommandCode::HEARTBEAT:
+            handleHeartbeatCommand(ctx, packet.seq);
+            break;
+          case CommandCode::KILL:
+            return;
+          default:
+            if(!dispatchCommand(ctx,
+                                command,
+                                packet.seq,
+                                packet.payload,
+                                COMMAND_ROUTES.data(),
+                                COMMAND_ROUTES.size(),
+                                respondInvalidPayloadLength))
+            {
+              ctx.serial.send_packet(packet.seq, as_u8(CommandCode::NACK), {UNSUPPORTED_COMMAND});
+            }
+            break;
+        }
       }
 
       continue;

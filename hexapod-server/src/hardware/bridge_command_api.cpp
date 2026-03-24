@@ -11,27 +11,16 @@ BridgeCommandApi::BridgeCommandApi(CommandClient& command_client)
 
 bool BridgeCommandApi::request_ack(CommandCode cmd,
                                    const std::vector<uint8_t>& payload) {
-    return request_ack(as_u8(cmd), payload);
-}
-
-bool BridgeCommandApi::request_ack(uint8_t cmd,
-                                   const std::vector<uint8_t>& payload) {
     return request_transaction(cmd, payload, nullptr);
 }
 
 bool BridgeCommandApi::request_ack_payload(CommandCode cmd,
                                            const std::vector<uint8_t>& payload,
                                            std::vector<uint8_t>& out_payload) {
-    return request_ack_payload(as_u8(cmd), payload, out_payload);
-}
-
-bool BridgeCommandApi::request_ack_payload(uint8_t cmd,
-                                           const std::vector<uint8_t>& payload,
-                                           std::vector<uint8_t>& out_payload) {
     return request_transaction(cmd, payload, &out_payload);
 }
 
-bool BridgeCommandApi::request_transaction(uint8_t cmd,
+bool BridgeCommandApi::request_transaction(CommandCode cmd,
                                            const std::vector<uint8_t>& payload,
                                            std::vector<uint8_t>* out_payload) {
     const auto outcome = command_client_.transact(cmd, payload, out_payload);
@@ -44,7 +33,7 @@ bool BridgeCommandApi::request_transaction(uint8_t cmd,
     return false;
 }
 
-void BridgeCommandApi::log_command_failure(uint8_t cmd,
+void BridgeCommandApi::log_command_failure(CommandCode cmd,
                                            TransportSession::OutcomeClass outcome_class,
                                            uint8_t nack_code,
                                            std::size_t response_payload_size) {
@@ -62,7 +51,7 @@ void BridgeCommandApi::log_command_failure(uint8_t cmd,
     }
 }
 
-void BridgeCommandApi::log_decode_failure(uint8_t cmd, std::size_t response_payload_size) {
+void BridgeCommandApi::log_decode_failure(CommandCode cmd, std::size_t response_payload_size) {
     if (auto logger = logging::GetDefaultLogger()) {
         LOG_ERROR(logger,
                   "command ",
