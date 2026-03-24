@@ -1,0 +1,2 @@
+{"captured_at_unix_ms": 1700000000000, "datagram": {"schema_version": 1, "geometry": {"coxa": 35.0, "femur": 70.0, "tibia": 110.0, "body_radius": 60.0}}}
+{"captured_at_unix_ms": 1700000000033, "datagram": {"schema_version": 1, "type": "joints", "timestamp_ms": 1700000000033, "angles_deg": {"LF": [0.0, 20.0, -40.0], "LM": [1.0, 21.0, -41.0], "LR": [2.0, 22.0, -42.0], "RF": [3.0, 23.0, -43.0], "RM": [4.0, 24.0, -44.0], "RR": [5.0, 25.0, -45.0]}}}

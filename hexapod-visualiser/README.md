@@ -22,6 +22,59 @@ In another terminal, run the sample data stream:
 python simulate_telemetry.py --host 127.0.0.1 --port 9870 --hz 30
 ```
 
+## Visualiser camera usage
+
+- **Orbit:** left-click + drag on the canvas.
+- **Pan:** right-click (or Shift + left-click) + drag.
+- **Zoom:** mouse wheel / trackpad scroll.
+- **Presets:** use **Top**, **Front**, **Side**, or **Reset View** in the header for deterministic camera poses.
+## Operational diagnostics
+
+The backend now emits structured logs with a consistent prefix:
+
+- Prefix: `[visualiser]`
+- Required fields: `level=<...> event=<...>`
+- Additional context fields are logged as key/value pairs (for example: UDP source address, schema mismatch details, active client count).
+
+### Counters tracked
+
+- `udp_received`: total UDP datagrams received by the server.
+- `udp_rejected`: UDP datagrams rejected due to invalid JSON, non-object payloads, or schema mismatch.
+- `ws_clients_connected`: current number of active WebSocket clients.
+- `ws_send_failures`: number of WebSocket broadcast send failures.
+- `last_udp_update_utc`: UTC timestamp of the most recent accepted UDP update that changed state.
+
+### Periodic stats logs
+
+By default, a periodic structured `event=periodic_stats` line is emitted every 30 seconds.
+
+- Change interval: `--stats-log-interval <seconds>`
+- Disable periodic logs: `--stats-log-interval 0`
+
+### Health / metrics endpoint
+
+The server exposes a lightweight JSON diagnostics endpoint.
+
+- Default path: `/healthz`
+- Change path: `--metrics-path /metrics`
+
+Example response shape:
+
+```json
+{
+  "status": "ok",
+  "telemetry_timestamp_ms": 1712345678901,
+  "generated_at_utc": "2026-03-24T00:00:00.000000Z",
+  "diagnostics": {
+    "udp_received": 1200,
+    "udp_rejected": 3,
+    "ws_clients_connected": 1,
+    "ws_send_failures": 0,
+    "last_udp_update_utc": "2026-03-24T00:00:00.000000Z"
+  }
+}
+```
+
 ## Telemetry format (UDP JSON)
 
 You can send partial updates or full state.
@@ -86,4 +139,55 @@ From repository root, run a smoke test that:
 
 ```bash
 python scripts/visualiser_smoke.py
+```
+
+
+## Capture and replay workflow
+
+Use capture tooling from repository root (`scripts/`) to record raw UDP JSON traffic and replay it against the visualiser.
+
+### Capture UDP datagrams to NDJSON
+
+```bash
+python scripts/capture_udp_telemetry.py \
+  --host 0.0.0.0 \
+  --port 9870 \
+  --output scripts/fixtures/session.ndjson
+```
+
+Useful options:
+- `--max-frames N`: stop capture after `N` packets.
+
+Each NDJSON line contains capture timestamps (`captured_at_unix_ms` / `captured_at_unix_ns`), source address, raw payload text, and decoded JSON (`datagram`).
+
+### Replay captured frames with timing control
+
+```bash
+python scripts/replay_udp_telemetry.py \
+  --input scripts/fixtures/session.ndjson \
+  --host 127.0.0.1 \
+  --port 9870 \
+  --speed 1.0
+```
+
+Useful replay options:
+- `--speed`: timing scale (`1.0` = original capture timing, `2.0` = 2x faster, `0.5` = slower).
+- `--loop`: repeat capture continuously.
+- `--start-offset-s`: skip to an offset from the beginning of the recording.
+- `--host` / `--port`: destination visualiser endpoint.
+
+### Smoke check path (fixture replay + WebSocket assertion)
+
+Run from repository root:
+
+```bash
+python scripts/visualiser_smoke.py --mode replay
+```
+
+This starts the visualiser server, replays `scripts/fixtures/visualiser_smoke.ndjson`, and validates that a matching WebSocket `state` update is observed.
+
+You can still use direct single-packet mode:
+
+```bash
+python scripts/visualiser_smoke.py --mode direct
 ```
