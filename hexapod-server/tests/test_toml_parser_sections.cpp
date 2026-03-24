@@ -3,6 +3,7 @@
 #include "toml_parser.hpp"
 
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -44,11 +45,30 @@ std::string writeTemp(const std::string& name, const std::string& content)
   return path;
 }
 
+
+std::string configPath(const std::string& file)
+{
+  const auto base = std::filesystem::path(__FILE__).parent_path().parent_path();
+  return (base / file).string();
+}
+
+bool replaceOnce(std::string& text, const std::string& from, const std::string& to)
+{
+  const auto pos = text.find(from);
+  if (pos == std::string::npos) {
+    return false;
+  }
+  text.replace(pos, from.size(), to);
+  return true;
+}
+
 bool testMalformedRuntimeModeFails()
 {
-  std::string cfg = readText("/workspace/hexapod/hexapod-server/config.txt");
+  std::string cfg = readText(configPath("config.txt"));
   const std::string needle = "Runtime.Mode = \"serial\"";
-  cfg.replace(cfg.find(needle), needle.size(), "Runtime.Mode = \"invalid\"");
+  if (!expect(replaceOnce(cfg, needle, "Runtime.Mode = \"invalid\""), "baseline config missing Runtime.Mode entry")) {
+    return false;
+  }
 
   ParsedToml parsed{};
   TomlParser parser;
@@ -58,9 +78,11 @@ bool testMalformedRuntimeModeFails()
 
 bool testMalformedCalibrationKeyFails()
 {
-  std::string cfg = readText("/workspace/hexapod/hexapod-server/config.txt");
+  std::string cfg = readText(configPath("config.txt"));
   const std::string needle = "[\"R31\", 1031, 2088]";
-  cfg.replace(cfg.find(needle), needle.size(), "[\"R99\", 1031, 2088]");
+  if (!expect(replaceOnce(cfg, needle, "[\"R99\", 1031, 2088]"), "baseline config missing R31 calibration entry")) {
+    return false;
+  }
 
   ParsedToml parsed{};
   TomlParser parser;
@@ -70,9 +92,11 @@ bool testMalformedCalibrationKeyFails()
 
 bool testOutOfRangeTuningFallsBackToDefaults()
 {
-  std::string cfg = readText("/workspace/hexapod/hexapod-server/config.txt");
+  std::string cfg = readText(configPath("config.txt"));
   const std::string from = "BusLoopPeriodUs = 2000";
-  cfg.replace(cfg.find(from), from.size(), "BusLoopPeriodUs = 100");
+  if (!expect(replaceOnce(cfg, from, "BusLoopPeriodUs = 100"), "baseline config missing BusLoopPeriodUs entry")) {
+    return false;
+  }
 
   ParsedToml parsed{};
   TomlParser parser;
@@ -90,8 +114,8 @@ bool testBaselineConfigParity()
   ParsedToml baseline_serial{};
   ParsedToml baseline_sim{};
   TomlParser parser;
-  if (!expect(parser.parse("/workspace/hexapod/hexapod-server/config.txt", baseline_serial), "config.txt should parse") ||
-      !expect(parser.parse("/workspace/hexapod/hexapod-server/config.sim.txt", baseline_sim), "config.sim.txt should parse")) {
+  if (!expect(parser.parse(configPath("config.txt"), baseline_serial), "config.txt should parse") ||
+      !expect(parser.parse(configPath("config.sim.txt"), baseline_sim), "config.sim.txt should parse")) {
     return false;
   }
 
