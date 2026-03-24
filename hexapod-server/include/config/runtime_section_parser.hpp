@@ -5,6 +5,7 @@
 
 #include <toml.hpp>
 
+#include "config_validation.hpp"
 #include "hexapod-server.hpp"
 #include "logger.hpp"
 
@@ -12,7 +13,8 @@ namespace runtime_section_parser {
 
 bool parseRuntimeSection(const toml::value& root,
                          ParsedToml& out,
-                         std::shared_ptr<logging::AsyncLogger> logger = nullptr);
+                         std::shared_ptr<logging::AsyncLogger> logger = nullptr,
+                         std::vector<config_validation::ConfigDiagnostic>* diagnostics = nullptr);
 
 } // namespace runtime_section_parser
 

@@ -28,10 +28,11 @@ bool TomlParser::parse(const std::string& filename, ParsedToml& out) const
 {
   try {
     const auto root = toml::parse(filename, toml::spec::v(1, 1, 0));
+    out.diagnostics.clear();
 
     bool ok = true;
-    ok = parseSchemaHeaderSection(root) && ok;
-    ok = runtime_section_parser::parseRuntimeSection(root, out, logger_) && ok;
+    ok = parseSchemaHeaderSection(root, &out.diagnostics) && ok;
+    ok = runtime_section_parser::parseRuntimeSection(root, out, logger_, &out.diagnostics) && ok;
     ok = transport_section_parser::parseTransportSection(root, out, out.runtimeMode == "serial", logger_) && ok;
 
     std::vector<calibrations_section_parser::CalibrationRow> raw_calibrations;
@@ -54,7 +55,9 @@ bool TomlParser::parse(const std::string& filename, ParsedToml& out) const
   }
 }
 
-bool TomlParser::parseSchemaHeaderSection(const toml::value& root) const
+bool TomlParser::parseSchemaHeaderSection(
+    const toml::value& root,
+    std::vector<config_validation::ConfigDiagnostic>* diagnostics) const
 {
   const std::string title = toml::find_or<std::string>(root, "title", "");
   if (title != kExpectedConfigTitle) {
@@ -62,6 +65,8 @@ bool TomlParser::parseSchemaHeaderSection(const toml::value& root) const
       LOG_ERROR(logger_, "[schema] incorrect config header. expected '", kExpectedConfigTitle,
                 "', got '", title, "'");
     }
+    config_validation::emitDiagnostic(diagnostics, "schema", "title", "unexpected_value",
+                                      "incorrect config header title");
     return false;
   }
 
@@ -71,6 +76,8 @@ bool TomlParser::parseSchemaHeaderSection(const toml::value& root) const
       LOG_ERROR(logger_, "[schema] invalid Schema '", schema, "'. expected '",
                 kExpectedConfigSchema, "'");
     }
+    config_validation::emitDiagnostic(diagnostics, "schema", "Schema", "unexpected_value",
+                                      "invalid Schema value");
     return false;
   }
 
@@ -80,6 +87,8 @@ bool TomlParser::parseSchemaHeaderSection(const toml::value& root) const
       LOG_ERROR(logger_, "[schema] unsupported SchemaVersion=", schema_version,
                 ". expected ", kExpectedConfigSchemaVersion);
     }
+    config_validation::emitDiagnostic(diagnostics, "schema", "SchemaVersion", "unexpected_value",
+                                      "unsupported SchemaVersion");
     return false;
   }
 

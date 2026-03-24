@@ -114,8 +114,15 @@ bool testMalformedRuntimeModeFails()
   logger->Flush();
   const bool logged = expect(containsMessage(sink->messages, "Runtime.Mode"),
                              "runtime mode parse failure should still emit an error log");
+  const bool has_diagnostic =
+      expect(!parsed.diagnostics.empty(), "invalid Runtime.Mode should produce diagnostics");
+  const bool diagnostic_fields = expect(
+      !parsed.diagnostics.empty() && parsed.diagnostics.front().section == "runtime" &&
+          parsed.diagnostics.front().key == "Runtime.Mode" &&
+          parsed.diagnostics.front().errorCode == "invalid_enum",
+      "invalid Runtime.Mode diagnostic should include section/key/error code");
   logger->Stop();
-  return parse_failed && logged;
+  return parse_failed && logged && has_diagnostic && diagnostic_fields;
 }
 
 bool testMalformedCalibrationKeyFails()
@@ -166,6 +173,36 @@ bool testOutOfRangeTuningFallsBackToDefaults()
 
   return expect(parsed.busLoopPeriodUs == control_config::kDefaultBusLoopPeriodUs,
                 "BusLoopPeriodUs should fallback to default when out of range");
+}
+
+bool testOutOfRangeRuntimeFallsBackWithDiagnostic()
+{
+  std::string cfg = readText(configPath("config.txt"));
+  if (!expect(replaceOnce(cfg, "Runtime.Sim.InitialVoltageV = 12.0",
+                          "Runtime.Sim.InitialVoltageV = 100.0"),
+              "baseline config missing Runtime.Sim.InitialVoltageV entry")) {
+    return false;
+  }
+
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(writeTemp("hexapod_bad_runtime_sim_voltage.toml", cfg), parsed),
+              "out-of-range runtime scalar should parse with fallback")) {
+    return false;
+  }
+
+  if (!expect(near(parsed.simInitialVoltageV, 12.0),
+              "Runtime.Sim.InitialVoltageV should fallback to default")) {
+    return false;
+  }
+
+  for (const auto& diagnostic : parsed.diagnostics) {
+    if (diagnostic.section == "runtime" && diagnostic.key == "Runtime.Sim.InitialVoltageV" &&
+        diagnostic.errorCode == "out_of_range") {
+      return true;
+    }
+  }
+  return expect(false, "runtime fallback should emit out_of_range diagnostic");
 }
 
 bool testCalibrationNormalizationStableForShuffledTable()
@@ -375,6 +412,7 @@ int main()
   testMalformedCalibrationKeyFails();
   testDuplicateCalibrationKeyFails();
   testOutOfRangeTuningFallsBackToDefaults();
+  testOutOfRangeRuntimeFallsBackWithDiagnostic();
   testCalibrationNormalizationStableForShuffledTable();
   testSimModeTransportOptional();
   testBaselineConfigParity();
