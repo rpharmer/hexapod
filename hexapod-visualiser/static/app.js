@@ -11,11 +11,26 @@ const MOUNT_ANGLES = {
 const STALE_AFTER_MS = 1200;
 const ROLLING_LIMIT = 8;
 
+const CAMERA_PRESETS = {
+  reset: { yaw: deg2rad(45), pitch: deg2rad(30), zoom: 1, panX: 0, panY: 0 },
+  top: { yaw: deg2rad(0), pitch: deg2rad(-89), zoom: 1, panX: 0, panY: 0 },
+  front: { yaw: deg2rad(0), pitch: deg2rad(8), zoom: 1, panX: 0, panY: 0 },
+  side: { yaw: deg2rad(90), pitch: deg2rad(8), zoom: 1, panX: 0, panY: 0 },
+};
+
+const ZOOM_MIN = 0.35;
+const ZOOM_MAX = 3.5;
+const ORBIT_SENSITIVITY = 0.0085;
+const PAN_SENSITIVITY = 1.0;
+const PITCH_MIN = deg2rad(-89);
+const PITCH_MAX = deg2rad(89);
+
 const statusEl = document.getElementById("status");
 const metaEl = document.getElementById("meta");
 const rollingMetricsEl = document.getElementById("rolling-metrics");
 const canvas = document.getElementById("scene");
 const ctx = canvas.getContext("2d");
+const viewButtons = document.querySelectorAll("[data-view]");
 
 let model = {
   geometry: { coxa: 35, femur: 70, tibia: 110, body_radius: 60 },
@@ -32,7 +47,25 @@ const telemetry = {
   rolling: [],
 };
 
+const camera = { ...CAMERA_PRESETS.reset };
+const interaction = {
+  pointerId: null,
+  mode: null,
+  lastX: 0,
+  lastY: 0,
+};
+
 function deg2rad(v) { return (v * Math.PI) / 180; }
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+function applyCameraPreset(name) {
+  const preset = CAMERA_PRESETS[name];
+  if (!preset) return;
+  Object.assign(camera, preset);
+}
 
 function resize() {
   const ratio = window.devicePixelRatio || 1;
@@ -44,9 +77,21 @@ window.addEventListener("resize", resize);
 resize();
 
 function project(p, scale, centerX, centerY) {
-  const x = (p.x - p.y) * 0.88;
-  const y = (p.x + p.y) * 0.45 - p.z;
-  return { x: centerX + x * scale, y: centerY + y * scale };
+  const cosYaw = Math.cos(camera.yaw);
+  const sinYaw = Math.sin(camera.yaw);
+  const cosPitch = Math.cos(camera.pitch);
+  const sinPitch = Math.sin(camera.pitch);
+
+  const yawX = p.x * cosYaw - p.y * sinYaw;
+  const yawY = p.x * sinYaw + p.y * cosYaw;
+  const yawZ = p.z;
+
+  const pitchY = yawY * cosPitch - yawZ * sinPitch;
+
+  return {
+    x: centerX + yawX * scale,
+    y: centerY + pitchY * scale,
+  };
 }
 
 function fkForLeg(legName, anglesDeg, geometry) {
@@ -126,9 +171,9 @@ function draw() {
   const height = canvas.clientHeight;
   ctx.clearRect(0, 0, width, height);
 
-  const scale = Math.min(width, height) / 420;
-  const centerX = width * 0.5;
-  const centerY = height * 0.58;
+  const scale = (Math.min(width, height) / 420) * camera.zoom;
+  const centerX = width * 0.5 + camera.panX;
+  const centerY = height * 0.58 + camera.panY;
 
   // Ground grid.
   ctx.strokeStyle = "#1f2937";
@@ -245,5 +290,62 @@ function connect() {
     setTimeout(connect, 1000);
   });
 }
+
+viewButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    applyCameraPreset(button.dataset.view);
+  });
+});
+
+canvas.addEventListener("contextmenu", (event) => {
+  event.preventDefault();
+});
+
+canvas.addEventListener("pointerdown", (event) => {
+  interaction.pointerId = event.pointerId;
+  interaction.lastX = event.clientX;
+  interaction.lastY = event.clientY;
+
+  if (event.button === 2 || event.button === 1 || event.shiftKey) {
+    interaction.mode = "pan";
+  } else {
+    interaction.mode = "orbit";
+  }
+
+  canvas.setPointerCapture(event.pointerId);
+});
+
+canvas.addEventListener("pointermove", (event) => {
+  if (interaction.pointerId !== event.pointerId || !interaction.mode) return;
+
+  const dx = event.clientX - interaction.lastX;
+  const dy = event.clientY - interaction.lastY;
+  interaction.lastX = event.clientX;
+  interaction.lastY = event.clientY;
+
+  if (interaction.mode === "orbit") {
+    camera.yaw += dx * ORBIT_SENSITIVITY;
+    camera.pitch = clamp(camera.pitch + dy * ORBIT_SENSITIVITY, PITCH_MIN, PITCH_MAX);
+    return;
+  }
+
+  camera.panX += dx * PAN_SENSITIVITY;
+  camera.panY += dy * PAN_SENSITIVITY;
+});
+
+function clearInteraction(event) {
+  if (interaction.pointerId !== event.pointerId) return;
+  interaction.pointerId = null;
+  interaction.mode = null;
+}
+
+canvas.addEventListener("pointerup", clearInteraction);
+canvas.addEventListener("pointercancel", clearInteraction);
+
+canvas.addEventListener("wheel", (event) => {
+  event.preventDefault();
+  const zoomFactor = Math.exp(-event.deltaY * 0.0015);
+  camera.zoom = clamp(camera.zoom * zoomFactor, ZOOM_MIN, ZOOM_MAX);
+}, { passive: false });
 
 connect();
