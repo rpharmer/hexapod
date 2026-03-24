@@ -4,9 +4,8 @@
 
 namespace loop_timing {
 
-void sleepUntil(const Clock::time_point& start,
-                std::chrono::microseconds period) {
-    std::this_thread::sleep_until(start + period);
+void sleepUntil(const Clock::time_point& deadline) {
+    std::this_thread::sleep_until(deadline);
 }
 
 }  // namespace loop_timing

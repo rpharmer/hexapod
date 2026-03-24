@@ -148,4 +148,8 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_protocol_command_metadata tests/test_protocol_command_metadata.cpp)
     target_link_libraries(test_protocol_command_metadata PRIVATE hexapod_server_core)
     add_test(NAME protocol_command_metadata COMMAND test_protocol_command_metadata)
+
+    add_executable(test_loop_executor_timing tests/test_loop_executor_timing.cpp)
+    target_link_libraries(test_loop_executor_timing PRIVATE hexapod_server_core)
+    add_test(NAME loop_executor_timing COMMAND test_loop_executor_timing)
 endif()
