@@ -1,11 +1,36 @@
 #include "robot_control.hpp"
 
+namespace {
+
+std::unique_ptr<telemetry::ITelemetryPublisher> makeRuntimeTelemetryPublisher(
+    const control_config::ControlConfig& config,
+    const std::shared_ptr<logging::AsyncLogger>& logger) {
+    if (!config.telemetry.enabled) {
+        return telemetry::makeNoopTelemetryPublisher();
+    }
+
+    telemetry::TelemetryPublisherConfig telemetry_config{};
+    telemetry_config.enabled = config.telemetry.enabled;
+    telemetry_config.udp_host = config.telemetry.udp_host;
+    telemetry_config.udp_port = config.telemetry.udp_port;
+    telemetry_config.publish_period_ms = static_cast<int>(config.telemetry.publish_period.count());
+    telemetry_config.geometry_refresh_period_ms =
+        static_cast<int>(config.telemetry.geometry_refresh_period.count());
+    return telemetry::makeUdpTelemetryPublisher(telemetry_config, logger);
+}
+
+} // namespace
+
 RobotControl::RobotControl(std::unique_ptr<IHardwareBridge> hw,
                            std::unique_ptr<IEstimator> estimator,
                            std::shared_ptr<logging::AsyncLogger> logger,
                            control_config::ControlConfig config)
     : config_(config),
-      runtime_(std::move(hw), std::move(estimator), logger, config_),
+      runtime_(std::move(hw),
+               std::move(estimator),
+               logger,
+               config_,
+               makeRuntimeTelemetryPublisher(config_, logger)),
       logger_(std::move(logger)) {}
 
 RobotControl::~RobotControl() {
@@ -22,6 +47,8 @@ void RobotControl::start() {
     if (logger_) {
         LOG_INFO(logger_, "Starting robot control loops");
     }
+
+    runtime_.startTelemetry();
 
     loops_.start(
         {

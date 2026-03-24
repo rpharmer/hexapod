@@ -30,6 +30,12 @@ struct ParsedToml
   double telemetryPublishRateHz{30.0};
   double telemetryGeometryResendIntervalSec{1.0};
 
+  bool telemetryEnabled{false};
+  std::string telemetryUdpHost{"127.0.0.1"};
+  int telemetryUdpPort{9870};
+  int telemetryPublishPeriodMs{50};
+  int telemetryGeometryRefreshPeriodMs{2000};
+
   int busLoopPeriodUs{2000};
   int estimatorLoopPeriodUs{2000};
   int controlLoopPeriodUs{4000};
