@@ -3,29 +3,11 @@
 
 #include <atomic>
 #include <memory>
-#include <string>
 
+#include "cli_options.hpp"
 #include "control_config.hpp"
 #include "logger.hpp"
 #include "robot_control.hpp"
-#include "scenario_driver.hpp"
-
-enum class ServerMode
-{
-  Interactive,
-  Scenario,
-};
-
-struct CliOptions
-{
-  ServerMode mode{ServerMode::Interactive};
-  ScenarioDriver::ValidationMode scenarioValidationMode{ScenarioDriver::ValidationMode::Permissive};
-  bool lintScenarioOnly{false};
-  std::string scenarioFile;
-  std::string controllerDevice;
-};
-
-bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error);
 
 class ScenarioRunner
 {
