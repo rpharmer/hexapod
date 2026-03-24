@@ -2,12 +2,6 @@
 
 namespace hardware_bridge_transport_test {
 
-bool test_set_target_angle_success_and_nack();
-bool test_set_and_get_angle_calibrations_success_and_failures();
-bool test_scalar_getters_success_and_malformed_payloads();
-bool test_servo_enable_roundtrip_success_and_failures();
-bool test_led_info_and_led_color_commands();
-
 bool test_send_diagnostic_success_and_nack() {
     const std::vector<uint8_t> diagnostic_request{0xDE, 0xAD, 0xBE, 0xEF};
     const std::vector<uint8_t> diagnostic_response{0x10, 0x20, 0x30};
