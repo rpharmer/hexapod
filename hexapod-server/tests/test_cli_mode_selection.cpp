@@ -298,6 +298,54 @@ bool testLogFileOptionRequiresValue()
                 "missing log-file value error should mention --log-file");
 }
 
+bool testTelemetryOverrideOptions()
+{
+  std::vector<std::string> args{"hexapod-server",
+                                "--telemetry-enable",
+                                "--telemetry-host",
+                                "10.0.0.2",
+                                "--telemetry-port",
+                                "9999",
+                                "--telemetry-publish-hz",
+                                "45.0",
+                                "--telemetry-geometry-resend-sec",
+                                "2.5"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(ok, "telemetry override options should parse") &&
+         expect(options.telemetryEnabledOverride.has_value() &&
+                    options.telemetryEnabledOverride.value(),
+                "telemetry-enable should set override true") &&
+         expect(options.telemetryHostOverride.has_value() &&
+                    options.telemetryHostOverride.value() == "10.0.0.2",
+                "telemetry-host should persist host override") &&
+         expect(options.telemetryPortOverride.has_value() &&
+                    options.telemetryPortOverride.value() == 9999,
+                "telemetry-port should persist port override") &&
+         expect(options.telemetryPublishRateHzOverride.has_value() &&
+                    options.telemetryPublishRateHzOverride.value() == 45.0,
+                "telemetry-publish-hz should persist rate override") &&
+         expect(options.telemetryGeometryResendIntervalSecOverride.has_value() &&
+                    options.telemetryGeometryResendIntervalSecOverride.value() == 2.5,
+                "telemetry-geometry-resend-sec should persist resend override");
+}
+
+bool testTelemetryPortRequiresInteger()
+{
+  std::vector<std::string> args{"hexapod-server", "--telemetry-port", "not-a-port"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "telemetry-port should reject non-integer value") &&
+         expect(error.find("--telemetry-port") != std::string::npos,
+                "telemetry-port parse failure should mention option name");
+}
+
 } // namespace
 
 int main()
@@ -322,6 +370,8 @@ int main()
   testLogFileOptionPersistsPath();
   testConsoleOnlyOptionSetsFlag();
   testLogFileOptionRequiresValue();
+  testTelemetryOverrideOptions();
+  testTelemetryPortRequiresInteger();
 
   if (g_failures != 0) {
     std::cerr << g_failures << " test(s) failed\n";

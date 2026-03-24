@@ -73,9 +73,12 @@ struct FreshnessConfig {
         true};
 };
 
-
 struct TelemetryConfig {
     bool enabled{false};
+    std::string host{"127.0.0.1"};
+    int port{9870};
+    double publish_rate_hz{30.0};
+    double geometry_resend_interval_sec{1.0};
     std::string udp_host{"127.0.0.1"};
     int udp_port{kDefaultTelemetryUdpPort};
     std::chrono::milliseconds publish_period{std::chrono::milliseconds{kDefaultTelemetryPublishPeriodMs}};

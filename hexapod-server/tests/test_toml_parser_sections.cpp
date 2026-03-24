@@ -205,6 +205,58 @@ bool testOutOfRangeRuntimeFallsBackWithDiagnostic()
   return expect(false, "runtime fallback should emit out_of_range diagnostic");
 }
 
+bool testTelemetryRuntimeFieldsParseAndFallback()
+{
+  std::string cfg = readText(configPath("config.txt"));
+  if (!expect(replaceOnce(cfg, "Runtime.Telemetry.Enable = false", "Runtime.Telemetry.Enable = true"),
+              "baseline config missing Runtime.Telemetry.Enable entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Telemetry.Host = \"127.0.0.1\"",
+                          "Runtime.Telemetry.Host = \"\""),
+              "baseline config missing Runtime.Telemetry.Host entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Telemetry.Port = 9870", "Runtime.Telemetry.Port = 99999"),
+              "baseline config missing Runtime.Telemetry.Port entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Telemetry.PublishRateHz = 30.0",
+                          "Runtime.Telemetry.PublishRateHz = 0.01"),
+              "baseline config missing Runtime.Telemetry.PublishRateHz entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Telemetry.GeometryResendIntervalSec = 1.0",
+                          "Runtime.Telemetry.GeometryResendIntervalSec = 0.01"),
+              "baseline config missing Runtime.Telemetry.GeometryResendIntervalSec entry")) {
+    return false;
+  }
+
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(writeTemp("hexapod_runtime_telemetry_fallback.toml", cfg), parsed),
+              "telemetry runtime values should parse with fallback on invalid scalars")) {
+    return false;
+  }
+
+  if (!expect(parsed.telemetryEnabled, "telemetry enable should parse explicit true") ||
+      !expect(parsed.telemetryHost == "127.0.0.1", "empty telemetry host should fallback to default") ||
+      !expect(parsed.telemetryPort == 9870, "out-of-range telemetry port should fallback to default") ||
+      !expect(near(parsed.telemetryPublishRateHz, 30.0),
+              "out-of-range telemetry publish rate should fallback to default") ||
+      !expect(near(parsed.telemetryGeometryResendIntervalSec, 1.0),
+              "out-of-range telemetry resend interval should fallback to default")) {
+    return false;
+  }
+
+  bool saw_host = false;
+  bool saw_port = false;
+  for (const auto& diagnostic : parsed.diagnostics) {
+    if (diagnostic.section == "runtime" && diagnostic.key == "Runtime.Telemetry.Host" &&
+        diagnostic.errorCode == "empty_value") {
+      saw_host = true;
+    }
+    if (diagnostic.section == "runtime" && diagnostic.key == "Runtime.Telemetry.Port" &&
+        diagnostic.errorCode == "out_of_range") {
+      saw_port = true;
+    }
+  }
+  return expect(saw_host, "telemetry host fallback should emit empty_value diagnostic") &&
+         expect(saw_port, "telemetry port fallback should emit out_of_range diagnostic");
+}
+
 bool testCalibrationNormalizationStableForShuffledTable()
 {
   const std::string ordered =
@@ -413,6 +465,7 @@ int main()
   testDuplicateCalibrationKeyFails();
   testOutOfRangeTuningFallsBackToDefaults();
   testOutOfRangeRuntimeFallsBackWithDiagnostic();
+  testTelemetryRuntimeFieldsParseAndFallback();
   testCalibrationNormalizationStableForShuffledTable();
   testSimModeTransportOptional();
   testBaselineConfigParity();

@@ -69,6 +69,55 @@ std::unique_ptr<IHardwareBridge> makeHardwareBridge(const ParsedToml& config,
                                                 config.timeout, config.minMaxPulses, logger);
 }
 
+void applyTelemetryCliOverrides(ParsedToml& config,
+                                const CliOptions& options,
+                                const std::shared_ptr<AsyncLogger>& logger)
+{
+  if (options.telemetryEnabledOverride.has_value()) {
+    config.telemetryEnabled = options.telemetryEnabledOverride.value();
+  }
+  if (options.telemetryHostOverride.has_value()) {
+    config.telemetryHost = options.telemetryHostOverride.value();
+  }
+  if (options.telemetryPortOverride.has_value()) {
+    config.telemetryPort = options.telemetryPortOverride.value();
+  }
+  if (options.telemetryPublishRateHzOverride.has_value()) {
+    config.telemetryPublishRateHz = options.telemetryPublishRateHzOverride.value();
+  }
+  if (options.telemetryGeometryResendIntervalSecOverride.has_value()) {
+    config.telemetryGeometryResendIntervalSec =
+        options.telemetryGeometryResendIntervalSecOverride.value();
+  }
+
+  if (config.telemetryHost.empty()) {
+    LOG_WARN(logger, "Runtime.Telemetry.Host effective value was empty, using 127.0.0.1");
+    config.telemetryHost = "127.0.0.1";
+  }
+  if (config.telemetryPort < 1 || config.telemetryPort > 65535) {
+    LOG_WARN(logger,
+             "Runtime.Telemetry.Port effective value out of range (1..65535): ",
+             config.telemetryPort,
+             ", using 9870");
+    config.telemetryPort = 9870;
+  }
+  if (config.telemetryPublishRateHz < 0.1 || config.telemetryPublishRateHz > 1000.0) {
+    LOG_WARN(logger,
+             "Runtime.Telemetry.PublishRateHz effective value out of range (0.1..1000): ",
+             config.telemetryPublishRateHz,
+             ", using 30.0");
+    config.telemetryPublishRateHz = 30.0;
+  }
+  if (config.telemetryGeometryResendIntervalSec < 0.1 ||
+      config.telemetryGeometryResendIntervalSec > 3600.0) {
+    LOG_WARN(logger,
+             "Runtime.Telemetry.GeometryResendIntervalSec effective value out of range (0.1..3600): ",
+             config.telemetryGeometryResendIntervalSec,
+             ", using 1.0");
+    config.telemetryGeometryResendIntervalSec = 1.0;
+  }
+}
+
 } // namespace
 
 void signalHandler(int)
@@ -110,11 +159,24 @@ int main(int argc, char** argv)
   bootstrapLogger->Flush();
   bootstrapLogger->Stop();
 
+  applyTelemetryCliOverrides(config, options, logger);
+
   const control_config::ControlConfig control_cfg = control_config::fromParsedToml(config);
   geometry_config::loadFromParsedToml(config);
 
   LOG_INFO(logger, "Runtime.Mode=", config.runtimeMode);
   LOG_INFO(logger, "Logging.FileEnabled=", enableFileLogging, ", Path=", effectiveLogPath);
+  LOG_INFO(logger,
+           "Runtime.Telemetry.Enabled=",
+           control_cfg.telemetry.enabled,
+           ", Host=",
+           control_cfg.telemetry.host,
+           ", Port=",
+           control_cfg.telemetry.port,
+           ", PublishRateHz=",
+           control_cfg.telemetry.publish_rate_hz,
+           ", GeometryResendIntervalSec=",
+           control_cfg.telemetry.geometry_resend_interval_sec);
 
   auto hw = makeHardwareBridge(config, logger);
   auto estimator = std::make_unique<SimpleEstimator>();

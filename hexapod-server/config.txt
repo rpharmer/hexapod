@@ -12,6 +12,11 @@ Runtime.Sim.LowVoltage = false
 Runtime.Sim.HighCurrent = false
 Runtime.Log.FilePath = "app.log"
 Runtime.Log.EnableFile = true
+Runtime.Telemetry.Enable = false
+Runtime.Telemetry.Host = "127.0.0.1"
+Runtime.Telemetry.Port = 9870
+Runtime.Telemetry.PublishRateHz = 30.0
+Runtime.Telemetry.GeometryResendIntervalSec = 1.0
 
 SerialDevice = '/dev/ttyACM0'
 
