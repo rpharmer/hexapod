@@ -104,6 +104,26 @@ bool test_dispatch_signature_requires_typed_command_code()
   return true;
 }
 
+
+bool test_find_route_signature_requires_typed_command_code()
+{
+  constexpr bool accepts_typed =
+      std::is_invocable_r_v<const CommandRoute*,
+                            decltype(findRoute),
+                            const CommandRoute*,
+                            std::size_t,
+                            CommandCode>;
+  constexpr bool accepts_raw =
+      std::is_invocable_r_v<const CommandRoute*,
+                            decltype(findRoute),
+                            const CommandRoute*,
+                            std::size_t,
+                            uint8_t>;
+  static_assert(accepts_typed, "findRoute should accept typed CommandCode");
+  static_assert(!accepts_raw, "findRoute should not accept raw command IDs");
+  return true;
+}
+
 } // namespace
 
 int main()
@@ -115,6 +135,8 @@ int main()
   if(!test_returns_false_for_unknown_command())
     return EXIT_FAILURE;
   if(!test_dispatch_signature_requires_typed_command_code())
+    return EXIT_FAILURE;
+  if(!test_find_route_signature_requires_typed_command_code())
     return EXIT_FAILURE;
 
   return EXIT_SUCCESS;

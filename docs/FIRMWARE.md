@@ -83,6 +83,7 @@ Decoder behavior on both host and firmware:
 ## Command ID typing rule (internal vs edge)
 
 **Rule:** use `CommandCode` (typed enum) for all internal APIs and control flow. Raw `uint8_t` command IDs are allowed only at explicit wire/compatibility seams.
+Short version: **typed internally, raw at the protocol edges**.
 
 ### Allowed raw-ID seams
 
