@@ -14,6 +14,14 @@ project(${NAME} C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
+if (HEXAPOD_CLIENT_ENABLE_HOST_TESTS AND CMAKE_CROSSCOMPILING)
+    message(FATAL_ERROR
+        "HEXAPOD_CLIENT_ENABLE_HOST_TESTS=ON requires a native compiler, but this build directory is configured for "
+        "cross-compilation (CMAKE_CXX_COMPILER='${CMAKE_CXX_COMPILER}', CMAKE_SYSTEM_NAME='${CMAKE_SYSTEM_NAME}'). "
+        "Use the 'host-tests' CMake preset or configure into a fresh build directory."
+    )
+endif()
+
 if (HEXAPOD_CLIENT_ENABLE_HOST_TESTS)
     enable_testing()
 
