@@ -32,10 +32,12 @@ public:
     explicit SimpleHardwareBridge(std::string device = "/dev/ttyACM0",
                                   int baud_rate = 115200,
                                   int timeout_ms = 100,
-                                  std::vector<float> calibrations = {});
+                                  std::vector<float> calibrations = {},
+                                  std::shared_ptr<logging::AsyncLogger> logger = nullptr);
     explicit SimpleHardwareBridge(std::unique_ptr<IPacketEndpoint> endpoint,
                                   int timeout_ms = 100,
-                                  std::vector<float> calibrations = {});
+                                  std::vector<float> calibrations = {},
+                                  std::shared_ptr<logging::AsyncLogger> logger = nullptr);
     ~SimpleHardwareBridge() override;
 
     bool init() override;

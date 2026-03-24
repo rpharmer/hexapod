@@ -6,13 +6,36 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
+#include <vector>
 
+#include "logger.hpp"
 namespace {
 
 int g_failures = 0;
 
+class CollectingSink final : public logging::LogSink {
+public:
+  void Write(logging::LogLevel,
+             std::string_view,
+             std::string_view message,
+             const logging::SourceLocation&) override
+  {
+    messages.emplace_back(message);
+  }
+
+  std::vector<std::string> messages;
+};
+
+
+std::shared_ptr<logging::AsyncLogger> makeTestLogger()
+{
+  auto logger = std::make_shared<logging::AsyncLogger>("test-toml", logging::LogLevel::Trace, 1024);
+  logger->AddSink(std::make_shared<CollectingSink>());
+  return logger;
+}
 bool expect(bool cond, const std::string& message)
 {
   if (!cond) {
@@ -61,8 +84,21 @@ bool replaceOnce(std::string& text, const std::string& from, const std::string& 
   return true;
 }
 
+bool containsMessage(const std::vector<std::string>& messages, const std::string& needle)
+{
+  for (const auto& message : messages) {
+    if (message.find(needle) != std::string::npos) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool testMalformedRuntimeModeFails()
 {
+  const auto sink = std::make_shared<CollectingSink>();
+  auto logger = std::make_shared<logging::AsyncLogger>("test-toml", logging::LogLevel::Trace, 1024);
+  logger->AddSink(sink);
   std::string cfg = readText(configPath("config.txt"));
   const std::string needle = "Runtime.Mode = \"serial\"";
   if (!expect(replaceOnce(cfg, needle, "Runtime.Mode = \"invalid\""),
@@ -71,9 +107,14 @@ bool testMalformedRuntimeModeFails()
   }
 
   ParsedToml parsed{};
-  TomlParser parser;
-  return expect(!parser.parse(writeTemp("hexapod_bad_runtime.toml", cfg), parsed),
-                "invalid Runtime.Mode should fail parser");
+  TomlParser parser(logger);
+  const bool parse_failed = expect(!parser.parse(writeTemp("hexapod_bad_runtime.toml", cfg), parsed),
+                                   "invalid Runtime.Mode should fail parser");
+  logger->Flush();
+  const bool logged = expect(containsMessage(sink->messages, "Runtime.Mode"),
+                             "runtime mode parse failure should still emit an error log");
+  logger->Stop();
+  return parse_failed && logged;
 }
 
 bool testMalformedCalibrationKeyFails()
@@ -86,7 +127,7 @@ bool testMalformedCalibrationKeyFails()
   }
 
   ParsedToml parsed{};
-  TomlParser parser;
+  TomlParser parser(makeTestLogger());
   return expect(!parser.parse(writeTemp("hexapod_bad_cal_key.toml", cfg), parsed),
                 "unexpected MotorCalibrations key should fail parser");
 }
@@ -101,7 +142,7 @@ bool testDuplicateCalibrationKeyFails()
   }
 
   ParsedToml parsed{};
-  TomlParser parser;
+  TomlParser parser(makeTestLogger());
   return expect(!parser.parse(writeTemp("hexapod_dup_cal_key.toml", cfg), parsed),
                 "duplicate MotorCalibrations key should fail parser");
 }
@@ -116,7 +157,7 @@ bool testOutOfRangeTuningFallsBackToDefaults()
   }
 
   ParsedToml parsed{};
-  TomlParser parser;
+  TomlParser parser(makeTestLogger());
   if (!expect(parser.parse(writeTemp("hexapod_bad_tuning_range.toml", cfg), parsed),
               "out-of-range tuning should still parse with defaults")) {
     return false;
@@ -164,7 +205,7 @@ bool testCalibrationNormalizationStableForShuffledTable()
 
   ParsedToml baseline{};
   ParsedToml shuffled_parsed{};
-  TomlParser parser;
+  TomlParser parser(makeTestLogger());
   if (!expect(parser.parse(writeTemp("hexapod_ordered_cals.toml", ordered), baseline),
               "ordered MotorCalibrations should parse") ||
       !expect(parser.parse(writeTemp("hexapod_shuffled_cals.toml", shuffled), shuffled_parsed),
@@ -193,7 +234,7 @@ bool testSimModeTransportOptional()
       "]\n";
 
   ParsedToml parsed{};
-  TomlParser parser;
+  TomlParser parser(makeTestLogger());
   if (!expect(parser.parse(writeTemp("hexapod_sim_minimal.toml", minimal_sim), parsed),
               "sim config should parse without transport section")) {
     return false;
@@ -206,7 +247,7 @@ bool testBaselineConfigParity()
 {
   ParsedToml baseline_serial{};
   ParsedToml baseline_sim{};
-  TomlParser parser;
+  TomlParser parser(makeTestLogger());
   if (!expect(parser.parse(configPath("config.txt"), baseline_serial), "config.txt should parse") ||
       !expect(parser.parse(configPath("config.sim.txt"), baseline_sim), "config.sim.txt should parse")) {
     return false;

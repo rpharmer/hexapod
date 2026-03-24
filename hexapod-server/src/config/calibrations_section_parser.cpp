@@ -6,11 +6,13 @@ using namespace logging;
 
 namespace calibrations_section_parser {
 
-bool parseCalibrationsSection(const toml::value& root, std::vector<CalibrationRow>& out)
+bool parseCalibrationsSection(const toml::value& root,
+                              std::vector<CalibrationRow>& out,
+                              std::shared_ptr<logging::AsyncLogger> logger)
 {
   out = toml::find_or<std::vector<CalibrationRow>>(root, "MotorCalibrations", {});
   if (out.empty()) {
-    if (auto logger = GetDefaultLogger()) {
+    if (logger) {
       LOG_ERROR(logger, "[calibrations] MotorCalibrations wasn't valid or not found");
     }
     return false;

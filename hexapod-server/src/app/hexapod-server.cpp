@@ -21,7 +21,8 @@ static std::atomic<bool> g_exit{false};
 
 namespace {
 
-std::unique_ptr<IHardwareBridge> makeHardwareBridge(const ParsedToml& config)
+std::unique_ptr<IHardwareBridge> makeHardwareBridge(const ParsedToml& config,
+                                                    const std::shared_ptr<AsyncLogger>& logger)
 {
   if (config.runtimeMode == "sim") {
     SimHardwareFaultToggles sim_faults{};
@@ -40,7 +41,7 @@ std::unique_ptr<IHardwareBridge> makeHardwareBridge(const ParsedToml& config)
   }
 
   return std::make_unique<SimpleHardwareBridge>(config.serialDevice, config.baudRate,
-                                                config.timeout, config.minMaxPulses);
+                                                config.timeout, config.minMaxPulses, logger);
 }
 
 } // namespace
@@ -77,7 +78,7 @@ int main(int argc, char** argv)
 
   LOG_INFO(logger, "Runtime.Mode=", config.runtimeMode);
 
-  auto hw = makeHardwareBridge(config);
+  auto hw = makeHardwareBridge(config, logger);
   auto estimator = std::make_unique<SimpleEstimator>();
   RobotControl robot(std::move(hw), std::move(estimator), logger, control_cfg);
 
@@ -108,6 +109,6 @@ int main(int argc, char** argv)
 
 bool tomlParser(std::string filename, ParsedToml& out)
 {
-  const TomlParser parser;
+  const TomlParser parser(GetDefaultLogger());
   return parser.parse(filename, out);
 }

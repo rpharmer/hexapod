@@ -26,17 +26,21 @@ bool decodeScalarFloatPayload(const std::vector<uint8_t>& payload, protocol::Sca
 SimpleHardwareBridge::SimpleHardwareBridge(std::string device,
                                            int baud_rate,
                                            int timeout_ms,
-                                           std::vector<float> calibrations)
+                                           std::vector<float> calibrations,
+                                           std::shared_ptr<logging::AsyncLogger> logger)
     : device_(std::move(device)),
       baud_rate_(baud_rate),
       timeout_ms_(timeout_ms),
-      calibrations_(std::move(calibrations)) {}
+      calibrations_(std::move(calibrations)),
+      logger_(std::move(logger)) {}
 
 SimpleHardwareBridge::SimpleHardwareBridge(std::unique_ptr<IPacketEndpoint> endpoint,
                                            int timeout_ms,
-                                           std::vector<float> calibrations)
+                                           std::vector<float> calibrations,
+                                           std::shared_ptr<logging::AsyncLogger> logger)
     : timeout_ms_(timeout_ms),
       calibrations_(std::move(calibrations)),
+      logger_(std::move(logger)),
       packet_endpoint_(std::move(endpoint)) {}
 
 SimpleHardwareBridge::~SimpleHardwareBridge() = default;
@@ -334,8 +338,8 @@ bool SimpleHardwareBridge::set_led_colors(
 
 bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs) {
     if (calibs.size() != (kProtocolJointCount * kProtocolCalibrationPairsPerJoint)) {
-        if (auto logger = logging::GetDefaultLogger()) {
-            LOG_ERROR(logger, "incorrect calibration size");
+        if (logger_) {
+            LOG_ERROR(logger_, "incorrect calibration size");
         }
         return false;
     }
@@ -359,8 +363,8 @@ bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs) {
         return false;
     }
 
-    if (auto logger = logging::GetDefaultLogger()) {
-        LOG_INFO(logger, "calibration packet accepted");
+    if (logger_) {
+        LOG_INFO(logger_, "calibration packet accepted");
     }
     return true;
 }

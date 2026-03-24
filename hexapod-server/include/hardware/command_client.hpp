@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
+#include "logger.hpp"
 #include "transport_session.hpp"
 
 class CommandClient {
@@ -11,7 +13,8 @@ public:
         int max_attempts{3};
     };
 
-    explicit CommandClient(TransportSession& transport);
+    explicit CommandClient(TransportSession& transport,
+                           std::shared_ptr<logging::AsyncLogger> logger = nullptr);
 
     void set_retry_policy(const RetryPolicy& retry_policy);
 
@@ -31,5 +34,6 @@ private:
     static const char* domain_error_for_outcome(TransportSession::OutcomeClass outcome);
 
     TransportSession& transport_;
+    std::shared_ptr<logging::AsyncLogger> logger_{};
     RetryPolicy retry_policy_{};
 };

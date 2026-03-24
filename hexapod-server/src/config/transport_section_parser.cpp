@@ -6,14 +6,15 @@ using namespace logging;
 
 namespace transport_section_parser {
 
-bool parseTransportSection(const toml::value& root, ParsedToml& out, bool required)
+bool parseTransportSection(const toml::value& root, ParsedToml& out, bool required,
+                           std::shared_ptr<logging::AsyncLogger> logger)
 {
   std::string serialDevice = toml::find_or<std::string>(root, "SerialDevice", "");
   if (serialDevice.empty()) {
     if (!required) {
       serialDevice = out.serialDevice;
     } else {
-      if (auto logger = GetDefaultLogger()) {
+      if (logger) {
         LOG_ERROR(logger, "[transport] SerialDevice definition not found or empty");
       }
       return false;
@@ -22,7 +23,7 @@ bool parseTransportSection(const toml::value& root, ParsedToml& out, bool requir
 
   const int baudInt = toml::find_or<int>(root, "BaudRate", out.baudRate);
   if (baudInt <= 0 && required) {
-    if (auto logger = GetDefaultLogger()) {
+    if (logger) {
       LOG_ERROR(logger, "[transport] BaudRate must be a positive number");
     }
     return false;
@@ -31,7 +32,7 @@ bool parseTransportSection(const toml::value& root, ParsedToml& out, bool requir
 
   const int timeout = toml::find_or<int>(root, "Timeout_ms", out.timeout);
   if (timeout <= 0 && required) {
-    if (auto logger = GetDefaultLogger()) {
+    if (logger) {
       LOG_ERROR(logger, "[transport] Timeout_ms must be a positive number");
     }
     return false;

@@ -1,15 +1,19 @@
 #include "transport_session.hpp"
 
+#include <utility>
+
 #include "hardware_bridge.hpp"
 #include "hexapod-common.hpp"
 #include "logger.hpp"
 
 TransportSession::TransportSession(IPacketEndpoint& endpoint,
                                    DurationUs link_timeout,
-                                   DurationUs heartbeat_interval)
+                                   DurationUs heartbeat_interval,
+                                   std::shared_ptr<logging::AsyncLogger> logger)
     : endpoint_(endpoint),
       link_timeout_(link_timeout),
-      heartbeat_interval_(heartbeat_interval) {}
+      heartbeat_interval_(heartbeat_interval),
+      logger_(std::move(logger)) {}
 
 uint16_t TransportSession::next_sequence() {
     return seq_++;
@@ -41,8 +45,8 @@ TransportSession::CommandOutcome TransportSession::parse_ack_or_nack(
     const DecodedPacket& response,
     uint16_t expected_seq) const {
     if (response.seq != expected_seq) {
-        if (auto logger = logging::GetDefaultLogger()) {
-            LOG_ERROR(logger,
+        if (logger_) {
+            LOG_ERROR(logger_,
                       "sequence mismatch (expected ",
                       static_cast<unsigned>(expected_seq),
                       ", got ",
@@ -59,19 +63,19 @@ TransportSession::CommandOutcome TransportSession::parse_ack_or_nack(
     if (response.cmd == NACK) {
         const uint8_t nack_code = response.payload.empty() ? 0 : response.payload[0];
         if (!response.payload.empty()) {
-            if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger, "NACK, error: ", static_cast<unsigned>(nack_code));
+            if (logger_) {
+                LOG_ERROR(logger_, "NACK, error: ", static_cast<unsigned>(nack_code));
             }
         } else {
-            if (auto logger = logging::GetDefaultLogger()) {
-                LOG_ERROR(logger, "NACK without error code");
+            if (logger_) {
+                LOG_ERROR(logger_, "NACK without error code");
             }
         }
         return CommandOutcome{OutcomeClass::Nack, {}, nack_code};
     }
 
-    if (auto logger = logging::GetDefaultLogger()) {
-        LOG_ERROR(logger, "unexpected response cmd: ", static_cast<unsigned>(response.cmd));
+    if (logger_) {
+        LOG_ERROR(logger_, "unexpected response cmd: ", static_cast<unsigned>(response.cmd));
     }
     return CommandOutcome{OutcomeClass::ProtocolError, {}, 0};
 }
