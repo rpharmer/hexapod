@@ -77,4 +77,11 @@ bool run_failure_and_corruption_tests();
 bool run_command_tests();
 bool run_capability_tests();
 
+bool test_send_diagnostic_success_and_nack();
+bool test_set_target_angle_success_and_nack();
+bool test_servo_enable_roundtrip_success_and_failures();
+bool test_scalar_getters_success_and_malformed_payloads();
+bool test_led_info_and_led_color_commands();
+bool test_set_and_get_angle_calibrations_success_and_failures();
+
 }  // namespace hardware_bridge_transport_test
