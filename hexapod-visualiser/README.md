@@ -22,6 +22,13 @@ In another terminal, run the sample data stream:
 python simulate_telemetry.py --host 127.0.0.1 --port 9870 --hz 30
 ```
 
+## Visualiser camera usage
+
+- **Orbit:** left-click + drag on the canvas.
+- **Pan:** right-click (or Shift + left-click) + drag.
+- **Zoom:** mouse wheel / trackpad scroll.
+- **Presets:** use **Top**, **Front**, **Side**, or **Reset View** in the header for deterministic camera poses.
+
 ## Telemetry format (UDP JSON)
 
 You can send partial updates or full state.
