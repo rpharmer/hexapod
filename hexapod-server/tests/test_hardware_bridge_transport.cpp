@@ -11,6 +11,7 @@
 
 #include "hexapod-common.hpp"
 #include "geometry_config.hpp"
+#include "geometry_profile_service.hpp"
 #include "protocol_codec.hpp"
 
 namespace {
@@ -908,15 +909,23 @@ bool test_read_falls_back_to_software_joint_estimate_without_angular_feedback() 
     FakePacketEndpoint* endpoint_view = nullptr;
     SimpleHardwareBridge* bridge = nullptr;
 
-    const HexapodGeometry geometry_before = geometry_config::kHexapodGeometry;
+    const HexapodGeometry geometry_before = geometry_config::activeHexapodGeometry();
+    HexapodGeometry modified_geometry = geometry_before;
     for (int leg = 0; leg < kNumLegs; ++leg) {
         for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-            auto& dyn = geometry_config::kHexapodGeometry.legGeometry[leg].servoDynamics[joint];
+            auto& dyn = modified_geometry.legGeometry[leg].servoDynamics[joint];
             dyn.positive_direction.tau_s = 0.08;
             dyn.negative_direction.tau_s = 0.08;
             dyn.positive_direction.vmax_radps = 0.05;
             dyn.negative_direction.vmax_radps = 0.05;
         }
+    }
+
+    std::string geometry_error;
+    if (!geometry_profile_service::preview(modified_geometry, &geometry_error) ||
+        !geometry_profile_service::apply(&geometry_error)) {
+        std::cerr << "FAIL: failed to apply geometry test profile: " << geometry_error << "\n";
+        return false;
     }
 
     const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
@@ -940,52 +949,61 @@ bool test_read_falls_back_to_software_joint_estimate_without_angular_feedback() 
                                          return std::vector<DecodedPacket>{};
                                      });
     if (!expect(init_ok, "init should succeed before software feedback fallback test")) {
-        geometry_config::kHexapodGeometry = geometry_before;
+        geometry_profile_service::preview(geometry_before);
+        geometry_profile_service::apply();
         return false;
     }
 
     JointTargets command{};
     command.leg_states[0].joint_state[COXA].pos_rad = AngleRad{0.8};
     if (!expect(bridge->write(command), "write should succeed before software feedback fallback read")) {
-        geometry_config::kHexapodGeometry = geometry_before;
+        geometry_profile_service::preview(geometry_before);
+        geometry_profile_service::apply();
         return false;
     }
 
     RobotState first{};
     if (!expect(bridge->read(first), "first read should succeed")) {
-        geometry_config::kHexapodGeometry = geometry_before;
+        geometry_profile_service::preview(geometry_before);
+        geometry_profile_service::apply();
         return false;
     }
     if (!expect(first.leg_states[0].joint_state[COXA].pos_rad.value > 0.0,
                 "software feedback should move estimate toward commanded target")) {
-        geometry_config::kHexapodGeometry = geometry_before;
+        geometry_profile_service::preview(geometry_before);
+        geometry_profile_service::apply();
         return false;
     }
     if (!expect(first.leg_states[0].joint_state[COXA].pos_rad.value < 0.35,
                 "software feedback should be handshake-driven and not use reported angular telemetry")) {
-        geometry_config::kHexapodGeometry = geometry_before;
+        geometry_profile_service::preview(geometry_before);
+        geometry_profile_service::apply();
         return false;
     }
     if (!expect(first.leg_states[0].joint_state[COXA].pos_rad.value <= 2e-4,
                 "software feedback should respect geometry servo dynamics vmax")) {
-        geometry_config::kHexapodGeometry = geometry_before;
+        geometry_profile_service::preview(geometry_before);
+        geometry_profile_service::apply();
         return false;
     }
     if (!expect(first.voltage > 0.0f && first.current > 0.0f,
                 "fallback should preserve non-angular telemetry from device")) {
-        geometry_config::kHexapodGeometry = geometry_before;
+        geometry_profile_service::preview(geometry_before);
+        geometry_profile_service::apply();
         return false;
     }
 
     RobotState second{};
     if (!expect(bridge->read(second), "second read should succeed")) {
-        geometry_config::kHexapodGeometry = geometry_before;
+        geometry_profile_service::preview(geometry_before);
+        geometry_profile_service::apply();
         return false;
     }
     const bool progressed = expect(second.leg_states[0].joint_state[COXA].pos_rad.value >=
                                        first.leg_states[0].joint_state[COXA].pos_rad.value,
                                    "software estimate should progress toward command over successive reads");
-    geometry_config::kHexapodGeometry = geometry_before;
+    geometry_profile_service::preview(geometry_before);
+    geometry_profile_service::apply();
     return progressed;
 }
 

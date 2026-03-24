@@ -180,6 +180,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_robot_runtime_freshness_gate_matrix PRIVATE hexapod_server_core)
     add_test(NAME robot_runtime_freshness_gate_matrix COMMAND test_robot_runtime_freshness_gate_matrix)
 
+
+    add_executable(test_geometry_profile_service tests/test_geometry_profile_service.cpp)
+    target_link_libraries(test_geometry_profile_service PRIVATE hexapod_server_core)
+    add_test(NAME geometry_profile_service COMMAND test_geometry_profile_service)
     add_executable(test_calibration_probe_fit tests/test_calibration_probe_fit.cpp)
     target_link_libraries(test_calibration_probe_fit PRIVATE hexapod_server_core)
     add_test(NAME calibration_probe_fit COMMAND test_calibration_probe_fit)
