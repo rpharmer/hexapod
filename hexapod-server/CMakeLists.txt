@@ -186,6 +186,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_robot_runtime_freshness_gate_matrix PRIVATE hexapod_server_core)
     add_test(NAME robot_runtime_freshness_gate_matrix COMMAND test_robot_runtime_freshness_gate_matrix)
 
+    add_executable(test_runtime_helpers tests/test_runtime_helpers.cpp)
+    target_link_libraries(test_runtime_helpers PRIVATE hexapod_server_core)
+    add_test(NAME runtime_helpers COMMAND test_runtime_helpers)
+
 
     add_executable(test_geometry_profile_service tests/test_geometry_profile_service.cpp)
     target_link_libraries(test_geometry_profile_service PRIVATE hexapod_server_core)
