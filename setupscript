@@ -1,3 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Bootstrap third-party host dependencies used by hexapod-server.
 cd ..
 git clone https://github.com/ToruNiina/toml11
 cd toml11
@@ -5,39 +9,52 @@ git submodule update --init --recursive
 cmake -B ./build/
 cmake --build ./build/
 cmake --install ./build/
+
 cd ..
 git clone https://github.com/gbmhunter/CppLinuxSerial
 cd CppLinuxSerial
-mkdir build
-cd build
-cmake .. -DBUILD_TESTS=FALSE
-make
-sudo make install
+cmake -S . -B build -DBUILD_TESTS=FALSE
+cmake --build build -j"$(nproc)"
+cmake --install build
+
+# Install build toolchain once.
+sudo apt update
+sudo apt install -y cmake gcc-arm-none-eabi build-essential
+
+# Bootstrap Pico SDKs used by hexapod-client firmware build.
 cd /workspace/
-mkdir pico
+mkdir -p pico
 cd pico
 git clone https://github.com/raspberrypi/pico-sdk
 cd pico-sdk
 git submodule update --init
-cd ../
-sudo apt update
-sudo apt install -y cmake gcc-arm-none-eabi build-essential
+
+cd ..
 git clone https://github.com/pimoroni/pimoroni-pico.git
 cd pimoroni-pico
 git submodule update --init
-mkdir build
-cd /workspace/hexapod/
-cd hexapod-server
-cmake -S . -B build
-cmake --build build -j
+
+# Build all project targets so setup cache contains every object/binary flavor.
+cd /workspace/hexapod/hexapod-server
+cmake --preset default
+cmake --build --preset default -j"$(nproc)"
+
+cmake --preset tests
+cmake --build --preset tests -j"$(nproc)"
+
 cd /workspace/hexapod/hexapod-client
+# Prebuild SDK/tooling artifacts that are otherwise fetched lazily.
 cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=ON
-cmake --build build --target setup-sdks
-cmake -S . -B build -DHEXAPOD_CLIENT_SETUP_SDKS_ONLY=OFF
+cmake --build build --target setup-sdks -j"$(nproc)"
 
+# Build firmware artifacts (.elf/.bin/.hex/.uf2).
+cmake --preset default
+cmake --build --preset default -j"$(nproc)"
 
-enviroment variables:
+# Build native host test binaries.
+cmake --preset host-tests
+cmake --build --preset host-tests -j"$(nproc)"
 
-PICO_SDK_PATH    /workspace/pico/pico-sdk
-PIMORONI_PICO_PATH    /workspace/pico/pimoroni-pico
-
+echo "Environment variables:"
+echo "  PICO_SDK_PATH=/workspace/pico/pico-sdk"
+echo "  PIMORONI_PICO_PATH=/workspace/pico/pimoroni-pico"
