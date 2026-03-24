@@ -14,10 +14,6 @@ const ROLLING_LIMIT = 8;
 const statusEl = document.getElementById("status");
 const metaEl = document.getElementById("meta");
 const rollingMetricsEl = document.getElementById("rolling-metrics");
-const badgeModeEl = document.getElementById("badge-mode");
-const badgeFaultEl = document.getElementById("badge-fault");
-const badgeBusEl = document.getElementById("badge-bus");
-const badgeEstimatorEl = document.getElementById("badge-estimator");
 const canvas = document.getElementById("scene");
 const ctx = canvas.getContext("2d");
 
@@ -31,16 +27,8 @@ let model = {
 };
 
 const telemetry = {
-  active_mode: null,
-  active_fault: null,
-  bus_ok: null,
-  estimator_valid: null,
-  loop_counter: null,
-  voltage: null,
-  current: null,
   lastPayloadAtMs: 0,
   lastModelTimestampMs: null,
-  lastAdvancingTimestampAtMs: 0,
   rolling: [],
 };
 
@@ -104,13 +92,6 @@ function fkForLeg(legName, anglesDeg, geometry) {
   return { anchor, shoulder, knee, foot };
 }
 
-function setBadge(el, label, value, stateClass = "") {
-  const shown = value === null || value === undefined || value === "" ? "n/a" : value;
-  el.textContent = `${label}: ${shown}`;
-  el.classList.remove("good", "bad", "warn");
-  if (stateClass) el.classList.add(stateClass);
-}
-
 function formatAge(ageMs) {
   if (!Number.isFinite(ageMs)) return "n/a";
   if (ageMs < 1000) return `${Math.round(ageMs)}ms`;
@@ -121,34 +102,6 @@ function updateTelemetryUI(nowMs) {
   const modelAgeMs = telemetry.lastModelTimestampMs === null ? NaN : nowMs - telemetry.lastModelTimestampMs;
   const transportAgeMs = telemetry.lastPayloadAtMs ? nowMs - telemetry.lastPayloadAtMs : NaN;
   const staleData = !Number.isFinite(modelAgeMs) || modelAgeMs > STALE_AFTER_MS;
-
-  setBadge(badgeModeEl, "mode", telemetry.active_mode, staleData ? "warn" : "good");
-
-  const faultClass = telemetry.active_fault ? "bad" : staleData ? "warn" : "good";
-  const faultText = telemetry.active_fault || "none";
-  setBadge(badgeFaultEl, "fault", faultText, faultClass);
-
-  let busLabel = telemetry.bus_ok;
-  let busClass = "warn";
-  if (telemetry.bus_ok === true) {
-    busLabel = "ok";
-    busClass = staleData ? "warn" : "good";
-  } else if (telemetry.bus_ok === false) {
-    busLabel = "down";
-    busClass = "bad";
-  }
-  setBadge(badgeBusEl, "bus", busLabel, busClass);
-
-  let estimatorLabel = telemetry.estimator_valid;
-  let estimatorClass = "warn";
-  if (telemetry.estimator_valid === true) {
-    estimatorLabel = "valid";
-    estimatorClass = staleData ? "warn" : "good";
-  } else if (telemetry.estimator_valid === false) {
-    estimatorLabel = "invalid";
-    estimatorClass = "bad";
-  }
-  setBadge(badgeEstimatorEl, "estimator", estimatorLabel, estimatorClass);
 
   const freshness = staleData ? "STALE" : "LIVE";
   statusEl.textContent = `Connected | ${freshness} telemetry`;
@@ -165,10 +118,7 @@ function updateTelemetryUI(nowMs) {
   rollingMetricsEl.textContent = telemetry.rolling.join("   |   ");
 
   const ts = model.timestamp_ms ? new Date(model.timestamp_ms).toISOString() : "n/a";
-  const voltage = telemetry.voltage == null ? "n/a" : `${Number(telemetry.voltage).toFixed(2)}V`;
-  const current = telemetry.current == null ? "n/a" : `${Number(telemetry.current).toFixed(2)}A`;
-  const counter = telemetry.loop_counter == null ? "n/a" : telemetry.loop_counter;
-  metaEl.textContent = `coxa:${model.geometry.coxa.toFixed(1)} femur:${model.geometry.femur.toFixed(1)} tibia:${model.geometry.tibia.toFixed(1)} | counter:${counter} | V:${voltage} I:${current} | timestamp:${ts}`;
+  metaEl.textContent = `coxa:${model.geometry.coxa.toFixed(1)} femur:${model.geometry.femur.toFixed(1)} tibia:${model.geometry.tibia.toFixed(1)} | timestamp:${ts}`;
 }
 
 function draw() {
@@ -267,20 +217,8 @@ function applyPayload(payload) {
     };
 
     if (typeof payload.timestamp_ms === "number") {
-      const prev = telemetry.lastModelTimestampMs;
       telemetry.lastModelTimestampMs = payload.timestamp_ms;
-      if (prev === null || payload.timestamp_ms > prev) {
-        telemetry.lastAdvancingTimestampAtMs = Date.now();
-      }
     }
-
-    if (payload.active_mode !== undefined) telemetry.active_mode = payload.active_mode;
-    if (payload.active_fault !== undefined) telemetry.active_fault = payload.active_fault;
-    if (payload.bus_ok !== undefined) telemetry.bus_ok = payload.bus_ok;
-    if (payload.estimator_valid !== undefined) telemetry.estimator_valid = payload.estimator_valid;
-    if (payload.loop_counter !== undefined) telemetry.loop_counter = payload.loop_counter;
-    if (payload.voltage !== undefined) telemetry.voltage = payload.voltage;
-    if (payload.current !== undefined) telemetry.current = payload.current;
   }
 }
 

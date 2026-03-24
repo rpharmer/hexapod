@@ -77,6 +77,32 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.geometry["coxa"], before["geometry"]["coxa"])
         self.assertEqual(state.geometry["femur"], 77.0)
 
+    def test_frontend_contract_does_not_expect_optional_status_badges(self):
+        static_dir = pathlib.Path(__file__).resolve().parents[1] / "static"
+        app_js = (static_dir / "app.js").read_text(encoding="utf-8")
+        index_html = (static_dir / "index.html").read_text(encoding="utf-8")
+
+        for field in (
+            "active_mode",
+            "active_fault",
+            "bus_ok",
+            "estimator_valid",
+            "loop_counter",
+            "voltage",
+            "current",
+        ):
+            self.assertNotIn(f"payload.{field}", app_js)
+            self.assertNotIn(f"telemetry.{field}", app_js)
+
+        for badge_id in (
+            "badge-mode",
+            "badge-fault",
+            "badge-bus",
+            "badge-estimator",
+            "status-badges",
+        ):
+            self.assertNotIn(badge_id, index_html)
+
 
 if __name__ == "__main__":
     unittest.main()
