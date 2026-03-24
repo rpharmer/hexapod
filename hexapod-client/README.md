@@ -91,6 +91,26 @@ Typical artifacts under `build/`:
 - `hexapod-client.uf2`
 - `hexapod-client.hex`
 
+## Host tests (native)
+
+Run host-mode command/router tests without Pico SDK or toolchain:
+
+```bash
+cd hexapod-client
+cmake --preset host-tests
+cmake --build --preset host-tests -j
+ctest --preset host-tests --output-on-failure
+```
+
+Equivalent non-preset commands:
+
+```bash
+cd hexapod-client
+cmake -S . -B build-host-tests -DHEXAPOD_CLIENT_ENABLE_HOST_TESTS=ON
+cmake --build build-host-tests -j
+ctest --test-dir build-host-tests --output-on-failure
+```
+
 Clean rebuild when switching SDK locations or CMake cache settings:
 
 ```bash

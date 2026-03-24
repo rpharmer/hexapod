@@ -1,12 +1,17 @@
+#ifndef HEXAPOD_CLIENT_HOST_TEST
 #define TARGET_PICO
-
 #include "pico/stdlib.h"
+#endif
+
 #include "hexapod-common.hpp"
 #include "protocol_codec.hpp"
 #include "hexapod-client.hpp"
 #include "firmware_context.hpp"
 
 namespace {
+constexpr bool kHardwareAngleFeedbackAvailable = false;
+
+#ifndef HEXAPOD_CLIENT_HOST_TEST
 // The speed that the LEDs will cycle at
 constexpr uint SPEED = 5;
 
@@ -15,7 +20,6 @@ constexpr float BRIGHTNESS = 0.4f;
 
 // How many times the LEDs will be updated per second
 constexpr uint UPDATES = 50;
-constexpr bool kHardwareAngleFeedbackAvailable = false;
 
 void configureSensorAddressPulls(FirmwareContext& ctx)
 {
@@ -80,9 +84,11 @@ void shutdownHardware(FirmwareContext& ctx)
   sleep_ms(100);
   ctx.state = HexapodState::OFF;
 }
+#endif
 
 } // namespace
 
+#ifndef HEXAPOD_CLIENT_HOST_TEST
 int main()
 {
   FirmwareContext& ctx = firmware();
@@ -90,6 +96,7 @@ int main()
   runCommandLoop();
   shutdownHardware(ctx);
 }
+#endif
 
 bool handleHandshake(uint16_t seq, const std::vector<uint8_t>& payload)
 {
@@ -120,6 +127,7 @@ bool handleHandshake(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8
   return false;
 }
 
+#ifndef HEXAPOD_CLIENT_HOST_TEST
 void echoLoop()
 {
   while(1)
@@ -129,3 +137,4 @@ void echoLoop()
       putchar_raw(input);
   }
 }
+#endif
