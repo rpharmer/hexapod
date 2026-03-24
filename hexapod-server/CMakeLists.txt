@@ -111,6 +111,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/servo_dynamics_fit.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/status_reporter.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/touch_residuals.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/visualiser_telemetry.cpp"
 
     # hardware
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/bridge_command_api.cpp"
@@ -260,6 +261,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_runtime_helpers tests/test_runtime_helpers.cpp)
     target_link_libraries(test_runtime_helpers PRIVATE hexapod_server_core)
     add_test(NAME runtime_helpers COMMAND test_runtime_helpers)
+
+    add_executable(test_visualiser_telemetry tests/test_visualiser_telemetry.cpp)
+    target_link_libraries(test_visualiser_telemetry PRIVATE hexapod_server_core)
+    add_test(NAME visualiser_telemetry COMMAND test_visualiser_telemetry)
 
     add_executable(test_shutdown_summary_logging tests/test_shutdown_summary_logging.cpp)
     target_link_libraries(test_shutdown_summary_logging PRIVATE hexapod_server_core)

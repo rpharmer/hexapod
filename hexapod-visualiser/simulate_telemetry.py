@@ -10,6 +10,7 @@ import socket
 import time
 
 LEG_ORDER = ["LF", "LM", "LR", "RF", "RM", "RR"]
+SCHEMA_VERSION = 1
 
 
 def main() -> None:
@@ -23,6 +24,7 @@ def main() -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     geometry_msg = {
+        "schema_version": SCHEMA_VERSION,
         "geometry": {
             "coxa": 35.0,
             "femur": 70.0,
@@ -44,6 +46,7 @@ def main() -> None:
             ]
 
         payload = {
+            "schema_version": SCHEMA_VERSION,
             "type": "joints",
             "timestamp_ms": int(time.time() * 1000),
             "angles_deg": angles,
