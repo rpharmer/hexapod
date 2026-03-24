@@ -1,153 +1,197 @@
 # Hexapod Codebase Review (March 24, 2026)
 
-This review covers repository structure, maintainability, test strategy, and roadmap opportunities across `hexapod-server`, `hexapod-client`, and `hexapod-common`.
+This review focuses on architecture, maintainability, testability, and roadmap direction across:
+
+- `hexapod-server` (host runtime/control loop)
+- `hexapod-client` (firmware)
+- `hexapod-common` (shared protocol)
+- `hexapod-visualiser` (UDP telemetry + browser rendering)
+
+> Priority note: this update places extra attention on the visualiser path and the server→visualiser telemetry contract.
 
 ## Executive summary
 
-### What is working well
-- Clear separation of concerns between host runtime, firmware runtime, and shared protocol primitives.
-- Strong test suite coverage in `hexapod-server` for control, transport, runtime, and parser behavior.
-- Robust end-to-end verification script (`scripts/verify.sh`) that chains server tests, firmware host tests, and simulator smoke.
+### Strengths
+- The repository has a clear product split: host runtime, firmware runtime, and shared protocol/framing primitives.
+- Verification entrypoints are straightforward (`scripts/verify.sh`, visualiser smoke, parser tests).
+- The visualiser contract is explicitly documented (`docs/VISUALISER_TELEMETRY.md`) with schema versioning and unit rules.
 
-### Highest-value refactoring opportunities
-1. **Reduce command boilerplate in `SimpleHardwareBridge`** with typed request helper templates.
-2. **Split oversized bridge implementation** into command-focused translation units.
-3. **Tighten build hygiene** by ensuring generated test/build outputs are always ignored.
-4. **Rationalize CMake source enumeration** (choose either explicit lists or `GLOB_RECURSE`, not both).
-5. **Unify config parse/validation defaults** into declarative schemas to reduce duplicated fallback code.
-
----
-
-## In-depth findings and refactoring opportunities
-
-## 1) `SimpleHardwareBridge` is doing too much in one file
-- `hexapod-server/src/hardware/hardware_bridge.cpp` is one of the largest implementation files and contains initialization/link management, payload assembly, request/response decoding, command-specific logging, and calibration upload behavior in one class.
-- The command methods follow repeated structural patterns:
-  - `requireReady(...)`
-  - `withCommandApi(...)`
-  - `complete_command(...)`
-  - decode or map output
-
-### Refactor direction
-- Introduce reusable command helpers (for example `runAckCommand`, `runDecodedCommand<T>`, `runScalarFloatCommand`) to reduce repeated error plumbing and lambda boilerplate.
-- Split by behavior into files such as:
-  - `hardware_bridge_lifecycle.cpp`
-  - `hardware_bridge_power_sensor.cpp`
-  - `hardware_bridge_servo.cpp`
-  - `hardware_bridge_led.cpp`
-  - `hardware_bridge_calibration.cpp`
-
-### Expected payoff
-- Lower cognitive load and easier review of protocol changes.
-- Smaller PR blast radius for future command additions.
-- Fewer accidental inconsistencies in command error handling.
-
-## 2) CMake source management has redundancy risk
-- `hexapod-server/CMakeLists.txt` currently uses `file(GLOB_RECURSE ... src/*.cpp)` and also manually appends specific sources before deduplicating.
-
-### Refactor direction
-- Pick one strategy:
-  - **Preferred for reliability:** explicit source lists grouped by module.
-  - **Alternative:** pure glob with strict code-owner discipline and CI checks.
-- If using explicit lists, add module comments so adding files is intentional and reviewable.
-
-### Expected payoff
-- Fewer accidental source-linking surprises.
-- Clearer ownership by subsystem.
-
-## 3) Config parsing/validation can become schema-driven
-- `src/config/config_validation.cpp` has several fallback parser variants (`int`, `u64`, `double`, `bool`, vector values, `Vec3` lists) with similar range checks and logging semantics.
-- `TomlParser::parse(...)` orchestrates many section-specific parse functions with repetitive boolean chaining patterns.
-
-### Refactor direction
-- Introduce a compact validation descriptor model (`key`, type, bounds, default, required/optional, section tag).
-- Provide common conversion/validation primitives and reduce custom one-off parser logic.
-- Return structured diagnostics (code + key + section + message), not only log side effects.
-
-### Expected payoff
-- Easier schema evolution and migration to future `SchemaVersion` values.
-- Better UX for CLI tools that may want machine-readable config diagnostics.
-
-## 4) Error semantics should distinguish capability mismatch vs transport failure
-- In `withCommandApi(...)`, capability negotiation fallback and command transport failure are sometimes folded into broad error categories.
-
-### Refactor direction
-- Introduce richer bridge result metadata (`error`, `command_code`, `phase`, `retryable`, `peer_capability_state`).
-- Add optional metrics counters per command outcome.
-
-### Expected payoff
-- Faster diagnosis for field issues (USB transport instability vs protocol/capability mismatch).
-- Better observability for reliability tuning.
-
-## 5) Test-build artifacts should be consistently ignored
-- Server and client include dedicated out-of-source test build directories (`build-tests`, `build-host-tests`) that can appear as untracked clutter if not ignored.
-
-### Refactor direction
-- Expand per-project `.gitignore` entries to include these generated test build directories.
-
-### Expected payoff
-- Cleaner `git status` and reduced accidental add/commit risk.
+### Top risks / refactor hotspots
+1. **Visualiser backend startup path regression risk**: listener wiring and callback signatures in `hexapod-visualiser/server.py` should be simplified and guarded by an integration test for process boot.
+2. **Visualiser frontend monolith**: `static/app.js` mixes network state, telemetry freshness logic, camera controls, and rendering in one file.
+3. **Large server bridge surface area**: host hardware bridge modules still carry repeated command boilerplate and broad responsibility.
+4. **Config parser duplication**: parsing and validation logic repeats common conversion/default/range patterns.
+5. **Contract drift risk**: schema docs and producers/consumers are strong today, but there is no automated compatibility matrix for versioned producer/consumer pairs.
 
 ---
 
-## Recommended next steps (execution plan)
+## Architecture review (cross-cutting)
 
-## Next 2 weeks (stabilization)
-1. Implement `.gitignore` hardening for generated test build directories.
-2. Add one reusable bridge helper (`runDecodedCommand`) and migrate 2-3 commands as a pilot.
-3. Add a small benchmark test around control-loop jitter in simulated runtime.
+## 1) Module boundaries are mostly sound
+- Current top-level module decomposition is coherent and makes ownership clear.
+- Shared protocol types live in `hexapod-common`, reducing accidental divergence between host and firmware.
+
+### Opportunity
+- Introduce a short, enforced architecture decision record (ADR) for each cross-component contract (`transport protocol`, `visualiser telemetry`, `config schema`).
+- Tie each ADR to a test path so contract changes require both doc + test updates.
+
+## 2) Runtime observability is improving but fragmented
+- Diagnostics exist in multiple places (visualiser logs, host telemetry JSON, test suites), but there is no single operator-focused runtime dashboard artifact.
+
+### Opportunity
+- Standardize on a small “runtime health schema” for host + visualiser.
+- Expose a compact machine-readable endpoint from `hexapod-server` similar to visualiser `/healthz` and consume both in one dev dashboard.
+
+---
+
+## In-depth visualiser review (priority)
+
+## A) Backend (`hexapod-visualiser/server.py`)
+
+### What is good
+- Schema-gated UDP parsing prevents silent acceptance of incompatible payloads.
+- Partial-merge semantics for geometry and per-leg angles are practical for incremental updates.
+- Diagnostics counters (`udp_received`, `udp_rejected`, `ws_send_failures`, etc.) are useful and low-cost.
+- Coalescing scheduler is directionally correct for bursty telemetry.
+
+### Refactoring opportunities
+1. **Stabilize startup and listener wiring**
+   - Keep exactly one UDP listener registration path and one callback flow.
+   - Add a dedicated startup test that launches `server.py` and verifies health endpoint + one telemetry round-trip.
+
+2. **Separate concerns in parser path**
+   - Split packet handling into pure functions:
+     - `decode_json_datagram(bytes) -> Result`
+     - `validate_schema(payload) -> Result`
+     - `merge_state(state, payload) -> changed`
+   - This shrinks `datagram_received()` complexity and improves test precision.
+
+3. **Make rate controls explicit and configurable**
+   - `publish_hz` is currently embedded in scheduler setup.
+   - Promote this to CLI (`--publish-hz`) and enforce bounds (`1..120`) with clear logs.
+
+4. **Improve broadcast robustness**
+   - Handle additional websocket exceptions (`RuntimeError`, closed socket state) and collect failure reasons.
+   - Consider per-client backpressure handling (drop stale frames vs queue limit).
+
+5. **Add contract assertions on outbound state**
+   - Validate that outbound payload still matches documented browser contract before broadcast in debug mode.
+
+## B) Frontend (`hexapod-visualiser/static/app.js`)
+
+### What is good
+- Deterministic camera presets are practical for debugging.
+- Freshness UI (`LIVE/STALE`) gives immediate operator feedback.
+- Rendering math is understandable and low dependency.
+
+### Refactoring opportunities
+1. **Split the monolith into modules**
+   - `telemetry_store.js` (payload merge + freshness)
+   - `camera_controller.js` (orbit/pan/zoom + presets)
+   - `renderer.js` (FK + draw pipeline)
+   - `ws_client.js` (reconnect/backoff)
+
+2. **Harden inbound payload sanitization at UI boundary**
+   - Even with backend validation, frontend should guard shape/range before mutating render model.
+
+3. **Tune reconnection policy**
+   - Replace fixed 1s reconnect with bounded exponential backoff + jitter to reduce thundering-herd behavior.
+
+4. **Add feature flags for debug overlays**
+   - Optional overlays: leg workspace circles, foot trajectory traces, frame-time graph.
+
+5. **Rendering performance envelope**
+   - Track FPS and draw time moving average; automatically degrade optional overlays when frame budget is exceeded.
+
+## C) Server→Visualiser producer (`hexapod-server/src/control/visualiser_telemetry.cpp`)
+
+### What is good
+- Explicit unit conversion (meters→mm, rad→deg) is clean and documented.
+- Leg key mapping is deterministic and test-covered.
+
+### Refactoring opportunities
+1. **Make geometry source explicit**
+   - Current serialization reaches into active geometry singleton; consider injecting geometry context to avoid hidden global coupling.
+
+2. **Schema evolution hooks**
+   - Reserve optional metadata envelope for additive fields (`producer_id`, `sequence`, `mode`) while preserving schema v1 compatibility.
+
+3. **Sampling strategy controls**
+   - Add configurable publish decimation independent from control loop to avoid unnecessary network load.
+
+---
+
+## Test strategy review
+
+## Strengths
+- Server test surface is broad and domain-oriented.
+- Visualiser has parser-focused unit tests and a smoke workflow.
+
+## Gaps to close
+1. **Visualiser process boot test in CI**
+   - Ensure startup wiring regressions are caught immediately.
+2. **Contract compatibility tests**
+   - Validate `hexapod-server` producer payloads directly against visualiser parser fixtures.
+3. **Golden telemetry fixtures**
+   - Add versioned fixtures (`schema_v1_nominal`, `schema_v1_partial`, `schema_v1_malformed`) and replay in tests.
+4. **Negative testing around timestamps**
+   - Include future timestamps, stale timestamps, and non-monotonic updates.
+
+---
+
+## Prioritized execution plan
+
+## Next 1-2 weeks (high ROI)
+1. Refactor visualiser backend startup/listener flow and add process-level startup smoke test.
+2. Split `app.js` into smaller modules without changing visual behavior.
+3. Add CLI knobs for visualiser publish rate and reconnect/backoff settings.
 
 ## Next 1-2 months (maintainability)
-1. Split `hardware_bridge.cpp` by domain while preserving API compatibility.
-2. Replace parser fallback duplication with schema descriptors and shared validation utilities.
-3. Add CI linting checks (format + static analysis profile) to catch complexity regressions.
+1. Introduce schema descriptors for config parsing in `hexapod-server`.
+2. Continue decomposing bridge command plumbing into reusable helpers.
+3. Add compatibility fixture tests between producer and consumer telemetry paths.
 
 ## Next quarter (product maturity)
-1. Add telemetry/event stream output for runtime health and command outcomes.
-2. Build richer scenario coverage (fault injection matrix + endurance/soak simulation).
-3. Add compatibility tests for protocol version negotiation between server/client revisions.
+1. Build operator dashboard for unified host + visualiser health.
+2. Add session recording/playback UI controls in visualiser (seek, speed, bookmark events).
+3. Add terrain/contact debug overlays and gait phase annotations in visualiser.
 
 ---
 
-## Feature ideas / future directions
+## Feature directions / ideas
 
-## A) Runtime introspection & developer tooling
-- Live diagnostics endpoint (CLI + JSON output mode) exposing:
-  - loop timing percentiles,
-  - freshness gate state,
-  - safety supervisor state transitions,
-  - active gait/mode and command rates.
-- Benefit: dramatically easier tuning and support in both sim and hardware sessions.
+## Visualiser-focused ideas
+1. **Ghost pose comparison**
+   - Overlay “planned” vs “measured” leg poses to diagnose estimator lag and calibration drift.
+2. **Footfall timeline strip**
+   - Per-leg contact state strip chart for gait debugging.
+3. **Safety/fault event markers**
+   - Annotate timeline and 3D scene when safety supervisor changes state.
+4. **Latency lens**
+   - Show transport age, model age, and render age as separate metrics.
+5. **Replay notebook mode**
+   - Load NDJSON captures and attach operator notes/bookmarks to timestamps.
 
-## B) “Protocol evolution” guardrails
-- Add protocol metadata hash exchange and negotiated capability map with strict feature flags.
-- Add compatibility test matrix in CI:
-  - latest server vs N-1 firmware,
-  - latest firmware vs N-1 server.
-- Benefit: safer incremental protocol changes.
-
-## C) Calibration UX improvements
-- Guided calibration wizard mode that logs each stage and validates ranges before apply.
-- Persist calibration confidence/quality score per joint based on probe stability and repeatability.
-- Benefit: fewer bad calibration deployments and easier operator workflows.
-
-## D) More realistic simulation
-- Add optional noise models and transient communication faults (bursty packet loss, delayed ACKs, intermittent sensor stalls).
-- Add scripted terrain/contact scenarios for estimator robustness.
-- Benefit: better pre-hardware validation of resilience.
-
-## E) Motion quality and safety enhancements
-- Add gait transition smoothing and jerk-limited body commands.
-- Add safety envelope checks for body pose requests before IK submission.
-- Benefit: reduced instability risk and smoother operator feel.
+## Broader platform ideas
+1. **Protocol compatibility checker CLI**
+   - Validate producer output against schema contracts offline.
+2. **Calibration confidence scorecards**
+   - Persist quality metrics by joint and show change over time.
+3. **Scenario mutation testing**
+   - Auto-perturb scenario inputs to discover brittle safety logic.
+4. **Release readiness gates**
+   - Add performance/error-budget thresholds (loop jitter, command failures, parser rejects).
 
 ---
 
-## Suggested review metrics to track going forward
-- Mean / p95 loop execution time by loop type (bus/estimator/safety/control).
-- Command success rate by command code.
-- Fault class frequency over runtime hours.
-- Calibration rejection rate (and reasons).
-- Scenario suite pass rate + runtime duration trends.
+## Suggested objective metrics
 
-These metrics can act as objective acceptance criteria for refactors and feature rollouts.
+Track these continuously and gate releases with thresholds:
+
+- Visualiser UDP accept ratio (`accepted / received`) and rejection reason breakdown.
+- WebSocket client stability (connect/disconnect rate, send failure rate).
+- End-to-end telemetry latency distribution (`timestamp_ms` to render time).
+- Host control-loop p95/p99 jitter under simulation and hardware profiles.
+- Scenario suite pass rate and median execution time trend.
+
+These metrics make refactoring impact measurable and keep feature growth aligned with reliability.
