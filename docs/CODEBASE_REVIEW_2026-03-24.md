@@ -176,6 +176,34 @@ even in successful completion.
 
 ---
 
+
+## Implementation map (file-level)
+
+To make the recommendations easier to execute, this map ties each refactor track to concrete files and likely seams:
+
+- **Bridge preconditions/logging consolidation**
+  - `hexapod-server/src/hardware/hardware_bridge.cpp`
+  - `hexapod-server/include/hardware/hardware_bridge.hpp`
+  - optional shared helper for failures in `hexapod-server/include/utils/logger.hpp`
+- **Runtime decomposition (`RobotRuntime`)**
+  - `hexapod-server/src/control/robot_runtime.cpp`
+  - `hexapod-server/include/control/robot_runtime.hpp`
+  - new helper units under `hexapod-server/include/control/` and `hexapod-server/src/control/`
+- **Protocol type hardening**
+  - `hexapod-common/include/hexapod-common.hpp`
+  - `hexapod-server/include/hardware/command_client.hpp`
+  - `hexapod-client/command_router.hpp` and command dispatch call sites
+- **Bridge transport test modularization**
+  - split `hexapod-server/tests/test_hardware_bridge_transport.cpp`
+  - add shared test fixture helpers in `hexapod-server/tests/` (local-only headers)
+
+### Suggested acceptance checks per phase
+
+- `./scripts/verify.sh` remains green at each phase boundary.
+- For the bridge precondition refactor, no change in command-level pass/fail behavior in existing transport tests.
+- For `RobotRuntime` extraction, preserve existing loop timing and freshness gate behavior (validated by current runtime/freshness tests).
+- For protocol hardening, all internal call sites compile without relying on raw `uint8_t` command identifiers.
+
 ## Suggested objective metrics to track refactor progress
 
 - `SimpleHardwareBridge` repeated readiness guard count (target: near-zero duplicates)
