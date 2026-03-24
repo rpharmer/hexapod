@@ -134,9 +134,43 @@ int main(int argc, char** argv)
     runner_rc = runner.run(robot, options, control_cfg, logger, g_exit);
   }
 
-  robot.stop();
-  LOG_WARN(logger, "All workers joined");
-  LOG_ERROR(logger, "Dropped messages=", logger->DroppedMessageCount());
+  bool teardown_ok = true;
+  try {
+    robot.stop();
+  } catch (const std::exception& ex) {
+    teardown_ok = false;
+    LOG_ERROR(logger, "Robot teardown failed: ", ex.what());
+  } catch (...) {
+    teardown_ok = false;
+    LOG_ERROR(logger, "Robot teardown failed: unknown exception");
+  }
+
+  if (teardown_ok) {
+    LOG_INFO(logger, "All workers joined");
+  } else {
+    LOG_ERROR(logger, "All workers joined: false");
+  }
+
+  const std::size_t dropped_messages = logger->DroppedMessageCount();
+  if (dropped_messages > 0) {
+    LOG_ERROR(logger, "Dropped messages=", dropped_messages);
+  } else {
+    LOG_INFO(logger, "Dropped messages=", dropped_messages);
+  }
+
+  const bool shutdown_success = teardown_ok && dropped_messages == 0;
+  const LogLevel shutdown_summary_level = shutdown_success ? LogLevel::Info : LogLevel::Error;
+  logger->LogStream(shutdown_summary_level,
+                    LOG_SOURCE_LOCATION,
+                    "shutdown_summary"
+                    " success=",
+                    shutdown_success ? 1 : 0,
+                    " teardown_ok=",
+                    teardown_ok ? 1 : 0,
+                    " dropped_messages=",
+                    dropped_messages,
+                    " runner_rc=",
+                    runner_rc);
 
   logger->Flush();
   logger->Stop();
