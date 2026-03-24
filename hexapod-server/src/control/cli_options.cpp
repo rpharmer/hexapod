@@ -19,6 +19,16 @@ bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error)
       out.mode = ServerMode::Scenario;
     } else if ((arg == "--xbox-device" || arg == "--controller-device") && i + 1 < argc) {
       out.controllerDevice = argv[++i];
+    } else if (arg == "--xbox-device" || arg == "--controller-device") {
+      error = arg + " requires a device path";
+      return false;
+    } else {
+      if (arg.rfind("--", 0) == 0) {
+        error = "Unknown option: " + arg;
+      } else {
+        error = "Unexpected positional argument: " + arg;
+      }
+      return false;
     }
   }
 

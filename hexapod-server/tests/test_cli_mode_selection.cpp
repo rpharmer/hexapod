@@ -83,6 +83,32 @@ bool testControllerDeviceOption()
                 "controller-device should be persisted");
 }
 
+bool testUnknownFlagFailsParsing()
+{
+  std::vector<std::string> args{"hexapod-server", "--does-not-exist"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "unknown option should fail parsing") &&
+         expect(error.find("--does-not-exist") != std::string::npos,
+                "unknown option error should include the token");
+}
+
+bool testUnexpectedPositionalArgumentFailsParsing()
+{
+  std::vector<std::string> args{"hexapod-server", "stray-token"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "unexpected positional argument should fail parsing") &&
+         expect(error.find("stray-token") != std::string::npos,
+                "positional argument error should include the token");
+}
+
 } // namespace
 
 int main()
@@ -91,6 +117,8 @@ int main()
   testScenarioModeSelection();
   testScenarioLintRequiresScenarioFile();
   testControllerDeviceOption();
+  testUnknownFlagFailsParsing();
+  testUnexpectedPositionalArgumentFailsParsing();
 
   if (g_failures != 0) {
     std::cerr << g_failures << " test(s) failed\n";
