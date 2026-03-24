@@ -282,7 +282,42 @@ bool testBaselineConfigParity()
          expect(near(minimal_parsed.coxaLengthM, baseline_serial.coxaLengthM),
                 "minimal config geometry defaults should match config.txt baseline") &&
          expect(minimal_parsed.commandTimeoutUs == baseline_sim.commandTimeoutUs,
-                "default timeout parity should match config.sim.txt baseline");
+                "default timeout parity should match config.sim.txt baseline") &&
+         expect(minimal_parsed.logToFile == baseline_serial.logToFile,
+                "default file logging toggle should match baseline config") &&
+         expect(minimal_parsed.logFilePath == baseline_serial.logFilePath,
+                "default log file path should match baseline config");
+}
+
+
+
+bool testRuntimeLoggingOverridesParse()
+{
+  const std::string cfg =
+      "title = \"Hexapod Config File\"\n"
+      "Schema = \"hexapod.server.config\"\n"
+      "SchemaVersion = 1\n"
+      "Runtime.Mode = \"sim\"\n"
+      "Runtime.Log.FilePath = \"ci.log\"\n"
+      "Runtime.Log.EnableFile = false\n"
+      "MotorCalibrations = [\n"
+      "[\"R31\", 1031, 2088], [\"R32\", 1003, 2016], [\"R33\", 958, 1990],\n"
+      "[\"L31\", 941, 2022], [\"L32\", 986, 2039], [\"L33\", 958, 1988],\n"
+      "[\"R21\", 1007, 2048], [\"R22\", 976, 2019], [\"R23\", 1057, 2090],\n"
+      "[\"L21\", 993, 2015], [\"L22\", 1011, 2013], [\"L23\", 956, 2000],\n"
+      "[\"R11\", 1040, 2055], [\"R12\", 983, 2057], [\"R13\", 959, 1995],\n"
+      "[\"L11\", 1031, 1998], [\"L12\", 951, 1978], [\"L13\", 1035, 2027]\n"
+      "]\n";
+
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(writeTemp("hexapod_runtime_log_overrides.toml", cfg), parsed),
+              "runtime logging overrides should parse")) {
+    return false;
+  }
+
+  return expect(parsed.logFilePath == "ci.log", "Runtime.Log.FilePath should be parsed") &&
+         expect(!parsed.logToFile, "Runtime.Log.EnableFile should be parsed");
 }
 
 bool testGeometryDynamicsLoadedFromParsedConfig()
@@ -343,6 +378,7 @@ int main()
   testCalibrationNormalizationStableForShuffledTable();
   testSimModeTransportOptional();
   testBaselineConfigParity();
+  testRuntimeLoggingOverridesParse();
   testGeometryDynamicsLoadedFromParsedConfig();
   testGeometryCanBeWrittenBackToParsedConfig();
 

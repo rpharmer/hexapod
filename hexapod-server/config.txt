@@ -10,6 +10,8 @@ Runtime.Sim.ResponseRateHz = 50.0
 Runtime.Sim.DropBus = false
 Runtime.Sim.LowVoltage = false
 Runtime.Sim.HighCurrent = false
+Runtime.Log.FilePath = "app.log"
+Runtime.Log.EnableFile = true
 
 SerialDevice = '/dev/ttyACM0'
 

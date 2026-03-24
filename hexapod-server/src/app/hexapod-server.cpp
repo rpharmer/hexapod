@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <atomic>
 #include <csignal>
+#include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 #include "control_config.hpp"
@@ -20,6 +22,28 @@ using namespace logging;
 static std::atomic<bool> g_exit{false};
 
 namespace {
+
+std::shared_ptr<AsyncLogger> makeLogger(bool enableFileLogging,
+                                        const std::string& logFilePath,
+                                        const std::shared_ptr<AsyncLogger>& fallbackLogger = nullptr)
+{
+  auto logger = std::make_shared<AsyncLogger>("app", LogLevel::Debug, 10000);
+  logger->AddSink(std::make_shared<ConsoleSink>());
+  if (enableFileLogging) {
+    try {
+      logger->AddSink(std::make_shared<FileSink>(logFilePath));
+    } catch (const std::exception& ex) {
+      if (fallbackLogger) {
+        LOG_WARN(fallbackLogger,
+                 "Failed to initialize file logging at '",
+                 logFilePath,
+                 "'. Falling back to console-only logging: ",
+                 ex.what());
+      }
+    }
+  }
+  return logger;
+}
 
 std::unique_ptr<IHardwareBridge> makeHardwareBridge(const ParsedToml& config,
                                                     const std::shared_ptr<AsyncLogger>& logger)
@@ -56,30 +80,40 @@ int main(int argc, char** argv)
   std::signal(SIGINT, signalHandler);
   std::signal(SIGTERM, signalHandler);
 
-  auto logger = std::make_shared<AsyncLogger>("app", LogLevel::Debug, 10000);
-  logger->AddSink(std::make_shared<ConsoleSink>());
-  logger->AddSink(std::make_shared<FileSink>("app.log"));
-  SetDefaultLogger(logger);
-
   CliOptions options;
   std::string cli_error;
   if (!parseCliOptions(argc, argv, options, cli_error)) {
-    LOG_ERROR(logger, "CLI error: ", cli_error);
+    std::cerr << "CLI error: " << cli_error << '\n';
     return 1;
   }
+
+  auto bootstrapLogger = makeLogger(false, "");
+  SetDefaultLogger(bootstrapLogger);
 
   const std::string effectiveConfigPath =
       options.configFile.empty() ? std::string("config.txt") : options.configFile;
 
   ParsedToml config;
   if (!tomlParser(effectiveConfigPath, config)) {
+    bootstrapLogger->Flush();
+    bootstrapLogger->Stop();
     return 1;
   }
+
+  const std::string effectiveLogPath =
+      options.logFilePath.empty() ? config.logFilePath : options.logFilePath;
+  const bool enableFileLogging = config.logToFile && !options.consoleOnlyLogging;
+
+  auto logger = makeLogger(enableFileLogging, effectiveLogPath, bootstrapLogger);
+  SetDefaultLogger(logger);
+  bootstrapLogger->Flush();
+  bootstrapLogger->Stop();
 
   const control_config::ControlConfig control_cfg = control_config::fromParsedToml(config);
   geometry_config::loadFromParsedToml(config);
 
   LOG_INFO(logger, "Runtime.Mode=", config.runtimeMode);
+  LOG_INFO(logger, "Logging.FileEnabled=", enableFileLogging, ", Path=", effectiveLogPath);
 
   auto hw = makeHardwareBridge(config, logger);
   auto estimator = std::make_unique<SimpleEstimator>();

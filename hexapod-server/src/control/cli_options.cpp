@@ -28,6 +28,14 @@ bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error)
     } else if (arg == "--xbox-device" || arg == "--controller-device") {
       error = arg + " requires a device path";
       return false;
+    } else if (arg == "--log-file") {
+      if (i + 1 >= argc || std::string(argv[i + 1]).rfind("--", 0) == 0) {
+        error = "--log-file requires a file path";
+        return false;
+      }
+      out.logFilePath = argv[++i];
+    } else if (arg == "--console-only") {
+      out.consoleOnlyLogging = true;
     } else {
       if (arg.rfind("--", 0) == 0) {
         error = "Unknown option: " + arg;
