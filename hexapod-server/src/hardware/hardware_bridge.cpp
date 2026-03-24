@@ -197,8 +197,34 @@ BridgeError SimpleHardwareBridge::last_error() const {
     return last_error_;
 }
 
-std::optional<BridgeCommandResultMetadata> SimpleHardwareBridge::last_bridge_result() const {
-    return last_result_;
+bool SimpleHardwareBridge::run_ack_command(const char* command_name,
+                                           CommandCode command_code,
+                                           const std::vector<uint8_t>& payload,
+                                           bool require_estimator) {
+    const BridgeError command_error = withCommandApi(
+        command_name,
+        [command_code, &payload](BridgeCommandApi& api) {
+            return api.request_ack_with_error(command_code, payload);
+        },
+        require_estimator);
+    return complete_command(command_name, command_error, "command execution failed");
+}
+
+template <typename DecodedPayload, typename Decoder>
+bool SimpleHardwareBridge::run_decoded_command(const char* command_name,
+                                               CommandCode command_code,
+                                               const std::vector<uint8_t>& request_payload,
+                                               Decoder&& decoder,
+                                               DecodedPayload& decoded,
+                                               bool require_estimator) {
+    const BridgeError command_error = withCommandApi(
+        command_name,
+        [&request_payload, command_code, &decoder, &decoded](BridgeCommandApi& api) {
+            return api.request_decoded_with_error(
+                command_code, request_payload, std::forward<Decoder>(decoder), decoded);
+        },
+        require_estimator);
+    return complete_command(command_name, command_error, "command execution failed");
 }
 
 bool SimpleHardwareBridge::init() {
