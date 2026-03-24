@@ -92,7 +92,7 @@ bool test_handshake_failure_then_recovery() {
     const auto logger = makeTestLogger(sink);
     bool first_hello = true;
     FakePacketEndpoint endpoint([&first_hello](const DecodedPacket& request) {
-        if (request.cmd == HELLO) {
+        if (request.cmd == as_u8(CommandCode::HELLO)) {
             if (first_hello) {
                 first_hello = false;
                 return std::vector<DecodedPacket>{{request.seq, NACK, {BUSY_NOT_READY}}};
@@ -115,7 +115,7 @@ bool test_handshake_failure_then_recovery() {
     }
 
     const auto& sent = endpoint.sent_packets();
-    const bool ok = expect(sent.size() == 2 && sent[0].cmd == HELLO && sent[1].cmd == HELLO,
+    const bool ok = expect(sent.size() == 2 && sent[0].cmd == as_u8(CommandCode::HELLO) && sent[1].cmd == as_u8(CommandCode::HELLO),
                            "handshake recovery should send HELLO twice");
     logger->Flush();
     logger->Stop();
@@ -132,7 +132,7 @@ bool test_retry_exhaustion_and_nack_mapping() {
     TransportSession timeout_transport(timeout_endpoint, DurationUs{500000}, DurationUs{150000}, logger);
     CommandClient timeout_client(timeout_transport, logger);
 
-    const auto timeout_outcome = timeout_client.transact(SET_POWER_RELAY, {1}, nullptr);
+    const auto timeout_outcome = timeout_client.transact(CommandCode::SET_POWER_RELAY, {1}, nullptr);
     if (!expect(timeout_outcome.outcome_class == TransportSession::OutcomeClass::RetryExhausted,
                 "timeouts should map to retry exhausted after all attempts")) {
         return false;
@@ -148,7 +148,7 @@ bool test_retry_exhaustion_and_nack_mapping() {
 
     TransportSession nack_transport(nack_endpoint, DurationUs{500000}, DurationUs{150000}, logger);
     CommandClient nack_client(nack_transport, logger);
-    const auto nack_outcome = nack_client.transact(SET_POWER_RELAY, {1}, nullptr);
+    const auto nack_outcome = nack_client.transact(CommandCode::SET_POWER_RELAY, {1}, nullptr);
 
     if (!expect(nack_outcome.outcome_class == TransportSession::OutcomeClass::Nack,
                 "explicit NACK should map to Nack outcome")) {

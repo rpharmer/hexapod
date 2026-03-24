@@ -24,10 +24,10 @@ void transitionToHostDisconnectedSafeState(FirmwareContext& ctx)
 
 void respondInvalidPayloadLength(FirmwareContext& ctx, uint16_t seq)
 {
-  ctx.serial.send_packet(seq, NACK, {INVALID_PAYLOAD_LENGTH});
+  ctx.serial.send_packet(seq, as_u8(CommandCode::NACK), {INVALID_PAYLOAD_LENGTH});
 }
 
-constexpr PayloadPolicy exactPayloadPolicyFromMetadata(uint8_t cmd)
+constexpr PayloadPolicy exactPayloadPolicyFromMetadata(CommandCode cmd)
 {
   const CommandMetadata* metadata = find_command_metadata(cmd);
   return (metadata != nullptr)
@@ -56,20 +56,20 @@ void routeCommand(FirmwareContext& ctx, uint16_t seq, const std::vector<uint8_t>
 }
 
 constexpr std::array<CommandRoute, 14> COMMAND_ROUTES{{
-    {SET_POWER_RELAY, exactPayloadPolicyFromMetadata(SET_POWER_RELAY), routeCommand<handleSetPowerRelayCommand>},
-    {SET_SERVOS_ENABLED, exactPayloadPolicyFromMetadata(SET_SERVOS_ENABLED), routeCommand<handleSetServosEnabledCommand>},
-    {GET_SERVOS_ENABLED, exactPayloadPolicyFromMetadata(GET_SERVOS_ENABLED), routeCommand<handleGetServosEnabledCommand>},
-    {SET_SERVOS_TO_MID, exactPayloadPolicyFromMetadata(SET_SERVOS_TO_MID), routeCommand<handleSetServosToMidCommand>},
-    {GET_LED_INFO, exactPayloadPolicyFromMetadata(GET_LED_INFO), routeCommand<handleGetLedInfoCommand>},
-    {SET_LED_COLORS, exactPayloadPolicyFromMetadata(SET_LED_COLORS), routeCommand<handleSetLedColorsCommand>},
-    {GET_ANGLE_CALIBRATIONS, exactPayloadPolicyFromMetadata(GET_ANGLE_CALIBRATIONS), routeCommand<handleGetAngleCalibCommand>},
-    {GET_CURRENT, exactPayloadPolicyFromMetadata(GET_CURRENT), routeCommand<handleGetCurrentCommand>},
-    {GET_VOLTAGE, exactPayloadPolicyFromMetadata(GET_VOLTAGE), routeCommand<handleGetVoltageCommand>},
-    {GET_SENSOR, exactPayloadPolicyFromMetadata(GET_SENSOR), routeCommand<handleGetSensorCommand>},
-    {GET_FULL_HARDWARE_STATE, exactPayloadPolicyFromMetadata(GET_FULL_HARDWARE_STATE), routeCommand<handleGetFullHardwareStateCommand>},
-    {SET_ANGLE_CALIBRATIONS, exactPayloadPolicyFromMetadata(SET_ANGLE_CALIBRATIONS), routeCommand<handleCalibCommand>},
-    {SET_TARGET_ANGLE, exactPayloadPolicyFromMetadata(SET_TARGET_ANGLE), routeCommand<handleSetAngleCommand>},
-    {SET_JOINT_TARGETS, exactPayloadPolicyFromMetadata(SET_JOINT_TARGETS), routeCommand<handleSetJointTargetsCommand>},
+    {CommandCode::SET_POWER_RELAY, exactPayloadPolicyFromMetadata(CommandCode::SET_POWER_RELAY), routeCommand<handleSetPowerRelayCommand>},
+    {CommandCode::SET_SERVOS_ENABLED, exactPayloadPolicyFromMetadata(CommandCode::SET_SERVOS_ENABLED), routeCommand<handleSetServosEnabledCommand>},
+    {CommandCode::GET_SERVOS_ENABLED, exactPayloadPolicyFromMetadata(CommandCode::GET_SERVOS_ENABLED), routeCommand<handleGetServosEnabledCommand>},
+    {CommandCode::SET_SERVOS_TO_MID, exactPayloadPolicyFromMetadata(CommandCode::SET_SERVOS_TO_MID), routeCommand<handleSetServosToMidCommand>},
+    {CommandCode::GET_LED_INFO, exactPayloadPolicyFromMetadata(CommandCode::GET_LED_INFO), routeCommand<handleGetLedInfoCommand>},
+    {CommandCode::SET_LED_COLORS, exactPayloadPolicyFromMetadata(CommandCode::SET_LED_COLORS), routeCommand<handleSetLedColorsCommand>},
+    {CommandCode::GET_ANGLE_CALIBRATIONS, exactPayloadPolicyFromMetadata(CommandCode::GET_ANGLE_CALIBRATIONS), routeCommand<handleGetAngleCalibCommand>},
+    {CommandCode::GET_CURRENT, exactPayloadPolicyFromMetadata(CommandCode::GET_CURRENT), routeCommand<handleGetCurrentCommand>},
+    {CommandCode::GET_VOLTAGE, exactPayloadPolicyFromMetadata(CommandCode::GET_VOLTAGE), routeCommand<handleGetVoltageCommand>},
+    {CommandCode::GET_SENSOR, exactPayloadPolicyFromMetadata(CommandCode::GET_SENSOR), routeCommand<handleGetSensorCommand>},
+    {CommandCode::GET_FULL_HARDWARE_STATE, exactPayloadPolicyFromMetadata(CommandCode::GET_FULL_HARDWARE_STATE), routeCommand<handleGetFullHardwareStateCommand>},
+    {CommandCode::SET_ANGLE_CALIBRATIONS, exactPayloadPolicyFromMetadata(CommandCode::SET_ANGLE_CALIBRATIONS), routeCommand<handleCalibCommand>},
+    {CommandCode::SET_TARGET_ANGLE, exactPayloadPolicyFromMetadata(CommandCode::SET_TARGET_ANGLE), routeCommand<handleSetAngleCommand>},
+    {CommandCode::SET_JOINT_TARGETS, exactPayloadPolicyFromMetadata(CommandCode::SET_JOINT_TARGETS), routeCommand<handleSetJointTargetsCommand>},
 }};
 
 constexpr bool routesMatchSharedCommandMetadata()
@@ -84,7 +84,7 @@ constexpr bool routesMatchSharedCommandMetadata()
     bool found_route = false;
     for(const CommandRoute& route : COMMAND_ROUTES)
     {
-      if(route.cmd == metadata.id)
+      if(as_u8(route.cmd) == metadata.id)
       {
         found_route = true;
         break;
@@ -132,7 +132,7 @@ void runCommandLoop()
 
       if(ctx.state != HexapodState::ACTIVE)
       {
-        if(packet.cmd == HELLO)
+        if(packet.cmd == as_u8(CommandCode::HELLO))
         {
           if(handleHandshake(ctx, packet.seq, packet.payload))
             ctx.state = HexapodState::ACTIVE;
@@ -142,24 +142,24 @@ void runCommandLoop()
           continue;
         }
       }
-      else if(packet.cmd == HELLO)
+      else if(packet.cmd == as_u8(CommandCode::HELLO))
       {
-        ctx.serial.send_packet(packet.seq, NACK, {ALREADY_PAIRED});
+        ctx.serial.send_packet(packet.seq, as_u8(CommandCode::NACK), {ALREADY_PAIRED});
       }
-      else if(packet.cmd == HEARTBEAT)
+      else if(packet.cmd == as_u8(CommandCode::HEARTBEAT))
       {
         handleHeartbeatCommand(ctx, packet.seq);
       }
       else if(dispatchCommand(ctx, packet, COMMAND_ROUTES.data(), COMMAND_ROUTES.size(), respondInvalidPayloadLength))
       {
       }
-      else if(packet.cmd == KILL)
+      else if(packet.cmd == as_u8(CommandCode::KILL))
       {
         break;
       }
       else
       {
-        ctx.serial.send_packet(packet.seq, NACK, {UNSUPPORTED_COMMAND});
+        ctx.serial.send_packet(packet.seq, as_u8(CommandCode::NACK), {UNSUPPORTED_COMMAND});
       }
 
       continue;

@@ -18,7 +18,7 @@ bool HandshakeClient::establish_link(uint8_t requested_caps) {
     const protocol::HelloRequest request{PROTOCOL_VERSION, requested_caps};
     std::vector<uint8_t> ack_payload;
     if (!command_client_.send_command_and_expect_ack_payload(
-            HELLO, protocol::encode_hello_request(request), ack_payload)) {
+            CommandCode::HELLO, protocol::encode_hello_request(request), ack_payload)) {
         if (logger_) {
             LOG_ERROR(logger_, "handshake failed");
         }
@@ -54,7 +54,7 @@ bool HandshakeClient::establish_link(uint8_t requested_caps) {
 
 bool HandshakeClient::send_heartbeat() {
     std::vector<uint8_t> ack_payload;
-    if (!command_client_.send_command_and_expect_ack_payload(HEARTBEAT, {}, ack_payload)) {
+    if (!command_client_.send_command_and_expect_ack_payload(CommandCode::HEARTBEAT, {}, ack_payload)) {
         if (logger_) {
             LOG_ERROR(logger_, "heartbeat failed");
         }

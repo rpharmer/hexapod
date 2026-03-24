@@ -1,6 +1,6 @@
 #include "command_router.hpp"
 
-const CommandRoute* findRoute(const CommandRoute* routes, std::size_t routeCount, uint8_t cmd)
+const CommandRoute* findRoute(const CommandRoute* routes, std::size_t routeCount, CommandCode cmd)
 {
   for(std::size_t i = 0; i < routeCount; ++i)
   {
@@ -9,6 +9,11 @@ const CommandRoute* findRoute(const CommandRoute* routes, std::size_t routeCount
   }
 
   return nullptr;
+}
+
+const CommandRoute* findRoute(const CommandRoute* routes, std::size_t routeCount, uint8_t cmd)
+{
+  return findRoute(routes, routeCount, static_cast<CommandCode>(cmd));
 }
 
 bool dispatchCommand(FirmwareContext& ctx, const DecodedPacket& packet,

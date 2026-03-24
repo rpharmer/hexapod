@@ -14,14 +14,30 @@ void CommandClient::set_retry_policy(const RetryPolicy& retry_policy) {
     retry_policy_ = retry_policy;
 }
 
+bool CommandClient::send_command_and_expect_ack(CommandCode cmd, const std::vector<uint8_t>& payload) {
+    return send_command_and_expect_ack(as_u8(cmd), payload);
+}
+
 bool CommandClient::send_command_and_expect_ack(uint8_t cmd, const std::vector<uint8_t>& payload) {
     return transact(cmd, payload, nullptr).outcome_class == TransportSession::OutcomeClass::Success;
+}
+
+bool CommandClient::send_command_and_expect_ack_payload(CommandCode cmd,
+                                                        const std::vector<uint8_t>& payload,
+                                                        std::vector<uint8_t>& ack_payload) {
+    return send_command_and_expect_ack_payload(as_u8(cmd), payload, ack_payload);
 }
 
 bool CommandClient::send_command_and_expect_ack_payload(uint8_t cmd,
                                                         const std::vector<uint8_t>& payload,
                                                         std::vector<uint8_t>& ack_payload) {
     return transact(cmd, payload, &ack_payload).outcome_class == TransportSession::OutcomeClass::Success;
+}
+
+TransportSession::CommandOutcome CommandClient::transact(CommandCode cmd,
+                                                         const std::vector<uint8_t>& payload,
+                                                         std::vector<uint8_t>* ack_payload) {
+    return transact(as_u8(cmd), payload, ack_payload);
 }
 
 TransportSession::CommandOutcome CommandClient::transact(uint8_t cmd,

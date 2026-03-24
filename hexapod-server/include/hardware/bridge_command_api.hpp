@@ -2,8 +2,10 @@
 
 #include <cstdint>
 #include <vector>
+#include <utility>
 
 #include "transport_session.hpp"
+#include "hexapod-common.hpp"
 
 class CommandClient;
 
@@ -11,10 +13,22 @@ class BridgeCommandApi {
 public:
     explicit BridgeCommandApi(CommandClient& command_client);
 
+    bool request_ack(CommandCode cmd, const std::vector<uint8_t>& payload);
     bool request_ack(uint8_t cmd, const std::vector<uint8_t>& payload);
+    bool request_ack_payload(CommandCode cmd,
+                             const std::vector<uint8_t>& payload,
+                             std::vector<uint8_t>& out_payload);
     bool request_ack_payload(uint8_t cmd,
                              const std::vector<uint8_t>& payload,
                              std::vector<uint8_t>& out_payload);
+
+    template <typename T, typename Decoder>
+    bool request_decoded(CommandCode cmd,
+                         const std::vector<uint8_t>& payload,
+                         Decoder&& decoder,
+                         T& out) {
+        return request_decoded(as_u8(cmd), payload, std::forward<Decoder>(decoder), out);
+    }
 
     template <typename T, typename Decoder>
     bool request_decoded(uint8_t cmd,

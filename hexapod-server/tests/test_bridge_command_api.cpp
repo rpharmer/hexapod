@@ -69,11 +69,11 @@ bool test_ack_and_nack_paths() {
     CommandClient command_client(transport);
     BridgeCommandApi api(command_client);
 
-    if (!expect(api.request_ack(SET_POWER_RELAY, {1}), "ACK response should return true")) {
+    if (!expect(api.request_ack(CommandCode::SET_POWER_RELAY, {1}), "ACK response should return true")) {
         return false;
     }
 
-    return expect(!api.request_ack(SET_TARGET_ANGLE, {0, 0, 0, 0, 0}), "NACK response should return false");
+    return expect(!api.request_ack(CommandCode::SET_TARGET_ANGLE, {0, 0, 0, 0, 0}), "NACK response should return false");
 }
 
 bool test_request_decoded_success_and_decode_failure() {
@@ -95,7 +95,7 @@ bool test_request_decoded_success_and_decode_failure() {
     const auto decode_scalar = [](const std::vector<uint8_t>& payload, protocol::ScalarFloat& decoded) {
         return protocol::decode_scalar_float(payload, decoded);
     };
-    if (!expect(api.request_decoded(GET_VOLTAGE, {}, decode_scalar, voltage),
+    if (!expect(api.request_decoded(CommandCode::GET_VOLTAGE, {}, decode_scalar, voltage),
                 "decoded helper should return true for valid ACK payload")) {
         return false;
     }
@@ -104,7 +104,7 @@ bool test_request_decoded_success_and_decode_failure() {
     }
 
     protocol::ScalarFloat current{};
-    return expect(!api.request_decoded(GET_CURRENT, {}, decode_scalar, current),
+    return expect(!api.request_decoded(CommandCode::GET_CURRENT, {}, decode_scalar, current),
                   "decoded helper should fail for malformed ACK payload");
 }
 

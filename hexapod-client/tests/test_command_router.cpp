@@ -1,4 +1,5 @@
 #include "command_router.hpp"
+#include "hexapod-common.hpp"
 
 #include <cstdlib>
 #include <iostream>
@@ -39,9 +40,9 @@ bool test_dispatches_matching_route()
 {
   FirmwareContext ctx{};
   const CommandRoute routes[] = {
-      {0x10, {PayloadPolicyType::ExactBytes, 2}, handlerA},
+      {CommandCode::HELLO, {PayloadPolicyType::ExactBytes, 2}, handlerA},
   };
-  const DecodedPacket packet{42, 0x10, {0xAB, 0xCD}};
+  const DecodedPacket packet{42, as_u8(CommandCode::HELLO), {0xAB, 0xCD}};
 
   const bool handled = dispatchCommand(ctx, packet, routes, 1, nackResponder);
   return expect(handled, "expected packet to be handled") &&
@@ -53,9 +54,9 @@ bool test_rejects_invalid_payload_length()
 {
   FirmwareContext ctx{};
   const CommandRoute routes[] = {
-      {0x10, {PayloadPolicyType::ExactBytes, 2}, handlerA},
+      {CommandCode::HELLO, {PayloadPolicyType::ExactBytes, 2}, handlerA},
   };
-  const DecodedPacket packet{7, 0x10, {0xAB}};
+  const DecodedPacket packet{7, as_u8(CommandCode::HELLO), {0xAB}};
 
   const bool handled = dispatchCommand(ctx, packet, routes, 1, nackResponder);
   return expect(handled, "expected invalid payload route to be consumed") &&
@@ -67,7 +68,7 @@ bool test_returns_false_for_unknown_command()
 {
   FirmwareContext ctx{};
   const CommandRoute routes[] = {
-      {0x10, {PayloadPolicyType::ExactBytes, 2}, handlerA},
+      {CommandCode::HELLO, {PayloadPolicyType::ExactBytes, 2}, handlerA},
   };
   const DecodedPacket packet{9, 0xFF, {0xAB, 0xCD}};
 
