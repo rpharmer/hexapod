@@ -1,14 +1,16 @@
 #pragma once
 
-#include <cstdint>
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "types.hpp"
-#include "serialCommsServer.hpp"
-#include "logger.hpp"
+
+class BridgeCommandApi;
+class BridgeLinkManager;
+class JointFeedbackEstimator;
 
 class IHardwareBridge {
 public:
@@ -17,11 +19,6 @@ public:
     virtual bool read(RobotState& out) = 0;
     virtual bool write(const JointTargets& in) = 0;
 };
-
-class TransportSession;
-class HandshakeClient;
-class HardwareStateCodec;
-class CommandClient;
 
 class IPacketEndpoint {
 public:
@@ -63,62 +60,17 @@ public:
     bool set_led_colors(const std::array<uint8_t, kProtocolLedColorsPayloadBytes>& colors);
 
 private:
-    bool request_ack(uint8_t cmd,
-                     const std::vector<uint8_t>& payload);
-
-    template <typename T, typename Decoder>
-    bool request_decoded(uint8_t cmd,
-                         const std::vector<uint8_t>& payload,
-                         Decoder&& decoder,
-                         T& out) {
-        std::vector<uint8_t> response_payload;
-        if (!request_ack_payload(cmd, payload, response_payload)) {
-            return false;
-        }
-
-        if (!decoder(response_payload, out)) {
-            if (logger_) {
-                LOG_ERROR(logger_,
-                          "command ",
-                          command_name(cmd),
-                          " decode failed (payload_size=",
-                          static_cast<unsigned>(response_payload.size()),
-                          ")");
-            }
-            return false;
-        }
-
-        return true;
-    }
-
-    bool request_ack_payload(uint8_t cmd,
-                             const std::vector<uint8_t>& payload,
-                             std::vector<uint8_t>& out_payload);
-    bool request_transaction(uint8_t cmd,
-                             const std::vector<uint8_t>& payload,
-                             std::vector<uint8_t>* out_payload);
-
-    bool ensure_link();
     bool send_calibrations(const std::vector<float>& calibs);
-    void synthesizeJointFeedback(RobotState& out);
-  
+
     std::string device_;
     int baud_rate_;
     int timeout_ms_;
     std::vector<float> calibrations_;
-    uint16_t seq_{0};
     bool initialized_{false};
 
-    RobotState state_{};
-    JointTargets last_written_{};
-    bool software_feedback_enabled_{false};
-    TimePointUs last_software_feedback_timestamp_{};
-    std::shared_ptr<logging::AsyncLogger> logger_{};
-
-    std::unique_ptr<SerialCommsServer> serialComs_{};
     std::unique_ptr<IPacketEndpoint> packet_endpoint_{};
-    std::unique_ptr<TransportSession> transport_;
-    std::unique_ptr<HandshakeClient> handshake_;
-    std::unique_ptr<HardwareStateCodec> codec_;
-    std::unique_ptr<CommandClient> command_client_;
+
+    std::unique_ptr<BridgeLinkManager> link_manager_;
+    std::unique_ptr<BridgeCommandApi> command_api_;
+    std::unique_ptr<JointFeedbackEstimator> feedback_estimator_;
 };

@@ -96,6 +96,22 @@ bool testEstimatorBeatsCommandTimeoutWithoutTorqueCut() {
                   "estimator and command timeout faults should not request torque cut");
 }
 
+bool testBusTimeoutBeatsFreshnessFaults() {
+    SafetySupervisor supervisor;
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+
+    raw.bus_ok = false;
+    raw.foot_contacts = {false, false, false, false, false, false};
+
+    const SafetyState state = supervisor.evaluate(
+        raw, est, staleIntent(RobotMode::WALK), SafetySupervisor::FreshnessInputs{false, false});
+
+    return expect(state.active_fault == FaultCode::BUS_TIMEOUT,
+                  "BUS_TIMEOUT should beat estimator/intent freshness faults") &&
+           expect(state.torque_cut, "BUS_TIMEOUT should keep torque_cut enabled");
+}
+
 bool testMotorFaultTorqueCut() {
     SafetySupervisor supervisor;
     RobotState raw = nominalRaw();
@@ -203,6 +219,7 @@ int main() {
     if (!testHigherPriorityFaultWins() ||
         !testRulePrecedenceAcrossAllFaultTriggers() ||
         !testEstimatorBeatsCommandTimeoutWithoutTorqueCut() ||
+        !testBusTimeoutBeatsFreshnessFaults() ||
         !testMotorFaultTorqueCut() ||
         !testLatchedRemainsWhenIntentNotSafeIdle() ||
         !testLatchedRemainsWhenIntentStale() ||

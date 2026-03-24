@@ -141,12 +141,39 @@ bool testStaleIntentTriggersCommandTimeoutFault() {
                   "stale intent should set COMMAND_TIMEOUT");
 }
 
+bool testStaleEstimatorAndIntentPreferEstimatorFault() {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<ScriptedEstimator>();
+    auto* scripted = estimator.get();
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, strictFreshnessConfig());
+
+    if (!expect(runtime.init(), "runtime init should succeed")) {
+        return false;
+    }
+
+    const TimePointUs now = now_us();
+    scripted->enqueue(makeEstimatorSample(40, now));
+    runtime.setMotionIntent(makeIntentSample(40, now));
+    runControlStep(runtime);
+
+    scripted->enqueue(makeEstimatorSample(41, TimePointUs{1}));
+    runtime.setMotionIntentForTest(makeIntentSample(41, TimePointUs{1}));
+    runControlStep(runtime);
+
+    const ControlStatus status = runtime.getStatus();
+    return expect(status.active_mode == RobotMode::SAFE_IDLE,
+                  "both stale streams should force SAFE_IDLE") &&
+           expect(status.active_fault == FaultCode::ESTIMATOR_INVALID,
+                  "ESTIMATOR_INVALID should take precedence when both streams are stale");
+}
+
 } // namespace
 
 int main() {
     if (!testEstimatorAndIntentFreshAllowsNominalControl() ||
         !testStaleEstimatorTriggersEstimatorInvalidFault() ||
-        !testStaleIntentTriggersCommandTimeoutFault()) {
+        !testStaleIntentTriggersCommandTimeoutFault() ||
+        !testStaleEstimatorAndIntentPreferEstimatorFault()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

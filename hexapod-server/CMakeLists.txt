@@ -192,6 +192,19 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_protocol_command_metadata PRIVATE hexapod_server_core)
     add_test(NAME protocol_command_metadata COMMAND test_protocol_command_metadata)
 
+
+    add_executable(test_bridge_link_manager tests/test_bridge_link_manager.cpp)
+    target_link_libraries(test_bridge_link_manager PRIVATE hexapod_server_core)
+    add_test(NAME bridge_link_manager COMMAND test_bridge_link_manager)
+
+    add_executable(test_bridge_command_api tests/test_bridge_command_api.cpp)
+    target_link_libraries(test_bridge_command_api PRIVATE hexapod_server_core)
+    add_test(NAME bridge_command_api COMMAND test_bridge_command_api)
+
+    add_executable(test_joint_feedback_estimator tests/test_joint_feedback_estimator.cpp)
+    target_link_libraries(test_joint_feedback_estimator PRIVATE hexapod_server_core)
+    add_test(NAME joint_feedback_estimator COMMAND test_joint_feedback_estimator)
+
     add_executable(test_command_flow_integration tests/test_command_flow_integration.cpp)
     target_link_libraries(test_command_flow_integration PRIVATE hexapod_server_core)
     add_test(NAME command_flow_integration COMMAND test_command_flow_integration)
