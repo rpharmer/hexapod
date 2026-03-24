@@ -29,6 +29,10 @@ bool test_set_target_angle_success_and_nack() {
                 "set_target_angle should succeed with ACK")) {
         return false;
     }
+    if (!expect(success_bridge->last_error() == BridgeError::None,
+                "set_target_angle success should clear last_error")) {
+        return false;
+    }
 
     const auto& success_sent = success_endpoint->sent_packets();
     if (!expect(success_sent.size() == 3, "expected HELLO, HEARTBEAT, and SET_TARGET_ANGLE")) {
@@ -83,6 +87,10 @@ bool test_set_target_angle_success_and_nack() {
 
     if (!expect(!nack_bridge->set_target_angle(2, -0.5f),
                 "set_target_angle should fail on explicit NACK")) {
+        return false;
+    }
+    if (!expect(nack_bridge->last_error() == BridgeError::ProtocolFailure,
+                "set_target_angle NACK should map to protocol failure")) {
         return false;
     }
     const auto& nack_sent = nack_endpoint->sent_packets();

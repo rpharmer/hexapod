@@ -12,6 +12,7 @@
 class BridgeCommandApi;
 class BridgeLinkManager;
 class JointFeedbackEstimator;
+enum class CommandCode : uint8_t;
 
 namespace logging {
 class AsyncLogger;
@@ -77,6 +78,18 @@ public:
     BridgeError last_error() const;
 
 private:
+    bool run_ack_command(const char* command_name,
+                         CommandCode command_code,
+                         const std::vector<uint8_t>& payload,
+                         bool require_estimator = false);
+    template <typename DecodedPayload, typename Decoder>
+    bool run_decoded_command(const char* command_name,
+                             CommandCode command_code,
+                             const std::vector<uint8_t>& request_payload,
+                             Decoder&& decoder,
+                             DecodedPayload& decoded,
+                             bool require_estimator = false);
+
     bool complete_command(const char* command_name, BridgeError error, const char* reason = nullptr);
     BridgeError requireReady(const char* command_name, bool require_estimator = false);
     BridgeError withCommandApi(const char* command_name,

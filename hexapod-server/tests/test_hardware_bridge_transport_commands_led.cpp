@@ -31,6 +31,10 @@ bool test_led_info_and_led_color_commands() {
                 "get_led_info should succeed with decodable ACK payload")) {
         return false;
     }
+    if (!expect(success_bridge->last_error() == BridgeError::None,
+                "get_led_info success should clear last_error")) {
+        return false;
+    }
     if (!expect(led_present && led_count == 6, "get_led_info should decode presence and count")) {
         return false;
     }
@@ -75,6 +79,10 @@ bool test_led_info_and_led_color_commands() {
     }
     if (!expect(!malformed_bridge->get_led_info(led_present, led_count),
                 "get_led_info should fail on malformed ACK payload")) {
+        return false;
+    }
+    if (!expect(malformed_bridge->last_error() == BridgeError::ProtocolFailure,
+                "get_led_info malformed payload should map to protocol failure")) {
         return false;
     }
 
