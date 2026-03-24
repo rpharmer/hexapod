@@ -53,61 +53,89 @@ SimpleHardwareBridge::SimpleHardwareBridge(std::unique_ptr<IPacketEndpoint> endp
 
 SimpleHardwareBridge::~SimpleHardwareBridge() = default;
 
-bool SimpleHardwareBridge::log_command_failure(const char* command_name, const char* reason) const {
-    if (auto logger = resolveLogger(logger_)) {
-        LOG_ERROR(logger, "command '{}' failed: {}", command_name, reason);
+const char* SimpleHardwareBridge::bridge_error_to_text(BridgeError error) {
+    switch (error) {
+        case BridgeError::None:
+            return "none";
+        case BridgeError::NotReady:
+            return "not_ready";
+        case BridgeError::TransportFailure:
+            return "transport_failure";
+        case BridgeError::ProtocolFailure:
+            return "protocol_failure";
+        case BridgeError::Timeout:
+            return "timeout";
+        case BridgeError::Unsupported:
+            return "unsupported";
     }
-    return false;
+    return "protocol_failure";
 }
 
-bool SimpleHardwareBridge::requireReady(const char* command_name, bool require_estimator) const {
-    if (!initialized_) {
-        return log_command_failure(command_name, "bridge not initialized");
-    }
-    if (!link_manager_) {
-        return log_command_failure(command_name, "link manager unavailable");
-    }
-    if (require_estimator && !feedback_estimator_) {
-        return log_command_failure(command_name, "feedback estimator unavailable");
-    }
-    return true;
-}
-
-bool SimpleHardwareBridge::withCommandApi(const char* command_name,
-                                          const std::function<bool(BridgeCommandApi&)>& action,
-                                          bool require_estimator) const {
-    if (!requireReady(command_name, require_estimator)) {
+bool SimpleHardwareBridge::complete_command(const char* command_name,
+                                            BridgeError error,
+                                            const char* reason) {
+    last_error_ = error;
+    if (error != BridgeError::None) {
+        if (auto logger = resolveLogger(logger_)) {
+            LOG_ERROR(logger,
+                      "command '{}' failed: {} ({})",
+                      command_name,
+                      reason != nullptr ? reason : bridge_error_to_text(error),
+                      bridge_error_to_text(error));
+        }
         return false;
     }
+    return true;
+}
+
+BridgeError SimpleHardwareBridge::requireReady(const char* command_name, bool require_estimator) {
+    (void)command_name;
+    if (!initialized_ || !link_manager_ || (require_estimator && !feedback_estimator_)) {
+        return BridgeError::NotReady;
+    }
+    return BridgeError::None;
+}
+
+BridgeError SimpleHardwareBridge::withCommandApi(
+    const char* command_name,
+    const std::function<BridgeError(BridgeCommandApi&)>& action,
+    bool require_estimator) {
+    (void)command_name;
+    const BridgeError ready_error = requireReady(command_name, require_estimator);
+    if (ready_error != BridgeError::None) {
+        return ready_error;
+    }
     if (!link_manager_->ensure_link(kRequestedCapabilities)) {
-        return log_command_failure(command_name, "link unavailable");
+        return BridgeError::TransportFailure;
     }
     if (!command_api_) {
-        return log_command_failure(command_name, "command API unavailable");
+        return BridgeError::NotReady;
     }
-    if (!action(*command_api_)) {
-        return log_command_failure(command_name, "command execution failed");
-    }
-    return true;
+    return action(*command_api_);
+}
+
+BridgeError SimpleHardwareBridge::last_error() const {
+    return last_error_;
 }
 
 bool SimpleHardwareBridge::init() {
+    last_error_ = BridgeError::None;
     link_manager_ = std::make_unique<BridgeLinkManager>(
         device_, baud_rate_, timeout_ms_, std::move(packet_endpoint_));
 
     if (!link_manager_->init(kRequestedCapabilities)) {
-        return false;
+        return complete_command("init", BridgeError::TransportFailure, "link manager init failed");
     }
 
     CommandClient* command_client = link_manager_->command_client();
     if (command_client == nullptr) {
-        return false;
+        return complete_command("init", BridgeError::NotReady, "command client unavailable");
     }
 
     command_api_ = std::make_unique<BridgeCommandApi>(*command_client);
     feedback_estimator_ = std::make_unique<JointFeedbackEstimator>();
 
-    if (!calibrations_.empty() && !send_calibrations(calibrations_)) {
+    if (!calibrations_.empty() && !set_angle_calibrations(calibrations_)) {
         return false;
     }
 
@@ -122,28 +150,31 @@ bool SimpleHardwareBridge::init() {
     }
 
     initialized_ = true;
+    last_error_ = BridgeError::None;
     return true;
 }
 
 bool SimpleHardwareBridge::read(RobotState& out) {
-    if (!requireReady("read", true)) {
+    const BridgeError ready_error = requireReady("read", true);
+    if (!complete_command("read", ready_error, "bridge not ready")) {
         return false;
     }
 
     HardwareStateCodec* codec = link_manager_->codec();
     if (codec == nullptr) {
-        return log_command_failure("read", "hardware codec unavailable");
+        return complete_command("read", BridgeError::NotReady, "hardware codec unavailable");
     }
 
     const auto decode_state = [codec](const std::vector<uint8_t>& payload, RobotState& decoded) {
         return codec->decode_full_hardware_state(payload, decoded);
     };
-    if (!withCommandApi(
-            "read",
-            [&out, &decode_state](BridgeCommandApi& api) {
-                return api.request_decoded(CommandCode::GET_FULL_HARDWARE_STATE, {}, decode_state, out);
-            },
-            true)) {
+    const BridgeError command_error = withCommandApi(
+        "read",
+        [&out, &decode_state](BridgeCommandApi& api) {
+            return api.request_decoded_with_error(CommandCode::GET_FULL_HARDWARE_STATE, {}, decode_state, out);
+        },
+        true);
+    if (!complete_command("read", command_error, "command execution failed")) {
         return false;
     }
 
@@ -153,21 +184,23 @@ bool SimpleHardwareBridge::read(RobotState& out) {
 }
 
 bool SimpleHardwareBridge::write(const JointTargets& in) {
-    if (!requireReady("write", true)) {
+    const BridgeError ready_error = requireReady("write", true);
+    if (!complete_command("write", ready_error, "bridge not ready")) {
         return false;
     }
 
     HardwareStateCodec* codec = link_manager_->codec();
     if (codec == nullptr) {
-        return log_command_failure("write", "hardware codec unavailable");
+        return complete_command("write", BridgeError::NotReady, "hardware codec unavailable");
     }
 
-    if (!withCommandApi(
-            "write",
-            [&codec, &in](BridgeCommandApi& api) {
-                return api.request_ack(CommandCode::SET_JOINT_TARGETS, codec->encode_joint_targets(in));
-            },
-            true)) {
+    const BridgeError command_error = withCommandApi(
+        "write",
+        [&codec, &in](BridgeCommandApi& api) {
+            return api.request_ack_with_error(CommandCode::SET_JOINT_TARGETS, codec->encode_joint_targets(in));
+        },
+        true);
+    if (!complete_command("write", command_error, "command execution failed")) {
         return false;
     }
 
@@ -176,7 +209,9 @@ bool SimpleHardwareBridge::write(const JointTargets& in) {
 }
 
 bool SimpleHardwareBridge::set_angle_calibrations(const std::vector<float>& calibs) {
-    return send_calibrations(calibs);
+    return complete_command("set_angle_calibrations",
+                            send_calibrations_result(calibs),
+                            "calibration command failed");
 }
 
 bool SimpleHardwareBridge::set_target_angle(uint8_t servo_id, float angle) {
@@ -184,17 +219,24 @@ bool SimpleHardwareBridge::set_target_angle(uint8_t servo_id, float angle) {
     payload.reserve(sizeof(uint8_t) + sizeof(float));
     append_scalar(payload, servo_id);
     append_scalar(payload, angle);
-    return withCommandApi(
-        "set_target_angle",
-        [&payload](BridgeCommandApi& api) { return api.request_ack(CommandCode::SET_TARGET_ANGLE, payload); });
+    return complete_command("set_target_angle",
+                            withCommandApi("set_target_angle",
+                                           [&payload](BridgeCommandApi& api) {
+                                               return api.request_ack_with_error(
+                                                   CommandCode::SET_TARGET_ANGLE, payload);
+                                           }),
+                            "command execution failed");
 }
 
 bool SimpleHardwareBridge::set_power_relay(bool enabled) {
-    return withCommandApi("set_power_relay",
-                          [enabled](BridgeCommandApi& api) {
-                              return api.request_ack(
-                                  CommandCode::SET_POWER_RELAY, {static_cast<uint8_t>(enabled ? 1 : 0)});
-                          });
+    return complete_command("set_power_relay",
+                            withCommandApi("set_power_relay",
+                                           [enabled](BridgeCommandApi& api) {
+                                               return api.request_ack_with_error(
+                                                   CommandCode::SET_POWER_RELAY,
+                                                   {static_cast<uint8_t>(enabled ? 1 : 0)});
+                                           }),
+                            "command execution failed");
 }
 
 bool SimpleHardwareBridge::get_angle_calibrations(std::vector<float>& out_calibs) {
@@ -202,12 +244,13 @@ bool SimpleHardwareBridge::get_angle_calibrations(std::vector<float>& out_calibs
     const auto decode_calibrations = [](const std::vector<uint8_t>& payload, protocol::Calibrations& decoded) {
         return protocol::decode_calibrations(payload, decoded);
     };
-    if (!withCommandApi(
-            "get_angle_calibrations",
-            [&calibrations, &decode_calibrations](BridgeCommandApi& api) {
-                return api.request_decoded(
-                    CommandCode::GET_ANGLE_CALIBRATIONS, {}, decode_calibrations, calibrations);
-            })) {
+    const BridgeError command_error = withCommandApi(
+        "get_angle_calibrations",
+        [&calibrations, &decode_calibrations](BridgeCommandApi& api) {
+            return api.request_decoded_with_error(
+                CommandCode::GET_ANGLE_CALIBRATIONS, {}, decode_calibrations, calibrations);
+        });
+    if (!complete_command("get_angle_calibrations", command_error, "command execution failed")) {
         return false;
     }
 
@@ -217,11 +260,15 @@ bool SimpleHardwareBridge::get_angle_calibrations(std::vector<float>& out_calibs
 
 bool SimpleHardwareBridge::get_current(float& out_current) {
     protocol::ScalarFloat current{};
-    if (!withCommandApi("get_current",
-                        [&current](BridgeCommandApi& api) {
-                            return api.request_decoded(
-                                CommandCode::GET_CURRENT, {}, decodeScalarFloatPayload, current);
-                        })) {
+    const BridgeError command_error = withCommandApi("get_current",
+                                                     [&current](BridgeCommandApi& api) {
+                                                         return api.request_decoded_with_error(
+                                                             CommandCode::GET_CURRENT,
+                                                             {},
+                                                             decodeScalarFloatPayload,
+                                                             current);
+                                                     });
+    if (!complete_command("get_current", command_error, "command execution failed")) {
         return false;
     }
 
@@ -231,11 +278,15 @@ bool SimpleHardwareBridge::get_current(float& out_current) {
 
 bool SimpleHardwareBridge::get_voltage(float& out_voltage) {
     protocol::ScalarFloat voltage{};
-    if (!withCommandApi("get_voltage",
-                        [&voltage](BridgeCommandApi& api) {
-                            return api.request_decoded(
-                                CommandCode::GET_VOLTAGE, {}, decodeScalarFloatPayload, voltage);
-                        })) {
+    const BridgeError command_error = withCommandApi("get_voltage",
+                                                     [&voltage](BridgeCommandApi& api) {
+                                                         return api.request_decoded_with_error(
+                                                             CommandCode::GET_VOLTAGE,
+                                                             {},
+                                                             decodeScalarFloatPayload,
+                                                             voltage);
+                                                     });
+    if (!complete_command("get_voltage", command_error, "command execution failed")) {
         return false;
     }
 
@@ -249,13 +300,14 @@ bool SimpleHardwareBridge::get_sensor(uint8_t sensor_id, float& out_voltage) {
     append_scalar(request_payload, sensor_id);
 
     protocol::ScalarFloat sensor_voltage{};
-    if (!withCommandApi("get_sensor",
-                        [&request_payload, &sensor_voltage](BridgeCommandApi& api) {
-                            return api.request_decoded(CommandCode::GET_SENSOR,
-                                                       request_payload,
-                                                       decodeScalarFloatPayload,
-                                                       sensor_voltage);
-                        })) {
+    const BridgeError command_error = withCommandApi("get_sensor",
+                                                     [&request_payload, &sensor_voltage](BridgeCommandApi& api) {
+                                                         return api.request_decoded_with_error(CommandCode::GET_SENSOR,
+                                                                                              request_payload,
+                                                                                              decodeScalarFloatPayload,
+                                                                                              sensor_voltage);
+                                                     });
+    if (!complete_command("get_sensor", command_error, "command execution failed")) {
         return false;
     }
 
@@ -265,11 +317,13 @@ bool SimpleHardwareBridge::get_sensor(uint8_t sensor_id, float& out_voltage) {
 
 bool SimpleHardwareBridge::send_diagnostic(const std::vector<uint8_t>& payload,
                                            std::vector<uint8_t>& response_payload) {
-    return withCommandApi("send_diagnostic",
-                          [&payload, &response_payload](BridgeCommandApi& api) {
-                              return api.request_ack_payload(
-                                  CommandCode::DIAGNOSTIC, payload, response_payload);
-                          });
+    return complete_command("send_diagnostic",
+                            withCommandApi("send_diagnostic",
+                                           [&payload, &response_payload](BridgeCommandApi& api) {
+                                               return api.request_ack_payload_with_error(
+                                                   CommandCode::DIAGNOSTIC, payload, response_payload);
+                                           }),
+                            "command execution failed");
 }
 
 bool SimpleHardwareBridge::set_servos_enabled(const std::array<bool, kNumJoints>& enabled) {
@@ -278,11 +332,14 @@ bool SimpleHardwareBridge::set_servos_enabled(const std::array<bool, kNumJoints>
         payload[i] = enabled[i] ? 1 : 0;
     }
 
-    return withCommandApi("set_servos_enabled",
-                          [&payload](BridgeCommandApi& api) {
-                              return api.request_ack(
-                                  CommandCode::SET_SERVOS_ENABLED, protocol::encode_servo_enabled(payload));
-                          });
+    return complete_command("set_servos_enabled",
+                            withCommandApi("set_servos_enabled",
+                                           [&payload](BridgeCommandApi& api) {
+                                               return api.request_ack_with_error(
+                                                   CommandCode::SET_SERVOS_ENABLED,
+                                                   protocol::encode_servo_enabled(payload));
+                                           }),
+                            "command execution failed");
 }
 
 bool SimpleHardwareBridge::get_servos_enabled(std::array<bool, kNumJoints>& enabled) {
@@ -290,11 +347,12 @@ bool SimpleHardwareBridge::get_servos_enabled(std::array<bool, kNumJoints>& enab
     const auto decode_servo_state = [](const std::vector<uint8_t>& payload, protocol::ServoEnabled& decoded) {
         return protocol::decode_servo_enabled(payload, decoded);
     };
-    if (!withCommandApi(
-            "get_servos_enabled",
-            [&states, &decode_servo_state](BridgeCommandApi& api) {
-                return api.request_decoded(CommandCode::GET_SERVOS_ENABLED, {}, decode_servo_state, states);
-            })) {
+    const BridgeError command_error = withCommandApi(
+        "get_servos_enabled",
+        [&states, &decode_servo_state](BridgeCommandApi& api) {
+            return api.request_decoded_with_error(CommandCode::GET_SERVOS_ENABLED, {}, decode_servo_state, states);
+        });
+    if (!complete_command("get_servos_enabled", command_error, "command execution failed")) {
         return false;
     }
 
@@ -306,8 +364,13 @@ bool SimpleHardwareBridge::get_servos_enabled(std::array<bool, kNumJoints>& enab
 }
 
 bool SimpleHardwareBridge::set_servos_to_mid() {
-    return withCommandApi(
-        "set_servos_to_mid", [](BridgeCommandApi& api) { return api.request_ack(CommandCode::SET_SERVOS_TO_MID, {}); });
+    return complete_command("set_servos_to_mid",
+                            withCommandApi("set_servos_to_mid",
+                                           [](BridgeCommandApi& api) {
+                                               return api.request_ack_with_error(
+                                                   CommandCode::SET_SERVOS_TO_MID, {});
+                                           }),
+                            "command execution failed");
 }
 
 bool SimpleHardwareBridge::get_led_info(bool& present, uint8_t& count) {
@@ -315,10 +378,15 @@ bool SimpleHardwareBridge::get_led_info(bool& present, uint8_t& count) {
     const auto decode_led_info = [](const std::vector<uint8_t>& payload, protocol::LedInfo& decoded) {
         return protocol::decode_led_info(payload, decoded);
     };
-    if (!withCommandApi("get_led_info",
-                        [&info, &decode_led_info](BridgeCommandApi& api) {
-                            return api.request_decoded(CommandCode::GET_LED_INFO, {}, decode_led_info, info);
-                        })) {
+    const BridgeError command_error = withCommandApi("get_led_info",
+                                                     [&info, &decode_led_info](BridgeCommandApi& api) {
+                                                         return api.request_decoded_with_error(
+                                                             CommandCode::GET_LED_INFO,
+                                                             {},
+                                                             decode_led_info,
+                                                             info);
+                                                     });
+    if (!complete_command("get_led_info", command_error, "command execution failed")) {
         return false;
     }
 
@@ -334,36 +402,41 @@ bool SimpleHardwareBridge::set_led_colors(
         payload[i] = colors[i];
     }
 
-    return withCommandApi("set_led_colors",
-                          [&payload](BridgeCommandApi& api) {
-                              return api.request_ack(
-                                  CommandCode::SET_LED_COLORS, protocol::encode_led_colors(payload));
-                          });
+    return complete_command("set_led_colors",
+                            withCommandApi("set_led_colors",
+                                           [&payload](BridgeCommandApi& api) {
+                                               return api.request_ack_with_error(
+                                                   CommandCode::SET_LED_COLORS,
+                                                   protocol::encode_led_colors(payload));
+                                           }),
+                            "command execution failed");
 }
 
-bool SimpleHardwareBridge::send_calibrations(const std::vector<float>& calibs) {
+BridgeError SimpleHardwareBridge::send_calibrations_result(const std::vector<float>& calibs) {
     if (calibs.size() != (kProtocolJointCount * kProtocolCalibrationPairsPerJoint)) {
-        return log_command_failure("set_angle_calibrations", "incorrect calibration size");
+        return BridgeError::ProtocolFailure;
     }
 
-    if (!withCommandApi(
-            "set_angle_calibrations",
-            [&calibs](BridgeCommandApi& api) {
-                protocol::Calibrations payload{};
-                for (std::size_t i = 0; i < calibs.size(); ++i) {
-                    payload[i] = calibs[i];
-                }
-                return api.request_ack(
-                    CommandCode::SET_ANGLE_CALIBRATIONS, protocol::encode_calibrations(payload));
-            })) {
+    const BridgeError command_error = withCommandApi(
+        "set_angle_calibrations",
+        [&calibs](BridgeCommandApi& api) {
+            protocol::Calibrations payload{};
+            for (std::size_t i = 0; i < calibs.size(); ++i) {
+                payload[i] = calibs[i];
+            }
+            return api.request_ack_with_error(
+                CommandCode::SET_ANGLE_CALIBRATIONS, protocol::encode_calibrations(payload));
+        });
+
+    if (command_error != BridgeError::None) {
         if (auto logger = resolveLogger(logger_)) {
             LOG_ERROR(logger, "calibration packet failed");
         }
-        return false;
+        return command_error;
     }
 
     if (auto logger = resolveLogger(logger_)) {
         LOG_INFO(logger, "calibration packet accepted");
     }
-    return true;
+    return BridgeError::None;
 }

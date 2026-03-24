@@ -25,6 +25,17 @@ public:
     virtual bool write(const JointTargets& in) = 0;
 };
 
+// Typed command/bridge error taxonomy for migration away from bool-only APIs.
+// Existing methods still return bool and now expose details through last_error().
+enum class BridgeError : uint8_t {
+    None = 0,
+    NotReady,
+    TransportFailure,
+    ProtocolFailure,
+    Timeout,
+    Unsupported,
+};
+
 class IPacketEndpoint {
 public:
     virtual ~IPacketEndpoint() = default;
@@ -63,14 +74,16 @@ public:
     bool set_servos_to_mid();
     bool get_led_info(bool& present, uint8_t& count);
     bool set_led_colors(const std::array<uint8_t, kProtocolLedColorsPayloadBytes>& colors);
+    BridgeError last_error() const;
 
 private:
-    bool log_command_failure(const char* command_name, const char* reason) const;
-    bool requireReady(const char* command_name, bool require_estimator = false) const;
-    bool withCommandApi(const char* command_name,
-                        const std::function<bool(BridgeCommandApi&)>& action,
-                        bool require_estimator = false) const;
-    bool send_calibrations(const std::vector<float>& calibs);
+    bool complete_command(const char* command_name, BridgeError error, const char* reason = nullptr);
+    BridgeError requireReady(const char* command_name, bool require_estimator = false);
+    BridgeError withCommandApi(const char* command_name,
+                               const std::function<BridgeError(BridgeCommandApi&)>& action,
+                               bool require_estimator = false);
+    BridgeError send_calibrations_result(const std::vector<float>& calibs);
+    static const char* bridge_error_to_text(BridgeError error);
 
     std::string device_;
     int baud_rate_;
@@ -84,4 +97,5 @@ private:
     std::unique_ptr<BridgeLinkManager> link_manager_;
     std::unique_ptr<BridgeCommandApi> command_api_;
     std::unique_ptr<JointFeedbackEstimator> feedback_estimator_;
+    BridgeError last_error_{BridgeError::None};
 };
