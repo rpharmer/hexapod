@@ -8,6 +8,7 @@
 #include "control_device.hpp"
 #include "evdev_gamepad_controller.hpp"
 #include "geometry_config.hpp"
+#include "geometry_profile_service.hpp"
 #include "motion_intent_utils.hpp"
 #include "xbox_controller.hpp"
 
@@ -126,14 +127,23 @@ bool runServoSpeedCalibrationProbe(const std::shared_ptr<AsyncLogger>& logger)
              " -vmax_radps=", result.negative_direction[joint].vmax_radps);
   }
 
+  HexapodGeometry preview_geometry = geometry_config::activeHexapodGeometry();
   for (int leg = 0; leg < kNumLegs; ++leg) {
     for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-      auto& joint_dynamics = geometry_config::kHexapodGeometry.legGeometry[leg].servoDynamics[joint];
+      auto& joint_dynamics = preview_geometry.legGeometry[leg].servoDynamics[joint];
       joint_dynamics.positive_direction.tau_s = result.positive_direction[joint].tau_s;
       joint_dynamics.positive_direction.vmax_radps = result.positive_direction[joint].vmax_radps;
       joint_dynamics.negative_direction.tau_s = result.negative_direction[joint].tau_s;
       joint_dynamics.negative_direction.vmax_radps = result.negative_direction[joint].vmax_radps;
     }
+  }
+
+  std::string error;
+  if (!geometry_profile_service::preview(preview_geometry, &error) ||
+      !geometry_profile_service::apply(&error)) {
+    LOG_WARN(logger, "calibration.servo_speed_fit failed to apply geometry profile: ",
+             error);
+    return false;
   }
 
   LOG_INFO(logger, "calibration.servo_speed_fit applied to active geometry dynamics profile");

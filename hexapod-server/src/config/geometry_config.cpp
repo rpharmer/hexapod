@@ -1,6 +1,10 @@
 #include "geometry_config.hpp"
 
 #include "hexapod-server.hpp"
+#include "geometry_profile_service.hpp"
+
+#include <stdexcept>
+#include <string>
 
 namespace geometry_config {
 
@@ -30,7 +34,12 @@ void loadFromParsedToml(const ParsedToml& config) {
     }
 
     geometry.toBottom = LengthM{config.bodyToBottomM};
-    kHexapodGeometry = geometry;
+
+    std::string error;
+    if (!geometry_profile_service::preview(geometry, &error) ||
+        !geometry_profile_service::apply(&error)) {
+        throw std::runtime_error("failed to load geometry profile: " + error);
+    }
 }
 
 } // namespace geometry_config
