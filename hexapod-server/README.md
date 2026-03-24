@@ -126,6 +126,10 @@ Button mappings in controller mode:
 - `Y` => run both probe entrypoints.
 
 
+### Extending input and hardware integrations
+
+For step-by-step instructions on adding new controller/input drivers and new hardware transport backends, see `../docs/EXTENDING_IO_AND_HARDWARE.md`.
+
 ## Offline simulation/testing
 
 Use offline mode for deterministic control/safety validation without physical robot hardware.
