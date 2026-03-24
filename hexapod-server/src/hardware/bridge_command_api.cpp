@@ -9,9 +9,20 @@
 BridgeCommandApi::BridgeCommandApi(CommandClient& command_client)
     : command_client_(command_client) {}
 
+bool BridgeCommandApi::request_ack(CommandCode cmd,
+                                   const std::vector<uint8_t>& payload) {
+    return request_ack(as_u8(cmd), payload);
+}
+
 bool BridgeCommandApi::request_ack(uint8_t cmd,
                                    const std::vector<uint8_t>& payload) {
     return request_transaction(cmd, payload, nullptr);
+}
+
+bool BridgeCommandApi::request_ack_payload(CommandCode cmd,
+                                           const std::vector<uint8_t>& payload,
+                                           std::vector<uint8_t>& out_payload) {
+    return request_ack_payload(as_u8(cmd), payload, out_payload);
 }
 
 bool BridgeCommandApi::request_ack_payload(uint8_t cmd,

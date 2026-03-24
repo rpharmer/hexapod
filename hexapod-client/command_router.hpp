@@ -1,6 +1,7 @@
 #pragma once
 
 #include "framing.hpp"
+#include "hexapod-common.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -33,11 +34,12 @@ using PayloadLengthErrorResponder = void (*)(FirmwareContext& ctx, uint16_t seq)
 
 struct CommandRoute
 {
-  uint8_t cmd;
+  CommandCode cmd;
   PayloadPolicy payloadPolicy;
   RoutedHandler handler;
 };
 
+const CommandRoute* findRoute(const CommandRoute* routes, std::size_t routeCount, CommandCode cmd);
 const CommandRoute* findRoute(const CommandRoute* routes, std::size_t routeCount, uint8_t cmd);
 
 bool dispatchCommand(FirmwareContext& ctx, const DecodedPacket& packet,

@@ -147,9 +147,19 @@ inline constexpr const CommandMetadata* find_command_metadata(uint8_t cmd) {
   return nullptr;
 }
 
+
+inline constexpr const CommandMetadata* find_command_metadata(CommandCode cmd) {
+  return find_command_metadata(as_u8(cmd));
+}
+
 inline constexpr const char* command_name(uint8_t cmd) {
   const CommandMetadata* metadata = find_command_metadata(cmd);
   return (metadata != nullptr) ? metadata->canonical_name : "UNKNOWN";
+}
+
+
+inline constexpr const char* command_name(CommandCode cmd) {
+  return command_name(as_u8(cmd));
 }
 
 // enum to map joints to ints

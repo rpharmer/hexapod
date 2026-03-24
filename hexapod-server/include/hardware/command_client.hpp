@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "logger.hpp"
+#include "hexapod-common.hpp"
 #include "transport_session.hpp"
 
 class CommandClient {
@@ -18,11 +19,20 @@ public:
 
     void set_retry_policy(const RetryPolicy& retry_policy);
 
+    bool send_command_and_expect_ack(CommandCode cmd, const std::vector<uint8_t>& payload = {});
     bool send_command_and_expect_ack(uint8_t cmd, const std::vector<uint8_t>& payload = {});
+
+    bool send_command_and_expect_ack_payload(CommandCode cmd,
+                                             const std::vector<uint8_t>& payload,
+                                             std::vector<uint8_t>& ack_payload);
 
     bool send_command_and_expect_ack_payload(uint8_t cmd,
                                              const std::vector<uint8_t>& payload,
                                              std::vector<uint8_t>& ack_payload);
+
+    TransportSession::CommandOutcome transact(CommandCode cmd,
+                                              const std::vector<uint8_t>& payload,
+                                              std::vector<uint8_t>* ack_payload);
 
     TransportSession::CommandOutcome transact(uint8_t cmd,
                                               const std::vector<uint8_t>& payload,

@@ -77,7 +77,7 @@ bool test_motion_command_flow_boundary_and_nack() {
 
     const bool init_ok = init_bridge(endpoint, bridge, bridge_owner,
                                      [](const DecodedPacket& request) {
-                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
+                                         if (request.cmd == as_u8(CommandCode::HELLO) || request.cmd == as_u8(CommandCode::HEARTBEAT)) {
                                              const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x22,
                                                                           CAPABILITY_ANGULAR_FEEDBACK};
                                              return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
@@ -145,7 +145,7 @@ bool test_sensing_get_sensor_decode_malformed_and_boundary_index() {
 
     const bool init_ok = init_bridge(endpoint, bridge, bridge_owner,
                                      [](const DecodedPacket& request) {
-                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
+                                         if (request.cmd == as_u8(CommandCode::HELLO) || request.cmd == as_u8(CommandCode::HEARTBEAT)) {
                                              const protocol::HelloAck ack{PROTOCOL_VERSION, STATUS_OK, 0x34,
                                                                           CAPABILITY_ANGULAR_FEEDBACK};
                                              return std::vector<DecodedPacket>{{request.seq, ACK, protocol::encode_hello_ack(ack)}};
@@ -219,7 +219,7 @@ bool test_sensing_get_sensor_decode_malformed_and_boundary_index() {
     }
 
     for (std::size_t i = 2; i < sent.size(); ++i) {
-        if (!expect(sent[i].cmd == GET_SENSOR,
+        if (!expect(sent[i].cmd == as_u8(CommandCode::GET_SENSOR),
                     "sensing test should send GET_SENSOR command for each call")) {
             return false;
         }
@@ -234,7 +234,7 @@ bool test_sensing_get_sensor_decode_malformed_and_boundary_index() {
 
 bool test_power_domain_outcome_semantics_and_payload() {
     FakePacketEndpoint endpoint([](const DecodedPacket& request) {
-        if (request.cmd == SET_POWER_RELAY) {
+        if (request.cmd == as_u8(CommandCode::SET_POWER_RELAY)) {
             if (request.payload.size() != sizeof(uint8_t)) {
                 return std::vector<DecodedPacket>{{request.seq, NACK, {INVALID_PAYLOAD_LENGTH}}};
             }
@@ -249,7 +249,7 @@ bool test_power_domain_outcome_semantics_and_payload() {
     TransportSession transport(endpoint, DurationUs{500000}, DurationUs{150000});
     CommandClient command_client(transport);
 
-    const auto outcome = command_client.transact(SET_POWER_RELAY, {1}, nullptr);
+    const auto outcome = command_client.transact(CommandCode::SET_POWER_RELAY, {1}, nullptr);
     if (!expect(outcome.outcome_class == TransportSession::OutcomeClass::Nack,
                 "power command should map explicit device rejection to Nack outcome")) {
         return false;
@@ -263,7 +263,7 @@ bool test_power_domain_outcome_semantics_and_payload() {
     if (!expect(sent.size() == 1, "NACK should stop power retries after first attempt")) {
         return false;
     }
-    if (!expect(sent[0].cmd == SET_POWER_RELAY,
+    if (!expect(sent[0].cmd == as_u8(CommandCode::SET_POWER_RELAY),
                 "power test should send SET_POWER_RELAY command")) {
         return false;
     }
