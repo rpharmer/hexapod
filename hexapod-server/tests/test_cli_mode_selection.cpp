@@ -67,6 +67,22 @@ bool testScenarioLintRequiresScenarioFile()
                 "missing scenario error should mention --scenario");
 }
 
+
+bool testControllerDeviceOption()
+{
+  std::vector<std::string> args{"hexapod-server", "--controller-device", "/dev/input/js0"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(ok, "controller-device CLI should parse") &&
+         expect(options.mode == ServerMode::Interactive,
+                "controller-device alone should keep interactive mode") &&
+         expect(options.controllerDevice == "/dev/input/js0",
+                "controller-device should be persisted");
+}
+
 } // namespace
 
 int main()
@@ -74,6 +90,7 @@ int main()
   testDefaultInteractiveMode();
   testScenarioModeSelection();
   testScenarioLintRequiresScenarioFile();
+  testControllerDeviceOption();
 
   if (g_failures != 0) {
     std::cerr << g_failures << " test(s) failed\n";

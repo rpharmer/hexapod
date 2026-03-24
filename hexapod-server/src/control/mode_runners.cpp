@@ -1,15 +1,13 @@
 #include "mode_runners.hpp"
 
-#include <algorithm>
-#include <cmath>
 #include <thread>
 
-#include "calibration_probe.hpp"
-#include "control_device.hpp"
 #include "evdev_gamepad_controller.hpp"
 #include "geometry_config.hpp"
 #include "geometry_profile_service.hpp"
 #include "motion_intent_utils.hpp"
+#include "interactive_calibration_actions.hpp"
+#include "interactive_input_mapper.hpp"
 #include "xbox_controller.hpp"
 
 using namespace logging;
@@ -296,60 +294,15 @@ int InteractiveRunner::run(RobotControl& robot,
   while (!exit_flag.load()) {
     if (controller != nullptr) {
       while (auto ev = controller->getQueue().pop()) {
-        if (ev->type != ControllerEvent::Type::Button || ev->value == 0) {
-          continue;
+        const InteractiveButtonMappingResult event_result =
+            mapInteractiveButtonEvent(*ev, state);
+        if (event_result.info_log.has_value()) {
+          LOG_INFO(logger, event_result.info_log.value());
         }
-
-        if (ev->name == "A") {
-          state.input_mode = nextControllerInputMode(state.input_mode);
-          LOG_INFO(logger, "Controller mode switched to ",
-                   controllerInputModeName(state.input_mode));
-          continue;
-        }
-
-        if (state.input_mode == ControllerInputMode::BodyPose) {
-          if (ev->name == "B") {
-            state.body_height_m = 0.20;
-            LOG_INFO(logger, "Body pose offsets reset to neutral");
-          } else if (ev->name == "LB") {
-            state.body_height_m = std::clamp(state.body_height_m + 0.01, 0.10, 0.35);
-          } else if (ev->name == "RB") {
-            state.body_height_m = std::clamp(state.body_height_m - 0.01, 0.10, 0.35);
-          }
-          continue;
-        }
-
-        if (state.input_mode == ControllerInputMode::Calibration) {
-          if (ev->name == "B") {
-            runHeightDetectionProbe(logger);
-          } else if (ev->name == "X") {
-            runServoCalibrationProbe(logger);
-          } else if (ev->name == "LB") {
-            runServoSpeedCalibrationProbe(logger);
-          } else if (ev->name == "Y") {
-            runHeightDetectionProbe(logger);
-            runServoCalibrationProbe(logger);
-          }
-          continue;
-        }
-
-        if (ev->name == "X") {
-          state.gait = GaitType::RIPPLE;
-        } else if (ev->name == "Y") {
-          state.gait = GaitType::TRIPOD;
-        }
+        executeCalibrationAction(event_result.calibration_action, logger);
       }
 
-      if (state.input_mode == ControllerInputMode::HeadingWalk) {
-        if (controller->getRightMag() > 0.20f) {
-          state.walk_facing_yaw_rad = static_cast<double>(controller->getRightAng());
-          state.walk_facing_valid = true;
-        }
-        state.walk_mode = RobotMode::WALK;
-      } else {
-        state.walk_mode = RobotMode::STAND;
-      }
-
+      updateControllerDerivedState(*controller, state);
       robot.setMotionIntent(makeControllerMotionIntent(*controller, state));
     } else {
       robot.setMotionIntent(makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.20));

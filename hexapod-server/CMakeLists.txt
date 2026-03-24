@@ -64,6 +64,12 @@ if(CPPLINUXSERIAL_INTERFACE_INCLUDES)
 endif()
 
 file(GLOB_RECURSE HEXAPOD_SERVER_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+list(APPEND HEXAPOD_SERVER_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/cli_options.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/interactive_input_mapper.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/interactive_calibration_actions.cpp"
+)
+list(REMOVE_DUPLICATES HEXAPOD_SERVER_SOURCES)
 set(HEXAPOD_SERVER_MAIN_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/app/hexapod-server.cpp")
 list(REMOVE_ITEM HEXAPOD_SERVER_SOURCES "${HEXAPOD_SERVER_MAIN_SOURCE}")
 
@@ -158,6 +164,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_cli_mode_selection tests/test_cli_mode_selection.cpp)
     target_link_libraries(test_cli_mode_selection PRIVATE hexapod_server_core)
     add_test(NAME cli_mode_selection COMMAND test_cli_mode_selection)
+
+    add_executable(test_interactive_input_mapper tests/test_interactive_input_mapper.cpp)
+    target_link_libraries(test_interactive_input_mapper PRIVATE hexapod_server_core)
+    add_test(NAME interactive_input_mapper COMMAND test_interactive_input_mapper)
     add_executable(test_transport_components tests/test_transport_components.cpp)
     target_link_libraries(test_transport_components PRIVATE hexapod_server_core)
     add_test(NAME transport_components COMMAND test_transport_components)
