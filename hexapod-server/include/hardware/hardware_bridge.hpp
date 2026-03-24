@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -64,6 +65,11 @@ public:
     bool set_led_colors(const std::array<uint8_t, kProtocolLedColorsPayloadBytes>& colors);
 
 private:
+    bool log_command_failure(const char* command_name, const char* reason) const;
+    bool requireReady(const char* command_name, bool require_estimator = false) const;
+    bool withCommandApi(const char* command_name,
+                        const std::function<bool(BridgeCommandApi&)>& action,
+                        bool require_estimator = false) const;
     bool send_calibrations(const std::vector<float>& calibs);
 
     std::string device_;
