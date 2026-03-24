@@ -17,9 +17,9 @@ cmake -S . -B build -DBUILD_TESTS=FALSE
 cmake --build build -j"$(nproc)"
 cmake --install build
 
-# Install build toolchain once.
+# Install build toolchain + Python runtime used by visualiser.
 sudo apt update
-sudo apt install -y cmake gcc-arm-none-eabi build-essential
+sudo apt install -y cmake gcc-arm-none-eabi build-essential python3-venv python3-pip
 
 # Bootstrap Pico SDKs used by hexapod-client firmware build.
 cd /workspace/
@@ -54,3 +54,10 @@ cmake --build --preset default -j"$(nproc)"
 # Build native host test binaries.
 cmake --preset host-tests
 cmake --build --preset host-tests -j"$(nproc)"
+
+# Install visualiser Python dependencies in a local virtual environment.
+cd /workspace/hexapod/hexapod-visualiser
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
