@@ -132,7 +132,11 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
         tests/test_hardware_bridge_transport_main.cpp
         tests/test_hardware_bridge_transport_handshake.cpp
         tests/test_hardware_bridge_transport_failures.cpp
-        tests/test_hardware_bridge_transport_commands.cpp
+        tests/test_hardware_bridge_transport_commands_power.cpp
+        tests/test_hardware_bridge_transport_commands_sensor.cpp
+        tests/test_hardware_bridge_transport_commands_servo.cpp
+        tests/test_hardware_bridge_transport_commands_led.cpp
+        tests/test_hardware_bridge_transport_commands_calibration.cpp
         tests/test_hardware_bridge_transport_capabilities.cpp
     )
     target_link_libraries(test_hardware_bridge_transport PRIVATE hexapod_server_core)
@@ -190,6 +194,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_runtime_helpers PRIVATE hexapod_server_core)
     add_test(NAME runtime_helpers COMMAND test_runtime_helpers)
 
+    add_executable(test_shutdown_summary_logging tests/test_shutdown_summary_logging.cpp)
+    target_link_libraries(test_shutdown_summary_logging PRIVATE hexapod_server_core)
+    add_test(NAME shutdown_summary_logging COMMAND test_shutdown_summary_logging)
 
     add_executable(test_geometry_profile_service tests/test_geometry_profile_service.cpp)
     target_link_libraries(test_geometry_profile_service PRIVATE hexapod_server_core)

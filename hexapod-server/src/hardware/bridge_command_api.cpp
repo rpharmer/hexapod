@@ -88,7 +88,7 @@ BridgeError BridgeCommandApi::map_outcome_to_bridge_error(
     return BridgeError::ProtocolFailure;
 }
 
-void BridgeCommandApi::log_command_failure(uint8_t cmd,
+void BridgeCommandApi::log_command_failure(CommandCode cmd,
                                            TransportSession::OutcomeClass outcome_class,
                                            uint8_t nack_code,
                                            std::size_t response_payload_size) {
@@ -106,7 +106,7 @@ void BridgeCommandApi::log_command_failure(uint8_t cmd,
     }
 }
 
-void BridgeCommandApi::log_decode_failure(uint8_t cmd, std::size_t response_payload_size) {
+void BridgeCommandApi::log_decode_failure(CommandCode cmd, std::size_t response_payload_size) {
     if (auto logger = logging::GetDefaultLogger()) {
         LOG_ERROR(logger,
                   "command ",

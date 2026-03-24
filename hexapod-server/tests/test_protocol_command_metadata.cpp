@@ -17,27 +17,10 @@ bool expect(bool condition, const char* message)
 
 bool test_known_commands_have_metadata_entries()
 {
-    const uint8_t known_commands[] = {
-        HELLO,
-        HEARTBEAT,
-        GET_FULL_HARDWARE_STATE,
-        SET_JOINT_TARGETS,
-        SET_TARGET_ANGLE,
-        SET_POWER_RELAY,
-        SET_ANGLE_CALIBRATIONS,
-        GET_ANGLE_CALIBRATIONS,
-        GET_CURRENT,
-        GET_VOLTAGE,
-        GET_SENSOR,
-        DIAGNOSTIC,
-        SET_SERVOS_ENABLED,
-        GET_SERVOS_ENABLED,
-        SET_SERVOS_TO_MID,
-        GET_LED_INFO,
-        SET_LED_COLORS
-    };
+    static_assert(command_metadata_is_complete(),
+                  "metadata table should remain complete for all typed command enums");
 
-    for (uint8_t cmd : known_commands) {
+    for (CommandCode cmd : kAllCommandCodes) {
         const CommandMetadata* metadata = find_command_metadata(cmd);
         if (!expect(metadata != nullptr, "expected metadata for known command")) {
             return false;
@@ -53,10 +36,10 @@ bool test_known_commands_have_metadata_entries()
 
 bool test_metadata_payload_contracts_match_protocol_constants()
 {
-    const CommandMetadata* set_joint_targets = find_command_metadata(SET_JOINT_TARGETS);
-    const CommandMetadata* set_calibrations = find_command_metadata(SET_ANGLE_CALIBRATIONS);
-    const CommandMetadata* set_servos_enabled = find_command_metadata(SET_SERVOS_ENABLED);
-    const CommandMetadata* set_led_colors = find_command_metadata(SET_LED_COLORS);
+    const CommandMetadata* set_joint_targets = find_command_metadata(CommandCode::SET_JOINT_TARGETS);
+    const CommandMetadata* set_calibrations = find_command_metadata(CommandCode::SET_ANGLE_CALIBRATIONS);
+    const CommandMetadata* set_servos_enabled = find_command_metadata(CommandCode::SET_SERVOS_ENABLED);
+    const CommandMetadata* set_led_colors = find_command_metadata(CommandCode::SET_LED_COLORS);
 
     return expect(set_joint_targets != nullptr &&
                       set_joint_targets->payload_bytes == kProtocolJointTargetsPayloadBytes &&
@@ -78,7 +61,9 @@ bool test_metadata_payload_contracts_match_protocol_constants()
 
 bool test_unknown_command_maps_to_unknown_name()
 {
-    return expect(std::string(command_name(0xFF)) == "UNKNOWN",
+    CommandCode parsed = CommandCode::HELLO;
+    return expect(!try_parse_command_code(0xFF, parsed), "unknown command should fail typed parse") &&
+           expect(std::string(command_name(0xFF)) == "UNKNOWN",
                   "expected unknown command name fallback");
 }
 
@@ -91,9 +76,9 @@ bool test_firmware_dispatch_coverage_flags()
         }
     }
 
-    const CommandMetadata* hello = find_command_metadata(HELLO);
-    const CommandMetadata* heartbeat = find_command_metadata(HEARTBEAT);
-    const CommandMetadata* diagnostic = find_command_metadata(DIAGNOSTIC);
+    const CommandMetadata* hello = find_command_metadata(CommandCode::HELLO);
+    const CommandMetadata* heartbeat = find_command_metadata(CommandCode::HEARTBEAT);
+    const CommandMetadata* diagnostic = find_command_metadata(CommandCode::DIAGNOSTIC);
 
     return expect(dispatch_handled_count == 14, "expected firmware dispatch metadata count to match route table") &&
            expect(hello != nullptr && !hello->handled_by_firmware_dispatch,

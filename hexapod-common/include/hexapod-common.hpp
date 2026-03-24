@@ -118,24 +118,44 @@ struct CommandMetadata {
   bool handled_by_firmware_dispatch{false};
 };
 
+inline constexpr std::array<CommandCode, 17> kAllCommandCodes{{
+    CommandCode::HELLO,
+    CommandCode::HEARTBEAT,
+    CommandCode::GET_FULL_HARDWARE_STATE,
+    CommandCode::SET_JOINT_TARGETS,
+    CommandCode::SET_TARGET_ANGLE,
+    CommandCode::SET_POWER_RELAY,
+    CommandCode::SET_ANGLE_CALIBRATIONS,
+    CommandCode::GET_ANGLE_CALIBRATIONS,
+    CommandCode::GET_CURRENT,
+    CommandCode::GET_VOLTAGE,
+    CommandCode::GET_SENSOR,
+    CommandCode::DIAGNOSTIC,
+    CommandCode::SET_SERVOS_ENABLED,
+    CommandCode::GET_SERVOS_ENABLED,
+    CommandCode::SET_SERVOS_TO_MID,
+    CommandCode::GET_LED_INFO,
+    CommandCode::SET_LED_COLORS,
+}};
+
 inline constexpr std::array<CommandMetadata, 17> kCommandMetadata{{
-    {HELLO, "HELLO", sizeof(uint8_t) * 2, true, false},
-    {HEARTBEAT, "HEARTBEAT", 0, true, false},
-    {GET_FULL_HARDWARE_STATE, "GET_FULL_HARDWARE_STATE", 0, true, true},
-    {SET_JOINT_TARGETS, "SET_JOINT_TARGETS", kProtocolJointTargetsPayloadBytes, true, true},
-    {SET_TARGET_ANGLE, "SET_TARGET_ANGLE", sizeof(uint8_t) + sizeof(float), true, true},
-    {SET_POWER_RELAY, "SET_POWER_RELAY", sizeof(uint8_t), true, true},
-    {SET_ANGLE_CALIBRATIONS, "SET_ANGLE_CALIBRATIONS", kProtocolCalibrationsPayloadBytes, true, true},
-    {GET_ANGLE_CALIBRATIONS, "GET_ANGLE_CALIBRATIONS", 0, true, true},
-    {GET_CURRENT, "GET_CURRENT", 0, true, true},
-    {GET_VOLTAGE, "GET_VOLTAGE", 0, true, true},
-    {GET_SENSOR, "GET_SENSOR", sizeof(uint8_t), true, true},
-    {DIAGNOSTIC, "DIAGNOSTIC", 0, false, false},
-    {SET_SERVOS_ENABLED, "SET_SERVOS_ENABLED", kProtocolServoEnablePayloadBytes, true, true},
-    {GET_SERVOS_ENABLED, "GET_SERVOS_ENABLED", 0, true, true},
-    {SET_SERVOS_TO_MID, "SET_SERVOS_TO_MID", 0, true, true},
-    {GET_LED_INFO, "GET_LED_INFO", 0, true, true},
-    {SET_LED_COLORS, "SET_LED_COLORS", kProtocolLedColorsPayloadBytes, true, true},
+    {as_u8(CommandCode::HELLO), "HELLO", sizeof(uint8_t) * 2, true, false},
+    {as_u8(CommandCode::HEARTBEAT), "HEARTBEAT", 0, true, false},
+    {as_u8(CommandCode::GET_FULL_HARDWARE_STATE), "GET_FULL_HARDWARE_STATE", 0, true, true},
+    {as_u8(CommandCode::SET_JOINT_TARGETS), "SET_JOINT_TARGETS", kProtocolJointTargetsPayloadBytes, true, true},
+    {as_u8(CommandCode::SET_TARGET_ANGLE), "SET_TARGET_ANGLE", sizeof(uint8_t) + sizeof(float), true, true},
+    {as_u8(CommandCode::SET_POWER_RELAY), "SET_POWER_RELAY", sizeof(uint8_t), true, true},
+    {as_u8(CommandCode::SET_ANGLE_CALIBRATIONS), "SET_ANGLE_CALIBRATIONS", kProtocolCalibrationsPayloadBytes, true, true},
+    {as_u8(CommandCode::GET_ANGLE_CALIBRATIONS), "GET_ANGLE_CALIBRATIONS", 0, true, true},
+    {as_u8(CommandCode::GET_CURRENT), "GET_CURRENT", 0, true, true},
+    {as_u8(CommandCode::GET_VOLTAGE), "GET_VOLTAGE", 0, true, true},
+    {as_u8(CommandCode::GET_SENSOR), "GET_SENSOR", sizeof(uint8_t), true, true},
+    {as_u8(CommandCode::DIAGNOSTIC), "DIAGNOSTIC", 0, false, false},
+    {as_u8(CommandCode::SET_SERVOS_ENABLED), "SET_SERVOS_ENABLED", kProtocolServoEnablePayloadBytes, true, true},
+    {as_u8(CommandCode::GET_SERVOS_ENABLED), "GET_SERVOS_ENABLED", 0, true, true},
+    {as_u8(CommandCode::SET_SERVOS_TO_MID), "SET_SERVOS_TO_MID", 0, true, true},
+    {as_u8(CommandCode::GET_LED_INFO), "GET_LED_INFO", 0, true, true},
+    {as_u8(CommandCode::SET_LED_COLORS), "SET_LED_COLORS", kProtocolLedColorsPayloadBytes, true, true},
 }};
 
 inline constexpr const CommandMetadata* find_command_metadata(uint8_t cmd) {
@@ -152,6 +172,15 @@ inline constexpr const CommandMetadata* find_command_metadata(CommandCode cmd) {
   return find_command_metadata(as_u8(cmd));
 }
 
+inline constexpr bool try_parse_command_code(uint8_t raw_cmd, CommandCode& out_cmd) {
+  const CommandMetadata* metadata = find_command_metadata(raw_cmd);
+  if(metadata == nullptr) {
+    return false;
+  }
+  out_cmd = static_cast<CommandCode>(raw_cmd);
+  return true;
+}
+
 inline constexpr const char* command_name(uint8_t cmd) {
   const CommandMetadata* metadata = find_command_metadata(cmd);
   return (metadata != nullptr) ? metadata->canonical_name : "UNKNOWN";
@@ -161,6 +190,22 @@ inline constexpr const char* command_name(uint8_t cmd) {
 inline constexpr const char* command_name(CommandCode cmd) {
   return command_name(as_u8(cmd));
 }
+
+inline constexpr bool command_metadata_is_complete() {
+  if(kAllCommandCodes.size() != kCommandMetadata.size()) {
+    return false;
+  }
+
+  for(CommandCode cmd : kAllCommandCodes) {
+    if(find_command_metadata(cmd) == nullptr) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static_assert(command_metadata_is_complete(),
+              "kCommandMetadata and CommandCode enum must stay aligned.");
 
 // enum to map joints to ints
 // [R/L] is Right/ Left handside from point of view of robot

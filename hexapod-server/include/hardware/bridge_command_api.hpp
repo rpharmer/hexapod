@@ -38,14 +38,6 @@ public:
                          const std::vector<uint8_t>& payload,
                          Decoder&& decoder,
                          T& out) {
-        return request_decoded(as_u8(cmd), payload, std::forward<Decoder>(decoder), out);
-    }
-
-    template <typename T, typename Decoder>
-    bool request_decoded(uint8_t cmd,
-                         const std::vector<uint8_t>& payload,
-                         Decoder&& decoder,
-                         T& out) {
         std::vector<uint8_t> response_payload;
         if (!request_ack_payload(cmd, payload, response_payload)) {
             return false;
@@ -93,11 +85,11 @@ private:
                                     std::vector<uint8_t>* out_payload);
     static BridgeError map_outcome_to_bridge_error(const TransportSession::CommandOutcome& outcome);
 
-    static void log_command_failure(uint8_t cmd,
+    static void log_command_failure(CommandCode cmd,
                                     TransportSession::OutcomeClass outcome_class,
                                     uint8_t nack_code,
                                     std::size_t response_payload_size);
-    static void log_decode_failure(uint8_t cmd, std::size_t response_payload_size);
+    static void log_decode_failure(CommandCode cmd, std::size_t response_payload_size);
 
     CommandClient& command_client_;
 };

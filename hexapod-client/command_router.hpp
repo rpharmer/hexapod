@@ -40,8 +40,7 @@ struct CommandRoute
 };
 
 const CommandRoute* findRoute(const CommandRoute* routes, std::size_t routeCount, CommandCode cmd);
-const CommandRoute* findRoute(const CommandRoute* routes, std::size_t routeCount, uint8_t cmd);
 
-bool dispatchCommand(FirmwareContext& ctx, const DecodedPacket& packet,
+bool dispatchCommand(FirmwareContext& ctx, CommandCode cmd, uint16_t seq, const std::vector<uint8_t>& payload,
                      const CommandRoute* routes, std::size_t routeCount,
                      PayloadLengthErrorResponder onPayloadLengthError);

@@ -11,25 +11,20 @@ const CommandRoute* findRoute(const CommandRoute* routes, std::size_t routeCount
   return nullptr;
 }
 
-const CommandRoute* findRoute(const CommandRoute* routes, std::size_t routeCount, uint8_t cmd)
-{
-  return findRoute(routes, routeCount, static_cast<CommandCode>(cmd));
-}
-
-bool dispatchCommand(FirmwareContext& ctx, const DecodedPacket& packet,
+bool dispatchCommand(FirmwareContext& ctx, CommandCode cmd, uint16_t seq, const std::vector<uint8_t>& payload,
                      const CommandRoute* routes, std::size_t routeCount,
                      PayloadLengthErrorResponder onPayloadLengthError)
 {
-  const CommandRoute* route = findRoute(routes, routeCount, packet.cmd);
+  const CommandRoute* route = findRoute(routes, routeCount, cmd);
   if(route == nullptr)
     return false;
 
-  if(!route->payloadPolicy.accepts(packet.payload.size()))
+  if(!route->payloadPolicy.accepts(payload.size()))
   {
-    onPayloadLengthError(ctx, packet.seq);
+    onPayloadLengthError(ctx, seq);
     return true;
   }
 
-  route->handler(ctx, packet.seq, packet.payload);
+  route->handler(ctx, seq, payload);
   return true;
 }

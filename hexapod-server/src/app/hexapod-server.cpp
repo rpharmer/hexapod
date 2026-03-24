@@ -14,6 +14,7 @@
 #include "logger.hpp"
 #include "mode_runners.hpp"
 #include "robot_control.hpp"
+#include "shutdown_summary.hpp"
 #include "sim_hardware_bridge.hpp"
 #include "toml_parser.hpp"
 
@@ -158,19 +159,7 @@ int main(int argc, char** argv)
     LOG_INFO(logger, "Dropped messages=", dropped_messages);
   }
 
-  const bool shutdown_success = teardown_ok && dropped_messages == 0;
-  const LogLevel shutdown_summary_level = shutdown_success ? LogLevel::Info : LogLevel::Error;
-  logger->LogStream(shutdown_summary_level,
-                    LOG_SOURCE_LOCATION,
-                    "shutdown_summary"
-                    " success=",
-                    shutdown_success ? 1 : 0,
-                    " teardown_ok=",
-                    teardown_ok ? 1 : 0,
-                    " dropped_messages=",
-                    dropped_messages,
-                    " runner_rc=",
-                    runner_rc);
+  app::logShutdownSummary(logger, teardown_ok, dropped_messages, runner_rc);
 
   logger->Flush();
   logger->Stop();
