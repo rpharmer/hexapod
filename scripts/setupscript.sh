@@ -54,7 +54,3 @@ cmake --build --preset default -j"$(nproc)"
 # Build native host test binaries.
 cmake --preset host-tests
 cmake --build --preset host-tests -j"$(nproc)"
-
-echo "Environment variables:"
-echo "  PICO_SDK_PATH=/workspace/pico/pico-sdk"
-echo "  PIMORONI_PICO_PATH=/workspace/pico/pimoroni-pico"

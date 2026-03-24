@@ -2,26 +2,74 @@ name: CI
 
 on:
   push:
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
 
 jobs:
   quality-gates:
     runs-on: ubuntu-latest
+    env:
+      DEPS_PREFIX: ${{ github.workspace }}/.deps/install
+      DEPS_SRC: ${{ github.workspace }}/.deps/src
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CC: ccache gcc
+      CXX: ccache g++
+      CMAKE_PREFIX_PATH: ${{ github.workspace }}/.deps/install
     steps:
       - uses: actions/checkout@v4
+
+      - name: Restore build/dependency cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .ccache
+            .deps/install
+            .deps/src/toml11/build
+            .deps/src/CppLinuxSerial/build
+            hexapod-server/build-tests
+            hexapod-client/build-host-tests
+          key: ${{ runner.os }}-quality-gates-${{ hashFiles('.github/workflows/ci.yml', 'scripts/verify.sh', '**/CMakeLists.txt', '**/CMakePresets.json') }}
+
       - name: Install dependencies
         run: |
+          set -euo pipefail
+
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential git
+          sudo apt-get install -y cmake build-essential git ccache
 
-          git clone --depth 1 https://github.com/ToruNiina/toml11
-          cmake -S toml11 -B toml11/build
-          cmake --build toml11/build -j
-          sudo cmake --install toml11/build
+          mkdir -p "$DEPS_PREFIX" "$DEPS_SRC"
 
-          git clone --depth 1 https://github.com/gbmhunter/CppLinuxSerial
-          cmake -S CppLinuxSerial -B CppLinuxSerial/build -DBUILD_TESTS=FALSE
-          cmake --build CppLinuxSerial/build -j
-          sudo cmake --install CppLinuxSerial/build
+          if [[ ! -f "$DEPS_PREFIX/include/toml.hpp" ]]; then
+            rm -rf "$DEPS_SRC/toml11"
+            git clone --depth 1 https://github.com/ToruNiina/toml11 "$DEPS_SRC/toml11"
+            cmake -S "$DEPS_SRC/toml11" -B "$DEPS_SRC/toml11/build" \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX="$DEPS_PREFIX"
+            cmake --build "$DEPS_SRC/toml11/build" -j
+            cmake --install "$DEPS_SRC/toml11/build"
+          fi
+
+          if [[ ! -f "$DEPS_PREFIX/lib/libCppLinuxSerial.a" && ! -f "$DEPS_PREFIX/lib/libCppLinuxSerial.so" ]]; then
+            rm -rf "$DEPS_SRC/CppLinuxSerial"
+            git clone --depth 1 https://github.com/gbmhunter/CppLinuxSerial "$DEPS_SRC/CppLinuxSerial"
+            cmake -S "$DEPS_SRC/CppLinuxSerial" -B "$DEPS_SRC/CppLinuxSerial/build" \
+              -DBUILD_TESTS=FALSE \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX="$DEPS_PREFIX"
+            cmake --build "$DEPS_SRC/CppLinuxSerial/build" -j
+            cmake --install "$DEPS_SRC/CppLinuxSerial/build"
+          fi
+
+          ccache --show-stats || true
+
       - name: Run root quality gates
         run: ./scripts/verify.sh
+
+      - name: Show compiler cache stats
+        if: always()
+        run: ccache --show-stats || true

@@ -67,6 +67,45 @@ bool testScenarioLintRequiresScenarioFile()
                 "missing scenario error should mention --scenario");
 }
 
+bool testUnknownFlagFails()
+{
+  std::vector<std::string> args{"hexapod-server", "--bogus"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "unknown flag should fail") &&
+         expect(error.find("Unknown option") != std::string::npos,
+                "unknown option error should mention Unknown option");
+}
+
+bool testPositionalArgFails()
+{
+  std::vector<std::string> args{"hexapod-server", "orphan-positional"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "unexpected positional arg should fail") &&
+         expect(error.find("Unexpected positional argument") != std::string::npos,
+                "positional arg error should mention unexpected positional argument");
+}
+
+bool testScenarioOptionRequiresNonFlagValue()
+{
+  std::vector<std::string> args{"hexapod-server", "--scenario", "--scenario-strict"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "scenario followed by another flag should fail") &&
+         expect(error.find("--scenario") != std::string::npos,
+                "scenario missing value error should mention --scenario");
+}
+
 
 bool testControllerDeviceOption()
 {
@@ -81,6 +120,71 @@ bool testControllerDeviceOption()
                 "controller-device alone should keep interactive mode") &&
          expect(options.controllerDevice == "/dev/input/js0",
                 "controller-device should be persisted");
+}
+
+bool testXboxDeviceOptionRequiresNonFlagValue()
+{
+  std::vector<std::string> args{"hexapod-server", "--xbox-device", "--scenario"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "xbox-device followed by another flag should fail") &&
+         expect(error.find("--xbox-device") != std::string::npos,
+                "missing xbox-device value error should mention --xbox-device");
+}
+
+bool testControllerDeviceOptionRequiresNonFlagValue()
+{
+  std::vector<std::string> args{"hexapod-server", "--controller-device", "--scenario"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "controller-device followed by another flag should fail") &&
+         expect(error.find("--controller-device") != std::string::npos,
+                "missing controller-device value error should mention --controller-device");
+}
+
+bool testScenarioOptionRequiresValueAtEndOfArgv()
+{
+  std::vector<std::string> args{"hexapod-server", "--scenario"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "scenario at end-of-argv should fail") &&
+         expect(error.find("--scenario") != std::string::npos,
+                "missing scenario value error should mention --scenario");
+}
+
+bool testXboxDeviceOptionRequiresValueAtEndOfArgv()
+{
+  std::vector<std::string> args{"hexapod-server", "--xbox-device"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "xbox-device at end-of-argv should fail") &&
+         expect(error.find("--xbox-device") != std::string::npos,
+                "missing xbox-device value error should mention --xbox-device");
+}
+
+bool testControllerDeviceOptionRequiresValueAtEndOfArgv()
+{
+  std::vector<std::string> args{"hexapod-server", "--controller-device"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "controller-device at end-of-argv should fail") &&
+         expect(error.find("--controller-device") != std::string::npos,
+                "missing controller-device value error should mention --controller-device");
 }
 
 bool testConfigOptionPersistsPath()
@@ -106,6 +210,32 @@ bool testConfigOptionRequiresValue()
   return expect(!ok, "config without explicit value should fail") &&
          expect(error.find("--config") != std::string::npos,
                 "missing config value error should mention --config");
+}
+
+bool testScenarioOptionRequiresExplicitValue()
+{
+  std::vector<std::string> args{"hexapod-server", "--scenario", "--scenario-strict"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "scenario without explicit value should fail") &&
+         expect(error.find("--scenario") != std::string::npos,
+                "missing scenario value error should mention --scenario");
+}
+
+bool testControllerDeviceOptionRequiresExplicitValue()
+{
+  std::vector<std::string> args{"hexapod-server", "--xbox-device", "--scenario-lint"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "controller-device without explicit value should fail") &&
+         expect(error.find("--xbox-device") != std::string::npos,
+                "missing controller-device value error should mention option name");
 }
 
 bool testConfigWithScenarioAndControllerOptions()
@@ -175,9 +305,19 @@ int main()
   testDefaultInteractiveMode();
   testScenarioModeSelection();
   testScenarioLintRequiresScenarioFile();
+  testUnknownFlagFails();
+  testPositionalArgFails();
+  testScenarioOptionRequiresNonFlagValue();
   testControllerDeviceOption();
+  testXboxDeviceOptionRequiresNonFlagValue();
+  testControllerDeviceOptionRequiresNonFlagValue();
+  testScenarioOptionRequiresValueAtEndOfArgv();
+  testXboxDeviceOptionRequiresValueAtEndOfArgv();
+  testControllerDeviceOptionRequiresValueAtEndOfArgv();
   testConfigOptionPersistsPath();
   testConfigOptionRequiresValue();
+  testScenarioOptionRequiresExplicitValue();
+  testControllerDeviceOptionRequiresExplicitValue();
   testConfigWithScenarioAndControllerOptions();
   testLogFileOptionPersistsPath();
   testConsoleOnlyOptionSetsFlag();
