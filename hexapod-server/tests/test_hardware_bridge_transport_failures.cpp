@@ -23,7 +23,11 @@ bool test_malformed_ack_payload_handling() {
     }
 
     RobotState out{};
-    return expect(!bridge->read(out), "read should fail for malformed ACK payload");
+    if (!expect(!bridge->read(out), "read should fail for malformed ACK payload")) {
+        return false;
+    }
+    return expect(bridge->last_error() == BridgeError::ProtocolFailure,
+                  "malformed ACK payload should map to BridgeError::ProtocolFailure");
 }
 
 bool test_explicit_nack_behavior_for_command_methods() {
@@ -47,6 +51,10 @@ bool test_explicit_nack_behavior_for_command_methods() {
     }
 
     if (!expect(!bridge->set_power_relay(true), "set_power_relay should fail on explicit NACK")) {
+        return false;
+    }
+    if (!expect(bridge->last_error() == BridgeError::ProtocolFailure,
+                "explicit NACK should map to BridgeError::ProtocolFailure")) {
         return false;
     }
 
@@ -111,6 +119,10 @@ bool test_timeout_retry_exhausted() {
     if (!expect(!bridge->set_power_relay(true), "set_power_relay should fail when all retries timeout")) {
         return false;
     }
+    if (!expect(bridge->last_error() == BridgeError::Timeout,
+                "retry exhaustion should map to BridgeError::Timeout")) {
+        return false;
+    }
 
     const auto& sent = endpoint_view->sent_packets();
     return expect(sent.size() == 5, "expected HELLO, HEARTBEAT, and three SET_POWER_RELAY attempts");
@@ -144,9 +156,39 @@ bool test_protocol_error_retried_and_succeeds() {
     if (!expect(bridge->set_power_relay(true), "set_power_relay should succeed after protocol error retry")) {
         return false;
     }
+    if (!expect(bridge->last_error() == BridgeError::None,
+                "successful retry should clear BridgeError to None")) {
+        return false;
+    }
 
     const auto& sent = endpoint_view->sent_packets();
     return expect(sent.size() == 4, "expected HELLO, HEARTBEAT, and two SET_POWER_RELAY attempts");
+}
+
+bool test_unsupported_command_maps_to_unsupported_error() {
+    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
+    FakePacketEndpoint* endpoint_view = nullptr;
+    SimpleHardwareBridge* bridge = nullptr;
+
+    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
+                                     [](const DecodedPacket& request) {
+                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
+                                             return ok_hello_ack(request);
+                                         }
+                                         if (request.cmd == SET_POWER_RELAY) {
+                                             return std::vector<DecodedPacket>{{request.seq, NACK, {UNSUPPORTED_COMMAND}}};
+                                         }
+                                         return std::vector<DecodedPacket>{};
+                                     });
+    if (!expect(init_ok, "init should succeed before unsupported command test")) {
+        return false;
+    }
+
+    if (!expect(!bridge->set_power_relay(true), "set_power_relay should fail when peer reports unsupported")) {
+        return false;
+    }
+    return expect(bridge->last_error() == BridgeError::Unsupported,
+                  "UNSUPPORTED_COMMAND should map to BridgeError::Unsupported");
 }
 
 }  // namespace
@@ -164,7 +206,10 @@ bool run_failure_and_corruption_tests() {
     if (!test_timeout_retry_exhausted()) {
         return false;
     }
-    return test_protocol_error_retried_and_succeeds();
+    if (!test_protocol_error_retried_and_succeeds()) {
+        return false;
+    }
+    return test_unsupported_command_maps_to_unsupported_error();
 }
 
 }  // namespace hardware_bridge_transport_test
