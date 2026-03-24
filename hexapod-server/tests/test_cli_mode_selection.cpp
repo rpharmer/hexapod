@@ -260,6 +260,44 @@ bool testConfigWithScenarioAndControllerOptions()
                 "controller device should be persisted");
 }
 
+
+bool testLogFileOptionPersistsPath()
+{
+  std::vector<std::string> args{"hexapod-server", "--log-file", "custom-app.log"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(ok, "log-file CLI should parse") &&
+         expect(options.logFilePath == "custom-app.log", "log-file path should be persisted");
+}
+
+bool testConsoleOnlyOptionSetsFlag()
+{
+  std::vector<std::string> args{"hexapod-server", "--console-only"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(ok, "console-only CLI should parse") &&
+         expect(options.consoleOnlyLogging, "console-only flag should be persisted");
+}
+
+bool testLogFileOptionRequiresValue()
+{
+  std::vector<std::string> args{"hexapod-server", "--log-file", "--scenario", "scenario.toml"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "log-file without explicit value should fail") &&
+         expect(error.find("--log-file") != std::string::npos,
+                "missing log-file value error should mention --log-file");
+}
+
 } // namespace
 
 int main()
@@ -281,6 +319,9 @@ int main()
   testScenarioOptionRequiresExplicitValue();
   testControllerDeviceOptionRequiresExplicitValue();
   testConfigWithScenarioAndControllerOptions();
+  testLogFileOptionPersistsPath();
+  testConsoleOnlyOptionSetsFlag();
+  testLogFileOptionRequiresValue();
 
   if (g_failures != 0) {
     std::cerr << g_failures << " test(s) failed\n";

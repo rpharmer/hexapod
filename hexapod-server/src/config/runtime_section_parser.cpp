@@ -34,6 +34,15 @@ bool parseRuntimeSection(const toml::value& root,
   out.simDropBus = toml::find_or<bool>(root, "Runtime", "Sim", "DropBus", false);
   out.simLowVoltage = toml::find_or<bool>(root, "Runtime", "Sim", "LowVoltage", false);
   out.simHighCurrent = toml::find_or<bool>(root, "Runtime", "Sim", "HighCurrent", false);
+
+  out.logFilePath = toml::find_or<std::string>(root, "Runtime", "Log", "FilePath", "app.log");
+  out.logToFile = toml::find_or<bool>(root, "Runtime", "Log", "EnableFile", true);
+  if (out.logToFile && out.logFilePath.empty()) {
+    out.logFilePath = "app.log";
+    if (logger) {
+      LOG_WARN(logger, "[runtime] Runtime.Log.FilePath was empty, using default app.log");
+    }
+  }
   return true;
 }
 

@@ -19,6 +19,8 @@ struct CliOptions
   std::string configFile{"config.txt"};
   std::string scenarioFile;
   std::string controllerDevice;
+  std::string logFilePath;
+  bool consoleOnlyLogging{false};
 };
 
 bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error);

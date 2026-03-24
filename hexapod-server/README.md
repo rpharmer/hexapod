@@ -86,6 +86,20 @@ cd hexapod-server
 ./build/hexapod-server --config config.txt
 ```
 
+Log file behavior:
+
+- Default remains `app.log` when no log settings are provided.
+- Configure defaults in config via `Runtime.Log.FilePath` and `Runtime.Log.EnableFile`.
+- Override path at runtime with `--log-file <path>`.
+- Disable file logging entirely with `--console-only` (useful for CI/sim/test workflows).
+
+Examples:
+
+```bash
+./build/hexapod-server --log-file /tmp/hexapod.log
+./build/hexapod-server --console-only
+```
+
 Controller-driven loop (optional):
 
 ```bash

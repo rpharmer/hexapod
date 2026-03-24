@@ -21,6 +21,9 @@ struct ParsedToml
   bool simLowVoltage{false};
   bool simHighCurrent{false};
 
+  std::string logFilePath{"app.log"};
+  bool logToFile{true};
+
   int busLoopPeriodUs{2000};
   int estimatorLoopPeriodUs{2000};
   int controlLoopPeriodUs{4000};
