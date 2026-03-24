@@ -93,6 +93,22 @@ cmake --build --preset host-tests -j
 ctest --preset host-tests --output-on-failure
 ```
 
+## Unified verification entrypoint
+
+Run the default repository quality gates from the repository root:
+
+```bash
+./scripts/verify.sh
+```
+
+This single command runs, in order (fail-fast):
+
+1. `hexapod-server` CMake test preset (`tests`)
+2. `hexapod-client` firmware host-test preset (`host-tests`)
+3. Lightweight server scenario smoke (`scenarios/01_nominal_stand_walk.toml`) when available
+
+Each section prints clear markers so CI and local runs can quickly identify where failures occur.
+
 ## Development workflow
 
 Use this loop when iterating on protocol/control changes that affect both host and firmware:
