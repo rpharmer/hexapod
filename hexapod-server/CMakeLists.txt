@@ -132,7 +132,11 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
         tests/test_hardware_bridge_transport_main.cpp
         tests/test_hardware_bridge_transport_handshake.cpp
         tests/test_hardware_bridge_transport_failures.cpp
-        tests/test_hardware_bridge_transport_commands.cpp
+        tests/test_hardware_bridge_transport_commands_power.cpp
+        tests/test_hardware_bridge_transport_commands_sensor.cpp
+        tests/test_hardware_bridge_transport_commands_servo.cpp
+        tests/test_hardware_bridge_transport_commands_led.cpp
+        tests/test_hardware_bridge_transport_commands_calibration.cpp
         tests/test_hardware_bridge_transport_capabilities.cpp
     )
     target_link_libraries(test_hardware_bridge_transport PRIVATE hexapod_server_core)
