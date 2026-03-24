@@ -43,7 +43,7 @@ bool TomlParser::parse(const std::string& filename, ParsedToml& out) const
     }
 
     tuning_section_parser::parseTuningSection(root, out, logger_);
-    geometry_section_parser::parseGeometrySection(root, out, logger_);
+    geometry_section_parser::parseGeometrySection(root, out);
 
     return ok;
   } catch (const std::exception& ex) {
