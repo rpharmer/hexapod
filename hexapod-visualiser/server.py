@@ -21,6 +21,8 @@ DEFAULT_ANGLES = {
     "RM": [0.0, 10.0, -25.0],
     "RR": [0.0, 10.0, -25.0],
 }
+EXPECTED_SCHEMA_VERSION = 1
+LEG_KEYS = frozenset(DEFAULT_ANGLES.keys())
 
 DEFAULT_GEOMETRY = {
     "coxa": 35.0,
@@ -59,6 +61,14 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
         if not isinstance(message, dict):
             return
 
+        schema_version = message.get("schema_version")
+        if schema_version != EXPECTED_SCHEMA_VERSION:
+            print(
+                f"[visualiser] warning: ignoring UDP payload with incompatible schema_version="
+                f"{schema_version!r} from {addr}; expected {EXPECTED_SCHEMA_VERSION}"
+            )
+            return
+
         changed = False
 
         geometry = message.get("geometry")
@@ -78,7 +88,12 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
         if isinstance(angles, dict):
             sanitized: dict[str, list[float]] = {}
             for leg_name, values in angles.items():
-                if isinstance(values, list) and len(values) == 3 and all(_is_number(v) for v in values):
+                if (
+                    leg_name in LEG_KEYS
+                    and isinstance(values, list)
+                    and len(values) == 3
+                    and all(_is_number(v) for v in values)
+                ):
                     sanitized[leg_name] = [float(v) for v in values]
             if sanitized:
                 merged_angles = dict(self.state.angles_deg)

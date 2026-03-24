@@ -30,6 +30,7 @@ You can send partial updates or full state.
 
 ```json
 {
+  "schema_version": 1,
   "geometry": {
     "coxa": 35.0,
     "femur": 70.0,
@@ -43,6 +44,7 @@ You can send partial updates or full state.
 
 ```json
 {
+  "schema_version": 1,
   "type": "joints",
   "timestamp_ms": 1712345678901,
   "angles_deg": {
@@ -57,6 +59,7 @@ You can send partial updates or full state.
 ```
 
 Leg keys expected: `LF`, `LM`, `LR`, `RF`, `RM`, `RR`.
+`schema_version` is required and must currently be `1`.
 
 ## Integration idea for `hexapod-server`
 

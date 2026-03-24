@@ -1,6 +1,7 @@
 #ifndef CLI_OPTIONS_HPP
 #define CLI_OPTIONS_HPP
 
+#include <optional>
 #include <string>
 
 #include "scenario_driver.hpp"
@@ -21,6 +22,11 @@ struct CliOptions
   std::string controllerDevice;
   std::string logFilePath;
   bool consoleOnlyLogging{false};
+  std::optional<bool> telemetryEnabledOverride;
+  std::optional<std::string> telemetryHostOverride;
+  std::optional<int> telemetryPortOverride;
+  std::optional<double> telemetryPublishRateHzOverride;
+  std::optional<double> telemetryGeometryResendIntervalSecOverride;
 };
 
 bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error);
