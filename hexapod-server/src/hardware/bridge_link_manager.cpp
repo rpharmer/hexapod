@@ -84,20 +84,36 @@ bool BridgeLinkManager::init(uint8_t requested_capabilities) {
 }
 
 bool BridgeLinkManager::ensure_link(uint8_t requested_capabilities) {
+    return ensure_link_with_status(requested_capabilities).ok;
+}
+
+BridgeLinkManager::EnsureLinkResult BridgeLinkManager::ensure_link_with_status(uint8_t requested_capabilities) {
     if (!initialized_ || !transport_ || !handshake_) {
-        return false;
+        return EnsureLinkResult{false, EnsureLinkFailure::TransportLink, false, false, 0};
     }
 
     const TimePointUs now = now_us();
-    if (transport_->has_link_timed_out(now)) {
-        return handshake_->establish_link(requested_capabilities);
+    const bool timed_out = transport_->has_link_timed_out(now);
+    if (timed_out) {
+        const bool ok = handshake_->establish_link(requested_capabilities);
+        return EnsureLinkResult{ok,
+                                ok ? EnsureLinkFailure::None : EnsureLinkFailure::CapabilityNegotiation,
+                                true,
+                                false,
+                                handshake_->negotiated_capabilities()};
     }
 
-    if (transport_->heartbeat_due(now)) {
-        return handshake_->send_heartbeat();
+    const bool hb_due = transport_->heartbeat_due(now);
+    if (hb_due) {
+        const bool ok = handshake_->send_heartbeat();
+        return EnsureLinkResult{ok,
+                                ok ? EnsureLinkFailure::None : EnsureLinkFailure::TransportLink,
+                                false,
+                                true,
+                                handshake_->negotiated_capabilities()};
     }
 
-    return true;
+    return EnsureLinkResult{true, EnsureLinkFailure::None, false, false, handshake_->negotiated_capabilities()};
 }
 
 bool BridgeLinkManager::has_capability(uint8_t capability) const {
@@ -106,6 +122,10 @@ bool BridgeLinkManager::has_capability(uint8_t capability) const {
 
 bool BridgeLinkManager::is_initialized() const {
     return initialized_;
+}
+
+uint8_t BridgeLinkManager::negotiated_capabilities() const {
+    return handshake_ ? handshake_->negotiated_capabilities() : 0;
 }
 
 HardwareStateCodec* BridgeLinkManager::codec() const {
