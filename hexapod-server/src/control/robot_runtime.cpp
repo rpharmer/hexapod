@@ -1,13 +1,17 @@
 #include "robot_runtime.hpp"
 
+#include "geometry_config.hpp"
+
 RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
                            std::unique_ptr<IEstimator> estimator,
                            std::shared_ptr<logging::AsyncLogger> logger,
-                           control_config::ControlConfig config)
+                           control_config::ControlConfig config,
+                           std::unique_ptr<telemetry::ITelemetryPublisher> telemetry_publisher)
     : hw_(std::move(hw)),
       estimator_(std::move(estimator)),
       logger_(std::move(logger)),
       config_(config),
+      telemetry_publisher_(std::move(telemetry_publisher)),
       pipeline_(config_.gait),
       safety_(config_.safety),
       freshness_policy_(config_.freshness),
@@ -47,8 +51,23 @@ bool RobotRuntime::init() {
     intent_sample_seq_.store(1);
     freshness_gate_.reset();
     timing_metrics_.reset();
+    next_telemetry_publish_at_ = TimePointUs{};
+    next_geometry_refresh_at_ = TimePointUs{};
 
     return true;
+}
+
+void RobotRuntime::startTelemetry() {
+    if (!telemetry_publisher_ || !config_.telemetry.enabled) {
+        return;
+    }
+
+    telemetry_publisher_->publishGeometry(geometry_config::activeHexapodGeometry());
+
+    const TimePointUs now = now_us();
+    next_telemetry_publish_at_ = now;
+    next_geometry_refresh_at_ = TimePointUs{
+        now.value + static_cast<uint64_t>(config_.telemetry.geometry_refresh_period.count()) * 1000ULL};
 }
 
 void RobotRuntime::busStep() {
@@ -91,6 +110,27 @@ void RobotRuntime::controlStep() {
         RuntimeFreshnessGate::maybeLogReject(logger_, freshness, est, intent);
         status_.write(decision.status);
         joint_targets_.write(decision.joint_targets);
+
+        if (telemetry_publisher_ && config_.telemetry.enabled &&
+            now.value >= next_telemetry_publish_at_.value) {
+            const uint64_t publish_period_us =
+                static_cast<uint64_t>(config_.telemetry.publish_period.count()) * 1000ULL;
+            next_telemetry_publish_at_ = TimePointUs{now.value + publish_period_us};
+
+            if (now.value >= next_geometry_refresh_at_.value) {
+                telemetry_publisher_->publishGeometry(geometry_config::activeHexapodGeometry());
+                const uint64_t geometry_refresh_period_us =
+                    static_cast<uint64_t>(config_.telemetry.geometry_refresh_period.count()) * 1000ULL;
+                next_geometry_refresh_at_ = TimePointUs{now.value + geometry_refresh_period_us};
+            }
+
+            telemetry::ControlStepTelemetry telemetry_sample{};
+            telemetry_sample.estimated_state = estimated_state_.read();
+            telemetry_sample.joint_targets = joint_targets_.read();
+            telemetry_sample.status = status_.read();
+            telemetry_sample.timestamp_us = now;
+            telemetry_publisher_->publishControlStep(telemetry_sample);
+        }
         return;
     }
 
@@ -103,6 +143,32 @@ void RobotRuntime::controlStep() {
 
     joint_targets_.write(result.joint_targets);
     status_.write(result.status);
+
+    if (!telemetry_publisher_ || !config_.telemetry.enabled) {
+        return;
+    }
+
+    if (now.value < next_telemetry_publish_at_.value) {
+        return;
+    }
+
+    const uint64_t publish_period_us =
+        static_cast<uint64_t>(config_.telemetry.publish_period.count()) * 1000ULL;
+    next_telemetry_publish_at_ = TimePointUs{now.value + publish_period_us};
+
+    if (now.value >= next_geometry_refresh_at_.value) {
+        telemetry_publisher_->publishGeometry(geometry_config::activeHexapodGeometry());
+        const uint64_t geometry_refresh_period_us =
+            static_cast<uint64_t>(config_.telemetry.geometry_refresh_period.count()) * 1000ULL;
+        next_geometry_refresh_at_ = TimePointUs{now.value + geometry_refresh_period_us};
+    }
+
+    telemetry::ControlStepTelemetry telemetry_sample{};
+    telemetry_sample.estimated_state = estimated_state_.read();
+    telemetry_sample.joint_targets = joint_targets_.read();
+    telemetry_sample.status = status_.read();
+    telemetry_sample.timestamp_us = now;
+    telemetry_publisher_->publishControlStep(telemetry_sample);
 }
 
 void RobotRuntime::safetyStep() {
