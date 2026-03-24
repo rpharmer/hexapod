@@ -13,7 +13,36 @@ option(HEXAPOD_SERVER_BUILD_TESTS "Build hexapod-server unit tests" OFF)
 set(BUILD_TESTING OFF CACHE BOOL "Disable CTest-based tests" FORCE)
 set(BUILD_TESTS OFF CACHE BOOL "Disable project-specific tests" FORCE)
 
-find_package(CppLinuxSerial REQUIRED)
+find_package(CppLinuxSerial CONFIG QUIET)
+
+if(TARGET CppLinuxSerial AND NOT TARGET CppLinuxSerial::CppLinuxSerial)
+    add_library(CppLinuxSerial::CppLinuxSerial ALIAS CppLinuxSerial)
+endif()
+
+if(NOT TARGET CppLinuxSerial::CppLinuxSerial)
+    find_path(CPPLINUXSERIAL_INCLUDE_DIR
+        NAMES CppLinuxSerial/SerialPort.hpp
+    )
+    find_library(CPPLINUXSERIAL_LIBRARY
+        NAMES CppLinuxSerial cpplinuxserial
+    )
+
+    include(FindPackageHandleStandardArgs)
+    find_package_handle_standard_args(CppLinuxSerial
+        REQUIRED_VARS CPPLINUXSERIAL_INCLUDE_DIR CPPLINUXSERIAL_LIBRARY
+    )
+
+    if(NOT CppLinuxSerial_FOUND)
+        message(FATAL_ERROR "CppLinuxSerial not found. Install it system-wide (for example via the setup script) or provide CppLinuxSerial_DIR.")
+    endif()
+
+    add_library(CppLinuxSerial::CppLinuxSerial UNKNOWN IMPORTED)
+    set_target_properties(CppLinuxSerial::CppLinuxSerial PROPERTIES
+        IMPORTED_LOCATION "${CPPLINUXSERIAL_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${CPPLINUXSERIAL_INCLUDE_DIR}"
+    )
+endif()
+
 find_package(toml11 REQUIRED)
 
 # Some CppLinuxSerial packages export a non-existent "/CppLinuxSerial" include

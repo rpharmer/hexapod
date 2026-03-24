@@ -9,6 +9,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install server dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential git
+
+          git clone --depth 1 https://github.com/ToruNiina/toml11
+          cmake -S toml11 -B toml11/build
+          cmake --build toml11/build -j
+          sudo cmake --install toml11/build
+
+          git clone --depth 1 https://github.com/gbmhunter/CppLinuxSerial
+          cmake -S CppLinuxSerial -B CppLinuxSerial/build -DBUILD_TESTS=FALSE
+          cmake --build CppLinuxSerial/build -j
+          sudo cmake --install CppLinuxSerial/build
       - name: Configure server tests
         run: cmake --preset tests
         working-directory: hexapod-server
