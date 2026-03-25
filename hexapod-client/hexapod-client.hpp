@@ -4,7 +4,7 @@
 
 #include <cstdint>
 #include <vector>
-#include "hexapod-common.hpp"
+#include "protocol_layout.hpp"
 struct FirmwareContext;
 
 // client device id

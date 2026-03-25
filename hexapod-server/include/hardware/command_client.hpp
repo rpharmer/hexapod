@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "logger.hpp"
-#include "hexapod-common.hpp"
+#include "protocol_ids.hpp"
 #include "transport_session.hpp"
 
 class CommandClient {

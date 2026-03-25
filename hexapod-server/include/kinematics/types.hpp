@@ -5,7 +5,7 @@
 #include <chrono>
 #include <cstdint>
 
-#include "hexapod-common.hpp"
+#include "protocol_layout.hpp"
 #include "kinematics/math_types.hpp"
 
 // ============================================================
