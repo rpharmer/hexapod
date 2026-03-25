@@ -1,4 +1,5 @@
-#!/bin/sh
-# let user know that setupscript is disabled and backed up to "setupscript.sh.backup"
+#!/usr/bin/env bash
+set -euo pipefail
 
+# let user know that setupscript is disabled and backed up to "setupscript.sh.backup"
 echo "disabled and backed-up to setupscript.sh.backup"
