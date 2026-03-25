@@ -9,7 +9,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from aiohttp import WSMsgType, web
 
@@ -40,11 +40,14 @@ class CoalescingUpdateScheduler:
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
-        publish_coro,
+        publish_coro: Callable[[], Awaitable[None]],
         *,
         publish_hz: float = 25.0,
         log_every: int = 200,
     ):
+        if publish_hz <= 0:
+            raise ValueError("publish_hz must be > 0")
+
         self.loop = loop
         self.publish_coro = publish_coro
         self.publish_interval_s = 1.0 / publish_hz
@@ -69,10 +72,12 @@ class CoalescingUpdateScheduler:
 
     def _maybe_log_coalescing(self) -> None:
         if self.coalesced_notifications and self.coalesced_notifications % self.log_every == 0:
-            print(
-                "[visualiser] info: coalesced notifications="
-                f"{self.coalesced_notifications}, publish_cycles={self.publish_cycles}, "
-                f"notifications={self.update_notifications}"
+            log_event(
+                "info",
+                "udp_coalesced",
+                coalesced_notifications=self.coalesced_notifications,
+                publish_cycles=self.publish_cycles,
+                notifications=self.update_notifications,
             )
 
     async def _run(self) -> None:
@@ -147,7 +152,7 @@ def log_event(level: str, event: str, **context: Any) -> None:
 
 
 class UdpTelemetryProtocol(asyncio.DatagramProtocol):
-    def __init__(self, state: TelemetryState, diagnostics: Diagnostics, on_update):
+    def __init__(self, state: TelemetryState, diagnostics: Diagnostics, on_update: Callable[[], None]):
         self.state = state
         self.diagnostics = diagnostics
         self.on_update = on_update
@@ -272,8 +277,12 @@ def _is_number(value: Any) -> bool:
 
 
 async def start_udp_listener(
-    loop, state: TelemetryState, diagnostics: Diagnostics, port: int, on_update
-):
+    loop: asyncio.AbstractEventLoop,
+    state: TelemetryState,
+    diagnostics: Diagnostics,
+    port: int,
+    on_update: Callable[[], None],
+) -> None:
     await loop.create_datagram_endpoint(
         lambda: UdpTelemetryProtocol(state, diagnostics, on_update),
         local_addr=("0.0.0.0", port),
@@ -313,6 +322,7 @@ async def make_app(state: TelemetryState, diagnostics: Diagnostics, metrics_path
         diagnostics.ws_clients_connected = len(clients)
         log_event("info", "ws_connected", client_count=diagnostics.ws_clients_connected)
 
+        # Preserve an immediate full state push on initial connection.
         await ws.send_str(json.dumps(state.to_payload()))
 
         async for message in ws:
@@ -354,6 +364,12 @@ async def main() -> None:
         help="HTTP path for lightweight diagnostics JSON endpoint",
     )
     parser.add_argument(
+        "--max-broadcast-hz",
+        type=float,
+        default=25.0,
+        help="Maximum websocket broadcast frequency in Hz (latest update wins)",
+    )
+    parser.add_argument(
         "--stats-log-interval",
         type=float,
         default=30.0,
@@ -371,11 +387,16 @@ async def main() -> None:
     update_scheduler = CoalescingUpdateScheduler(
         asyncio.get_running_loop(),
         on_update_async,
-        publish_hz=25.0,
+        publish_hz=args.max_broadcast_hz,
     )
 
-    await start_udp_listener(asyncio.get_running_loop(), state, args.udp_port, update_scheduler.notify_update)
-    await start_udp_listener(asyncio.get_running_loop(), state, diagnostics, args.udp_port, on_update)
+    await start_udp_listener(
+        asyncio.get_running_loop(),
+        state,
+        diagnostics,
+        args.udp_port,
+        update_scheduler.notify_update,
+    )
 
     runner = web.AppRunner(app)
     await runner.setup()
@@ -396,6 +417,7 @@ async def main() -> None:
         http_url=f"http://localhost:{args.http_port}",
         udp_port=args.udp_port,
         metrics_path=args.metrics_path,
+        max_broadcast_hz=args.max_broadcast_hz,
         stats_log_interval=args.stats_log_interval,
     )
     await asyncio.Event().wait()
