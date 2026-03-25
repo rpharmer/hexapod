@@ -155,6 +155,36 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.voltage, 11.4)
         self.assertEqual(state.current, 1.8)
         
+    def test_udp_protocol_ignores_unknown_geometry_keys_in_geometry_object(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
+
+        before = dict(state.geometry)
+        protocol.datagram_received(
+            b'{"schema_version": 1, "geometry": {"coxxa": 99, "femur": 82}}',
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertEqual(state.geometry["femur"], 82.0)
+        self.assertEqual(state.geometry["coxa"], before["coxa"])
+        self.assertNotIn("coxxa", state.geometry)
+
+    def test_udp_protocol_ignores_unknown_geometry_keys_in_legacy_geometry_payload(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
+
+        before = dict(state.geometry)
+        protocol.datagram_received(
+            b'{"schema_version": 1, "type": "geometry", "coxxa": 99, "body_radius": 75}',
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertEqual(state.geometry["body_radius"], 75.0)
+        self.assertEqual(state.geometry["coxa"], before["coxa"])
+        self.assertNotIn("coxxa", state.geometry)
+        
     def test_frontend_contract_does_not_expect_optional_status_badges(self):
         static_dir = pathlib.Path(__file__).resolve().parents[1] / "static"
         app_js = (static_dir / "app.js").read_text(encoding="utf-8")
