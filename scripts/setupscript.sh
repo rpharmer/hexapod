@@ -39,8 +39,8 @@ cd /workspace/hexapod/hexapod-server
 cmake --preset default
 cmake --build --preset default -j"$(nproc)"
 
-cmake --preset tests
-cmake --build --preset tests -j"$(nproc)"
+#cmake --preset tests
+#cmake --build --preset tests -j"$(nproc)"
 
 cd /workspace/hexapod/hexapod-client
 # Prebuild SDK/tooling artifacts that are otherwise fetched lazily.
