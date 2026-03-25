@@ -174,7 +174,7 @@ void RobotRuntime::diagnosticsStep() {
     const auto st = status_.read();
     const auto bridge_result = hw_ ? hw_->last_bridge_result() : std::nullopt;
     const uint64_t loops = control_loop_counter_.load();
-    diagnostics_reporter_.recordVisualizerTelemetry(bridge_result, loops, now_us());
+    diagnostics_reporter_.recordVisualizerTelemetry(telemetry_publisher_->counters(), now_us());
     diagnostics_reporter_.report(st,
                                  bridge_result,
                                  loops,

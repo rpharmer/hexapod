@@ -73,10 +73,25 @@ function fkForLeg(legName, anglesDeg, geometry) {
   return { anchor, shoulder, knee, foot };
 }
 
+function resolveModelAgeMs(telemetry, nowMs) {
+  if (!Number.isFinite(telemetry.lastModelTimestampMs)) {
+    return NaN;
+  }
+
+  const ageMs = nowMs - telemetry.lastModelTimestampMs;
+  const maxExpectedAgeMs = 24 * 60 * 60 * 1000;
+  if (ageMs < -STALE_AFTER_MS || ageMs > maxExpectedAgeMs) {
+    return NaN;
+  }
+
+  return ageMs;
+}
+
 function updateTelemetryUI({ statusEl, metaEl, rollingMetricsEl, telemetry, model }, nowMs) {
-  const modelAgeMs = telemetry.lastModelTimestampMs === null ? NaN : nowMs - telemetry.lastModelTimestampMs;
   const transportAgeMs = telemetry.lastPayloadAtMs ? nowMs - telemetry.lastPayloadAtMs : NaN;
-  const staleData = !Number.isFinite(modelAgeMs) || modelAgeMs > STALE_AFTER_MS;
+  const modelAgeCandidateMs = resolveModelAgeMs(telemetry, nowMs);
+  const modelAgeMs = Number.isFinite(modelAgeCandidateMs) ? modelAgeCandidateMs : transportAgeMs;
+  const staleData = !Number.isFinite(transportAgeMs) || transportAgeMs > STALE_AFTER_MS;
 
   const freshness = staleData ? "STALE" : "LIVE";
   statusEl.textContent = `Connected | ${freshness} telemetry`;
