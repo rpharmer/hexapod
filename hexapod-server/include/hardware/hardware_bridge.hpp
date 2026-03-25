@@ -129,9 +129,6 @@ private:
                                const std::function<BridgeError(BridgeCommandApi&)>& action,
                                bool require_estimator = false);
     BridgeError send_calibrations_result(const std::vector<float>& calibs);
-    static const char* bridge_error_to_text(BridgeError error);
-    static const char* bridge_phase_to_text(BridgeFailurePhase phase);
-    static const char* bridge_domain_to_text(BridgeFailureDomain domain);
     void set_last_result(const BridgeCommandResultMetadata& metadata);
 
     std::string device_;
