@@ -1,6 +1,7 @@
 #include "gait_scheduler.hpp"
 
 #include "control_config.hpp"
+#include "stability_tracker.hpp"
 
 #include <algorithm>
 #include <array>
@@ -37,22 +38,29 @@ double GaitScheduler::wrap01(double x) const {
     return x;
 }
 
-GaitState GaitScheduler::update(const RobotState&,
+GaitState GaitScheduler::update(const RobotState& est,
                                 const MotionIntent& intent,
                                 const SafetyState& safety) {
     GaitState out{};
     out.timestamp_us = now_us();
 
+    const StabilityAssessment stability = assessStability(est);
+    out.stable = stability.com_inside_support_polygon;
+    out.support_contact_count = stability.support_contact_count;
+    out.stability_margin_m = stability.stability_margin_m;
+
     const bool walking =
         (intent.requested_mode == RobotMode::WALK) &&
         !safety.inhibit_motion &&
-        !safety.torque_cut;
+        !safety.torque_cut &&
+        out.stable;
 
     if (!walking) {
         for (int i = 0; i < kNumLegs; ++i) {
             out.phase[i] = 0.0;
             out.in_stance[i] = true;
         }
+        out.stride_phase_rate_hz = FrequencyHz{0.0};
         last_update_us_ = out.timestamp_us;
         return out;
     }
