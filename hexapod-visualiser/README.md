@@ -51,6 +51,13 @@ By default, a periodic structured `event=periodic_stats` line is emitted every 3
 - Change interval: `--stats-log-interval <seconds>`
 - Disable periodic logs: `--stats-log-interval 0`
 
+### Broadcast coalescing / max publish rate
+
+WebSocket broadcasts are coalesced (many UDP packets can collapse into one outbound push), while always sending the latest merged state.
+
+- Default max push rate: `25 Hz`
+- Change max rate: `--max-broadcast-hz <hz>`
+
 ### Health / metrics endpoint
 
 The server exposes a lightweight JSON diagnostics endpoint.

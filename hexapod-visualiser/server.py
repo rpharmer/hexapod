@@ -9,7 +9,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from aiohttp import WSMsgType, web
 
@@ -31,6 +31,7 @@ DEFAULT_GEOMETRY = {
     "tibia": 110.0,
     "body_radius": 60.0,
 }
+GEOMETRY_KEYS = frozenset(DEFAULT_GEOMETRY.keys())
 
 
 class CoalescingUpdateScheduler:
@@ -39,11 +40,14 @@ class CoalescingUpdateScheduler:
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
-        publish_coro,
+        publish_coro: Callable[[], Awaitable[None]],
         *,
         publish_hz: float = 25.0,
         log_every: int = 200,
     ):
+        if publish_hz <= 0:
+            raise ValueError("publish_hz must be > 0")
+
         self.loop = loop
         self.publish_coro = publish_coro
         self.publish_interval_s = 1.0 / publish_hz
@@ -68,10 +72,12 @@ class CoalescingUpdateScheduler:
 
     def _maybe_log_coalescing(self) -> None:
         if self.coalesced_notifications and self.coalesced_notifications % self.log_every == 0:
-            print(
-                "[visualiser] info: coalesced notifications="
-                f"{self.coalesced_notifications}, publish_cycles={self.publish_cycles}, "
-                f"notifications={self.update_notifications}"
+            log_event(
+                "info",
+                "udp_coalesced",
+                coalesced_notifications=self.coalesced_notifications,
+                publish_cycles=self.publish_cycles,
+                notifications=self.update_notifications,
             )
 
     async def _run(self) -> None:
@@ -90,6 +96,13 @@ class TelemetryState:
     geometry: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_GEOMETRY))
     angles_deg: dict[str, list[float]] = field(default_factory=lambda: dict(DEFAULT_ANGLES))
     timestamp_ms: int | None = None
+    active_mode: str | None = None
+    active_fault: str | None = None
+    bus_ok: bool | None = None
+    estimator_valid: bool | None = None
+    loop_counter: int | None = None
+    voltage: float | None = None
+    current: float | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -97,6 +110,13 @@ class TelemetryState:
             "geometry": self.geometry,
             "angles_deg": self.angles_deg,
             "timestamp_ms": self.timestamp_ms,
+            "active_mode": self.active_mode,
+            "active_fault": self.active_fault,
+            "bus_ok": self.bus_ok,
+            "estimator_valid": self.estimator_valid,
+            "loop_counter": self.loop_counter,
+            "voltage": self.voltage,
+            "current": self.current,
         }
 
 
@@ -132,7 +152,7 @@ def log_event(level: str, event: str, **context: Any) -> None:
 
 
 class UdpTelemetryProtocol(asyncio.DatagramProtocol):
-    def __init__(self, state: TelemetryState, diagnostics: Diagnostics, on_update):
+    def __init__(self, state: TelemetryState, diagnostics: Diagnostics, on_update: Callable[[], None]):
         self.state = state
         self.diagnostics = diagnostics
         self.on_update = on_update
@@ -169,13 +189,13 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
         geometry = message.get("geometry")
         if isinstance(geometry, dict):
             merged = dict(self.state.geometry)
-            merged.update({k: float(v) for k, v in geometry.items() if _is_number(v)})
+            merged.update(self._sanitize_geometry_update(geometry, source="geometry"))
             self.state.geometry = merged
             changed = True
 
         if message.get("type") == "geometry":
             merged = dict(self.state.geometry)
-            merged.update({k: float(v) for k, v in message.items() if _is_number(v)})
+            merged.update(self._sanitize_geometry_update(message, source="legacy_geometry"))
             self.state.geometry = merged
             changed = True
 
@@ -205,9 +225,51 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
             self.state.timestamp_ms = int(message["timestamp_ms"])
             changed = True
 
+        if isinstance(message.get("active_mode"), str):
+            self.state.active_mode = message["active_mode"]
+            changed = True
+
+        if isinstance(message.get("active_fault"), str):
+            self.state.active_fault = message["active_fault"]
+            changed = True
+
+        if isinstance(message.get("bus_ok"), bool):
+            self.state.bus_ok = message["bus_ok"]
+            changed = True
+
+        if isinstance(message.get("estimator_valid"), bool):
+            self.state.estimator_valid = message["estimator_valid"]
+            changed = True
+
+        if isinstance(message.get("loop_counter"), int):
+            self.state.loop_counter = int(message["loop_counter"])
+            changed = True
+
+        if _is_number(message.get("voltage")):
+            self.state.voltage = float(message["voltage"])
+            changed = True
+
+        if _is_number(message.get("current")):
+            self.state.current = float(message["current"])
+            changed = True
+
         if changed:
             self.diagnostics.mark_udp_update()
             self.on_update()
+
+    def _sanitize_geometry_update(self, geometry: dict[str, Any], *, source: str) -> dict[str, float]:
+        sanitized: dict[str, float] = {}
+        unknown_keys = sorted(
+            key for key in geometry.keys() if key in {"schema_version", "type"} or key not in GEOMETRY_KEYS
+        )
+        if unknown_keys:
+            log_event("debug", "geometry_unknown_keys_ignored", source=source, keys=unknown_keys)
+
+        for key in GEOMETRY_KEYS:
+            value = geometry.get(key)
+            if _is_number(value):
+                sanitized[key] = float(value)
+        return sanitized
 
 
 def _is_number(value: Any) -> bool:
@@ -215,8 +277,12 @@ def _is_number(value: Any) -> bool:
 
 
 async def start_udp_listener(
-    loop, state: TelemetryState, diagnostics: Diagnostics, port: int, on_update
-):
+    loop: asyncio.AbstractEventLoop,
+    state: TelemetryState,
+    diagnostics: Diagnostics,
+    port: int,
+    on_update: Callable[[], None],
+) -> None:
     await loop.create_datagram_endpoint(
         lambda: UdpTelemetryProtocol(state, diagnostics, on_update),
         local_addr=("0.0.0.0", port),
@@ -256,6 +322,7 @@ async def make_app(state: TelemetryState, diagnostics: Diagnostics, metrics_path
         diagnostics.ws_clients_connected = len(clients)
         log_event("info", "ws_connected", client_count=diagnostics.ws_clients_connected)
 
+        # Preserve an immediate full state push on initial connection.
         await ws.send_str(json.dumps(state.to_payload()))
 
         async for message in ws:
@@ -297,6 +364,12 @@ async def main() -> None:
         help="HTTP path for lightweight diagnostics JSON endpoint",
     )
     parser.add_argument(
+        "--max-broadcast-hz",
+        type=float,
+        default=25.0,
+        help="Maximum websocket broadcast frequency in Hz (latest update wins)",
+    )
+    parser.add_argument(
         "--stats-log-interval",
         type=float,
         default=30.0,
@@ -314,11 +387,16 @@ async def main() -> None:
     update_scheduler = CoalescingUpdateScheduler(
         asyncio.get_running_loop(),
         on_update_async,
-        publish_hz=25.0,
+        publish_hz=args.max_broadcast_hz,
     )
 
-    await start_udp_listener(asyncio.get_running_loop(), state, args.udp_port, update_scheduler.notify_update)
-    await start_udp_listener(asyncio.get_running_loop(), state, diagnostics, args.udp_port, on_update)
+    await start_udp_listener(
+        asyncio.get_running_loop(),
+        state,
+        diagnostics,
+        args.udp_port,
+        update_scheduler.notify_update,
+    )
 
     runner = web.AppRunner(app)
     await runner.setup()
@@ -339,6 +417,7 @@ async def main() -> None:
         http_url=f"http://localhost:{args.http_port}",
         udp_port=args.udp_port,
         metrics_path=args.metrics_path,
+        max_broadcast_hz=args.max_broadcast_hz,
         stats_log_interval=args.stats_log_interval,
     )
     await asyncio.Event().wait()
