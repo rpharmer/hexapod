@@ -47,7 +47,8 @@ class TelemetryParserTests(unittest.TestCase):
 
     def test_udp_protocol_schema_gate_ignores_missing_and_incompatible_versions(self):
         state = server.TelemetryState()
-        protocol = server.UdpTelemetryProtocol(state, lambda: None)
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
 
         before = state.to_payload()
         protocol.datagram_received(
@@ -95,7 +96,8 @@ class TelemetryParserTests(unittest.TestCase):
         state = server.TelemetryState()
         loop = FakeLoop()
         scheduler = server.CoalescingUpdateScheduler(loop, lambda: None, publish_hz=25.0)
-        protocol = server.UdpTelemetryProtocol(state, scheduler.notify_update)
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, scheduler.notify_update)
 
         payload = b'{"schema_version": 1, "type":"joints", "angles_deg": {"LF": [1, 2, 3]}, "timestamp_ms": 1001}'
         for _ in range(1000):
@@ -104,6 +106,36 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(loop.create_task_calls, 1)
         self.assertEqual(scheduler.update_notifications, 1000)
         self.assertGreaterEqual(scheduler.coalesced_notifications, 999)
+
+    def test_udp_protocol_ignores_unknown_geometry_keys_in_geometry_object(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
+
+        before = dict(state.geometry)
+        protocol.datagram_received(
+            b'{"schema_version": 1, "geometry": {"coxxa": 99, "femur": 82}}',
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertEqual(state.geometry["femur"], 82.0)
+        self.assertEqual(state.geometry["coxa"], before["coxa"])
+        self.assertNotIn("coxxa", state.geometry)
+
+    def test_udp_protocol_ignores_unknown_geometry_keys_in_legacy_geometry_payload(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
+
+        before = dict(state.geometry)
+        protocol.datagram_received(
+            b'{"schema_version": 1, "type": "geometry", "coxxa": 99, "body_radius": 75}',
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertEqual(state.geometry["body_radius"], 75.0)
+        self.assertEqual(state.geometry["coxa"], before["coxa"])
+        self.assertNotIn("coxxa", state.geometry)
         
     def test_frontend_contract_does_not_expect_optional_status_badges(self):
         static_dir = pathlib.Path(__file__).resolve().parents[1] / "static"
