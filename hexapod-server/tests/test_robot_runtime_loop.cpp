@@ -3,6 +3,7 @@
 #include "sim_hardware_bridge.hpp"
 
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -50,6 +51,20 @@ public:
 private:
     std::vector<RobotState> queue_{};
     RobotState last_{};
+};
+
+class CountingTelemetryPublisher final : public telemetry::ITelemetryPublisher {
+public:
+    void publishGeometry(const HexapodGeometry&) override {
+        ++geometry_count;
+    }
+
+    void publishControlStep(const telemetry::ControlStepTelemetry&) override {
+        ++control_step_count;
+    }
+
+    size_t geometry_count{0};
+    size_t control_step_count{0};
 };
 
 struct FlagScenario {
@@ -164,6 +179,93 @@ bool runIntentInvalidCase(const FlagScenario& scenario,
                   std::string{"invalid intent should report COMMAND_TIMEOUT for "} + reason_label);
 }
 
+bool runTelemetryCadenceSuccessCase() {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<ScriptedEstimator>();
+    auto* scripted = estimator.get();
+    auto telemetry = std::make_unique<CountingTelemetryPublisher>();
+    auto* telemetry_raw = telemetry.get();
+
+    control_config::ControlConfig cfg{};
+    cfg.telemetry.enabled = true;
+    cfg.telemetry.publish_period = std::chrono::milliseconds{200};
+    cfg.telemetry.geometry_refresh_period = std::chrono::milliseconds{500};
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, cfg, std::move(telemetry));
+
+    if (!expect(runtime.init(), "init should succeed (telemetry success cadence)")) {
+        return false;
+    }
+
+    runtime.startTelemetry();
+    if (!expect(telemetry_raw->geometry_count == 1, "startTelemetry should publish geometry once")) {
+        return false;
+    }
+
+    scripted->enqueue(makeEstimatorSample(500, now_us()));
+    runtime.setMotionIntent(makeIntentSample(500, now_us()));
+    runControlStep(runtime);
+
+    if (!expect(telemetry_raw->control_step_count == 1,
+                "first successful control step should publish telemetry")) {
+        return false;
+    }
+
+    scripted->enqueue(makeEstimatorSample(501, now_us()));
+    runtime.setMotionIntent(makeIntentSample(501, now_us()));
+    runControlStep(runtime);
+
+    return expect(telemetry_raw->control_step_count == 1,
+                  "second successful control step inside publish period should not publish telemetry") &&
+           expect(telemetry_raw->geometry_count == 1,
+                  "geometry should not refresh before geometry refresh period elapses");
+}
+
+bool runTelemetryCadenceRejectCase() {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<ScriptedEstimator>();
+    auto* scripted = estimator.get();
+    auto telemetry = std::make_unique<CountingTelemetryPublisher>();
+    auto* telemetry_raw = telemetry.get();
+
+    control_config::ControlConfig cfg{};
+    cfg.telemetry.enabled = true;
+    cfg.telemetry.publish_period = std::chrono::milliseconds{200};
+    cfg.telemetry.geometry_refresh_period = std::chrono::milliseconds{500};
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.require_timestamp = true;
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, cfg, std::move(telemetry));
+
+    if (!expect(runtime.init(), "init should succeed (telemetry reject cadence)")) {
+        return false;
+    }
+
+    runtime.startTelemetry();
+    if (!expect(telemetry_raw->geometry_count == 1, "startTelemetry should publish geometry once")) {
+        return false;
+    }
+
+    scripted->enqueue(makeEstimatorSample(600, now_us()));
+    runtime.setMotionIntentForTest(makeIntentSample(600, TimePointUs{}));
+    runControlStep(runtime);
+
+    if (!expect(telemetry_raw->control_step_count == 1,
+                "first rejected control step should publish telemetry")) {
+        return false;
+    }
+
+    scripted->enqueue(makeEstimatorSample(601, now_us()));
+    runtime.setMotionIntentForTest(makeIntentSample(601, TimePointUs{}));
+    runControlStep(runtime);
+
+    return expect(telemetry_raw->control_step_count == 1,
+                  "second rejected control step inside publish period should not publish telemetry") &&
+           expect(telemetry_raw->geometry_count == 1,
+                  "rejected control steps should keep geometry refresh cadence");
+}
+
 } // namespace
 
 int main() {
@@ -224,6 +326,14 @@ int main() {
                 return EXIT_FAILURE;
             }
         }
+    }
+
+    if (!runTelemetryCadenceSuccessCase()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runTelemetryCadenceRejectCase()) {
+        return EXIT_FAILURE;
     }
 
     return EXIT_SUCCESS;

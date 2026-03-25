@@ -42,6 +42,8 @@ public:
     ControlStatus getStatus() const;
 
 private:
+    void maybePublishTelemetry(const TimePointUs& now);
+
     std::unique_ptr<IHardwareBridge> hw_;
     std::unique_ptr<IEstimator> estimator_;
     std::shared_ptr<logging::AsyncLogger> logger_;

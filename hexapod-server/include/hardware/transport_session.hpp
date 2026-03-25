@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "logger.hpp"
+#include "protocol_ids.hpp"
 #include "serialCommsServer.hpp"
 #include "types.hpp"
 

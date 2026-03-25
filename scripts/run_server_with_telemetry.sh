@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
+
+ROOT_DIR="$HEXAPOD_ROOT_DIR"
 SERVER_DIR="$ROOT_DIR/hexapod-server"
 SERVER_BIN="$SERVER_DIR/build/hexapod-server"
 
@@ -74,7 +77,7 @@ while [[ $# -gt 0 ]]; do
       done
       ;;
     *)
-      echo "Unknown argument: $1" >&2
+      msg_error "Unknown argument: $1"
       usage >&2
       exit 1
       ;;
@@ -82,14 +85,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$MODE" in
-  serial)
-    :
-    ;;
-  sim)
-    :
-    ;;
+  serial|sim) ;;
   *)
-    echo "Invalid --mode '$MODE' (expected serial or sim)" >&2
+    msg_error "Invalid --mode '$MODE' (expected serial or sim)"
     exit 1
     ;;
 esac
@@ -100,35 +98,31 @@ if [[ -z "$CONFIG_PATH" ]]; then
   else
     CONFIG_PATH="$SERVER_DIR/config.txt"
   fi
-elif [[ "$CONFIG_PATH" != /* ]]; then
-  CONFIG_PATH="$ROOT_DIR/$CONFIG_PATH"
+else
+  CONFIG_PATH="$(resolve_from_root "$CONFIG_PATH")"
 fi
 
 if [[ ! -f "$CONFIG_PATH" ]]; then
-  echo "Config file not found: $CONFIG_PATH" >&2
+  msg_error "Config file not found: $CONFIG_PATH"
   exit 1
 fi
 
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
-  (cd "$SERVER_DIR" && cmake --preset default)
-  (cd "$SERVER_DIR" && cmake --build --preset default -j)
+  run_in_dir "$SERVER_DIR" cmake --preset default
+  run_in_dir "$SERVER_DIR" cmake --build --preset default -j
 fi
 
 if [[ ! -x "$SERVER_BIN" ]]; then
-  echo "Server binary not found or not executable: $SERVER_BIN" >&2
+  msg_error "Server binary not found or not executable: $SERVER_BIN"
   exit 1
 fi
 
 SCENARIO_ARGS=()
 if [[ -n "$SCENARIO" ]]; then
-  if [[ "$SCENARIO" = /* ]]; then
-    SCENARIO_PATH="$SCENARIO"
-  else
-    SCENARIO_PATH="$SERVER_DIR/$SCENARIO"
-  fi
+  SCENARIO_PATH="$(resolve_server_path "$SCENARIO")"
 
   if [[ ! -f "$SCENARIO_PATH" ]]; then
-    echo "Scenario file not found: $SCENARIO_PATH" >&2
+    msg_error "Scenario file not found: $SCENARIO_PATH"
     exit 1
   fi
 
@@ -144,7 +138,4 @@ a+=(--telemetry-enable --telemetry-host "$TELEMETRY_HOST" --telemetry-port "$TEL
 a+=("${SCENARIO_ARGS[@]}")
 a+=("${SERVER_ARGS[@]}")
 
-(
-  cd "$SERVER_DIR"
-  "${a[@]}"
-)
+run_in_dir "$SERVER_DIR" "${a[@]}"

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "framing.hpp"
-#include "hexapod-common.hpp"
+#include "protocol_ids.hpp"
 
 #include <cstddef>
 #include <cstdint>

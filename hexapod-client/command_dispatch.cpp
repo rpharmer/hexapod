@@ -1,7 +1,10 @@
+#ifndef HEXAPOD_CLIENT_HOST_TEST
 #include "pico/stdlib.h"
+#endif
 #include "hexapod-common.hpp"
 #include "hexapod-client.hpp"
 #include "command_router.hpp"
+#include "command_dispatch_internal.hpp"
 #include "firmware_context.hpp"
 
 #include <array>
@@ -14,6 +17,15 @@ template <typename>
 constexpr bool kAlwaysFalse = false;
 
 constexpr int64_t HOST_LIVENESS_TIMEOUT_US = 2000000;
+
+int64_t readCurrentTimeUs()
+{
+#ifndef HEXAPOD_CLIENT_HOST_TEST
+  return to_us_since_boot(get_absolute_time());
+#else
+  return 0;
+#endif
+}
 
 void transitionToHostDisconnectedSafeState(FirmwareContext& ctx)
 {
@@ -72,6 +84,35 @@ constexpr std::array<CommandRoute, 14> COMMAND_ROUTES{{
     {CommandCode::SET_JOINT_TARGETS, exactPayloadPolicyFromMetadata(CommandCode::SET_JOINT_TARGETS), routeCommand<handleSetJointTargetsCommand>},
 }};
 
+bool handleKnownActiveCommand(FirmwareContext& ctx, const DecodedPacket& packet, CommandCode command)
+{
+  switch(command)
+  {
+    case CommandCode::HELLO:
+      ctx.serial.send_packet(packet.seq, as_u8(CommandCode::NACK), {ALREADY_PAIRED});
+      break;
+    case CommandCode::HEARTBEAT:
+      handleHeartbeatCommand(ctx, packet.seq);
+      break;
+    case CommandCode::KILL:
+      return false;
+    default:
+      if(!dispatchCommand(ctx,
+                          command,
+                          packet.seq,
+                          packet.payload,
+                          COMMAND_ROUTES.data(),
+                          COMMAND_ROUTES.size(),
+                          respondInvalidPayloadLength))
+      {
+        ctx.serial.send_packet(packet.seq, as_u8(CommandCode::NACK), {UNSUPPORTED_COMMAND});
+      }
+      break;
+  }
+
+  return true;
+}
+
 constexpr bool routesMatchSharedCommandMetadata()
 {
   std::size_t route_count_from_metadata = 0;
@@ -117,10 +158,47 @@ static_assert(routesMatchSharedCommandMetadata(),
 
 } // namespace
 
+bool handleWaitingForHostPacket(FirmwareContext& ctx, const DecodedPacket& packet)
+{
+  CommandCode command = CommandCode::HELLO;
+  const bool has_known_command = try_parse_command_code(packet.cmd, command);
+  if(!has_known_command || command != CommandCode::HELLO)
+    return true;
+
+  if(handleHandshake(ctx, packet.seq, packet.payload))
+    ctx.state = HexapodState::ACTIVE;
+  return true;
+}
+
+bool handleActivePacket(FirmwareContext& ctx, const DecodedPacket& packet)
+{
+  CommandCode command = CommandCode::HELLO;
+  const bool has_known_command = try_parse_command_code(packet.cmd, command);
+  if(!has_known_command)
+  {
+    ctx.serial.send_packet(packet.seq, as_u8(CommandCode::NACK), {UNSUPPORTED_COMMAND});
+    return true;
+  }
+
+  return handleKnownActiveCommand(ctx, packet, command);
+}
+
+void enforceHostLivenessTimeout(FirmwareContext& ctx, int64_t now_us, int64_t& last_host_activity_us)
+{
+  if(ctx.state != HexapodState::ACTIVE)
+    return;
+
+  if((now_us - last_host_activity_us) <= HOST_LIVENESS_TIMEOUT_US)
+    return;
+
+  transitionToHostDisconnectedSafeState(ctx);
+  last_host_activity_us = now_us;
+}
+
 void runCommandLoop()
 {
   firmware().state = HexapodState::WAITING_FOR_HOST;
-  absolute_time_t lastHostActivity = get_absolute_time();
+  int64_t last_host_activity_us = readCurrentTimeUs();
 
   while(1)
   {
@@ -128,63 +206,19 @@ void runCommandLoop()
     DecodedPacket packet;
     if(ctx.serial.recv_packet(packet))
     {
-      lastHostActivity = get_absolute_time();
-      CommandCode command = CommandCode::HELLO;
-      const bool has_known_command = try_parse_command_code(packet.cmd, command);
+      last_host_activity_us = readCurrentTimeUs();
 
       if(ctx.state != HexapodState::ACTIVE)
       {
-        if(has_known_command && command == CommandCode::HELLO)
-        {
-          if(handleHandshake(ctx, packet.seq, packet.payload))
-            ctx.state = HexapodState::ACTIVE;
-        }
-        else
-        {
-          continue;
-        }
+        handleWaitingForHostPacket(ctx, packet);
       }
       else
       {
-        if(!has_known_command)
-        {
-          ctx.serial.send_packet(packet.seq, as_u8(CommandCode::NACK), {UNSUPPORTED_COMMAND});
-          continue;
-        }
-
-        switch(command)
-        {
-          case CommandCode::HELLO:
-            ctx.serial.send_packet(packet.seq, as_u8(CommandCode::NACK), {ALREADY_PAIRED});
-            break;
-          case CommandCode::HEARTBEAT:
-            handleHeartbeatCommand(ctx, packet.seq);
-            break;
-          case CommandCode::KILL:
-            return;
-          default:
-            if(!dispatchCommand(ctx,
-                                command,
-                                packet.seq,
-                                packet.payload,
-                                COMMAND_ROUTES.data(),
-                                COMMAND_ROUTES.size(),
-                                respondInvalidPayloadLength))
-            {
-              ctx.serial.send_packet(packet.seq, as_u8(CommandCode::NACK), {UNSUPPORTED_COMMAND});
-            }
-            break;
-        }
+        if(!handleActivePacket(ctx, packet))
+          return;
       }
-
-      continue;
     }
 
-    if(ctx.state == HexapodState::ACTIVE &&
-       absolute_time_diff_us(lastHostActivity, get_absolute_time()) > HOST_LIVENESS_TIMEOUT_US)
-    {
-      transitionToHostDisconnectedSafeState(ctx);
-      lastHostActivity = get_absolute_time();
-    }
+    enforceHostLivenessTimeout(ctx, readCurrentTimeUs(), last_host_activity_us);
   }
 }

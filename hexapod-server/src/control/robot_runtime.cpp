@@ -110,27 +110,7 @@ void RobotRuntime::controlStep() {
         RuntimeFreshnessGate::maybeLogReject(logger_, freshness, est, intent);
         status_.write(decision.status);
         joint_targets_.write(decision.joint_targets);
-
-        if (telemetry_publisher_ && config_.telemetry.enabled &&
-            now.value >= next_telemetry_publish_at_.value) {
-            const uint64_t publish_period_us =
-                static_cast<uint64_t>(config_.telemetry.publish_period.count()) * 1000ULL;
-            next_telemetry_publish_at_ = TimePointUs{now.value + publish_period_us};
-
-            if (now.value >= next_geometry_refresh_at_.value) {
-                telemetry_publisher_->publishGeometry(geometry_config::activeHexapodGeometry());
-                const uint64_t geometry_refresh_period_us =
-                    static_cast<uint64_t>(config_.telemetry.geometry_refresh_period.count()) * 1000ULL;
-                next_geometry_refresh_at_ = TimePointUs{now.value + geometry_refresh_period_us};
-            }
-
-            telemetry::ControlStepTelemetry telemetry_sample{};
-            telemetry_sample.estimated_state = estimated_state_.read();
-            telemetry_sample.joint_targets = joint_targets_.read();
-            telemetry_sample.status = status_.read();
-            telemetry_sample.timestamp_us = now;
-            telemetry_publisher_->publishControlStep(telemetry_sample);
-        }
+        maybePublishTelemetry(now);
         return;
     }
 
@@ -144,6 +124,10 @@ void RobotRuntime::controlStep() {
     joint_targets_.write(result.joint_targets);
     status_.write(result.status);
 
+    maybePublishTelemetry(now);
+}
+
+void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
     if (!telemetry_publisher_ || !config_.telemetry.enabled) {
         return;
     }

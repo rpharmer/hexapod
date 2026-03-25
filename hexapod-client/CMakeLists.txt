@@ -57,6 +57,18 @@ if (HEXAPOD_CLIENT_ENABLE_HOST_TESTS)
     )
     add_test(NAME hexapod-client.command_handlers COMMAND hexapod-client-test-command-handlers)
 
+    add_executable(hexapod-client-test-command-dispatch
+        tests/test_command_dispatch.cpp
+        command_dispatch.cpp
+        ${HEXAPOD_CLIENT_HOST_TEST_COMMON_SOURCES}
+    )
+    target_compile_definitions(hexapod-client-test-command-dispatch PRIVATE HEXAPOD_CLIENT_HOST_TEST=1)
+    target_include_directories(hexapod-client-test-command-dispatch PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/include
+    )
+    add_test(NAME hexapod-client.command_dispatch COMMAND hexapod-client-test-command-dispatch)
+
     return()
 endif()
 
