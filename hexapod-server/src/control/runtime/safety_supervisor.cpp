@@ -41,6 +41,7 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
     const RobotState& est,
     const MotionIntent&,
     const FreshnessInputs& freshness,
+    const StabilityAssessment& stability,
     int contact_count) const {
     const std::array<FaultRule, 6> rules{{
         FaultRule{
@@ -83,7 +84,8 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
         FaultRule{
             .is_triggered = [&](void) {
                 return std::abs(est.body_twist_state.twist_pos_rad.x) > config_.max_tilt_rad.value ||
-                       std::abs(est.body_twist_state.twist_pos_rad.y) > config_.max_tilt_rad.value;
+                       std::abs(est.body_twist_state.twist_pos_rad.y) > config_.max_tilt_rad.value ||
+                       (freshness.estimator_valid && !stability.com_inside_support_polygon);
             },
             .fault = FaultCode::TIP_OVER,
             .torque_cut = true,
@@ -107,15 +109,14 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
 SafetySupervisor::FaultDecision SafetySupervisor::evaluateCurrentFault(const RobotState& raw,
                                                                        const RobotState& est,
                                                                        const MotionIntent& intent,
-                                                                       const FreshnessInputs& freshness) const {
-    int contact_count = 0;
-    for (bool foot_contact : raw.foot_contacts) {
-        if (foot_contact) {
-            ++contact_count;
-        }
-    }
+                                                                       const FreshnessInputs& freshness,
+                                                                       StabilityAssessment& stability) const {
+    RobotState stability_state = est;
+    stability_state.foot_contacts = raw.foot_contacts;
+    stability = assessStability(stability_state);
 
-    return evaluateFaultRules(raw, est, intent, freshness, contact_count);
+    const int contact_count = stability.support_contact_count;
+    return evaluateFaultRules(raw, est, intent, freshness, stability, contact_count);
 }
 
 void SafetySupervisor::trip(FaultCode code, bool torque_cut, TimePointUs timestamp_us) {
@@ -153,7 +154,12 @@ SafetyState SafetySupervisor::evaluate(const RobotState& raw,
                                        const MotionIntent& intent,
                                        FreshnessInputs freshness) {
     const TimePointUs now = now_us();
-    const FaultDecision fault = evaluateCurrentFault(raw, est, intent, freshness);
+    StabilityAssessment stability{};
+    const FaultDecision fault = evaluateCurrentFault(raw, est, intent, freshness, stability);
+
+    state_.stable = stability.com_inside_support_polygon;
+    state_.support_contact_count = stability.support_contact_count;
+    state_.stability_margin_m = stability.stability_margin_m;
 
     if (fault.code != FaultCode::NONE) {
         trip(fault.code, fault.torque_cut, now);

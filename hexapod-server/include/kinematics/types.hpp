@@ -74,6 +74,9 @@ struct GaitState {
     std::array<double, kNumLegs> phase{};
     std::array<bool, kNumLegs> in_stance{};
     FrequencyHz stride_phase_rate_hz{FrequencyHz{1.0}};
+    bool stable{true};
+    int support_contact_count{0};
+    double stability_margin_m{0.0};
     TimePointUs timestamp_us{};
 };
 
@@ -97,6 +100,9 @@ enum class FaultLifecycle : uint8_t {
 struct SafetyState {
     bool inhibit_motion{true};
     bool torque_cut{false};
+    bool stable{true};
+    int support_contact_count{0};
+    double stability_margin_m{0.0};
     FaultCode active_fault{FaultCode::NONE};
     FaultLifecycle fault_lifecycle{FaultLifecycle::ACTIVE};
     uint32_t active_fault_trip_count{0};

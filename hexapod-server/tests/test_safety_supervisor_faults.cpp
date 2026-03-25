@@ -112,6 +112,25 @@ bool testBusTimeoutBeatsFreshnessFaults() {
            expect(state.torque_cut, "BUS_TIMEOUT should keep torque_cut enabled");
 }
 
+
+
+bool testUnstableSupportTriggersTipOver() {
+    SafetySupervisor supervisor;
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+
+    raw.foot_contacts = {true, false, true, false, false, false};
+
+    const SafetyState state = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+
+    return expect(!state.stable, "stability tracking should report unstable when support polygon is invalid") &&
+           expect(state.support_contact_count == 2, "safety state should track active support contacts") &&
+           expect(state.active_fault == FaultCode::TIP_OVER,
+                  "unstable support should trigger TIP_OVER safety fault") &&
+           expect(state.torque_cut, "TIP_OVER from instability should request torque cut");
+}
+
 bool testMotorFaultTorqueCut() {
     SafetySupervisor supervisor;
     RobotState raw = nominalRaw();
@@ -220,6 +239,7 @@ int main() {
         !testRulePrecedenceAcrossAllFaultTriggers() ||
         !testEstimatorBeatsCommandTimeoutWithoutTorqueCut() ||
         !testBusTimeoutBeatsFreshnessFaults() ||
+        !testUnstableSupportTriggersTipOver() ||
         !testMotorFaultTorqueCut() ||
         !testLatchedRemainsWhenIntentNotSafeIdle() ||
         !testLatchedRemainsWhenIntentStale() ||

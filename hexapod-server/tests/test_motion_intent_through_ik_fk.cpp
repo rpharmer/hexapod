@@ -35,6 +35,12 @@ bool finiteJointTargets(const JointTargets& targets) {
 bool gaitSchedulerRespondsToWalkIntent() {
     GaitScheduler gait;
     RobotState est{};
+    est.foot_contacts = {true, true, true, true, true, true};
+    for (auto& leg : est.leg_states) {
+        leg.joint_state[1].pos_rad = AngleRad{-0.6};
+        leg.joint_state[2].pos_rad = AngleRad{-0.8};
+    }
+
     MotionIntent walk{};
     walk.requested_mode = RobotMode::WALK;
     walk.gait = GaitType::TRIPOD;
@@ -57,9 +63,49 @@ bool gaitSchedulerRespondsToWalkIntent() {
            expect(timestamp_set, "gait update should stamp output time");
 }
 
+
+
+bool gaitSchedulerHoldsWhenUnstable() {
+    GaitScheduler gait;
+    RobotState est{};
+    est.timestamp_us = now_us();
+    est.foot_contacts = {true, false, true, false, false, false};
+    for (auto& leg : est.leg_states) {
+        leg.joint_state[1].pos_rad = AngleRad{-0.6};
+        leg.joint_state[2].pos_rad = AngleRad{-0.8};
+    }
+
+    MotionIntent walk{};
+    walk.requested_mode = RobotMode::WALK;
+    walk.gait = GaitType::TRIPOD;
+    walk.timestamp_us = now_us();
+
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    safety.torque_cut = false;
+
+    const GaitState output = gait.update(est, walk, safety);
+
+    bool all_stance = true;
+    for (bool leg_stance : output.in_stance) {
+        all_stance = all_stance && leg_stance;
+    }
+
+    return expect(!output.stable, "gait output should report instability with insufficient support contacts") &&
+           expect(output.support_contact_count == 2, "gait output should track support contact count") &&
+           expect(output.stride_phase_rate_hz.value == 0.0, "unstable support should stop gait phase progression") &&
+           expect(all_stance, "unstable support should keep all legs in stance");
+}
+
 bool bodyControllerUsesGaitState() {
     BodyController body;
     RobotState est{};
+    est.foot_contacts = {true, true, true, true, true, true};
+    for (auto& leg : est.leg_states) {
+        leg.joint_state[1].pos_rad = AngleRad{-0.6};
+        leg.joint_state[2].pos_rad = AngleRad{-0.8};
+    }
+
     MotionIntent walk{};
     walk.requested_mode = RobotMode::WALK;
 
@@ -144,6 +190,9 @@ bool controlPipelineProducesStableOutputs() {
 
 int main() {
     if (!gaitSchedulerRespondsToWalkIntent()) {
+        return EXIT_FAILURE;
+    }
+    if (!gaitSchedulerHoldsWhenUnstable()) {
         return EXIT_FAILURE;
     }
     if (!bodyControllerUsesGaitState()) {

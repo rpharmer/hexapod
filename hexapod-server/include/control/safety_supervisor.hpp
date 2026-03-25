@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <functional>
 
+#include "stability_tracker.hpp"
+
 class SafetySupervisor {
 public:
     struct FreshnessInputs {
@@ -58,11 +60,13 @@ private:
                                      const RobotState& est,
                                      const MotionIntent& intent,
                                      const FreshnessInputs& freshness,
+                                     const StabilityAssessment& stability,
                                      int contact_count) const;
     FaultDecision evaluateCurrentFault(const RobotState& raw,
                                        const RobotState& est,
                                        const MotionIntent& intent,
-                                       const FreshnessInputs& freshness) const;
+                                       const FreshnessInputs& freshness,
+                                       StabilityAssessment& stability) const;
 
     void trip(FaultCode code, bool torque_cut, TimePointUs timestamp_us);
     void clearActiveFault();

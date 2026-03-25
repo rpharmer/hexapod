@@ -85,35 +85,36 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/config/tuning_section_parser.cpp"
 
     # control
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/body_controller.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/calibration_probe.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/cli_options.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/control_config.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/control_pipeline.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/estimator.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/freshness_policy.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/gait_scheduler.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/geometry_profile_service.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/interactive_calibration_actions.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/interactive_input_mapper.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/loop_executor.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/loop_timing.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/mode_runners.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/motion_intent_utils.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/plane_estimation.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/probe_contact_logic.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/robot_control.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/robot_runtime.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime_diagnostics_reporter.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime_freshness_gate.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime_timing_metrics.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/safety_supervisor.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/servo_dynamics_fit.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/status_reporter.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/telemetry_json.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/telemetry_publisher.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/touch_residuals.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/visualiser_telemetry.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/body_controller.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/calibration/calibration_probe.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/input/cli_options.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/control_config.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/control_pipeline.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/estimator.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/freshness_policy.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/gait_scheduler.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/geometry_profile_service.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/calibration/interactive_calibration_actions.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/input/interactive_input_mapper.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime/loop_executor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime/loop_timing.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/input/mode_runners.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/input/motion_intent_utils.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/calibration/plane_estimation.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/calibration/probe_contact_logic.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/robot_control.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/stability_tracker.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime/robot_runtime.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime/runtime_diagnostics_reporter.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime/runtime_freshness_gate.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime/runtime_timing_metrics.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime/safety_supervisor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/calibration/servo_dynamics_fit.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime/status_reporter.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/telemetry/telemetry_json.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/telemetry/telemetry_publisher.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/calibration/touch_residuals.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/telemetry/visualiser_telemetry.cpp"
 
     # hardware
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/bridge_command_api.cpp"
@@ -236,6 +237,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_body_controller_velocity PRIVATE hexapod_server_core)
     add_test(NAME body_controller_velocity COMMAND test_body_controller_velocity)
 
+    add_executable(test_stability_tracker tests/test_stability_tracker.cpp)
+    target_link_libraries(test_stability_tracker PRIVATE hexapod_server_core)
+    add_test(NAME stability_tracker COMMAND test_stability_tracker)
 
     add_executable(test_toml_parser_sections tests/test_toml_parser_sections.cpp)
     target_link_libraries(test_toml_parser_sections PRIVATE hexapod_server_core)
