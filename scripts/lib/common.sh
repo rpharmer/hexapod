@@ -29,6 +29,10 @@ msg_error() {
   echo "ERROR: $*" >&2
 }
 
+msg_warn() {
+  echo "WARN: $*" >&2
+}
+
 msg_skip() {
   echo "SKIP: $*"
 }
