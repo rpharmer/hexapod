@@ -170,6 +170,24 @@ Baseline scenarios in `hexapod-server/scenarios/`:
 - `03_power_fault_triggers.toml`
 - `04_contact_loss_edge_cases.toml`
 
+Convenience script from repository root:
+
+```bash
+scripts/run_server_scenarios.sh
+```
+
+Launch server + visualiser together (sim mode, telemetry linked):
+
+```bash
+scripts/run_sim_stack.sh
+```
+
+Run server only (serial or sim) while streaming telemetry to a visualiser IP:
+
+```bash
+scripts/run_server_with_telemetry.sh --mode serial --telemetry-host <VISUALISER_IP> --telemetry-port 9870
+```
+
 Run one scenario:
 
 ```bash

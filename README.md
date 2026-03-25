@@ -117,6 +117,42 @@ You can also run an end-to-end visualiser smoke test from repository root:
 python scripts/visualiser_smoke.py
 ```
 
+To start the visualiser without manually creating/activating a venv each time:
+
+```bash
+scripts/run_visualiser.sh --install-deps -- --http-port 8080 --udp-port 9870
+```
+
+For simulator-mode scenario sweeps without copying configs by hand:
+
+```bash
+scripts/run_server_scenarios.sh
+```
+
+To launch the server and visualiser together (wired over UDP telemetry) in simulator mode:
+
+```bash
+scripts/run_sim_stack.sh --install-deps
+```
+
+Optional scenario-run example:
+
+```bash
+scripts/run_sim_stack.sh --scenario scenarios/01_nominal_stand_walk.toml
+```
+
+For a **serial-connected robot** (or when `hexapod-server` runs on a different machine), run server telemetry with an explicit visualiser IP:
+
+```bash
+# on the server machine
+scripts/run_server_with_telemetry.sh --mode serial --telemetry-host <VISUALISER_IP> --telemetry-port 9870
+```
+
+```bash
+# on the visualiser machine
+scripts/run_visualiser.sh --install-deps -- --http-port 8080 --udp-port 9870
+```
+
 This script launches the visualiser backend, injects a canonical UDP telemetry packet, and asserts the WebSocket state frame includes expected geometry, angles, and timestamp fields.
 
 ## Development workflow
