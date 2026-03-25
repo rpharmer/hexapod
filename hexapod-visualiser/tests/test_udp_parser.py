@@ -1,3 +1,4 @@
+import asyncio
 import importlib.util
 import pathlib
 import sys
@@ -47,7 +48,8 @@ class TelemetryParserTests(unittest.TestCase):
 
     def test_udp_protocol_schema_gate_ignores_missing_and_incompatible_versions(self):
         state = server.TelemetryState()
-        protocol = server.UdpTelemetryProtocol(state, lambda: None)
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
 
         before = state.to_payload()
         protocol.datagram_received(
@@ -93,9 +95,10 @@ class TelemetryParserTests(unittest.TestCase):
                 return SimpleNamespace(done=lambda: False)
 
         state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
         loop = FakeLoop()
-        scheduler = server.CoalescingUpdateScheduler(loop, lambda: None, publish_hz=25.0)
-        protocol = server.UdpTelemetryProtocol(state, scheduler.notify_update)
+        scheduler = server.CoalescingUpdateScheduler(loop, lambda: asyncio.sleep(0), publish_hz=25.0)
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, scheduler.notify_update)
 
         payload = b'{"schema_version": 1, "type":"joints", "angles_deg": {"LF": [1, 2, 3]}, "timestamp_ms": 1001}'
         for _ in range(1000):
@@ -104,7 +107,7 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(loop.create_task_calls, 1)
         self.assertEqual(scheduler.update_notifications, 1000)
         self.assertGreaterEqual(scheduler.coalesced_notifications, 999)
-        
+
     def test_frontend_contract_does_not_expect_optional_status_badges(self):
         static_dir = pathlib.Path(__file__).resolve().parents[1] / "static"
         app_js = (static_dir / "app.js").read_text(encoding="utf-8")
@@ -130,6 +133,37 @@ class TelemetryParserTests(unittest.TestCase):
             "status-badges",
         ):
             self.assertNotIn(badge_id, index_html)
+
+
+class SchedulerIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_coalescing_scheduler_limits_publish_rate_and_sends_latest_state(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        sent_payloads = []
+
+        async def publish():
+            sent_payloads.append(state.to_payload()["timestamp_ms"])
+
+        scheduler = server.CoalescingUpdateScheduler(
+            asyncio.get_running_loop(),
+            publish,
+            publish_hz=20.0,
+        )
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, scheduler.notify_update)
+
+        for timestamp_ms in range(500):
+            payload = (
+                "{"
+                f'"schema_version": 1, "type":"joints", "angles_deg": {{"LF": [1, 2, 3]}}, "timestamp_ms": {timestamp_ms}'
+                "}"
+            ).encode("utf-8")
+            protocol.datagram_received(payload, ("127.0.0.1", 9000))
+
+        await asyncio.sleep(0.22)
+
+        self.assertLess(len(sent_payloads), 8)
+        self.assertEqual(sent_payloads[-1], 499)
+        self.assertEqual(state.timestamp_ms, 499)
 
 
 if __name__ == "__main__":
