@@ -71,22 +71,22 @@ bool LegIK::solveOneLeg(const LegState& est,
   const double minReach = std::fabs(leg.femurLength.value - leg.tibiaLength.value);
   const double maxReach = leg.femurLength.value + leg.tibiaLength.value;
 
-  if (d < minReach || d > maxReach) {
-    return false;
-  }
+  // Clamp out-of-reach requests to the closest solvable configuration instead of
+  // rejecting the whole leg update and snapping to estimator fallback angles.
+  const double clampedD = clamp(d, minReach, maxReach);
+  const double reachScale = (d > 1e-9) ? (clampedD / d) : 1.0;
+  const double rhoSolved = rho * reachScale;
+  const double zSolved = z * reachScale;
 
   // --------------------------------------------------------
   // 2) Tibia angle by law of cosines
   // --------------------------------------------------------
   const double D =
-      (rho * rho + z * z - leg.femurLength.value * leg.femurLength.value -
+      (rhoSolved * rhoSolved + zSolved * zSolved - leg.femurLength.value * leg.femurLength.value -
        leg.tibiaLength.value * leg.tibiaLength.value) /
       (2.0 * leg.femurLength.value * leg.tibiaLength.value);
 
   const double Dclamped = clamp(D, -1.0, 1.0);
-  if (std::fabs(Dclamped - D) > 1e-9) {
-    return false;
-  }
 
   // Choose one branch consistently.
   // Switch the sign of sqrt(...) if your knee bends the wrong way.
@@ -97,7 +97,7 @@ bool LegIK::solveOneLeg(const LegState& est,
   // 3) Femur angle
   // --------------------------------------------------------
   const double q2 =
-      std::atan2(z, rho) -
+      std::atan2(zSolved, rhoSolved) -
       std::atan2(leg.tibiaLength.value * std::sin(q3),
                  leg.femurLength.value + leg.tibiaLength.value * std::cos(q3));
 
