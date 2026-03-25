@@ -6,7 +6,8 @@
 #include <cstdint>
 #include <vector>
 
-#include "hexapod-common.hpp"
+#include "protocol_ids.hpp"
+#include "framing.hpp"
 
 namespace protocol {
 

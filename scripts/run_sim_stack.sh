@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
+
+ROOT_DIR="$HEXAPOD_ROOT_DIR"
 VIS_SCRIPT="$ROOT_DIR/scripts/run_visualiser.sh"
 SERVER_SCRIPT="$ROOT_DIR/scripts/run_server_with_telemetry.sh"
 SERVER_DIR="$ROOT_DIR/hexapod-server"
@@ -88,7 +91,7 @@ while [[ $# -gt 0 ]]; do
       done
       ;;
     *)
-      echo "Unknown argument: $1" >&2
+      msg_error "Unknown argument: $1"
       usage >&2
       exit 1
       ;;
@@ -96,32 +99,28 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ! -x "$VIS_SCRIPT" ]]; then
-  echo "Visualiser launcher missing or not executable: $VIS_SCRIPT" >&2
+  msg_error "Visualiser launcher missing or not executable: $VIS_SCRIPT"
   exit 1
 fi
 
 if [[ ! -x "$SERVER_SCRIPT" ]]; then
-  echo "Server launcher missing or not executable: $SERVER_SCRIPT" >&2
+  msg_error "Server launcher missing or not executable: $SERVER_SCRIPT"
   exit 1
 fi
 
 case "$SERVER_MODE" in
   sim|serial) ;;
   *)
-    echo "Invalid --server-mode '$SERVER_MODE' (expected sim or serial)" >&2
+    msg_error "Invalid --server-mode '$SERVER_MODE' (expected sim or serial)"
     exit 1
     ;;
 esac
 
 if [[ -n "$SCENARIO" ]]; then
-  if [[ "$SCENARIO" = /* ]]; then
-    SCENARIO_PATH="$SCENARIO"
-  else
-    SCENARIO_PATH="$SERVER_DIR/$SCENARIO"
-  fi
+  SCENARIO_PATH="$(resolve_server_path "$SCENARIO")"
 
   if [[ ! -f "$SCENARIO_PATH" ]]; then
-    echo "Scenario file not found: $SCENARIO_PATH" >&2
+    msg_error "Scenario file not found: $SCENARIO_PATH"
     exit 1
   fi
   SCENARIO_ARG=(--scenario "${SCENARIO_PATH#$SERVER_DIR/}")

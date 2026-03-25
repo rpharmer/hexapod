@@ -2,7 +2,7 @@
 #define HEXAPOD_COMMS_CLIENT_H
 
 #include <stdint.h>
-#include "hexapod-common.hpp"
+#include "serial_comms.hpp"
 
 // Concrete class derived from SerialComms defining which communication functions
 class SerialCommsClient : public SerialComms

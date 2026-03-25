@@ -6,7 +6,7 @@
 
 #include "hardware_bridge.hpp"
 #include "transport_session.hpp"
-#include "hexapod-common.hpp"
+#include "protocol_ids.hpp"
 
 class CommandClient;
 

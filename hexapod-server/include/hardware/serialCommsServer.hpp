@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <memory>
 #include <CppLinuxSerial/SerialPort.hpp>
-#include "hexapod-common.hpp"
+#include "serial_comms.hpp"
 #include "framing.hpp"
 #include "logger.hpp"
 

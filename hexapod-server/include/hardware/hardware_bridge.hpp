@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "framing.hpp"
 #include "types.hpp"
 
 class BridgeCommandApi;

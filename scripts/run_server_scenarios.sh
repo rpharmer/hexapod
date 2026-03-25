@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
+
+ROOT_DIR="$HEXAPOD_ROOT_DIR"
 SERVER_DIR="$ROOT_DIR/hexapod-server"
 SERVER_BIN="$SERVER_DIR/build/hexapod-server"
 SIM_CONFIG="$SERVER_DIR/config.sim.txt"
@@ -42,7 +45,7 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     *)
-      echo "Unknown argument: $1" >&2
+      msg_error "Unknown argument: $1"
       usage >&2
       exit 1
       ;;
@@ -50,17 +53,17 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ! -f "$SIM_CONFIG" ]]; then
-  echo "Missing simulator config: $SIM_CONFIG" >&2
+  msg_error "Missing simulator config: $SIM_CONFIG"
   exit 1
 fi
 
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
-  (cd "$SERVER_DIR" && cmake --preset default)
-  (cd "$SERVER_DIR" && cmake --build --preset default -j)
+  run_in_dir "$SERVER_DIR" cmake --preset default
+  run_in_dir "$SERVER_DIR" cmake --build --preset default -j
 fi
 
 if [[ ! -x "$SERVER_BIN" ]]; then
-  echo "Server binary not found/executable: $SERVER_BIN" >&2
+  msg_error "Server binary not found/executable: $SERVER_BIN"
   exit 1
 fi
 
@@ -88,18 +91,14 @@ cp "$SIM_CONFIG" "$ACTIVE_CONFIG"
 run_one() {
   local scenario_path="$1"
   echo "=== Running ${scenario_path#$SERVER_DIR/} ==="
-  (cd "$SERVER_DIR" && "$SERVER_BIN" --scenario "${scenario_path#$SERVER_DIR/}")
+  run_in_dir "$SERVER_DIR" "$SERVER_BIN" --scenario "${scenario_path#$SERVER_DIR/}"
 }
 
 if [[ -n "$ONLY_SCENARIO" ]]; then
-  if [[ "$ONLY_SCENARIO" = /* ]]; then
-    target="$ONLY_SCENARIO"
-  else
-    target="$SERVER_DIR/$ONLY_SCENARIO"
-  fi
+  target="$(resolve_server_path "$ONLY_SCENARIO")"
 
   if [[ ! -f "$target" ]]; then
-    echo "Scenario not found: $target" >&2
+    msg_error "Scenario not found: $target"
     exit 1
   fi
 
@@ -110,7 +109,7 @@ else
   shopt -u nullglob
 
   if [[ ${#scenarios[@]} -eq 0 ]]; then
-    echo "No scenarios found matching $SCENARIO_GLOB" >&2
+    msg_error "No scenarios found matching $SCENARIO_GLOB"
     exit 1
   fi
 
