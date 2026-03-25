@@ -90,6 +90,13 @@ class TelemetryState:
     geometry: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_GEOMETRY))
     angles_deg: dict[str, list[float]] = field(default_factory=lambda: dict(DEFAULT_ANGLES))
     timestamp_ms: int | None = None
+    active_mode: str | None = None
+    active_fault: str | None = None
+    bus_ok: bool | None = None
+    estimator_valid: bool | None = None
+    loop_counter: int | None = None
+    voltage: float | None = None
+    current: float | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -97,6 +104,13 @@ class TelemetryState:
             "geometry": self.geometry,
             "angles_deg": self.angles_deg,
             "timestamp_ms": self.timestamp_ms,
+            "active_mode": self.active_mode,
+            "active_fault": self.active_fault,
+            "bus_ok": self.bus_ok,
+            "estimator_valid": self.estimator_valid,
+            "loop_counter": self.loop_counter,
+            "voltage": self.voltage,
+            "current": self.current,
         }
 
 
@@ -203,6 +217,34 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
 
         if isinstance(message.get("timestamp_ms"), int):
             self.state.timestamp_ms = int(message["timestamp_ms"])
+            changed = True
+
+        if isinstance(message.get("active_mode"), str):
+            self.state.active_mode = message["active_mode"]
+            changed = True
+
+        if isinstance(message.get("active_fault"), str):
+            self.state.active_fault = message["active_fault"]
+            changed = True
+
+        if isinstance(message.get("bus_ok"), bool):
+            self.state.bus_ok = message["bus_ok"]
+            changed = True
+
+        if isinstance(message.get("estimator_valid"), bool):
+            self.state.estimator_valid = message["estimator_valid"]
+            changed = True
+
+        if isinstance(message.get("loop_counter"), int):
+            self.state.loop_counter = int(message["loop_counter"])
+            changed = True
+
+        if _is_number(message.get("voltage")):
+            self.state.voltage = float(message["voltage"])
+            changed = True
+
+        if _is_number(message.get("current")):
+            self.state.current = float(message["current"])
             changed = True
 
         if changed:

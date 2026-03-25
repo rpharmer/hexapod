@@ -79,7 +79,7 @@ Consumer only applies per-leg updates where value is a numeric 3-element joint a
 
 ## Browser payload contract (`server.py -> static/app.js`)
 
-WebSocket payloads emitted by `TelemetryState.to_payload` currently include **only**:
+WebSocket payloads emitted by `TelemetryState.to_payload` include:
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
@@ -87,18 +87,18 @@ WebSocket payloads emitted by `TelemetryState.to_payload` currently include **on
 | `geometry` | object | yes | dictionary of geometry values in mm |
 | `angles_deg` | object | yes | leg-key map to 3-element numeric arrays |
 | `timestamp_ms` | integer or `null` | yes | `null` until a timestamp arrives |
+| `active_mode` | string or `null` | yes | mode from upstream telemetry when present |
+| `active_fault` | string or `null` | yes | active fault summary when present |
+| `bus_ok` | boolean or `null` | yes | bus health when present |
+| `estimator_valid` | boolean or `null` | yes | estimator health when present |
+| `loop_counter` | integer or `null` | yes | control loop counter when present |
+| `voltage` | number or `null` | yes | power bus voltage when present |
+| `current` | number or `null` | yes | power bus current when present |
 
-The following fields are **not part of the current payload contract** and must not be required by the UI:
-
-- `active_mode`
-- `active_fault`
-- `bus_ok`
-- `estimator_valid`
-- `loop_counter`
-- `voltage`
-- `current`
-
-If those fields are added by producer telemetry in the future, this document and both `server.py` + `app.js` must be updated together.
+Optionality semantics:
+- These fields are **always present in WebSocket payloads** but may be `null` until UDP telemetry includes a valid value.
+- The UI must treat every status/health field as optional data.
+- UDP parsing accepts these fields on any schema-v1 payload type (`geometry`, `joints`, or additive telemetry payloads) and merges them into the current state.
 
 ## Backward compatibility expectations
 
