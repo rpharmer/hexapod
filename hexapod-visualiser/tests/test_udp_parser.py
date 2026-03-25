@@ -101,7 +101,25 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.voltage, 12.3)
         self.assertEqual(state.current, 0.8)
 
-    def test_udp_protocol_schema_gate_rejects_missing_version_without_state_mutation(self):
+    def test_udp_protocol_accepts_legacy_packets_without_schema_version(self):
+        state = server.TelemetryState()
+        updates = []
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(
+            state, diagnostics, lambda: updates.append(state.to_payload())
+        )
+
+        protocol.datagram_received(
+            b'{"angles_deg": {"LF": [1, 2, 3]}, "geometry": {"coxa": 41.5}, "timestamp_ms": 1002}',
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertGreaterEqual(len(updates), 1)
+        self.assertEqual(state.geometry["coxa"], 41.5)
+        self.assertEqual(state.angles_deg["LF"], [1.0, 2.0, 3.0])
+        self.assertEqual(state.timestamp_ms, 1002)
+
+    def test_udp_protocol_schema_gate_still_rejects_missing_version_for_unknown_payload(self):
         state = server.TelemetryState()
         updates = []
         diagnostics = server.Diagnostics()
@@ -111,7 +129,7 @@ class TelemetryParserTests(unittest.TestCase):
 
         before = state.to_payload()
         protocol.datagram_received(
-            b'{"angles_deg": {"LF": [1, 2, 3]}, "geometry": {"coxa": 41.5}, "timestamp_ms": 1002}',
+            b'{"timestamp_ms": 1002, "note":"missing_schema"}',
             ("127.0.0.1", 9000),
         )
 

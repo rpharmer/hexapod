@@ -29,7 +29,7 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
             log_event("warning", "udp_rejected", reason="payload_not_object", addr=addr)
             return
 
-        schema_version = message.get("schema_version")
+        schema_version = self._resolve_schema_version(message)
         if schema_version != EXPECTED_SCHEMA_VERSION:
             self.diagnostics.udp_rejected += 1
             log_event(
@@ -79,6 +79,20 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
         if changed:
             self.diagnostics.mark_udp_update()
             self.on_update()
+
+    def _resolve_schema_version(self, message: dict[str, Any]) -> int | None:
+        schema_version = message.get("schema_version")
+        if isinstance(schema_version, int):
+            return schema_version
+
+        # Backward compatibility: older server builds did not include schema_version.
+        # Treat recognised legacy packet layouts as schema v1 to keep the visualiser usable.
+        packet_type = message.get("type")
+        looks_like_legacy_geometry = isinstance(message.get("geometry"), dict)
+        looks_like_legacy_joints = packet_type == "joints" and isinstance(message.get("angles_deg"), dict)
+        if looks_like_legacy_geometry or looks_like_legacy_joints:
+            return EXPECTED_SCHEMA_VERSION
+        return None
 
     def _apply_common_state_fields(self, message: dict[str, Any]) -> bool:
         changed = False
