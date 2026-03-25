@@ -15,6 +15,72 @@ namespace {
 
 constexpr uint8_t kRequestedCapabilities = CAPABILITY_ANGULAR_FEEDBACK;
 
+const char* bridge_error_to_text(BridgeError error) {
+    switch (error) {
+        case BridgeError::None:
+            return "none";
+        case BridgeError::NotReady:
+            return "not_ready";
+        case BridgeError::TransportFailure:
+            return "transport_failure";
+        case BridgeError::ProtocolFailure:
+            return "protocol_failure";
+        case BridgeError::Timeout:
+            return "timeout";
+        case BridgeError::Unsupported:
+            return "unsupported";
+    }
+    return "protocol_failure";
+}
+
+const char* bridge_phase_to_text(BridgeFailurePhase phase) {
+    switch (phase) {
+        case BridgeFailurePhase::None: return "none";
+        case BridgeFailurePhase::Readiness: return "readiness";
+        case BridgeFailurePhase::CapabilityNegotiation: return "capability_negotiation";
+        case BridgeFailurePhase::CommandTransport: return "command_transport";
+        case BridgeFailurePhase::CommandResponse: return "command_response";
+        case BridgeFailurePhase::CommandDecode: return "command_decode";
+        case BridgeFailurePhase::CommandExecution: return "command_execution";
+        case BridgeFailurePhase::Initialization: return "initialization";
+    }
+    return "none";
+}
+
+const char* bridge_domain_to_text(BridgeFailureDomain domain) {
+    switch (domain) {
+        case BridgeFailureDomain::None: return "none";
+        case BridgeFailureDomain::CapabilityProtocol: return "capability_protocol";
+        case BridgeFailureDomain::TransportLink: return "transport_link";
+        case BridgeFailureDomain::CommandProtocol: return "command_protocol";
+    }
+    return "none";
+}
+
+class BridgeResultMetadataBuilder {
+public:
+    explicit BridgeResultMetadataBuilder(uint8_t requested_capabilities)
+        : requested_capabilities_(requested_capabilities) {}
+
+    BridgeCommandResultMetadata build(BridgeError error,
+                                      BridgeFailurePhase phase,
+                                      BridgeFailureDomain domain,
+                                      bool retryable,
+                                      uint8_t command_code,
+                                      uint8_t negotiated_capabilities) const {
+        return BridgeCommandResultMetadata{error,
+                                           phase,
+                                           domain,
+                                           retryable,
+                                           command_code,
+                                           requested_capabilities_,
+                                           negotiated_capabilities};
+    }
+
+private:
+    uint8_t requested_capabilities_;
+};
+
 bool decodeScalarFloatPayload(const std::vector<uint8_t>& payload, protocol::ScalarFloat& decoded) {
     return protocol::decode_scalar_float(payload, decoded);
 }
@@ -51,47 +117,6 @@ SimpleHardwareBridge::SimpleHardwareBridge(std::unique_ptr<IPacketEndpoint> endp
 
 SimpleHardwareBridge::~SimpleHardwareBridge() = default;
 
-const char* SimpleHardwareBridge::bridge_error_to_text(BridgeError error) {
-    switch (error) {
-        case BridgeError::None:
-            return "none";
-        case BridgeError::NotReady:
-            return "not_ready";
-        case BridgeError::TransportFailure:
-            return "transport_failure";
-        case BridgeError::ProtocolFailure:
-            return "protocol_failure";
-        case BridgeError::Timeout:
-            return "timeout";
-        case BridgeError::Unsupported:
-            return "unsupported";
-    }
-    return "protocol_failure";
-}
-
-const char* SimpleHardwareBridge::bridge_phase_to_text(BridgeFailurePhase phase) {
-    switch (phase) {
-        case BridgeFailurePhase::None: return "none";
-        case BridgeFailurePhase::Readiness: return "readiness";
-        case BridgeFailurePhase::CapabilityNegotiation: return "capability_negotiation";
-        case BridgeFailurePhase::CommandTransport: return "command_transport";
-        case BridgeFailurePhase::CommandResponse: return "command_response";
-        case BridgeFailurePhase::CommandDecode: return "command_decode";
-        case BridgeFailurePhase::CommandExecution: return "command_execution";
-        case BridgeFailurePhase::Initialization: return "initialization";
-    }
-    return "none";
-}
-
-const char* SimpleHardwareBridge::bridge_domain_to_text(BridgeFailureDomain domain) {
-    switch (domain) {
-        case BridgeFailureDomain::None: return "none";
-        case BridgeFailureDomain::CapabilityProtocol: return "capability_protocol";
-        case BridgeFailureDomain::TransportLink: return "transport_link";
-        case BridgeFailureDomain::CommandProtocol: return "command_protocol";
-    }
-    return "none";
-}
 
 void SimpleHardwareBridge::set_last_result(const BridgeCommandResultMetadata& metadata) {
     last_result_ = metadata;
@@ -108,10 +133,10 @@ bool SimpleHardwareBridge::complete_command(const char* command_name,
             LOG_ERROR(logger,
                       "command '{}' failed: {} (error={}, phase={}, domain={}, retryable={}, cmd_code={}, req_caps={}, nego_caps={})",
                       command_name,
-                      reason != nullptr ? reason : bridge_error_to_text(error),
-                      bridge_error_to_text(error),
-                      bridge_phase_to_text(last_result_.phase),
-                      bridge_domain_to_text(last_result_.domain),
+                      reason != nullptr ? reason : ::bridge_error_to_text(error),
+                      ::bridge_error_to_text(error),
+                      ::bridge_phase_to_text(last_result_.phase),
+                      ::bridge_domain_to_text(last_result_.domain),
                       (last_result_.retryable ? "yes" : "no"),
                       static_cast<unsigned>(last_result_.command_code),
                       static_cast<unsigned>(last_result_.requested_capabilities),
@@ -126,13 +151,13 @@ bool SimpleHardwareBridge::complete_command(const char* command_name,
 BridgeError SimpleHardwareBridge::requireReady(const char* command_name, bool require_estimator) {
     (void)command_name;
     if (!initialized_ || !link_manager_ || (require_estimator && !feedback_estimator_)) {
-        set_last_result(BridgeCommandResultMetadata{BridgeError::NotReady,
-                                                    BridgeFailurePhase::Readiness,
-                                                    BridgeFailureDomain::CommandProtocol,
-                                                    false,
-                                                    0,
-                                                    kRequestedCapabilities,
-                                                    static_cast<uint8_t>(link_manager_ ? link_manager_->negotiated_capabilities() : 0)});
+        const BridgeResultMetadataBuilder metadata_builder{kRequestedCapabilities};
+        set_last_result(metadata_builder.build(BridgeError::NotReady,
+                                              BridgeFailurePhase::Readiness,
+                                              BridgeFailureDomain::CommandProtocol,
+                                              false,
+                                              0,
+                                              static_cast<uint8_t>(link_manager_ ? link_manager_->negotiated_capabilities() : 0)));
         return BridgeError::NotReady;
     }
     return BridgeError::None;
@@ -144,6 +169,7 @@ BridgeError SimpleHardwareBridge::withCommandApi(
     const std::function<BridgeError(BridgeCommandApi&)>& action,
     bool require_estimator) {
     (void)command_name;
+    const BridgeResultMetadataBuilder metadata_builder{kRequestedCapabilities};
     const BridgeError ready_error = requireReady(command_name, require_estimator);
     if (ready_error != BridgeError::None) {
         return ready_error;
@@ -151,43 +177,39 @@ BridgeError SimpleHardwareBridge::withCommandApi(
     const auto ensure = link_manager_->ensure_link_with_status(kRequestedCapabilities);
     if (!ensure.ok) {
         if (ensure.failure == BridgeLinkManager::EnsureLinkFailure::CapabilityNegotiation) {
-            set_last_result(BridgeCommandResultMetadata{BridgeError::ProtocolFailure,
-                                                        BridgeFailurePhase::CapabilityNegotiation,
-                                                        BridgeFailureDomain::CapabilityProtocol,
-                                                        true,
-                                                        as_u8(command_code),
-                                                        kRequestedCapabilities,
-                                                        ensure.negotiated_capabilities});
+            set_last_result(metadata_builder.build(BridgeError::ProtocolFailure,
+                                                  BridgeFailurePhase::CapabilityNegotiation,
+                                                  BridgeFailureDomain::CapabilityProtocol,
+                                                  true,
+                                                  as_u8(command_code),
+                                                  ensure.negotiated_capabilities));
             return BridgeError::ProtocolFailure;
         }
-        set_last_result(BridgeCommandResultMetadata{BridgeError::TransportFailure,
-                                                    BridgeFailurePhase::CommandTransport,
-                                                    BridgeFailureDomain::TransportLink,
-                                                    true,
-                                                    as_u8(command_code),
-                                                    kRequestedCapabilities,
-                                                    ensure.negotiated_capabilities});
+        set_last_result(metadata_builder.build(BridgeError::TransportFailure,
+                                              BridgeFailurePhase::CommandTransport,
+                                              BridgeFailureDomain::TransportLink,
+                                              true,
+                                              as_u8(command_code),
+                                              ensure.negotiated_capabilities));
         return BridgeError::TransportFailure;
     }
     if (!command_api_) {
-        set_last_result(BridgeCommandResultMetadata{BridgeError::NotReady,
-                                                    BridgeFailurePhase::Readiness,
-                                                    BridgeFailureDomain::CommandProtocol,
-                                                    false,
-                                                    as_u8(command_code),
-                                                    kRequestedCapabilities,
-                                                    link_manager_->negotiated_capabilities()});
+        set_last_result(metadata_builder.build(BridgeError::NotReady,
+                                              BridgeFailurePhase::Readiness,
+                                              BridgeFailureDomain::CommandProtocol,
+                                              false,
+                                              as_u8(command_code),
+                                              link_manager_->negotiated_capabilities()));
         return BridgeError::NotReady;
     }
     const BridgeError error = action(*command_api_);
     const auto command_meta = command_api_->last_result_metadata();
-    set_last_result(BridgeCommandResultMetadata{error,
-                                                command_meta.phase,
-                                                command_meta.domain,
-                                                command_meta.retryable,
-                                                command_meta.command_code,
-                                                kRequestedCapabilities,
-                                                link_manager_->negotiated_capabilities()});
+    set_last_result(metadata_builder.build(error,
+                                          command_meta.phase,
+                                          command_meta.domain,
+                                          command_meta.retryable,
+                                          command_meta.command_code,
+                                          link_manager_->negotiated_capabilities()));
     return error;
 }
 
@@ -236,26 +258,26 @@ bool SimpleHardwareBridge::init() {
     link_manager_ = std::make_unique<BridgeLinkManager>(
         device_, baud_rate_, timeout_ms_, std::move(packet_endpoint_));
 
+    const BridgeResultMetadataBuilder metadata_builder{kRequestedCapabilities};
+
     if (!link_manager_->init(kRequestedCapabilities)) {
-        set_last_result(BridgeCommandResultMetadata{BridgeError::TransportFailure,
-                                                    BridgeFailurePhase::Initialization,
-                                                    BridgeFailureDomain::TransportLink,
-                                                    true,
-                                                    as_u8(CommandCode::HELLO),
-                                                    kRequestedCapabilities,
-                                                    0});
+        set_last_result(metadata_builder.build(BridgeError::TransportFailure,
+                                              BridgeFailurePhase::Initialization,
+                                              BridgeFailureDomain::TransportLink,
+                                              true,
+                                              as_u8(CommandCode::HELLO),
+                                              0));
         return complete_command("init", BridgeError::TransportFailure, "link manager init failed");
     }
 
     CommandClient* command_client = link_manager_->command_client();
     if (command_client == nullptr) {
-        set_last_result(BridgeCommandResultMetadata{BridgeError::NotReady,
-                                                    BridgeFailurePhase::Initialization,
-                                                    BridgeFailureDomain::CommandProtocol,
-                                                    false,
-                                                    0,
-                                                    kRequestedCapabilities,
-                                                    link_manager_->negotiated_capabilities()});
+        set_last_result(metadata_builder.build(BridgeError::NotReady,
+                                              BridgeFailurePhase::Initialization,
+                                              BridgeFailureDomain::CommandProtocol,
+                                              false,
+                                              0,
+                                              link_manager_->negotiated_capabilities()));
         return complete_command("init", BridgeError::NotReady, "command client unavailable");
     }
 
