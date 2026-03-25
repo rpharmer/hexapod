@@ -70,8 +70,11 @@ class TelemetryParserTests(unittest.TestCase):
 
     def test_udp_protocol_schema_gate_rejects_missing_version_without_state_mutation(self):
         state = server.TelemetryState()
+        updates = []
         diagnostics = server.Diagnostics()
-        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
+        protocol = server.UdpTelemetryProtocol(
+            state, diagnostics, lambda: updates.append(state.to_payload())
+        )
 
         before = state.to_payload()
         protocol.datagram_received(
