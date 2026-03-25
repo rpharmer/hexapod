@@ -85,7 +85,7 @@ public:
         }
 
         std::ostringstream payload;
-        payload << "{\"geometry\":{"
+        payload << "{\"schema_version\":1,\"geometry\":{"
                 << "\"coxa\":" << geometry.legGeometry[0].coxaLength.value * 1000.0 << ","
                 << "\"femur\":" << geometry.legGeometry[0].femurLength.value * 1000.0 << ","
                 << "\"tibia\":" << geometry.legGeometry[0].tibiaLength.value * 1000.0 << ","
@@ -101,7 +101,7 @@ public:
         }
 
         std::ostringstream payload;
-        payload << "{\"type\":\"joints\","
+        payload << "{\"type\":\"joints\",\"schema_version\":1,"
                 << "\"timestamp_ms\":" << (telemetry.timestamp_us.value / 1000ULL) << ","
                 << "\"loop_counter\":" << telemetry.status.loop_counter << ","
                 << "\"mode\":" << static_cast<int>(telemetry.status.active_mode) << ","
