@@ -6,6 +6,33 @@ It receives geometry + joint angles over **UDP** (easy for `hexapod-server` to p
 
 ## Quick start
 
+From repository root (recommended):
+
+```bash
+scripts/run_visualiser.sh --install-deps -- --http-port 8080 --udp-port 9870
+```
+
+Add `--simulate` to also stream sample telemetry automatically:
+
+```bash
+scripts/run_visualiser.sh --simulate -- --http-port 8080 --udp-port 9870
+```
+
+To run visualiser plus `hexapod-server` together in simulator mode (telemetry linked end-to-end), use:
+
+```bash
+scripts/run_sim_stack.sh --install-deps
+```
+
+If `hexapod-server` is running on another machine, point that machine at this visualiser host:
+
+```bash
+# server machine
+scripts/run_server_with_telemetry.sh --mode serial --telemetry-host <THIS_MACHINE_IP> --telemetry-port 9870
+```
+
+Manual setup (equivalent):
+
 ```bash
 cd hexapod-visualiser
 python3 -m venv .venv
