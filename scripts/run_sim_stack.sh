@@ -14,6 +14,7 @@ UDP_PORT=9870
 VIS_HOST="127.0.0.1"
 INSTALL_DEPS=0
 SKIP_BUILD=0
+KILL_CONFLICTING=1
 SCENARIO=""
 SERVER_MODE="sim"
 SERVER_CONFIG=""
@@ -33,6 +34,7 @@ Options:
   --server-mode <mode>     Server mode: sim or serial (default: sim).
   --server-config <path>   Server config override.
   --install-deps           Force visualiser Python dependency install.
+  --no-kill-conflicting    Do not auto-kill processes already bound to selected HTTP/UDP ports.
   --skip-build             Skip server configure/build.
   --scenario <path>        Optional scenario to run (relative to hexapod-server/ or absolute).
   -h, --help               Show this help text.
@@ -61,6 +63,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --install-deps)
       INSTALL_DEPS=1
+      shift
+      ;;
+    --no-kill-conflicting)
+      KILL_CONFLICTING=0
       shift
       ;;
     --server-mode)
@@ -116,6 +122,41 @@ case "$SERVER_MODE" in
     ;;
 esac
 
+kill_port_owners() {
+  local port="$1"
+  local proto="$2"
+  local -a pids=()
+
+  if command -v lsof >/dev/null 2>&1; then
+    while IFS= read -r pid; do
+      [[ -n "$pid" ]] && pids+=("$pid")
+    done < <(lsof -t -i"${proto}:${port}" 2>/dev/null | sort -u)
+  fi
+
+  if [[ ${#pids[@]} -eq 0 ]] && command -v ss >/dev/null 2>&1; then
+    local ss_flag="-lunp"
+    if [[ "$proto" == "tcp" ]]; then
+      ss_flag="-ltnp"
+    fi
+    while IFS= read -r pid; do
+      [[ -n "$pid" ]] && pids+=("$pid")
+    done < <(
+      ss "$ss_flag" "sport = :${port}" 2>/dev/null \
+        | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' \
+        | sort -u
+    )
+  fi
+
+  if [[ ${#pids[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  msg_warn "Found ${#pids[@]} process(es) bound to ${proto^^} port ${port}; terminating: ${pids[*]}"
+  kill "${pids[@]}" >/dev/null 2>&1 || true
+  sleep 0.3
+  kill -0 "${pids[@]}" >/dev/null 2>&1 && kill -9 "${pids[@]}" >/dev/null 2>&1 || true
+}
+
 if [[ -n "$SCENARIO" ]]; then
   SCENARIO_PATH="$(resolve_server_path "$SCENARIO")"
 
@@ -128,6 +169,11 @@ else
   SCENARIO_ARG=()
 fi
 
+if [[ "$KILL_CONFLICTING" -eq 1 ]]; then
+  kill_port_owners "$HTTP_PORT" tcp
+  kill_port_owners "$UDP_PORT" udp
+fi
+
 VIS_CMD=("$VIS_SCRIPT")
 if [[ "$INSTALL_DEPS" -eq 1 ]]; then
   VIS_CMD+=(--install-deps)
@@ -136,6 +182,12 @@ VIS_CMD+=(-- --http-port "$HTTP_PORT" --udp-port "$UDP_PORT")
 
 "${VIS_CMD[@]}" &
 VIS_PID="$!"
+
+sleep 0.5
+if ! kill -0 "$VIS_PID" >/dev/null 2>&1; then
+  msg_error "Visualiser exited during startup. Check logs above (likely port conflict or dependency/runtime failure)."
+  exit 1
+fi
 
 cleanup() {
   kill "$VIS_PID" >/dev/null 2>&1 || true
