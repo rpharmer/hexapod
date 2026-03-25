@@ -3,13 +3,17 @@ import importlib.util
 import pathlib
 import sys
 import unittest
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 
 SERVER_PATH = pathlib.Path(__file__).resolve().parents[1] / "server.py"
 SPEC = importlib.util.spec_from_file_location("visualiser_server", SERVER_PATH)
 server = importlib.util.module_from_spec(SPEC)
 assert SPEC and SPEC.loader
+fake_aiohttp = ModuleType("aiohttp")
+fake_aiohttp.WSMsgType = SimpleNamespace(TEXT="TEXT", CLOSE="CLOSE", ERROR="ERROR")
+fake_aiohttp.web = SimpleNamespace()
+sys.modules.setdefault("aiohttp", fake_aiohttp)
 sys.modules[SPEC.name] = server
 SPEC.loader.exec_module(server)
 
