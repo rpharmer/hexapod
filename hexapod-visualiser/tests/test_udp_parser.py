@@ -1,3 +1,4 @@
+import asyncio
 import importlib.util
 import pathlib
 import sys
@@ -19,8 +20,30 @@ class TelemetryParserTests(unittest.TestCase):
         payload = state.to_payload()
 
         self.assertEqual(payload["type"], "state")
-        self.assertEqual(set(payload.keys()), {"type", "geometry", "angles_deg", "timestamp_ms"})
+        self.assertEqual(
+            set(payload.keys()),
+            {
+                "type",
+                "geometry",
+                "angles_deg",
+                "timestamp_ms",
+                "active_mode",
+                "active_fault",
+                "bus_ok",
+                "estimator_valid",
+                "loop_counter",
+                "voltage",
+                "current",
+            },
+        )
         self.assertEqual(list(payload["angles_deg"].keys()), ["LF", "LM", "LR", "RF", "RM", "RR"])
+        self.assertIsNone(payload["active_mode"])
+        self.assertIsNone(payload["active_fault"])
+        self.assertIsNone(payload["bus_ok"])
+        self.assertIsNone(payload["estimator_valid"])
+        self.assertIsNone(payload["loop_counter"])
+        self.assertIsNone(payload["voltage"])
+        self.assertIsNone(payload["current"])
 
     def test_udp_protocol_merges_partial_updates_with_schema_gate(self):
         state = server.TelemetryState()
@@ -45,7 +68,7 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.timestamp_ms, 1001)
         self.assertEqual(state.angles_deg["RM"], [0.0, 10.0, -25.0])
 
-    def test_udp_protocol_schema_gate_ignores_missing_and_incompatible_versions(self):
+    def test_udp_protocol_schema_gate_rejects_missing_version_without_state_mutation(self):
         state = server.TelemetryState()
         diagnostics = server.Diagnostics()
         protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
@@ -55,12 +78,26 @@ class TelemetryParserTests(unittest.TestCase):
             b'{"angles_deg": {"LF": [1, 2, 3]}, "geometry": {"coxa": 41.5}, "timestamp_ms": 1002}',
             ("127.0.0.1", 9000),
         )
+
+        self.assertEqual(state.to_payload(), before)
+        self.assertEqual(updates, [])
+
+    def test_udp_protocol_schema_gate_rejects_wrong_version_without_state_mutation(self):
+        state = server.TelemetryState()
+        updates = []
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(
+            state, diagnostics, lambda: updates.append(state.to_payload())
+        )
+
+        before = state.to_payload()
         protocol.datagram_received(
             b'{"schema_version": 2, "angles_deg": {"LF": [3, 4, 5]}, "geometry": {"coxa": 47}, "timestamp_ms": 1003}',
             ("127.0.0.1", 9000),
         )
 
         self.assertEqual(state.to_payload(), before)
+        self.assertEqual(updates, [])
 
     def test_udp_protocol_schema_gate_keeps_parser_safe_for_malformed_json(self):
         state = server.TelemetryState()
@@ -94,7 +131,9 @@ class TelemetryParserTests(unittest.TestCase):
                 return SimpleNamespace(done=lambda: False)
 
         state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
         loop = FakeLoop()
+        scheduler = server.CoalescingUpdateScheduler(loop, lambda: asyncio.sleep(0), publish_hz=25.0)
         scheduler = server.CoalescingUpdateScheduler(loop, lambda: None, publish_hz=25.0)
         diagnostics = server.Diagnostics()
         protocol = server.UdpTelemetryProtocol(state, diagnostics, scheduler.notify_update)
@@ -107,6 +146,32 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(scheduler.update_notifications, 1000)
         self.assertGreaterEqual(scheduler.coalesced_notifications, 999)
 
+    def test_udp_parser_applies_status_and_health_fields(self):
+        state = server.TelemetryState()
+        updates = []
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(
+            state, diagnostics, lambda: updates.append(state.to_payload())
+        )
+
+        protocol.datagram_received(
+            (
+                b'{"schema_version": 1, "type":"joints", "timestamp_ms": 1001, '
+                b'"active_mode":"walk", "active_fault":"none", "bus_ok":true, '
+                b'"estimator_valid":false, "loop_counter":123, "voltage":11.4, "current":1.8}'
+            ),
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertGreaterEqual(len(updates), 1)
+        self.assertEqual(state.active_mode, "walk")
+        self.assertEqual(state.active_fault, "none")
+        self.assertTrue(state.bus_ok)
+        self.assertFalse(state.estimator_valid)
+        self.assertEqual(state.loop_counter, 123)
+        self.assertEqual(state.voltage, 11.4)
+        self.assertEqual(state.current, 1.8)
+        
     def test_udp_protocol_ignores_unknown_geometry_keys_in_geometry_object(self):
         state = server.TelemetryState()
         diagnostics = server.Diagnostics()
@@ -162,6 +227,37 @@ class TelemetryParserTests(unittest.TestCase):
             "status-badges",
         ):
             self.assertNotIn(badge_id, index_html)
+
+
+class SchedulerIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_coalescing_scheduler_limits_publish_rate_and_sends_latest_state(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        sent_payloads = []
+
+        async def publish():
+            sent_payloads.append(state.to_payload()["timestamp_ms"])
+
+        scheduler = server.CoalescingUpdateScheduler(
+            asyncio.get_running_loop(),
+            publish,
+            publish_hz=20.0,
+        )
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, scheduler.notify_update)
+
+        for timestamp_ms in range(500):
+            payload = (
+                "{"
+                f'"schema_version": 1, "type":"joints", "angles_deg": {{"LF": [1, 2, 3]}}, "timestamp_ms": {timestamp_ms}'
+                "}"
+            ).encode("utf-8")
+            protocol.datagram_received(payload, ("127.0.0.1", 9000))
+
+        await asyncio.sleep(0.22)
+
+        self.assertLess(len(sent_payloads), 8)
+        self.assertEqual(sent_payloads[-1], 499)
+        self.assertEqual(state.timestamp_ms, 499)
 
 
 if __name__ == "__main__":
