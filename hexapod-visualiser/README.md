@@ -16,6 +16,8 @@ python server.py --http-port 8080 --udp-port 9870
 
 Open: `http://localhost:8080`
 
+Diagnostics endpoint (default): `http://localhost:8080/healthz`
+
 In another terminal, run the sample data stream:
 
 ```bash
@@ -56,7 +58,7 @@ By default, a periodic structured `event=periodic_stats` line is emitted every 3
 The server exposes a lightweight JSON diagnostics endpoint.
 
 - Default path: `/healthz`
-- Change path: `--metrics-path /metrics`
+- Alternate path example: `--metrics-path /metrics`
 
 Example response shape:
 

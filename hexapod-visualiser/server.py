@@ -235,8 +235,9 @@ async def make_app(state: TelemetryState, diagnostics: Diagnostics, metrics_path
         for client in clients:
             try:
                 await client.send_str(payload)
-            except ConnectionResetError:
+            except Exception as exc:  # noqa: BLE001
                 diagnostics.ws_send_failures += 1
+                log_event("warning", "ws_send_failed", error=type(exc).__name__)
                 stale_clients.append(client)
         for client in stale_clients:
             clients.discard(client)
@@ -317,8 +318,13 @@ async def main() -> None:
         publish_hz=25.0,
     )
 
-    await start_udp_listener(asyncio.get_running_loop(), state, args.udp_port, update_scheduler.notify_update)
-    await start_udp_listener(asyncio.get_running_loop(), state, diagnostics, args.udp_port, on_update)
+    await start_udp_listener(
+        asyncio.get_running_loop(),
+        state,
+        diagnostics,
+        args.udp_port,
+        update_scheduler.notify_update,
+    )
 
     runner = web.AppRunner(app)
     await runner.setup()
