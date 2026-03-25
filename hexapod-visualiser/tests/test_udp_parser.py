@@ -45,21 +45,39 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.timestamp_ms, 1001)
         self.assertEqual(state.angles_deg["RM"], [0.0, 10.0, -25.0])
 
-    def test_udp_protocol_schema_gate_ignores_missing_and_incompatible_versions(self):
+    def test_udp_protocol_schema_gate_rejects_missing_version_without_state_mutation(self):
         state = server.TelemetryState()
-        protocol = server.UdpTelemetryProtocol(state, lambda: None)
+        updates = []
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(
+            state, diagnostics, lambda: updates.append(state.to_payload())
+        )
 
         before = state.to_payload()
         protocol.datagram_received(
             b'{"angles_deg": {"LF": [1, 2, 3]}, "geometry": {"coxa": 41.5}, "timestamp_ms": 1002}',
             ("127.0.0.1", 9000),
         )
+
+        self.assertEqual(state.to_payload(), before)
+        self.assertEqual(updates, [])
+
+    def test_udp_protocol_schema_gate_rejects_wrong_version_without_state_mutation(self):
+        state = server.TelemetryState()
+        updates = []
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(
+            state, diagnostics, lambda: updates.append(state.to_payload())
+        )
+
+        before = state.to_payload()
         protocol.datagram_received(
             b'{"schema_version": 2, "angles_deg": {"LF": [3, 4, 5]}, "geometry": {"coxa": 47}, "timestamp_ms": 1003}',
             ("127.0.0.1", 9000),
         )
 
         self.assertEqual(state.to_payload(), before)
+        self.assertEqual(updates, [])
 
     def test_udp_protocol_schema_gate_keeps_parser_safe_for_malformed_json(self):
         state = server.TelemetryState()
