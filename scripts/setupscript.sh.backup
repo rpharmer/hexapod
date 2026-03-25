@@ -3,7 +3,9 @@ set -euo pipefail
 
 # Bootstrap third-party host dependencies used by hexapod-server.
 cd ..
-git clone https://github.com/ToruNiina/toml11
+if [ ! -d toml11/.git ]; then
+  git clone https://github.com/ToruNiina/toml11
+fi
 cd toml11
 git submodule update --init --recursive
 cmake -B ./build/
@@ -11,7 +13,9 @@ cmake --build ./build/
 cmake --install ./build/
 
 cd ..
-git clone https://github.com/gbmhunter/CppLinuxSerial
+if [ ! -d CppLinuxSerial/.git ]; then
+  git clone https://github.com/gbmhunter/CppLinuxSerial
+fi
 cd CppLinuxSerial
 cmake -S . -B build -DBUILD_TESTS=FALSE
 cmake --build build -j"$(nproc)"
@@ -25,12 +29,16 @@ sudo apt install -y cmake gcc-arm-none-eabi build-essential python3-venv python3
 cd /workspace/
 mkdir -p pico
 cd pico
-git clone https://github.com/raspberrypi/pico-sdk
+if [ ! -d pico-sdk/.git ]; then
+  git clone https://github.com/raspberrypi/pico-sdk
+fi
 cd pico-sdk
 git submodule update --init
 
 cd ..
-git clone https://github.com/pimoroni/pimoroni-pico.git
+if [ ! -d pimoroni-pico/.git ]; then
+  git clone https://github.com/pimoroni/pimoroni-pico.git
+fi
 cd pimoroni-pico
 git submodule update --init
 

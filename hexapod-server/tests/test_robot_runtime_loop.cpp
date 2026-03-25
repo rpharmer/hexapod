@@ -63,6 +63,12 @@ public:
         ++control_step_count;
     }
 
+    telemetry::TelemetryPublishCounters counters() const override {
+        telemetry::TelemetryPublishCounters value{};
+        value.packets_sent = static_cast<uint64_t>(geometry_count + control_step_count);
+        return value;
+    }
+
     size_t geometry_count{0};
     size_t control_step_count{0};
 };

@@ -2,6 +2,7 @@
 #define FIRMWARE_CONTEXT_HPP
 
 #include "hexapod-client.hpp"
+#include "framing.hpp"
 
 #include <array>
 #include <cstddef>
