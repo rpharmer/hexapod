@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
+
+ROOT_DIR="$HEXAPOD_ROOT_DIR"
 VIS_DIR="$ROOT_DIR/hexapod-visualiser"
 VENV_DIR="$VIS_DIR/.venv"
 INSTALL_DEPS=0
@@ -61,7 +64,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ! -d "$VENV_DIR" ]]; then
-  python3 -m venv "$VENV_DIR"
+  run python3 -m venv "$VENV_DIR"
   INSTALL_DEPS=1
 fi
 
@@ -69,8 +72,8 @@ fi
 source "$VENV_DIR/bin/activate"
 
 if [[ "$INSTALL_DEPS" -eq 1 ]]; then
-  python -m pip install --upgrade pip
-  python -m pip install -r "$VIS_DIR/requirements.txt"
+  run python -m pip install --upgrade pip
+  run python -m pip install -r "$VIS_DIR/requirements.txt"
 fi
 
 SIM_PID=""
@@ -90,12 +93,8 @@ if [[ "$SIMULATE" -eq 1 ]]; then
     fi
   done
 
-  (
-    cd "$VIS_DIR"
-    python simulate_telemetry.py --host 127.0.0.1 --port "$udp_port" --hz "$SIM_HZ"
-  ) &
+  run_in_dir "$VIS_DIR" python simulate_telemetry.py --host 127.0.0.1 --port "$udp_port" --hz "$SIM_HZ" &
   SIM_PID="$!"
 fi
 
-cd "$VIS_DIR"
-python server.py "${SERVER_ARGS[@]}"
+run_in_dir "$VIS_DIR" python server.py "${SERVER_ARGS[@]}"

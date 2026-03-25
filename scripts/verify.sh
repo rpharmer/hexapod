@@ -1,27 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
-section() {
-  local title="$1"
-  printf '\n========== %s =========='"\n" "$title"
-}
-
-run() {
-  printf '+ %s\n' "$*"
-  "$@"
-}
-
-run_in_dir() {
-  local dir="$1"
-  shift
-  printf '+ (cd %s && %s)\n' "$dir" "$*"
-  (
-    cd "$dir"
-    "$@"
-  )
-}
+ROOT_DIR="$HEXAPOD_ROOT_DIR"
 
 run_server_tests() {
   section "Server tests (hexapod-server / preset: tests)"
@@ -47,7 +30,7 @@ run_server_smoke_scenario() {
   local server_bin_tests="$server_dir/build-tests/hexapod-server"
 
   if [[ ! -f "$scenario" || ! -f "$sim_config" ]]; then
-    echo "Skipping scenario smoke: required files not found."
+    msg_skip "Scenario smoke: required files not found."
     return 0
   fi
 
