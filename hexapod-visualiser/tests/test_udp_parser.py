@@ -6,7 +6,10 @@ import unittest
 from types import ModuleType, SimpleNamespace
 
 
-SERVER_PATH = pathlib.Path(__file__).resolve().parents[1] / "server.py"
+VISUALISER_DIR = pathlib.Path(__file__).resolve().parents[1]
+SERVER_PATH = VISUALISER_DIR / "server.py"
+if str(VISUALISER_DIR) not in sys.path:
+    sys.path.insert(0, str(VISUALISER_DIR))
 SPEC = importlib.util.spec_from_file_location("visualiser_server", SERVER_PATH)
 server = importlib.util.module_from_spec(SPEC)
 assert SPEC and SPEC.loader
@@ -71,6 +74,32 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.angles_deg["LF"], [1.0, 2.0, 3.0])
         self.assertEqual(state.timestamp_ms, 1001)
         self.assertEqual(state.angles_deg["RM"], [0.0, 10.0, -25.0])
+
+    def test_udp_protocol_applies_common_fields_for_joints_and_generic_state_messages(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
+
+        protocol.datagram_received(
+            b'{"schema_version": 1, "type":"joints", "timestamp_ms": 1500, "active_mode":"walk"}',
+            ("127.0.0.1", 9000),
+        )
+        self.assertEqual(state.timestamp_ms, 1500)
+        self.assertEqual(state.active_mode, "walk")
+
+        protocol.datagram_received(
+            (
+                b'{"schema_version": 1, "type":"state", "timestamp_ms": 1510, '
+                b'"active_mode":"idle", "loop_counter":9, "voltage":12.3, "current":0.8}'
+            ),
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertEqual(state.timestamp_ms, 1510)
+        self.assertEqual(state.active_mode, "idle")
+        self.assertEqual(state.loop_counter, 9)
+        self.assertEqual(state.voltage, 12.3)
+        self.assertEqual(state.current, 0.8)
 
     def test_udp_protocol_schema_gate_rejects_missing_version_without_state_mutation(self):
         state = server.TelemetryState()
