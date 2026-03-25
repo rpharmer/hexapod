@@ -29,12 +29,19 @@ struct ControlStepTelemetry {
     TimePointUs timestamp_us{};
 };
 
+struct TelemetryPublishCounters {
+    uint64_t packets_sent{0};
+    uint64_t socket_send_failures{0};
+    TimePointUs last_successful_send_timestamp{};
+};
+
 class ITelemetryPublisher {
 public:
     virtual ~ITelemetryPublisher() = default;
 
     virtual void publishGeometry(const HexapodGeometry& geometry) = 0;
     virtual void publishControlStep(const ControlStepTelemetry& telemetry) = 0;
+    virtual TelemetryPublishCounters counters() const = 0;
 };
 
 std::unique_ptr<ITelemetryPublisher> makeNoopTelemetryPublisher();

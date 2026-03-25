@@ -19,6 +19,9 @@ class NoopTelemetryPublisher final : public ITelemetryPublisher {
 public:
     void publishGeometry(const HexapodGeometry&) override {}
     void publishControlStep(const ControlStepTelemetry&) override {}
+    TelemetryPublishCounters counters() const override {
+        return {};
+    }
 };
 
 std::string legNameFromIndex(int leg_index) {
@@ -134,19 +137,35 @@ private:
                                       sizeof(destination_));
         if (sent >= 0) {
             send_error_count_ = 0;
+            ++packets_sent_count_;
+            last_successful_send_timestamp_us_ = now_us().value;
             return;
         }
 
         ++send_error_count_;
+        ++socket_send_failures_;
         if (logger_ && send_error_count_ == 1) {
             LOG_WARN(logger_, "telemetry UDP send failed; dropping frame (errno=", errno, ")");
         }
     }
 
+public:
+    TelemetryPublishCounters counters() const override {
+        return TelemetryPublishCounters{
+            packets_sent_count_,
+            socket_send_failures_,
+            TimePointUs{last_successful_send_timestamp_us_},
+        };
+    }
+
+private:
     int socket_fd_{-1};
     sockaddr_in destination_{};
     std::shared_ptr<logging::AsyncLogger> logger_;
     uint64_t send_error_count_{0};
+    uint64_t packets_sent_count_{0};
+    uint64_t socket_send_failures_{0};
+    uint64_t last_successful_send_timestamp_us_{0};
 };
 
 } // namespace

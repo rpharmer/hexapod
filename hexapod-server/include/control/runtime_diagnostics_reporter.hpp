@@ -3,6 +3,7 @@
 #include "freshness_policy.hpp"
 #include "hardware_bridge.hpp"
 #include "logger.hpp"
+#include "telemetry_publisher.hpp"
 #include "types.hpp"
 
 #include <cstdint>
@@ -22,8 +23,7 @@ public:
     RuntimeDiagnosticsReporter(std::shared_ptr<logging::AsyncLogger> logger,
                                const FreshnessPolicy& freshness_policy);
 
-    void recordVisualizerTelemetry(const std::optional<BridgeCommandResultMetadata>& bridge_result,
-                                   uint64_t control_loops,
+    void recordVisualizerTelemetry(const telemetry::TelemetryPublishCounters& telemetry_counters,
                                    TimePointUs now);
 
     void report(const ControlStatus& status,
@@ -41,7 +41,7 @@ private:
     std::shared_ptr<logging::AsyncLogger> logger_;
     const FreshnessPolicy& freshness_policy_;
     VisualizerTelemetryDiagnostics telemetry_diag_{};
-    uint64_t last_telemetry_loop_{0};
+    telemetry::TelemetryPublishCounters last_telemetry_counters_{};
     uint64_t consecutive_failures_{0};
     uint64_t warning_failures_observed_{0};
 };

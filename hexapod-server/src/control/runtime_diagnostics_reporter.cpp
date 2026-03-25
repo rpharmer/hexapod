@@ -8,42 +8,30 @@ RuntimeDiagnosticsReporter::RuntimeDiagnosticsReporter(std::shared_ptr<logging::
       freshness_policy_(freshness_policy) {}
 
 void RuntimeDiagnosticsReporter::recordVisualizerTelemetry(
-    const std::optional<BridgeCommandResultMetadata>& bridge_result,
-    uint64_t control_loops,
+    const telemetry::TelemetryPublishCounters& telemetry_counters,
     TimePointUs now) {
-    if (control_loops == last_telemetry_loop_) {
-        ++telemetry_diag_.dropped_rate_limited_frames;
-        return;
-    }
-    last_telemetry_loop_ = control_loops;
+    const uint64_t sent_delta = telemetry_counters.packets_sent >= last_telemetry_counters_.packets_sent
+                                    ? telemetry_counters.packets_sent - last_telemetry_counters_.packets_sent
+                                    : telemetry_counters.packets_sent;
+    const uint64_t failures_delta =
+        telemetry_counters.socket_send_failures >= last_telemetry_counters_.socket_send_failures
+            ? telemetry_counters.socket_send_failures - last_telemetry_counters_.socket_send_failures
+            : telemetry_counters.socket_send_failures;
+    last_telemetry_counters_ = telemetry_counters;
 
-    if (!bridge_result.has_value()) {
-        ++telemetry_diag_.socket_send_failures;
-        ++consecutive_failures_;
-        maybeLogVisualizerFailureWarning(now);
-        return;
-    }
+    telemetry_diag_.packets_sent = telemetry_counters.packets_sent;
+    telemetry_diag_.socket_send_failures = telemetry_counters.socket_send_failures;
+    telemetry_diag_.last_successful_send_timestamp = telemetry_counters.last_successful_send_timestamp;
 
-    const BridgeCommandResultMetadata& metadata = *bridge_result;
-    if (metadata.error == BridgeError::None) {
-        ++telemetry_diag_.packets_sent;
-        telemetry_diag_.last_successful_send_timestamp = now;
+    if (sent_delta > 0) {
         maybeLogVisualizerRecovery();
         consecutive_failures_ = 0;
-        return;
     }
 
-    if (metadata.error == BridgeError::TransportFailure || metadata.error == BridgeError::Timeout) {
-        ++telemetry_diag_.socket_send_failures;
-    } else if (metadata.phase == BridgeFailurePhase::CommandDecode ||
-               metadata.domain == BridgeFailureDomain::CommandProtocol) {
-        ++telemetry_diag_.serialization_failures;
-    } else {
-        ++telemetry_diag_.socket_send_failures;
+    if (failures_delta > 0) {
+        consecutive_failures_ += failures_delta;
+        maybeLogVisualizerFailureWarning(now);
     }
-
-    ++consecutive_failures_;
-    maybeLogVisualizerFailureWarning(now);
 }
 
 void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
