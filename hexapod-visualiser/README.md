@@ -16,6 +16,8 @@ python server.py --http-port 8080 --udp-port 9870
 
 Open: `http://localhost:8080`
 
+Diagnostics endpoint (default): `http://localhost:8080/healthz`
+
 In another terminal, run the sample data stream:
 
 ```bash
@@ -63,7 +65,7 @@ WebSocket broadcasts are coalesced (many UDP packets can collapse into one outbo
 The server exposes a lightweight JSON diagnostics endpoint.
 
 - Default path: `/healthz`
-- Change path: `--metrics-path /metrics`
+- Alternate path example: `--metrics-path /metrics`
 
 Example response shape:
 
