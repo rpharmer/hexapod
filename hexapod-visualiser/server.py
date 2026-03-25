@@ -31,6 +31,7 @@ DEFAULT_GEOMETRY = {
     "tibia": 110.0,
     "body_radius": 60.0,
 }
+GEOMETRY_KEYS = frozenset(DEFAULT_GEOMETRY.keys())
 
 
 class CoalescingUpdateScheduler:
@@ -95,6 +96,13 @@ class TelemetryState:
     geometry: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_GEOMETRY))
     angles_deg: dict[str, list[float]] = field(default_factory=lambda: dict(DEFAULT_ANGLES))
     timestamp_ms: int | None = None
+    active_mode: str | None = None
+    active_fault: str | None = None
+    bus_ok: bool | None = None
+    estimator_valid: bool | None = None
+    loop_counter: int | None = None
+    voltage: float | None = None
+    current: float | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -102,6 +110,13 @@ class TelemetryState:
             "geometry": self.geometry,
             "angles_deg": self.angles_deg,
             "timestamp_ms": self.timestamp_ms,
+            "active_mode": self.active_mode,
+            "active_fault": self.active_fault,
+            "bus_ok": self.bus_ok,
+            "estimator_valid": self.estimator_valid,
+            "loop_counter": self.loop_counter,
+            "voltage": self.voltage,
+            "current": self.current,
         }
 
 
@@ -174,13 +189,13 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
         geometry = message.get("geometry")
         if isinstance(geometry, dict):
             merged = dict(self.state.geometry)
-            merged.update({k: float(v) for k, v in geometry.items() if _is_number(v)})
+            merged.update(self._sanitize_geometry_update(geometry, source="geometry"))
             self.state.geometry = merged
             changed = True
 
         if message.get("type") == "geometry":
             merged = dict(self.state.geometry)
-            merged.update({k: float(v) for k, v in message.items() if _is_number(v)})
+            merged.update(self._sanitize_geometry_update(message, source="legacy_geometry"))
             self.state.geometry = merged
             changed = True
 
@@ -210,9 +225,51 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
             self.state.timestamp_ms = int(message["timestamp_ms"])
             changed = True
 
+        if isinstance(message.get("active_mode"), str):
+            self.state.active_mode = message["active_mode"]
+            changed = True
+
+        if isinstance(message.get("active_fault"), str):
+            self.state.active_fault = message["active_fault"]
+            changed = True
+
+        if isinstance(message.get("bus_ok"), bool):
+            self.state.bus_ok = message["bus_ok"]
+            changed = True
+
+        if isinstance(message.get("estimator_valid"), bool):
+            self.state.estimator_valid = message["estimator_valid"]
+            changed = True
+
+        if isinstance(message.get("loop_counter"), int):
+            self.state.loop_counter = int(message["loop_counter"])
+            changed = True
+
+        if _is_number(message.get("voltage")):
+            self.state.voltage = float(message["voltage"])
+            changed = True
+
+        if _is_number(message.get("current")):
+            self.state.current = float(message["current"])
+            changed = True
+
         if changed:
             self.diagnostics.mark_udp_update()
             self.on_update()
+
+    def _sanitize_geometry_update(self, geometry: dict[str, Any], *, source: str) -> dict[str, float]:
+        sanitized: dict[str, float] = {}
+        unknown_keys = sorted(
+            key for key in geometry.keys() if key in {"schema_version", "type"} or key not in GEOMETRY_KEYS
+        )
+        if unknown_keys:
+            log_event("debug", "geometry_unknown_keys_ignored", source=source, keys=unknown_keys)
+
+        for key in GEOMETRY_KEYS:
+            value = geometry.get(key)
+            if _is_number(value):
+                sanitized[key] = float(value)
+        return sanitized
 
 
 def _is_number(value: Any) -> bool:

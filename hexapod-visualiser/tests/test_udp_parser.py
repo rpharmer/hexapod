@@ -20,8 +20,30 @@ class TelemetryParserTests(unittest.TestCase):
         payload = state.to_payload()
 
         self.assertEqual(payload["type"], "state")
-        self.assertEqual(set(payload.keys()), {"type", "geometry", "angles_deg", "timestamp_ms"})
+        self.assertEqual(
+            set(payload.keys()),
+            {
+                "type",
+                "geometry",
+                "angles_deg",
+                "timestamp_ms",
+                "active_mode",
+                "active_fault",
+                "bus_ok",
+                "estimator_valid",
+                "loop_counter",
+                "voltage",
+                "current",
+            },
+        )
         self.assertEqual(list(payload["angles_deg"].keys()), ["LF", "LM", "LR", "RF", "RM", "RR"])
+        self.assertIsNone(payload["active_mode"])
+        self.assertIsNone(payload["active_fault"])
+        self.assertIsNone(payload["bus_ok"])
+        self.assertIsNone(payload["estimator_valid"])
+        self.assertIsNone(payload["loop_counter"])
+        self.assertIsNone(payload["voltage"])
+        self.assertIsNone(payload["current"])
 
     def test_udp_protocol_merges_partial_updates_with_schema_gate(self):
         state = server.TelemetryState()
@@ -98,6 +120,8 @@ class TelemetryParserTests(unittest.TestCase):
         diagnostics = server.Diagnostics()
         loop = FakeLoop()
         scheduler = server.CoalescingUpdateScheduler(loop, lambda: asyncio.sleep(0), publish_hz=25.0)
+        scheduler = server.CoalescingUpdateScheduler(loop, lambda: None, publish_hz=25.0)
+        diagnostics = server.Diagnostics()
         protocol = server.UdpTelemetryProtocol(state, diagnostics, scheduler.notify_update)
 
         payload = b'{"schema_version": 1, "type":"joints", "angles_deg": {"LF": [1, 2, 3]}, "timestamp_ms": 1001}'
@@ -108,6 +132,62 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(scheduler.update_notifications, 1000)
         self.assertGreaterEqual(scheduler.coalesced_notifications, 999)
 
+    def test_udp_parser_applies_status_and_health_fields(self):
+        state = server.TelemetryState()
+        updates = []
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(
+            state, diagnostics, lambda: updates.append(state.to_payload())
+        )
+
+        protocol.datagram_received(
+            (
+                b'{"schema_version": 1, "type":"joints", "timestamp_ms": 1001, '
+                b'"active_mode":"walk", "active_fault":"none", "bus_ok":true, '
+                b'"estimator_valid":false, "loop_counter":123, "voltage":11.4, "current":1.8}'
+            ),
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertGreaterEqual(len(updates), 1)
+        self.assertEqual(state.active_mode, "walk")
+        self.assertEqual(state.active_fault, "none")
+        self.assertTrue(state.bus_ok)
+        self.assertFalse(state.estimator_valid)
+        self.assertEqual(state.loop_counter, 123)
+        self.assertEqual(state.voltage, 11.4)
+        self.assertEqual(state.current, 1.8)
+        
+    def test_udp_protocol_ignores_unknown_geometry_keys_in_geometry_object(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
+
+        before = dict(state.geometry)
+        protocol.datagram_received(
+            b'{"schema_version": 1, "geometry": {"coxxa": 99, "femur": 82}}',
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertEqual(state.geometry["femur"], 82.0)
+        self.assertEqual(state.geometry["coxa"], before["coxa"])
+        self.assertNotIn("coxxa", state.geometry)
+
+    def test_udp_protocol_ignores_unknown_geometry_keys_in_legacy_geometry_payload(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
+
+        before = dict(state.geometry)
+        protocol.datagram_received(
+            b'{"schema_version": 1, "type": "geometry", "coxxa": 99, "body_radius": 75}',
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertEqual(state.geometry["body_radius"], 75.0)
+        self.assertEqual(state.geometry["coxa"], before["coxa"])
+        self.assertNotIn("coxxa", state.geometry)
+        
     def test_frontend_contract_does_not_expect_optional_status_badges(self):
         static_dir = pathlib.Path(__file__).resolve().parents[1] / "static"
         app_js = (static_dir / "app.js").read_text(encoding="utf-8")
