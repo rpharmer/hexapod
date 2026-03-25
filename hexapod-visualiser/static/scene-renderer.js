@@ -34,6 +34,7 @@ function fkForLeg(legName, anglesDeg, geometry) {
   const [coxaDeg, femurDeg, tibiaDeg] = anglesDeg;
   const mountYaw = MOUNT_ANGLES[legName];
   const yaw = mountYaw + deg2rad(coxaDeg);
+  const sidePitchSign = legName.startsWith("L") ? -1 : 1;
 
   const coxa = geometry.coxa;
   const femur = geometry.femur;
@@ -52,8 +53,11 @@ function fkForLeg(legName, anglesDeg, geometry) {
     z: 0,
   };
 
-  const femurPitch = deg2rad(femurDeg);
-  const tibiaPitch = deg2rad(tibiaDeg);
+  // Incoming telemetry currently reflects mirrored servo sign conventions:
+  // left-side femur/tibia increase in the opposite direction from right-side.
+  // Normalise here so both sides render with the same "positive pitch" meaning.
+  const femurPitch = deg2rad(femurDeg * sidePitchSign);
+  const tibiaPitch = deg2rad(tibiaDeg * sidePitchSign);
 
   const femurR = femur * Math.cos(femurPitch);
   const knee = {
