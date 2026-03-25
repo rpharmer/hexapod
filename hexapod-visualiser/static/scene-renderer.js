@@ -34,7 +34,7 @@ function fkForLeg(legName, anglesDeg, geometry) {
   const [coxaDeg, femurDeg, tibiaDeg] = anglesDeg;
   const mountYaw = MOUNT_ANGLES[legName];
   const yaw = mountYaw + deg2rad(coxaDeg);
-  const sidePitchSign = legName.startsWith("L") ? -1 : 1;
+  const sidePitchSign = legName.startsWith("R") ? -1 : 1;
 
   const coxa = geometry.coxa;
   const femur = geometry.femur;
