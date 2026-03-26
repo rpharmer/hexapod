@@ -21,6 +21,25 @@ enum class LocomotionRegion {
     ARC,
     PIVOT,
     POINT_REORIENTATION
+enum class DynamicGaitRegion {
+    ARC,
+    PIVOT,
+    REORIENTATION
+};
+
+enum class GaitFallbackStage : uint8_t {
+    NONE = 0,
+    STABILITY,
+    DEGRADED_LOCOMOTION,
+    SAFE_STOP,
+    FAULT_HOLD
+};
+
+struct DynamicSafetyEnvelope {
+    double max_speed_normalized{1.0};
+    double max_yaw_normalized{1.0};
+    bool allow_tripod{true};
+    double max_roll_pitch_rad{0.15};
 };
 
 struct LegDynamicGaitParams {
@@ -34,6 +53,9 @@ struct RuntimeGaitPolicy {
     GaitType gait_family{GaitType::TRIPOD};
     TurnMode turn_mode{TurnMode::CRAB};
     LocomotionRegion region{LocomotionRegion::ARC};
+    DynamicGaitRegion region{DynamicGaitRegion::ARC};
+    DynamicSafetyEnvelope envelope{};
+    GaitFallbackStage fallback_stage{GaitFallbackStage::NONE};
     std::array<LegDynamicGaitParams, kNumLegs> per_leg{};
     FrequencyHz cadence_hz{FrequencyHz{0.0}};
     GaitSuppressionFlags suppression{};
@@ -58,6 +80,15 @@ public:
                                                  TurnMode turn_mode) const;
 
 private:
+    DynamicGaitRegion classifyRegion(double speed_normalized, double yaw_normalized);
+    DynamicSafetyEnvelope envelopeForRegion(DynamicGaitRegion region) const;
+    GaitFallbackStage selectFallbackStage(const SafetyState& safety,
+                                          const DynamicSafetyEnvelope& envelope,
+                                          double roll_pitch_abs_rad,
+                                          double speed_normalized,
+                                          double yaw_normalized,
+                                          double reach_utilization) const;
+    void applyFallback(RuntimeGaitPolicy& policy) const;
     double maxReachUtilization(const RobotState& est) const;
 
     control_config::GaitConfig config_{};
@@ -66,4 +97,6 @@ private:
     GaitType last_gait_family_{GaitType::WAVE};
     double filtered_speed_norm_{0.0};
     double filtered_yaw_norm_{0.0};
+    TurnMode last_turn_mode_{TurnMode::CRAB};
+    DynamicGaitRegion last_region_{DynamicGaitRegion::ARC};
 };
