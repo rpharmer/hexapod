@@ -24,4 +24,11 @@ private:
 
     HexapodGeometry geometry_{defaultHexapodGeometry()};
     FootholdPlanner foothold_planner_{geometry_};
+    double filtered_yaw_cmd_rad_{0.0};
+    bool yaw_filter_initialized_{false};
+    TimePointUs last_update_timestamp_{};
+    bool has_previous_targets_{false};
+    LegTargets previous_targets_{};
+    bool previous_walking_{false};
+    uint32_t transition_slew_steps_remaining_{0};
 };

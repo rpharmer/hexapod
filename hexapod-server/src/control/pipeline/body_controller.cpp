@@ -62,10 +62,31 @@ LegTargets BodyController::update(const RobotState& est,
         (intent.requested_mode == RobotMode::WALK) &&
         !safety.inhibit_motion &&
         !safety.torque_cut;
+    if (walking != previous_walking_) {
+        transition_slew_steps_remaining_ = kLegTargetTransitionSlewSteps;
+    } else if (transition_slew_steps_remaining_ > 0) {
+        --transition_slew_steps_remaining_;
+    }
+    previous_walking_ = walking;
 
     const double roll_cmd = intent.twist.twist_pos_rad.x;
     const double pitch_cmd = intent.twist.twist_pos_rad.y;
-    const double yaw_cmd = policy.suppression.suppress_turning ? 0.0 : intent.twist.twist_pos_rad.z;
+    const double yaw_cmd_raw = policy.suppression.suppress_turning ? 0.0 : intent.twist.twist_pos_rad.z;
+    const TimePointUs now = out.timestamp_us;
+    const TimePointUs previous_update_ts = last_update_timestamp_;
+    const bool has_positive_dt = !previous_update_ts.isZero() && now.value > previous_update_ts.value;
+    const double update_dt_s =
+        has_positive_dt ? static_cast<double>(now.value - previous_update_ts.value) / 1'000'000.0 : 0.0;
+    if (!yaw_filter_initialized_ || !has_positive_dt) {
+        filtered_yaw_cmd_rad_ = yaw_cmd_raw;
+        yaw_filter_initialized_ = true;
+    } else {
+        const double max_step = kYawCommandSlewLimitRadPerSec * update_dt_s;
+        const double delta = yaw_cmd_raw - filtered_yaw_cmd_rad_;
+        filtered_yaw_cmd_rad_ += std::clamp(delta, -max_step, max_step);
+    }
+    last_update_timestamp_ = now;
+    const double yaw_cmd = filtered_yaw_cmd_rad_;
     const Mat3 body_rotation = Mat3::rotZ(yaw_cmd) * Mat3::rotY(pitch_cmd) * Mat3::rotX(roll_cmd);
     const Vec3 planar_body_offset = Vec3{
         intent.twist.body_trans_m.x,
@@ -90,11 +111,25 @@ LegTargets BodyController::update(const RobotState& est,
         Vec3 target_vel = body_rotation * foothold.vel_body_mps;
 
         target = clampToReachEnvelope(leg, target);
+        if (has_previous_targets_ && has_positive_dt) {
+            const double speed_limit = transition_slew_steps_remaining_ > 0
+                                           ? kLegTargetTransitionSlewLimitMps
+                                           : kLegTargetSlewLimitMps;
+            const double max_step_m = speed_limit * update_dt_s;
+            const Vec3 previous = previous_targets_.feet[leg].pos_body_m;
+            const Vec3 delta = target - previous;
+            const double delta_mag = std::sqrt((delta.x * delta.x) + (delta.y * delta.y) + (delta.z * delta.z));
+            if (delta_mag > max_step_m && delta_mag > 1e-9) {
+                target = previous + (delta * (max_step_m / delta_mag));
+            }
+        }
         target_vel = target_vel + cross(intent.twist.twist_vel_radps, target);
 
         out.feet[leg].pos_body_m = target;
         out.feet[leg].vel_body_mps = target_vel;
     }
 
+    previous_targets_ = out;
+    has_previous_targets_ = true;
     return out;
 }

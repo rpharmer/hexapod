@@ -54,6 +54,7 @@ public:
                 uint64_t stale_estimator_events);
 
 private:
+    bool isTransitionStep(const ControlStatus& status) const;
     void maybeLogVisualizerFailureWarning(TimePointUs now);
     void maybeLogVisualizerRecovery();
 
