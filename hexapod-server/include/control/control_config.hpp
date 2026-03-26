@@ -47,6 +47,7 @@ struct SafetyConfig {
     float max_bus_current_a{kDefaultMaxBusCurrentA};
     int min_foot_contacts{kDefaultMinFootContacts};
     int max_foot_contacts{kDefaultMaxFootContacts};
+    AngleRad max_joint_position_step_rad{AngleRad{1.0}};
 };
 
 struct GaitConfig {

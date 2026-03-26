@@ -63,8 +63,10 @@ int main() {
     walk_gait.in_stance[0] = true;
     walk_gait.stride_phase_rate_hz = FrequencyHz{1.0};
     const LegTargets walk_targets = controller.update(est, walk_intent, walk_gait, safety);
+    const double expected_walk_x_vel =
+        -kPi * 0.06 * walk_gait.stride_phase_rate_hz.value * std::sin(2.0 * kPi * walk_gait.phase[0]);
 
-    if (!expect(nearlyEqual(walk_targets.feet[0].vel_body_mps.x, -0.12, 1e-6),
+    if (!expect(nearlyEqual(walk_targets.feet[0].vel_body_mps.x, expected_walk_x_vel, 1e-6),
                 "walking stance velocity should include analytic step derivative")) {
         return EXIT_FAILURE;
     }

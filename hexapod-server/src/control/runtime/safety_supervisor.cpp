@@ -36,14 +36,47 @@ bool SafetySupervisor::canAttemptClear(const MotionIntent& intent,
     return intent.requested_mode == RobotMode::SAFE_IDLE && freshness.intent_valid;
 }
 
+bool SafetySupervisor::hasLargeJointPositionDiscontinuity(const RobotState& est) const {
+    if (!has_previous_estimate_) {
+        previous_estimate_ = est;
+        has_previous_estimate_ = true;
+        return false;
+    }
+    if (previous_estimate_.sample_id == 0 ||
+        est.sample_id == 0 ||
+        est.sample_id <= previous_estimate_.sample_id ||
+        (est.sample_id - previous_estimate_.sample_id) > 1) {
+        previous_estimate_ = est;
+        return false;
+    }
+
+    bool has_discontinuity = false;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+            const double previous = previous_estimate_.leg_states[leg].joint_state[joint].pos_rad.value;
+            const double current = est.leg_states[leg].joint_state[joint].pos_rad.value;
+            if (std::abs(current - previous) > config_.max_joint_position_step_rad.value) {
+                has_discontinuity = true;
+                break;
+            }
+        }
+        if (has_discontinuity) {
+            break;
+        }
+    }
+
+    previous_estimate_ = est;
+    return has_discontinuity;
+}
+
 SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
     const RobotState& raw,
     const RobotState& est,
-    const MotionIntent&,
+    const MotionIntent& intent,
     const FreshnessInputs& freshness,
     const StabilityAssessment& stability,
     int contact_count) const {
-    const std::array<FaultRule, 6> rules{{
+    const std::array<FaultRule, 7> rules{{
         FaultRule{
             .is_triggered = [&](void) {
                 return !freshness.intent_valid;
@@ -79,6 +112,16 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
                        raw.current > config_.max_bus_current_a;
             },
             .fault = FaultCode::MOTOR_FAULT,
+            .torque_cut = true,
+        },
+        FaultRule{
+            .is_triggered = [&](void) {
+                return freshness.estimator_valid &&
+                       freshness.intent_valid &&
+                       intent.requested_mode == RobotMode::WALK &&
+                       hasLargeJointPositionDiscontinuity(est);
+            },
+            .fault = FaultCode::JOINT_LIMIT,
             .torque_cut = true,
         },
         FaultRule{

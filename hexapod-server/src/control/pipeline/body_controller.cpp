@@ -80,21 +80,18 @@ LegTargets BodyController::update(const RobotState& est,
         if (walking) {
             const double phase = clamp01(gait.phase[leg]);
             const double phase_rate = std::max(gait.stride_phase_rate_hz.value, 0.0);
-            if (gait.in_stance[leg]) {
-                const double stance_alpha = clamp01(phase / 0.5);
-                const double step_delta = (0.5 - stance_alpha) * kStepLengthM;
-                const double step_vel = -2.0 * phase_rate * kStepLengthM;
-                target = target + (step_dir * step_delta);
-                target_vel = target_vel + (step_dir * step_vel);
-            } else {
+            const double planar_phase = 2.0 * kPi * phase;
+            const double step_delta = 0.5 * kStepLengthM * std::cos(planar_phase);
+            const double step_vel = -kPi * kStepLengthM * phase_rate * std::sin(planar_phase);
+            target = target + (step_dir * step_delta);
+            target_vel = target_vel + (step_dir * step_vel);
+
+            if (!gait.in_stance[leg]) {
                 const double swing_alpha = clamp01((phase - 0.5) / 0.5);
-                const double step_delta = (swing_alpha - 0.5) * kStepLengthM;
-                const double step_vel = 2.0 * phase_rate * kStepLengthM;
+                const double swing_lift = 0.5 * (1.0 - std::cos(2.0 * kPi * swing_alpha));
                 const double swing_z_vel =
-                    std::cos(kPi * swing_alpha) * kPi * 2.0 * phase_rate * kSwingHeightM;
-                target = target + (step_dir * step_delta);
-                target.z += std::sin(kPi * swing_alpha) * kSwingHeightM;
-                target_vel = target_vel + (step_dir * step_vel);
+                    2.0 * kPi * phase_rate * kSwingHeightM * std::sin(2.0 * kPi * swing_alpha);
+                target.z += swing_lift * kSwingHeightM;
                 target_vel.z += swing_z_vel;
             }
         }

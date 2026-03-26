@@ -145,6 +145,41 @@ bool bodyControllerUsesGaitState() {
            expect(leg1_z > targets.feet[0].pos_body_m.z, "swing leg should receive swing height lift");
 }
 
+bool bodyControllerKeepsSwingTransitionContinuous() {
+    BodyController body;
+    RobotState est{};
+    est.foot_contacts = {true, true, true, true, true, true};
+
+    MotionIntent walk{};
+    walk.requested_mode = RobotMode::WALK;
+    walk.heading_rad = AngleRad{0.0};
+
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+
+    GaitState near_stance_end{};
+    near_stance_end.in_stance.fill(true);
+    near_stance_end.phase.fill(0.0);
+    near_stance_end.phase[0] = 0.49;
+    near_stance_end.in_stance[0] = true;
+    near_stance_end.stride_phase_rate_hz = FrequencyHz{1.0};
+
+    GaitState near_swing_start = near_stance_end;
+    near_swing_start.phase[0] = 0.51;
+    near_swing_start.in_stance[0] = false;
+
+    const LegTargets before = body.update(est, walk, near_stance_end, safety);
+    const LegTargets after = body.update(est, walk, near_swing_start, safety);
+
+    const double x_jump = std::abs(after.feet[0].pos_body_m.x - before.feet[0].pos_body_m.x);
+    const double z_jump = std::abs(after.feet[0].pos_body_m.z - before.feet[0].pos_body_m.z);
+    const double x_vel_jump = std::abs(after.feet[0].vel_body_mps.x - before.feet[0].vel_body_mps.x);
+
+    return expect(x_jump < 0.005, "swing transition should keep x target continuous") &&
+           expect(z_jump < 0.003, "swing transition should keep z target continuous") &&
+           expect(x_vel_jump < 0.05, "swing transition should avoid large x velocity discontinuity");
+}
+
 bool ikFkChainTracksBodyTargets() {
     const HexapodGeometry geometry = defaultHexapodGeometry();
 
@@ -213,6 +248,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!bodyControllerUsesGaitState()) {
+        return EXIT_FAILURE;
+    }
+    if (!bodyControllerKeepsSwingTransitionContinuous()) {
         return EXIT_FAILURE;
     }
     if (!ikFkChainTracksBodyTargets()) {

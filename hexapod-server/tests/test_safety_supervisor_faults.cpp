@@ -146,6 +146,29 @@ bool testMotorFaultTorqueCut() {
            expect(state.torque_cut, "MOTOR_FAULT should request torque cut");
 }
 
+bool testJointDiscontinuityTripsSafety() {
+    SafetySupervisor supervisor;
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+
+    est.sample_id = 1;
+    est.leg_states[0].joint_state[0].pos_rad = AngleRad{0.0};
+    const SafetyState baseline = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+    if (!expect(baseline.active_fault == FaultCode::NONE, "baseline sample should not trigger discontinuity fault")) {
+        return false;
+    }
+
+    est.sample_id = 2;
+    est.leg_states[0].joint_state[0].pos_rad = AngleRad{2.0};
+    const SafetyState jumped = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+
+    return expect(jumped.active_fault == FaultCode::JOINT_LIMIT,
+                  "large joint discontinuity should trigger JOINT_LIMIT fault") &&
+           expect(jumped.torque_cut, "joint discontinuity fault should request torque cut");
+}
+
 bool testLatchedRemainsWhenIntentNotSafeIdle() {
     SafetySupervisor supervisor;
     RobotState raw = nominalRaw();
@@ -241,6 +264,7 @@ int main() {
         !testBusTimeoutBeatsFreshnessFaults() ||
         !testUnstableSupportTriggersTipOver() ||
         !testMotorFaultTorqueCut() ||
+        !testJointDiscontinuityTripsSafety() ||
         !testLatchedRemainsWhenIntentNotSafeIdle() ||
         !testLatchedRemainsWhenIntentStale() ||
         !testRecoveryRequiresBothConditionsAndHoldTime()) {

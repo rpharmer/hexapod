@@ -67,6 +67,7 @@ private:
                                        const MotionIntent& intent,
                                        const FreshnessInputs& freshness,
                                        StabilityAssessment& stability) const;
+    bool hasLargeJointPositionDiscontinuity(const RobotState& est) const;
 
     void trip(FaultCode code, bool torque_cut, TimePointUs timestamp_us);
     void clearActiveFault();
@@ -76,4 +77,6 @@ private:
     TimePointUs recovery_started_at_us_{};
     std::array<uint32_t, kFaultCodeCount> trip_counts_{};
     std::array<TimePointUs, kFaultCodeCount> last_trip_timestamps_{};
+    mutable bool has_previous_estimate_{false};
+    mutable RobotState previous_estimate_{};
 };
