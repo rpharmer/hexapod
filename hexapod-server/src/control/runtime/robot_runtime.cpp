@@ -233,12 +233,14 @@ void RobotRuntime::diagnosticsStep() {
     const auto st = status_.read();
     const auto bridge_result = hw_ ? hw_->last_bridge_result() : std::nullopt;
     const uint64_t loops = control_loop_counter_.load();
+    const LoopTimingRollingMetrics loop_timing_metrics = timing_metrics_.rollingMetrics();
     diagnostics_reporter_.recordVisualizerTelemetry(readTelemetryCounters(telemetry_publisher_), now_us());
     diagnostics_reporter_.report(st,
                                  bridge_result,
                                  loops,
                                  timing_metrics_.averageControlDtUs(loops),
                                  control_jitter_max_us_.load(),
+                                 loop_timing_metrics,
                                  stale_intent_count_.load(),
                                  stale_estimator_count_.load());
 }

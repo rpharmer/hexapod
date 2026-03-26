@@ -4,6 +4,7 @@
 #include "hardware_bridge.hpp"
 #include "joint_oscillation_tracker.hpp"
 #include "logger.hpp"
+#include "runtime_timing_metrics.hpp"
 #include "telemetry_publisher.hpp"
 #include "types.hpp"
 
@@ -50,6 +51,7 @@ public:
                 uint64_t loops,
                 uint64_t avg_control_dt_us,
                 uint64_t max_control_jitter_us,
+                const LoopTimingRollingMetrics& loop_timing_metrics,
                 uint64_t stale_intent_events,
                 uint64_t stale_estimator_events);
 
@@ -57,6 +59,7 @@ private:
     bool isTransitionStep(const ControlStatus& status) const;
     void maybeLogVisualizerFailureWarning(TimePointUs now);
     void maybeLogVisualizerRecovery();
+    void maybeLogLoopTimingWarning(const LoopTimingRollingMetrics& loop_timing_metrics);
 
     std::shared_ptr<logging::AsyncLogger> logger_;
     const FreshnessPolicy& freshness_policy_;
@@ -73,4 +76,5 @@ private:
     ControlStatus previous_status_{};
     TimePointUs last_control_output_timestamp_{};
     bool diagnostics_tracking_active_{false};
+    uint64_t last_overrun_warning_consecutive_{0};
 };

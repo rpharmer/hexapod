@@ -156,6 +156,7 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
                                         uint64_t loops,
                                         uint64_t avg_control_dt_us,
                                         uint64_t max_control_jitter_us,
+                                        const LoopTimingRollingMetrics& loop_timing_metrics,
                                         uint64_t stale_intent_events,
                                         uint64_t stale_estimator_events) {
     status_reporter::logStatus(logger_, status, bridge_result);
@@ -201,6 +202,24 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
              avg_control_dt_us,
              " max_control_jitter_us=",
              max_control_jitter_us,
+             " loop_dt_window_samples=",
+             loop_timing_metrics.sample_count,
+             " loop_dt_p50_us=",
+             loop_timing_metrics.p50_control_dt_us,
+             " loop_dt_p95_us=",
+             loop_timing_metrics.p95_control_dt_us,
+             " loop_dt_p99_us=",
+             loop_timing_metrics.p99_control_dt_us,
+             " loop_overrun_events_total=",
+             loop_timing_metrics.overrun_events_total,
+             " loop_overrun_periods_total=",
+             loop_timing_metrics.overrun_periods_total,
+             " loop_consecutive_overruns=",
+             loop_timing_metrics.consecutive_overruns,
+             " loop_max_consecutive_overruns=",
+             loop_timing_metrics.max_consecutive_overruns,
+             " loop_hard_overrun_escalation_crossings=",
+             loop_timing_metrics.hard_overrun_escalation_crossings,
              " stale_intent_events=",
              stale_intent_events,
              " stale_estimator_events=",
@@ -268,6 +287,8 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
              ",rapid_change_events:",
              gait_variability_diag_.rapid_change_events,
              "}");
+
+    maybeLogLoopTimingWarning(loop_timing_metrics);
 }
 
 void RuntimeDiagnosticsReporter::maybeLogVisualizerFailureWarning(TimePointUs now) {
@@ -303,4 +324,46 @@ void RuntimeDiagnosticsReporter::maybeLogVisualizerRecovery() {
              "visualizer.transport recovered after_failures=",
              consecutive_failures_,
              " policy=auto_recovery");
+}
+
+void RuntimeDiagnosticsReporter::maybeLogLoopTimingWarning(
+    const LoopTimingRollingMetrics& loop_timing_metrics)
+{
+    if (!logger_) {
+        return;
+    }
+
+    const uint64_t warn_threshold = loop_timing_metrics.warning_consecutive_overrun_threshold;
+    const uint64_t hard_threshold = loop_timing_metrics.hard_consecutive_overrun_threshold;
+    if (warn_threshold == 0 || hard_threshold == 0 || warn_threshold >= hard_threshold) {
+        return;
+    }
+
+    const uint64_t consecutive = loop_timing_metrics.consecutive_overruns;
+    if (consecutive < warn_threshold || consecutive >= hard_threshold) {
+        if (consecutive < warn_threshold) {
+            last_overrun_warning_consecutive_ = 0;
+        }
+        return;
+    }
+
+    if (last_overrun_warning_consecutive_ == consecutive) {
+        return;
+    }
+    last_overrun_warning_consecutive_ = consecutive;
+
+    LOG_WARN(logger_,
+             "runtime.loop_timing pre_safety_escalation_warning consecutive_overruns=",
+             consecutive,
+             " warning_threshold=",
+             warn_threshold,
+             " hard_escalation_threshold=",
+             hard_threshold,
+             " p95_us=",
+             loop_timing_metrics.p95_control_dt_us,
+             " p99_us=",
+             loop_timing_metrics.p99_control_dt_us,
+             " overrun_events_total=",
+             loop_timing_metrics.overrun_events_total,
+             " policy=reduce_load_before_safety_fault");
 }
