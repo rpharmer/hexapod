@@ -9,9 +9,6 @@ namespace {
 
 constexpr std::array<const char*, kNumLegs> kLegNames{"RF", "RM", "RR", "LF", "LM", "LR"};
 constexpr std::array<const char*, kJointsPerLeg> kJointNames{"coxa", "femur", "tibia"};
-constexpr uint32_t kTransitionWindowSteps = 20;
-constexpr double kLargeJointVelocityTraceRadps = 20.0;
-constexpr double kLargeFootVelocityTraceMps = 1.5;
 
 const char* legName(std::size_t leg_idx) {
     return leg_idx < kLegNames.size() ? kLegNames[leg_idx] : "unknown_leg";
@@ -55,19 +52,6 @@ void RuntimeDiagnosticsReporter::recordVisualizerTelemetry(
     }
 }
 
-bool RuntimeDiagnosticsReporter::isTransitionStep(const ControlStatus& status) const {
-    if (!has_previous_status_) {
-        return true;
-    }
-    if (status.active_mode != previous_status_.active_mode) {
-        return true;
-    }
-    if (status.dynamic_gait.gait_family != previous_status_.dynamic_gait.gait_family) {
-        return true;
-    }
-    return false;
-}
-
 void RuntimeDiagnosticsReporter::recordControlOutputs(const JointTargets& targets,
                                                       const ControlStatus& status,
                                                       TimePointUs now,
@@ -83,7 +67,6 @@ void RuntimeDiagnosticsReporter::recordControlOutputs(const JointTargets& target
         has_previous_leg_targets_ = false;
         has_previous_status_ = false;
         last_control_output_timestamp_ = now;
-        transition_window_steps_remaining_ = 0;
         return;
     }
 
@@ -97,50 +80,10 @@ void RuntimeDiagnosticsReporter::recordControlOutputs(const JointTargets& target
         previous_status_ = status;
         has_previous_status_ = true;
         last_control_output_timestamp_ = now;
-        transition_window_steps_remaining_ = kTransitionWindowSteps;
         return;
     }
 
-    if (isTransitionStep(status)) {
-        transition_window_steps_remaining_ = kTransitionWindowSteps;
-    } else if (transition_window_steps_remaining_ > 0) {
-        --transition_window_steps_remaining_;
-    }
-    const bool transition_step = transition_window_steps_remaining_ > 0;
-
-    const JointOscillationMetrics joint_before = joint_oscillation_tracker_.metrics();
     joint_oscillation_tracker_.observe(targets, now);
-    const JointOscillationMetrics joint_after = joint_oscillation_tracker_.metrics();
-    if (joint_after.peak_joint_velocity_radps > joint_before.peak_joint_velocity_radps) {
-        if (!transition_step &&
-            joint_after.peak_joint_velocity_radps > steady_peak_joint_velocity_radps_) {
-            steady_peak_joint_velocity_radps_ = joint_after.peak_joint_velocity_radps;
-        } else if (transition_step) {
-            ++transition_excluded_samples_;
-        }
-        if (logger_ && joint_after.peak_joint_velocity_radps >= kLargeJointVelocityTraceRadps) {
-            std::size_t worst_idx = 0;
-            for (std::size_t idx = 1; idx < joint_after.kJointCount; ++idx) {
-                if (joint_after.peak_joint_velocity_radps_by_joint[idx] >
-                    joint_after.peak_joint_velocity_radps_by_joint[worst_idx]) {
-                    worst_idx = idx;
-                }
-            }
-            const std::size_t worst_leg = worst_idx / static_cast<std::size_t>(kJointsPerLeg);
-            const std::size_t worst_joint = worst_idx % static_cast<std::size_t>(kJointsPerLeg);
-            LOG_WARN(logger_,
-                     "runtime.trace_joint_peak loop=",
-                     status.loop_counter,
-                     " transition_step=",
-                     transition_step ? 1 : 0,
-                     " joint=",
-                     legName(worst_leg),
-                     ".",
-                     jointName(worst_joint),
-                     " peak_radps=",
-                     joint_after.peak_joint_velocity_radps);
-        }
-    }
 
     if (!last_control_output_timestamp_.isZero() && now.value > last_control_output_timestamp_.value) {
         const double dt_s = static_cast<double>(now.value - last_control_output_timestamp_.value) / 1'000'000.0;
@@ -192,24 +135,6 @@ void RuntimeDiagnosticsReporter::recordControlOutputs(const JointTargets& target
             }
             if (velocity_mps > leg_target_variability_diag_.peak_foot_target_velocity_mps) {
                 leg_target_variability_diag_.peak_foot_target_velocity_mps = velocity_mps;
-                if (!transition_step && velocity_mps > steady_peak_foot_target_velocity_mps_) {
-                    steady_peak_foot_target_velocity_mps_ = velocity_mps;
-                } else if (transition_step) {
-                    ++transition_excluded_samples_;
-                }
-                if (logger_ && velocity_mps >= kLargeFootVelocityTraceMps) {
-                    LOG_WARN(logger_,
-                             "runtime.trace_leg_target_peak loop=",
-                             status.loop_counter,
-                             " transition_step=",
-                             transition_step ? 1 : 0,
-                             " leg=",
-                             legName(leg_idx),
-                             " peak_mps=",
-                             velocity_mps,
-                             " dt_s=",
-                             dt_s);
-                }
             }
             if (velocity_mps > 0.75) {
                 ++leg_target_variability_diag_.rapid_change_events;
@@ -322,16 +247,12 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
              jointName(velocity_joint),
              ",worst_velocity_joint_peak_radps:",
              joint_diag.peak_joint_velocity_radps_by_joint[worst_velocity_joint],
-             ",steady_peak_velocity_radps:",
-             steady_peak_joint_velocity_radps_,
              "} leg_target_diag={peak_foot_vel_mps:",
              leg_target_variability_diag_.peak_foot_target_velocity_mps,
              ",worst_leg:",
              legName(worst_leg_target_velocity_leg),
              ",worst_leg_peak_foot_vel_mps:",
              leg_target_variability_diag_.peak_foot_target_velocity_mps_by_leg[worst_leg_target_velocity_leg],
-             ",steady_peak_foot_vel_mps:",
-             steady_peak_foot_target_velocity_mps_,
              ",rapid_change_events:",
              leg_target_variability_diag_.rapid_change_events,
              "} gait_variability_diag={peak_cadence_delta_hz_per_s:",
@@ -346,10 +267,6 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
              gait_variability_diag_.peak_phase_delta_per_s_by_leg[worst_phase_leg],
              ",rapid_change_events:",
              gait_variability_diag_.rapid_change_events,
-             "} transition_diag={window_steps_remaining:",
-             transition_window_steps_remaining_,
-             ",excluded_samples:",
-             transition_excluded_samples_,
              "}");
 }
 

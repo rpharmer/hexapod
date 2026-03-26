@@ -8,10 +8,6 @@
 namespace {
 
 constexpr double kDefaultBodyHeightM = 0.20;
-constexpr double kYawCommandSlewLimitRadPerSec = 1.2;
-constexpr double kLegTargetSlewLimitMps = 0.9;
-constexpr double kLegTargetTransitionSlewLimitMps = 0.35;
-constexpr uint32_t kLegTargetTransitionSlewSteps = 20;
 
 } // namespace
 

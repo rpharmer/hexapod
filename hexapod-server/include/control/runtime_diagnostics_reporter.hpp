@@ -73,8 +73,4 @@ private:
     ControlStatus previous_status_{};
     TimePointUs last_control_output_timestamp_{};
     bool diagnostics_tracking_active_{false};
-    uint32_t transition_window_steps_remaining_{0};
-    double steady_peak_joint_velocity_radps_{0.0};
-    double steady_peak_foot_target_velocity_mps_{0.0};
-    uint64_t transition_excluded_samples_{0};
 };
