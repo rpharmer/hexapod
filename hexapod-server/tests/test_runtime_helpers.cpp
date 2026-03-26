@@ -77,6 +77,34 @@ bool testStrictMetricsOnlyCountInvalidStreams() {
            expect(stale_estimator_count.load() == 2, "strict metrics should count stale estimators");
 }
 
+bool testSafetyLenientEvaluationIgnoresAgeExpiry() {
+    control_config::FreshnessConfig cfg{};
+    cfg.estimator.max_allowed_age_us = DurationUs{1'000};
+    cfg.intent.max_allowed_age_us = DurationUs{1'000};
+    FreshnessPolicy policy(cfg);
+    RuntimeFreshnessGate gate(policy);
+
+    const TimePointUs now{1'000'000};
+    RobotState est{};
+    est.sample_id = 5;
+    est.timestamp_us = TimePointUs{1};
+    MotionIntent intent{};
+    intent.sample_id = 5;
+    intent.timestamp_us = TimePointUs{1};
+
+    const auto strict = gate.evaluate(RuntimeFreshnessGate::EvaluationMode::StrictControl, now, est, intent);
+    const auto lenient = gate.evaluate(RuntimeFreshnessGate::EvaluationMode::SafetyLenient, now, est, intent);
+
+    return expect(!strict.estimator.valid && strict.estimator.stale_age,
+                  "strict freshness evaluation should reject stale estimator age") &&
+           expect(!strict.intent.valid && strict.intent.stale_age,
+                  "strict freshness evaluation should reject stale intent age") &&
+           expect(lenient.estimator.valid && !lenient.estimator.stale_age,
+                  "safety lenient mode should ignore estimator age expiry") &&
+           expect(lenient.intent.valid && !lenient.intent.stale_age,
+                  "safety lenient mode should ignore intent age expiry");
+}
+
 bool testTimingMetricsTracksDeltaJitterAndAverage() {
     control_config::ControlConfig cfg{};
     cfg.loop_timing.control_loop_period = std::chrono::microseconds{2'000};
@@ -110,6 +138,7 @@ bool testTimingMetricsTracksDeltaJitterAndAverage() {
 int main() {
     if (!testFreshnessGateDecisionMatrix() ||
         !testStrictMetricsOnlyCountInvalidStreams() ||
+        !testSafetyLenientEvaluationIgnoresAgeExpiry() ||
         !testTimingMetricsTracksDeltaJitterAndAverage()) {
         return EXIT_FAILURE;
     }
