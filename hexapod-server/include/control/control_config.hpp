@@ -123,6 +123,19 @@ struct TurnModeThresholdConfig {
     LinearRateMps speed_exit_mps{LinearRateMps{kDefaultTurnSpeedExitMps}};
 };
 
+struct DynamicGaitAcceptanceGateConfig {
+    bool feature_flag_enabled{false};
+    bool simulator_first_required{true};
+    int simulator_validation_runs_required{5};
+    int simulator_validation_runs_passed{0};
+    double max_control_latency_p95_ms{8.0};
+    double observed_control_latency_p95_ms{0.0};
+    double max_safety_faults_per_hour{0.20};
+    double observed_safety_faults_per_hour{0.0};
+    double min_stability_margin_m{0.015};
+    double observed_min_stability_margin_m{0.0};
+};
+
 struct GaitConfig {
     LinearRateMps fallback_speed_mag{kDefaultFallbackSpeedMag};
     GaitFrequencyConfig frequency{};
@@ -133,6 +146,7 @@ struct GaitConfig {
     GaitStanceFieldConfig stance_field{};
     GaitPrioritySuppressionConfig priority_suppression{};
     TurnModeThresholdConfig turn_mode_thresholds{};
+    DynamicGaitAcceptanceGateConfig acceptance_gate{};
 };
 
 struct StreamFreshnessConfig {

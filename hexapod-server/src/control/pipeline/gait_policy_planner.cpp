@@ -84,7 +84,12 @@ RuntimeGaitPolicy GaitPolicyPlanner::plan(const RobotState& est,
                                           const MotionIntent& intent,
                                           const SafetyState& safety)
 {
+    if (!dynamicPolicyEnabled()) {
+        return legacyPolicy(est, intent, safety);
+    }
+
     RuntimeGaitPolicy policy{};
+    policy.dynamic_enabled = true;
     policy.region = selectRegion(intent);
     policy.gait_family = selectGaitFamily(intent, policy.region);
     policy.turn_mode = selectTurnMode(policy.region);
@@ -128,6 +133,74 @@ RuntimeGaitPolicy GaitPolicyPlanner::plan(const RobotState& est,
             (config_.frequency.max_hz.value - config_.frequency.min_hz.value) * speed_mag * envelope_speed_scale,
         config_.frequency.min_hz.value,
         config_.frequency.max_hz.value)};
+    applyFallback(policy);
+    return policy;
+}
+
+bool GaitPolicyPlanner::dynamicPolicyEnabled() const
+{
+    const auto& gate = config_.acceptance_gate;
+    if (!gate.feature_flag_enabled) {
+        return false;
+    }
+
+    if (gate.simulator_first_required &&
+        gate.simulator_validation_runs_passed < gate.simulator_validation_runs_required) {
+        return false;
+    }
+
+    return gate.observed_control_latency_p95_ms <= gate.max_control_latency_p95_ms &&
+           gate.observed_safety_faults_per_hour <= gate.max_safety_faults_per_hour &&
+           gate.observed_min_stability_margin_m >= gate.min_stability_margin_m;
+}
+
+RuntimeGaitPolicy GaitPolicyPlanner::legacyPolicy(const RobotState& est,
+                                                  const MotionIntent& intent,
+                                                  const SafetyState& safety) const
+{
+    RuntimeGaitPolicy policy{};
+    policy.dynamic_enabled = false;
+    policy.region = DynamicGaitRegion::ARC;
+    policy.gait_family = intent.gait;
+    policy.turn_mode = (std::abs(intent.twist.twist_vel_radps.z) >=
+                        config_.turn_mode_thresholds.yaw_rate_enter_radps.value)
+                           ? TurnMode::IN_PLACE
+                           : TurnMode::CRAB;
+    policy.per_leg = computePerLegDynamicParameters(policy.gait_family);
+    policy.suppression = computeSuppressionFlags(est, intent, safety, policy.turn_mode);
+    policy.reach_utilization = maxReachUtilization(est);
+
+    const double command_norm = std::clamp(
+        std::abs(intent.speed_mps.value) / std::max(config_.frequency.nominal_max_speed_mps.value, 1e-6),
+        0.0,
+        1.0);
+    const double speed_mag = std::max(command_norm, config_.fallback_speed_mag.value);
+    const double envelope_speed_scale = std::clamp(
+        (1.0 - policy.reach_utilization) / std::max(config_.frequency.reach_envelope_soft_limit, 1e-6),
+        config_.frequency.reach_envelope_min_scale,
+        1.0);
+    policy.cadence_hz = FrequencyHz{std::clamp(
+        config_.frequency.min_hz.value +
+            (config_.frequency.max_hz.value - config_.frequency.min_hz.value) * speed_mag * envelope_speed_scale,
+        config_.frequency.min_hz.value,
+        config_.frequency.max_hz.value)};
+
+    policy.envelope = DynamicSafetyEnvelope{1.0, 1.0, true, kArcMaxRollPitchRad};
+    const double yaw_normalized = std::clamp(
+        std::abs(intent.twist.twist_vel_radps.z) /
+            std::max(config_.turn_mode_thresholds.yaw_rate_enter_radps.value, 1e-6),
+        0.0,
+        1.0);
+    const double roll_pitch_abs_rad = std::max(
+        std::abs(est.body_twist_state.twist_pos_rad.x),
+        std::abs(est.body_twist_state.twist_pos_rad.y));
+    policy.fallback_stage = selectFallbackStage(
+        safety,
+        policy.envelope,
+        roll_pitch_abs_rad,
+        command_norm,
+        yaw_normalized,
+        policy.reach_utilization);
     applyFallback(policy);
     return policy;
 }

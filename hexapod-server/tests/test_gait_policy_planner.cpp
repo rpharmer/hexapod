@@ -45,6 +45,22 @@ RobotState nominalEstimate()
     return est;
 }
 
+control_config::GaitConfig enabledDynamicConfig()
+{
+    control_config::GaitConfig cfg{};
+    cfg.acceptance_gate.feature_flag_enabled = true;
+    cfg.acceptance_gate.simulator_first_required = true;
+    cfg.acceptance_gate.simulator_validation_runs_required = 5;
+    cfg.acceptance_gate.simulator_validation_runs_passed = 5;
+    cfg.acceptance_gate.observed_control_latency_p95_ms = 5.0;
+    cfg.acceptance_gate.max_control_latency_p95_ms = 8.0;
+    cfg.acceptance_gate.observed_safety_faults_per_hour = 0.0;
+    cfg.acceptance_gate.max_safety_faults_per_hour = 0.2;
+    cfg.acceptance_gate.observed_min_stability_margin_m = 0.02;
+    cfg.acceptance_gate.min_stability_margin_m = 0.015;
+    return cfg;
+}
+
 void warmPlanner(GaitPolicyPlanner& planner, const MotionIntent& intent, const SafetyState& safety, const int steps)
 {
     RobotState est = nominalEstimate();
@@ -55,7 +71,7 @@ void warmPlanner(GaitPolicyPlanner& planner, const MotionIntent& intent, const S
 
 void testArcTripodSelection()
 {
-    GaitPolicyPlanner planner{};
+    GaitPolicyPlanner planner{enabledDynamicConfig()};
     const SafetyState safety = safeState();
     warmPlanner(planner, walkingIntent(0.90, 0.10), safety, 16);
 
@@ -67,7 +83,7 @@ void testArcTripodSelection()
 
 void testPivotSelection()
 {
-    GaitPolicyPlanner planner{};
+    GaitPolicyPlanner planner{enabledDynamicConfig()};
     const SafetyState safety = safeState();
     warmPlanner(planner, walkingIntent(0.05, 0.95), safety, 16);
 
@@ -81,7 +97,7 @@ void testPivotSelection()
 
 void testAntiChatterHysteresis()
 {
-    GaitPolicyPlanner planner{};
+    GaitPolicyPlanner planner{enabledDynamicConfig()};
     const SafetyState safety = safeState();
     warmPlanner(planner, walkingIntent(0.85, 0.10), safety, 18);
 
@@ -101,7 +117,7 @@ void testAntiChatterHysteresis()
 
 void testFallbackStages()
 {
-    GaitPolicyPlanner planner{};
+    GaitPolicyPlanner planner{enabledDynamicConfig()};
     RobotState est = nominalEstimate();
     const MotionIntent pivot_tripod = walkingIntent(0.05, 0.95, GaitType::TRIPOD);
 
@@ -125,6 +141,18 @@ void testFallbackStages()
            "safe-stop should zero planned step length");
 }
 
+void testAcceptanceGatesDisableByDefault()
+{
+    control_config::GaitConfig cfg = enabledDynamicConfig();
+    cfg.acceptance_gate.feature_flag_enabled = false;
+    GaitPolicyPlanner planner{cfg};
+    const SafetyState safety = safeState();
+    RobotState est = nominalEstimate();
+    const RuntimeGaitPolicy policy = planner.plan(est, walkingIntent(0.95, 0.10), safety);
+
+    expect(!policy.dynamic_enabled, "dynamic gait should remain disabled until rollout gates pass");
+}
+
 } // namespace
 
 int main()
@@ -133,6 +161,7 @@ int main()
     testPivotSelection();
     testAntiChatterHysteresis();
     testFallbackStages();
+    testAcceptanceGatesDisableByDefault();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test(s) failed\n";

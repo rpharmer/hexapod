@@ -77,6 +77,16 @@ struct ParsedToml
   double gaitTurnYawRateExitRadps{0.3};
   double gaitTurnSpeedEnterMps{0.05};
   double gaitTurnSpeedExitMps{0.03};
+  bool gaitDynamicFeatureFlagEnabled{false};
+  bool gaitDynamicSimulatorFirstRequired{true};
+  int gaitDynamicSimulatorValidationRunsRequired{5};
+  int gaitDynamicSimulatorValidationRunsPassed{0};
+  double gaitDynamicMaxControlLatencyP95Ms{8.0};
+  double gaitDynamicObservedControlLatencyP95Ms{0.0};
+  double gaitDynamicMaxSafetyFaultsPerHour{0.20};
+  double gaitDynamicObservedSafetyFaultsPerHour{0.0};
+  double gaitDynamicMinStabilityMarginM{0.015};
+  double gaitDynamicObservedMinStabilityMarginM{0.0};
   double minBusVoltageV{10.5};
   double maxBusCurrentA{25.0};
   int minFootContacts{0};
