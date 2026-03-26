@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 
 #include "reach_envelope.hpp"
 
@@ -134,6 +135,7 @@ RuntimeGaitPolicy GaitPolicyPlanner::plan(const RobotState& est,
         config_.frequency.min_hz.value,
         config_.frequency.max_hz.value)};
     applyFallback(policy);
+    applyServoVelocityConstraint(policy, est);
     return policy;
 }
 
@@ -202,6 +204,7 @@ RuntimeGaitPolicy GaitPolicyPlanner::legacyPolicy(const RobotState& est,
         yaw_normalized,
         policy.reach_utilization);
     applyFallback(policy);
+    applyServoVelocityConstraint(policy, est);
     return policy;
 }
 
@@ -424,6 +427,57 @@ void GaitPolicyPlanner::applyFallback(RuntimeGaitPolicy& policy) const
                 leg.swing_height_m = LengthM{0.0};
             }
             break;
+    }
+}
+
+void GaitPolicyPlanner::applyServoVelocityConstraint(RuntimeGaitPolicy& policy, const RobotState& est) const
+{
+    if (policy.cadence_hz.value <= 0.0 ||
+        policy.fallback_stage == GaitFallbackStage::SAFE_STOP ||
+        policy.fallback_stage == GaitFallbackStage::FAULT_HOLD) {
+        return;
+    }
+
+    double observed_peak_velocity_radps = 0.0;
+    for (const auto& leg : est.leg_states) {
+        for (const auto& joint : leg.joint_state) {
+            observed_peak_velocity_radps =
+                std::max(observed_peak_velocity_radps, std::abs(joint.vel_radps.value));
+        }
+    }
+    if (observed_peak_velocity_radps <= 0.0) {
+        return;
+    }
+
+    double min_servo_vmax_radps = std::numeric_limits<double>::infinity();
+    for (const auto& leg : geometry_.legGeometry) {
+        for (const auto& dynamics : leg.servoDynamics) {
+            min_servo_vmax_radps = std::min(min_servo_vmax_radps, dynamics.positive_direction.vmax_radps);
+            min_servo_vmax_radps = std::min(min_servo_vmax_radps, dynamics.negative_direction.vmax_radps);
+        }
+    }
+    if (!std::isfinite(min_servo_vmax_radps) || min_servo_vmax_radps <= 1e-9) {
+        return;
+    }
+
+    const double allowed_peak_velocity_radps = 2.0 * min_servo_vmax_radps;
+    if (observed_peak_velocity_radps <= allowed_peak_velocity_radps) {
+        return;
+    }
+
+    const double gait_scale =
+        std::clamp(allowed_peak_velocity_radps / observed_peak_velocity_radps, 0.05, 1.0);
+    policy.cadence_hz = FrequencyHz{policy.cadence_hz.value * gait_scale};
+    for (auto& leg : policy.per_leg) {
+        leg.step_length_m = LengthM{leg.step_length_m.value * gait_scale};
+        leg.swing_height_m = LengthM{leg.swing_height_m.value * std::sqrt(gait_scale)};
+        leg.duty_cycle = std::clamp(leg.duty_cycle + ((1.0 - gait_scale) * 0.15), 0.05, 0.95);
+    }
+
+    if (gait_scale < 0.75 && policy.gait_family == GaitType::TRIPOD) {
+        policy.gait_family = GaitType::RIPPLE;
+    } else if (gait_scale < 0.50) {
+        policy.gait_family = GaitType::WAVE;
     }
 }
 
