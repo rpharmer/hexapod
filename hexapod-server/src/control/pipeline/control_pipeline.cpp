@@ -16,7 +16,8 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
 
     const RuntimeGaitPolicy gait_policy = planner_.plan(estimated, intent, safety_state);
     const GaitState gait_state = gait_.update(estimated, intent, safety_state, gait_policy);
-    const LegTargets leg_targets = body_.update(estimated, intent, gait_state, gait_policy, safety_state);
+    const ContactManagerOutput contact_adjusted = contact_manager_.update(estimated, gait_state, gait_policy);
+    const LegTargets leg_targets = body_.update(estimated, intent, contact_adjusted.managed_gait, contact_adjusted.managed_policy, safety_state);
     const JointTargets joint_targets = ik_.solve(estimated, leg_targets, safety_state);
 
     ControlStatus status{};
