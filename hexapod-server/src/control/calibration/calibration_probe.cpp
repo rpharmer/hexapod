@@ -144,7 +144,7 @@ BaseClearanceEstimateResult estimateToBottomFromSynchronousLift(
         result.contact_legs_before_loss = contacts_before;
         result.ground_plane_height_m = plane_height_m;
         result.estimated_to_bottom_m =
-            LengthM{after.body_pose.position.z - plane_height_m};
+            LengthM{after.body_pose_setpoint.position.z - plane_height_m};
         return result;
     }
 

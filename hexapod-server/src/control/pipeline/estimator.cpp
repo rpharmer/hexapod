@@ -77,8 +77,8 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
     est.foot_contacts = raw.foot_contacts;
     est.sample_id = raw.sample_id;
     est.timestamp_us = raw.timestamp_us;
-    est.has_body_twist_state = raw.has_body_twist_state;
-    est.body_twist_state.body_trans_mps = Vec3{};
+    est.has_body_pose_state = raw.has_body_pose_state;
+    est.body_pose_state.body_trans_mps = Vec3{};
 
     if (!last_leg_timestamp_.isZero()) {
         const DurationUs dt_us = raw.timestamp_us - last_leg_timestamp_;
@@ -107,11 +107,11 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
     last_leg_states_ = raw.leg_states;
     last_leg_timestamp_ = raw.timestamp_us;
 
-    if (raw.has_body_twist_state) {
-        est.body_twist_state.twist_pos_rad = raw.body_twist_state.twist_pos_rad;
-        est.body_twist_state.twist_vel_radps = raw.body_twist_state.twist_vel_radps;
-        last_twist_timestamp_ = raw.timestamp_us;
-        last_twist_pos_rad_ = est.body_twist_state.twist_pos_rad;
+    if (raw.has_body_pose_state) {
+        est.body_pose_state.orientation_rad = raw.body_pose_state.orientation_rad;
+        est.body_pose_state.angular_velocity_radps = raw.body_pose_state.angular_velocity_radps;
+        last_body_pose_timestamp_ = raw.timestamp_us;
+        last_orientation_rad_ = est.body_pose_state.orientation_rad;
         return est;
     }
 
@@ -137,30 +137,31 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
     double b = 0.0;
     double c = 0.0;
     if (solveGroundPlane(support_points_body_m, support_point_valid, a, b, c)) {
-        est.body_twist_state.twist_pos_rad.x = std::atan2(-b, 1.0);
-        est.body_twist_state.twist_pos_rad.y = std::atan2(a, 1.0);
-        est.body_twist_state.twist_pos_rad.z = 0.0;
+        est.body_pose_state.orientation_rad.x = std::atan2(-b, 1.0);
+        est.body_pose_state.orientation_rad.y = std::atan2(a, 1.0);
+        est.body_pose_state.orientation_rad.z = 0.0;
 
-        est.body_twist_state.body_trans_m.x = 0.0;
-        est.body_twist_state.body_trans_m.y = 0.0;
-        est.body_twist_state.body_trans_m.z = -c;
+        est.body_pose_state.body_trans_m.x = 0.0;
+        est.body_pose_state.body_trans_m.y = 0.0;
+        est.body_pose_state.body_trans_m.z = -c;
 
-        if (!last_twist_timestamp_.isZero()) {
-            const DurationUs dt_us = raw.timestamp_us - last_twist_timestamp_;
+        if (!last_body_pose_timestamp_.isZero()) {
+            const DurationUs dt_us = raw.timestamp_us - last_body_pose_timestamp_;
             if (dt_us.value > 0) {
                 const double dt_s = static_cast<double>(dt_us.value) * 1e-6;
-                const Vec3 twist_delta =
-                    static_cast<Vec3>(est.body_twist_state.twist_pos_rad) - last_twist_pos_rad_;
+                const Vec3 orientation_delta =
+                    static_cast<Vec3>(est.body_pose_state.orientation_rad) - last_orientation_rad_;
                 const Vec3 body_trans_delta =
-                    static_cast<Vec3>(est.body_twist_state.body_trans_m) - last_body_trans_m_;
-                est.body_twist_state.twist_vel_radps = AngularVelocityRadPerSec3{twist_delta * (1.0 / dt_s)};
-                est.body_twist_state.body_trans_mps = VelocityMps3{body_trans_delta * (1.0 / dt_s)};
+                    static_cast<Vec3>(est.body_pose_state.body_trans_m) - last_body_translation_m_;
+                est.body_pose_state.angular_velocity_radps =
+                    AngularVelocityRadPerSec3{orientation_delta * (1.0 / dt_s)};
+                est.body_pose_state.body_trans_mps = VelocityMps3{body_trans_delta * (1.0 / dt_s)};
             }
         }
 
-        last_twist_timestamp_ = raw.timestamp_us;
-        last_twist_pos_rad_ = est.body_twist_state.twist_pos_rad;
-        last_body_trans_m_ = est.body_twist_state.body_trans_m;
+        last_body_pose_timestamp_ = raw.timestamp_us;
+        last_orientation_rad_ = est.body_pose_state.orientation_rad;
+        last_body_translation_m_ = est.body_pose_state.body_trans_m;
     }
 
     return est;

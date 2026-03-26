@@ -32,18 +32,18 @@ int main() {
 
     MotionIntent stand_intent{};
     stand_intent.requested_mode = RobotMode::STAND;
-    stand_intent.twist.body_trans_mps = Vec3{0.10, -0.20, 0.05};
-    stand_intent.twist.twist_vel_radps = Vec3{0.0, 0.0, 0.3};
-    stand_intent.twist.body_trans_m.z = 0.20;
+    stand_intent.body_pose_setpoint.body_trans_mps = Vec3{0.10, -0.20, 0.05};
+    stand_intent.body_pose_setpoint.angular_velocity_radps = Vec3{0.0, 0.0, 0.3};
+    stand_intent.body_pose_setpoint.body_trans_m.z = 0.20;
 
     GaitState gait{};
     const LegTargets stand_targets = controller.update(est, stand_intent, gait, safety);
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
-        const Vec3 expected = (Vec3{-stand_intent.twist.body_trans_mps.x,
-                                    -stand_intent.twist.body_trans_mps.y,
-                                    -stand_intent.twist.body_trans_mps.z}) +
-                              cross(stand_intent.twist.twist_vel_radps, stand_targets.feet[leg].pos_body_m);
+        const Vec3 expected = (Vec3{-stand_intent.body_pose_setpoint.body_trans_mps.x,
+                                    -stand_intent.body_pose_setpoint.body_trans_mps.y,
+                                    -stand_intent.body_pose_setpoint.body_trans_mps.z}) +
+                              cross(stand_intent.body_pose_setpoint.angular_velocity_radps, stand_targets.feet[leg].pos_body_m);
         const Vec3 actual = stand_targets.feet[leg].vel_body_mps;
         if (!expect(nearlyEqual(actual.x, expected.x) &&
                         nearlyEqual(actual.y, expected.y) &&
@@ -57,7 +57,7 @@ int main() {
     walk_intent.requested_mode = RobotMode::WALK;
     walk_intent.speed_mps = LinearRateMps{0.2};
     walk_intent.heading_rad = AngleRad{0.0};
-    walk_intent.twist.body_trans_m.z = 0.20;
+    walk_intent.body_pose_setpoint.body_trans_m.z = 0.20;
 
     GaitState walk_gait{};
     walk_gait.phase[0] = 0.25;
@@ -74,7 +74,7 @@ int main() {
 
     MotionIntent offset_intent{};
     offset_intent.requested_mode = RobotMode::STAND;
-    offset_intent.twist.body_trans_m = Vec3{0.25, 0.0, 0.20};
+    offset_intent.body_pose_setpoint.body_trans_m = Vec3{0.25, 0.0, 0.20};
 
     const LegTargets offset_targets = controller.update(est, offset_intent, gait, safety);
     for (int leg = 0; leg < kNumLegs; ++leg) {
@@ -89,8 +89,8 @@ int main() {
 
     MotionIntent turn_intent{};
     turn_intent.requested_mode = RobotMode::WALK;
-    turn_intent.twist.twist_vel_radps.z = 0.8;
-    turn_intent.twist.body_trans_m.z = 0.20;
+    turn_intent.body_pose_setpoint.angular_velocity_radps.z = 0.8;
+    turn_intent.body_pose_setpoint.body_trans_m.z = 0.20;
 
     GaitState turn_gait{};
     turn_gait.in_stance.fill(true);
@@ -106,7 +106,7 @@ int main() {
     turn_policy.turn_mode = TurnMode::IN_PLACE;
 
     MotionIntent neutral_turn_intent = turn_intent;
-    neutral_turn_intent.twist.twist_vel_radps.z = 0.0;
+    neutral_turn_intent.body_pose_setpoint.angular_velocity_radps.z = 0.0;
     const LegTargets neutral_turn_targets = controller.update(est, neutral_turn_intent, turn_gait, turn_policy, safety);
     const LegTargets turn_targets = controller.update(est, turn_intent, turn_gait, turn_policy, safety);
 
@@ -136,8 +136,8 @@ int main() {
 
     MotionIntent swing_intent{};
     swing_intent.requested_mode = RobotMode::WALK;
-    swing_intent.twist.body_trans_m.z = 0.20;
-    swing_intent.twist.body_trans_mps = Vec3{0.10, 0.0, 0.0};
+    swing_intent.body_pose_setpoint.body_trans_m.z = 0.20;
+    swing_intent.body_pose_setpoint.body_trans_mps = Vec3{0.10, 0.0, 0.0};
 
     GaitState swing_gait{};
     swing_gait.in_stance.fill(false);
@@ -145,7 +145,7 @@ int main() {
     swing_gait.stride_phase_rate_hz = FrequencyHz{1.0};
 
     MotionIntent swing_static_intent = swing_intent;
-    swing_static_intent.twist.body_trans_mps = Vec3{0.0, 0.0, 0.0};
+    swing_static_intent.body_pose_setpoint.body_trans_mps = Vec3{0.0, 0.0, 0.0};
 
     const LegTargets swing_static_targets = controller.update(est, swing_static_intent, swing_gait, safety);
     const LegTargets swing_targets = controller.update(est, swing_intent, swing_gait, safety);

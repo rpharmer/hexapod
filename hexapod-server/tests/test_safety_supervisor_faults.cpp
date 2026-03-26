@@ -51,7 +51,7 @@ bool testHigherPriorityFaultWins() {
     RobotState est = nominalEstimated();
 
     raw.bus_ok = false;
-    est.body_twist_state.twist_pos_rad.x = 2.0; // clearly above default tilt limit
+    est.body_pose_state.orientation_rad.x = 2.0; // clearly above default tilt limit
 
     const SafetyState state = supervisor.evaluate(
         raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
@@ -69,7 +69,7 @@ bool testRulePrecedenceAcrossAllFaultTriggers() {
     raw.voltage = 1.0f;
     raw.current = 999.0f;
     raw.foot_contacts = {false, false, false, false, false, false};
-    est.body_twist_state.twist_pos_rad.x = 2.0;
+    est.body_pose_state.orientation_rad.x = 2.0;
 
     const SafetyState state = supervisor.evaluate(
         raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{false, false});

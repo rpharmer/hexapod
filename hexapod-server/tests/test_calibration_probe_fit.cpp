@@ -36,10 +36,10 @@ CalibrationTouchSample makeTouchSample(const LegGeometry& leg,
     sample.servo_angles = true_cal.toServoAngles(joint_true);
 
     const Vec3 foot_body = fk.footInBodyFrame(joint_true, leg).pos_body_m;
-    sample.body_pose.position = Vec3{0.0, 0.0, -foot_body.z};
-    sample.body_pose.roll = AngleRad{0.0};
-    sample.body_pose.pitch = AngleRad{0.0};
-    sample.body_pose.yaw = AngleRad{0.0};
+    sample.body_pose_setpoint.position = Vec3{0.0, 0.0, -foot_body.z};
+    sample.body_pose_setpoint.roll = AngleRad{0.0};
+    sample.body_pose_setpoint.pitch = AngleRad{0.0};
+    sample.body_pose_setpoint.yaw = AngleRad{0.0};
     return sample;
 }
 
@@ -57,7 +57,7 @@ BaseClearanceSample makeBaseClearanceSample(const HexapodGeometry& geometry,
                                             const std::array<bool, kNumLegs>& contacts) {
     LegFK fk{};
     BaseClearanceSample sample{};
-    sample.body_pose = pose;
+    sample.body_pose_setpoint = pose;
     sample.foot_contacts = contacts;
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
@@ -69,7 +69,7 @@ BaseClearanceSample makeBaseClearanceSample(const HexapodGeometry& geometry,
 
         if (contacts[leg]) {
             const Vec3 foot_body = fk.footInBodyFrame(joint, leg_geometry).pos_body_m;
-            sample.body_pose.position.z = -foot_body.z;
+            sample.body_pose_setpoint.position.z = -foot_body.z;
         }
     }
 
@@ -90,7 +90,7 @@ double meanContactHeight(const BaseClearanceSample& sample,
             geometry.legGeometry[leg].servo.toJointAngles(sample.servo_angles[leg]);
         const Vec3 foot_body =
             fk.footInBodyFrame(joint, geometry.legGeometry[leg]).pos_body_m;
-        sum += sample.body_pose.position.z + foot_body.z;
+        sum += sample.body_pose_setpoint.position.z + foot_body.z;
         ++count;
     }
 

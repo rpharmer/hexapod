@@ -33,8 +33,8 @@ MotionIntent walkingIntent(double speed_mps, double yaw_radps) {
     intent.requested_mode = RobotMode::WALK;
     intent.gait = GaitType::TRIPOD;
     intent.speed_mps = LinearRateMps{speed_mps};
-    intent.twist.twist_vel_radps.z = yaw_radps;
-    intent.twist.body_trans_mps.x = speed_mps;
+    intent.body_pose_setpoint.angular_velocity_radps.z = yaw_radps;
+    intent.body_pose_setpoint.body_trans_mps.x = speed_mps;
     intent.timestamp_us = now_us();
     return intent;
 }

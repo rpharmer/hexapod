@@ -31,7 +31,7 @@ PlannedFoothold FootholdPlanner::plan(int leg,
     PlannedFoothold foothold{};
     foothold.pos_body_m = nominal_body;
 
-    const Vec3 body_vel = -static_cast<Vec3>(intent.twist.body_trans_mps);
+    const Vec3 body_vel = -static_cast<Vec3>(intent.body_pose_setpoint.body_trans_mps);
     foothold.vel_body_mps = body_vel;
 
     if (!walking) {
@@ -92,7 +92,7 @@ Vec3 FootholdPlanner::modeStepDirection(int leg,
     const Vec3 tangent{-geometry_.legGeometry[leg].bodyCoxaOffset.y,
                        geometry_.legGeometry[leg].bodyCoxaOffset.x,
                        0.0};
-    const double yaw_sign = (intent.twist.twist_vel_radps.z >= 0.0) ? 1.0 : -1.0;
+    const double yaw_sign = (intent.body_pose_setpoint.angular_velocity_radps.z >= 0.0) ? 1.0 : -1.0;
     return normalizedPlanar(tangent * yaw_sign, crab_dir);
 }
 
@@ -103,7 +103,7 @@ double FootholdPlanner::innerOuterScale(int leg,
         return 1.0;
     }
 
-    const double yaw_rate = intent.twist.twist_vel_radps.z;
+    const double yaw_rate = intent.body_pose_setpoint.angular_velocity_radps.z;
     if (std::abs(yaw_rate) <= 1e-5) {
         return 1.0;
     }

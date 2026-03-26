@@ -34,7 +34,7 @@ double normalizedSpeed(const MotionIntent& intent, const control_config::GaitCon
 double normalizedYaw(const MotionIntent& intent, const control_config::GaitConfig& config)
 {
     const double yaw_enter = std::max(config.turn_mode_thresholds.yaw_rate_enter_radps.value, 1e-6);
-    return clamp01(std::abs(intent.twist.twist_vel_radps.z) / yaw_enter);
+    return clamp01(std::abs(intent.body_pose_setpoint.angular_velocity_radps.z) / yaw_enter);
 }
 constexpr double kArcMaxRollPitchRad = 8.0 * kPi / 180.0;
 constexpr double kPivotMaxRollPitchRad = 10.0 * kPi / 180.0;
@@ -249,7 +249,7 @@ RuntimeGaitPolicy GaitPolicyPlanner::legacyPolicy(const RobotState& est,
     policy.dynamic_enabled = false;
     policy.region = DynamicGaitRegion::ARC;
     policy.gait_family = intent.gait;
-    policy.turn_mode = (std::abs(intent.twist.twist_vel_radps.z) >=
+    policy.turn_mode = (std::abs(intent.body_pose_setpoint.angular_velocity_radps.z) >=
                         config_.turn_mode_thresholds.yaw_rate_enter_radps.value)
                            ? TurnMode::IN_PLACE
                            : TurnMode::CRAB;
@@ -274,13 +274,13 @@ RuntimeGaitPolicy GaitPolicyPlanner::legacyPolicy(const RobotState& est,
 
     policy.envelope = DynamicSafetyEnvelope{1.0, 1.0, true, kArcMaxRollPitchRad};
     const double yaw_normalized = std::clamp(
-        std::abs(intent.twist.twist_vel_radps.z) /
+        std::abs(intent.body_pose_setpoint.angular_velocity_radps.z) /
             std::max(config_.turn_mode_thresholds.yaw_rate_enter_radps.value, 1e-6),
         0.0,
         1.0);
     const double roll_pitch_abs_rad = std::max(
-        std::abs(est.body_twist_state.twist_pos_rad.x),
-        std::abs(est.body_twist_state.twist_pos_rad.y));
+        std::abs(est.body_pose_state.orientation_rad.x),
+        std::abs(est.body_pose_state.orientation_rad.y));
     policy.fallback_stage = selectFallbackStage(
         safety,
         policy.envelope,
@@ -303,13 +303,13 @@ void GaitPolicyPlanner::applyEnvelopeAndFallback(RuntimeGaitPolicy& policy,
         0.0,
         1.0);
     const double yaw_normalized = std::clamp(
-        std::abs(intent.twist.twist_vel_radps.z) /
+        std::abs(intent.body_pose_setpoint.angular_velocity_radps.z) /
             std::max(config_.turn_mode_thresholds.yaw_rate_enter_radps.value, 1e-6),
         0.0,
         1.0);
     const double roll_pitch_abs_rad = std::max(
-        std::abs(est.body_twist_state.twist_pos_rad.x),
-        std::abs(est.body_twist_state.twist_pos_rad.y));
+        std::abs(est.body_pose_state.orientation_rad.x),
+        std::abs(est.body_pose_state.orientation_rad.y));
 
     policy.envelope = envelopeForRegion(policy.region);
     if (!policy.envelope.allow_tripod && policy.gait_family == GaitType::TRIPOD) {
@@ -385,7 +385,7 @@ GaitSuppressionFlags GaitPolicyPlanner::computeSuppressionFlags(const RobotState
 
     flags.suppress_stride_progression = !safe_to_walk || (reach > 1.02);
     flags.suppress_turning = (turn_mode == TurnMode::CRAB &&
-                              std::abs(intent.twist.twist_vel_radps.z) <
+                              std::abs(intent.body_pose_setpoint.angular_velocity_radps.z) <
                                   config_.turn_mode_thresholds.yaw_rate_exit_radps.value);
     flags.prioritize_stability = config_.priority_suppression.stability_priority >= 1.0;
     return flags;

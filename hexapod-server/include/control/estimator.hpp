@@ -21,7 +21,7 @@ private:
     std::array<TimePointUs, kNumLegs> last_contact_timestamps_{};
     std::array<LegState, kNumLegs> last_leg_states_{};
     TimePointUs last_leg_timestamp_{};
-    TimePointUs last_twist_timestamp_{};
-    Vec3 last_twist_pos_rad_{};
-    Vec3 last_body_trans_m_{};
+    TimePointUs last_body_pose_timestamp_{};
+    Vec3 last_orientation_rad_{};
+    Vec3 last_body_translation_m_{};
 };

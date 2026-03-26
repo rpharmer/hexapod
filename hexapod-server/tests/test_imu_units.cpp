@@ -41,17 +41,17 @@ int main() {
     RobotState raw{};
     raw.sample_id = 1;
     raw.timestamp_us = now_us();
-    raw.has_body_twist_state = true;
-    raw.body_twist_state.twist_pos_rad = EulerAnglesRad3{0.11, -0.07, 0.42};
-    raw.body_twist_state.twist_vel_radps = AngularVelocityRadPerSec3{0.5, 0.4, 0.3};
+    raw.has_body_pose_state = true;
+    raw.body_pose_state.orientation_rad = EulerAnglesRad3{0.11, -0.07, 0.42};
+    raw.body_pose_state.angular_velocity_radps = AngularVelocityRadPerSec3{0.5, 0.4, 0.3};
 
     const RobotState est = estimator.update(raw);
-    if (!expect(est.has_body_twist_state, "estimator should keep imu twist validity") ||
-        !expect(std::abs(est.body_twist_state.twist_pos_rad.x - raw.body_twist_state.twist_pos_rad.x) < 1e-9,
+    if (!expect(est.has_body_pose_state, "estimator should keep imu body-pose validity") ||
+        !expect(std::abs(est.body_pose_state.orientation_rad.x - raw.body_pose_state.orientation_rad.x) < 1e-9,
                 "estimator should use imu roll directly") ||
-        !expect(std::abs(est.body_twist_state.twist_pos_rad.y - raw.body_twist_state.twist_pos_rad.y) < 1e-9,
+        !expect(std::abs(est.body_pose_state.orientation_rad.y - raw.body_pose_state.orientation_rad.y) < 1e-9,
                 "estimator should use imu pitch directly") ||
-        !expect(std::abs(est.body_twist_state.twist_vel_radps.z - raw.body_twist_state.twist_vel_radps.z) < 1e-9,
+        !expect(std::abs(est.body_pose_state.angular_velocity_radps.z - raw.body_pose_state.angular_velocity_radps.z) < 1e-9,
                 "estimator should use imu yaw rate directly")) {
         return EXIT_FAILURE;
     }

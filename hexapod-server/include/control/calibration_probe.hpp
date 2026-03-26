@@ -7,7 +7,7 @@
 
 struct CalibrationTouchSample {
     LegState servo_angles{};
-    BodyPose body_pose{};
+    BodyPose body_pose_setpoint{};
     bool contact{true};
 };
 
@@ -39,7 +39,7 @@ CalibrationLegFitResult fitServoCalibrationFromTouches(
 
 struct BaseClearanceSample {
     std::array<LegState, kNumLegs> servo_angles{};
-    BodyPose body_pose{};
+    BodyPose body_pose_setpoint{};
     std::array<bool, kNumLegs> foot_contacts{};
 };
 

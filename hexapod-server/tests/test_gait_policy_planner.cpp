@@ -23,7 +23,7 @@ MotionIntent walkingIntent(const double speed_norm, const double yaw_norm, const
     intent.requested_mode = RobotMode::WALK;
     intent.gait = gait;
     intent.speed_mps = LinearRateMps{speed_norm * control_config::kDefaultGaitNominalMaxSpeedMps};
-    intent.twist.twist_vel_radps.z = yaw_norm * control_config::kDefaultTurnYawRateEnterRadps;
+    intent.body_pose_setpoint.angular_velocity_radps.z = yaw_norm * control_config::kDefaultTurnYawRateEnterRadps;
     return intent;
 }
 

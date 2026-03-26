@@ -73,9 +73,9 @@ LegTargets BodyController::update(const RobotState& est,
     }
     previous_walking_ = walking;
 
-    const double roll_cmd = intent.twist.twist_pos_rad.x;
-    const double pitch_cmd = intent.twist.twist_pos_rad.y;
-    const double yaw_cmd_raw = policy.suppression.suppress_turning ? 0.0 : intent.twist.twist_pos_rad.z;
+    const double roll_cmd = intent.body_pose_setpoint.orientation_rad.x;
+    const double pitch_cmd = intent.body_pose_setpoint.orientation_rad.y;
+    const double yaw_cmd_raw = policy.suppression.suppress_turning ? 0.0 : intent.body_pose_setpoint.orientation_rad.z;
     const TimePointUs now = out.timestamp_us;
     const TimePointUs previous_update_ts = last_update_timestamp_;
     const bool has_positive_dt = !previous_update_ts.isZero() && now.value > previous_update_ts.value;
@@ -93,11 +93,11 @@ LegTargets BodyController::update(const RobotState& est,
     const double yaw_cmd = filtered_yaw_cmd_rad_;
     const Mat3 body_rotation = Mat3::rotZ(yaw_cmd) * Mat3::rotY(pitch_cmd) * Mat3::rotX(roll_cmd);
     const Vec3 planar_body_offset = Vec3{
-        intent.twist.body_trans_m.x,
-        intent.twist.body_trans_m.y,
+        intent.body_pose_setpoint.body_trans_m.x,
+        intent.body_pose_setpoint.body_trans_m.y,
         0.0};
 
-    double commanded_body_height_m = intent.twist.body_trans_m.z;
+    double commanded_body_height_m = intent.body_pose_setpoint.body_trans_m.z;
     if (commanded_body_height_m <= 1e-6) {
         commanded_body_height_m = kDefaultBodyHeightM;
     }
@@ -127,7 +127,7 @@ LegTargets BodyController::update(const RobotState& est,
                 target = previous + (delta * (max_step_m / delta_mag));
             }
         }
-        target_vel = target_vel + cross(intent.twist.twist_vel_radps, target);
+        target_vel = target_vel + cross(intent.body_pose_setpoint.angular_velocity_radps, target);
 
         out.feet[leg].pos_body_m = target;
         out.feet[leg].vel_body_mps = target_vel;

@@ -37,11 +37,11 @@ int main() {
     const RobotState first = makeNeutralRaw(1, 1'000'000);
     const RobotState first_est = estimator.update(first);
 
-    if (!expect(std::abs(first_est.body_twist_state.twist_pos_rad.x) < 1e-6,
+    if (!expect(std::abs(first_est.body_pose_state.orientation_rad.x) < 1e-6,
                 "neutral stance should estimate near-zero roll") ||
-        !expect(std::abs(first_est.body_twist_state.twist_pos_rad.y) < 1e-6,
+        !expect(std::abs(first_est.body_pose_state.orientation_rad.y) < 1e-6,
                 "neutral stance should estimate near-zero pitch") ||
-        !expect(first_est.body_twist_state.body_trans_m.z > 0.0,
+        !expect(first_est.body_pose_state.body_trans_m.z > 0.0,
                 "neutral stance should estimate body above the ground plane")) {
         return EXIT_FAILURE;
     }
@@ -53,7 +53,7 @@ int main() {
     no_contact_recent.leg_states[0].joint_state[COXA].pos_rad = AngleRad{0.1};
 
     const RobotState recent_est = estimator.update(no_contact_recent);
-    if (!expect(recent_est.body_twist_state.body_trans_m.z > 0.0,
+    if (!expect(recent_est.body_pose_state.body_trans_m.z > 0.0,
                 "recently touching feet should still support a ground estimate") ||
         !expect(std::abs(recent_est.leg_states[0].joint_state[COXA].vel_radps.value - 1.0) < 1e-6,
                 "joint velocity should be estimated from position delta over dt")) {
@@ -65,7 +65,7 @@ int main() {
     no_contact_stale.timestamp_us = TimePointUs{1'500'001};
 
     const RobotState stale_est = estimator.update(no_contact_stale);
-    if (!expect(std::abs(stale_est.body_twist_state.body_trans_m.z) < 1e-9,
+    if (!expect(std::abs(stale_est.body_pose_state.body_trans_m.z) < 1e-9,
                 "stale no-contact window should clear ground estimate")) {
         return EXIT_FAILURE;
     }
