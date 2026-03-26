@@ -58,9 +58,26 @@ bool gaitSchedulerRespondsToWalkIntent() {
     const bool stride_active = advanced.stride_phase_rate_hz.value >= 0.5;
     const bool timestamp_set = !advanced.timestamp_us.isZero();
 
+    RobotState near_limit = est;
+    const HexapodGeometry geometry = defaultHexapodGeometry();
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        LegState straight_joint{};
+        straight_joint.joint_state[0].pos_rad = AngleRad{0.0};
+        straight_joint.joint_state[1].pos_rad = AngleRad{0.0};
+        straight_joint.joint_state[2].pos_rad = AngleRad{0.0};
+        near_limit.leg_states[leg] = geometry.legGeometry[leg].servo.toServoAngles(straight_joint);
+    }
+
+    GaitScheduler reach_limited;
+    reach_limited.update(near_limit, walk, safety);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    const GaitState slowed = reach_limited.update(near_limit, walk, safety);
+
     return expect(stride_active, "walk intent should produce positive stride phase rate") &&
            expect(leg0_leg1_offset, "tripod gait should offset neighboring leg phases") &&
-           expect(timestamp_set, "gait update should stamp output time");
+           expect(timestamp_set, "gait update should stamp output time") &&
+           expect(slowed.stride_phase_rate_hz.value < advanced.stride_phase_rate_hz.value,
+                  "gait scheduler should reduce stride rate near reach envelope limits");
 }
 
 

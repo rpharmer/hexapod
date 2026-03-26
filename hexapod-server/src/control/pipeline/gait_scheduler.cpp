@@ -1,6 +1,7 @@
 #include "gait_scheduler.hpp"
 
 #include "control_config.hpp"
+#include "reach_envelope.hpp"
 #include "stability_tracker.hpp"
 
 #include <algorithm>
@@ -38,6 +39,32 @@ double GaitScheduler::wrap01(double x) const {
     return x;
 }
 
+
+double GaitScheduler::maxReachUtilization(const RobotState& est) const {
+    double max_utilization = 0.0;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        const LegGeometry& leg_geo = geometry_.legGeometry[leg];
+        const LegState joint_frame = leg_geo.servo.toJointAngles(est.leg_states[leg]);
+
+        const double q1 = joint_frame.joint_state[0].pos_rad.value;
+        const double q2 = joint_frame.joint_state[1].pos_rad.value;
+        const double q3 = joint_frame.joint_state[2].pos_rad.value;
+
+        const double rho =
+            leg_geo.femurLength.value * std::cos(q2) +
+            leg_geo.tibiaLength.value * std::cos(q2 + q3);
+        const double z =
+            leg_geo.femurLength.value * std::sin(q2) +
+            leg_geo.tibiaLength.value * std::sin(q2 + q3);
+        const double r = leg_geo.coxaLength.value + rho;
+        const Vec3 foot_leg{r * std::cos(q1), r * std::sin(q1), z};
+
+        max_utilization = std::max(max_utilization, kinematics::legReachUtilization(foot_leg, leg_geo));
+    }
+
+    return max_utilization;
+}
+
 GaitState GaitScheduler::update(const RobotState& est,
                                 const MotionIntent& intent,
                                 const SafetyState& safety) {
@@ -49,11 +76,15 @@ GaitState GaitScheduler::update(const RobotState& est,
     out.support_contact_count = stability.support_contact_count;
     out.stability_margin_m = stability.stability_margin_m;
 
+    const double reach_utilization = maxReachUtilization(est);
+    const bool envelope_allows_progression = reach_utilization < 1.02;
+
     const bool walking =
         (intent.requested_mode == RobotMode::WALK) &&
         !safety.inhibit_motion &&
         !safety.torque_cut &&
-        out.stable;
+        out.stable &&
+        envelope_allows_progression;
 
     if (!walking) {
         for (int i = 0; i < kNumLegs; ++i) {
@@ -77,8 +108,10 @@ GaitState GaitScheduler::update(const RobotState& est,
     const double commanded_speed = std::abs(intent.speed_mps.value);
     const double normalized_command = std::clamp(commanded_speed / kNominalMaxSpeedMps, 0.0, 1.0);
     const double speed_mag = std::max(normalized_command, config_.fallback_speed_mag.value);
+    const double envelope_speed_scale =
+        std::clamp((1.0 - reach_utilization) / 0.15, 0.25, 1.0);
 
-    const double step_hz = std::clamp(0.5 + 2.0 * speed_mag, 0.5, 2.5);
+    const double step_hz = std::clamp(0.5 + 2.0 * speed_mag * envelope_speed_scale, 0.5, 2.5);
     const FrequencyHz step_rate_hz{step_hz};
     out.stride_phase_rate_hz = step_rate_hz;
 
