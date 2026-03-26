@@ -9,6 +9,7 @@
 #include "types.hpp"
 
 struct PipelineStepResult {
+    LegTargets leg_targets{};
     JointTargets joint_targets{};
     ControlStatus status{};
 };

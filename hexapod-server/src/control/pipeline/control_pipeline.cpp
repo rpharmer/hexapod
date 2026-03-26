@@ -1,5 +1,21 @@
 #include "control_pipeline.hpp"
 
+#include <cstdlib>
+#include <string_view>
+
+namespace {
+
+bool contactManagerBypassed() {
+    const char* raw = std::getenv("HEXAPOD_BYPASS_CONTACT_MANAGER");
+    if (raw == nullptr) {
+        return false;
+    }
+    const std::string_view value{raw};
+    return value == "1" || value == "true" || value == "TRUE" || value == "yes" || value == "YES";
+}
+
+} // namespace
+
 ControlPipeline::ControlPipeline(control_config::GaitConfig config)
     : planner_(config),
       gait_(config) {}
@@ -16,7 +32,13 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
 
     const RuntimeGaitPolicy gait_policy = planner_.plan(estimated, intent, safety_state);
     const GaitState gait_state = gait_.update(estimated, intent, safety_state, gait_policy);
-    const ContactManagerOutput contact_adjusted = contact_manager_.update(estimated, gait_state, gait_policy);
+    ContactManagerOutput contact_adjusted{};
+    if (contactManagerBypassed()) {
+        contact_adjusted.managed_gait = gait_state;
+        contact_adjusted.managed_policy = gait_policy;
+    } else {
+        contact_adjusted = contact_manager_.update(estimated, gait_state, gait_policy);
+    }
     const LegTargets leg_targets = body_.update(estimated, intent, contact_adjusted.managed_gait, contact_adjusted.managed_policy, safety_state);
     const JointTargets joint_targets = ik_.solve(estimated, leg_targets, safety_state);
 
@@ -54,6 +76,7 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     }
 
     PipelineStepResult result{};
+    result.leg_targets = leg_targets;
     result.joint_targets = joint_targets;
     result.status = status;
     return result;

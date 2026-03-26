@@ -8,36 +8,6 @@
 namespace {
 
 constexpr double kDefaultBodyHeightM = 0.20;
-constexpr double kContinuityPhaseBlendWidth = 0.25;
-
-Vec3 lerp(const Vec3& a, const Vec3& b, double t) {
-    return a + ((b - a) * t);
-}
-
-double smoothstep(double t) {
-    const double alpha = clamp01(t);
-    return alpha * alpha * (3.0 - (2.0 * alpha));
-}
-
-double phaseProgressForLeg(const GaitState& gait, int leg, const RuntimeGaitPolicy& policy) {
-    const double phase = clamp01(gait.phase[leg]);
-    const double duty = std::clamp(policy.per_leg[leg].duty_cycle, 0.05, 0.95);
-    if (gait.in_stance[leg]) {
-        return (duty <= 1e-6) ? 0.0 : clamp01(phase / duty);
-    }
-    return clamp01((phase - duty) / std::max(1.0 - duty, 1e-6));
-}
-
-struct LegContinuityState {
-    bool initialized{false};
-    bool in_stance{true};
-    Vec3 transition_pos{};
-    Vec3 transition_vel{};
-    Vec3 last_pos{};
-    Vec3 last_vel{};
-};
-
-std::array<LegContinuityState, kNumLegs> g_leg_continuity{};
 
 } // namespace
 
@@ -116,34 +86,11 @@ LegTargets BodyController::update(const RobotState& est,
         const PlannedFoothold foothold =
             foothold_planner_.plan(leg, target, intent, gait, policy, walking);
 
-        // Apply planner trajectory first, then apply posture-bias as a continuous offset.
-        const Vec3 planned_target = body_rotation * foothold.pos_body_m;
-        const Vec3 planned_vel = body_rotation * foothold.vel_body_mps;
-
-        LegContinuityState& continuity = g_leg_continuity[leg];
-        if (!continuity.initialized) {
-            continuity.initialized = true;
-            continuity.in_stance = gait.in_stance[leg];
-            continuity.transition_pos = planned_target;
-            continuity.transition_vel = planned_vel;
-            continuity.last_pos = planned_target;
-            continuity.last_vel = planned_vel;
-        } else if (continuity.in_stance != gait.in_stance[leg]) {
-            continuity.in_stance = gait.in_stance[leg];
-            continuity.transition_pos = continuity.last_pos;
-            continuity.transition_vel = continuity.last_vel;
-        }
-
-        const double phase_progress = phaseProgressForLeg(gait, leg, policy);
-        const double continuity_alpha = smoothstep(clamp01(phase_progress / kContinuityPhaseBlendWidth));
-
-        target = lerp(continuity.transition_pos, planned_target, continuity_alpha);
-        Vec3 target_vel = lerp(continuity.transition_vel, planned_vel, continuity_alpha);
+        target = body_rotation * foothold.pos_body_m;
+        Vec3 target_vel = body_rotation * foothold.vel_body_mps;
 
         target = clampToReachEnvelope(leg, target);
         target_vel = target_vel + cross(intent.twist.twist_vel_radps, target);
-        continuity.last_pos = target;
-        continuity.last_vel = target_vel;
 
         out.feet[leg].pos_body_m = target;
         out.feet[leg].vel_body_mps = target_vel;

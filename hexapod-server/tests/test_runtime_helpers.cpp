@@ -194,8 +194,12 @@ bool testJointOscillationTrackerCountsDirectionReversals() {
     const JointOscillationMetrics metrics = tracker.metrics();
     return expect(metrics.direction_reversal_events == 2,
                   "joint tracker should count significant direction reversals") &&
+           expect(metrics.direction_reversal_events_by_joint[0] == 2,
+                  "joint tracker should attribute reversals to the active joint") &&
            expect(metrics.peak_joint_velocity_radps > 2.0,
-                  "joint tracker should report peak velocity from delta over dt");
+                  "joint tracker should report peak velocity from delta over dt") &&
+           expect(metrics.peak_joint_velocity_radps_by_joint[0] > 2.0,
+                  "joint tracker should retain per-joint peak velocity diagnostics");
 }
 
 bool testJointOscillationTrackerReversalCooldown() {

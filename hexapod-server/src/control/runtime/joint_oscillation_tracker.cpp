@@ -64,6 +64,9 @@ void JointOscillationTracker::observe(const JointTargets& targets, TimePointUs n
             if (velocity_radps > metrics_.peak_joint_velocity_radps) {
                 metrics_.peak_joint_velocity_radps = velocity_radps;
             }
+            if (velocity_radps > metrics_.peak_joint_velocity_radps_by_joint[idx]) {
+                metrics_.peak_joint_velocity_radps_by_joint[idx] = velocity_radps;
+            }
 
             int8_t direction = 0;
             if (delta > 0.0) {
@@ -83,6 +86,7 @@ void JointOscillationTracker::observe(const JointTargets& targets, TimePointUs n
                 now.value >= (last_reversal_timestamp_[idx].value + min_reversal_interval_us_);
             if (has_direction_reversal && significant_delta && previous_significant_delta && interval_elapsed) {
                 ++metrics_.direction_reversal_events;
+                ++metrics_.direction_reversal_events_by_joint[idx];
                 last_reversal_timestamp_[idx] = now;
             }
 

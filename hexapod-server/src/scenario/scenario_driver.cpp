@@ -93,8 +93,7 @@ MotionIntent blendMotionIntent(const MotionIntent& from, const MotionIntent& to,
 
 bool isRampEligible(const MotionIntent& from, const MotionIntent& to) {
     return from.requested_mode == RobotMode::WALK &&
-           to.requested_mode == RobotMode::WALK &&
-           from.gait == to.gait;
+           to.requested_mode == RobotMode::WALK;
 }
 
 } // namespace

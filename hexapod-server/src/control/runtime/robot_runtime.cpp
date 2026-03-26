@@ -136,7 +136,7 @@ void RobotRuntime::controlStep() {
         RuntimeFreshnessGate::maybeLogReject(logger_, freshness, est, intent);
         status_.write(decision.status);
         joint_targets_.write(decision.joint_targets);
-        diagnostics_reporter_.recordJointTargets(decision.joint_targets, now);
+        diagnostics_reporter_.recordControlOutputs(decision.joint_targets, decision.status, now, nullptr);
         maybePublishTelemetry(now);
         return;
     }
@@ -150,7 +150,7 @@ void RobotRuntime::controlStep() {
 
     joint_targets_.write(result.joint_targets);
     status_.write(result.status);
-    diagnostics_reporter_.recordJointTargets(result.joint_targets, now);
+    diagnostics_reporter_.recordControlOutputs(result.joint_targets, result.status, now, &result.leg_targets);
 
     maybePublishTelemetry(now);
 }
