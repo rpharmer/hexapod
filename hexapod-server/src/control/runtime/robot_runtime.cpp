@@ -112,9 +112,9 @@ void RobotRuntime::busStep() {
     if (config_.runtime_imu.enable_reads) {
         hardware::ImuSample imu_sample{};
         if (imu_ && imu_->read(imu_sample) && imu_sample.valid) {
-            raw.body_twist_state.twist_pos_rad = imu_sample.orientation_rad;
-            raw.body_twist_state.twist_vel_radps = imu_sample.angular_velocity_radps;
-            raw.has_body_twist_state = true;
+            raw.body_pose_state.orientation_rad = imu_sample.orientation_rad;
+            raw.body_pose_state.angular_velocity_radps = imu_sample.angular_velocity_radps;
+            raw.has_body_pose_state = true;
         }
     }
     if (raw.sample_id == 0) {

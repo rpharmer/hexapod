@@ -133,17 +133,17 @@ struct JointTargets {
   std::array<LegState,kNumLegs> leg_states{};
 };
 
-struct BodyTwistState {
-  // Body orientation setpoint in radians as {roll, pitch, yaw}.
-  EulerAnglesRad3 twist_pos_rad{};
-  // Body angular velocity setpoint in rad/s as {roll_rate, pitch_rate, yaw_rate}.
-  AngularVelocityRadPerSec3 twist_vel_radps{};
+struct BodyPoseKinematics {
+  // Body orientation in radians as {roll, pitch, yaw}.
+  EulerAnglesRad3 orientation_rad{};
+  // Body angular velocity in rad/s as {roll_rate, pitch_rate, yaw_rate}.
+  AngularVelocityRadPerSec3 angular_velocity_radps{};
 
-  // Body translation setpoint relative to nominal stance in meters as {x, y, z}.
-  // x/y are planar body translation offsets; z is vertical body-height setpoint.
+  // Body translation relative to nominal stance in meters as {x, y, z}.
+  // x/y are planar body translation offsets; z is vertical body height.
   // (0, 0, 0) is the nominal stance translation.
   PositionM3 body_trans_m{};
-  // Body translation velocity setpoint in m/s as {x_rate, y_rate, z_rate}.
+  // Body translation velocity in m/s as {x_rate, y_rate, z_rate}.
   VelocityMps3 body_trans_mps{};
 };
 
@@ -153,7 +153,7 @@ struct MotionIntent {
   // Planar walk command magnitude in m/s and heading in body frame radians.
   LinearRateMps speed_mps{};
   AngleRad heading_rad{};
-  BodyTwistState twist{};
+  BodyPoseKinematics body_pose_setpoint{};
   uint64_t sample_id{0};
   TimePointUs timestamp_us{};
 };
@@ -161,7 +161,7 @@ struct MotionIntent {
 struct RobotState {
   std::array<LegState, kNumLegs> leg_states{};
   std::array<bool, kNumLegs> foot_contacts{};
-  BodyTwistState body_twist_state{};
+  BodyPoseKinematics body_pose_state{};
   float voltage{0.0f};
   float current{0.0f};
   bool bus_ok{true};
@@ -170,7 +170,7 @@ struct RobotState {
   TimePointUs timestamp_us{};
 
   // Optional-field validity flags for context-specific usage.
-  bool has_body_twist_state{false};
+  bool has_body_pose_state{false};
   bool has_power_state{false};
   bool has_valid_flag{false};
 };

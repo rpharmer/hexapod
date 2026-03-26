@@ -72,9 +72,9 @@ std::set<std::string> collectKeys(const toml::value& table) {
 MotionIntent blendMotionIntent(const MotionIntent& from, const MotionIntent& to, double t) {
     MotionIntent blended = to;
     blended.speed_mps.value = lerp(from.speed_mps.value, to.speed_mps.value, t);
-    blended.twist.body_trans_m.z = lerp(from.twist.body_trans_m.z, to.twist.body_trans_m.z, t);
+    blended.body_pose_setpoint.body_trans_m.z = lerp(from.body_pose_setpoint.body_trans_m.z, to.body_pose_setpoint.body_trans_m.z, t);
     blended.heading_rad.value = lerpAngleShortest(from.heading_rad.value, to.heading_rad.value, t);
-    blended.twist.twist_pos_rad.z = lerpAngleShortest(from.twist.twist_pos_rad.z, to.twist.twist_pos_rad.z, t);
+    blended.body_pose_setpoint.orientation_rad.z = lerpAngleShortest(from.body_pose_setpoint.orientation_rad.z, to.body_pose_setpoint.orientation_rad.z, t);
     return blended;
 }
 

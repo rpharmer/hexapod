@@ -299,7 +299,7 @@ bool runTelemetryCadenceRejectCase() {
                   "rejected control steps should keep geometry refresh cadence");
 }
 
-bool runImuReadGateCase(bool imu_reads_enabled, bool expect_body_twist_state) {
+bool runImuReadGateCase(bool imu_reads_enabled, bool expect_body_pose_state) {
     auto bridge = std::make_unique<SimHardwareBridge>();
     auto estimator = std::make_unique<CapturingEstimator>();
     auto* estimator_raw = estimator.get();
@@ -322,14 +322,14 @@ bool runImuReadGateCase(bool imu_reads_enabled, bool expect_body_twist_state) {
     runtime.busStep();
     runtime.estimatorStep();
 
-    if (!expect(estimator_raw->last_raw.has_body_twist_state == expect_body_twist_state,
-                "IMU read gate should control raw body_twist_state propagation")) {
+    if (!expect(estimator_raw->last_raw.has_body_pose_state == expect_body_pose_state,
+                "IMU read gate should control raw body_pose_state propagation")) {
         return false;
     }
 
-    if (expect_body_twist_state) {
+    if (expect_body_pose_state) {
         return expect(imu_raw->read_count == 1, "enabled IMU reads should poll the IMU once per bus step") &&
-               expect(estimator_raw->last_raw.body_twist_state.twist_pos_rad.x == 0.1,
+               expect(estimator_raw->last_raw.body_pose_state.orientation_rad.x == 0.1,
                       "enabled IMU reads should propagate orientation into raw state");
     }
     return expect(imu_raw->read_count == 0, "disabled IMU reads should not poll IMU");

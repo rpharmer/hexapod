@@ -118,38 +118,38 @@ MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
     cmd.heading_rad = AngleRad{static_cast<double>(controller.getLeftAng())};
 
     const double body_height_cmd = state.walk_body_height_m + (rt - lt) * kBodyHeightAdjustRangeM;
-    cmd.twist.body_trans_m = Vec3{0.0, 0.0, std::clamp(body_height_cmd, kMinBodyHeightM, kMaxBodyHeightM)};
-    cmd.twist.body_trans_mps = Vec3{};
+    cmd.body_pose_setpoint.body_trans_m = Vec3{0.0, 0.0, std::clamp(body_height_cmd, kMinBodyHeightM, kMaxBodyHeightM)};
+    cmd.body_pose_setpoint.body_trans_mps = Vec3{};
     const double facing_yaw_rad =
         state.walk_facing_valid ? state.walk_facing_yaw_rad : (right_x * kMaxWalkYawRad);
-    cmd.twist.twist_pos_rad = Vec3{0.0, 0.0, facing_yaw_rad};
-    cmd.twist.twist_vel_radps = Vec3{};
+    cmd.body_pose_setpoint.orientation_rad = Vec3{0.0, 0.0, facing_yaw_rad};
+    cmd.body_pose_setpoint.angular_velocity_radps = Vec3{};
     return cmd;
   }
 
   if (state.input_mode == ControllerInputMode::BodyPose) {
     cmd.speed_mps = LinearRateMps{0.0};
     cmd.heading_rad = AngleRad{0.0};
-    cmd.twist.body_trans_m = Vec3{
+    cmd.body_pose_setpoint.body_trans_m = Vec3{
         -left_y * kMaxBodyTranslateXYM,
         left_x * kMaxBodyTranslateXYM,
         std::clamp(state.body_height_m, kMinBodyHeightM, kMaxBodyHeightM)};
-    cmd.twist.body_trans_mps = Vec3{};
-    cmd.twist.twist_pos_rad = Vec3{
+    cmd.body_pose_setpoint.body_trans_mps = Vec3{};
+    cmd.body_pose_setpoint.orientation_rad = Vec3{
         right_x * kMaxBodyRollPitchRad,
         -right_y * kMaxBodyRollPitchRad,
         std::clamp(rt - lt, -1.0, 1.0) * kMaxBodyYawRad};
-    cmd.twist.twist_vel_radps = Vec3{};
+    cmd.body_pose_setpoint.angular_velocity_radps = Vec3{};
     return cmd;
   }
 
   cmd.requested_mode = RobotMode::STAND;
   cmd.speed_mps = LinearRateMps{0.0};
   cmd.heading_rad = AngleRad{0.0};
-  cmd.twist.body_trans_m = Vec3{0.0, 0.0, state.walk_body_height_m};
-  cmd.twist.body_trans_mps = Vec3{};
-  cmd.twist.twist_pos_rad = Vec3{};
-  cmd.twist.twist_vel_radps = Vec3{};
+  cmd.body_pose_setpoint.body_trans_m = Vec3{0.0, 0.0, state.walk_body_height_m};
+  cmd.body_pose_setpoint.body_trans_mps = Vec3{};
+  cmd.body_pose_setpoint.orientation_rad = Vec3{};
+  cmd.body_pose_setpoint.angular_velocity_radps = Vec3{};
 
   return cmd;
 }

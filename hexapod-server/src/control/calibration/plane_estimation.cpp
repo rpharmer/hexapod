@@ -33,7 +33,7 @@ double meanContactPlaneHeight(const BaseClearanceSample& sample,
         }
 
         const Vec3 foot_world = computeFootWorldFromServoAngles(
-            sample.servo_angles[leg], geometry.legGeometry[leg], sample.body_pose);
+            sample.servo_angles[leg], geometry.legGeometry[leg], sample.body_pose_setpoint);
         sum_height += foot_world.z;
         ++used_contacts;
     }

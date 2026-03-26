@@ -21,8 +21,8 @@ double touchResidualMeters(const CalibrationTouchSample& sample,
                            double plane_height_m) {
     const Vec3 foot_body = computeFootInBodyFromServoAngles(
         sample.servo_angles, leg_geometry, calibration);
-    const Mat3 body_to_world = sample.body_pose.rotationBodyToWorld();
-    const Vec3 foot_world = sample.body_pose.position + (body_to_world * foot_body);
+    const Mat3 body_to_world = sample.body_pose_setpoint.rotationBodyToWorld();
+    const Vec3 foot_world = sample.body_pose_setpoint.position + (body_to_world * foot_body);
 
     return foot_world.z - plane_height_m;
 }

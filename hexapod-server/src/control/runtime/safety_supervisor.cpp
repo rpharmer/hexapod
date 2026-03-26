@@ -126,8 +126,8 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
         },
         FaultRule{
             .is_triggered = [&](void) {
-                return std::abs(est.body_twist_state.twist_pos_rad.x) > config_.max_tilt_rad.value ||
-                       std::abs(est.body_twist_state.twist_pos_rad.y) > config_.max_tilt_rad.value ||
+                return std::abs(est.body_pose_state.orientation_rad.x) > config_.max_tilt_rad.value ||
+                       std::abs(est.body_pose_state.orientation_rad.y) > config_.max_tilt_rad.value ||
                        (freshness.estimator_valid && !stability.com_inside_support_polygon);
             },
             .fault = FaultCode::TIP_OVER,

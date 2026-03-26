@@ -116,7 +116,7 @@ Button mappings in controller mode:
 
 - Left stick => walk heading + speed (`heading_rad`, `speed_mps`)
   - stick axes (`LX`,`LY`) are radial-deadzone filtered and normalized to `[-1, 1]` for downstream consumers.
-- Right stick => facing yaw setpoint (`twist_pos_rad.z`) from stick angle.
+- Right stick => facing yaw setpoint (`orientation_rad.z`) from stick angle.
   - when right-stick magnitude is above threshold, the current stick direction becomes the robot facing direction.
 - Triggers (`LT`/`RT`) => body height down/up (`body_trans_m.z`).
 - `X` => RIPPLE gait.
@@ -125,8 +125,8 @@ Button mappings in controller mode:
 ### 2) Body-pose mode
 
 - Left stick => body XY translation relative to the support legs (`body_trans_m.x/.y`).
-- Right stick => body roll/pitch (`twist_pos_rad.x/.y`).
-- Triggers (`LT`/`RT`) => body yaw (`twist_pos_rad.z`).
+- Right stick => body roll/pitch (`orientation_rad.x/.y`).
+- Triggers (`LT`/`RT`) => body yaw (`orientation_rad.z`).
 - `LB` / `RB` => increment/decrement body height (`body_trans_m.z`).
 - `B` => reset body translation and rotation to neutral.
 
@@ -150,7 +150,7 @@ For step-by-step instructions on adding new controller/input drivers and new har
   - Reads newline-delimited CSV records from `/dev/ttyIMU0` (default).
   - Expected record format:
     `roll,pitch,yaw,gx,gy,gz,ax,ay,az,mx,my,mz`
-  - Orientation (`roll/pitch/yaw`) and angular velocity (`gx/gy/gz`) are fed into `RobotState.body_twist_state`.
+  - Orientation (`roll/pitch/yaw`) and angular velocity (`gx/gy/gz`) are fed into `RobotState.body_pose_state`.
 - **Simulation/testing unit:** `hardware::DummyImuUnit`
   - Auto-enabled when `Runtime.Mode = "sim"`.
   - Generates deterministic synthetic 9-axis motion data for repeatable tests.
