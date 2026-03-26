@@ -2,6 +2,21 @@
 
 #include <cmath>
 
+namespace {
+
+double shortestAngularDelta(double current, double previous) {
+    constexpr double kPi = 3.14159265358979323846;
+    constexpr double kTwoPi = 6.28318530717958647692;
+    double delta = current - previous;
+    delta = std::fmod(delta + kPi, kTwoPi);
+    if (delta < 0.0) {
+        delta += kTwoPi;
+    }
+    return delta - kPi;
+}
+
+} // namespace
+
 JointOscillationTracker::JointOscillationTracker(double min_delta_rad_for_reversal,
                                                  uint64_t min_reversal_interval_us)
     : min_delta_rad_for_reversal_(min_delta_rad_for_reversal > 0.0 ? min_delta_rad_for_reversal : 0.0),
@@ -43,11 +58,14 @@ void JointOscillationTracker::observe(const JointTargets& targets, TimePointUs n
 
             const double current = targets.leg_states[leg_idx].joint_state[joint_idx].pos_rad.value;
             const double previous = previous_targets_.leg_states[leg_idx].joint_state[joint_idx].pos_rad.value;
-            const double delta = current - previous;
+            const double delta = shortestAngularDelta(current, previous);
             const double abs_delta = std::abs(delta);
             const double velocity_radps = abs_delta / dt_s;
             if (velocity_radps > metrics_.peak_joint_velocity_radps) {
                 metrics_.peak_joint_velocity_radps = velocity_radps;
+            }
+            if (velocity_radps > metrics_.peak_joint_velocity_radps_by_joint[idx]) {
+                metrics_.peak_joint_velocity_radps_by_joint[idx] = velocity_radps;
             }
 
             int8_t direction = 0;
@@ -68,6 +86,7 @@ void JointOscillationTracker::observe(const JointTargets& targets, TimePointUs n
                 now.value >= (last_reversal_timestamp_[idx].value + min_reversal_interval_us_);
             if (has_direction_reversal && significant_delta && previous_significant_delta && interval_elapsed) {
                 ++metrics_.direction_reversal_events;
+                ++metrics_.direction_reversal_events_by_joint[idx];
                 last_reversal_timestamp_[idx] = now;
             }
 

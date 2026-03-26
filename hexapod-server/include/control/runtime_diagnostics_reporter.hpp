@@ -19,6 +19,20 @@ struct VisualizerTelemetryDiagnostics {
     TimePointUs last_successful_send_timestamp{};
 };
 
+struct LegTargetVariabilityDiagnostics {
+    double peak_foot_target_velocity_mps{0.0};
+    std::array<double, kNumLegs> peak_foot_target_velocity_mps_by_leg{};
+    uint64_t rapid_change_events{0};
+};
+
+struct GaitVariabilityDiagnostics {
+    double peak_cadence_delta_hz_per_s{0.0};
+    double peak_reach_utilization_delta_per_s{0.0};
+    double peak_phase_delta_per_s{0.0};
+    std::array<double, kNumLegs> peak_phase_delta_per_s_by_leg{};
+    uint64_t rapid_change_events{0};
+};
+
 class RuntimeDiagnosticsReporter {
 public:
     RuntimeDiagnosticsReporter(std::shared_ptr<logging::AsyncLogger> logger,
@@ -26,7 +40,10 @@ public:
 
     void recordVisualizerTelemetry(const telemetry::TelemetryPublishCounters& telemetry_counters,
                                    TimePointUs now);
-    void recordJointTargets(const JointTargets& targets, TimePointUs now);
+    void recordControlOutputs(const JointTargets& targets,
+                              const ControlStatus& status,
+                              TimePointUs now,
+                              const LegTargets* leg_targets = nullptr);
 
     void report(const ControlStatus& status,
                 const std::optional<BridgeCommandResultMetadata>& bridge_result,
@@ -47,4 +64,12 @@ private:
     uint64_t consecutive_failures_{0};
     uint64_t warning_failures_observed_{0};
     JointOscillationTracker joint_oscillation_tracker_{};
+    LegTargetVariabilityDiagnostics leg_target_variability_diag_{};
+    GaitVariabilityDiagnostics gait_variability_diag_{};
+    bool has_previous_leg_targets_{false};
+    LegTargets previous_leg_targets_{};
+    bool has_previous_status_{false};
+    ControlStatus previous_status_{};
+    TimePointUs last_control_output_timestamp_{};
+    bool diagnostics_tracking_active_{false};
 };
