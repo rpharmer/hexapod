@@ -194,8 +194,12 @@ bool testJointOscillationTrackerCountsDirectionReversals() {
     const JointOscillationMetrics metrics = tracker.metrics();
     return expect(metrics.direction_reversal_events == 2,
                   "joint tracker should count significant direction reversals") &&
+           expect(metrics.direction_reversal_events_by_joint[0] == 2,
+                  "joint tracker should attribute reversals to the active joint") &&
            expect(metrics.peak_joint_velocity_radps > 2.0,
-                  "joint tracker should report peak velocity from delta over dt");
+                  "joint tracker should report peak velocity from delta over dt") &&
+           expect(metrics.peak_joint_velocity_radps_by_joint[0] > 2.0,
+                  "joint tracker should retain per-joint peak velocity diagnostics");
 }
 
 bool testJointOscillationTrackerReversalCooldown() {
@@ -219,6 +223,27 @@ bool testJointOscillationTrackerReversalCooldown() {
                   "reversal cooldown should suppress rapid flip-flop counting");
 }
 
+bool testJointOscillationTrackerWrapAwareDelta() {
+    JointOscillationTracker tracker(0.05, 0);
+    JointTargets a{};
+    JointTargets b{};
+    JointTargets c{};
+
+    a.leg_states[0].joint_state[0].pos_rad.value = 3.12;
+    b.leg_states[0].joint_state[0].pos_rad.value = -3.12;
+    c.leg_states[0].joint_state[0].pos_rad.value = 3.11;
+
+    tracker.observe(a, TimePointUs{0});
+    tracker.observe(b, TimePointUs{20'000});
+    tracker.observe(c, TimePointUs{40'000});
+
+    const JointOscillationMetrics metrics = tracker.metrics();
+    return expect(metrics.direction_reversal_events == 0,
+                  "wrapped angle crossings should not count as direction reversals") &&
+           expect(metrics.peak_joint_velocity_radps < 5.0,
+                  "wrapped angle crossings should not generate implausible peak velocity");
+}
+
 } // namespace
 
 int main() {
@@ -229,7 +254,8 @@ int main() {
         !testJointOscillationTrackerIgnoresSubThresholdDirectionChanges() ||
         !testJointOscillationTrackerHandlesNonMonotonicTimestamps() ||
         !testJointOscillationTrackerCountsDirectionReversals() ||
-        !testJointOscillationTrackerReversalCooldown()) {
+        !testJointOscillationTrackerReversalCooldown() ||
+        !testJointOscillationTrackerWrapAwareDelta()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

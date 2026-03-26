@@ -2,6 +2,27 @@
 
 #include "status_reporter.hpp"
 
+#include <array>
+#include <cmath>
+
+namespace {
+
+constexpr std::array<const char*, kNumLegs> kLegNames{"RF", "RM", "RR", "LF", "LM", "LR"};
+constexpr std::array<const char*, kJointsPerLeg> kJointNames{"coxa", "femur", "tibia"};
+constexpr uint32_t kTransitionWindowSteps = 20;
+constexpr double kLargeJointVelocityTraceRadps = 20.0;
+constexpr double kLargeFootVelocityTraceMps = 1.5;
+
+const char* legName(std::size_t leg_idx) {
+    return leg_idx < kLegNames.size() ? kLegNames[leg_idx] : "unknown_leg";
+}
+
+const char* jointName(std::size_t joint_idx) {
+    return joint_idx < kJointNames.size() ? kJointNames[joint_idx] : "unknown_joint";
+}
+
+} // namespace
+
 RuntimeDiagnosticsReporter::RuntimeDiagnosticsReporter(std::shared_ptr<logging::AsyncLogger> logger,
                                                        const FreshnessPolicy& freshness_policy)
     : logger_(std::move(logger)),
@@ -34,8 +55,175 @@ void RuntimeDiagnosticsReporter::recordVisualizerTelemetry(
     }
 }
 
-void RuntimeDiagnosticsReporter::recordJointTargets(const JointTargets& targets, TimePointUs now) {
+bool RuntimeDiagnosticsReporter::isTransitionStep(const ControlStatus& status) const {
+    if (!has_previous_status_) {
+        return true;
+    }
+    if (status.active_mode != previous_status_.active_mode) {
+        return true;
+    }
+    if (status.dynamic_gait.gait_family != previous_status_.dynamic_gait.gait_family) {
+        return true;
+    }
+    return false;
+}
+
+void RuntimeDiagnosticsReporter::recordControlOutputs(const JointTargets& targets,
+                                                      const ControlStatus& status,
+                                                      TimePointUs now,
+                                                      const LegTargets* leg_targets) {
+    const bool diagnostics_trackable =
+        status.estimator_valid && status.active_fault == FaultCode::NONE &&
+        (status.active_mode == RobotMode::STAND || status.active_mode == RobotMode::WALK);
+    if (!diagnostics_trackable) {
+        if (diagnostics_tracking_active_) {
+            joint_oscillation_tracker_.reset();
+        }
+        diagnostics_tracking_active_ = false;
+        has_previous_leg_targets_ = false;
+        has_previous_status_ = false;
+        last_control_output_timestamp_ = now;
+        transition_window_steps_remaining_ = 0;
+        return;
+    }
+
+    if (!diagnostics_tracking_active_) {
+        joint_oscillation_tracker_.reset();
+        diagnostics_tracking_active_ = true;
+        if (leg_targets != nullptr) {
+            previous_leg_targets_ = *leg_targets;
+            has_previous_leg_targets_ = true;
+        }
+        previous_status_ = status;
+        has_previous_status_ = true;
+        last_control_output_timestamp_ = now;
+        transition_window_steps_remaining_ = kTransitionWindowSteps;
+        return;
+    }
+
+    if (isTransitionStep(status)) {
+        transition_window_steps_remaining_ = kTransitionWindowSteps;
+    } else if (transition_window_steps_remaining_ > 0) {
+        --transition_window_steps_remaining_;
+    }
+    const bool transition_step = transition_window_steps_remaining_ > 0;
+
+    const JointOscillationMetrics joint_before = joint_oscillation_tracker_.metrics();
     joint_oscillation_tracker_.observe(targets, now);
+    const JointOscillationMetrics joint_after = joint_oscillation_tracker_.metrics();
+    if (joint_after.peak_joint_velocity_radps > joint_before.peak_joint_velocity_radps) {
+        if (!transition_step &&
+            joint_after.peak_joint_velocity_radps > steady_peak_joint_velocity_radps_) {
+            steady_peak_joint_velocity_radps_ = joint_after.peak_joint_velocity_radps;
+        } else if (transition_step) {
+            ++transition_excluded_samples_;
+        }
+        if (logger_ && joint_after.peak_joint_velocity_radps >= kLargeJointVelocityTraceRadps) {
+            std::size_t worst_idx = 0;
+            for (std::size_t idx = 1; idx < joint_after.kJointCount; ++idx) {
+                if (joint_after.peak_joint_velocity_radps_by_joint[idx] >
+                    joint_after.peak_joint_velocity_radps_by_joint[worst_idx]) {
+                    worst_idx = idx;
+                }
+            }
+            const std::size_t worst_leg = worst_idx / static_cast<std::size_t>(kJointsPerLeg);
+            const std::size_t worst_joint = worst_idx % static_cast<std::size_t>(kJointsPerLeg);
+            LOG_WARN(logger_,
+                     "runtime.trace_joint_peak loop=",
+                     status.loop_counter,
+                     " transition_step=",
+                     transition_step ? 1 : 0,
+                     " joint=",
+                     legName(worst_leg),
+                     ".",
+                     jointName(worst_joint),
+                     " peak_radps=",
+                     joint_after.peak_joint_velocity_radps);
+        }
+    }
+
+    if (!last_control_output_timestamp_.isZero() && now.value > last_control_output_timestamp_.value) {
+        const double dt_s = static_cast<double>(now.value - last_control_output_timestamp_.value) / 1'000'000.0;
+
+        if (has_previous_status_) {
+            const double cadence_rate =
+                std::abs(status.dynamic_gait.cadence_hz - previous_status_.dynamic_gait.cadence_hz) / dt_s;
+            if (cadence_rate > gait_variability_diag_.peak_cadence_delta_hz_per_s) {
+                gait_variability_diag_.peak_cadence_delta_hz_per_s = cadence_rate;
+            }
+
+            const double reach_rate = std::abs(status.dynamic_gait.reach_utilization -
+                                               previous_status_.dynamic_gait.reach_utilization) /
+                                      dt_s;
+            if (reach_rate > gait_variability_diag_.peak_reach_utilization_delta_per_s) {
+                gait_variability_diag_.peak_reach_utilization_delta_per_s = reach_rate;
+            }
+
+            for (std::size_t leg_idx = 0; leg_idx < static_cast<std::size_t>(kNumLegs); ++leg_idx) {
+                const double phase_rate = std::abs(status.dynamic_gait.leg_phase[leg_idx] -
+                                                   previous_status_.dynamic_gait.leg_phase[leg_idx]) /
+                                          dt_s;
+                if (phase_rate > gait_variability_diag_.peak_phase_delta_per_s_by_leg[leg_idx]) {
+                    gait_variability_diag_.peak_phase_delta_per_s_by_leg[leg_idx] = phase_rate;
+                }
+                if (phase_rate > gait_variability_diag_.peak_phase_delta_per_s) {
+                    gait_variability_diag_.peak_phase_delta_per_s = phase_rate;
+                }
+            }
+
+            if (cadence_rate > 20.0 || reach_rate > 6.0) {
+                ++gait_variability_diag_.rapid_change_events;
+            }
+        }
+    }
+
+    if (leg_targets != nullptr && has_previous_leg_targets_ && !last_control_output_timestamp_.isZero() &&
+        now.value > last_control_output_timestamp_.value) {
+        const double dt_s = static_cast<double>(now.value - last_control_output_timestamp_.value) / 1'000'000.0;
+        for (std::size_t leg_idx = 0; leg_idx < static_cast<std::size_t>(kNumLegs); ++leg_idx) {
+            const Vec3& current = leg_targets->feet[leg_idx].pos_body_m;
+            const Vec3& previous = previous_leg_targets_.feet[leg_idx].pos_body_m;
+            const double dx = current.x - previous.x;
+            const double dy = current.y - previous.y;
+            const double dz = current.z - previous.z;
+            const double velocity_mps = std::sqrt((dx * dx + dy * dy + dz * dz)) / dt_s;
+            if (velocity_mps > leg_target_variability_diag_.peak_foot_target_velocity_mps_by_leg[leg_idx]) {
+                leg_target_variability_diag_.peak_foot_target_velocity_mps_by_leg[leg_idx] = velocity_mps;
+            }
+            if (velocity_mps > leg_target_variability_diag_.peak_foot_target_velocity_mps) {
+                leg_target_variability_diag_.peak_foot_target_velocity_mps = velocity_mps;
+                if (!transition_step && velocity_mps > steady_peak_foot_target_velocity_mps_) {
+                    steady_peak_foot_target_velocity_mps_ = velocity_mps;
+                } else if (transition_step) {
+                    ++transition_excluded_samples_;
+                }
+                if (logger_ && velocity_mps >= kLargeFootVelocityTraceMps) {
+                    LOG_WARN(logger_,
+                             "runtime.trace_leg_target_peak loop=",
+                             status.loop_counter,
+                             " transition_step=",
+                             transition_step ? 1 : 0,
+                             " leg=",
+                             legName(leg_idx),
+                             " peak_mps=",
+                             velocity_mps,
+                             " dt_s=",
+                             dt_s);
+                }
+            }
+            if (velocity_mps > 0.75) {
+                ++leg_target_variability_diag_.rapid_change_events;
+            }
+        }
+    }
+
+    if (leg_targets != nullptr) {
+        previous_leg_targets_ = *leg_targets;
+        has_previous_leg_targets_ = true;
+    }
+    previous_status_ = status;
+    has_previous_status_ = true;
+    last_control_output_timestamp_ = now;
 }
 
 void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
@@ -53,6 +241,34 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
     const auto& estimator_diag = freshness_policy_.estimatorDiagnostics();
     const auto& intent_diag = freshness_policy_.intentDiagnostics();
     const JointOscillationMetrics joint_diag = joint_oscillation_tracker_.metrics();
+    std::size_t worst_reversal_joint = 0;
+    std::size_t worst_velocity_joint = 0;
+    std::size_t worst_leg_target_velocity_leg = 0;
+    std::size_t worst_phase_leg = 0;
+    for (std::size_t idx = 1; idx < joint_diag.kJointCount; ++idx) {
+        if (joint_diag.direction_reversal_events_by_joint[idx] >
+            joint_diag.direction_reversal_events_by_joint[worst_reversal_joint]) {
+            worst_reversal_joint = idx;
+        }
+        if (joint_diag.peak_joint_velocity_radps_by_joint[idx] >
+            joint_diag.peak_joint_velocity_radps_by_joint[worst_velocity_joint]) {
+            worst_velocity_joint = idx;
+        }
+    }
+    for (std::size_t leg_idx = 1; leg_idx < static_cast<std::size_t>(kNumLegs); ++leg_idx) {
+        if (leg_target_variability_diag_.peak_foot_target_velocity_mps_by_leg[leg_idx] >
+            leg_target_variability_diag_.peak_foot_target_velocity_mps_by_leg[worst_leg_target_velocity_leg]) {
+            worst_leg_target_velocity_leg = leg_idx;
+        }
+        if (gait_variability_diag_.peak_phase_delta_per_s_by_leg[leg_idx] >
+            gait_variability_diag_.peak_phase_delta_per_s_by_leg[worst_phase_leg]) {
+            worst_phase_leg = leg_idx;
+        }
+    }
+    const std::size_t reversal_leg = worst_reversal_joint / static_cast<std::size_t>(kJointsPerLeg);
+    const std::size_t reversal_joint = worst_reversal_joint % static_cast<std::size_t>(kJointsPerLeg);
+    const std::size_t velocity_leg = worst_velocity_joint / static_cast<std::size_t>(kJointsPerLeg);
+    const std::size_t velocity_joint = worst_velocity_joint % static_cast<std::size_t>(kJointsPerLeg);
     LOG_INFO(logger_,
              "runtime.metrics loops=",
              loops,
@@ -92,8 +308,48 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
              telemetry_diag_.last_successful_send_timestamp.value,
              "} joint_cmd_diag={direction_reversals:",
              joint_diag.direction_reversal_events,
+             ",worst_reversal_joint:",
+             legName(reversal_leg),
+             ".",
+             jointName(reversal_joint),
+             ",worst_reversal_count:",
+             joint_diag.direction_reversal_events_by_joint[worst_reversal_joint],
              ",peak_velocity_radps:",
              joint_diag.peak_joint_velocity_radps,
+             ",worst_velocity_joint:",
+             legName(velocity_leg),
+             ".",
+             jointName(velocity_joint),
+             ",worst_velocity_joint_peak_radps:",
+             joint_diag.peak_joint_velocity_radps_by_joint[worst_velocity_joint],
+             ",steady_peak_velocity_radps:",
+             steady_peak_joint_velocity_radps_,
+             "} leg_target_diag={peak_foot_vel_mps:",
+             leg_target_variability_diag_.peak_foot_target_velocity_mps,
+             ",worst_leg:",
+             legName(worst_leg_target_velocity_leg),
+             ",worst_leg_peak_foot_vel_mps:",
+             leg_target_variability_diag_.peak_foot_target_velocity_mps_by_leg[worst_leg_target_velocity_leg],
+             ",steady_peak_foot_vel_mps:",
+             steady_peak_foot_target_velocity_mps_,
+             ",rapid_change_events:",
+             leg_target_variability_diag_.rapid_change_events,
+             "} gait_variability_diag={peak_cadence_delta_hz_per_s:",
+             gait_variability_diag_.peak_cadence_delta_hz_per_s,
+             ",peak_reach_delta_per_s:",
+             gait_variability_diag_.peak_reach_utilization_delta_per_s,
+             ",peak_phase_delta_per_s:",
+             gait_variability_diag_.peak_phase_delta_per_s,
+             ",worst_phase_leg:",
+             legName(worst_phase_leg),
+             ",worst_phase_leg_delta_per_s:",
+             gait_variability_diag_.peak_phase_delta_per_s_by_leg[worst_phase_leg],
+             ",rapid_change_events:",
+             gait_variability_diag_.rapid_change_events,
+             "} transition_diag={window_steps_remaining:",
+             transition_window_steps_remaining_,
+             ",excluded_samples:",
+             transition_excluded_samples_,
              "}");
 }
 

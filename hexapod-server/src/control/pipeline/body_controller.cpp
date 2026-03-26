@@ -8,36 +8,10 @@
 namespace {
 
 constexpr double kDefaultBodyHeightM = 0.20;
-constexpr double kContinuityPhaseBlendWidth = 0.25;
-
-Vec3 lerp(const Vec3& a, const Vec3& b, double t) {
-    return a + ((b - a) * t);
-}
-
-double smoothstep(double t) {
-    const double alpha = clamp01(t);
-    return alpha * alpha * (3.0 - (2.0 * alpha));
-}
-
-double phaseProgressForLeg(const GaitState& gait, int leg, const RuntimeGaitPolicy& policy) {
-    const double phase = clamp01(gait.phase[leg]);
-    const double duty = std::clamp(policy.per_leg[leg].duty_cycle, 0.05, 0.95);
-    if (gait.in_stance[leg]) {
-        return (duty <= 1e-6) ? 0.0 : clamp01(phase / duty);
-    }
-    return clamp01((phase - duty) / std::max(1.0 - duty, 1e-6));
-}
-
-struct LegContinuityState {
-    bool initialized{false};
-    bool in_stance{true};
-    Vec3 transition_pos{};
-    Vec3 transition_vel{};
-    Vec3 last_pos{};
-    Vec3 last_vel{};
-};
-
-std::array<LegContinuityState, kNumLegs> g_leg_continuity{};
+constexpr double kYawCommandSlewLimitRadPerSec = 1.2;
+constexpr double kLegTargetSlewLimitMps = 0.9;
+constexpr double kLegTargetTransitionSlewLimitMps = 0.35;
+constexpr uint32_t kLegTargetTransitionSlewSteps = 20;
 
 } // namespace
 
@@ -92,10 +66,31 @@ LegTargets BodyController::update(const RobotState& est,
         (intent.requested_mode == RobotMode::WALK) &&
         !safety.inhibit_motion &&
         !safety.torque_cut;
+    if (walking != previous_walking_) {
+        transition_slew_steps_remaining_ = kLegTargetTransitionSlewSteps;
+    } else if (transition_slew_steps_remaining_ > 0) {
+        --transition_slew_steps_remaining_;
+    }
+    previous_walking_ = walking;
 
     const double roll_cmd = intent.twist.twist_pos_rad.x;
     const double pitch_cmd = intent.twist.twist_pos_rad.y;
-    const double yaw_cmd = policy.suppression.suppress_turning ? 0.0 : intent.twist.twist_pos_rad.z;
+    const double yaw_cmd_raw = policy.suppression.suppress_turning ? 0.0 : intent.twist.twist_pos_rad.z;
+    const TimePointUs now = out.timestamp_us;
+    const TimePointUs previous_update_ts = last_update_timestamp_;
+    const bool has_positive_dt = !previous_update_ts.isZero() && now.value > previous_update_ts.value;
+    const double update_dt_s =
+        has_positive_dt ? static_cast<double>(now.value - previous_update_ts.value) / 1'000'000.0 : 0.0;
+    if (!yaw_filter_initialized_ || !has_positive_dt) {
+        filtered_yaw_cmd_rad_ = yaw_cmd_raw;
+        yaw_filter_initialized_ = true;
+    } else {
+        const double max_step = kYawCommandSlewLimitRadPerSec * update_dt_s;
+        const double delta = yaw_cmd_raw - filtered_yaw_cmd_rad_;
+        filtered_yaw_cmd_rad_ += std::clamp(delta, -max_step, max_step);
+    }
+    last_update_timestamp_ = now;
+    const double yaw_cmd = filtered_yaw_cmd_rad_;
     const Mat3 body_rotation = Mat3::rotZ(yaw_cmd) * Mat3::rotY(pitch_cmd) * Mat3::rotX(roll_cmd);
     const Vec3 planar_body_offset = Vec3{
         intent.twist.body_trans_m.x,
@@ -116,38 +111,29 @@ LegTargets BodyController::update(const RobotState& est,
         const PlannedFoothold foothold =
             foothold_planner_.plan(leg, target, intent, gait, policy, walking);
 
-        // Apply planner trajectory first, then apply posture-bias as a continuous offset.
-        const Vec3 planned_target = body_rotation * foothold.pos_body_m;
-        const Vec3 planned_vel = body_rotation * foothold.vel_body_mps;
-
-        LegContinuityState& continuity = g_leg_continuity[leg];
-        if (!continuity.initialized) {
-            continuity.initialized = true;
-            continuity.in_stance = gait.in_stance[leg];
-            continuity.transition_pos = planned_target;
-            continuity.transition_vel = planned_vel;
-            continuity.last_pos = planned_target;
-            continuity.last_vel = planned_vel;
-        } else if (continuity.in_stance != gait.in_stance[leg]) {
-            continuity.in_stance = gait.in_stance[leg];
-            continuity.transition_pos = continuity.last_pos;
-            continuity.transition_vel = continuity.last_vel;
-        }
-
-        const double phase_progress = phaseProgressForLeg(gait, leg, policy);
-        const double continuity_alpha = smoothstep(clamp01(phase_progress / kContinuityPhaseBlendWidth));
-
-        target = lerp(continuity.transition_pos, planned_target, continuity_alpha);
-        Vec3 target_vel = lerp(continuity.transition_vel, planned_vel, continuity_alpha);
+        target = body_rotation * foothold.pos_body_m;
+        Vec3 target_vel = body_rotation * foothold.vel_body_mps;
 
         target = clampToReachEnvelope(leg, target);
+        if (has_previous_targets_ && has_positive_dt) {
+            const double speed_limit = transition_slew_steps_remaining_ > 0
+                                           ? kLegTargetTransitionSlewLimitMps
+                                           : kLegTargetSlewLimitMps;
+            const double max_step_m = speed_limit * update_dt_s;
+            const Vec3 previous = previous_targets_.feet[leg].pos_body_m;
+            const Vec3 delta = target - previous;
+            const double delta_mag = std::sqrt((delta.x * delta.x) + (delta.y * delta.y) + (delta.z * delta.z));
+            if (delta_mag > max_step_m && delta_mag > 1e-9) {
+                target = previous + (delta * (max_step_m / delta_mag));
+            }
+        }
         target_vel = target_vel + cross(intent.twist.twist_vel_radps, target);
-        continuity.last_pos = target;
-        continuity.last_vel = target_vel;
 
         out.feet[leg].pos_body_m = target;
         out.feet[leg].vel_body_mps = target_vel;
     }
 
+    previous_targets_ = out;
+    has_previous_targets_ = true;
     return out;
 }

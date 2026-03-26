@@ -74,6 +74,9 @@ private:
     DoubleBuffer<SafetyState> safety_state_;
     DoubleBuffer<JointTargets> joint_targets_;
     DoubleBuffer<ControlStatus> status_;
+    JointTargets last_written_joint_targets_{};
+    bool has_last_written_joint_targets_{false};
+    TimePointUs last_joint_write_timestamp_{};
 
     TimePointUs next_telemetry_publish_at_{};
     TimePointUs next_geometry_refresh_at_{};

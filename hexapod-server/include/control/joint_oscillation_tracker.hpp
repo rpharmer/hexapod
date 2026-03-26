@@ -6,8 +6,11 @@
 #include <cstdint>
 
 struct JointOscillationMetrics {
+    static constexpr std::size_t kJointCount = kNumLegs * kJointsPerLeg;
     uint64_t direction_reversal_events{0};
     double peak_joint_velocity_radps{0.0};
+    std::array<uint64_t, kJointCount> direction_reversal_events_by_joint{};
+    std::array<double, kJointCount> peak_joint_velocity_radps_by_joint{};
 };
 
 class JointOscillationTracker {

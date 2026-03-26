@@ -2,6 +2,8 @@
 
 #include "geometry_config.hpp"
 
+#include <algorithm>
+
 RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
                            std::unique_ptr<IEstimator> estimator,
                            std::shared_ptr<logging::AsyncLogger> logger,
@@ -29,6 +31,9 @@ telemetry::TelemetryPublishCounters readTelemetryCounters(
     return telemetry_publisher ? telemetry_publisher->counters() : telemetry::TelemetryPublishCounters{};
 }
 
+constexpr bool kDisableImuReads = true;
+constexpr double kJointTargetSlewLimitRadPerSec = 18.0;
+
 } // namespace
 
 bool RobotRuntime::init() {
@@ -48,6 +53,9 @@ bool RobotRuntime::init() {
         imu_ = hardware::makeNoopImuUnit();
     }
     (void)imu_->init();
+    if (kDisableImuReads && logger_) {
+        LOG_WARN(logger_, "IMU reads are temporarily disabled (kDisableImuReads=true)");
+    }
 
     if (!telemetry_publisher_) {
         telemetry_publisher_ = telemetry::makeNoopTelemetryPublisher();
@@ -69,6 +77,9 @@ bool RobotRuntime::init() {
     stale_estimator_count_.store(0);
     raw_sample_seq_.store(0);
     intent_sample_seq_.store(1);
+    has_last_written_joint_targets_ = false;
+    last_written_joint_targets_ = JointTargets{};
+    last_joint_write_timestamp_ = TimePointUs{};
     freshness_gate_.reset();
     timing_metrics_.reset();
     next_telemetry_publish_at_ = TimePointUs{};
@@ -95,19 +106,39 @@ void RobotRuntime::busStep() {
     if (!hw_->read(raw)) {
         raw.bus_ok = false;
     }
-    hardware::ImuSample imu_sample{};
-    if (imu_ && imu_->read(imu_sample) && imu_sample.valid) {
-        raw.body_twist_state.twist_pos_rad = imu_sample.orientation_rad;
-        raw.body_twist_state.twist_vel_radps = imu_sample.angular_velocity_radps;
-        raw.has_body_twist_state = true;
+    if (!kDisableImuReads) {
+        hardware::ImuSample imu_sample{};
+        if (imu_ && imu_->read(imu_sample) && imu_sample.valid) {
+            raw.body_twist_state.twist_pos_rad = imu_sample.orientation_rad;
+            raw.body_twist_state.twist_vel_radps = imu_sample.angular_velocity_radps;
+            raw.has_body_twist_state = true;
+        }
     }
     if (raw.sample_id == 0) {
         raw.sample_id = raw_sample_seq_.fetch_add(1) + 1;
     }
     raw_state_.write(raw);
 
-    const JointTargets cmd = joint_targets_.read();
+    JointTargets cmd = joint_targets_.read();
+    const TimePointUs now = now_us();
+    if (has_last_written_joint_targets_ && !last_joint_write_timestamp_.isZero() &&
+        now.value > last_joint_write_timestamp_.value) {
+        const double dt_s = static_cast<double>(now.value - last_joint_write_timestamp_.value) / 1'000'000.0;
+        const double max_step = kJointTargetSlewLimitRadPerSec * dt_s;
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+                const double previous = last_written_joint_targets_.leg_states[leg].joint_state[joint].pos_rad.value;
+                const double requested = cmd.leg_states[leg].joint_state[joint].pos_rad.value;
+                const double delta = requested - previous;
+                cmd.leg_states[leg].joint_state[joint].pos_rad.value =
+                    previous + std::clamp(delta, -max_step, max_step);
+            }
+        }
+    }
     (void)hw_->write(cmd);
+    last_written_joint_targets_ = cmd;
+    has_last_written_joint_targets_ = true;
+    last_joint_write_timestamp_ = now;
 }
 
 void RobotRuntime::estimatorStep() {
@@ -136,7 +167,7 @@ void RobotRuntime::controlStep() {
         RuntimeFreshnessGate::maybeLogReject(logger_, freshness, est, intent);
         status_.write(decision.status);
         joint_targets_.write(decision.joint_targets);
-        diagnostics_reporter_.recordJointTargets(decision.joint_targets, now);
+        diagnostics_reporter_.recordControlOutputs(decision.joint_targets, decision.status, now, nullptr);
         maybePublishTelemetry(now);
         return;
     }
@@ -150,7 +181,7 @@ void RobotRuntime::controlStep() {
 
     joint_targets_.write(result.joint_targets);
     status_.write(result.status);
-    diagnostics_reporter_.recordJointTargets(result.joint_targets, now);
+    diagnostics_reporter_.recordControlOutputs(result.joint_targets, result.status, now, &result.leg_targets);
 
     maybePublishTelemetry(now);
 }
