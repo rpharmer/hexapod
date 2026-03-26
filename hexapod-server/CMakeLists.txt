@@ -239,6 +239,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_body_controller_velocity PRIVATE hexapod_server_core)
     add_test(NAME body_controller_velocity COMMAND test_body_controller_velocity)
 
+    add_executable(test_gait_policy_planner tests/test_gait_policy_planner.cpp)
+    target_link_libraries(test_gait_policy_planner PRIVATE hexapod_server_core)
+    add_test(NAME gait_policy_planner COMMAND test_gait_policy_planner)
+
     add_executable(test_stability_tracker tests/test_stability_tracker.cpp)
     target_link_libraries(test_stability_tracker PRIVATE hexapod_server_core)
     add_test(NAME stability_tracker COMMAND test_stability_tracker)
