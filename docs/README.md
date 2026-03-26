@@ -7,6 +7,7 @@ This directory is the canonical documentation hub for the Hexapod monorepo.
 - `CODEBASE_REVIEW_2026-03-26.md` — monorepo-level architecture review, risks, and prioritized roadmap.
 - `CODEBASE_SOURCE_FILE_MATRIX_2026-03-26.md` — detailed source-level inventory and follow-up notes.
 - `SUBSYSTEM_CONTRACTS.md` — subsystem invariants, boundaries, and failure contracts.
+- `contracts/autonomy/README.md` — v1 autonomy contract set (units/frames/timing/QoS/fault semantics).
 - `DYNAMIC_GAIT_POLICY.md` — gait-planning policy behavior and tuning rationale.
 
 ## Runtime and protocol references
