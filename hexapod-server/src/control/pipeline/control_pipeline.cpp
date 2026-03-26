@@ -26,6 +26,32 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     status.bus_ok = bus_ok;
     status.active_fault = safety_state.active_fault;
     status.loop_counter = loop_counter;
+    status.dynamic_gait.valid = true;
+    status.dynamic_gait.gait_family = contact_adjusted.managed_policy.gait_family;
+    status.dynamic_gait.region = static_cast<uint8_t>(contact_adjusted.managed_policy.region);
+    status.dynamic_gait.turn_mode = static_cast<uint8_t>(contact_adjusted.managed_policy.turn_mode);
+    status.dynamic_gait.fallback_stage = static_cast<uint8_t>(contact_adjusted.managed_policy.fallback_stage);
+    status.dynamic_gait.cadence_hz = contact_adjusted.managed_policy.cadence_hz.value;
+    status.dynamic_gait.reach_utilization = contact_adjusted.managed_policy.reach_utilization;
+    status.dynamic_gait.envelope_max_speed_normalized =
+        contact_adjusted.managed_policy.envelope.max_speed_normalized;
+    status.dynamic_gait.envelope_max_yaw_normalized =
+        contact_adjusted.managed_policy.envelope.max_yaw_normalized;
+    status.dynamic_gait.envelope_max_roll_pitch_rad =
+        contact_adjusted.managed_policy.envelope.max_roll_pitch_rad;
+    status.dynamic_gait.envelope_allow_tripod =
+        contact_adjusted.managed_policy.envelope.allow_tripod;
+    status.dynamic_gait.suppress_stride_progression =
+        contact_adjusted.managed_policy.suppression.suppress_stride_progression;
+    status.dynamic_gait.suppress_turning =
+        contact_adjusted.managed_policy.suppression.suppress_turning;
+    status.dynamic_gait.prioritize_stability =
+        contact_adjusted.managed_policy.suppression.prioritize_stability;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        status.dynamic_gait.leg_phase[leg] = contact_adjusted.managed_gait.phase[leg];
+        status.dynamic_gait.leg_duty_cycle[leg] = contact_adjusted.managed_policy.per_leg[leg].duty_cycle;
+        status.dynamic_gait.leg_in_stance[leg] = contact_adjusted.managed_gait.in_stance[leg];
+    }
 
     PipelineStepResult result{};
     result.joint_targets = joint_targets;

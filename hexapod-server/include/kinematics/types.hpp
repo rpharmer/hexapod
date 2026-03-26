@@ -176,11 +176,32 @@ struct RobotState {
 };
 
 struct ControlStatus {
+    struct DynamicGaitTelemetry {
+        bool valid{false};
+        GaitType gait_family{GaitType::TRIPOD};
+        uint8_t region{0};
+        uint8_t turn_mode{0};
+        uint8_t fallback_stage{0};
+        double cadence_hz{0.0};
+        double reach_utilization{0.0};
+        double envelope_max_speed_normalized{0.0};
+        double envelope_max_yaw_normalized{0.0};
+        double envelope_max_roll_pitch_rad{0.0};
+        bool envelope_allow_tripod{false};
+        bool suppress_stride_progression{false};
+        bool suppress_turning{false};
+        bool prioritize_stability{true};
+        std::array<double, kNumLegs> leg_phase{};
+        std::array<double, kNumLegs> leg_duty_cycle{};
+        std::array<bool, kNumLegs> leg_in_stance{};
+    };
+
     RobotMode active_mode{RobotMode::SAFE_IDLE};
     bool estimator_valid{false};
     bool bus_ok{false};
     FaultCode active_fault{FaultCode::NONE};
     uint64_t loop_counter{0};
+    DynamicGaitTelemetry dynamic_gait{};
 };
 
 // ============================================================

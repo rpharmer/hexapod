@@ -104,6 +104,7 @@ class TelemetryState:
     loop_counter: int | None = None
     voltage: float | None = None
     current: float | None = None
+    dynamic_gait: dict[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -118,6 +119,7 @@ class TelemetryState:
             "loop_counter": self.loop_counter,
             "voltage": self.voltage,
             "current": self.current,
+            "dynamic_gait": self.dynamic_gait,
         }
 
 
