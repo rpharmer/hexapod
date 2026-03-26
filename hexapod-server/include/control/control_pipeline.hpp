@@ -2,6 +2,7 @@
 
 #include "body_controller.hpp"
 #include "control_config.hpp"
+#include "contact_manager.hpp"
 #include "gait_policy_planner.hpp"
 #include "gait_scheduler.hpp"
 #include "leg_ik.hpp"
@@ -25,6 +26,7 @@ public:
 private:
     GaitPolicyPlanner planner_;
     GaitScheduler gait_;
+    ContactManager contact_manager_;
     BodyController body_;
     LegIK ik_;
 };

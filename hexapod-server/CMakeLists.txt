@@ -90,6 +90,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/input/cli_options.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/control_config.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/control_pipeline.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/contact_manager.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/estimator.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/freshness_policy.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/foothold_planner.cpp"
@@ -239,6 +240,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_body_controller_velocity PRIVATE hexapod_server_core)
     add_test(NAME body_controller_velocity COMMAND test_body_controller_velocity)
 
+
+    add_executable(test_contact_manager tests/test_contact_manager.cpp)
+    target_link_libraries(test_contact_manager PRIVATE hexapod_server_core)
+    add_test(NAME contact_manager COMMAND test_contact_manager)
     add_executable(test_gait_policy_planner tests/test_gait_policy_planner.cpp)
     target_link_libraries(test_gait_policy_planner PRIVATE hexapod_server_core)
     add_test(NAME gait_policy_planner COMMAND test_gait_policy_planner)
