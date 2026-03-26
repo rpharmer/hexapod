@@ -12,6 +12,7 @@ public:
 
 private:
     std::array<Vec3, kNumLegs> nominalStance() const;
+    Vec3 clampToReachEnvelope(int leg, const Vec3& target_body) const;
 
     HexapodGeometry geometry_{defaultHexapodGeometry()};
 };

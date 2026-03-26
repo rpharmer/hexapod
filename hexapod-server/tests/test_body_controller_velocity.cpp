@@ -1,6 +1,8 @@
 #include "body_controller.hpp"
 
 #include <cmath>
+
+#include "reach_envelope.hpp"
 #include <cstdlib>
 #include <iostream>
 
@@ -65,6 +67,21 @@ int main() {
     if (!expect(nearlyEqual(walk_targets.feet[0].vel_body_mps.x, -0.12, 1e-6),
                 "walking stance velocity should include analytic step derivative")) {
         return EXIT_FAILURE;
+    }
+
+    MotionIntent offset_intent{};
+    offset_intent.requested_mode = RobotMode::STAND;
+    offset_intent.twist.body_trans_m = Vec3{0.25, 0.0, 0.20};
+
+    const LegTargets offset_targets = controller.update(est, offset_intent, gait, safety);
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        const LegGeometry& leg_geo = defaultHexapodGeometry().legGeometry[leg];
+        const Vec3 relative = offset_targets.feet[leg].pos_body_m - leg_geo.bodyCoxaOffset;
+        const Vec3 foot_leg = Mat3::rotZ(-leg_geo.mountAngle.value) * relative;
+        if (!expect(kinematics::legReachUtilization(foot_leg, leg_geo) <= 1.0 + 1e-6,
+                    "body controller should clamp target positions to leg reach envelope")) {
+            return EXIT_FAILURE;
+        }
     }
 
     return EXIT_SUCCESS;

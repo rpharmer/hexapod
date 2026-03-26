@@ -3,6 +3,8 @@
 
 #include <cmath>
 
+#include "reach_envelope.hpp"
+
 namespace {
 
 void apply_estimated_leg_fallback(const RobotState& est,
@@ -52,31 +54,18 @@ bool LegIK::solveOneLeg(const LegState& est,
 
   const double x = footLeg.x;
   const double y = footLeg.y;
-  const double z = footLeg.z;
 
   // --------------------------------------------------------
   // 1) Coxa angle
   // --------------------------------------------------------
   const double q1 = std::atan2(y, x);
   
-  // Horizontal distance from coxa axis to foot
-  const double r = std::hypot(x, y);
-  
-  // Effective horizontal distance for femur+tibia plane
-  const double rho = r - leg.coxaLength.value;
-  
-  // 2D distance from femur joint to foot
-  const double d = std::hypot(rho, z);
-
-  const double minReach = std::fabs(leg.femurLength.value - leg.tibiaLength.value);
-  const double maxReach = leg.femurLength.value + leg.tibiaLength.value;
-
   // Clamp out-of-reach requests to the closest solvable configuration instead of
   // rejecting the whole leg update and snapping to estimator fallback angles.
-  const double clampedD = clamp(d, minReach, maxReach);
-  const double reachScale = (d > 1e-9) ? (clampedD / d) : 1.0;
-  const double rhoSolved = rho * reachScale;
-  const double zSolved = z * reachScale;
+  const Vec3 clamped_leg = kinematics::clampFootToReachEnvelope(footLeg, leg);
+  const double rSolved = std::hypot(clamped_leg.x, clamped_leg.y);
+  const double rhoSolved = rSolved - leg.coxaLength.value;
+  const double zSolved = clamped_leg.z;
 
   // --------------------------------------------------------
   // 2) Tibia angle by law of cosines

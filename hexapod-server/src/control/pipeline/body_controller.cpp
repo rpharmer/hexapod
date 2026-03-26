@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "reach_envelope.hpp"
+
 namespace {
 
 constexpr double kStepLengthM = 0.06;
@@ -22,6 +24,17 @@ std::array<Vec3, kNumLegs> BodyController::nominalStance() const {
         nominal[leg] = leg_geo.bodyCoxaOffset + (body_from_leg * neutral_leg_frame);
     }
     return nominal;
+}
+
+
+Vec3 BodyController::clampToReachEnvelope(int leg, const Vec3& target_body) const {
+    const LegGeometry& leg_geo = geometry_.legGeometry[leg];
+    const Vec3 relative_to_coxa = target_body - leg_geo.bodyCoxaOffset;
+    const Mat3 leg_from_body = Mat3::rotZ(-leg_geo.mountAngle.value);
+    const Vec3 target_leg = leg_from_body * relative_to_coxa;
+    const Vec3 clamped_leg = kinematics::clampFootToReachEnvelope(target_leg, leg_geo);
+    const Mat3 body_from_leg = Mat3::rotZ(leg_geo.mountAngle.value);
+    return leg_geo.bodyCoxaOffset + (body_from_leg * clamped_leg);
 }
 
 LegTargets BodyController::update(const RobotState& est,
@@ -89,6 +102,8 @@ LegTargets BodyController::update(const RobotState& est,
         // Apply commanded body orientation by rotating each foot target in body frame.
         target = body_rotation * target;
         target_vel = body_rotation * target_vel;
+
+        target = clampToReachEnvelope(leg, target);
         target_vel = target_vel + cross(intent.twist.twist_vel_radps, target);
 
         out.feet[leg].pos_body_m = target;
