@@ -21,6 +21,7 @@ inline constexpr int kDefaultStandSettlingDelayMs = 2000;
 inline constexpr int kDefaultTelemetryPublishPeriodMs = 50;
 inline constexpr int kDefaultTelemetryGeometryRefreshPeriodMs = 2000;
 inline constexpr int kDefaultTelemetryUdpPort = 9870;
+inline constexpr bool kDefaultImuEnableReads = false;
 inline constexpr AngleRad kDefaultMaxTiltRad{0.70};
 inline constexpr DurationUs kDefaultCommandTimeoutUs{300000};
 inline constexpr DurationUs kDefaultEstimatorMaxAgeUs{300000};
@@ -181,12 +182,17 @@ struct TelemetryConfig {
     std::chrono::milliseconds geometry_refresh_period{std::chrono::milliseconds{kDefaultTelemetryGeometryRefreshPeriodMs}};
 };
 
+struct RuntimeImuConfig {
+    bool enable_reads{kDefaultImuEnableReads};
+};
+
 struct ControlConfig {
     LoopTimingConfig loop_timing{};
     SafetyConfig safety{};
     GaitConfig gait{};
     FreshnessConfig freshness{};
     TelemetryConfig telemetry{};
+    RuntimeImuConfig runtime_imu{};
 };
 
 ControlConfig fromParsedToml(const ParsedToml& config);

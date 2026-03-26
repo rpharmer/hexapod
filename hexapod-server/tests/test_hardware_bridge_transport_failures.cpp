@@ -105,6 +105,11 @@ bool test_explicit_nack_behavior_for_command_methods() {
         return false;
     }
 
+    if (!expect(metadata->command_code == SET_POWER_RELAY,
+                "explicit NACK should propagate command code metadata")) {
+        return false;
+    }
+
     const auto& sent = endpoint_view->sent_packets();
     if (!expect(sent.size() == 3, "bridge should send HELLO, HEARTBEAT, then SET_POWER_RELAY")) {
         return false;
@@ -180,6 +185,15 @@ bool test_timeout_retry_exhausted() {
     }
     if (!expect(metadata->domain == BridgeFailureDomain::TransportLink,
                 "retry exhaustion should classify as transport/link domain")) {
+        return false;
+    }
+
+    if (!expect(metadata->command_code == SET_POWER_RELAY,
+                "retry exhaustion should preserve command metadata")) {
+        return false;
+    }
+    if (!expect(metadata->requested_capabilities == CAPABILITY_ANGULAR_FEEDBACK,
+                "retry exhaustion should preserve requested capabilities metadata")) {
         return false;
     }
 
@@ -296,8 +310,16 @@ bool test_capability_negotiation_failure_classification() {
                 "re-establish handshake failure should classify as capability negotiation")) {
         return false;
     }
-    return expect(metadata->domain == BridgeFailureDomain::CapabilityProtocol,
-                  "re-establish handshake failure should classify as capability/protocol domain");
+    if (!expect(metadata->domain == BridgeFailureDomain::CapabilityProtocol,
+                "re-establish handshake failure should classify as capability/protocol domain")) {
+        return false;
+    }
+    if (!expect(metadata->command_code == SET_POWER_RELAY,
+                "capability negotiation failures should preserve target command metadata")) {
+        return false;
+    }
+    return expect(metadata->negotiated_capabilities == CAPABILITY_ANGULAR_FEEDBACK,
+                  "capability negotiation failures should keep the last negotiated capabilities");
 }
 
 }  // namespace

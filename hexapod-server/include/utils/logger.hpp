@@ -87,6 +87,12 @@ private:
 
 class AsyncLogger {
 public:
+    struct QueueState {
+        std::size_t depth{0};
+        std::size_t capacity{0};
+        bool worker_busy{false};
+    };
+
     explicit AsyncLogger(
         std::string name,
         LogLevel minLevel = LogLevel::Info,
@@ -127,6 +133,7 @@ public:
     void Stop();
 
     std::size_t DroppedMessageCount() const;
+    QueueState CurrentQueueState() const;
     const std::string& Name() const;
 
 private:
