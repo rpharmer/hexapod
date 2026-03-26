@@ -140,6 +140,26 @@ void parseTuningSection(const toml::value& root,
   out.gaitTurnSpeedExitMps = config_validation::parseDoubleWithFallback(
       root, "Tuning.GaitTurnSpeedExitMps", control_config::kDefaultTurnSpeedExitMps, 0.0, 2.0,
       "tuning", logger);
+  out.gaitDynamicFeatureFlagEnabled = config_validation::parseBoolWithFallback(
+      root, "Tuning.GaitDynamicFeatureFlagEnabled", false);
+  out.gaitDynamicSimulatorFirstRequired = config_validation::parseBoolWithFallback(
+      root, "Tuning.GaitDynamicSimulatorFirstRequired", true);
+  out.gaitDynamicSimulatorValidationRunsRequired = config_validation::parseIntWithFallback(
+      root, "Tuning.GaitDynamicSimulatorValidationRunsRequired", 5, 0, 100000, "tuning", logger);
+  out.gaitDynamicSimulatorValidationRunsPassed = config_validation::parseIntWithFallback(
+      root, "Tuning.GaitDynamicSimulatorValidationRunsPassed", 0, 0, 100000, "tuning", logger);
+  out.gaitDynamicMaxControlLatencyP95Ms = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitDynamicMaxControlLatencyP95Ms", 8.0, 0.1, 200.0, "tuning", logger);
+  out.gaitDynamicObservedControlLatencyP95Ms = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitDynamicObservedControlLatencyP95Ms", 0.0, 0.0, 200.0, "tuning", logger);
+  out.gaitDynamicMaxSafetyFaultsPerHour = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitDynamicMaxSafetyFaultsPerHour", 0.20, 0.0, 100.0, "tuning", logger);
+  out.gaitDynamicObservedSafetyFaultsPerHour = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitDynamicObservedSafetyFaultsPerHour", 0.0, 0.0, 100.0, "tuning", logger);
+  out.gaitDynamicMinStabilityMarginM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitDynamicMinStabilityMarginM", 0.015, 0.0, 0.50, "tuning", logger);
+  out.gaitDynamicObservedMinStabilityMarginM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitDynamicObservedMinStabilityMarginM", 0.0, 0.0, 0.50, "tuning", logger);
   if (out.gaitTurnYawRateExitRadps > out.gaitTurnYawRateEnterRadps) {
     if (logger) {
       LOG_WARN(logger, "[tuning] turn yaw-rate exit threshold > enter threshold, using defaults");

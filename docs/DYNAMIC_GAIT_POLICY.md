@@ -212,3 +212,30 @@ When any mode-specific fallback cannot restore constraints within `500 ms`, esca
 - Slew-limit changes in contact ratio (recommended `|dCR/dt| <= 0.8 s^-1`).
 - On gait-family changes, phase-align over one cycle rather than hard-switching phase.
 - Telemetry should emit region, family, `CR*`, clamped `CR`, and active safety fallback state for observability.
+
+---
+
+## 7. Rollout and Default-Enablement Gates
+
+Dynamic gait is now guarded behind an explicit rollout gate and stays disabled by default.
+
+### Feature Flag
+
+- `Tuning.GaitDynamicFeatureFlagEnabled` must be `true`.
+
+### Simulator-First Validation Gate
+
+- `Tuning.GaitDynamicSimulatorFirstRequired` controls whether simulator gating is enforced.
+- If simulator-first mode is enabled, both of the following must pass:
+  - `Tuning.GaitDynamicSimulatorValidationRunsPassed >= Tuning.GaitDynamicSimulatorValidationRunsRequired`
+  - The configured acceptance metrics below are satisfied.
+
+### Explicit Acceptance Metrics
+
+All of the following must pass before dynamic gait can be enabled:
+
+- `Tuning.GaitDynamicObservedControlLatencyP95Ms <= Tuning.GaitDynamicMaxControlLatencyP95Ms`
+- `Tuning.GaitDynamicObservedSafetyFaultsPerHour <= Tuning.GaitDynamicMaxSafetyFaultsPerHour`
+- `Tuning.GaitDynamicObservedMinStabilityMarginM >= Tuning.GaitDynamicMinStabilityMarginM`
+
+If any gate fails, runtime falls back to legacy gait execution (requested gait family + safety fallback ladder).

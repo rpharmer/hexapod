@@ -54,6 +54,16 @@ MinBusVoltageV = 10.5
 MaxBusCurrentA = 25.0
 MinFootContacts = 0
 MaxFootContacts = 6
+GaitDynamicFeatureFlagEnabled = false
+GaitDynamicSimulatorFirstRequired = true
+GaitDynamicSimulatorValidationRunsRequired = 10
+GaitDynamicSimulatorValidationRunsPassed = 0
+GaitDynamicMaxControlLatencyP95Ms = 8.0
+GaitDynamicObservedControlLatencyP95Ms = 0.0
+GaitDynamicMaxSafetyFaultsPerHour = 0.20
+GaitDynamicObservedSafetyFaultsPerHour = 0.0
+GaitDynamicMinStabilityMarginM = 0.015
+GaitDynamicObservedMinStabilityMarginM = 0.0
 
 [Geometry]
 CoxaLengthM = 0.043

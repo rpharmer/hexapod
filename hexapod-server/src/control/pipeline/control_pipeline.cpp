@@ -26,7 +26,7 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     status.bus_ok = bus_ok;
     status.active_fault = safety_state.active_fault;
     status.loop_counter = loop_counter;
-    status.dynamic_gait.valid = true;
+    status.dynamic_gait.valid = contact_adjusted.managed_policy.dynamic_enabled;
     status.dynamic_gait.gait_family = contact_adjusted.managed_policy.gait_family;
     status.dynamic_gait.region = static_cast<uint8_t>(contact_adjusted.managed_policy.region);
     status.dynamic_gait.turn_mode = static_cast<uint8_t>(contact_adjusted.managed_policy.turn_mode);

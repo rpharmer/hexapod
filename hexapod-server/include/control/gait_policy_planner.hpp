@@ -47,6 +47,7 @@ struct LegDynamicGaitParams {
 };
 
 struct RuntimeGaitPolicy {
+    bool dynamic_enabled{false};
     GaitType gait_family{GaitType::TRIPOD};
     TurnMode turn_mode{TurnMode::CRAB};
     DynamicGaitRegion region{DynamicGaitRegion::ARC};
@@ -76,6 +77,10 @@ public:
                                                  TurnMode turn_mode) const;
 
 private:
+    bool dynamicPolicyEnabled() const;
+    RuntimeGaitPolicy legacyPolicy(const RobotState& est,
+                                   const MotionIntent& intent,
+                                   const SafetyState& safety) const;
     DynamicSafetyEnvelope envelopeForRegion(DynamicGaitRegion region) const;
     GaitFallbackStage selectFallbackStage(const SafetyState& safety,
                                           const DynamicSafetyEnvelope& envelope,

@@ -65,6 +65,18 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.gait.turn_mode_thresholds.yaw_rate_exit_radps = AngularRateRadPerSec{config.gaitTurnYawRateExitRadps};
     parsed.gait.turn_mode_thresholds.speed_enter_mps = LinearRateMps{config.gaitTurnSpeedEnterMps};
     parsed.gait.turn_mode_thresholds.speed_exit_mps = LinearRateMps{config.gaitTurnSpeedExitMps};
+    parsed.gait.acceptance_gate.feature_flag_enabled = config.gaitDynamicFeatureFlagEnabled;
+    parsed.gait.acceptance_gate.simulator_first_required = config.gaitDynamicSimulatorFirstRequired;
+    parsed.gait.acceptance_gate.simulator_validation_runs_required =
+        config.gaitDynamicSimulatorValidationRunsRequired;
+    parsed.gait.acceptance_gate.simulator_validation_runs_passed =
+        config.gaitDynamicSimulatorValidationRunsPassed;
+    parsed.gait.acceptance_gate.max_control_latency_p95_ms = config.gaitDynamicMaxControlLatencyP95Ms;
+    parsed.gait.acceptance_gate.observed_control_latency_p95_ms = config.gaitDynamicObservedControlLatencyP95Ms;
+    parsed.gait.acceptance_gate.max_safety_faults_per_hour = config.gaitDynamicMaxSafetyFaultsPerHour;
+    parsed.gait.acceptance_gate.observed_safety_faults_per_hour = config.gaitDynamicObservedSafetyFaultsPerHour;
+    parsed.gait.acceptance_gate.min_stability_margin_m = config.gaitDynamicMinStabilityMarginM;
+    parsed.gait.acceptance_gate.observed_min_stability_margin_m = config.gaitDynamicObservedMinStabilityMarginM;
 
     parsed.freshness.estimator.max_allowed_age_us = DurationUs{config.estimatorMaxAgeUs};
     parsed.freshness.estimator.require_timestamp = config.estimatorRequireTimestamp;
