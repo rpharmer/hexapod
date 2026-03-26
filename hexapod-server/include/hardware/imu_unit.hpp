@@ -51,6 +51,9 @@ public:
     bool read(ImuSample& out) override;
 
 private:
+    std::array<std::array<double, kJointsPerLeg>, kNumLegs> simulated_joint_pos_{};
+    EulerAnglesRad3 last_orientation_rad_{};
+    AngularVelocityRadPerSec3 last_angular_velocity_radps_{};
     std::chrono::milliseconds sample_period_;
     TimePointUs next_sample_at_{};
     uint64_t sample_counter_{0};
