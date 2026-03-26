@@ -24,7 +24,6 @@ std::array<Vec3, kNumLegs> BodyController::nominalStance() const {
     return nominal;
 }
 
-
 Vec3 BodyController::clampToReachEnvelope(int leg, const Vec3& target_body) const {
     const LegGeometry& leg_geo = geometry_.legGeometry[leg];
     const Vec3 relative_to_coxa = target_body - leg_geo.bodyCoxaOffset;
@@ -43,6 +42,7 @@ LegTargets BodyController::update(const RobotState& est,
     for (int leg = 0; leg < kNumLegs; ++leg) {
         fallback_policy.per_leg[leg].step_length_m = LengthM{0.06};
         fallback_policy.per_leg[leg].swing_height_m = LengthM{0.03};
+        fallback_policy.per_leg[leg].duty_cycle = 0.5;
     }
     return update(est, intent, gait, fallback_policy, safety);
 }
@@ -63,8 +63,6 @@ LegTargets BodyController::update(const RobotState& est,
         !safety.inhibit_motion &&
         !safety.torque_cut;
 
-    const double heading = intent.heading_rad.value;
-    const Vec3 step_dir{std::cos(heading), std::sin(heading), 0.0};
     const double roll_cmd = intent.twist.twist_pos_rad.x;
     const double pitch_cmd = intent.twist.twist_pos_rad.y;
     const double yaw_cmd = policy.suppression.suppress_turning ? 0.0 : intent.twist.twist_pos_rad.z;
@@ -81,37 +79,15 @@ LegTargets BodyController::update(const RobotState& est,
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
         Vec3 target = nominal[leg];
-        Vec3 target_vel = Vec3{};
 
-        // Apply commanded body-height offset around the nominal stance height.
         target.z += commanded_body_height_m - kDefaultBodyHeightM;
         target = target - planar_body_offset;
-        target_vel = target_vel - intent.twist.body_trans_mps;
 
-        if (walking) {
-            const double phase = clamp01(gait.phase[leg]);
-            const double phase_rate = std::max(gait.stride_phase_rate_hz.value, 0.0);
-            const double planar_phase = 2.0 * kPi * phase;
-            const double leg_step_length = policy.per_leg[leg].step_length_m.value;
-            const double step_delta = 0.5 * leg_step_length * std::cos(planar_phase);
-            const double step_vel = -kPi * leg_step_length * phase_rate * std::sin(planar_phase);
-            target = target + (step_dir * step_delta);
-            target_vel = target_vel + (step_dir * step_vel);
+        const PlannedFoothold foothold =
+            foothold_planner_.plan(leg, target, intent, gait, policy, walking);
 
-            if (!gait.in_stance[leg]) {
-                const double swing_alpha = clamp01((phase - 0.5) / 0.5);
-                const double swing_lift = 0.5 * (1.0 - std::cos(2.0 * kPi * swing_alpha));
-                const double swing_height = policy.per_leg[leg].swing_height_m.value;
-                const double swing_z_vel =
-                    2.0 * kPi * phase_rate * swing_height * std::sin(2.0 * kPi * swing_alpha);
-                target.z += swing_lift * swing_height;
-                target_vel.z += swing_z_vel;
-            }
-        }
-
-        // Apply commanded body orientation by rotating each foot target in body frame.
-        target = body_rotation * target;
-        target_vel = body_rotation * target_vel;
+        target = body_rotation * foothold.pos_body_m;
+        Vec3 target_vel = body_rotation * foothold.vel_body_mps;
 
         target = clampToReachEnvelope(leg, target);
         target_vel = target_vel + cross(intent.twist.twist_vel_radps, target);
