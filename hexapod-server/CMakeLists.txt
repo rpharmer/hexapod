@@ -126,6 +126,8 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/command_client.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/handshake_client.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/hardware_bridge.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/hardware_bridge_commands.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/hardware_bridge_metadata.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/hardware_state_codec.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/imu_unit.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/joint_feedback_estimator.cpp"
