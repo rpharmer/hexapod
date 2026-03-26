@@ -6,8 +6,10 @@ RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
                            std::unique_ptr<IEstimator> estimator,
                            std::shared_ptr<logging::AsyncLogger> logger,
                            control_config::ControlConfig config,
-                           std::unique_ptr<telemetry::ITelemetryPublisher> telemetry_publisher)
+                           std::unique_ptr<telemetry::ITelemetryPublisher> telemetry_publisher,
+                           std::unique_ptr<hardware::IImuUnit> imu)
     : hw_(std::move(hw)),
+      imu_(std::move(imu)),
       estimator_(std::move(estimator)),
       logger_(std::move(logger)),
       config_(config),
@@ -42,6 +44,10 @@ bool RobotRuntime::init() {
         }
         return false;
     }
+    if (!imu_) {
+        imu_ = hardware::makeNoopImuUnit();
+    }
+    (void)imu_->init();
 
     if (!telemetry_publisher_) {
         telemetry_publisher_ = telemetry::makeNoopTelemetryPublisher();
@@ -88,6 +94,12 @@ void RobotRuntime::busStep() {
     RobotState raw{};
     if (!hw_->read(raw)) {
         raw.bus_ok = false;
+    }
+    hardware::ImuSample imu_sample{};
+    if (imu_ && imu_->read(imu_sample) && imu_sample.valid) {
+        raw.body_twist_state.twist_pos_rad = imu_sample.orientation_rad;
+        raw.body_twist_state.twist_vel_radps = imu_sample.angular_velocity_radps;
+        raw.has_body_twist_state = true;
     }
     if (raw.sample_id == 0) {
         raw.sample_id = raw_sample_seq_.fetch_add(1) + 1;

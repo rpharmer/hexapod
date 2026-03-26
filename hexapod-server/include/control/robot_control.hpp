@@ -1,6 +1,7 @@
 #pragma once
 
 #include "control_config.hpp"
+#include "imu_unit.hpp"
 #include "loop_executor.hpp"
 #include "logger.hpp"
 #include "robot_runtime.hpp"
@@ -13,7 +14,8 @@ public:
     RobotControl(std::unique_ptr<IHardwareBridge> hw,
                  std::unique_ptr<IEstimator> estimator,
                  std::shared_ptr<logging::AsyncLogger> logger,
-                 control_config::ControlConfig config = {});
+                 control_config::ControlConfig config = {},
+                 std::unique_ptr<hardware::IImuUnit> imu = nullptr);
 
     ~RobotControl();
 

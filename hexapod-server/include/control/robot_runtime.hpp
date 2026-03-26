@@ -6,6 +6,7 @@
 #include "estimator.hpp"
 #include "freshness_policy.hpp"
 #include "hardware_bridge.hpp"
+#include "imu_unit.hpp"
 #include "logger.hpp"
 #include "runtime_diagnostics_reporter.hpp"
 #include "runtime_freshness_gate.hpp"
@@ -25,7 +26,8 @@ public:
                  std::unique_ptr<IEstimator> estimator,
                  std::shared_ptr<logging::AsyncLogger> logger,
                  control_config::ControlConfig config = {},
-                 std::unique_ptr<telemetry::ITelemetryPublisher> telemetry_publisher = telemetry::makeNoopTelemetryPublisher());
+                 std::unique_ptr<telemetry::ITelemetryPublisher> telemetry_publisher = telemetry::makeNoopTelemetryPublisher(),
+                 std::unique_ptr<hardware::IImuUnit> imu = nullptr);
 
     bool init();
     void startTelemetry();
@@ -45,6 +47,7 @@ private:
     void maybePublishTelemetry(const TimePointUs& now);
 
     std::unique_ptr<IHardwareBridge> hw_;
+    std::unique_ptr<hardware::IImuUnit> imu_;
     std::unique_ptr<IEstimator> estimator_;
     std::shared_ptr<logging::AsyncLogger> logger_;
     control_config::ControlConfig config_;

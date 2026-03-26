@@ -10,6 +10,7 @@
 #include "estimator.hpp"
 #include "geometry_config.hpp"
 #include "hardware_bridge.hpp"
+#include "imu_unit.hpp"
 #include "hexapod-server.hpp"
 #include "logger.hpp"
 #include "mode_runners.hpp"
@@ -67,6 +68,13 @@ std::unique_ptr<IHardwareBridge> makeHardwareBridge(const ParsedToml& config,
 
   return std::make_unique<SimpleHardwareBridge>(config.serialDevice, config.baudRate,
                                                 config.timeout, config.minMaxPulses, logger);
+}
+
+std::unique_ptr<hardware::IImuUnit> makeImuUnit(const ParsedToml& config) {
+  if (config.runtimeMode == "sim") {
+    return std::make_unique<hardware::DummyImuUnit>();
+  }
+  return std::make_unique<hardware::DirectImuUnit>();
 }
 
 void applyTelemetryCliOverrides(ParsedToml& config,
@@ -179,8 +187,9 @@ int main(int argc, char** argv)
            control_cfg.telemetry.geometry_resend_interval_sec);
 
   auto hw = makeHardwareBridge(config, logger);
+  auto imu = makeImuUnit(config);
   auto estimator = std::make_unique<SimpleEstimator>();
-  RobotControl robot(std::move(hw), std::move(estimator), logger, control_cfg);
+  RobotControl robot(std::move(hw), std::move(estimator), logger, control_cfg, std::move(imu));
 
   if (!robot.init()) {
     return 1;
