@@ -15,8 +15,10 @@ Monorepo for a serial-controlled hexapod robot, containing Linux host control so
 hexapod/
 ├── README.md
 ├── docs/
+│   ├── EXTENDING_IO_AND_HARDWARE.md
 │   ├── FIRMWARE.md
-│   └── HARDWARE.md
+│   ├── HARDWARE.md
+│   └── VISUALISER_TELEMETRY.md
 ├── hexapod-common/
 │   ├── include/
 │   │   ├── framing.hpp
@@ -33,15 +35,20 @@ hexapod/
 │   ├── src/
 │   ├── tests/
 │   └── README.md
-└── hexapod-client/
-    ├── CMakeLists.txt
-    ├── firmware_boot.cpp
-    ├── command_dispatch.cpp
-    ├── command_router.cpp
-    ├── motion_commands.cpp
-    ├── sensing_commands.cpp
-    ├── power_commands.cpp
-    ├── serialCommsClient.cpp
+├── hexapod-client/
+│   ├── CMakeLists.txt
+│   ├── firmware_boot.cpp
+│   ├── command_dispatch.cpp
+│   ├── command_router.cpp
+│   ├── motion_commands.cpp
+│   ├── sensing_commands.cpp
+│   ├── power_commands.cpp
+│   ├── serialCommsClient.cpp
+│   ├── tests/
+│   └── README.md
+└── hexapod-visualiser/
+    ├── server.py
+    ├── static/
     ├── tests/
     └── README.md
 ```
@@ -197,6 +204,7 @@ done
 - `docs/FIRMWARE.md` — wire protocol framing, constants, and payload definitions.
 - `docs/HARDWARE.md` — mechanical/electrical build reference and dimensions.
 - `docs/EXTENDING_IO_AND_HARDWARE.md` — how to add new control input devices and hardware bridge backends.
+- `docs/VISUALISER_TELEMETRY.md` — UDP telemetry schema/version contract between server and visualiser.
 
 ## Safety notes
 

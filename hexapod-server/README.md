@@ -23,25 +23,23 @@ hexapod-server/
 ├── config.sim.txt
 ├── README.md
 ├── include/
-│   ├── body_controller.hpp
-│   ├── control_config.hpp
-│   ├── control_pipeline.hpp
-│   ├── double_buffer.hpp
-│   ├── estimator.hpp
-│   ├── gait_scheduler.hpp
-│   ├── geometry_config.hpp
-│   ├── hardware_bridge.hpp
-│   ├── hexapod-server.hpp
-│   ├── leg_fk.hpp
-│   ├── leg_ik.hpp
-│   ├── logger.hpp
-│   ├── loop_timing.hpp
-│   ├── robot_control.hpp
-│   ├── safety_supervisor.hpp
-│   ├── serialCommsServer.hpp
-│   ├── status_reporter.hpp
-│   └── types.hpp
+│   ├── app/
+│   ├── config/
+│   ├── control/
+│   ├── hardware/
+│   ├── input/
+│   ├── kinematics/
+│   ├── scenario/
+│   └── utils/
 ├── src/
+│   ├── app/
+│   ├── config/
+│   ├── control/
+│   ├── hardware/
+│   ├── input/
+│   ├── kinematics/
+│   ├── scenario/
+│   └── utils/
 ├── scenarios/
 └── tests/
 ```
@@ -169,6 +167,7 @@ Baseline scenarios in `hexapod-server/scenarios/`:
 - `02_command_timeout_fallback.toml`
 - `03_power_fault_triggers.toml`
 - `04_contact_loss_edge_cases.toml`
+- `05_long_walk_observability.toml`
 
 Convenience script from repository root:
 

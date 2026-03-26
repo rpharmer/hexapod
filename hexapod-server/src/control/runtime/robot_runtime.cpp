@@ -19,6 +19,16 @@ RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
       timing_metrics_(config_, control_dt_sum_us_, control_jitter_max_us_),
       diagnostics_reporter_(logger_, freshness_policy_) {}
 
+namespace {
+
+telemetry::TelemetryPublishCounters readTelemetryCounters(
+    const std::unique_ptr<telemetry::ITelemetryPublisher>& telemetry_publisher)
+{
+    return telemetry_publisher ? telemetry_publisher->counters() : telemetry::TelemetryPublishCounters{};
+}
+
+} // namespace
+
 bool RobotRuntime::init() {
     if (!hw_ || !estimator_) {
         if (logger_) {
@@ -31,6 +41,10 @@ bool RobotRuntime::init() {
             LOG_ERROR(logger_, "Hardware Bridge init failed");
         }
         return false;
+    }
+
+    if (!telemetry_publisher_) {
+        telemetry_publisher_ = telemetry::makeNoopTelemetryPublisher();
     }
 
     MotionIntent initial{};
@@ -174,7 +188,7 @@ void RobotRuntime::diagnosticsStep() {
     const auto st = status_.read();
     const auto bridge_result = hw_ ? hw_->last_bridge_result() : std::nullopt;
     const uint64_t loops = control_loop_counter_.load();
-    diagnostics_reporter_.recordVisualizerTelemetry(telemetry_publisher_->counters(), now_us());
+    diagnostics_reporter_.recordVisualizerTelemetry(readTelemetryCounters(telemetry_publisher_), now_us());
     diagnostics_reporter_.report(st,
                                  bridge_result,
                                  loops,
