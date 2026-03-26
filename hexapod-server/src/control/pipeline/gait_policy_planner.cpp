@@ -52,6 +52,19 @@ RuntimeGaitPolicy GaitPolicyPlanner::plan(const RobotState& est,
     policy.per_leg = computePerLegDynamicParameters(policy.gait_family);
     policy.suppression = computeSuppressionFlags(est, intent, safety, policy.turn_mode);
     policy.reach_utilization = maxReachUtilization(est);
+    const double commanded_speed = std::abs(intent.speed_mps.value);
+    const double normalized_command =
+        std::clamp(commanded_speed / config_.frequency.nominal_max_speed_mps.value, 0.0, 1.0);
+    const double speed_mag = std::max(normalized_command, config_.fallback_speed_mag.value);
+    const double envelope_speed_scale = std::clamp(
+        (1.0 - policy.reach_utilization) / config_.frequency.reach_envelope_soft_limit,
+        config_.frequency.reach_envelope_min_scale,
+        1.0);
+    policy.cadence_hz = FrequencyHz{std::clamp(
+        config_.frequency.min_hz.value +
+            (config_.frequency.max_hz.value - config_.frequency.min_hz.value) * speed_mag * envelope_speed_scale,
+        config_.frequency.min_hz.value,
+        config_.frequency.max_hz.value)};
     return policy;
 }
 
