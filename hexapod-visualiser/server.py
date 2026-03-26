@@ -92,7 +92,7 @@ async def main() -> None:
     parser.add_argument(
         "--max-broadcast-hz",
         type=float,
-        default=25.0,
+        default=50.0,
         help="Maximum websocket broadcast frequency in Hz (latest update wins)",
     )
     parser.add_argument(

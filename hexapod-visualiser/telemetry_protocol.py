@@ -42,6 +42,18 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
             )
             return
 
+        incoming_timestamp_ms = message.get("timestamp_ms") if isinstance(message.get("timestamp_ms"), int) else None
+        if self._is_stale_timestamp(incoming_timestamp_ms):
+            self.diagnostics.udp_rejected += 1
+            log_event(
+                "debug",
+                "udp_dropped_stale_timestamp",
+                incoming_timestamp_ms=incoming_timestamp_ms,
+                last_timestamp_ms=self.state.timestamp_ms,
+                addr=addr,
+            )
+            return
+
         changed = False
 
         geometry = message.get("geometry")
@@ -79,6 +91,13 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
         if changed:
             self.diagnostics.mark_udp_update()
             self.on_update()
+
+    def _is_stale_timestamp(self, incoming_timestamp_ms: int | None) -> bool:
+        if incoming_timestamp_ms is None:
+            return False
+        if not isinstance(self.state.timestamp_ms, int):
+            return False
+        return incoming_timestamp_ms < self.state.timestamp_ms
 
     def _resolve_schema_version(self, message: dict[str, Any]) -> int | None:
         schema_version = message.get("schema_version")

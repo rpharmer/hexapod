@@ -202,6 +202,26 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(scheduler.update_notifications, 1000)
         self.assertGreaterEqual(scheduler.coalesced_notifications, 999)
 
+    def test_udp_protocol_drops_out_of_order_timestamp_updates(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
+
+        protocol.datagram_received(
+            b'{"schema_version": 1, "type":"joints", "angles_deg": {"LF": [1, 2, 3]}, "timestamp_ms": 2000}',
+            ("127.0.0.1", 9000),
+        )
+
+        before_angles = dict(state.angles_deg)
+        protocol.datagram_received(
+            b'{"schema_version": 1, "type":"joints", "angles_deg": {"LF": [9, 9, 9]}, "timestamp_ms": 1999}',
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertEqual(state.timestamp_ms, 2000)
+        self.assertEqual(state.angles_deg, before_angles)
+        self.assertGreaterEqual(diagnostics.udp_rejected, 1)
+
     def test_udp_parser_applies_status_and_health_fields(self):
         state = server.TelemetryState()
         updates = []

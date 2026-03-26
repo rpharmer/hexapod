@@ -47,6 +47,16 @@ export function applyStatePayload(model, telemetry, payload, nowMs = Date.now())
 
   if (payload.type !== "state") return model;
 
+  const payloadTimestampMs = typeof payload.timestamp_ms === "number" ? payload.timestamp_ms : null;
+  const lastTimestampMs = Number.isFinite(telemetry.lastModelTimestampMs)
+    ? telemetry.lastModelTimestampMs
+    : Number.NEGATIVE_INFINITY;
+  const hasStaleTimestamp = payloadTimestampMs !== null && payloadTimestampMs < lastTimestampMs;
+
+  if (hasStaleTimestamp) {
+    return model;
+  }
+
   const nextModel = {
     ...model,
     geometry: { ...model.geometry, ...(payload.geometry || {}) },
@@ -54,8 +64,8 @@ export function applyStatePayload(model, telemetry, payload, nowMs = Date.now())
     timestamp_ms: payload.timestamp_ms ?? model.timestamp_ms,
   };
 
-  if (typeof payload.timestamp_ms === "number") {
-    telemetry.lastModelTimestampMs = payload.timestamp_ms;
+  if (payloadTimestampMs !== null) {
+    telemetry.lastModelTimestampMs = payloadTimestampMs;
   }
 
   return nextModel;

@@ -134,6 +134,47 @@ bool testTimingMetricsTracksDeltaJitterAndAverage() {
                   "first update after reset should establish baseline without changing sums");
 }
 
+
+bool testJointOscillationTrackerIgnoresSubThresholdDirectionChanges() {
+    JointOscillationTracker tracker(0.02);
+    JointTargets a{};
+    JointTargets b{};
+    JointTargets c{};
+
+    b.leg_states[1].joint_state[1].pos_rad.value = 0.01;
+    c.leg_states[1].joint_state[1].pos_rad.value = -0.005;
+
+    tracker.observe(a, TimePointUs{0});
+    tracker.observe(b, TimePointUs{20'000});
+    tracker.observe(c, TimePointUs{40'000});
+
+    const JointOscillationMetrics metrics = tracker.metrics();
+    return expect(metrics.direction_reversal_events == 0,
+                  "sub-threshold deltas should not count as oscillation reversals") &&
+           expect(metrics.peak_joint_velocity_radps > 0.0,
+                  "tracker should still accumulate peak velocity for motion samples");
+}
+
+bool testJointOscillationTrackerHandlesNonMonotonicTimestamps() {
+    JointOscillationTracker tracker(0.01);
+    JointTargets a{};
+    JointTargets b{};
+    JointTargets c{};
+
+    b.leg_states[0].joint_state[2].pos_rad.value = 0.05;
+    c.leg_states[0].joint_state[2].pos_rad.value = -0.05;
+
+    tracker.observe(a, TimePointUs{10'000});
+    tracker.observe(b, TimePointUs{20'000});
+    tracker.observe(c, TimePointUs{15'000});
+
+    const JointOscillationMetrics metrics = tracker.metrics();
+    return expect(metrics.direction_reversal_events == 0,
+                  "non-monotonic timestamps should not produce reversal artifacts") &&
+           expect(metrics.peak_joint_velocity_radps > 0.0,
+                  "peak velocity should remain from valid monotonic intervals");
+}
+
 bool testJointOscillationTrackerCountsDirectionReversals() {
     JointOscillationTracker tracker(0.01);
     JointTargets a{};
@@ -164,6 +205,8 @@ int main() {
         !testStrictMetricsOnlyCountInvalidStreams() ||
         !testSafetyLenientEvaluationIgnoresAgeExpiry() ||
         !testTimingMetricsTracksDeltaJitterAndAverage() ||
+        !testJointOscillationTrackerIgnoresSubThresholdDirectionChanges() ||
+        !testJointOscillationTrackerHandlesNonMonotonicTimestamps() ||
         !testJointOscillationTrackerCountsDirectionReversals()) {
         return EXIT_FAILURE;
     }
