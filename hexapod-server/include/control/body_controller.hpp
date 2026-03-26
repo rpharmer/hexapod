@@ -1,5 +1,6 @@
 #pragma once
 
+#include "foothold_planner.hpp"
 #include "gait_policy_planner.hpp"
 #include "geometry_config.hpp"
 #include "types.hpp"
@@ -22,4 +23,5 @@ private:
     Vec3 clampToReachEnvelope(int leg, const Vec3& target_body) const;
 
     HexapodGeometry geometry_{defaultHexapodGeometry()};
+    FootholdPlanner foothold_planner_{geometry_};
 };
