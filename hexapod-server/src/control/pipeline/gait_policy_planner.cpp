@@ -85,7 +85,7 @@ RuntimeGaitPolicy GaitPolicyPlanner::plan(const RobotState& est,
                                           const SafetyState& safety)
 {
     RuntimeGaitPolicy policy{};
-    policy.region = selectLocomotionRegion(intent);
+    policy.region = selectRegion(intent);
     policy.gait_family = selectGaitFamily(intent, policy.region);
     policy.turn_mode = selectTurnMode(policy.region);
     policy.per_leg = computePerLegDynamicParameters(policy.gait_family);
@@ -100,13 +100,10 @@ RuntimeGaitPolicy GaitPolicyPlanner::plan(const RobotState& est,
         0.0,
         1.0);
 
-    policy.region = classifyRegion(normalized_command, yaw_normalized);
     policy.envelope = envelopeForRegion(policy.region);
-    policy.gait_family = selectGaitFamily(intent);
     if (!policy.envelope.allow_tripod && policy.gait_family == GaitType::TRIPOD) {
         policy.gait_family = GaitType::RIPPLE;
     }
-    policy.turn_mode = selectTurnMode(intent);
     policy.per_leg = computePerLegDynamicParameters(policy.gait_family);
     policy.suppression = computeSuppressionFlags(est, intent, safety, policy.turn_mode);
 
@@ -135,44 +132,44 @@ RuntimeGaitPolicy GaitPolicyPlanner::plan(const RobotState& est,
     return policy;
 }
 
-LocomotionRegion GaitPolicyPlanner::selectLocomotionRegion(const MotionIntent& intent)
+DynamicGaitRegion GaitPolicyPlanner::selectRegion(const MotionIntent& intent)
 {
     const double speed = normalizedSpeed(intent, config_);
     const double yaw = normalizedYaw(intent, config_);
     filtered_speed_norm_ = std::lerp(filtered_speed_norm_, speed, kSmoothCommandAlpha);
     filtered_yaw_norm_ = std::lerp(filtered_yaw_norm_, yaw, kSmoothCommandAlpha);
 
-    if (last_region_ == LocomotionRegion::ARC) {
+    if (last_region_ == DynamicGaitRegion::ARC) {
         if (filtered_yaw_norm_ > kRegionArcExitYaw || filtered_speed_norm_ < kRegionArcExitSpeed) {
-            last_region_ = LocomotionRegion::POINT_REORIENTATION;
+            last_region_ = DynamicGaitRegion::REORIENTATION;
         }
         return last_region_;
     }
 
-    if (last_region_ == LocomotionRegion::PIVOT) {
+    if (last_region_ == DynamicGaitRegion::PIVOT) {
         if (filtered_yaw_norm_ < kRegionPivotExitYaw && filtered_speed_norm_ > kRegionPivotExitSpeed) {
-            last_region_ = LocomotionRegion::POINT_REORIENTATION;
+            last_region_ = DynamicGaitRegion::REORIENTATION;
         }
         return last_region_;
     }
 
     if (filtered_speed_norm_ >= kRegionReorientToArcSpeed && filtered_yaw_norm_ <= kRegionReorientToArcYaw) {
-        last_region_ = LocomotionRegion::ARC;
+        last_region_ = DynamicGaitRegion::ARC;
     } else if (filtered_speed_norm_ <= kRegionReorientToPivotSpeed &&
                filtered_yaw_norm_ >= kRegionReorientToPivotYaw) {
-        last_region_ = LocomotionRegion::PIVOT;
+        last_region_ = DynamicGaitRegion::PIVOT;
     } else if (filtered_speed_norm_ >= kRegionArcEnterSpeed && filtered_yaw_norm_ <= kRegionArcEnterYaw) {
-        last_region_ = LocomotionRegion::ARC;
+        last_region_ = DynamicGaitRegion::ARC;
     } else if (filtered_speed_norm_ <= kRegionPivotEnterSpeed && filtered_yaw_norm_ >= kRegionPivotEnterYaw) {
-        last_region_ = LocomotionRegion::PIVOT;
+        last_region_ = DynamicGaitRegion::PIVOT;
     } else {
-        last_region_ = LocomotionRegion::POINT_REORIENTATION;
+        last_region_ = DynamicGaitRegion::REORIENTATION;
     }
 
     return last_region_;
 }
 
-GaitType GaitPolicyPlanner::selectGaitFamily(const MotionIntent& intent, const LocomotionRegion region)
+GaitType GaitPolicyPlanner::selectGaitFamily(const MotionIntent& intent, const DynamicGaitRegion region)
 {
     (void)intent;
     const double speed = filtered_speed_norm_;
@@ -198,12 +195,12 @@ GaitType GaitPolicyPlanner::selectGaitFamily(const MotionIntent& intent, const L
         return candidate;
     };
 
-    if (region == LocomotionRegion::PIVOT) {
+    if (region == DynamicGaitRegion::PIVOT) {
         const GaitType candidate = (speed >= 0.15 && yaw <= 0.85) ? GaitType::RIPPLE : GaitType::WAVE;
         last_gait_family_ = keepStableTransitions(candidate);
         return last_gait_family_;
     }
-    if (region == LocomotionRegion::POINT_REORIENTATION) {
+    if (region == DynamicGaitRegion::REORIENTATION) {
         const GaitType candidate = (speed < 0.30 || yaw > 0.75) ? GaitType::WAVE : GaitType::RIPPLE;
         last_gait_family_ = keepStableTransitions(candidate);
         return last_gait_family_;
@@ -224,9 +221,9 @@ GaitType GaitPolicyPlanner::selectGaitFamily(const MotionIntent& intent, const L
     return last_gait_family_;
 }
 
-TurnMode GaitPolicyPlanner::selectTurnMode(const LocomotionRegion region) const
+TurnMode GaitPolicyPlanner::selectTurnMode(const DynamicGaitRegion region) const
 {
-    if (region == LocomotionRegion::PIVOT) {
+    if (region == DynamicGaitRegion::PIVOT) {
         return TurnMode::IN_PLACE;
     }
     return TurnMode::CRAB;
@@ -264,32 +261,6 @@ GaitSuppressionFlags GaitPolicyPlanner::computeSuppressionFlags(const RobotState
                                   config_.turn_mode_thresholds.yaw_rate_exit_radps.value);
     flags.prioritize_stability = config_.priority_suppression.stability_priority >= 1.0;
     return flags;
-}
-
-DynamicGaitRegion GaitPolicyPlanner::classifyRegion(const double speed_normalized, const double yaw_normalized)
-{
-    if (last_region_ == DynamicGaitRegion::ARC) {
-        if (yaw_normalized > 0.60 || speed_normalized < 0.16) {
-            last_region_ = DynamicGaitRegion::REORIENTATION;
-        }
-        return last_region_;
-    }
-
-    if (last_region_ == DynamicGaitRegion::PIVOT) {
-        if (yaw_normalized < 0.52 && speed_normalized > 0.18) {
-            last_region_ = DynamicGaitRegion::REORIENTATION;
-        }
-        return last_region_;
-    }
-
-    if (speed_normalized >= 0.22 && yaw_normalized <= 0.52) {
-        last_region_ = DynamicGaitRegion::ARC;
-    } else if (speed_normalized <= 0.22 && yaw_normalized >= 0.60) {
-        last_region_ = DynamicGaitRegion::PIVOT;
-    } else {
-        last_region_ = DynamicGaitRegion::REORIENTATION;
-    }
-    return last_region_;
 }
 
 DynamicSafetyEnvelope GaitPolicyPlanner::envelopeForRegion(const DynamicGaitRegion region) const
