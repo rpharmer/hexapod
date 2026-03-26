@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <string>
 
@@ -250,6 +251,36 @@ events = [
                   "strict mode should reject contacts when clear_contacts=true");
 }
 
+
+
+bool test_dynamic_turn_priority_safety_scenario_loads_strict() {
+    namespace fs = std::filesystem;
+    const fs::path test_file = fs::path(__FILE__).lexically_normal();
+    const fs::path scenario_path = test_file.parent_path().parent_path() / "scenarios" / "06_dynamic_turn_priority_safety.toml";
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    const bool ok = ScenarioDriver::loadFromToml(scenario_path.string(), scenario, error,
+                                                 ScenarioDriver::ValidationMode::Strict);
+
+    if (!expect(ok, "dynamic turn/priority/safety scenario should parse in strict mode")) {
+        std::cerr << "strict parse error: " << error << '\n';
+        return false;
+    }
+
+    bool saw_motion = false;
+    bool saw_fault = false;
+    bool saw_sensor_override = false;
+    for (const auto& event : scenario.events) {
+        saw_motion = saw_motion || event.motion.enabled;
+        saw_fault = saw_fault || event.has_fault_overrides;
+        saw_sensor_override = saw_sensor_override || event.has_sensor_overrides;
+    }
+
+    return expect(saw_motion, "scenario should include motion events for gait/turn transitions") &&
+           expect(saw_fault, "scenario should include safety fault overrides") &&
+           expect(saw_sensor_override, "scenario should include contact/sensor overrides");
+}
 } // namespace
 
 int main() {
@@ -281,6 +312,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!test_strict_clear_contacts_with_contacts_rejected()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_dynamic_turn_priority_safety_scenario_loads_strict()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

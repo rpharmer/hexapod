@@ -253,6 +253,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_gait_policy_planner PRIVATE hexapod_server_core)
     add_test(NAME gait_policy_planner COMMAND test_gait_policy_planner)
 
+    add_executable(test_gait_dynamics_turn_safety tests/test_gait_dynamics_turn_safety.cpp)
+    target_link_libraries(test_gait_dynamics_turn_safety PRIVATE hexapod_server_core)
+    add_test(NAME gait_dynamics_turn_safety COMMAND test_gait_dynamics_turn_safety)
+
     add_executable(test_stability_tracker tests/test_stability_tracker.cpp)
     target_link_libraries(test_stability_tracker PRIVATE hexapod_server_core)
     add_test(NAME stability_tracker COMMAND test_stability_tracker)
