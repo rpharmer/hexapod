@@ -1,7 +1,8 @@
 #include "control_pipeline.hpp"
 
 ControlPipeline::ControlPipeline(control_config::GaitConfig config)
-    : gait_(config) {}
+    : planner_(config),
+      gait_(config) {}
 
 PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
                                             const MotionIntent& intent,
@@ -13,8 +14,9 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
         active_mode = RobotMode::FAULT;
     }
 
-    const GaitState gait_state = gait_.update(estimated, intent, safety_state);
-    const LegTargets leg_targets = body_.update(estimated, intent, gait_state, safety_state);
+    const RuntimeGaitPolicy gait_policy = planner_.plan(estimated, intent, safety_state);
+    const GaitState gait_state = gait_.update(estimated, intent, safety_state, gait_policy);
+    const LegTargets leg_targets = body_.update(estimated, intent, gait_state, gait_policy, safety_state);
     const JointTargets joint_targets = ik_.solve(estimated, leg_targets, safety_state);
 
     ControlStatus status{};
