@@ -290,6 +290,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_runtime_helpers PRIVATE hexapod_server_core)
     add_test(NAME runtime_helpers COMMAND test_runtime_helpers)
 
+    add_executable(test_runtime_diagnostics_reporter tests/test_runtime_diagnostics_reporter.cpp)
+    target_link_libraries(test_runtime_diagnostics_reporter PRIVATE hexapod_server_core)
+    add_test(NAME runtime_diagnostics_reporter COMMAND test_runtime_diagnostics_reporter)
+
     add_executable(test_visualiser_telemetry tests/test_visualiser_telemetry.cpp)
     target_link_libraries(test_visualiser_telemetry PRIVATE hexapod_server_core)
     add_test(NAME visualiser_telemetry COMMAND test_visualiser_telemetry)

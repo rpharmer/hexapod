@@ -166,6 +166,8 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
     const auto& estimator_diag = freshness_policy_.estimatorDiagnostics();
     const auto& intent_diag = freshness_policy_.intentDiagnostics();
     const JointOscillationMetrics joint_diag = joint_oscillation_tracker_.metrics();
+    const std::size_t dropped_messages = logger_->DroppedMessageCount();
+    const logging::AsyncLogger::QueueState log_queue_state = logger_->CurrentQueueState();
     std::size_t worst_reversal_joint = 0;
     std::size_t worst_velocity_joint = 0;
     std::size_t worst_leg_target_velocity_leg = 0;
@@ -221,6 +223,14 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
              intent_diag.invalid_sample_id_count,
              ",non_monotonic_sample:",
              intent_diag.non_monotonic_sample_id_count,
+             "} logger_diag={dropped_messages:",
+             dropped_messages,
+             ",queue_depth:",
+             log_queue_state.depth,
+             ",queue_capacity:",
+             log_queue_state.capacity,
+             ",worker_busy:",
+             log_queue_state.worker_busy ? 1 : 0,
              "} visualizer_diag={packets_sent:",
              telemetry_diag_.packets_sent,
              ",serialization_failures:",
