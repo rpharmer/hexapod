@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 
 #include "control_config.hpp"
 #include "geometry_config.hpp"
@@ -17,10 +18,6 @@ enum class TurnMode {
     IN_PLACE
 };
 
-enum class LocomotionRegion {
-    ARC,
-    PIVOT,
-    POINT_REORIENTATION
 enum class DynamicGaitRegion {
     ARC,
     PIVOT,
@@ -52,7 +49,6 @@ struct LegDynamicGaitParams {
 struct RuntimeGaitPolicy {
     GaitType gait_family{GaitType::TRIPOD};
     TurnMode turn_mode{TurnMode::CRAB};
-    LocomotionRegion region{LocomotionRegion::ARC};
     DynamicGaitRegion region{DynamicGaitRegion::ARC};
     DynamicSafetyEnvelope envelope{};
     GaitFallbackStage fallback_stage{GaitFallbackStage::NONE};
@@ -70,9 +66,9 @@ public:
                            const MotionIntent& intent,
                            const SafetyState& safety);
 
-    GaitType selectGaitFamily(const MotionIntent& intent, LocomotionRegion region);
-    TurnMode selectTurnMode(LocomotionRegion region) const;
-    LocomotionRegion selectLocomotionRegion(const MotionIntent& intent);
+    GaitType selectGaitFamily(const MotionIntent& intent, DynamicGaitRegion region);
+    TurnMode selectTurnMode(DynamicGaitRegion region) const;
+    DynamicGaitRegion selectRegion(const MotionIntent& intent);
     std::array<LegDynamicGaitParams, kNumLegs> computePerLegDynamicParameters(GaitType family) const;
     GaitSuppressionFlags computeSuppressionFlags(const RobotState& est,
                                                  const MotionIntent& intent,
@@ -80,7 +76,6 @@ public:
                                                  TurnMode turn_mode) const;
 
 private:
-    DynamicGaitRegion classifyRegion(double speed_normalized, double yaw_normalized);
     DynamicSafetyEnvelope envelopeForRegion(DynamicGaitRegion region) const;
     GaitFallbackStage selectFallbackStage(const SafetyState& safety,
                                           const DynamicSafetyEnvelope& envelope,
@@ -93,10 +88,8 @@ private:
 
     control_config::GaitConfig config_{};
     HexapodGeometry geometry_{defaultHexapodGeometry()};
-    LocomotionRegion last_region_{LocomotionRegion::ARC};
+    DynamicGaitRegion last_region_{DynamicGaitRegion::ARC};
     GaitType last_gait_family_{GaitType::WAVE};
     double filtered_speed_norm_{0.0};
     double filtered_yaw_norm_{0.0};
-    TurnMode last_turn_mode_{TurnMode::CRAB};
-    DynamicGaitRegion last_region_{DynamicGaitRegion::ARC};
 };
