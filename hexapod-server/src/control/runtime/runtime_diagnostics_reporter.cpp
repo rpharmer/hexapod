@@ -52,6 +52,10 @@ void RuntimeDiagnosticsReporter::recordVisualizerTelemetry(
     }
 }
 
+void RuntimeDiagnosticsReporter::setRuntimeImuReadsEnabled(bool enabled) {
+    imu_reads_enabled_ = enabled;
+}
+
 void RuntimeDiagnosticsReporter::recordControlOutputs(const JointTargets& targets,
                                                       const ControlStatus& status,
                                                       TimePointUs now,
@@ -197,6 +201,8 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
     LOG_INFO(logger_,
              "runtime.metrics loops=",
              loops,
+             " imu_reads_enabled=",
+             imu_reads_enabled_ ? 1 : 0,
              " avg_control_dt_us=",
              avg_control_dt_us,
              " max_control_jitter_us=",

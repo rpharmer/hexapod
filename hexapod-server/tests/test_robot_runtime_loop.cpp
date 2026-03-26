@@ -1,4 +1,5 @@
 #include "estimator.hpp"
+#include "imu_unit.hpp"
 #include "robot_runtime.hpp"
 #include "sim_hardware_bridge.hpp"
 
@@ -51,6 +52,32 @@ public:
 private:
     std::vector<RobotState> queue_{};
     RobotState last_{};
+};
+
+class CapturingEstimator final : public IEstimator {
+public:
+    RobotState update(const RobotState& raw) override {
+        last_raw = raw;
+        return raw;
+    }
+
+    RobotState last_raw{};
+};
+
+class FixedImuUnit final : public hardware::IImuUnit {
+public:
+    bool init() override {
+        return true;
+    }
+
+    bool read(hardware::ImuSample& out) override {
+        ++read_count;
+        out = sample;
+        return true;
+    }
+
+    hardware::ImuSample sample{};
+    int read_count{0};
 };
 
 class CountingTelemetryPublisher final : public telemetry::ITelemetryPublisher {
@@ -272,6 +299,42 @@ bool runTelemetryCadenceRejectCase() {
                   "rejected control steps should keep geometry refresh cadence");
 }
 
+bool runImuReadGateCase(bool imu_reads_enabled, bool expect_body_twist_state) {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<CapturingEstimator>();
+    auto* estimator_raw = estimator.get();
+    auto imu = std::make_unique<FixedImuUnit>();
+    auto* imu_raw = imu.get();
+    imu_raw->sample.valid = true;
+    imu_raw->sample.orientation_rad = EulerAnglesRad3{0.1, -0.2, 0.3};
+    imu_raw->sample.angular_velocity_radps = AngularVelocityRadPerSec3{0.4, 0.5, -0.6};
+
+    control_config::ControlConfig cfg{};
+    cfg.runtime_imu.enable_reads = imu_reads_enabled;
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, cfg, nullptr, std::move(imu));
+
+    if (!expect(runtime.init(), "init should succeed (imu read gate case)")) {
+        return false;
+    }
+
+    runtime.busStep();
+    runtime.estimatorStep();
+
+    if (!expect(estimator_raw->last_raw.has_body_twist_state == expect_body_twist_state,
+                "IMU read gate should control raw body_twist_state propagation")) {
+        return false;
+    }
+
+    if (expect_body_twist_state) {
+        return expect(imu_raw->read_count == 1, "enabled IMU reads should poll the IMU once per bus step") &&
+               expect(estimator_raw->last_raw.body_twist_state.twist_pos_rad.x == 0.1,
+                      "enabled IMU reads should propagate orientation into raw state");
+    }
+    return expect(imu_raw->read_count == 0, "disabled IMU reads should not poll IMU");
+}
+
 } // namespace
 
 int main() {
@@ -339,6 +402,14 @@ int main() {
     }
 
     if (!runTelemetryCadenceRejectCase()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runImuReadGateCase(false, false)) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runImuReadGateCase(true, true)) {
         return EXIT_FAILURE;
     }
 

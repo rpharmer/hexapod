@@ -40,6 +40,7 @@ public:
 
     void recordVisualizerTelemetry(const telemetry::TelemetryPublishCounters& telemetry_counters,
                                    TimePointUs now);
+    void setRuntimeImuReadsEnabled(bool enabled);
     void recordControlOutputs(const JointTargets& targets,
                               const ControlStatus& status,
                               TimePointUs now,
@@ -73,4 +74,5 @@ private:
     ControlStatus previous_status_{};
     TimePointUs last_control_output_timestamp_{};
     bool diagnostics_tracking_active_{false};
+    bool imu_reads_enabled_{false};
 };

@@ -21,6 +21,7 @@ struct ParsedToml
   bool simDropBus{false};
   bool simLowVoltage{false};
   bool simHighCurrent{false};
+  bool imuEnableReads{false};
 
   std::string logFilePath{"app.log"};
   bool logToFile{true};

@@ -173,6 +173,7 @@ int main(int argc, char** argv)
   geometry_config::loadFromParsedToml(config);
 
   LOG_INFO(logger, "Runtime.Mode=", config.runtimeMode);
+  LOG_INFO(logger, "Runtime.Imu.EnableReads=", control_cfg.runtime_imu.enable_reads);
   LOG_INFO(logger, "Logging.FileEnabled=", enableFileLogging, ", Path=", effectiveLogPath);
   LOG_INFO(logger,
            "Runtime.Telemetry.Enabled=",

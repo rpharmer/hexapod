@@ -257,6 +257,31 @@ bool testTelemetryRuntimeFieldsParseAndFallback()
          expect(saw_port, "telemetry port fallback should emit out_of_range diagnostic");
 }
 
+bool testImuRuntimeReadGateParsesAndDefaults()
+{
+  ParsedToml defaults{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(configPath("config.txt"), defaults), "config.txt should parse for imu defaults")) {
+    return false;
+  }
+  if (!expect(!defaults.imuEnableReads, "Runtime.Imu.EnableReads should default to false")) {
+    return false;
+  }
+
+  std::string cfg = readText(configPath("config.txt"));
+  if (!expect(replaceOnce(cfg, "Runtime.Imu.EnableReads = false", "Runtime.Imu.EnableReads = true"),
+              "baseline config missing Runtime.Imu.EnableReads entry")) {
+    return false;
+  }
+
+  ParsedToml parsed{};
+  if (!expect(parser.parse(writeTemp("hexapod_runtime_imu_enabled.toml", cfg), parsed),
+              "Runtime.Imu.EnableReads=true should parse")) {
+    return false;
+  }
+  return expect(parsed.imuEnableReads, "Runtime.Imu.EnableReads should parse explicit true");
+}
+
 bool testCalibrationNormalizationStableForShuffledTable()
 {
   const std::string ordered =
@@ -466,6 +491,7 @@ int main()
   testOutOfRangeTuningFallsBackToDefaults();
   testOutOfRangeRuntimeFallsBackWithDiagnostic();
   testTelemetryRuntimeFieldsParseAndFallback();
+  testImuRuntimeReadGateParsesAndDefaults();
   testCalibrationNormalizationStableForShuffledTable();
   testSimModeTransportOptional();
   testBaselineConfigParity();

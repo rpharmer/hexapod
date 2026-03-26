@@ -31,7 +31,6 @@ telemetry::TelemetryPublishCounters readTelemetryCounters(
     return telemetry_publisher ? telemetry_publisher->counters() : telemetry::TelemetryPublishCounters{};
 }
 
-constexpr bool kDisableImuReads = true;
 constexpr double kJointTargetSlewLimitRadPerSec = 18.0;
 
 } // namespace
@@ -53,8 +52,12 @@ bool RobotRuntime::init() {
         imu_ = hardware::makeNoopImuUnit();
     }
     (void)imu_->init();
-    if (kDisableImuReads && logger_) {
-        LOG_WARN(logger_, "IMU reads are temporarily disabled (kDisableImuReads=true)");
+    diagnostics_reporter_.setRuntimeImuReadsEnabled(config_.runtime_imu.enable_reads);
+    if (logger_) {
+        LOG_INFO(logger_, "Runtime.Imu.EnableReads=", config_.runtime_imu.enable_reads);
+    }
+    if (!config_.runtime_imu.enable_reads && logger_) {
+        LOG_WARN(logger_, "IMU reads disabled by Runtime.Imu.EnableReads=false");
     }
 
     if (!telemetry_publisher_) {
@@ -106,7 +109,7 @@ void RobotRuntime::busStep() {
     if (!hw_->read(raw)) {
         raw.bus_ok = false;
     }
-    if (!kDisableImuReads) {
+    if (config_.runtime_imu.enable_reads) {
         hardware::ImuSample imu_sample{};
         if (imu_ && imu_->read(imu_sample) && imu_sample.valid) {
             raw.body_twist_state.twist_pos_rad = imu_sample.orientation_rad;
@@ -211,6 +214,7 @@ void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
     telemetry_sample.joint_targets = joint_targets_.read();
     telemetry_sample.status = status_.read();
     telemetry_sample.timestamp_us = now;
+    telemetry_sample.imu_reads_enabled = config_.runtime_imu.enable_reads;
     telemetry_publisher_->publishControlStep(telemetry_sample);
 }
 
