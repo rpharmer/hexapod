@@ -199,6 +199,8 @@ done
 
 ## Documentation map
 
+- `docs/README.md` — docs index and canonical entrypoint for architecture/protocol/hardware references.
+- `docs/CODEBASE_REVIEW_2026-03-26.md` — monorepo architecture review, risks, and prioritized roadmap.
 - `hexapod-server/README.md` — host runtime architecture, simulation flow, and test commands.
 - `hexapod-client/README.md` — firmware build/flash workflow and protocol command handling notes.
 - `docs/FIRMWARE.md` — wire protocol framing, constants, and payload definitions.
