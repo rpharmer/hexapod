@@ -190,22 +190,29 @@ target_link_libraries(hexapod-server
         hexapod_server_core
 )
 
+function(hexapod_server_add_test test_target test_name)
+    add_executable(${test_target} ${ARGN})
+    target_link_libraries(${test_target} PRIVATE hexapod_server_core)
+    if(NOT MSVC)
+        target_link_options(${test_target} PRIVATE -pthread)
+    endif()
+    add_test(NAME ${test_name} COMMAND ${test_target})
+endfunction()
+
 if(HEXAPOD_SERVER_BUILD_TESTS)
     enable_testing()
 
-    add_executable(test_robot_runtime_loop tests/test_robot_runtime_loop.cpp)
-    target_link_libraries(test_robot_runtime_loop PRIVATE hexapod_server_core)
-    add_test(NAME robot_runtime_loop_behavior COMMAND test_robot_runtime_loop)
-
-    add_executable(test_safety_supervisor_faults tests/test_safety_supervisor_faults.cpp)
-    target_link_libraries(test_safety_supervisor_faults PRIVATE hexapod_server_core)
-    add_test(NAME safety_supervisor_transitions COMMAND test_safety_supervisor_faults)
-
-    add_executable(test_control_pipeline_sanity tests/test_control_pipeline_sanity.cpp)
-    target_link_libraries(test_control_pipeline_sanity PRIVATE hexapod_server_core)
-    add_test(NAME control_pipeline_output_sanity COMMAND test_control_pipeline_sanity)
-
-    add_executable(test_hardware_bridge_transport
+    # runtime
+    hexapod_server_add_test(test_robot_runtime_loop robot_runtime_loop_behavior
+        tests/test_robot_runtime_loop.cpp
+    )
+    hexapod_server_add_test(test_safety_supervisor_faults safety_supervisor_transitions
+        tests/test_safety_supervisor_faults.cpp
+    )
+    hexapod_server_add_test(test_control_pipeline_sanity control_pipeline_output_sanity
+        tests/test_control_pipeline_sanity.cpp
+    )
+    hexapod_server_add_test(test_hardware_bridge_transport hardware_bridge_transport_behavior
         tests/test_hardware_bridge_transport_main.cpp
         tests/test_hardware_bridge_transport_handshake.cpp
         tests/test_hardware_bridge_transport_failures.cpp
@@ -216,125 +223,110 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
         tests/test_hardware_bridge_transport_commands_calibration.cpp
         tests/test_hardware_bridge_transport_capabilities.cpp
     )
-    target_link_libraries(test_hardware_bridge_transport PRIVATE hexapod_server_core)
-    add_test(NAME hardware_bridge_transport_behavior COMMAND test_hardware_bridge_transport)
 
-    add_executable(test_servo_calibration_unified_conversion tests/test_servo_calibration_unified_conversion.cpp)
-    target_link_libraries(test_servo_calibration_unified_conversion PRIVATE hexapod_server_core)
-    add_test(NAME servo_calibration_unified_conversion COMMAND test_servo_calibration_unified_conversion)
+    # calibration
+    hexapod_server_add_test(test_servo_calibration_unified_conversion servo_calibration_unified_conversion
+        tests/test_servo_calibration_unified_conversion.cpp
+    )
+    hexapod_server_add_test(test_calibration_probe_fit calibration_probe_fit
+        tests/test_calibration_probe_fit.cpp
+    )
 
-    add_executable(test_motion_intent_through_ik_fk tests/test_motion_intent_through_ik_fk.cpp)
-    target_link_libraries(test_motion_intent_through_ik_fk PRIVATE hexapod_server_core)
-    add_test(NAME motion_intent_through_ik_fk_chain COMMAND test_motion_intent_through_ik_fk)
+    # kinematics
+    hexapod_server_add_test(test_motion_intent_through_ik_fk motion_intent_through_ik_fk_chain
+        tests/test_motion_intent_through_ik_fk.cpp
+    )
 
-    add_executable(test_virtual_gamepad_controller tests/test_virtual_gamepad_controller.cpp)
-    target_link_libraries(test_virtual_gamepad_controller PRIVATE hexapod_server_core)
-    add_test(NAME virtual_gamepad_controller COMMAND test_virtual_gamepad_controller)
+    # input
+    hexapod_server_add_test(test_virtual_gamepad_controller virtual_gamepad_controller
+        tests/test_virtual_gamepad_controller.cpp
+    )
+    hexapod_server_add_test(test_cli_mode_selection cli_mode_selection
+        tests/test_cli_mode_selection.cpp
+    )
+    hexapod_server_add_test(test_interactive_input_mapper interactive_input_mapper
+        tests/test_interactive_input_mapper.cpp
+    )
 
-    add_executable(test_scenario_driver_validation tests/test_scenario_driver_validation.cpp)
-    target_link_libraries(test_scenario_driver_validation PRIVATE hexapod_server_core)
-    add_test(NAME scenario_driver_validation COMMAND test_scenario_driver_validation)
+    # scenario
+    hexapod_server_add_test(test_scenario_driver_validation scenario_driver_validation
+        tests/test_scenario_driver_validation.cpp
+    )
 
-    add_executable(test_simple_estimator_ground_plane tests/test_simple_estimator_ground_plane.cpp)
-    target_link_libraries(test_simple_estimator_ground_plane PRIVATE hexapod_server_core)
-    add_test(NAME simple_estimator_ground_plane COMMAND test_simple_estimator_ground_plane)
+    # control
+    hexapod_server_add_test(test_simple_estimator_ground_plane simple_estimator_ground_plane
+        tests/test_simple_estimator_ground_plane.cpp
+    )
+    hexapod_server_add_test(test_body_controller_velocity body_controller_velocity
+        tests/test_body_controller_velocity.cpp
+    )
+    hexapod_server_add_test(test_contact_manager contact_manager
+        tests/test_contact_manager.cpp
+    )
+    hexapod_server_add_test(test_gait_policy_planner gait_policy_planner
+        tests/test_gait_policy_planner.cpp
+    )
+    hexapod_server_add_test(test_gait_dynamics_turn_safety gait_dynamics_turn_safety
+        tests/test_gait_dynamics_turn_safety.cpp
+    )
+    hexapod_server_add_test(test_stability_tracker stability_tracker
+        tests/test_stability_tracker.cpp
+    )
+    hexapod_server_add_test(test_freshness_policy freshness_policy
+        tests/test_freshness_policy.cpp
+    )
+    hexapod_server_add_test(test_robot_runtime_freshness_gate_matrix robot_runtime_freshness_gate_matrix
+        tests/test_robot_runtime_freshness_gate_matrix.cpp
+    )
+    hexapod_server_add_test(test_runtime_helpers runtime_helpers
+        tests/test_runtime_helpers.cpp
+    )
+    hexapod_server_add_test(test_visualiser_telemetry visualiser_telemetry
+        tests/test_visualiser_telemetry.cpp
+    )
+    hexapod_server_add_test(test_shutdown_summary_logging shutdown_summary_logging
+        tests/test_shutdown_summary_logging.cpp
+    )
+    hexapod_server_add_test(test_runtime_teardown_logging runtime_teardown_logging
+        tests/test_runtime_teardown_logging.cpp
+    )
+    hexapod_server_add_test(test_geometry_profile_service geometry_profile_service
+        tests/test_geometry_profile_service.cpp
+    )
+    hexapod_server_add_test(test_telemetry_json_serialization telemetry_json_serialization
+        tests/test_telemetry_json_serialization.cpp
+    )
+    hexapod_server_add_test(test_loop_executor_timing loop_executor_timing
+        tests/test_loop_executor_timing.cpp
+    )
 
-    add_executable(test_imu_units tests/test_imu_units.cpp)
-    target_link_libraries(test_imu_units PRIVATE hexapod_server_core)
-    add_test(NAME imu_units COMMAND test_imu_units)
+    # config
+    hexapod_server_add_test(test_toml_parser_sections toml_parser_sections
+        tests/test_toml_parser_sections.cpp
+    )
 
-    add_executable(test_body_controller_velocity tests/test_body_controller_velocity.cpp)
-    target_link_libraries(test_body_controller_velocity PRIVATE hexapod_server_core)
-    add_test(NAME body_controller_velocity COMMAND test_body_controller_velocity)
+    # transport
+    hexapod_server_add_test(test_transport_components transport_components
+        tests/test_transport_components.cpp
+    )
+    hexapod_server_add_test(test_protocol_command_metadata protocol_command_metadata
+        tests/test_protocol_command_metadata.cpp
+    )
 
-
-    add_executable(test_contact_manager tests/test_contact_manager.cpp)
-    target_link_libraries(test_contact_manager PRIVATE hexapod_server_core)
-    add_test(NAME contact_manager COMMAND test_contact_manager)
-    add_executable(test_gait_policy_planner tests/test_gait_policy_planner.cpp)
-    target_link_libraries(test_gait_policy_planner PRIVATE hexapod_server_core)
-    add_test(NAME gait_policy_planner COMMAND test_gait_policy_planner)
-
-    add_executable(test_gait_dynamics_turn_safety tests/test_gait_dynamics_turn_safety.cpp)
-    target_link_libraries(test_gait_dynamics_turn_safety PRIVATE hexapod_server_core)
-    add_test(NAME gait_dynamics_turn_safety COMMAND test_gait_dynamics_turn_safety)
-
-    add_executable(test_stability_tracker tests/test_stability_tracker.cpp)
-    target_link_libraries(test_stability_tracker PRIVATE hexapod_server_core)
-    add_test(NAME stability_tracker COMMAND test_stability_tracker)
-
-    add_executable(test_toml_parser_sections tests/test_toml_parser_sections.cpp)
-    target_link_libraries(test_toml_parser_sections PRIVATE hexapod_server_core)
-    add_test(NAME toml_parser_sections COMMAND test_toml_parser_sections)
-
-    add_executable(test_cli_mode_selection tests/test_cli_mode_selection.cpp)
-    target_link_libraries(test_cli_mode_selection PRIVATE hexapod_server_core)
-    add_test(NAME cli_mode_selection COMMAND test_cli_mode_selection)
-
-    add_executable(test_interactive_input_mapper tests/test_interactive_input_mapper.cpp)
-    target_link_libraries(test_interactive_input_mapper PRIVATE hexapod_server_core)
-    add_test(NAME interactive_input_mapper COMMAND test_interactive_input_mapper)
-    add_executable(test_transport_components tests/test_transport_components.cpp)
-    target_link_libraries(test_transport_components PRIVATE hexapod_server_core)
-    add_test(NAME transport_components COMMAND test_transport_components)
-
-    add_executable(test_freshness_policy tests/test_freshness_policy.cpp)
-    target_link_libraries(test_freshness_policy PRIVATE hexapod_server_core)
-    add_test(NAME freshness_policy COMMAND test_freshness_policy)
-
-    add_executable(test_robot_runtime_freshness_gate_matrix tests/test_robot_runtime_freshness_gate_matrix.cpp)
-    target_link_libraries(test_robot_runtime_freshness_gate_matrix PRIVATE hexapod_server_core)
-    add_test(NAME robot_runtime_freshness_gate_matrix COMMAND test_robot_runtime_freshness_gate_matrix)
-
-    add_executable(test_runtime_helpers tests/test_runtime_helpers.cpp)
-    target_link_libraries(test_runtime_helpers PRIVATE hexapod_server_core)
-    add_test(NAME runtime_helpers COMMAND test_runtime_helpers)
-
-    add_executable(test_visualiser_telemetry tests/test_visualiser_telemetry.cpp)
-    target_link_libraries(test_visualiser_telemetry PRIVATE hexapod_server_core)
-    add_test(NAME visualiser_telemetry COMMAND test_visualiser_telemetry)
-
-    add_executable(test_shutdown_summary_logging tests/test_shutdown_summary_logging.cpp)
-    target_link_libraries(test_shutdown_summary_logging PRIVATE hexapod_server_core)
-    add_test(NAME shutdown_summary_logging COMMAND test_shutdown_summary_logging)
-
-    add_executable(test_runtime_teardown_logging tests/test_runtime_teardown_logging.cpp)
-    target_link_libraries(test_runtime_teardown_logging PRIVATE hexapod_server_core)
-    add_test(NAME runtime_teardown_logging COMMAND test_runtime_teardown_logging)
-
-    add_executable(test_geometry_profile_service tests/test_geometry_profile_service.cpp)
-    target_link_libraries(test_geometry_profile_service PRIVATE hexapod_server_core)
-    add_test(NAME geometry_profile_service COMMAND test_geometry_profile_service)
-    add_executable(test_calibration_probe_fit tests/test_calibration_probe_fit.cpp)
-    target_link_libraries(test_calibration_probe_fit PRIVATE hexapod_server_core)
-    add_test(NAME calibration_probe_fit COMMAND test_calibration_probe_fit)
-
-    add_executable(test_protocol_command_metadata tests/test_protocol_command_metadata.cpp)
-    target_link_libraries(test_protocol_command_metadata PRIVATE hexapod_server_core)
-    add_test(NAME protocol_command_metadata COMMAND test_protocol_command_metadata)
-
-    add_executable(test_telemetry_json_serialization tests/test_telemetry_json_serialization.cpp)
-    target_link_libraries(test_telemetry_json_serialization PRIVATE hexapod_server_core)
-    add_test(NAME telemetry_json_serialization COMMAND test_telemetry_json_serialization)
-
-
-    add_executable(test_bridge_link_manager tests/test_bridge_link_manager.cpp)
-    target_link_libraries(test_bridge_link_manager PRIVATE hexapod_server_core)
-    add_test(NAME bridge_link_manager COMMAND test_bridge_link_manager)
-
-    add_executable(test_bridge_command_api tests/test_bridge_command_api.cpp)
-    target_link_libraries(test_bridge_command_api PRIVATE hexapod_server_core)
-    add_test(NAME bridge_command_api COMMAND test_bridge_command_api)
-
-    add_executable(test_joint_feedback_estimator tests/test_joint_feedback_estimator.cpp)
-    target_link_libraries(test_joint_feedback_estimator PRIVATE hexapod_server_core)
-    add_test(NAME joint_feedback_estimator COMMAND test_joint_feedback_estimator)
-
-    add_executable(test_command_flow_integration tests/test_command_flow_integration.cpp)
-    target_link_libraries(test_command_flow_integration PRIVATE hexapod_server_core)
-    add_test(NAME command_flow_integration COMMAND test_command_flow_integration)
-    
-    add_executable(test_loop_executor_timing tests/test_loop_executor_timing.cpp)
-    target_link_libraries(test_loop_executor_timing PRIVATE hexapod_server_core)
-    add_test(NAME loop_executor_timing COMMAND test_loop_executor_timing)
+    # hardware
+    hexapod_server_add_test(test_imu_units imu_units
+        tests/test_imu_units.cpp
+    )
+    hexapod_server_add_test(test_bridge_link_manager bridge_link_manager
+        tests/test_bridge_link_manager.cpp
+    )
+    hexapod_server_add_test(test_bridge_command_api bridge_command_api
+        tests/test_bridge_command_api.cpp
+    )
+    hexapod_server_add_test(test_joint_feedback_estimator joint_feedback_estimator
+        tests/test_joint_feedback_estimator.cpp
+    )
+    hexapod_server_add_test(test_command_flow_integration command_flow_integration
+        tests/test_command_flow_integration.cpp
+    )
 endif()
