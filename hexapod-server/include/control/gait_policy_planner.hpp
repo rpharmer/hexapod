@@ -28,6 +28,7 @@ struct RuntimeGaitPolicy {
     GaitType gait_family{GaitType::TRIPOD};
     TurnMode turn_mode{TurnMode::CRAB};
     std::array<LegDynamicGaitParams, kNumLegs> per_leg{};
+    FrequencyHz cadence_hz{FrequencyHz{0.0}};
     GaitSuppressionFlags suppression{};
     double reach_utilization{0.0};
 };

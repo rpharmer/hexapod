@@ -7,6 +7,13 @@
 #include <array>
 #include <cmath>
 
+namespace {
+
+constexpr double kCadenceSlewUpHzPerSec = 150.0;
+constexpr double kCadenceSlewDownHzPerSec = 200.0;
+
+}
+
 GaitScheduler::GaitScheduler(control_config::GaitConfig config)
     : config_(config) {}
 
@@ -14,6 +21,15 @@ double GaitScheduler::wrap01(double x) const {
     while (x >= 1.0) x -= 1.0;
     while (x < 0.0) x += 1.0;
     return x;
+}
+
+FrequencyHz GaitScheduler::applyCadenceSlew(const FrequencyHz& target_rate_hz, const DurationSec& dt) {
+    const double up_limit = kCadenceSlewUpHzPerSec * std::max(dt.value, 0.0);
+    const double down_limit = kCadenceSlewDownHzPerSec * std::max(dt.value, 0.0);
+    const double delta = target_rate_hz.value - cadence_hz_.value;
+    const double clamped_delta = std::clamp(delta, -down_limit, up_limit);
+    cadence_hz_ = FrequencyHz{cadence_hz_.value + clamped_delta};
+    return cadence_hz_;
 }
 
 GaitState GaitScheduler::update(const RobotState& est,
@@ -45,10 +61,11 @@ GaitState GaitScheduler::update(const RobotState& est,
 
     if (!walking) {
         for (int i = 0; i < kNumLegs; ++i) {
-            out.phase[i] = 0.0;
+            out.phase[i] = wrap01(policy.per_leg[i].phase_offset);
             out.in_stance[i] = true;
         }
         out.stride_phase_rate_hz = FrequencyHz{0.0};
+        cadence_hz_ = FrequencyHz{0.0};
         last_update_us_ = out.timestamp_us;
         return out;
     }
@@ -61,21 +78,11 @@ GaitState GaitScheduler::update(const RobotState& est,
     const DurationSec dt{static_cast<double>((now - last_update_us_).value) * 1e-6};
     last_update_us_ = now;
 
-    const double commanded_speed = std::abs(intent.speed_mps.value);
-    const double normalized_command =
-        std::clamp(commanded_speed / config_.frequency.nominal_max_speed_mps.value, 0.0, 1.0);
-    const double speed_mag = std::max(normalized_command, config_.fallback_speed_mag.value);
-    const double envelope_speed_scale = std::clamp(
-        (1.0 - policy.reach_utilization) / config_.frequency.reach_envelope_soft_limit,
-        config_.frequency.reach_envelope_min_scale,
-        1.0);
-
-    const double step_hz = std::clamp(
-        config_.frequency.min_hz.value +
-            (config_.frequency.max_hz.value - config_.frequency.min_hz.value) * speed_mag * envelope_speed_scale,
-        config_.frequency.min_hz.value,
-        config_.frequency.max_hz.value);
-    const FrequencyHz step_rate_hz{step_hz};
+    FrequencyHz commanded_cadence = policy.cadence_hz;
+    if (policy.suppression.suppress_stride_progression) {
+        commanded_cadence = FrequencyHz{0.0};
+    }
+    const FrequencyHz step_rate_hz = applyCadenceSlew(commanded_cadence, dt);
     out.stride_phase_rate_hz = step_rate_hz;
 
     phase_accum_ = wrap01(phase_accum_ + dt.value * step_rate_hz.value);
