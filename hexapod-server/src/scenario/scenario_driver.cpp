@@ -61,27 +61,6 @@ bool containsOnlyKeys(const toml::value& table, const std::set<std::string>& all
     return true;
 }
 
-double lerp(double a, double b, double t) {
-    return a + ((b - a) * t);
-}
-
-double normalizeAngle(double rad) {
-    constexpr double kPi = 3.14159265358979323846;
-    constexpr double kTwoPi = 2.0 * kPi;
-    while (rad > kPi) {
-        rad -= kTwoPi;
-    }
-    while (rad < -kPi) {
-        rad += kTwoPi;
-    }
-    return rad;
-}
-
-double lerpAngleShortest(double from_rad, double to_rad, double t) {
-    const double delta = normalizeAngle(to_rad - from_rad);
-    return normalizeAngle(from_rad + (delta * t));
-}
-
 MotionIntent blendMotionIntent(const MotionIntent& from, const MotionIntent& to, double t) {
     MotionIntent blended = to;
     blended.speed_mps.value = lerp(from.speed_mps.value, to.speed_mps.value, t);

@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 
 namespace {
 
@@ -16,12 +15,6 @@ constexpr double kCadenceSlewDownHzPerSec = 200.0;
 
 GaitScheduler::GaitScheduler(control_config::GaitConfig config)
     : config_(config) {}
-
-double GaitScheduler::wrap01(double x) const {
-    while (x >= 1.0) x -= 1.0;
-    while (x < 0.0) x += 1.0;
-    return x;
-}
 
 FrequencyHz GaitScheduler::applyCadenceSlew(const FrequencyHz& target_rate_hz, const DurationSec& dt) {
     const double up_limit = kCadenceSlewUpHzPerSec * std::max(dt.value, 0.0);

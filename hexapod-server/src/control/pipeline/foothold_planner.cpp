@@ -31,9 +31,7 @@ PlannedFoothold FootholdPlanner::plan(int leg,
     PlannedFoothold foothold{};
     foothold.pos_body_m = nominal_body;
 
-    const Vec3 body_vel = Vec3{-intent.twist.body_trans_mps.x,
-                               -intent.twist.body_trans_mps.y,
-                               -intent.twist.body_trans_mps.z};
+    const Vec3 body_vel = -static_cast<Vec3>(intent.twist.body_trans_mps);
     foothold.vel_body_mps = body_vel;
 
     if (!walking) {
@@ -67,9 +65,9 @@ PlannedFoothold FootholdPlanner::plan(int leg,
     const Vec3 anticipatory = foothold.vel_body_mps * (0.5 * stance_duration_s);
     const Vec3 touchdown = nominal_body + (step_dir * (0.5 * step_length_m)) + anticipatory;
 
-    const double blend = (3.0 * swing_alpha * swing_alpha) - (2.0 * swing_alpha * swing_alpha * swing_alpha);
+    const double blend = smoothstep01(swing_alpha);
     const double blend_rate = 6.0 * swing_alpha * (1.0 - swing_alpha) * alpha_rate;
-    foothold.pos_body_m = liftoff + ((touchdown - liftoff) * blend);
+    foothold.pos_body_m = lerp(liftoff, touchdown, blend);
     foothold.vel_body_mps = foothold.vel_body_mps + ((touchdown - liftoff) * blend_rate);
 
     const double swing_height = policy.per_leg[leg].swing_height_m.value;

@@ -1,7 +1,7 @@
 #include "leg_fk.hpp"
 
-#include <cmath>
 #include "geometry_config.hpp"
+#include "leg_kinematics_utils.hpp"
 #include "logger.hpp"
 
 LegFK::LegFK() : hexGeo(defaultHexapodGeometry()) {}
@@ -54,30 +54,8 @@ LegTargets LegFK::solve(const RobotState& raw, const SafetyState& safety)
 bool LegFK::solveOneLeg(const LegState& est, FootTarget& out,
                         const LegGeometry& leg)
 {
-  const std::array<JointState, kJointsPerLeg> joints = est.joint_state;
-  const double q1 = joints[0].pos_rad.value;
-  const double q2 = joints[1].pos_rad.value;
-  const double q3 = joints[2].pos_rad.value;
-
-  // Effective reach of the femur+tibia chain in the leg plane
-  const double rho =
-      leg.femurLength.value * std::cos(q2) +
-      leg.tibiaLength.value * std::cos(q2 + q3);
-
-  // Vertical position in the leg plane
-  const double z =
-      leg.femurLength.value * std::sin(q2) +
-      leg.tibiaLength.value * std::sin(q2 + q3);
-
-  // Total radial distance from coxa axis to foot
-  const double r = leg.coxaLength.value + rho;
-
-  // Rotate radial distance by coxa yaw into x/y
-  const double x = r * std::cos(q1);
-  const double y = r * std::sin(q1);
-
   FootTarget foot{};
-  foot.pos_body_m = {x, y, z};
+  foot.pos_body_m = kinematics::footInLegFrame(est, leg);
   out = foot;
 
   return true;
@@ -92,20 +70,8 @@ bool LegFK::solveOneLeg(const LegState& est, FootTarget& out,
 //   3) Add the coxa mount position in body frame.
 // ------------------------------------------------------------
 FootTarget LegFK::footInBodyFrame(const LegState& est, const LegGeometry& leg){
-
-  FootTarget footLeg{};
-
-  // Foot in the leg's own local frame
-  solveOneLeg(est, footLeg, leg);
-
-  // Leg frame -> body frame
-  const Mat3 R_body_from_leg = Mat3::rotZ(leg.mountAngle.value);
-  const Vec3 footRelativeToCoxa = R_body_from_leg * footLeg.pos_body_m;
-
-  // Shift from coxa origin to body origin
-  const Vec3 footBody = leg.bodyCoxaOffset + footRelativeToCoxa;
   FootTarget out{};
-  out.pos_body_m = footBody;
+  out.pos_body_m = kinematics::footInBodyFrame(est, leg);
 
   return out;
 }

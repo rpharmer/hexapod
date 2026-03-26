@@ -9,14 +9,6 @@
 #include "servo_dynamics_fit.hpp"
 #include "touch_residuals.hpp"
 
-namespace {
-
-double clampedDelta(double candidate, double limit_abs) {
-    return std::clamp(candidate, -limit_abs, limit_abs);
-}
-
-} // namespace
-
 CalibrationLegFitResult fitServoCalibrationFromTouches(
     const LegGeometry& leg_geometry,
     const std::vector<CalibrationTouchSample>& samples,

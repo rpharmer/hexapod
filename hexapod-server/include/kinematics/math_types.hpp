@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <vector>
 
 constexpr double kPi = 3.14159265358979323846;
 
@@ -65,6 +66,12 @@ double clamp(double value, double lo, double hi);
 inline double clamp01(double value) {
     return std::clamp(value, 0.0, 1.0);
 }
+double clampedDelta(double candidate, double limit_abs);
+double wrap01(double x);
+double normalizeAngleRad(double rad);
+double lerp(double a, double b, double t);
+double lerpAngleShortest(double from_rad, double to_rad, double t);
+double smoothstep01(double t);
 
 struct Vec3 {
     double x{0.0};
@@ -74,10 +81,34 @@ struct Vec3 {
     Vec3 operator+(const Vec3& other) const;
     Vec3 operator-(const Vec3& other) const;
     Vec3 operator*(double s) const;
+    Vec3 operator-() const;
 };
 
+Vec3 operator*(double s, const Vec3& v);
 Vec3 cross(const Vec3& lhs, const Vec3& rhs);
 double vecNorm(const Vec3& v);
+double vecNormSquared(const Vec3& v);
+bool isFinite(const Vec3& vec);
+Vec3 lerp(const Vec3& a, const Vec3& b, double t);
+double det3x3(double m00, double m01, double m02,
+              double m10, double m11, double m12,
+              double m20, double m21, double m22);
+bool solve3x3Cramers(double m00, double m01, double m02,
+                     double m10, double m11, double m12,
+                     double m20, double m21, double m22,
+                     double r0, double r1, double r2,
+                     double& x0, double& x1, double& x2,
+                     double singular_threshold = 1e-8);
+
+struct Point2 {
+    double x{0.0};
+    double y{0.0};
+};
+
+double cross(const Point2& o, const Point2& a, const Point2& b);
+double edgeSignedDistance(const Point2& a, const Point2& b, const Point2& p);
+double polygonSignedArea(const std::vector<Point2>& polygon);
+std::vector<Point2> convexHull(std::vector<Point2> points);
 
 template <typename Tag>
 struct UnitVec3 {
