@@ -2,8 +2,10 @@
 
 #include <cmath>
 
-JointOscillationTracker::JointOscillationTracker(double min_delta_rad_for_reversal)
-    : min_delta_rad_for_reversal_(min_delta_rad_for_reversal > 0.0 ? min_delta_rad_for_reversal : 0.0) {}
+JointOscillationTracker::JointOscillationTracker(double min_delta_rad_for_reversal,
+                                                 uint64_t min_reversal_interval_us)
+    : min_delta_rad_for_reversal_(min_delta_rad_for_reversal > 0.0 ? min_delta_rad_for_reversal : 0.0),
+      min_reversal_interval_us_(min_reversal_interval_us) {}
 
 void JointOscillationTracker::reset() {
     has_previous_ = false;
@@ -11,6 +13,7 @@ void JointOscillationTracker::reset() {
     previous_targets_ = JointTargets{};
     previous_direction_.fill(0);
     previous_delta_rad_.fill(0.0);
+    last_reversal_timestamp_.fill(TimePointUs{});
     metrics_ = JointOscillationMetrics{};
 }
 
@@ -59,8 +62,13 @@ void JointOscillationTracker::observe(const JointTargets& targets, TimePointUs n
             const bool has_direction_reversal = direction != 0 &&
                                                 previous_direction_[idx] != 0 &&
                                                 direction != previous_direction_[idx];
-            if (has_direction_reversal && significant_delta && previous_significant_delta) {
+            const bool interval_elapsed =
+                min_reversal_interval_us_ == 0 ||
+                last_reversal_timestamp_[idx].isZero() ||
+                now.value >= (last_reversal_timestamp_[idx].value + min_reversal_interval_us_);
+            if (has_direction_reversal && significant_delta && previous_significant_delta && interval_elapsed) {
                 ++metrics_.direction_reversal_events;
+                last_reversal_timestamp_[idx] = now;
             }
 
             if (direction != 0) {
