@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <string>
@@ -25,6 +26,30 @@ inline constexpr DurationUs kDefaultCommandTimeoutUs{300000};
 inline constexpr DurationUs kDefaultEstimatorMaxAgeUs{300000};
 inline constexpr DurationUs kDefaultIntentMaxAgeUs{300000};
 inline constexpr LinearRateMps kDefaultFallbackSpeedMag{0.01};
+inline constexpr double kDefaultGaitFrequencyMinHz{0.5};
+inline constexpr double kDefaultGaitFrequencyMaxHz{2.5};
+inline constexpr double kDefaultGaitNominalMaxSpeedMps{0.25};
+inline constexpr double kDefaultGaitReachEnvelopeMinScale{0.25};
+inline constexpr double kDefaultGaitReachEnvelopeSoftLimit{0.15};
+inline constexpr double kDefaultTripodDutyCycle{0.5};
+inline constexpr double kDefaultRippleDutyCycle{0.5};
+inline constexpr double kDefaultWaveDutyCycle{0.5};
+inline constexpr std::array<double, kNumLegs> kDefaultTripodPhaseOffsets{{0.0, 0.5, 0.0, 0.5, 0.0, 0.5}};
+inline constexpr std::array<double, kNumLegs> kDefaultRipplePhaseOffsets{{0.0, 1.0 / 6.0, 2.0 / 6.0, 3.0 / 6.0, 4.0 / 6.0, 5.0 / 6.0}};
+inline constexpr std::array<double, kNumLegs> kDefaultWavePhaseOffsets{{0.0, 1.0 / 6.0, 2.0 / 6.0, 3.0 / 6.0, 4.0 / 6.0, 5.0 / 6.0}};
+inline constexpr double kDefaultSwingHeightM{0.03};
+inline constexpr double kDefaultFootholdStepLengthM{0.06};
+inline constexpr double kDefaultStanceFieldCenterXM{0.0};
+inline constexpr double kDefaultStanceFieldCenterYM{0.0};
+inline constexpr double kDefaultStanceFieldRadiusXM{0.12};
+inline constexpr double kDefaultStanceFieldRadiusYM{0.10};
+inline constexpr double kDefaultStabilityPriority{1.0};
+inline constexpr double kDefaultReachSuppressionGain{1.0};
+inline constexpr double kDefaultTurnSuppressionGain{1.0};
+inline constexpr double kDefaultTurnYawRateEnterRadps{0.4};
+inline constexpr double kDefaultTurnYawRateExitRadps{0.3};
+inline constexpr double kDefaultTurnSpeedEnterMps{0.05};
+inline constexpr double kDefaultTurnSpeedExitMps{0.03};
 inline constexpr float kDefaultMinBusVoltageV{10.5f};
 inline constexpr float kDefaultMaxBusCurrentA{25.0f};
 inline constexpr int kDefaultMinFootContacts{0};
@@ -50,8 +75,64 @@ struct SafetyConfig {
     AngleRad max_joint_position_step_rad{AngleRad{1.0}};
 };
 
+struct GaitFrequencyConfig {
+    FrequencyHz min_hz{FrequencyHz{kDefaultGaitFrequencyMinHz}};
+    FrequencyHz max_hz{FrequencyHz{kDefaultGaitFrequencyMaxHz}};
+    LinearRateMps nominal_max_speed_mps{LinearRateMps{kDefaultGaitNominalMaxSpeedMps}};
+    double reach_envelope_soft_limit{kDefaultGaitReachEnvelopeSoftLimit};
+    double reach_envelope_min_scale{kDefaultGaitReachEnvelopeMinScale};
+};
+
+struct GaitDutyConfig {
+    double tripod{kDefaultTripodDutyCycle};
+    double ripple{kDefaultRippleDutyCycle};
+    double wave{kDefaultWaveDutyCycle};
+};
+
+struct GaitPhaseOffsetsConfig {
+    std::array<double, kNumLegs> tripod{kDefaultTripodPhaseOffsets};
+    std::array<double, kNumLegs> ripple{kDefaultRipplePhaseOffsets};
+    std::array<double, kNumLegs> wave{kDefaultWavePhaseOffsets};
+};
+
+struct GaitSwingConfig {
+    LengthM height_m{LengthM{kDefaultSwingHeightM}};
+};
+
+struct GaitFootholdConfig {
+    LengthM step_length_m{LengthM{kDefaultFootholdStepLengthM}};
+};
+
+struct GaitStanceFieldConfig {
+    LengthM center_x_m{LengthM{kDefaultStanceFieldCenterXM}};
+    LengthM center_y_m{LengthM{kDefaultStanceFieldCenterYM}};
+    LengthM radius_x_m{LengthM{kDefaultStanceFieldRadiusXM}};
+    LengthM radius_y_m{LengthM{kDefaultStanceFieldRadiusYM}};
+};
+
+struct GaitPrioritySuppressionConfig {
+    double stability_priority{kDefaultStabilityPriority};
+    double reach_suppression_gain{kDefaultReachSuppressionGain};
+    double turn_suppression_gain{kDefaultTurnSuppressionGain};
+};
+
+struct TurnModeThresholdConfig {
+    AngularRateRadPerSec yaw_rate_enter_radps{AngularRateRadPerSec{kDefaultTurnYawRateEnterRadps}};
+    AngularRateRadPerSec yaw_rate_exit_radps{AngularRateRadPerSec{kDefaultTurnYawRateExitRadps}};
+    LinearRateMps speed_enter_mps{LinearRateMps{kDefaultTurnSpeedEnterMps}};
+    LinearRateMps speed_exit_mps{LinearRateMps{kDefaultTurnSpeedExitMps}};
+};
+
 struct GaitConfig {
     LinearRateMps fallback_speed_mag{kDefaultFallbackSpeedMag};
+    GaitFrequencyConfig frequency{};
+    GaitDutyConfig duty{};
+    GaitPhaseOffsetsConfig phase_offsets{};
+    GaitSwingConfig swing{};
+    GaitFootholdConfig foothold{};
+    GaitStanceFieldConfig stance_field{};
+    GaitPrioritySuppressionConfig priority_suppression{};
+    TurnModeThresholdConfig turn_mode_thresholds{};
 };
 
 struct StreamFreshnessConfig {
