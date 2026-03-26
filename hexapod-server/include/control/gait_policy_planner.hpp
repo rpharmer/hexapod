@@ -81,6 +81,10 @@ private:
     RuntimeGaitPolicy legacyPolicy(const RobotState& est,
                                    const MotionIntent& intent,
                                    const SafetyState& safety) const;
+    void applyEnvelopeAndFallback(RuntimeGaitPolicy& policy,
+                                  const RobotState& est,
+                                  const MotionIntent& intent,
+                                  const SafetyState& safety) const;
     DynamicSafetyEnvelope envelopeForRegion(DynamicGaitRegion region) const;
     GaitFallbackStage selectFallbackStage(const SafetyState& safety,
                                           const DynamicSafetyEnvelope& envelope,

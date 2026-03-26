@@ -97,6 +97,7 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.telemetry.udp_port = config.telemetryUdpPort;
     parsed.telemetry.publish_period = std::chrono::milliseconds{config.telemetryPublishPeriodMs};
     parsed.telemetry.geometry_refresh_period = std::chrono::milliseconds{config.telemetryGeometryRefreshPeriodMs};
+    parsed.runtime_imu.enable_reads = config.imuEnableReads;
 
     return parsed;
 }

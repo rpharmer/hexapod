@@ -183,7 +183,7 @@ bool parseBoolWithFallback(const toml::value& root,
                            const std::string& key,
                            bool default_value)
 {
-  return toml::find_or<bool>(root, key, default_value);
+  return findOrByPath<bool>(root, key, default_value);
 }
 
 std::vector<double> parseDoubleListWithFallback(const toml::value& root,

@@ -4,6 +4,7 @@
 #include "runtime_timing_metrics.hpp"
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -134,6 +135,58 @@ bool testTimingMetricsTracksDeltaJitterAndAverage() {
                   "first update after reset should establish baseline without changing sums");
 }
 
+bool testTimingMetricsRollingWindowAndOverrunThresholds() {
+    control_config::ControlConfig cfg{};
+    cfg.loop_timing.control_loop_period = std::chrono::microseconds{1'000};
+
+    std::atomic<uint64_t> dt_sum_us{0};
+    std::atomic<uint64_t> jitter_max_us{0};
+    RuntimeTimingMetrics timing(cfg, dt_sum_us, jitter_max_us);
+
+    TimePointUs now{0};
+    timing.update(now);
+
+    for (int i = 0; i < 2; ++i) {
+        now.value += 10'000;
+        timing.update(now);
+    }
+    for (std::size_t i = 0; i < RuntimeTimingMetrics::kRollingWindowSize; ++i) {
+        now.value += 2'000;
+        timing.update(now);
+    }
+
+    LoopTimingRollingMetrics rolling = timing.rollingMetrics();
+    if (!expect(rolling.sample_count == RuntimeTimingMetrics::kRollingWindowSize,
+                "rolling metrics should retain only the fixed-size recent window") ||
+        !expect(rolling.p50_control_dt_us == 2'000, "p50 should be based on the retained rolling window") ||
+        !expect(rolling.p95_control_dt_us == 2'000, "p95 should be stable for uniform window samples") ||
+        !expect(rolling.p99_control_dt_us == 2'000, "p99 should be stable for uniform window samples")) {
+        return false;
+    }
+
+    timing.reset();
+    now = TimePointUs{0};
+    timing.update(now);
+    const std::array<uint64_t, 11> dts_us{1'000, 1'500, 1'600, 1'700, 1'800, 1'900, 1'000, 2'000, 2'100, 2'200, 2'300};
+    for (const uint64_t dt_us : dts_us) {
+        now.value += dt_us;
+        timing.update(now);
+    }
+
+    rolling = timing.rollingMetrics();
+    return expect(rolling.warning_consecutive_overrun_threshold == RuntimeTimingMetrics::kWarningConsecutiveOverruns,
+                  "rolling metrics should expose warning threshold") &&
+           expect(rolling.hard_consecutive_overrun_threshold == RuntimeTimingMetrics::kHardConsecutiveOverruns,
+                  "rolling metrics should expose hard threshold") &&
+           expect(rolling.overrun_events_total == 9, "overrun counter should track all dt samples above period") &&
+           expect(rolling.consecutive_overruns == 4,
+                  "consecutive overrun counter should reset after on-time iteration and rebuild") &&
+           expect(rolling.max_consecutive_overruns == 5,
+                  "max consecutive overruns should capture longest overrun streak") &&
+           expect(rolling.hard_overrun_escalation_crossings == 1,
+                  "hard escalation crossings should count streak entries that hit the hard threshold");
+}
+
 
 bool testJointOscillationTrackerIgnoresSubThresholdDirectionChanges() {
     JointOscillationTracker tracker(0.02, 0);
@@ -251,6 +304,7 @@ int main() {
         !testStrictMetricsOnlyCountInvalidStreams() ||
         !testSafetyLenientEvaluationIgnoresAgeExpiry() ||
         !testTimingMetricsTracksDeltaJitterAndAverage() ||
+        !testTimingMetricsRollingWindowAndOverrunThresholds() ||
         !testJointOscillationTrackerIgnoresSubThresholdDirectionChanges() ||
         !testJointOscillationTrackerHandlesNonMonotonicTimestamps() ||
         !testJointOscillationTrackerCountsDirectionReversals() ||

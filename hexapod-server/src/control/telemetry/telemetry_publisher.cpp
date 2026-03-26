@@ -147,6 +147,12 @@ public:
                 << "\"mode\":" << static_cast<int>(telemetry.status.active_mode) << ","
                 << "\"bus_ok\":" << (telemetry.status.bus_ok ? "true" : "false") << ","
                 << "\"estimator_valid\":" << (telemetry.status.estimator_valid ? "true" : "false") << ","
+                << "\"metadata\":{\"runtime\":{\"imu\":{\"reads_enabled\":"
+                << (telemetry.imu_reads_enabled ? "true" : "false")
+                << ",\"read_mode\":\""
+                << (telemetry.imu_reads_enabled ? "enabled" : "disabled")
+                << "\""
+                << "}}},"
                 << "\"dynamic_gait\":{"
                 << "\"valid\":" << (telemetry.status.dynamic_gait.valid ? "true" : "false") << ","
                 << "\"gait_family\":\"" << gaitTypeToString(telemetry.status.dynamic_gait.gait_family) << "\","

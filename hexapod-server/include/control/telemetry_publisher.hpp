@@ -27,6 +27,7 @@ struct ControlStepTelemetry {
     JointTargets joint_targets{};
     ControlStatus status{};
     TimePointUs timestamp_us{};
+    bool imu_reads_enabled{false};
 };
 
 struct TelemetryPublishCounters {

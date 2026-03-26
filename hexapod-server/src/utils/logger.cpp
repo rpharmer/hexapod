@@ -229,6 +229,15 @@ std::size_t AsyncLogger::DroppedMessageCount() const {
     return droppedMessages_;
 }
 
+AsyncLogger::QueueState AsyncLogger::CurrentQueueState() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return QueueState{
+        queue_.size(),
+        maxQueueSize_,
+        workerBusy_
+    };
+}
+
 const std::string& AsyncLogger::Name() const {
     return name_;
 }
