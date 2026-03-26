@@ -17,6 +17,12 @@ enum class TurnMode {
     IN_PLACE
 };
 
+enum class LocomotionRegion {
+    ARC,
+    PIVOT,
+    POINT_REORIENTATION
+};
+
 struct LegDynamicGaitParams {
     double phase_offset{0.0};
     double duty_cycle{0.5};
@@ -27,6 +33,7 @@ struct LegDynamicGaitParams {
 struct RuntimeGaitPolicy {
     GaitType gait_family{GaitType::TRIPOD};
     TurnMode turn_mode{TurnMode::CRAB};
+    LocomotionRegion region{LocomotionRegion::ARC};
     std::array<LegDynamicGaitParams, kNumLegs> per_leg{};
     FrequencyHz cadence_hz{FrequencyHz{0.0}};
     GaitSuppressionFlags suppression{};
@@ -41,8 +48,9 @@ public:
                            const MotionIntent& intent,
                            const SafetyState& safety);
 
-    GaitType selectGaitFamily(const MotionIntent& intent) const;
-    TurnMode selectTurnMode(const MotionIntent& intent);
+    GaitType selectGaitFamily(const MotionIntent& intent, LocomotionRegion region);
+    TurnMode selectTurnMode(LocomotionRegion region) const;
+    LocomotionRegion selectLocomotionRegion(const MotionIntent& intent);
     std::array<LegDynamicGaitParams, kNumLegs> computePerLegDynamicParameters(GaitType family) const;
     GaitSuppressionFlags computeSuppressionFlags(const RobotState& est,
                                                  const MotionIntent& intent,
@@ -54,5 +62,8 @@ private:
 
     control_config::GaitConfig config_{};
     HexapodGeometry geometry_{defaultHexapodGeometry()};
-    TurnMode last_turn_mode_{TurnMode::CRAB};
+    LocomotionRegion last_region_{LocomotionRegion::ARC};
+    GaitType last_gait_family_{GaitType::WAVE};
+    double filtered_speed_norm_{0.0};
+    double filtered_yaw_norm_{0.0};
 };
