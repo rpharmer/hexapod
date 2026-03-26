@@ -105,6 +105,7 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
     est.foot_contacts = raw.foot_contacts;
     est.sample_id = raw.sample_id;
     est.timestamp_us = raw.timestamp_us;
+    est.has_body_twist_state = raw.has_body_twist_state;
     est.body_twist_state.body_trans_mps = Vec3{};
 
     if (!last_leg_timestamp_.isZero()) {
@@ -133,6 +134,14 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
     }
     last_leg_states_ = raw.leg_states;
     last_leg_timestamp_ = raw.timestamp_us;
+
+    if (raw.has_body_twist_state) {
+        est.body_twist_state.twist_pos_rad = raw.body_twist_state.twist_pos_rad;
+        est.body_twist_state.twist_vel_radps = raw.body_twist_state.twist_vel_radps;
+        last_twist_timestamp_ = raw.timestamp_us;
+        last_twist_pos_rad_ = est.body_twist_state.twist_pos_rad;
+        return est;
+    }
 
     const HexapodGeometry& geometry = geometry_config::activeHexapodGeometry();
     std::array<Vec3, kNumLegs> support_points_body_m{};

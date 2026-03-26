@@ -24,13 +24,15 @@ std::unique_ptr<telemetry::ITelemetryPublisher> makeRuntimeTelemetryPublisher(
 RobotControl::RobotControl(std::unique_ptr<IHardwareBridge> hw,
                            std::unique_ptr<IEstimator> estimator,
                            std::shared_ptr<logging::AsyncLogger> logger,
-                           control_config::ControlConfig config)
+                           control_config::ControlConfig config,
+                           std::unique_ptr<hardware::IImuUnit> imu)
     : config_(config),
       runtime_(std::move(hw),
                std::move(estimator),
                logger,
                config_,
-               makeRuntimeTelemetryPublisher(config_, logger)),
+               makeRuntimeTelemetryPublisher(config_, logger),
+               std::move(imu)),
       logger_(std::move(logger)) {}
 
 RobotControl::~RobotControl() {

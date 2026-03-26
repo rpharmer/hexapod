@@ -142,6 +142,19 @@ Button mappings in controller mode:
 
 For step-by-step instructions on adding new controller/input drivers and new hardware transport backends, see `../docs/EXTENDING_IO_AND_HARDWARE.md`.
 
+## 9-axis IMU integration
+
+`hexapod-server` now includes a local IMU unit abstraction for sensors connected directly to the server host.
+
+- **Production/direct unit:** `hardware::DirectImuUnit`
+  - Reads newline-delimited CSV records from `/dev/ttyIMU0` (default).
+  - Expected record format:
+    `roll,pitch,yaw,gx,gy,gz,ax,ay,az,mx,my,mz`
+  - Orientation (`roll/pitch/yaw`) and angular velocity (`gx/gy/gz`) are fed into `RobotState.body_twist_state`.
+- **Simulation/testing unit:** `hardware::DummyImuUnit`
+  - Auto-enabled when `Runtime.Mode = "sim"`.
+  - Generates deterministic synthetic 9-axis motion data for repeatable tests.
+
 ## Offline simulation/testing
 
 Use offline mode for deterministic control/safety validation without physical robot hardware.

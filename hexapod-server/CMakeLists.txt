@@ -125,6 +125,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/handshake_client.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/hardware_bridge.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/hardware_state_codec.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/imu_unit.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/joint_feedback_estimator.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/serialCommsServer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/sim_hardware_bridge.cpp"
@@ -234,6 +235,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_simple_estimator_ground_plane tests/test_simple_estimator_ground_plane.cpp)
     target_link_libraries(test_simple_estimator_ground_plane PRIVATE hexapod_server_core)
     add_test(NAME simple_estimator_ground_plane COMMAND test_simple_estimator_ground_plane)
+
+    add_executable(test_imu_units tests/test_imu_units.cpp)
+    target_link_libraries(test_imu_units PRIVATE hexapod_server_core)
+    add_test(NAME imu_units COMMAND test_imu_units)
 
     add_executable(test_body_controller_velocity tests/test_body_controller_velocity.cpp)
     target_link_libraries(test_body_controller_velocity PRIVATE hexapod_server_core)
