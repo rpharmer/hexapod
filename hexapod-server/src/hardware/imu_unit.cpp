@@ -1,5 +1,6 @@
 #include "imu_unit.hpp"
 
+#include <algorithm>
 #include <cerrno>
 #include <cmath>
 #include <cstdio>
@@ -16,6 +17,9 @@ public:
     bool init() override { return true; }
     bool read(ImuSample&) override { return false; }
 };
+
+constexpr std::array<double, kNumLegs> kTripodLegPhaseOffset{
+    0.0, 3.14159265358979323846, 0.0, 3.14159265358979323846, 0.0, 3.14159265358979323846};
 
 } // namespace
 
@@ -129,6 +133,9 @@ DummyImuUnit::DummyImuUnit(std::chrono::milliseconds sample_period)
     : sample_period_(sample_period) {}
 
 bool DummyImuUnit::init() {
+    simulated_joint_pos_ = {};
+    last_orientation_rad_ = EulerAnglesRad3{};
+    last_angular_velocity_radps_ = AngularVelocityRadPerSec3{};
     sample_counter_ = 0;
     next_sample_at_ = now_us();
     return true;
@@ -140,23 +147,89 @@ bool DummyImuUnit::read(ImuSample& out) {
         return false;
     }
 
-    const double t = static_cast<double>(sample_counter_) *
-                     static_cast<double>(sample_period_.count()) * 1e-3;
+    const double dt = std::max(1e-4, static_cast<double>(sample_period_.count()) * 1e-3);
+    const double t = static_cast<double>(sample_counter_) * dt;
+    const double stride_omega = 2.0 * 3.14159265358979323846 * 0.55;
+    const std::array<double, kJointsPerLeg> tau_s{0.08, 0.11, 0.13};
+    const std::array<double, kJointsPerLeg> vmax_radps{2.8, 3.2, 3.8};
+
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        const double phase = stride_omega * t + kTripodLegPhaseOffset[leg];
+        const std::array<double, kJointsPerLeg> desired{
+            0.17 * std::sin(phase),
+            -0.42 + 0.25 * std::sin(phase + 0.85),
+            0.78 + 0.35 * std::sin(phase + 0.65)};
+
+        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+            const double error = desired[joint] - simulated_joint_pos_[leg][joint];
+            const double alpha = clamp01(1.0 - std::exp(-dt / tau_s[joint]));
+            double delta = alpha * error;
+            const double max_delta = vmax_radps[joint] * dt;
+            if (max_delta > 0.0) {
+                delta = std::clamp(delta, -max_delta, max_delta);
+            }
+            simulated_joint_pos_[leg][joint] += delta;
+        }
+    }
+
+    auto average_joint = [&](int leg_start, int leg_step, int joint) {
+        double sum = 0.0;
+        int count = 0;
+        for (int leg = leg_start; leg < kNumLegs; leg += leg_step) {
+            sum += simulated_joint_pos_[leg][joint];
+            ++count;
+        }
+        return (count > 0) ? (sum / static_cast<double>(count)) : 0.0;
+    };
+
+    const double left_femur = average_joint(0, 2, FEMUR);
+    const double right_femur = average_joint(1, 2, FEMUR);
+    const double left_tibia = average_joint(0, 2, TIBIA);
+    const double right_tibia = average_joint(1, 2, TIBIA);
+    const double front_femur =
+        (simulated_joint_pos_[0][FEMUR] + simulated_joint_pos_[1][FEMUR]) * 0.5;
+    const double rear_femur =
+        (simulated_joint_pos_[4][FEMUR] + simulated_joint_pos_[5][FEMUR]) * 0.5;
+
+    double left_coxa = 0.0;
+    double right_coxa = 0.0;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        if ((leg % 2) == 0) {
+            left_coxa += simulated_joint_pos_[leg][COXA];
+        } else {
+            right_coxa += simulated_joint_pos_[leg][COXA];
+        }
+    }
+    left_coxa /= 3.0;
+    right_coxa /= 3.0;
+
+    EulerAnglesRad3 orientation{};
+    orientation.x = 0.22 * (right_femur - left_femur) + 0.06 * (right_tibia - left_tibia);
+    orientation.y = 0.18 * (rear_femur - front_femur) + 0.03 * std::sin(stride_omega * 0.5 * t + 0.4);
+    orientation.z = 0.14 * (right_coxa - left_coxa) + 0.09 * std::sin(stride_omega * 0.35 * t);
+
+    AngularVelocityRadPerSec3 angular_velocity{};
+    angular_velocity.x = (orientation.x - last_orientation_rad_.x) / dt;
+    angular_velocity.y = (orientation.y - last_orientation_rad_.y) / dt;
+    angular_velocity.z = (orientation.z - last_orientation_rad_.z) / dt;
 
     out = ImuSample{};
     out.sample_id = ++sample_counter_;
     out.timestamp_us = now;
-    out.orientation_rad = EulerAnglesRad3{0.04 * std::sin(0.8 * t),
-                                          0.03 * std::sin(0.6 * t + 0.3),
-                                          0.2 * std::sin(0.25 * t)};
-    out.angular_velocity_radps =
-        AngularVelocityRadPerSec3{0.032 * std::cos(0.8 * t),
-                                  0.018 * std::cos(0.6 * t + 0.3),
-                                  0.05 * std::cos(0.25 * t)};
-    out.linear_accel_mps2 = Vec3{0.1 * std::sin(1.1 * t), 0.08 * std::cos(0.9 * t), 9.81};
-    out.magnetic_field_ut = Vec3{22.0, 2.0 * std::sin(0.1 * t), 41.0};
+    out.orientation_rad = orientation;
+    out.angular_velocity_radps = angular_velocity;
+    out.linear_accel_mps2 = Vec3{
+        0.42 * std::sin(2.0 * stride_omega * t) + 0.16 * angular_velocity.y,
+        0.33 * std::cos(2.0 * stride_omega * t + 0.35) - 0.12 * angular_velocity.x,
+        9.81 + 0.58 * std::sin(2.0 * stride_omega * t + 1.1)};
+    out.magnetic_field_ut = Vec3{
+        22.5 + 1.4 * std::cos(orientation.z),
+        3.0 * std::sin(orientation.z),
+        40.5 + 0.9 * std::sin(orientation.x)};
     out.valid = true;
 
+    last_orientation_rad_ = orientation;
+    last_angular_velocity_radps_ = angular_velocity;
     next_sample_at_ = TimePointUs{now.value + static_cast<uint64_t>(sample_period_.count()) * 1000ULL};
     return true;
 }
