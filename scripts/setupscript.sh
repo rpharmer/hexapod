@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# NOTE:
+# This script is intentionally best-effort and should NOT fail the setup job.
+# Individual steps may fail, but we continue execution, record warnings, and
+# always exit successfully so partially primed caches can still be reused.
 set -uo pipefail
 
 log_step() {
@@ -20,6 +24,38 @@ run_step() {
 
   log_warn "$description failed (continuing)."
   return 1
+}
+
+build_all_presets() {
+  local project_dir="$1"
+  local project_name="$2"
+  local preset_names
+
+  preset_names="$(
+    python3 -c '
+import json
+from pathlib import Path
+presets = json.loads(Path("'"$project_dir"'/CMakePresets.json").read_text())
+print("\n".join(p["name"] for p in presets.get("buildPresets", [])))
+'
+  )"
+
+  if [ -z "$preset_names" ]; then
+    log_warn "No build presets found for $project_name."
+    return 1
+  fi
+
+  while IFS= read -r preset; do
+    run_step "Configure $project_name preset: $preset" bash -c "
+      cd '$project_dir' &&
+      cmake --preset '$preset'
+    " || failures=$((failures + 1))
+
+    run_step "Build $project_name preset: $preset" bash -c "
+      cd '$project_dir' &&
+      cmake --build --preset '$preset' --target all -j\"\$(nproc)\"
+    " || failures=$((failures + 1))
+  done <<< "$preset_names"
 }
 
 failures=0
@@ -87,18 +123,8 @@ run_step "Update pimoroni-pico submodules" bash -c '
   git submodule update --init
 ' || failures=$((failures + 1))
 
-# Build all project targets so setup cache contains every object/binary flavor.
-run_step "Build hexapod-server default preset" bash -c '
-  cd /workspace/hexapod/hexapod-server
-  cmake --preset default &&
-  cmake --build --preset default -j"$(nproc)"
-' || failures=$((failures + 1))
-
-run_step "Build hexapod-server tests preset" bash -c '
-  cd /workspace/hexapod/hexapod-server
-  cmake --preset tests &&
-  cmake --build --preset tests -j"$(nproc)"
-' || failures=$((failures + 1))
+# Build all project presets so setup cache contains every object/binary flavor.
+build_all_presets "/workspace/hexapod/hexapod-server" "hexapod-server"
 
 run_step "Prepare and build hexapod-client SDK artifacts" bash -c '
   cd /workspace/hexapod/hexapod-client
@@ -106,17 +132,7 @@ run_step "Prepare and build hexapod-client SDK artifacts" bash -c '
   cmake --build build --target setup-sdks -j"$(nproc)"
 ' || failures=$((failures + 1))
 
-run_step "Build hexapod-client default preset" bash -c '
-  cd /workspace/hexapod/hexapod-client
-  cmake --preset default &&
-  cmake --build --preset default -j"$(nproc)"
-' || failures=$((failures + 1))
-
-run_step "Build hexapod-client host-tests preset" bash -c '
-  cd /workspace/hexapod/hexapod-client
-  cmake --preset host-tests &&
-  cmake --build --preset host-tests -j"$(nproc)"
-' || failures=$((failures + 1))
+build_all_presets "/workspace/hexapod/hexapod-client" "hexapod-client"
 
 # Install visualiser Python dependencies in a local virtual environment.
 run_step "Set up hexapod-visualiser virtual environment" bash -c '
@@ -124,7 +140,8 @@ run_step "Set up hexapod-visualiser virtual environment" bash -c '
   python3 -m venv .venv &&
   source .venv/bin/activate &&
   python -m pip install --upgrade pip &&
-  python -m pip install -r requirements.txt
+  python -m pip install -r requirements.txt &&
+  python -m compileall .
 ' || failures=$((failures + 1))
 
 if [ "$failures" -gt 0 ]; then
@@ -132,3 +149,5 @@ if [ "$failures" -gt 0 ]; then
 else
   log_step "Setup completed successfully."
 fi
+
+exit 0
