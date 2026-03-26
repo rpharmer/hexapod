@@ -1,4 +1,5 @@
 #include "control_config.hpp"
+#include "joint_oscillation_tracker.hpp"
 #include "runtime_freshness_gate.hpp"
 #include "runtime_timing_metrics.hpp"
 
@@ -133,13 +134,37 @@ bool testTimingMetricsTracksDeltaJitterAndAverage() {
                   "first update after reset should establish baseline without changing sums");
 }
 
+bool testJointOscillationTrackerCountsDirectionReversals() {
+    JointOscillationTracker tracker(0.01);
+    JointTargets a{};
+    JointTargets b{};
+    JointTargets c{};
+    JointTargets d{};
+
+    b.leg_states[0].joint_state[0].pos_rad.value = 0.05;
+    c.leg_states[0].joint_state[0].pos_rad.value = 0.00;
+    d.leg_states[0].joint_state[0].pos_rad.value = 0.04;
+
+    tracker.observe(a, TimePointUs{0});
+    tracker.observe(b, TimePointUs{20'000});
+    tracker.observe(c, TimePointUs{40'000});
+    tracker.observe(d, TimePointUs{60'000});
+
+    const JointOscillationMetrics metrics = tracker.metrics();
+    return expect(metrics.direction_reversal_events == 2,
+                  "joint tracker should count significant direction reversals") &&
+           expect(metrics.peak_joint_velocity_radps > 2.0,
+                  "joint tracker should report peak velocity from delta over dt");
+}
+
 } // namespace
 
 int main() {
     if (!testFreshnessGateDecisionMatrix() ||
         !testStrictMetricsOnlyCountInvalidStreams() ||
         !testSafetyLenientEvaluationIgnoresAgeExpiry() ||
-        !testTimingMetricsTracksDeltaJitterAndAverage()) {
+        !testTimingMetricsTracksDeltaJitterAndAverage() ||
+        !testJointOscillationTrackerCountsDirectionReversals()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

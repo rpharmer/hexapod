@@ -61,6 +61,42 @@ bool containsOnlyKeys(const toml::value& table, const std::set<std::string>& all
     return true;
 }
 
+double lerp(double a, double b, double t) {
+    return a + ((b - a) * t);
+}
+
+double normalizeAngle(double rad) {
+    constexpr double kPi = 3.14159265358979323846;
+    constexpr double kTwoPi = 2.0 * kPi;
+    while (rad > kPi) {
+        rad -= kTwoPi;
+    }
+    while (rad < -kPi) {
+        rad += kTwoPi;
+    }
+    return rad;
+}
+
+double lerpAngleShortest(double from_rad, double to_rad, double t) {
+    const double delta = normalizeAngle(to_rad - from_rad);
+    return normalizeAngle(from_rad + (delta * t));
+}
+
+MotionIntent blendMotionIntent(const MotionIntent& from, const MotionIntent& to, double t) {
+    MotionIntent blended = to;
+    blended.speed_mps.value = lerp(from.speed_mps.value, to.speed_mps.value, t);
+    blended.twist.body_trans_m.z = lerp(from.twist.body_trans_m.z, to.twist.body_trans_m.z, t);
+    blended.heading_rad.value = lerpAngleShortest(from.heading_rad.value, to.heading_rad.value, t);
+    blended.twist.twist_pos_rad.z = lerpAngleShortest(from.twist.twist_pos_rad.z, to.twist.twist_pos_rad.z, t);
+    return blended;
+}
+
+bool isRampEligible(const MotionIntent& from, const MotionIntent& to) {
+    return from.requested_mode == RobotMode::WALK &&
+           to.requested_mode == RobotMode::WALK &&
+           from.gait == to.gait;
+}
+
 } // namespace
 
 bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& out,
@@ -74,7 +110,7 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
         const toml::value root = toml::parse(path, toml::spec::v(1, 1, 0));
 
         if (mode == ValidationMode::Strict &&
-            !containsOnlyKeys(root, {"name", "duration_ms", "tick_ms", "refresh_motion_intent", "events"},
+            !containsOnlyKeys(root, {"name", "duration_ms", "tick_ms", "refresh_motion_intent", "motion_ramp_ms", "events"},
                               "scenario root", error)) {
             return false;
         }
@@ -83,6 +119,7 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
         out.duration_ms = toml::find_or<uint64_t>(root, "duration_ms", 5000);
         out.tick_ms = std::max<uint64_t>(1, toml::find_or<uint64_t>(root, "tick_ms", 20));
         out.refresh_motion_intent = toml::find_or<bool>(root, "refresh_motion_intent", true);
+        out.motion_ramp_ms = toml::find_or<uint64_t>(root, "motion_ramp_ms", 0);
 
         out.events.clear();
         const auto events = toml::find_or<std::vector<toml::value>>(root, "events", {});
@@ -216,14 +253,29 @@ bool ScenarioDriver::run(RobotControl& robot, const ScenarioDefinition& scenario
 
     std::size_t event_idx = 0;
     const auto start = std::chrono::steady_clock::now();
+    bool ramp_active = false;
+    MotionIntent ramp_start_intent{};
+    MotionIntent ramp_target_intent{};
+    uint64_t ramp_start_ms = 0;
+    uint64_t ramp_end_ms = 0;
 
     for (uint64_t elapsed_ms = 0; elapsed_ms <= scenario.duration_ms; elapsed_ms += scenario.tick_ms) {
         while (event_idx < scenario.events.size() && scenario.events[event_idx].at_ms <= elapsed_ms) {
             const ScenarioEvent& event = scenario.events[event_idx];
 
             if (event.motion.enabled) {
-                current_intent = makeMotionIntent(event.motion);
-                robot.setMotionIntent(current_intent);
+                MotionIntent target_intent = makeMotionIntent(event.motion);
+                if (scenario.motion_ramp_ms > 0 && isRampEligible(current_intent, target_intent)) {
+                    ramp_active = true;
+                    ramp_start_intent = current_intent;
+                    ramp_target_intent = target_intent;
+                    ramp_start_ms = elapsed_ms;
+                    ramp_end_ms = elapsed_ms + scenario.motion_ramp_ms;
+                } else {
+                    current_intent = target_intent;
+                    ramp_active = false;
+                    robot.setMotionIntent(current_intent);
+                }
                 if (logger) {
                     LOG_INFO(logger, "Scenario event @", event.at_ms, "ms mode update");
                 }
@@ -242,6 +294,21 @@ bool ScenarioDriver::run(RobotControl& robot, const ScenarioDefinition& scenario
             }
 
             ++event_idx;
+        }
+
+        if (ramp_active) {
+            const uint64_t elapsed_in_ramp_ms = elapsed_ms > ramp_end_ms ? (ramp_end_ms - ramp_start_ms)
+                                                                          : (elapsed_ms - ramp_start_ms);
+            const double duration_ms = static_cast<double>(ramp_end_ms - ramp_start_ms);
+            const double t = duration_ms > 0.0
+                                 ? (static_cast<double>(elapsed_in_ramp_ms) / duration_ms)
+                                 : 1.0;
+            current_intent = blendMotionIntent(ramp_start_intent, ramp_target_intent, t);
+            robot.setMotionIntent(current_intent);
+            if (elapsed_ms >= ramp_end_ms) {
+                current_intent = ramp_target_intent;
+                ramp_active = false;
+            }
         }
 
         if (!robot.setSimFaultToggles(toggles)) {

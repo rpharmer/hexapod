@@ -43,6 +43,7 @@ struct ScenarioDefinition {
     uint64_t duration_ms{5000};
     uint64_t tick_ms{20};
     bool refresh_motion_intent{true};
+    uint64_t motion_ramp_ms{0};
     std::vector<ScenarioEvent> events{};
 };
 
