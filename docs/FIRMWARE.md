@@ -43,6 +43,7 @@ Decoder behavior on both host and firmware:
   - `OUT_OF_RANGE_INDEX = 0xA5`
   - `UNSUPPORTED_COMMAND = 0xA6`
   - `BUSY_NOT_READY = 0xA7`
+  - `ALREADY_PAIRED = 0xA8`
 
 ## Command table
 
@@ -62,6 +63,9 @@ Decoder behavior on both host and firmware:
 | `SET_SERVOS_ENABLED` | `0x15` | Server → Client | 18 × `enable:bool` | `ACK` or `NACK(error:u8)` |
 | `GET_SERVOS_ENABLED` | `0x16` | Server → Client | _none_ | `ACK` + 18 × `enable:bool` or `NACK(error:u8)` |
 | `SET_SERVOS_TO_MID` | `0x17` | Server → Client | _none_ | `ACK` or `NACK(error:u8)` |
+| `KILL` | `0x18` | Server → Client | _none_ | no response required (firmware exits active loop) |
+| `GET_LED_INFO` | `0x19` | Server → Client | _none_ | `ACK` + LED state payload or `NACK(error:u8)` |
+| `SET_LED_COLORS` | `0x1A` | Server → Client | RGB payload (`kProtocolLedColorsPayloadBytes`) | `ACK` or `NACK(error:u8)` |
 
 > Multibyte numeric fields are serialized in little-endian byte order.
 
