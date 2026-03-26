@@ -1,10 +1,27 @@
 #include "control_config.hpp"
 
 #include <algorithm>
+#include <array>
 
 #include "hexapod-server.hpp"
 
 namespace control_config {
+
+namespace {
+
+std::array<double, kNumLegs> toLegArray(const std::vector<double>& values,
+                                        const std::array<double, kNumLegs>& defaults) {
+    std::array<double, kNumLegs> out = defaults;
+    if (values.size() != kNumLegs) {
+        return out;
+    }
+    for (int i = 0; i < kNumLegs; ++i) {
+        out[i] = std::clamp(values[static_cast<std::size_t>(i)], 0.0, 1.0);
+    }
+    return out;
+}
+
+} // namespace
 
 ControlConfig fromParsedToml(const ParsedToml& config) {
     ControlConfig parsed{};
@@ -24,6 +41,30 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.safety.max_foot_contacts = config.maxFootContacts;
 
     parsed.gait.fallback_speed_mag = LinearRateMps{config.fallbackSpeedMag};
+    parsed.gait.frequency.min_hz = FrequencyHz{config.gaitFrequencyMinHz};
+    parsed.gait.frequency.max_hz = FrequencyHz{config.gaitFrequencyMaxHz};
+    parsed.gait.frequency.nominal_max_speed_mps = LinearRateMps{config.gaitNominalMaxSpeedMps};
+    parsed.gait.frequency.reach_envelope_soft_limit = config.gaitReachEnvelopeSoftLimit;
+    parsed.gait.frequency.reach_envelope_min_scale = config.gaitReachEnvelopeMinScale;
+    parsed.gait.duty.tripod = config.gaitTripodDutyCycle;
+    parsed.gait.duty.ripple = config.gaitRippleDutyCycle;
+    parsed.gait.duty.wave = config.gaitWaveDutyCycle;
+    parsed.gait.phase_offsets.tripod = toLegArray(config.gaitTripodPhaseOffsets, kDefaultTripodPhaseOffsets);
+    parsed.gait.phase_offsets.ripple = toLegArray(config.gaitRipplePhaseOffsets, kDefaultRipplePhaseOffsets);
+    parsed.gait.phase_offsets.wave = toLegArray(config.gaitWavePhaseOffsets, kDefaultWavePhaseOffsets);
+    parsed.gait.swing.height_m = LengthM{config.gaitSwingHeightM};
+    parsed.gait.foothold.step_length_m = LengthM{config.gaitFootholdStepLengthM};
+    parsed.gait.stance_field.center_x_m = LengthM{config.gaitStanceFieldCenterXM};
+    parsed.gait.stance_field.center_y_m = LengthM{config.gaitStanceFieldCenterYM};
+    parsed.gait.stance_field.radius_x_m = LengthM{config.gaitStanceFieldRadiusXM};
+    parsed.gait.stance_field.radius_y_m = LengthM{config.gaitStanceFieldRadiusYM};
+    parsed.gait.priority_suppression.stability_priority = config.gaitStabilityPriority;
+    parsed.gait.priority_suppression.reach_suppression_gain = config.gaitReachSuppressionGain;
+    parsed.gait.priority_suppression.turn_suppression_gain = config.gaitTurnSuppressionGain;
+    parsed.gait.turn_mode_thresholds.yaw_rate_enter_radps = AngularRateRadPerSec{config.gaitTurnYawRateEnterRadps};
+    parsed.gait.turn_mode_thresholds.yaw_rate_exit_radps = AngularRateRadPerSec{config.gaitTurnYawRateExitRadps};
+    parsed.gait.turn_mode_thresholds.speed_enter_mps = LinearRateMps{config.gaitTurnSpeedEnterMps};
+    parsed.gait.turn_mode_thresholds.speed_exit_mps = LinearRateMps{config.gaitTurnSpeedExitMps};
 
     parsed.freshness.estimator.max_allowed_age_us = DurationUs{config.estimatorMaxAgeUs};
     parsed.freshness.estimator.require_timestamp = config.estimatorRequireTimestamp;

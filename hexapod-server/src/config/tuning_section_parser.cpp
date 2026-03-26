@@ -58,6 +58,102 @@ void parseTuningSection(const toml::value& root,
   out.fallbackSpeedMag = config_validation::parseDoubleWithFallback(
       root, "Tuning.FallbackSpeedMag", control_config::kDefaultFallbackSpeedMag.value, 0.0, 1.0,
       "tuning", logger);
+  out.gaitFrequencyMinHz = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitFrequencyMinHz", control_config::kDefaultGaitFrequencyMinHz, 0.05, 10.0,
+      "tuning", logger);
+  out.gaitFrequencyMaxHz = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitFrequencyMaxHz", control_config::kDefaultGaitFrequencyMaxHz, 0.05, 10.0,
+      "tuning", logger);
+  if (out.gaitFrequencyMinHz > out.gaitFrequencyMaxHz) {
+    if (logger) {
+      LOG_WARN(logger, "[tuning] Gait frequency min > max, using defaults");
+    }
+    out.gaitFrequencyMinHz = control_config::kDefaultGaitFrequencyMinHz;
+    out.gaitFrequencyMaxHz = control_config::kDefaultGaitFrequencyMaxHz;
+  }
+  out.gaitNominalMaxSpeedMps = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitNominalMaxSpeedMps", control_config::kDefaultGaitNominalMaxSpeedMps,
+      0.01, 2.0, "tuning", logger);
+  out.gaitReachEnvelopeSoftLimit = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitReachEnvelopeSoftLimit", control_config::kDefaultGaitReachEnvelopeSoftLimit,
+      0.01, 1.0, "tuning", logger);
+  out.gaitReachEnvelopeMinScale = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitReachEnvelopeMinScale", control_config::kDefaultGaitReachEnvelopeMinScale,
+      0.01, 1.0, "tuning", logger);
+  out.gaitTripodDutyCycle = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitTripodDutyCycle", control_config::kDefaultTripodDutyCycle, 0.05, 0.95,
+      "tuning", logger);
+  out.gaitRippleDutyCycle = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitRippleDutyCycle", control_config::kDefaultRippleDutyCycle, 0.05, 0.95,
+      "tuning", logger);
+  out.gaitWaveDutyCycle = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitWaveDutyCycle", control_config::kDefaultWaveDutyCycle, 0.05, 0.95,
+      "tuning", logger);
+
+  out.gaitTripodPhaseOffsets = config_validation::parseDoubleListWithFallback(
+      root, "Tuning.GaitTripodPhaseOffsets", std::vector<double>(control_config::kDefaultTripodPhaseOffsets.begin(), control_config::kDefaultTripodPhaseOffsets.end()),
+      kNumLegs, 0.0, 1.0, "tuning", logger);
+  out.gaitRipplePhaseOffsets = config_validation::parseDoubleListWithFallback(
+      root, "Tuning.GaitRipplePhaseOffsets", std::vector<double>(control_config::kDefaultRipplePhaseOffsets.begin(), control_config::kDefaultRipplePhaseOffsets.end()),
+      kNumLegs, 0.0, 1.0, "tuning", logger);
+  out.gaitWavePhaseOffsets = config_validation::parseDoubleListWithFallback(
+      root, "Tuning.GaitWavePhaseOffsets", std::vector<double>(control_config::kDefaultWavePhaseOffsets.begin(), control_config::kDefaultWavePhaseOffsets.end()),
+      kNumLegs, 0.0, 1.0, "tuning", logger);
+
+  out.gaitSwingHeightM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitSwingHeightM", control_config::kDefaultSwingHeightM, 0.0, 0.20, "tuning", logger);
+  out.gaitFootholdStepLengthM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitFootholdStepLengthM", control_config::kDefaultFootholdStepLengthM, 0.0, 0.30,
+      "tuning", logger);
+  out.gaitStanceFieldCenterXM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitStanceFieldCenterXM", control_config::kDefaultStanceFieldCenterXM, -0.25, 0.25,
+      "tuning", logger);
+  out.gaitStanceFieldCenterYM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitStanceFieldCenterYM", control_config::kDefaultStanceFieldCenterYM, -0.25, 0.25,
+      "tuning", logger);
+  out.gaitStanceFieldRadiusXM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitStanceFieldRadiusXM", control_config::kDefaultStanceFieldRadiusXM, 0.01, 0.50,
+      "tuning", logger);
+  out.gaitStanceFieldRadiusYM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitStanceFieldRadiusYM", control_config::kDefaultStanceFieldRadiusYM, 0.01, 0.50,
+      "tuning", logger);
+
+  out.gaitStabilityPriority = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitStabilityPriority", control_config::kDefaultStabilityPriority, 0.0, 10.0,
+      "tuning", logger);
+  out.gaitReachSuppressionGain = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitReachSuppressionGain", control_config::kDefaultReachSuppressionGain, 0.0, 10.0,
+      "tuning", logger);
+  out.gaitTurnSuppressionGain = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitTurnSuppressionGain", control_config::kDefaultTurnSuppressionGain, 0.0, 10.0,
+      "tuning", logger);
+
+  out.gaitTurnYawRateEnterRadps = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitTurnYawRateEnterRadps", control_config::kDefaultTurnYawRateEnterRadps, 0.0, 20.0,
+      "tuning", logger);
+  out.gaitTurnYawRateExitRadps = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitTurnYawRateExitRadps", control_config::kDefaultTurnYawRateExitRadps, 0.0, 20.0,
+      "tuning", logger);
+  out.gaitTurnSpeedEnterMps = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitTurnSpeedEnterMps", control_config::kDefaultTurnSpeedEnterMps, 0.0, 2.0,
+      "tuning", logger);
+  out.gaitTurnSpeedExitMps = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitTurnSpeedExitMps", control_config::kDefaultTurnSpeedExitMps, 0.0, 2.0,
+      "tuning", logger);
+  if (out.gaitTurnYawRateExitRadps > out.gaitTurnYawRateEnterRadps) {
+    if (logger) {
+      LOG_WARN(logger, "[tuning] turn yaw-rate exit threshold > enter threshold, using defaults");
+    }
+    out.gaitTurnYawRateEnterRadps = control_config::kDefaultTurnYawRateEnterRadps;
+    out.gaitTurnYawRateExitRadps = control_config::kDefaultTurnYawRateExitRadps;
+  }
+  if (out.gaitTurnSpeedExitMps > out.gaitTurnSpeedEnterMps) {
+    if (logger) {
+      LOG_WARN(logger, "[tuning] turn speed exit threshold > enter threshold, using defaults");
+    }
+    out.gaitTurnSpeedEnterMps = control_config::kDefaultTurnSpeedEnterMps;
+    out.gaitTurnSpeedExitMps = control_config::kDefaultTurnSpeedExitMps;
+  }
   out.minBusVoltageV = config_validation::parseDoubleWithFallback(
       root, "Tuning.MinBusVoltageV", control_config::kDefaultMinBusVoltageV, 5.0, 24.0, "tuning", logger);
   out.maxBusCurrentA = config_validation::parseDoubleWithFallback(
