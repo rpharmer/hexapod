@@ -136,7 +136,7 @@ bool testTimingMetricsTracksDeltaJitterAndAverage() {
 
 
 bool testJointOscillationTrackerIgnoresSubThresholdDirectionChanges() {
-    JointOscillationTracker tracker(0.02);
+    JointOscillationTracker tracker(0.02, 0);
     JointTargets a{};
     JointTargets b{};
     JointTargets c{};
@@ -156,7 +156,7 @@ bool testJointOscillationTrackerIgnoresSubThresholdDirectionChanges() {
 }
 
 bool testJointOscillationTrackerHandlesNonMonotonicTimestamps() {
-    JointOscillationTracker tracker(0.01);
+    JointOscillationTracker tracker(0.01, 0);
     JointTargets a{};
     JointTargets b{};
     JointTargets c{};
@@ -176,7 +176,7 @@ bool testJointOscillationTrackerHandlesNonMonotonicTimestamps() {
 }
 
 bool testJointOscillationTrackerCountsDirectionReversals() {
-    JointOscillationTracker tracker(0.01);
+    JointOscillationTracker tracker(0.01, 0);
     JointTargets a{};
     JointTargets b{};
     JointTargets c{};
@@ -198,6 +198,27 @@ bool testJointOscillationTrackerCountsDirectionReversals() {
                   "joint tracker should report peak velocity from delta over dt");
 }
 
+bool testJointOscillationTrackerReversalCooldown() {
+    JointOscillationTracker tracker(0.01, 50'000);
+    JointTargets a{};
+    JointTargets b{};
+    JointTargets c{};
+    JointTargets d{};
+
+    b.leg_states[2].joint_state[1].pos_rad.value = 0.03;
+    c.leg_states[2].joint_state[1].pos_rad.value = 0.00;
+    d.leg_states[2].joint_state[1].pos_rad.value = 0.03;
+
+    tracker.observe(a, TimePointUs{0});
+    tracker.observe(b, TimePointUs{20'000});
+    tracker.observe(c, TimePointUs{40'000});
+    tracker.observe(d, TimePointUs{60'000});
+
+    const JointOscillationMetrics metrics = tracker.metrics();
+    return expect(metrics.direction_reversal_events == 1,
+                  "reversal cooldown should suppress rapid flip-flop counting");
+}
+
 } // namespace
 
 int main() {
@@ -207,7 +228,8 @@ int main() {
         !testTimingMetricsTracksDeltaJitterAndAverage() ||
         !testJointOscillationTrackerIgnoresSubThresholdDirectionChanges() ||
         !testJointOscillationTrackerHandlesNonMonotonicTimestamps() ||
-        !testJointOscillationTrackerCountsDirectionReversals()) {
+        !testJointOscillationTrackerCountsDirectionReversals() ||
+        !testJointOscillationTrackerReversalCooldown()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
