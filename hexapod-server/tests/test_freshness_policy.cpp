@@ -113,12 +113,43 @@ bool testBoundaryAgeThresholds() {
                   "age over threshold should be stale for intent");
 }
 
+bool testAgeChecksCanBeDisabledForLenientEvaluation() {
+    FreshnessPolicy policy(strictFreshnessConfig());
+    policy.reset();
+
+    const TimePointUs now{500'000};
+    RobotState est{};
+    est.sample_id = 7;
+    est.timestamp_us = TimePointUs{1};  // Intentionally stale.
+
+    MotionIntent intent{};
+    intent.sample_id = 7;
+    intent.timestamp_us = TimePointUs{1};  // Intentionally stale.
+
+    const auto strict = policy.evaluate(now, est, intent, false, true);
+    if (!expect(!strict.estimator.valid && strict.estimator.stale_age,
+                "strict evaluation should reject stale estimator by age")) {
+        return false;
+    }
+    if (!expect(!strict.intent.valid && strict.intent.stale_age,
+                "strict evaluation should reject stale intent by age")) {
+        return false;
+    }
+
+    const auto lenient = policy.evaluate(now, est, intent, false, false);
+    return expect(lenient.estimator.valid && !lenient.estimator.stale_age,
+                  "lenient evaluation should ignore stale estimator age") &&
+           expect(lenient.intent.valid && !lenient.intent.stale_age,
+                  "lenient evaluation should ignore stale intent age");
+}
+
 } // namespace
 
 int main() {
     if (!testNonMonotonicSampleIds() ||
         !testMissingTimestamps() ||
-        !testBoundaryAgeThresholds()) {
+        !testBoundaryAgeThresholds() ||
+        !testAgeChecksCanBeDisabledForLenientEvaluation()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

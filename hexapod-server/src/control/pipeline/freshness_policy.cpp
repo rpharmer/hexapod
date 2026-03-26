@@ -13,7 +13,8 @@ void FreshnessPolicy::reset() {
 FreshnessPolicy::Evaluation FreshnessPolicy::evaluate(TimePointUs now,
                                                       const RobotState& est,
                                                       const MotionIntent& intent,
-                                                      bool update_tracking) {
+                                                      bool update_tracking,
+                                                      bool enforce_age) {
     uint64_t estimator_last_sample_id = last_estimator_sample_id_;
     uint64_t intent_last_sample_id = last_intent_sample_id_;
     StreamDiagnostics estimator_diag = estimator_diag_;
@@ -27,7 +28,8 @@ FreshnessPolicy::Evaluation FreshnessPolicy::evaluate(TimePointUs now,
         estimator_last_sample_id,
         config_.estimator,
         estimator_diag,
-        update_tracking);
+        update_tracking,
+        enforce_age);
     eval.intent = evaluateStream(
         now,
         intent.timestamp_us,
@@ -35,7 +37,8 @@ FreshnessPolicy::Evaluation FreshnessPolicy::evaluate(TimePointUs now,
         intent_last_sample_id,
         config_.intent,
         intent_diag,
-        update_tracking);
+        update_tracking,
+        enforce_age);
 
     if (update_tracking) {
         last_estimator_sample_id_ = estimator_last_sample_id;
@@ -62,7 +65,8 @@ FreshnessPolicy::StreamResult FreshnessPolicy::evaluateStream(
     uint64_t& last_sample_id,
     const control_config::StreamFreshnessConfig& freshness,
     StreamDiagnostics& diagnostics,
-    bool update_tracking) const {
+    bool update_tracking,
+    bool enforce_age) const {
     StreamResult result{};
 
     if (freshness.require_timestamp && timestamp_us.isZero()) {
@@ -73,7 +77,7 @@ FreshnessPolicy::StreamResult FreshnessPolicy::evaluateStream(
         }
     }
 
-    if (!timestamp_us.isZero()) {
+    if (enforce_age && !timestamp_us.isZero()) {
         result.age_us = (now - timestamp_us).value;
         if (result.age_us > freshness.max_allowed_age_us.value) {
             result.valid = false;
@@ -82,6 +86,8 @@ FreshnessPolicy::StreamResult FreshnessPolicy::evaluateStream(
                 ++diagnostics.stale_age_count;
             }
         }
+    } else if (!timestamp_us.isZero()) {
+        result.age_us = (now - timestamp_us).value;
     }
 
     if (freshness.require_nonzero_sample_id && sample_id == 0) {

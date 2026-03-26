@@ -28,7 +28,8 @@ FreshnessPolicy::Evaluation RuntimeFreshnessGate::evaluate(EvaluationMode mode,
                                                            const RobotState& est,
                                                            const MotionIntent& intent) {
     const bool update_tracking = (mode == EvaluationMode::StrictControl);
-    return freshness_policy_.evaluate(now, est, intent, update_tracking);
+    const bool enforce_age = (mode == EvaluationMode::StrictControl);
+    return freshness_policy_.evaluate(now, est, intent, update_tracking, enforce_age);
 }
 
 void RuntimeFreshnessGate::recordStrictMetrics(const FreshnessPolicy::Evaluation& freshness,

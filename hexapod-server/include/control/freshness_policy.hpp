@@ -35,7 +35,8 @@ public:
     Evaluation evaluate(TimePointUs now,
                         const RobotState& est,
                         const MotionIntent& intent,
-                        bool update_tracking = true);
+                        bool update_tracking = true,
+                        bool enforce_age = true);
 
     const StreamDiagnostics& estimatorDiagnostics() const;
     const StreamDiagnostics& intentDiagnostics() const;
@@ -47,7 +48,8 @@ private:
                                 uint64_t& last_sample_id,
                                 const control_config::StreamFreshnessConfig& freshness,
                                 StreamDiagnostics& diagnostics,
-                                bool update_tracking) const;
+                                bool update_tracking,
+                                bool enforce_age) const;
 
     control_config::FreshnessConfig config_{};
     uint64_t last_estimator_sample_id_{0};
