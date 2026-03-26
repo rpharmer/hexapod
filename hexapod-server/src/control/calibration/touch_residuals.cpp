@@ -1,8 +1,9 @@
 #include "touch_residuals.hpp"
 
-#include <array>
 #include <cmath>
 #include <vector>
+
+#include "leg_kinematics_utils.hpp"
 
 Vec3 computeFootInBodyFromServoAngles(const LegState& servo_angles,
                                       const LegGeometry& leg_geometry,
@@ -11,28 +12,7 @@ Vec3 computeFootInBodyFromServoAngles(const LegState& servo_angles,
     model_leg.servo = calibration;
 
     const LegState joint_angles = model_leg.servo.toJointAngles(servo_angles);
-    const std::array<JointState, kJointsPerLeg> joints = joint_angles.joint_state;
-
-    const double q1 = joints[COXA].pos_rad.value;
-    const double q2 = joints[FEMUR].pos_rad.value;
-    const double q3 = joints[TIBIA].pos_rad.value;
-
-    const double rho =
-        model_leg.femurLength.value * std::cos(q2) +
-        model_leg.tibiaLength.value * std::cos(q2 + q3);
-    const double z_leg =
-        model_leg.femurLength.value * std::sin(q2) +
-        model_leg.tibiaLength.value * std::sin(q2 + q3);
-    const double r = model_leg.coxaLength.value + rho;
-
-    const Vec3 foot_leg{
-        r * std::cos(q1),
-        r * std::sin(q1),
-        z_leg,
-    };
-
-    const Mat3 body_from_leg = Mat3::rotZ(model_leg.mountAngle.value);
-    return model_leg.bodyCoxaOffset + (body_from_leg * foot_leg);
+    return kinematics::footInBodyFrame(joint_angles, model_leg);
 }
 
 double touchResidualMeters(const CalibrationTouchSample& sample,

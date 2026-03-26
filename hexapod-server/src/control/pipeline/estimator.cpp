@@ -3,23 +3,12 @@
 #include <cmath>
 
 #include "geometry_config.hpp"
+#include "leg_kinematics_utils.hpp"
 
 namespace {
 
 Vec3 computeFootInBodyFrame(const LegState& leg_state, const LegGeometry& leg_geometry) {
-    const double q1 = leg_state.joint_state[COXA].pos_rad.value;
-    const double q2 = leg_state.joint_state[FEMUR].pos_rad.value;
-    const double q3 = leg_state.joint_state[TIBIA].pos_rad.value;
-
-    const double rho = leg_geometry.femurLength.value * std::cos(q2) +
-                       leg_geometry.tibiaLength.value * std::cos(q2 + q3);
-    const double z_leg = leg_geometry.femurLength.value * std::sin(q2) +
-                         leg_geometry.tibiaLength.value * std::sin(q2 + q3);
-    const double r = leg_geometry.coxaLength.value + rho;
-
-    const Vec3 foot_leg_local{r * std::cos(q1), r * std::sin(q1), z_leg};
-    const Vec3 foot_body_relative = Mat3::rotZ(leg_geometry.mountAngle.value) * foot_leg_local;
-    return leg_geometry.bodyCoxaOffset + foot_body_relative;
+    return kinematics::footInBodyFrame(leg_state, leg_geometry);
 }
 
 bool solveGroundPlane(const std::array<Vec3, kNumLegs>& points,
@@ -70,31 +59,14 @@ bool solveGroundPlane(const std::array<Vec3, kNumLegs>& points,
     const double m21 = sum_y;
     const double m22 = dn;
 
-    const double det = m00 * (m11 * m22 - m12 * m21) -
-                       m01 * (m10 * m22 - m12 * m20) +
-                       m02 * (m10 * m21 - m11 * m20);
-    if (std::abs(det) < 1e-8) {
-        return false;
-    }
-
     const double r0 = sum_xz;
     const double r1 = sum_yz;
     const double r2 = sum_z;
-
-    const double det_a = r0 * (m11 * m22 - m12 * m21) -
-                         m01 * (r1 * m22 - m12 * r2) +
-                         m02 * (r1 * m21 - m11 * r2);
-    const double det_b = m00 * (r1 * m22 - m12 * r2) -
-                         r0 * (m10 * m22 - m12 * m20) +
-                         m02 * (m10 * r2 - r1 * m20);
-    const double det_c = m00 * (m11 * r2 - r1 * m21) -
-                         m01 * (m10 * r2 - r1 * m20) +
-                         r0 * (m10 * m21 - m11 * m20);
-
-    a = det_a / det;
-    b = det_b / det;
-    c = det_c / det;
-    return true;
+    return solve3x3Cramers(m00, m01, m02,
+                           m10, m11, m12,
+                           m20, m21, m22,
+                           r0, r1, r2,
+                           a, b, c);
 }
 
 } // namespace

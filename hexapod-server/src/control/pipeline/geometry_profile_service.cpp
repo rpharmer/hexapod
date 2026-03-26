@@ -8,10 +8,6 @@ namespace {
 std::optional<HexapodGeometry> g_preview_geometry;
 std::optional<HexapodGeometry> g_rollback_geometry;
 
-bool isFinite(const Vec3& vec) {
-    return std::isfinite(vec.x) && std::isfinite(vec.y) && std::isfinite(vec.z);
-}
-
 bool validateServoDirectionDynamics(const ServoDirectionDynamics& dynamics) {
     return std::isfinite(dynamics.tau_s) && std::isfinite(dynamics.vmax_radps) &&
            dynamics.tau_s >= 0.0 && dynamics.vmax_radps >= 0.0;

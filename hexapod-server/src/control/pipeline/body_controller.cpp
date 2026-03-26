@@ -122,7 +122,7 @@ LegTargets BodyController::update(const RobotState& est,
             const double max_step_m = speed_limit * update_dt_s;
             const Vec3 previous = previous_targets_.feet[leg].pos_body_m;
             const Vec3 delta = target - previous;
-            const double delta_mag = std::sqrt((delta.x * delta.x) + (delta.y * delta.y) + (delta.z * delta.z));
+            const double delta_mag = vecNorm(delta);
             if (delta_mag > max_step_m && delta_mag > 1e-9) {
                 target = previous + (delta * (max_step_m / delta_mag));
             }

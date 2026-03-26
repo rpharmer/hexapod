@@ -14,7 +14,6 @@ public:
 
 private:
     control_config::GaitConfig config_{};
-    double wrap01(double x) const;
     FrequencyHz applyCadenceSlew(const FrequencyHz& target_rate_hz, const DurationSec& dt);
     double phase_accum_{0.0};
     FrequencyHz cadence_hz_{FrequencyHz{0.0}};

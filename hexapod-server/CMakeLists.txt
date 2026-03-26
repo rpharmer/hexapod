@@ -140,6 +140,7 @@ set(HEXAPOD_SERVER_SOURCES
     # kinematics
     "${CMAKE_CURRENT_SOURCE_DIR}/src/kinematics/leg_fk.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/kinematics/leg_ik.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/kinematics/leg_kinematics_utils.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/kinematics/types.cpp"
 
     # scenario

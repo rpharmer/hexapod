@@ -5,6 +5,7 @@
 #include <cmath>
 #include <limits>
 
+#include "leg_kinematics_utils.hpp"
 #include "reach_envelope.hpp"
 
 namespace {
@@ -23,11 +24,6 @@ constexpr double kRegionReorientToPivotYaw = 0.60;
 constexpr double kSmoothCommandAlpha = 0.25;
 constexpr double kGaitSwitchSpeedHysteresis = 0.03;
 constexpr double kGaitSwitchYawHysteresis = 0.04;
-
-double clamp01(const double value)
-{
-    return std::clamp(value, 0.0, 1.0);
-}
 
 double normalizedSpeed(const MotionIntent& intent, const control_config::GaitConfig& config)
 {
@@ -487,19 +483,7 @@ double GaitPolicyPlanner::maxReachUtilization(const RobotState& est) const
     for (int leg = 0; leg < kNumLegs; ++leg) {
         const LegGeometry& leg_geo = geometry_.legGeometry[leg];
         const LegState joint_frame = leg_geo.servo.toJointAngles(est.leg_states[leg]);
-
-        const double q1 = joint_frame.joint_state[0].pos_rad.value;
-        const double q2 = joint_frame.joint_state[1].pos_rad.value;
-        const double q3 = joint_frame.joint_state[2].pos_rad.value;
-
-        const double rho =
-            leg_geo.femurLength.value * std::cos(q2) +
-            leg_geo.tibiaLength.value * std::cos(q2 + q3);
-        const double z =
-            leg_geo.femurLength.value * std::sin(q2) +
-            leg_geo.tibiaLength.value * std::sin(q2 + q3);
-        const double r = leg_geo.coxaLength.value + rho;
-        const Vec3 foot_leg{r * std::cos(q1), r * std::sin(q1), z};
+        const Vec3 foot_leg = kinematics::footInLegFrame(joint_frame, leg_geo);
 
         max_utilization = std::max(max_utilization, kinematics::legReachUtilization(foot_leg, leg_geo));
     }
