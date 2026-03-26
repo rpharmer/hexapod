@@ -31,6 +31,9 @@ SafetyState safeState()
 {
     SafetyState safety{};
     safety.stable = true;
+    safety.inhibit_motion = false;
+    safety.torque_cut = false;
+    safety.active_fault = FaultCode::NONE;
     return safety;
 }
 
@@ -180,6 +183,77 @@ void testServoVelocityConstraintModifiesGait()
            "servo velocity overspeed should increase duty cycle for stability");
 }
 
+void testRegionThresholdBoundaries()
+{
+    GaitPolicyPlanner planner{enabledDynamicConfig()};
+    const SafetyState safety = safeState();
+    RobotState est = nominalEstimate();
+
+    warmPlanner(planner, walkingIntent(0.90, 0.10), safety, 20);
+    RuntimeGaitPolicy at_arc_boundary{};
+    for (int i = 0; i < 8; ++i) {
+        at_arc_boundary = planner.plan(est, walkingIntent(0.16, 0.60), safety);
+    }
+    expect(at_arc_boundary.region == DynamicGaitRegion::ARC,
+           "exact ARC exit thresholds should not force a region transition");
+
+    RuntimeGaitPolicy beyond_arc_boundary = planner.plan(est, walkingIntent(0.05, 0.95), safety);
+    for (int i = 0; i < 3; ++i) {
+        beyond_arc_boundary = planner.plan(est, walkingIntent(0.05, 0.95), safety);
+    }
+    expect(beyond_arc_boundary.region != DynamicGaitRegion::ARC,
+           "strong yaw command from ARC should leave ARC via hysteresis transition");
+}
+
+void testPivotHysteresisTransitionBoundary()
+{
+    GaitPolicyPlanner planner{enabledDynamicConfig()};
+    const SafetyState safety = safeState();
+    RobotState est = nominalEstimate();
+    warmPlanner(planner, walkingIntent(0.05, 0.95), safety, 20);
+
+    RuntimeGaitPolicy at_pivot_exit{};
+    for (int i = 0; i < 8; ++i) {
+        at_pivot_exit = planner.plan(est, walkingIntent(0.18, 0.52), safety);
+    }
+    expect(at_pivot_exit.region == DynamicGaitRegion::PIVOT,
+           "exact PIVOT exit thresholds should hold pivot via hysteresis");
+
+    RuntimeGaitPolicy beyond_pivot_exit{};
+    for (int i = 0; i < 8; ++i) {
+        beyond_pivot_exit = planner.plan(est, walkingIntent(0.20, 0.48), safety);
+    }
+    expect(beyond_pivot_exit.region == DynamicGaitRegion::REORIENTATION,
+           "crossing PIVOT exit thresholds should move to reorientation");
+}
+
+void testFallbackEscalationPrecedence()
+{
+    GaitPolicyPlanner planner{enabledDynamicConfig()};
+    RobotState est = nominalEstimate();
+    const MotionIntent pivot_intent = walkingIntent(0.05, 0.95, GaitType::RIPPLE);
+    const SafetyState baseline = safeState();
+    warmPlanner(planner, pivot_intent, baseline, 20);
+
+    SafetyState degraded_safety = baseline;
+    degraded_safety.stable = false;
+    const RuntimeGaitPolicy degraded = planner.plan(est, pivot_intent, degraded_safety);
+    expect(degraded.fallback_stage == GaitFallbackStage::DEGRADED_LOCOMOTION,
+           "instability without inhibit/fault should select degraded locomotion");
+
+    SafetyState safe_stop_safety = degraded_safety;
+    safe_stop_safety.inhibit_motion = true;
+    const RuntimeGaitPolicy safe_stop = planner.plan(est, pivot_intent, safe_stop_safety);
+    expect(safe_stop.fallback_stage == GaitFallbackStage::SAFE_STOP,
+           "inhibit motion should take precedence over degraded locomotion");
+
+    SafetyState fault_safety = safe_stop_safety;
+    fault_safety.active_fault = FaultCode::TIP_OVER;
+    const RuntimeGaitPolicy fault_hold = planner.plan(est, pivot_intent, fault_safety);
+    expect(fault_hold.fallback_stage == GaitFallbackStage::FAULT_HOLD,
+           "active fault should take highest fallback precedence over all lower stages");
+}
+
 } // namespace
 
 int main()
@@ -187,7 +261,10 @@ int main()
     testArcTripodSelection();
     testPivotSelection();
     testAntiChatterHysteresis();
+    testRegionThresholdBoundaries();
+    testPivotHysteresisTransitionBoundary();
     testFallbackStages();
+    testFallbackEscalationPrecedence();
     testAcceptanceGatesDisableByDefault();
     testServoVelocityConstraintModifiesGait();
 

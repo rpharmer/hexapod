@@ -72,6 +72,115 @@ double gaitDutyCycle(const control_config::GaitDutyConfig& config, const GaitTyp
     return config.tripod;
 }
 
+struct RegionClassificationState {
+    DynamicGaitRegion region{DynamicGaitRegion::ARC};
+    double filtered_speed_norm{0.0};
+    double filtered_yaw_norm{0.0};
+};
+
+struct RegionClassifier {
+    static RegionClassificationState classify(const MotionIntent& intent,
+                                              const control_config::GaitConfig& config,
+                                              const RegionClassificationState& prior)
+    {
+        RegionClassificationState next = prior;
+        const double speed = normalizedSpeed(intent, config);
+        const double yaw = normalizedYaw(intent, config);
+        next.filtered_speed_norm = std::lerp(prior.filtered_speed_norm, speed, kSmoothCommandAlpha);
+        next.filtered_yaw_norm = std::lerp(prior.filtered_yaw_norm, yaw, kSmoothCommandAlpha);
+        next.region = applyHysteresis(prior.region, next.filtered_speed_norm, next.filtered_yaw_norm);
+        return next;
+    }
+
+private:
+    static DynamicGaitRegion applyHysteresis(const DynamicGaitRegion prior, const double speed, const double yaw)
+    {
+        if (prior == DynamicGaitRegion::ARC) {
+            if (yaw > kRegionArcExitYaw || speed < kRegionArcExitSpeed) {
+                return DynamicGaitRegion::REORIENTATION;
+            }
+            return prior;
+        }
+
+        if (prior == DynamicGaitRegion::PIVOT) {
+            if (yaw < kRegionPivotExitYaw && speed > kRegionPivotExitSpeed) {
+                return DynamicGaitRegion::REORIENTATION;
+            }
+            return prior;
+        }
+
+        if (speed >= kRegionReorientToArcSpeed && yaw <= kRegionReorientToArcYaw) {
+            return DynamicGaitRegion::ARC;
+        }
+        if (speed <= kRegionReorientToPivotSpeed && yaw >= kRegionReorientToPivotYaw) {
+            return DynamicGaitRegion::PIVOT;
+        }
+        if (speed >= kRegionArcEnterSpeed && yaw <= kRegionArcEnterYaw) {
+            return DynamicGaitRegion::ARC;
+        }
+        if (speed <= kRegionPivotEnterSpeed && yaw >= kRegionPivotEnterYaw) {
+            return DynamicGaitRegion::PIVOT;
+        }
+        return DynamicGaitRegion::REORIENTATION;
+    }
+};
+
+struct GaitFamilySelector {
+    static GaitType select(const DynamicGaitRegion region,
+                           const double speed,
+                           const double yaw,
+                           const GaitType prior_family)
+    {
+        const GaitType candidate = candidateFor(region, speed, yaw);
+        return applyHysteresis(candidate, prior_family, speed, yaw);
+    }
+
+private:
+    static GaitType candidateFor(const DynamicGaitRegion region, const double speed, const double yaw)
+    {
+        if (region == DynamicGaitRegion::PIVOT) {
+            return (speed >= 0.15 && yaw <= 0.85) ? GaitType::RIPPLE : GaitType::WAVE;
+        }
+        if (region == DynamicGaitRegion::REORIENTATION) {
+            return (speed < 0.30 || yaw > 0.75) ? GaitType::WAVE : GaitType::RIPPLE;
+        }
+        if (speed < 0.35) {
+            return GaitType::WAVE;
+        }
+        if (speed < 0.70) {
+            return GaitType::RIPPLE;
+        }
+        if (yaw <= 0.35) {
+            return GaitType::TRIPOD;
+        }
+        return GaitType::RIPPLE;
+    }
+
+    static GaitType applyHysteresis(const GaitType candidate,
+                                    const GaitType prior,
+                                    const double speed,
+                                    const double yaw)
+    {
+        if (candidate == prior) {
+            return candidate;
+        }
+
+        if (candidate == GaitType::TRIPOD && prior == GaitType::RIPPLE &&
+            yaw > (0.35 - kGaitSwitchYawHysteresis)) {
+            return prior;
+        }
+        if (prior == GaitType::WAVE && candidate == GaitType::RIPPLE &&
+            speed < (0.35 + kGaitSwitchSpeedHysteresis)) {
+            return prior;
+        }
+        if (prior == GaitType::RIPPLE && candidate == GaitType::TRIPOD &&
+            speed < (0.70 + kGaitSwitchSpeedHysteresis)) {
+            return prior;
+        }
+        return candidate;
+    }
+};
+
 } // namespace
 
 GaitPolicyPlanner::GaitPolicyPlanner(control_config::GaitConfig config)
@@ -93,32 +202,12 @@ RuntimeGaitPolicy GaitPolicyPlanner::plan(const RobotState& est,
     policy.per_leg = computePerLegDynamicParameters(policy.gait_family);
     policy.suppression = computeSuppressionFlags(est, intent, safety, policy.turn_mode);
     policy.reach_utilization = maxReachUtilization(est);
-    const double commanded_speed = std::abs(intent.speed_mps.value);
-    const double normalized_command =
-        std::clamp(commanded_speed / config_.frequency.nominal_max_speed_mps.value, 0.0, 1.0);
-    const double yaw_normalized = std::clamp(
-        std::abs(intent.twist.twist_vel_radps.z) /
-            std::max(config_.turn_mode_thresholds.yaw_rate_enter_radps.value, 1e-6),
+    const double normalized_command = std::clamp(
+        std::abs(intent.speed_mps.value) / config_.frequency.nominal_max_speed_mps.value,
         0.0,
         1.0);
 
-    policy.envelope = envelopeForRegion(policy.region);
-    if (!policy.envelope.allow_tripod && policy.gait_family == GaitType::TRIPOD) {
-        policy.gait_family = GaitType::RIPPLE;
-    }
-    policy.per_leg = computePerLegDynamicParameters(policy.gait_family);
-    policy.suppression = computeSuppressionFlags(est, intent, safety, policy.turn_mode);
-
-    const double roll_pitch_abs_rad = std::max(
-        std::abs(est.body_twist_state.twist_pos_rad.x),
-        std::abs(est.body_twist_state.twist_pos_rad.y));
-    policy.fallback_stage = selectFallbackStage(
-        safety,
-        policy.envelope,
-        roll_pitch_abs_rad,
-        normalized_command,
-        yaw_normalized,
-        policy.reach_utilization);
+    applyEnvelopeAndFallback(policy, est, intent, safety);
 
     const double speed_mag = std::max(normalized_command, config_.fallback_speed_mag.value);
     const double envelope_speed_scale = std::clamp(
@@ -204,92 +293,59 @@ RuntimeGaitPolicy GaitPolicyPlanner::legacyPolicy(const RobotState& est,
     return policy;
 }
 
+void GaitPolicyPlanner::applyEnvelopeAndFallback(RuntimeGaitPolicy& policy,
+                                                 const RobotState& est,
+                                                 const MotionIntent& intent,
+                                                 const SafetyState& safety) const
+{
+    const double normalized_command = std::clamp(
+        std::abs(intent.speed_mps.value) / std::max(config_.frequency.nominal_max_speed_mps.value, 1e-6),
+        0.0,
+        1.0);
+    const double yaw_normalized = std::clamp(
+        std::abs(intent.twist.twist_vel_radps.z) /
+            std::max(config_.turn_mode_thresholds.yaw_rate_enter_radps.value, 1e-6),
+        0.0,
+        1.0);
+    const double roll_pitch_abs_rad = std::max(
+        std::abs(est.body_twist_state.twist_pos_rad.x),
+        std::abs(est.body_twist_state.twist_pos_rad.y));
+
+    policy.envelope = envelopeForRegion(policy.region);
+    if (!policy.envelope.allow_tripod && policy.gait_family == GaitType::TRIPOD) {
+        policy.gait_family = GaitType::RIPPLE;
+    }
+    policy.per_leg = computePerLegDynamicParameters(policy.gait_family);
+    policy.suppression = computeSuppressionFlags(est, intent, safety, policy.turn_mode);
+    policy.fallback_stage = selectFallbackStage(
+        safety,
+        policy.envelope,
+        roll_pitch_abs_rad,
+        normalized_command,
+        yaw_normalized,
+        policy.reach_utilization);
+}
+
 DynamicGaitRegion GaitPolicyPlanner::selectRegion(const MotionIntent& intent)
 {
-    const double speed = normalizedSpeed(intent, config_);
-    const double yaw = normalizedYaw(intent, config_);
-    filtered_speed_norm_ = std::lerp(filtered_speed_norm_, speed, kSmoothCommandAlpha);
-    filtered_yaw_norm_ = std::lerp(filtered_yaw_norm_, yaw, kSmoothCommandAlpha);
-
-    if (last_region_ == DynamicGaitRegion::ARC) {
-        if (filtered_yaw_norm_ > kRegionArcExitYaw || filtered_speed_norm_ < kRegionArcExitSpeed) {
-            last_region_ = DynamicGaitRegion::REORIENTATION;
-        }
-        return last_region_;
-    }
-
-    if (last_region_ == DynamicGaitRegion::PIVOT) {
-        if (filtered_yaw_norm_ < kRegionPivotExitYaw && filtered_speed_norm_ > kRegionPivotExitSpeed) {
-            last_region_ = DynamicGaitRegion::REORIENTATION;
-        }
-        return last_region_;
-    }
-
-    if (filtered_speed_norm_ >= kRegionReorientToArcSpeed && filtered_yaw_norm_ <= kRegionReorientToArcYaw) {
-        last_region_ = DynamicGaitRegion::ARC;
-    } else if (filtered_speed_norm_ <= kRegionReorientToPivotSpeed &&
-               filtered_yaw_norm_ >= kRegionReorientToPivotYaw) {
-        last_region_ = DynamicGaitRegion::PIVOT;
-    } else if (filtered_speed_norm_ >= kRegionArcEnterSpeed && filtered_yaw_norm_ <= kRegionArcEnterYaw) {
-        last_region_ = DynamicGaitRegion::ARC;
-    } else if (filtered_speed_norm_ <= kRegionPivotEnterSpeed && filtered_yaw_norm_ >= kRegionPivotEnterYaw) {
-        last_region_ = DynamicGaitRegion::PIVOT;
-    } else {
-        last_region_ = DynamicGaitRegion::REORIENTATION;
-    }
-
+    const RegionClassificationState next_state = RegionClassifier::classify(
+        intent,
+        config_,
+        RegionClassificationState{last_region_, filtered_speed_norm_, filtered_yaw_norm_});
+    filtered_speed_norm_ = next_state.filtered_speed_norm;
+    filtered_yaw_norm_ = next_state.filtered_yaw_norm;
+    last_region_ = next_state.region;
     return last_region_;
 }
 
 GaitType GaitPolicyPlanner::selectGaitFamily(const MotionIntent& intent, const DynamicGaitRegion region)
 {
     (void)intent;
-    const double speed = filtered_speed_norm_;
-    const double yaw = filtered_yaw_norm_;
-
-    auto keepStableTransitions = [&](const GaitType candidate) {
-        if (candidate == last_gait_family_) {
-            return candidate;
-        }
-
-        if (candidate == GaitType::TRIPOD && last_gait_family_ == GaitType::RIPPLE &&
-            yaw > (0.35 - kGaitSwitchYawHysteresis)) {
-            return last_gait_family_;
-        }
-        if (last_gait_family_ == GaitType::WAVE && candidate == GaitType::RIPPLE &&
-            speed < (0.35 + kGaitSwitchSpeedHysteresis)) {
-            return last_gait_family_;
-        }
-        if (last_gait_family_ == GaitType::RIPPLE && candidate == GaitType::TRIPOD &&
-            speed < (0.70 + kGaitSwitchSpeedHysteresis)) {
-            return last_gait_family_;
-        }
-        return candidate;
-    };
-
-    if (region == DynamicGaitRegion::PIVOT) {
-        const GaitType candidate = (speed >= 0.15 && yaw <= 0.85) ? GaitType::RIPPLE : GaitType::WAVE;
-        last_gait_family_ = keepStableTransitions(candidate);
-        return last_gait_family_;
-    }
-    if (region == DynamicGaitRegion::REORIENTATION) {
-        const GaitType candidate = (speed < 0.30 || yaw > 0.75) ? GaitType::WAVE : GaitType::RIPPLE;
-        last_gait_family_ = keepStableTransitions(candidate);
-        return last_gait_family_;
-    }
-
-    GaitType candidate = GaitType::WAVE;
-    if (speed < 0.35) {
-        candidate = GaitType::WAVE;
-    } else if (speed < 0.70) {
-        candidate = GaitType::RIPPLE;
-    } else if (yaw <= 0.35) {
-        candidate = GaitType::TRIPOD;
-    } else {
-        candidate = GaitType::RIPPLE;
-    }
-
-    last_gait_family_ = keepStableTransitions(candidate);
+    last_gait_family_ = GaitFamilySelector::select(
+        region,
+        filtered_speed_norm_,
+        filtered_yaw_norm_,
+        last_gait_family_);
     return last_gait_family_;
 }
 
