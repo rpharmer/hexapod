@@ -153,6 +153,33 @@ void testAcceptanceGatesDisableByDefault()
     expect(!policy.dynamic_enabled, "dynamic gait should remain disabled until rollout gates pass");
 }
 
+void testServoVelocityConstraintModifiesGait()
+{
+    GaitPolicyPlanner planner{enabledDynamicConfig()};
+    SafetyState safety = safeState();
+    safety.inhibit_motion = false;
+    safety.torque_cut = false;
+    warmPlanner(planner, walkingIntent(0.90, 0.05), safety, 16);
+
+    RobotState nominal = nominalEstimate();
+    const RuntimeGaitPolicy unconstrained = planner.plan(nominal, walkingIntent(0.90, 0.05), safety);
+
+    RobotState overspeed = nominalEstimate();
+    for (auto& leg : overspeed.leg_states) {
+        for (auto& joint : leg.joint_state) {
+            joint.vel_radps = AngularRateRadPerSec{120.0};
+        }
+    }
+    const RuntimeGaitPolicy constrained = planner.plan(overspeed, walkingIntent(0.90, 0.05), safety);
+
+    expect(constrained.cadence_hz.value < unconstrained.cadence_hz.value,
+           "servo velocity overspeed should reduce gait cadence instead of only clamping joints");
+    expect(constrained.per_leg[0].step_length_m.value < unconstrained.per_leg[0].step_length_m.value,
+           "servo velocity overspeed should shorten stride length");
+    expect(constrained.per_leg[0].duty_cycle >= unconstrained.per_leg[0].duty_cycle,
+           "servo velocity overspeed should increase duty cycle for stability");
+}
+
 } // namespace
 
 int main()
@@ -162,6 +189,7 @@ int main()
     testAntiChatterHysteresis();
     testFallbackStages();
     testAcceptanceGatesDisableByDefault();
+    testServoVelocityConstraintModifiesGait();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test(s) failed\n";
