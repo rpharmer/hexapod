@@ -299,3 +299,25 @@ The highest-leverage improvements are:
 2. telemetry schema policy clarity,
 3. build/test maintainability cleanup.
 
+
+---
+
+## 5. Test Sweep Update (2026-03-26)
+
+Ran the repository-wide verification entrypoint to satisfy the request to run all tests and check for obvious bugs:
+
+```bash
+./scripts/verify.sh
+```
+
+### Results
+
+- `hexapod-server` preset `tests`: **34 / 34 passed**.
+- `hexapod-client` preset `host-tests`: **3 / 3 passed**.
+- Scenario smoke (`scenarios/01_nominal_stand_walk.toml`): **passed** with normal runtime diagnostics and clean shutdown summary.
+
+### Bug check outcome
+
+- No failing test, crash, assertion failure, or scenario abort was observed in this sweep.
+- No obvious regressions were detected by default quality gates at this time.
+

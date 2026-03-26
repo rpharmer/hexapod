@@ -99,6 +99,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/geometry_profile_service.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/calibration/interactive_calibration_actions.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/input/interactive_input_mapper.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime/joint_oscillation_tracker.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime/loop_executor.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime/loop_timing.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/input/mode_runners.cpp"

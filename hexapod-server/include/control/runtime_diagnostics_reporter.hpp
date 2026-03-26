@@ -2,6 +2,7 @@
 
 #include "freshness_policy.hpp"
 #include "hardware_bridge.hpp"
+#include "joint_oscillation_tracker.hpp"
 #include "logger.hpp"
 #include "telemetry_publisher.hpp"
 #include "types.hpp"
@@ -25,6 +26,7 @@ public:
 
     void recordVisualizerTelemetry(const telemetry::TelemetryPublishCounters& telemetry_counters,
                                    TimePointUs now);
+    void recordJointTargets(const JointTargets& targets, TimePointUs now);
 
     void report(const ControlStatus& status,
                 const std::optional<BridgeCommandResultMetadata>& bridge_result,
@@ -44,4 +46,5 @@ private:
     telemetry::TelemetryPublishCounters last_telemetry_counters_{};
     uint64_t consecutive_failures_{0};
     uint64_t warning_failures_observed_{0};
+    JointOscillationTracker joint_oscillation_tracker_{};
 };

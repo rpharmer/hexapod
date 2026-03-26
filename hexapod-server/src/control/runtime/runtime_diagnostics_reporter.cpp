@@ -34,6 +34,10 @@ void RuntimeDiagnosticsReporter::recordVisualizerTelemetry(
     }
 }
 
+void RuntimeDiagnosticsReporter::recordJointTargets(const JointTargets& targets, TimePointUs now) {
+    joint_oscillation_tracker_.observe(targets, now);
+}
+
 void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
                                         const std::optional<BridgeCommandResultMetadata>& bridge_result,
                                         uint64_t loops,
@@ -48,6 +52,7 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
 
     const auto& estimator_diag = freshness_policy_.estimatorDiagnostics();
     const auto& intent_diag = freshness_policy_.intentDiagnostics();
+    const JointOscillationMetrics joint_diag = joint_oscillation_tracker_.metrics();
     LOG_INFO(logger_,
              "runtime.metrics loops=",
              loops,
@@ -85,6 +90,10 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
              telemetry_diag_.dropped_rate_limited_frames,
              ",last_successful_send_ts_us:",
              telemetry_diag_.last_successful_send_timestamp.value,
+             "} joint_cmd_diag={direction_reversals:",
+             joint_diag.direction_reversal_events,
+             ",peak_velocity_radps:",
+             joint_diag.peak_joint_velocity_radps,
              "}");
 }
 
