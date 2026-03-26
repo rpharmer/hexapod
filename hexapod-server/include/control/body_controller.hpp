@@ -1,5 +1,6 @@
 #pragma once
 
+#include "gait_policy_planner.hpp"
 #include "geometry_config.hpp"
 #include "types.hpp"
 
@@ -8,6 +9,12 @@ public:
     LegTargets update(const RobotState& est,
                       const MotionIntent& intent,
                       const GaitState& gait,
+                      const SafetyState& safety);
+
+    LegTargets update(const RobotState& est,
+                      const MotionIntent& intent,
+                      const GaitState& gait,
+                      const RuntimeGaitPolicy& policy,
                       const SafetyState& safety);
 
 private:

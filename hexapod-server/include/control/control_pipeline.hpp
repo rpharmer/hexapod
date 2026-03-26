@@ -2,6 +2,7 @@
 
 #include "body_controller.hpp"
 #include "control_config.hpp"
+#include "gait_policy_planner.hpp"
 #include "gait_scheduler.hpp"
 #include "leg_ik.hpp"
 #include "types.hpp"
@@ -22,6 +23,7 @@ public:
                                uint64_t loop_counter);
 
 private:
+    GaitPolicyPlanner planner_;
     GaitScheduler gait_;
     BodyController body_;
     LegIK ik_;

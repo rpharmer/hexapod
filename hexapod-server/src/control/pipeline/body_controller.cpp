@@ -7,8 +7,6 @@
 
 namespace {
 
-constexpr double kStepLengthM = 0.06;
-constexpr double kSwingHeightM = 0.03;
 constexpr double kDefaultBodyHeightM = 0.20;
 
 } // namespace
@@ -41,6 +39,19 @@ LegTargets BodyController::update(const RobotState& est,
                                   const MotionIntent& intent,
                                   const GaitState& gait,
                                   const SafetyState& safety) {
+    RuntimeGaitPolicy fallback_policy{};
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        fallback_policy.per_leg[leg].step_length_m = LengthM{0.06};
+        fallback_policy.per_leg[leg].swing_height_m = LengthM{0.03};
+    }
+    return update(est, intent, gait, fallback_policy, safety);
+}
+
+LegTargets BodyController::update(const RobotState& est,
+                                  const MotionIntent& intent,
+                                  const GaitState& gait,
+                                  const RuntimeGaitPolicy& policy,
+                                  const SafetyState& safety) {
     LegTargets out{};
     out.timestamp_us = now_us();
 
@@ -56,7 +67,7 @@ LegTargets BodyController::update(const RobotState& est,
     const Vec3 step_dir{std::cos(heading), std::sin(heading), 0.0};
     const double roll_cmd = intent.twist.twist_pos_rad.x;
     const double pitch_cmd = intent.twist.twist_pos_rad.y;
-    const double yaw_cmd = intent.twist.twist_pos_rad.z;
+    const double yaw_cmd = policy.suppression.suppress_turning ? 0.0 : intent.twist.twist_pos_rad.z;
     const Mat3 body_rotation = Mat3::rotZ(yaw_cmd) * Mat3::rotY(pitch_cmd) * Mat3::rotX(roll_cmd);
     const Vec3 planar_body_offset = Vec3{
         intent.twist.body_trans_m.x,
@@ -81,17 +92,19 @@ LegTargets BodyController::update(const RobotState& est,
             const double phase = clamp01(gait.phase[leg]);
             const double phase_rate = std::max(gait.stride_phase_rate_hz.value, 0.0);
             const double planar_phase = 2.0 * kPi * phase;
-            const double step_delta = 0.5 * kStepLengthM * std::cos(planar_phase);
-            const double step_vel = -kPi * kStepLengthM * phase_rate * std::sin(planar_phase);
+            const double leg_step_length = policy.per_leg[leg].step_length_m.value;
+            const double step_delta = 0.5 * leg_step_length * std::cos(planar_phase);
+            const double step_vel = -kPi * leg_step_length * phase_rate * std::sin(planar_phase);
             target = target + (step_dir * step_delta);
             target_vel = target_vel + (step_dir * step_vel);
 
             if (!gait.in_stance[leg]) {
                 const double swing_alpha = clamp01((phase - 0.5) / 0.5);
                 const double swing_lift = 0.5 * (1.0 - std::cos(2.0 * kPi * swing_alpha));
+                const double swing_height = policy.per_leg[leg].swing_height_m.value;
                 const double swing_z_vel =
-                    2.0 * kPi * phase_rate * kSwingHeightM * std::sin(2.0 * kPi * swing_alpha);
-                target.z += swing_lift * kSwingHeightM;
+                    2.0 * kPi * phase_rate * swing_height * std::sin(2.0 * kPi * swing_alpha);
+                target.z += swing_lift * swing_height;
                 target_vel.z += swing_z_vel;
             }
         }
