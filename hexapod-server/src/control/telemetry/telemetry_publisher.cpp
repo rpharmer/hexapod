@@ -36,6 +36,43 @@ std::string legNameFromIndex(int leg_index) {
     }
 }
 
+const char* gaitTypeToString(GaitType gait) {
+    switch (gait) {
+        case GaitType::TRIPOD: return "tripod";
+        case GaitType::RIPPLE: return "ripple";
+        case GaitType::WAVE: return "wave";
+    }
+    return "unknown";
+}
+
+const char* dynamicRegionToString(uint8_t region) {
+    switch (region) {
+        case 0: return "arc";
+        case 1: return "pivot";
+        case 2: return "reorientation";
+        default: return "unknown";
+    }
+}
+
+const char* turnModeToString(uint8_t turn_mode) {
+    switch (turn_mode) {
+        case 0: return "crab";
+        case 1: return "in_place";
+        default: return "unknown";
+    }
+}
+
+const char* fallbackStageToString(uint8_t fallback_stage) {
+    switch (fallback_stage) {
+        case 0: return "none";
+        case 1: return "stability";
+        case 2: return "degraded_locomotion";
+        case 3: return "safe_stop";
+        case 4: return "fault_hold";
+        default: return "unknown";
+    }
+}
+
 class UdpTelemetryPublisher final : public ITelemetryPublisher {
 public:
     UdpTelemetryPublisher(const TelemetryPublisherConfig& config,
@@ -110,6 +147,49 @@ public:
                 << "\"mode\":" << static_cast<int>(telemetry.status.active_mode) << ","
                 << "\"bus_ok\":" << (telemetry.status.bus_ok ? "true" : "false") << ","
                 << "\"estimator_valid\":" << (telemetry.status.estimator_valid ? "true" : "false") << ","
+                << "\"dynamic_gait\":{"
+                << "\"valid\":" << (telemetry.status.dynamic_gait.valid ? "true" : "false") << ","
+                << "\"gait_family\":\"" << gaitTypeToString(telemetry.status.dynamic_gait.gait_family) << "\","
+                << "\"region\":\"" << dynamicRegionToString(telemetry.status.dynamic_gait.region) << "\","
+                << "\"turn_mode\":\"" << turnModeToString(telemetry.status.dynamic_gait.turn_mode) << "\","
+                << "\"fallback_stage\":\"" << fallbackStageToString(telemetry.status.dynamic_gait.fallback_stage) << "\","
+                << "\"cadence_hz\":" << telemetry.status.dynamic_gait.cadence_hz << ","
+                << "\"reach_utilization\":" << telemetry.status.dynamic_gait.reach_utilization << ","
+                << "\"suppress_stride_progression\":"
+                << (telemetry.status.dynamic_gait.suppress_stride_progression ? "true" : "false") << ","
+                << "\"suppress_turning\":"
+                << (telemetry.status.dynamic_gait.suppress_turning ? "true" : "false") << ","
+                << "\"prioritize_stability\":"
+                << (telemetry.status.dynamic_gait.prioritize_stability ? "true" : "false") << ","
+                << "\"envelope\":{"
+                << "\"max_speed_normalized\":" << telemetry.status.dynamic_gait.envelope_max_speed_normalized << ","
+                << "\"max_yaw_normalized\":" << telemetry.status.dynamic_gait.envelope_max_yaw_normalized << ","
+                << "\"max_roll_pitch_rad\":" << telemetry.status.dynamic_gait.envelope_max_roll_pitch_rad << ","
+                << "\"allow_tripod\":"
+                << (telemetry.status.dynamic_gait.envelope_allow_tripod ? "true" : "false")
+                << "},"
+                << "\"leg_phase\":["
+                << telemetry.status.dynamic_gait.leg_phase[0] << ','
+                << telemetry.status.dynamic_gait.leg_phase[1] << ','
+                << telemetry.status.dynamic_gait.leg_phase[2] << ','
+                << telemetry.status.dynamic_gait.leg_phase[3] << ','
+                << telemetry.status.dynamic_gait.leg_phase[4] << ','
+                << telemetry.status.dynamic_gait.leg_phase[5] << "],"
+                << "\"leg_duty_cycle\":["
+                << telemetry.status.dynamic_gait.leg_duty_cycle[0] << ','
+                << telemetry.status.dynamic_gait.leg_duty_cycle[1] << ','
+                << telemetry.status.dynamic_gait.leg_duty_cycle[2] << ','
+                << telemetry.status.dynamic_gait.leg_duty_cycle[3] << ','
+                << telemetry.status.dynamic_gait.leg_duty_cycle[4] << ','
+                << telemetry.status.dynamic_gait.leg_duty_cycle[5] << "],"
+                << "\"leg_in_stance\":["
+                << (telemetry.status.dynamic_gait.leg_in_stance[0] ? "true" : "false") << ','
+                << (telemetry.status.dynamic_gait.leg_in_stance[1] ? "true" : "false") << ','
+                << (telemetry.status.dynamic_gait.leg_in_stance[2] ? "true" : "false") << ','
+                << (telemetry.status.dynamic_gait.leg_in_stance[3] ? "true" : "false") << ','
+                << (telemetry.status.dynamic_gait.leg_in_stance[4] ? "true" : "false") << ','
+                << (telemetry.status.dynamic_gait.leg_in_stance[5] ? "true" : "false")
+                << "]},"
                 << "\"angles_deg\":{";
 
         for (int leg = 0; leg < kNumLegs; ++leg) {

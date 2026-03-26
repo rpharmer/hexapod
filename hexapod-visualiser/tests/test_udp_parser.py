@@ -41,6 +41,7 @@ class TelemetryParserTests(unittest.TestCase):
                 "loop_counter",
                 "voltage",
                 "current",
+                "dynamic_gait",
             },
         )
         self.assertEqual(list(payload["angles_deg"].keys()), ["LF", "LM", "LR", "RF", "RM", "RR"])
@@ -51,6 +52,7 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertIsNone(payload["loop_counter"])
         self.assertIsNone(payload["voltage"])
         self.assertIsNone(payload["current"])
+        self.assertIsNone(payload["dynamic_gait"])
 
     def test_udp_protocol_merges_partial_updates_with_schema_gate(self):
         state = server.TelemetryState()
@@ -212,7 +214,8 @@ class TelemetryParserTests(unittest.TestCase):
             (
                 b'{"schema_version": 1, "type":"joints", "timestamp_ms": 1001, '
                 b'"active_mode":"walk", "active_fault":"none", "bus_ok":true, '
-                b'"estimator_valid":false, "loop_counter":123, "voltage":11.4, "current":1.8}'
+                b'"estimator_valid":false, "loop_counter":123, "voltage":11.4, "current":1.8, '
+                b'"dynamic_gait":{"gait_family":"ripple","region":"arc","cadence_hz":1.8}}'
             ),
             ("127.0.0.1", 9000),
         )
@@ -225,6 +228,8 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.loop_counter, 123)
         self.assertEqual(state.voltage, 11.4)
         self.assertEqual(state.current, 1.8)
+        self.assertEqual(state.dynamic_gait["gait_family"], "ripple")
+        self.assertEqual(state.dynamic_gait["region"], "arc")
         
     def test_udp_protocol_ignores_unknown_geometry_keys_in_geometry_object(self):
         state = server.TelemetryState()

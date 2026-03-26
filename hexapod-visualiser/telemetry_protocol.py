@@ -129,6 +129,10 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
             self.state.current = float(message["current"])
             changed = True
 
+        if isinstance(message.get("dynamic_gait"), dict):
+            self.state.dynamic_gait = message["dynamic_gait"]
+            changed = True
+
         return changed
 
     def _sanitize_geometry_update(self, geometry: dict[str, Any], *, source: str) -> dict[str, float]:

@@ -94,6 +94,7 @@ WebSocket payloads emitted by `TelemetryState.to_payload` include:
 | `loop_counter` | integer or `null` | yes | control loop counter when present |
 | `voltage` | number or `null` | yes | power bus voltage when present |
 | `current` | number or `null` | yes | power bus current when present |
+| `dynamic_gait` | object or `null` | yes | dynamic gait internals (family/region/fallback/envelope/per-leg phase+duty+stance) for tuning + safety validation |
 
 Optionality semantics:
 - These fields are **always present in WebSocket payloads** but may be `null` until UDP telemetry includes a valid value.

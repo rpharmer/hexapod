@@ -63,6 +63,43 @@ const char* toString(BridgeFailureDomain domain) {
     return "unknown";
 }
 
+const char* toString(GaitType gait) {
+    switch (gait) {
+        case GaitType::TRIPOD: return "TRIPOD";
+        case GaitType::RIPPLE: return "RIPPLE";
+        case GaitType::WAVE: return "WAVE";
+    }
+    return "UNKNOWN";
+}
+
+const char* toStringDynamicRegion(uint8_t region) {
+    switch (region) {
+        case 0: return "ARC";
+        case 1: return "PIVOT";
+        case 2: return "REORIENTATION";
+        default: return "UNKNOWN";
+    }
+}
+
+const char* toStringTurnMode(uint8_t mode) {
+    switch (mode) {
+        case 0: return "CRAB";
+        case 1: return "IN_PLACE";
+        default: return "UNKNOWN";
+    }
+}
+
+const char* toStringFallbackStage(uint8_t stage) {
+    switch (stage) {
+        case 0: return "NONE";
+        case 1: return "STABILITY";
+        case 2: return "DEGRADED_LOCOMOTION";
+        case 3: return "SAFE_STOP";
+        case 4: return "FAULT_HOLD";
+        default: return "UNKNOWN";
+    }
+}
+
 }  // namespace
 
 namespace status_reporter {
@@ -81,6 +118,24 @@ void logStatus(const std::shared_ptr<logging::AsyncLogger>& logger,
         " bus=", (status.bus_ok ? "ok" : "bad"),
         " fault=", toString(status.active_fault),
         " loops=", status.loop_counter);
+
+    if (status.dynamic_gait.valid) {
+        LOG_INFO(
+            logger,
+            "[diag.gait] family=", toString(status.dynamic_gait.gait_family),
+            " region=", toStringDynamicRegion(status.dynamic_gait.region),
+            " turn=", toStringTurnMode(status.dynamic_gait.turn_mode),
+            " fallback=", toStringFallbackStage(status.dynamic_gait.fallback_stage),
+            " cadence_hz=", status.dynamic_gait.cadence_hz,
+            " reach_util=", status.dynamic_gait.reach_utilization,
+            " env_speed_max=", status.dynamic_gait.envelope_max_speed_normalized,
+            " env_yaw_max=", status.dynamic_gait.envelope_max_yaw_normalized,
+            " env_max_rp_rad=", status.dynamic_gait.envelope_max_roll_pitch_rad,
+            " env_tripod=", (status.dynamic_gait.envelope_allow_tripod ? "yes" : "no"),
+            " suppress_stride=", (status.dynamic_gait.suppress_stride_progression ? "yes" : "no"),
+            " suppress_turn=", (status.dynamic_gait.suppress_turning ? "yes" : "no"),
+            " prioritize_stability=", (status.dynamic_gait.prioritize_stability ? "yes" : "no"));
+    }
 
     if (bridge_result.has_value() && bridge_result->error != BridgeError::None) {
         LOG_WARN(logger,
