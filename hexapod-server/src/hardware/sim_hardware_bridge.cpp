@@ -19,9 +19,8 @@ bool SimHardwareBridge::init() {
     state_.current = fault_toggles_.high_current ? fault_toggles_.high_current_value
                                                  : fault_toggles_.nominal_current;
     state_.bus_ok = !fault_toggles_.drop_bus;
-    if (fault_toggles_.forced_contacts.has_value()) {
-        state_.foot_contacts = *fault_toggles_.forced_contacts;
-    }
+    state_.foot_contacts = fault_toggles_.forced_contacts.value_or(std::array<bool, kNumLegs>{
+        true, true, true, true, true, true});
 
     state_.timestamp_us = now_us();
     initialized_ = true;
@@ -51,9 +50,8 @@ bool SimHardwareBridge::read(RobotState& out) {
                                                 : fault_toggles_.nominal_voltage;
     state_.current = fault_toggles_.high_current ? fault_toggles_.high_current_value
                                                  : fault_toggles_.nominal_current;
-    if (fault_toggles_.forced_contacts.has_value()) {
-        state_.foot_contacts = *fault_toggles_.forced_contacts;
-    }
+    state_.foot_contacts = fault_toggles_.forced_contacts.value_or(std::array<bool, kNumLegs>{
+        true, true, true, true, true, true});
 
     state_.timestamp_us = now_us();
     out = state_;
