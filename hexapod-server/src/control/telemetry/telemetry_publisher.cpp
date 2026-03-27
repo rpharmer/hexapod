@@ -1,4 +1,5 @@
 #include "telemetry_publisher.hpp"
+#include "autonomy/mission_executive.hpp"
 
 #include <arpa/inet.h>
 #include <cerrno>
@@ -71,6 +72,18 @@ const char* fallbackStageToString(uint8_t fallback_stage) {
         case 4: return "fault_hold";
         default: return "unknown";
     }
+}
+
+const char* missionStateToString(uint8_t mission_state) {
+    switch (static_cast<autonomy::MissionState>(mission_state)) {
+        case autonomy::MissionState::Idle: return "idle";
+        case autonomy::MissionState::Ready: return "ready";
+        case autonomy::MissionState::Exec: return "exec";
+        case autonomy::MissionState::Paused: return "paused";
+        case autonomy::MissionState::Aborted: return "aborted";
+        case autonomy::MissionState::Complete: return "complete";
+    }
+    return "unknown";
 }
 
 class UdpTelemetryPublisher final : public ITelemetryPublisher {
@@ -151,7 +164,19 @@ public:
                 << (telemetry.imu_reads_enabled ? "true" : "false")
                 << ",\"read_mode\":\""
                 << (telemetry.imu_reads_enabled ? "enabled" : "disabled")
-                << "\""
+                << "\"},\"autonomy\":{"
+                << "\"enabled\":" << (telemetry.status.autonomy.enabled ? "true" : "false") << ","
+                << "\"step_ok\":" << (telemetry.status.autonomy.step_ok ? "true" : "false") << ","
+                << "\"blocked\":" << (telemetry.status.autonomy.blocked ? "true" : "false") << ","
+                << "\"no_progress\":" << (telemetry.status.autonomy.no_progress ? "true" : "false") << ","
+                << "\"recovery_active\":" << (telemetry.status.autonomy.recovery_active ? "true" : "false") << ","
+                << "\"motion_allowed\":" << (telemetry.status.autonomy.motion_allowed ? "true" : "false") << ","
+                << "\"locomotion_sent\":" << (telemetry.status.autonomy.locomotion_sent ? "true" : "false") << ","
+                << "\"mission_loaded\":" << (telemetry.status.autonomy.mission_loaded ? "true" : "false") << ","
+                << "\"mission_running\":" << (telemetry.status.autonomy.mission_running ? "true" : "false") << ","
+                << "\"mission_state\":\"" << missionStateToString(telemetry.status.autonomy.mission_state) << "\","
+                << "\"mission_completed_waypoints\":" << telemetry.status.autonomy.mission_completed_waypoints << ","
+                << "\"mission_total_waypoints\":" << telemetry.status.autonomy.mission_total_waypoints
                 << "}}},"
                 << "\"dynamic_gait\":{"
                 << "\"valid\":" << (telemetry.status.dynamic_gait.valid ? "true" : "false") << ","

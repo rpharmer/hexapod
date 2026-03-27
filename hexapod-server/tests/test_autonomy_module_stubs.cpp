@@ -31,7 +31,7 @@ bool testLifecycleTransitions() {
     }
 
     const auto health = module.health();
-    if (!expect(health.heartbeat_timestamp_ms == 321,
+    if (!expect(health.heartbeat_timestamp_ms == TimestampMs{321},
                 "step should update heartbeat timestamp")) {
         return false;
     }

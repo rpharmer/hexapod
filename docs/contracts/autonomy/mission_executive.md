@@ -27,6 +27,10 @@ Required transitions:
 - Operator controls: start/pause/resume/abort
 - Nav/recovery status updates
 
+Mission script ingestion boundary metadata:
+- `ContractEnvelope.stream_id = autonomy.mission_script.ingress`
+- `contract_enforcer` validation enforces compatible `contract_version`, required `frame_id`/`correlation_id`, monotonic `sample_id`, and freshness checks.
+
 ## Outputs
 - Mission status snapshot:
   - `mission_id`

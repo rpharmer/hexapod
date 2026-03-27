@@ -24,12 +24,28 @@ enum class ProcessCriticality {
     NonCritical,
 };
 
+enum class ProcessGroup {
+    Critical,
+    SoftRealtime,
+    NonCritical,
+};
+
 struct ModuleProcessContract {
     std::string module_name{};
     ProcessCriticality criticality{ProcessCriticality::NonCritical};
+    ProcessGroup process_group{ProcessGroup::NonCritical};
     uint64_t heartbeat_timeout_ms{0};
     uint64_t max_restarts{0};
+    bool safe_stop_on_exhausted_restart{false};
     std::vector<std::string> dependencies{};
+};
+
+struct IpcBoundaryContract {
+    std::string producer_module{};
+    std::string consumer_module{};
+    std::string message_type{};
+    ProcessGroup producer_group{ProcessGroup::NonCritical};
+    ProcessGroup consumer_group{ProcessGroup::NonCritical};
 };
 
 struct ModuleSupervisorStatus {
@@ -47,6 +63,7 @@ struct ModuleSupervisorStatus {
 struct AutonomyStackConfig {
     uint64_t no_progress_timeout_ms{1000};
     uint64_t recovery_retry_budget{2};
+    TraversabilityPolicyConfig traversability_policy{};
     LocomotionInterfaceModuleShell::CommandSink locomotion_command_sink{};
 };
 
@@ -116,6 +133,7 @@ public:
     MissionEvent startMission();
 
     [[nodiscard]] std::vector<ModuleProcessContract> processContracts() const;
+    [[nodiscard]] std::vector<IpcBoundaryContract> ipcBoundaryContracts() const;
     [[nodiscard]] std::vector<ModuleSupervisorStatus> supervisorStatuses() const;
     [[nodiscard]] std::optional<ModuleSupervisorStatus> supervisorStatus(std::string_view module_name) const;
 
@@ -140,7 +158,8 @@ private:
     bool validateEnvelopeForStream(const ContractEnvelope& envelope,
                                    uint64_t now_ms,
                                    const ContractValidationConfig& config,
-                                   const std::string& fallback_stream_id);
+                                   const std::string& expected_stream_id,
+                                   ContractValidationResult* validation_result = nullptr);
     [[nodiscard]] AutonomyModuleStub* moduleByName(std::string_view module_name);
     [[nodiscard]] const AutonomyModuleStub* moduleByName(std::string_view module_name) const;
     bool faultInjected(const AutonomyStepInput& input,
@@ -150,6 +169,7 @@ private:
                                  uint64_t now_ms,
                                  bool crashed,
                                  bool timed_out);
+    [[nodiscard]] bool processGroupHealthy(ProcessGroup group, uint64_t now_ms) const;
     bool dependencyHealthy(const std::string& dependency_name, uint64_t now_ms) const;
     void applyDegradedMode(const AutonomyStepInput& input, AutonomyStepOutput* output);
 

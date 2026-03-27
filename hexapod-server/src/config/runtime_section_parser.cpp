@@ -111,6 +111,11 @@ bool parseRuntimeSection(const toml::value& root,
       {"Runtime.Autonomy.Enabled", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
       {"Runtime.Autonomy.NoProgressTimeoutMs", ValueType::Double, false, true, 1.0, 60000.0, "", false, 1000.0},
       {"Runtime.Autonomy.RecoveryRetryBudget", ValueType::Double, false, true, 0.0, 100.0, "", false, 2.0},
+      {"Runtime.Autonomy.Traversability.OccupancyRiskWeight", ValueType::Double, false, true, 0.0, 10.0, "", false, 0.65},
+      {"Runtime.Autonomy.Traversability.GradientRiskWeight", ValueType::Double, false, true, 0.0, 10.0, "", false, 0.35},
+      {"Runtime.Autonomy.Traversability.ConfidenceCostWeight", ValueType::Double, false, true, 0.0, 10.0, "", false, 1.0},
+      {"Runtime.Autonomy.Traversability.RiskBlockThreshold", ValueType::Double, false, true, 0.0, 1.0, "", false, 0.85},
+      {"Runtime.Autonomy.Traversability.ConfidenceBlockThreshold", ValueType::Double, false, true, 0.0, 1.0, "", false, 0.3},
       {"Runtime.Log.FilePath", ValueType::String, false, false, kNoBoundsMin, kNoBoundsMax, "app.log", false, 0.0},
       {"Runtime.Log.EnableFile", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", true, 0.0},
       {"Runtime.Telemetry.Enable", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
@@ -171,19 +176,34 @@ bool parseRuntimeSection(const toml::value& root,
   out.autonomyRecoveryRetryBudget = static_cast<uint64_t>(config_validation::parseDoubleWithFallback(
       root, schema[10].key, schema[10].default_double, schema[10].min_value, schema[10].max_value,
       "runtime", logger, diagnostics));
-
-  out.logFilePath = findOrByPath<std::string>(root, schema[11].key, schema[11].default_string);
-  out.logToFile = findOrByPath<bool>(root, schema[12].key, schema[12].default_bool);
-  out.telemetryEnabled = findOrByPath<bool>(root, schema[13].key, schema[13].default_bool);
-  out.telemetryUdpHost = findOrByPath<std::string>(root, schema[14].key, schema[14].default_string);
-  out.telemetryUdpPort = static_cast<int>(config_validation::parseDoubleWithFallback(
+  out.autonomyTraversabilityOccupancyRiskWeight = config_validation::parseDoubleWithFallback(
+      root, schema[11].key, schema[11].default_double, schema[11].min_value, schema[11].max_value,
+      "runtime", logger, diagnostics);
+  out.autonomyTraversabilityGradientRiskWeight = config_validation::parseDoubleWithFallback(
+      root, schema[12].key, schema[12].default_double, schema[12].min_value, schema[12].max_value,
+      "runtime", logger, diagnostics);
+  out.autonomyTraversabilityConfidenceCostWeight = config_validation::parseDoubleWithFallback(
+      root, schema[13].key, schema[13].default_double, schema[13].min_value, schema[13].max_value,
+      "runtime", logger, diagnostics);
+  out.autonomyTraversabilityRiskBlockThreshold = config_validation::parseDoubleWithFallback(
+      root, schema[14].key, schema[14].default_double, schema[14].min_value, schema[14].max_value,
+      "runtime", logger, diagnostics);
+  out.autonomyTraversabilityConfidenceBlockThreshold = config_validation::parseDoubleWithFallback(
       root, schema[15].key, schema[15].default_double, schema[15].min_value, schema[15].max_value,
+      "runtime", logger, diagnostics);
+
+  out.logFilePath = findOrByPath<std::string>(root, schema[16].key, schema[16].default_string);
+  out.logToFile = findOrByPath<bool>(root, schema[17].key, schema[17].default_bool);
+  out.telemetryEnabled = findOrByPath<bool>(root, schema[18].key, schema[18].default_bool);
+  out.telemetryUdpHost = findOrByPath<std::string>(root, schema[19].key, schema[19].default_string);
+  out.telemetryUdpPort = static_cast<int>(config_validation::parseDoubleWithFallback(
+      root, schema[20].key, schema[20].default_double, schema[20].min_value, schema[20].max_value,
       "runtime", logger, diagnostics));
   out.telemetryPublishPeriodMs = static_cast<int>(config_validation::parseDoubleWithFallback(
-      root, schema[16].key, schema[16].default_double, schema[16].min_value, schema[16].max_value,
+      root, schema[21].key, schema[21].default_double, schema[21].min_value, schema[21].max_value,
       "runtime", logger, diagnostics));
   out.telemetryGeometryRefreshPeriodMs = static_cast<int>(config_validation::parseDoubleWithFallback(
-      root, schema[17].key, schema[17].default_double, schema[17].min_value, schema[17].max_value,
+      root, schema[22].key, schema[22].default_double, schema[22].min_value, schema[22].max_value,
       "runtime", logger, diagnostics));
 
   if (out.logToFile && out.logFilePath.empty()) {
@@ -196,26 +216,26 @@ bool parseRuntimeSection(const toml::value& root,
     }
   }
 
-  out.telemetryEnabled = findOrByPath<bool>(root, schema[13].key, schema[13].default_bool);
-  out.telemetryHost = findOrByPath<std::string>(root, schema[14].key, schema[14].default_string);
+  out.telemetryEnabled = findOrByPath<bool>(root, schema[18].key, schema[18].default_bool);
+  out.telemetryHost = findOrByPath<std::string>(root, schema[19].key, schema[19].default_string);
   if (out.telemetryHost.empty()) {
-    out.telemetryHost = schema[14].default_string;
-    config_validation::emitDiagnostic(diagnostics, "runtime", schema[14].key, "empty_value",
+    out.telemetryHost = schema[19].default_string;
+    config_validation::emitDiagnostic(diagnostics, "runtime", schema[19].key, "empty_value",
                                       "Runtime.Telemetry.Host was empty, using default 127.0.0.1");
     if (logger) {
       LOG_WARN(logger, "[runtime] Runtime.Telemetry.Host was empty, using default 127.0.0.1");
     }
   }
   out.telemetryPort = config_validation::parseIntWithFallback(
-      root, schema[15].key, static_cast<int>(schema[15].default_double),
-      static_cast<int>(schema[15].min_value), static_cast<int>(schema[15].max_value), "runtime",
+      root, schema[20].key, static_cast<int>(schema[20].default_double),
+      static_cast<int>(schema[20].min_value), static_cast<int>(schema[20].max_value), "runtime",
       logger, diagnostics);
   out.telemetryPublishRateHz = config_validation::parseDoubleWithFallback(
-      root, schema[16].key, schema[16].default_double, schema[16].min_value, schema[16].max_value,
+      root, schema[21].key, schema[21].default_double, schema[21].min_value, schema[21].max_value,
       "runtime", logger, diagnostics);
   out.telemetryGeometryResendIntervalSec = config_validation::parseDoubleWithFallback(
-      root, schema[17].key, schema[17].default_double, schema[17].min_value,
-      schema[17].max_value, "runtime", logger, diagnostics);
+      root, schema[22].key, schema[22].default_double, schema[22].min_value,
+      schema[22].max_value, "runtime", logger, diagnostics);
   return true;
 }
 

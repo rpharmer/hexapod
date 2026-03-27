@@ -42,6 +42,7 @@ Rules:
 - `utc_timestamp_ms` (optional): wall-clock for logs/operator UX.
 - `sample_id`: strictly increasing per data stream.
 - `correlation_id`: carried across mission->nav->planner->arbiter events for traceability.
+- `stream_id`: canonical boundary identifier. Producers/consumers SHOULD use stable IDs (for example `autonomy.step.ingress`) so monotonic sample checks are applied to the intended stream and not fragmented by naming drift.
 
 Staleness baseline classes:
 - **hard realtime control inputs:** stale if `age_ms > 100`
@@ -49,6 +50,12 @@ Staleness baseline classes:
 - **world/traversability:** stale if `age_ms > 1000`
 
 Module-specific contracts may tighten these limits.
+
+Validation baseline at process/module boundaries:
+- reject invalid major contract versions
+- reject stale timestamps (`age_ms > max_age_ms` or future timestamps)
+- reject duplicate or out-of-order `sample_id` per `stream_id`
+- reject missing required metadata (`frame_id`, `correlation_id`) for traced control streams
 
 ## 5) QoS Classes
 

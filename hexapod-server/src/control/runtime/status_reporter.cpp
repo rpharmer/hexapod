@@ -1,4 +1,5 @@
 #include "status_reporter.hpp"
+#include "autonomy/mission_executive.hpp"
 
 namespace {
 
@@ -100,6 +101,18 @@ const char* toStringFallbackStage(uint8_t stage) {
     }
 }
 
+const char* toStringMissionState(uint8_t state) {
+    switch (static_cast<autonomy::MissionState>(state)) {
+        case autonomy::MissionState::Idle: return "IDLE";
+        case autonomy::MissionState::Ready: return "READY";
+        case autonomy::MissionState::Exec: return "EXEC";
+        case autonomy::MissionState::Paused: return "PAUSED";
+        case autonomy::MissionState::Aborted: return "ABORTED";
+        case autonomy::MissionState::Complete: return "COMPLETE";
+    }
+    return "UNKNOWN";
+}
+
 }  // namespace
 
 namespace status_reporter {
@@ -135,6 +148,22 @@ void logStatus(const std::shared_ptr<logging::AsyncLogger>& logger,
             " suppress_stride=", (status.dynamic_gait.suppress_stride_progression ? "yes" : "no"),
             " suppress_turn=", (status.dynamic_gait.suppress_turning ? "yes" : "no"),
             " prioritize_stability=", (status.dynamic_gait.prioritize_stability ? "yes" : "no"));
+    }
+
+    if (status.autonomy.enabled) {
+        LOG_INFO(
+            logger,
+            "[diag.autonomy] step_ok=", (status.autonomy.step_ok ? "yes" : "no"),
+            " blocked=", (status.autonomy.blocked ? "yes" : "no"),
+            " no_progress=", (status.autonomy.no_progress ? "yes" : "no"),
+            " recovery_active=", (status.autonomy.recovery_active ? "yes" : "no"),
+            " motion_allowed=", (status.autonomy.motion_allowed ? "yes" : "no"),
+            " locomotion_sent=", (status.autonomy.locomotion_sent ? "yes" : "no"),
+            " mission_loaded=", (status.autonomy.mission_loaded ? "yes" : "no"),
+            " mission_running=", (status.autonomy.mission_running ? "yes" : "no"),
+            " mission_state=", toStringMissionState(status.autonomy.mission_state),
+            " mission_progress=", status.autonomy.mission_completed_waypoints, "/",
+            status.autonomy.mission_total_waypoints);
     }
 
     if (bridge_result.has_value() && bridge_result->error != BridgeError::None) {
