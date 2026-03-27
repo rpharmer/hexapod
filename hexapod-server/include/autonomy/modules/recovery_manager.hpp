@@ -6,13 +6,14 @@
 
 namespace autonomy {
 
+// Thin façade shell: delegates to RecoveryManager and snapshots the last output.
 class RecoveryManagerModuleShell : public AutonomyModuleStub {
 public:
     explicit RecoveryManagerModuleShell(uint64_t retry_budget = 2);
 
     void reset();
     RecoveryDecision onNoProgress(bool triggered,
-                                ContractEnvelope envelope = {});
+                                  ContractEnvelope envelope = {});
     [[nodiscard]] RecoveryDecision lastDecision() const;
 
 private:

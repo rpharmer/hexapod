@@ -10,6 +10,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -63,7 +64,10 @@ struct ModuleSupervisorStatus {
 struct AutonomyStackConfig {
     uint64_t no_progress_timeout_ms{1000};
     uint64_t recovery_retry_budget{2};
+    LocalizationValidationPolicy localization_policy{};
     TraversabilityPolicyConfig traversability_policy{};
+    TraversabilityScoreCompositionPolicy traversability_score_policy{};
+    LocalPlannerPolicyConfig local_planner_policy{};
     LocomotionInterfaceModuleShell::CommandSink locomotion_command_sink{};
 };
 
@@ -160,6 +164,11 @@ private:
                                    const ContractValidationConfig& config,
                                    const std::string& expected_stream_id,
                                    ContractValidationResult* validation_result = nullptr);
+    bool runValidatedStage(const std::string& stream_id,
+                           uint64_t now_ms,
+                           const std::string& correlation_id,
+                           const ContractValidationConfig& config,
+                           const std::function<bool(const ContractEnvelope&)>& stage_body);
     [[nodiscard]] AutonomyModuleStub* moduleByName(std::string_view module_name);
     [[nodiscard]] const AutonomyModuleStub* moduleByName(std::string_view module_name) const;
     bool faultInjected(const AutonomyStepInput& input,

@@ -11,6 +11,14 @@
 
 namespace autonomy {
 
+struct LocalizationValidationPolicy {
+    std::string expected_frame_id{"map"};
+    uint64_t stale_threshold_ms{250};
+    bool require_frame_match{true};
+    bool reject_future_timestamps{true};
+    bool reject_zero_timestamp{true};
+};
+
 struct LocalizationSourceObservation {
     bool valid{false};
     std::string frame_id{"map"};
@@ -38,8 +46,7 @@ LocalizationSourceObservation localizationObservationFromOdometry(double x_m,
 
 class LocalizationModuleShell : public AutonomyModuleStub {
 public:
-    explicit LocalizationModuleShell(std::string expected_frame = "map",
-                                     uint64_t stale_threshold_ms = 250);
+    explicit LocalizationModuleShell(LocalizationValidationPolicy policy = {});
 
     LocalizationEstimate update(const LocalizationSourceObservation& observation,
                                 uint64_t now_ms,
@@ -47,12 +54,12 @@ public:
     [[nodiscard]] LocalizationEstimate estimate() const;
 
 private:
+    bool isFrameValid(const LocalizationSourceObservation& observation) const;
     bool isObservationFresh(const LocalizationSourceObservation& observation,
                             uint64_t now_ms) const;
 
     LocalizationEstimate estimate_{};
-    std::string expected_frame_{};
-    uint64_t stale_threshold_ms_{250};
+    LocalizationValidationPolicy policy_{};
 };
 
 } // namespace autonomy

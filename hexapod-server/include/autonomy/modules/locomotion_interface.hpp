@@ -10,6 +10,7 @@
 
 namespace autonomy {
 
+// Thin façade shell: handles command dispatch and snapshots the last command status.
 class LocomotionInterfaceModuleShell : public AutonomyModuleStub {
 public:
     using CommandSink = std::function<bool(const Waypoint& target, std::string* failure_reason)>;

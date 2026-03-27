@@ -1,4 +1,5 @@
 #include "autonomy/modules/recovery_manager.hpp"
+#include "autonomy/modules/shell_utils.hpp"
 
 namespace autonomy {
 
@@ -14,8 +15,8 @@ void RecoveryManagerModuleShell::reset() {
 RecoveryDecision RecoveryManagerModuleShell::onNoProgress(bool triggered,
                                                           ContractEnvelope envelope) {
     (void)envelope;
-    last_decision_ = triggered ? recovery_manager_.onNoProgress() : RecoveryDecision{};
-    return last_decision_;
+    return modules::storeLast(last_decision_,
+                              triggered ? recovery_manager_.onNoProgress() : RecoveryDecision{});
 }
 
 RecoveryDecision RecoveryManagerModuleShell::lastDecision() const {

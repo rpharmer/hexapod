@@ -1,4 +1,5 @@
 #include "autonomy/modules/navigation_manager.hpp"
+#include "autonomy/modules/shell_utils.hpp"
 
 namespace autonomy {
 
@@ -10,8 +11,8 @@ NavigationUpdate NavigationManagerModuleShell::computeIntent(const WaypointMissi
                                                              bool blocked,
                                                              ContractEnvelope envelope) {
     (void)envelope;
-    last_update_ = navigation_manager_.planNextIntent(mission, completed_waypoints, blocked);
-    return last_update_;
+    return modules::storeLast(last_update_,
+                              navigation_manager_.planNextIntent(mission, completed_waypoints, blocked));
 }
 
 NavigationUpdate NavigationManagerModuleShell::lastUpdate() const {
