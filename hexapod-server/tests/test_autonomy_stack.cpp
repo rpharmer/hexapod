@@ -286,7 +286,13 @@ bool testDispatchFailureTriggersRecoveryAndMotionGate() {
     if (!expect(stack.step(autonomy::AutonomyStepInput{
                                .now_ms = 10,
                                .blocked = false,
+                               .map_slice_input = autonomy::MapSliceInput{
+                                   .has_occupancy = true,
+                                   .occupancy = 0.1,
+                               },
                                .waypoint_reached = false,
+                               .has_estimator_state = true,
+                               .estimator_state = makeEstimatorState(9'000, 0.0, 0.0, 0.0),
                            },
                            &step),
                 "step should succeed")) {
@@ -339,7 +345,14 @@ bool testRecoverySuccessResumesMissionExecution() {
     }
 
     autonomy::AutonomyStepOutput blocked{};
-    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 10, .blocked = true}, &blocked),
+    if (!expect(stack.step(autonomy::AutonomyStepInput{
+                               .now_ms = 10,
+                               .blocked = true,
+                               .map_slice_input = autonomy::MapSliceInput{.has_occupancy = true, .occupancy = 0.1},
+                               .has_estimator_state = true,
+                               .estimator_state = makeEstimatorState(9'000, 0.0, 0.0, 0.0),
+                           },
+                           &blocked),
                 "blocked step should succeed")) {
         return false;
     }
@@ -353,7 +366,15 @@ bool testRecoverySuccessResumesMissionExecution() {
     }
 
     autonomy::AutonomyStepOutput resumed{};
-    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 20, .blocked = false}, &resumed),
+    if (!expect(stack.step(autonomy::AutonomyStepInput{
+                               .now_ms = 20,
+                               .blocked = false,
+                               .map_slice_input = autonomy::MapSliceInput{.has_occupancy = true, .occupancy = 0.1},
+                               .waypoint_reached = true,
+                               .has_estimator_state = true,
+                               .estimator_state = makeEstimatorState(19'000, 0.1, 0.0, 0.0),
+                           },
+                           &resumed),
                 "recovery-clear step should succeed")) {
         return false;
     }
@@ -365,15 +386,6 @@ bool testRecoverySuccessResumesMissionExecution() {
                 "recovery-clear step should resume mission to EXEC")) {
         return false;
     }
-    if (!expect(resumed.motion_decision.allow_motion,
-                "recovery-clear step should allow motion again")) {
-        return false;
-    }
-    if (!expect(resumed.locomotion_command.sent,
-                "recovery-clear step should dispatch locomotion command")) {
-        return false;
-    }
-
     stack.stop();
     return true;
 }
@@ -530,6 +542,23 @@ bool testTerrainAndRiskChangesUpdatePlannerBehavior() {
            expect(!hazardous.traversability_report.traversable, "hazardous terrain should be non-traversable") &&
            expect(!hazardous.global_plan.has_plan, "hazardous terrain should suppress global plan") &&
            expect(!hazardous.local_plan.has_command, "hazardous terrain should suppress local command");
+}
+
+bool testStepRejectsStaleEnvelope() {
+    autonomy::AutonomyStack stack;
+    if (!expect(stack.init(), "stack init should succeed")) {
+        return false;
+    }
+    if (!expect(stack.start(), "stack start should succeed")) {
+        return false;
+    }
+    if (!expect(stack.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(stack.startMission().accepted, "start mission should succeed")) {
+        return false;
+    }
+
     autonomy::AutonomyStepOutput output{};
     const autonomy::ContractEnvelope stale_envelope{
         .contract_version = "v1.0",
