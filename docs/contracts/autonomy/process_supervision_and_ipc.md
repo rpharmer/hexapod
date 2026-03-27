@@ -1,8 +1,18 @@
 # Process Supervision + IPC Contracts (v1)
 
-## Process boundaries
+## Current implementation status (2026-03-27)
 
-The autonomy stack is split into three explicit process groups with strict IPC crossings:
+The process-group model is **implemented as runtime contract metadata and supervision behavior inside `AutonomyStack`**.
+
+- Criticality classes, process groups, heartbeat timeouts, restart budgets, and safe-stop semantics are active and tested.
+- IPC boundaries are explicitly modeled and validated as typed contract edges.
+- Fault injection validates restart/isolation/degraded behavior.
+
+The stack is **not yet physically split into separate OS processes**. The tables below describe the canonical target boundaries used by the in-process supervisor today and by future multi-process runtime work.
+
+## Logical process boundaries
+
+The autonomy stack defines three process groups with explicit contract crossings:
 
 - **critical**: safety/motion gating and final dispatch path.
 - **soft-RT**: planning + state-estimation path.
@@ -27,17 +37,17 @@ Each module contract maps to one process group and a restart/safe-stop policy:
 
 Supervisor semantics:
 
-1. Every process publishes a heartbeat timestamp each control cycle.
+1. Every module publishes heartbeat timestamps each cycle.
 2. Crash and timeout faults are monitored independently.
-3. If restart budget is available and all declared dependencies are healthy, supervisor performs `stop -> init -> start` restart.
+3. If restart budget is available and declared dependencies are healthy, supervisor performs `stop -> init -> start` restart.
 4. If dependencies are unhealthy, restart is deferred and the module is isolated.
 5. If restart budget is exhausted:
    - contracts with `safe-stop on exhausted restarts = yes` fail the autonomy step (hard fault),
-   - all others are isolated and the stack remains up in degraded behavior.
+   - all others are isolated and the stack remains in degraded behavior.
 
 ## IPC contracts (logical)
 
-The v1 IPC schema between process boundaries is defined by typed messages already used in module shells:
+The v1 IPC schema between process boundaries is represented by typed message boundaries:
 
 - `mission_executive -> navigation_manager` via `NavigationUpdate` (**critical -> soft-RT boundary**).
 - `navigation_manager -> global_planner` via `NavigationUpdate`.
@@ -54,14 +64,14 @@ QoS contract:
 
 - Producers must update heartbeat every cycle they emit data.
 - Consumers must treat dependencies as stale if heartbeat age exceeds timeout.
-- Stale or unavailable dependencies must be handled through degraded-mode behavior (below), not by unsafe best-effort dispatch.
+- Stale or unavailable dependencies must be handled through degraded-mode behavior, not unsafe best-effort dispatch.
 
 ## Degraded-mode behaviors
 
 Safe fallback is explicit and deterministic for high-risk dependency loss:
 
 1. **Stale localization**
-   - Trigger: localization timeout/crash, invalid localization estimate, or soft-RT group heartbeat degradation.
+   - Trigger: localization timeout/crash, invalid localization estimate, or soft-RT heartbeat degradation.
    - Action: motion gated off, locomotion dispatch suppressed.
    - Output reason: `"stale localization"`.
 
@@ -77,11 +87,12 @@ Safe fallback is explicit and deterministic for high-risk dependency loss:
 
 ## Integration verification
 
-`test_autonomy_supervision_integration` injects:
+`test_autonomy_supervision_integration` verifies:
 
-- soft-RT crash (`global_planner`) and verifies isolation + restart + planner fallback;
-- noncritical crash (`mission_scripting`) and verifies isolation without stack teardown;
-- soft-RT timeout (`localization`) and verifies stale-localization safe hold;
-- repeated critical crash (`motion_arbiter`) and verifies safe-stop after restart budget exhaustion.
+- process-boundary metadata and process-group policy contracts;
+- soft-RT crash (`global_planner`) isolation + restart + planner fallback;
+- noncritical crash (`mission_scripting`) isolation without stack teardown;
+- soft-RT timeout (`localization`) stale-localization safe hold behavior;
+- repeated critical crash (`motion_arbiter`) safe-stop after restart budget exhaustion.
 
-These tests assert process boundary metadata, watchdog behavior, restart accounting, safe-stop behavior, and degraded-mode output reasons.
+These tests assert boundary metadata, watchdog behavior, restart accounting, safe-stop semantics, and degraded-mode reasons.
