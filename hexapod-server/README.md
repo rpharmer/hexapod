@@ -68,6 +68,16 @@ cmake -S . -B build-tests -DHEXAPOD_SERVER_BUILD_TESTS=ON
 cmake --build build-tests -j
 ```
 
+Run gate profiles (from repository root):
+
+```bash
+scripts/run_acceptance_gates.sh --profile fast-sim
+scripts/run_acceptance_gates.sh --profile extended-hil
+```
+
+- `fast-sim` runs quick simulation checks (`fast_sim` ctest label).
+- `extended-hil` runs hardware-targeted acceptance checks (`extended_hil` ctest label) and writes JSON/CSV artifacts to `hexapod-server/build-tests/hil-artifacts/`.
+
 ## Run
 
 ```bash
