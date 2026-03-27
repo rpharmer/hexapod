@@ -8,7 +8,9 @@ MotionArbiterModuleShell::MotionArbiterModuleShell()
 MotionDecision MotionArbiterModuleShell::arbitrate(bool estop,
                                                    bool hold,
                                                    bool recovery_active,
-                                                   const NavigationUpdate& nav_update) {
+                                                   const NavigationUpdate& nav_update,
+                                                   ContractEnvelope envelope) {
+    (void)envelope;
     last_decision_ = motion_arbiter_.select(estop, hold, recovery_active, nav_update);
     return last_decision_;
 }

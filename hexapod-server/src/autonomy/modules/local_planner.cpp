@@ -6,7 +6,9 @@ LocalPlannerModuleShell::LocalPlannerModuleShell()
     : AutonomyModuleStub("local_planner") {}
 
 LocalPlan LocalPlannerModuleShell::plan(const GlobalPlan& global_plan,
-                                        bool blocked) {
+                                        bool blocked,
+                                        ContractEnvelope envelope) {
+    (void)envelope;
     if (global_plan.has_plan && !blocked) {
         plan_.has_command = true;
         plan_.target = global_plan.target;

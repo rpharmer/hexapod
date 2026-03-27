@@ -195,12 +195,116 @@ bool testScriptAndContractLoadPath() {
                   "invalid version flag should be set");
 }
 
+bool testStepRejectsStaleEnvelope() {
+    autonomy::AutonomyStack stack;
+    if (!expect(stack.init(), "stack init should succeed")) {
+        return false;
+    }
+    if (!expect(stack.start(), "stack start should succeed")) {
+        return false;
+    }
+    if (!expect(stack.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(stack.startMission().accepted, "start mission should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput output{};
+    const autonomy::ContractEnvelope stale_envelope{
+        .contract_version = "v1.0",
+        .frame_id = "map",
+        .correlation_id = "corr-stale",
+        .stream_id = "autonomy_step_input",
+        .sample_id = 1,
+        .timestamp_ms = 100,
+    };
+    autonomy::ContractValidationConfig config{};
+    config.max_age_ms = 5;
+
+    return expect(!stack.step(autonomy::AutonomyStepInput{.now_ms = 200}, stale_envelope, &output, config),
+                  "stale step envelope should be rejected");
+}
+
+bool testStepRejectsNonMonotonicSamplePerStream() {
+    autonomy::AutonomyStack stack;
+    if (!expect(stack.init(), "stack init should succeed")) {
+        return false;
+    }
+    if (!expect(stack.start(), "stack start should succeed")) {
+        return false;
+    }
+    if (!expect(stack.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(stack.startMission().accepted, "start mission should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput first{};
+    const autonomy::ContractEnvelope envelope_a{
+        .contract_version = "v1.0",
+        .frame_id = "map",
+        .correlation_id = "corr-monotonic-a",
+        .stream_id = "autonomy_step_input",
+        .sample_id = 7,
+        .timestamp_ms = 10,
+    };
+    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 10}, envelope_a, &first),
+                "first step with explicit envelope should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput second{};
+    const autonomy::ContractEnvelope envelope_b{
+        .contract_version = "v1.0",
+        .frame_id = "map",
+        .correlation_id = "corr-monotonic-b",
+        .stream_id = "autonomy_step_input",
+        .sample_id = 7,
+        .timestamp_ms = 20,
+    };
+    return expect(!stack.step(autonomy::AutonomyStepInput{.now_ms = 20}, envelope_b, &second),
+                  "equal sample id on same stream should be rejected");
+}
+
+bool testStepRejectsInvalidContractVersion() {
+    autonomy::AutonomyStack stack;
+    if (!expect(stack.init(), "stack init should succeed")) {
+        return false;
+    }
+    if (!expect(stack.start(), "stack start should succeed")) {
+        return false;
+    }
+    if (!expect(stack.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(stack.startMission().accepted, "start mission should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput output{};
+    const autonomy::ContractEnvelope envelope{
+        .contract_version = "v2.0",
+        .frame_id = "map",
+        .correlation_id = "corr-version",
+        .stream_id = "autonomy_step_input",
+        .sample_id = 1,
+        .timestamp_ms = 10,
+    };
+    return expect(!stack.step(autonomy::AutonomyStepInput{.now_ms = 10}, envelope, &output),
+                  "invalid major contract version should be rejected for step payload ingress");
+}
+
 } // namespace
 
 int main() {
     if (!testHappyPathWiresMissionNavAndMotion() ||
         !testBlockedFlowEscalatesRecoveryToAbort() ||
-        !testScriptAndContractLoadPath()) {
+        !testScriptAndContractLoadPath() ||
+        !testStepRejectsStaleEnvelope() ||
+        !testStepRejectsNonMonotonicSamplePerStream() ||
+        !testStepRejectsInvalidContractVersion()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

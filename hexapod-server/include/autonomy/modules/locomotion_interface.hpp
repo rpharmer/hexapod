@@ -1,6 +1,7 @@
 #pragma once
 
 #include "autonomy/module_stubs.hpp"
+#include "autonomy/common_types.hpp"
 #include "autonomy/modules/module_data.hpp"
 #include "autonomy/motion_arbiter.hpp"
 
@@ -11,7 +12,8 @@ public:
     LocomotionInterfaceModuleShell();
 
     LocomotionCommand dispatch(const MotionDecision& motion_decision,
-                               const LocalPlan& local_plan);
+                               const LocalPlan& local_plan,
+                               ContractEnvelope envelope = {});
     [[nodiscard]] LocomotionCommand lastCommand() const;
 
 private:

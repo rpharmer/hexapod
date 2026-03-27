@@ -11,7 +11,9 @@ void ProgressMonitorModuleShell::reset() {
     last_evaluation_ = {};
 }
 
-ProgressEvaluation ProgressMonitorModuleShell::evaluate(const ProgressSample& sample) {
+ProgressEvaluation ProgressMonitorModuleShell::evaluate(const ProgressSample& sample,
+                                                        ContractEnvelope envelope) {
+    (void)envelope;
     last_evaluation_ = progress_monitor_.evaluate(sample);
     return last_evaluation_;
 }

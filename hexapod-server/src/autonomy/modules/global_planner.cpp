@@ -6,7 +6,9 @@ GlobalPlannerModuleShell::GlobalPlannerModuleShell()
     : AutonomyModuleStub("global_planner") {}
 
 GlobalPlan GlobalPlannerModuleShell::plan(const NavigationUpdate& navigation_update,
-                                          const TraversabilityReport& traversability_report) {
+                                          const TraversabilityReport& traversability_report,
+                                          ContractEnvelope envelope) {
+    (void)envelope;
     if (navigation_update.has_intent && traversability_report.traversable) {
         plan_.has_plan = true;
         plan_.target = navigation_update.intent.target;

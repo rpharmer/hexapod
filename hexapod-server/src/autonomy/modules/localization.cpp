@@ -6,7 +6,9 @@ LocalizationModuleShell::LocalizationModuleShell()
     : AutonomyModuleStub("localization") {}
 
 LocalizationEstimate LocalizationModuleShell::update(const NavigationUpdate& navigation_update,
-                                                     uint64_t timestamp_ms) {
+                                                     uint64_t timestamp_ms,
+                                                     ContractEnvelope envelope) {
+    (void)envelope;
     estimate_.timestamp_ms = timestamp_ms;
     if (navigation_update.has_intent) {
         estimate_.valid = true;

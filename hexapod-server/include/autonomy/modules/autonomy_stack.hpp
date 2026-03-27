@@ -10,6 +10,7 @@
 #include <string>
 #include <array>
 #include <cstdint>
+#include <unordered_map>
 
 namespace autonomy {
 
@@ -55,6 +56,10 @@ public:
     bool init();
     bool start();
     bool step(const AutonomyStepInput& input, AutonomyStepOutput* output);
+    bool step(const AutonomyStepInput& input,
+              const ContractEnvelope& envelope,
+              AutonomyStepOutput* output,
+              const ContractValidationConfig& config = {});
     void stop();
 
     MissionEvent loadMission(const WaypointMission& mission);
@@ -69,6 +74,14 @@ private:
     using ModuleArray = std::array<AutonomyModuleStub*, kModuleCount>;
 
     ModuleArray modules();
+    ContractEnvelope makeInternalEnvelope(const std::string& stream_id,
+                                          const std::string& frame_id,
+                                          const std::string& correlation_id,
+                                          uint64_t timestamp_ms);
+    bool validateEnvelopeForStream(const ContractEnvelope& envelope,
+                                   uint64_t now_ms,
+                                   const ContractValidationConfig& config,
+                                   const std::string& fallback_stream_id);
 
     MissionExecutiveModule mission_executive_module_{};
     MissionScriptingModule mission_scripting_module_{};
@@ -86,7 +99,9 @@ private:
     MissionExecutive mission_executive_{};
     MissionScripting mission_scripting_{};
     ContractEnforcer contract_enforcer_{};
-    std::optional<uint64_t> last_sample_id_{};
+    std::unordered_map<std::string, uint64_t> last_sample_id_by_stream_{};
+    uint64_t generated_sample_id_{0};
+    uint64_t generated_correlation_id_{0};
 };
 
 } // namespace autonomy

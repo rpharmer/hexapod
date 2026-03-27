@@ -6,7 +6,9 @@ LocomotionInterfaceModuleShell::LocomotionInterfaceModuleShell()
     : AutonomyModuleStub("locomotion_interface") {}
 
 LocomotionCommand LocomotionInterfaceModuleShell::dispatch(const MotionDecision& motion_decision,
-                                                           const LocalPlan& local_plan) {
+                                                           const LocalPlan& local_plan,
+                                                           ContractEnvelope envelope) {
+    (void)envelope;
     if (motion_decision.allow_motion && local_plan.has_command) {
         last_command_ = LocomotionCommand{
             .sent = true,

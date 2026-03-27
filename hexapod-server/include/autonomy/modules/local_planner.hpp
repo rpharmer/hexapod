@@ -1,6 +1,7 @@
 #pragma once
 
 #include "autonomy/module_stubs.hpp"
+#include "autonomy/common_types.hpp"
 #include "autonomy/modules/module_data.hpp"
 
 namespace autonomy {
@@ -10,7 +11,8 @@ public:
     LocalPlannerModuleShell();
 
     LocalPlan plan(const GlobalPlan& global_plan,
-                   bool blocked);
+                   bool blocked,
+                                   ContractEnvelope envelope = {});
     [[nodiscard]] LocalPlan currentPlan() const;
 
 private:

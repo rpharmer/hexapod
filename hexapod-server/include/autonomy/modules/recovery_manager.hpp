@@ -1,6 +1,7 @@
 #pragma once
 
 #include "autonomy/module_stubs.hpp"
+#include "autonomy/common_types.hpp"
 #include "autonomy/recovery_manager.hpp"
 
 namespace autonomy {
@@ -10,7 +11,8 @@ public:
     explicit RecoveryManagerModuleShell(uint64_t retry_budget = 2);
 
     void reset();
-    RecoveryDecision onNoProgress(bool triggered);
+    RecoveryDecision onNoProgress(bool triggered,
+                                ContractEnvelope envelope = {});
     [[nodiscard]] RecoveryDecision lastDecision() const;
 
 private:
