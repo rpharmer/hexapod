@@ -195,6 +195,11 @@ struct AutonomyRuntimeConfig {
     struct TraversabilityConfig {
         double occupancy_risk_weight{kDefaultTraversabilityOccupancyRiskWeight};
         double gradient_risk_weight{kDefaultTraversabilityGradientRiskWeight};
+        double obstacle_near_risk_weight{0.75};
+        double obstacle_mid_risk_weight{0.45};
+        double obstacle_far_risk_weight{0.25};
+        double slope_high_risk_weight{0.8};
+        double confidence_unknown_penalty{0.5};
         double confidence_cost_weight{kDefaultTraversabilityConfidenceCostWeight};
         double risk_block_threshold{kDefaultTraversabilityRiskBlockThreshold};
         double confidence_block_threshold{kDefaultTraversabilityConfidenceBlockThreshold};

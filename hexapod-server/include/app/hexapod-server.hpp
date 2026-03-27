@@ -27,6 +27,11 @@ struct ParsedToml
   uint64_t autonomyRecoveryRetryBudget{2};
   double autonomyTraversabilityOccupancyRiskWeight{0.65};
   double autonomyTraversabilityGradientRiskWeight{0.35};
+  double autonomyTraversabilityObstacleNearRiskWeight{0.75};
+  double autonomyTraversabilityObstacleMidRiskWeight{0.45};
+  double autonomyTraversabilityObstacleFarRiskWeight{0.25};
+  double autonomyTraversabilitySlopeHighRiskWeight{0.8};
+  double autonomyTraversabilityConfidenceUnknownPenalty{0.5};
   double autonomyTraversabilityConfidenceCostWeight{1.0};
   double autonomyTraversabilityRiskBlockThreshold{0.85};
   double autonomyTraversabilityConfidenceBlockThreshold{0.3};

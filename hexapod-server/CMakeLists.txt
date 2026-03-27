@@ -235,6 +235,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     hexapod_server_add_test(test_autonomy_module_shells autonomy_module_shells
         tests/test_autonomy_module_shells.cpp
     )
+    hexapod_server_add_test(test_autonomy_planner_regression autonomy_planner_regression
+        tests/test_autonomy_planner_regression.cpp
+    )
     hexapod_server_add_test(test_autonomy_stack autonomy_stack
         tests/test_autonomy_stack.cpp
     )

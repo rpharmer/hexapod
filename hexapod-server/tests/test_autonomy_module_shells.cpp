@@ -487,6 +487,10 @@ bool testPlannerReachableBlockedAndDegradedFlows() {
                 "stale planning should mark local plan stale")) {
         return false;
     }
+    if (!expect(stale_local.reason == "stale-global-plan-fallback-smoothed",
+                "stale planning with prior command should report smoothed fallback reason")) {
+        return false;
+    }
 
     const auto replanned_after_unblock = global_planner.plan(nav_update, autonomy::TraversabilityReport{
                                                                           .traversable = true,

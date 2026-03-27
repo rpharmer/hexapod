@@ -299,6 +299,21 @@ bool testAutonomyTraversabilityRuntimeFieldsParseAndFallback()
       !expect(replaceOnce(cfg, "Runtime.Autonomy.Traversability.GradientRiskWeight = 0.35",
                           "Runtime.Autonomy.Traversability.GradientRiskWeight = 0.2"),
               "baseline config missing Runtime.Autonomy.Traversability.GradientRiskWeight entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Autonomy.Traversability.ObstacleNearRiskWeight = 0.75",
+                          "Runtime.Autonomy.Traversability.ObstacleNearRiskWeight = 0.9"),
+              "baseline config missing Runtime.Autonomy.Traversability.ObstacleNearRiskWeight entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Autonomy.Traversability.ObstacleMidRiskWeight = 0.45",
+                          "Runtime.Autonomy.Traversability.ObstacleMidRiskWeight = 0.6"),
+              "baseline config missing Runtime.Autonomy.Traversability.ObstacleMidRiskWeight entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Autonomy.Traversability.ObstacleFarRiskWeight = 0.25",
+                          "Runtime.Autonomy.Traversability.ObstacleFarRiskWeight = 0.3"),
+              "baseline config missing Runtime.Autonomy.Traversability.ObstacleFarRiskWeight entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Autonomy.Traversability.SlopeHighRiskWeight = 0.8",
+                          "Runtime.Autonomy.Traversability.SlopeHighRiskWeight = 0.7"),
+              "baseline config missing Runtime.Autonomy.Traversability.SlopeHighRiskWeight entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Autonomy.Traversability.ConfidenceUnknownPenalty = 0.5",
+                          "Runtime.Autonomy.Traversability.ConfidenceUnknownPenalty = 5.0"),
+              "baseline config missing Runtime.Autonomy.Traversability.ConfidenceUnknownPenalty entry") ||
       !expect(replaceOnce(cfg, "Runtime.Autonomy.Traversability.ConfidenceCostWeight = 1.0",
                           "Runtime.Autonomy.Traversability.ConfidenceCostWeight = 2.5"),
               "baseline config missing Runtime.Autonomy.Traversability.ConfidenceCostWeight entry") ||
@@ -323,6 +338,16 @@ bool testAutonomyTraversabilityRuntimeFieldsParseAndFallback()
                 "occupancy risk weight should parse configured value") &&
          expect(near(parsed.autonomyTraversabilityGradientRiskWeight, 0.2),
                 "gradient risk weight should parse configured value") &&
+         expect(near(parsed.autonomyTraversabilityObstacleNearRiskWeight, 0.9),
+                "obstacle near risk weight should parse configured value") &&
+         expect(near(parsed.autonomyTraversabilityObstacleMidRiskWeight, 0.6),
+                "obstacle mid risk weight should parse configured value") &&
+         expect(near(parsed.autonomyTraversabilityObstacleFarRiskWeight, 0.3),
+                "obstacle far risk weight should parse configured value") &&
+         expect(near(parsed.autonomyTraversabilitySlopeHighRiskWeight, 0.7),
+                "slope high risk weight should parse configured value") &&
+         expect(near(parsed.autonomyTraversabilityConfidenceUnknownPenalty, 0.5),
+                "out-of-range unknown confidence penalty should fallback to default") &&
          expect(near(parsed.autonomyTraversabilityConfidenceCostWeight, 2.5),
                 "confidence cost weight should parse configured value") &&
          expect(near(parsed.autonomyTraversabilityRiskBlockThreshold, 0.85),
