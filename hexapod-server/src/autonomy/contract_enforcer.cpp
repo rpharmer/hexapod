@@ -73,7 +73,7 @@ ContractValidationResult ContractEnforcer::validate(const ContractEnvelope& enve
         result.stale_timestamp = true;
         result.age_ms = 0;
     } else {
-        result.age_ms = now_ms - envelope.timestamp_ms;
+        result.age_ms = (now_ms - envelope.timestamp_ms).value;
         if (result.age_ms > config.max_age_ms) {
             result.valid = false;
             result.stale_timestamp = true;

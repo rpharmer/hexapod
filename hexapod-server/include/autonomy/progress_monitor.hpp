@@ -1,11 +1,13 @@
 #pragma once
 
+#include "autonomy/common_types.hpp"
+
 #include <cstdint>
 
 namespace autonomy {
 
 struct ProgressSample {
-    uint64_t timestamp_ms{0};
+    TimestampMs timestamp_ms{};
     uint64_t completed_waypoints{0};
 };
 

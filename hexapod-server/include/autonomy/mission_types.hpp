@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/math_types.hpp"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -11,6 +13,23 @@ struct Waypoint {
     double x_m{0.0};
     double y_m{0.0};
     double yaw_rad{0.0};
+
+    PositionM3 position_m() const {
+        return PositionM3{x_m, y_m, 0.0};
+    }
+
+    AngleRad yaw() const {
+        return AngleRad{yaw_rad};
+    }
+
+    void set_position_m(const PositionM3& position) {
+        x_m = position.x;
+        y_m = position.y;
+    }
+
+    void set_yaw(AngleRad heading) {
+        yaw_rad = heading.value;
+    }
 };
 
 struct WaypointMission {

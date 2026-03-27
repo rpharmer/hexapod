@@ -6,8 +6,8 @@ namespace autonomy {
 
 namespace {
 
-uint64_t toMilliseconds(TimePointUs timestamp_us) {
-    return timestamp_us.value / 1000;
+TimestampMs toMilliseconds(TimePointUs timestamp_us) {
+    return TimestampMs{timestamp_us.value / 1000};
 }
 
 } // namespace
@@ -27,7 +27,7 @@ LocalizationSourceObservation localizationObservationFromEstimator(const RobotSt
 LocalizationSourceObservation localizationObservationFromOdometry(double x_m,
                                                                   double y_m,
                                                                   double yaw_rad,
-                                                                  uint64_t timestamp_ms,
+                                                                  TimestampMs timestamp_ms,
                                                                   const std::string& frame_id) {
     return LocalizationSourceObservation{
         .valid = true,
@@ -72,10 +72,10 @@ LocalizationEstimate LocalizationModuleShell::estimate() const {
 
 bool LocalizationModuleShell::isObservationFresh(const LocalizationSourceObservation& observation,
                                                  uint64_t now_ms) const {
-    if (observation.timestamp_ms == 0 || observation.timestamp_ms > now_ms) {
+    if (observation.timestamp_ms == TimestampMs{} || observation.timestamp_ms > now_ms) {
         return false;
     }
-    return (now_ms - observation.timestamp_ms) <= stale_threshold_ms_;
+    return (now_ms - observation.timestamp_ms).value <= stale_threshold_ms_;
 }
 
 } // namespace autonomy

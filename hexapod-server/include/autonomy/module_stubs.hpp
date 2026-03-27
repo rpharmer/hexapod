@@ -1,5 +1,7 @@
 #pragma once
 
+#include "autonomy/common_types.hpp"
+
 #include <cstdint>
 #include <string>
 
@@ -15,7 +17,7 @@ struct ModuleHealth {
     std::string module_name{};
     ModuleRunState state{ModuleRunState::Stopped};
     bool healthy{true};
-    uint64_t heartbeat_timestamp_ms{0};
+    TimestampMs heartbeat_timestamp_ms{};
     std::string detail{"ok"};
 };
 

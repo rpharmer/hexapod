@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/types.hpp"
+
 #include <cstdint>
 #include <string>
 
@@ -31,13 +33,13 @@ struct ContractEnvelope {
     std::string correlation_id{};
     std::string stream_id{};
     uint64_t sample_id{0};
-    uint64_t timestamp_ms{0};
+    TimestampMs timestamp_ms{};
 };
 
 struct FaultEvent {
     std::string fault_code{};
     FaultSeverity severity{FaultSeverity::Info};
-    uint64_t timestamp_ms{0};
+    TimestampMs timestamp_ms{};
     std::string origin_module{};
     std::string details{};
     std::string correlation_id{};
