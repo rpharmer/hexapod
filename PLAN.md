@@ -2,6 +2,35 @@
 
 This plan converts the proposed autonomy architecture into an incremental, testable implementation roadmap aligned with the current `hexapod-server` codebase.
 
+## Current Status Snapshot (2026-03-27)
+
+### Implemented
+- Contract documentation and review checklist exist in `docs/contracts/autonomy/`, including `traceability_matrix.md`.
+- Contract/runtime foundations are in place:
+  - common contract types
+  - contract enforcer with version compatibility and freshness checks
+- Source scaffolding is implemented:
+  - lifecycle/health module stubs
+  - per-module shell classes for autonomy module boundaries
+- Mission/navigation baseline primitives are implemented and unit tested:
+  - mission scripting parser
+  - mission executive FSM
+  - navigation manager intent emission
+- Recovery/arbitration baseline primitives are implemented and unit tested:
+  - progress monitor no-progress timeout
+  - recovery strategy chain (hold/retry/replan/abort)
+  - arbiter priority (`E_STOP > HOLD > RECOVERY > NAV`)
+
+### Partially Implemented
+- Runtime integration: autonomy components exist but are not fully wired into the full `robot_runtime` E2E mission path.
+
+### Not Implemented Yet
+- World model + traversability data flow into planners.
+- Full mission E2E simulation scenarios with recovery wiring to mission state transitions.
+- Criticality-based process split, watchdogs, supervisor restart policy, degraded mode behavior.
+
+---
+
 ## Objectives
 
 - Introduce explicit mission/navigation/autonomy module boundaries without destabilizing current locomotion control.
@@ -57,6 +86,9 @@ Lock interface contracts before behavior work.
 - All module interfaces documented and reviewed.
 - Arbitration priority and stale-data semantics explicitly specified.
 
+### Status
+**Mostly complete** (docs and validation primitives are in place). Remaining: enforce contracts at all runtime ingress/egress boundaries.
+
 ---
 
 ## Epic 2: Source Scaffolding (No Behavior Change)
@@ -76,6 +108,9 @@ Introduce module boundaries around existing runtime.
 ### Exit Criteria
 - Build passes with new scaffolding.
 - Existing behavior unchanged in sim/hardware mode.
+
+### Status
+**Scaffolding complete** (stubs/shells and tests exist). Remaining: replace placeholder shells with runtime-wired adapters.
 
 ---
 
@@ -97,6 +132,9 @@ Deliver one end-to-end mission pathway using existing control backend.
 ### Exit Criteria
 - Waypoint mission executes end-to-end in simulation.
 - Mission status/progress observable in telemetry/status channels.
+
+### Status
+**Partially complete** (1-3 implemented with tests). Remaining: runtime adapter wiring and E2E simulation/telemetry verification.
 
 ---
 
@@ -121,6 +159,9 @@ Add deterministic recovery for blocked/no-progress states.
 - Stall conditions trigger recovery.
 - Recovery success resumes mission; repeated failure aborts with explicit reason.
 
+### Status
+**Partially complete** (1-3 implemented with tests). Remaining: mission escalation hooks and integrated blocked-path scenario tests.
+
 ---
 
 ## Epic 5: World Model + Traversability
@@ -137,6 +178,9 @@ Standardize environment understanding input to planning.
 ### Exit Criteria
 - Planner consumes standardized world/traversability interfaces.
 - Cost/risk changes are reflected in selected motion outputs.
+
+### Status
+**Not started beyond module shells**.
 
 ---
 
@@ -156,6 +200,9 @@ Move from monolith to criticality-based multi-process runtime.
 ### Exit Criteria
 - Crash isolation demonstrated.
 - Degraded mode behavior documented and validated.
+
+### Status
+**Not started**.
 
 ---
 
@@ -180,12 +227,12 @@ Move from monolith to criticality-based multi-process runtime.
 
 ---
 
-## 4-Sprint Rollout
+## Updated Rollout View
 
-- **Sprint 1**: Epic 1 + Epic 2
-- **Sprint 2**: Epic 3
-- **Sprint 3**: Epic 4 + baseline Epic 5
-- **Sprint 4**: Epic 6 + hardening/regression
+- **Sprint 1**: Epic 1 + Epic 2 ✅ (baseline complete)
+- **Sprint 2**: Epic 3 🟡 (logic complete, runtime E2E pending)
+- **Sprint 3**: Epic 4 + baseline Epic 5 🟡 (Epic 4 partial, Epic 5 pending)
+- **Sprint 4**: Epic 6 + hardening/regression ⏳
 
 ---
 
@@ -196,3 +243,17 @@ Move from monolith to criticality-based multi-process runtime.
 - Waypoint mission E2E is passing in sim.
 - Recovery paths and arbitration priority are tested.
 - Process split completed with health/watchdog/degraded-mode behavior.
+
+---
+
+## Next Execution Slice (Immediate)
+
+1. **Runtime integration PR**
+   - wire mission/navigation/recovery/arbiter into `robot_runtime`
+   - route selected nav intent into locomotion adapters
+2. **E2E simulation PR**
+   - add mission happy-path and blocked-path scenario tests
+   - validate telemetry/status outputs and recovery transitions
+3. **World/traversability bootstrap PR**
+   - implement minimal world slice + traversability cost output
+   - connect to local planner via contract interfaces
