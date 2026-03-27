@@ -126,15 +126,16 @@ bool AutonomyStack::step(const AutonomyStepInput& input,
                                            : envelope.correlation_id;
 
     if (mission) {
-        const auto nav_envelope = makeInternalEnvelope(kNavigationIntentStreamId, "map", correlation_id, input.now_ms);
-        if (!validateEnvelopeForStream(nav_envelope, input.now_ms, config, kNavigationIntentStreamId)) {
+        if (!runValidatedStage(kNavigationIntentStreamId, input.now_ms, correlation_id, config, [&](const ContractEnvelope& stage_envelope) {
+                output->navigation_update = navigation_manager_module_.computeIntent(
+                    *mission,
+                    output->mission_event.progress.completed_waypoints,
+                    input.blocked,
+                    stage_envelope);
+                return true;
+            })) {
             return false;
         }
-        output->navigation_update = navigation_manager_module_.computeIntent(
-            *mission,
-            output->mission_event.progress.completed_waypoints,
-            input.blocked,
-            nav_envelope);
     } else {
         output->navigation_update = NavigationUpdate{};
     }
@@ -154,66 +155,75 @@ bool AutonomyStack::step(const AutonomyStepInput& input,
                 ? "map"
                 : output->navigation_update.intent.target.frame_id);
     }
-    const auto localization_envelope = makeInternalEnvelope(kLocalizationEstimateStreamId, "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(localization_envelope, input.now_ms, config, kLocalizationEstimateStreamId)) {
+    if (!runValidatedStage(kLocalizationEstimateStreamId, input.now_ms, correlation_id, config, [&](const ContractEnvelope& stage_envelope) {
+            output->localization_estimate = localization_module_.update(localization_observation, input.now_ms, stage_envelope);
+            return true;
+        })) {
         return false;
     }
-    output->localization_estimate = localization_module_.update(localization_observation, input.now_ms, localization_envelope);
 
-    const auto world_model_envelope = makeInternalEnvelope(kWorldModelSnapshotStreamId, "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(world_model_envelope, input.now_ms, config, kWorldModelSnapshotStreamId)) {
+    if (!runValidatedStage(kWorldModelSnapshotStreamId, input.now_ms, correlation_id, config, [&](const ContractEnvelope& stage_envelope) {
+            output->world_model_snapshot = world_model_module_.update(
+                output->localization_estimate,
+                input.map_slice_input,
+                input.blocked,
+                input.now_ms,
+                stage_envelope);
+            return true;
+        })) {
         return false;
     }
-    output->world_model_snapshot = world_model_module_.update(
-        output->localization_estimate,
-        input.map_slice_input,
-        input.blocked,
-        input.now_ms,
-        world_model_envelope);
 
-    const auto traversability_envelope = makeInternalEnvelope(kTraversabilityReportStreamId, "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(traversability_envelope, input.now_ms, config, kTraversabilityReportStreamId)) {
+    if (!runValidatedStage(kTraversabilityReportStreamId, input.now_ms, correlation_id, config, [&](const ContractEnvelope& stage_envelope) {
+            output->traversability_report = traversability_analyzer_module_.analyze(
+                output->world_model_snapshot,
+                input.now_ms,
+                stage_envelope);
+            return true;
+        })) {
         return false;
     }
-    output->traversability_report = traversability_analyzer_module_.analyze(
-        output->world_model_snapshot,
-        input.now_ms,
-        traversability_envelope);
 
-    const auto global_plan_envelope = makeInternalEnvelope(kGlobalPlannerOutputStreamId, "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(global_plan_envelope, input.now_ms, config, kGlobalPlannerOutputStreamId)) {
+    if (!runValidatedStage(kGlobalPlannerOutputStreamId, input.now_ms, correlation_id, config, [&](const ContractEnvelope& stage_envelope) {
+            output->global_plan = global_planner_module_.plan(
+                output->navigation_update,
+                output->traversability_report,
+                stage_envelope);
+            return true;
+        })) {
         return false;
     }
-    output->global_plan = global_planner_module_.plan(
-        output->navigation_update,
-        output->traversability_report,
-        global_plan_envelope);
 
-    const auto local_plan_envelope = makeInternalEnvelope(kLocalPlannerOutputStreamId, "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(local_plan_envelope, input.now_ms, config, kLocalPlannerOutputStreamId)) {
+    if (!runValidatedStage(kLocalPlannerOutputStreamId, input.now_ms, correlation_id, config, [&](const ContractEnvelope& stage_envelope) {
+            output->local_plan = local_planner_module_.plan(output->global_plan,
+                                                            input.blocked,
+                                                            input.now_ms,
+                                                            stage_envelope);
+            return true;
+        })) {
         return false;
     }
-    output->local_plan = local_planner_module_.plan(output->global_plan,
-                                                    input.blocked,
-                                                    input.now_ms,
-                                                    local_plan_envelope);
 
-    const auto progress_envelope = makeInternalEnvelope(kProgressEvaluationStreamId, "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(progress_envelope, input.now_ms, config, kProgressEvaluationStreamId)) {
+    if (!runValidatedStage(kProgressEvaluationStreamId, input.now_ms, correlation_id, config, [&](const ContractEnvelope& stage_envelope) {
+            output->progress_evaluation = progress_monitor_module_.evaluate(ProgressSample{
+                .timestamp_ms = input.now_ms,
+                .completed_waypoints = output->mission_event.progress.completed_waypoints,
+            }, stage_envelope);
+            return true;
+        })) {
         return false;
     }
-    output->progress_evaluation = progress_monitor_module_.evaluate(ProgressSample{
-        .timestamp_ms = input.now_ms,
-        .completed_waypoints = output->mission_event.progress.completed_waypoints,
-    }, progress_envelope);
 
     const bool recovery_trigger = input.blocked || output->progress_evaluation.no_progress;
-    const auto recovery_envelope = makeInternalEnvelope(kRecoveryDecisionStreamId, "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(recovery_envelope, input.now_ms, config, kRecoveryDecisionStreamId)) {
+    ContractEnvelope recovery_envelope{};
+    if (!runValidatedStage(kRecoveryDecisionStreamId, input.now_ms, correlation_id, config, [&](const ContractEnvelope& stage_envelope) {
+            recovery_envelope = stage_envelope;
+            output->recovery_decision = recovery_manager_module_.onNoProgress(recovery_trigger,
+                                                                              stage_envelope);
+            return true;
+        })) {
         return false;
     }
-    output->recovery_decision = recovery_manager_module_.onNoProgress(recovery_trigger,
-                                                                      recovery_envelope);
     if (output->mission_event.state == MissionState::Exec || output->mission_event.state == MissionState::Paused) {
         const auto recovery_event = mission_executive_.onRecoveryDecision(output->recovery_decision);
         if (recovery_event.accepted) {
@@ -221,25 +231,29 @@ bool AutonomyStack::step(const AutonomyStepInput& input,
         }
     }
 
-    const auto motion_envelope = makeInternalEnvelope(kMotionDecisionStreamId, "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(motion_envelope, input.now_ms, config, kMotionDecisionStreamId)) {
+    ContractEnvelope motion_envelope{};
+    if (!runValidatedStage(kMotionDecisionStreamId, input.now_ms, correlation_id, config, [&](const ContractEnvelope& stage_envelope) {
+            motion_envelope = stage_envelope;
+            output->motion_decision = motion_arbiter_module_.arbitrate(
+                input.estop,
+                input.hold,
+                output->recovery_decision.recovery_active,
+                output->navigation_update,
+                stage_envelope);
+            return true;
+        })) {
         return false;
     }
-    output->motion_decision = motion_arbiter_module_.arbitrate(
-        input.estop,
-        input.hold,
-        output->recovery_decision.recovery_active,
-        output->navigation_update,
-        motion_envelope);
 
-    const auto locomotion_envelope = makeInternalEnvelope(kLocomotionCommandOutputStreamId, "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(locomotion_envelope, input.now_ms, config, kLocomotionCommandOutputStreamId)) {
+    if (!runValidatedStage(kLocomotionCommandOutputStreamId, input.now_ms, correlation_id, config, [&](const ContractEnvelope& stage_envelope) {
+            output->locomotion_command = locomotion_interface_module_.dispatch(
+                output->motion_decision,
+                output->local_plan,
+                stage_envelope);
+            return true;
+        })) {
         return false;
     }
-    output->locomotion_command = locomotion_interface_module_.dispatch(
-        output->motion_decision,
-        output->local_plan,
-        locomotion_envelope);
     if (output->locomotion_command.status == LocomotionCommand::DispatchStatus::DispatchFailed) {
         output->recovery_decision = recovery_manager_module_.onNoProgress(true, recovery_envelope);
         const auto recovery_event = mission_executive_.onRecoveryDecision(output->recovery_decision);
@@ -503,6 +517,18 @@ bool AutonomyStack::validateEnvelopeForStream(const ContractEnvelope& envelope,
 
     last_sample_id_by_stream_[stream_id] = envelope.sample_id;
     return true;
+}
+
+bool AutonomyStack::runValidatedStage(const std::string& stream_id,
+                                      uint64_t now_ms,
+                                      const std::string& correlation_id,
+                                      const ContractValidationConfig& config,
+                                      const std::function<bool(const ContractEnvelope&)>& stage_body) {
+    const auto stage_envelope = makeInternalEnvelope(stream_id, "map", correlation_id, now_ms);
+    if (!validateEnvelopeForStream(stage_envelope, now_ms, config, stream_id)) {
+        return false;
+    }
+    return stage_body(stage_envelope);
 }
 
 AutonomyModuleStub* AutonomyStack::moduleByName(std::string_view module_name) {

@@ -577,6 +577,45 @@ bool testStepRejectsStaleEnvelope() {
                   "stale step envelope should be rejected");
 }
 
+bool testStepValidationFailureKeepsOutputUntouched() {
+    autonomy::AutonomyStack stack;
+    if (!expect(stack.init(), "stack init should succeed")) {
+        return false;
+    }
+    if (!expect(stack.start(), "stack start should succeed")) {
+        return false;
+    }
+    if (!expect(stack.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(stack.startMission().accepted, "start mission should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput output{};
+    output.navigation_update.has_intent = true;
+    output.localization_estimate.valid = true;
+
+    const autonomy::ContractEnvelope stale_envelope{
+        .contract_version = "v1.0",
+        .frame_id = "map",
+        .correlation_id = "corr-stale-untouched",
+        .stream_id = kAutonomyStepIngressStreamId,
+        .sample_id = 1,
+        .timestamp_ms = 100,
+    };
+    autonomy::ContractValidationConfig config{};
+    config.max_age_ms = 5;
+
+    if (!expect(!stack.step(autonomy::AutonomyStepInput{.now_ms = 200}, stale_envelope, &output, config),
+                "stale step envelope should be rejected")) {
+        return false;
+    }
+
+    return expect(output.navigation_update.has_intent, "failed step should not mutate navigation output") &&
+           expect(output.localization_estimate.valid, "failed step should not mutate localization output");
+}
+
 bool testStepRejectsNonMonotonicSamplePerStream() {
     autonomy::AutonomyStack stack;
     if (!expect(stack.init(), "stack init should succeed")) {
@@ -790,6 +829,7 @@ int main() {
         !testScriptAndContractLoadPath() ||
         !testTerrainAndRiskChangesUpdatePlannerBehavior() ||
         !testStepRejectsStaleEnvelope() ||
+        !testStepValidationFailureKeepsOutputUntouched() ||
         !testStepRejectsNonMonotonicSamplePerStream() ||
         !testStepRejectsInvalidContractVersion() ||
         !testStepRejectsMissingFrameAndCorrelationMetadata() ||
