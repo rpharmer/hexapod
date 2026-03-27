@@ -6,6 +6,7 @@
 #include "gait_policy_planner.hpp"
 #include "gait_scheduler.hpp"
 #include "leg_ik.hpp"
+#include "motion_limiter.hpp"
 #include "types.hpp"
 
 struct PipelineStepResult {
@@ -26,6 +27,7 @@ public:
 
 private:
     GaitPolicyPlanner planner_;
+    MotionLimiter motion_limiter_;
     GaitScheduler gait_;
     ContactManager contact_manager_;
     BodyController body_;

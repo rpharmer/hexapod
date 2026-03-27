@@ -25,13 +25,16 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
                                             const SafetyState& safety_state,
                                             bool bus_ok,
                                             uint64_t loop_counter) {
-    RobotMode active_mode = intent.requested_mode;
+    const MotionLimiterOutput limited_motion = motion_limiter_.update(intent, safety_state);
+    const MotionIntent& effective_intent = limited_motion.intent;
+
+    RobotMode active_mode = effective_intent.requested_mode;
     if (safety_state.active_fault != FaultCode::NONE) {
         active_mode = RobotMode::FAULT;
     }
 
-    const RuntimeGaitPolicy gait_policy = planner_.plan(estimated, intent, safety_state);
-    const GaitState gait_state = gait_.update(estimated, intent, safety_state, gait_policy);
+    const RuntimeGaitPolicy gait_policy = planner_.plan(estimated, effective_intent, safety_state);
+    const GaitState gait_state = gait_.update(estimated, effective_intent, safety_state, gait_policy);
     ContactManagerOutput contact_adjusted{};
     if (contactManagerBypassed()) {
         contact_adjusted.managed_gait = gait_state;
@@ -39,7 +42,8 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     } else {
         contact_adjusted = contact_manager_.update(estimated, gait_state, gait_policy);
     }
-    const LegTargets leg_targets = body_.update(estimated, intent, contact_adjusted.managed_gait, contact_adjusted.managed_policy, safety_state);
+    const LegTargets leg_targets =
+        body_.update(estimated, effective_intent, contact_adjusted.managed_gait, contact_adjusted.managed_policy, safety_state);
     const JointTargets joint_targets = ik_.solve(estimated, leg_targets, safety_state);
 
     ControlStatus status{};

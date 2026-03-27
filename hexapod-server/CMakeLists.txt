@@ -125,6 +125,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime/loop_executor.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime/loop_timing.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/input/mode_runners.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/pipeline/motion_limiter.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/input/motion_intent_utils.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/calibration/plane_estimation.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/calibration/probe_contact_logic.cpp"
@@ -375,6 +376,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     )
     hexapod_server_add_test(test_loop_executor_timing loop_executor_timing
         tests/test_loop_executor_timing.cpp
+    )
+    hexapod_server_add_test(test_motion_limiter motion_limiter
+        tests/test_motion_limiter.cpp
     )
 
     # config
