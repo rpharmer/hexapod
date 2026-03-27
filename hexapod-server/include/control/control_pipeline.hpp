@@ -6,6 +6,7 @@
 #include "gait_policy_planner.hpp"
 #include "gait_scheduler.hpp"
 #include "leg_ik.hpp"
+#include "motion_limiter.hpp"
 #include "types.hpp"
 
 struct PipelineStepResult {
@@ -30,4 +31,5 @@ private:
     ContactManager contact_manager_;
     BodyController body_;
     LegIK ik_;
+    MotionLimiter motion_limiter_{};
 };

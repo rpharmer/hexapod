@@ -30,8 +30,12 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
         active_mode = RobotMode::FAULT;
     }
 
-    const RuntimeGaitPolicy gait_policy = planner_.plan(estimated, intent, safety_state);
-    const GaitState gait_state = gait_.update(estimated, intent, safety_state, gait_policy);
+    const TimePointUs now = now_us();
+    const MotionIntent effective_intent = motion_limiter_.limit(intent, now);
+    body_.setYawCommandSlewEnabled(!motion_limiter_.enabled());
+
+    const RuntimeGaitPolicy gait_policy = planner_.plan(estimated, effective_intent, safety_state);
+    const GaitState gait_state = gait_.update(estimated, effective_intent, safety_state, gait_policy);
     ContactManagerOutput contact_adjusted{};
     if (contactManagerBypassed()) {
         contact_adjusted.managed_gait = gait_state;
@@ -39,7 +43,7 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     } else {
         contact_adjusted = contact_manager_.update(estimated, gait_state, gait_policy);
     }
-    const LegTargets leg_targets = body_.update(estimated, intent, contact_adjusted.managed_gait, contact_adjusted.managed_policy, safety_state);
+    const LegTargets leg_targets = body_.update(estimated, effective_intent, contact_adjusted.managed_gait, contact_adjusted.managed_policy, safety_state);
     const JointTargets joint_targets = ik_.solve(estimated, leg_targets, safety_state);
 
     ControlStatus status{};

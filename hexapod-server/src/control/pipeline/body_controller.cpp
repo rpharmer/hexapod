@@ -38,6 +38,14 @@ Vec3 BodyController::clampToReachEnvelope(int leg, const Vec3& target_body) cons
     return leg_geo.bodyCoxaOffset + (body_from_leg * clamped_leg);
 }
 
+
+void BodyController::setYawCommandSlewEnabled(bool enabled) {
+    yaw_command_slew_enabled_ = enabled;
+    if (!enabled) {
+        yaw_filter_initialized_ = false;
+    }
+}
+
 LegTargets BodyController::update(const RobotState& est,
                                   const MotionIntent& intent,
                                   const GaitState& gait,
@@ -81,7 +89,7 @@ LegTargets BodyController::update(const RobotState& est,
     const bool has_positive_dt = !previous_update_ts.isZero() && now.value > previous_update_ts.value;
     const double update_dt_s =
         has_positive_dt ? static_cast<double>(now.value - previous_update_ts.value) / 1'000'000.0 : 0.0;
-    if (!yaw_filter_initialized_ || !has_positive_dt) {
+    if (!yaw_command_slew_enabled_ || !yaw_filter_initialized_ || !has_positive_dt) {
         filtered_yaw_cmd_rad_ = yaw_cmd_raw;
         yaw_filter_initialized_ = true;
     } else {
