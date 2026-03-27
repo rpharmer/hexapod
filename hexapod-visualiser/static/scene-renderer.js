@@ -206,7 +206,7 @@ function resolveVelocityTwist(model) {
   };
 }
 
-export function resolvePoseOffsetMm(model, deadReckoning) {
+export function resolvePoseOffsetMm(model, deadReckoning, nowMs = Date.now()) {
   const pose = resolveFinitePoseCandidate(
     model.autonomy_debug?.current_pose,
     model.autonomy_debug?.localization?.current_pose,
@@ -227,12 +227,16 @@ export function resolvePoseOffsetMm(model, deadReckoning) {
       yaw: Number.isFinite(pose.yaw_rad) ? pose.yaw_rad : 0,
     };
     deadReckoning.pose = { ...resolved };
-    deadReckoning.lastTimestampMs = Number.isFinite(model.timestamp_ms) ? model.timestamp_ms : null;
+    deadReckoning.lastTimestampMs = Number.isFinite(model.timestamp_ms)
+      ? model.timestamp_ms
+      : (Number.isFinite(nowMs) ? nowMs : null);
     return resolved;
   }
 
   const velocity = resolveVelocityTwist(model);
-  const timestampMs = Number.isFinite(model.timestamp_ms) ? model.timestamp_ms : null;
+  const timestampMs = Number.isFinite(model.timestamp_ms)
+    ? model.timestamp_ms
+    : (Number.isFinite(nowMs) ? nowMs : null);
   if (!velocity || timestampMs === null) {
     return deadReckoning.pose;
   }
@@ -396,7 +400,7 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     const scale = (Math.min(width, height) / 420) * camera.zoom;
     const centerX = width * 0.5 + camera.panX;
     const centerY = height * 0.58 + camera.panY;
-    const poseOffset = resolvePoseOffsetMm(model, deadReckoning);
+    const poseOffset = resolvePoseOffsetMm(model, deadReckoning, Date.now());
     const gridSpacingMm = 55;
     const kinematics = LEG_ORDER.map((legName) => ({
       legName,
