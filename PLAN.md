@@ -22,12 +22,12 @@ This plan converts the proposed autonomy architecture into an incremental, testa
   - arbiter priority (`E_STOP > HOLD > RECOVERY > NAV`)
 
 ### Partially Implemented
-- Runtime integration: autonomy components exist but are not fully wired into the full `robot_runtime` E2E mission path.
+- Runtime integration is present for the autonomy stack and runtime bridge tests, but full mission-scenario telemetry validation is still incomplete.
+- World model + traversability contracts are wired through the autonomy stack with baseline planner consumption; broader planner fidelity and scenario depth remain open.
 
 ### Not Implemented Yet
-- World model + traversability data flow into planners.
-- Full mission E2E simulation scenarios with recovery wiring to mission state transitions.
 - Criticality-based process split, watchdogs, supervisor restart policy, degraded mode behavior.
+- Full mission E2E simulation scenario suite with explicit operator-facing telemetry acceptance criteria.
 
 ---
 
@@ -160,7 +160,7 @@ Add deterministic recovery for blocked/no-progress states.
 - Recovery success resumes mission; repeated failure aborts with explicit reason.
 
 ### Status
-**Partially complete** (1-3 implemented with tests). Remaining: mission escalation hooks and integrated blocked-path scenario tests.
+**Mostly complete** (1-4 implemented with tests, including mission escalation hooks). Remaining: expanded integrated blocked-path/E2E scenario coverage in the simulation harness.
 
 ---
 
@@ -180,7 +180,7 @@ Standardize environment understanding input to planning.
 - Cost/risk changes are reflected in selected motion outputs.
 
 ### Status
-**Not started beyond module shells**.
+**Partially complete** (baseline world-model snapshot + traversability analysis + planner wiring are implemented). Remaining: richer map semantics, planner cost tuning, and broader scenario validation.
 
 ---
 
@@ -257,3 +257,41 @@ Move from monolith to criticality-based multi-process runtime.
 3. **World/traversability bootstrap PR**
    - implement minimal world slice + traversability cost output
    - connect to local planner via contract interfaces
+
+## Current Focus (2026-03-27)
+
+Only open execution items are listed below.
+
+1. **Mission/runtime E2E scenario closure**  
+   **Owner:** Autonomy Runtime (Mission Integration)  
+   **Open work:** close remaining mission-scenario validation gaps (happy path + blocked/recovery + telemetry acceptance) at the runtime boundary.  
+   **Primary files/tests:**  
+   - `hexapod-server/tests/test_robot_runtime_autonomy_integration.cpp`  
+   - `hexapod-server/tests/test_autonomy_stack.cpp`  
+   - `hexapod-server/src/control/runtime/robot_runtime.cpp`  
+   - `hexapod-server/src/autonomy/modules/autonomy_stack.cpp`
+
+2. **Simulation harness + acceptance assertions expansion**  
+   **Owner:** Simulation & QA  
+   **Open work:** encode additional scenario-driver cases and assertions for recovery transitions and operator-visible status channels.  
+   **Primary files/tests:**  
+   - `hexapod-server/src/scenario/scenario_driver.cpp`  
+   - `hexapod-server/tests/test_autonomy_stack.cpp`  
+   - `hexapod-server/tests/test_robot_runtime_autonomy_integration.cpp`
+
+3. **World/traversability fidelity follow-through**  
+   **Owner:** Planning/Perception  
+   **Open work:** deepen map/traversability signal quality and planner behavior verification beyond the current baseline contract wiring.  
+   **Primary files/tests:**  
+   - `hexapod-server/src/autonomy/modules/traversability_analyzer.cpp`  
+   - `hexapod-server/src/autonomy/modules/autonomy_stack.cpp`  
+   - `hexapod-server/tests/test_autonomy_stack.cpp`  
+   - `hexapod-server/tests/test_toml_parser_sections.cpp`
+
+4. **Criticality process split + runtime hardening**  
+   **Owner:** Platform Runtime  
+   **Open work:** implement true multi-process split and validate watchdog/restart/degraded-mode behavior under fault injection.  
+   **Primary files/tests:**  
+   - `docs/contracts/autonomy/process_supervision_and_ipc.md`  
+   - `hexapod-server/src/autonomy/modules/autonomy_stack.cpp`  
+   - `hexapod-server/tests/test_autonomy_supervision_integration.cpp`
