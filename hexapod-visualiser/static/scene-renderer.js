@@ -160,6 +160,19 @@ function resolveFinitePoseCandidate(...candidates) {
   return null;
 }
 
+function resolvePoseCandidateFromTranslation(translation, orientation) {
+  if (!translation) {
+    return null;
+  }
+  const x = Number.isFinite(translation.x_m) ? translation.x_m : translation.x;
+  const y = Number.isFinite(translation.y_m) ? translation.y_m : translation.y;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return null;
+  }
+  const yaw = Number.isFinite(orientation?.yaw_rad) ? orientation.yaw_rad : orientation?.z;
+  return { x_m: x, y_m: y, yaw_rad: Number.isFinite(yaw) ? yaw : 0 };
+}
+
 function resolveVelocityTwist(model) {
   const linear = model.dynamic_gait?.body_linear_velocity_mps;
   const angular = model.dynamic_gait?.body_angular_velocity_radps;
@@ -173,11 +186,19 @@ function resolveVelocityTwist(model) {
   };
 }
 
-function resolvePoseOffsetMm(model, deadReckoning) {
+export function resolvePoseOffsetMm(model, deadReckoning) {
   const pose = resolveFinitePoseCandidate(
     model.autonomy_debug?.current_pose,
     model.autonomy_debug?.localization?.current_pose,
     model.dynamic_gait?.current_pose,
+    resolvePoseCandidateFromTranslation(
+      model.dynamic_gait?.body_translation_m,
+      model.dynamic_gait?.body_orientation_rad,
+    ),
+    resolvePoseCandidateFromTranslation(
+      model.dynamic_gait?.body_translation_m,
+      model.dynamic_gait?.orientation_rad,
+    ),
   );
   if (pose) {
     const resolved = {
