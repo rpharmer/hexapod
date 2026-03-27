@@ -27,7 +27,9 @@ constexpr const char* kLocomotionCommandOutputStreamId = "autonomy.locomotion.co
 } // namespace
 
 AutonomyStack::AutonomyStack(const AutonomyStackConfig& config)
-    : traversability_analyzer_module_(config.traversability_policy),
+    : localization_module_(config.localization_policy),
+      traversability_analyzer_module_(config.traversability_policy, config.traversability_score_policy),
+      local_planner_module_(config.local_planner_policy),
       locomotion_interface_module_(config.locomotion_command_sink),
       progress_monitor_module_(config.no_progress_timeout_ms),
       recovery_manager_module_(config.recovery_retry_budget),

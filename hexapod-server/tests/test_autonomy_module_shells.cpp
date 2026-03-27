@@ -85,7 +85,10 @@ bool testLocalizationAdapterNominalEstimatorPropagation() {
 }
 
 bool testLocalizationRejectsStaleObservation() {
-    autonomy::LocalizationModuleShell localization("map", /*stale_threshold_ms=*/50);
+    autonomy::LocalizationModuleShell localization(autonomy::LocalizationValidationPolicy{
+        .expected_frame_id = "map",
+        .stale_threshold_ms = 50,
+    });
     const auto stale_observation = autonomy::localizationObservationFromOdometry(
         /*x_m=*/0.2,
         /*y_m=*/0.3,
@@ -99,7 +102,10 @@ bool testLocalizationRejectsStaleObservation() {
 }
 
 bool testLocalizationRejectsFrameMismatch() {
-    autonomy::LocalizationModuleShell localization("map", /*stale_threshold_ms=*/100);
+    autonomy::LocalizationModuleShell localization(autonomy::LocalizationValidationPolicy{
+        .expected_frame_id = "map",
+        .stale_threshold_ms = 100,
+    });
     const auto wrong_frame_observation = autonomy::localizationObservationFromOdometry(
         /*x_m=*/1.0,
         /*y_m=*/2.0,
@@ -110,6 +116,25 @@ bool testLocalizationRejectsFrameMismatch() {
     const auto estimate = localization.update(wrong_frame_observation, /*now_ms=*/150);
     return expect(!estimate.valid, "frame mismatch should invalidate localization observation") &&
            expect(estimate.frame_id == "map", "frame mismatch should keep localization estimate in expected frame");
+}
+
+bool testLocalizationPolicyOverrideAllowsCrossFrameObservation() {
+    autonomy::LocalizationModuleShell localization(autonomy::LocalizationValidationPolicy{
+        .expected_frame_id = "map",
+        .stale_threshold_ms = 100,
+        .require_frame_match = false,
+    });
+    const auto odom_observation = autonomy::localizationObservationFromOdometry(
+        /*x_m=*/0.8,
+        /*y_m=*/-0.2,
+        /*yaw_rad=*/0.1,
+        /*timestamp_ms=*/120,
+        "odom");
+
+    const auto estimate = localization.update(odom_observation, /*now_ms=*/150);
+    return expect(estimate.valid, "policy override should allow cross-frame localization observations") &&
+           expect(estimate.frame_id == "odom",
+                  "cross-frame localization policy override should preserve source frame");
 }
 
 bool testWorldModelMapSliceNominalIntegration() {
@@ -596,6 +621,47 @@ bool testPlannerNoIntentUnsafeAndStaleNoFallback() {
     return true;
 }
 
+bool testLocalPlannerPolicyOverrideChangesStaleAndFeasibilityBehavior() {
+    autonomy::LocalPlannerModuleShell planner(autonomy::LocalPlannerPolicyConfig{
+        .stale_plan_timeout_ms = 10,
+        .execution_horizon_m = 0.1,
+        .max_feasible_step_m = 2.0,
+        .fallback_blend_gain = 0.0,
+    });
+    const autonomy::GlobalPlan permissive_plan{
+        .has_plan = true,
+        .target = autonomy::Waypoint{.frame_id = "map", .x_m = 1.0, .y_m = 0.0, .yaw_rad = 0.0},
+        .route = {autonomy::Waypoint{.frame_id = "map", .x_m = 1.8, .y_m = 0.0, .yaw_rad = 0.0}},
+        .cost = 0.4,
+        .status = autonomy::PlannerStatus::Ready,
+        .reason = "route-ready",
+        .source_timestamp_ms = 100,
+    };
+
+    const auto feasible = planner.plan(permissive_plan, false, 105);
+    if (!expect(feasible.has_command, "raised feasibility threshold should permit longer route steps")) {
+        return false;
+    }
+    if (!expect(feasible.target.x_m == 1.8, "short execution horizon should select first route waypoint")) {
+        return false;
+    }
+
+    const autonomy::GlobalPlan stale_plan{
+        .has_plan = true,
+        .target = autonomy::Waypoint{.frame_id = "map", .x_m = 2.5, .y_m = 0.0, .yaw_rad = 0.4},
+        .route = permissive_plan.route,
+        .cost = 0.5,
+        .status = autonomy::PlannerStatus::Ready,
+        .reason = "route-ready",
+        .source_timestamp_ms = 100,
+    };
+    const auto stale = planner.plan(stale_plan, false, 120);
+    return expect(stale.fallback_active, "short stale timeout override should trigger fallback state earlier") &&
+           expect(stale.has_command, "stale fallback should keep command when prior executable target exists") &&
+           expect(stale.target.x_m == feasible.target.x_m,
+                  "zero blend override should pin stale fallback target to last executable command");
+}
+
 bool testTraversabilityPolicyAndReasonsEdgeCases() {
     autonomy::TraversabilityAnalyzerModuleShell traversability(autonomy::TraversabilityPolicyConfig{
         .occupancy_risk_weight = 0.7,
@@ -663,6 +729,44 @@ bool testTraversabilityPolicyAndReasonsEdgeCases() {
                   "mixed terrain should report all blocking reasons for explainability");
 }
 
+bool testTraversabilityScoreCompositionPolicyOverrideAffectsRiskThresholding() {
+    const autonomy::TraversabilityPolicyConfig thresholds{
+        .risk_block_threshold = 0.70,
+        .confidence_block_threshold = 0.3,
+    };
+    const autonomy::WorldModelSnapshot world{
+        .has_map = true,
+        .occupancy = 0.0,
+        .terrain_gradient = 0.0,
+        .risk_confidence = 0.95,
+        .obstacle_band_near = 1.0,
+        .obstacle_band_mid = 1.0,
+        .obstacle_band_far = 1.0,
+        .slope_band_high = 1.0,
+    };
+
+    autonomy::TraversabilityAnalyzerModuleShell baseline(thresholds);
+    const auto baseline_report = baseline.analyze(world, 100);
+    if (!expect(baseline_report.traversable,
+                "default score composition should keep secondary-only hazards below threshold")) {
+        return false;
+    }
+
+    autonomy::TraversabilityAnalyzerModuleShell secondary_biased(
+        thresholds,
+        autonomy::TraversabilityScoreCompositionPolicy{
+            .aggregated_primary_weight = 0.0,
+            .aggregated_secondary_weight = 1.0,
+            .risk_aggregate_weight = 1.0,
+            .risk_peak_weight = 0.0,
+        });
+    const auto biased_report = secondary_biased.analyze(world, 110);
+    return expect(!biased_report.traversable,
+                  "composition override should make secondary risk contribution trigger thresholding") &&
+           expect(biased_report.reason == "risk-threshold-exceeded",
+                  "secondary-biased composition should trip risk threshold deterministically");
+}
+
 } // namespace
 
 int main() {
@@ -670,6 +774,7 @@ int main() {
         !testLocalizationAdapterNominalEstimatorPropagation() ||
         !testLocalizationRejectsStaleObservation() ||
         !testLocalizationRejectsFrameMismatch() ||
+        !testLocalizationPolicyOverrideAllowsCrossFrameObservation() ||
         !testWorldModelMapSliceNominalIntegration() ||
         !testWorldModelRejectsStaleMapSlice() ||
         !testWorldModelRejectsFrameMismatch() ||
@@ -678,7 +783,9 @@ int main() {
         !testTerrainRiskInputsAffectPlanning() ||
         !testPlannerReachableBlockedAndDegradedFlows() ||
         !testPlannerNoIntentUnsafeAndStaleNoFallback() ||
-        !testTraversabilityPolicyAndReasonsEdgeCases()) {
+        !testLocalPlannerPolicyOverrideChangesStaleAndFeasibilityBehavior() ||
+        !testTraversabilityPolicyAndReasonsEdgeCases() ||
+        !testTraversabilityScoreCompositionPolicyOverrideAffectsRiskThresholding()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

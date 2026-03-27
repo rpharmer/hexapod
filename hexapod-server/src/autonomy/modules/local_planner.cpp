@@ -3,18 +3,7 @@
 #include <cmath>
 
 namespace autonomy {
-namespace {
-
-struct StalePlanPolicy {
-    uint64_t timeout_ms{1000};
-};
-
-constexpr StalePlanPolicy kDefaultStalePlanPolicy{};
-constexpr double kExecutionHorizonMeters = 1.0;
-constexpr double kMaxFeasibleStepMeters = 1.25;
-constexpr double kFallbackBlendGain = 0.5;
-
-Waypoint selectShortHorizonTarget(const GlobalPlan& global_plan) {
+Waypoint LocalPlannerModuleShell::selectShortHorizonTarget(const GlobalPlan& global_plan) const {
     if (global_plan.route.empty()) {
         return global_plan.target;
     }
@@ -28,14 +17,14 @@ Waypoint selectShortHorizonTarget(const GlobalPlan& global_plan) {
         previous_x = waypoint.x_m;
         previous_y = waypoint.y_m;
         selected = waypoint;
-        if (cumulative_distance >= kExecutionHorizonMeters) {
+        if (cumulative_distance >= policy_.execution_horizon_m) {
             break;
         }
     }
     return selected;
 }
 
-bool trajectoryFeasible(const GlobalPlan& global_plan) {
+bool LocalPlannerModuleShell::trajectoryFeasible(const GlobalPlan& global_plan) const {
     if (global_plan.route.empty()) {
         return false;
     }
@@ -43,7 +32,7 @@ bool trajectoryFeasible(const GlobalPlan& global_plan) {
     double previous_y = 0.0;
     for (const auto& waypoint : global_plan.route) {
         const double step = std::hypot(waypoint.x_m - previous_x, waypoint.y_m - previous_y);
-        if (step > kMaxFeasibleStepMeters) {
+        if (step > policy_.max_feasible_step_m) {
             return false;
         }
         previous_x = waypoint.x_m;
@@ -52,19 +41,19 @@ bool trajectoryFeasible(const GlobalPlan& global_plan) {
     return true;
 }
 
-Waypoint blendFallbackTarget(const Waypoint& stale_target, const Waypoint& fallback_target) {
+Waypoint LocalPlannerModuleShell::blendFallbackTarget(const Waypoint& stale_target,
+                                                      const Waypoint& fallback_target) const {
     return Waypoint{
         .frame_id = fallback_target.frame_id.empty() ? stale_target.frame_id : fallback_target.frame_id,
-        .x_m = fallback_target.x_m + (stale_target.x_m - fallback_target.x_m) * kFallbackBlendGain,
-        .y_m = fallback_target.y_m + (stale_target.y_m - fallback_target.y_m) * kFallbackBlendGain,
-        .yaw_rad = fallback_target.yaw_rad + (stale_target.yaw_rad - fallback_target.yaw_rad) * kFallbackBlendGain,
+        .x_m = fallback_target.x_m + (stale_target.x_m - fallback_target.x_m) * policy_.fallback_blend_gain,
+        .y_m = fallback_target.y_m + (stale_target.y_m - fallback_target.y_m) * policy_.fallback_blend_gain,
+        .yaw_rad = fallback_target.yaw_rad + (stale_target.yaw_rad - fallback_target.yaw_rad) * policy_.fallback_blend_gain,
     };
 }
 
-} // namespace
-
-LocalPlannerModuleShell::LocalPlannerModuleShell()
-    : AutonomyModuleStub("local_planner") {}
+LocalPlannerModuleShell::LocalPlannerModuleShell(LocalPlannerPolicyConfig policy)
+    : AutonomyModuleStub("local_planner"),
+      policy_(policy) {}
 
 LocalPlan LocalPlannerModuleShell::plan(const GlobalPlan& global_plan,
                                         bool blocked,
@@ -93,7 +82,7 @@ LocalPlan LocalPlannerModuleShell::plan(const GlobalPlan& global_plan,
         return plan_;
     }
 
-    if (now_ms > global_plan.source_timestamp_ms + kDefaultStalePlanPolicy.timeout_ms) {
+    if (now_ms > global_plan.source_timestamp_ms + policy_.stale_plan_timeout_ms) {
         const bool have_fallback_target = last_executable_target_valid_;
         const auto fallback_target = have_fallback_target
                                          ? blendFallbackTarget(global_plan.target, last_executable_target_)

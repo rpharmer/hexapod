@@ -63,7 +63,10 @@ struct ModuleSupervisorStatus {
 struct AutonomyStackConfig {
     uint64_t no_progress_timeout_ms{1000};
     uint64_t recovery_retry_budget{2};
+    LocalizationValidationPolicy localization_policy{};
     TraversabilityPolicyConfig traversability_policy{};
+    TraversabilityScoreCompositionPolicy traversability_score_policy{};
+    LocalPlannerPolicyConfig local_planner_policy{};
     LocomotionInterfaceModuleShell::CommandSink locomotion_command_sink{};
 };
 

@@ -546,6 +546,66 @@ bool testTerrainAndRiskChangesUpdatePlannerBehavior() {
            expect(!hazardous.local_plan.has_command, "hazardous terrain should suppress local command");
 }
 
+bool testAutonomyStackPolicyOverridesPassThroughToModules() {
+    autonomy::AutonomyStack stack(autonomy::AutonomyStackConfig{
+        .localization_policy = autonomy::LocalizationValidationPolicy{
+            .expected_frame_id = "map",
+            .stale_threshold_ms = 250,
+            .require_frame_match = false,
+        },
+        .traversability_policy = autonomy::TraversabilityPolicyConfig{
+            .risk_block_threshold = 0.7,
+            .confidence_block_threshold = 0.3,
+        },
+        .traversability_score_policy = autonomy::TraversabilityScoreCompositionPolicy{
+            .aggregated_primary_weight = 0.0,
+            .aggregated_secondary_weight = 1.0,
+            .risk_aggregate_weight = 1.0,
+            .risk_peak_weight = 0.0,
+        },
+        .local_planner_policy = autonomy::LocalPlannerPolicyConfig{
+            .stale_plan_timeout_ms = 1,
+        },
+    });
+    if (!expect(stack.init(), "stack init should succeed")) {
+        return false;
+    }
+    if (!expect(stack.start(), "stack start should succeed")) {
+        return false;
+    }
+    if (!expect(stack.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(stack.startMission().accepted, "start mission should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput output{};
+    if (!expect(stack.step(autonomy::AutonomyStepInput{
+                               .now_ms = 100,
+                               .blocked = false,
+                               .map_slice_input = autonomy::MapSliceInput{
+                                   .has_occupancy = true,
+                                   .has_elevation = true,
+                                   .has_risk_confidence = true,
+                                   .occupancy = 0.0,
+                                   .elevation_m = 0.0,
+                                   .risk_confidence = 0.95,
+                               },
+                               .has_estimator_state = true,
+                               .estimator_state = makeEstimatorState(99'000, 0.1, 0.2, 0.0),
+                               .localization_frame_id = "odom",
+                           },
+                           &output),
+                "policy override step should succeed")) {
+        return false;
+    }
+
+    stack.stop();
+    return expect(output.localization_estimate.valid,
+                  "localization policy override should allow odom source frame through stack wiring");
+}
+
 bool testStepRejectsStaleEnvelope() {
     autonomy::AutonomyStack stack;
     if (!expect(stack.init(), "stack init should succeed")) {
@@ -789,6 +849,7 @@ int main() {
         !testRecoveryDoesNotBypassEStopOrHoldPriority() ||
         !testScriptAndContractLoadPath() ||
         !testTerrainAndRiskChangesUpdatePlannerBehavior() ||
+        !testAutonomyStackPolicyOverridesPassThroughToModules() ||
         !testStepRejectsStaleEnvelope() ||
         !testStepRejectsNonMonotonicSamplePerStream() ||
         !testStepRejectsInvalidContractVersion() ||

@@ -39,20 +39,18 @@ LocalizationSourceObservation localizationObservationFromOdometry(double x_m,
     };
 }
 
-LocalizationModuleShell::LocalizationModuleShell(std::string expected_frame,
-                                                 uint64_t stale_threshold_ms)
+LocalizationModuleShell::LocalizationModuleShell(LocalizationValidationPolicy policy)
     : AutonomyModuleStub("localization"),
-      expected_frame_(std::move(expected_frame)),
-      stale_threshold_ms_(stale_threshold_ms) {}
+      policy_(std::move(policy)) {}
 
 LocalizationEstimate LocalizationModuleShell::update(const LocalizationSourceObservation& observation,
                                                      uint64_t now_ms,
                                                      ContractEnvelope envelope) {
     (void)envelope;
     estimate_.valid = false;
-    estimate_.frame_id = expected_frame_;
+    estimate_.frame_id = policy_.expected_frame_id;
 
-    if (!observation.valid || observation.frame_id != expected_frame_ || !isObservationFresh(observation, now_ms)) {
+    if (!observation.valid || !isFrameValid(observation) || !isObservationFresh(observation, now_ms)) {
         estimate_.timestamp_ms = now_ms;
         return estimate_;
     }
@@ -70,12 +68,22 @@ LocalizationEstimate LocalizationModuleShell::estimate() const {
     return estimate_;
 }
 
+bool LocalizationModuleShell::isFrameValid(const LocalizationSourceObservation& observation) const {
+    if (!policy_.require_frame_match) {
+        return true;
+    }
+    return observation.frame_id == policy_.expected_frame_id;
+}
+
 bool LocalizationModuleShell::isObservationFresh(const LocalizationSourceObservation& observation,
                                                  uint64_t now_ms) const {
-    if (observation.timestamp_ms == TimestampMs{} || observation.timestamp_ms > now_ms) {
+    if (policy_.reject_zero_timestamp && observation.timestamp_ms == TimestampMs{}) {
         return false;
     }
-    return (now_ms - observation.timestamp_ms).value <= stale_threshold_ms_;
+    if (policy_.reject_future_timestamps && observation.timestamp_ms > now_ms) {
+        return false;
+    }
+    return (now_ms - observation.timestamp_ms).value <= policy_.stale_threshold_ms;
 }
 
 } // namespace autonomy
