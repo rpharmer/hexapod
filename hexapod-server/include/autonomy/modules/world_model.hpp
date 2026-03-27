@@ -10,6 +10,7 @@ public:
     WorldModelModuleShell();
 
     WorldModelSnapshot update(const LocalizationEstimate& localization,
+                              const MapSliceInput& map_slice_input,
                               bool blocked,
                               uint64_t timestamp_ms);
     [[nodiscard]] WorldModelSnapshot snapshot() const;

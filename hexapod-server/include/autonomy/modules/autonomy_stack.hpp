@@ -23,6 +23,7 @@ struct AutonomyStepInput {
     bool estop{false};
     bool hold{false};
     bool blocked{false};
+    MapSliceInput map_slice_input{};
     bool waypoint_reached{false};
 };
 

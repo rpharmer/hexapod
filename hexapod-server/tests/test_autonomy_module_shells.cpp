@@ -80,10 +80,21 @@ bool testAllShellsFunctionalWiring() {
     if (!expect(loc.valid, "localization shell should synthesize valid estimate from nav intent")) {
         return false;
     }
-    const auto world = world_model.update(loc, false, 10);
+    const auto world = world_model.update(
+        loc,
+        autonomy::MapSliceInput{
+            .has_occupancy = true,
+            .has_elevation = true,
+            .has_risk_confidence = true,
+            .occupancy = 0.2,
+            .elevation_m = 0.05,
+            .risk_confidence = 0.9,
+        },
+        false,
+        10);
     const auto traverse = traversability.analyze(world, 10);
     const auto global_plan = global_planner.plan(nav_update, traverse);
-    const auto local_plan = local_planner.plan(global_plan, false);
+    const auto local_plan = local_planner.plan(global_plan);
     if (!expect(local_plan.has_command, "local planner shell should emit command from global plan")) {
         return false;
     }
@@ -109,11 +120,64 @@ bool testAllShellsFunctionalWiring() {
     return expect(!locomotion_command.sent, "locomotion shell should not dispatch when motion is gated");
 }
 
+
+
+bool testTerrainRiskInputsAffectPlanning() {
+    autonomy::NavigationManagerModuleShell navigation;
+    autonomy::LocalizationModuleShell localization;
+    autonomy::WorldModelModuleShell world_model;
+    autonomy::TraversabilityAnalyzerModuleShell traversability;
+    autonomy::GlobalPlannerModuleShell global_planner;
+
+    const autonomy::WaypointMission mission{
+        .mission_id = "terrain-risk-mission",
+        .waypoints = {autonomy::Waypoint{.frame_id = "map", .x_m = 2.0, .y_m = 1.0, .yaw_rad = 0.0}},
+    };
+
+    const auto nav_update = navigation.computeIntent(mission, 0, false);
+    const auto loc = localization.update(nav_update, 100);
+
+    const auto nominal_world = world_model.update(
+        loc,
+        autonomy::MapSliceInput{
+            .has_occupancy = true,
+            .has_elevation = true,
+            .has_risk_confidence = true,
+            .occupancy = 0.1,
+            .elevation_m = 0.02,
+            .risk_confidence = 0.95,
+        },
+        false,
+        100);
+    const auto nominal_traversability = traversability.analyze(nominal_world, 100);
+    const auto nominal_plan = global_planner.plan(nav_update, nominal_traversability);
+
+    const auto risky_world = world_model.update(
+        loc,
+        autonomy::MapSliceInput{
+            .has_occupancy = true,
+            .has_elevation = true,
+            .has_risk_confidence = true,
+            .occupancy = 0.95,
+            .elevation_m = 0.9,
+            .risk_confidence = 0.1,
+        },
+        false,
+        110);
+    const auto risky_traversability = traversability.analyze(risky_world, 110);
+    const auto risky_plan = global_planner.plan(nav_update, risky_traversability);
+
+    return expect(nominal_plan.has_plan, "nominal terrain should remain plannable") &&
+           expect(!risky_traversability.traversable, "high risk with low confidence should be non-traversable") &&
+           expect(!risky_plan.has_plan, "risky terrain should suppress global plan");
+}
+
 } // namespace
 
 int main() {
     if (!testAllShellsLifecycleAndIdentity() ||
-        !testAllShellsFunctionalWiring()) {
+        !testAllShellsFunctionalWiring() ||
+        !testTerrainRiskInputsAffectPlanning()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

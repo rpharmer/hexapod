@@ -5,9 +5,8 @@ namespace autonomy {
 LocalPlannerModuleShell::LocalPlannerModuleShell()
     : AutonomyModuleStub("local_planner") {}
 
-LocalPlan LocalPlannerModuleShell::plan(const GlobalPlan& global_plan,
-                                        bool blocked) {
-    if (global_plan.has_plan && !blocked) {
+LocalPlan LocalPlannerModuleShell::plan(const GlobalPlan& global_plan) {
+    if (global_plan.has_plan) {
         plan_.has_command = true;
         plan_.target = global_plan.target;
         return plan_;

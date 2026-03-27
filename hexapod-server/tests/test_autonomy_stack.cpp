@@ -45,6 +45,14 @@ bool testHappyPathWiresMissionNavAndMotion() {
     if (!expect(stack.step(autonomy::AutonomyStepInput{
                                .now_ms = 10,
                                .blocked = false,
+                               .map_slice_input = autonomy::MapSliceInput{
+                                   .has_occupancy = true,
+                                   .has_elevation = true,
+                                   .has_risk_confidence = true,
+                                   .occupancy = 0.1,
+                                   .elevation_m = 0.01,
+                                   .risk_confidence = 0.95,
+                               },
                                .waypoint_reached = false,
                            },
                            &first),
@@ -80,6 +88,14 @@ bool testHappyPathWiresMissionNavAndMotion() {
     if (!expect(stack.step(autonomy::AutonomyStepInput{
                                .now_ms = 20,
                                .blocked = false,
+                               .map_slice_input = autonomy::MapSliceInput{
+                                   .has_occupancy = true,
+                                   .has_elevation = true,
+                                   .has_risk_confidence = true,
+                                   .occupancy = 0.2,
+                                   .elevation_m = 0.03,
+                                   .risk_confidence = 0.9,
+                               },
                                .waypoint_reached = true,
                            },
                            &second),
@@ -116,15 +132,15 @@ bool testBlockedFlowEscalatesRecoveryToAbort() {
     autonomy::AutonomyStepOutput step1{};
     autonomy::AutonomyStepOutput step2{};
     autonomy::AutonomyStepOutput step3{};
-    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 10, .blocked = true}, &step1),
+    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 10, .blocked = true, .map_slice_input = autonomy::MapSliceInput{.has_occupancy = true, .occupancy = 1.0}}, &step1),
                 "first blocked step should succeed")) {
         return false;
     }
-    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 20, .blocked = true}, &step2),
+    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 20, .blocked = true, .map_slice_input = autonomy::MapSliceInput{.has_occupancy = true, .occupancy = 1.0}}, &step2),
                 "second blocked step should succeed")) {
         return false;
     }
-    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 30, .blocked = true}, &step3),
+    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 30, .blocked = true, .map_slice_input = autonomy::MapSliceInput{.has_occupancy = true, .occupancy = 1.0}}, &step3),
                 "third blocked step should succeed")) {
         return false;
     }
@@ -195,12 +211,74 @@ bool testScriptAndContractLoadPath() {
                   "invalid version flag should be set");
 }
 
+
+
+bool testTerrainAndRiskChangesUpdatePlannerBehavior() {
+    autonomy::AutonomyStack stack;
+    if (!expect(stack.init(), "stack init should succeed")) {
+        return false;
+    }
+    if (!expect(stack.start(), "stack start should succeed")) {
+        return false;
+    }
+    if (!expect(stack.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(stack.startMission().accepted, "start mission should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput nominal{};
+    if (!expect(stack.step(autonomy::AutonomyStepInput{
+                               .now_ms = 10,
+                               .blocked = false,
+                               .map_slice_input = autonomy::MapSliceInput{
+                                   .has_occupancy = true,
+                                   .has_elevation = true,
+                                   .has_risk_confidence = true,
+                                   .occupancy = 0.1,
+                                   .elevation_m = 0.02,
+                                   .risk_confidence = 0.95,
+                               },
+                           },
+                           &nominal),
+                "nominal terrain step should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput hazardous{};
+    if (!expect(stack.step(autonomy::AutonomyStepInput{
+                               .now_ms = 20,
+                               .blocked = false,
+                               .map_slice_input = autonomy::MapSliceInput{
+                                   .has_occupancy = true,
+                                   .has_elevation = true,
+                                   .has_risk_confidence = true,
+                                   .occupancy = 0.95,
+                                   .elevation_m = 0.9,
+                                   .risk_confidence = 0.1,
+                               },
+                           },
+                           &hazardous),
+                "hazardous terrain step should succeed")) {
+        return false;
+    }
+
+    stack.stop();
+
+    return expect(nominal.local_plan.has_command, "nominal terrain should allow local planning") &&
+           expect(!hazardous.traversability_report.traversable, "hazardous terrain should be non-traversable") &&
+           expect(!hazardous.global_plan.has_plan, "hazardous terrain should suppress global plan") &&
+           expect(!hazardous.local_plan.has_command, "hazardous terrain should suppress local command");
+}
+
 } // namespace
 
 int main() {
     if (!testHappyPathWiresMissionNavAndMotion() ||
         !testBlockedFlowEscalatesRecoveryToAbort() ||
-        !testScriptAndContractLoadPath()) {
+        !testScriptAndContractLoadPath() ||
+        !testTerrainAndRiskChangesUpdatePlannerBehavior()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

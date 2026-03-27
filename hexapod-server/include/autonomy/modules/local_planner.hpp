@@ -9,8 +9,7 @@ class LocalPlannerModuleShell : public AutonomyModuleStub {
 public:
     LocalPlannerModuleShell();
 
-    LocalPlan plan(const GlobalPlan& global_plan,
-                   bool blocked);
+    LocalPlan plan(const GlobalPlan& global_plan);
     [[nodiscard]] LocalPlan currentPlan() const;
 
 private:

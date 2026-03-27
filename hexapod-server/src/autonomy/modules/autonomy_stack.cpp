@@ -63,6 +63,7 @@ bool AutonomyStack::step(const AutonomyStepInput& input, AutonomyStepOutput* out
     output->localization_estimate = localization_module_.update(output->navigation_update, input.now_ms);
     output->world_model_snapshot = world_model_module_.update(
         output->localization_estimate,
+        input.map_slice_input,
         input.blocked,
         input.now_ms);
     output->traversability_report = traversability_analyzer_module_.analyze(
@@ -71,7 +72,7 @@ bool AutonomyStack::step(const AutonomyStepInput& input, AutonomyStepOutput* out
     output->global_plan = global_planner_module_.plan(
         output->navigation_update,
         output->traversability_report);
-    output->local_plan = local_planner_module_.plan(output->global_plan, input.blocked);
+    output->local_plan = local_planner_module_.plan(output->global_plan);
 
     output->progress_evaluation = progress_monitor_module_.evaluate(ProgressSample{
         .timestamp_ms = input.now_ms,
