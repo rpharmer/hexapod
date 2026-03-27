@@ -136,6 +136,14 @@ For simulator-mode scenario sweeps without copying configs by hand:
 scripts/run_server_scenarios.sh
 ```
 
+For CI-friendly replay validation of pose telemetry invariants (capture + scenario run + NDJSON checks):
+
+```bash
+scripts/verify_pose_telemetry_replay.sh --skip-build
+```
+
+This verifier uses UDP loopback host `127.0.0.1` on port `9871` by default and typically completes in ~30-90 seconds when the server is already built.
+
 To launch the server and visualiser together (wired over UDP telemetry) in simulator mode:
 
 ```bash
