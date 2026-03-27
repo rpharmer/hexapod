@@ -24,6 +24,8 @@ constexpr double kRegionReorientToPivotYaw = 0.60;
 constexpr double kSmoothCommandAlpha = 0.25;
 constexpr double kGaitSwitchSpeedHysteresis = 0.03;
 constexpr double kGaitSwitchYawHysteresis = 0.04;
+constexpr double kFiniteDifferenceStepRad = 1e-4;
+constexpr double kMinMotionLimiterScale = 0.30;
 
 double normalizedSpeed(const MotionIntent& intent, const control_config::GaitConfig& config)
 {
@@ -35,6 +37,185 @@ double normalizedYaw(const MotionIntent& intent, const control_config::GaitConfi
 {
     const double yaw_enter = std::max(config.turn_mode_thresholds.yaw_rate_enter_radps.value, 1e-6);
     return clamp01(std::abs(intent.body_pose_setpoint.angular_velocity_radps.z) / yaw_enter);
+}
+
+double minJointVmaxRadps(const LegGeometry& leg_geo, const int joint_idx)
+{
+    const ServoJointDynamics& dynamics = leg_geo.servoDynamics[joint_idx];
+    return std::max(0.0, std::min(dynamics.positive_direction.vmax_radps, dynamics.negative_direction.vmax_radps));
+}
+
+double minJointAmaxRadps2(const LegGeometry& leg_geo, const int joint_idx)
+{
+    const ServoJointDynamics& dynamics = leg_geo.servoDynamics[joint_idx];
+    const double vmax = minJointVmaxRadps(leg_geo, joint_idx);
+    const double tau = std::max(1e-3, std::min(dynamics.positive_direction.tau_s, dynamics.negative_direction.tau_s));
+    return vmax / tau;
+}
+
+double predictedFootSpeedUpperBound(const RuntimeGaitPolicy& policy)
+{
+    if (policy.cadence_hz.value <= 1e-9) {
+        return 0.0;
+    }
+
+    double peak = 0.0;
+    for (const auto& leg : policy.per_leg) {
+        const double duty = std::clamp(leg.duty_cycle, 0.05, 0.95);
+        const double phase_rate = std::max(0.0, policy.cadence_hz.value);
+        const double step = std::max(0.0, leg.step_length_m.value);
+        const double swing = std::max(0.0, leg.swing_height_m.value);
+
+        const double stance_xy = kPi * step * phase_rate;
+        const double swing_xy = 3.0 * step * phase_rate / std::max(1.0 - duty, 1e-3);
+        const double swing_z = 2.0 * kPi * swing * phase_rate / std::max(1.0 - duty, 1e-3);
+        peak = std::max(peak, stance_xy + swing_xy + swing_z);
+    }
+    return peak;
+}
+
+double predictedFootAccelUpperBound(const RuntimeGaitPolicy& policy)
+{
+    if (policy.cadence_hz.value <= 1e-9) {
+        return 0.0;
+    }
+
+    double peak = 0.0;
+    for (const auto& leg : policy.per_leg) {
+        const double duty = std::clamp(leg.duty_cycle, 0.05, 0.95);
+        const double phase_rate = std::max(0.0, policy.cadence_hz.value);
+        const double step = std::max(0.0, leg.step_length_m.value);
+        const double swing = std::max(0.0, leg.swing_height_m.value);
+        const double rate_sq = phase_rate * phase_rate;
+
+        const double stance_xy = 2.0 * kPi * kPi * step * rate_sq;
+        const double swing_xy = 18.0 * step * rate_sq /
+                                std::max((1.0 - duty) * (1.0 - duty), 1e-4);
+        const double swing_z = 4.0 * kPi * kPi * swing * rate_sq /
+                               std::max((1.0 - duty) * (1.0 - duty), 1e-4);
+        peak = std::max(peak, stance_xy + swing_xy + swing_z);
+    }
+    return peak;
+}
+
+bool buildLocalJacobian(const LegGeometry& leg_geo, const LegState& leg_state, double jac[3][3])
+{
+    const LegState joint_frame = leg_geo.servo.toJointAngles(leg_state);
+    for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+        LegState plus = joint_frame;
+        LegState minus = joint_frame;
+        plus.joint_state[joint].pos_rad.value += kFiniteDifferenceStepRad;
+        minus.joint_state[joint].pos_rad.value -= kFiniteDifferenceStepRad;
+
+        const Vec3 foot_plus = kinematics::footInLegFrame(plus, leg_geo);
+        const Vec3 foot_minus = kinematics::footInLegFrame(minus, leg_geo);
+        if (!isFinite(foot_plus) || !isFinite(foot_minus)) {
+            return false;
+        }
+
+        const Vec3 column = (foot_plus - foot_minus) * (0.5 / kFiniteDifferenceStepRad);
+        jac[0][joint] = column.x;
+        jac[1][joint] = column.y;
+        jac[2][joint] = column.z;
+    }
+    return true;
+}
+
+double estimateJointDemandRatio(const RuntimeGaitPolicy& policy,
+                                const RobotState& est,
+                                const HexapodGeometry& geometry)
+{
+    const double predicted_speed = predictedFootSpeedUpperBound(policy);
+    const double predicted_accel = predictedFootAccelUpperBound(policy);
+    if (predicted_speed <= 1e-9 && predicted_accel <= 1e-9) {
+        return 1.0;
+    }
+
+    const std::array<Vec3, 6> probing_dirs{
+        Vec3{1.0, 0.0, 0.0},
+        Vec3{0.0, 1.0, 0.0},
+        Vec3{0.0, 0.0, 1.0},
+        Vec3{-1.0, 0.0, 0.0},
+        Vec3{0.0, -1.0, 0.0},
+        Vec3{0.0, 0.0, -1.0},
+    };
+
+    double min_ratio = 1.0;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        const LegGeometry& leg_geo = geometry.legGeometry[leg];
+        double jac[3][3]{};
+        if (!buildLocalJacobian(leg_geo, est.leg_states[leg], jac)) {
+            continue;
+        }
+
+        for (const Vec3& dir : probing_dirs) {
+            double qd0 = 0.0;
+            double qd1 = 0.0;
+            double qd2 = 0.0;
+            if (!solve3x3Cramers(jac[0][0], jac[0][1], jac[0][2],
+                                 jac[1][0], jac[1][1], jac[1][2],
+                                 jac[2][0], jac[2][1], jac[2][2],
+                                 dir.x * predicted_speed, dir.y * predicted_speed, dir.z * predicted_speed,
+                                 qd0, qd1, qd2, 1e-9)) {
+                min_ratio = std::min(min_ratio, 0.4);
+                continue;
+            }
+
+            double qdd0 = 0.0;
+            double qdd1 = 0.0;
+            double qdd2 = 0.0;
+            const bool accel_ok = solve3x3Cramers(jac[0][0], jac[0][1], jac[0][2],
+                                                  jac[1][0], jac[1][1], jac[1][2],
+                                                  jac[2][0], jac[2][1], jac[2][2],
+                                                  dir.x * predicted_accel, dir.y * predicted_accel, dir.z * predicted_accel,
+                                                  qdd0, qdd1, qdd2, 1e-9);
+
+            const std::array<double, kJointsPerLeg> qd{qd0, qd1, qd2};
+            const std::array<double, kJointsPerLeg> qdd{qdd0, qdd1, qdd2};
+            for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+                const double vmax = minJointVmaxRadps(leg_geo, joint);
+                if (vmax > 1e-9) {
+                    const double current = std::abs(est.leg_states[leg].joint_state[joint].vel_radps.value);
+                    const double remaining = std::max(vmax - current, 0.0);
+                    const double occupancy_margin =
+                        std::clamp(remaining / std::max(0.25 * vmax, 1e-6), 0.0, 1.0);
+                    min_ratio = std::min(min_ratio, occupancy_margin);
+                    const double demand = std::abs(qd[joint]);
+                    if (demand > 1e-9) {
+                        min_ratio = std::min(min_ratio, remaining / demand);
+                    }
+                }
+
+                if (accel_ok) {
+                    const double amax = minJointAmaxRadps2(leg_geo, joint);
+                    const double demand_accel = std::abs(qdd[joint]);
+                    if (amax > 1e-9 && demand_accel > 1e-9) {
+                        min_ratio = std::min(min_ratio, amax / demand_accel);
+                    }
+                }
+            }
+        }
+    }
+
+    return std::clamp(min_ratio, 0.0, 1.0);
+}
+
+void applyGaitScale(RuntimeGaitPolicy& policy, const double gait_scale)
+{
+    const double scale = std::clamp(gait_scale, kMinMotionLimiterScale, 1.0);
+    policy.cadence_hz = FrequencyHz{policy.cadence_hz.value * scale};
+    for (auto& leg : policy.per_leg) {
+        leg.step_length_m = LengthM{leg.step_length_m.value * scale};
+        leg.swing_height_m = LengthM{leg.swing_height_m.value * std::sqrt(scale)};
+        leg.duty_cycle = std::clamp(leg.duty_cycle + (1.0 - scale) * 0.20, 0.05, 0.95);
+    }
+
+    if (scale < 0.72 && policy.gait_family == GaitType::TRIPOD) {
+        policy.gait_family = GaitType::RIPPLE;
+    }
+    if (scale < 0.52 && policy.gait_family != GaitType::WAVE) {
+        policy.gait_family = GaitType::WAVE;
+    }
 }
 constexpr double kArcMaxRollPitchRad = 8.0 * kPi / 180.0;
 constexpr double kPivotMaxRollPitchRad = 10.0 * kPi / 180.0;
@@ -219,6 +400,7 @@ RuntimeGaitPolicy GaitPolicyPlanner::plan(const RobotState& est,
             (config_.frequency.max_hz.value - config_.frequency.min_hz.value) * speed_mag * envelope_speed_scale,
         config_.frequency.min_hz.value,
         config_.frequency.max_hz.value)};
+    applyMotionLimiter(policy, est);
     applyFallback(policy);
     applyServoVelocityConstraint(policy, est);
     return policy;
@@ -288,6 +470,7 @@ RuntimeGaitPolicy GaitPolicyPlanner::legacyPolicy(const RobotState& est,
         command_norm,
         yaw_normalized,
         policy.reach_utilization);
+    applyMotionLimiter(policy, est);
     applyFallback(policy);
     applyServoVelocityConstraint(policy, est);
     return policy;
@@ -482,6 +665,32 @@ void GaitPolicyPlanner::applyFallback(RuntimeGaitPolicy& policy) const
     }
 }
 
+void GaitPolicyPlanner::applyMotionLimiter(RuntimeGaitPolicy& policy, const RobotState& est) const
+{
+    if (policy.cadence_hz.value <= 0.0 ||
+        policy.fallback_stage == GaitFallbackStage::SAFE_STOP ||
+        policy.fallback_stage == GaitFallbackStage::FAULT_HOLD) {
+        return;
+    }
+
+    const double margin_scale = estimateJointDemandRatio(policy, est, geometry_);
+    if (margin_scale >= 0.999) {
+        return;
+    }
+
+    applyGaitScale(policy, margin_scale);
+
+    if (margin_scale < kMinMotionLimiterScale) {
+        policy.cadence_hz = FrequencyHz{std::min(policy.cadence_hz.value, 0.8)};
+        policy.gait_family = GaitType::WAVE;
+        for (auto& leg : policy.per_leg) {
+            leg.step_length_m = LengthM{leg.step_length_m.value * 0.60};
+            leg.swing_height_m = LengthM{leg.swing_height_m.value * 0.85};
+            leg.duty_cycle = std::max(leg.duty_cycle, 0.88);
+        }
+    }
+}
+
 void GaitPolicyPlanner::applyServoVelocityConstraint(RuntimeGaitPolicy& policy, const RobotState& est) const
 {
     if (policy.cadence_hz.value <= 0.0 ||
@@ -519,6 +728,9 @@ void GaitPolicyPlanner::applyServoVelocityConstraint(RuntimeGaitPolicy& policy, 
 
     const double gait_scale =
         std::clamp(allowed_peak_velocity_radps / observed_peak_velocity_radps, 0.05, 1.0);
+    policy.adaptation_scale_cadence = gait_scale;
+    policy.adaptation_scale_step = gait_scale;
+    policy.hard_clamp_cadence = gait_scale < 0.999;
     policy.cadence_hz = FrequencyHz{policy.cadence_hz.value * gait_scale};
     for (auto& leg : policy.per_leg) {
         leg.step_length_m = LengthM{leg.step_length_m.value * gait_scale};

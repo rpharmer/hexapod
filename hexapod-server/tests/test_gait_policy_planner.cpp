@@ -154,6 +154,8 @@ void testAcceptanceGatesDisableByDefault()
     const RuntimeGaitPolicy policy = planner.plan(est, walkingIntent(0.95, 0.10), safety);
 
     expect(!policy.dynamic_enabled, "dynamic gait should remain disabled until rollout gates pass");
+    expect(!policy.hard_clamp_cadence,
+           "cadence hard-clamp telemetry should stay clear when limiter path is effectively disabled");
 }
 
 void testServoVelocityConstraintModifiesGait()
@@ -181,6 +183,35 @@ void testServoVelocityConstraintModifiesGait()
            "servo velocity overspeed should shorten stride length");
     expect(constrained.per_leg[0].duty_cycle >= unconstrained.per_leg[0].duty_cycle,
            "servo velocity overspeed should increase duty cycle for stability");
+    expect(constrained.hard_clamp_cadence,
+           "overspeed constraint should set cadence hard-clamp telemetry");
+    expect(constrained.adaptation_scale_cadence < 1.0,
+           "overspeed constraint should lower cadence adaptation scale");
+}
+
+void testMotionLimiterUsesJointMarginBeforeHardClamp()
+{
+    GaitPolicyPlanner planner{enabledDynamicConfig()};
+    SafetyState safety = safeState();
+    warmPlanner(planner, walkingIntent(0.95, 0.05), safety, 16);
+
+    RobotState baseline = nominalEstimate();
+    const RuntimeGaitPolicy nominal = planner.plan(baseline, walkingIntent(0.95, 0.05), safety);
+
+    RobotState tight_margin = nominalEstimate();
+    for (auto& leg : tight_margin.leg_states) {
+        for (auto& joint : leg.joint_state) {
+            joint.vel_radps = AngularRateRadPerSec{50.0};
+        }
+    }
+    const RuntimeGaitPolicy adapted = planner.plan(tight_margin, walkingIntent(0.95, 0.05), safety);
+
+    expect(adapted.cadence_hz.value < nominal.cadence_hz.value,
+           "motion limiter should lower cadence when estimated joint velocity margin is small");
+    expect(adapted.per_leg[0].step_length_m.value < nominal.per_leg[0].step_length_m.value,
+           "motion limiter should shorten step length when velocity margin is small");
+    expect(adapted.per_leg[0].duty_cycle > nominal.per_leg[0].duty_cycle,
+           "motion limiter should increase duty cycle as margin shrinks");
 }
 
 void testRegionThresholdBoundaries()
@@ -267,6 +298,7 @@ int main()
     testFallbackEscalationPrecedence();
     testAcceptanceGatesDisableByDefault();
     testServoVelocityConstraintModifiesGait();
+    testMotionLimiterUsesJointMarginBeforeHardClamp();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test(s) failed\n";

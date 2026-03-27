@@ -175,6 +175,92 @@ bool testOutOfRangeTuningFallsBackToDefaults()
                 "BusLoopPeriodUs should fallback to default when out of range");
 }
 
+bool testMotionLimiterDefaultsApplyWhenSectionMissing()
+{
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(configPath("config.txt"), parsed),
+              "config.txt should parse for motion limiter defaults")) {
+    return false;
+  }
+
+  return expect(near(parsed.motionBodyLinearAccelLimitXYMps2,
+                     control_config::kDefaultMotionBodyLinearAccelLimitXYMps2),
+                "motion body xy accel default should apply when section is missing") &&
+         expect(near(parsed.motionBodyLinearAccelLimitZMps2,
+                     control_config::kDefaultMotionBodyLinearAccelLimitZMps2),
+                "motion body z accel default should apply when section is missing") &&
+         expect(near(parsed.motionBodyAngularAccelLimitXRadps2,
+                     control_config::kDefaultMotionBodyAngularAccelLimitXRadps2),
+                "motion body angular x accel default should apply when section is missing") &&
+         expect(near(parsed.motionBodyAngularAccelLimitYRadps2,
+                     control_config::kDefaultMotionBodyAngularAccelLimitYRadps2),
+                "motion body angular y accel default should apply when section is missing") &&
+         expect(near(parsed.motionBodyAngularAccelLimitZRadps2,
+                     control_config::kDefaultMotionBodyAngularAccelLimitZRadps2),
+                "motion body angular z accel default should apply when section is missing") &&
+         expect(near(parsed.motionFootVelocityLimitMps, control_config::kDefaultMotionFootVelocityLimitMps),
+                "motion foot velocity default should apply when section is missing") &&
+         expect(near(parsed.motionFootAccelLimitMps2, control_config::kDefaultMotionFootAccelLimitMps2),
+                "motion foot accel default should apply when section is missing") &&
+         expect(near(parsed.motionJointSoftVelocityLimitRadps,
+                     control_config::kDefaultMotionJointSoftVelocityLimitRadps),
+                "motion joint soft velocity default should apply when section is missing") &&
+         expect(near(parsed.motionJointSoftAccelLimitRadps2,
+                     control_config::kDefaultMotionJointSoftAccelLimitRadps2),
+                "motion joint soft accel default should apply when section is missing") &&
+         expect(parsed.motionStartupPhaseThresholdMs ==
+                    control_config::kDefaultMotionStartupPhaseThresholdMs,
+                "motion startup phase threshold default should apply when section is missing") &&
+         expect(parsed.motionShutdownPhaseThresholdMs ==
+                    control_config::kDefaultMotionShutdownPhaseThresholdMs,
+                "motion shutdown phase threshold default should apply when section is missing");
+}
+
+bool testMotionLimiterInvalidValuesFallbackToDefaults()
+{
+  std::string cfg = readText(configPath("config.sim.txt"));
+  if (!expect(replaceOnce(cfg, "body_linear_accel_limit_xy_mps2 = 0.6",
+                          "body_linear_accel_limit_xy_mps2 = -0.5"),
+              "baseline sim config missing motion limiter xy accel entry") ||
+      !expect(replaceOnce(cfg, "body_linear_accel_limit_z_mps2 = 0.4",
+                          "body_linear_accel_limit_z_mps2 = 0.9"),
+              "baseline sim config missing motion limiter z accel entry") ||
+      !expect(replaceOnce(cfg, "body_angular_accel_limit_x_radps2 = 1.2",
+                          "body_angular_accel_limit_x_radps2 = 0.0"),
+              "baseline sim config missing motion limiter angular x entry") ||
+      !expect(replaceOnce(cfg, "joint_soft_accel_limit_radps2 = 30.0",
+                          "joint_soft_accel_limit_radps2 = 3000.0"),
+              "baseline sim config missing motion limiter joint soft accel entry") ||
+      !expect(replaceOnce(cfg, "startup_phase_threshold_ms = 350",
+                          "startup_phase_threshold_ms = -1"),
+              "baseline sim config missing motion limiter startup threshold entry")) {
+    return false;
+  }
+
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(writeTemp("hexapod_bad_motion_limiter.toml", cfg), parsed),
+              "motion limiter invalid values should parse with fallback")) {
+    return false;
+  }
+
+  return expect(near(parsed.motionBodyLinearAccelLimitXYMps2,
+                     control_config::kDefaultMotionBodyLinearAccelLimitXYMps2),
+                "invalid motion body xy accel should fallback to default") &&
+         expect(near(parsed.motionBodyLinearAccelLimitZMps2, 0.9),
+                "valid motion body z accel should parse configured value") &&
+         expect(near(parsed.motionBodyAngularAccelLimitXRadps2,
+                     control_config::kDefaultMotionBodyAngularAccelLimitXRadps2),
+                "invalid motion body angular x accel should fallback to default") &&
+         expect(near(parsed.motionJointSoftAccelLimitRadps2,
+                     control_config::kDefaultMotionJointSoftAccelLimitRadps2),
+                "invalid joint soft accel should fallback to default") &&
+         expect(parsed.motionStartupPhaseThresholdMs ==
+                    control_config::kDefaultMotionStartupPhaseThresholdMs,
+                "invalid startup threshold should fallback to default");
+}
+
 bool testOutOfRangeRuntimeFallsBackWithDiagnostic()
 {
   std::string cfg = readText(configPath("config.txt"));
@@ -563,6 +649,8 @@ int main()
   testMalformedCalibrationKeyFails();
   testDuplicateCalibrationKeyFails();
   testOutOfRangeTuningFallsBackToDefaults();
+  testMotionLimiterDefaultsApplyWhenSectionMissing();
+  testMotionLimiterInvalidValuesFallbackToDefaults();
   testOutOfRangeRuntimeFallsBackWithDiagnostic();
   testTelemetryRuntimeFieldsParseAndFallback();
   testImuRuntimeReadGateParsesAndDefaults();
