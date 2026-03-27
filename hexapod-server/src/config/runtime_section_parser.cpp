@@ -108,6 +108,9 @@ bool parseRuntimeSection(const toml::value& root,
       {"Runtime.Sim.LowVoltage", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
       {"Runtime.Sim.HighCurrent", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
       {"Runtime.Imu.EnableReads", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.Autonomy.Enabled", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.Autonomy.NoProgressTimeoutMs", ValueType::Double, false, true, 1.0, 60000.0, "", false, 1000.0},
+      {"Runtime.Autonomy.RecoveryRetryBudget", ValueType::Double, false, true, 0.0, 100.0, "", false, 2.0},
       {"Runtime.Log.FilePath", ValueType::String, false, false, kNoBoundsMin, kNoBoundsMax, "app.log", false, 0.0},
       {"Runtime.Log.EnableFile", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", true, 0.0},
       {"Runtime.Telemetry.Enable", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
@@ -161,19 +164,26 @@ bool parseRuntimeSection(const toml::value& root,
   out.simLowVoltage = findOrByPath<bool>(root, schema[5].key, schema[5].default_bool);
   out.simHighCurrent = findOrByPath<bool>(root, schema[6].key, schema[6].default_bool);
   out.imuEnableReads = config_validation::parseBoolWithFallback(root, schema[7].key, schema[7].default_bool);
+  out.autonomyEnabled = config_validation::parseBoolWithFallback(root, schema[8].key, schema[8].default_bool);
+  out.autonomyNoProgressTimeoutMs = static_cast<uint64_t>(config_validation::parseDoubleWithFallback(
+      root, schema[9].key, schema[9].default_double, schema[9].min_value, schema[9].max_value,
+      "runtime", logger, diagnostics));
+  out.autonomyRecoveryRetryBudget = static_cast<uint64_t>(config_validation::parseDoubleWithFallback(
+      root, schema[10].key, schema[10].default_double, schema[10].min_value, schema[10].max_value,
+      "runtime", logger, diagnostics));
 
-  out.logFilePath = findOrByPath<std::string>(root, schema[8].key, schema[8].default_string);
-  out.logToFile = findOrByPath<bool>(root, schema[9].key, schema[9].default_bool);
-  out.telemetryEnabled = findOrByPath<bool>(root, schema[10].key, schema[10].default_bool);
-  out.telemetryUdpHost = findOrByPath<std::string>(root, schema[11].key, schema[11].default_string);
+  out.logFilePath = findOrByPath<std::string>(root, schema[11].key, schema[11].default_string);
+  out.logToFile = findOrByPath<bool>(root, schema[12].key, schema[12].default_bool);
+  out.telemetryEnabled = findOrByPath<bool>(root, schema[13].key, schema[13].default_bool);
+  out.telemetryUdpHost = findOrByPath<std::string>(root, schema[14].key, schema[14].default_string);
   out.telemetryUdpPort = static_cast<int>(config_validation::parseDoubleWithFallback(
-      root, schema[12].key, schema[12].default_double, schema[12].min_value, schema[12].max_value,
+      root, schema[15].key, schema[15].default_double, schema[15].min_value, schema[15].max_value,
       "runtime", logger, diagnostics));
   out.telemetryPublishPeriodMs = static_cast<int>(config_validation::parseDoubleWithFallback(
-      root, schema[13].key, schema[13].default_double, schema[13].min_value, schema[13].max_value,
+      root, schema[16].key, schema[16].default_double, schema[16].min_value, schema[16].max_value,
       "runtime", logger, diagnostics));
   out.telemetryGeometryRefreshPeriodMs = static_cast<int>(config_validation::parseDoubleWithFallback(
-      root, schema[14].key, schema[14].default_double, schema[14].min_value, schema[14].max_value,
+      root, schema[17].key, schema[17].default_double, schema[17].min_value, schema[17].max_value,
       "runtime", logger, diagnostics));
 
   if (out.logToFile && out.logFilePath.empty()) {
@@ -186,26 +196,26 @@ bool parseRuntimeSection(const toml::value& root,
     }
   }
 
-  out.telemetryEnabled = findOrByPath<bool>(root, schema[10].key, schema[10].default_bool);
-  out.telemetryHost = findOrByPath<std::string>(root, schema[11].key, schema[11].default_string);
+  out.telemetryEnabled = findOrByPath<bool>(root, schema[13].key, schema[13].default_bool);
+  out.telemetryHost = findOrByPath<std::string>(root, schema[14].key, schema[14].default_string);
   if (out.telemetryHost.empty()) {
-    out.telemetryHost = schema[11].default_string;
-    config_validation::emitDiagnostic(diagnostics, "runtime", schema[11].key, "empty_value",
+    out.telemetryHost = schema[14].default_string;
+    config_validation::emitDiagnostic(diagnostics, "runtime", schema[14].key, "empty_value",
                                       "Runtime.Telemetry.Host was empty, using default 127.0.0.1");
     if (logger) {
       LOG_WARN(logger, "[runtime] Runtime.Telemetry.Host was empty, using default 127.0.0.1");
     }
   }
   out.telemetryPort = config_validation::parseIntWithFallback(
-      root, schema[12].key, static_cast<int>(schema[12].default_double),
-      static_cast<int>(schema[12].min_value), static_cast<int>(schema[12].max_value), "runtime",
+      root, schema[15].key, static_cast<int>(schema[15].default_double),
+      static_cast<int>(schema[15].min_value), static_cast<int>(schema[15].max_value), "runtime",
       logger, diagnostics);
   out.telemetryPublishRateHz = config_validation::parseDoubleWithFallback(
-      root, schema[13].key, schema[13].default_double, schema[13].min_value, schema[13].max_value,
+      root, schema[16].key, schema[16].default_double, schema[16].min_value, schema[16].max_value,
       "runtime", logger, diagnostics);
   out.telemetryGeometryResendIntervalSec = config_validation::parseDoubleWithFallback(
-      root, schema[14].key, schema[14].default_double, schema[14].min_value,
-      schema[14].max_value, "runtime", logger, diagnostics);
+      root, schema[17].key, schema[17].default_double, schema[17].min_value,
+      schema[17].max_value, "runtime", logger, diagnostics);
   return true;
 }
 

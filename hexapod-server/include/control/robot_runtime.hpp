@@ -2,6 +2,7 @@
 
 #include "control_pipeline.hpp"
 #include "control_config.hpp"
+#include "autonomy/modules/autonomy_stack.hpp"
 #include "double_buffer.hpp"
 #include "estimator.hpp"
 #include "freshness_policy.hpp"
@@ -19,6 +20,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 class RobotRuntime {
 public:
@@ -30,6 +32,7 @@ public:
                  std::unique_ptr<hardware::IImuUnit> imu = nullptr);
 
     bool init();
+    void stop();
     void startTelemetry();
 
     void busStep();
@@ -42,9 +45,18 @@ public:
     void setMotionIntentForTest(const MotionIntent& intent);
     bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
     ControlStatus getStatus() const;
+    void setAutonomyBlockedForTest(bool blocked);
+    void setAutonomyNoProgressForTest(bool no_progress);
+    void signalAutonomyWaypointReachedForTest();
+    bool loadAutonomyMissionForTest(const autonomy::WaypointMission& mission);
+    bool startAutonomyMissionForTest();
+    std::optional<autonomy::AutonomyStepOutput> lastAutonomyStepOutputForTest() const;
 
 private:
     void maybePublishTelemetry(const TimePointUs& now);
+    MotionIntent resolveAutonomyMotionIntent(const MotionIntent& base_intent,
+                                             const SafetyState& safety_state,
+                                             const TimePointUs& now);
 
     std::unique_ptr<IHardwareBridge> hw_;
     std::unique_ptr<hardware::IImuUnit> imu_;
@@ -80,4 +92,9 @@ private:
 
     TimePointUs next_telemetry_publish_at_{};
     TimePointUs next_geometry_refresh_at_{};
+    std::unique_ptr<autonomy::AutonomyStack> autonomy_stack_;
+    std::optional<autonomy::AutonomyStepOutput> last_autonomy_step_output_{};
+    std::atomic<bool> autonomy_blocked_signal_{false};
+    std::atomic<bool> autonomy_no_progress_signal_{false};
+    std::atomic<bool> autonomy_waypoint_reached_event_{false};
 };

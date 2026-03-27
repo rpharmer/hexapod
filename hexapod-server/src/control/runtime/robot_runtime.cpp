@@ -3,6 +3,7 @@
 #include "geometry_config.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
                            std::unique_ptr<IEstimator> estimator,
@@ -87,8 +88,41 @@ bool RobotRuntime::init() {
     timing_metrics_.reset();
     next_telemetry_publish_at_ = TimePointUs{};
     next_geometry_refresh_at_ = TimePointUs{};
+    last_autonomy_step_output_.reset();
+    autonomy_blocked_signal_.store(false);
+    autonomy_no_progress_signal_.store(false);
+    autonomy_waypoint_reached_event_.store(false);
+
+    if (config_.autonomy.enabled) {
+        autonomy_stack_ = std::make_unique<autonomy::AutonomyStack>(autonomy::AutonomyStackConfig{
+            .no_progress_timeout_ms = config_.autonomy.no_progress_timeout_ms,
+            .recovery_retry_budget = config_.autonomy.recovery_retry_budget,
+        });
+        if (!autonomy_stack_->init() || !autonomy_stack_->start()) {
+            if (logger_) {
+                LOG_ERROR(logger_, "AutonomyStack init/start failed");
+            }
+            autonomy_stack_.reset();
+            return false;
+        }
+        if (logger_) {
+            LOG_INFO(logger_,
+                     "Runtime.Autonomy.Enabled=true, NoProgressTimeoutMs=",
+                     config_.autonomy.no_progress_timeout_ms,
+                     ", RecoveryRetryBudget=",
+                     config_.autonomy.recovery_retry_budget);
+        }
+    } else {
+        autonomy_stack_.reset();
+    }
 
     return true;
+}
+
+void RobotRuntime::stop() {
+    if (autonomy_stack_) {
+        autonomy_stack_->stop();
+    }
 }
 
 void RobotRuntime::startTelemetry() {
@@ -175,9 +209,11 @@ void RobotRuntime::controlStep() {
         return;
     }
 
+    const MotionIntent effective_intent = resolveAutonomyMotionIntent(intent, safety_state, now);
+
     const PipelineStepResult result = pipeline_.runStep(
         est,
-        intent,
+        effective_intent,
         safety_state,
         bus_ok,
         loop_counter);
@@ -260,6 +296,50 @@ void RobotRuntime::setMotionIntent(const MotionIntent& intent) {
     motion_intent_.write(stamped_intent);
 }
 
+MotionIntent RobotRuntime::resolveAutonomyMotionIntent(const MotionIntent& base_intent,
+                                                       const SafetyState& safety_state,
+                                                       const TimePointUs& now) {
+    last_autonomy_step_output_.reset();
+    if (!autonomy_stack_) {
+        return base_intent;
+    }
+
+    autonomy::AutonomyStepInput step_input{};
+    step_input.now_ms = now.value / 1000ULL;
+    step_input.estop = safety_state.torque_cut;
+    step_input.hold = safety_state.inhibit_motion && !step_input.estop;
+    step_input.blocked = autonomy_blocked_signal_.load() || autonomy_no_progress_signal_.load();
+    step_input.waypoint_reached = autonomy_waypoint_reached_event_.exchange(false);
+
+    autonomy::AutonomyStepOutput step_output{};
+    if (!autonomy_stack_->step(step_input, &step_output)) {
+        if (logger_) {
+            LOG_WARN(logger_, "AutonomyStack step failed, using direct MotionIntent");
+        }
+        return base_intent;
+    }
+    last_autonomy_step_output_ = step_output;
+
+    MotionIntent intent = base_intent;
+    intent.timestamp_us = now;
+    intent.sample_id = intent_sample_seq_.fetch_add(1) + 1;
+
+    if (!step_output.motion_decision.allow_motion || !step_output.locomotion_command.sent) {
+        intent.requested_mode = RobotMode::SAFE_IDLE;
+        intent.speed_mps = LinearRateMps{0.0};
+        return intent;
+    }
+
+    intent.requested_mode = RobotMode::WALK;
+    const double target_x = step_output.locomotion_command.target.x_m;
+    const double target_y = step_output.locomotion_command.target.y_m;
+    intent.heading_rad = AngleRad{std::atan2(target_y, target_x)};
+    const double distance = std::sqrt((target_x * target_x) + (target_y * target_y));
+    const double capped_speed = std::min(distance, config_.gait.fallback_speed_mag.value);
+    intent.speed_mps = LinearRateMps{capped_speed};
+    return intent;
+}
+
 void RobotRuntime::setMotionIntentForTest(const MotionIntent& intent) {
     motion_intent_.write(intent);
 }
@@ -276,4 +356,36 @@ bool RobotRuntime::setSimFaultToggles(const SimHardwareFaultToggles& toggles) {
 
 ControlStatus RobotRuntime::getStatus() const {
     return status_.read();
+}
+
+void RobotRuntime::setAutonomyBlockedForTest(bool blocked) {
+    autonomy_blocked_signal_.store(blocked);
+}
+
+void RobotRuntime::setAutonomyNoProgressForTest(bool no_progress) {
+    autonomy_no_progress_signal_.store(no_progress);
+}
+
+void RobotRuntime::signalAutonomyWaypointReachedForTest() {
+    autonomy_waypoint_reached_event_.store(true);
+}
+
+bool RobotRuntime::loadAutonomyMissionForTest(const autonomy::WaypointMission& mission) {
+    if (!autonomy_stack_) {
+        return false;
+    }
+    const auto event = autonomy_stack_->loadMission(mission);
+    return event.accepted;
+}
+
+bool RobotRuntime::startAutonomyMissionForTest() {
+    if (!autonomy_stack_) {
+        return false;
+    }
+    const auto event = autonomy_stack_->startMission();
+    return event.accepted;
+}
+
+std::optional<autonomy::AutonomyStepOutput> RobotRuntime::lastAutonomyStepOutputForTest() const {
+    return last_autonomy_step_output_;
 }

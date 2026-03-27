@@ -258,6 +258,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     hexapod_server_add_test(test_robot_runtime_loop robot_runtime_loop_behavior
         tests/test_robot_runtime_loop.cpp
     )
+    hexapod_server_add_test(test_robot_runtime_autonomy_integration robot_runtime_autonomy_integration
+        tests/test_robot_runtime_autonomy_integration.cpp
+    )
     hexapod_server_add_test(test_safety_supervisor_faults safety_supervisor_transitions
         tests/test_safety_supervisor_faults.cpp
     )
