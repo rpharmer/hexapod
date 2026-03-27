@@ -156,12 +156,14 @@ function resolvePoseOffsetMm(model) {
   return { x, y, yaw };
 }
 
-function transformBodyToWorld(point, poseOffset) {
+function transformWorldToBodyAnchored(point, poseOffset) {
+  const dx = point.x - poseOffset.x;
+  const dy = point.y - poseOffset.y;
   const cosYaw = Math.cos(poseOffset.yaw);
   const sinYaw = Math.sin(poseOffset.yaw);
   return {
-    x: poseOffset.x + point.x * cosYaw - point.y * sinYaw,
-    y: poseOffset.y + point.x * sinYaw + point.y * cosYaw,
+    x: dx * cosYaw + dy * sinYaw,
+    y: -dx * sinYaw + dy * cosYaw,
     z: point.z,
   };
 }
@@ -178,7 +180,8 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model,
       x: waypoint.x_m * 1000,
       y: waypoint.y_m * 1000,
       z: groundPlaneZ,
-    }));
+    }))
+    .map((point) => transformWorldToBodyAnchored(point, poseOffset));
 
   if (waypointPoints.length === 0) {
     return;
@@ -217,8 +220,8 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model,
     const yawRad = autonomy.waypoints[index]?.yaw_rad;
     if (Number.isFinite(yawRad)) {
       const headingPoint = {
-        x: point.x + Math.cos(yawRad) * 22,
-        y: point.y + Math.sin(yawRad) * 22,
+        x: point.x + Math.cos(yawRad - poseOffset.yaw) * 22,
+        y: point.y + Math.sin(yawRad - poseOffset.yaw) * 22,
         z: point.z,
       };
       const headingScreen = project(headingPoint, camera, scale, centerX, centerY);
@@ -232,8 +235,8 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model,
   });
 
   if (autonomy.current_pose && Number.isFinite(autonomy.current_pose.x_m) && Number.isFinite(autonomy.current_pose.y_m)) {
-    const posePoint = { x: poseOffset.x, y: poseOffset.y, z: groundPlaneZ };
-    const heading = poseOffset.yaw;
+    const posePoint = { x: 0, y: 0, z: groundPlaneZ };
+    const heading = 0;
     const nosePoint = {
       x: posePoint.x + Math.cos(heading) * 45,
       y: posePoint.y + Math.sin(heading) * 45,
@@ -293,7 +296,6 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     const centerY = height * 0.58 + camera.panY;
     const poseOffset = resolvePoseOffsetMm(model);
     const gridSpacingMm = 55;
-    const gridExtentMm = 220;
     const kinematics = LEG_ORDER.map((legName) => ({
       legName,
       points: fkForLeg(
@@ -303,28 +305,38 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
       ),
     }));
     const footHeights = kinematics.map((entry) => entry.points.foot.z).filter(Number.isFinite);
-    const averageFootHeight =
-      footHeights.length === 0 ? -120 : footHeights.reduce((sum, z) => sum + z, 0) / footHeights.length;
-    const groundPlaneZ = averageFootHeight;
+    const groundPlaneZ = footHeights.length === 0 ? -120 : Math.min(...footHeights);
 
     ctx.strokeStyle = "#1f2937";
     ctx.lineWidth = 1;
-    for (let i = -5; i <= 5; i += 1) {
-      const worldY = i * gridSpacingMm;
-      const a = project({ x: -gridExtentMm, y: worldY, z: groundPlaneZ }, camera, scale, centerX, centerY);
-      const b = project({ x: gridExtentMm, y: worldY, z: groundPlaneZ }, camera, scale, centerX, centerY);
+    const visibleRadiusMm = Math.max(width, height) / Math.max(scale, 1e-6);
+    const gridExtentMm = visibleRadiusMm * 1.2;
+    const minWorldX = poseOffset.x - gridExtentMm;
+    const maxWorldX = poseOffset.x + gridExtentMm;
+    const minWorldY = poseOffset.y - gridExtentMm;
+    const maxWorldY = poseOffset.y + gridExtentMm;
+    const firstWorldY = Math.floor(minWorldY / gridSpacingMm) * gridSpacingMm;
+    const firstWorldX = Math.floor(minWorldX / gridSpacingMm) * gridSpacingMm;
+
+    for (let worldY = firstWorldY; worldY <= maxWorldY + gridSpacingMm; worldY += gridSpacingMm) {
+      const a = transformWorldToBodyAnchored({ x: minWorldX, y: worldY, z: groundPlaneZ }, poseOffset);
+      const b = transformWorldToBodyAnchored({ x: maxWorldX, y: worldY, z: groundPlaneZ }, poseOffset);
+      const ap = project(a, camera, scale, centerX, centerY);
+      const bp = project(b, camera, scale, centerX, centerY);
       ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
+      ctx.moveTo(ap.x, ap.y);
+      ctx.lineTo(bp.x, bp.y);
       ctx.stroke();
     }
-    for (let i = -5; i <= 5; i += 1) {
-      const worldX = i * gridSpacingMm;
-      const a = project({ x: worldX, y: -gridExtentMm, z: groundPlaneZ }, camera, scale, centerX, centerY);
-      const b = project({ x: worldX, y: gridExtentMm, z: groundPlaneZ }, camera, scale, centerX, centerY);
+
+    for (let worldX = firstWorldX; worldX <= maxWorldX + gridSpacingMm; worldX += gridSpacingMm) {
+      const a = transformWorldToBodyAnchored({ x: worldX, y: minWorldY, z: groundPlaneZ }, poseOffset);
+      const b = transformWorldToBodyAnchored({ x: worldX, y: maxWorldY, z: groundPlaneZ }, poseOffset);
+      const ap = project(a, camera, scale, centerX, centerY);
+      const bp = project(b, camera, scale, centerX, centerY);
       ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
+      ctx.moveTo(ap.x, ap.y);
+      ctx.lineTo(bp.x, bp.y);
       ctx.stroke();
     }
 
@@ -342,7 +354,7 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     ctx.lineWidth = 2;
     ctx.beginPath();
     bodyPts.forEach((p, index) => {
-      const screen = project(transformBodyToWorld(p, poseOffset), camera, scale, centerX, centerY);
+      const screen = project(p, camera, scale, centerX, centerY);
       if (index === 0) ctx.moveTo(screen.x, screen.y);
       else ctx.lineTo(screen.x, screen.y);
     });
@@ -353,7 +365,6 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     kinematics.forEach(({ legName, points }) => {
 
       const segments = [points.anchor, points.shoulder, points.knee, points.foot]
-        .map((point) => transformBodyToWorld(point, poseOffset))
         .map((point) => project(point, camera, scale, centerX, centerY));
 
       ctx.strokeStyle = "#f59e0b";
