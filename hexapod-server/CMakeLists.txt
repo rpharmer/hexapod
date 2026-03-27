@@ -82,6 +82,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/recovery_manager.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/mission_scripting.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/global_planner.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/global_planner_algorithms.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/autonomy_stack.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/local_planner.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/localization.cpp"
