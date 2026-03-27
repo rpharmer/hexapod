@@ -102,7 +102,7 @@ When localization data is absent, fallback pose uses dead-reckoned integration i
    - Integrates planar velocity into `odometry_pose_x_m_`, `odometry_pose_y_m_`.
    - Integrates yaw rate into `odometry_pose_yaw_rad_`.
    - Uses estimated planar velocity when non-zero finite values exist.
-   - Otherwise falls back to commanded heading/speed.
+   - Does **not** integrate commanded heading/speed alone when estimator planar velocity is unavailable.
    - Clamps integration timestep to `[0.0, 0.25]` seconds.
 
 2. **Renderer fallback (`scene-renderer.js`)**
@@ -114,7 +114,7 @@ When localization data is absent, fallback pose uses dead-reckoned integration i
 
 - Fallback odometry is **not globally corrected** (no loop closure / map anchoring).
 - Position and yaw can drift over time.
-- Command-derived fallback (`speed + heading`) can diverge from physical motion (slip/compliance).
+- If estimator planar velocity is unavailable, fallback odometry may under-report motion.
 - Unknown localization frames will intentionally not override this fallback.
 
 ## Required vs optional fields

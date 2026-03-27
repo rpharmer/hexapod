@@ -59,13 +59,17 @@ bool closeEnough(const double lhs, const double rhs, const double tol = 1e-6)
 telemetry::ControlStepTelemetry makeStep(const uint64_t timestamp_us,
                                          const double speed_mps,
                                          const double heading_rad,
-                                         const double yaw_rate_radps)
+                                         const double yaw_rate_radps,
+                                         const double estimated_vx_mps = 0.0,
+                                         const double estimated_vy_mps = 0.0)
 {
     telemetry::ControlStepTelemetry step{};
     step.timestamp_us = TimePointUs{timestamp_us};
     step.status.active_mode = RobotMode::WALK;
     step.motion_intent.speed_mps = LinearRateMps{speed_mps};
     step.motion_intent.heading_rad = AngleRad{heading_rad};
+    step.estimated_state.body_pose_state.body_trans_mps.x = estimated_vx_mps;
+    step.estimated_state.body_pose_state.body_trans_mps.y = estimated_vy_mps;
     step.estimated_state.body_pose_state.angular_velocity_radps.z = yaw_rate_radps;
     return step;
 }
@@ -106,14 +110,14 @@ bool testFallbackIntegratorResetsOnTimestampRegressionAndLongPause()
     cfg.udp_port = recv_port;
     auto publisher = telemetry::makeUdpTelemetryPublisher(cfg, nullptr);
 
-    publisher->publishControlStep(makeStep(1'000'000, 1.0, 0.0, 0.0));
+    publisher->publishControlStep(makeStep(1'000'000, 1.0, 0.0, 0.0, 1.0, 0.0));
     auto packet = recvPacket(recv_socket);
     if (!expect(packet.has_value(), "should receive packet for first sample")) {
         ::close(recv_socket);
         return false;
     }
 
-    publisher->publishControlStep(makeStep(1'500'000, 1.0, 0.0, 0.0));
+    publisher->publishControlStep(makeStep(1'500'000, 1.0, 0.0, 0.0, 1.0, 0.0));
     packet = recvPacket(recv_socket);
     const auto x_after_motion = packet ? extractNumberAfter(*packet, "\"x_m\":") : std::nullopt;
     if (!expect(packet.has_value() && x_after_motion.has_value(),
@@ -127,7 +131,7 @@ bool testFallbackIntegratorResetsOnTimestampRegressionAndLongPause()
         return false;
     }
 
-    publisher->publishControlStep(makeStep(1'400'000, 1.0, 0.0, 0.0));
+    publisher->publishControlStep(makeStep(1'400'000, 1.0, 0.0, 0.0, 1.0, 0.0));
     packet = recvPacket(recv_socket);
     const auto x_after_regression = packet ? extractNumberAfter(*packet, "\"x_m\":") : std::nullopt;
     if (!expect(packet.has_value() && x_after_regression.has_value(),
@@ -140,7 +144,7 @@ bool testFallbackIntegratorResetsOnTimestampRegressionAndLongPause()
         return false;
     }
 
-    publisher->publishControlStep(makeStep(2'900'000, 1.0, 0.0, 0.0));
+    publisher->publishControlStep(makeStep(2'900'000, 1.0, 0.0, 0.0, 1.0, 0.0));
     packet = recvPacket(recv_socket);
     const auto x_after_pause = packet ? extractNumberAfter(*packet, "\"x_m\":") : std::nullopt;
     if (!expect(packet.has_value() && x_after_pause.has_value(),
@@ -237,6 +241,67 @@ bool testFallbackIntegratorIgnoresNonFiniteInputsAndResetsOnIdle()
     return true;
 }
 
+bool testFallbackIntegratorDoesNotUseCommandedVelocityWhenEstimatorVelocityIsZero()
+{
+    const int recv_socket = ::socket(AF_INET, SOCK_DGRAM, 0);
+    if (!expect(recv_socket >= 0, "should create UDP receiver socket")) {
+        return false;
+    }
+
+    sockaddr_in recv_addr{};
+    recv_addr.sin_family = AF_INET;
+    recv_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    recv_addr.sin_port = 0;
+    if (!expect(::bind(recv_socket, reinterpret_cast<const sockaddr*>(&recv_addr), sizeof(recv_addr)) == 0,
+                "should bind UDP receiver")) {
+        ::close(recv_socket);
+        return false;
+    }
+
+    timeval timeout{};
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+    (void)::setsockopt(recv_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    socklen_t addr_len = sizeof(recv_addr);
+    if (!expect(::getsockname(recv_socket, reinterpret_cast<sockaddr*>(&recv_addr), &addr_len) == 0,
+                "should read bound UDP port")) {
+        ::close(recv_socket);
+        return false;
+    }
+    const int recv_port = ntohs(recv_addr.sin_port);
+
+    telemetry::TelemetryPublisherConfig cfg{};
+    cfg.enabled = true;
+    cfg.udp_host = "127.0.0.1";
+    cfg.udp_port = recv_port;
+    auto publisher = telemetry::makeUdpTelemetryPublisher(cfg, nullptr);
+
+    publisher->publishControlStep(makeStep(1'000'000, 0.8, 0.0, 0.0, 0.0, 0.0));
+    auto packet = recvPacket(recv_socket);
+    if (!expect(packet.has_value(), "should receive packet for initial command-only sample")) {
+        ::close(recv_socket);
+        return false;
+    }
+
+    publisher->publishControlStep(makeStep(1'250'000, 0.8, 0.0, 0.0, 0.0, 0.0));
+    packet = recvPacket(recv_socket);
+    const auto x_after_command_only = packet ? extractNumberAfter(*packet, "\"x_m\":") : std::nullopt;
+    if (!expect(packet.has_value() && x_after_command_only.has_value(),
+                "should decode fallback x pose for command-only sample")) {
+        ::close(recv_socket);
+        return false;
+    }
+    if (!expect(closeEnough(*x_after_command_only, 0.0),
+                "commanded velocity without estimator motion should not advance fallback pose")) {
+        ::close(recv_socket);
+        return false;
+    }
+
+    ::close(recv_socket);
+    return true;
+}
+
 } // namespace
 
 int main()
@@ -245,6 +310,9 @@ int main()
         return EXIT_FAILURE;
     }
     if (!testFallbackIntegratorIgnoresNonFiniteInputsAndResetsOnIdle()) {
+        return EXIT_FAILURE;
+    }
+    if (!testFallbackIntegratorDoesNotUseCommandedVelocityWhenEstimatorVelocityIsZero()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
