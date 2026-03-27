@@ -56,7 +56,7 @@ GlobalPlan GlobalPlannerModuleShell::plan(const NavigationUpdate& navigation_upd
             .route = {},
             .cost = traversability_report.cost,
             .status = PlannerStatus::UnsafePlan,
-            .reason = "unsafe-traversability",
+            .reason = "unsafe-traversability:" + traversability_report.reason,
             .source_timestamp_ms = traversability_report.timestamp_ms,
         };
         return plan_;

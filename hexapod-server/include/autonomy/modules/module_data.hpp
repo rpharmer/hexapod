@@ -66,7 +66,17 @@ struct TraversabilityReport {
     double cost{0.0};
     double risk{0.0};
     double confidence{1.0};
+    std::string reason{"traversable"};
+    std::vector<std::string> non_traversable_reasons{};
     TimestampMs timestamp_ms{};
+};
+
+struct TraversabilityPolicyConfig {
+    double occupancy_risk_weight{0.65};
+    double gradient_risk_weight{0.35};
+    double confidence_cost_weight{1.0};
+    double risk_block_threshold{0.85};
+    double confidence_block_threshold{0.3};
 };
 
 struct GlobalPlan {

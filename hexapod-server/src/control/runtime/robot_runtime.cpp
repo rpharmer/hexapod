@@ -97,6 +97,13 @@ bool RobotRuntime::init() {
         autonomy_stack_ = std::make_unique<autonomy::AutonomyStack>(autonomy::AutonomyStackConfig{
             .no_progress_timeout_ms = config_.autonomy.no_progress_timeout_ms,
             .recovery_retry_budget = config_.autonomy.recovery_retry_budget,
+            .traversability_policy = autonomy::TraversabilityPolicyConfig{
+                .occupancy_risk_weight = config_.autonomy.traversability.occupancy_risk_weight,
+                .gradient_risk_weight = config_.autonomy.traversability.gradient_risk_weight,
+                .confidence_cost_weight = config_.autonomy.traversability.confidence_cost_weight,
+                .risk_block_threshold = config_.autonomy.traversability.risk_block_threshold,
+                .confidence_block_threshold = config_.autonomy.traversability.confidence_block_threshold,
+            },
         });
         if (!autonomy_stack_->init() || !autonomy_stack_->start()) {
             if (logger_) {

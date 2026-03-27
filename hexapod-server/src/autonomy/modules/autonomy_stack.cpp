@@ -15,7 +15,8 @@ constexpr const char* kLocomotionDispatchFailure = "locomotion dispatch failure"
 } // namespace
 
 AutonomyStack::AutonomyStack(const AutonomyStackConfig& config)
-    : locomotion_interface_module_(config.locomotion_command_sink),
+    : traversability_analyzer_module_(config.traversability_policy),
+      locomotion_interface_module_(config.locomotion_command_sink),
       progress_monitor_module_(config.no_progress_timeout_ms),
       recovery_manager_module_(config.recovery_retry_budget),
       supervisor_states_({

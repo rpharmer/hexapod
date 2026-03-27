@@ -11,6 +11,14 @@ Runtime.Sim.DropBus = false
 Runtime.Sim.LowVoltage = false
 Runtime.Sim.HighCurrent = false
 Runtime.Imu.EnableReads = false
+Runtime.Autonomy.Enabled = false
+Runtime.Autonomy.NoProgressTimeoutMs = 1000
+Runtime.Autonomy.RecoveryRetryBudget = 2
+Runtime.Autonomy.Traversability.OccupancyRiskWeight = 0.65
+Runtime.Autonomy.Traversability.GradientRiskWeight = 0.35
+Runtime.Autonomy.Traversability.ConfidenceCostWeight = 1.0
+Runtime.Autonomy.Traversability.RiskBlockThreshold = 0.85
+Runtime.Autonomy.Traversability.ConfidenceBlockThreshold = 0.3
 Runtime.Log.FilePath = "app.log"
 Runtime.Log.EnableFile = true
 

@@ -59,7 +59,7 @@ bool testAllShellsLifecycleAndIdentity() {
         if (!expect(module->step(1000), "step should succeed")) {
             return false;
         }
-        if (!expect(module->health().heartbeat_timestamp_ms == 1000, "step should set heartbeat")) {
+        if (!expect(module->health().heartbeat_timestamp_ms == TimestampMs{1000}, "step should set heartbeat")) {
             return false;
         }
         module->stop();
@@ -79,7 +79,7 @@ bool testLocalizationAdapterNominalEstimatorPropagation() {
     const auto estimate = localization.update(observation, /*now_ms=*/20);
     return expect(estimate.valid, "nominal estimator observation should produce a valid localization estimate") &&
            expect(estimate.frame_id == "map", "nominal estimate should keep the map frame") &&
-           expect(estimate.timestamp_ms == 10, "nominal estimate should propagate estimator timestamp") &&
+           expect(estimate.timestamp_ms == TimestampMs{10}, "nominal estimate should propagate estimator timestamp") &&
            expect(estimate.x_m == 1.25 && estimate.y_m == -0.5 && estimate.yaw_rad == 0.75,
                   "nominal estimate should propagate estimator pose");
 }
@@ -369,6 +369,73 @@ bool testPlannerReachableBlockedAndDegradedFlows() {
     return true;
 }
 
+bool testTraversabilityPolicyAndReasonsEdgeCases() {
+    autonomy::TraversabilityAnalyzerModuleShell traversability(autonomy::TraversabilityPolicyConfig{
+        .occupancy_risk_weight = 0.7,
+        .gradient_risk_weight = 0.3,
+        .confidence_cost_weight = 1.2,
+        .risk_block_threshold = 0.8,
+        .confidence_block_threshold = 0.4,
+    });
+
+    const auto low_risk = traversability.analyze(autonomy::WorldModelSnapshot{
+                                                     .has_map = true,
+                                                     .occupancy = 0.1,
+                                                     .terrain_gradient = 0.1,
+                                                     .risk_confidence = 0.95,
+                                                 },
+                                                 100);
+    if (!expect(low_risk.traversable, "low-risk high-confidence terrain should be traversable")) {
+        return false;
+    }
+    if (!expect(low_risk.reason == "traversable", "traversable report should include traversable reason")) {
+        return false;
+    }
+
+    const auto high_risk = traversability.analyze(autonomy::WorldModelSnapshot{
+                                                      .has_map = true,
+                                                      .occupancy = 0.95,
+                                                      .terrain_gradient = 0.9,
+                                                      .risk_confidence = 0.95,
+                                                  },
+                                                  110);
+    if (!expect(!high_risk.traversable, "high-risk terrain should be non-traversable")) {
+        return false;
+    }
+    if (!expect(high_risk.reason == "risk-threshold-exceeded",
+                "high-risk non-traversable reason should be deterministic")) {
+        return false;
+    }
+
+    const auto low_confidence = traversability.analyze(autonomy::WorldModelSnapshot{
+                                                           .has_map = true,
+                                                           .occupancy = 0.1,
+                                                           .terrain_gradient = 0.1,
+                                                           .risk_confidence = 0.1,
+                                                       },
+                                                       120);
+    if (!expect(!low_confidence.traversable, "low-confidence terrain should be non-traversable")) {
+        return false;
+    }
+    if (!expect(low_confidence.reason == "confidence-below-threshold",
+                "low-confidence non-traversable reason should be deterministic")) {
+        return false;
+    }
+
+    const auto mixed_terrain = traversability.analyze(autonomy::WorldModelSnapshot{
+                                                          .has_map = false,
+                                                          .occupancy = 0.9,
+                                                          .terrain_gradient = 0.9,
+                                                          .risk_confidence = 0.2,
+                                                      },
+                                                      130);
+    return expect(!mixed_terrain.traversable, "mixed terrain edge case should be non-traversable") &&
+           expect(mixed_terrain.reason == "missing-map",
+                  "mixed terrain reason ordering should prioritize missing map deterministically") &&
+           expect(mixed_terrain.non_traversable_reasons.size() == 3,
+                  "mixed terrain should report all blocking reasons for explainability");
+}
+
 } // namespace
 
 int main() {
@@ -379,7 +446,8 @@ int main() {
         !testAllShellsFunctionalWiring() ||
         !testLocomotionShellDispatchSinkOutcomes() ||
         !testTerrainRiskInputsAffectPlanning() ||
-        !testPlannerReachableBlockedAndDegradedFlows()) {
+        !testPlannerReachableBlockedAndDegradedFlows() ||
+        !testTraversabilityPolicyAndReasonsEdgeCases()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
