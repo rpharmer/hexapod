@@ -140,7 +140,8 @@ private:
     bool validateEnvelopeForStream(const ContractEnvelope& envelope,
                                    uint64_t now_ms,
                                    const ContractValidationConfig& config,
-                                   const std::string& fallback_stream_id);
+                                   const std::string& expected_stream_id,
+                                   ContractValidationResult* validation_result = nullptr);
     [[nodiscard]] AutonomyModuleStub* moduleByName(std::string_view module_name);
     [[nodiscard]] const AutonomyModuleStub* moduleByName(std::string_view module_name) const;
     bool faultInjected(const AutonomyStepInput& input,

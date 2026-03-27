@@ -18,6 +18,9 @@
   - `distance_remaining_m`
   - `heading_error_rad`
   - `timestamp_ms`
+- Planner-boundary stream IDs used by runtime validation:
+  - `autonomy.global_planner.output`
+  - `autonomy.local_planner.output`
 
 ## Timing / Staleness
 - Localization older than `max_age_ms=200` => mark nav degraded.
