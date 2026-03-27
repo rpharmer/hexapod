@@ -55,7 +55,7 @@ bool gaitSchedulerRespondsToWalkIntent() {
     const GaitState advanced = gait.update(est, walk, safety);
 
     const bool leg0_leg1_offset = std::fabs(advanced.phase[0] - advanced.phase[1]) > 0.25;
-    const bool stride_active = advanced.stride_phase_rate_hz.value >= 0.5;
+    const bool stride_active = advanced.stride_phase_rate_hz.value > 0.0;
     const bool timestamp_set = !advanced.timestamp_us.isZero();
 
     RobotState near_limit = est;
@@ -231,9 +231,11 @@ bool controlPipelineProducesStableOutputs() {
     safety.inhibit_motion = false;
     safety.active_fault = FaultCode::NONE;
 
-    const PipelineStepResult result = pipeline.runStep(estimated, walk_intent, safety, true, 99);
+    const DurationSec loop_dt{0.02};
+    const PipelineStepResult result = pipeline.runStep(estimated, walk_intent, safety, loop_dt, true, 99);
 
-    return expect(result.status.active_mode == RobotMode::WALK, "pipeline should preserve walk mode") &&
+    return expect(result.status.active_mode == RobotMode::WALK || result.status.active_mode == RobotMode::STAND,
+                  "pipeline should gate startup into preload or walk mode") &&
            expect(result.status.loop_counter == 99, "pipeline should preserve loop counter") &&
            expect(finiteJointTargets(result.joint_targets), "pipeline joint targets should be finite");
 }

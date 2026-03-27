@@ -98,6 +98,19 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.telemetry.publish_period = std::chrono::milliseconds{config.telemetryPublishPeriodMs};
     parsed.telemetry.geometry_refresh_period = std::chrono::milliseconds{config.telemetryGeometryRefreshPeriodMs};
     parsed.runtime_imu.enable_reads = config.imuEnableReads;
+    parsed.motion_limiter.body_linear_accel_limit_xy_mps2 = config.motionBodyLinearAccelLimitXYMps2;
+    parsed.motion_limiter.body_linear_accel_limit_z_mps2 = config.motionBodyLinearAccelLimitZMps2;
+    parsed.motion_limiter.body_angular_accel_limit_radps2.x = config.motionBodyAngularAccelLimitXRadps2;
+    parsed.motion_limiter.body_angular_accel_limit_radps2.y = config.motionBodyAngularAccelLimitYRadps2;
+    parsed.motion_limiter.body_angular_accel_limit_radps2.z = config.motionBodyAngularAccelLimitZRadps2;
+    parsed.motion_limiter.foot_velocity_limit_mps = config.motionFootVelocityLimitMps;
+    parsed.motion_limiter.foot_accel_limit_mps2 = config.motionFootAccelLimitMps2;
+    parsed.motion_limiter.joint_soft_velocity_limit_radps = config.motionJointSoftVelocityLimitRadps;
+    parsed.motion_limiter.joint_soft_accel_limit_radps2 = config.motionJointSoftAccelLimitRadps2;
+    parsed.motion_limiter.startup_phase_threshold =
+        std::chrono::milliseconds{config.motionStartupPhaseThresholdMs};
+    parsed.motion_limiter.shutdown_phase_threshold =
+        std::chrono::milliseconds{config.motionShutdownPhaseThresholdMs};
     parsed.autonomy.enabled = config.autonomyEnabled;
     parsed.autonomy.no_progress_timeout_ms = config.autonomyNoProgressTimeoutMs;
     parsed.autonomy.recovery_retry_budget = config.autonomyRecoveryRetryBudget;

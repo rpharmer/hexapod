@@ -41,8 +41,10 @@ int main() {
     healthy_safety.inhibit_motion = false;
     healthy_safety.active_fault = FaultCode::NONE;
 
+    const DurationSec loop_dt{0.02};
+
     const PipelineStepResult nominal = pipeline.runStep(
-        estimated, walk_intent, healthy_safety, true, 42);
+        estimated, walk_intent, healthy_safety, loop_dt, true, 42);
 
     if (!expect(nominal.status.active_mode == RobotMode::WALK, "pipeline should keep WALK mode when safety is healthy") ||
         !expect(nominal.status.estimator_valid, "estimator should be valid for non-zero timestamp") ||
@@ -56,7 +58,7 @@ int main() {
     faulted_safety.active_fault = FaultCode::MOTOR_FAULT;
 
     const PipelineStepResult faulted = pipeline.runStep(
-        estimated, walk_intent, faulted_safety, true, 43);
+        estimated, walk_intent, faulted_safety, loop_dt, true, 43);
 
     if (!expect(faulted.status.active_mode == RobotMode::FAULT, "active safety fault should force FAULT mode") ||
         !expect(faulted.status.active_fault == FaultCode::MOTOR_FAULT, "status should expose active safety fault") ||

@@ -23,6 +23,7 @@ ControlPipeline::ControlPipeline(control_config::GaitConfig config)
 PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
                                             const MotionIntent& intent,
                                             const SafetyState& safety_state,
+                                            const DurationSec& loop_dt,
                                             bool bus_ok,
                                             uint64_t loop_counter) {
     RobotMode active_mode = intent.requested_mode;
@@ -31,16 +32,20 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     }
 
     const RuntimeGaitPolicy gait_policy = planner_.plan(estimated, intent, safety_state);
-    const GaitState gait_state = gait_.update(estimated, intent, safety_state, gait_policy);
+    const MotionLimiterOutput limiter_output =
+        motion_limiter_.update(estimated, intent, gait_policy, safety_state, loop_dt);
+    const GaitState gait_state =
+        gait_.update(estimated, limiter_output.limited_intent, safety_state, limiter_output.adapted_gait_policy);
     ContactManagerOutput contact_adjusted{};
     if (contactManagerBypassed()) {
         contact_adjusted.managed_gait = gait_state;
-        contact_adjusted.managed_policy = gait_policy;
+        contact_adjusted.managed_policy = limiter_output.adapted_gait_policy;
     } else {
-        contact_adjusted = contact_manager_.update(estimated, gait_state, gait_policy);
+        contact_adjusted = contact_manager_.update(estimated, gait_state, limiter_output.adapted_gait_policy);
     }
-    const LegTargets leg_targets = body_.update(estimated, intent, contact_adjusted.managed_gait, contact_adjusted.managed_policy, safety_state);
+    const LegTargets leg_targets = body_.update(estimated, limiter_output.limited_intent, contact_adjusted.managed_gait, contact_adjusted.managed_policy, safety_state);
     const JointTargets joint_targets = ik_.solve(estimated, leg_targets, safety_state);
+    const BodyController::MotionLimiterTelemetry limiter = body_.lastMotionLimiterTelemetry();
 
     ControlStatus status{};
     status.active_mode = active_mode;
@@ -74,6 +79,22 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
         status.dynamic_gait.leg_duty_cycle[leg] = contact_adjusted.managed_policy.per_leg[leg].duty_cycle;
         status.dynamic_gait.leg_in_stance[leg] = contact_adjusted.managed_gait.in_stance[leg];
     }
+    status.dynamic_gait.limiter_enabled = limiter.enabled;
+    status.dynamic_gait.limiter_phase = limiter.phase;
+    status.dynamic_gait.active_constraint_reason = limiter.constraint_reason;
+    status.dynamic_gait.adaptation_scale_linear = limiter.adaptation_scale_linear;
+    status.dynamic_gait.adaptation_scale_yaw = limiter.adaptation_scale_yaw;
+    status.dynamic_gait.adaptation_scale_cadence = contact_adjusted.managed_policy.adaptation_scale_cadence;
+    status.dynamic_gait.adaptation_scale_step = contact_adjusted.managed_policy.adaptation_scale_step;
+    status.dynamic_gait.hard_clamp_linear = limiter.hard_clamp_linear;
+    status.dynamic_gait.hard_clamp_yaw = limiter.hard_clamp_yaw;
+    status.dynamic_gait.hard_clamp_reach = limiter.hard_clamp_reach;
+    status.dynamic_gait.hard_clamp_cadence = contact_adjusted.managed_policy.hard_clamp_cadence;
+    status.dynamic_gait.saturated =
+        status.dynamic_gait.hard_clamp_linear ||
+        status.dynamic_gait.hard_clamp_yaw ||
+        status.dynamic_gait.hard_clamp_reach ||
+        status.dynamic_gait.hard_clamp_cadence;
 
     PipelineStepResult result{};
     result.leg_targets = leg_targets;

@@ -81,6 +81,25 @@ const char* fallbackStageToString(uint8_t fallback_stage) {
     }
 }
 
+const char* limiterPhaseToString(uint8_t phase) {
+    switch (phase) {
+        case 0: return "tracking";
+        case 1: return "body_leads_on_start";
+        case 2: return "legs_lead_on_stop";
+        default: return "unknown";
+    }
+}
+
+const char* limiterConstraintReasonToString(uint8_t reason) {
+    switch (reason) {
+        case 0: return "none";
+        case 1: return "transition";
+        case 2: return "slew_rate";
+        case 3: return "reach_clamp";
+        default: return "unknown";
+    }
+}
+
 const char* missionStateToString(uint8_t mission_state) {
     switch (static_cast<autonomy::MissionState>(mission_state)) {
         case autonomy::MissionState::Idle: return "idle";
@@ -297,6 +316,25 @@ public:
                 << (telemetry.status.dynamic_gait.suppress_turning ? "true" : "false") << ","
                 << "\"prioritize_stability\":"
                 << (telemetry.status.dynamic_gait.prioritize_stability ? "true" : "false") << ","
+                << "\"limiter\":{"
+                << "\"enabled\":" << (telemetry.status.dynamic_gait.limiter_enabled ? "true" : "false") << ","
+                << "\"phase\":\"" << limiterPhaseToString(telemetry.status.dynamic_gait.limiter_phase) << "\","
+                << "\"active_constraint_reason\":\""
+                << limiterConstraintReasonToString(telemetry.status.dynamic_gait.active_constraint_reason) << "\","
+                << "\"adaptation_scales\":{"
+                << "\"linear\":" << telemetry.status.dynamic_gait.adaptation_scale_linear << ","
+                << "\"yaw\":" << telemetry.status.dynamic_gait.adaptation_scale_yaw << ","
+                << "\"cadence\":" << telemetry.status.dynamic_gait.adaptation_scale_cadence << ","
+                << "\"step\":" << telemetry.status.dynamic_gait.adaptation_scale_step
+                << "},"
+                << "\"hard_clamp\":{"
+                << "\"linear\":" << (telemetry.status.dynamic_gait.hard_clamp_linear ? "true" : "false") << ","
+                << "\"yaw\":" << (telemetry.status.dynamic_gait.hard_clamp_yaw ? "true" : "false") << ","
+                << "\"reach\":" << (telemetry.status.dynamic_gait.hard_clamp_reach ? "true" : "false") << ","
+                << "\"cadence\":" << (telemetry.status.dynamic_gait.hard_clamp_cadence ? "true" : "false") << ","
+                << "\"saturated\":" << (telemetry.status.dynamic_gait.saturated ? "true" : "false")
+                << "}"
+                << "},"
                 << "\"envelope\":{"
                 << "\"max_speed_normalized\":" << telemetry.status.dynamic_gait.envelope_max_speed_normalized << ","
                 << "\"max_yaw_normalized\":" << telemetry.status.dynamic_gait.envelope_max_yaw_normalized << ","

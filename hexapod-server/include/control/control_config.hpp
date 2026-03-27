@@ -60,6 +60,17 @@ inline constexpr double kDefaultTraversabilityGradientRiskWeight{0.35};
 inline constexpr double kDefaultTraversabilityConfidenceCostWeight{1.0};
 inline constexpr double kDefaultTraversabilityRiskBlockThreshold{0.85};
 inline constexpr double kDefaultTraversabilityConfidenceBlockThreshold{0.3};
+inline constexpr double kDefaultMotionBodyLinearAccelLimitXYMps2{0.6};
+inline constexpr double kDefaultMotionBodyLinearAccelLimitZMps2{0.4};
+inline constexpr double kDefaultMotionBodyAngularAccelLimitXRadps2{1.2};
+inline constexpr double kDefaultMotionBodyAngularAccelLimitYRadps2{1.2};
+inline constexpr double kDefaultMotionBodyAngularAccelLimitZRadps2{1.5};
+inline constexpr double kDefaultMotionFootVelocityLimitMps{0.30};
+inline constexpr double kDefaultMotionFootAccelLimitMps2{1.0};
+inline constexpr double kDefaultMotionJointSoftVelocityLimitRadps{5.0};
+inline constexpr double kDefaultMotionJointSoftAccelLimitRadps2{30.0};
+inline constexpr int kDefaultMotionStartupPhaseThresholdMs{350};
+inline constexpr int kDefaultMotionShutdownPhaseThresholdMs{450};
 
 struct LoopTimingConfig {
     std::chrono::microseconds bus_loop_period{std::chrono::microseconds{kDefaultBusLoopPeriodUs}};
@@ -191,6 +202,21 @@ struct RuntimeImuConfig {
     bool enable_reads{kDefaultImuEnableReads};
 };
 
+struct MotionLimiterConfig {
+    double body_linear_accel_limit_xy_mps2{kDefaultMotionBodyLinearAccelLimitXYMps2};
+    double body_linear_accel_limit_z_mps2{kDefaultMotionBodyLinearAccelLimitZMps2};
+    Vec3 body_angular_accel_limit_radps2{
+        kDefaultMotionBodyAngularAccelLimitXRadps2,
+        kDefaultMotionBodyAngularAccelLimitYRadps2,
+        kDefaultMotionBodyAngularAccelLimitZRadps2};
+    double foot_velocity_limit_mps{kDefaultMotionFootVelocityLimitMps};
+    double foot_accel_limit_mps2{kDefaultMotionFootAccelLimitMps2};
+    double joint_soft_velocity_limit_radps{kDefaultMotionJointSoftVelocityLimitRadps};
+    double joint_soft_accel_limit_radps2{kDefaultMotionJointSoftAccelLimitRadps2};
+    std::chrono::milliseconds startup_phase_threshold{std::chrono::milliseconds{kDefaultMotionStartupPhaseThresholdMs}};
+    std::chrono::milliseconds shutdown_phase_threshold{std::chrono::milliseconds{kDefaultMotionShutdownPhaseThresholdMs}};
+};
+
 struct AutonomyRuntimeConfig {
     struct TraversabilityConfig {
         double occupancy_risk_weight{kDefaultTraversabilityOccupancyRiskWeight};
@@ -218,6 +244,7 @@ struct ControlConfig {
     FreshnessConfig freshness{};
     TelemetryConfig telemetry{};
     RuntimeImuConfig runtime_imu{};
+    MotionLimiterConfig motion_limiter{};
     AutonomyRuntimeConfig autonomy{};
 };
 
