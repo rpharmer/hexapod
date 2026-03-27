@@ -1,6 +1,7 @@
 #pragma once
 
 #include "autonomy/module_stubs.hpp"
+#include "autonomy/common_types.hpp"
 #include "autonomy/navigation_manager.hpp"
 
 namespace autonomy {
@@ -11,7 +12,8 @@ public:
 
     NavigationUpdate computeIntent(const WaypointMission& mission,
                                    uint64_t completed_waypoints,
-                                   bool blocked);
+                                   bool blocked,
+                                   ContractEnvelope envelope = {});
     [[nodiscard]] NavigationUpdate lastUpdate() const;
 
 private:

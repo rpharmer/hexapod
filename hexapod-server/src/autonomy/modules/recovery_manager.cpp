@@ -11,7 +11,9 @@ void RecoveryManagerModuleShell::reset() {
     last_decision_ = {};
 }
 
-RecoveryDecision RecoveryManagerModuleShell::onNoProgress(bool triggered) {
+RecoveryDecision RecoveryManagerModuleShell::onNoProgress(bool triggered,
+                                                          ContractEnvelope envelope) {
+    (void)envelope;
     last_decision_ = triggered ? recovery_manager_.onNoProgress() : RecoveryDecision{};
     return last_decision_;
 }

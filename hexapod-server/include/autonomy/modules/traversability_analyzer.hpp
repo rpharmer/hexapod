@@ -1,6 +1,7 @@
 #pragma once
 
 #include "autonomy/module_stubs.hpp"
+#include "autonomy/common_types.hpp"
 #include "autonomy/modules/module_data.hpp"
 
 namespace autonomy {
@@ -10,7 +11,8 @@ public:
     TraversabilityAnalyzerModuleShell();
 
     TraversabilityReport analyze(const WorldModelSnapshot& world_model,
-                                 uint64_t timestamp_ms);
+                                 uint64_t timestamp_ms,
+                                ContractEnvelope envelope = {});
     [[nodiscard]] TraversabilityReport report() const;
 
 private:
