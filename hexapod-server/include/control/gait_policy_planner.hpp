@@ -93,6 +93,7 @@ private:
                                           double yaw_normalized,
                                           double reach_utilization) const;
     void applyFallback(RuntimeGaitPolicy& policy) const;
+    void applyMotionLimiter(RuntimeGaitPolicy& policy, const RobotState& est) const;
     void applyServoVelocityConstraint(RuntimeGaitPolicy& policy, const RobotState& est) const;
     double maxReachUtilization(const RobotState& est) const;
 
