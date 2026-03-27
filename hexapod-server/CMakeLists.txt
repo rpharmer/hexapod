@@ -73,6 +73,26 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/app/runtime_teardown.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/app/shutdown_summary.cpp"
 
+    # autonomy
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/contract_enforcer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/mission_executive.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/motion_arbiter.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/navigation_manager.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/progress_monitor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/recovery_manager.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/mission_scripting.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/global_planner.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/local_planner.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/localization.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/locomotion_interface.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/motion_arbiter.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/navigation_manager.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/progress_monitor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/recovery_manager.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/traversability_analyzer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/world_model.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/module_stubs.cpp"
+
     # config
     "${CMAKE_CURRENT_SOURCE_DIR}/src/config/calibrations_section_parser.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/config/config_validation.cpp"
@@ -203,6 +223,32 @@ endfunction()
 
 if(HEXAPOD_SERVER_BUILD_TESTS)
     enable_testing()
+
+    # autonomy
+    hexapod_server_add_test(test_autonomy_contract_enforcer autonomy_contract_enforcer
+        tests/test_autonomy_contract_enforcer.cpp
+    )
+    hexapod_server_add_test(test_autonomy_module_stubs autonomy_module_stubs
+        tests/test_autonomy_module_stubs.cpp
+    )
+    hexapod_server_add_test(test_autonomy_module_shells autonomy_module_shells
+        tests/test_autonomy_module_shells.cpp
+    )
+    hexapod_server_add_test(test_mission_executive mission_executive
+        tests/test_mission_executive.cpp
+    )
+    hexapod_server_add_test(test_mission_scripting mission_scripting
+        tests/test_mission_scripting.cpp
+    )
+    hexapod_server_add_test(test_motion_arbiter motion_arbiter
+        tests/test_motion_arbiter.cpp
+    )
+    hexapod_server_add_test(test_navigation_manager navigation_manager
+        tests/test_navigation_manager.cpp
+    )
+    hexapod_server_add_test(test_progress_recovery progress_recovery
+        tests/test_progress_recovery.cpp
+    )
 
     # runtime
     hexapod_server_add_test(test_robot_runtime_loop robot_runtime_loop_behavior

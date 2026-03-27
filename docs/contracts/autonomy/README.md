@@ -13,6 +13,7 @@ This directory contains the initial contract-first interface set for autonomy mo
 - `traversability_analyzer.md`
 - `locomotion_interface.md`
 - `contract_review_checklist.md`
+- `traceability_matrix.md`
 
 ## Scope
 These contracts are intended to freeze v1 interface expectations (units, frames, timing, QoS, and fault semantics) prior to deeper behavior refactors.
