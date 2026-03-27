@@ -34,7 +34,6 @@ function fkForLeg(legName, anglesDeg, geometry) {
   const [coxaDeg, femurDeg, tibiaDeg] = anglesDeg;
   const mountYaw = MOUNT_ANGLES[legName];
   const yaw = mountYaw + deg2rad(coxaDeg);
-  const sidePitchSign = legName.startsWith("R") ? -1 : 1;
 
   const coxa = geometry.coxa;
   const femur = geometry.femur;
@@ -53,11 +52,8 @@ function fkForLeg(legName, anglesDeg, geometry) {
     z: 0,
   };
 
-  // Incoming telemetry currently reflects mirrored servo sign conventions:
-  // left-side femur/tibia increase in the opposite direction from right-side.
-  // Normalise here so both sides render with the same "positive pitch" meaning.
-  const femurPitch = deg2rad(femurDeg * sidePitchSign);
-  const tibiaPitch = deg2rad(tibiaDeg * sidePitchSign);
+  const femurPitch = deg2rad(femurDeg);
+  const tibiaPitch = deg2rad(tibiaDeg);
 
   const femurR = femur * Math.cos(femurPitch);
   const knee = {
@@ -134,18 +130,14 @@ function resolvePoseOffsetMm(model) {
   return { x, y, yaw };
 }
 
-function projectRelative(point, poseOffset, camera, scale, centerX, centerY) {
-  return project(
-    {
-      x: point.x - poseOffset.x,
-      y: point.y - poseOffset.y,
-      z: point.z,
-    },
-    camera,
-    scale,
-    centerX,
-    centerY,
-  );
+function transformBodyToWorld(point, poseOffset) {
+  const cosYaw = Math.cos(poseOffset.yaw);
+  const sinYaw = Math.sin(poseOffset.yaw);
+  return {
+    x: poseOffset.x + point.x * cosYaw - point.y * sinYaw,
+    y: poseOffset.y + point.x * sinYaw + point.y * cosYaw,
+    z: point.z,
+  };
 }
 
 function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model, poseOffset }) {
@@ -173,7 +165,7 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model,
   ctx.strokeStyle = "rgba(99, 102, 241, 0.85)";
   ctx.beginPath();
   waypointPoints.forEach((point, index) => {
-    const screen = projectRelative(point, poseOffset, camera, scale, centerX, centerY);
+    const screen = project(point, camera, scale, centerX, centerY);
     if (index === 0) {
       ctx.moveTo(screen.x, screen.y);
       return;
@@ -183,7 +175,7 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model,
   ctx.stroke();
 
   waypointPoints.forEach((point, index) => {
-    const screen = projectRelative(point, poseOffset, camera, scale, centerX, centerY);
+    const screen = project(point, camera, scale, centerX, centerY);
     const isCompleted = index < completedCount;
     const isActive = completedCount < waypointPoints.length && index === completedCount;
     ctx.fillStyle = isActive ? "#f59e0b" : isCompleted ? "#34d399" : "#60a5fa";
@@ -206,8 +198,8 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model,
       z: posePoint.z,
     };
 
-    const poseScreen = projectRelative(posePoint, poseOffset, camera, scale, centerX, centerY);
-    const noseScreen = projectRelative(nosePoint, poseOffset, camera, scale, centerX, centerY);
+    const poseScreen = project(posePoint, camera, scale, centerX, centerY);
+    const noseScreen = project(nosePoint, camera, scale, centerX, centerY);
 
     ctx.strokeStyle = "#fbbf24";
     ctx.lineWidth = 2;
@@ -242,14 +234,12 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     const centerY = height * 0.58 + camera.panY;
     const poseOffset = resolvePoseOffsetMm(model);
     const gridSpacingMm = 55;
-    const gridPhaseX = ((-poseOffset.x % gridSpacingMm) + gridSpacingMm) % gridSpacingMm;
-    const gridPhaseY = ((-poseOffset.y % gridSpacingMm) + gridSpacingMm) % gridSpacingMm;
     const gridExtentMm = 220;
 
     ctx.strokeStyle = "#1f2937";
     ctx.lineWidth = 1;
     for (let i = -5; i <= 5; i += 1) {
-      const worldY = i * gridSpacingMm + gridPhaseY;
+      const worldY = i * gridSpacingMm;
       const a = project({ x: -gridExtentMm, y: worldY, z: -120 }, camera, scale, centerX, centerY);
       const b = project({ x: gridExtentMm, y: worldY, z: -120 }, camera, scale, centerX, centerY);
       ctx.beginPath();
@@ -258,7 +248,7 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
       ctx.stroke();
     }
     for (let i = -5; i <= 5; i += 1) {
-      const worldX = i * gridSpacingMm + gridPhaseX;
+      const worldX = i * gridSpacingMm;
       const a = project({ x: worldX, y: -gridExtentMm, z: -120 }, camera, scale, centerX, centerY);
       const b = project({ x: worldX, y: gridExtentMm, z: -120 }, camera, scale, centerX, centerY);
       ctx.beginPath();
@@ -281,7 +271,7 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     ctx.lineWidth = 2;
     ctx.beginPath();
     bodyPts.forEach((p, index) => {
-      const screen = project(p, camera, scale, centerX, centerY);
+      const screen = project(transformBodyToWorld(p, poseOffset), camera, scale, centerX, centerY);
       if (index === 0) ctx.moveTo(screen.x, screen.y);
       else ctx.lineTo(screen.x, screen.y);
     });
@@ -297,6 +287,7 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
       );
 
       const segments = [points.anchor, points.shoulder, points.knee, points.foot]
+        .map((point) => transformBodyToWorld(point, poseOffset))
         .map((point) => project(point, camera, scale, centerX, centerY));
 
       ctx.strokeStyle = "#f59e0b";
