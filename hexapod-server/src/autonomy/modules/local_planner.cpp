@@ -11,6 +11,8 @@ struct StalePlanPolicy {
 
 constexpr StalePlanPolicy kDefaultStalePlanPolicy{};
 constexpr double kExecutionHorizonMeters = 1.0;
+constexpr double kMaxFeasibleStepMeters = 1.25;
+constexpr double kFallbackBlendGain = 0.5;
 
 Waypoint selectShortHorizonTarget(const GlobalPlan& global_plan) {
     if (global_plan.route.empty()) {
@@ -31,6 +33,32 @@ Waypoint selectShortHorizonTarget(const GlobalPlan& global_plan) {
         }
     }
     return selected;
+}
+
+bool trajectoryFeasible(const GlobalPlan& global_plan) {
+    if (global_plan.route.empty()) {
+        return false;
+    }
+    double previous_x = 0.0;
+    double previous_y = 0.0;
+    for (const auto& waypoint : global_plan.route) {
+        const double step = std::hypot(waypoint.x_m - previous_x, waypoint.y_m - previous_y);
+        if (step > kMaxFeasibleStepMeters) {
+            return false;
+        }
+        previous_x = waypoint.x_m;
+        previous_y = waypoint.y_m;
+    }
+    return true;
+}
+
+Waypoint blendFallbackTarget(const Waypoint& stale_target, const Waypoint& fallback_target) {
+    return Waypoint{
+        .frame_id = fallback_target.frame_id.empty() ? stale_target.frame_id : fallback_target.frame_id,
+        .x_m = fallback_target.x_m + (stale_target.x_m - fallback_target.x_m) * kFallbackBlendGain,
+        .y_m = fallback_target.y_m + (stale_target.y_m - fallback_target.y_m) * kFallbackBlendGain,
+        .yaw_rad = fallback_target.yaw_rad + (stale_target.yaw_rad - fallback_target.yaw_rad) * kFallbackBlendGain,
+    };
 }
 
 } // namespace
@@ -67,12 +95,26 @@ LocalPlan LocalPlannerModuleShell::plan(const GlobalPlan& global_plan,
 
     if (now_ms > global_plan.source_timestamp_ms + kDefaultStalePlanPolicy.timeout_ms) {
         const bool have_fallback_target = last_executable_target_valid_;
+        const auto fallback_target = have_fallback_target
+                                         ? blendFallbackTarget(global_plan.target, last_executable_target_)
+                                         : global_plan.target;
         plan_ = LocalPlan{
             .has_command = have_fallback_target,
-            .target = have_fallback_target ? last_executable_target_ : global_plan.target,
+            .target = fallback_target,
             .status = PlannerStatus::StalePlan,
-            .reason = have_fallback_target ? "stale-global-plan-fallback-last-command" : "stale-global-plan-no-fallback",
+            .reason = have_fallback_target ? "stale-global-plan-fallback-smoothed" : "stale-global-plan-no-fallback",
             .fallback_active = true,
+        };
+        return plan_;
+    }
+
+    if (!trajectoryFeasible(global_plan)) {
+        plan_ = LocalPlan{
+            .has_command = false,
+            .target = {},
+            .status = PlannerStatus::UnsafePlan,
+            .reason = "infeasible-short-horizon-trajectory",
+            .fallback_active = false,
         };
         return plan_;
     }

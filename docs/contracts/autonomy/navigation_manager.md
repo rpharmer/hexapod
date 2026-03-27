@@ -12,6 +12,10 @@
 
 ## Outputs
 - `nav_intent` to `motion_arbiter` (or downstream adapter).
+- Planner outputs (normative behavior assumptions):
+  - `global_planner` performs cost/risk-aware grid search and reports `READY`, `DEGRADED`, `UNSAFE`, or `NO_PLAN`.
+  - `local_planner` performs short-horizon trajectory feasibility checks before dispatching executable targets.
+  - stale global plans trigger bounded fallback targeting; fallback may be smoothed from last executable command.
 - Navigation status:
   - `NAV_IDLE`, `NAV_ACTIVE`, `NAV_BLOCKED`, `NAV_COMPLETE`, `NAV_FAILED`
 - Progress metrics:
@@ -29,3 +33,4 @@
 ## Fault Behavior
 - Planner timeout or no-feasible-path emits `NAV_BLOCKED` and recovery trigger hint.
 - Hard faults emit `NAV_FAILED` with `fault_code` and `correlation_id`.
+- Unsafe traversability (`UNSAFE`) must not emit executable local commands; downstream locomotion dispatch remains suppressed.

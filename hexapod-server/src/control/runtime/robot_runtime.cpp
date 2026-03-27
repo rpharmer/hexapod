@@ -107,6 +107,11 @@ bool RobotRuntime::init() {
             .traversability_policy = autonomy::TraversabilityPolicyConfig{
                 .occupancy_risk_weight = config_.autonomy.traversability.occupancy_risk_weight,
                 .gradient_risk_weight = config_.autonomy.traversability.gradient_risk_weight,
+                .obstacle_near_risk_weight = config_.autonomy.traversability.obstacle_near_risk_weight,
+                .obstacle_mid_risk_weight = config_.autonomy.traversability.obstacle_mid_risk_weight,
+                .obstacle_far_risk_weight = config_.autonomy.traversability.obstacle_far_risk_weight,
+                .slope_high_risk_weight = config_.autonomy.traversability.slope_high_risk_weight,
+                .confidence_unknown_penalty = config_.autonomy.traversability.confidence_unknown_penalty,
                 .confidence_cost_weight = config_.autonomy.traversability.confidence_cost_weight,
                 .risk_block_threshold = config_.autonomy.traversability.risk_block_threshold,
                 .confidence_block_threshold = config_.autonomy.traversability.confidence_block_threshold,

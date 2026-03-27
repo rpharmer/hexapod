@@ -103,6 +103,11 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.autonomy.recovery_retry_budget = config.autonomyRecoveryRetryBudget;
     parsed.autonomy.traversability.occupancy_risk_weight = config.autonomyTraversabilityOccupancyRiskWeight;
     parsed.autonomy.traversability.gradient_risk_weight = config.autonomyTraversabilityGradientRiskWeight;
+    parsed.autonomy.traversability.obstacle_near_risk_weight = config.autonomyTraversabilityObstacleNearRiskWeight;
+    parsed.autonomy.traversability.obstacle_mid_risk_weight = config.autonomyTraversabilityObstacleMidRiskWeight;
+    parsed.autonomy.traversability.obstacle_far_risk_weight = config.autonomyTraversabilityObstacleFarRiskWeight;
+    parsed.autonomy.traversability.slope_high_risk_weight = config.autonomyTraversabilitySlopeHighRiskWeight;
+    parsed.autonomy.traversability.confidence_unknown_penalty = config.autonomyTraversabilityConfidenceUnknownPenalty;
     parsed.autonomy.traversability.confidence_cost_weight = config.autonomyTraversabilityConfidenceCostWeight;
     parsed.autonomy.traversability.risk_block_threshold = config.autonomyTraversabilityRiskBlockThreshold;
     parsed.autonomy.traversability.confidence_block_threshold = config.autonomyTraversabilityConfidenceBlockThreshold;
