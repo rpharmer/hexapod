@@ -367,6 +367,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     hexapod_server_add_test(test_telemetry_json_serialization telemetry_json_serialization
         tests/test_telemetry_json_serialization.cpp
     )
+    hexapod_server_add_test(test_telemetry_publisher_fallback telemetry_publisher_fallback
+        tests/test_telemetry_publisher_fallback.cpp
+    )
     hexapod_server_add_test(test_loop_executor_timing loop_executor_timing
         tests/test_loop_executor_timing.cpp
     )
