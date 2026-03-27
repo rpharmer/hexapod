@@ -196,13 +196,57 @@ function resolvePoseCandidateFromTranslation(translation, orientation) {
 function resolveVelocityTwist(model) {
   const linear = model.dynamic_gait?.body_linear_velocity_mps;
   const angular = model.dynamic_gait?.body_angular_velocity_radps;
-  if (!linear && !angular) {
+  const commandedLinear = model.dynamic_gait?.commanded_body_velocity_mps;
+  const commandedAngular = model.dynamic_gait?.commanded_body_angular_velocity_radps;
+  const commandedSpeed = model.dynamic_gait?.commanded_speed_mps;
+  const commandedHeading = model.dynamic_gait?.commanded_heading_rad;
+  if (
+    !linear &&
+    !angular &&
+    !commandedLinear &&
+    !commandedAngular &&
+    !Number.isFinite(commandedSpeed) &&
+    !Number.isFinite(commandedHeading)
+  ) {
     return null;
   }
+  const linearHasPlanarSignal = Number.isFinite(linear?.x) || Number.isFinite(linear?.y);
+  const commandedHasPlanarSignal = Number.isFinite(commandedLinear?.x) || Number.isFinite(commandedLinear?.y);
+  const linearPlanarMagnitude = Math.hypot(
+    Number.isFinite(linear?.x) ? linear.x : 0,
+    Number.isFinite(linear?.y) ? linear.y : 0,
+  );
+  const commandedPlanarMagnitude = Math.hypot(
+    Number.isFinite(commandedLinear?.x) ? commandedLinear.x : 0,
+    Number.isFinite(commandedLinear?.y) ? commandedLinear.y : 0,
+  );
+  const useCommandedLinear =
+    commandedHasPlanarSignal &&
+    (!linearHasPlanarSignal || (linearPlanarMagnitude < 1e-5 && commandedPlanarMagnitude > 1e-5));
+  const headingDerivedLinear = (Number.isFinite(commandedSpeed) && Number.isFinite(commandedHeading))
+    ? {
+      x: commandedSpeed * Math.cos(commandedHeading),
+      y: commandedSpeed * Math.sin(commandedHeading),
+      z: 0,
+    }
+    : null;
+  const useHeadingDerivedLinear =
+    headingDerivedLinear !== null && linearPlanarMagnitude < 1e-5 && commandedPlanarMagnitude < 1e-5;
+  const resolvedLinear = useCommandedLinear
+    ? commandedLinear
+    : useHeadingDerivedLinear
+      ? headingDerivedLinear
+      : linearHasPlanarSignal
+        ? linear
+        : headingDerivedLinear;
+  const resolvedAngular =
+    (Number.isFinite(angular?.x) || Number.isFinite(angular?.y) || Number.isFinite(angular?.z))
+      ? angular
+      : commandedAngular;
   return {
-    vx: Number.isFinite(linear?.x) ? linear.x : 0,
-    vy: Number.isFinite(linear?.y) ? linear.y : 0,
-    wz: Number.isFinite(angular?.z) ? angular.z : 0,
+    vx: Number.isFinite(resolvedLinear?.x) ? resolvedLinear.x : 0,
+    vy: Number.isFinite(resolvedLinear?.y) ? resolvedLinear.y : 0,
+    wz: Number.isFinite(resolvedAngular?.z) ? resolvedAngular.z : 0,
   };
 }
 
@@ -287,6 +331,42 @@ function transformWorldToBodyAnchored(point, poseOffset) {
     y: -dx * sinYaw + dy * cosYaw,
     z: point.z,
   };
+}
+
+export function buildGridProbePoints({
+  width,
+  height,
+  scale,
+  poseOffset,
+  gridSpacingMm = 55,
+  groundPlaneZ = -120,
+}) {
+  const visibleRadiusMm = Math.max(width, height) / Math.max(scale, 1e-6);
+  const gridExtentMm = visibleRadiusMm * 1.2;
+  const minWorldX = poseOffset.x - gridExtentMm;
+  const maxWorldX = poseOffset.x + gridExtentMm;
+  const minWorldY = poseOffset.y - gridExtentMm;
+  const maxWorldY = poseOffset.y + gridExtentMm;
+  const firstWorldY = Math.floor(minWorldY / gridSpacingMm) * gridSpacingMm;
+  const firstWorldX = Math.floor(minWorldX / gridSpacingMm) * gridSpacingMm;
+
+  const horizontalStart = transformWorldToBodyAnchored(
+    { x: minWorldX, y: firstWorldY, z: groundPlaneZ },
+    poseOffset,
+  );
+  const horizontalEnd = transformWorldToBodyAnchored(
+    { x: maxWorldX, y: firstWorldY, z: groundPlaneZ },
+    poseOffset,
+  );
+  const verticalStart = transformWorldToBodyAnchored(
+    { x: firstWorldX, y: minWorldY, z: groundPlaneZ },
+    poseOffset,
+  );
+  const verticalEnd = transformWorldToBodyAnchored(
+    { x: firstWorldX, y: maxWorldY, z: groundPlaneZ },
+    poseOffset,
+  );
+  return { horizontalStart, horizontalEnd, verticalStart, verticalEnd };
 }
 
 function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model, poseOffset, groundPlaneZ }) {

@@ -272,6 +272,27 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.autonomy_debug["active_waypoint_index"], 1)
         self.assertEqual(state.autonomy_debug["current_pose"]["x_m"], 0.4)
         self.assertEqual(state.autonomy_debug["current_pose"]["yaw_rad"], 0.2)
+
+    def test_udp_parser_accepts_legacy_xy_pose_fields_and_localization_pose(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
+
+        protocol.datagram_received(
+            (
+                b'{"schema_version":1,"type":"state","timestamp_ms":1235,'
+                b'"autonomy_debug":{"waypoints":[],"current_pose":{"x":1.5,"y":-0.75,"z":0.9},'
+                b'"localization":{"current_pose":{"x":2.25,"y":-1.25,"yaw":-0.3}}}}'
+            ),
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertIsNotNone(state.autonomy_debug)
+        self.assertEqual(state.autonomy_debug["current_pose"]["x_m"], 1.5)
+        self.assertEqual(state.autonomy_debug["current_pose"]["y_m"], -0.75)
+        self.assertEqual(state.autonomy_debug["current_pose"]["yaw_rad"], 0.9)
+        self.assertEqual(state.autonomy_debug["localization"]["current_pose"]["x_m"], 2.25)
+        self.assertEqual(state.autonomy_debug["localization"]["current_pose"]["yaw_rad"], -0.3)
         
     def test_udp_protocol_ignores_unknown_geometry_keys_in_geometry_object(self):
         state = server.TelemetryState()

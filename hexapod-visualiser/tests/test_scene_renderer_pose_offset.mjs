@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { resolvePoseOffsetMm } from "../static/scene-renderer.js";
+import { buildGridProbePoints, resolvePoseOffsetMm } from "../static/scene-renderer.js";
 
 function baseModel(overrides = {}) {
   return {
@@ -70,4 +70,63 @@ test("resolvePoseOffsetMm prefers velocity integration when only static body_tra
 
   const poseB = resolvePoseOffsetMm({ ...model, timestamp_ms: 1_500 }, deadReckoning);
   assert.deepEqual(poseB, { x: 50, y: 0, yaw: 0 });
+});
+
+test("resolvePoseOffsetMm falls back to commanded body velocity when estimated XY velocity is absent", () => {
+  const deadReckoning = { pose: { x: 0, y: 0, yaw: 0 }, lastTimestampMs: null };
+  const model = baseModel({
+    timestamp_ms: 1_000,
+    dynamic_gait: {
+      body_translation_m: { x: 0, y: 0, z: 0 },
+      body_linear_velocity_mps: { x: 0, y: 0, z: 0 },
+      body_angular_velocity_radps: { x: 0, y: 0, z: 0 },
+      commanded_body_velocity_mps: { x: 0.3, y: 0, z: 0 },
+      commanded_body_angular_velocity_radps: { x: 0, y: 0, z: 0 },
+    },
+  });
+
+  const poseA = resolvePoseOffsetMm(model, deadReckoning);
+  assert.deepEqual(poseA, { x: 0, y: 0, yaw: 0 });
+
+  const poseB = resolvePoseOffsetMm({ ...model, timestamp_ms: 1_500 }, deadReckoning);
+  assert.deepEqual(poseB, { x: 75, y: 0, yaw: 0 });
+});
+
+test("resolvePoseOffsetMm falls back to commanded speed+heading when no XY velocity vectors are present", () => {
+  const deadReckoning = { pose: { x: 0, y: 0, yaw: 0 }, lastTimestampMs: null };
+  const model = baseModel({
+    timestamp_ms: 2_000,
+    dynamic_gait: {
+      body_translation_m: { x: 0, y: 0, z: 0 },
+      body_linear_velocity_mps: { x: 0, y: 0, z: 0 },
+      body_angular_velocity_radps: { x: 0, y: 0, z: 0 },
+      commanded_speed_mps: 0.2,
+      commanded_heading_rad: Math.PI / 2,
+    },
+  });
+
+  const poseA = resolvePoseOffsetMm(model, deadReckoning);
+  assert.deepEqual(poseA, { x: 0, y: 0, yaw: 0 });
+
+  const poseB = resolvePoseOffsetMm({ ...model, timestamp_ms: 2_500 }, deadReckoning);
+  assert.ok(Math.abs(poseB.x) < 0.001);
+  assert.equal(Math.round(poseB.y), 50);
+});
+
+test("buildGridProbePoints shifts rendered grid anchors as pose offset changes", () => {
+  const width = 800;
+  const height = 600;
+  const scale = 2;
+  const poseA = { x: 0, y: 0, yaw: 0 };
+  const poseB = { x: 18, y: -12, yaw: 0.15 };
+
+  const probeA = buildGridProbePoints({ width, height, scale, poseOffset: poseA, groundPlaneZ: -100 });
+  const probeB = buildGridProbePoints({ width, height, scale, poseOffset: poseB, groundPlaneZ: -100 });
+
+  // Helpful diagnostic dump for investigation/reproduction logs.
+  console.log("grid_probe_frame_a", JSON.stringify(probeA));
+  console.log("grid_probe_frame_b", JSON.stringify(probeB));
+
+  assert.notDeepEqual(probeA.horizontalStart, probeB.horizontalStart);
+  assert.notDeepEqual(probeA.verticalStart, probeB.verticalStart);
 });
