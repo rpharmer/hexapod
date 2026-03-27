@@ -4,7 +4,7 @@
 #include "autonomy/common_types.hpp"
 #include "autonomy/modules/module_data.hpp"
 
-#include "kinematics/types.hpp"
+#include "core/types.hpp"
 
 #include <cstdint>
 #include <string>
@@ -17,7 +17,15 @@ struct LocalizationSourceObservation {
     double x_m{0.0};
     double y_m{0.0};
     double yaw_rad{0.0};
-    uint64_t timestamp_ms{0};
+    TimestampMs timestamp_ms{};
+
+    PositionM3 position_m() const {
+        return PositionM3{x_m, y_m, 0.0};
+    }
+
+    AngleRad yaw() const {
+        return AngleRad{yaw_rad};
+    }
 };
 
 LocalizationSourceObservation localizationObservationFromEstimator(const RobotState& estimator_state,
@@ -25,7 +33,7 @@ LocalizationSourceObservation localizationObservationFromEstimator(const RobotSt
 LocalizationSourceObservation localizationObservationFromOdometry(double x_m,
                                                                   double y_m,
                                                                   double yaw_rad,
-                                                                  uint64_t timestamp_ms,
+                                                                  TimestampMs timestamp_ms,
                                                                   const std::string& frame_id = "odom");
 
 class LocalizationModuleShell : public AutonomyModuleStub {

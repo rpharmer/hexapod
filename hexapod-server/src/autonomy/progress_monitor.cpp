@@ -22,14 +22,14 @@ ProgressEvaluation ProgressMonitor::evaluate(const ProgressSample& sample) {
         return ProgressEvaluation{};
     }
 
-    const uint64_t stagnant_duration_ms =
+    const DurationMs stagnant_duration_ms =
         (sample.timestamp_ms >= last_progress_sample_.timestamp_ms)
             ? (sample.timestamp_ms - last_progress_sample_.timestamp_ms)
-            : 0;
+            : DurationMs{};
 
     return ProgressEvaluation{
-        .no_progress = stagnant_duration_ms > no_progress_timeout_ms_,
-        .stagnant_duration_ms = stagnant_duration_ms,
+        .no_progress = stagnant_duration_ms.value > no_progress_timeout_ms_,
+        .stagnant_duration_ms = stagnant_duration_ms.value,
     };
 }
 

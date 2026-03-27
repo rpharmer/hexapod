@@ -23,7 +23,24 @@ struct LocalizationEstimate {
     double x_m{0.0};
     double y_m{0.0};
     double yaw_rad{0.0};
-    uint64_t timestamp_ms{0};
+    TimestampMs timestamp_ms{};
+
+    PositionM3 position_m() const {
+        return PositionM3{x_m, y_m, 0.0};
+    }
+
+    AngleRad yaw() const {
+        return AngleRad{yaw_rad};
+    }
+
+    void set_position_m(const PositionM3& position) {
+        x_m = position.x;
+        y_m = position.y;
+    }
+
+    void set_yaw(AngleRad heading) {
+        yaw_rad = heading.value;
+    }
 };
 
 struct MapSliceInput {
@@ -41,7 +58,7 @@ struct WorldModelSnapshot {
     double elevation_m{0.0};
     double terrain_gradient{0.0};
     double risk_confidence{1.0};
-    uint64_t timestamp_ms{0};
+    TimestampMs timestamp_ms{};
 };
 
 struct TraversabilityReport {
@@ -49,7 +66,7 @@ struct TraversabilityReport {
     double cost{0.0};
     double risk{0.0};
     double confidence{1.0};
-    uint64_t timestamp_ms{0};
+    TimestampMs timestamp_ms{};
 };
 
 struct GlobalPlan {
@@ -59,7 +76,7 @@ struct GlobalPlan {
     double cost{0.0};
     PlannerStatus status{PlannerStatus::None};
     std::string reason{};
-    uint64_t source_timestamp_ms{0};
+    TimestampMs source_timestamp_ms{};
 };
 
 struct LocalPlan {

@@ -6,7 +6,7 @@
 #include "autonomy/module_stubs.hpp"
 #include "autonomy/modules/module_shells.hpp"
 
-#include "kinematics/types.hpp"
+#include "core/types.hpp"
 
 #include <array>
 #include <cstdint>
@@ -40,7 +40,7 @@ struct ModuleSupervisorStatus {
     bool crashed{false};
     bool isolated_fault{false};
     uint64_t restart_count{0};
-    uint64_t heartbeat_timestamp_ms{0};
+    TimestampMs heartbeat_timestamp_ms{};
     std::string last_fault{};
 };
 

@@ -1,5 +1,7 @@
 #include "autonomy/modules/locomotion_interface.hpp"
 
+#include "utils/logger.hpp"
+
 #include <utility>
 
 namespace autonomy {
@@ -16,6 +18,8 @@ LocomotionCommand LocomotionInterfaceModuleShell::dispatch(const MotionDecision&
                                                            const LocalPlan& local_plan,
                                                            ContractEnvelope envelope) {
     (void)envelope;
+    const auto logger = logging::GetDefaultLogger();
+
     if (motion_decision.allow_motion && local_plan.has_command) {
         std::string failure_reason{};
         const bool write_ok = command_sink_(local_plan.target, &failure_reason);
@@ -27,6 +31,11 @@ LocomotionCommand LocomotionInterfaceModuleShell::dispatch(const MotionDecision&
             .target = local_plan.target,
             .reason = write_ok ? std::string{} : failure_reason,
         };
+        if (!write_ok && logger) {
+            LOG_WARN(logger,
+                     "[autonomy] locomotion dispatch failed; reason=",
+                     failure_reason.empty() ? std::string{"unspecified"} : failure_reason);
+        }
         return last_command_;
     }
 
@@ -37,6 +46,9 @@ LocomotionCommand LocomotionInterfaceModuleShell::dispatch(const MotionDecision&
         .target = {},
         .reason = motion_decision.allow_motion ? local_plan.reason : motion_decision.reason,
     };
+    if (logger && !motion_decision.allow_motion) {
+        LOG_DEBUG(logger, "[autonomy] locomotion command suppressed by motion arbiter: ", motion_decision.reason);
+    }
     return last_command_;
 }
 

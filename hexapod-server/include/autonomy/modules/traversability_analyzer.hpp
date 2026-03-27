@@ -11,7 +11,7 @@ public:
     TraversabilityAnalyzerModuleShell();
 
     TraversabilityReport analyze(const WorldModelSnapshot& world_model,
-                                 uint64_t timestamp_ms,
+                                 TimestampMs timestamp_ms,
                                 ContractEnvelope envelope = {});
     [[nodiscard]] TraversabilityReport report() const;
 

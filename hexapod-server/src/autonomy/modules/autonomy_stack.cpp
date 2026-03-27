@@ -1,5 +1,7 @@
 #include "autonomy/modules/autonomy_stack.hpp"
 
+#include "utils/logger.hpp"
+
 #include <algorithm>
 #include <string>
 
@@ -32,8 +34,12 @@ AutonomyStack::AutonomyStack(const AutonomyStackConfig& config)
       }) {}
 
 bool AutonomyStack::init() {
+    const auto logger = logging::GetDefaultLogger();
     for (auto* module : modules()) {
         if (!module->init()) {
+            if (logger) {
+                LOG_ERROR(logger, "[autonomy] failed to initialize module: ", module->health().module_name);
+            }
             return false;
         }
     }
@@ -41,8 +47,12 @@ bool AutonomyStack::init() {
 }
 
 bool AutonomyStack::start() {
+    const auto logger = logging::GetDefaultLogger();
     for (auto* module : modules()) {
         if (!module->start()) {
+            if (logger) {
+                LOG_ERROR(logger, "[autonomy] failed to start module: ", module->health().module_name);
+            }
             return false;
         }
     }
@@ -60,6 +70,9 @@ bool AutonomyStack::step(const AutonomyStepInput& input,
                          AutonomyStepOutput* output,
                          const ContractValidationConfig& config) {
     if (!output) {
+        if (const auto logger = logging::GetDefaultLogger()) {
+            LOG_ERROR(logger, "[autonomy] step called with null output");
+        }
         return false;
     }
 
@@ -386,6 +399,15 @@ bool AutonomyStack::validateEnvelopeForStream(const ContractEnvelope& envelope,
 
     const auto result = contract_enforcer_.validate(envelope, now_ms, config, last_sample_id);
     if (!result.valid) {
+        if (const auto logger = logging::GetDefaultLogger()) {
+            LOG_WARN(logger,
+                     "[autonomy] contract validation failed for stream=",
+                     stream_id,
+                     " sample_id=",
+                     envelope.sample_id,
+                     " reason=",
+                     result.message);
+        }
         return false;
     }
 
@@ -421,10 +443,14 @@ bool AutonomyStack::monitorAndRecoverModule(AutonomyModuleStub* module,
                                             uint64_t now_ms,
                                             bool crashed,
                                             bool timed_out) {
+    const auto logger = logging::GetDefaultLogger();
     auto supervisor_iter = std::find_if(supervisor_states_.begin(), supervisor_states_.end(), [&](const auto& state) {
         return state.contract.module_name == module->health().module_name;
     });
     if (supervisor_iter == supervisor_states_.end()) {
+        if (logger) {
+            LOG_ERROR(logger, "[autonomy] missing supervisor state for module: ", module->health().module_name);
+        }
         return false;
     }
 
@@ -447,6 +473,13 @@ bool AutonomyStack::monitorAndRecoverModule(AutonomyModuleStub* module,
     supervisor.last_fault = crashed ? "crash" : "timeout";
 
     if (supervisor.restart_count >= supervisor.contract.max_restarts) {
+        if (logger) {
+            LOG_WARN(logger,
+                     "[autonomy] module restart budget exhausted: ",
+                     supervisor.contract.module_name,
+                     " fault=",
+                     supervisor.last_fault);
+        }
         if (supervisor.contract.criticality == ProcessCriticality::Critical) {
             return false;
         }
@@ -456,7 +489,17 @@ bool AutonomyStack::monitorAndRecoverModule(AutonomyModuleStub* module,
 
     module->stop();
     if (!module->init() || !module->start()) {
+        if (logger) {
+            LOG_ERROR(logger, "[autonomy] module recovery restart failed: ", supervisor.contract.module_name);
+        }
         return false;
+    }
+    if (logger) {
+        LOG_WARN(logger,
+                 "[autonomy] module recovered via restart: ",
+                 supervisor.contract.module_name,
+                 " fault=",
+                 supervisor.last_fault);
     }
     supervisor.restart_count += 1;
     supervisor.crashed = false;
@@ -489,6 +532,7 @@ bool AutonomyStack::dependencyHealthy(const std::string& dependency_name, uint64
 }
 
 void AutonomyStack::applyDegradedMode(const AutonomyStepInput& input, AutonomyStepOutput* output) {
+    const auto logger = logging::GetDefaultLogger();
     output->degraded_mode = false;
     output->degraded_reason.clear();
 
@@ -498,6 +542,9 @@ void AutonomyStack::applyDegradedMode(const AutonomyStepInput& input, AutonomySt
         output->motion_decision.allow_motion = false;
         output->motion_decision.reason = kStaleLocalization;
         output->locomotion_command = LocomotionCommand{.sent = false, .target = {}, .reason = kStaleLocalization};
+        if (logger) {
+            LOG_WARN(logger, "[autonomy] degraded mode enabled: ", kStaleLocalization);
+        }
         return;
     }
 
@@ -510,6 +557,9 @@ void AutonomyStack::applyDegradedMode(const AutonomyStepInput& input, AutonomySt
         output->motion_decision.allow_motion = false;
         output->motion_decision.reason = kPlannerUnavailable;
         output->locomotion_command = LocomotionCommand{.sent = false, .target = {}, .reason = kPlannerUnavailable};
+        if (logger) {
+            LOG_WARN(logger, "[autonomy] degraded mode enabled: ", kPlannerUnavailable);
+        }
         return;
     }
 
@@ -519,6 +569,9 @@ void AutonomyStack::applyDegradedMode(const AutonomyStepInput& input, AutonomySt
         output->motion_decision.allow_motion = false;
         output->motion_decision.reason = kLocomotionDispatchFailure;
         output->locomotion_command.reason = kLocomotionDispatchFailure;
+        if (logger) {
+            LOG_WARN(logger, "[autonomy] degraded mode enabled: ", kLocomotionDispatchFailure);
+        }
     }
 }
 

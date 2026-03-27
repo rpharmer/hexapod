@@ -30,6 +30,22 @@ struct DurationUs {
     uint64_t value{0};
 };
 
+struct DurationMs {
+    uint64_t value{0};
+
+    constexpr DurationMs() = default;
+    constexpr DurationMs(uint64_t raw_value) : value(raw_value) {}
+    constexpr operator uint64_t() const { return value; }
+};
+
+struct TimestampMs {
+    uint64_t value{0};
+
+    constexpr TimestampMs() = default;
+    constexpr TimestampMs(uint64_t raw_value) : value(raw_value) {}
+    constexpr operator uint64_t() const { return value; }
+};
+
 inline TimePointUs now_us() {
     const auto t = Clock::now().time_since_epoch();
     return TimePointUs{
@@ -47,6 +63,32 @@ inline DurationUs operator-(TimePointUs lhs, TimePointUs rhs) {
 
 inline bool operator>(DurationUs lhs, DurationUs rhs) {
     return lhs.value > rhs.value;
+}
+
+constexpr bool operator==(TimestampMs lhs, TimestampMs rhs) { return lhs.value == rhs.value; }
+constexpr bool operator!=(TimestampMs lhs, TimestampMs rhs) { return !(lhs == rhs); }
+constexpr bool operator<(TimestampMs lhs, TimestampMs rhs) { return lhs.value < rhs.value; }
+constexpr bool operator<=(TimestampMs lhs, TimestampMs rhs) { return lhs.value <= rhs.value; }
+constexpr bool operator>(TimestampMs lhs, TimestampMs rhs) { return rhs < lhs; }
+constexpr bool operator>=(TimestampMs lhs, TimestampMs rhs) { return rhs <= lhs; }
+
+constexpr bool operator>(TimestampMs lhs, uint64_t rhs) { return lhs.value > rhs; }
+constexpr bool operator>=(TimestampMs lhs, uint64_t rhs) { return lhs.value >= rhs; }
+constexpr bool operator<(TimestampMs lhs, uint64_t rhs) { return lhs.value < rhs; }
+constexpr bool operator<=(TimestampMs lhs, uint64_t rhs) { return lhs.value <= rhs; }
+constexpr bool operator>(uint64_t lhs, TimestampMs rhs) { return lhs > rhs.value; }
+constexpr bool operator>=(uint64_t lhs, TimestampMs rhs) { return lhs >= rhs.value; }
+constexpr bool operator<(uint64_t lhs, TimestampMs rhs) { return lhs < rhs.value; }
+constexpr bool operator<=(uint64_t lhs, TimestampMs rhs) { return lhs <= rhs.value; }
+
+constexpr DurationMs operator-(TimestampMs lhs, TimestampMs rhs) {
+    return DurationMs{lhs.value <= rhs.value ? 0 : lhs.value - rhs.value};
+}
+constexpr DurationMs operator-(uint64_t lhs, TimestampMs rhs) {
+    return DurationMs{lhs <= rhs.value ? 0 : lhs - rhs.value};
+}
+constexpr TimestampMs operator+(TimestampMs lhs, uint64_t rhs) {
+    return TimestampMs{lhs.value + rhs};
 }
 
 template <typename T>
