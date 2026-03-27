@@ -191,6 +191,8 @@ Baseline scenarios in `hexapod-server/scenarios/`:
 - `03_power_fault_triggers.toml`
 - `04_contact_loss_edge_cases.toml`
 - `05_long_walk_observability.toml`
+- `10_sustained_fast_cruise.toml`
+- `11_endurance_speed_mix.toml`
 
 Convenience script from repository root:
 

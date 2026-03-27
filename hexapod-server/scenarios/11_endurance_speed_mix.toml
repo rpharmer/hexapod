@@ -1,0 +1,95 @@
+name = "endurance_speed_mix"
+duration_ms = 90000
+tick_ms = 20
+refresh_motion_intent = true
+motion_ramp_ms = 1500
+
+[[events]]
+at_ms = 0
+mode = "SAFE_IDLE"
+gait = "TRIPOD"
+body_height_m = 0.18
+speed_mps = 0.0
+heading_rad = 0.0
+yaw_rad = 0.0
+
+[[events]]
+at_ms = 1200
+mode = "STAND"
+gait = "TRIPOD"
+body_height_m = 0.20
+speed_mps = 0.0
+heading_rad = 0.0
+yaw_rad = 0.0
+
+[[events]]
+at_ms = 3000
+mode = "WALK"
+gait = "TRIPOD"
+body_height_m = 0.20
+speed_mps = 0.30
+heading_rad = 0.0
+yaw_rad = 0.0
+
+[[events]]
+at_ms = 9000
+mode = "WALK"
+gait = "TRIPOD"
+body_height_m = 0.20
+speed_mps = 0.50
+heading_rad = 0.52
+yaw_rad = 0.10
+
+[[events]]
+at_ms = 24000
+mode = "WALK"
+gait = "TRIPOD"
+body_height_m = 0.21
+speed_mps = 0.48
+heading_rad = 1.05
+yaw_rad = -0.10
+
+[[events]]
+at_ms = 39000
+mode = "WALK"
+gait = "RIPPLE"
+body_height_m = 0.21
+speed_mps = 0.42
+heading_rad = 1.57
+yaw_rad = 0.15
+
+[[events]]
+at_ms = 54000
+mode = "WALK"
+gait = "TRIPOD"
+body_height_m = 0.20
+speed_mps = 0.46
+heading_rad = -1.20
+yaw_rad = -0.15
+
+[[events]]
+at_ms = 70000
+mode = "WALK"
+gait = "WAVE"
+body_height_m = 0.20
+speed_mps = 0.35
+heading_rad = 0.0
+yaw_rad = 0.0
+
+[[events]]
+at_ms = 84000
+mode = "WALK"
+gait = "TRIPOD"
+body_height_m = 0.20
+speed_mps = 0.18
+heading_rad = 0.0
+yaw_rad = 0.0
+
+[[events]]
+at_ms = 88000
+mode = "STAND"
+gait = "TRIPOD"
+body_height_m = 0.20
+speed_mps = 0.0
+heading_rad = 0.0
+yaw_rad = 0.0
