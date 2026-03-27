@@ -99,12 +99,22 @@ MissionEvent MissionExecutive::onRecoveryDecision(const RecoveryDecision& decisi
         return reject("recovery decisions only allowed from EXEC or PAUSED");
     }
 
-    if (!decision.mission_should_abort) {
-        return accept();
+    if (decision.mission_should_abort) {
+        const std::string reason = decision.reason.empty() ? "recovery escalation abort" : decision.reason;
+        return abort(reason);
     }
 
-    const std::string reason = decision.reason.empty() ? "recovery escalation abort" : decision.reason;
-    return abort(reason);
+    if (decision.recovery_active) {
+        if (state_ == MissionState::Exec) {
+            state_ = MissionState::Paused;
+        }
+        return accept(decision.reason);
+    }
+
+    if (state_ == MissionState::Paused) {
+        state_ = MissionState::Exec;
+    }
+    return accept(decision.reason);
 }
 
 MissionEvent MissionExecutive::reject(const std::string& reason) const {
@@ -120,11 +130,11 @@ MissionEvent MissionExecutive::reject(const std::string& reason) const {
     };
 }
 
-MissionEvent MissionExecutive::accept() {
+MissionEvent MissionExecutive::accept(const std::string& reason) {
     return MissionEvent{
         .accepted = true,
         .state = state_,
-        .reason = {},
+        .reason = reason,
         .progress = MissionProgress{
             .mission_id = mission_.mission_id,
             .completed_waypoints = next_waypoint_index_,

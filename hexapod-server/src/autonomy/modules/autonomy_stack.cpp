@@ -80,7 +80,7 @@ bool AutonomyStack::step(const AutonomyStepInput& input, AutonomyStepOutput* out
 
     const bool recovery_trigger = input.blocked || output->progress_evaluation.no_progress;
     output->recovery_decision = recovery_manager_module_.onNoProgress(recovery_trigger);
-    if (recovery_trigger) {
+    if (output->mission_event.state == MissionState::Exec || output->mission_event.state == MissionState::Paused) {
         const auto recovery_event = mission_executive_.onRecoveryDecision(output->recovery_decision);
         if (recovery_event.accepted) {
             output->mission_event = recovery_event;

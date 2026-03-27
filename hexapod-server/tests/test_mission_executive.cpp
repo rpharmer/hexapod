@@ -89,8 +89,30 @@ bool testRecoveryEscalationAbortHook() {
     if (!expect(no_abort.accepted, "non-aborting recovery decisions should be accepted")) {
         return false;
     }
-    if (!expect(no_abort.state == autonomy::MissionState::Exec,
-                "non-aborting recovery decisions should keep mission in EXEC")) {
+    if (!expect(no_abort.state == autonomy::MissionState::Paused,
+                "active recovery should move mission to PAUSED")) {
+        return false;
+    }
+    if (!expect(no_abort.reason == "retry trajectory",
+                "recovery telemetry reason should propagate for active recovery")) {
+        return false;
+    }
+
+    const auto resumed = executive.onRecoveryDecision(autonomy::RecoveryDecision{
+        .action = autonomy::RecoveryAction::None,
+        .recovery_active = false,
+        .mission_should_abort = false,
+        .reason = "recovery complete",
+    });
+    if (!expect(resumed.accepted, "recovery completion decision should be accepted")) {
+        return false;
+    }
+    if (!expect(resumed.state == autonomy::MissionState::Exec,
+                "recovery completion should resume mission execution")) {
+        return false;
+    }
+    if (!expect(resumed.reason == "recovery complete",
+                "recovery completion reason should propagate")) {
         return false;
     }
 
@@ -107,13 +129,34 @@ bool testRecoveryEscalationAbortHook() {
                   "abort recovery reason should propagate");
 }
 
+bool testRecoveryEscalationAbortHookUsesDefaultReason() {
+    autonomy::MissionExecutive executive;
+    if (!expect(executive.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(executive.start().accepted, "start should succeed")) {
+        return false;
+    }
+
+    const auto aborted = executive.onRecoveryDecision(autonomy::RecoveryDecision{
+        .action = autonomy::RecoveryAction::Abort,
+        .recovery_active = false,
+        .mission_should_abort = true,
+        .reason = {},
+    });
+    return expect(aborted.accepted, "default-reason abort should be accepted") &&
+           expect(aborted.reason == "recovery escalation abort",
+                  "empty recovery abort reason should default explicitly");
+}
+
 } // namespace
 
 int main() {
     if (!testHappyPathToComplete() ||
         !testPauseResumeAndAbort() ||
         !testInvalidTransitionRejected() ||
-        !testRecoveryEscalationAbortHook()) {
+        !testRecoveryEscalationAbortHook() ||
+        !testRecoveryEscalationAbortHookUsesDefaultReason()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

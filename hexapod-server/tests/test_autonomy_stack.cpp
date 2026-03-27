@@ -72,6 +72,14 @@ bool testHappyPathWiresMissionNavAndMotion() {
     if (!expect(first.motion_decision.allow_motion, "motion should be allowed on active nav intent")) {
         return false;
     }
+    if (!expect(first.mission_event.progress.mission_id == "autonomy-stack-mission",
+                "mission telemetry should expose mission id")) {
+        return false;
+    }
+    if (!expect(first.mission_event.progress.total_waypoints == 2,
+                "mission telemetry should expose total waypoint count")) {
+        return false;
+    }
     if (!expect(first.locomotion_command.sent, "locomotion interface should dispatch allowed motion")) {
         return false;
     }
@@ -133,6 +141,10 @@ bool testBlockedFlowEscalatesRecoveryToAbort() {
                 "first blocked step should hold")) {
         return false;
     }
+    if (!expect(step1.mission_event.state == autonomy::MissionState::Paused,
+                "active recovery should pause mission while blocked")) {
+        return false;
+    }
     if (!expect(step2.recovery_decision.action == autonomy::RecoveryAction::Replan,
                 "second blocked step should replan when retry budget is exhausted")) {
         return false;
@@ -145,12 +157,132 @@ bool testBlockedFlowEscalatesRecoveryToAbort() {
                 "abort recovery should push mission to aborted")) {
         return false;
     }
+    if (!expect(step3.mission_event.reason == "retry budget exhausted",
+                "abort recovery should expose explicit telemetry abort reason")) {
+        return false;
+    }
     if (!expect(!step3.motion_decision.allow_motion,
                 "aborted recovery path should not allow motion")) {
         return false;
     }
     if (!expect(!step3.locomotion_command.sent,
                 "aborted recovery path should suppress locomotion dispatch")) {
+        return false;
+    }
+
+    stack.stop();
+    return true;
+}
+
+bool testRecoverySuccessResumesMissionExecution() {
+    autonomy::AutonomyStack stack(autonomy::AutonomyStackConfig{
+        .no_progress_timeout_ms = 1000,
+        .recovery_retry_budget = 2,
+    });
+    if (!expect(stack.init(), "stack init should succeed")) {
+        return false;
+    }
+    if (!expect(stack.start(), "stack start should succeed")) {
+        return false;
+    }
+    if (!expect(stack.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(stack.startMission().accepted, "start mission should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput blocked{};
+    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 10, .blocked = true}, &blocked),
+                "blocked step should succeed")) {
+        return false;
+    }
+    if (!expect(blocked.mission_event.state == autonomy::MissionState::Paused,
+                "blocked recovery should pause mission")) {
+        return false;
+    }
+    if (!expect(blocked.recovery_decision.recovery_active,
+                "blocked recovery decision should be active")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput resumed{};
+    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 20, .blocked = false}, &resumed),
+                "recovery-clear step should succeed")) {
+        return false;
+    }
+    if (!expect(resumed.recovery_decision.action == autonomy::RecoveryAction::None,
+                "recovery-clear step should reset to no recovery action")) {
+        return false;
+    }
+    if (!expect(resumed.mission_event.state == autonomy::MissionState::Exec,
+                "recovery-clear step should resume mission to EXEC")) {
+        return false;
+    }
+    if (!expect(resumed.motion_decision.allow_motion,
+                "recovery-clear step should allow motion again")) {
+        return false;
+    }
+    if (!expect(resumed.locomotion_command.sent,
+                "recovery-clear step should dispatch locomotion command")) {
+        return false;
+    }
+
+    stack.stop();
+    return true;
+}
+
+bool testRecoveryDoesNotBypassEStopOrHoldPriority() {
+    autonomy::AutonomyStack stack(autonomy::AutonomyStackConfig{
+        .no_progress_timeout_ms = 1000,
+        .recovery_retry_budget = 2,
+    });
+    if (!expect(stack.init(), "stack init should succeed")) {
+        return false;
+    }
+    if (!expect(stack.start(), "stack start should succeed")) {
+        return false;
+    }
+    if (!expect(stack.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(stack.startMission().accepted, "start mission should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput estop_step{};
+    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 10, .estop = true, .blocked = true}, &estop_step),
+                "estop + recovery step should succeed")) {
+        return false;
+    }
+    if (!expect(estop_step.recovery_decision.recovery_active,
+                "estop case should still detect active recovery")) {
+        return false;
+    }
+    if (!expect(estop_step.motion_decision.source == autonomy::MotionSource::EStop,
+                "estop should keep highest arbitration priority during recovery")) {
+        return false;
+    }
+    if (!expect(!estop_step.locomotion_command.sent,
+                "estop should prevent locomotion dispatch during recovery")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput hold_step{};
+    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 20, .hold = true, .blocked = true}, &hold_step),
+                "hold + recovery step should succeed")) {
+        return false;
+    }
+    if (!expect(hold_step.recovery_decision.recovery_active,
+                "hold case should still detect active recovery")) {
+        return false;
+    }
+    if (!expect(hold_step.motion_decision.source == autonomy::MotionSource::Hold,
+                "hold should outrank recovery in arbitration")) {
+        return false;
+    }
+    if (!expect(!hold_step.locomotion_command.sent,
+                "hold should prevent locomotion dispatch during recovery")) {
         return false;
     }
 
@@ -200,6 +332,8 @@ bool testScriptAndContractLoadPath() {
 int main() {
     if (!testHappyPathWiresMissionNavAndMotion() ||
         !testBlockedFlowEscalatesRecoveryToAbort() ||
+        !testRecoverySuccessResumesMissionExecution() ||
+        !testRecoveryDoesNotBypassEStopOrHoldPriority() ||
         !testScriptAndContractLoadPath()) {
         return EXIT_FAILURE;
     }
