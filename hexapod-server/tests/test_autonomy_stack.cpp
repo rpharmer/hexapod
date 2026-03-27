@@ -75,6 +75,10 @@ bool testHappyPathWiresMissionNavAndMotion() {
     if (!expect(first.locomotion_command.sent, "locomotion interface should dispatch allowed motion")) {
         return false;
     }
+    if (!expect(first.locomotion_command.status == autonomy::LocomotionCommand::DispatchStatus::Dispatched,
+                "locomotion command should report dispatch success")) {
+        return false;
+    }
 
     autonomy::AutonomyStepOutput second{};
     if (!expect(stack.step(autonomy::AutonomyStepInput{
@@ -158,6 +162,71 @@ bool testBlockedFlowEscalatesRecoveryToAbort() {
     return true;
 }
 
+bool testDispatchFailureTriggersRecoveryAndMotionGate() {
+    bool sink_invoked = false;
+    autonomy::AutonomyStack stack(autonomy::AutonomyStackConfig{
+        .no_progress_timeout_ms = 1000,
+        .recovery_retry_budget = 2,
+        .locomotion_command_sink =
+            [&](const autonomy::Waypoint&, std::string* failure_reason) {
+                sink_invoked = true;
+                if (failure_reason) {
+                    *failure_reason = "hardware bridge write failed";
+                }
+                return false;
+            },
+    });
+    if (!expect(stack.init(), "stack init should succeed")) {
+        return false;
+    }
+    if (!expect(stack.start(), "stack start should succeed")) {
+        return false;
+    }
+    if (!expect(stack.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(stack.startMission().accepted, "start mission should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput step{};
+    if (!expect(stack.step(autonomy::AutonomyStepInput{
+                               .now_ms = 10,
+                               .blocked = false,
+                               .waypoint_reached = false,
+                           },
+                           &step),
+                "step should succeed")) {
+        return false;
+    }
+
+    if (!expect(sink_invoked, "locomotion dispatch should invoke configured command sink")) {
+        return false;
+    }
+    if (!expect(step.locomotion_command.status == autonomy::LocomotionCommand::DispatchStatus::DispatchFailed,
+                "dispatch failure should be explicitly reported")) {
+        return false;
+    }
+    if (!expect(!step.locomotion_command.write_ok, "failed dispatch should report write failure")) {
+        return false;
+    }
+    if (!expect(step.recovery_decision.recovery_active,
+                "dispatch failure should trigger recovery handling")) {
+        return false;
+    }
+    if (!expect(step.recovery_decision.action == autonomy::RecoveryAction::Hold,
+                "first dispatch failure should request hold recovery action")) {
+        return false;
+    }
+    if (!expect(!step.motion_decision.allow_motion,
+                "dispatch failure recovery should gate subsequent motion commands")) {
+        return false;
+    }
+
+    stack.stop();
+    return true;
+}
+
 bool testScriptAndContractLoadPath() {
     autonomy::AutonomyStack stack;
     if (!expect(stack.init(), "stack init should succeed")) {
@@ -200,6 +269,7 @@ bool testScriptAndContractLoadPath() {
 int main() {
     if (!testHappyPathWiresMissionNavAndMotion() ||
         !testBlockedFlowEscalatesRecoveryToAbort() ||
+        !testDispatchFailureTriggersRecoveryAndMotionGate() ||
         !testScriptAndContractLoadPath()) {
         return EXIT_FAILURE;
     }

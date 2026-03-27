@@ -4,17 +4,23 @@
 #include "autonomy/modules/module_data.hpp"
 #include "autonomy/motion_arbiter.hpp"
 
+#include <functional>
+#include <string>
+
 namespace autonomy {
 
 class LocomotionInterfaceModuleShell : public AutonomyModuleStub {
 public:
-    LocomotionInterfaceModuleShell();
+    using CommandSink = std::function<bool(const Waypoint& target, std::string* failure_reason)>;
+
+    explicit LocomotionInterfaceModuleShell(CommandSink command_sink = {});
 
     LocomotionCommand dispatch(const MotionDecision& motion_decision,
                                const LocalPlan& local_plan);
     [[nodiscard]] LocomotionCommand lastCommand() const;
 
 private:
+    CommandSink command_sink_;
     LocomotionCommand last_command_{};
 };
 

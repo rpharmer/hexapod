@@ -3,7 +3,8 @@
 namespace autonomy {
 
 AutonomyStack::AutonomyStack(const AutonomyStackConfig& config)
-    : progress_monitor_module_(config.no_progress_timeout_ms),
+    : locomotion_interface_module_(config.locomotion_command_sink),
+      progress_monitor_module_(config.no_progress_timeout_ms),
       recovery_manager_module_(config.recovery_retry_budget) {}
 
 bool AutonomyStack::init() {
@@ -95,6 +96,19 @@ bool AutonomyStack::step(const AutonomyStepInput& input, AutonomyStepOutput* out
     output->locomotion_command = locomotion_interface_module_.dispatch(
         output->motion_decision,
         output->local_plan);
+    if (output->locomotion_command.status == LocomotionCommand::DispatchStatus::DispatchFailed) {
+        output->recovery_decision = recovery_manager_module_.onNoProgress(true);
+        const auto recovery_event = mission_executive_.onRecoveryDecision(output->recovery_decision);
+        if (recovery_event.accepted) {
+            output->mission_event = recovery_event;
+        }
+
+        output->motion_decision = motion_arbiter_module_.arbitrate(
+            input.estop,
+            input.hold,
+            output->recovery_decision.recovery_active,
+            output->navigation_update);
+    }
 
     return true;
 }

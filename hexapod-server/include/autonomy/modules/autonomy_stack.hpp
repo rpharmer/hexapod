@@ -16,6 +16,7 @@ namespace autonomy {
 struct AutonomyStackConfig {
     uint64_t no_progress_timeout_ms{1000};
     uint64_t recovery_retry_budget{2};
+    LocomotionInterfaceModuleShell::CommandSink locomotion_command_sink{};
 };
 
 struct AutonomyStepInput {

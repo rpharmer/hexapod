@@ -39,7 +39,15 @@ struct LocalPlan {
 };
 
 struct LocomotionCommand {
+    enum class DispatchStatus {
+        Suppressed,
+        Dispatched,
+        DispatchFailed,
+    };
+
+    DispatchStatus status{DispatchStatus::Suppressed};
     bool sent{false};
+    bool write_ok{false};
     Waypoint target{};
     std::string reason{};
 };

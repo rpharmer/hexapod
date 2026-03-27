@@ -106,14 +106,58 @@ bool testAllShellsFunctionalWiring() {
         return false;
     }
     const auto locomotion_command = locomotion.dispatch(motion, local_plan);
-    return expect(!locomotion_command.sent, "locomotion shell should not dispatch when motion is gated");
+    return expect(!locomotion_command.sent, "locomotion shell should not dispatch when motion is gated") &&
+           expect(locomotion_command.status == autonomy::LocomotionCommand::DispatchStatus::Suppressed,
+                  "suppressed locomotion dispatch should report suppressed status");
+}
+
+bool testLocomotionShellDispatchSinkOutcomes() {
+    bool success_sink_called = false;
+    autonomy::LocomotionInterfaceModuleShell success_locomotion(
+        [&](const autonomy::Waypoint&, std::string*) {
+            success_sink_called = true;
+            return true;
+        });
+    const autonomy::MotionDecision allow_motion{
+        .source = autonomy::MotionSource::Nav,
+        .allow_motion = true,
+        .reason = {},
+    };
+    const autonomy::LocalPlan local_plan{
+        .has_command = true,
+        .target = autonomy::Waypoint{.frame_id = "map", .x_m = 0.5, .y_m = -0.5, .yaw_rad = 0.1},
+    };
+    const auto success = success_locomotion.dispatch(allow_motion, local_plan);
+    if (!expect(success_sink_called, "success sink should be invoked")) {
+        return false;
+    }
+    if (!expect(success.status == autonomy::LocomotionCommand::DispatchStatus::Dispatched,
+                "successful sink write should report dispatched status")) {
+        return false;
+    }
+
+    bool failure_sink_called = false;
+    autonomy::LocomotionInterfaceModuleShell failed_locomotion(
+        [&](const autonomy::Waypoint&, std::string* failure_reason) {
+            failure_sink_called = true;
+            if (failure_reason) {
+                *failure_reason = "simulated hardware failure";
+            }
+            return false;
+        });
+    const auto failed = failed_locomotion.dispatch(allow_motion, local_plan);
+    return expect(failure_sink_called, "failure sink should be invoked") &&
+           expect(failed.status == autonomy::LocomotionCommand::DispatchStatus::DispatchFailed,
+                  "failing sink write should report dispatch failure status") &&
+           expect(!failed.write_ok, "failing sink write should set write_ok=false");
 }
 
 } // namespace
 
 int main() {
     if (!testAllShellsLifecycleAndIdentity() ||
-        !testAllShellsFunctionalWiring()) {
+        !testAllShellsFunctionalWiring() ||
+        !testLocomotionShellDispatchSinkOutcomes()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
