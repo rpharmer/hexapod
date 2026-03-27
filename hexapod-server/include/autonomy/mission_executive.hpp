@@ -1,6 +1,7 @@
 #pragma once
 
 #include "autonomy/mission_types.hpp"
+#include "autonomy/recovery_manager.hpp"
 
 #include <cstdint>
 #include <string>
@@ -29,6 +30,7 @@ public:
 
     MissionState state() const;
     const WaypointMission* activeMission() const;
+    MissionProgress currentProgress() const;
 
     MissionEvent loadMission(const WaypointMission& mission);
     MissionEvent start();
@@ -36,6 +38,7 @@ public:
     MissionEvent resume();
     MissionEvent abort(const std::string& reason);
     MissionEvent markWaypointReached();
+    MissionEvent onRecoveryDecision(const RecoveryDecision& decision);
 
 private:
     MissionEvent reject(const std::string& reason) const;

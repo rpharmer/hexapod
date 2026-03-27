@@ -13,6 +13,14 @@ const WaypointMission* MissionExecutive::activeMission() const {
     return &mission_;
 }
 
+MissionProgress MissionExecutive::currentProgress() const {
+    return MissionProgress{
+        .mission_id = mission_.mission_id,
+        .completed_waypoints = next_waypoint_index_,
+        .total_waypoints = mission_.waypoints.size(),
+    };
+}
+
 MissionEvent MissionExecutive::loadMission(const WaypointMission& mission) {
     if (state_ != MissionState::Idle && state_ != MissionState::Complete && state_ != MissionState::Aborted) {
         return reject("cannot load mission while active");
@@ -84,6 +92,19 @@ MissionEvent MissionExecutive::markWaypointReached() {
     }
 
     return accept();
+}
+
+MissionEvent MissionExecutive::onRecoveryDecision(const RecoveryDecision& decision) {
+    if (state_ != MissionState::Exec && state_ != MissionState::Paused) {
+        return reject("recovery decisions only allowed from EXEC or PAUSED");
+    }
+
+    if (!decision.mission_should_abort) {
+        return accept();
+    }
+
+    const std::string reason = decision.reason.empty() ? "recovery escalation abort" : decision.reason;
+    return abort(reason);
 }
 
 MissionEvent MissionExecutive::reject(const std::string& reason) const {

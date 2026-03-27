@@ -55,10 +55,65 @@ bool testAllShellsLifecycleAndIdentity() {
     return true;
 }
 
+bool testAllShellsFunctionalWiring() {
+    autonomy::NavigationManagerModuleShell navigation;
+    autonomy::LocalizationModuleShell localization;
+    autonomy::WorldModelModuleShell world_model;
+    autonomy::TraversabilityAnalyzerModuleShell traversability;
+    autonomy::GlobalPlannerModuleShell global_planner;
+    autonomy::LocalPlannerModuleShell local_planner;
+    autonomy::ProgressMonitorModuleShell progress_monitor(50);
+    autonomy::RecoveryManagerModuleShell recovery(1);
+    autonomy::MotionArbiterModuleShell motion_arbiter;
+    autonomy::LocomotionInterfaceModuleShell locomotion;
+
+    const autonomy::WaypointMission mission{
+        .mission_id = "module-shells-mission",
+        .waypoints = {autonomy::Waypoint{.frame_id = "map", .x_m = 1.0, .y_m = 2.0, .yaw_rad = 0.25}},
+    };
+
+    const auto nav_update = navigation.computeIntent(mission, 0, false);
+    if (!expect(nav_update.has_intent, "navigation shell should emit intent")) {
+        return false;
+    }
+    const auto loc = localization.update(nav_update, 10);
+    if (!expect(loc.valid, "localization shell should synthesize valid estimate from nav intent")) {
+        return false;
+    }
+    const auto world = world_model.update(loc, false, 10);
+    const auto traverse = traversability.analyze(world, 10);
+    const auto global_plan = global_planner.plan(nav_update, traverse);
+    const auto local_plan = local_planner.plan(global_plan, false);
+    if (!expect(local_plan.has_command, "local planner shell should emit command from global plan")) {
+        return false;
+    }
+
+    const auto progress_a = progress_monitor.evaluate(autonomy::ProgressSample{.timestamp_ms = 0, .completed_waypoints = 0});
+    if (!expect(!progress_a.no_progress, "first progress sample should not trigger no-progress")) {
+        return false;
+    }
+    const auto progress_b = progress_monitor.evaluate(autonomy::ProgressSample{.timestamp_ms = 100, .completed_waypoints = 0});
+    if (!expect(progress_b.no_progress, "stagnant progress should trigger no-progress")) {
+        return false;
+    }
+    const auto recovery_decision = recovery.onNoProgress(progress_b.no_progress);
+    if (!expect(recovery_decision.recovery_active, "recovery shell should activate recovery when triggered")) {
+        return false;
+    }
+
+    const auto motion = motion_arbiter.arbitrate(false, false, recovery_decision.recovery_active, nav_update);
+    if (!expect(!motion.allow_motion, "active recovery should gate motion")) {
+        return false;
+    }
+    const auto locomotion_command = locomotion.dispatch(motion, local_plan);
+    return expect(!locomotion_command.sent, "locomotion shell should not dispatch when motion is gated");
+}
+
 } // namespace
 
 int main() {
-    if (!testAllShellsLifecycleAndIdentity()) {
+    if (!testAllShellsLifecycleAndIdentity() ||
+        !testAllShellsFunctionalWiring()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

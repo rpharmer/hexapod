@@ -71,12 +71,49 @@ bool testInvalidTransitionRejected() {
                   "invalid transition should provide explicit reason");
 }
 
+bool testRecoveryEscalationAbortHook() {
+    autonomy::MissionExecutive executive;
+    if (!expect(executive.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(executive.start().accepted, "start should succeed")) {
+        return false;
+    }
+
+    const auto no_abort = executive.onRecoveryDecision(autonomy::RecoveryDecision{
+        .action = autonomy::RecoveryAction::Retry,
+        .recovery_active = true,
+        .mission_should_abort = false,
+        .reason = "retry trajectory",
+    });
+    if (!expect(no_abort.accepted, "non-aborting recovery decisions should be accepted")) {
+        return false;
+    }
+    if (!expect(no_abort.state == autonomy::MissionState::Exec,
+                "non-aborting recovery decisions should keep mission in EXEC")) {
+        return false;
+    }
+
+    const auto aborted = executive.onRecoveryDecision(autonomy::RecoveryDecision{
+        .action = autonomy::RecoveryAction::Abort,
+        .recovery_active = false,
+        .mission_should_abort = true,
+        .reason = "retry budget exhausted",
+    });
+    return expect(aborted.accepted, "abort recovery decision should be accepted") &&
+           expect(aborted.state == autonomy::MissionState::Aborted,
+                  "abort recovery decision should transition mission to ABORTED") &&
+           expect(aborted.reason == "retry budget exhausted",
+                  "abort recovery reason should propagate");
+}
+
 } // namespace
 
 int main() {
     if (!testHappyPathToComplete() ||
         !testPauseResumeAndAbort() ||
-        !testInvalidTransitionRejected()) {
+        !testInvalidTransitionRejected() ||
+        !testRecoveryEscalationAbortHook()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
