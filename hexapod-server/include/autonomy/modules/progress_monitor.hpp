@@ -6,6 +6,7 @@
 
 namespace autonomy {
 
+// Thin façade shell: delegates to ProgressMonitor and snapshots the last output.
 class ProgressMonitorModuleShell : public AutonomyModuleStub {
 public:
     explicit ProgressMonitorModuleShell(uint64_t no_progress_timeout_ms = 1000);

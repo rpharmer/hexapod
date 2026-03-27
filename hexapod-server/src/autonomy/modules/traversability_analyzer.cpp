@@ -24,9 +24,12 @@ double normalizedWeightedBlend(const std::initializer_list<std::pair<double, dou
 
 } // namespace
 
-TraversabilityAnalyzerModuleShell::TraversabilityAnalyzerModuleShell(const TraversabilityPolicyConfig& config)
+TraversabilityAnalyzerModuleShell::TraversabilityAnalyzerModuleShell(
+    const TraversabilityPolicyConfig& config,
+    TraversabilityScoreCompositionPolicy composition_policy)
     : AutonomyModuleStub("traversability_analyzer"),
-      config_(config) {}
+      config_(config),
+      composition_policy_(composition_policy) {}
 
 TraversabilityReport TraversabilityAnalyzerModuleShell::analyze(const WorldModelSnapshot& world_model,
                                                                 TimestampMs timestamp_ms,
@@ -52,16 +55,24 @@ TraversabilityReport TraversabilityAnalyzerModuleShell::analyze(const WorldModel
         {far_obstacle_risk, config_.obstacle_far_risk_weight},
         {high_slope_risk, config_.slope_high_risk_weight},
     });
-    const double aggregated_risk = std::max(primary_risk, 0.65 * primary_risk + 0.35 * secondary_risk);
+    const double aggregated_risk = std::max(
+        primary_risk,
+        (composition_policy_.aggregated_primary_weight * primary_risk) +
+            (composition_policy_.aggregated_secondary_weight * secondary_risk));
     const double peak_risk = std::max({occupancy_risk, gradient_risk, near_obstacle_risk, high_slope_risk});
-    report_.risk = ::clamp01(0.75 * aggregated_risk + 0.25 * peak_risk);
+    report_.risk = ::clamp01((composition_policy_.risk_aggregate_weight * aggregated_risk) +
+                             (composition_policy_.risk_peak_weight * peak_risk));
 
     const double base_confidence = ::clamp01(world_model.risk_confidence);
     const double zone_confidence = ::clamp01(world_model.confidence_zone_nominal +
-                                             0.5 * world_model.confidence_zone_degraded);
+                                             composition_policy_.confidence_zone_degraded_weight *
+                                                 world_model.confidence_zone_degraded);
     const double unknown_penalty = std::max(0.0, config_.confidence_unknown_penalty) *
                                    ::clamp01(world_model.confidence_zone_unknown);
-    report_.confidence = ::clamp01((0.8 * base_confidence + 0.2 * zone_confidence) - unknown_penalty);
+    report_.confidence = ::clamp01(
+        (composition_policy_.confidence_base_weight * base_confidence) +
+            (composition_policy_.confidence_zone_weight * zone_confidence) -
+        unknown_penalty);
     report_.cost = report_.risk + (std::max(0.0, config_.confidence_cost_weight) * (1.0 - report_.confidence));
 
     if (!world_model.has_map) {

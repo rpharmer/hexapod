@@ -1,4 +1,5 @@
 #include "autonomy/modules/locomotion_interface.hpp"
+#include "autonomy/modules/shell_utils.hpp"
 
 #include "utils/logger.hpp"
 
@@ -23,7 +24,7 @@ LocomotionCommand LocomotionInterfaceModuleShell::dispatch(const MotionDecision&
     if (motion_decision.allow_motion && local_plan.has_command) {
         std::string failure_reason{};
         const bool write_ok = command_sink_(local_plan.target, &failure_reason);
-        last_command_ = LocomotionCommand{
+        const auto command = LocomotionCommand{
             .status = write_ok ? LocomotionCommand::DispatchStatus::Dispatched
                                : LocomotionCommand::DispatchStatus::DispatchFailed,
             .sent = write_ok,
@@ -36,10 +37,10 @@ LocomotionCommand LocomotionInterfaceModuleShell::dispatch(const MotionDecision&
                      "[autonomy] locomotion dispatch failed; reason=",
                      failure_reason.empty() ? std::string{"unspecified"} : failure_reason);
         }
-        return last_command_;
+        return modules::storeLast(last_command_, command);
     }
 
-    last_command_ = LocomotionCommand{
+    const auto command = LocomotionCommand{
         .status = LocomotionCommand::DispatchStatus::Suppressed,
         .sent = false,
         .write_ok = false,
@@ -49,7 +50,7 @@ LocomotionCommand LocomotionInterfaceModuleShell::dispatch(const MotionDecision&
     if (logger && !motion_decision.allow_motion) {
         LOG_DEBUG(logger, "[autonomy] locomotion command suppressed by motion arbiter: ", motion_decision.reason);
     }
-    return last_command_;
+    return modules::storeLast(last_command_, command);
 }
 
 LocomotionCommand LocomotionInterfaceModuleShell::lastCommand() const {

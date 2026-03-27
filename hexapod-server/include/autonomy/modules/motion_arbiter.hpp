@@ -6,6 +6,7 @@
 
 namespace autonomy {
 
+// Thin façade shell: delegates to MotionArbiter and snapshots the last output.
 class MotionArbiterModuleShell : public AutonomyModuleStub {
 public:
     MotionArbiterModuleShell();

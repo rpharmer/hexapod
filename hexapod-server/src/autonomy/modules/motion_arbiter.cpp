@@ -1,4 +1,5 @@
 #include "autonomy/modules/motion_arbiter.hpp"
+#include "autonomy/modules/shell_utils.hpp"
 
 namespace autonomy {
 
@@ -11,8 +12,8 @@ MotionDecision MotionArbiterModuleShell::arbitrate(bool estop,
                                                    const NavigationUpdate& nav_update,
                                                    ContractEnvelope envelope) {
     (void)envelope;
-    last_decision_ = motion_arbiter_.select(estop, hold, recovery_active, nav_update);
-    return last_decision_;
+    return modules::storeLast(last_decision_,
+                              motion_arbiter_.select(estop, hold, recovery_active, nav_update));
 }
 
 MotionDecision MotionArbiterModuleShell::lastDecision() const {

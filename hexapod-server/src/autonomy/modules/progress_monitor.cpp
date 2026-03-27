@@ -1,4 +1,5 @@
 #include "autonomy/modules/progress_monitor.hpp"
+#include "autonomy/modules/shell_utils.hpp"
 
 namespace autonomy {
 
@@ -14,8 +15,7 @@ void ProgressMonitorModuleShell::reset() {
 ProgressEvaluation ProgressMonitorModuleShell::evaluate(const ProgressSample& sample,
                                                         ContractEnvelope envelope) {
     (void)envelope;
-    last_evaluation_ = progress_monitor_.evaluate(sample);
-    return last_evaluation_;
+    return modules::storeLast(last_evaluation_, progress_monitor_.evaluate(sample));
 }
 
 ProgressEvaluation ProgressMonitorModuleShell::lastEvaluation() const {
