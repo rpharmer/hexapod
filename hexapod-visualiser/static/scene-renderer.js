@@ -109,7 +109,10 @@ function updateTelemetryUI({ statusEl, metaEl, rollingMetricsEl, telemetry, mode
 
   const ts = model.timestamp_ms ? new Date(model.timestamp_ms).toISOString() : "n/a";
   const missionProgress = resolveMissionProgress(model);
-  metaEl.textContent = `coxa:${model.geometry.coxa.toFixed(1)} femur:${model.geometry.femur.toFixed(1)} tibia:${model.geometry.tibia.toFixed(1)} | ${missionProgress} | timestamp:${ts}`;
+  const activeDistanceM = resolveActiveWaypointDistanceM(model);
+  const targetDistance =
+    activeDistanceM === null ? "target:n/a" : `target_dist:${activeDistanceM.toFixed(2)}m`;
+  metaEl.textContent = `coxa:${model.geometry.coxa.toFixed(1)} femur:${model.geometry.femur.toFixed(1)} tibia:${model.geometry.tibia.toFixed(1)} | ${missionProgress} ${targetDistance} | timestamp:${ts}`;
 }
 
 function resolveMissionProgress(model) {
@@ -120,6 +123,26 @@ function resolveMissionProgress(model) {
   const idx = Number.isInteger(autonomy.active_waypoint_index) ? autonomy.active_waypoint_index : 0;
   const clampedIdx = Math.max(0, Math.min(idx, autonomy.waypoints.length));
   return `mission:${clampedIdx}/${autonomy.waypoints.length}`;
+}
+
+function resolveActiveWaypointDistanceM(model) {
+  const autonomy = model.autonomy_debug;
+  const pose = autonomy?.current_pose;
+  const waypoints = autonomy?.waypoints;
+  if (!pose || !Array.isArray(waypoints) || waypoints.length === 0) {
+    return null;
+  }
+  const idx = Number.isInteger(autonomy.active_waypoint_index) ? autonomy.active_waypoint_index : 0;
+  const active = waypoints[Math.max(0, Math.min(idx, waypoints.length - 1))];
+  if (
+    !Number.isFinite(pose.x_m) ||
+    !Number.isFinite(pose.y_m) ||
+    !Number.isFinite(active?.x_m) ||
+    !Number.isFinite(active?.y_m)
+  ) {
+    return null;
+  }
+  return Math.hypot(active.x_m - pose.x_m, active.y_m - pose.y_m);
 }
 
 function resolvePoseOffsetMm(model) {
@@ -187,6 +210,22 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model,
     ctx.fillStyle = "#cbd5e1";
     ctx.font = "10px sans-serif";
     ctx.fillText(`W${index}`, screen.x + 6, screen.y - 6);
+
+    const yawRad = autonomy.waypoints[index]?.yaw_rad;
+    if (Number.isFinite(yawRad)) {
+      const headingPoint = {
+        x: point.x + Math.cos(yawRad) * 22,
+        y: point.y + Math.sin(yawRad) * 22,
+        z: point.z,
+      };
+      const headingScreen = project(headingPoint, camera, scale, centerX, centerY);
+      ctx.strokeStyle = isActive ? "#f59e0b" : "#93c5fd";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(screen.x, screen.y);
+      ctx.lineTo(headingScreen.x, headingScreen.y);
+      ctx.stroke();
+    }
   });
 
   if (autonomy.current_pose && Number.isFinite(autonomy.current_pose.x_m) && Number.isFinite(autonomy.current_pose.y_m)) {
@@ -212,7 +251,24 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model,
     ctx.beginPath();
     ctx.arc(poseScreen.x, poseScreen.y, 5, 0, Math.PI * 2);
     ctx.fill();
+
+    const activeWaypoint = waypointPoints[Math.max(0, Math.min(activeIndex, waypointPoints.length - 1))];
+    if (activeWaypoint) {
+      const activeScreen = project(activeWaypoint, camera, scale, centerX, centerY);
+      ctx.strokeStyle = "rgba(245, 158, 11, 0.75)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.moveTo(poseScreen.x, poseScreen.y);
+      ctx.lineTo(activeScreen.x, activeScreen.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
   }
+
+  ctx.fillStyle = "#cbd5e1";
+  ctx.font = "11px sans-serif";
+  ctx.fillText("Autonomy overlay: green=completed, amber=active, blue=pending", 12, 22);
 }
 
 export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rollingMetricsEl, modelRef, telemetry }) {

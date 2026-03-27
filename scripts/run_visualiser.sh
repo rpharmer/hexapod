@@ -10,6 +10,7 @@ VENV_DIR="$VIS_DIR/.venv"
 INSTALL_DEPS=0
 SIMULATE=0
 SIM_HZ=30
+SIM_AUTONOMY_SCENARIO="patrol"
 SERVER_ARGS=()
 
 usage() {
@@ -22,6 +23,7 @@ Options:
   --install-deps           Force dependency installation from requirements.txt.
   --simulate               Also run simulate_telemetry.py in the background.
   --simulate-hz <hz>       Telemetry simulator rate (default: 30).
+  --simulate-scenario <id> Autonomy simulator scenario (patrol, zigzag_dense, dock_and_return).
   -h, --help               Show this help text.
 
 Examples:
@@ -43,6 +45,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --simulate-hz)
       SIM_HZ="$2"
+      shift 2
+      ;;
+    --simulate-scenario)
+      SIM_AUTONOMY_SCENARIO="$2"
       shift 2
       ;;
     -h|--help)
@@ -93,7 +99,7 @@ if [[ "$SIMULATE" -eq 1 ]]; then
     fi
   done
 
-  run_in_dir "$VIS_DIR" python simulate_telemetry.py --host 127.0.0.1 --port "$udp_port" --hz "$SIM_HZ" &
+  run_in_dir "$VIS_DIR" python simulate_telemetry.py --host 127.0.0.1 --port "$udp_port" --hz "$SIM_HZ" --autonomy-scenario "$SIM_AUTONOMY_SCENARIO" &
   SIM_PID="$!"
 fi
 

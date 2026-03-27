@@ -18,6 +18,12 @@ Add `--simulate` to also stream sample telemetry automatically:
 scripts/run_visualiser.sh --simulate -- --http-port 8080 --udp-port 9870
 ```
 
+To exercise waypoint-heavy autonomy overlays, choose a simulator scenario:
+
+```bash
+scripts/run_visualiser.sh --simulate --simulate-scenario zigzag_dense -- --http-port 8080 --udp-port 9870
+```
+
 To run visualiser plus `hexapod-server` together in simulator mode (telemetry linked end-to-end), use:
 
 ```bash
@@ -50,6 +56,12 @@ In another terminal, run the sample data stream:
 ```bash
 python simulate_telemetry.py --host 127.0.0.1 --port 9870 --hz 30
 ```
+
+Available autonomy demo scenarios for `simulate_telemetry.py --autonomy-scenario <id>`:
+
+- `patrol`: balanced mission path with moderate waypoint spacing.
+- `zigzag_dense`: dense waypoint chain for frequent active-waypoint transitions.
+- `dock_and_return`: outbound + docking + return route with heading reversals.
 
 ## Visualiser camera usage
 
