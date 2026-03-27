@@ -34,6 +34,10 @@ telemetry::TelemetryPublishCounters readTelemetryCounters(
 
 constexpr double kJointTargetSlewLimitRadPerSec = 18.0;
 
+uint8_t missionStateCode(autonomy::MissionState state) {
+    return static_cast<uint8_t>(state);
+}
+
 } // namespace
 
 bool RobotRuntime::init() {
@@ -89,6 +93,9 @@ bool RobotRuntime::init() {
     next_telemetry_publish_at_ = TimePointUs{};
     next_geometry_refresh_at_ = TimePointUs{};
     last_autonomy_step_output_.reset();
+    last_autonomy_mission_event_ = autonomy::MissionEvent{};
+    last_autonomy_recovery_decision_ = autonomy::RecoveryDecision{};
+    autonomy_step_ok_ = false;
     autonomy_blocked_signal_.store(false);
     autonomy_no_progress_signal_.store(false);
     autonomy_waypoint_reached_event_.store(false);
@@ -97,6 +104,13 @@ bool RobotRuntime::init() {
         autonomy_stack_ = std::make_unique<autonomy::AutonomyStack>(autonomy::AutonomyStackConfig{
             .no_progress_timeout_ms = config_.autonomy.no_progress_timeout_ms,
             .recovery_retry_budget = config_.autonomy.recovery_retry_budget,
+            .traversability_policy = autonomy::TraversabilityPolicyConfig{
+                .occupancy_risk_weight = config_.autonomy.traversability.occupancy_risk_weight,
+                .gradient_risk_weight = config_.autonomy.traversability.gradient_risk_weight,
+                .confidence_cost_weight = config_.autonomy.traversability.confidence_cost_weight,
+                .risk_block_threshold = config_.autonomy.traversability.risk_block_threshold,
+                .confidence_block_threshold = config_.autonomy.traversability.confidence_block_threshold,
+            },
         });
         if (!autonomy_stack_->init() || !autonomy_stack_->start()) {
             if (logger_) {
@@ -202,9 +216,11 @@ void RobotRuntime::controlStep() {
         freshness_gate_.computeControlDecision(freshness, bus_ok, loop_counter);
     if (!decision.allow_pipeline) {
         RuntimeFreshnessGate::maybeLogReject(logger_, freshness, est, intent);
-        status_.write(decision.status);
+        ControlStatus runtime_status = decision.status;
+        applyAutonomyStatus(runtime_status);
+        status_.write(runtime_status);
         joint_targets_.write(decision.joint_targets);
-        diagnostics_reporter_.recordControlOutputs(decision.joint_targets, decision.status, now, nullptr);
+        diagnostics_reporter_.recordControlOutputs(decision.joint_targets, runtime_status, now, nullptr);
         maybePublishTelemetry(now);
         return;
     }
@@ -219,8 +235,10 @@ void RobotRuntime::controlStep() {
         loop_counter);
 
     joint_targets_.write(result.joint_targets);
-    status_.write(result.status);
-    diagnostics_reporter_.recordControlOutputs(result.joint_targets, result.status, now, &result.leg_targets);
+    ControlStatus runtime_status = result.status;
+    applyAutonomyStatus(runtime_status);
+    status_.write(runtime_status);
+    diagnostics_reporter_.recordControlOutputs(result.joint_targets, runtime_status, now, &result.leg_targets);
 
     maybePublishTelemetry(now);
 }
@@ -300,6 +318,7 @@ MotionIntent RobotRuntime::resolveAutonomyMotionIntent(const MotionIntent& base_
                                                        const SafetyState& safety_state,
                                                        const TimePointUs& now) {
     last_autonomy_step_output_.reset();
+    autonomy_step_ok_ = false;
     if (!autonomy_stack_) {
         return base_intent;
     }
@@ -330,7 +349,10 @@ MotionIntent RobotRuntime::resolveAutonomyMotionIntent(const MotionIntent& base_
         }
         return base_intent;
     }
+    autonomy_step_ok_ = true;
     last_autonomy_step_output_ = step_output;
+    last_autonomy_mission_event_ = step_output.mission_event;
+    last_autonomy_recovery_decision_ = step_output.recovery_decision;
 
     MotionIntent intent = base_intent;
     intent.timestamp_us = now;
@@ -352,6 +374,67 @@ MotionIntent RobotRuntime::resolveAutonomyMotionIntent(const MotionIntent& base_
     return intent;
 }
 
+void RobotRuntime::applyAutonomyStatus(ControlStatus& status) const {
+    if (!autonomy_stack_) {
+        status.autonomy = ControlStatus::AutonomyTelemetry{};
+        return;
+    }
+
+    status.autonomy.enabled = true;
+    status.autonomy.step_ok = autonomy_step_ok_;
+    status.autonomy.blocked = autonomy_blocked_signal_.load();
+    status.autonomy.no_progress = autonomy_no_progress_signal_.load();
+    status.autonomy.recovery_active = last_autonomy_recovery_decision_.recovery_active;
+    status.autonomy.motion_allowed =
+        last_autonomy_step_output_.has_value() && last_autonomy_step_output_->motion_decision.allow_motion;
+    status.autonomy.locomotion_sent =
+        last_autonomy_step_output_.has_value() && last_autonomy_step_output_->locomotion_command.sent;
+    status.autonomy.mission_state = missionStateCode(last_autonomy_mission_event_.state);
+    status.autonomy.mission_completed_waypoints = last_autonomy_mission_event_.progress.completed_waypoints;
+    status.autonomy.mission_total_waypoints = last_autonomy_mission_event_.progress.total_waypoints;
+    status.autonomy.mission_loaded = !last_autonomy_mission_event_.progress.mission_id.empty() &&
+                                     last_autonomy_mission_event_.state != autonomy::MissionState::Idle;
+    status.autonomy.mission_running = last_autonomy_mission_event_.state == autonomy::MissionState::Exec ||
+                                      last_autonomy_mission_event_.state == autonomy::MissionState::Paused;
+}
+
+bool RobotRuntime::loadAutonomyMission(const autonomy::WaypointMission& mission) {
+    if (!autonomy_stack_) {
+        return false;
+    }
+
+    const auto event = autonomy_stack_->loadMission(mission);
+    last_autonomy_mission_event_ = event;
+    last_autonomy_recovery_decision_ = autonomy::RecoveryDecision{};
+    return event.accepted;
+}
+
+bool RobotRuntime::startAutonomyMission() {
+    if (!autonomy_stack_) {
+        return false;
+    }
+
+    const auto event = autonomy_stack_->startMission();
+    last_autonomy_mission_event_ = event;
+    return event.accepted;
+}
+
+void RobotRuntime::setAutonomyBlocked(bool blocked) {
+    autonomy_blocked_signal_.store(blocked);
+}
+
+void RobotRuntime::setAutonomyNoProgress(bool no_progress) {
+    autonomy_no_progress_signal_.store(no_progress);
+}
+
+void RobotRuntime::signalAutonomyWaypointReached() {
+    autonomy_waypoint_reached_event_.store(true);
+}
+
+std::optional<autonomy::AutonomyStepOutput> RobotRuntime::lastAutonomyStepOutput() const {
+    return last_autonomy_step_output_;
+}
+
 void RobotRuntime::setMotionIntentForTest(const MotionIntent& intent) {
     motion_intent_.write(intent);
 }
@@ -371,33 +454,25 @@ ControlStatus RobotRuntime::getStatus() const {
 }
 
 void RobotRuntime::setAutonomyBlockedForTest(bool blocked) {
-    autonomy_blocked_signal_.store(blocked);
+    setAutonomyBlocked(blocked);
 }
 
 void RobotRuntime::setAutonomyNoProgressForTest(bool no_progress) {
-    autonomy_no_progress_signal_.store(no_progress);
+    setAutonomyNoProgress(no_progress);
 }
 
 void RobotRuntime::signalAutonomyWaypointReachedForTest() {
-    autonomy_waypoint_reached_event_.store(true);
+    signalAutonomyWaypointReached();
 }
 
 bool RobotRuntime::loadAutonomyMissionForTest(const autonomy::WaypointMission& mission) {
-    if (!autonomy_stack_) {
-        return false;
-    }
-    const auto event = autonomy_stack_->loadMission(mission);
-    return event.accepted;
+    return loadAutonomyMission(mission);
 }
 
 bool RobotRuntime::startAutonomyMissionForTest() {
-    if (!autonomy_stack_) {
-        return false;
-    }
-    const auto event = autonomy_stack_->startMission();
-    return event.accepted;
+    return startAutonomyMission();
 }
 
 std::optional<autonomy::AutonomyStepOutput> RobotRuntime::lastAutonomyStepOutputForTest() const {
-    return last_autonomy_step_output_;
+    return lastAutonomyStepOutput();
 }

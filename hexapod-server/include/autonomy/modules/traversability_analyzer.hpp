@@ -8,7 +8,7 @@ namespace autonomy {
 
 class TraversabilityAnalyzerModuleShell : public AutonomyModuleStub {
 public:
-    TraversabilityAnalyzerModuleShell();
+    explicit TraversabilityAnalyzerModuleShell(const TraversabilityPolicyConfig& config = {});
 
     TraversabilityReport analyze(const WorldModelSnapshot& world_model,
                                  TimestampMs timestamp_ms,
@@ -16,6 +16,7 @@ public:
     [[nodiscard]] TraversabilityReport report() const;
 
 private:
+    TraversabilityPolicyConfig config_{};
     TraversabilityReport report_{};
 };
 

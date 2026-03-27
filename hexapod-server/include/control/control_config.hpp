@@ -55,6 +55,11 @@ inline constexpr float kDefaultMinBusVoltageV{10.5f};
 inline constexpr float kDefaultMaxBusCurrentA{25.0f};
 inline constexpr int kDefaultMinFootContacts{0};
 inline constexpr int kDefaultMaxFootContacts{kNumLegs};
+inline constexpr double kDefaultTraversabilityOccupancyRiskWeight{0.65};
+inline constexpr double kDefaultTraversabilityGradientRiskWeight{0.35};
+inline constexpr double kDefaultTraversabilityConfidenceCostWeight{1.0};
+inline constexpr double kDefaultTraversabilityRiskBlockThreshold{0.85};
+inline constexpr double kDefaultTraversabilityConfidenceBlockThreshold{0.3};
 
 struct LoopTimingConfig {
     std::chrono::microseconds bus_loop_period{std::chrono::microseconds{kDefaultBusLoopPeriodUs}};
@@ -187,9 +192,18 @@ struct RuntimeImuConfig {
 };
 
 struct AutonomyRuntimeConfig {
+    struct TraversabilityConfig {
+        double occupancy_risk_weight{kDefaultTraversabilityOccupancyRiskWeight};
+        double gradient_risk_weight{kDefaultTraversabilityGradientRiskWeight};
+        double confidence_cost_weight{kDefaultTraversabilityConfidenceCostWeight};
+        double risk_block_threshold{kDefaultTraversabilityRiskBlockThreshold};
+        double confidence_block_threshold{kDefaultTraversabilityConfidenceBlockThreshold};
+    };
+
     bool enabled{false};
     uint64_t no_progress_timeout_ms{1000};
     uint64_t recovery_retry_budget{2};
+    TraversabilityConfig traversability{};
 };
 
 struct ControlConfig {

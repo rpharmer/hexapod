@@ -38,6 +38,7 @@ autonomy::WaypointMission makeMission() {
 bool testContractsDefineBoundariesAndPolicies() {
     autonomy::AutonomyStack stack;
     const auto contracts = stack.processContracts();
+    const auto ipc_boundaries = stack.ipcBoundaryContracts();
 
     const auto critical_iter = std::find_if(contracts.cbegin(), contracts.cend(), [](const auto& contract) {
         return contract.module_name == "motion_arbiter";
@@ -47,6 +48,14 @@ bool testContractsDefineBoundariesAndPolicies() {
     }
     if (!expect(critical_iter->criticality == autonomy::ProcessCriticality::Critical,
                 "motion arbiter should be marked critical")) {
+        return false;
+    }
+    if (!expect(critical_iter->process_group == autonomy::ProcessGroup::Critical,
+                "motion arbiter should be in critical process group")) {
+        return false;
+    }
+    if (!expect(critical_iter->safe_stop_on_exhausted_restart,
+                "critical modules should safe-stop when restart budget is exhausted")) {
         return false;
     }
 
@@ -60,6 +69,10 @@ bool testContractsDefineBoundariesAndPolicies() {
                 "localization should be marked soft-RT")) {
         return false;
     }
+    if (!expect(soft_rt_iter->process_group == autonomy::ProcessGroup::SoftRealtime,
+                "localization should be in soft-RT process group")) {
+        return false;
+    }
 
     const auto noncritical_iter = std::find_if(contracts.cbegin(), contracts.cend(), [](const auto& contract) {
         return contract.module_name == "mission_scripting";
@@ -67,11 +80,49 @@ bool testContractsDefineBoundariesAndPolicies() {
     if (!expect(noncritical_iter != contracts.cend(), "mission scripting process contract should exist")) {
         return false;
     }
-    return expect(noncritical_iter->criticality == autonomy::ProcessCriticality::NonCritical,
-                  "mission scripting should be marked noncritical");
+    if (!expect(noncritical_iter->criticality == autonomy::ProcessCriticality::NonCritical,
+                "mission scripting should be marked noncritical")) {
+        return false;
+    }
+    if (!expect(noncritical_iter->process_group == autonomy::ProcessGroup::NonCritical,
+                "mission scripting should be in noncritical process group")) {
+        return false;
+    }
+    if (!expect(!noncritical_iter->safe_stop_on_exhausted_restart,
+                "noncritical modules should isolate on restart exhaustion")) {
+        return false;
+    }
+
+    const auto critical_to_soft_rt = std::find_if(ipc_boundaries.cbegin(), ipc_boundaries.cend(), [](const auto& edge) {
+        return edge.producer_module == "mission_executive" &&
+               edge.consumer_module == "navigation_manager" &&
+               edge.message_type == "NavigationUpdate";
+    });
+    if (!expect(critical_to_soft_rt != ipc_boundaries.cend(),
+                "critical->soft-RT IPC boundary should be explicit")) {
+        return false;
+    }
+
+    const auto soft_rt_to_critical = std::find_if(ipc_boundaries.cbegin(), ipc_boundaries.cend(), [](const auto& edge) {
+        return edge.producer_module == "local_planner" &&
+               edge.consumer_module == "locomotion_interface" &&
+               edge.message_type == "LocalPlan";
+    });
+    if (!expect(soft_rt_to_critical != ipc_boundaries.cend(),
+                "soft-RT->critical IPC boundary should be explicit")) {
+        return false;
+    }
+
+    const auto noncritical_to_critical = std::find_if(ipc_boundaries.cbegin(), ipc_boundaries.cend(), [](const auto& edge) {
+        return edge.producer_module == "recovery_manager" &&
+               edge.consumer_module == "motion_arbiter" &&
+               edge.message_type == "RecoveryDecision";
+    });
+    return expect(noncritical_to_critical != ipc_boundaries.cend(),
+                  "noncritical->critical IPC boundary should be explicit");
 }
 
-bool testCrashIsolationRestartAndDegradedFallback() {
+bool testCrashIsolationPerProcessGroup() {
     autonomy::AutonomyStack stack;
     if (!expect(stack.init(), "stack init should succeed")) {
         return false;
@@ -132,82 +183,120 @@ bool testCrashIsolationRestartAndDegradedFallback() {
     if (!expect(planner_status->restart_count == 1, "planner crash should increment restart count")) {
         return false;
     }
-    return expect(planner_status->isolated_fault, "planner fault should be isolated from the rest of stack");
-}
-
-bool testTimeoutStaleLocalizationAndDispatchFailureFallback() {
-    autonomy::AutonomyStack stack;
-    if (!expect(stack.init(), "stack init should succeed")) {
-        return false;
-    }
-    if (!expect(stack.start(), "stack start should succeed")) {
-        return false;
-    }
-    if (!expect(stack.loadMission(makeMission()).accepted, "mission load should succeed")) {
-        return false;
-    }
-    if (!expect(stack.startMission().accepted, "mission start should succeed")) {
+    if (!expect(planner_status->isolated_fault, "planner fault should be isolated from the rest of stack")) {
         return false;
     }
 
-    autonomy::AutonomyStepOutput stale_localization{};
+    autonomy::AutonomyStepOutput noncritical_crash{};
     if (!expect(stack.step(autonomy::AutonomyStepInput{
                                .now_ms = 30,
                                .map_slice_input = autonomy::MapSliceInput{.has_occupancy = true, .occupancy = 0.1},
                                .has_estimator_state = true,
                                .estimator_state = makeEstimatorState(29'000, 0.2, 0.0, 0.0),
                                .fault_injections = {
+                                   autonomy::ModuleFaultInjection{.module_name = "mission_scripting", .crash = true},
+                               },
+                           },
+                           &noncritical_crash),
+                "noncritical crash should be isolated without taking down stack")) {
+        return false;
+    }
+
+    const auto scripting_status = stack.supervisorStatus("mission_scripting");
+    if (!expect(scripting_status.has_value(), "mission scripting status should be available")) {
+        return false;
+    }
+    if (!expect(scripting_status->restart_count == 1, "noncritical crash should be restarted once")) {
+        return false;
+    }
+    return expect(scripting_status->isolated_fault, "noncritical crash should remain isolated");
+}
+
+bool testTimeoutAndSafeStopPolicies() {
+    autonomy::AutonomyStack timeout_stack;
+    if (!expect(timeout_stack.init(), "timeout stack init should succeed")) {
+        return false;
+    }
+    if (!expect(timeout_stack.start(), "timeout stack start should succeed")) {
+        return false;
+    }
+    if (!expect(timeout_stack.loadMission(makeMission()).accepted, "timeout stack mission load should succeed")) {
+        return false;
+    }
+    if (!expect(timeout_stack.startMission().accepted, "timeout stack mission start should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput stale_localization{};
+    if (!expect(timeout_stack.step(autonomy::AutonomyStepInput{
+                               .now_ms = 10,
+                               .map_slice_input = autonomy::MapSliceInput{.has_occupancy = true, .occupancy = 0.1},
+                               .has_estimator_state = true,
+                               .estimator_state = makeEstimatorState(9'000, 0.3, 0.0, 0.0),
+                               .fault_injections = {
                                    autonomy::ModuleFaultInjection{.module_name = "localization", .timeout = true},
                                },
                            },
                            &stale_localization),
-                "localization timeout step should succeed")) {
+                "soft-RT timeout should be isolated")) {
         return false;
     }
-    if (!expect(stale_localization.degraded_mode, "stale localization should trigger degraded mode")) {
+    if (!expect(stale_localization.degraded_mode, "soft-RT timeout should force degraded mode")) {
         return false;
     }
     if (!expect(stale_localization.degraded_reason == "stale localization",
-                "localization timeout should trigger stale localization fallback")) {
+                "localization timeout should trigger stale localization reason")) {
         return false;
     }
 
-    autonomy::AutonomyStepOutput locomotion_failure{};
-    if (!expect(stack.step(autonomy::AutonomyStepInput{
-                               .now_ms = 40,
+    autonomy::AutonomyStack critical_stack;
+    if (!expect(critical_stack.init(), "critical stack init should succeed")) {
+        return false;
+    }
+    if (!expect(critical_stack.start(), "critical stack start should succeed")) {
+        return false;
+    }
+    if (!expect(critical_stack.loadMission(makeMission()).accepted, "critical stack mission load should succeed")) {
+        return false;
+    }
+    if (!expect(critical_stack.startMission().accepted, "critical stack mission start should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput ignored{};
+    if (!expect(critical_stack.step(autonomy::AutonomyStepInput{
+                               .now_ms = 10,
                                .map_slice_input = autonomy::MapSliceInput{.has_occupancy = true, .occupancy = 0.1},
                                .has_estimator_state = true,
-                               .estimator_state = makeEstimatorState(39'000, 0.3, 0.0, 0.0),
+                               .estimator_state = makeEstimatorState(9'000, 0.0, 0.0, 0.0),
                                .fault_injections = {
-                                   autonomy::ModuleFaultInjection{.module_name = "locomotion_interface", .crash = true},
+                                   autonomy::ModuleFaultInjection{.module_name = "motion_arbiter", .crash = true},
                                },
                            },
-                           &locomotion_failure),
-                "locomotion crash step should succeed due to restart policy")) {
-        return false;
-    }
-    if (!expect(locomotion_failure.degraded_mode, "locomotion failure should trigger degraded mode")) {
-        return false;
-    }
-    if (!expect(locomotion_failure.degraded_reason == "locomotion dispatch failure",
-                "locomotion failure should trigger safe dispatch fallback")) {
+                           &ignored),
+                "critical module first crash should be restarted")) {
         return false;
     }
 
-    const auto locomotion_status = stack.supervisorStatus("locomotion_interface");
-    if (!expect(locomotion_status.has_value(), "locomotion status should be available")) {
-        return false;
-    }
-    return expect(locomotion_status->restart_count == 1,
-                  "locomotion crash should be restarted once by supervisor");
+    return expect(!critical_stack.step(autonomy::AutonomyStepInput{
+                                           .now_ms = 20,
+                                           .map_slice_input = autonomy::MapSliceInput{.has_occupancy = true, .occupancy = 0.1},
+                                           .has_estimator_state = true,
+                                           .estimator_state = makeEstimatorState(19'000, 0.0, 0.0, 0.0),
+                                           .fault_injections = {
+                                               autonomy::ModuleFaultInjection{.module_name = "motion_arbiter", .crash = true},
+                                           },
+                                       },
+                                       &ignored),
+                  "critical module should safe-stop once restart budget is exhausted");
 }
 
 } // namespace
 
 int main() {
     if (!testContractsDefineBoundariesAndPolicies() ||
-        !testCrashIsolationRestartAndDegradedFallback() ||
-        !testTimeoutStaleLocalizationAndDispatchFailureFallback()) {
+        !testCrashIsolationPerProcessGroup() ||
+        !testTimeoutAndSafeStopPolicies()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

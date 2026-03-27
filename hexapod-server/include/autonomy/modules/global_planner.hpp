@@ -18,6 +18,10 @@ public:
 
 private:
     GlobalPlan plan_{};
+    bool had_traversability_report_{false};
+    bool previous_traversable_{true};
+    double previous_cost_{0.0};
+    double previous_risk_{0.0};
 };
 
 } // namespace autonomy

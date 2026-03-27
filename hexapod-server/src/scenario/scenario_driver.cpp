@@ -115,8 +115,30 @@ struct DecodedEvent {
 struct DecodedScenario {
     ScenarioDefinition scenario{};
     std::set<std::string> root_keys{};
+    std::set<std::string> expected_keys{};
     std::vector<DecodedEvent> events{};
 };
+
+bool decodeExpected(const toml::value& root, parser::DecodedScenario& out) {
+    if (!root.contains("expected")) {
+        return true;
+    }
+
+    const auto& expected = root.at("expected");
+    out.expected_keys = collectKeys(expected);
+    out.scenario.expected.enabled = true;
+    out.scenario.expected.mission_states =
+        toml::find_or<std::vector<std::string>>(expected, "mission_states", {});
+    out.scenario.expected.recovery_actions =
+        toml::find_or<std::vector<std::string>>(expected, "recovery_actions", {});
+    out.scenario.expected.final_mission_state =
+        toml::find_or<std::string>(expected, "final_mission_state", "");
+    out.scenario.expected.mission_should_abort =
+        toml::find_or<bool>(expected, "mission_should_abort", false);
+    out.scenario.expected.locomotion_should_be_gated =
+        toml::find_or<bool>(expected, "locomotion_should_be_gated", false);
+    return true;
+}
 
 bool decodeFaults(const toml::value& event_value, DecodedEvent& decoded_event) {
     if (!event_value.contains("faults")) {
@@ -211,7 +233,7 @@ bool decode(const std::string& path, DecodedScenario& out) {
         out.events.push_back(decoded_event);
     }
 
-    return true;
+    return decodeExpected(root, out);
 }
 
 } // namespace parser
@@ -226,8 +248,54 @@ bool validateRootKeys(const parser::DecodedScenario& decoded,
     }
 
     return containsOnlyKeys(decoded.root_keys,
-                            {"name", "duration_ms", "tick_ms", "refresh_motion_intent", "motion_ramp_ms", "events"},
+                            {"name", "duration_ms", "tick_ms", "refresh_motion_intent", "motion_ramp_ms", "events", "expected"},
                             "scenario root", error);
+}
+
+bool validateExpectedOutcomes(const parser::DecodedScenario& decoded,
+                              ScenarioDriver::ValidationMode mode,
+                              std::string& error) {
+    if (!decoded.scenario.expected.enabled) {
+        return true;
+    }
+
+    if (mode != ScenarioDriver::ValidationMode::Strict) {
+        return true;
+    }
+
+    if (!containsOnlyKeys(decoded.expected_keys,
+                          {"mission_states", "recovery_actions", "final_mission_state",
+                           "mission_should_abort", "locomotion_should_be_gated"},
+                          "expected", error)) {
+        return false;
+    }
+
+    static const std::set<std::string> valid_mission_states{
+        "IDLE", "READY", "EXEC", "PAUSED", "ABORTED", "COMPLETE"
+    };
+    for (const auto& state : decoded.scenario.expected.mission_states) {
+        if (!valid_mission_states.contains(state)) {
+            error = "invalid expected mission state '" + state + "'";
+            return false;
+        }
+    }
+    if (!decoded.scenario.expected.final_mission_state.empty() &&
+        !valid_mission_states.contains(decoded.scenario.expected.final_mission_state)) {
+        error = "invalid expected final mission state '" +
+                decoded.scenario.expected.final_mission_state + "'";
+        return false;
+    }
+
+    static const std::set<std::string> valid_recovery_actions{
+        "NONE", "HOLD", "RETRY", "REPLAN", "ABORT"
+    };
+    for (const auto& action : decoded.scenario.expected.recovery_actions) {
+        if (!valid_recovery_actions.contains(action)) {
+            error = "invalid expected recovery action '" + action + "'";
+            return false;
+        }
+    }
+    return true;
 }
 
 bool validateMotion(const parser::DecodedEvent& decoded_event,
@@ -370,6 +438,9 @@ bool buildScenario(const parser::DecodedScenario& decoded,
     out.events.reserve(decoded.events.size());
 
     if (!validateRootKeys(decoded, mode, error)) {
+        return false;
+    }
+    if (!validateExpectedOutcomes(decoded, mode, error)) {
         return false;
     }
 

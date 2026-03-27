@@ -17,6 +17,15 @@ enum class PlannerStatus {
     Degraded,
 };
 
+enum class MapDataProvenance {
+    Unknown,
+    Sensor,
+    Map,
+    Fused,
+    Inferred,
+    SafetyOverride,
+};
+
 struct LocalizationEstimate {
     bool valid{false};
     std::string frame_id{"map"};
@@ -44,20 +53,42 @@ struct LocalizationEstimate {
 };
 
 struct MapSliceInput {
+    std::string frame_id{"map"};
+    bool has_timestamp{false};
+    TimestampMs timestamp_ms{};
     bool has_occupancy{false};
     bool has_elevation{false};
     bool has_risk_confidence{false};
     double occupancy{0.0};
     double elevation_m{0.0};
     double risk_confidence{1.0};
+    MapDataProvenance occupancy_provenance{MapDataProvenance::Unknown};
+    MapDataProvenance elevation_provenance{MapDataProvenance::Unknown};
+    MapDataProvenance risk_confidence_provenance{MapDataProvenance::Unknown};
 };
 
 struct WorldModelSnapshot {
     bool has_map{false};
+    std::string frame_id{"map"};
+    bool stale_input_rejected{false};
+    bool frame_mismatch{false};
+    bool non_monotonic_timestamp{false};
     double occupancy{0.0};
     double elevation_m{0.0};
     double terrain_gradient{0.0};
     double risk_confidence{1.0};
+    MapDataProvenance occupancy_provenance{MapDataProvenance::Unknown};
+    MapDataProvenance elevation_provenance{MapDataProvenance::Unknown};
+    MapDataProvenance risk_confidence_provenance{MapDataProvenance::Unknown};
+    double obstacle_band_near{0.0};
+    double obstacle_band_mid{0.0};
+    double obstacle_band_far{0.0};
+    double slope_band_low{0.0};
+    double slope_band_mid{0.0};
+    double slope_band_high{0.0};
+    double confidence_zone_nominal{1.0};
+    double confidence_zone_degraded{0.0};
+    double confidence_zone_unknown{0.0};
     TimestampMs timestamp_ms{};
 };
 
@@ -66,7 +97,17 @@ struct TraversabilityReport {
     double cost{0.0};
     double risk{0.0};
     double confidence{1.0};
+    std::string reason{"traversable"};
+    std::vector<std::string> non_traversable_reasons{};
     TimestampMs timestamp_ms{};
+};
+
+struct TraversabilityPolicyConfig {
+    double occupancy_risk_weight{0.65};
+    double gradient_risk_weight{0.35};
+    double confidence_cost_weight{1.0};
+    double risk_block_threshold{0.85};
+    double confidence_block_threshold{0.3};
 };
 
 struct GlobalPlan {

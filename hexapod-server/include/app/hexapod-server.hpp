@@ -25,6 +25,11 @@ struct ParsedToml
   bool autonomyEnabled{false};
   uint64_t autonomyNoProgressTimeoutMs{1000};
   uint64_t autonomyRecoveryRetryBudget{2};
+  double autonomyTraversabilityOccupancyRiskWeight{0.65};
+  double autonomyTraversabilityGradientRiskWeight{0.35};
+  double autonomyTraversabilityConfidenceCostWeight{1.0};
+  double autonomyTraversabilityRiskBlockThreshold{0.85};
+  double autonomyTraversabilityConfidenceBlockThreshold{0.3};
 
   std::string logFilePath{"app.log"};
   bool logToFile{true};

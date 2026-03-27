@@ -4,6 +4,8 @@
 #include <iostream>
 
 namespace {
+constexpr const char* kMissionScriptIngressStreamId = "autonomy.mission_script.ingress";
+constexpr const char* kAutonomyStepIngressStreamId = "autonomy.step.ingress";
 
 bool expect(bool condition, const char* message) {
     if (!condition) {
@@ -465,7 +467,7 @@ bool testScriptAndContractLoadPath() {
         .contract_version = "v1.0",
         .frame_id = "map",
         .correlation_id = "corr-1",
-        .stream_id = "mission_script",
+        .stream_id = kMissionScriptIngressStreamId,
         .sample_id = 1,
         .timestamp_ms = 50,
     };
@@ -564,7 +566,7 @@ bool testStepRejectsStaleEnvelope() {
         .contract_version = "v1.0",
         .frame_id = "map",
         .correlation_id = "corr-stale",
-        .stream_id = "autonomy_step_input",
+        .stream_id = kAutonomyStepIngressStreamId,
         .sample_id = 1,
         .timestamp_ms = 100,
     };
@@ -595,7 +597,7 @@ bool testStepRejectsNonMonotonicSamplePerStream() {
         .contract_version = "v1.0",
         .frame_id = "map",
         .correlation_id = "corr-monotonic-a",
-        .stream_id = "autonomy_step_input",
+        .stream_id = kAutonomyStepIngressStreamId,
         .sample_id = 7,
         .timestamp_ms = 10,
     };
@@ -609,7 +611,7 @@ bool testStepRejectsNonMonotonicSamplePerStream() {
         .contract_version = "v1.0",
         .frame_id = "map",
         .correlation_id = "corr-monotonic-b",
-        .stream_id = "autonomy_step_input",
+        .stream_id = kAutonomyStepIngressStreamId,
         .sample_id = 7,
         .timestamp_ms = 20,
     };
@@ -637,12 +639,144 @@ bool testStepRejectsInvalidContractVersion() {
         .contract_version = "v2.0",
         .frame_id = "map",
         .correlation_id = "corr-version",
-        .stream_id = "autonomy_step_input",
+        .stream_id = kAutonomyStepIngressStreamId,
         .sample_id = 1,
         .timestamp_ms = 10,
     };
     return expect(!stack.step(autonomy::AutonomyStepInput{.now_ms = 10}, envelope, &output),
                   "invalid major contract version should be rejected for step payload ingress");
+}
+
+bool testStepRejectsMissingFrameAndCorrelationMetadata() {
+    autonomy::AutonomyStack stack;
+    if (!expect(stack.init(), "stack init should succeed")) {
+        return false;
+    }
+    if (!expect(stack.start(), "stack start should succeed")) {
+        return false;
+    }
+    if (!expect(stack.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(stack.startMission().accepted, "start mission should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput output{};
+    const autonomy::ContractEnvelope envelope{
+        .contract_version = "v1.0",
+        .frame_id = "",
+        .correlation_id = "",
+        .stream_id = kAutonomyStepIngressStreamId,
+        .sample_id = 1,
+        .timestamp_ms = 10,
+    };
+    return expect(!stack.step(autonomy::AutonomyStepInput{.now_ms = 10}, envelope, &output),
+                  "missing frame/correlation metadata should be rejected on step ingress");
+}
+
+bool testStepRejectsOutOfOrderSampleId() {
+    autonomy::AutonomyStack stack;
+    if (!expect(stack.init(), "stack init should succeed")) {
+        return false;
+    }
+    if (!expect(stack.start(), "stack start should succeed")) {
+        return false;
+    }
+    if (!expect(stack.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(stack.startMission().accepted, "start mission should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput first{};
+    const autonomy::ContractEnvelope envelope_a{
+        .contract_version = "v1.0",
+        .frame_id = "map",
+        .correlation_id = "corr-order-a",
+        .stream_id = kAutonomyStepIngressStreamId,
+        .sample_id = 10,
+        .timestamp_ms = 10,
+    };
+    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 10}, envelope_a, &first),
+                "first step should pass")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput second{};
+    const autonomy::ContractEnvelope envelope_b{
+        .contract_version = "v1.0",
+        .frame_id = "map",
+        .correlation_id = "corr-order-b",
+        .stream_id = kAutonomyStepIngressStreamId,
+        .sample_id = 9,
+        .timestamp_ms = 20,
+    };
+    return expect(!stack.step(autonomy::AutonomyStepInput{.now_ms = 20}, envelope_b, &second),
+                  "out-of-order sample id should be rejected");
+}
+
+bool testStepRejectsStreamIdDrift() {
+    autonomy::AutonomyStack stack;
+    if (!expect(stack.init(), "stack init should succeed")) {
+        return false;
+    }
+    if (!expect(stack.start(), "stack start should succeed")) {
+        return false;
+    }
+    if (!expect(stack.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(stack.startMission().accepted, "start mission should succeed")) {
+        return false;
+    }
+
+    autonomy::AutonomyStepOutput output{};
+    const autonomy::ContractEnvelope envelope{
+        .contract_version = "v1.0",
+        .frame_id = "map",
+        .correlation_id = "corr-drift",
+        .stream_id = "autonomy_step_input",
+        .sample_id = 1,
+        .timestamp_ms = 10,
+    };
+    return expect(!stack.step(autonomy::AutonomyStepInput{.now_ms = 10}, envelope, &output),
+                  "non-canonical stream ids should be rejected to avoid drift");
+}
+
+bool testMissionScriptRejectsDuplicateSampleId() {
+    autonomy::AutonomyStack stack;
+    if (!expect(stack.init(), "stack init should succeed")) {
+        return false;
+    }
+    if (!expect(stack.start(), "stack start should succeed")) {
+        return false;
+    }
+
+    const std::string script =
+        "mission_id=script-dup\n"
+        "waypoint,map,0.0,0.0,0.0\n";
+
+    autonomy::ContractEnvelope envelope{
+        .contract_version = "v1.0",
+        .frame_id = "map",
+        .correlation_id = "corr-script-a",
+        .stream_id = kMissionScriptIngressStreamId,
+        .sample_id = 1,
+        .timestamp_ms = 10,
+    };
+    const auto first_load = stack.loadMissionScript(script, envelope, 20);
+    if (!expect(first_load.accepted, "first mission script load should succeed")) {
+        return false;
+    }
+
+    envelope.correlation_id = "corr-script-b";
+    envelope.timestamp_ms = 30;
+    const auto duplicate_load = stack.loadMissionScript(script, envelope, 30);
+    return expect(!duplicate_load.accepted, "duplicate mission script sample id should be rejected") &&
+           expect(duplicate_load.contract_validation.non_monotonic_sample_id,
+                  "duplicate mission script sample id should flag monotonic violation");
 }
 
 } // namespace
@@ -657,7 +791,11 @@ int main() {
         !testTerrainAndRiskChangesUpdatePlannerBehavior() ||
         !testStepRejectsStaleEnvelope() ||
         !testStepRejectsNonMonotonicSamplePerStream() ||
-        !testStepRejectsInvalidContractVersion()) {
+        !testStepRejectsInvalidContractVersion() ||
+        !testStepRejectsMissingFrameAndCorrelationMetadata() ||
+        !testStepRejectsOutOfOrderSampleId() ||
+        !testStepRejectsStreamIdDrift() ||
+        !testMissionScriptRejectsDuplicateSampleId()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

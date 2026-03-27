@@ -20,6 +20,8 @@ public:
 
 private:
     LocalPlan plan_{};
+    Waypoint last_executable_target_{};
+    bool last_executable_target_valid_{false};
 };
 
 } // namespace autonomy

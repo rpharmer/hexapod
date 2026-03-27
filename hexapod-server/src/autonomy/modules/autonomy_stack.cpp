@@ -11,26 +11,39 @@ namespace {
 constexpr const char* kStaleLocalization = "stale localization";
 constexpr const char* kPlannerUnavailable = "planner unavailable";
 constexpr const char* kLocomotionDispatchFailure = "locomotion dispatch failure";
+constexpr const char* kMissionScriptIngressStreamId = "autonomy.mission_script.ingress";
+constexpr const char* kAutonomyStepIngressStreamId = "autonomy.step.ingress";
+constexpr const char* kNavigationIntentStreamId = "autonomy.navigation.intent";
+constexpr const char* kLocalizationEstimateStreamId = "autonomy.localization.estimate";
+constexpr const char* kWorldModelSnapshotStreamId = "autonomy.world_model.snapshot";
+constexpr const char* kTraversabilityReportStreamId = "autonomy.traversability.report";
+constexpr const char* kGlobalPlannerOutputStreamId = "autonomy.global_planner.output";
+constexpr const char* kLocalPlannerOutputStreamId = "autonomy.local_planner.output";
+constexpr const char* kProgressEvaluationStreamId = "autonomy.progress_monitor.evaluation";
+constexpr const char* kRecoveryDecisionStreamId = "autonomy.recovery_manager.decision";
+constexpr const char* kMotionDecisionStreamId = "autonomy.motion_arbiter.decision";
+constexpr const char* kLocomotionCommandOutputStreamId = "autonomy.locomotion.command_output";
 
 } // namespace
 
 AutonomyStack::AutonomyStack(const AutonomyStackConfig& config)
-    : locomotion_interface_module_(config.locomotion_command_sink),
+    : traversability_analyzer_module_(config.traversability_policy),
+      locomotion_interface_module_(config.locomotion_command_sink),
       progress_monitor_module_(config.no_progress_timeout_ms),
       recovery_manager_module_(config.recovery_retry_budget),
       supervisor_states_({
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "mission_executive", .criticality = ProcessCriticality::Critical, .heartbeat_timeout_ms = 100, .max_restarts = 1, .dependencies = {}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "mission_scripting", .criticality = ProcessCriticality::NonCritical, .heartbeat_timeout_ms = 500, .max_restarts = 1, .dependencies = {}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "navigation_manager", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 100, .max_restarts = 2, .dependencies = {"mission_executive"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "recovery_manager", .criticality = ProcessCriticality::NonCritical, .heartbeat_timeout_ms = 500, .max_restarts = 1, .dependencies = {"progress_monitor"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "motion_arbiter", .criticality = ProcessCriticality::Critical, .heartbeat_timeout_ms = 100, .max_restarts = 1, .dependencies = {"navigation_manager", "recovery_manager"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "localization", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 75, .max_restarts = 3, .dependencies = {"navigation_manager"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "world_model", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 100, .max_restarts = 2, .dependencies = {"localization"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "traversability_analyzer", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 100, .max_restarts = 2, .dependencies = {"world_model"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "global_planner", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 120, .max_restarts = 2, .dependencies = {"navigation_manager", "traversability_analyzer"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "local_planner", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 120, .max_restarts = 2, .dependencies = {"global_planner"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "locomotion_interface", .criticality = ProcessCriticality::Critical, .heartbeat_timeout_ms = 75, .max_restarts = 2, .dependencies = {"motion_arbiter", "local_planner"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "progress_monitor", .criticality = ProcessCriticality::NonCritical, .heartbeat_timeout_ms = 500, .max_restarts = 1, .dependencies = {"mission_executive"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "mission_executive", .criticality = ProcessCriticality::Critical, .process_group = ProcessGroup::Critical, .heartbeat_timeout_ms = 100, .max_restarts = 1, .safe_stop_on_exhausted_restart = true, .dependencies = {}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "mission_scripting", .criticality = ProcessCriticality::NonCritical, .process_group = ProcessGroup::NonCritical, .heartbeat_timeout_ms = 500, .max_restarts = 1, .safe_stop_on_exhausted_restart = false, .dependencies = {}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "navigation_manager", .criticality = ProcessCriticality::SoftRealtime, .process_group = ProcessGroup::SoftRealtime, .heartbeat_timeout_ms = 100, .max_restarts = 2, .safe_stop_on_exhausted_restart = false, .dependencies = {"mission_executive"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "recovery_manager", .criticality = ProcessCriticality::NonCritical, .process_group = ProcessGroup::NonCritical, .heartbeat_timeout_ms = 500, .max_restarts = 1, .safe_stop_on_exhausted_restart = false, .dependencies = {"progress_monitor"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "motion_arbiter", .criticality = ProcessCriticality::Critical, .process_group = ProcessGroup::Critical, .heartbeat_timeout_ms = 100, .max_restarts = 1, .safe_stop_on_exhausted_restart = true, .dependencies = {"navigation_manager", "recovery_manager"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "localization", .criticality = ProcessCriticality::SoftRealtime, .process_group = ProcessGroup::SoftRealtime, .heartbeat_timeout_ms = 75, .max_restarts = 3, .safe_stop_on_exhausted_restart = false, .dependencies = {"navigation_manager"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "world_model", .criticality = ProcessCriticality::SoftRealtime, .process_group = ProcessGroup::SoftRealtime, .heartbeat_timeout_ms = 100, .max_restarts = 2, .safe_stop_on_exhausted_restart = false, .dependencies = {"localization"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "traversability_analyzer", .criticality = ProcessCriticality::SoftRealtime, .process_group = ProcessGroup::SoftRealtime, .heartbeat_timeout_ms = 100, .max_restarts = 2, .safe_stop_on_exhausted_restart = false, .dependencies = {"world_model"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "global_planner", .criticality = ProcessCriticality::SoftRealtime, .process_group = ProcessGroup::SoftRealtime, .heartbeat_timeout_ms = 120, .max_restarts = 2, .safe_stop_on_exhausted_restart = false, .dependencies = {"navigation_manager", "traversability_analyzer"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "local_planner", .criticality = ProcessCriticality::SoftRealtime, .process_group = ProcessGroup::SoftRealtime, .heartbeat_timeout_ms = 120, .max_restarts = 2, .safe_stop_on_exhausted_restart = false, .dependencies = {"global_planner"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "locomotion_interface", .criticality = ProcessCriticality::Critical, .process_group = ProcessGroup::Critical, .heartbeat_timeout_ms = 75, .max_restarts = 2, .safe_stop_on_exhausted_restart = true, .dependencies = {"motion_arbiter", "local_planner"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "progress_monitor", .criticality = ProcessCriticality::NonCritical, .process_group = ProcessGroup::NonCritical, .heartbeat_timeout_ms = 500, .max_restarts = 1, .safe_stop_on_exhausted_restart = false, .dependencies = {"mission_executive"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
       }) {}
 
 bool AutonomyStack::init() {
@@ -61,7 +74,7 @@ bool AutonomyStack::start() {
 
 bool AutonomyStack::step(const AutonomyStepInput& input, AutonomyStepOutput* output) {
     const std::string correlation_id = "autonomy-step-" + std::to_string(++generated_correlation_id_);
-    ContractEnvelope envelope = makeInternalEnvelope("autonomy_step_input", "map", correlation_id, input.now_ms);
+    ContractEnvelope envelope = makeInternalEnvelope(kAutonomyStepIngressStreamId, "map", correlation_id, input.now_ms);
     return step(input, envelope, output);
 }
 
@@ -76,7 +89,7 @@ bool AutonomyStack::step(const AutonomyStepInput& input,
         return false;
     }
 
-    if (!validateEnvelopeForStream(envelope, input.now_ms, config, "autonomy_step_input")) {
+    if (!validateEnvelopeForStream(envelope, input.now_ms, config, kAutonomyStepIngressStreamId)) {
         return false;
     }
 
@@ -113,8 +126,8 @@ bool AutonomyStack::step(const AutonomyStepInput& input,
                                            : envelope.correlation_id;
 
     if (mission) {
-        const auto nav_envelope = makeInternalEnvelope("navigation_manager.intent", "map", correlation_id, input.now_ms);
-        if (!validateEnvelopeForStream(nav_envelope, input.now_ms, config, "navigation_manager.intent")) {
+        const auto nav_envelope = makeInternalEnvelope(kNavigationIntentStreamId, "map", correlation_id, input.now_ms);
+        if (!validateEnvelopeForStream(nav_envelope, input.now_ms, config, kNavigationIntentStreamId)) {
             return false;
         }
         output->navigation_update = navigation_manager_module_.computeIntent(
@@ -141,14 +154,14 @@ bool AutonomyStack::step(const AutonomyStepInput& input,
                 ? "map"
                 : output->navigation_update.intent.target.frame_id);
     }
-    const auto localization_envelope = makeInternalEnvelope("localization.estimate", "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(localization_envelope, input.now_ms, config, "localization.estimate")) {
+    const auto localization_envelope = makeInternalEnvelope(kLocalizationEstimateStreamId, "map", correlation_id, input.now_ms);
+    if (!validateEnvelopeForStream(localization_envelope, input.now_ms, config, kLocalizationEstimateStreamId)) {
         return false;
     }
     output->localization_estimate = localization_module_.update(localization_observation, input.now_ms, localization_envelope);
 
-    const auto world_model_envelope = makeInternalEnvelope("world_model.snapshot", "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(world_model_envelope, input.now_ms, config, "world_model.snapshot")) {
+    const auto world_model_envelope = makeInternalEnvelope(kWorldModelSnapshotStreamId, "map", correlation_id, input.now_ms);
+    if (!validateEnvelopeForStream(world_model_envelope, input.now_ms, config, kWorldModelSnapshotStreamId)) {
         return false;
     }
     output->world_model_snapshot = world_model_module_.update(
@@ -158,8 +171,8 @@ bool AutonomyStack::step(const AutonomyStepInput& input,
         input.now_ms,
         world_model_envelope);
 
-    const auto traversability_envelope = makeInternalEnvelope("traversability.report", "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(traversability_envelope, input.now_ms, config, "traversability.report")) {
+    const auto traversability_envelope = makeInternalEnvelope(kTraversabilityReportStreamId, "map", correlation_id, input.now_ms);
+    if (!validateEnvelopeForStream(traversability_envelope, input.now_ms, config, kTraversabilityReportStreamId)) {
         return false;
     }
     output->traversability_report = traversability_analyzer_module_.analyze(
@@ -167,8 +180,8 @@ bool AutonomyStack::step(const AutonomyStepInput& input,
         input.now_ms,
         traversability_envelope);
 
-    const auto global_plan_envelope = makeInternalEnvelope("global_planner.plan", "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(global_plan_envelope, input.now_ms, config, "global_planner.plan")) {
+    const auto global_plan_envelope = makeInternalEnvelope(kGlobalPlannerOutputStreamId, "map", correlation_id, input.now_ms);
+    if (!validateEnvelopeForStream(global_plan_envelope, input.now_ms, config, kGlobalPlannerOutputStreamId)) {
         return false;
     }
     output->global_plan = global_planner_module_.plan(
@@ -176,8 +189,8 @@ bool AutonomyStack::step(const AutonomyStepInput& input,
         output->traversability_report,
         global_plan_envelope);
 
-    const auto local_plan_envelope = makeInternalEnvelope("local_planner.plan", "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(local_plan_envelope, input.now_ms, config, "local_planner.plan")) {
+    const auto local_plan_envelope = makeInternalEnvelope(kLocalPlannerOutputStreamId, "map", correlation_id, input.now_ms);
+    if (!validateEnvelopeForStream(local_plan_envelope, input.now_ms, config, kLocalPlannerOutputStreamId)) {
         return false;
     }
     output->local_plan = local_planner_module_.plan(output->global_plan,
@@ -185,8 +198,8 @@ bool AutonomyStack::step(const AutonomyStepInput& input,
                                                     input.now_ms,
                                                     local_plan_envelope);
 
-    const auto progress_envelope = makeInternalEnvelope("progress_monitor.evaluation", "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(progress_envelope, input.now_ms, config, "progress_monitor.evaluation")) {
+    const auto progress_envelope = makeInternalEnvelope(kProgressEvaluationStreamId, "map", correlation_id, input.now_ms);
+    if (!validateEnvelopeForStream(progress_envelope, input.now_ms, config, kProgressEvaluationStreamId)) {
         return false;
     }
     output->progress_evaluation = progress_monitor_module_.evaluate(ProgressSample{
@@ -195,8 +208,8 @@ bool AutonomyStack::step(const AutonomyStepInput& input,
     }, progress_envelope);
 
     const bool recovery_trigger = input.blocked || output->progress_evaluation.no_progress;
-    const auto recovery_envelope = makeInternalEnvelope("recovery_manager.decision", "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(recovery_envelope, input.now_ms, config, "recovery_manager.decision")) {
+    const auto recovery_envelope = makeInternalEnvelope(kRecoveryDecisionStreamId, "map", correlation_id, input.now_ms);
+    if (!validateEnvelopeForStream(recovery_envelope, input.now_ms, config, kRecoveryDecisionStreamId)) {
         return false;
     }
     output->recovery_decision = recovery_manager_module_.onNoProgress(recovery_trigger,
@@ -208,8 +221,8 @@ bool AutonomyStack::step(const AutonomyStepInput& input,
         }
     }
 
-    const auto motion_envelope = makeInternalEnvelope("motion_arbiter.decision", "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(motion_envelope, input.now_ms, config, "motion_arbiter.decision")) {
+    const auto motion_envelope = makeInternalEnvelope(kMotionDecisionStreamId, "map", correlation_id, input.now_ms);
+    if (!validateEnvelopeForStream(motion_envelope, input.now_ms, config, kMotionDecisionStreamId)) {
         return false;
     }
     output->motion_decision = motion_arbiter_module_.arbitrate(
@@ -219,8 +232,8 @@ bool AutonomyStack::step(const AutonomyStepInput& input,
         output->navigation_update,
         motion_envelope);
 
-    const auto locomotion_envelope = makeInternalEnvelope("locomotion_interface.command", "map", correlation_id, input.now_ms);
-    if (!validateEnvelopeForStream(locomotion_envelope, input.now_ms, config, "locomotion_interface.command")) {
+    const auto locomotion_envelope = makeInternalEnvelope(kLocomotionCommandOutputStreamId, "map", correlation_id, input.now_ms);
+    if (!validateEnvelopeForStream(locomotion_envelope, input.now_ms, config, kLocomotionCommandOutputStreamId)) {
         return false;
     }
     output->locomotion_command = locomotion_interface_module_.dispatch(
@@ -256,9 +269,6 @@ void AutonomyStack::stop() {
 MissionEvent AutonomyStack::loadMission(const WaypointMission& mission) {
     progress_monitor_module_.reset();
     recovery_manager_module_.reset();
-    last_sample_id_by_stream_.clear();
-    generated_sample_id_ = 0;
-    generated_correlation_id_ = 0;
     return mission_executive_.loadMission(mission);
 }
 
@@ -267,24 +277,7 @@ MissionScriptLoadResult AutonomyStack::loadMissionScript(const std::string& scri
                                                          uint64_t now_ms,
                                                          const ContractValidationConfig& config) {
     MissionScriptLoadResult result{};
-    const std::string stream_id = envelope.stream_id.empty() ? "mission_script" : envelope.stream_id;
-    std::optional<uint64_t> last_sample_id = std::nullopt;
-    const auto sample_it = last_sample_id_by_stream_.find(stream_id);
-    if (sample_it != last_sample_id_by_stream_.end()) {
-        last_sample_id = sample_it->second;
-    }
-
-    result.contract_validation = contract_enforcer_.validate(envelope, now_ms, config, last_sample_id);
-    if (!result.contract_validation.valid) {
-        result.error = result.contract_validation.message;
-        return result;
-    }
-
-    if (!validateEnvelopeForStream(envelope, now_ms, config, "mission_script")) {
-        result.contract_validation = contract_enforcer_.validate(envelope,
-                                                                 now_ms,
-                                                                 config,
-                                                                 last_sample_id);
+    if (!validateEnvelopeForStream(envelope, now_ms, config, kMissionScriptIngressStreamId, &result.contract_validation)) {
         result.error = result.contract_validation.message;
         return result;
     }
@@ -316,6 +309,81 @@ std::vector<ModuleProcessContract> AutonomyStack::processContracts() const {
         contracts.push_back(state.contract);
     }
     return contracts;
+}
+
+std::vector<IpcBoundaryContract> AutonomyStack::ipcBoundaryContracts() const {
+    return {
+        IpcBoundaryContract{
+            .producer_module = "mission_executive",
+            .consumer_module = "navigation_manager",
+            .message_type = "NavigationUpdate",
+            .producer_group = ProcessGroup::Critical,
+            .consumer_group = ProcessGroup::SoftRealtime,
+        },
+        IpcBoundaryContract{
+            .producer_module = "navigation_manager",
+            .consumer_module = "global_planner",
+            .message_type = "NavigationUpdate",
+            .producer_group = ProcessGroup::SoftRealtime,
+            .consumer_group = ProcessGroup::SoftRealtime,
+        },
+        IpcBoundaryContract{
+            .producer_module = "localization",
+            .consumer_module = "world_model",
+            .message_type = "LocalizationEstimate",
+            .producer_group = ProcessGroup::SoftRealtime,
+            .consumer_group = ProcessGroup::SoftRealtime,
+        },
+        IpcBoundaryContract{
+            .producer_module = "world_model",
+            .consumer_module = "traversability_analyzer",
+            .message_type = "WorldModelSnapshot",
+            .producer_group = ProcessGroup::SoftRealtime,
+            .consumer_group = ProcessGroup::SoftRealtime,
+        },
+        IpcBoundaryContract{
+            .producer_module = "traversability_analyzer",
+            .consumer_module = "global_planner",
+            .message_type = "TraversabilityReport",
+            .producer_group = ProcessGroup::SoftRealtime,
+            .consumer_group = ProcessGroup::SoftRealtime,
+        },
+        IpcBoundaryContract{
+            .producer_module = "global_planner",
+            .consumer_module = "local_planner",
+            .message_type = "GlobalPlan",
+            .producer_group = ProcessGroup::SoftRealtime,
+            .consumer_group = ProcessGroup::SoftRealtime,
+        },
+        IpcBoundaryContract{
+            .producer_module = "local_planner",
+            .consumer_module = "locomotion_interface",
+            .message_type = "LocalPlan",
+            .producer_group = ProcessGroup::SoftRealtime,
+            .consumer_group = ProcessGroup::Critical,
+        },
+        IpcBoundaryContract{
+            .producer_module = "motion_arbiter",
+            .consumer_module = "locomotion_interface",
+            .message_type = "MotionDecision",
+            .producer_group = ProcessGroup::Critical,
+            .consumer_group = ProcessGroup::Critical,
+        },
+        IpcBoundaryContract{
+            .producer_module = "progress_monitor",
+            .consumer_module = "recovery_manager",
+            .message_type = "ProgressEvaluation",
+            .producer_group = ProcessGroup::NonCritical,
+            .consumer_group = ProcessGroup::NonCritical,
+        },
+        IpcBoundaryContract{
+            .producer_module = "recovery_manager",
+            .consumer_module = "motion_arbiter",
+            .message_type = "RecoveryDecision",
+            .producer_group = ProcessGroup::NonCritical,
+            .consumer_group = ProcessGroup::Critical,
+        },
+    };
 }
 
 std::vector<ModuleSupervisorStatus> AutonomyStack::supervisorStatuses() const {
@@ -389,8 +457,27 @@ ContractEnvelope AutonomyStack::makeInternalEnvelope(const std::string& stream_i
 bool AutonomyStack::validateEnvelopeForStream(const ContractEnvelope& envelope,
                                               uint64_t now_ms,
                                               const ContractValidationConfig& config,
-                                              const std::string& fallback_stream_id) {
-    const std::string stream_id = envelope.stream_id.empty() ? fallback_stream_id : envelope.stream_id;
+                                              const std::string& expected_stream_id,
+                                              ContractValidationResult* validation_result) {
+    const std::string stream_id = expected_stream_id;
+    if (!envelope.stream_id.empty() && envelope.stream_id != expected_stream_id) {
+        if (validation_result) {
+            validation_result->valid = false;
+            validation_result->message = "contract validation failed stream_id_mismatch expected=" + expected_stream_id +
+                                         " actual=" + envelope.stream_id;
+        }
+        if (const auto logger = logging::GetDefaultLogger()) {
+            LOG_WARN(logger,
+                     "[autonomy] contract validation failed for stream=",
+                     expected_stream_id,
+                     " sample_id=",
+                     envelope.sample_id,
+                     " reason=stream_id_mismatch actual_stream=",
+                     envelope.stream_id);
+        }
+        return false;
+    }
+
     std::optional<uint64_t> last_sample_id = std::nullopt;
     const auto it = last_sample_id_by_stream_.find(stream_id);
     if (it != last_sample_id_by_stream_.end()) {
@@ -398,6 +485,9 @@ bool AutonomyStack::validateEnvelopeForStream(const ContractEnvelope& envelope,
     }
 
     const auto result = contract_enforcer_.validate(envelope, now_ms, config, last_sample_id);
+    if (validation_result) {
+        *validation_result = result;
+    }
     if (!result.valid) {
         if (const auto logger = logging::GetDefaultLogger()) {
             LOG_WARN(logger,
@@ -472,6 +562,25 @@ bool AutonomyStack::monitorAndRecoverModule(AutonomyModuleStub* module,
     supervisor.timed_out = timed_out || heartbeat_timed_out;
     supervisor.last_fault = crashed ? "crash" : "timeout";
 
+    const bool dependencies_ready = std::all_of(supervisor.contract.dependencies.cbegin(),
+                                                supervisor.contract.dependencies.cend(),
+                                                [&](const auto& dependency) {
+                                                    return dependencyHealthy(dependency, now_ms);
+                                                });
+    if (!dependencies_ready) {
+        supervisor.isolated_fault = true;
+        supervisor.last_fault += "|dependency-unhealthy";
+        if (supervisor.contract.safe_stop_on_exhausted_restart) {
+            if (logger) {
+                LOG_ERROR(logger,
+                          "[autonomy] safe-stop: critical module dependencies unhealthy: ",
+                          supervisor.contract.module_name);
+            }
+            return false;
+        }
+        return true;
+    }
+
     if (supervisor.restart_count >= supervisor.contract.max_restarts) {
         if (logger) {
             LOG_WARN(logger,
@@ -480,7 +589,7 @@ bool AutonomyStack::monitorAndRecoverModule(AutonomyModuleStub* module,
                      " fault=",
                      supervisor.last_fault);
         }
-        if (supervisor.contract.criticality == ProcessCriticality::Critical) {
+        if (supervisor.contract.safe_stop_on_exhausted_restart) {
             return false;
         }
         supervisor.isolated_fault = true;
@@ -531,12 +640,19 @@ bool AutonomyStack::dependencyHealthy(const std::string& dependency_name, uint64
     return true;
 }
 
+bool AutonomyStack::processGroupHealthy(ProcessGroup group, uint64_t now_ms) const {
+    return std::all_of(supervisor_states_.cbegin(), supervisor_states_.cend(), [&](const auto& state) {
+        return state.contract.process_group != group || dependencyHealthy(state.contract.module_name, now_ms);
+    });
+}
+
 void AutonomyStack::applyDegradedMode(const AutonomyStepInput& input, AutonomyStepOutput* output) {
     const auto logger = logging::GetDefaultLogger();
     output->degraded_mode = false;
     output->degraded_reason.clear();
 
-    if (!dependencyHealthy("localization", input.now_ms) || !output->localization_estimate.valid) {
+    if (!dependencyHealthy("localization", input.now_ms) ||
+        !output->localization_estimate.valid) {
         output->degraded_mode = true;
         output->degraded_reason = kStaleLocalization;
         output->motion_decision.allow_motion = false;
@@ -548,7 +664,8 @@ void AutonomyStack::applyDegradedMode(const AutonomyStepInput& input, AutonomySt
         return;
     }
 
-    if (!dependencyHealthy("global_planner", input.now_ms) ||
+    if (!processGroupHealthy(ProcessGroup::SoftRealtime, input.now_ms) ||
+        !dependencyHealthy("global_planner", input.now_ms) ||
         !dependencyHealthy("local_planner", input.now_ms) ||
         !output->global_plan.has_plan ||
         !output->local_plan.has_command) {

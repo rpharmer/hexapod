@@ -282,6 +282,55 @@ bool testImuRuntimeReadGateParsesAndDefaults()
   return expect(parsed.imuEnableReads, "Runtime.Imu.EnableReads should parse explicit true");
 }
 
+bool testAutonomyTraversabilityRuntimeFieldsParseAndFallback()
+{
+  std::string cfg = readText(configPath("config.txt"));
+  if (!expect(replaceOnce(cfg, "Runtime.Autonomy.Enabled = false", "Runtime.Autonomy.Enabled = true"),
+              "baseline config missing Runtime.Autonomy.Enabled entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Autonomy.NoProgressTimeoutMs = 1000",
+                          "Runtime.Autonomy.NoProgressTimeoutMs = 2000"),
+              "baseline config missing Runtime.Autonomy.NoProgressTimeoutMs entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Autonomy.RecoveryRetryBudget = 2",
+                          "Runtime.Autonomy.RecoveryRetryBudget = 4"),
+              "baseline config missing Runtime.Autonomy.RecoveryRetryBudget entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Autonomy.Traversability.OccupancyRiskWeight = 0.65",
+                          "Runtime.Autonomy.Traversability.OccupancyRiskWeight = 0.8"),
+              "baseline config missing Runtime.Autonomy.Traversability.OccupancyRiskWeight entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Autonomy.Traversability.GradientRiskWeight = 0.35",
+                          "Runtime.Autonomy.Traversability.GradientRiskWeight = 0.2"),
+              "baseline config missing Runtime.Autonomy.Traversability.GradientRiskWeight entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Autonomy.Traversability.ConfidenceCostWeight = 1.0",
+                          "Runtime.Autonomy.Traversability.ConfidenceCostWeight = 2.5"),
+              "baseline config missing Runtime.Autonomy.Traversability.ConfidenceCostWeight entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Autonomy.Traversability.RiskBlockThreshold = 0.85",
+                          "Runtime.Autonomy.Traversability.RiskBlockThreshold = 2.0"),
+              "baseline config missing Runtime.Autonomy.Traversability.RiskBlockThreshold entry") ||
+      !expect(replaceOnce(cfg, "Runtime.Autonomy.Traversability.ConfidenceBlockThreshold = 0.3",
+                          "Runtime.Autonomy.Traversability.ConfidenceBlockThreshold = -1.0"),
+              "baseline config missing Runtime.Autonomy.Traversability.ConfidenceBlockThreshold entry")) {
+    return false;
+  }
+
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(writeTemp("hexapod_runtime_autonomy_traversability.toml", cfg), parsed),
+              "autonomy traversability runtime fields should parse with fallback")) {
+    return false;
+  }
+
+  return expect(parsed.autonomyEnabled, "autonomy enabled should parse explicit true") &&
+         expect(near(parsed.autonomyTraversabilityOccupancyRiskWeight, 0.8),
+                "occupancy risk weight should parse configured value") &&
+         expect(near(parsed.autonomyTraversabilityGradientRiskWeight, 0.2),
+                "gradient risk weight should parse configured value") &&
+         expect(near(parsed.autonomyTraversabilityConfidenceCostWeight, 2.5),
+                "confidence cost weight should parse configured value") &&
+         expect(near(parsed.autonomyTraversabilityRiskBlockThreshold, 0.85),
+                "out-of-range risk threshold should fallback to default") &&
+         expect(near(parsed.autonomyTraversabilityConfidenceBlockThreshold, 0.3),
+                "out-of-range confidence threshold should fallback to default");
+}
+
 bool testCalibrationNormalizationStableForShuffledTable()
 {
   const std::string ordered =
@@ -492,6 +541,7 @@ int main()
   testOutOfRangeRuntimeFallsBackWithDiagnostic();
   testTelemetryRuntimeFieldsParseAndFallback();
   testImuRuntimeReadGateParsesAndDefaults();
+  testAutonomyTraversabilityRuntimeFieldsParseAndFallback();
   testCalibrationNormalizationStableForShuffledTable();
   testSimModeTransportOptional();
   testBaselineConfigParity();

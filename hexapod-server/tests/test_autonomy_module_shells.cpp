@@ -59,7 +59,7 @@ bool testAllShellsLifecycleAndIdentity() {
         if (!expect(module->step(1000), "step should succeed")) {
             return false;
         }
-        if (!expect(module->health().heartbeat_timestamp_ms == 1000, "step should set heartbeat")) {
+        if (!expect(module->health().heartbeat_timestamp_ms == TimestampMs{1000}, "step should set heartbeat")) {
             return false;
         }
         module->stop();
@@ -79,7 +79,7 @@ bool testLocalizationAdapterNominalEstimatorPropagation() {
     const auto estimate = localization.update(observation, /*now_ms=*/20);
     return expect(estimate.valid, "nominal estimator observation should produce a valid localization estimate") &&
            expect(estimate.frame_id == "map", "nominal estimate should keep the map frame") &&
-           expect(estimate.timestamp_ms == 10, "nominal estimate should propagate estimator timestamp") &&
+           expect(estimate.timestamp_ms == TimestampMs{10}, "nominal estimate should propagate estimator timestamp") &&
            expect(estimate.x_m == 1.25 && estimate.y_m == -0.5 && estimate.yaw_rad == 0.75,
                   "nominal estimate should propagate estimator pose");
 }
@@ -110,6 +110,122 @@ bool testLocalizationRejectsFrameMismatch() {
     const auto estimate = localization.update(wrong_frame_observation, /*now_ms=*/150);
     return expect(!estimate.valid, "frame mismatch should invalidate localization observation") &&
            expect(estimate.frame_id == "map", "frame mismatch should keep localization estimate in expected frame");
+}
+
+bool testWorldModelMapSliceNominalIntegration() {
+    autonomy::WorldModelModuleShell world_model;
+    const autonomy::LocalizationEstimate localization{
+        .valid = true,
+        .frame_id = "map",
+        .x_m = 0.0,
+        .y_m = 0.0,
+        .yaw_rad = 0.0,
+        .timestamp_ms = 100,
+    };
+
+    const auto world = world_model.update(
+        localization,
+        autonomy::MapSliceInput{
+            .frame_id = "map",
+            .has_timestamp = true,
+            .timestamp_ms = 100,
+            .has_occupancy = true,
+            .has_elevation = true,
+            .has_risk_confidence = true,
+            .occupancy = 0.35,
+            .elevation_m = 0.12,
+            .risk_confidence = 0.85,
+            .occupancy_provenance = autonomy::MapDataProvenance::Map,
+            .elevation_provenance = autonomy::MapDataProvenance::Sensor,
+            .risk_confidence_provenance = autonomy::MapDataProvenance::Fused,
+        },
+        false,
+        110);
+
+    return expect(world.has_map, "nominal world-model map slice should be accepted") &&
+           expect(world.occupancy_provenance == autonomy::MapDataProvenance::Map,
+                  "occupancy provenance should be propagated") &&
+           expect(world.elevation_provenance == autonomy::MapDataProvenance::Sensor,
+                  "elevation provenance should be propagated") &&
+           expect(world.risk_confidence_provenance == autonomy::MapDataProvenance::Fused,
+                  "confidence provenance should be propagated") &&
+           expect(world.obstacle_band_near >= world.obstacle_band_mid,
+                  "obstacle near band should stay at least as conservative as mid band") &&
+           expect(world.slope_band_high >= world.slope_band_mid,
+                  "slope high band should be at least mid band") &&
+           expect(world.confidence_zone_nominal > world.confidence_zone_degraded,
+                  "nominal confidence zone should dominate for high confidence slices");
+}
+
+bool testWorldModelRejectsStaleMapSlice() {
+    autonomy::WorldModelModuleShell world_model;
+    const autonomy::LocalizationEstimate localization{
+        .valid = true,
+        .frame_id = "map",
+        .x_m = 0.0,
+        .y_m = 0.0,
+        .yaw_rad = 0.0,
+        .timestamp_ms = 100,
+    };
+
+    const auto accepted = world_model.update(
+        localization,
+        autonomy::MapSliceInput{
+            .frame_id = "map",
+            .has_timestamp = true,
+            .timestamp_ms = 100,
+            .has_occupancy = true,
+            .occupancy = 0.2,
+        },
+        false,
+        120);
+    if (!expect(accepted.has_map, "first map update should be accepted")) {
+        return false;
+    }
+
+    const auto stale = world_model.update(
+        localization,
+        autonomy::MapSliceInput{
+            .frame_id = "map",
+            .has_timestamp = true,
+            .timestamp_ms = 90,
+            .has_occupancy = true,
+            .occupancy = 0.8,
+        },
+        false,
+        130);
+
+    return expect(!stale.has_map, "non-monotonic stale map timestamp should be rejected") &&
+           expect(stale.stale_input_rejected, "rejected stale map should set stale rejection flag") &&
+           expect(stale.non_monotonic_timestamp, "rejected stale map should set non-monotonic flag") &&
+           expect(stale.occupancy == accepted.occupancy, "stale map rejection should preserve prior occupancy");
+}
+
+bool testWorldModelRejectsFrameMismatch() {
+    autonomy::WorldModelModuleShell world_model;
+    const autonomy::LocalizationEstimate localization{
+        .valid = true,
+        .frame_id = "map",
+        .x_m = 0.0,
+        .y_m = 0.0,
+        .yaw_rad = 0.0,
+        .timestamp_ms = 100,
+    };
+
+    const auto mismatch = world_model.update(
+        localization,
+        autonomy::MapSliceInput{
+            .frame_id = "odom",
+            .has_timestamp = true,
+            .timestamp_ms = 100,
+            .has_occupancy = true,
+            .occupancy = 0.5,
+        },
+        false,
+        110);
+
+    return expect(!mismatch.has_map, "map slices in unexpected frame should be rejected") &&
+           expect(mismatch.frame_mismatch, "frame mismatch rejection should set frame flag");
 }
 
 bool testAllShellsFunctionalWiring() {
@@ -313,6 +429,11 @@ bool testPlannerReachableBlockedAndDegradedFlows() {
     if (!expect(local_reachable.status == autonomy::PlannerStatus::Ready, "reachable local plan should be ready")) {
         return false;
     }
+    if (!expect(local_reachable.target.x_m != reachable.route.front().x_m ||
+                    local_reachable.target.y_m != reachable.route.front().y_m,
+                "local short horizon target should not always be the first waypoint")) {
+        return false;
+    }
 
     const auto blocked_global = global_planner.plan(nav_update, autonomy::TraversabilityReport{
                                                                     .traversable = false,
@@ -366,7 +487,176 @@ bool testPlannerReachableBlockedAndDegradedFlows() {
                 "stale planning should mark local plan stale")) {
         return false;
     }
+
+    const auto replanned_after_unblock = global_planner.plan(nav_update, autonomy::TraversabilityReport{
+                                                                          .traversable = true,
+                                                                          .cost = 0.15,
+                                                                          .risk = 0.15,
+                                                                          .timestamp_ms = 1600,
+                                                                      });
+    if (!expect(replanned_after_unblock.has_plan, "unblocked traversability should trigger replanning")) {
+        return false;
+    }
+    if (!expect(replanned_after_unblock.status == autonomy::PlannerStatus::Ready,
+                "replanned route after unblock should return to ready status")) {
+        return false;
+    }
+    if (!expect(replanned_after_unblock.reason == "route-ready",
+                "replanned route should keep stable ready telemetry reason")) {
+        return false;
+    }
     return true;
+}
+
+bool testPlannerNoIntentUnsafeAndStaleNoFallback() {
+    autonomy::GlobalPlannerModuleShell global_planner;
+    autonomy::LocalPlannerModuleShell local_planner;
+
+    const auto no_intent = global_planner.plan(autonomy::NavigationUpdate{},
+                                               autonomy::TraversabilityReport{
+                                                   .traversable = true,
+                                                   .cost = 0.2,
+                                                   .timestamp_ms = 50,
+                                               });
+    if (!expect(!no_intent.has_plan, "missing navigation intent should not produce global plan")) {
+        return false;
+    }
+    if (!expect(no_intent.status == autonomy::PlannerStatus::NoPlan,
+                "missing navigation intent should surface no-plan status")) {
+        return false;
+    }
+    if (!expect(no_intent.reason == "no-navigation-intent",
+                "missing navigation intent should preserve no-intent reason")) {
+        return false;
+    }
+
+    const auto local_no_intent = local_planner.plan(no_intent, false, 100);
+    if (!expect(local_no_intent.status == autonomy::PlannerStatus::NoPlan,
+                "no-intent global plan should map to no-plan local status")) {
+        return false;
+    }
+    if (!expect(local_no_intent.reason == "no-navigation-intent",
+                "no-intent local plan should preserve telemetry reason")) {
+        return false;
+    }
+
+    const autonomy::NavigationUpdate nav_update{
+        .has_intent = true,
+        .intent = autonomy::NavigationIntent{
+            .mission_id = "unsafe-terrain",
+            .waypoint_index = 0,
+            .target = autonomy::Waypoint{.frame_id = "map", .x_m = 2.0, .y_m = 1.0, .yaw_rad = 0.0},
+        },
+        .status = autonomy::NavigationStatus::Active,
+        .reason = {},
+    };
+    const auto unsafe_plan = global_planner.plan(nav_update, autonomy::TraversabilityReport{
+                                                                 .traversable = true,
+                                                                 .cost = 0.99,
+                                                                 .risk = 0.9,
+                                                                 .timestamp_ms = 120,
+                                                             });
+    if (!expect(!unsafe_plan.has_plan, "unsafe terrain constraints should suppress global plan")) {
+        return false;
+    }
+    if (!expect(unsafe_plan.status == autonomy::PlannerStatus::UnsafePlan,
+                "unsafe terrain constraints should report unsafe status")) {
+        return false;
+    }
+    if (!expect(unsafe_plan.reason.rfind("unsafe-traversability", 0) == 0,
+                "unsafe terrain constraints should preserve telemetry reason prefix")) {
+        return false;
+    }
+
+    const autonomy::GlobalPlan stale_plan{
+        .has_plan = true,
+        .target = autonomy::Waypoint{.frame_id = "map", .x_m = 1.0, .y_m = 0.0, .yaw_rad = 0.0},
+        .route = {autonomy::Waypoint{.frame_id = "map", .x_m = 0.2, .y_m = 0.0, .yaw_rad = 0.0}},
+        .cost = 0.5,
+        .status = autonomy::PlannerStatus::Ready,
+        .reason = "route-ready",
+        .source_timestamp_ms = 200,
+    };
+    const auto stale_without_fallback = autonomy::LocalPlannerModuleShell{}.plan(stale_plan, false, 2000);
+    if (!expect(!stale_without_fallback.has_command, "stale plan without prior command should not emit target")) {
+        return false;
+    }
+    if (!expect(stale_without_fallback.status == autonomy::PlannerStatus::StalePlan,
+                "stale plan should report stale status")) {
+        return false;
+    }
+    if (!expect(stale_without_fallback.reason == "stale-global-plan-no-fallback",
+                "stale plan without prior command should keep stable fallback reason")) {
+        return false;
+    }
+    return true;
+}
+
+bool testTraversabilityPolicyAndReasonsEdgeCases() {
+    autonomy::TraversabilityAnalyzerModuleShell traversability(autonomy::TraversabilityPolicyConfig{
+        .occupancy_risk_weight = 0.7,
+        .gradient_risk_weight = 0.3,
+        .confidence_cost_weight = 1.2,
+        .risk_block_threshold = 0.8,
+        .confidence_block_threshold = 0.4,
+    });
+
+    const auto low_risk = traversability.analyze(autonomy::WorldModelSnapshot{
+                                                     .has_map = true,
+                                                     .occupancy = 0.1,
+                                                     .terrain_gradient = 0.1,
+                                                     .risk_confidence = 0.95,
+                                                 },
+                                                 100);
+    if (!expect(low_risk.traversable, "low-risk high-confidence terrain should be traversable")) {
+        return false;
+    }
+    if (!expect(low_risk.reason == "traversable", "traversable report should include traversable reason")) {
+        return false;
+    }
+
+    const auto high_risk = traversability.analyze(autonomy::WorldModelSnapshot{
+                                                      .has_map = true,
+                                                      .occupancy = 0.95,
+                                                      .terrain_gradient = 0.9,
+                                                      .risk_confidence = 0.95,
+                                                  },
+                                                  110);
+    if (!expect(!high_risk.traversable, "high-risk terrain should be non-traversable")) {
+        return false;
+    }
+    if (!expect(high_risk.reason == "risk-threshold-exceeded",
+                "high-risk non-traversable reason should be deterministic")) {
+        return false;
+    }
+
+    const auto low_confidence = traversability.analyze(autonomy::WorldModelSnapshot{
+                                                           .has_map = true,
+                                                           .occupancy = 0.1,
+                                                           .terrain_gradient = 0.1,
+                                                           .risk_confidence = 0.1,
+                                                       },
+                                                       120);
+    if (!expect(!low_confidence.traversable, "low-confidence terrain should be non-traversable")) {
+        return false;
+    }
+    if (!expect(low_confidence.reason == "confidence-below-threshold",
+                "low-confidence non-traversable reason should be deterministic")) {
+        return false;
+    }
+
+    const auto mixed_terrain = traversability.analyze(autonomy::WorldModelSnapshot{
+                                                          .has_map = false,
+                                                          .occupancy = 0.9,
+                                                          .terrain_gradient = 0.9,
+                                                          .risk_confidence = 0.2,
+                                                      },
+                                                      130);
+    return expect(!mixed_terrain.traversable, "mixed terrain edge case should be non-traversable") &&
+           expect(mixed_terrain.reason == "missing-map",
+                  "mixed terrain reason ordering should prioritize missing map deterministically") &&
+           expect(mixed_terrain.non_traversable_reasons.size() == 3,
+                  "mixed terrain should report all blocking reasons for explainability");
 }
 
 } // namespace
@@ -376,10 +666,15 @@ int main() {
         !testLocalizationAdapterNominalEstimatorPropagation() ||
         !testLocalizationRejectsStaleObservation() ||
         !testLocalizationRejectsFrameMismatch() ||
+        !testWorldModelMapSliceNominalIntegration() ||
+        !testWorldModelRejectsStaleMapSlice() ||
+        !testWorldModelRejectsFrameMismatch() ||
         !testAllShellsFunctionalWiring() ||
         !testLocomotionShellDispatchSinkOutcomes() ||
         !testTerrainRiskInputsAffectPlanning() ||
-        !testPlannerReachableBlockedAndDegradedFlows()) {
+        !testPlannerReachableBlockedAndDegradedFlows() ||
+        !testPlannerNoIntentUnsafeAndStaleNoFallback() ||
+        !testTraversabilityPolicyAndReasonsEdgeCases()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
