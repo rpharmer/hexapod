@@ -316,6 +316,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     hexapod_server_add_test(test_scenario_autonomy_outcomes scenario_autonomy_outcomes
         tests/test_scenario_autonomy_outcomes.cpp
     )
+    hexapod_server_add_test(test_hardware_hil_acceptance hardware_hil_acceptance
+        tests/test_hardware_hil_acceptance.cpp
+    )
 
     # control
     hexapod_server_add_test(test_simple_estimator_ground_plane simple_estimator_ground_plane
@@ -397,5 +400,16 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     # diagnostics
     hexapod_server_add_test(test_runtime_diagnostics_reporter runtime_diagnostics_reporter
         tests/test_runtime_diagnostics_reporter.cpp
+    )
+
+    set_tests_properties(
+        scenario_autonomy_outcomes
+        autonomy_supervision_integration
+        progress_recovery
+        PROPERTIES LABELS "fast_sim"
+    )
+    set_tests_properties(
+        hardware_hil_acceptance
+        PROPERTIES LABELS "extended_hil;manual_gate"
     )
 endif()
