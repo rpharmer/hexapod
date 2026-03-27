@@ -194,23 +194,40 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
                 waypoints.append(waypoint)
 
         active_waypoint_index = value.get("active_waypoint_index")
-        current_pose = value.get("current_pose")
-        pose_payload: dict[str, float] | None = None
-        if isinstance(current_pose, dict):
-            px = current_pose.get("x_m")
-            py = current_pose.get("y_m")
-            if _is_number(px) and _is_number(py):
-                pose_payload = {"x_m": float(px), "y_m": float(py)}
-                yaw = current_pose.get("yaw_rad")
-                if _is_number(yaw):
-                    pose_payload["yaw_rad"] = float(yaw)
+        pose_payload = self._sanitize_pose_payload(value.get("current_pose"))
+        localization_payload = self._sanitize_localization_payload(value.get("localization"))
 
         out: dict[str, Any] = {"waypoints": waypoints}
         if isinstance(active_waypoint_index, int):
             out["active_waypoint_index"] = int(active_waypoint_index)
         if pose_payload is not None:
             out["current_pose"] = pose_payload
+        if localization_payload is not None:
+            out["localization"] = localization_payload
         return out
+
+    def _sanitize_pose_payload(self, value: Any) -> dict[str, float] | None:
+        if not isinstance(value, dict):
+            return None
+        px = value.get("x_m") if _is_number(value.get("x_m")) else value.get("x")
+        py = value.get("y_m") if _is_number(value.get("y_m")) else value.get("y")
+        if not (_is_number(px) and _is_number(py)):
+            return None
+        pose_payload: dict[str, float] = {"x_m": float(px), "y_m": float(py)}
+        yaw = value.get("yaw_rad") if _is_number(value.get("yaw_rad")) else value.get("yaw")
+        if not _is_number(yaw):
+            yaw = value.get("z")
+        if _is_number(yaw):
+            pose_payload["yaw_rad"] = float(yaw)
+        return pose_payload
+
+    def _sanitize_localization_payload(self, value: Any) -> dict[str, Any] | None:
+        if not isinstance(value, dict):
+            return None
+        pose_payload = self._sanitize_pose_payload(value.get("current_pose"))
+        if pose_payload is None:
+            return None
+        return {"current_pose": pose_payload}
 
 
 def _is_number(value: Any) -> bool:

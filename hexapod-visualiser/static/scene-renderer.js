@@ -289,6 +289,42 @@ function transformWorldToBodyAnchored(point, poseOffset) {
   };
 }
 
+export function buildGridProbePoints({
+  width,
+  height,
+  scale,
+  poseOffset,
+  gridSpacingMm = 55,
+  groundPlaneZ = -120,
+}) {
+  const visibleRadiusMm = Math.max(width, height) / Math.max(scale, 1e-6);
+  const gridExtentMm = visibleRadiusMm * 1.2;
+  const minWorldX = poseOffset.x - gridExtentMm;
+  const maxWorldX = poseOffset.x + gridExtentMm;
+  const minWorldY = poseOffset.y - gridExtentMm;
+  const maxWorldY = poseOffset.y + gridExtentMm;
+  const firstWorldY = Math.floor(minWorldY / gridSpacingMm) * gridSpacingMm;
+  const firstWorldX = Math.floor(minWorldX / gridSpacingMm) * gridSpacingMm;
+
+  const horizontalStart = transformWorldToBodyAnchored(
+    { x: minWorldX, y: firstWorldY, z: groundPlaneZ },
+    poseOffset,
+  );
+  const horizontalEnd = transformWorldToBodyAnchored(
+    { x: maxWorldX, y: firstWorldY, z: groundPlaneZ },
+    poseOffset,
+  );
+  const verticalStart = transformWorldToBodyAnchored(
+    { x: firstWorldX, y: minWorldY, z: groundPlaneZ },
+    poseOffset,
+  );
+  const verticalEnd = transformWorldToBodyAnchored(
+    { x: firstWorldX, y: maxWorldY, z: groundPlaneZ },
+    poseOffset,
+  );
+  return { horizontalStart, horizontalEnd, verticalStart, verticalEnd };
+}
+
 function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model, poseOffset, groundPlaneZ }) {
   const autonomy = model.autonomy_debug;
   if (!autonomy || !Array.isArray(autonomy.waypoints) || autonomy.waypoints.length === 0) {
