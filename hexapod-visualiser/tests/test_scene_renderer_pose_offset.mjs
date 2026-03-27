@@ -52,3 +52,22 @@ test("resolvePoseOffsetMm dead reckons with wall clock when telemetry timestamp 
   const poseB = resolvePoseOffsetMm(model, deadReckoning, 1_500);
   assert.deepEqual(poseB, { x: 250, y: 0, yaw: 0 });
 });
+
+test("resolvePoseOffsetMm prefers velocity integration when only static body_translation is available", () => {
+  const deadReckoning = { pose: { x: 0, y: 0, yaw: 0 }, lastTimestampMs: null };
+  const model = baseModel({
+    timestamp_ms: 1_000,
+    dynamic_gait: {
+      body_translation_m: { x: 0, y: 0, z: 0 },
+      body_orientation_rad: { x: 0, y: 0, z: 0 },
+      body_linear_velocity_mps: { x: 0.2, y: 0.0, z: 0.0 },
+      body_angular_velocity_radps: { x: 0.0, y: 0.0, z: 0.0 },
+    },
+  });
+
+  const poseA = resolvePoseOffsetMm(model, deadReckoning);
+  assert.deepEqual(poseA, { x: 0, y: 0, yaw: 0 });
+
+  const poseB = resolvePoseOffsetMm({ ...model, timestamp_ms: 1_500 }, deadReckoning);
+  assert.deepEqual(poseB, { x: 50, y: 0, yaw: 0 });
+});

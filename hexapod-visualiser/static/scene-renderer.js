@@ -207,10 +207,25 @@ function resolveVelocityTwist(model) {
 }
 
 export function resolvePoseOffsetMm(model, deadReckoning, nowMs = Date.now()) {
-  const pose = resolveFinitePoseCandidate(
+  const absolutePose = resolveFinitePoseCandidate(
     model.autonomy_debug?.current_pose,
     model.autonomy_debug?.localization?.current_pose,
     model.dynamic_gait?.current_pose,
+  );
+  if (absolutePose) {
+    const resolved = {
+      x: absolutePose.x_m * 1000,
+      y: absolutePose.y_m * 1000,
+      yaw: Number.isFinite(absolutePose.yaw_rad) ? absolutePose.yaw_rad : 0,
+    };
+    deadReckoning.pose = { ...resolved };
+    deadReckoning.lastTimestampMs = Number.isFinite(model.timestamp_ms)
+      ? model.timestamp_ms
+      : (Number.isFinite(nowMs) ? nowMs : null);
+    return resolved;
+  }
+
+  const translationPose = resolveFinitePoseCandidate(
     resolvePoseCandidateFromTranslation(
       model.dynamic_gait?.body_translation_m,
       model.dynamic_gait?.body_orientation_rad,
@@ -220,39 +235,45 @@ export function resolvePoseOffsetMm(model, deadReckoning, nowMs = Date.now()) {
       model.dynamic_gait?.orientation_rad,
     ),
   );
-  if (pose) {
-    const resolved = {
-      x: pose.x_m * 1000,
-      y: pose.y_m * 1000,
-      yaw: Number.isFinite(pose.yaw_rad) ? pose.yaw_rad : 0,
-    };
-    deadReckoning.pose = { ...resolved };
-    deadReckoning.lastTimestampMs = Number.isFinite(model.timestamp_ms)
-      ? model.timestamp_ms
-      : (Number.isFinite(nowMs) ? nowMs : null);
-    return resolved;
-  }
-
   const velocity = resolveVelocityTwist(model);
   const timestampMs = Number.isFinite(model.timestamp_ms)
     ? model.timestamp_ms
     : (Number.isFinite(nowMs) ? nowMs : null);
-  if (!velocity || timestampMs === null) {
+  if (velocity && timestampMs !== null) {
+    if (deadReckoning.lastTimestampMs === null && translationPose) {
+      deadReckoning.pose = {
+        x: translationPose.x_m * 1000,
+        y: translationPose.y_m * 1000,
+        yaw: Number.isFinite(translationPose.yaw_rad) ? translationPose.yaw_rad : deadReckoning.pose.yaw,
+      };
+    }
+
+    if (deadReckoning.lastTimestampMs !== null) {
+      const dtSeconds = Math.max(0, Math.min((timestampMs - deadReckoning.lastTimestampMs) / 1000, 0.25));
+      if (dtSeconds > 0) {
+        const yaw = deadReckoning.pose.yaw;
+        const worldVx = velocity.vx * Math.cos(yaw) - velocity.vy * Math.sin(yaw);
+        const worldVy = velocity.vx * Math.sin(yaw) + velocity.vy * Math.cos(yaw);
+        deadReckoning.pose.x += worldVx * dtSeconds * 1000;
+        deadReckoning.pose.y += worldVy * dtSeconds * 1000;
+        deadReckoning.pose.yaw += velocity.wz * dtSeconds;
+      }
+    }
+    deadReckoning.lastTimestampMs = timestampMs;
     return deadReckoning.pose;
   }
 
-  if (deadReckoning.lastTimestampMs !== null) {
-    const dtSeconds = Math.max(0, Math.min((timestampMs - deadReckoning.lastTimestampMs) / 1000, 0.25));
-    if (dtSeconds > 0) {
-      const yaw = deadReckoning.pose.yaw;
-      const worldVx = velocity.vx * Math.cos(yaw) - velocity.vy * Math.sin(yaw);
-      const worldVy = velocity.vx * Math.sin(yaw) + velocity.vy * Math.cos(yaw);
-      deadReckoning.pose.x += worldVx * dtSeconds * 1000;
-      deadReckoning.pose.y += worldVy * dtSeconds * 1000;
-      deadReckoning.pose.yaw += velocity.wz * dtSeconds;
-    }
+  if (translationPose) {
+    const translated = {
+      x: translationPose.x_m * 1000,
+      y: translationPose.y_m * 1000,
+      yaw: Number.isFinite(translationPose.yaw_rad) ? translationPose.yaw_rad : 0,
+    };
+    deadReckoning.pose = { ...translated };
+    deadReckoning.lastTimestampMs = timestampMs;
+    return translated;
   }
-  deadReckoning.lastTimestampMs = timestampMs;
+
   return deadReckoning.pose;
 }
 
