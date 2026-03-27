@@ -59,7 +59,7 @@ bool testAllShellsLifecycleAndIdentity() {
         if (!expect(module->step(1000), "step should succeed")) {
             return false;
         }
-        if (!expect(module->health().heartbeat_timestamp_ms == 1000, "step should set heartbeat")) {
+        if (!expect(module->health().heartbeat_timestamp_ms.value == 1000, "step should set heartbeat")) {
             return false;
         }
         module->stop();
@@ -79,7 +79,7 @@ bool testLocalizationAdapterNominalEstimatorPropagation() {
     const auto estimate = localization.update(observation, /*now_ms=*/20);
     return expect(estimate.valid, "nominal estimator observation should produce a valid localization estimate") &&
            expect(estimate.frame_id == "map", "nominal estimate should keep the map frame") &&
-           expect(estimate.timestamp_ms == 10, "nominal estimate should propagate estimator timestamp") &&
+           expect(estimate.timestamp_ms.value == 10, "nominal estimate should propagate estimator timestamp") &&
            expect(estimate.x_m == 1.25 && estimate.y_m == -0.5 && estimate.yaw_rad == 0.75,
                   "nominal estimate should propagate estimator pose");
 }
@@ -313,6 +313,11 @@ bool testPlannerReachableBlockedAndDegradedFlows() {
     if (!expect(local_reachable.status == autonomy::PlannerStatus::Ready, "reachable local plan should be ready")) {
         return false;
     }
+    if (!expect(local_reachable.target.x_m != reachable.route.front().x_m ||
+                    local_reachable.target.y_m != reachable.route.front().y_m,
+                "local short horizon target should not always be the first waypoint")) {
+        return false;
+    }
 
     const auto blocked_global = global_planner.plan(nav_update, autonomy::TraversabilityReport{
                                                                     .traversable = false,
@@ -366,6 +371,108 @@ bool testPlannerReachableBlockedAndDegradedFlows() {
                 "stale planning should mark local plan stale")) {
         return false;
     }
+
+    const auto replanned_after_unblock = global_planner.plan(nav_update, autonomy::TraversabilityReport{
+                                                                          .traversable = true,
+                                                                          .cost = 0.15,
+                                                                          .risk = 0.15,
+                                                                          .timestamp_ms = 1600,
+                                                                      });
+    if (!expect(replanned_after_unblock.has_plan, "unblocked traversability should trigger replanning")) {
+        return false;
+    }
+    if (!expect(replanned_after_unblock.status == autonomy::PlannerStatus::Ready,
+                "replanned route after unblock should return to ready status")) {
+        return false;
+    }
+    if (!expect(replanned_after_unblock.reason == "route-ready",
+                "replanned route should keep stable ready telemetry reason")) {
+        return false;
+    }
+    return true;
+}
+
+bool testPlannerNoIntentUnsafeAndStaleNoFallback() {
+    autonomy::GlobalPlannerModuleShell global_planner;
+    autonomy::LocalPlannerModuleShell local_planner;
+
+    const auto no_intent = global_planner.plan(autonomy::NavigationUpdate{},
+                                               autonomy::TraversabilityReport{
+                                                   .traversable = true,
+                                                   .cost = 0.2,
+                                                   .timestamp_ms = 50,
+                                               });
+    if (!expect(!no_intent.has_plan, "missing navigation intent should not produce global plan")) {
+        return false;
+    }
+    if (!expect(no_intent.status == autonomy::PlannerStatus::NoPlan,
+                "missing navigation intent should surface no-plan status")) {
+        return false;
+    }
+    if (!expect(no_intent.reason == "no-navigation-intent",
+                "missing navigation intent should preserve no-intent reason")) {
+        return false;
+    }
+
+    const auto local_no_intent = local_planner.plan(no_intent, false, 100);
+    if (!expect(local_no_intent.status == autonomy::PlannerStatus::NoPlan,
+                "no-intent global plan should map to no-plan local status")) {
+        return false;
+    }
+    if (!expect(local_no_intent.reason == "no-navigation-intent",
+                "no-intent local plan should preserve telemetry reason")) {
+        return false;
+    }
+
+    const autonomy::NavigationUpdate nav_update{
+        .has_intent = true,
+        .intent = autonomy::NavigationIntent{
+            .mission_id = "unsafe-terrain",
+            .waypoint_index = 0,
+            .target = autonomy::Waypoint{.frame_id = "map", .x_m = 2.0, .y_m = 1.0, .yaw_rad = 0.0},
+        },
+        .status = autonomy::NavigationStatus::Active,
+        .reason = {},
+    };
+    const auto unsafe_plan = global_planner.plan(nav_update, autonomy::TraversabilityReport{
+                                                                 .traversable = true,
+                                                                 .cost = 0.99,
+                                                                 .risk = 0.9,
+                                                                 .timestamp_ms = 120,
+                                                             });
+    if (!expect(!unsafe_plan.has_plan, "unsafe terrain constraints should suppress global plan")) {
+        return false;
+    }
+    if (!expect(unsafe_plan.status == autonomy::PlannerStatus::UnsafePlan,
+                "unsafe terrain constraints should report unsafe status")) {
+        return false;
+    }
+    if (!expect(unsafe_plan.reason == "unsafe-traversability",
+                "unsafe terrain constraints should preserve telemetry reason")) {
+        return false;
+    }
+
+    const autonomy::GlobalPlan stale_plan{
+        .has_plan = true,
+        .target = autonomy::Waypoint{.frame_id = "map", .x_m = 1.0, .y_m = 0.0, .yaw_rad = 0.0},
+        .route = {autonomy::Waypoint{.frame_id = "map", .x_m = 0.2, .y_m = 0.0, .yaw_rad = 0.0}},
+        .cost = 0.5,
+        .status = autonomy::PlannerStatus::Ready,
+        .reason = "route-ready",
+        .source_timestamp_ms = 200,
+    };
+    const auto stale_without_fallback = autonomy::LocalPlannerModuleShell{}.plan(stale_plan, false, 2000);
+    if (!expect(!stale_without_fallback.has_command, "stale plan without prior command should not emit target")) {
+        return false;
+    }
+    if (!expect(stale_without_fallback.status == autonomy::PlannerStatus::StalePlan,
+                "stale plan should report stale status")) {
+        return false;
+    }
+    if (!expect(stale_without_fallback.reason == "stale-global-plan-no-fallback",
+                "stale plan without prior command should keep stable fallback reason")) {
+        return false;
+    }
     return true;
 }
 
@@ -379,7 +486,8 @@ int main() {
         !testAllShellsFunctionalWiring() ||
         !testLocomotionShellDispatchSinkOutcomes() ||
         !testTerrainRiskInputsAffectPlanning() ||
-        !testPlannerReachableBlockedAndDegradedFlows()) {
+        !testPlannerReachableBlockedAndDegradedFlows() ||
+        !testPlannerNoIntentUnsafeAndStaleNoFallback()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
