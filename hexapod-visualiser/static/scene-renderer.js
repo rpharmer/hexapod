@@ -148,13 +148,30 @@ function resolveActiveWaypointDistanceM(model) {
   return Math.hypot(active.x_m - pose.x_m, active.y_m - pose.y_m);
 }
 
+function normalizePoseCandidate(candidate) {
+  if (!candidate) {
+    return null;
+  }
+  const x = Number.isFinite(candidate.x_m) ? candidate.x_m : candidate.x;
+  const y = Number.isFinite(candidate.y_m) ? candidate.y_m : candidate.y;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return null;
+  }
+
+  const yaw = Number.isFinite(candidate.yaw_rad)
+    ? candidate.yaw_rad
+    : Number.isFinite(candidate.yaw)
+      ? candidate.yaw
+      : candidate.z;
+
+  return { x_m: x, y_m: y, yaw_rad: Number.isFinite(yaw) ? yaw : 0 };
+}
+
 function resolveFinitePoseCandidate(...candidates) {
   for (const candidate of candidates) {
-    if (!candidate) {
-      continue;
-    }
-    if (Number.isFinite(candidate.x_m) && Number.isFinite(candidate.y_m)) {
-      return candidate;
+    const normalized = normalizePoseCandidate(candidate);
+    if (normalized) {
+      return normalized;
     }
   }
   return null;
@@ -164,13 +181,16 @@ function resolvePoseCandidateFromTranslation(translation, orientation) {
   if (!translation) {
     return null;
   }
-  const x = Number.isFinite(translation.x_m) ? translation.x_m : translation.x;
-  const y = Number.isFinite(translation.y_m) ? translation.y_m : translation.y;
-  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+  const candidate = normalizePoseCandidate(translation);
+  if (!candidate) {
     return null;
   }
-  const yaw = Number.isFinite(orientation?.yaw_rad) ? orientation.yaw_rad : orientation?.z;
-  return { x_m: x, y_m: y, yaw_rad: Number.isFinite(yaw) ? yaw : 0 };
+  const yaw = Number.isFinite(orientation?.yaw_rad)
+    ? orientation.yaw_rad
+    : Number.isFinite(orientation?.yaw)
+      ? orientation.yaw
+      : orientation?.z;
+  return { x_m: candidate.x_m, y_m: candidate.y_m, yaw_rad: Number.isFinite(yaw) ? yaw : candidate.yaw_rad };
 }
 
 function resolveVelocityTwist(model) {
