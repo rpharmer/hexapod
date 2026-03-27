@@ -152,6 +152,11 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
             self.state.dynamic_gait = message["dynamic_gait"]
             changed = True
 
+        autonomy_debug = self._sanitize_autonomy_debug(message.get("autonomy_debug"))
+        if autonomy_debug is not None:
+            self.state.autonomy_debug = autonomy_debug
+            changed = True
+
         return changed
 
     def _sanitize_geometry_update(self, geometry: dict[str, Any], *, source: str) -> dict[str, float]:
@@ -167,6 +172,45 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
             if _is_number(value):
                 sanitized[key] = float(value)
         return sanitized
+
+    def _sanitize_autonomy_debug(self, value: Any) -> dict[str, Any] | None:
+        if not isinstance(value, dict):
+            return None
+
+        waypoints_raw = value.get("waypoints")
+        waypoints: list[dict[str, float]] = []
+        if isinstance(waypoints_raw, list):
+            for item in waypoints_raw:
+                if not isinstance(item, dict):
+                    continue
+                x_m = item.get("x_m")
+                y_m = item.get("y_m")
+                if not (_is_number(x_m) and _is_number(y_m)):
+                    continue
+                waypoint = {"x_m": float(x_m), "y_m": float(y_m)}
+                yaw_rad = item.get("yaw_rad")
+                if _is_number(yaw_rad):
+                    waypoint["yaw_rad"] = float(yaw_rad)
+                waypoints.append(waypoint)
+
+        active_waypoint_index = value.get("active_waypoint_index")
+        current_pose = value.get("current_pose")
+        pose_payload: dict[str, float] | None = None
+        if isinstance(current_pose, dict):
+            px = current_pose.get("x_m")
+            py = current_pose.get("y_m")
+            if _is_number(px) and _is_number(py):
+                pose_payload = {"x_m": float(px), "y_m": float(py)}
+                yaw = current_pose.get("yaw_rad")
+                if _is_number(yaw):
+                    pose_payload["yaw_rad"] = float(yaw)
+
+        out: dict[str, Any] = {"waypoints": waypoints}
+        if isinstance(active_waypoint_index, int):
+            out["active_waypoint_index"] = int(active_waypoint_index)
+        if pose_payload is not None:
+            out["current_pose"] = pose_payload
+        return out
 
 
 def _is_number(value: Any) -> bool:

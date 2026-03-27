@@ -147,6 +147,26 @@ You can send partial updates or full state.
 }
 ```
 
+### Optional autonomy debug overlay payload
+
+Include `autonomy_debug` in any schema-v1 packet to render mission waypoints and live pose hints in the browser:
+
+```json
+{
+  "schema_version": 1,
+  "type": "state",
+  "timestamp_ms": 1712345678910,
+  "autonomy_debug": {
+    "waypoints": [
+      { "x_m": 0.0, "y_m": 0.0, "yaw_rad": 0.0 },
+      { "x_m": 1.2, "y_m": -0.4, "yaw_rad": -0.3 }
+    ],
+    "active_waypoint_index": 1,
+    "current_pose": { "x_m": 0.8, "y_m": -0.1, "yaw_rad": -0.2 }
+  }
+}
+```
+
 Leg keys expected: `LF`, `LM`, `LR`, `RF`, `RM`, `RR`.
 `schema_version` is required and must currently be `1`.
 

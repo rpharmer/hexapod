@@ -20,6 +20,15 @@ const modelRef = {
     geometry: { ...DEFAULT_GEOMETRY },
     angles_deg: { ...DEFAULT_ANGLES_DEG },
     timestamp_ms: null,
+    active_mode: null,
+    active_fault: null,
+    bus_ok: null,
+    estimator_valid: null,
+    loop_counter: null,
+    voltage: null,
+    current: null,
+    dynamic_gait: null,
+    autonomy_debug: null,
   },
 };
 

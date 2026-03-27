@@ -105,6 +105,7 @@ class TelemetryState:
     voltage: float | None = None
     current: float | None = None
     dynamic_gait: dict[str, Any] | None = None
+    autonomy_debug: dict[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -120,6 +121,7 @@ class TelemetryState:
             "voltage": self.voltage,
             "current": self.current,
             "dynamic_gait": self.dynamic_gait,
+            "autonomy_debug": self.autonomy_debug,
         }
 
 
