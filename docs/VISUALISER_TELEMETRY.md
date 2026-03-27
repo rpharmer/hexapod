@@ -94,7 +94,7 @@ WebSocket payloads emitted by `TelemetryState.to_payload` include:
 | `loop_counter` | integer or `null` | yes | control loop counter when present |
 | `voltage` | number or `null` | yes | power bus voltage when present |
 | `current` | number or `null` | yes | power bus current when present |
-| `dynamic_gait` | object or `null` | yes | dynamic gait internals (family/region/fallback/envelope/per-leg phase+duty+stance) for tuning + safety validation |
+| `dynamic_gait` | object or `null` | yes | dynamic gait internals (family/region/fallback/envelope/per-leg phase+duty+stance) and body velocity vectors (`body_linear_velocity_mps`, `body_angular_velocity_radps`) for tuning + visual dead-reckoning |
 | `autonomy_debug` | object or `null` | yes | optional autonomy mission-debug payload (waypoints, active waypoint index, current pose) for route/mission visual overlays |
 
 Optionality semantics:

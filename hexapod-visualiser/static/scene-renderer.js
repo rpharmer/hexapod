@@ -160,16 +160,55 @@ function resolveFinitePoseCandidate(...candidates) {
   return null;
 }
 
-function resolvePoseOffsetMm(model) {
+function resolveVelocityTwist(model) {
+  const linear = model.dynamic_gait?.body_linear_velocity_mps;
+  const angular = model.dynamic_gait?.body_angular_velocity_radps;
+  if (!linear && !angular) {
+    return null;
+  }
+  return {
+    vx: Number.isFinite(linear?.x) ? linear.x : 0,
+    vy: Number.isFinite(linear?.y) ? linear.y : 0,
+    wz: Number.isFinite(angular?.z) ? angular.z : 0,
+  };
+}
+
+function resolvePoseOffsetMm(model, deadReckoning) {
   const pose = resolveFinitePoseCandidate(
     model.autonomy_debug?.current_pose,
     model.autonomy_debug?.localization?.current_pose,
     model.dynamic_gait?.current_pose,
   );
-  const x = Number.isFinite(pose?.x_m) ? pose.x_m * 1000 : 0;
-  const y = Number.isFinite(pose?.y_m) ? pose.y_m * 1000 : 0;
-  const yaw = Number.isFinite(pose?.yaw_rad) ? pose.yaw_rad : 0;
-  return { x, y, yaw };
+  if (pose) {
+    const resolved = {
+      x: pose.x_m * 1000,
+      y: pose.y_m * 1000,
+      yaw: Number.isFinite(pose.yaw_rad) ? pose.yaw_rad : 0,
+    };
+    deadReckoning.pose = { ...resolved };
+    deadReckoning.lastTimestampMs = Number.isFinite(model.timestamp_ms) ? model.timestamp_ms : null;
+    return resolved;
+  }
+
+  const velocity = resolveVelocityTwist(model);
+  const timestampMs = Number.isFinite(model.timestamp_ms) ? model.timestamp_ms : null;
+  if (!velocity || timestampMs === null) {
+    return deadReckoning.pose;
+  }
+
+  if (deadReckoning.lastTimestampMs !== null) {
+    const dtSeconds = Math.max(0, Math.min((timestampMs - deadReckoning.lastTimestampMs) / 1000, 0.25));
+    if (dtSeconds > 0) {
+      const yaw = deadReckoning.pose.yaw;
+      const worldVx = velocity.vx * Math.cos(yaw) - velocity.vy * Math.sin(yaw);
+      const worldVy = velocity.vx * Math.sin(yaw) + velocity.vy * Math.cos(yaw);
+      deadReckoning.pose.x += worldVx * dtSeconds * 1000;
+      deadReckoning.pose.y += worldVy * dtSeconds * 1000;
+      deadReckoning.pose.yaw += velocity.wz * dtSeconds;
+    }
+  }
+  deadReckoning.lastTimestampMs = timestampMs;
+  return deadReckoning.pose;
 }
 
 function transformWorldToBodyAnchored(point, poseOffset) {
@@ -295,6 +334,10 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model,
 
 export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rollingMetricsEl, modelRef, telemetry }) {
   let stableGroundPlaneZ = Number.NaN;
+  const deadReckoning = {
+    pose: { x: 0, y: 0, yaw: 0 },
+    lastTimestampMs: null,
+  };
 
   function resize() {
     const ratio = window.devicePixelRatio || 1;
@@ -312,7 +355,7 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     const scale = (Math.min(width, height) / 420) * camera.zoom;
     const centerX = width * 0.5 + camera.panX;
     const centerY = height * 0.58 + camera.panY;
-    const poseOffset = resolvePoseOffsetMm(model);
+    const poseOffset = resolvePoseOffsetMm(model, deadReckoning);
     const gridSpacingMm = 55;
     const kinematics = LEG_ORDER.map((legName) => ({
       legName,

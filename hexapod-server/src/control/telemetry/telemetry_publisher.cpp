@@ -186,6 +186,16 @@ public:
                 << "\"fallback_stage\":\"" << fallbackStageToString(telemetry.status.dynamic_gait.fallback_stage) << "\","
                 << "\"cadence_hz\":" << telemetry.status.dynamic_gait.cadence_hz << ","
                 << "\"reach_utilization\":" << telemetry.status.dynamic_gait.reach_utilization << ","
+                << "\"body_linear_velocity_mps\":{"
+                << "\"x\":" << telemetry.estimated_state.body_pose_state.body_trans_mps.x << ","
+                << "\"y\":" << telemetry.estimated_state.body_pose_state.body_trans_mps.y << ","
+                << "\"z\":" << telemetry.estimated_state.body_pose_state.body_trans_mps.z
+                << "},"
+                << "\"body_angular_velocity_radps\":{"
+                << "\"x\":" << telemetry.estimated_state.body_pose_state.angular_velocity_radps.x << ","
+                << "\"y\":" << telemetry.estimated_state.body_pose_state.angular_velocity_radps.y << ","
+                << "\"z\":" << telemetry.estimated_state.body_pose_state.angular_velocity_radps.z
+                << "},"
                 << "\"suppress_stride_progression\":"
                 << (telemetry.status.dynamic_gait.suppress_stride_progression ? "true" : "false") << ","
                 << "\"suppress_turning\":"
