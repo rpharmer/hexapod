@@ -16,6 +16,12 @@ namespace telemetry {
 namespace {
 
 constexpr double kRadToDeg = 180.0 / 3.14159265358979323846;
+constexpr double kFallbackMaxDtSeconds = 0.25;
+constexpr double kFallbackLongPauseResetSeconds = 1.0;
+
+bool isFiniteOrZero(const double value) {
+    return std::isfinite(value);
+}
 
 class NoopTelemetryPublisher final : public ITelemetryPublisher {
 public:
@@ -155,39 +161,69 @@ public:
         }
 
         const double timestamp_us = static_cast<double>(telemetry.timestamp_us.value);
-        if (last_odometry_timestamp_us_ <= 0.0) {
-            last_odometry_timestamp_us_ = timestamp_us;
+        const bool should_reset_for_idle = telemetry.status.active_mode == RobotMode::SAFE_IDLE;
+        if (should_reset_for_idle) {
+            resetFallbackOdometry(timestamp_us);
         }
-        const double dt_seconds =
-            std::clamp((timestamp_us - last_odometry_timestamp_us_) * 1e-6, 0.0, 0.25);
-        last_odometry_timestamp_us_ = timestamp_us;
 
-        const double estimated_vx = telemetry.estimated_state.body_pose_state.body_trans_mps.x;
-        const double estimated_vy = telemetry.estimated_state.body_pose_state.body_trans_mps.y;
-        const bool has_estimated_planar_velocity =
-            std::isfinite(estimated_vx) && std::isfinite(estimated_vy) &&
-            (std::abs(estimated_vx) > 1e-6 || std::abs(estimated_vy) > 1e-6);
+        bool should_integrate = true;
+        if (!std::isfinite(timestamp_us) || timestamp_us <= 0.0) {
+            resetFallbackOdometry(0.0);
+            should_integrate = false;
+        }
 
-        const double intent_speed_mps = telemetry.motion_intent.speed_mps.value;
-        const double intent_heading_rad = telemetry.motion_intent.heading_rad.value;
-        const double body_vx_mps = has_estimated_planar_velocity
-                                       ? estimated_vx
-                                       : (intent_speed_mps * std::cos(intent_heading_rad));
-        const double body_vy_mps = has_estimated_planar_velocity
-                                       ? estimated_vy
-                                       : (intent_speed_mps * std::sin(intent_heading_rad));
-        const double yaw_rad = odometry_pose_yaw_rad_;
-        const double world_vx_mps =
-            (body_vx_mps * std::cos(yaw_rad)) - (body_vy_mps * std::sin(yaw_rad));
-        const double world_vy_mps =
-            (body_vx_mps * std::sin(yaw_rad)) + (body_vy_mps * std::cos(yaw_rad));
+        double dt_seconds = 0.0;
+        if (should_integrate) {
+            if (last_odometry_timestamp_us_ <= 0.0) {
+                last_odometry_timestamp_us_ = timestamp_us;
+                should_integrate = false;
+            } else {
+                dt_seconds = (timestamp_us - last_odometry_timestamp_us_) * 1e-6;
+                if (!std::isfinite(dt_seconds) || dt_seconds < 0.0 || dt_seconds > kFallbackLongPauseResetSeconds) {
+                    resetFallbackOdometry(timestamp_us);
+                    should_integrate = false;
+                } else {
+                    dt_seconds = std::clamp(dt_seconds, 0.0, kFallbackMaxDtSeconds);
+                    last_odometry_timestamp_us_ = timestamp_us;
+                }
+            }
+        }
 
-        odometry_pose_x_m_ += world_vx_mps * dt_seconds;
-        odometry_pose_y_m_ += world_vy_mps * dt_seconds;
+        if (should_integrate && dt_seconds > 0.0) {
+            const double estimated_vx = telemetry.estimated_state.body_pose_state.body_trans_mps.x;
+            const double estimated_vy = telemetry.estimated_state.body_pose_state.body_trans_mps.y;
+            const bool has_estimated_planar_velocity =
+                isFiniteOrZero(estimated_vx) && isFiniteOrZero(estimated_vy) &&
+                (std::abs(estimated_vx) > 1e-6 || std::abs(estimated_vy) > 1e-6);
 
-        const double yaw_rate_radps = telemetry.estimated_state.body_pose_state.angular_velocity_radps.z;
-        if (std::isfinite(yaw_rate_radps)) {
-            odometry_pose_yaw_rad_ += yaw_rate_radps * dt_seconds;
+            const double intent_speed_mps = telemetry.motion_intent.speed_mps.value;
+            const double intent_heading_rad = telemetry.motion_intent.heading_rad.value;
+            const bool has_finite_intent = isFiniteOrZero(intent_speed_mps) && isFiniteOrZero(intent_heading_rad);
+            const double body_vx_mps = has_estimated_planar_velocity
+                                           ? estimated_vx
+                                           : (has_finite_intent ? (intent_speed_mps * std::cos(intent_heading_rad)) : 0.0);
+            const double body_vy_mps = has_estimated_planar_velocity
+                                           ? estimated_vy
+                                           : (has_finite_intent ? (intent_speed_mps * std::sin(intent_heading_rad)) : 0.0);
+
+            // Frame convention:
+            //  - body_vx/body_vy are body-frame planar velocities (x forward, y left).
+            //  - we rotate body velocities into the world/odom frame using the *current* fallback yaw.
+            //  - position integrates world-frame velocity; yaw integrates body yaw-rate.
+            const double yaw_rad = odometry_pose_yaw_rad_;
+            if (isFiniteOrZero(yaw_rad) && isFiniteOrZero(body_vx_mps) && isFiniteOrZero(body_vy_mps)) {
+                const double world_vx_mps =
+                    (body_vx_mps * std::cos(yaw_rad)) - (body_vy_mps * std::sin(yaw_rad));
+                const double world_vy_mps =
+                    (body_vx_mps * std::sin(yaw_rad)) + (body_vy_mps * std::cos(yaw_rad));
+                odometry_pose_x_m_ += world_vx_mps * dt_seconds;
+                odometry_pose_y_m_ += world_vy_mps * dt_seconds;
+            }
+
+            const double yaw_rate_radps = telemetry.estimated_state.body_pose_state.angular_velocity_radps.z;
+            if (isFiniteOrZero(yaw_rate_radps) && isFiniteOrZero(odometry_pose_yaw_rad_)) {
+                odometry_pose_yaw_rad_ += yaw_rate_radps * dt_seconds;
+            }
         }
 
         std::ostringstream payload;
@@ -339,6 +375,13 @@ public:
     }
 
 private:
+    void resetFallbackOdometry(const double timestamp_us) {
+        odometry_pose_x_m_ = 0.0;
+        odometry_pose_y_m_ = 0.0;
+        odometry_pose_yaw_rad_ = 0.0;
+        last_odometry_timestamp_us_ = timestamp_us;
+    }
+
     void send(const std::string& payload) {
         const ssize_t sent = ::sendto(socket_fd_,
                                       payload.data(),
