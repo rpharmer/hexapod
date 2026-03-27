@@ -206,6 +206,18 @@ public:
                 << "\"y\":" << telemetry.estimated_state.body_pose_state.angular_velocity_radps.y << ","
                 << "\"z\":" << telemetry.estimated_state.body_pose_state.angular_velocity_radps.z
                 << "},"
+                << "\"commanded_body_velocity_mps\":{"
+                << "\"x\":" << telemetry.motion_intent.body_pose_setpoint.body_trans_mps.x << ","
+                << "\"y\":" << telemetry.motion_intent.body_pose_setpoint.body_trans_mps.y << ","
+                << "\"z\":" << telemetry.motion_intent.body_pose_setpoint.body_trans_mps.z
+                << "},"
+                << "\"commanded_body_angular_velocity_radps\":{"
+                << "\"x\":" << telemetry.motion_intent.body_pose_setpoint.angular_velocity_radps.x << ","
+                << "\"y\":" << telemetry.motion_intent.body_pose_setpoint.angular_velocity_radps.y << ","
+                << "\"z\":" << telemetry.motion_intent.body_pose_setpoint.angular_velocity_radps.z
+                << "},"
+                << "\"commanded_speed_mps\":" << telemetry.motion_intent.speed_mps.value << ","
+                << "\"commanded_heading_rad\":" << telemetry.motion_intent.heading_rad.value << ","
                 << "\"suppress_stride_progression\":"
                 << (telemetry.status.dynamic_gait.suppress_stride_progression ? "true" : "false") << ","
                 << "\"suppress_turning\":"

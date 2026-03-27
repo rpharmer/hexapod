@@ -24,6 +24,7 @@ struct TelemetryPublisherConfig {
 
 struct ControlStepTelemetry {
     RobotState estimated_state{};
+    MotionIntent motion_intent{};
     JointTargets joint_targets{};
     ControlStatus status{};
     TimePointUs timestamp_us{};

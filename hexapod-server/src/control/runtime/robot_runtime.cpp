@@ -270,6 +270,7 @@ void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
 
     telemetry::ControlStepTelemetry telemetry_sample{};
     telemetry_sample.estimated_state = estimated_state_.read();
+    telemetry_sample.motion_intent = motion_intent_.read();
     telemetry_sample.joint_targets = joint_targets_.read();
     telemetry_sample.status = status_.read();
     telemetry_sample.timestamp_us = now;
