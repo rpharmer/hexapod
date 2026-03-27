@@ -79,6 +79,19 @@ GaitDynamicObservedSafetyFaultsPerHour = 0.0
 GaitDynamicMinStabilityMarginM = 0.015
 GaitDynamicObservedMinStabilityMarginM = 0.0
 
+[motion_limiter]
+body_linear_accel_limit_xy_mps2 = 0.6
+body_linear_accel_limit_z_mps2 = 0.4
+body_angular_accel_limit_x_radps2 = 1.2
+body_angular_accel_limit_y_radps2 = 1.2
+body_angular_accel_limit_z_radps2 = 1.5
+foot_velocity_limit_mps = 0.30
+foot_accel_limit_mps2 = 1.0
+joint_soft_velocity_limit_radps = 5.0
+joint_soft_accel_limit_radps2 = 30.0
+startup_phase_threshold_ms = 350
+shutdown_phase_threshold_ms = 450
+
 [Geometry]
 CoxaLengthM = 0.043
 FemurLengthM = 0.060

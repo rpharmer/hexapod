@@ -189,6 +189,40 @@ void parseTuningSection(const toml::value& root,
     out.minFootContacts = control_config::kDefaultMinFootContacts;
     out.maxFootContacts = control_config::kDefaultMaxFootContacts;
   }
+
+  out.motionBodyLinearAccelLimitXYMps2 = config_validation::parseDoubleWithFallback(
+      root, "motion_limiter.body_linear_accel_limit_xy_mps2",
+      control_config::kDefaultMotionBodyLinearAccelLimitXYMps2, 0.01, 20.0, "tuning", logger);
+  out.motionBodyLinearAccelLimitZMps2 = config_validation::parseDoubleWithFallback(
+      root, "motion_limiter.body_linear_accel_limit_z_mps2",
+      control_config::kDefaultMotionBodyLinearAccelLimitZMps2, 0.01, 20.0, "tuning", logger);
+  out.motionBodyAngularAccelLimitXRadps2 = config_validation::parseDoubleWithFallback(
+      root, "motion_limiter.body_angular_accel_limit_x_radps2",
+      control_config::kDefaultMotionBodyAngularAccelLimitXRadps2, 0.01, 100.0, "tuning", logger);
+  out.motionBodyAngularAccelLimitYRadps2 = config_validation::parseDoubleWithFallback(
+      root, "motion_limiter.body_angular_accel_limit_y_radps2",
+      control_config::kDefaultMotionBodyAngularAccelLimitYRadps2, 0.01, 100.0, "tuning", logger);
+  out.motionBodyAngularAccelLimitZRadps2 = config_validation::parseDoubleWithFallback(
+      root, "motion_limiter.body_angular_accel_limit_z_radps2",
+      control_config::kDefaultMotionBodyAngularAccelLimitZRadps2, 0.01, 100.0, "tuning", logger);
+  out.motionFootVelocityLimitMps = config_validation::parseDoubleWithFallback(
+      root, "motion_limiter.foot_velocity_limit_mps",
+      control_config::kDefaultMotionFootVelocityLimitMps, 0.01, 5.0, "tuning", logger);
+  out.motionFootAccelLimitMps2 = config_validation::parseDoubleWithFallback(
+      root, "motion_limiter.foot_accel_limit_mps2",
+      control_config::kDefaultMotionFootAccelLimitMps2, 0.01, 50.0, "tuning", logger);
+  out.motionJointSoftVelocityLimitRadps = config_validation::parseDoubleWithFallback(
+      root, "motion_limiter.joint_soft_velocity_limit_radps",
+      control_config::kDefaultMotionJointSoftVelocityLimitRadps, 0.01, 100.0, "tuning", logger);
+  out.motionJointSoftAccelLimitRadps2 = config_validation::parseDoubleWithFallback(
+      root, "motion_limiter.joint_soft_accel_limit_radps2",
+      control_config::kDefaultMotionJointSoftAccelLimitRadps2, 0.01, 1000.0, "tuning", logger);
+  out.motionStartupPhaseThresholdMs = config_validation::parseIntWithFallback(
+      root, "motion_limiter.startup_phase_threshold_ms",
+      control_config::kDefaultMotionStartupPhaseThresholdMs, 0, 60000, "tuning", logger);
+  out.motionShutdownPhaseThresholdMs = config_validation::parseIntWithFallback(
+      root, "motion_limiter.shutdown_phase_threshold_ms",
+      control_config::kDefaultMotionShutdownPhaseThresholdMs, 0, 60000, "tuning", logger);
 }
 
 } // namespace tuning_section_parser

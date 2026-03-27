@@ -105,6 +105,17 @@ struct ParsedToml
   double maxBusCurrentA{25.0};
   int minFootContacts{0};
   int maxFootContacts{kNumLegs};
+  double motionBodyLinearAccelLimitXYMps2{0.6};
+  double motionBodyLinearAccelLimitZMps2{0.4};
+  double motionBodyAngularAccelLimitXRadps2{1.2};
+  double motionBodyAngularAccelLimitYRadps2{1.2};
+  double motionBodyAngularAccelLimitZRadps2{1.5};
+  double motionFootVelocityLimitMps{0.30};
+  double motionFootAccelLimitMps2{1.0};
+  double motionJointSoftVelocityLimitRadps{5.0};
+  double motionJointSoftAccelLimitRadps2{30.0};
+  int motionStartupPhaseThresholdMs{350};
+  int motionShutdownPhaseThresholdMs{450};
 
   double coxaLengthM{0.043};
   double femurLengthM{0.060};
