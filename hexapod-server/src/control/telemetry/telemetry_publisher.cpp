@@ -2,6 +2,7 @@
 #include "autonomy/mission_executive.hpp"
 
 #include <arpa/inet.h>
+#include <algorithm>
 #include <cerrno>
 #include <cmath>
 #include <cstring>
@@ -153,6 +154,42 @@ public:
             return;
         }
 
+        const double timestamp_us = static_cast<double>(telemetry.timestamp_us.value);
+        if (last_odometry_timestamp_us_ <= 0.0) {
+            last_odometry_timestamp_us_ = timestamp_us;
+        }
+        const double dt_seconds =
+            std::clamp((timestamp_us - last_odometry_timestamp_us_) * 1e-6, 0.0, 0.25);
+        last_odometry_timestamp_us_ = timestamp_us;
+
+        const double estimated_vx = telemetry.estimated_state.body_pose_state.body_trans_mps.x;
+        const double estimated_vy = telemetry.estimated_state.body_pose_state.body_trans_mps.y;
+        const bool has_estimated_planar_velocity =
+            std::isfinite(estimated_vx) && std::isfinite(estimated_vy) &&
+            (std::abs(estimated_vx) > 1e-6 || std::abs(estimated_vy) > 1e-6);
+
+        const double intent_speed_mps = telemetry.motion_intent.speed_mps.value;
+        const double intent_heading_rad = telemetry.motion_intent.heading_rad.value;
+        const double body_vx_mps = has_estimated_planar_velocity
+                                       ? estimated_vx
+                                       : (intent_speed_mps * std::cos(intent_heading_rad));
+        const double body_vy_mps = has_estimated_planar_velocity
+                                       ? estimated_vy
+                                       : (intent_speed_mps * std::sin(intent_heading_rad));
+        const double yaw_rad = odometry_pose_yaw_rad_;
+        const double world_vx_mps =
+            (body_vx_mps * std::cos(yaw_rad)) - (body_vy_mps * std::sin(yaw_rad));
+        const double world_vy_mps =
+            (body_vx_mps * std::sin(yaw_rad)) + (body_vy_mps * std::cos(yaw_rad));
+
+        odometry_pose_x_m_ += world_vx_mps * dt_seconds;
+        odometry_pose_y_m_ += world_vy_mps * dt_seconds;
+
+        const double yaw_rate_radps = telemetry.estimated_state.body_pose_state.angular_velocity_radps.z;
+        if (std::isfinite(yaw_rate_radps)) {
+            odometry_pose_yaw_rad_ += yaw_rate_radps * dt_seconds;
+        }
+
         std::ostringstream payload;
         payload << "{\"type\":\"joints\",\"schema_version\":1,"
                 << "\"timestamp_ms\":" << (telemetry.timestamp_us.value / 1000ULL) << ","
@@ -252,7 +289,38 @@ public:
                 << (telemetry.status.dynamic_gait.leg_in_stance[3] ? "true" : "false") << ','
                 << (telemetry.status.dynamic_gait.leg_in_stance[4] ? "true" : "false") << ','
                 << (telemetry.status.dynamic_gait.leg_in_stance[5] ? "true" : "false")
-                << "]},"
+                << "]},";
+
+        payload << "\"autonomy_debug\":{";
+        if (telemetry.autonomy_debug.localization_pose.has_value()) {
+            const auto& pose = *telemetry.autonomy_debug.localization_pose;
+            payload << "\"current_pose\":{"
+                    << "\"x_m\":" << pose.x_m << ","
+                    << "\"y_m\":" << pose.y_m << ","
+                    << "\"yaw_rad\":" << pose.yaw_rad
+                    << "},"
+                    << "\"localization\":{"
+                    << "\"frame_id\":\"" << pose.frame_id << "\","
+                    << "\"current_pose\":{"
+                    << "\"x_m\":" << pose.x_m << ","
+                    << "\"y_m\":" << pose.y_m << ","
+                    << "\"yaw_rad\":" << pose.yaw_rad
+                    << "}}";
+        } else {
+            payload << "\"current_pose\":{"
+                    << "\"x_m\":" << odometry_pose_x_m_ << ","
+                    << "\"y_m\":" << odometry_pose_y_m_ << ","
+                    << "\"yaw_rad\":" << odometry_pose_yaw_rad_
+                    << "},"
+                    << "\"localization\":{"
+                    << "\"frame_id\":\"odom\","
+                    << "\"current_pose\":{"
+                    << "\"x_m\":" << odometry_pose_x_m_ << ","
+                    << "\"y_m\":" << odometry_pose_y_m_ << ","
+                    << "\"yaw_rad\":" << odometry_pose_yaw_rad_
+                    << "}}";
+        }
+        payload << "},"
                 << "\"angles_deg\":{";
 
         for (int leg = 0; leg < kNumLegs; ++leg) {
@@ -309,6 +377,10 @@ private:
     uint64_t packets_sent_count_{0};
     uint64_t socket_send_failures_{0};
     uint64_t last_successful_send_timestamp_us_{0};
+    double odometry_pose_x_m_{0.0};
+    double odometry_pose_y_m_{0.0};
+    double odometry_pose_yaw_rad_{0.0};
+    double last_odometry_timestamp_us_{0.0};
 };
 
 } // namespace

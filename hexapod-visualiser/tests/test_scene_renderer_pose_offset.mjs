@@ -36,6 +36,24 @@ test("resolvePoseOffsetMm accepts x/y pose fields from autonomy current_pose", (
   assert.deepEqual(pose, { x: -300, y: 200, yaw: -0.4 });
 });
 
+test("resolvePoseOffsetMm ignores unsupported localization frame ids", () => {
+  const deadReckoning = { pose: { x: 0, y: 0, yaw: 0 }, lastTimestampMs: null };
+  const model = baseModel({
+    autonomy_debug: {
+      localization: {
+        frame_id: "base_link",
+        current_pose: { x_m: 2.0, y_m: 3.0, yaw_rad: 0.25 },
+      },
+    },
+    dynamic_gait: {
+      current_pose: { x_m: 0.4, y_m: -0.2, yaw_rad: 0.1 },
+    },
+  });
+
+  const pose = resolvePoseOffsetMm(model, deadReckoning);
+  assert.deepEqual(pose, { x: 400, y: -200, yaw: 0.1 });
+});
+
 test("resolvePoseOffsetMm dead reckons with wall clock when telemetry timestamp is missing", () => {
   const deadReckoning = { pose: { x: 0, y: 0, yaw: 0 }, lastTimestampMs: null };
   const model = baseModel({
@@ -129,4 +147,40 @@ test("buildGridProbePoints shifts rendered grid anchors as pose offset changes",
 
   assert.notDeepEqual(probeA.horizontalStart, probeB.horizontalStart);
   assert.notDeepEqual(probeA.verticalStart, probeB.verticalStart);
+});
+
+test("grid probe dumps show pose increases under forward command while rendered world anchors move opposite", () => {
+  const deadReckoning = { pose: { x: 0, y: 0, yaw: 0 }, lastTimestampMs: null };
+  const makeFrame = (timestampMs) => baseModel({
+    timestamp_ms: timestampMs,
+    dynamic_gait: {
+      body_translation_m: { x: 0, y: 0, z: 0 },
+      body_linear_velocity_mps: { x: 0, y: 0, z: 0 },
+      body_angular_velocity_radps: { x: 0, y: 0, z: 0 },
+      commanded_speed_mps: 0.15,
+      commanded_heading_rad: 0,
+    },
+  });
+
+  const dump = [];
+  for (const timestampMs of [1_000, 1_250, 1_500, 1_750]) {
+    const poseOffset = { ...resolvePoseOffsetMm(makeFrame(timestampMs), deadReckoning) };
+    const probe = buildGridProbePoints({
+      width: 800,
+      height: 600,
+      scale: 2,
+      poseOffset,
+      groundPlaneZ: -100,
+    });
+    dump.push({ timestampMs, poseOffset, probe });
+  }
+
+  // Helpful reproduction dump requested during observability diagnosis.
+  console.log("grid_probe_time_series", JSON.stringify(dump));
+
+  assert.ok(dump[3].poseOffset.x > dump[0].poseOffset.x, "forward command should increase dead-reckoned world pose x");
+  assert.ok(
+    dump[3].probe.verticalStart.x < dump[0].probe.verticalStart.x,
+    "world-anchored grid x should move opposite the forward pose direction in body frame",
+  );
 });

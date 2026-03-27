@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace telemetry {
@@ -23,12 +24,24 @@ struct TelemetryPublisherConfig {
 };
 
 struct ControlStepTelemetry {
+    struct AutonomyDebugPose {
+        double x_m{0.0};
+        double y_m{0.0};
+        double yaw_rad{0.0};
+        std::string frame_id{"map"};
+    };
+
+    struct AutonomyDebugTelemetry {
+        std::optional<AutonomyDebugPose> localization_pose{};
+    };
+
     RobotState estimated_state{};
     MotionIntent motion_intent{};
     JointTargets joint_targets{};
     ControlStatus status{};
     TimePointUs timestamp_us{};
     bool imu_reads_enabled{false};
+    AutonomyDebugTelemetry autonomy_debug{};
 };
 
 struct TelemetryPublishCounters {

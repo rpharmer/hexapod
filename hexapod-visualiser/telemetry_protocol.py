@@ -227,7 +227,11 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
         pose_payload = self._sanitize_pose_payload(value.get("current_pose"))
         if pose_payload is None:
             return None
-        return {"current_pose": pose_payload}
+        payload: dict[str, Any] = {"current_pose": pose_payload}
+        frame_id = value.get("frame_id")
+        if isinstance(frame_id, str) and frame_id:
+            payload["frame_id"] = frame_id
+        return payload
 
 
 def _is_number(value: Any) -> bool:
