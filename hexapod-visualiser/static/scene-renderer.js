@@ -101,7 +101,11 @@ function updateTelemetryUI({ statusEl, metaEl, rollingMetricsEl, telemetry, mode
   statusEl.style.color = staleData ? "#fbbf24" : "#34d399";
   statusEl.classList.toggle("stale", staleData);
 
-  const rollingSample = `loop_age=${formatAge(modelAgeMs)} · telemetry_age=${formatAge(transportAgeMs)}`;
+  const poseSource = telemetry.poseSource ?? "n/a";
+  const rollingSampleBase = `loop_age=${formatAge(modelAgeMs)} · telemetry_age=${formatAge(transportAgeMs)}`;
+  const rollingSample = telemetry.verboseDiagnostics
+    ? `${rollingSampleBase} · pose_src=${poseSource}`
+    : rollingSampleBase;
   if (telemetry.rolling[0] !== rollingSample) {
     telemetry.rolling.unshift(rollingSample);
     if (telemetry.rolling.length > ROLLING_LIMIT) {
@@ -115,7 +119,7 @@ function updateTelemetryUI({ statusEl, metaEl, rollingMetricsEl, telemetry, mode
   const activeDistanceM = resolveActiveWaypointDistanceM(model);
   const targetDistance =
     activeDistanceM === null ? "target:n/a" : `target_dist:${activeDistanceM.toFixed(2)}m`;
-  metaEl.textContent = `coxa:${model.geometry.coxa.toFixed(1)} femur:${model.geometry.femur.toFixed(1)} tibia:${model.geometry.tibia.toFixed(1)} | ${missionProgress} ${targetDistance} | timestamp:${ts}`;
+  metaEl.textContent = `coxa:${model.geometry.coxa.toFixed(1)} femur:${model.geometry.femur.toFixed(1)} tibia:${model.geometry.tibia.toFixed(1)} | ${missionProgress} ${targetDistance} pose_src:${poseSource} | timestamp:${ts}`;
 }
 
 function resolveMissionProgress(model) {
@@ -251,28 +255,35 @@ function resolveVelocityTwist(model) {
 }
 
 export function resolvePoseOffsetMm(model, deadReckoning, nowMs = Date.now()) {
+  return resolvePoseOffsetWithSource(model, deadReckoning, nowMs).pose;
+}
+
+export function resolvePoseOffsetWithSource(model, deadReckoning, nowMs = Date.now()) {
   const localizationFrameId = model.autonomy_debug?.localization?.frame_id;
   const localizationPose =
     !localizationFrameId || localizationFrameId === "map" || localizationFrameId === "odom"
       ? model.autonomy_debug?.localization?.current_pose
       : null;
 
-  const absolutePose = resolveFinitePoseCandidate(
-    model.autonomy_debug?.current_pose,
-    localizationPose,
-    model.dynamic_gait?.current_pose,
-  );
-  if (absolutePose) {
+  const sourcedAbsoluteCandidates = [
+    { source: "autonomy_current_pose", pose: normalizePoseCandidate(model.autonomy_debug?.current_pose) },
+    { source: "localization_pose", pose: normalizePoseCandidate(localizationPose) },
+    { source: "dynamic_gait_current_pose", pose: normalizePoseCandidate(model.dynamic_gait?.current_pose) },
+  ];
+  const absolutePoseSource = sourcedAbsoluteCandidates.find((candidate) => candidate.pose);
+  if (absolutePoseSource) {
+    const absolutePose = absolutePoseSource.pose;
     const resolved = {
       x: absolutePose.x_m * 1000,
       y: absolutePose.y_m * 1000,
       yaw: Number.isFinite(absolutePose.yaw_rad) ? absolutePose.yaw_rad : 0,
     };
     deadReckoning.pose = { ...resolved };
+    deadReckoning.poseSource = absolutePoseSource.source;
     deadReckoning.lastTimestampMs = Number.isFinite(model.timestamp_ms)
       ? model.timestamp_ms
       : (Number.isFinite(nowMs) ? nowMs : null);
-    return resolved;
+    return { pose: resolved, poseSource: absolutePoseSource.source };
   }
 
   const translationPose = resolveFinitePoseCandidate(
@@ -310,7 +321,8 @@ export function resolvePoseOffsetMm(model, deadReckoning, nowMs = Date.now()) {
       }
     }
     deadReckoning.lastTimestampMs = timestampMs;
-    return deadReckoning.pose;
+    deadReckoning.poseSource = "dead_reckoning";
+    return { pose: deadReckoning.pose, poseSource: deadReckoning.poseSource };
   }
 
   if (translationPose) {
@@ -320,11 +332,13 @@ export function resolvePoseOffsetMm(model, deadReckoning, nowMs = Date.now()) {
       yaw: Number.isFinite(translationPose.yaw_rad) ? translationPose.yaw_rad : 0,
     };
     deadReckoning.pose = { ...translated };
+    deadReckoning.poseSource = "dead_reckoning";
     deadReckoning.lastTimestampMs = timestampMs;
-    return translated;
+    return { pose: translated, poseSource: deadReckoning.poseSource };
   }
 
-  return deadReckoning.pose;
+  deadReckoning.poseSource = "dead_reckoning";
+  return { pose: deadReckoning.pose, poseSource: deadReckoning.poseSource };
 }
 
 function transformWorldToBodyAnchored(point, poseOffset) {
@@ -486,9 +500,12 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model,
 
 export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rollingMetricsEl, modelRef, telemetry }) {
   let stableGroundPlaneZ = Number.NaN;
+  const urlParams = new URLSearchParams(window.location.search);
+  telemetry.verboseDiagnostics = urlParams.get("debug") === "1" || urlParams.get("verbose_diagnostics") === "1";
   const deadReckoning = {
     pose: { x: 0, y: 0, yaw: 0 },
     lastTimestampMs: null,
+    poseSource: "dead_reckoning",
   };
 
   function resize() {
@@ -507,7 +524,8 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     const scale = (Math.min(width, height) / 420) * camera.zoom;
     const centerX = width * 0.5 + camera.panX;
     const centerY = height * 0.58 + camera.panY;
-    const poseOffset = resolvePoseOffsetMm(model, deadReckoning, Date.now());
+    const { pose: poseOffset, poseSource } = resolvePoseOffsetWithSource(model, deadReckoning, Date.now());
+    telemetry.poseSource = poseSource;
     const gridSpacingMm = 55;
     const kinematics = LEG_ORDER.map((legName) => ({
       legName,

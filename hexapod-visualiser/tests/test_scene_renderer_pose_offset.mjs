@@ -52,6 +52,7 @@ test("resolvePoseOffsetMm ignores unsupported localization frame ids", () => {
 
   const pose = resolvePoseOffsetMm(model, deadReckoning);
   assert.deepEqual(pose, { x: 400, y: -200, yaw: 0.1 });
+  assert.equal(deadReckoning.poseSource, "dynamic_gait_current_pose");
 });
 
 test("resolvePoseOffsetMm dead reckons with wall clock when telemetry timestamp is missing", () => {
