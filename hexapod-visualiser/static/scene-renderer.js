@@ -148,8 +148,24 @@ function resolveActiveWaypointDistanceM(model) {
   return Math.hypot(active.x_m - pose.x_m, active.y_m - pose.y_m);
 }
 
+function resolveFinitePoseCandidate(...candidates) {
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+    if (Number.isFinite(candidate.x_m) && Number.isFinite(candidate.y_m)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 function resolvePoseOffsetMm(model) {
-  const pose = model.autonomy_debug?.current_pose;
+  const pose = resolveFinitePoseCandidate(
+    model.autonomy_debug?.current_pose,
+    model.autonomy_debug?.localization?.current_pose,
+    model.dynamic_gait?.current_pose,
+  );
   const x = Number.isFinite(pose?.x_m) ? pose.x_m * 1000 : 0;
   const y = Number.isFinite(pose?.y_m) ? pose.y_m * 1000 : 0;
   const yaw = Number.isFinite(pose?.yaw_rad) ? pose.yaw_rad : 0;
@@ -278,6 +294,8 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model,
 }
 
 export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rollingMetricsEl, modelRef, telemetry }) {
+  let stableGroundPlaneZ = Number.NaN;
+
   function resize() {
     const ratio = window.devicePixelRatio || 1;
     canvas.width = canvas.clientWidth * ratio;
@@ -305,7 +323,10 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
       ),
     }));
     const footHeights = kinematics.map((entry) => entry.points.foot.z).filter(Number.isFinite);
-    const groundPlaneZ = footHeights.length === 0 ? -120 : Math.min(...footHeights);
+    if (footHeights.length > 0 && !Number.isFinite(stableGroundPlaneZ)) {
+      stableGroundPlaneZ = Math.min(...footHeights);
+    }
+    const groundPlaneZ = Number.isFinite(stableGroundPlaneZ) ? stableGroundPlaneZ : -120;
 
     ctx.strokeStyle = "#1f2937";
     ctx.lineWidth = 1;
