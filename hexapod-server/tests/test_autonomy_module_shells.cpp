@@ -112,6 +112,122 @@ bool testLocalizationRejectsFrameMismatch() {
            expect(estimate.frame_id == "map", "frame mismatch should keep localization estimate in expected frame");
 }
 
+bool testWorldModelMapSliceNominalIntegration() {
+    autonomy::WorldModelModuleShell world_model;
+    const autonomy::LocalizationEstimate localization{
+        .valid = true,
+        .frame_id = "map",
+        .x_m = 0.0,
+        .y_m = 0.0,
+        .yaw_rad = 0.0,
+        .timestamp_ms = 100,
+    };
+
+    const auto world = world_model.update(
+        localization,
+        autonomy::MapSliceInput{
+            .frame_id = "map",
+            .has_timestamp = true,
+            .timestamp_ms = 100,
+            .has_occupancy = true,
+            .has_elevation = true,
+            .has_risk_confidence = true,
+            .occupancy = 0.35,
+            .elevation_m = 0.12,
+            .risk_confidence = 0.85,
+            .occupancy_provenance = autonomy::MapDataProvenance::Map,
+            .elevation_provenance = autonomy::MapDataProvenance::Sensor,
+            .risk_confidence_provenance = autonomy::MapDataProvenance::Fused,
+        },
+        false,
+        110);
+
+    return expect(world.has_map, "nominal world-model map slice should be accepted") &&
+           expect(world.occupancy_provenance == autonomy::MapDataProvenance::Map,
+                  "occupancy provenance should be propagated") &&
+           expect(world.elevation_provenance == autonomy::MapDataProvenance::Sensor,
+                  "elevation provenance should be propagated") &&
+           expect(world.risk_confidence_provenance == autonomy::MapDataProvenance::Fused,
+                  "confidence provenance should be propagated") &&
+           expect(world.obstacle_band_near >= world.obstacle_band_mid,
+                  "obstacle near band should stay at least as conservative as mid band") &&
+           expect(world.slope_band_high >= world.slope_band_mid,
+                  "slope high band should be at least mid band") &&
+           expect(world.confidence_zone_nominal > world.confidence_zone_degraded,
+                  "nominal confidence zone should dominate for high confidence slices");
+}
+
+bool testWorldModelRejectsStaleMapSlice() {
+    autonomy::WorldModelModuleShell world_model;
+    const autonomy::LocalizationEstimate localization{
+        .valid = true,
+        .frame_id = "map",
+        .x_m = 0.0,
+        .y_m = 0.0,
+        .yaw_rad = 0.0,
+        .timestamp_ms = 100,
+    };
+
+    const auto accepted = world_model.update(
+        localization,
+        autonomy::MapSliceInput{
+            .frame_id = "map",
+            .has_timestamp = true,
+            .timestamp_ms = 100,
+            .has_occupancy = true,
+            .occupancy = 0.2,
+        },
+        false,
+        120);
+    if (!expect(accepted.has_map, "first map update should be accepted")) {
+        return false;
+    }
+
+    const auto stale = world_model.update(
+        localization,
+        autonomy::MapSliceInput{
+            .frame_id = "map",
+            .has_timestamp = true,
+            .timestamp_ms = 90,
+            .has_occupancy = true,
+            .occupancy = 0.8,
+        },
+        false,
+        130);
+
+    return expect(!stale.has_map, "non-monotonic stale map timestamp should be rejected") &&
+           expect(stale.stale_input_rejected, "rejected stale map should set stale rejection flag") &&
+           expect(stale.non_monotonic_timestamp, "rejected stale map should set non-monotonic flag") &&
+           expect(stale.occupancy == accepted.occupancy, "stale map rejection should preserve prior occupancy");
+}
+
+bool testWorldModelRejectsFrameMismatch() {
+    autonomy::WorldModelModuleShell world_model;
+    const autonomy::LocalizationEstimate localization{
+        .valid = true,
+        .frame_id = "map",
+        .x_m = 0.0,
+        .y_m = 0.0,
+        .yaw_rad = 0.0,
+        .timestamp_ms = 100,
+    };
+
+    const auto mismatch = world_model.update(
+        localization,
+        autonomy::MapSliceInput{
+            .frame_id = "odom",
+            .has_timestamp = true,
+            .timestamp_ms = 100,
+            .has_occupancy = true,
+            .occupancy = 0.5,
+        },
+        false,
+        110);
+
+    return expect(!mismatch.has_map, "map slices in unexpected frame should be rejected") &&
+           expect(mismatch.frame_mismatch, "frame mismatch rejection should set frame flag");
+}
+
 bool testAllShellsFunctionalWiring() {
     autonomy::NavigationManagerModuleShell navigation;
     autonomy::LocalizationModuleShell localization;
@@ -376,6 +492,9 @@ int main() {
         !testLocalizationAdapterNominalEstimatorPropagation() ||
         !testLocalizationRejectsStaleObservation() ||
         !testLocalizationRejectsFrameMismatch() ||
+        !testWorldModelMapSliceNominalIntegration() ||
+        !testWorldModelRejectsStaleMapSlice() ||
+        !testWorldModelRejectsFrameMismatch() ||
         !testAllShellsFunctionalWiring() ||
         !testLocomotionShellDispatchSinkOutcomes() ||
         !testTerrainRiskInputsAffectPlanning() ||
