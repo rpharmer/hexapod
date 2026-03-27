@@ -191,6 +191,16 @@ public:
                 << "\"y\":" << telemetry.estimated_state.body_pose_state.body_trans_mps.y << ","
                 << "\"z\":" << telemetry.estimated_state.body_pose_state.body_trans_mps.z
                 << "},"
+                << "\"body_translation_m\":{"
+                << "\"x\":" << telemetry.estimated_state.body_pose_state.body_trans_m.x << ","
+                << "\"y\":" << telemetry.estimated_state.body_pose_state.body_trans_m.y << ","
+                << "\"z\":" << telemetry.estimated_state.body_pose_state.body_trans_m.z
+                << "},"
+                << "\"body_orientation_rad\":{"
+                << "\"x\":" << telemetry.estimated_state.body_pose_state.orientation_rad.x << ","
+                << "\"y\":" << telemetry.estimated_state.body_pose_state.orientation_rad.y << ","
+                << "\"z\":" << telemetry.estimated_state.body_pose_state.orientation_rad.z
+                << "},"
                 << "\"body_angular_velocity_radps\":{"
                 << "\"x\":" << telemetry.estimated_state.body_pose_state.angular_velocity_radps.x << ","
                 << "\"y\":" << telemetry.estimated_state.body_pose_state.angular_velocity_radps.y << ","
