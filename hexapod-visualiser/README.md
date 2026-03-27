@@ -160,9 +160,9 @@ You can send partial updates or full state.
 }
 ```
 
-### Optional autonomy debug overlay payload
+### Autonomy debug overlay payload (pose fields required for world-anchored visualisation)
 
-Include `autonomy_debug` in any schema-v1 packet to render mission waypoints and live pose hints in the browser:
+Include `autonomy_debug` in schema-v1 state packets when using world-anchored overlays. `current_pose.x_m`, `current_pose.y_m`, and `current_pose.yaw_rad` are required by the visualiser contract:
 
 ```json
 {
@@ -182,6 +182,7 @@ Include `autonomy_debug` in any schema-v1 packet to render mission waypoints and
 
 Leg keys expected: `LF`, `LM`, `LR`, `RF`, `RM`, `RR`.
 `schema_version` is required and must currently be `1`.
+Legacy packets without `schema_version`, and legacy pose aliases (`x/y/z`, `yaw`) are rejected by the parser.
 
 ## Integration idea for `hexapod-server`
 
