@@ -52,6 +52,71 @@ Conversion rules:
 - `deg = rad * 180 / pi`
 - `ms = us / 1000`
 
+## Pose semantics (`autonomy_debug`) 
+
+The visualiser reads world pose from these fields, in this order:
+
+1. `autonomy_debug.current_pose`
+2. `autonomy_debug.localization.current_pose` (only when `frame_id` is accepted; see frame rules below)
+3. `dynamic_gait.current_pose` (legacy/optional source)
+4. Fallback dead-reckoning from translation/velocity fields.
+
+### `autonomy_debug.current_pose`
+
+**Meaning:** best available absolute planar body pose (`x_m`, `y_m`, `yaw_rad`) in world coordinates for rendering map-anchored overlays and world grid motion.
+
+**Producer behavior:**
+- If localization pose is available, server copies that localization pose directly into `autonomy_debug.current_pose`.
+- If localization pose is unavailable, server publishes fallback odometry pose in this field.
+
+So, this field is always intended to be directly consumable by the visualiser, regardless of whether its source is localization or fallback odometry.
+
+### `autonomy_debug.localization.current_pose`
+
+**Meaning:** raw pose from localization module, with explicit `frame_id` attached.
+
+**Consumer behavior:**
+- The visualiser treats this as authoritative only when `frame_id` is accepted (`map` or `odom`).
+- Unknown frames are preserved in telemetry state for debugging, but ignored for pose resolution in renderer logic.
+
+This allows tests to assert both that unknown frames are retained in state and that rendering does not use them.
+
+### `frame_id` values and handling rules
+
+`autonomy_debug.localization.frame_id` is a string provided by telemetry producer.
+
+| `frame_id` | Renderer handling | Notes |
+|---|---|---|
+| `map` | accepted for pose resolution | global map frame |
+| `odom` | accepted for pose resolution | drifting local odometry frame |
+| missing/empty | localization pose ignored; resolver falls through to next source | defensive behavior |
+| any other value | localization pose ignored for rendering | kept in state for diagnostics |
+
+Validation rule (testable): `frame_id` gating is implemented in `resolvePoseOffsetMm` before localization pose can be chosen.
+
+## Fallback odometry semantics and limitations
+
+When localization data is absent, fallback pose uses dead-reckoned integration in producer and/or renderer:
+
+1. **Server fallback (`telemetry_publisher.cpp`)**
+   - Integrates planar velocity into `odometry_pose_x_m_`, `odometry_pose_y_m_`.
+   - Integrates yaw rate into `odometry_pose_yaw_rad_`.
+   - Uses estimated planar velocity when non-zero finite values exist.
+   - Otherwise falls back to commanded heading/speed.
+   - Clamps integration timestep to `[0.0, 0.25]` seconds.
+
+2. **Renderer fallback (`scene-renderer.js`)**
+   - If no accepted absolute pose exists, attempts translation-derived pose.
+   - If velocity and timestamp are available, integrates dead-reckoning in renderer-local state.
+   - Also clamps timestep to `<= 0.25` s.
+
+### Limitations (explicit)
+
+- Fallback odometry is **not globally corrected** (no loop closure / map anchoring).
+- Position and yaw can drift over time.
+- Command-derived fallback (`speed + heading`) can diverge from physical motion (slip/compliance).
+- Unknown localization frames will intentionally not override this fallback.
+
 ## Required vs optional fields
 
 ### Geometry payload
@@ -95,12 +160,38 @@ WebSocket payloads emitted by `TelemetryState.to_payload` include:
 | `voltage` | number or `null` | yes | power bus voltage when present |
 | `current` | number or `null` | yes | power bus current when present |
 | `dynamic_gait` | object or `null` | yes | dynamic gait internals (family/region/fallback/envelope/per-leg phase+duty+stance) and body velocity vectors (`body_linear_velocity_mps`, `body_angular_velocity_radps`) for tuning + visual dead-reckoning |
-| `autonomy_debug` | object or `null` | yes | optional autonomy mission-debug payload (waypoints, active waypoint index, current pose) for route/mission visual overlays |
+| `autonomy_debug` | object or `null` | yes | optional autonomy mission-debug payload (waypoints, active waypoint index, current pose/localization) for route and mission visual overlays |
 
 Optionality semantics:
 - These fields are **always present in WebSocket payloads** but may be `null` until UDP telemetry includes a valid value.
 - The UI must treat every status/health field as optional data.
 - UDP parsing accepts these fields on any schema-v1 payload type (`geometry`, `joints`, or additive telemetry payloads) and merges them into the current state.
+
+## Troubleshooting: grid moves wrong direction
+
+Symptoms:
+- Robot appears stationary while grid slides the wrong way.
+- Waypoint overlay direction does not match expected motion.
+
+Checks:
+1. Confirm whether `autonomy_debug.current_pose` is present and finite.
+2. If relying on localization, check `autonomy_debug.localization.frame_id` is exactly `map` or `odom`.
+3. If frame is unknown, renderer will ignore localization and use fallback dead-reckoning.
+4. Compare `dynamic_gait.body_linear_velocity_mps` vs commanded velocity fields; large mismatch can flip apparent motion under fallback.
+
+Likely causes:
+- Coordinate-frame mismatch in upstream localization (`frame_id` not in accepted set).
+- Sign convention mismatch for yaw/velocity in upstream producer.
+- Dead-reckoning drift from prolonged localization loss.
+
+## Implementation references
+
+- Producer and fallback odometry construction:
+  - [`hexapod-server/src/control/telemetry/telemetry_publisher.cpp`](../hexapod-server/src/control/telemetry/telemetry_publisher.cpp)
+- Telemetry sanitation and autonomy pose parsing:
+  - [`hexapod-visualiser/telemetry_protocol.py`](../hexapod-visualiser/telemetry_protocol.py)
+- Pose resolution, frame gating, and dead-reckoning integration in renderer:
+  - [`hexapod-visualiser/static/scene-renderer.js`](../hexapod-visualiser/static/scene-renderer.js)
 
 ## Backward compatibility expectations
 
