@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <string>
 
 #include "protocol_layout.hpp"
 #include "kinematics/math_types.hpp"
@@ -238,12 +239,28 @@ struct ControlStatus {
         std::array<bool, kNumLegs> leg_in_stance{};
     };
 
+    struct AutonomyTelemetry {
+        bool enabled{false};
+        bool step_ok{false};
+        bool blocked{false};
+        bool no_progress{false};
+        bool recovery_active{false};
+        bool motion_allowed{false};
+        bool locomotion_sent{false};
+        bool mission_loaded{false};
+        bool mission_running{false};
+        uint8_t mission_state{0};
+        uint64_t mission_completed_waypoints{0};
+        uint64_t mission_total_waypoints{0};
+    };
+
     RobotMode active_mode{RobotMode::SAFE_IDLE};
     bool estimator_valid{false};
     bool bus_ok{false};
     FaultCode active_fault{FaultCode::NONE};
     uint64_t loop_counter{0};
     DynamicGaitTelemetry dynamic_gait{};
+    AutonomyTelemetry autonomy{};
 };
 
 // ============================================================

@@ -42,6 +42,13 @@ public:
     void diagnosticsStep();
 
     void setMotionIntent(const MotionIntent& intent);
+    bool loadAutonomyMission(const autonomy::WaypointMission& mission);
+    bool startAutonomyMission();
+    void setAutonomyBlocked(bool blocked);
+    void setAutonomyNoProgress(bool no_progress);
+    void signalAutonomyWaypointReached();
+    std::optional<autonomy::AutonomyStepOutput> lastAutonomyStepOutput() const;
+
     void setMotionIntentForTest(const MotionIntent& intent);
     bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
     ControlStatus getStatus() const;
@@ -57,6 +64,7 @@ private:
     MotionIntent resolveAutonomyMotionIntent(const MotionIntent& base_intent,
                                              const SafetyState& safety_state,
                                              const TimePointUs& now);
+    void applyAutonomyStatus(ControlStatus& status) const;
 
     std::unique_ptr<IHardwareBridge> hw_;
     std::unique_ptr<hardware::IImuUnit> imu_;
@@ -94,6 +102,9 @@ private:
     TimePointUs next_geometry_refresh_at_{};
     std::unique_ptr<autonomy::AutonomyStack> autonomy_stack_;
     std::optional<autonomy::AutonomyStepOutput> last_autonomy_step_output_{};
+    autonomy::MissionEvent last_autonomy_mission_event_{};
+    autonomy::RecoveryDecision last_autonomy_recovery_decision_{};
+    bool autonomy_step_ok_{false};
     std::atomic<bool> autonomy_blocked_signal_{false};
     std::atomic<bool> autonomy_no_progress_signal_{false};
     std::atomic<bool> autonomy_waypoint_reached_event_{false};
