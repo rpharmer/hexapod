@@ -266,6 +266,13 @@ export function applyStanceContactLockCorrection({ model, kinematics, poseOffset
   return correctedPose;
 }
 
+function resetStanceContactLock(stanceLockState) {
+  if (!stanceLockState || !stanceLockState.worldAnchorsByLeg) {
+    return;
+  }
+  stanceLockState.worldAnchorsByLeg = {};
+}
+
 export function buildGridProbePoints({
   width,
   height,
@@ -456,13 +463,18 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     }
     const groundPlaneZ = Number.isFinite(stableGroundPlaneZ) ? stableGroundPlaneZ : -120;
 
-    const correctedPoseOffset = applyStanceContactLockCorrection({
-      model,
-      kinematics,
-      poseOffset,
-      stanceLockState,
-    });
-    poseOffset = correctedPoseOffset;
+    const canApplyStanceCorrection = poseSource === "missing_pose";
+    if (canApplyStanceCorrection) {
+      const correctedPoseOffset = applyStanceContactLockCorrection({
+        model,
+        kinematics,
+        poseOffset,
+        stanceLockState,
+      });
+      poseOffset = correctedPoseOffset;
+    } else {
+      resetStanceContactLock(stanceLockState);
+    }
 
     ctx.strokeStyle = "#1f2937";
     ctx.lineWidth = 1;
