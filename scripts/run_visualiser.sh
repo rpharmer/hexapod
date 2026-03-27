@@ -23,7 +23,7 @@ Options:
   --install-deps           Force dependency installation from requirements.txt.
   --simulate               Also run simulate_telemetry.py in the background.
   --simulate-hz <hz>       Telemetry simulator rate (default: 30).
-  --simulate-scenario <id> Autonomy simulator scenario (patrol, zigzag_dense, dock_and_return).
+  --simulate-scenario <id> Autonomy simulator scenario (run --help in simulate_telemetry.py for full list).
   -h, --help               Show this help text.
 
 Examples:
