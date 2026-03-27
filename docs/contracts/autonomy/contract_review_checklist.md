@@ -10,3 +10,7 @@ Use this checklist before accepting any `v1.x` contract updates.
 - [ ] Failure semantics define severity and downstream expected behavior.
 - [ ] Arbitration/priority behavior is explicit when module competes for motion control.
 - [ ] Backward-compatibility statement included (`v1` vs `v1.x`).
+- [ ] IPC/schema producer and consumer code paths updated in the same change.
+- [ ] Unit/integration/fault-injection tests updated for changed contract behavior.
+- [ ] Telemetry consumers (events/counters/parsers/dashboards) updated with schema changes.
+- [ ] `traceability_matrix.md` updated so contract changes are linked to implementation and tests.

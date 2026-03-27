@@ -27,4 +27,6 @@ This directory contains the contract-first interface set for autonomy modules an
 When behavior changes:
 1. update the relevant contract document;
 2. update the corresponding tests;
-3. update `PLAN.md` status to keep implementation and roadmap aligned.
+3. update `PLAN.md` status to keep implementation and roadmap aligned;
+4. if IPC/schema changed, complete `contract_review_checklist.md` items for docs + tests + telemetry consumers in the same PR;
+5. update `../../AUTONOMY_OPERATIONS_RUNBOOK.md` when operator behavior (startup/safe-stop/degraded interpretation/HIL flow) changes.
