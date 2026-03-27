@@ -126,7 +126,29 @@ function resolveMissionProgress(model) {
   return `mission:${clampedIdx}/${autonomy.waypoints.length}`;
 }
 
-function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model }) {
+function resolvePoseOffsetMm(model) {
+  const pose = model.autonomy_debug?.current_pose;
+  const x = Number.isFinite(pose?.x_m) ? pose.x_m * 1000 : 0;
+  const y = Number.isFinite(pose?.y_m) ? pose.y_m * 1000 : 0;
+  const yaw = Number.isFinite(pose?.yaw_rad) ? pose.yaw_rad : 0;
+  return { x, y, yaw };
+}
+
+function projectRelative(point, poseOffset, camera, scale, centerX, centerY) {
+  return project(
+    {
+      x: point.x - poseOffset.x,
+      y: point.y - poseOffset.y,
+      z: point.z,
+    },
+    camera,
+    scale,
+    centerX,
+    centerY,
+  );
+}
+
+function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model, poseOffset }) {
   const autonomy = model.autonomy_debug;
   if (!autonomy || !Array.isArray(autonomy.waypoints) || autonomy.waypoints.length === 0) {
     return;
@@ -151,7 +173,7 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model 
   ctx.strokeStyle = "rgba(99, 102, 241, 0.85)";
   ctx.beginPath();
   waypointPoints.forEach((point, index) => {
-    const screen = project(point, camera, scale, centerX, centerY);
+    const screen = projectRelative(point, poseOffset, camera, scale, centerX, centerY);
     if (index === 0) {
       ctx.moveTo(screen.x, screen.y);
       return;
@@ -161,7 +183,7 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model 
   ctx.stroke();
 
   waypointPoints.forEach((point, index) => {
-    const screen = project(point, camera, scale, centerX, centerY);
+    const screen = projectRelative(point, poseOffset, camera, scale, centerX, centerY);
     const isCompleted = index < completedCount;
     const isActive = completedCount < waypointPoints.length && index === completedCount;
     ctx.fillStyle = isActive ? "#f59e0b" : isCompleted ? "#34d399" : "#60a5fa";
@@ -175,22 +197,17 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model 
     ctx.fillText(`W${index}`, screen.x + 6, screen.y - 6);
   });
 
-  const pose = autonomy.current_pose;
-  if (pose && Number.isFinite(pose.x_m) && Number.isFinite(pose.y_m)) {
-    const posePoint = {
-      x: pose.x_m * 1000,
-      y: pose.y_m * 1000,
-      z: -115,
-    };
-    const heading = Number.isFinite(pose.yaw_rad) ? pose.yaw_rad : 0;
+  if (autonomy.current_pose && Number.isFinite(autonomy.current_pose.x_m) && Number.isFinite(autonomy.current_pose.y_m)) {
+    const posePoint = { x: poseOffset.x, y: poseOffset.y, z: -115 };
+    const heading = poseOffset.yaw;
     const nosePoint = {
       x: posePoint.x + Math.cos(heading) * 45,
       y: posePoint.y + Math.sin(heading) * 45,
       z: posePoint.z,
     };
 
-    const poseScreen = project(posePoint, camera, scale, centerX, centerY);
-    const noseScreen = project(nosePoint, camera, scale, centerX, centerY);
+    const poseScreen = projectRelative(posePoint, poseOffset, camera, scale, centerX, centerY);
+    const noseScreen = projectRelative(nosePoint, poseOffset, camera, scale, centerX, centerY);
 
     ctx.strokeStyle = "#fbbf24";
     ctx.lineWidth = 2;
@@ -223,12 +240,27 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     const scale = (Math.min(width, height) / 420) * camera.zoom;
     const centerX = width * 0.5 + camera.panX;
     const centerY = height * 0.58 + camera.panY;
+    const poseOffset = resolvePoseOffsetMm(model);
+    const gridSpacingMm = 55;
+    const gridPhaseX = ((-poseOffset.x % gridSpacingMm) + gridSpacingMm) % gridSpacingMm;
+    const gridPhaseY = ((-poseOffset.y % gridSpacingMm) + gridSpacingMm) % gridSpacingMm;
+    const gridExtentMm = 220;
 
     ctx.strokeStyle = "#1f2937";
     ctx.lineWidth = 1;
-    for (let i = -4; i <= 4; i += 1) {
-      const a = project({ x: -220, y: i * 55, z: -120 }, camera, scale, centerX, centerY);
-      const b = project({ x: 220, y: i * 55, z: -120 }, camera, scale, centerX, centerY);
+    for (let i = -5; i <= 5; i += 1) {
+      const worldY = i * gridSpacingMm + gridPhaseY;
+      const a = project({ x: -gridExtentMm, y: worldY, z: -120 }, camera, scale, centerX, centerY);
+      const b = project({ x: gridExtentMm, y: worldY, z: -120 }, camera, scale, centerX, centerY);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    for (let i = -5; i <= 5; i += 1) {
+      const worldX = i * gridSpacingMm + gridPhaseX;
+      const a = project({ x: worldX, y: -gridExtentMm, z: -120 }, camera, scale, centerX, centerY);
+      const b = project({ x: worldX, y: gridExtentMm, z: -120 }, camera, scale, centerX, centerY);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
@@ -293,7 +325,7 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
       ctx.fillText(legName, segments[0].x + 5, segments[0].y - 5);
     });
 
-    drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model });
+    drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model, poseOffset });
 
     updateTelemetryUI({ statusEl, metaEl, rollingMetricsEl, telemetry, model }, Date.now());
     requestAnimationFrame(drawFrame);
