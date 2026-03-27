@@ -66,7 +66,15 @@ bool testHappyPathWiresMissionNavAndMotion() {
     if (!expect(first.global_plan.has_plan, "global planner should produce plan")) {
         return false;
     }
+    if (!expect(first.global_plan.status == autonomy::PlannerStatus::Ready,
+                "nominal global plan should be marked ready")) {
+        return false;
+    }
     if (!expect(first.local_plan.has_command, "local planner should produce local command")) {
+        return false;
+    }
+    if (!expect(first.local_plan.status == autonomy::PlannerStatus::Ready,
+                "nominal local plan should be marked ready")) {
         return false;
     }
     if (!expect(first.motion_decision.allow_motion, "motion should be allowed on active nav intent")) {
@@ -151,6 +159,18 @@ bool testBlockedFlowEscalatesRecoveryToAbort() {
     }
     if (!expect(!step3.locomotion_command.sent,
                 "aborted recovery path should suppress locomotion dispatch")) {
+        return false;
+    }
+    if (!expect(step1.global_plan.status == autonomy::PlannerStatus::NoPlan,
+                "blocked navigation should surface no-plan global status")) {
+        return false;
+    }
+    if (!expect(step1.local_plan.status == autonomy::PlannerStatus::NoPlan,
+                "blocked navigation should surface no-plan local status")) {
+        return false;
+    }
+    if (!expect(step1.local_plan.reason == "no-navigation-intent",
+                "local plan reason should preserve no-plan-vs-unsafe distinction")) {
         return false;
     }
 

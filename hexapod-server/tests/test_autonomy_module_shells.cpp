@@ -83,7 +83,7 @@ bool testAllShellsFunctionalWiring() {
     const auto world = world_model.update(loc, false, 10);
     const auto traverse = traversability.analyze(world, 10);
     const auto global_plan = global_planner.plan(nav_update, traverse);
-    const auto local_plan = local_planner.plan(global_plan, false);
+    const auto local_plan = local_planner.plan(global_plan, false, 10);
     if (!expect(local_plan.has_command, "local planner shell should emit command from global plan")) {
         return false;
     }
@@ -109,11 +109,105 @@ bool testAllShellsFunctionalWiring() {
     return expect(!locomotion_command.sent, "locomotion shell should not dispatch when motion is gated");
 }
 
+bool testPlannerReachableBlockedAndDegradedFlows() {
+    autonomy::GlobalPlannerModuleShell global_planner;
+    autonomy::LocalPlannerModuleShell local_planner;
+
+    const autonomy::NavigationUpdate nav_update{
+        .has_intent = true,
+        .intent = autonomy::NavigationIntent{
+            .mission_id = "plan-test",
+            .waypoint_index = 0,
+            .target = autonomy::Waypoint{.frame_id = "map", .x_m = 4.0, .y_m = 2.0, .yaw_rad = 0.1},
+        },
+        .status = autonomy::NavigationStatus::Active,
+        .reason = {},
+    };
+
+    const auto reachable = global_planner.plan(nav_update, autonomy::TraversabilityReport{
+                                                               .traversable = true,
+                                                               .cost = 0.2,
+                                                               .timestamp_ms = 100,
+                                                           });
+    if (!expect(reachable.has_plan, "reachable traversability should produce a global plan")) {
+        return false;
+    }
+    if (!expect(!reachable.route.empty(), "reachable plan should generate a route")) {
+        return false;
+    }
+    if (!expect(reachable.status == autonomy::PlannerStatus::Ready, "reachable plan should be marked ready")) {
+        return false;
+    }
+
+    const auto local_reachable = local_planner.plan(reachable, false, 200);
+    if (!expect(local_reachable.has_command, "reachable global plan should produce local command")) {
+        return false;
+    }
+    if (!expect(local_reachable.status == autonomy::PlannerStatus::Ready, "reachable local plan should be ready")) {
+        return false;
+    }
+
+    const auto blocked_global = global_planner.plan(nav_update, autonomy::TraversabilityReport{
+                                                                    .traversable = false,
+                                                                    .cost = 1.0,
+                                                                    .timestamp_ms = 250,
+                                                                });
+    if (!expect(!blocked_global.has_plan, "non-traversable space should yield no global plan")) {
+        return false;
+    }
+    if (!expect(blocked_global.status == autonomy::PlannerStatus::UnsafePlan,
+                "non-traversable plan should be unsafe")) {
+        return false;
+    }
+
+    const auto blocked_local = local_planner.plan(blocked_global, true, 260);
+    if (!expect(!blocked_local.has_command, "blocked local flow should suppress commands")) {
+        return false;
+    }
+    if (!expect(blocked_local.status == autonomy::PlannerStatus::UnsafePlan,
+                "blocked local flow should be marked unsafe")) {
+        return false;
+    }
+
+    const auto degraded_global = global_planner.plan(nav_update, autonomy::TraversabilityReport{
+                                                                     .traversable = true,
+                                                                     .cost = 0.8,
+                                                                     .timestamp_ms = 400,
+                                                                 });
+    if (!expect(degraded_global.has_plan, "high cost but traversable path should still produce plan")) {
+        return false;
+    }
+    if (!expect(degraded_global.status == autonomy::PlannerStatus::Degraded,
+                "high cost route should be marked degraded")) {
+        return false;
+    }
+
+    const auto degraded_local = local_planner.plan(degraded_global, false, 401);
+    if (!expect(degraded_local.has_command, "degraded global plan should still produce local command")) {
+        return false;
+    }
+    if (!expect(degraded_local.status == autonomy::PlannerStatus::Degraded,
+                "degraded global plan should propagate degraded local status")) {
+        return false;
+    }
+
+    const auto stale_local = local_planner.plan(degraded_global, false, 1500);
+    if (!expect(stale_local.fallback_active, "stale planning should activate fallback handling")) {
+        return false;
+    }
+    if (!expect(stale_local.status == autonomy::PlannerStatus::StalePlan,
+                "stale planning should mark local plan stale")) {
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main() {
     if (!testAllShellsLifecycleAndIdentity() ||
-        !testAllShellsFunctionalWiring()) {
+        !testAllShellsFunctionalWiring() ||
+        !testPlannerReachableBlockedAndDegradedFlows()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

@@ -4,8 +4,18 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace autonomy {
+
+enum class PlannerStatus {
+    None,
+    Ready,
+    NoPlan,
+    UnsafePlan,
+    StalePlan,
+    Degraded,
+};
 
 struct LocalizationEstimate {
     bool valid{false};
@@ -30,12 +40,19 @@ struct TraversabilityReport {
 struct GlobalPlan {
     bool has_plan{false};
     Waypoint target{};
+    std::vector<Waypoint> route{};
     double cost{0.0};
+    PlannerStatus status{PlannerStatus::None};
+    std::string reason{};
+    uint64_t source_timestamp_ms{0};
 };
 
 struct LocalPlan {
     bool has_command{false};
     Waypoint target{};
+    PlannerStatus status{PlannerStatus::None};
+    std::string reason{};
+    bool fallback_active{false};
 };
 
 struct LocomotionCommand {

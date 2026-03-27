@@ -19,7 +19,7 @@ LocomotionCommand LocomotionInterfaceModuleShell::dispatch(const MotionDecision&
     last_command_ = LocomotionCommand{
         .sent = false,
         .target = {},
-        .reason = motion_decision.reason,
+        .reason = motion_decision.allow_motion ? local_plan.reason : motion_decision.reason,
     };
     return last_command_;
 }
