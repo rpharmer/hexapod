@@ -215,15 +215,8 @@ public:
                 isFiniteOrZero(estimated_vx) && isFiniteOrZero(estimated_vy) &&
                 (std::abs(estimated_vx) > 1e-6 || std::abs(estimated_vy) > 1e-6);
 
-            const double intent_speed_mps = telemetry.motion_intent.speed_mps.value;
-            const double intent_heading_rad = telemetry.motion_intent.heading_rad.value;
-            const bool has_finite_intent = isFiniteOrZero(intent_speed_mps) && isFiniteOrZero(intent_heading_rad);
-            const double body_vx_mps = has_estimated_planar_velocity
-                                           ? estimated_vx
-                                           : (has_finite_intent ? (intent_speed_mps * std::cos(intent_heading_rad)) : 0.0);
-            const double body_vy_mps = has_estimated_planar_velocity
-                                           ? estimated_vy
-                                           : (has_finite_intent ? (intent_speed_mps * std::sin(intent_heading_rad)) : 0.0);
+            const double body_vx_mps = has_estimated_planar_velocity ? estimated_vx : 0.0;
+            const double body_vy_mps = has_estimated_planar_velocity ? estimated_vy : 0.0;
 
             // Frame convention:
             //  - body_vx/body_vy are body-frame planar velocities (x forward, y left).
