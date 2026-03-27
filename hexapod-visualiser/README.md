@@ -62,6 +62,7 @@ Available autonomy demo scenarios for `simulate_telemetry.py --autonomy-scenario
 - `patrol`: balanced mission path with moderate waypoint spacing.
 - `zigzag_dense`: dense waypoint chain for frequent active-waypoint transitions.
 - `dock_and_return`: outbound + docking + return route with heading reversals.
+- Server-scenario mirrors (from `hexapod-server/scenarios/*.toml`): `nominal_stand_walk`, `command_timeout_fallback`, `power_fault_triggers`, `contact_loss_edge_cases`, `long_walk_observability`, `dynamic_turn_priority_safety`, `blocked_navigation_pause_resume`, `retry_replan_escalation`, `abort_on_budget_exhaustion`.
 
 ## Visualiser camera usage
 

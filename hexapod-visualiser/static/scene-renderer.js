@@ -6,6 +6,8 @@ import {
   deg2rad,
 } from "./constants.js";
 
+const RIGHT_SIDE_LEGS = new Set(["RF", "RM", "RR"]);
+
 function formatAge(ageMs) {
   if (!Number.isFinite(ageMs)) return "n/a";
   if (ageMs < 1000) return `${Math.round(ageMs)}ms`;
@@ -52,8 +54,9 @@ function fkForLeg(legName, anglesDeg, geometry) {
     z: 0,
   };
 
-  const femurPitch = deg2rad(femurDeg);
-  const tibiaPitch = deg2rad(tibiaDeg);
+  const sideSign = RIGHT_SIDE_LEGS.has(legName) ? -1 : 1;
+  const femurPitch = deg2rad(femurDeg * sideSign);
+  const tibiaPitch = deg2rad(tibiaDeg * sideSign);
 
   const femurR = femur * Math.cos(femurPitch);
   const knee = {
@@ -163,7 +166,7 @@ function transformBodyToWorld(point, poseOffset) {
   };
 }
 
-function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model, poseOffset }) {
+function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model, poseOffset, groundPlaneZ }) {
   const autonomy = model.autonomy_debug;
   if (!autonomy || !Array.isArray(autonomy.waypoints) || autonomy.waypoints.length === 0) {
     return;
@@ -174,7 +177,7 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model,
     .map((waypoint) => ({
       x: waypoint.x_m * 1000,
       y: waypoint.y_m * 1000,
-      z: -115,
+      z: groundPlaneZ,
     }));
 
   if (waypointPoints.length === 0) {
@@ -229,7 +232,7 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model,
   });
 
   if (autonomy.current_pose && Number.isFinite(autonomy.current_pose.x_m) && Number.isFinite(autonomy.current_pose.y_m)) {
-    const posePoint = { x: poseOffset.x, y: poseOffset.y, z: -115 };
+    const posePoint = { x: poseOffset.x, y: poseOffset.y, z: groundPlaneZ };
     const heading = poseOffset.yaw;
     const nosePoint = {
       x: posePoint.x + Math.cos(heading) * 45,
@@ -291,13 +294,25 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     const poseOffset = resolvePoseOffsetMm(model);
     const gridSpacingMm = 55;
     const gridExtentMm = 220;
+    const kinematics = LEG_ORDER.map((legName) => ({
+      legName,
+      points: fkForLeg(
+        legName,
+        model.angles_deg[legName] ?? [0, 0, 0],
+        model.geometry,
+      ),
+    }));
+    const footHeights = kinematics.map((entry) => entry.points.foot.z).filter(Number.isFinite);
+    const averageFootHeight =
+      footHeights.length === 0 ? -120 : footHeights.reduce((sum, z) => sum + z, 0) / footHeights.length;
+    const groundPlaneZ = averageFootHeight;
 
     ctx.strokeStyle = "#1f2937";
     ctx.lineWidth = 1;
     for (let i = -5; i <= 5; i += 1) {
       const worldY = i * gridSpacingMm;
-      const a = project({ x: -gridExtentMm, y: worldY, z: -120 }, camera, scale, centerX, centerY);
-      const b = project({ x: gridExtentMm, y: worldY, z: -120 }, camera, scale, centerX, centerY);
+      const a = project({ x: -gridExtentMm, y: worldY, z: groundPlaneZ }, camera, scale, centerX, centerY);
+      const b = project({ x: gridExtentMm, y: worldY, z: groundPlaneZ }, camera, scale, centerX, centerY);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
@@ -305,8 +320,8 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     }
     for (let i = -5; i <= 5; i += 1) {
       const worldX = i * gridSpacingMm;
-      const a = project({ x: worldX, y: -gridExtentMm, z: -120 }, camera, scale, centerX, centerY);
-      const b = project({ x: worldX, y: gridExtentMm, z: -120 }, camera, scale, centerX, centerY);
+      const a = project({ x: worldX, y: -gridExtentMm, z: groundPlaneZ }, camera, scale, centerX, centerY);
+      const b = project({ x: worldX, y: gridExtentMm, z: groundPlaneZ }, camera, scale, centerX, centerY);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
@@ -335,12 +350,7 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     ctx.fill();
     ctx.stroke();
 
-    LEG_ORDER.forEach((legName) => {
-      const points = fkForLeg(
-        legName,
-        model.angles_deg[legName] ?? [0, 0, 0],
-        model.geometry,
-      );
+    kinematics.forEach(({ legName, points }) => {
 
       const segments = [points.anchor, points.shoulder, points.knee, points.foot]
         .map((point) => transformBodyToWorld(point, poseOffset))
@@ -372,7 +382,7 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
       ctx.fillText(legName, segments[0].x + 5, segments[0].y - 5);
     });
 
-    drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model, poseOffset });
+    drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model, poseOffset, groundPlaneZ });
 
     updateTelemetryUI({ statusEl, metaEl, rollingMetricsEl, telemetry, model }, Date.now());
     requestAnimationFrame(drawFrame);
