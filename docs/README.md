@@ -12,6 +12,7 @@ This directory is the canonical documentation hub for the Hexapod monorepo.
 
 ## Runtime and protocol references
 
+- `AUTONOMY_OPERATIONS_RUNBOOK.md` — startup/supervision/degraded-mode/safe-stop operations, HIL acceptance, and reliability campaign procedures.
 - `FIRMWARE.md` — wire protocol framing, command IDs, and firmware-side details.
 - `VISUALISER_TELEMETRY.md` — telemetry schema and visualiser integration contract.
 - `EXTENDING_IO_AND_HARDWARE.md` — how to add new control devices and hardware backends.
