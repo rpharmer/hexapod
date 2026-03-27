@@ -1,10 +1,33 @@
 #include "autonomy/modules/autonomy_stack.hpp"
 
+#include <algorithm>
+
 namespace autonomy {
+namespace {
+
+constexpr const char* kStaleLocalization = "stale localization";
+constexpr const char* kPlannerUnavailable = "planner unavailable";
+constexpr const char* kLocomotionDispatchFailure = "locomotion dispatch failure";
+
+} // namespace
 
 AutonomyStack::AutonomyStack(const AutonomyStackConfig& config)
     : progress_monitor_module_(config.no_progress_timeout_ms),
-      recovery_manager_module_(config.recovery_retry_budget) {}
+      recovery_manager_module_(config.recovery_retry_budget),
+      supervisor_states_({
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "mission_executive", .criticality = ProcessCriticality::Critical, .heartbeat_timeout_ms = 100, .max_restarts = 1, .dependencies = {}}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "mission_scripting", .criticality = ProcessCriticality::NonCritical, .heartbeat_timeout_ms = 500, .max_restarts = 1, .dependencies = {}}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "navigation_manager", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 100, .max_restarts = 2, .dependencies = {"mission_executive"}}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "recovery_manager", .criticality = ProcessCriticality::NonCritical, .heartbeat_timeout_ms = 500, .max_restarts = 1, .dependencies = {"progress_monitor"}}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "motion_arbiter", .criticality = ProcessCriticality::Critical, .heartbeat_timeout_ms = 100, .max_restarts = 1, .dependencies = {"navigation_manager", "recovery_manager"}}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "localization", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 75, .max_restarts = 3, .dependencies = {"navigation_manager"}}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "world_model", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 100, .max_restarts = 2, .dependencies = {"localization"}}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "traversability_analyzer", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 100, .max_restarts = 2, .dependencies = {"world_model"}}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "global_planner", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 120, .max_restarts = 2, .dependencies = {"navigation_manager", "traversability_analyzer"}}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "local_planner", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 120, .max_restarts = 2, .dependencies = {"global_planner"}}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "locomotion_interface", .criticality = ProcessCriticality::Critical, .heartbeat_timeout_ms = 75, .max_restarts = 2, .dependencies = {"motion_arbiter", "local_planner"}}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "progress_monitor", .criticality = ProcessCriticality::NonCritical, .heartbeat_timeout_ms = 500, .max_restarts = 1, .dependencies = {"mission_executive"}}},
+      }) {}
 
 bool AutonomyStack::init() {
     for (auto* module : modules()) {
@@ -30,7 +53,13 @@ bool AutonomyStack::step(const AutonomyStepInput& input, AutonomyStepOutput* out
     }
 
     for (auto* module : modules()) {
-        if (!module->step(input.now_ms)) {
+        const bool crashed = faultInjected(input, module->health().module_name, &ModuleFaultInjection::crash);
+        const bool timed_out = faultInjected(input, module->health().module_name, &ModuleFaultInjection::timeout);
+
+        if (!crashed && !timed_out && !module->step(input.now_ms)) {
+            return false;
+        }
+        if (!monitorAndRecoverModule(module, input.now_ms, crashed, timed_out)) {
             return false;
         }
     }
@@ -96,6 +125,8 @@ bool AutonomyStack::step(const AutonomyStepInput& input, AutonomyStepOutput* out
         output->motion_decision,
         output->local_plan);
 
+    applyDegradedMode(input, output);
+
     return true;
 }
 
@@ -147,6 +178,52 @@ MissionEvent AutonomyStack::startMission() {
     return mission_executive_.start();
 }
 
+std::vector<ModuleProcessContract> AutonomyStack::processContracts() const {
+    std::vector<ModuleProcessContract> contracts;
+    contracts.reserve(supervisor_states_.size());
+    for (const auto& state : supervisor_states_) {
+        contracts.push_back(state.contract);
+    }
+    return contracts;
+}
+
+std::vector<ModuleSupervisorStatus> AutonomyStack::supervisorStatuses() const {
+    std::vector<ModuleSupervisorStatus> statuses;
+    statuses.reserve(supervisor_states_.size());
+
+    for (const auto& state : supervisor_states_) {
+        ModuleSupervisorStatus status{};
+        status.module_name = state.contract.module_name;
+        status.criticality = state.contract.criticality;
+        status.alive = !state.crashed;
+        status.timed_out = state.timed_out;
+        status.crashed = state.crashed;
+        status.isolated_fault = state.isolated_fault;
+        status.restart_count = state.restart_count;
+        status.last_fault = state.last_fault;
+
+        const auto* module = moduleByName(state.contract.module_name);
+        if (module != nullptr) {
+            status.heartbeat_timestamp_ms = module->health().heartbeat_timestamp_ms;
+        }
+
+        statuses.push_back(status);
+    }
+
+    return statuses;
+}
+
+std::optional<ModuleSupervisorStatus> AutonomyStack::supervisorStatus(std::string_view module_name) const {
+    const auto statuses = supervisorStatuses();
+    const auto iter = std::find_if(statuses.cbegin(), statuses.cend(), [&](const auto& status) {
+        return status.module_name == module_name;
+    });
+    if (iter == statuses.cend()) {
+        return std::nullopt;
+    }
+    return *iter;
+}
+
 AutonomyStack::ModuleArray AutonomyStack::modules() {
     return {
         &mission_executive_module_,
@@ -162,6 +239,135 @@ AutonomyStack::ModuleArray AutonomyStack::modules() {
         &locomotion_interface_module_,
         &progress_monitor_module_,
     };
+}
+
+AutonomyModuleStub* AutonomyStack::moduleByName(std::string_view module_name) {
+    auto module_array = modules();
+    const auto iter = std::find_if(module_array.begin(), module_array.end(), [&](auto* module) {
+        return module->health().module_name == module_name;
+    });
+    if (iter == module_array.end()) {
+        return nullptr;
+    }
+    return *iter;
+}
+
+const AutonomyModuleStub* AutonomyStack::moduleByName(std::string_view module_name) const {
+    auto* mutable_this = const_cast<AutonomyStack*>(this);
+    return mutable_this->moduleByName(module_name);
+}
+
+bool AutonomyStack::faultInjected(const AutonomyStepInput& input,
+                                  std::string_view module_name,
+                                  bool ModuleFaultInjection::*selector) const {
+    return std::any_of(input.fault_injections.cbegin(), input.fault_injections.cend(), [&](const auto& fault) {
+        return fault.module_name == module_name && fault.*selector;
+    });
+}
+
+bool AutonomyStack::monitorAndRecoverModule(AutonomyModuleStub* module,
+                                            uint64_t now_ms,
+                                            bool crashed,
+                                            bool timed_out) {
+    auto supervisor_iter = std::find_if(supervisor_states_.begin(), supervisor_states_.end(), [&](const auto& state) {
+        return state.contract.module_name == module->health().module_name;
+    });
+    if (supervisor_iter == supervisor_states_.end()) {
+        return false;
+    }
+
+    auto& supervisor = *supervisor_iter;
+    supervisor.crashed = crashed;
+    supervisor.timed_out = timed_out;
+    supervisor.isolated_fault = false;
+
+    const auto module_health = module->health();
+    const bool heartbeat_timed_out = !timed_out &&
+                                     (now_ms > module_health.heartbeat_timestamp_ms) &&
+                                     ((now_ms - module_health.heartbeat_timestamp_ms) > supervisor.contract.heartbeat_timeout_ms);
+
+    if (!crashed && !timed_out && !heartbeat_timed_out) {
+        supervisor.last_fault.clear();
+        return true;
+    }
+
+    supervisor.timed_out = timed_out || heartbeat_timed_out;
+    supervisor.last_fault = crashed ? "crash" : "timeout";
+
+    if (supervisor.restart_count >= supervisor.contract.max_restarts) {
+        if (supervisor.contract.criticality == ProcessCriticality::Critical) {
+            return false;
+        }
+        supervisor.isolated_fault = true;
+        return true;
+    }
+
+    module->stop();
+    if (!module->init() || !module->start()) {
+        return false;
+    }
+    supervisor.restart_count += 1;
+    supervisor.crashed = false;
+    supervisor.timed_out = false;
+    supervisor.isolated_fault = true;
+    return true;
+}
+
+bool AutonomyStack::dependencyHealthy(const std::string& dependency_name, uint64_t now_ms) const {
+    const auto status = supervisorStatus(dependency_name);
+    if (!status.has_value()) {
+        return false;
+    }
+    if (status->crashed || status->timed_out || status->isolated_fault) {
+        return false;
+    }
+
+    const auto contract_iter = std::find_if(supervisor_states_.cbegin(), supervisor_states_.cend(), [&](const auto& state) {
+        return state.contract.module_name == dependency_name;
+    });
+    if (contract_iter == supervisor_states_.cend()) {
+        return false;
+    }
+
+    if ((now_ms > status->heartbeat_timestamp_ms) &&
+        ((now_ms - status->heartbeat_timestamp_ms) > contract_iter->contract.heartbeat_timeout_ms)) {
+        return false;
+    }
+    return true;
+}
+
+void AutonomyStack::applyDegradedMode(const AutonomyStepInput& input, AutonomyStepOutput* output) {
+    output->degraded_mode = false;
+    output->degraded_reason.clear();
+
+    if (!dependencyHealthy("localization", input.now_ms) || !output->localization_estimate.valid) {
+        output->degraded_mode = true;
+        output->degraded_reason = kStaleLocalization;
+        output->motion_decision.allow_motion = false;
+        output->motion_decision.reason = kStaleLocalization;
+        output->locomotion_command = LocomotionCommand{.sent = false, .target = {}, .reason = kStaleLocalization};
+        return;
+    }
+
+    if (!dependencyHealthy("global_planner", input.now_ms) ||
+        !dependencyHealthy("local_planner", input.now_ms) ||
+        !output->global_plan.has_plan ||
+        !output->local_plan.has_command) {
+        output->degraded_mode = true;
+        output->degraded_reason = kPlannerUnavailable;
+        output->motion_decision.allow_motion = false;
+        output->motion_decision.reason = kPlannerUnavailable;
+        output->locomotion_command = LocomotionCommand{.sent = false, .target = {}, .reason = kPlannerUnavailable};
+        return;
+    }
+
+    if (!dependencyHealthy("locomotion_interface", input.now_ms) || !output->locomotion_command.sent) {
+        output->degraded_mode = true;
+        output->degraded_reason = kLocomotionDispatchFailure;
+        output->motion_decision.allow_motion = false;
+        output->motion_decision.reason = kLocomotionDispatchFailure;
+        output->locomotion_command.reason = kLocomotionDispatchFailure;
+    }
 }
 
 } // namespace autonomy

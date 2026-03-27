@@ -6,16 +6,50 @@
 #include "autonomy/modules/module_shells.hpp"
 #include "autonomy/mission_scripting.hpp"
 
-#include <optional>
-#include <string>
 #include <array>
 #include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace autonomy {
+
+enum class ProcessCriticality {
+    Critical,
+    SoftRealtime,
+    NonCritical,
+};
+
+struct ModuleProcessContract {
+    std::string module_name{};
+    ProcessCriticality criticality{ProcessCriticality::NonCritical};
+    uint64_t heartbeat_timeout_ms{0};
+    uint64_t max_restarts{0};
+    std::vector<std::string> dependencies{};
+};
+
+struct ModuleSupervisorStatus {
+    std::string module_name{};
+    ProcessCriticality criticality{ProcessCriticality::NonCritical};
+    bool alive{true};
+    bool timed_out{false};
+    bool crashed{false};
+    bool isolated_fault{false};
+    uint64_t restart_count{0};
+    uint64_t heartbeat_timestamp_ms{0};
+    std::string last_fault{};
+};
 
 struct AutonomyStackConfig {
     uint64_t no_progress_timeout_ms{1000};
     uint64_t recovery_retry_budget{2};
+};
+
+struct ModuleFaultInjection {
+    std::string module_name{};
+    bool crash{false};
+    bool timeout{false};
 };
 
 struct AutonomyStepInput {
@@ -24,6 +58,7 @@ struct AutonomyStepInput {
     bool hold{false};
     bool blocked{false};
     bool waypoint_reached{false};
+    std::vector<ModuleFaultInjection> fault_injections{};
 };
 
 struct AutonomyStepOutput {
@@ -38,6 +73,8 @@ struct AutonomyStepOutput {
     RecoveryDecision recovery_decision{};
     MotionDecision motion_decision{};
     LocomotionCommand locomotion_command{};
+    bool degraded_mode{false};
+    std::string degraded_reason{};
 };
 
 struct MissionScriptLoadResult {
@@ -64,11 +101,35 @@ public:
                                               const ContractValidationConfig& config = {});
     MissionEvent startMission();
 
+    [[nodiscard]] std::vector<ModuleProcessContract> processContracts() const;
+    [[nodiscard]] std::vector<ModuleSupervisorStatus> supervisorStatuses() const;
+    [[nodiscard]] std::optional<ModuleSupervisorStatus> supervisorStatus(std::string_view module_name) const;
+
 private:
     static constexpr size_t kModuleCount = 12;
     using ModuleArray = std::array<AutonomyModuleStub*, kModuleCount>;
 
+    struct SupervisorState {
+        ModuleProcessContract contract{};
+        uint64_t restart_count{0};
+        bool isolated_fault{false};
+        bool crashed{false};
+        bool timed_out{false};
+        std::string last_fault{};
+    };
+
     ModuleArray modules();
+    [[nodiscard]] AutonomyModuleStub* moduleByName(std::string_view module_name);
+    [[nodiscard]] const AutonomyModuleStub* moduleByName(std::string_view module_name) const;
+    bool faultInjected(const AutonomyStepInput& input,
+                      std::string_view module_name,
+                      bool ModuleFaultInjection::*selector) const;
+    bool monitorAndRecoverModule(AutonomyModuleStub* module,
+                                 uint64_t now_ms,
+                                 bool crashed,
+                                 bool timed_out);
+    bool dependencyHealthy(const std::string& dependency_name, uint64_t now_ms) const;
+    void applyDegradedMode(const AutonomyStepInput& input, AutonomyStepOutput* output);
 
     MissionExecutiveModule mission_executive_module_{};
     MissionScriptingModule mission_scripting_module_{};
@@ -87,6 +148,8 @@ private:
     MissionScripting mission_scripting_{};
     ContractEnforcer contract_enforcer_{};
     std::optional<uint64_t> last_sample_id_{};
+
+    std::vector<SupervisorState> supervisor_states_{};
 };
 
 } // namespace autonomy

@@ -238,6 +238,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     hexapod_server_add_test(test_autonomy_stack autonomy_stack
         tests/test_autonomy_stack.cpp
     )
+    hexapod_server_add_test(test_autonomy_supervision_integration autonomy_supervision_integration
+        tests/test_autonomy_supervision_integration.cpp
+    )
     hexapod_server_add_test(test_mission_executive mission_executive
         tests/test_mission_executive.cpp
     )
