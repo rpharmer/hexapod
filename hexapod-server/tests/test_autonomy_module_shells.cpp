@@ -17,6 +17,22 @@ bool expect(bool condition, const char* message) {
     return true;
 }
 
+RobotState makeEstimatorState(uint64_t timestamp_us,
+                              double x_m,
+                              double y_m,
+                              double yaw_rad,
+                              bool valid = true,
+                              bool has_body_pose = true) {
+    RobotState est{};
+    est.valid = valid;
+    est.has_body_pose_state = has_body_pose;
+    est.timestamp_us = TimePointUs{timestamp_us};
+    est.body_pose_state.body_trans_m.x = x_m;
+    est.body_pose_state.body_trans_m.y = y_m;
+    est.body_pose_state.orientation_rad.z = yaw_rad;
+    return est;
+}
+
 bool testAllShellsLifecycleAndIdentity() {
     std::vector<std::pair<std::string, std::unique_ptr<autonomy::AutonomyModuleStub>>> modules;
     modules.emplace_back("navigation_manager", std::make_unique<autonomy::NavigationManagerModuleShell>());
@@ -55,6 +71,47 @@ bool testAllShellsLifecycleAndIdentity() {
     return true;
 }
 
+bool testLocalizationAdapterNominalEstimatorPropagation() {
+    autonomy::LocalizationModuleShell localization;
+    const RobotState estimator_state = makeEstimatorState(/*timestamp_us=*/10'000, /*x_m=*/1.25, /*y_m=*/-0.5, /*yaw_rad=*/0.75);
+    const auto observation = autonomy::localizationObservationFromEstimator(estimator_state, "map");
+
+    const auto estimate = localization.update(observation, /*now_ms=*/20);
+    return expect(estimate.valid, "nominal estimator observation should produce a valid localization estimate") &&
+           expect(estimate.frame_id == "map", "nominal estimate should keep the map frame") &&
+           expect(estimate.timestamp_ms == 10, "nominal estimate should propagate estimator timestamp") &&
+           expect(estimate.x_m == 1.25 && estimate.y_m == -0.5 && estimate.yaw_rad == 0.75,
+                  "nominal estimate should propagate estimator pose");
+}
+
+bool testLocalizationRejectsStaleObservation() {
+    autonomy::LocalizationModuleShell localization("map", /*stale_threshold_ms=*/50);
+    const auto stale_observation = autonomy::localizationObservationFromOdometry(
+        /*x_m=*/0.2,
+        /*y_m=*/0.3,
+        /*yaw_rad=*/0.4,
+        /*timestamp_ms=*/100,
+        "map");
+
+    const auto estimate = localization.update(stale_observation, /*now_ms=*/200);
+    return expect(!estimate.valid, "stale localization observation should be rejected") &&
+           expect(estimate.frame_id == "map", "rejected stale observation should preserve expected frame");
+}
+
+bool testLocalizationRejectsFrameMismatch() {
+    autonomy::LocalizationModuleShell localization("map", /*stale_threshold_ms=*/100);
+    const auto wrong_frame_observation = autonomy::localizationObservationFromOdometry(
+        /*x_m=*/1.0,
+        /*y_m=*/2.0,
+        /*yaw_rad=*/0.2,
+        /*timestamp_ms=*/120,
+        "odom");
+
+    const auto estimate = localization.update(wrong_frame_observation, /*now_ms=*/150);
+    return expect(!estimate.valid, "frame mismatch should invalidate localization observation") &&
+           expect(estimate.frame_id == "map", "frame mismatch should keep localization estimate in expected frame");
+}
+
 bool testAllShellsFunctionalWiring() {
     autonomy::NavigationManagerModuleShell navigation;
     autonomy::LocalizationModuleShell localization;
@@ -76,10 +133,13 @@ bool testAllShellsFunctionalWiring() {
     if (!expect(nav_update.has_intent, "navigation shell should emit intent")) {
         return false;
     }
-    const auto loc = localization.update(nav_update, 10);
-    if (!expect(loc.valid, "localization shell should synthesize valid estimate from nav intent")) {
+
+    const RobotState estimator_state = makeEstimatorState(/*timestamp_us=*/10'000, /*x_m=*/1.0, /*y_m=*/2.0, /*yaw_rad=*/0.25);
+    const auto loc = localization.update(autonomy::localizationObservationFromEstimator(estimator_state), 20);
+    if (!expect(loc.valid, "localization shell should synthesize valid estimate from estimator state")) {
         return false;
     }
+
     const auto world = world_model.update(loc, false, 10);
     const auto traverse = traversability.analyze(world, 10);
     const auto global_plan = global_planner.plan(nav_update, traverse);
@@ -113,6 +173,9 @@ bool testAllShellsFunctionalWiring() {
 
 int main() {
     if (!testAllShellsLifecycleAndIdentity() ||
+        !testLocalizationAdapterNominalEstimatorPropagation() ||
+        !testLocalizationRejectsStaleObservation() ||
+        !testLocalizationRejectsFrameMismatch() ||
         !testAllShellsFunctionalWiring()) {
         return EXIT_FAILURE;
     }

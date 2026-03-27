@@ -9,6 +9,7 @@ namespace autonomy {
 
 struct LocalizationEstimate {
     bool valid{false};
+    std::string frame_id{"map"};
     double x_m{0.0};
     double y_m{0.0};
     double yaw_rad{0.0};

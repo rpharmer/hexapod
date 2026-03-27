@@ -60,7 +60,13 @@ bool AutonomyStack::step(const AutonomyStepInput& input, AutonomyStepOutput* out
         output->navigation_update = NavigationUpdate{};
     }
 
-    output->localization_estimate = localization_module_.update(output->navigation_update, input.now_ms);
+    LocalizationSourceObservation localization_observation{};
+    if (input.has_estimator_state) {
+        localization_observation = localizationObservationFromEstimator(
+            input.estimator_state,
+            input.localization_frame_id);
+    }
+    output->localization_estimate = localization_module_.update(localization_observation, input.now_ms);
     output->world_model_snapshot = world_model_module_.update(
         output->localization_estimate,
         input.blocked,

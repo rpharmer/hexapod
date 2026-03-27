@@ -13,6 +13,20 @@ bool expect(bool condition, const char* message) {
     return true;
 }
 
+RobotState makeEstimatorState(uint64_t timestamp_us,
+                              double x_m,
+                              double y_m,
+                              double yaw_rad) {
+    RobotState est{};
+    est.valid = true;
+    est.has_body_pose_state = true;
+    est.timestamp_us = TimePointUs{timestamp_us};
+    est.body_pose_state.body_trans_m.x = x_m;
+    est.body_pose_state.body_trans_m.y = y_m;
+    est.body_pose_state.orientation_rad.z = yaw_rad;
+    return est;
+}
+
 autonomy::WaypointMission makeMission() {
     autonomy::WaypointMission mission{};
     mission.mission_id = "autonomy-stack-mission";
@@ -46,6 +60,9 @@ bool testHappyPathWiresMissionNavAndMotion() {
                                .now_ms = 10,
                                .blocked = false,
                                .waypoint_reached = false,
+                               .has_estimator_state = true,
+                               .estimator_state = makeEstimatorState(9'000, 0.1, 0.2, 0.05),
+                               .localization_frame_id = "map",
                            },
                            &first),
                 "first step should succeed")) {
@@ -81,6 +98,9 @@ bool testHappyPathWiresMissionNavAndMotion() {
                                .now_ms = 20,
                                .blocked = false,
                                .waypoint_reached = true,
+                               .has_estimator_state = true,
+                               .estimator_state = makeEstimatorState(19'000, 1.4, 0.45, 0.19),
+                               .localization_frame_id = "map",
                            },
                            &second),
                 "second step should succeed")) {
@@ -116,15 +136,15 @@ bool testBlockedFlowEscalatesRecoveryToAbort() {
     autonomy::AutonomyStepOutput step1{};
     autonomy::AutonomyStepOutput step2{};
     autonomy::AutonomyStepOutput step3{};
-    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 10, .blocked = true}, &step1),
+    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 10, .blocked = true, .has_estimator_state = true, .estimator_state = makeEstimatorState(9'000, 0.0, 0.0, 0.0)}, &step1),
                 "first blocked step should succeed")) {
         return false;
     }
-    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 20, .blocked = true}, &step2),
+    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 20, .blocked = true, .has_estimator_state = true, .estimator_state = makeEstimatorState(19'000, 0.0, 0.0, 0.0)}, &step2),
                 "second blocked step should succeed")) {
         return false;
     }
-    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 30, .blocked = true}, &step3),
+    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 30, .blocked = true, .has_estimator_state = true, .estimator_state = makeEstimatorState(29'000, 0.0, 0.0, 0.0)}, &step3),
                 "third blocked step should succeed")) {
         return false;
     }

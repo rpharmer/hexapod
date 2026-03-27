@@ -6,6 +6,8 @@
 #include "autonomy/modules/module_shells.hpp"
 #include "autonomy/mission_scripting.hpp"
 
+#include "kinematics/types.hpp"
+
 #include <optional>
 #include <string>
 #include <array>
@@ -24,6 +26,10 @@ struct AutonomyStepInput {
     bool hold{false};
     bool blocked{false};
     bool waypoint_reached{false};
+
+    bool has_estimator_state{false};
+    RobotState estimator_state{};
+    std::string localization_frame_id{"map"};
 };
 
 struct AutonomyStepOutput {
