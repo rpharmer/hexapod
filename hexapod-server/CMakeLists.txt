@@ -310,6 +310,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     hexapod_server_add_test(test_scenario_driver_validation scenario_driver_validation
         tests/test_scenario_driver_validation.cpp
     )
+    hexapod_server_add_test(test_scenario_autonomy_outcomes scenario_autonomy_outcomes
+        tests/test_scenario_autonomy_outcomes.cpp
+    )
 
     # control
     hexapod_server_add_test(test_simple_estimator_ground_plane simple_estimator_ground_plane

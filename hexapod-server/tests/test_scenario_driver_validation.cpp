@@ -360,6 +360,34 @@ bool test_dynamic_turn_priority_safety_scenario_loads_strict() {
            expect(saw_fault, "scenario should include safety fault overrides") &&
            expect(saw_sensor_override, "scenario should include contact/sensor overrides");
 }
+
+bool test_autonomy_outcome_scenarios_load_strict() {
+    namespace fs = std::filesystem;
+    const fs::path test_file = fs::path(__FILE__).lexically_normal();
+    const fs::path scenarios_dir = test_file.parent_path().parent_path() / "scenarios";
+    const std::vector<std::string> scenario_names{
+        "07_blocked_navigation_pause_resume.toml",
+        "08_retry_replan_escalation.toml",
+        "09_abort_on_budget_exhaustion.toml",
+    };
+
+    for (const auto& scenario_name : scenario_names) {
+        ScenarioDefinition scenario{};
+        std::string error;
+        const fs::path scenario_path = scenarios_dir / scenario_name;
+        const bool ok = ScenarioDriver::loadFromToml(scenario_path.string(), scenario, error,
+                                                     ScenarioDriver::ValidationMode::Strict);
+        if (!expect(ok, ("scenario should parse in strict mode: " + scenario_name).c_str())) {
+            std::cerr << "strict parse error: " << error << '\n';
+            return false;
+        }
+        if (!expect(scenario.expected.enabled,
+                    ("scenario should include [expected] signatures: " + scenario_name).c_str())) {
+            return false;
+        }
+    }
+    return true;
+}
 } // namespace
 
 int main() {
@@ -388,6 +416,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!test_dynamic_turn_priority_safety_scenario_loads_strict()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_autonomy_outcome_scenarios_load_strict()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

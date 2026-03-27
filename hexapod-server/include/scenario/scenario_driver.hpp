@@ -6,6 +6,15 @@
 #include <string>
 #include <vector>
 
+struct ScenarioExpectedOutcomes {
+    bool enabled{false};
+    std::vector<std::string> mission_states{};
+    std::vector<std::string> recovery_actions{};
+    std::string final_mission_state{};
+    bool mission_should_abort{false};
+    bool locomotion_should_be_gated{false};
+};
+
 struct ScenarioMotionIntent {
     bool enabled{false};
     RobotMode mode{RobotMode::SAFE_IDLE};
@@ -44,6 +53,7 @@ struct ScenarioDefinition {
     uint64_t tick_ms{20};
     bool refresh_motion_intent{true};
     uint64_t motion_ramp_ms{0};
+    ScenarioExpectedOutcomes expected{};
     std::vector<ScenarioEvent> events{};
 };
 
