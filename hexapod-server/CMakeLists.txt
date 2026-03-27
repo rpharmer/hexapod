@@ -82,6 +82,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/recovery_manager.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/mission_scripting.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/global_planner.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/autonomy_stack.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/local_planner.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/localization.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/autonomy/modules/locomotion_interface.cpp"
@@ -233,6 +234,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     )
     hexapod_server_add_test(test_autonomy_module_shells autonomy_module_shells
         tests/test_autonomy_module_shells.cpp
+    )
+    hexapod_server_add_test(test_autonomy_stack autonomy_stack
+        tests/test_autonomy_stack.cpp
     )
     hexapod_server_add_test(test_mission_executive mission_executive
         tests/test_mission_executive.cpp
