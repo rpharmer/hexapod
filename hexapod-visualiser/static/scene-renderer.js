@@ -153,192 +153,43 @@ function resolveActiveWaypointDistanceM(model) {
 }
 
 function normalizePoseCandidate(candidate) {
-  if (!candidate) {
+  if (!candidate || !Number.isFinite(candidate.x_m) || !Number.isFinite(candidate.y_m) || !Number.isFinite(candidate.yaw_rad)) {
     return null;
   }
-  const x = Number.isFinite(candidate.x_m) ? candidate.x_m : candidate.x;
-  const y = Number.isFinite(candidate.y_m) ? candidate.y_m : candidate.y;
-  if (!Number.isFinite(x) || !Number.isFinite(y)) {
-    return null;
-  }
-
-  const yaw = Number.isFinite(candidate.yaw_rad)
-    ? candidate.yaw_rad
-    : Number.isFinite(candidate.yaw)
-      ? candidate.yaw
-      : candidate.z;
-
-  return { x_m: x, y_m: y, yaw_rad: Number.isFinite(yaw) ? yaw : 0 };
+  return { x_m: candidate.x_m, y_m: candidate.y_m, yaw_rad: candidate.yaw_rad };
 }
 
-function resolveFinitePoseCandidate(...candidates) {
-  for (const candidate of candidates) {
-    const normalized = normalizePoseCandidate(candidate);
-    if (normalized) {
-      return normalized;
-    }
-  }
-  return null;
+export function resolvePoseOffsetMm(model, poseState) {
+  return resolvePoseOffsetWithSource(model, poseState).pose;
 }
 
-function resolvePoseCandidateFromTranslation(translation, orientation) {
-  if (!translation) {
-    return null;
-  }
-  const candidate = normalizePoseCandidate(translation);
-  if (!candidate) {
-    return null;
-  }
-  const yaw = Number.isFinite(orientation?.yaw_rad)
-    ? orientation.yaw_rad
-    : Number.isFinite(orientation?.yaw)
-      ? orientation.yaw
-      : orientation?.z;
-  return { x_m: candidate.x_m, y_m: candidate.y_m, yaw_rad: Number.isFinite(yaw) ? yaw : candidate.yaw_rad };
-}
-
-function resolveVelocityTwist(model) {
-  const linear = model.dynamic_gait?.body_linear_velocity_mps;
-  const angular = model.dynamic_gait?.body_angular_velocity_radps;
-  const commandedLinear = model.dynamic_gait?.commanded_body_velocity_mps;
-  const commandedAngular = model.dynamic_gait?.commanded_body_angular_velocity_radps;
-  const commandedSpeed = model.dynamic_gait?.commanded_speed_mps;
-  const commandedHeading = model.dynamic_gait?.commanded_heading_rad;
-  if (
-    !linear &&
-    !angular &&
-    !commandedLinear &&
-    !commandedAngular &&
-    !Number.isFinite(commandedSpeed) &&
-    !Number.isFinite(commandedHeading)
-  ) {
-    return null;
-  }
-  const linearHasPlanarSignal = Number.isFinite(linear?.x) || Number.isFinite(linear?.y);
-  const commandedHasPlanarSignal = Number.isFinite(commandedLinear?.x) || Number.isFinite(commandedLinear?.y);
-  const linearPlanarMagnitude = Math.hypot(
-    Number.isFinite(linear?.x) ? linear.x : 0,
-    Number.isFinite(linear?.y) ? linear.y : 0,
-  );
-  const commandedPlanarMagnitude = Math.hypot(
-    Number.isFinite(commandedLinear?.x) ? commandedLinear.x : 0,
-    Number.isFinite(commandedLinear?.y) ? commandedLinear.y : 0,
-  );
-  const useCommandedLinear =
-    commandedHasPlanarSignal &&
-    (!linearHasPlanarSignal || (linearPlanarMagnitude < 1e-5 && commandedPlanarMagnitude > 1e-5));
-  const headingDerivedLinear = (Number.isFinite(commandedSpeed) && Number.isFinite(commandedHeading))
-    ? {
-      x: commandedSpeed * Math.cos(commandedHeading),
-      y: commandedSpeed * Math.sin(commandedHeading),
-      z: 0,
-    }
-    : null;
-  const useHeadingDerivedLinear =
-    headingDerivedLinear !== null && linearPlanarMagnitude < 1e-5 && commandedPlanarMagnitude < 1e-5;
-  const resolvedLinear = useCommandedLinear
-    ? commandedLinear
-    : useHeadingDerivedLinear
-      ? headingDerivedLinear
-      : linearHasPlanarSignal
-        ? linear
-        : headingDerivedLinear;
-  const resolvedAngular =
-    (Number.isFinite(angular?.x) || Number.isFinite(angular?.y) || Number.isFinite(angular?.z))
-      ? angular
-      : commandedAngular;
-  return {
-    vx: Number.isFinite(resolvedLinear?.x) ? resolvedLinear.x : 0,
-    vy: Number.isFinite(resolvedLinear?.y) ? resolvedLinear.y : 0,
-    wz: Number.isFinite(resolvedAngular?.z) ? resolvedAngular.z : 0,
-  };
-}
-
-export function resolvePoseOffsetMm(model, deadReckoning, nowMs = Date.now()) {
-  return resolvePoseOffsetWithSource(model, deadReckoning, nowMs).pose;
-}
-
-export function resolvePoseOffsetWithSource(model, deadReckoning, nowMs = Date.now()) {
+export function resolvePoseOffsetWithSource(model, poseState) {
   const localizationFrameId = model.autonomy_debug?.localization?.frame_id;
   const localizationPose =
-    !localizationFrameId || localizationFrameId === "map" || localizationFrameId === "odom"
+    localizationFrameId === "map" || localizationFrameId === "odom"
       ? model.autonomy_debug?.localization?.current_pose
       : null;
 
   const sourcedAbsoluteCandidates = [
     { source: "autonomy_current_pose", pose: normalizePoseCandidate(model.autonomy_debug?.current_pose) },
     { source: "localization_pose", pose: normalizePoseCandidate(localizationPose) },
-    { source: "dynamic_gait_current_pose", pose: normalizePoseCandidate(model.dynamic_gait?.current_pose) },
   ];
+
   const absolutePoseSource = sourcedAbsoluteCandidates.find((candidate) => candidate.pose);
-  if (absolutePoseSource) {
-    const absolutePose = absolutePoseSource.pose;
-    const resolved = {
-      x: absolutePose.x_m * 1000,
-      y: absolutePose.y_m * 1000,
-      yaw: Number.isFinite(absolutePose.yaw_rad) ? absolutePose.yaw_rad : 0,
-    };
-    deadReckoning.pose = { ...resolved };
-    deadReckoning.poseSource = absolutePoseSource.source;
-    deadReckoning.lastTimestampMs = Number.isFinite(model.timestamp_ms)
-      ? model.timestamp_ms
-      : (Number.isFinite(nowMs) ? nowMs : null);
-    return { pose: resolved, poseSource: absolutePoseSource.source };
+  if (!absolutePoseSource) {
+    poseState.poseSource = "missing_pose";
+    return { pose: poseState.pose, poseSource: poseState.poseSource };
   }
 
-  const translationPose = resolveFinitePoseCandidate(
-    resolvePoseCandidateFromTranslation(
-      model.dynamic_gait?.body_translation_m,
-      model.dynamic_gait?.body_orientation_rad,
-    ),
-    resolvePoseCandidateFromTranslation(
-      model.dynamic_gait?.body_translation_m,
-      model.dynamic_gait?.orientation_rad,
-    ),
-  );
-  const velocity = resolveVelocityTwist(model);
-  const timestampMs = Number.isFinite(model.timestamp_ms)
-    ? model.timestamp_ms
-    : (Number.isFinite(nowMs) ? nowMs : null);
-  if (velocity && timestampMs !== null) {
-    if (deadReckoning.lastTimestampMs === null && translationPose) {
-      deadReckoning.pose = {
-        x: translationPose.x_m * 1000,
-        y: translationPose.y_m * 1000,
-        yaw: Number.isFinite(translationPose.yaw_rad) ? translationPose.yaw_rad : deadReckoning.pose.yaw,
-      };
-    }
-
-    if (deadReckoning.lastTimestampMs !== null) {
-      const dtSeconds = Math.max(0, Math.min((timestampMs - deadReckoning.lastTimestampMs) / 1000, 0.25));
-      if (dtSeconds > 0) {
-        const yaw = deadReckoning.pose.yaw;
-        const worldVx = velocity.vx * Math.cos(yaw) - velocity.vy * Math.sin(yaw);
-        const worldVy = velocity.vx * Math.sin(yaw) + velocity.vy * Math.cos(yaw);
-        deadReckoning.pose.x += worldVx * dtSeconds * 1000;
-        deadReckoning.pose.y += worldVy * dtSeconds * 1000;
-        deadReckoning.pose.yaw += velocity.wz * dtSeconds;
-      }
-    }
-    deadReckoning.lastTimestampMs = timestampMs;
-    deadReckoning.poseSource = "dead_reckoning";
-    return { pose: deadReckoning.pose, poseSource: deadReckoning.poseSource };
-  }
-
-  if (translationPose) {
-    const translated = {
-      x: translationPose.x_m * 1000,
-      y: translationPose.y_m * 1000,
-      yaw: Number.isFinite(translationPose.yaw_rad) ? translationPose.yaw_rad : 0,
-    };
-    deadReckoning.pose = { ...translated };
-    deadReckoning.poseSource = "dead_reckoning";
-    deadReckoning.lastTimestampMs = timestampMs;
-    return { pose: translated, poseSource: deadReckoning.poseSource };
-  }
-
-  deadReckoning.poseSource = "dead_reckoning";
-  return { pose: deadReckoning.pose, poseSource: deadReckoning.poseSource };
+  const absolutePose = absolutePoseSource.pose;
+  const resolved = {
+    x: absolutePose.x_m * 1000,
+    y: absolutePose.y_m * 1000,
+    yaw: absolutePose.yaw_rad,
+  };
+  poseState.pose = { ...resolved };
+  poseState.poseSource = absolutePoseSource.source;
+  return { pose: resolved, poseSource: absolutePoseSource.source };
 }
 
 function transformWorldToBodyAnchored(point, poseOffset) {
@@ -564,10 +415,9 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
   let stableGroundPlaneZ = Number.NaN;
   const urlParams = new URLSearchParams(window.location.search);
   telemetry.verboseDiagnostics = urlParams.get("debug") === "1" || urlParams.get("verbose_diagnostics") === "1";
-  const deadReckoning = {
+  const poseState = {
     pose: { x: 0, y: 0, yaw: 0 },
-    lastTimestampMs: null,
-    poseSource: "dead_reckoning",
+    poseSource: "missing_pose",
   };
   const stanceLockState = {
     worldAnchorsByLeg: {},
@@ -589,7 +439,7 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     const scale = (Math.min(width, height) / 420) * camera.zoom;
     const centerX = width * 0.5 + camera.panX;
     const centerY = height * 0.58 + camera.panY;
-    let { pose: poseOffset, poseSource } = resolvePoseOffsetWithSource(model, deadReckoning, Date.now());
+    let { pose: poseOffset, poseSource } = resolvePoseOffsetWithSource(model, poseState);
     telemetry.poseSource = poseSource;
     const gridSpacingMm = 55;
     const kinematics = LEG_ORDER.map((legName) => ({

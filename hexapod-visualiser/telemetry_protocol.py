@@ -29,7 +29,7 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
             log_event("warning", "udp_rejected", reason="payload_not_object", addr=addr)
             return
 
-        schema_version = self._resolve_schema_version(message)
+        schema_version = message.get("schema_version")
         if schema_version != EXPECTED_SCHEMA_VERSION:
             self.diagnostics.udp_rejected += 1
             log_event(
@@ -63,12 +63,6 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
             self.state.geometry = merged
             changed = True
 
-        if message.get("type") == "geometry":
-            merged = dict(self.state.geometry)
-            merged.update(self._sanitize_geometry_update(message, source="legacy_geometry"))
-            self.state.geometry = merged
-            changed = True
-
         angles = message.get("angles_deg")
         if isinstance(angles, dict):
             sanitized: dict[str, list[float]] = {}
@@ -98,20 +92,6 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
         if not isinstance(self.state.timestamp_ms, int):
             return False
         return incoming_timestamp_ms < self.state.timestamp_ms
-
-    def _resolve_schema_version(self, message: dict[str, Any]) -> int | None:
-        schema_version = message.get("schema_version")
-        if isinstance(schema_version, int):
-            return schema_version
-
-        # Backward compatibility: older server builds did not include schema_version.
-        # Treat recognised legacy packet layouts as schema v1 to keep the visualiser usable.
-        packet_type = message.get("type")
-        looks_like_legacy_geometry = isinstance(message.get("geometry"), dict)
-        looks_like_legacy_joints = packet_type == "joints" and isinstance(message.get("angles_deg"), dict)
-        if looks_like_legacy_geometry or looks_like_legacy_joints:
-            return EXPECTED_SCHEMA_VERSION
-        return None
 
     def _apply_common_state_fields(self, message: dict[str, Any]) -> bool:
         changed = False
@@ -197,11 +177,13 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
         pose_payload = self._sanitize_pose_payload(value.get("current_pose"))
         localization_payload = self._sanitize_localization_payload(value.get("localization"))
 
-        out: dict[str, Any] = {"waypoints": waypoints}
+        if pose_payload is None:
+            log_event("debug", "autonomy_debug_rejected", reason="missing_required_current_pose")
+            return None
+
+        out: dict[str, Any] = {"waypoints": waypoints, "current_pose": pose_payload}
         if isinstance(active_waypoint_index, int):
             out["active_waypoint_index"] = int(active_waypoint_index)
-        if pose_payload is not None:
-            out["current_pose"] = pose_payload
         if localization_payload is not None:
             out["localization"] = localization_payload
         return out
@@ -209,17 +191,12 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
     def _sanitize_pose_payload(self, value: Any) -> dict[str, float] | None:
         if not isinstance(value, dict):
             return None
-        px = value.get("x_m") if _is_number(value.get("x_m")) else value.get("x")
-        py = value.get("y_m") if _is_number(value.get("y_m")) else value.get("y")
-        if not (_is_number(px) and _is_number(py)):
+        x_m = value.get("x_m")
+        y_m = value.get("y_m")
+        yaw_rad = value.get("yaw_rad")
+        if not (_is_number(x_m) and _is_number(y_m) and _is_number(yaw_rad)):
             return None
-        pose_payload: dict[str, float] = {"x_m": float(px), "y_m": float(py)}
-        yaw = value.get("yaw_rad") if _is_number(value.get("yaw_rad")) else value.get("yaw")
-        if not _is_number(yaw):
-            yaw = value.get("z")
-        if _is_number(yaw):
-            pose_payload["yaw_rad"] = float(yaw)
-        return pose_payload
+        return {"x_m": float(x_m), "y_m": float(y_m), "yaw_rad": float(yaw_rad)}
 
     def _sanitize_localization_payload(self, value: Any) -> dict[str, Any] | None:
         if not isinstance(value, dict):

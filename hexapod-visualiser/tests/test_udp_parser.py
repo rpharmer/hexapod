@@ -105,24 +105,6 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.voltage, 12.3)
         self.assertEqual(state.current, 0.8)
 
-    def test_udp_protocol_accepts_legacy_packets_without_schema_version(self):
-        state = server.TelemetryState()
-        updates = []
-        diagnostics = server.Diagnostics()
-        protocol = server.UdpTelemetryProtocol(
-            state, diagnostics, lambda: updates.append(state.to_payload())
-        )
-
-        protocol.datagram_received(
-            b'{"angles_deg": {"LF": [1, 2, 3]}, "geometry": {"coxa": 41.5}, "timestamp_ms": 1002}',
-            ("127.0.0.1", 9000),
-        )
-
-        self.assertGreaterEqual(len(updates), 1)
-        self.assertEqual(state.geometry["coxa"], 41.5)
-        self.assertEqual(state.angles_deg["LF"], [1.0, 2.0, 3.0])
-        self.assertEqual(state.timestamp_ms, 1002)
-
     def test_udp_protocol_schema_gate_still_rejects_missing_version_for_unknown_payload(self):
         state = server.TelemetryState()
         updates = []
@@ -273,7 +255,21 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.autonomy_debug["current_pose"]["x_m"], 0.4)
         self.assertEqual(state.autonomy_debug["current_pose"]["yaw_rad"], 0.2)
 
-    def test_udp_parser_accepts_legacy_xy_pose_fields_and_localization_pose(self):
+    def test_udp_parser_requires_schema_version_field(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
+
+        before = state.to_payload()
+        protocol.datagram_received(
+            b'{"angles_deg": {"LF": [1, 2, 3]}, "geometry": {"coxa": 41.5}, "timestamp_ms": 1002}',
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertEqual(state.to_payload(), before)
+        self.assertGreaterEqual(diagnostics.udp_rejected, 1)
+
+    def test_udp_parser_requires_complete_metric_pose_fields(self):
         state = server.TelemetryState()
         diagnostics = server.Diagnostics()
         protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
@@ -287,14 +283,22 @@ class TelemetryParserTests(unittest.TestCase):
             ("127.0.0.1", 9000),
         )
 
+        self.assertIsNone(state.autonomy_debug)
+
+        protocol.datagram_received(
+            (
+                b'{"schema_version":1,"type":"state","timestamp_ms":1236,'
+                b'"autonomy_debug":{"current_pose":{"x_m":1.5,"y_m":-0.75,"yaw_rad":0.9},'
+                b'"localization":{"frame_id":"map","current_pose":{"x_m":2.25,"y_m":-1.25,"yaw_rad":-0.3}}}}'
+            ),
+            ("127.0.0.1", 9000),
+        )
+
         self.assertIsNotNone(state.autonomy_debug)
         self.assertEqual(state.autonomy_debug["current_pose"]["x_m"], 1.5)
-        self.assertEqual(state.autonomy_debug["current_pose"]["y_m"], -0.75)
-        self.assertEqual(state.autonomy_debug["current_pose"]["yaw_rad"], 0.9)
-        self.assertEqual(state.autonomy_debug["localization"]["current_pose"]["x_m"], 2.25)
         self.assertEqual(state.autonomy_debug["localization"]["current_pose"]["yaw_rad"], -0.3)
-        self.assertEqual(state.autonomy_debug["localization"]["frame_id"], "map")
-        
+
+
     def test_udp_protocol_ignores_unknown_geometry_keys_in_geometry_object(self):
         state = server.TelemetryState()
         diagnostics = server.Diagnostics()
@@ -310,21 +314,6 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.geometry["coxa"], before["coxa"])
         self.assertNotIn("coxxa", state.geometry)
 
-    def test_udp_protocol_ignores_unknown_geometry_keys_in_legacy_geometry_payload(self):
-        state = server.TelemetryState()
-        diagnostics = server.Diagnostics()
-        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
-
-        before = dict(state.geometry)
-        protocol.datagram_received(
-            b'{"schema_version": 1, "type": "geometry", "coxxa": 99, "body_radius": 75}',
-            ("127.0.0.1", 9000),
-        )
-
-        self.assertEqual(state.geometry["body_radius"], 75.0)
-        self.assertEqual(state.geometry["coxa"], before["coxa"])
-        self.assertNotIn("coxxa", state.geometry)
-        
     def test_frontend_contract_does_not_expect_optional_status_badges(self):
         static_dir = pathlib.Path(__file__).resolve().parents[1] / "static"
         app_js = (static_dir / "app.js").read_text(encoding="utf-8")
