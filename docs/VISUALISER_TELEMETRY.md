@@ -95,6 +95,7 @@ WebSocket payloads emitted by `TelemetryState.to_payload` include:
 | `voltage` | number or `null` | yes | power bus voltage when present |
 | `current` | number or `null` | yes | power bus current when present |
 | `dynamic_gait` | object or `null` | yes | dynamic gait internals (family/region/fallback/envelope/per-leg phase+duty+stance) for tuning + safety validation |
+| `autonomy_debug` | object or `null` | yes | optional autonomy mission-debug payload (waypoints, active waypoint index, current pose) for route/mission visual overlays |
 
 Optionality semantics:
 - These fields are **always present in WebSocket payloads** but may be `null` until UDP telemetry includes a valid value.

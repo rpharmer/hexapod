@@ -62,6 +62,15 @@ export function applyStatePayload(model, telemetry, payload, nowMs = Date.now())
     geometry: { ...model.geometry, ...(payload.geometry || {}) },
     angles_deg: { ...model.angles_deg, ...(payload.angles_deg || {}) },
     timestamp_ms: payload.timestamp_ms ?? model.timestamp_ms,
+    active_mode: payload.active_mode ?? model.active_mode ?? null,
+    active_fault: payload.active_fault ?? model.active_fault ?? null,
+    bus_ok: payload.bus_ok ?? model.bus_ok ?? null,
+    estimator_valid: payload.estimator_valid ?? model.estimator_valid ?? null,
+    loop_counter: payload.loop_counter ?? model.loop_counter ?? null,
+    voltage: payload.voltage ?? model.voltage ?? null,
+    current: payload.current ?? model.current ?? null,
+    dynamic_gait: payload.dynamic_gait ?? model.dynamic_gait ?? null,
+    autonomy_debug: payload.autonomy_debug ?? model.autonomy_debug ?? null,
   };
 
   if (payloadTimestampMs !== null) {

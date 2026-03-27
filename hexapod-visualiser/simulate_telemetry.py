@@ -11,6 +11,12 @@ import time
 
 LEG_ORDER = ["LF", "LM", "LR", "RF", "RM", "RR"]
 SCHEMA_VERSION = 1
+MISSION_WAYPOINTS = [
+    {"x_m": 0.0, "y_m": 0.0, "yaw_rad": 0.0},
+    {"x_m": 0.35, "y_m": 0.20, "yaw_rad": 0.4},
+    {"x_m": 0.80, "y_m": 0.10, "yaw_rad": 0.0},
+    {"x_m": 1.05, "y_m": -0.30, "yaw_rad": -0.5},
+]
 
 
 def main() -> None:
@@ -50,6 +56,15 @@ def main() -> None:
             "type": "joints",
             "timestamp_ms": int(time.time() * 1000),
             "angles_deg": angles,
+            "autonomy_debug": {
+                "waypoints": MISSION_WAYPOINTS,
+                "active_waypoint_index": int((t * 0.25) % len(MISSION_WAYPOINTS)),
+                "current_pose": {
+                    "x_m": 0.55 + 0.45 * math.cos(t * 0.3),
+                    "y_m": 0.05 + 0.35 * math.sin(t * 0.4),
+                    "yaw_rad": math.sin(t * 0.25),
+                },
+            },
         }
         sock.sendto(json.dumps(payload).encode("utf-8"), (args.host, args.port))
         t += period * 2.0
