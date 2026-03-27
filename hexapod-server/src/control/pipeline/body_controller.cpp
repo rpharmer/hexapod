@@ -12,6 +12,13 @@ constexpr double kYawCommandSlewLimitRadPerSec = 1.2;
 constexpr double kLegTargetSlewLimitMps = 0.9;
 constexpr double kLegTargetTransitionSlewLimitMps = 0.35;
 constexpr uint32_t kLegTargetTransitionSlewSteps = 20;
+constexpr uint8_t kLimiterPhaseTracking = 0;
+constexpr uint8_t kLimiterPhaseBodyLeadsOnStart = 1;
+constexpr uint8_t kLimiterPhaseLegsLeadOnStop = 2;
+constexpr uint8_t kConstraintReasonNone = 0;
+constexpr uint8_t kConstraintReasonTransition = 1;
+constexpr uint8_t kConstraintReasonSlewRate = 2;
+constexpr uint8_t kConstraintReasonReachClamp = 3;
 
 } // namespace
 
@@ -58,6 +65,7 @@ LegTargets BodyController::update(const RobotState& est,
                                   const SafetyState& safety) {
     LegTargets out{};
     out.timestamp_us = now_us();
+    MotionLimiterTelemetry limiter_telemetry{};
 
     (void)est;
 
@@ -66,12 +74,22 @@ LegTargets BodyController::update(const RobotState& est,
         (intent.requested_mode == RobotMode::WALK) &&
         !safety.inhibit_motion &&
         !safety.torque_cut;
+    const bool was_walking = previous_walking_;
     if (walking != previous_walking_) {
         transition_slew_steps_remaining_ = kLegTargetTransitionSlewSteps;
     } else if (transition_slew_steps_remaining_ > 0) {
         --transition_slew_steps_remaining_;
     }
     previous_walking_ = walking;
+    if (!was_walking && walking) {
+        limiter_telemetry.phase = kLimiterPhaseBodyLeadsOnStart;
+        limiter_telemetry.constraint_reason = kConstraintReasonTransition;
+    } else if (was_walking && !walking) {
+        limiter_telemetry.phase = kLimiterPhaseLegsLeadOnStop;
+        limiter_telemetry.constraint_reason = kConstraintReasonTransition;
+    } else {
+        limiter_telemetry.phase = kLimiterPhaseTracking;
+    }
 
     const double roll_cmd = intent.body_pose_setpoint.orientation_rad.x;
     const double pitch_cmd = intent.body_pose_setpoint.orientation_rad.y;
@@ -87,7 +105,14 @@ LegTargets BodyController::update(const RobotState& est,
     } else {
         const double max_step = kYawCommandSlewLimitRadPerSec * update_dt_s;
         const double delta = yaw_cmd_raw - filtered_yaw_cmd_rad_;
-        filtered_yaw_cmd_rad_ += std::clamp(delta, -max_step, max_step);
+        const double clamped_delta = std::clamp(delta, -max_step, max_step);
+        if (std::abs(delta) > std::abs(clamped_delta) + 1e-12) {
+            limiter_telemetry.hard_clamp_yaw = true;
+            limiter_telemetry.constraint_reason = kConstraintReasonSlewRate;
+        }
+        filtered_yaw_cmd_rad_ += clamped_delta;
+        const double delta_abs = std::abs(delta);
+        limiter_telemetry.adaptation_scale_yaw = delta_abs > 1e-9 ? std::abs(clamped_delta) / delta_abs : 1.0;
     }
     last_update_timestamp_ = now;
     const double yaw_cmd = filtered_yaw_cmd_rad_;
@@ -114,7 +139,12 @@ LegTargets BodyController::update(const RobotState& est,
         target = body_rotation * foothold.pos_body_m;
         Vec3 target_vel = body_rotation * foothold.vel_body_mps;
 
+        const Vec3 unclamped_reach_target = target;
         target = clampToReachEnvelope(leg, target);
+        if (vecNorm(target - unclamped_reach_target) > 1e-9) {
+            limiter_telemetry.hard_clamp_reach = true;
+            limiter_telemetry.constraint_reason = kConstraintReasonReachClamp;
+        }
         if (has_previous_targets_ && has_positive_dt) {
             const double speed_limit = transition_slew_steps_remaining_ > 0
                                            ? kLegTargetTransitionSlewLimitMps
@@ -124,6 +154,10 @@ LegTargets BodyController::update(const RobotState& est,
             const Vec3 delta = target - previous;
             const double delta_mag = vecNorm(delta);
             if (delta_mag > max_step_m && delta_mag > 1e-9) {
+                limiter_telemetry.hard_clamp_linear = true;
+                limiter_telemetry.constraint_reason =
+                    (transition_slew_steps_remaining_ > 0) ? kConstraintReasonTransition : kConstraintReasonSlewRate;
+                limiter_telemetry.adaptation_scale_linear = max_step_m / delta_mag;
                 target = previous + (delta * (max_step_m / delta_mag));
             }
         }
@@ -135,5 +169,6 @@ LegTargets BodyController::update(const RobotState& est,
 
     previous_targets_ = out;
     has_previous_targets_ = true;
+    last_motion_limiter_telemetry_ = limiter_telemetry;
     return out;
 }

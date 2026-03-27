@@ -156,6 +156,18 @@ telemetry::ControlStepTelemetry makeSampleTelemetry()
     telemetry.status.active_mode = RobotMode::WALK;
     telemetry.status.bus_ok = true;
     telemetry.status.estimator_valid = true;
+    telemetry.status.dynamic_gait.limiter_enabled = true;
+    telemetry.status.dynamic_gait.limiter_phase = 1;
+    telemetry.status.dynamic_gait.active_constraint_reason = 2;
+    telemetry.status.dynamic_gait.adaptation_scale_linear = 0.72;
+    telemetry.status.dynamic_gait.adaptation_scale_yaw = 0.90;
+    telemetry.status.dynamic_gait.adaptation_scale_cadence = 0.68;
+    telemetry.status.dynamic_gait.adaptation_scale_step = 0.68;
+    telemetry.status.dynamic_gait.hard_clamp_linear = true;
+    telemetry.status.dynamic_gait.hard_clamp_yaw = false;
+    telemetry.status.dynamic_gait.hard_clamp_reach = true;
+    telemetry.status.dynamic_gait.hard_clamp_cadence = true;
+    telemetry.status.dynamic_gait.saturated = true;
     return telemetry;
 }
 
@@ -203,7 +215,17 @@ bool testPublishControlStepIncludesLocalizationPoseWhenPresent()
            expect(payload->find("\"localization\":{\"frame_id\":\"map\",\"current_pose\":{") != std::string::npos,
                   "localization.current_pose should be emitted under localization") &&
            expect(payload->find("\"current_pose\":{\"x_m\":4.5,\"y_m\":-2.1,\"yaw_rad\":1.57}") != std::string::npos,
-                  "autonomy_debug.current_pose should reflect localization pose values");
+                  "autonomy_debug.current_pose should reflect localization pose values") &&
+           expect(payload->find("\"limiter\":{\"enabled\":true") != std::string::npos,
+                  "payload should include limiter enabled flag") &&
+           expect(payload->find("\"phase\":\"body_leads_on_start\"") != std::string::npos,
+                  "payload should include limiter phase") &&
+           expect(payload->find("\"active_constraint_reason\":\"slew_rate\"") != std::string::npos,
+                  "payload should include limiter constraint reason") &&
+           expect(payload->find("\"adaptation_scales\":{\"linear\":0.72,\"yaw\":0.9,\"cadence\":0.68,\"step\":0.68}") != std::string::npos,
+                  "payload should include limiter adaptation scales") &&
+           expect(payload->find("\"hard_clamp\":{\"linear\":true,\"yaw\":false,\"reach\":true,\"cadence\":true,\"saturated\":true}") != std::string::npos,
+                  "payload should include hard-clamp saturation flags");
 }
 
 bool testPublishControlStepFallsBackToOdometryWhenLocalizationAbsent()

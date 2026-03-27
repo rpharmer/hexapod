@@ -519,6 +519,9 @@ void GaitPolicyPlanner::applyServoVelocityConstraint(RuntimeGaitPolicy& policy, 
 
     const double gait_scale =
         std::clamp(allowed_peak_velocity_radps / observed_peak_velocity_radps, 0.05, 1.0);
+    policy.adaptation_scale_cadence = gait_scale;
+    policy.adaptation_scale_step = gait_scale;
+    policy.hard_clamp_cadence = gait_scale < 0.999;
     policy.cadence_hz = FrequencyHz{policy.cadence_hz.value * gait_scale};
     for (auto& leg : policy.per_leg) {
         leg.step_length_m = LengthM{leg.step_length_m.value * gait_scale};

@@ -298,6 +298,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     hexapod_server_add_test(test_motion_intent_through_ik_fk motion_intent_through_ik_fk_chain
         tests/test_motion_intent_through_ik_fk.cpp
     )
+    hexapod_server_add_test(test_motion_limiter_behavior motion_limiter_behavior
+        tests/test_motion_limiter_behavior.cpp
+    )
 
     # input
     hexapod_server_add_test(test_virtual_gamepad_controller virtual_gamepad_controller

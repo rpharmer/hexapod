@@ -57,6 +57,9 @@ struct RuntimeGaitPolicy {
     FrequencyHz cadence_hz{FrequencyHz{0.0}};
     GaitSuppressionFlags suppression{};
     double reach_utilization{0.0};
+    double adaptation_scale_cadence{1.0};
+    double adaptation_scale_step{1.0};
+    bool hard_clamp_cadence{false};
 };
 
 class GaitPolicyPlanner {

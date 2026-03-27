@@ -154,6 +154,8 @@ void testAcceptanceGatesDisableByDefault()
     const RuntimeGaitPolicy policy = planner.plan(est, walkingIntent(0.95, 0.10), safety);
 
     expect(!policy.dynamic_enabled, "dynamic gait should remain disabled until rollout gates pass");
+    expect(!policy.hard_clamp_cadence,
+           "cadence hard-clamp telemetry should stay clear when limiter path is effectively disabled");
 }
 
 void testServoVelocityConstraintModifiesGait()
@@ -181,6 +183,10 @@ void testServoVelocityConstraintModifiesGait()
            "servo velocity overspeed should shorten stride length");
     expect(constrained.per_leg[0].duty_cycle >= unconstrained.per_leg[0].duty_cycle,
            "servo velocity overspeed should increase duty cycle for stability");
+    expect(constrained.hard_clamp_cadence,
+           "overspeed constraint should set cadence hard-clamp telemetry");
+    expect(constrained.adaptation_scale_cadence < 1.0,
+           "overspeed constraint should lower cadence adaptation scale");
 }
 
 void testRegionThresholdBoundaries()

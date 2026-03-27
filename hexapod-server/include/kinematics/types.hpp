@@ -237,6 +237,18 @@ struct ControlStatus {
         std::array<double, kNumLegs> leg_phase{};
         std::array<double, kNumLegs> leg_duty_cycle{};
         std::array<bool, kNumLegs> leg_in_stance{};
+        bool limiter_enabled{false};
+        uint8_t limiter_phase{0};
+        uint8_t active_constraint_reason{0};
+        double adaptation_scale_linear{1.0};
+        double adaptation_scale_yaw{1.0};
+        double adaptation_scale_cadence{1.0};
+        double adaptation_scale_step{1.0};
+        bool hard_clamp_linear{false};
+        bool hard_clamp_yaw{false};
+        bool hard_clamp_reach{false};
+        bool hard_clamp_cadence{false};
+        bool saturated{false};
     };
 
     struct AutonomyTelemetry {
