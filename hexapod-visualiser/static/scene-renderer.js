@@ -251,9 +251,15 @@ function resolveVelocityTwist(model) {
 }
 
 export function resolvePoseOffsetMm(model, deadReckoning, nowMs = Date.now()) {
+  const localizationFrameId = model.autonomy_debug?.localization?.frame_id;
+  const localizationPose =
+    !localizationFrameId || localizationFrameId === "map" || localizationFrameId === "odom"
+      ? model.autonomy_debug?.localization?.current_pose
+      : null;
+
   const absolutePose = resolveFinitePoseCandidate(
     model.autonomy_debug?.current_pose,
-    model.autonomy_debug?.localization?.current_pose,
+    localizationPose,
     model.dynamic_gait?.current_pose,
   );
   if (absolutePose) {

@@ -275,6 +275,17 @@ void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
     telemetry_sample.status = status_.read();
     telemetry_sample.timestamp_us = now;
     telemetry_sample.imu_reads_enabled = config_.runtime_imu.enable_reads;
+    if (last_autonomy_step_output_.has_value()) {
+        const auto& localization = last_autonomy_step_output_->localization_estimate;
+        if (localization.valid) {
+            telemetry_sample.autonomy_debug.localization_pose = telemetry::ControlStepTelemetry::AutonomyDebugPose{
+                .x_m = localization.x_m,
+                .y_m = localization.y_m,
+                .yaw_rad = localization.yaw_rad,
+                .frame_id = localization.frame_id,
+            };
+        }
+    }
     telemetry_publisher_->publishControlStep(telemetry_sample);
 }
 
