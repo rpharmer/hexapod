@@ -353,6 +353,68 @@ function transformWorldToBodyAnchored(point, poseOffset) {
   };
 }
 
+function transformBodyToWorld(point, poseOffset) {
+  const cosYaw = Math.cos(poseOffset.yaw);
+  const sinYaw = Math.sin(poseOffset.yaw);
+  return {
+    x: poseOffset.x + point.x * cosYaw - point.y * sinYaw,
+    y: poseOffset.y + point.x * sinYaw + point.y * cosYaw,
+    z: point.z,
+  };
+}
+
+export function applyStanceContactLockCorrection({ model, kinematics, poseOffset, stanceLockState }) {
+  const stanceFlags = model.dynamic_gait?.leg_in_stance;
+  if (!Array.isArray(stanceFlags) || !stanceLockState || !stanceLockState.worldAnchorsByLeg) {
+    return poseOffset;
+  }
+
+  const correctedPose = { ...poseOffset };
+  const perLegKinematics = new Map(kinematics.map(({ legName, points }) => [legName, points]));
+  let correctionX = 0;
+  let correctionY = 0;
+  let correctionCount = 0;
+
+  LEG_ORDER.forEach((legName, legIndex) => {
+    const points = perLegKinematics.get(legName);
+    if (!points || !stanceFlags[legIndex]) {
+      delete stanceLockState.worldAnchorsByLeg[legName];
+      return;
+    }
+
+    const cachedAnchor = stanceLockState.worldAnchorsByLeg[legName];
+    if (!cachedAnchor) {
+      stanceLockState.worldAnchorsByLeg[legName] = transformBodyToWorld(points.foot, correctedPose);
+      return;
+    }
+
+    const predictedAnchor = transformBodyToWorld(points.foot, correctedPose);
+    correctionX += cachedAnchor.x - predictedAnchor.x;
+    correctionY += cachedAnchor.y - predictedAnchor.y;
+    correctionCount += 1;
+  });
+
+  if (correctionCount > 0) {
+    correctedPose.x += correctionX / correctionCount;
+    correctedPose.y += correctionY / correctionCount;
+  }
+
+  LEG_ORDER.forEach((legName, legIndex) => {
+    if (!stanceFlags[legIndex]) {
+      return;
+    }
+    const points = perLegKinematics.get(legName);
+    if (!points) {
+      return;
+    }
+    if (!stanceLockState.worldAnchorsByLeg[legName]) {
+      stanceLockState.worldAnchorsByLeg[legName] = transformBodyToWorld(points.foot, correctedPose);
+    }
+  });
+
+  return correctedPose;
+}
+
 export function buildGridProbePoints({
   width,
   height,
@@ -507,6 +569,9 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     lastTimestampMs: null,
     poseSource: "dead_reckoning",
   };
+  const stanceLockState = {
+    worldAnchorsByLeg: {},
+  };
 
   function resize() {
     const ratio = window.devicePixelRatio || 1;
@@ -524,7 +589,7 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     const scale = (Math.min(width, height) / 420) * camera.zoom;
     const centerX = width * 0.5 + camera.panX;
     const centerY = height * 0.58 + camera.panY;
-    const { pose: poseOffset, poseSource } = resolvePoseOffsetWithSource(model, deadReckoning, Date.now());
+    let { pose: poseOffset, poseSource } = resolvePoseOffsetWithSource(model, deadReckoning, Date.now());
     telemetry.poseSource = poseSource;
     const gridSpacingMm = 55;
     const kinematics = LEG_ORDER.map((legName) => ({
@@ -540,6 +605,14 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
       stableGroundPlaneZ = Math.min(...footHeights);
     }
     const groundPlaneZ = Number.isFinite(stableGroundPlaneZ) ? stableGroundPlaneZ : -120;
+
+    const correctedPoseOffset = applyStanceContactLockCorrection({
+      model,
+      kinematics,
+      poseOffset,
+      stanceLockState,
+    });
+    poseOffset = correctedPoseOffset;
 
     ctx.strokeStyle = "#1f2937";
     ctx.lineWidth = 1;

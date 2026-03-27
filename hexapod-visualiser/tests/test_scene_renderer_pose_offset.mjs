@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildGridProbePoints, resolvePoseOffsetMm } from "../static/scene-renderer.js";
+import {
+  applyStanceContactLockCorrection,
+  buildGridProbePoints,
+  resolvePoseOffsetMm,
+} from "../static/scene-renderer.js";
+import { LEG_ORDER } from "../static/constants.js";
 
 function baseModel(overrides = {}) {
   return {
@@ -273,4 +278,44 @@ test("grid probe dumps show pose increases under forward command while rendered 
     dump[3].probe.verticalStart.x < dump[0].probe.verticalStart.x,
     "world-anchored grid x should move opposite the forward pose direction in body frame",
   );
+});
+
+test("applyStanceContactLockCorrection keeps stance feet anchored in world while correcting pose drift", () => {
+  const stanceLockState = { worldAnchorsByLeg: {} };
+  const basePose = { x: 0, y: 0, yaw: 0 };
+  const kinematicsAtStart = LEG_ORDER.map((legName, idx) => ({
+    legName,
+    points: {
+      foot: { x: idx * 10, y: idx % 2 === 0 ? 20 : -20, z: -120 },
+    },
+  }));
+  const model = {
+    dynamic_gait: { leg_in_stance: [true, true, true, true, true, true] },
+  };
+
+  const initializedPose = applyStanceContactLockCorrection({
+    model,
+    kinematics: kinematicsAtStart,
+    poseOffset: basePose,
+    stanceLockState,
+  });
+  assert.deepEqual(initializedPose, basePose);
+
+  // Simulate body-forward foot slip in body frame while stance feet should remain world-anchored.
+  const slippedKinematics = LEG_ORDER.map((legName, idx) => ({
+    legName,
+    points: {
+      foot: { x: idx * 10 - 30, y: idx % 2 === 0 ? 20 : -20, z: -120 },
+    },
+  }));
+  const driftedPose = { x: 10, y: 0, yaw: 0 };
+  const corrected = applyStanceContactLockCorrection({
+    model,
+    kinematics: slippedKinematics,
+    poseOffset: driftedPose,
+    stanceLockState,
+  });
+
+  assert.equal(Math.round(corrected.x), 30);
+  assert.equal(Math.round(corrected.y), 0);
 });
