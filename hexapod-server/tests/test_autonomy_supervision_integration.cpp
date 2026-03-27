@@ -14,6 +14,17 @@ bool expect(bool condition, const char* message) {
     return true;
 }
 
+RobotState makeEstimatorState(uint64_t timestamp_us, double x_m, double y_m, double yaw_rad) {
+    RobotState est{};
+    est.valid = true;
+    est.has_body_pose_state = true;
+    est.timestamp_us = TimePointUs{timestamp_us};
+    est.body_pose_state.body_trans_m.x = x_m;
+    est.body_pose_state.body_trans_m.y = y_m;
+    est.body_pose_state.orientation_rad.z = yaw_rad;
+    return est;
+}
+
 autonomy::WaypointMission makeMission() {
     autonomy::WaypointMission mission{};
     mission.mission_id = "autonomy-supervision-mission";
@@ -76,7 +87,14 @@ bool testCrashIsolationRestartAndDegradedFallback() {
     }
 
     autonomy::AutonomyStepOutput nominal{};
-    if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 10}, &nominal), "nominal step should succeed")) {
+    if (!expect(stack.step(autonomy::AutonomyStepInput{
+                               .now_ms = 10,
+                               .map_slice_input = autonomy::MapSliceInput{.has_occupancy = true, .occupancy = 0.1},
+                               .has_estimator_state = true,
+                               .estimator_state = makeEstimatorState(9'000, 0.0, 0.0, 0.0),
+                           },
+                           &nominal),
+                "nominal step should succeed")) {
         return false;
     }
     if (!expect(!nominal.degraded_mode, "nominal step should not be degraded")) {
@@ -86,6 +104,9 @@ bool testCrashIsolationRestartAndDegradedFallback() {
     autonomy::AutonomyStepOutput crash_step{};
     if (!expect(stack.step(autonomy::AutonomyStepInput{
                                .now_ms = 20,
+                               .map_slice_input = autonomy::MapSliceInput{.has_occupancy = true, .occupancy = 0.1},
+                               .has_estimator_state = true,
+                               .estimator_state = makeEstimatorState(19'000, 0.1, 0.0, 0.0),
                                .fault_injections = {
                                    autonomy::ModuleFaultInjection{.module_name = "global_planner", .crash = true},
                                },
@@ -132,6 +153,9 @@ bool testTimeoutStaleLocalizationAndDispatchFailureFallback() {
     autonomy::AutonomyStepOutput stale_localization{};
     if (!expect(stack.step(autonomy::AutonomyStepInput{
                                .now_ms = 30,
+                               .map_slice_input = autonomy::MapSliceInput{.has_occupancy = true, .occupancy = 0.1},
+                               .has_estimator_state = true,
+                               .estimator_state = makeEstimatorState(29'000, 0.2, 0.0, 0.0),
                                .fault_injections = {
                                    autonomy::ModuleFaultInjection{.module_name = "localization", .timeout = true},
                                },
@@ -151,6 +175,9 @@ bool testTimeoutStaleLocalizationAndDispatchFailureFallback() {
     autonomy::AutonomyStepOutput locomotion_failure{};
     if (!expect(stack.step(autonomy::AutonomyStepInput{
                                .now_ms = 40,
+                               .map_slice_input = autonomy::MapSliceInput{.has_occupancy = true, .occupancy = 0.1},
+                               .has_estimator_state = true,
+                               .estimator_state = makeEstimatorState(39'000, 0.3, 0.0, 0.0),
                                .fault_injections = {
                                    autonomy::ModuleFaultInjection{.module_name = "locomotion_interface", .crash = true},
                                },

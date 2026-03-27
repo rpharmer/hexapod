@@ -237,7 +237,9 @@ bool testTerrainRiskInputsAffectPlanning() {
     };
 
     const auto nav_update = navigation.computeIntent(mission, 0, false);
-    const auto loc = localization.update(nav_update, 100);
+    const auto loc = localization.update(
+        autonomy::localizationObservationFromOdometry(0.0, 0.0, 0.0, 100, "map"),
+        100);
 
     const auto nominal_world = world_model.update(
         loc,

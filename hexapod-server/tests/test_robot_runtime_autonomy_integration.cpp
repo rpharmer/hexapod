@@ -104,6 +104,9 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     }
 
     runtime.setAutonomyBlockedForTest(false);
+    runtime.setMotionIntent(makeFreshWalkIntent());
+    runRuntimeStep(runtime);
+
     runtime.signalAutonomyWaypointReachedForTest();
     runtime.setMotionIntent(makeFreshWalkIntent());
     runRuntimeStep(runtime);

@@ -17,18 +17,18 @@ AutonomyStack::AutonomyStack(const AutonomyStackConfig& config)
       progress_monitor_module_(config.no_progress_timeout_ms),
       recovery_manager_module_(config.recovery_retry_budget),
       supervisor_states_({
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "mission_executive", .criticality = ProcessCriticality::Critical, .heartbeat_timeout_ms = 100, .max_restarts = 1, .dependencies = {}}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "mission_scripting", .criticality = ProcessCriticality::NonCritical, .heartbeat_timeout_ms = 500, .max_restarts = 1, .dependencies = {}}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "navigation_manager", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 100, .max_restarts = 2, .dependencies = {"mission_executive"}}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "recovery_manager", .criticality = ProcessCriticality::NonCritical, .heartbeat_timeout_ms = 500, .max_restarts = 1, .dependencies = {"progress_monitor"}}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "motion_arbiter", .criticality = ProcessCriticality::Critical, .heartbeat_timeout_ms = 100, .max_restarts = 1, .dependencies = {"navigation_manager", "recovery_manager"}}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "localization", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 75, .max_restarts = 3, .dependencies = {"navigation_manager"}}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "world_model", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 100, .max_restarts = 2, .dependencies = {"localization"}}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "traversability_analyzer", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 100, .max_restarts = 2, .dependencies = {"world_model"}}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "global_planner", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 120, .max_restarts = 2, .dependencies = {"navigation_manager", "traversability_analyzer"}}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "local_planner", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 120, .max_restarts = 2, .dependencies = {"global_planner"}}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "locomotion_interface", .criticality = ProcessCriticality::Critical, .heartbeat_timeout_ms = 75, .max_restarts = 2, .dependencies = {"motion_arbiter", "local_planner"}}},
-          SupervisorState{.contract = ModuleProcessContract{.module_name = "progress_monitor", .criticality = ProcessCriticality::NonCritical, .heartbeat_timeout_ms = 500, .max_restarts = 1, .dependencies = {"mission_executive"}}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "mission_executive", .criticality = ProcessCriticality::Critical, .heartbeat_timeout_ms = 100, .max_restarts = 1, .dependencies = {}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "mission_scripting", .criticality = ProcessCriticality::NonCritical, .heartbeat_timeout_ms = 500, .max_restarts = 1, .dependencies = {}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "navigation_manager", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 100, .max_restarts = 2, .dependencies = {"mission_executive"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "recovery_manager", .criticality = ProcessCriticality::NonCritical, .heartbeat_timeout_ms = 500, .max_restarts = 1, .dependencies = {"progress_monitor"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "motion_arbiter", .criticality = ProcessCriticality::Critical, .heartbeat_timeout_ms = 100, .max_restarts = 1, .dependencies = {"navigation_manager", "recovery_manager"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "localization", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 75, .max_restarts = 3, .dependencies = {"navigation_manager"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "world_model", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 100, .max_restarts = 2, .dependencies = {"localization"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "traversability_analyzer", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 100, .max_restarts = 2, .dependencies = {"world_model"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "global_planner", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 120, .max_restarts = 2, .dependencies = {"navigation_manager", "traversability_analyzer"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "local_planner", .criticality = ProcessCriticality::SoftRealtime, .heartbeat_timeout_ms = 120, .max_restarts = 2, .dependencies = {"global_planner"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "locomotion_interface", .criticality = ProcessCriticality::Critical, .heartbeat_timeout_ms = 75, .max_restarts = 2, .dependencies = {"motion_arbiter", "local_planner"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
+          SupervisorState{.contract = ModuleProcessContract{.module_name = "progress_monitor", .criticality = ProcessCriticality::NonCritical, .heartbeat_timeout_ms = 500, .max_restarts = 1, .dependencies = {"mission_executive"}}, .restart_count = 0, .isolated_fault = false, .crashed = false, .timed_out = false, .last_fault = {}},
       }) {}
 
 bool AutonomyStack::init() {
@@ -118,6 +118,15 @@ bool AutonomyStack::step(const AutonomyStepInput& input,
         localization_observation = localizationObservationFromEstimator(
             input.estimator_state,
             input.localization_frame_id);
+    } else if (output->navigation_update.has_intent) {
+        localization_observation = localizationObservationFromOdometry(
+            output->navigation_update.intent.target.x_m,
+            output->navigation_update.intent.target.y_m,
+            output->navigation_update.intent.target.yaw_rad,
+            input.now_ms,
+            output->navigation_update.intent.target.frame_id.empty()
+                ? "map"
+                : output->navigation_update.intent.target.frame_id);
     }
     const auto localization_envelope = makeInternalEnvelope("localization.estimate", "map", correlation_id, input.now_ms);
     if (!validateEnvelopeForStream(localization_envelope, input.now_ms, config, "localization.estimate")) {
@@ -301,22 +310,22 @@ std::vector<ModuleSupervisorStatus> AutonomyStack::supervisorStatuses() const {
     statuses.reserve(supervisor_states_.size());
 
     for (const auto& state : supervisor_states_) {
-        ModuleSupervisorStatus status{};
-        status.module_name = state.contract.module_name;
-        status.criticality = state.contract.criticality;
-        status.alive = !state.crashed;
-        status.timed_out = state.timed_out;
-        status.crashed = state.crashed;
-        status.isolated_fault = state.isolated_fault;
-        status.restart_count = state.restart_count;
-        status.last_fault = state.last_fault;
+        statuses.emplace_back(ModuleSupervisorStatus{
+            .module_name = state.contract.module_name,
+            .criticality = state.contract.criticality,
+            .alive = !state.crashed,
+            .timed_out = state.timed_out,
+            .crashed = state.crashed,
+            .isolated_fault = state.isolated_fault,
+            .restart_count = state.restart_count,
+            .heartbeat_timestamp_ms = 0,
+            .last_fault = state.last_fault,
+        });
 
         const auto* module = moduleByName(state.contract.module_name);
         if (module != nullptr) {
-            status.heartbeat_timestamp_ms = module->health().heartbeat_timestamp_ms;
+            statuses.back().heartbeat_timestamp_ms = module->health().heartbeat_timestamp_ms;
         }
-
-        statuses.push_back(status);
     }
 
     return statuses;

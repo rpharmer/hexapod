@@ -310,6 +310,18 @@ MotionIntent RobotRuntime::resolveAutonomyMotionIntent(const MotionIntent& base_
     step_input.hold = safety_state.inhibit_motion && !step_input.estop;
     step_input.blocked = autonomy_blocked_signal_.load() || autonomy_no_progress_signal_.load();
     step_input.waypoint_reached = autonomy_waypoint_reached_event_.exchange(false);
+    step_input.map_slice_input = autonomy::MapSliceInput{
+        .has_occupancy = true,
+        .has_elevation = false,
+        .has_risk_confidence = false,
+        .occupancy = 0.0,
+    };
+
+    const RobotState estimated = estimated_state_.read();
+    if (estimated.valid) {
+        step_input.has_estimator_state = true;
+        step_input.estimator_state = estimated;
+    }
 
     autonomy::AutonomyStepOutput step_output{};
     if (!autonomy_stack_->step(step_input, &step_output)) {
