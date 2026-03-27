@@ -6,6 +6,7 @@
 
 namespace autonomy {
 
+// Thin façade shell: delegates to NavigationManager and snapshots the last output.
 class NavigationManagerModuleShell : public AutonomyModuleStub {
 public:
     NavigationManagerModuleShell();
