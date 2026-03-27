@@ -232,10 +232,13 @@ void RobotRuntime::controlStep() {
 
     const MotionIntent effective_intent = resolveAutonomyMotionIntent(intent, safety_state, now);
 
+    const DurationSec control_loop_dt{
+        static_cast<double>(config_.loop_timing.control_loop_period.count()) / 1'000'000.0};
     const PipelineStepResult result = pipeline_.runStep(
         est,
         effective_intent,
         safety_state,
+        control_loop_dt,
         bus_ok,
         loop_counter);
 
