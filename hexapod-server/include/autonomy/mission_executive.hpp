@@ -42,7 +42,7 @@ public:
 
 private:
     MissionEvent reject(const std::string& reason) const;
-    MissionEvent accept();
+    MissionEvent accept(const std::string& reason = {});
 
     MissionState state_{MissionState::Idle};
     WaypointMission mission_{};

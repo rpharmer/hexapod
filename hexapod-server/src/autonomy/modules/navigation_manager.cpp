@@ -7,7 +7,9 @@ NavigationManagerModuleShell::NavigationManagerModuleShell()
 
 NavigationUpdate NavigationManagerModuleShell::computeIntent(const WaypointMission& mission,
                                                              uint64_t completed_waypoints,
-                                                             bool blocked) {
+                                                             bool blocked,
+                                                             ContractEnvelope envelope) {
+    (void)envelope;
     last_update_ = navigation_manager_.planNextIntent(mission, completed_waypoints, blocked);
     return last_update_;
 }

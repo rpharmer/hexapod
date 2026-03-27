@@ -12,6 +12,7 @@ This directory contains the initial contract-first interface set for autonomy mo
 - `world_model.md`
 - `traversability_analyzer.md`
 - `locomotion_interface.md`
+- `process_supervision_and_ipc.md`
 - `contract_review_checklist.md`
 - `traceability_matrix.md`
 

@@ -186,6 +186,12 @@ struct RuntimeImuConfig {
     bool enable_reads{kDefaultImuEnableReads};
 };
 
+struct AutonomyRuntimeConfig {
+    bool enabled{false};
+    uint64_t no_progress_timeout_ms{1000};
+    uint64_t recovery_retry_budget{2};
+};
+
 struct ControlConfig {
     LoopTimingConfig loop_timing{};
     SafetyConfig safety{};
@@ -193,6 +199,7 @@ struct ControlConfig {
     FreshnessConfig freshness{};
     TelemetryConfig telemetry{};
     RuntimeImuConfig runtime_imu{};
+    AutonomyRuntimeConfig autonomy{};
 };
 
 ControlConfig fromParsedToml(const ParsedToml& config);

@@ -98,6 +98,9 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.telemetry.publish_period = std::chrono::milliseconds{config.telemetryPublishPeriodMs};
     parsed.telemetry.geometry_refresh_period = std::chrono::milliseconds{config.telemetryGeometryRefreshPeriodMs};
     parsed.runtime_imu.enable_reads = config.imuEnableReads;
+    parsed.autonomy.enabled = config.autonomyEnabled;
+    parsed.autonomy.no_progress_timeout_ms = config.autonomyNoProgressTimeoutMs;
+    parsed.autonomy.recovery_retry_budget = config.autonomyRecoveryRetryBudget;
 
     return parsed;
 }

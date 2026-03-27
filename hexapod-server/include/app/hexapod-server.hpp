@@ -22,6 +22,9 @@ struct ParsedToml
   bool simLowVoltage{false};
   bool simHighCurrent{false};
   bool imuEnableReads{false};
+  bool autonomyEnabled{false};
+  uint64_t autonomyNoProgressTimeoutMs{1000};
+  uint64_t autonomyRecoveryRetryBudget{2};
 
   std::string logFilePath{"app.log"};
   bool logToFile{true};

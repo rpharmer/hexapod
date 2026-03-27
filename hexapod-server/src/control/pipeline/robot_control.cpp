@@ -64,13 +64,17 @@ void RobotControl::start() {
 }
 
 void RobotControl::stop() {
-    if (!running_.exchange(false)) return;
+    if (!running_.exchange(false)) {
+        runtime_.stop();
+        return;
+    }
 
     if (logger_) {
         LOG_INFO(logger_, "Stopping robot control loops");
     }
 
     loops_.stop();
+    runtime_.stop();
 }
 
 void RobotControl::setMotionIntent(const MotionIntent& intent) {
