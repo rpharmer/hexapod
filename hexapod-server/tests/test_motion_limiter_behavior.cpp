@@ -1,6 +1,8 @@
 #include "body_controller.hpp"
 #include "control_pipeline.hpp"
 #include "gait_policy_planner.hpp"
+#include "gait_scheduler.hpp"
+#include "motion_limiter.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -192,6 +194,69 @@ bool scenario_body_leads_on_start_and_legs_lead_on_stop() {
                   "pipeline telemetry should mark limiter enabled");
 }
 
+bool unit_motion_limiter_scales_with_dt_and_stays_bounded() {
+    control_config::MotionLimiterConfig limiter_cfg{};
+    limiter_cfg.foot_velocity_limit_mps = 0.05;
+    MotionLimiter limiter{limiter_cfg};
+
+    RobotState est = nominalEstimatedState();
+    SafetyState safety{};
+    RuntimeGaitPolicy gait_policy{};
+    MotionIntent walk = walkingIntent();
+
+    (void)limiter.update(est, walk, gait_policy, safety, DurationSec{0.02});
+
+    walk.body_pose_setpoint.body_trans_m.x = 0.5;
+    const MotionLimiterOutput tiny_dt =
+        limiter.update(est, walk, gait_policy, safety, DurationSec{1e-9});
+
+    walk.body_pose_setpoint.body_trans_m.x = 1.0;
+    const MotionLimiterOutput large_dt =
+        limiter.update(est, walk, gait_policy, safety, DurationSec{0.4});
+
+    const double tiny_dx =
+        std::abs(tiny_dt.limited_intent.body_pose_setpoint.body_trans_m.x - 0.0);
+    const double large_dx = std::abs(
+        large_dt.limited_intent.body_pose_setpoint.body_trans_m.x - tiny_dt.limited_intent.body_pose_setpoint.body_trans_m.x);
+    const double expected_large_limit = limiter_cfg.foot_velocity_limit_mps * 0.4;
+
+    return expect(tiny_dt.diagnostics.hard_clamp_linear,
+                  "tiny dt with large body step should still register linear clamp") &&
+           expect(tiny_dx <= limiter_cfg.foot_velocity_limit_mps * 1e-9 + 1e-10,
+                  "tiny dt should produce a near-zero linear step") &&
+           expect(large_dt.diagnostics.hard_clamp_linear,
+                  "large dt with larger body step should still clamp linearly") &&
+           expect(large_dx <= expected_large_limit + 1e-9,
+                  "large dt response must stay bounded by velocity limit times dt") &&
+           expect(large_dx > tiny_dx + 1e-5,
+                  "larger dt should allow a proportionally larger bounded step");
+}
+
+bool integration_gait_scheduler_progress_tracks_elapsed_dt() {
+    GaitScheduler scheduler;
+    RobotState est = nominalEstimatedState();
+    MotionIntent walk = walkingIntent();
+    SafetyState safety{};
+    RuntimeGaitPolicy policy{};
+    policy.cadence_hz = FrequencyHz{3.0};
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        policy.per_leg[leg].phase_offset = 0.0;
+        policy.per_leg[leg].duty_cycle = 0.5;
+    }
+
+    (void)scheduler.update(est, walk, safety, policy);
+    const GaitState tiny_elapsed = scheduler.update(est, walk, safety, policy);
+    std::this_thread::sleep_for(std::chrono::milliseconds(35));
+    const GaitState larger_elapsed = scheduler.update(est, walk, safety, policy);
+
+    return expect(tiny_elapsed.stride_phase_rate_hz.value >= 0.0,
+                  "gait scheduler cadence should remain non-negative for tiny dt") &&
+           expect(larger_elapsed.stride_phase_rate_hz.value >= tiny_elapsed.stride_phase_rate_hz.value,
+                  "larger elapsed dt should not reduce cadence slew progress in steady walk") &&
+           expect(larger_elapsed.phase[0] >= tiny_elapsed.phase[0],
+                  "larger elapsed dt should advance phase progression");
+}
+
 } // namespace
 
 int main() {
@@ -208,6 +273,12 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!scenario_motion_limiter_config_changes_clamp_behavior()) {
+        return EXIT_FAILURE;
+    }
+    if (!unit_motion_limiter_scales_with_dt_and_stays_bounded()) {
+        return EXIT_FAILURE;
+    }
+    if (!integration_gait_scheduler_progress_tracks_elapsed_dt()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
