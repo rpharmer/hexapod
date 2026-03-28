@@ -6,6 +6,7 @@
 #include "leg_ik.hpp"
 #include "stability_tracker.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -293,6 +294,80 @@ bool ikMaintainsCoxaContinuityAcrossAtanBranchCut() {
                   "ik coxa command should stay continuous near +/-pi branch cut");
 }
 
+bool ikFkRoundTripStaysAccurateAcrossBodyAttitudeSweep() {
+    const HexapodGeometry geometry = defaultHexapodGeometry();
+    LegIK ik(geometry);
+    LegFK fk;
+
+    RobotState est{};
+    SafetyState safety{};
+    safety.leg_enabled.fill(true);
+
+    LegTargets targets{};
+    constexpr double kRollSweep[] = {-0.05, 0.0, 0.05};
+    constexpr double kPitchSweep[] = {-0.05, 0.0, 0.05};
+    constexpr double kYawSweep[] = {-0.10, 0.0, 0.10};
+    constexpr double kForwardOffsetsM[] = {-0.008, 0.0, 0.008};
+    constexpr double kLateralOffsetsM[] = {-0.008, 0.0, 0.008};
+    constexpr double kVerticalOffsetsM[] = {-0.006, 0.0, 0.006};
+    constexpr double kMaxRoundTripErrorM = 0.08;
+    constexpr int kRepresentativeLegs[] = {0};
+    double max_round_trip_error_m = 0.0;
+
+    for (double roll_rad : kRollSweep) {
+        for (double pitch_rad : kPitchSweep) {
+            for (double yaw_rad : kYawSweep) {
+                for (double x_offset_m : kForwardOffsetsM) {
+                    for (double y_offset_m : kLateralOffsetsM) {
+                        for (double z_offset_m : kVerticalOffsetsM) {
+                            for (int leg : kRepresentativeLegs) {
+                                LegState nominal_joint{};
+                                nominal_joint.joint_state[0].pos_rad = AngleRad{0.0};
+                                nominal_joint.joint_state[1].pos_rad = AngleRad{-0.55};
+                                nominal_joint.joint_state[2].pos_rad = AngleRad{-0.95};
+                                const FootTarget nominal_stance =
+                                    fk.footInBodyFrame(nominal_joint, geometry.legGeometry[leg]);
+                                const Vec3 attitude_coupled_offset{
+                                    x_offset_m + (0.01 * pitch_rad),
+                                    y_offset_m + (0.01 * yaw_rad),
+                                    z_offset_m - (0.01 * roll_rad)};
+                                targets.feet[leg].pos_body_m =
+                                    nominal_stance.pos_body_m + attitude_coupled_offset;
+                            }
+
+                            const JointTargets solved = ik.solve(est, targets, safety);
+                            if (!expect(finiteJointTargets(solved),
+                                        "ik output should stay finite through body attitude sweep")) {
+                                return false;
+                            }
+
+                            for (int leg : kRepresentativeLegs) {
+                                const LegState joint_frame =
+                                    geometry.legGeometry[leg].servo.toJointAngles(solved.leg_states[leg]);
+                                const FootTarget fk_body =
+                                    fk.footInBodyFrame(joint_frame, geometry.legGeometry[leg]);
+                                const Vec3 error =
+                                    fk_body.pos_body_m - targets.feet[leg].pos_body_m;
+                                const double err_norm_m =
+                                    std::sqrt(error.x * error.x + error.y * error.y + error.z * error.z);
+                                max_round_trip_error_m = std::max(max_round_trip_error_m, err_norm_m);
+                                est.leg_states[leg] = solved.leg_states[leg];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (max_round_trip_error_m >= kMaxRoundTripErrorM) {
+        std::cerr << "FAIL: ik/fk sweep max round-trip error was " << max_round_trip_error_m
+                  << " m (tolerance " << kMaxRoundTripErrorM << " m)\n";
+        return false;
+    }
+    return true;
+}
+
 bool stabilityTrackerUsesJointSpaceForServoFeedbackState() {
     const HexapodGeometry geometry = defaultHexapodGeometry();
     RobotState est{};
@@ -360,6 +435,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!ikMaintainsCoxaContinuityAcrossAtanBranchCut()) {
+        return EXIT_FAILURE;
+    }
+    if (!ikFkRoundTripStaysAccurateAcrossBodyAttitudeSweep()) {
         return EXIT_FAILURE;
     }
     if (!stabilityTrackerUsesJointSpaceForServoFeedbackState()) {
