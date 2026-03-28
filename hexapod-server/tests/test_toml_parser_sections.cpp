@@ -261,6 +261,48 @@ bool testMotionLimiterInvalidValuesFallbackToDefaults()
                 "invalid startup threshold should fallback to default");
 }
 
+bool testContradictoryLimitsFallbackAndDiagnostics()
+{
+  std::string cfg = readText(configPath("config.sim.txt"));
+  if (!expect(replaceOnce(
+                  cfg, "FallbackSpeedMag = 0.01",
+                  "FallbackSpeedMag = 0.01\nGaitFrequencyMinHz = 2.0\nGaitFrequencyMaxHz = 1.0\n"
+                  "GaitTripodDutyCycle = 0.0\nGaitRippleDutyCycle = 1.1"),
+              "baseline sim config missing tuning fallback speed entry for gait overrides") ||
+      !expect(replaceOnce(cfg, "MinBusVoltageV = 10.5", "MinBusVoltageV = 0.1"),
+              "baseline sim config missing Tuning.MinBusVoltageV entry") ||
+      !expect(replaceOnce(cfg, "MaxBusCurrentA = 25.0", "MaxBusCurrentA = 0.01"),
+              "baseline sim config missing Tuning.MaxBusCurrentA entry") ||
+      !expect(replaceOnce(cfg, "body_linear_accel_limit_xy_mps2 = 0.6",
+                          "body_linear_accel_limit_xy_mps2 = 0.0001"),
+              "baseline sim config missing motion_limiter.body_linear_accel_limit_xy_mps2 entry")) {
+    return false;
+  }
+
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(writeTemp("hexapod_contradictory_limits.toml", cfg), parsed),
+              "contradictory tuning limits should parse with fallback behavior")) {
+    return false;
+  }
+
+  return expect(near(parsed.gaitFrequencyMinHz, control_config::kDefaultGaitFrequencyMinHz),
+                "gait frequency min > max should fallback to default min") &&
+         expect(near(parsed.gaitFrequencyMaxHz, control_config::kDefaultGaitFrequencyMaxHz),
+                "gait frequency min > max should fallback to default max") &&
+         expect(near(parsed.gaitTripodDutyCycle, control_config::kDefaultTripodDutyCycle),
+                "invalid tripod duty below range should fallback to default") &&
+         expect(near(parsed.gaitRippleDutyCycle, control_config::kDefaultRippleDutyCycle),
+                "invalid ripple duty above range should fallback to default") &&
+         expect(near(parsed.minBusVoltageV, control_config::kDefaultMinBusVoltageV),
+                "impossible min bus voltage threshold should fallback to default") &&
+         expect(near(parsed.maxBusCurrentA, control_config::kDefaultMaxBusCurrentA),
+                "impossible max bus current threshold should fallback to default") &&
+         expect(near(parsed.motionBodyLinearAccelLimitXYMps2,
+                     control_config::kDefaultMotionBodyLinearAccelLimitXYMps2),
+                "overly small body xy accel limit should fallback to default");
+}
+
 bool testOutOfRangeRuntimeFallsBackWithDiagnostic()
 {
   std::string cfg = readText(configPath("config.txt"));
@@ -651,6 +693,7 @@ int main()
   testOutOfRangeTuningFallsBackToDefaults();
   testMotionLimiterDefaultsApplyWhenSectionMissing();
   testMotionLimiterInvalidValuesFallbackToDefaults();
+  testContradictoryLimitsFallbackAndDiagnostics();
   testOutOfRangeRuntimeFallsBackWithDiagnostic();
   testTelemetryRuntimeFieldsParseAndFallback();
   testImuRuntimeReadGateParsesAndDefaults();
