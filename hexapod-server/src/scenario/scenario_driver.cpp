@@ -482,6 +482,7 @@ public:
         : robot_(robot), logger_(std::move(logger)) {
         current_intent_.requested_mode = RobotMode::SAFE_IDLE;
         current_intent_.gait = GaitType::TRIPOD;
+        current_intent_.sample_id = next_intent_sample_id_++;
     }
 
     bool run(const ScenarioDefinition& scenario) {
@@ -532,6 +533,7 @@ private:
 
     void applyMotionEvent(const ScenarioDefinition& scenario, uint64_t elapsed_ms, const ScenarioEvent& event) {
         MotionIntent target_intent = makeMotionIntent(event.motion);
+        target_intent.sample_id = next_intent_sample_id_++;
         if (scenario.motion_ramp_ms > 0 && isRampEligible(current_intent_, target_intent)) {
             ramp_active_ = true;
             ramp_start_intent_ = current_intent_;
@@ -580,6 +582,7 @@ private:
     MotionIntent ramp_target_intent_{};
     uint64_t ramp_start_ms_{0};
     uint64_t ramp_end_ms_{0};
+    uint64_t next_intent_sample_id_{1};
 };
 
 } // namespace executor
