@@ -22,6 +22,10 @@ class LogStats:
     runtime_metrics_lines: int = 0
     peak_foot_vel_mps: float = 0.0
     peak_velocity_radps: float = 0.0
+    foot_velocity_samples: int = 0
+    joint_velocity_samples: int = 0
+    foot_high_frequency_energy_ratio: float = 0.0
+    joint_high_frequency_energy_ratio: float = 0.0
     tip_over_events: int = 0
     max_tip_over_streak: int = 0
 
@@ -30,6 +34,8 @@ class LogStats:
 class ThresholdPreset:
     max_peak_foot_vel_mps: float
     max_peak_velocity_radps: float
+    max_foot_high_frequency_energy_ratio: float
+    max_joint_high_frequency_energy_ratio: float
     tip_over_persist_streak: int
 
 
@@ -37,11 +43,15 @@ THRESHOLD_PRESETS: dict[str, ThresholdPreset] = {
     "current-baseline": ThresholdPreset(
         max_peak_foot_vel_mps=15.0,
         max_peak_velocity_radps=120.0,
+        max_foot_high_frequency_energy_ratio=0.35,
+        max_joint_high_frequency_energy_ratio=0.35,
         tip_over_persist_streak=3,
     ),
     "strict": ThresholdPreset(
         max_peak_foot_vel_mps=12.2,
         max_peak_velocity_radps=25.0,
+        max_foot_high_frequency_energy_ratio=0.2,
+        max_joint_high_frequency_energy_ratio=0.2,
         tip_over_persist_streak=2,
     ),
 }
@@ -60,6 +70,16 @@ def resolve_thresholds(args: argparse.Namespace) -> ThresholdPreset:
             if args.max_peak_velocity_radps is not None
             else preset.max_peak_velocity_radps
         ),
+        max_foot_high_frequency_energy_ratio=(
+            args.max_foot_high_frequency_energy_ratio
+            if args.max_foot_high_frequency_energy_ratio is not None
+            else preset.max_foot_high_frequency_energy_ratio
+        ),
+        max_joint_high_frequency_energy_ratio=(
+            args.max_joint_high_frequency_energy_ratio
+            if args.max_joint_high_frequency_energy_ratio is not None
+            else preset.max_joint_high_frequency_energy_ratio
+        ),
         tip_over_persist_streak=(
             args.tip_over_persist_streak
             if args.tip_over_persist_streak is not None
@@ -73,13 +93,69 @@ def validate_thresholds(thresholds: ThresholdPreset) -> None:
         raise SystemExit("--max-peak-foot-vel-mps must be a finite value > 0")
     if not math.isfinite(thresholds.max_peak_velocity_radps) or thresholds.max_peak_velocity_radps <= 0:
         raise SystemExit("--max-peak-velocity-radps must be a finite value > 0")
+    if (
+        not math.isfinite(thresholds.max_foot_high_frequency_energy_ratio)
+        or thresholds.max_foot_high_frequency_energy_ratio < 0
+        or thresholds.max_foot_high_frequency_energy_ratio > 1
+    ):
+        raise SystemExit("--max-foot-high-frequency-energy-ratio must be in [0, 1]")
+    if (
+        not math.isfinite(thresholds.max_joint_high_frequency_energy_ratio)
+        or thresholds.max_joint_high_frequency_energy_ratio < 0
+        or thresholds.max_joint_high_frequency_energy_ratio > 1
+    ):
+        raise SystemExit("--max-joint-high-frequency-energy-ratio must be in [0, 1]")
     if thresholds.tip_over_persist_streak < 1:
         raise SystemExit("--tip-over-persist-streak must be >= 1")
+
+
+def high_frequency_energy_ratio(samples: list[float]) -> float:
+    """Compute high-band spectral energy ratio from a real-valued sequence.
+
+    A simple DFT is used and non-DC bins are partitioned into equal low/mid/high
+    normalized-frequency buckets. The returned ratio is high_band / total_non_dc.
+    """
+    count = len(samples)
+    if count < 4:
+        return 0.0
+
+    mean = sum(samples) / count
+    centered = [sample - mean for sample in samples]
+    nyquist_bin = count // 2
+    if nyquist_bin < 2:
+        return 0.0
+
+    low_energy = 0.0
+    mid_energy = 0.0
+    high_energy = 0.0
+
+    for k in range(1, nyquist_bin + 1):
+        re = 0.0
+        im = 0.0
+        for n, value in enumerate(centered):
+            angle = 2.0 * math.pi * k * n / count
+            re += value * math.cos(angle)
+            im -= value * math.sin(angle)
+        power = re * re + im * im
+        normalized = k / nyquist_bin
+        if normalized <= (1.0 / 3.0):
+            low_energy += power
+        elif normalized <= (2.0 / 3.0):
+            mid_energy += power
+        else:
+            high_energy += power
+
+    total_energy = low_energy + mid_energy + high_energy
+    if total_energy <= 0:
+        return 0.0
+    return high_energy / total_energy
 
 
 def analyze_log(log_path: Path) -> LogStats:
     stats = LogStats()
     tip_over_streak = 0
+    foot_velocity_samples: list[float] = []
+    joint_velocity_samples: list[float] = []
 
     with log_path.open("r", encoding="utf-8", errors="replace") as handle:
         for line in handle:
@@ -88,11 +164,15 @@ def analyze_log(log_path: Path) -> LogStats:
 
                 match = PEAK_FOOT_RE.search(line)
                 if match:
-                    stats.peak_foot_vel_mps = max(stats.peak_foot_vel_mps, float(match.group(1)))
+                    sample = float(match.group(1))
+                    stats.peak_foot_vel_mps = max(stats.peak_foot_vel_mps, sample)
+                    foot_velocity_samples.append(sample)
 
                 match = PEAK_JOINT_RE.search(line)
                 if match:
-                    stats.peak_velocity_radps = max(stats.peak_velocity_radps, float(match.group(1)))
+                    sample = float(match.group(1))
+                    stats.peak_velocity_radps = max(stats.peak_velocity_radps, sample)
+                    joint_velocity_samples.append(sample)
 
             fault_match = FAULT_RE.search(line)
             if not fault_match:
@@ -105,6 +185,10 @@ def analyze_log(log_path: Path) -> LogStats:
             else:
                 tip_over_streak = 0
 
+    stats.foot_velocity_samples = len(foot_velocity_samples)
+    stats.joint_velocity_samples = len(joint_velocity_samples)
+    stats.foot_high_frequency_energy_ratio = high_frequency_energy_ratio(foot_velocity_samples)
+    stats.joint_high_frequency_energy_ratio = high_frequency_energy_ratio(joint_velocity_samples)
     return stats
 
 
@@ -163,6 +247,24 @@ def main() -> int:
         type=float,
         default=120.0,
         help="Fail if runtime.metrics peak_velocity_radps exceeds this threshold.",
+    )
+    parser.add_argument(
+        "--max-foot-high-frequency-energy-ratio",
+        type=float,
+        default=None,
+        help=(
+            "Fail if high-frequency spectral energy ratio of runtime.metrics peak_foot_vel_mps "
+            "sequence exceeds this threshold."
+        ),
+    )
+    parser.add_argument(
+        "--max-joint-high-frequency-energy-ratio",
+        type=float,
+        default=None,
+        help=(
+            "Fail if high-frequency spectral energy ratio of runtime.metrics peak_velocity_radps "
+            "sequence exceeds this threshold."
+        ),
     )
     parser.add_argument(
         "--tip-over-persist-streak",
@@ -241,6 +343,18 @@ def main() -> int:
             failures.append(
                 f"peak_velocity_radps={stats.peak_velocity_radps:.6g} exceeds {thresholds.max_peak_velocity_radps:.6g}"
             )
+        if stats.foot_high_frequency_energy_ratio > thresholds.max_foot_high_frequency_energy_ratio:
+            failures.append(
+                "foot velocity high-frequency spectral energy ratio="
+                f"{stats.foot_high_frequency_energy_ratio:.6g} exceeds "
+                f"{thresholds.max_foot_high_frequency_energy_ratio:.6g}"
+            )
+        if stats.joint_high_frequency_energy_ratio > thresholds.max_joint_high_frequency_energy_ratio:
+            failures.append(
+                "joint velocity high-frequency spectral energy ratio="
+                f"{stats.joint_high_frequency_energy_ratio:.6g} exceeds "
+                f"{thresholds.max_joint_high_frequency_energy_ratio:.6g}"
+            )
         if stats.max_tip_over_streak >= thresholds.tip_over_persist_streak:
             failures.append(
                 "persistent fault=TIP_OVER observed "
@@ -254,11 +368,23 @@ def main() -> int:
         print(f"  runtime.metrics lines: {stats.runtime_metrics_lines}")
         print(f"  peak_foot_vel_mps: {stats.peak_foot_vel_mps:.6g}")
         print(f"  peak_velocity_radps: {stats.peak_velocity_radps:.6g}")
+        print(f"  foot velocity samples: {stats.foot_velocity_samples}")
+        print(f"  joint velocity samples: {stats.joint_velocity_samples}")
+        print(f"  foot high-frequency energy ratio: {stats.foot_high_frequency_energy_ratio:.6g}")
+        print(f"  joint high-frequency energy ratio: {stats.joint_high_frequency_energy_ratio:.6g}")
         print(f"  fault=TIP_OVER events: {stats.tip_over_events}")
         print(f"  fault=TIP_OVER max consecutive streak: {stats.max_tip_over_streak}")
         print("  thresholds:")
         print(f"    max_peak_foot_vel_mps: {thresholds.max_peak_foot_vel_mps:.6g}")
         print(f"    max_peak_velocity_radps: {thresholds.max_peak_velocity_radps:.6g}")
+        print(
+            "    max_foot_high_frequency_energy_ratio: "
+            f"{thresholds.max_foot_high_frequency_energy_ratio:.6g}"
+        )
+        print(
+            "    max_joint_high_frequency_energy_ratio: "
+            f"{thresholds.max_joint_high_frequency_energy_ratio:.6g}"
+        )
         print(f"    tip_over_persist_streak: {thresholds.tip_over_persist_streak}")
 
         if failures:
