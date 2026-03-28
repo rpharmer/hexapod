@@ -296,6 +296,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     )
 
     # kinematics
+    hexapod_server_add_test(test_leg_ik_limit_stability leg_ik_limit_stability
+        tests/test_leg_ik_limit_stability.cpp
+    )
     hexapod_server_add_test(test_motion_intent_through_ik_fk motion_intent_through_ik_fk_chain
         tests/test_motion_intent_through_ik_fk.cpp
     )
