@@ -182,6 +182,8 @@ Include `autonomy_debug` in schema-v1 state packets when using world-anchored ov
 }
 ```
 
+If `autonomy_debug.localization.pose_reset` is set to `true`, the renderer treats that sample as a localization reinitialization boundary and immediately reseeds its smoothed render pose to the resolved absolute pose for that same frame. This avoids long interpolation from stale pre-reset pose history after map/odom relocalization jumps.
+
 Leg keys expected: `LF`, `LM`, `LR`, `RF`, `RM`, `RR`.
 `active_mode` (string) is the canonical mode field; legacy numeric `mode` is deprecated and accepted only for backward compatibility.
 `schema_version` is required and must currently be `1`.
