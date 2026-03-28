@@ -336,6 +336,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     hexapod_server_add_test(test_body_controller_velocity body_controller_velocity
         tests/test_body_controller_velocity.cpp
     )
+    hexapod_server_add_test(test_estimator_body_controller_integration estimator_body_controller_integration
+        tests/test_estimator_body_controller_integration.cpp
+    )
     hexapod_server_add_test(test_gait_plausibility_flat_plane gait_plausibility_flat_plane
         tests/test_gait_plausibility_flat_plane.cpp
     )
