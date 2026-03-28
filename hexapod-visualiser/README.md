@@ -171,6 +171,8 @@ Include `autonomy_debug` in schema-v1 state packets when using world-anchored ov
   "schema_version": 1,
   "type": "state",
   "timestamp_ms": 1712345678910,
+  "active_mode": "WALK",
+  "active_fault": "NONE",
   "autonomy_debug": {
     "waypoints": [
       { "x_m": 0.0, "y_m": 0.0, "yaw_rad": 0.0 },
