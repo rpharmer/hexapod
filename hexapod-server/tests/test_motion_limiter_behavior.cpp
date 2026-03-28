@@ -313,6 +313,49 @@ bool unit_motion_limiter_scales_with_dt_and_stays_bounded() {
                   "larger dt should allow a proportionally larger bounded step");
 }
 
+bool unit_motion_limiter_yaw_clamp_uses_rate_limit_semantics() {
+    control_config::MotionLimiterConfig limiter_cfg{};
+    limiter_cfg.body_yaw_rate_limit_radps = 0.4;
+    limiter_cfg.body_angular_accel_limit_radps2 = Vec3{100.0, 100.0, 100.0};
+    MotionLimiter limiter{limiter_cfg};
+
+    RobotState est = nominalEstimatedState();
+    SafetyState safety{};
+    RuntimeGaitPolicy gait_policy{};
+
+    MotionIntent walk = walkingIntent();
+    walk.body_pose_setpoint.orientation_rad.z = 0.0;
+    (void)limiter.update(est, walk, gait_policy, safety, DurationSec{0.02});
+
+    walk.body_pose_setpoint.orientation_rad.z = 1.0;
+    const DurationSec small_dt{0.02};
+    const MotionLimiterOutput small_step =
+        limiter.update(est, walk, gait_policy, safety, small_dt);
+
+    walk.body_pose_setpoint.orientation_rad.z = 2.0;
+    const DurationSec large_dt{0.10};
+    const MotionLimiterOutput large_step =
+        limiter.update(est, walk, gait_policy, safety, large_dt);
+
+    const double first_yaw = small_step.limited_intent.body_pose_setpoint.orientation_rad.z;
+    const double second_yaw = large_step.limited_intent.body_pose_setpoint.orientation_rad.z;
+    const double small_delta = std::abs(first_yaw - 0.0);
+    const double large_delta = std::abs(second_yaw - first_yaw);
+    const double small_limit = limiter_cfg.body_yaw_rate_limit_radps * small_dt.value;
+    const double large_limit = limiter_cfg.body_yaw_rate_limit_radps * large_dt.value;
+
+    return expect(small_step.diagnostics.hard_clamp_yaw,
+                  "small dt yaw step should clamp against yaw-rate bound") &&
+           expect(large_step.diagnostics.hard_clamp_yaw,
+                  "large dt yaw step should clamp against yaw-rate bound") &&
+           expect(small_delta <= small_limit + 1e-12,
+                  "small dt yaw delta should be bounded by yaw-rate * dt") &&
+           expect(large_delta <= large_limit + 1e-12,
+                  "large dt yaw delta should be bounded by yaw-rate * dt") &&
+           expect(large_delta > small_delta + 1e-6,
+                  "larger dt should allow a proportionally larger bounded yaw step");
+}
+
 bool unit_motion_limiter_replay_is_deterministic_for_fixed_dt() {
     control_config::MotionLimiterConfig limiter_cfg{};
     limiter_cfg.foot_velocity_limit_mps = 0.05;
@@ -573,6 +616,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!unit_motion_limiter_scales_with_dt_and_stays_bounded()) {
+        return EXIT_FAILURE;
+    }
+    if (!unit_motion_limiter_yaw_clamp_uses_rate_limit_semantics()) {
         return EXIT_FAILURE;
     }
     if (!unit_motion_limiter_replay_is_deterministic_for_fixed_dt()) {

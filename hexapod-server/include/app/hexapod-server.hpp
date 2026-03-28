@@ -110,6 +110,7 @@ struct ParsedToml
   double motionBodyAngularAccelLimitXRadps2{1.2};
   double motionBodyAngularAccelLimitYRadps2{1.2};
   double motionBodyAngularAccelLimitZRadps2{1.5};
+  double motionBodyYawRateLimitRadps{1.5};
   double motionFootVelocityLimitMps{0.30};
   double motionFootAccelLimitMps2{1.0};
   double motionJointSoftVelocityLimitRadps{5.0};

@@ -85,6 +85,7 @@ body_linear_accel_limit_z_mps2 = 0.4
 body_angular_accel_limit_x_radps2 = 1.2
 body_angular_accel_limit_y_radps2 = 1.2
 body_angular_accel_limit_z_radps2 = 1.5
+body_yaw_rate_limit_radps = 1.5
 foot_velocity_limit_mps = 0.30
 foot_accel_limit_mps2 = 1.0
 joint_soft_velocity_limit_radps = 5.0

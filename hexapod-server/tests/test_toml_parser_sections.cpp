@@ -199,6 +199,9 @@ bool testMotionLimiterDefaultsApplyWhenSectionMissing()
          expect(near(parsed.motionBodyAngularAccelLimitZRadps2,
                      control_config::kDefaultMotionBodyAngularAccelLimitZRadps2),
                 "motion body angular z accel default should apply when section is missing") &&
+         expect(near(parsed.motionBodyYawRateLimitRadps,
+                     control_config::kDefaultMotionBodyYawRateLimitRadps),
+                "motion body yaw-rate default should apply when section is missing") &&
          expect(near(parsed.motionFootVelocityLimitMps, control_config::kDefaultMotionFootVelocityLimitMps),
                 "motion foot velocity default should apply when section is missing") &&
          expect(near(parsed.motionFootAccelLimitMps2, control_config::kDefaultMotionFootAccelLimitMps2),
@@ -229,6 +232,9 @@ bool testMotionLimiterInvalidValuesFallbackToDefaults()
       !expect(replaceOnce(cfg, "body_angular_accel_limit_x_radps2 = 1.2",
                           "body_angular_accel_limit_x_radps2 = 0.0"),
               "baseline sim config missing motion limiter angular x entry") ||
+      !expect(replaceOnce(cfg, "body_yaw_rate_limit_radps = 1.5",
+                          "body_yaw_rate_limit_radps = -2.0"),
+              "baseline sim config missing motion limiter yaw-rate entry") ||
       !expect(replaceOnce(cfg, "joint_soft_accel_limit_radps2 = 30.0",
                           "joint_soft_accel_limit_radps2 = 3000.0"),
               "baseline sim config missing motion limiter joint soft accel entry") ||
@@ -253,6 +259,9 @@ bool testMotionLimiterInvalidValuesFallbackToDefaults()
          expect(near(parsed.motionBodyAngularAccelLimitXRadps2,
                      control_config::kDefaultMotionBodyAngularAccelLimitXRadps2),
                 "invalid motion body angular x accel should fallback to default") &&
+         expect(near(parsed.motionBodyYawRateLimitRadps,
+                     control_config::kDefaultMotionBodyYawRateLimitRadps),
+                "invalid motion body yaw-rate should fallback to default") &&
          expect(near(parsed.motionJointSoftAccelLimitRadps2,
                      control_config::kDefaultMotionJointSoftAccelLimitRadps2),
                 "invalid joint soft accel should fallback to default") &&

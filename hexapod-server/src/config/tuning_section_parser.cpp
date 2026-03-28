@@ -205,6 +205,9 @@ void parseTuningSection(const toml::value& root,
   out.motionBodyAngularAccelLimitZRadps2 = config_validation::parseDoubleWithFallback(
       root, "motion_limiter.body_angular_accel_limit_z_radps2",
       control_config::kDefaultMotionBodyAngularAccelLimitZRadps2, 0.01, 100.0, "tuning", logger);
+  out.motionBodyYawRateLimitRadps = config_validation::parseDoubleWithFallback(
+      root, "motion_limiter.body_yaw_rate_limit_radps",
+      control_config::kDefaultMotionBodyYawRateLimitRadps, 0.01, 100.0, "tuning", logger);
   out.motionFootVelocityLimitMps = config_validation::parseDoubleWithFallback(
       root, "motion_limiter.foot_velocity_limit_mps",
       control_config::kDefaultMotionFootVelocityLimitMps, 0.01, 5.0, "tuning", logger);

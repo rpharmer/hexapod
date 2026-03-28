@@ -66,6 +66,7 @@ inline constexpr double kDefaultMotionBodyLinearAccelLimitZMps2{0.4};
 inline constexpr double kDefaultMotionBodyAngularAccelLimitXRadps2{1.2};
 inline constexpr double kDefaultMotionBodyAngularAccelLimitYRadps2{1.2};
 inline constexpr double kDefaultMotionBodyAngularAccelLimitZRadps2{1.5};
+inline constexpr double kDefaultMotionBodyYawRateLimitRadps{1.5};
 inline constexpr double kDefaultMotionFootVelocityLimitMps{0.30};
 inline constexpr double kDefaultMotionFootAccelLimitMps2{1.0};
 inline constexpr double kDefaultMotionJointSoftVelocityLimitRadps{5.0};
@@ -210,6 +211,7 @@ struct MotionLimiterConfig {
         kDefaultMotionBodyAngularAccelLimitXRadps2,
         kDefaultMotionBodyAngularAccelLimitYRadps2,
         kDefaultMotionBodyAngularAccelLimitZRadps2};
+    double body_yaw_rate_limit_radps{kDefaultMotionBodyYawRateLimitRadps};
     double foot_velocity_limit_mps{kDefaultMotionFootVelocityLimitMps};
     double foot_accel_limit_mps2{kDefaultMotionFootAccelLimitMps2};
     double joint_soft_velocity_limit_radps{kDefaultMotionJointSoftVelocityLimitRadps};
