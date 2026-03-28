@@ -448,6 +448,84 @@ bool unit_motion_limiter_rejects_non_finite_commands() {
                   "rejecting non-finite commands should mark limiter intent as modified");
 }
 
+bool integration_multi_clamp_same_cycle_remains_bounded_without_spikes() {
+    control_config::ControlConfig cfg{};
+    cfg.motion_limiter.foot_velocity_limit_mps = 0.03;
+    cfg.motion_limiter.body_angular_accel_limit_radps2 = Vec3{0.8, 0.8, 0.8};
+    ControlPipeline pipeline(cfg);
+
+    RobotState est = nominalEstimatedState();
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    safety.torque_cut = false;
+    const DurationSec loop_dt{0.02};
+
+    MotionIntent walk = walkingIntent();
+    const PipelineStepResult baseline = pipeline.runStep(est, walk, safety, loop_dt, true, 300);
+
+    walk.body_pose_setpoint.body_trans_m = Vec3{1.2, 0.0, 0.2};
+    walk.body_pose_setpoint.orientation_rad.z = 2.2;
+
+    std::array<PipelineStepResult, 5> sequence{};
+    for (std::size_t i = 0; i < sequence.size(); ++i) {
+        sequence[i] = pipeline.runStep(est, walk, safety, loop_dt, true, 301 + i);
+        const auto& gait = sequence[i].status.dynamic_gait;
+        if (!expect(gait.hard_clamp_linear,
+                    "extreme translation should trigger motion limiter clamp while walking")) {
+            return false;
+        }
+        if (!expect(gait.hard_clamp_reach,
+                    "extreme translation should also trigger reach-envelope clamp in the same cycle")) {
+            return false;
+        }
+        if (!expect(std::isfinite(gait.adaptation_scale_linear) &&
+                        gait.adaptation_scale_linear >= 0.0 &&
+                        gait.adaptation_scale_linear <= 1.0,
+                    "combined clamp path should keep linear adaptation scale bounded to [0, 1]")) {
+            return false;
+        }
+        if (!expect(std::isfinite(gait.adaptation_scale_yaw) &&
+                        gait.adaptation_scale_yaw >= 0.0 &&
+                        gait.adaptation_scale_yaw <= 1.0,
+                    "combined clamp path should keep yaw adaptation scale bounded to [0, 1]")) {
+            return false;
+        }
+        if (!expect(std::isfinite(gait.adaptation_scale_cadence) &&
+                        gait.adaptation_scale_cadence >= 0.0 &&
+                        gait.adaptation_scale_cadence <= 1.0 &&
+                        std::isfinite(gait.adaptation_scale_step) &&
+                        gait.adaptation_scale_step >= 0.0 &&
+                        gait.adaptation_scale_step <= 1.0,
+                    "combined clamp path should keep cadence/step adaptation scales bounded to [0, 1]")) {
+            return false;
+        }
+    }
+
+    const double first_dx = sequence[0].leg_targets.feet[0].pos_body_m.x - baseline.leg_targets.feet[0].pos_body_m.x;
+    if (!expect(std::abs(first_dx) > 1e-9,
+                "multi-clamp stress sequence should produce a measurable command update")) {
+        return false;
+    }
+
+    double max_abs_step = std::abs(first_dx);
+    double oscillation_budget = 0.0;
+    for (std::size_t i = 1; i < sequence.size(); ++i) {
+        const double dx =
+            sequence[i].leg_targets.feet[0].pos_body_m.x - sequence[i - 1].leg_targets.feet[0].pos_body_m.x;
+        max_abs_step = std::max(max_abs_step, std::abs(dx));
+        oscillation_budget += std::abs(dx);
+        if (!expect(std::isfinite(dx),
+                    "multi-clamp command deltas must stay finite across repeated cycles")) {
+            return false;
+        }
+    }
+
+    return expect(max_abs_step <= std::abs(first_dx) + 1e-6,
+                  "clamp ordering should not create larger downstream command spikes after the initial transient") &&
+           expect(oscillation_budget <= std::abs(first_dx) * static_cast<double>(sequence.size()) + 1e-6,
+                  "combined clamp loop should stay bounded without runaway oscillation energy");
+}
+
 bool integration_gait_scheduler_progress_tracks_elapsed_dt() {
     GaitScheduler scheduler;
     RobotState est = nominalEstimatedState();
@@ -504,6 +582,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!unit_motion_limiter_rejects_non_finite_commands()) {
+        return EXIT_FAILURE;
+    }
+    if (!integration_multi_clamp_same_cycle_remains_bounded_without_spikes()) {
         return EXIT_FAILURE;
     }
     if (!integration_gait_scheduler_progress_tracks_elapsed_dt()) {
