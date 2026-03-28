@@ -23,8 +23,10 @@ StabilityAssessment assessStability(const RobotState& state) {
             continue;
         }
 
+        const LegState joint_space =
+            geometry.legGeometry[leg].servo.toJointAngles(state.leg_states[leg]);
         support_points.push_back(kinematics::footPointInBodyPlane(
-            state.leg_states[leg], geometry.legGeometry[leg]));
+            joint_space, geometry.legGeometry[leg]));
     }
 
     assessment.support_contact_count = static_cast<int>(support_points.size());

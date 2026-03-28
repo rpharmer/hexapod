@@ -18,4 +18,6 @@ private:
     double phase_accum_{0.0};
     FrequencyHz cadence_hz_{FrequencyHz{0.0}};
     TimePointUs last_update_us_{};
+    std::array<double, kNumLegs> last_phase_{};
+    bool last_phase_initialized_{false};
 };

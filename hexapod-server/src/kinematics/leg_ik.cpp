@@ -7,6 +7,8 @@
 
 namespace {
 
+constexpr double kTwoPi = 2.0 * kPi;
+
 void apply_estimated_leg_fallback(const RobotState& est,
                                   JointTargets& joints,
                                   int legID)
@@ -15,6 +17,11 @@ void apply_estimated_leg_fallback(const RobotState& est,
     joints.leg_states[legID].joint_state[joint].pos_rad =
         est.leg_states[legID].joint_state[joint].pos_rad;
   }
+}
+
+double unwrapToNearest(double reference_rad, double candidate_rad) {
+  const double turns = std::round((reference_rad - candidate_rad) / kTwoPi);
+  return candidate_rad + (turns * kTwoPi);
 }
 
 } // namespace
@@ -45,8 +52,6 @@ bool LegIK::solveOneLeg(const LegState& est,
                         LegState& out,
                         const FootTarget& foot,
                         const LegGeometry& leg) {
-  (void)est;
-
   // Transform foot target coordinates so they are relative to Coxa mount
   const Vec3 relativeToCoxa = foot.pos_body_m - leg.bodyCoxaOffset;
   const Mat3 R_leg = Mat3::rotZ(-leg.mountAngle.value);
@@ -94,6 +99,14 @@ bool LegIK::solveOneLeg(const LegState& est,
   out.joint_state[1].pos_rad = AngleRad{q2};
   out.joint_state[2].pos_rad = AngleRad{q3};
   out = leg.servo.toServoAngles(out);
+
+  // Keep servo command continuity across +/-pi branch cuts by selecting the
+  // equivalent angle nearest to current estimated feedback.
+  for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+    out.joint_state[joint].pos_rad.value =
+        unwrapToNearest(est.joint_state[joint].pos_rad.value,
+                        out.joint_state[joint].pos_rad.value);
+  }
 
   return true;
 }

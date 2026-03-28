@@ -8,7 +8,8 @@
 namespace {
 
 Vec3 computeFootInBodyFrame(const LegState& leg_state, const LegGeometry& leg_geometry) {
-    return kinematics::footInBodyFrame(leg_state, leg_geometry);
+    const LegState joint_space = leg_geometry.servo.toJointAngles(leg_state);
+    return kinematics::footInBodyFrame(joint_space, leg_geometry);
 }
 
 bool isFiniteOrZero(const double value) {
