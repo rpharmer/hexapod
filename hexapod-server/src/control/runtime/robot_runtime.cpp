@@ -3,6 +3,7 @@
 #include "geometry_config.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
@@ -229,7 +230,13 @@ void RobotRuntime::busStep() {
 
 void RobotRuntime::estimatorStep() {
     const RobotState raw = raw_state_.read();
+    const auto estimator_start = std::chrono::steady_clock::now();
     const RobotState est = estimator_->update(raw);
+    const auto estimator_finish = std::chrono::steady_clock::now();
+    pipeline_.recordStageDuration(
+        PipelineStage::Estimator,
+        static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(estimator_finish - estimator_start).count()));
     estimated_state_.write(est);
 }
 
@@ -540,6 +547,10 @@ std::optional<autonomy::AutonomyStepOutput> RobotRuntime::lastAutonomyStepOutput
 
 void RobotRuntime::setMotionIntentForTest(const MotionIntent& intent) {
     motion_intent_.write(intent);
+}
+
+void RobotRuntime::setJointTargetsForTest(const JointTargets& targets) {
+    joint_targets_.write(targets);
 }
 
 bool RobotRuntime::setSimFaultToggles(const SimHardwareFaultToggles& toggles) {

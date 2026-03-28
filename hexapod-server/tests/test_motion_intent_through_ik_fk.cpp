@@ -6,6 +6,7 @@
 #include "leg_ik.hpp"
 #include "stability_tracker.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -160,6 +161,106 @@ bool gaitSchedulerRecoversWithoutPhaseSnapAfterTransientInstability() {
                   "phase should continue progressing after instability clears");
 }
 
+bool gaitSchedulerCadenceSlewRespectsUpDownLimitsAndWalkRestartSign() {
+    constexpr double kCadenceSlewUpHzPerSec = 150.0;
+    constexpr double kCadenceSlewDownHzPerSec = 200.0;
+    constexpr double kSlewToleranceHz = 0.02;
+
+    GaitScheduler gait;
+    RobotState est{};
+    est.timestamp_us = now_us();
+    est.foot_contacts = {true, true, true, true, true, true};
+    for (auto& leg : est.leg_states) {
+        leg.joint_state[1].pos_rad = AngleRad{-0.6};
+        leg.joint_state[2].pos_rad = AngleRad{-0.8};
+    }
+
+    MotionIntent walk{};
+    walk.requested_mode = RobotMode::WALK;
+    walk.gait = GaitType::TRIPOD;
+    walk.timestamp_us = now_us();
+
+    MotionIntent stop = walk;
+    stop.requested_mode = RobotMode::STAND;
+
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    safety.torque_cut = false;
+
+    RuntimeGaitPolicy low_policy{};
+    low_policy.cadence_hz = FrequencyHz{0.2};
+
+    RuntimeGaitPolicy high_policy = low_policy;
+    high_policy.cadence_hz = FrequencyHz{2.5};
+
+    gait.update(est, walk, safety, low_policy);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(8));
+    const GaitState ramp_start = gait.update(est, walk, safety, low_policy);
+    TimePointUs previous_time = ramp_start.timestamp_us;
+    double previous_rate = ramp_start.stride_phase_rate_hz.value;
+
+    for (int i = 0; i < 6; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(8));
+        const GaitState ramped = gait.update(est, walk, safety, high_policy);
+        const double dt_sec = static_cast<double>((ramped.timestamp_us - previous_time).value) * 1e-6;
+        const double delta_rate = ramped.stride_phase_rate_hz.value - previous_rate;
+        const double max_up = kCadenceSlewUpHzPerSec * std::max(0.0, dt_sec) + kSlewToleranceHz;
+        if (!expect(delta_rate <= max_up, "abrupt cadence increase exceeded up slew limit")) {
+            return false;
+        }
+        if (!expect(delta_rate >= -kSlewToleranceHz,
+                    "cadence increase produced negative slew delta (sign error)")) {
+            return false;
+        }
+        previous_time = ramped.timestamp_us;
+        previous_rate = ramped.stride_phase_rate_hz.value;
+    }
+
+    for (int i = 0; i < 6; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(8));
+        const GaitState ramped = gait.update(est, walk, safety, low_policy);
+        const double dt_sec = static_cast<double>((ramped.timestamp_us - previous_time).value) * 1e-6;
+        const double delta_rate = ramped.stride_phase_rate_hz.value - previous_rate;
+        const double max_down = kCadenceSlewDownHzPerSec * std::max(0.0, dt_sec) + kSlewToleranceHz;
+        if (!expect((-delta_rate) <= max_down, "abrupt cadence decrease exceeded down slew limit")) {
+            return false;
+        }
+        if (!expect(delta_rate <= kSlewToleranceHz,
+                    "cadence decrease produced positive slew delta (sign error)")) {
+            return false;
+        }
+        if (!expect(ramped.stride_phase_rate_hz.value >= -kSlewToleranceHz,
+                    "cadence should never cross negative while ramping down")) {
+            return false;
+        }
+        previous_time = ramped.timestamp_us;
+        previous_rate = ramped.stride_phase_rate_hz.value;
+    }
+
+    const GaitState stopped = gait.update(est, stop, safety, high_policy);
+    if (!expect(stopped.stride_phase_rate_hz.value == 0.0, "stopping walk should force zero cadence")) {
+        return false;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(8));
+    const GaitState restarted = gait.update(est, walk, safety, high_policy);
+    if (!expect(restarted.stride_phase_rate_hz.value >= 0.0, "restart should not produce negative cadence")) {
+        return false;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(8));
+    const GaitState restarted_2 = gait.update(est, walk, safety, high_policy);
+    const double restart_dt_sec = static_cast<double>((restarted_2.timestamp_us - restarted.timestamp_us).value) * 1e-6;
+    const double restart_delta = restarted_2.stride_phase_rate_hz.value - restarted.stride_phase_rate_hz.value;
+    const double restart_max_up = kCadenceSlewUpHzPerSec * std::max(0.0, restart_dt_sec) + kSlewToleranceHz;
+
+    return expect(restart_delta >= -kSlewToleranceHz,
+                  "restart cadence ramp should not flip sign") &&
+           expect(restart_delta <= restart_max_up,
+                  "restart cadence ramp should still obey up slew limit");
+}
+
 bool bodyControllerUsesGaitState() {
     BodyController body;
     RobotState est{};
@@ -293,6 +394,80 @@ bool ikMaintainsCoxaContinuityAcrossAtanBranchCut() {
                   "ik coxa command should stay continuous near +/-pi branch cut");
 }
 
+bool ikFkRoundTripStaysAccurateAcrossBodyAttitudeSweep() {
+    const HexapodGeometry geometry = defaultHexapodGeometry();
+    LegIK ik(geometry);
+    LegFK fk;
+
+    RobotState est{};
+    SafetyState safety{};
+    safety.leg_enabled.fill(true);
+
+    LegTargets targets{};
+    constexpr double kRollSweep[] = {-0.05, 0.0, 0.05};
+    constexpr double kPitchSweep[] = {-0.05, 0.0, 0.05};
+    constexpr double kYawSweep[] = {-0.10, 0.0, 0.10};
+    constexpr double kForwardOffsetsM[] = {-0.008, 0.0, 0.008};
+    constexpr double kLateralOffsetsM[] = {-0.008, 0.0, 0.008};
+    constexpr double kVerticalOffsetsM[] = {-0.006, 0.0, 0.006};
+    constexpr double kMaxRoundTripErrorM = 0.08;
+    constexpr int kRepresentativeLegs[] = {0};
+    double max_round_trip_error_m = 0.0;
+
+    for (double roll_rad : kRollSweep) {
+        for (double pitch_rad : kPitchSweep) {
+            for (double yaw_rad : kYawSweep) {
+                for (double x_offset_m : kForwardOffsetsM) {
+                    for (double y_offset_m : kLateralOffsetsM) {
+                        for (double z_offset_m : kVerticalOffsetsM) {
+                            for (int leg : kRepresentativeLegs) {
+                                LegState nominal_joint{};
+                                nominal_joint.joint_state[0].pos_rad = AngleRad{0.0};
+                                nominal_joint.joint_state[1].pos_rad = AngleRad{-0.55};
+                                nominal_joint.joint_state[2].pos_rad = AngleRad{-0.95};
+                                const FootTarget nominal_stance =
+                                    fk.footInBodyFrame(nominal_joint, geometry.legGeometry[leg]);
+                                const Vec3 attitude_coupled_offset{
+                                    x_offset_m + (0.01 * pitch_rad),
+                                    y_offset_m + (0.01 * yaw_rad),
+                                    z_offset_m - (0.01 * roll_rad)};
+                                targets.feet[leg].pos_body_m =
+                                    nominal_stance.pos_body_m + attitude_coupled_offset;
+                            }
+
+                            const JointTargets solved = ik.solve(est, targets, safety);
+                            if (!expect(finiteJointTargets(solved),
+                                        "ik output should stay finite through body attitude sweep")) {
+                                return false;
+                            }
+
+                            for (int leg : kRepresentativeLegs) {
+                                const LegState joint_frame =
+                                    geometry.legGeometry[leg].servo.toJointAngles(solved.leg_states[leg]);
+                                const FootTarget fk_body =
+                                    fk.footInBodyFrame(joint_frame, geometry.legGeometry[leg]);
+                                const Vec3 error =
+                                    fk_body.pos_body_m - targets.feet[leg].pos_body_m;
+                                const double err_norm_m =
+                                    std::sqrt(error.x * error.x + error.y * error.y + error.z * error.z);
+                                max_round_trip_error_m = std::max(max_round_trip_error_m, err_norm_m);
+                                est.leg_states[leg] = solved.leg_states[leg];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (max_round_trip_error_m >= kMaxRoundTripErrorM) {
+        std::cerr << "FAIL: ik/fk sweep max round-trip error was " << max_round_trip_error_m
+                  << " m (tolerance " << kMaxRoundTripErrorM << " m)\n";
+        return false;
+    }
+    return true;
+}
+
 bool stabilityTrackerUsesJointSpaceForServoFeedbackState() {
     const HexapodGeometry geometry = defaultHexapodGeometry();
     RobotState est{};
@@ -350,6 +525,9 @@ int main() {
     if (!gaitSchedulerRecoversWithoutPhaseSnapAfterTransientInstability()) {
         return EXIT_FAILURE;
     }
+    if (!gaitSchedulerCadenceSlewRespectsUpDownLimitsAndWalkRestartSign()) {
+        return EXIT_FAILURE;
+    }
     if (!bodyControllerUsesGaitState()) {
         return EXIT_FAILURE;
     }
@@ -360,6 +538,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!ikMaintainsCoxaContinuityAcrossAtanBranchCut()) {
+        return EXIT_FAILURE;
+    }
+    if (!ikFkRoundTripStaysAccurateAcrossBodyAttitudeSweep()) {
         return EXIT_FAILURE;
     }
     if (!stabilityTrackerUsesJointSpaceForServoFeedbackState()) {

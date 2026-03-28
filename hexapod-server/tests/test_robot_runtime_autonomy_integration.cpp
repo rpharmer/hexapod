@@ -214,6 +214,20 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     }
 
     runtime.setAutonomyBlocked(false);
+    runtime.setMotionIntent(makeFreshWalkIntent());
+    runRuntimeStep(runtime);
+    const auto resumed_output = runtime.lastAutonomyStepOutput();
+    if (!expect(resumed_output.has_value(), "autonomy output should exist after blocked signal clears")) {
+        return false;
+    }
+    if (!expect(!resumed_output->motion_decision.allow_motion,
+                "blocked mission should remain gated until mission is re-armed")) {
+        return false;
+    }
+    if (!expect(runtime.getStatus().active_mode == RobotMode::SAFE_IDLE,
+                "mode transition should remain safety-gated after blocked signal clears")) {
+        return false;
+    }
     runtime.setAutonomyNoProgress(true);
     runtime.setMotionIntent(makeFreshWalkIntent());
     runRuntimeStep(runtime);
@@ -254,6 +268,8 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     }
     if (!expect(resumed_speed_mps <= (cfg.gait.fallback_speed_mag.value + 1e-9),
                 "post-recovery autonomy speed should respect fallback speed cap")) {
+    const auto recovery_clear_output = runtime.lastAutonomyStepOutput();
+    if (!expect(recovery_clear_output.has_value(), "autonomy output should exist when recovery clears")) {
         return false;
     }
     if (!expect(runtime.getStatus().autonomy.mission_state == static_cast<uint8_t>(autonomy::MissionState::Exec),
@@ -298,10 +314,153 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     return true;
 }
 
+bool testRuntimeWithoutAutonomyKeepsOperatorWalkIntentStable() {
+    control_config::ControlConfig cfg{};
+    cfg.autonomy.enabled = false;
+bool testInterleavedManualAndAutonomyIntentsPreserveFreshnessAndSampleMonotonicity() {
+    control_config::ControlConfig cfg{};
+    cfg.autonomy.enabled = true;
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.telemetry.enabled = true;
+    cfg.telemetry.publish_period = std::chrono::milliseconds{0};
+    cfg.telemetry.geometry_refresh_period = std::chrono::milliseconds{1000};
+
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<PassThroughEstimator>();
+    auto telemetry_publisher = std::make_unique<CapturingTelemetryPublisher>();
+    auto* telemetry_raw = telemetry_publisher.get();
+    RobotRuntime runtime(
+        std::move(bridge), std::move(estimator), nullptr, cfg, std::move(telemetry_publisher));
+
+    if (!expect(runtime.init(), "runtime init should succeed with autonomy disabled")) {
+        return false;
+    }
+    runtime.startTelemetry();
+
+    MotionIntent walk = makeFreshWalkIntent();
+    walk.speed_mps = LinearRateMps{0.22};
+    walk.heading_rad = AngleRad{0.3};
+    runtime.setMotionIntent(walk);
+    runRuntimeStep(runtime);
+
+    if (!expect(!runtime.lastAutonomyStepOutput().has_value(),
+                "autonomy disabled runtime should not emit autonomy step output")) {
+        return false;
+    }
+    if (!expect(runtime.getStatus().active_mode == RobotMode::WALK,
+                "autonomy disabled runtime should keep operator WALK mode")) {
+        return false;
+    }
+    if (!expect(telemetry_raw->last_sample.has_value(), "autonomy disabled runtime should still publish telemetry")) {
+        return false;
+    }
+    if (!expect(!telemetry_raw->last_sample->status.autonomy.enabled,
+                "telemetry autonomy state should remain disabled when stack is disabled")) {
+        return false;
+    }
+    if (!expect(std::abs(telemetry_raw->last_sample->motion_intent.speed_mps.value - walk.speed_mps.value) < 1e-9,
+                "telemetry motion intent should preserve operator speed command")) {
+        return false;
+    }
+    if (!expect(std::abs(telemetry_raw->last_sample->motion_intent.heading_rad.value - walk.heading_rad.value) < 1e-9,
+                "telemetry motion intent should preserve operator heading command")) {
+    if (!expect(runtime.init(), "runtime init should succeed for source-switching monotonicity test")) {
+        return false;
+    }
+    runtime.startTelemetry();
+    if (!expect(runtime.loadAutonomyMission(makeMission()), "mission load should succeed")) {
+        return false;
+    }
+    if (!expect(runtime.startAutonomyMission(), "mission start should succeed")) {
+        return false;
+    }
+
+    uint64_t last_sample_id = 0;
+    const auto run_interleaved_step = [&](MotionIntent intent, const char* step_label) {
+        runtime.setMotionIntent(intent);
+        runRuntimeStep(runtime);
+
+        if (!expect(telemetry_raw->last_sample.has_value(), "telemetry sample should be available after step")) {
+            return false;
+        }
+        const auto& telemetry = *telemetry_raw->last_sample;
+        if (!expect(telemetry.motion_intent.sample_id != 0,
+                    "intent sample ids should remain non-zero across source switches")) {
+            return false;
+        }
+        if (!expect(telemetry.motion_intent.sample_id > last_sample_id,
+                    "intent sample ids should remain strictly monotonic across source switches")) {
+            return false;
+        }
+        last_sample_id = telemetry.motion_intent.sample_id;
+
+        if (!expect(telemetry.status.active_fault != FaultCode::COMMAND_TIMEOUT,
+                    "freshness gate should not falsely raise COMMAND_TIMEOUT when intent source switches")) {
+            return false;
+        }
+        if (!expect(telemetry.runtime_freshness.total_rejects == 0,
+                    "freshness gate should not reject valid interleaved manual/autonomy intent stream")) {
+            return false;
+        }
+        if (!expect(telemetry.runtime_freshness.non_monotonic_id_rejects == 0,
+                    "freshness gate should not record non-monotonic rejects for source switching alone")) {
+            return false;
+        }
+
+        const auto step_output = runtime.lastAutonomyStepOutput();
+        if (!expect(step_output.has_value(), "autonomy output should be produced for interleaved step")) {
+            return false;
+        }
+        if (!expect(step_output->motion_decision.allow_motion || runtime.getStatus().active_mode == RobotMode::SAFE_IDLE,
+                    step_label)) {
+            return false;
+        }
+        return true;
+    };
+
+    MotionIntent manual_with_explicit_sample{};
+    manual_with_explicit_sample.requested_mode = RobotMode::WALK;
+    manual_with_explicit_sample.timestamp_us = now_us();
+    manual_with_explicit_sample.sample_id = 100;
+    if (!run_interleaved_step(manual_with_explicit_sample,
+                              "interleaved step 1 should keep runtime in a valid autonomy control state")) {
+        return false;
+    }
+
+    MotionIntent manual_with_runtime_sample = makeFreshWalkIntent();
+    manual_with_runtime_sample.sample_id = 0;
+    if (!run_interleaved_step(manual_with_runtime_sample,
+                              "interleaved step 2 should keep runtime in a valid autonomy control state")) {
+        return false;
+    }
+
+    MotionIntent manual_with_higher_explicit_sample = makeFreshWalkIntent();
+    manual_with_higher_explicit_sample.sample_id = 200;
+    if (!run_interleaved_step(manual_with_higher_explicit_sample,
+                              "interleaved step 3 should keep runtime in a valid autonomy control state")) {
+        return false;
+    }
+
+    MotionIntent manual_with_runtime_sample_again = makeFreshWalkIntent();
+    manual_with_runtime_sample_again.sample_id = 0;
+    if (!run_interleaved_step(manual_with_runtime_sample_again,
+                              "interleaved step 4 should keep runtime in a valid autonomy control state")) {
+        return false;
+    }
+
+    runtime.stop();
+    return true;
+}
+
 } // namespace
 
 int main() {
-    if (!testRuntimeRoutesAutonomyOutputIntoControlPath()) {
+    if (!testRuntimeRoutesAutonomyOutputIntoControlPath() ||
+        !testRuntimeWithoutAutonomyKeepsOperatorWalkIntentStable()) {
+        return EXIT_FAILURE;
+    }
+    if (!testInterleavedManualAndAutonomyIntentsPreserveFreshnessAndSampleMonotonicity()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <thread>
 
 namespace {
@@ -35,6 +36,8 @@ bool exactlyEqual(const MotionIntent& lhs, const MotionIntent& rhs) {
            exactlyEqual(lhs.body_pose_setpoint.body_trans_mps, rhs.body_pose_setpoint.body_trans_mps) &&
            lhs.sample_id == rhs.sample_id &&
            lhs.timestamp_us.value == rhs.timestamp_us.value;
+bool allFiniteVec3(const Vec3& value) {
+    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
 
 RobotState nominalEstimatedState() {
@@ -211,6 +214,65 @@ bool scenario_body_leads_on_start_and_legs_lead_on_stop() {
                   "pipeline telemetry should mark limiter enabled");
 }
 
+bool scenario_quick_mode_toggles_preserve_phase_order_with_elapsed_gating() {
+    constexpr uint8_t kLimiterPhaseTracking = 0;
+    constexpr uint8_t kLimiterPhaseBodyLeadsOnStart = 1;
+    constexpr uint8_t kLimiterPhaseLegsLeadOnStop = 2;
+
+    control_config::MotionLimiterConfig limiter_cfg{};
+    limiter_cfg.startup_phase_threshold = std::chrono::milliseconds{60};
+    limiter_cfg.shutdown_phase_threshold = std::chrono::milliseconds{60};
+
+    ControlPipeline pipeline(control_config::ControlConfig{
+        .gait = control_config::GaitConfig{},
+        .motion_limiter = limiter_cfg});
+
+    RobotState est = nominalEstimatedState();
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    safety.torque_cut = false;
+
+    MotionIntent idle{};
+    idle.requested_mode = RobotMode::SAFE_IDLE;
+    MotionIntent walk = walkingIntent();
+    const DurationSec loop_dt{0.02};
+
+    const PipelineStepResult idle_prime = pipeline.runStep(est, idle, safety, loop_dt, true, 100);
+    const PipelineStepResult walk_start = pipeline.runStep(est, walk, safety, loop_dt, true, 101);
+    const PipelineStepResult walk_gate_1 = pipeline.runStep(est, walk, safety, loop_dt, true, 102);
+    const PipelineStepResult walk_gate_2 = pipeline.runStep(est, walk, safety, loop_dt, true, 103);
+    const PipelineStepResult walk_gate_3 = pipeline.runStep(est, walk, safety, loop_dt, true, 104);
+    const PipelineStepResult walk_tracking = pipeline.runStep(est, walk, safety, loop_dt, true, 105);
+    const PipelineStepResult stop_start = pipeline.runStep(est, idle, safety, loop_dt, true, 106);
+    const PipelineStepResult stop_gate_1 = pipeline.runStep(est, idle, safety, loop_dt, true, 107);
+    const PipelineStepResult stop_gate_2 = pipeline.runStep(est, idle, safety, loop_dt, true, 108);
+    const PipelineStepResult stop_gate_3 = pipeline.runStep(est, idle, safety, loop_dt, true, 109);
+    const PipelineStepResult stop_tracking = pipeline.runStep(est, idle, safety, loop_dt, true, 110);
+
+    return expect(idle_prime.status.dynamic_gait.limiter_phase == kLimiterPhaseLegsLeadOnStop,
+                  "idle priming should begin in stop-gating phase") &&
+           expect(walk_start.status.dynamic_gait.limiter_phase == kLimiterPhaseBodyLeadsOnStart,
+                  "walk toggle should enter body-leads-on-start phase immediately") &&
+           expect(walk_gate_1.status.dynamic_gait.limiter_phase == kLimiterPhaseBodyLeadsOnStart &&
+                      walk_gate_2.status.dynamic_gait.limiter_phase == kLimiterPhaseBodyLeadsOnStart &&
+                      walk_gate_3.status.dynamic_gait.limiter_phase == kLimiterPhaseBodyLeadsOnStart,
+                  "startup gating should persist until elapsed time reaches threshold") &&
+           expect(walk_tracking.status.dynamic_gait.limiter_phase == kLimiterPhaseTracking,
+                  "startup gating should exit to tracking only after threshold elapsed") &&
+           expect(stop_start.status.dynamic_gait.limiter_phase == kLimiterPhaseLegsLeadOnStop,
+                  "stop toggle should enter legs-lead-on-stop phase immediately") &&
+           expect(stop_gate_1.status.dynamic_gait.limiter_phase == kLimiterPhaseLegsLeadOnStop &&
+                      stop_gate_2.status.dynamic_gait.limiter_phase == kLimiterPhaseLegsLeadOnStop &&
+                      stop_gate_3.status.dynamic_gait.limiter_phase == kLimiterPhaseLegsLeadOnStop,
+                  "shutdown gating should persist until elapsed time reaches threshold") &&
+           expect(stop_tracking.status.dynamic_gait.limiter_phase == kLimiterPhaseTracking,
+                  "shutdown gating should exit to tracking only after threshold elapsed") &&
+           expect(walk_start.status.dynamic_gait.limiter_phase == kLimiterPhaseBodyLeadsOnStart &&
+                      walk_tracking.status.dynamic_gait.limiter_phase == kLimiterPhaseTracking &&
+                      stop_start.status.dynamic_gait.limiter_phase == kLimiterPhaseLegsLeadOnStop,
+                  "phase ordering should be body-leads -> tracking -> legs-lead across quick toggles");
+}
+
 bool unit_motion_limiter_scales_with_dt_and_stays_bounded() {
     control_config::MotionLimiterConfig limiter_cfg{};
     limiter_cfg.foot_velocity_limit_mps = 0.05;
@@ -338,6 +400,48 @@ bool unit_motion_limiter_ignores_estimated_angular_velocity_spikes() {
                       std::abs(second_ang.y - expected_second.y) < 1e-12 &&
                       std::abs(second_ang.z - expected_second.z) < 1e-12,
                   "limited angular velocity should depend only on previous limited intent and accel bounds");
+bool unit_motion_limiter_rejects_non_finite_commands() {
+    MotionLimiter limiter{};
+    RobotState est = nominalEstimatedState();
+    SafetyState safety{};
+    RuntimeGaitPolicy gait_policy{};
+
+    MotionIntent baseline = walkingIntent();
+    baseline.body_pose_setpoint.body_trans_m = Vec3{0.01, -0.01, 0.2};
+    baseline.body_pose_setpoint.body_trans_mps = Vec3{0.0, 0.0, 0.0};
+    baseline.body_pose_setpoint.angular_velocity_radps = Vec3{0.0, 0.0, 0.0};
+    (void)limiter.update(est, baseline, gait_policy, safety, DurationSec{0.02});
+
+    MotionIntent non_finite = baseline;
+    non_finite.body_pose_setpoint.body_trans_m = Vec3{
+        std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::infinity(),
+        0.2};
+    non_finite.body_pose_setpoint.body_trans_mps = Vec3{
+        std::numeric_limits<double>::quiet_NaN(),
+        -std::numeric_limits<double>::infinity(),
+        std::numeric_limits<double>::infinity()};
+    non_finite.body_pose_setpoint.angular_velocity_radps = Vec3{
+        std::numeric_limits<double>::infinity(),
+        std::numeric_limits<double>::quiet_NaN(),
+        -std::numeric_limits<double>::infinity()};
+    non_finite.body_pose_setpoint.orientation_rad.z = std::numeric_limits<double>::quiet_NaN();
+
+    const MotionLimiterOutput out =
+        limiter.update(est, non_finite, gait_policy, safety, DurationSec{0.02});
+
+    const Vec3 limited_pos = out.limited_intent.body_pose_setpoint.body_trans_m;
+    const Vec3 limited_vel = out.limited_intent.body_pose_setpoint.body_trans_mps;
+    const Vec3 limited_ang = out.limited_intent.body_pose_setpoint.angular_velocity_radps;
+    const bool finite_pose = allFiniteVec3(limited_pos) &&
+                             allFiniteVec3(limited_vel) &&
+                             allFiniteVec3(limited_ang) &&
+                             std::isfinite(out.limited_intent.body_pose_setpoint.orientation_rad.z);
+
+    return expect(finite_pose,
+                  "non-finite motion intent inputs should be clamped or rejected to finite limiter outputs") &&
+           expect(out.diagnostics.intent_modified,
+                  "rejecting non-finite commands should mark limiter intent as modified");
 }
 
 bool integration_gait_scheduler_progress_tracks_elapsed_dt() {
@@ -380,6 +484,9 @@ int main() {
     if (!scenario_body_leads_on_start_and_legs_lead_on_stop()) {
         return EXIT_FAILURE;
     }
+    if (!scenario_quick_mode_toggles_preserve_phase_order_with_elapsed_gating()) {
+        return EXIT_FAILURE;
+    }
     if (!scenario_motion_limiter_config_changes_clamp_behavior()) {
         return EXIT_FAILURE;
     }
@@ -390,6 +497,7 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!unit_motion_limiter_ignores_estimated_angular_velocity_spikes()) {
+    if (!unit_motion_limiter_rejects_non_finite_commands()) {
         return EXIT_FAILURE;
     }
     if (!integration_gait_scheduler_progress_tracks_elapsed_dt()) {

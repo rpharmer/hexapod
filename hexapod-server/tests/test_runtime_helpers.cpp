@@ -193,6 +193,36 @@ bool testTimingMetricsRollingWindowAndOverrunThresholds() {
                   "hard escalation crossings should count streak entries that hit the hard threshold");
 }
 
+bool testTimingMetricsControlledDelayOverrunEscalations() {
+    control_config::ControlConfig cfg{};
+    cfg.loop_timing.control_loop_period = std::chrono::microseconds{1'000};
+
+    std::atomic<uint64_t> dt_sum_us{0};
+    std::atomic<uint64_t> jitter_max_us{0};
+    RuntimeTimingMetrics timing(cfg, dt_sum_us, jitter_max_us);
+
+    TimePointUs now{0};
+    timing.update(now);
+
+    const std::array<uint64_t, 13> controlled_delays_us{
+        900,  1'400, 1'500, 1'600, 1'700, 1'800, 900,  1'900, 2'000, 2'100, 2'200, 2'300, 2'400,
+    };
+    for (const uint64_t delay_us : controlled_delays_us) {
+        now.value += delay_us;
+        timing.update(now);
+    }
+
+    const LoopTimingRollingMetrics rolling = timing.rollingMetrics();
+    return expect(rolling.overrun_events_total == 11,
+                  "controlled delays above period should increment overrun event counter") &&
+           expect(rolling.consecutive_overruns == 6,
+                  "consecutive overrun tracking should reset on on-time delay then rebuild") &&
+           expect(rolling.max_consecutive_overruns == 6,
+                  "max consecutive overruns should retain longest post-reset streak") &&
+           expect(rolling.hard_overrun_escalation_crossings == 2,
+                  "hard escalation crossings should count once per threshold crossing event");
+}
+
 
 bool testJointOscillationTrackerIgnoresSubThresholdDirectionChanges() {
     JointOscillationTracker tracker(0.02, 0);
@@ -311,6 +341,7 @@ int main() {
         !testSafetyLenientEvaluationIgnoresAgeExpiry() ||
         !testTimingMetricsTracksDeltaJitterAndAverage() ||
         !testTimingMetricsRollingWindowAndOverrunThresholds() ||
+        !testTimingMetricsControlledDelayOverrunEscalations() ||
         !testJointOscillationTrackerIgnoresSubThresholdDirectionChanges() ||
         !testJointOscillationTrackerHandlesNonMonotonicTimestamps() ||
         !testJointOscillationTrackerCountsDirectionReversals() ||
