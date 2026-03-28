@@ -5,9 +5,11 @@
 
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <thread>
 #include <string>
 #include <utility>
 #include <vector>
@@ -100,6 +102,43 @@ public:
     size_t geometry_count{0};
     size_t control_step_count{0};
     std::optional<telemetry::ControlStepTelemetry> last_control_step{};
+};
+
+class CapturingHardwareBridge final : public IHardwareBridge {
+public:
+    struct WriteSample {
+        JointTargets targets{};
+        TimePointUs timestamp_us{};
+    };
+
+    bool init() override {
+        initialized_ = true;
+        return true;
+    }
+
+    bool read(RobotState& out) override {
+        if (!initialized_) {
+            return false;
+        }
+        out = state_;
+        out.bus_ok = true;
+        out.timestamp_us = now_us();
+        return true;
+    }
+
+    bool write(const JointTargets& in) override {
+        if (!initialized_) {
+            return false;
+        }
+        writes.push_back(WriteSample{in, now_us()});
+        return true;
+    }
+
+    std::vector<WriteSample> writes{};
+
+private:
+    bool initialized_{false};
+    RobotState state_{};
 };
 
 struct FlagScenario {
@@ -442,6 +481,68 @@ bool runMixedIntentPublisherSampleIdCase() {
                   "mixed intent publishers should not trigger freshness COMMAND_TIMEOUT");
 }
 
+bool runJointTargetWriteSlewLimitCase() {
+    auto bridge = std::make_unique<CapturingHardwareBridge>();
+    auto* bridge_raw = bridge.get();
+    auto estimator = std::make_unique<ScriptedEstimator>();
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, control_config::ControlConfig{});
+
+    if (!expect(runtime.init(), "init should succeed (joint target write slew case)")) {
+        return false;
+    }
+
+    JointTargets step_positive{};
+    JointTargets step_negative{};
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+            step_positive.leg_states[leg].joint_state[joint].pos_rad = AngleRad{3.0};
+            step_negative.leg_states[leg].joint_state[joint].pos_rad = AngleRad{-3.0};
+        }
+    }
+
+    runtime.setJointTargetsForTest(step_positive);
+    runtime.busStep();
+    std::this_thread::sleep_for(std::chrono::milliseconds{20});
+
+    runtime.setJointTargetsForTest(step_negative);
+    runtime.busStep();
+    std::this_thread::sleep_for(std::chrono::milliseconds{20});
+
+    runtime.setJointTargetsForTest(step_positive);
+    runtime.busStep();
+
+    if (!expect(bridge_raw->writes.size() >= 3,
+                "slew case should record at least three hardware writes")) {
+        return false;
+    }
+
+    constexpr double kJointTargetSlewLimitRadPerSec = 18.0;
+    constexpr double kSlackRad = 1e-6;
+    for (size_t idx = 1; idx < bridge_raw->writes.size(); ++idx) {
+        const auto& prev = bridge_raw->writes[idx - 1];
+        const auto& current = bridge_raw->writes[idx];
+        if (current.timestamp_us.value <= prev.timestamp_us.value) {
+            return expect(false, "hardware write timestamps should be monotonic");
+        }
+        const double dt_s =
+            static_cast<double>(current.timestamp_us.value - prev.timestamp_us.value) / 1'000'000.0;
+        const double max_delta = (kJointTargetSlewLimitRadPerSec * dt_s) + kSlackRad;
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+                const double previous = prev.targets.leg_states[leg].joint_state[joint].pos_rad.value;
+                const double observed = current.targets.leg_states[leg].joint_state[joint].pos_rad.value;
+                const double observed_delta = std::abs(observed - previous);
+                if (!expect(observed_delta <= max_delta,
+                            "per-cycle hw write delta should be bounded by joint slew limit")) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -525,6 +626,10 @@ int main() {
     }
 
     if (!runMixedIntentPublisherSampleIdCase()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runJointTargetWriteSlewLimitCase()) {
         return EXIT_FAILURE;
     }
 
