@@ -16,6 +16,16 @@ bool isFiniteOrZero(const double value) {
     return std::isfinite(value);
 }
 
+double finiteOr(const double value, const double fallback = 0.0) {
+    return std::isfinite(value) ? value : fallback;
+}
+
+bool allFinite(const Vec3& value) {
+    return std::isfinite(value.x) &&
+           std::isfinite(value.y) &&
+           std::isfinite(value.z);
+}
+
 bool solveGroundPlane(const std::array<Vec3, kNumLegs>& points,
                       const std::array<bool, kNumLegs>& valid,
                       double& a,
@@ -100,9 +110,11 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
                 for (int joint = 0; joint < kJointsPerLeg; ++joint) {
                     const AngleRad current = raw.leg_states[leg].joint_state[joint].pos_rad;
                     const AngleRad previous = last_leg_states_[leg].joint_state[joint].pos_rad;
-                    est.leg_states[leg].joint_state[joint].pos_rad = current;
+                    const double current_value = finiteOr(current.value, finiteOr(previous.value, 0.0));
+                    const double previous_value = finiteOr(previous.value, current_value);
+                    est.leg_states[leg].joint_state[joint].pos_rad = AngleRad{current_value};
                     est.leg_states[leg].joint_state[joint].vel_radps =
-                        AngularRateRadPerSec{(current.value - previous.value) * inv_dt_s};
+                        AngularRateRadPerSec{(current_value - previous_value) * inv_dt_s};
                 }
             }
         }
@@ -112,7 +124,7 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
         for (int leg = 0; leg < kNumLegs; ++leg) {
             for (int joint = 0; joint < kJointsPerLeg; ++joint) {
                 est.leg_states[leg].joint_state[joint].pos_rad =
-                    raw.leg_states[leg].joint_state[joint].pos_rad;
+                    AngleRad{finiteOr(raw.leg_states[leg].joint_state[joint].pos_rad.value, 0.0)};
             }
         }
     }
@@ -129,17 +141,21 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
         if (raw.foot_contacts[leg]) {
             const Vec3 current_contact_point =
                 computeFootInBodyFrame(raw.leg_states[leg], geometry.legGeometry[leg]);
-            last_contact_points_body_m_[leg] = current_contact_point;
-            last_contact_timestamps_[leg] = raw.timestamp_us;
+            if (allFinite(current_contact_point)) {
+                last_contact_points_body_m_[leg] = current_contact_point;
+                last_contact_timestamps_[leg] = raw.timestamp_us;
 
-            if (last_stance_valid_[leg] && dt_s > 0.0) {
-                const Vec3 contact_delta_body = current_contact_point - last_stance_points_body_m_[leg];
-                summed_planar_body_velocity_mps =
-                    summed_planar_body_velocity_mps + ((-1.0 / dt_s) * contact_delta_body);
-                ++stance_velocity_samples;
+                if (last_stance_valid_[leg] && dt_s > 0.0) {
+                    const Vec3 contact_delta_body = current_contact_point - last_stance_points_body_m_[leg];
+                    summed_planar_body_velocity_mps =
+                        summed_planar_body_velocity_mps + ((-1.0 / dt_s) * contact_delta_body);
+                    ++stance_velocity_samples;
+                }
+                last_stance_points_body_m_[leg] = current_contact_point;
+                last_stance_valid_[leg] = true;
+            } else {
+                last_stance_valid_[leg] = false;
             }
-            last_stance_points_body_m_[leg] = current_contact_point;
-            last_stance_valid_[leg] = true;
         } else {
             last_stance_valid_[leg] = false;
         }
@@ -160,8 +176,14 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
     }
 
     if (raw.has_measured_body_pose_state) {
-        est.body_pose_state.orientation_rad = raw.body_pose_state.orientation_rad;
-        est.body_pose_state.angular_velocity_radps = raw.body_pose_state.angular_velocity_radps;
+        est.body_pose_state.orientation_rad = Vec3{
+            finiteOr(raw.body_pose_state.orientation_rad.x),
+            finiteOr(raw.body_pose_state.orientation_rad.y),
+            finiteOr(raw.body_pose_state.orientation_rad.z)};
+        est.body_pose_state.angular_velocity_radps = Vec3{
+            finiteOr(raw.body_pose_state.angular_velocity_radps.x),
+            finiteOr(raw.body_pose_state.angular_velocity_radps.y),
+            finiteOr(raw.body_pose_state.angular_velocity_radps.z)};
 
         const Vec3 imu_linear_velocity = raw.body_pose_state.body_trans_mps;
         if (isFiniteOrZero(imu_linear_velocity.x) && isFiniteOrZero(imu_linear_velocity.y) &&

@@ -5,10 +5,14 @@
 
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <thread>
+#include <random>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -64,6 +68,21 @@ public:
     RobotState last_raw{};
 };
 
+class StableCapturingEstimator final : public IEstimator {
+public:
+    RobotState update(const RobotState& raw) override {
+        last_raw = raw;
+        RobotState stable = stable_estimate;
+        stable.sample_id = raw.sample_id;
+        stable.timestamp_us = raw.timestamp_us;
+        stable.valid = true;
+        return stable;
+    }
+
+    RobotState stable_estimate{};
+    RobotState last_raw{};
+};
+
 class FixedImuUnit final : public hardware::IImuUnit {
 public:
     bool init() override {
@@ -84,10 +103,12 @@ class CountingTelemetryPublisher final : public telemetry::ITelemetryPublisher {
 public:
     void publishGeometry(const HexapodGeometry&) override {
         ++geometry_count;
+        geometry_publish_timestamps_us.push_back(now_us().value);
     }
 
     void publishControlStep(const telemetry::ControlStepTelemetry& telemetry_sample) override {
         ++control_step_count;
+        control_publish_timestamps_us.push_back(telemetry_sample.timestamp_us.value);
         last_control_step = telemetry_sample;
     }
 
@@ -99,7 +120,46 @@ public:
 
     size_t geometry_count{0};
     size_t control_step_count{0};
+    std::vector<uint64_t> geometry_publish_timestamps_us{};
+    std::vector<uint64_t> control_publish_timestamps_us{};
     std::optional<telemetry::ControlStepTelemetry> last_control_step{};
+};
+
+class CapturingHardwareBridge final : public IHardwareBridge {
+public:
+    struct WriteSample {
+        JointTargets targets{};
+        TimePointUs timestamp_us{};
+    };
+
+    bool init() override {
+        initialized_ = true;
+        return true;
+    }
+
+    bool read(RobotState& out) override {
+        if (!initialized_) {
+            return false;
+        }
+        out = state_;
+        out.bus_ok = true;
+        out.timestamp_us = now_us();
+        return true;
+    }
+
+    bool write(const JointTargets& in) override {
+        if (!initialized_) {
+            return false;
+        }
+        writes.push_back(WriteSample{in, now_us()});
+        return true;
+    }
+
+    std::vector<WriteSample> writes{};
+
+private:
+    bool initialized_{false};
+    RobotState state_{};
 };
 
 struct FlagScenario {
@@ -308,6 +368,94 @@ bool runTelemetryCadenceRejectCase() {
                   "second rejected control step inside publish period should not publish telemetry") &&
            expect(telemetry_raw->geometry_count == 1,
                   "rejected control steps should keep geometry refresh cadence");
+}
+
+bool runTelemetryRapidLoopCadenceCase() {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<ScriptedEstimator>();
+    auto* scripted = estimator.get();
+    auto telemetry = std::make_unique<CountingTelemetryPublisher>();
+    auto* telemetry_raw = telemetry.get();
+
+    control_config::ControlConfig cfg{};
+    cfg.telemetry.enabled = true;
+    cfg.telemetry.publish_period = std::chrono::milliseconds{25};
+    cfg.telemetry.geometry_refresh_period = std::chrono::milliseconds{80};
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, cfg, std::move(telemetry));
+
+    if (!expect(runtime.init(), "init should succeed (telemetry rapid loop cadence)")) {
+        return false;
+    }
+
+    runtime.startTelemetry();
+    if (!expect(telemetry_raw->geometry_count == 1,
+                "rapid loop cadence should publish geometry on startTelemetry")) {
+        return false;
+    }
+
+    const uint64_t publish_period_us = static_cast<uint64_t>(cfg.telemetry.publish_period.count()) * 1000ULL;
+    const uint64_t geometry_period_us =
+        static_cast<uint64_t>(cfg.telemetry.geometry_refresh_period.count()) * 1000ULL;
+
+    const auto rapid_window = std::chrono::milliseconds{240};
+    const auto start = std::chrono::steady_clock::now();
+    uint64_t sample_id = 900;
+    while (std::chrono::steady_clock::now() - start < rapid_window) {
+        scripted->enqueue(makeEstimatorSample(sample_id, now_us()));
+        runtime.setMotionIntent(makeIntentSample(sample_id, now_us()));
+        runControlStep(runtime);
+        ++sample_id;
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+
+    if (!expect(telemetry_raw->control_step_count > 0,
+                "rapid loop cadence should publish control telemetry during loop window")) {
+        return false;
+    }
+
+    const auto& control_timestamps = telemetry_raw->control_publish_timestamps_us;
+    if (!expect(!control_timestamps.empty(),
+                "rapid loop cadence should capture control publish timestamps")) {
+        return false;
+    }
+    for (size_t i = 1; i < control_timestamps.size(); ++i) {
+        const uint64_t delta_us = control_timestamps[i] - control_timestamps[i - 1];
+        if (!expect(delta_us >= publish_period_us,
+                    "publish period throttling should prevent sub-period control telemetry bursts")) {
+            return false;
+        }
+    }
+
+    const uint64_t elapsed_control_window_us =
+        control_timestamps.back() - control_timestamps.front() + publish_period_us;
+    const uint64_t theoretical_max_publishes =
+        (elapsed_control_window_us / publish_period_us) + 1;
+    if (!expect(telemetry_raw->control_step_count <= theoretical_max_publishes,
+                "rapid loop cadence should never over-publish beyond period budget")) {
+        return false;
+    }
+
+    if (!expect(telemetry_raw->geometry_count >= 3,
+                "geometry refresh should publish periodically during sustained rapid loops")) {
+        return false;
+    }
+
+    const auto& geometry_timestamps = telemetry_raw->geometry_publish_timestamps_us;
+    if (!expect(geometry_timestamps.size() == telemetry_raw->geometry_count,
+                "rapid loop cadence should capture all geometry publish timestamps")) {
+        return false;
+    }
+    for (size_t i = 1; i < geometry_timestamps.size(); ++i) {
+        const uint64_t delta_us = geometry_timestamps[i] - geometry_timestamps[i - 1];
+        if (!expect(delta_us >= geometry_period_us,
+                    "geometry refresh interval should be honored")) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 bool runImuReadGateCase(bool imu_reads_enabled, bool expect_body_pose_state) {
@@ -606,6 +754,126 @@ bool jointTargetsEqual(const JointTargets& lhs, const JointTargets& rhs) {
         for (int joint = 0; joint < kJointsPerLeg; ++joint) {
             if (lhs.leg_states[leg].joint_state[joint].pos_rad.value !=
                 rhs.leg_states[leg].joint_state[joint].pos_rad.value) {
+bool runLoopInterleavingJitterStressCase() {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<ScriptedEstimator>();
+    auto* scripted = estimator.get();
+
+    control_config::ControlConfig cfg{};
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{2'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{2'000};
+    cfg.freshness.estimator.require_timestamp = true;
+    cfg.freshness.intent.require_timestamp = true;
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, cfg);
+
+    if (!expect(runtime.init(), "init should succeed (loop interleaving jitter stress case)")) {
+        return false;
+    }
+
+    std::mt19937 rng(0xC0FFEEu);
+    std::uniform_int_distribution<int> jitter_us_dist(0, 150);
+    std::uniform_int_distribution<int> interleave_dist(0, 5);
+
+    uint64_t est_sample_id = 1'000;
+    uint64_t intent_sample_id = 1'000;
+    bool observed_reject = false;
+    bool observed_walk = false;
+
+    for (int cycle = 0; cycle < 180; ++cycle) {
+        const bool stale_estimator = (cycle % 11) == 0;
+        const bool stale_intent = (cycle % 13) == 0;
+
+        RobotState estimator_sample = makeEstimatorSample(++est_sample_id, now_us());
+        if (stale_estimator) {
+            estimator_sample.timestamp_us = TimePointUs{1};
+        }
+        scripted->enqueue(estimator_sample);
+
+        MotionIntent intent = makeIntentSample(++intent_sample_id, now_us());
+        if (stale_intent) {
+            intent.timestamp_us = TimePointUs{1};
+        }
+        runtime.setMotionIntentForTest(intent);
+
+        switch (interleave_dist(rng)) {
+        case 0:
+            runtime.busStep();
+            std::this_thread::sleep_for(std::chrono::microseconds(jitter_us_dist(rng)));
+            runtime.estimatorStep();
+            std::this_thread::sleep_for(std::chrono::microseconds(jitter_us_dist(rng)));
+            runtime.safetyStep();
+            runtime.controlStep();
+            break;
+        case 1:
+            runtime.busStep();
+            runtime.safetyStep();
+            std::this_thread::sleep_for(std::chrono::microseconds(jitter_us_dist(rng)));
+            runtime.estimatorStep();
+            runtime.controlStep();
+            break;
+        case 2:
+            runtime.estimatorStep();
+            runtime.busStep();
+            runtime.safetyStep();
+            runtime.controlStep();
+            break;
+        case 3:
+            runtime.busStep();
+            runtime.estimatorStep();
+            runtime.controlStep();
+            runtime.safetyStep();
+            break;
+        case 4:
+            runtime.busStep();
+            runtime.estimatorStep();
+            runtime.safetyStep();
+            runtime.busStep();
+            runtime.controlStep();
+            break;
+        default:
+            runtime.safetyStep();
+            runtime.busStep();
+            runtime.estimatorStep();
+            runtime.safetyStep();
+            runtime.controlStep();
+            break;
+        }
+
+        const ControlStatus status = runtime.getStatus();
+        if (status.active_mode == RobotMode::WALK) {
+            observed_walk = true;
+        }
+        if (status.active_fault == FaultCode::COMMAND_TIMEOUT ||
+            status.active_fault == FaultCode::ESTIMATOR_INVALID) {
+            observed_reject = true;
+        }
+
+        if (!expect(status.active_fault == FaultCode::NONE || status.active_mode == RobotMode::SAFE_IDLE,
+                    "faulted status should always force SAFE_IDLE under interleaving jitter")) {
+            return false;
+        }
+
+        if (status.active_fault == FaultCode::ESTIMATOR_INVALID) {
+            if (!expect(!status.estimator_valid,
+                        "ESTIMATOR_INVALID should always set estimator_valid=false")) {
+                return false;
+            }
+        }
+
+        if (status.active_fault == FaultCode::COMMAND_TIMEOUT) {
+            if (!expect(status.estimator_valid,
+                        "COMMAND_TIMEOUT should preserve estimator_valid=true when only intent is stale")) {
+                return false;
+            }
+        }
+
+        if (status.active_mode == RobotMode::WALK) {
+            if (!expect(status.active_fault == FaultCode::NONE,
+                        "WALK mode should never report a fault under interleaving jitter")) {
+                return false;
+            }
+            if (!expect(status.estimator_valid,
+                        "WALK mode should require estimator_valid=true")) {
                 return false;
             }
         }
@@ -795,6 +1063,173 @@ bool runWalkingFreshnessRejectRecoveryCase() {
                   "post-recovery walking step should clear consecutive freshness reject window");
 }
 
+bool runJointTargetWriteSlewLimitCase() {
+    auto bridge = std::make_unique<CapturingHardwareBridge>();
+    auto* bridge_raw = bridge.get();
+    auto estimator = std::make_unique<ScriptedEstimator>();
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, control_config::ControlConfig{});
+
+    if (!expect(runtime.init(), "init should succeed (joint target write slew case)")) {
+        return false;
+    }
+
+    JointTargets step_positive{};
+    JointTargets step_negative{};
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+            step_positive.leg_states[leg].joint_state[joint].pos_rad = AngleRad{3.0};
+            step_negative.leg_states[leg].joint_state[joint].pos_rad = AngleRad{-3.0};
+        }
+    }
+
+    runtime.setJointTargetsForTest(step_positive);
+    runtime.busStep();
+    std::this_thread::sleep_for(std::chrono::milliseconds{20});
+
+    runtime.setJointTargetsForTest(step_negative);
+    runtime.busStep();
+    std::this_thread::sleep_for(std::chrono::milliseconds{20});
+
+    runtime.setJointTargetsForTest(step_positive);
+    runtime.busStep();
+
+    if (!expect(bridge_raw->writes.size() >= 3,
+                "slew case should record at least three hardware writes")) {
+        return false;
+    }
+
+    constexpr double kJointTargetSlewLimitRadPerSec = 18.0;
+    constexpr double kSlackRad = 1e-6;
+    for (size_t idx = 1; idx < bridge_raw->writes.size(); ++idx) {
+        const auto& prev = bridge_raw->writes[idx - 1];
+        const auto& current = bridge_raw->writes[idx];
+        if (current.timestamp_us.value <= prev.timestamp_us.value) {
+            return expect(false, "hardware write timestamps should be monotonic");
+        }
+        const double dt_s =
+            static_cast<double>(current.timestamp_us.value - prev.timestamp_us.value) / 1'000'000.0;
+        const double max_delta = (kJointTargetSlewLimitRadPerSec * dt_s) + kSlackRad;
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+                const double previous = prev.targets.leg_states[leg].joint_state[joint].pos_rad.value;
+                const double observed = current.targets.leg_states[leg].joint_state[joint].pos_rad.value;
+                const double observed_delta = std::abs(observed - previous);
+                if (!expect(observed_delta <= max_delta,
+                            "per-cycle hw write delta should be bounded by joint slew limit")) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    return true;
+
+    return expect(observed_walk, "jitter stress should include accepted WALK outputs") &&
+           expect(observed_reject, "jitter stress should include freshness rejects");
+bool runBusFaultDuringMixedStanceSwingCase() {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<StableCapturingEstimator>();
+    auto* estimator_raw = estimator.get();
+    estimator_raw->stable_estimate.foot_contacts = {true, true, true, true, true, true};
+    for (auto& leg : estimator_raw->stable_estimate.leg_states) {
+        leg.joint_state[0].pos_rad = AngleRad{0.0};
+        leg.joint_state[1].pos_rad = AngleRad{-0.6};
+        leg.joint_state[2].pos_rad = AngleRad{-0.8};
+    }
+
+    control_config::ControlConfig cfg{};
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, cfg);
+
+    if (!expect(runtime.init(), "init should succeed (bus fault during mixed stance/swing case)")) {
+        return false;
+    }
+
+    MotionIntent walk{};
+    walk.requested_mode = RobotMode::WALK;
+    walk.gait = GaitType::TRIPOD;
+    walk.speed_mps = LinearRateMps{0.60};
+    walk.heading_rad = AngleRad{0.0};
+    walk.body_pose_setpoint.body_trans_m = Vec3{0.0, 0.0, 0.20};
+
+    bool reached_mixed_stance_swing = false;
+    ControlStatus mixed_status{};
+    RobotState pre_fault_raw{};
+    for (uint64_t sample_id = 1; sample_id <= 150; ++sample_id) {
+        walk.sample_id = sample_id;
+        walk.timestamp_us = now_us();
+        runtime.setMotionIntentForTest(walk);
+        runControlStep(runtime);
+        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+
+        const ControlStatus status = runtime.getStatus();
+        bool any_stance = false;
+        bool any_swing = false;
+        for (const bool in_stance : status.dynamic_gait.leg_in_stance) {
+            any_stance = any_stance || in_stance;
+            any_swing = any_swing || !in_stance;
+        }
+
+        if (any_stance && any_swing) {
+            reached_mixed_stance_swing = true;
+            mixed_status = status;
+            pre_fault_raw = estimator_raw->last_raw;
+            break;
+        }
+    }
+
+    if (!expect(reached_mixed_stance_swing,
+                "walking runtime should reach a mixed stance/swing gait state before fault injection")) {
+        return false;
+    }
+    if (!expect(mixed_status.active_mode == RobotMode::WALK,
+                "pre-fault mixed stance/swing step should still run in WALK mode")) {
+        return false;
+    }
+
+    SimHardwareFaultToggles fault_toggles{};
+    fault_toggles.drop_bus = true;
+    if (!expect(runtime.setSimFaultToggles(fault_toggles),
+                "runtime should support toggling simulated bus faults")) {
+        return false;
+    }
+
+    walk.sample_id += 1;
+    walk.timestamp_us = now_us();
+    runtime.setMotionIntentForTest(walk);
+    runControlStep(runtime);
+
+    const ControlStatus post_fault = runtime.getStatus();
+    if (!expect(post_fault.active_fault == FaultCode::BUS_TIMEOUT,
+                "bus drop in mixed stance/swing should trigger immediate BUS_TIMEOUT safety fault") ||
+        !expect(post_fault.active_mode == RobotMode::FAULT,
+                "bus drop in mixed stance/swing should transition runtime mode to FAULT immediately")) {
+        return false;
+    }
+
+    const bool gait_motion_inhibited =
+        post_fault.dynamic_gait.suppress_stride_progression ||
+        post_fault.dynamic_gait.fallback_stage != 0;
+    if (!expect(gait_motion_inhibited,
+                "BUS_TIMEOUT torque-cut/inhibit policy should gate gait progression immediately")) {
+        return false;
+    }
+
+    const RobotState post_fault_raw = estimator_raw->last_raw;
+    double max_joint_step_rad = 0.0;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+            const double before = pre_fault_raw.leg_states[leg].joint_state[joint].pos_rad.value;
+            const double after = post_fault_raw.leg_states[leg].joint_state[joint].pos_rad.value;
+            max_joint_step_rad = std::max(max_joint_step_rad, std::abs(after - before));
+        }
+    }
+
+    return expect(max_joint_step_rad < 0.35,
+                  "bus fault transition should avoid large per-step joint output transients");
+}
+
 } // namespace
 
 int main() {
@@ -865,6 +1300,10 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    if (!runTelemetryRapidLoopCadenceCase()) {
+        return EXIT_FAILURE;
+    }
+
     if (!runImuReadGateCase(false, false)) {
         return EXIT_FAILURE;
     }
@@ -893,6 +1332,12 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!runWalkingFreshnessRejectRecoveryCase()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runJointTargetWriteSlewLimitCase()) {
+    if (!runLoopInterleavingJitterStressCase()) {
+    if (!runBusFaultDuringMixedStanceSwingCase()) {
         return EXIT_FAILURE;
     }
 

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 
 namespace {
 
@@ -16,6 +17,31 @@ bool expect(bool condition, const char* message) {
 
 bool almostEqual(double a, double b, double eps = 1e-9) {
     return std::abs(a - b) < eps;
+bool allFiniteBodyPose(const BodyPoseKinematics& pose) {
+    return std::isfinite(pose.orientation_rad.x) &&
+           std::isfinite(pose.orientation_rad.y) &&
+           std::isfinite(pose.orientation_rad.z) &&
+           std::isfinite(pose.angular_velocity_radps.x) &&
+           std::isfinite(pose.angular_velocity_radps.y) &&
+           std::isfinite(pose.angular_velocity_radps.z) &&
+           std::isfinite(pose.body_trans_m.x) &&
+           std::isfinite(pose.body_trans_m.y) &&
+           std::isfinite(pose.body_trans_m.z) &&
+           std::isfinite(pose.body_trans_mps.x) &&
+           std::isfinite(pose.body_trans_mps.y) &&
+           std::isfinite(pose.body_trans_mps.z);
+bool allEstimatedValuesFinite(const RobotState& state) {
+    for (const auto& leg : state.leg_states) {
+        for (const auto& joint : leg.joint_state) {
+            if (!std::isfinite(joint.pos_rad.value) || !std::isfinite(joint.vel_radps.value)) {
+                return false;
+            }
+        }
+    }
+
+    const Vec3 body_velocity = state.body_pose_state.body_trans_mps;
+    return std::isfinite(body_velocity.x) && std::isfinite(body_velocity.y) &&
+           std::isfinite(body_velocity.z);
 }
 
 RobotState makeNeutralRaw(uint64_t sample_id, uint64_t timestamp_us) {
@@ -92,9 +118,9 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    RobotState no_contact_stale = no_contact_recent;
-    no_contact_stale.sample_id = 3;
-    no_contact_stale.timestamp_us = TimePointUs{1'500'001};
+    RobotState no_contact_at_window = no_contact_recent;
+    no_contact_at_window.sample_id = 3;
+    no_contact_at_window.timestamp_us = TimePointUs{1'250'000};
 
     const RobotState stale_est = inferred_estimator.update(no_contact_stale);
     if (!expect(std::abs(stale_est.body_pose_state.body_trans_m.z) < 1e-9,
@@ -123,12 +149,39 @@ int main() {
     }
 
     RobotState stance_motion_a = makeNeutralRaw(4, 2'000'000);
+    const RobotState at_window_est = estimator.update(no_contact_at_window);
+    if (!expect(at_window_est.body_pose_state.body_trans_m.z > 0.0,
+                "contact memory should preserve support points exactly at expiry boundary") ||
+        !expect(at_window_est.has_inferred_body_pose_state,
+                "inferred pose should remain available at contact memory boundary") ||
+        !expect(at_window_est.has_body_pose_state,
+                "aggregate body pose should remain available at contact memory boundary")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState no_contact_just_over_window = no_contact_at_window;
+    no_contact_just_over_window.sample_id = 4;
+    no_contact_just_over_window.timestamp_us = TimePointUs{1'250'001};
+
+    const RobotState just_over_window_est = estimator.update(no_contact_just_over_window);
+    if (!expect(std::abs(just_over_window_est.body_pose_state.body_trans_m.z) < 1e-9,
+                "support points should expire immediately after contact memory boundary") ||
+        !expect(!just_over_window_est.has_inferred_body_pose_state,
+                "expired support points should drop inferred body pose availability") ||
+        !expect(!just_over_window_est.has_measured_body_pose_state,
+                "without IMU sample, measured body pose should be unavailable") ||
+        !expect(!just_over_window_est.has_body_pose_state,
+                "aggregate body pose should degrade predictably after support expiry")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState stance_motion_a = makeNeutralRaw(5, 2'000'000);
     stance_motion_a.foot_contacts = {true, false, false, false, false, false};
     const RobotState stance_motion_a_est = inferred_estimator.update(stance_motion_a);
     (void)stance_motion_a_est;
 
     RobotState stance_motion_b = stance_motion_a;
-    stance_motion_b.sample_id = 5;
+    stance_motion_b.sample_id = 6;
     stance_motion_b.timestamp_us = TimePointUs{2'050'000};
     stance_motion_b.foot_contacts = {true, false, false, false, false, false};
     stance_motion_b.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{0.05};
@@ -139,6 +192,113 @@ int main() {
                    stance_motion_b_est.body_pose_state.body_trans_mps.y);
     if (!expect(planar_speed > 1e-4,
                 "stance contact deltas should produce non-zero planar body velocity estimate")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState non_finite_imu = makeNeutralRaw(6, 2'100'000);
+    non_finite_imu.has_measured_body_pose_state = true;
+    non_finite_imu.body_pose_state.orientation_rad = Vec3{0.01, -0.01, 0.0};
+    non_finite_imu.body_pose_state.angular_velocity_radps = Vec3{
+        std::numeric_limits<double>::quiet_NaN(), 0.2, 0.3};
+    non_finite_imu.body_pose_state.body_trans_mps = Vec3{
+        std::numeric_limits<double>::infinity(),
+        -std::numeric_limits<double>::infinity(),
+        std::numeric_limits<double>::quiet_NaN()};
+    const RobotState non_finite_imu_est = estimator.update(non_finite_imu);
+    if (!expect(allFiniteBodyPose(non_finite_imu_est.body_pose_state),
+                "non-finite measured body velocity inputs should not produce non-finite estimator body pose outputs")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState non_finite_joint = makeNeutralRaw(7, 2'120'000);
+    non_finite_joint.leg_states[0].joint_state[FEMUR].pos_rad =
+        AngleRad{std::numeric_limits<double>::infinity()};
+    const RobotState non_finite_joint_est = estimator.update(non_finite_joint);
+    if (!expect(std::isfinite(non_finite_joint_est.leg_states[0].joint_state[FEMUR].vel_radps.value),
+                "non-finite joint telemetry should be safely rejected for velocity estimation")) {
+    // Feed non-increasing timestamps while joints continue changing to ensure
+    // velocity estimation does not divide by zero or emit non-finite artifacts.
+    RobotState non_increasing_a = makeNeutralRaw(6, 3'000'000);
+    non_increasing_a.foot_contacts = {true, true, true, true, true, true};
+    non_increasing_a.leg_states[0].joint_state[COXA].pos_rad = AngleRad{0.20};
+    non_increasing_a.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{-0.15};
+    const RobotState non_increasing_a_est = estimator.update(non_increasing_a);
+
+    RobotState equal_timestamp = non_increasing_a;
+    equal_timestamp.sample_id = 7;
+    equal_timestamp.leg_states[0].joint_state[COXA].pos_rad = AngleRad{0.23};
+    equal_timestamp.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{-0.10};
+    const RobotState equal_timestamp_est = estimator.update(equal_timestamp);
+
+    RobotState decreasing_timestamp = equal_timestamp;
+    decreasing_timestamp.sample_id = 8;
+    decreasing_timestamp.timestamp_us = TimePointUs{2'999'500};
+    decreasing_timestamp.leg_states[0].joint_state[COXA].pos_rad = AngleRad{0.19};
+    decreasing_timestamp.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{-0.05};
+    const RobotState decreasing_timestamp_est = estimator.update(decreasing_timestamp);
+
+    if (!expect(std::abs(equal_timestamp_est.leg_states[0].joint_state[COXA].vel_radps.value) < 1e-12,
+                "equal timestamps should not synthesize divide-by-zero joint velocity spikes") ||
+        !expect(std::abs(decreasing_timestamp_est.leg_states[0].joint_state[COXA].vel_radps.value) < 1e-12,
+                "decreasing timestamps should not synthesize divide-by-zero joint velocity spikes") ||
+        !expect(allEstimatedValuesFinite(non_increasing_a_est) &&
+                    allEstimatedValuesFinite(equal_timestamp_est) &&
+                    allEstimatedValuesFinite(decreasing_timestamp_est),
+                "non-increasing timestamp samples should keep estimator outputs finite")) {
+    // Subcase 4: alternating contact around memory window should keep support only within window,
+    // and reacquisition after expiry should avoid pose discontinuity under slight joint drift.
+    SimpleEstimator alternating_contact_estimator{};
+    RobotState alternating_contact_true = makeNeutralRaw(10, 3'000'000);
+    const RobotState alternating_contact_true_est =
+        alternating_contact_estimator.update(alternating_contact_true);
+    if (!expect(alternating_contact_true_est.has_inferred_body_pose_state,
+                "initial contact sample should seed inferred support points")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState alternating_contact_false_within = alternating_contact_true;
+    alternating_contact_false_within.sample_id = 11;
+    alternating_contact_false_within.timestamp_us = TimePointUs{3'249'999}; // 249,999us age < 250,000us window.
+    alternating_contact_false_within.foot_contacts = {false, false, false, false, false, false};
+    alternating_contact_false_within.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{0.015};
+    const RobotState alternating_contact_false_within_est =
+        alternating_contact_estimator.update(alternating_contact_false_within);
+    if (!expect(alternating_contact_false_within_est.has_inferred_body_pose_state,
+                "support points should persist while no-contact age remains within memory window") ||
+        !expect(std::abs(alternating_contact_false_within_est.body_pose_state.body_trans_m.z -
+                         alternating_contact_true_est.body_pose_state.body_trans_m.z) < 1e-9,
+                "joint drift without contact should not perturb support-point-derived body height")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState alternating_contact_false_stale = alternating_contact_false_within;
+    alternating_contact_false_stale.sample_id = 12;
+    alternating_contact_false_stale.timestamp_us = TimePointUs{3'250'001}; // 250,001us age > 250,000us window.
+    const RobotState alternating_contact_false_stale_est =
+        alternating_contact_estimator.update(alternating_contact_false_stale);
+    if (!expect(!alternating_contact_false_stale_est.has_inferred_body_pose_state,
+                "support points should expire once no-contact age exceeds memory window")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState alternating_contact_reacquired = alternating_contact_false_stale;
+    alternating_contact_reacquired.sample_id = 13;
+    alternating_contact_reacquired.timestamp_us = TimePointUs{3'300'000};
+    alternating_contact_reacquired.foot_contacts = {true, true, true, true, true, true};
+    alternating_contact_reacquired.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{0.02};
+    const RobotState alternating_contact_reacquired_est =
+        alternating_contact_estimator.update(alternating_contact_reacquired);
+    if (!expect(alternating_contact_reacquired_est.has_inferred_body_pose_state,
+                "contact reacquisition should restore inferred pose availability") ||
+        !expect(std::abs(alternating_contact_reacquired_est.body_pose_state.body_trans_m.z -
+                         alternating_contact_false_within_est.body_pose_state.body_trans_m.z) < 0.02,
+                "contact reacquisition with slight drift should not introduce body-height discontinuity") ||
+        !expect(std::abs(alternating_contact_reacquired_est.body_pose_state.orientation_rad.x -
+                         alternating_contact_false_within_est.body_pose_state.orientation_rad.x) < 0.05,
+                "contact reacquisition with slight drift should keep roll continuity") ||
+        !expect(std::abs(alternating_contact_reacquired_est.body_pose_state.orientation_rad.y -
+                         alternating_contact_false_within_est.body_pose_state.orientation_rad.y) < 0.05,
+                "contact reacquisition with slight drift should keep pitch continuity")) {
         return EXIT_FAILURE;
     }
 

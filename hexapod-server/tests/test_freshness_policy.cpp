@@ -143,13 +143,63 @@ bool testAgeChecksCanBeDisabledForLenientEvaluation() {
                   "lenient evaluation should ignore stale intent age");
 }
 
+bool testDiagnosticsTrackTimestampAnomaliesAndNonMonotonicIds() {
+    FreshnessPolicy policy(strictFreshnessConfig());
+    policy.reset();
+
+    const TimePointUs now{1'000'000};
+
+    RobotState baseline_est{};
+    baseline_est.sample_id = 100;
+    baseline_est.timestamp_us = TimePointUs{999'500};
+    MotionIntent baseline_intent{};
+    baseline_intent.sample_id = 100;
+    baseline_intent.timestamp_us = TimePointUs{999'500};
+
+    const auto baseline = policy.evaluate(now, baseline_est, baseline_intent);
+    if (!expect(baseline.estimator.valid && baseline.intent.valid,
+                "baseline stream should be valid before anomaly injection")) {
+        return false;
+    }
+
+    // Equal/decreasing timestamps are realistic transport anomalies; pair them
+    // with stale age + decreasing sample ids and verify diagnostics report both.
+    RobotState anomaly_est = baseline_est;
+    anomaly_est.sample_id = 99;
+    anomaly_est.timestamp_us = TimePointUs{998'999}; // stale and lower than previous timestamp
+    MotionIntent anomaly_intent = baseline_intent;
+    anomaly_intent.sample_id = 99;
+    anomaly_intent.timestamp_us = TimePointUs{999'500}; // equal timestamp
+
+    const auto anomaly = policy.evaluate(now, anomaly_est, anomaly_intent);
+    if (!expect(!anomaly.estimator.valid && anomaly.estimator.stale_age &&
+                    anomaly.estimator.non_monotonic_sample_id,
+                "estimator anomaly should be rejected for stale age and non-monotonic id") ||
+        !expect(!anomaly.intent.valid && anomaly.intent.non_monotonic_sample_id,
+                "intent anomaly should be rejected for non-monotonic id")) {
+        return false;
+    }
+
+    const auto& est_diag = policy.estimatorDiagnostics();
+    const auto& intent_diag = policy.intentDiagnostics();
+    return expect(est_diag.stale_age_count == 1,
+                  "estimator stale-age diagnostics should count timestamp anomaly") &&
+           expect(est_diag.non_monotonic_sample_id_count == 1,
+                  "estimator non-monotonic id diagnostics should count anomaly") &&
+           expect(intent_diag.stale_age_count == 0,
+                  "intent equal timestamp should not count as stale in this scenario") &&
+           expect(intent_diag.non_monotonic_sample_id_count == 1,
+                  "intent diagnostics should count non-monotonic sample id anomaly");
+}
+
 } // namespace
 
 int main() {
     if (!testNonMonotonicSampleIds() ||
         !testMissingTimestamps() ||
         !testBoundaryAgeThresholds() ||
-        !testAgeChecksCanBeDisabledForLenientEvaluation()) {
+        !testAgeChecksCanBeDisabledForLenientEvaluation() ||
+        !testDiagnosticsTrackTimestampAnomaliesAndNonMonotonicIds()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

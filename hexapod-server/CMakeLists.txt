@@ -275,6 +275,12 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     hexapod_server_add_test(test_control_pipeline_sanity control_pipeline_output_sanity
         tests/test_control_pipeline_sanity.cpp
     )
+    hexapod_server_add_test(test_control_replay_harness control_replay_harness
+        tests/test_control_replay_harness.cpp
+    )
+    hexapod_server_add_test(test_pipeline_stage_timing_envelopes pipeline_stage_timing_envelopes
+        tests/test_pipeline_stage_timing_envelopes.cpp
+    )
     hexapod_server_add_test(test_hardware_bridge_transport hardware_bridge_transport_behavior
         tests/test_hardware_bridge_transport_main.cpp
         tests/test_hardware_bridge_transport_handshake.cpp
@@ -296,8 +302,14 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     )
 
     # kinematics
+    hexapod_server_add_test(test_leg_ik_limit_stability leg_ik_limit_stability
+        tests/test_leg_ik_limit_stability.cpp
+    )
     hexapod_server_add_test(test_motion_intent_through_ik_fk motion_intent_through_ik_fk_chain
         tests/test_motion_intent_through_ik_fk.cpp
+    )
+    hexapod_server_add_test(test_randomized_geometry_control_updates randomized_geometry_control_updates
+        tests/test_randomized_geometry_control_updates.cpp
     )
 
     hexapod_server_add_test(test_motion_limiter_behavior motion_limiter_behavior

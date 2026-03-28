@@ -1,6 +1,10 @@
 #include "control_pipeline.hpp"
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstdlib>
+#include <vector>
 #include <string_view>
 
 namespace {
@@ -17,10 +21,16 @@ bool contactManagerBypassed() {
 } // namespace
 
 ControlPipeline::ControlPipeline(control_config::ControlConfig config)
-    : planner_(config.gait),
+    : config_(config),
+      planner_(config_.gait),
       motion_limiter_(config.motion_limiter),
-      gait_(config.gait),
-      body_(config.motion_limiter) {}
+      gait_(config_.gait),
+      body_(config_.motion_limiter) {
+    timing_window_size_ = std::clamp<std::size_t>(
+        config_.pipeline_stage_timing.rolling_window_samples,
+        1U,
+        kMaxTimingWindow);
+}
 
 PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
                                             const MotionIntent& intent,
@@ -34,10 +44,23 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     }
 
     const RuntimeGaitPolicy gait_policy = planner_.plan(estimated, intent, safety_state);
+    const auto limiter_start = std::chrono::steady_clock::now();
     const MotionLimiterOutput limiter_output =
         motion_limiter_.update(estimated, intent, gait_policy, safety_state, loop_dt);
+    const auto limiter_finish = std::chrono::steady_clock::now();
+    recordStageDuration(PipelineStage::Limiter,
+                        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                                  limiter_finish - limiter_start)
+                                                  .count()));
+
+    const auto gait_start = std::chrono::steady_clock::now();
     const GaitState gait_state =
         gait_.update(estimated, limiter_output.limited_intent, safety_state, limiter_output.adapted_gait_policy);
+    const auto gait_finish = std::chrono::steady_clock::now();
+    recordStageDuration(PipelineStage::Gait,
+                        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                                  gait_finish - gait_start)
+                                                  .count()));
     ContactManagerOutput contact_adjusted{};
     if (contactManagerBypassed()) {
         contact_adjusted.managed_gait = gait_state;
@@ -45,8 +68,21 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     } else {
         contact_adjusted = contact_manager_.update(estimated, gait_state, limiter_output.adapted_gait_policy);
     }
+    const auto body_start = std::chrono::steady_clock::now();
     const LegTargets leg_targets = body_.update(estimated, limiter_output.limited_intent, contact_adjusted.managed_gait, contact_adjusted.managed_policy, safety_state);
+    const auto body_finish = std::chrono::steady_clock::now();
+    recordStageDuration(PipelineStage::Body,
+                        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                                  body_finish - body_start)
+                                                  .count()));
+
+    const auto ik_start = std::chrono::steady_clock::now();
     const JointTargets joint_targets = ik_.solve(estimated, leg_targets, safety_state);
+    const auto ik_finish = std::chrono::steady_clock::now();
+    recordStageDuration(PipelineStage::Ik,
+                        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                                  ik_finish - ik_start)
+                                                  .count()));
     const BodyController::MotionLimiterTelemetry body_limiter = body_.lastMotionLimiterTelemetry();
 
     ControlStatus status{};
@@ -104,4 +140,103 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     result.joint_targets = joint_targets;
     result.status = status;
     return result;
+}
+
+void ControlPipeline::recordStageDuration(PipelineStage stage, uint64_t duration_us) {
+    const std::size_t stage_index = static_cast<std::size_t>(stage);
+    if (stage_index >= stage_timings_.size()) {
+        return;
+    }
+
+    std::scoped_lock<std::mutex> lock(timing_mutex_);
+    StageTimingWindow& window = stage_timings_[stage_index];
+    window.samples_us[window.write_index] = duration_us;
+    window.write_index = (window.write_index + 1) % timing_window_size_;
+    if (window.sample_count < timing_window_size_) {
+        ++window.sample_count;
+    }
+}
+
+PipelineTimingSnapshot ControlPipeline::timingSnapshot() const {
+    std::scoped_lock<std::mutex> lock(timing_mutex_);
+    return PipelineTimingSnapshot{
+        .estimator = stageEnvelopeLocked(PipelineStage::Estimator),
+        .limiter = stageEnvelopeLocked(PipelineStage::Limiter),
+        .gait = stageEnvelopeLocked(PipelineStage::Gait),
+        .body = stageEnvelopeLocked(PipelineStage::Body),
+        .ik = stageEnvelopeLocked(PipelineStage::Ik),
+    };
+}
+
+uint64_t ControlPipeline::stageBudgetP95Us(PipelineStage stage) const {
+    switch (stage) {
+        case PipelineStage::Estimator:
+            return config_.pipeline_stage_timing.estimator.p95_max_us;
+        case PipelineStage::Limiter:
+            return config_.pipeline_stage_timing.limiter.p95_max_us;
+        case PipelineStage::Gait:
+            return config_.pipeline_stage_timing.gait.p95_max_us;
+        case PipelineStage::Body:
+            return config_.pipeline_stage_timing.body.p95_max_us;
+        case PipelineStage::Ik:
+            return config_.pipeline_stage_timing.ik.p95_max_us;
+        case PipelineStage::Count:
+            break;
+    }
+    return 0;
+}
+
+uint64_t ControlPipeline::stageBudgetP99Us(PipelineStage stage) const {
+    switch (stage) {
+        case PipelineStage::Estimator:
+            return config_.pipeline_stage_timing.estimator.p99_max_us;
+        case PipelineStage::Limiter:
+            return config_.pipeline_stage_timing.limiter.p99_max_us;
+        case PipelineStage::Gait:
+            return config_.pipeline_stage_timing.gait.p99_max_us;
+        case PipelineStage::Body:
+            return config_.pipeline_stage_timing.body.p99_max_us;
+        case PipelineStage::Ik:
+            return config_.pipeline_stage_timing.ik.p99_max_us;
+        case PipelineStage::Count:
+            break;
+    }
+    return 0;
+}
+
+StageTimingEnvelope ControlPipeline::stageEnvelopeLocked(PipelineStage stage) const {
+    const StageTimingWindow& window = stage_timings_[static_cast<std::size_t>(stage)];
+    const uint64_t p95_us = percentileLocked(window, 0.95);
+    const uint64_t p99_us = percentileLocked(window, 0.99);
+    const uint64_t budget_p95_us = stageBudgetP95Us(stage);
+    const uint64_t budget_p99_us = stageBudgetP99Us(stage);
+    return StageTimingEnvelope{
+        .sample_count = static_cast<uint64_t>(window.sample_count),
+        .p95_us = p95_us,
+        .p99_us = p99_us,
+        .budget_p95_us = budget_p95_us,
+        .budget_p99_us = budget_p99_us,
+        .p95_within_budget = (budget_p95_us == 0) || (p95_us <= budget_p95_us),
+        .p99_within_budget = (budget_p99_us == 0) || (p99_us <= budget_p99_us),
+    };
+}
+
+uint64_t ControlPipeline::percentileLocked(const StageTimingWindow& window, double quantile) const {
+    if (window.sample_count == 0) {
+        return 0;
+    }
+
+    std::vector<uint64_t> ordered(window.sample_count);
+    for (std::size_t idx = 0; idx < window.sample_count; ++idx) {
+        const std::size_t ring_idx =
+            (window.write_index + timing_window_size_ - window.sample_count + idx) % timing_window_size_;
+        ordered[idx] = window.samples_us[ring_idx];
+    }
+    std::sort(ordered.begin(), ordered.end());
+    const double scaled_rank = std::ceil(quantile * static_cast<double>(ordered.size()));
+    const std::size_t rank = std::clamp<std::size_t>(
+        scaled_rank > 1.0 ? static_cast<std::size_t>(scaled_rank) : 1U,
+        1U,
+        ordered.size());
+    return ordered[rank - 1U];
 }

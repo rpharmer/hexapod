@@ -117,6 +117,22 @@ std::optional<double> extractEqualsFieldValue(const std::string& message, const 
     } catch (...) {
         return std::nullopt;
     }
+std::optional<std::string> extractFieldToken(const std::string& message, const std::string& field) {
+    const std::size_t colon_start = message.find(field + ":");
+    const std::size_t equals_start = message.find(field + "=");
+    const bool use_colon = colon_start != std::string::npos &&
+                           (equals_start == std::string::npos || colon_start < equals_start);
+    const std::size_t start = use_colon ? colon_start : equals_start;
+    if (start == std::string::npos) {
+        return std::nullopt;
+    }
+    const std::size_t value_start = start + field.size() + 1;
+    std::size_t value_end = value_start;
+    while (value_end < message.size() && message[value_end] != ',' && message[value_end] != '}' &&
+           message[value_end] != ' ') {
+        ++value_end;
+    }
+    return message.substr(value_start, value_end - value_start);
 }
 
 std::optional<std::string> latestInfoLineContaining(const std::vector<CapturedLog>& entries,
@@ -446,6 +462,105 @@ bool testRuntimeMetricsKeyDiagnosticsFieldsArePresentAndParseable() {
                   "gait_variability_diag.worst_phase_leg_delta_per_s should be present and parseable");
 }
 
+bool testLongStandSafeIdleNoMotionRemainsStable() {
+    FreshnessPolicy freshness_policy{};
+    const auto logger = std::make_shared<logging::AsyncLogger>(
+        "test-runtime-stand-safe-idle-stability", logging::LogLevel::Trace, 512);
+    const auto collecting_sink = std::make_shared<CollectingSink>();
+    logger->AddSink(collecting_sink);
+
+    RuntimeDiagnosticsReporter reporter(logger, freshness_policy);
+    ControlStatus status{};
+    status.estimator_valid = true;
+    status.bus_ok = true;
+    status.active_fault = FaultCode::NONE;
+    status.dynamic_gait.valid = true;
+    status.dynamic_gait.gait_family = GaitType::TRIPOD;
+    status.dynamic_gait.leg_in_stance.fill(true);
+    status.dynamic_gait.leg_phase.fill(0.0);
+
+    SafetyState safety_state{};
+    safety_state.stable = true;
+    safety_state.support_contact_count = kNumLegs;
+    safety_state.stability_margin_m = 0.03;
+
+    RobotState estimated_state{};
+    estimated_state.valid = true;
+    estimated_state.has_body_pose_state = true;
+
+    JointTargets joints{};
+    LegTargets legs{};
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        legs.feet[leg].pos_body_m = Vec3{0.18, 0.0, -0.20};
+    }
+
+    uint64_t now_us_value = 1'000'000;
+
+    status.active_mode = RobotMode::SAFE_IDLE;
+    for (int step = 0; step < 300; ++step) {
+        reporter.recordControlOutputs(joints, status, TimePointUs{now_us_value}, &legs);
+        now_us_value += 20'000;
+    }
+
+    status.active_mode = RobotMode::STAND;
+    for (int step = 0; step < 3000; ++step) {
+        reporter.recordControlOutputs(joints, status, TimePointUs{now_us_value}, &legs);
+        now_us_value += 20'000;
+    }
+
+    status.active_mode = RobotMode::SAFE_IDLE;
+    for (int step = 0; step < 300; ++step) {
+        reporter.recordControlOutputs(joints, status, TimePointUs{now_us_value}, &legs);
+        now_us_value += 20'000;
+    }
+
+    reporter.report(status,
+                    estimated_state,
+                    safety_state,
+                    std::nullopt,
+                    3600,
+                    4000,
+                    200,
+                    LoopTimingRollingMetrics{},
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0);
+    logger->Flush();
+
+    const auto latest_metrics = latestInfoLineContaining(collecting_sink->entries, "runtime.metrics");
+    const auto latest_status = latestInfoLineContaining(collecting_sink->entries, "[diag] mode=");
+    if (!expect(latest_metrics.has_value(), "runtime.metrics should be emitted for long stand/safe-idle run") ||
+        !expect(latest_status.has_value(), "status diagnostics should be emitted for long stand/safe-idle run")) {
+        logger->Stop();
+        return false;
+    }
+
+    const auto peak_joint_velocity_radps = extractFieldValue(*latest_metrics, "peak_velocity_radps");
+    const auto peak_foot_velocity_mps = extractFieldValue(*latest_metrics, "peak_foot_vel_mps");
+    const auto gait_peak_phase_delta_per_s = extractFieldValue(*latest_metrics, "peak_phase_delta_per_s");
+    const auto gait_peak_cadence_delta_per_s = extractFieldValue(*latest_metrics, "peak_cadence_delta_hz_per_s");
+    const auto gait_rapid_change_events = extractFieldValue(*latest_metrics, "rapid_change_events");
+    const auto fault_token = extractFieldToken(*latest_status, "fault");
+
+    logger->Stop();
+    return expect(peak_joint_velocity_radps.has_value() && *peak_joint_velocity_radps < 1e-6,
+                  "long no-motion run should keep peak joint velocity near zero") &&
+           expect(peak_foot_velocity_mps.has_value() && *peak_foot_velocity_mps < 1e-6,
+                  "long no-motion run should keep peak foot target velocity near zero") &&
+           expect(gait_peak_phase_delta_per_s.has_value() && *gait_peak_phase_delta_per_s < 1e-6,
+                  "long no-motion run should keep gait phase variability near zero") &&
+           expect(gait_peak_cadence_delta_per_s.has_value() && *gait_peak_cadence_delta_per_s < 1e-6,
+                  "long no-motion run should keep gait cadence variability near zero") &&
+           expect(gait_rapid_change_events.has_value() && *gait_rapid_change_events == 0.0,
+                  "long no-motion run should not trigger gait rapid-change variability events") &&
+           expect(fault_token.has_value() && *fault_token == "NONE",
+                  "long no-motion run should avoid drift-induced safety faults");
+}
+
 } // namespace
 
 int main() {
@@ -459,6 +574,7 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!testRuntimeMetricsKeyDiagnosticsFieldsArePresentAndParseable()) {
+    if (!testLongStandSafeIdleNoMotionRemainsStable()) {
         return EXIT_FAILURE;
     }
 

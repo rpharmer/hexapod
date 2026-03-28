@@ -50,6 +50,7 @@ public:
     std::optional<autonomy::AutonomyStepOutput> lastAutonomyStepOutput() const;
 
     void setMotionIntentForTest(const MotionIntent& intent);
+    void setJointTargetsForTest(const JointTargets& targets);
     bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
     ControlStatus getStatus() const;
     void setAutonomyBlockedForTest(bool blocked);
