@@ -26,6 +26,15 @@ double legVelocityMagnitude(const FootTarget& target) {
     return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 }
 
+double totalLegPositionDelta(const LegTargets& lhs, const LegTargets& rhs) {
+    double total_delta = 0.0;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        const Vec3 delta = lhs.feet[leg].pos_body_m - rhs.feet[leg].pos_body_m;
+        total_delta += std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+    }
+    return total_delta;
+}
+
 } // namespace
 
 int main() {
@@ -184,22 +193,14 @@ int main() {
     tilted_est.has_body_pose_state = true;
     const LegTargets poor_support_targets = controller.update(tilted_est, level_hold_intent, gait, poor_support_safety);
 
-    double total_delta = 0.0;
-    for (int leg = 0; leg < kNumLegs; ++leg) {
-        const Vec3 delta = poor_support_targets.feet[leg].pos_body_m - level_targets.feet[leg].pos_body_m;
-        total_delta += std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
-    }
+    double total_delta = totalLegPositionDelta(poor_support_targets, level_targets);
     if (!expect(total_delta < 1e-6,
                 "level hold should be disabled with inferred pose but poor support quality")) {
         return EXIT_FAILURE;
     }
 
     const LegTargets corrected_targets = controller.update(tilted_est, level_hold_intent, gait, good_support_safety);
-    total_delta = 0.0;
-    for (int leg = 0; leg < kNumLegs; ++leg) {
-        const Vec3 delta = corrected_targets.feet[leg].pos_body_m - level_targets.feet[leg].pos_body_m;
-        total_delta += std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
-    }
+    total_delta = totalLegPositionDelta(corrected_targets, level_targets);
     if (!expect(total_delta > 1e-4,
                 "level hold should engage with inferred pose when support quality is sufficient")) {
         return EXIT_FAILURE;
@@ -210,11 +211,7 @@ int main() {
     tilted_measured_only.has_measured_body_pose_state = true;
     tilted_measured_only.has_body_pose_state = true;
     const LegTargets measured_level_hold_targets = controller.update(tilted_measured_only, level_hold_intent, gait, safety);
-    total_delta = 0.0;
-    for (int leg = 0; leg < kNumLegs; ++leg) {
-        const Vec3 delta = measured_level_hold_targets.feet[leg].pos_body_m - level_targets.feet[leg].pos_body_m;
-        total_delta += std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
-    }
+    total_delta = totalLegPositionDelta(measured_level_hold_targets, level_targets);
     if (!expect(total_delta > 1e-4,
                 "level hold should work when measured body pose provenance is available")) {
         return EXIT_FAILURE;
@@ -246,17 +243,109 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    BodyController trajectory_controller{};
+    MotionIntent trajectory_intent = level_hold_intent;
+    trajectory_intent.body_pose_setpoint.orientation_rad = Vec3{0.08, -0.06, 0.0};
+
+    RobotState no_pose_est{};
+    no_pose_est.body_pose_state.orientation_rad = trajectory_intent.body_pose_setpoint.orientation_rad;
+    no_pose_est.has_inferred_body_pose_state = false;
+    no_pose_est.has_measured_body_pose_state = false;
+    no_pose_est.has_body_pose_state = false;
+
+    RobotState matching_est{};
+    matching_est.body_pose_state.orientation_rad = trajectory_intent.body_pose_setpoint.orientation_rad;
+    matching_est.has_inferred_body_pose_state = true;
+    matching_est.has_body_pose_state = true;
+    const LegTargets trajectory_equal =
+        trajectory_controller.update(matching_est, trajectory_intent, gait, good_support_safety);
+    const LegTargets trajectory_baseline =
+        trajectory_controller.update(no_pose_est, trajectory_intent, gait, good_support_safety);
+    if (!expect(totalLegPositionDelta(trajectory_equal, trajectory_baseline) < 1e-6,
+                "zero level-hold error should add no extra correction")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState roll_high_est = matching_est;
+    roll_high_est.body_pose_state.orientation_rad = Vec3{
+        trajectory_intent.body_pose_setpoint.orientation_rad.x + 0.10,
+        trajectory_intent.body_pose_setpoint.orientation_rad.y,
+        0.0};
+    const LegTargets trajectory_roll_high =
+        trajectory_controller.update(roll_high_est, trajectory_intent, gait, good_support_safety);
+    MotionIntent roll_negative_reference = trajectory_intent;
+    roll_negative_reference.body_pose_setpoint.orientation_rad.x -= 0.04;
+    MotionIntent roll_positive_reference = trajectory_intent;
+    roll_positive_reference.body_pose_setpoint.orientation_rad.x += 0.04;
+    const LegTargets roll_negative_targets =
+        trajectory_controller.update(no_pose_est, roll_negative_reference, gait, good_support_safety);
+    const LegTargets roll_positive_targets =
+        trajectory_controller.update(no_pose_est, roll_positive_reference, gait, good_support_safety);
+    if (!expect(totalLegPositionDelta(trajectory_roll_high, roll_negative_targets) <
+                    totalLegPositionDelta(trajectory_roll_high, roll_positive_targets),
+                "roll correction direction should oppose roll error sign")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState pitch_low_est = matching_est;
+    pitch_low_est.body_pose_state.orientation_rad = Vec3{
+        trajectory_intent.body_pose_setpoint.orientation_rad.x,
+        trajectory_intent.body_pose_setpoint.orientation_rad.y - 0.10,
+        0.0};
+    const LegTargets trajectory_pitch_low =
+        trajectory_controller.update(pitch_low_est, trajectory_intent, gait, good_support_safety);
+    MotionIntent pitch_positive_reference = trajectory_intent;
+    pitch_positive_reference.body_pose_setpoint.orientation_rad.y += 0.04;
+    MotionIntent pitch_negative_reference = trajectory_intent;
+    pitch_negative_reference.body_pose_setpoint.orientation_rad.y -= 0.04;
+    const LegTargets pitch_positive_targets =
+        trajectory_controller.update(no_pose_est, pitch_positive_reference, gait, good_support_safety);
+    const LegTargets pitch_negative_targets =
+        trajectory_controller.update(no_pose_est, pitch_negative_reference, gait, good_support_safety);
+    if (!expect(totalLegPositionDelta(trajectory_pitch_low, pitch_positive_targets) <
+                    totalLegPositionDelta(trajectory_pitch_low, pitch_negative_targets),
+                "pitch correction direction should oppose pitch error sign")) {
+        return EXIT_FAILURE;
+    }
+
+    LegTargets trajectory_return =
+        trajectory_controller.update(matching_est, trajectory_intent, gait, good_support_safety);
+    const double initial_return_delta = totalLegPositionDelta(trajectory_return, trajectory_baseline);
+    double return_delta = initial_return_delta;
+    for (int i = 0; i < 30; ++i) {
+        trajectory_return = trajectory_controller.update(matching_est, trajectory_intent, gait, good_support_safety);
+        return_delta = totalLegPositionDelta(trajectory_return, trajectory_baseline);
+    }
+    if (!expect(return_delta < initial_return_delta * 0.3,
+                "setpoint trajectory should return near commanded path after transient error")) {
+        return EXIT_FAILURE;
+    }
+
+    MotionIntent trajectory_next_intent = trajectory_intent;
+    trajectory_next_intent.body_pose_setpoint.orientation_rad = Vec3{0.11, -0.02, 0.0};
+    BodyController trajectory_update_controller{};
+    RobotState next_matching_est{};
+    next_matching_est.body_pose_state.orientation_rad = trajectory_next_intent.body_pose_setpoint.orientation_rad;
+    next_matching_est.has_inferred_body_pose_state = true;
+    next_matching_est.has_body_pose_state = true;
+    const LegTargets next_trajectory_with_hold =
+        trajectory_update_controller.update(next_matching_est, trajectory_next_intent, gait, good_support_safety);
+    RobotState no_pose_next_est = no_pose_est;
+    no_pose_next_est.body_pose_state.orientation_rad = trajectory_next_intent.body_pose_setpoint.orientation_rad;
+    const LegTargets next_trajectory_baseline =
+        trajectory_update_controller.update(no_pose_next_est, trajectory_next_intent, gait, good_support_safety);
+    if (!expect(totalLegPositionDelta(next_trajectory_with_hold, next_trajectory_baseline) < 1e-6,
+                "setpoint trajectory updates should be preserved under zero-error level hold")) {
+        return EXIT_FAILURE;
+    }
+
     RobotState tilted_without_pose = tilted_est;
     tilted_without_pose.has_inferred_body_pose_state = false;
     tilted_without_pose.has_measured_body_pose_state = false;
     tilted_without_pose.has_body_pose_state = false;
     const LegTargets disabled_level_hold_targets =
         controller.update(tilted_without_pose, level_hold_intent, gait, good_support_safety);
-    total_delta = 0.0;
-    for (int leg = 0; leg < kNumLegs; ++leg) {
-        const Vec3 delta = disabled_level_hold_targets.feet[leg].pos_body_m - level_targets.feet[leg].pos_body_m;
-        total_delta += std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
-    }
+    total_delta = totalLegPositionDelta(disabled_level_hold_targets, level_targets);
     if (!expect(total_delta < 1e-6,
                 "level hold should be disabled when body pose state is unavailable")) {
         return EXIT_FAILURE;
