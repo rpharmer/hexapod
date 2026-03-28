@@ -62,29 +62,43 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    RobotState no_contact_stale = no_contact_recent;
-    no_contact_stale.sample_id = 3;
-    no_contact_stale.timestamp_us = TimePointUs{1'500'001};
+    RobotState no_contact_at_window = no_contact_recent;
+    no_contact_at_window.sample_id = 3;
+    no_contact_at_window.timestamp_us = TimePointUs{1'250'000};
 
-    const RobotState stale_est = estimator.update(no_contact_stale);
-    if (!expect(std::abs(stale_est.body_pose_state.body_trans_m.z) < 1e-9,
-                "stale no-contact window should clear ground estimate") ||
-        !expect(!stale_est.has_inferred_body_pose_state,
-                "without contact memory, inferred body pose should be unavailable") ||
-        !expect(!stale_est.has_measured_body_pose_state,
-                "without IMU sample, measured body pose should be unavailable") ||
-        !expect(!stale_est.has_body_pose_state,
-                "aggregate body pose should be unavailable when no source is present")) {
+    const RobotState at_window_est = estimator.update(no_contact_at_window);
+    if (!expect(at_window_est.body_pose_state.body_trans_m.z > 0.0,
+                "contact memory should preserve support points exactly at expiry boundary") ||
+        !expect(at_window_est.has_inferred_body_pose_state,
+                "inferred pose should remain available at contact memory boundary") ||
+        !expect(at_window_est.has_body_pose_state,
+                "aggregate body pose should remain available at contact memory boundary")) {
         return EXIT_FAILURE;
     }
 
-    RobotState stance_motion_a = makeNeutralRaw(4, 2'000'000);
+    RobotState no_contact_just_over_window = no_contact_at_window;
+    no_contact_just_over_window.sample_id = 4;
+    no_contact_just_over_window.timestamp_us = TimePointUs{1'250'001};
+
+    const RobotState just_over_window_est = estimator.update(no_contact_just_over_window);
+    if (!expect(std::abs(just_over_window_est.body_pose_state.body_trans_m.z) < 1e-9,
+                "support points should expire immediately after contact memory boundary") ||
+        !expect(!just_over_window_est.has_inferred_body_pose_state,
+                "expired support points should drop inferred body pose availability") ||
+        !expect(!just_over_window_est.has_measured_body_pose_state,
+                "without IMU sample, measured body pose should be unavailable") ||
+        !expect(!just_over_window_est.has_body_pose_state,
+                "aggregate body pose should degrade predictably after support expiry")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState stance_motion_a = makeNeutralRaw(5, 2'000'000);
     stance_motion_a.foot_contacts = {true, false, false, false, false, false};
     const RobotState stance_motion_a_est = estimator.update(stance_motion_a);
     (void)stance_motion_a_est;
 
     RobotState stance_motion_b = stance_motion_a;
-    stance_motion_b.sample_id = 5;
+    stance_motion_b.sample_id = 6;
     stance_motion_b.timestamp_us = TimePointUs{2'050'000};
     stance_motion_b.foot_contacts = {true, false, false, false, false, false};
     stance_motion_b.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{0.05};
