@@ -26,6 +26,57 @@ class LogStats:
     max_tip_over_streak: int = 0
 
 
+@dataclass(frozen=True)
+class ThresholdPreset:
+    max_peak_foot_vel_mps: float
+    max_peak_velocity_radps: float
+    tip_over_persist_streak: int
+
+
+THRESHOLD_PRESETS: dict[str, ThresholdPreset] = {
+    "current-baseline": ThresholdPreset(
+        max_peak_foot_vel_mps=15.0,
+        max_peak_velocity_radps=120.0,
+        tip_over_persist_streak=3,
+    ),
+    "strict": ThresholdPreset(
+        max_peak_foot_vel_mps=12.2,
+        max_peak_velocity_radps=25.0,
+        tip_over_persist_streak=2,
+    ),
+}
+
+
+def resolve_thresholds(args: argparse.Namespace) -> ThresholdPreset:
+    preset = THRESHOLD_PRESETS[args.threshold_profile]
+    return ThresholdPreset(
+        max_peak_foot_vel_mps=(
+            args.max_peak_foot_vel_mps
+            if args.max_peak_foot_vel_mps is not None
+            else preset.max_peak_foot_vel_mps
+        ),
+        max_peak_velocity_radps=(
+            args.max_peak_velocity_radps
+            if args.max_peak_velocity_radps is not None
+            else preset.max_peak_velocity_radps
+        ),
+        tip_over_persist_streak=(
+            args.tip_over_persist_streak
+            if args.tip_over_persist_streak is not None
+            else preset.tip_over_persist_streak
+        ),
+    )
+
+
+def validate_thresholds(thresholds: ThresholdPreset) -> None:
+    if not math.isfinite(thresholds.max_peak_foot_vel_mps) or thresholds.max_peak_foot_vel_mps <= 0:
+        raise SystemExit("--max-peak-foot-vel-mps must be a finite value > 0")
+    if not math.isfinite(thresholds.max_peak_velocity_radps) or thresholds.max_peak_velocity_radps <= 0:
+        raise SystemExit("--max-peak-velocity-radps must be a finite value > 0")
+    if thresholds.tip_over_persist_streak < 1:
+        raise SystemExit("--tip-over-persist-streak must be >= 1")
+
+
 def analyze_log(log_path: Path) -> LogStats:
     stats = LogStats()
     tip_over_streak = 0
@@ -93,6 +144,15 @@ def main() -> int:
         help="Skip build step and run existing binary.",
     )
     parser.add_argument(
+        "--threshold-profile",
+        choices=sorted(THRESHOLD_PRESETS.keys()),
+        default="current-baseline",
+        help=(
+            "Threshold preset profile. "
+            "Use 'current-baseline' for current envelope or 'strict' for tighter historical bounds."
+        ),
+    )
+    parser.add_argument(
         "--max-peak-foot-vel-mps",
         type=float,
         default=15.0,
@@ -107,8 +167,8 @@ def main() -> int:
     parser.add_argument(
         "--tip-over-persist-streak",
         type=int,
-        default=3,
-        help="Fail if fault=TIP_OVER appears in this many consecutive status updates.",
+        default=None,
+        help="Override profile threshold for consecutive fault=TIP_OVER status updates.",
     )
     parser.add_argument(
         "--output-log",
@@ -116,9 +176,8 @@ def main() -> int:
         help="Log output path relative to server dir.",
     )
     args = parser.parse_args()
-
-    if args.tip_over_persist_streak < 1:
-        raise SystemExit("--tip-over-persist-streak must be >= 1")
+    thresholds = resolve_thresholds(args)
+    validate_thresholds(thresholds)
 
     repo_root = Path(__file__).resolve().parents[1]
     server_dir = (repo_root / args.server_dir).resolve()
@@ -168,28 +227,39 @@ def main() -> int:
             failures.append(f"scenario exited with code {proc.returncode}")
         if stats.runtime_metrics_lines == 0:
             failures.append("no runtime.metrics entries were found")
-        if not math.isfinite(stats.peak_foot_vel_mps) or stats.peak_foot_vel_mps > args.max_peak_foot_vel_mps:
+        if (
+            not math.isfinite(stats.peak_foot_vel_mps)
+            or stats.peak_foot_vel_mps > thresholds.max_peak_foot_vel_mps
+        ):
             failures.append(
-                f"peak_foot_vel_mps={stats.peak_foot_vel_mps:.6g} exceeds {args.max_peak_foot_vel_mps:.6g}"
+                f"peak_foot_vel_mps={stats.peak_foot_vel_mps:.6g} exceeds {thresholds.max_peak_foot_vel_mps:.6g}"
             )
-        if not math.isfinite(stats.peak_velocity_radps) or stats.peak_velocity_radps > args.max_peak_velocity_radps:
+        if (
+            not math.isfinite(stats.peak_velocity_radps)
+            or stats.peak_velocity_radps > thresholds.max_peak_velocity_radps
+        ):
             failures.append(
-                f"peak_velocity_radps={stats.peak_velocity_radps:.6g} exceeds {args.max_peak_velocity_radps:.6g}"
+                f"peak_velocity_radps={stats.peak_velocity_radps:.6g} exceeds {thresholds.max_peak_velocity_radps:.6g}"
             )
-        if stats.max_tip_over_streak >= args.tip_over_persist_streak:
+        if stats.max_tip_over_streak >= thresholds.tip_over_persist_streak:
             failures.append(
                 "persistent fault=TIP_OVER observed "
-                f"(max consecutive streak={stats.max_tip_over_streak}, threshold={args.tip_over_persist_streak})"
+                f"(max consecutive streak={stats.max_tip_over_streak}, threshold={thresholds.tip_over_persist_streak})"
             )
 
         print("Scenario regression summary")
         print(f"  scenario: {scenario_rel}")
+        print(f"  threshold profile: {args.threshold_profile}")
         print(f"  log: {log_path}")
         print(f"  runtime.metrics lines: {stats.runtime_metrics_lines}")
         print(f"  peak_foot_vel_mps: {stats.peak_foot_vel_mps:.6g}")
         print(f"  peak_velocity_radps: {stats.peak_velocity_radps:.6g}")
         print(f"  fault=TIP_OVER events: {stats.tip_over_events}")
         print(f"  fault=TIP_OVER max consecutive streak: {stats.max_tip_over_streak}")
+        print("  thresholds:")
+        print(f"    max_peak_foot_vel_mps: {thresholds.max_peak_foot_vel_mps:.6g}")
+        print(f"    max_peak_velocity_radps: {thresholds.max_peak_velocity_radps:.6g}")
+        print(f"    tip_over_persist_streak: {thresholds.tip_over_persist_streak}")
 
         if failures:
             print("\nFAIL:")
