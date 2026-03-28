@@ -5,12 +5,14 @@
 #include "sim_hardware_bridge.hpp"
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <numeric>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -61,6 +63,25 @@ std::optional<double> extractFieldValue(const std::string& message, const std::s
     }
 }
 
+std::optional<double> extractEqualsFieldValue(const std::string& message, const std::string& field) {
+    const std::string token = field + "=";
+    const std::size_t start = message.find(token);
+    if (start == std::string::npos) {
+        return std::nullopt;
+    }
+    const std::size_t value_start = start + token.size();
+    std::size_t value_end = value_start;
+    while (value_end < message.size() && message[value_end] != ' ' && message[value_end] != ',' &&
+           message[value_end] != '}') {
+        ++value_end;
+    }
+    try {
+        return std::stod(message.substr(value_start, value_end - value_start));
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
 std::optional<std::string> latestInfoLineContaining(const std::vector<CapturedLog>& entries,
                                                     const std::string& token) {
     for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
@@ -90,6 +111,40 @@ std::optional<double> maxFieldValueAcrossInfoLines(const std::vector<CapturedLog
     return max_value;
 }
 
+std::vector<double> collectEqualsFieldValuesAcrossInfoLines(const std::vector<CapturedLog>& entries,
+                                                            const std::string& token,
+                                                            const std::string& field) {
+    std::vector<double> values;
+    values.reserve(entries.size());
+    for (const auto& entry : entries) {
+        if (entry.level != logging::LogLevel::Info || entry.message.find(token) == std::string::npos) {
+            continue;
+        }
+        const auto value = extractEqualsFieldValue(entry.message, field);
+        if (value.has_value()) {
+            values.push_back(*value);
+        }
+    }
+    return values;
+}
+
+std::vector<double> collectFieldValuesAcrossInfoLines(const std::vector<CapturedLog>& entries,
+                                                      const std::string& token,
+                                                      const std::string& field) {
+    std::vector<double> values;
+    values.reserve(entries.size());
+    for (const auto& entry : entries) {
+        if (entry.level != logging::LogLevel::Info || entry.message.find(token) == std::string::npos) {
+            continue;
+        }
+        const auto value = extractFieldValue(entry.message, field);
+        if (value.has_value()) {
+            values.push_back(*value);
+        }
+    }
+    return values;
+}
+
 class PassthroughEstimator final : public IEstimator {
 public:
     RobotState update(const RobotState& raw) override {
@@ -109,6 +164,112 @@ control_config::ControlConfig makeStrictFreshnessConfig() {
     cfg.freshness.intent.require_nonzero_sample_id = true;
     cfg.freshness.intent.require_monotonic_sample_id = true;
     return cfg;
+}
+
+struct DistributionSummary {
+    double min{0.0};
+    double p10{0.0};
+    double p50{0.0};
+    double p90{0.0};
+    double max{0.0};
+    double mean{0.0};
+};
+
+DistributionSummary summarizeDistribution(const std::vector<double>& input) {
+    DistributionSummary summary{};
+    if (input.empty()) {
+        return summary;
+    }
+    std::vector<double> sorted = input;
+    std::sort(sorted.begin(), sorted.end());
+    auto quantile = [&](double q) {
+        const double clamped_q = std::clamp(q, 0.0, 1.0);
+        const std::size_t idx = static_cast<std::size_t>(clamped_q * static_cast<double>(sorted.size() - 1));
+        return sorted[idx];
+    };
+    summary.min = sorted.front();
+    summary.p10 = quantile(0.10);
+    summary.p50 = quantile(0.50);
+    summary.p90 = quantile(0.90);
+    summary.max = sorted.back();
+    summary.mean = std::accumulate(sorted.begin(), sorted.end(), 0.0) / static_cast<double>(sorted.size());
+    return summary;
+}
+
+struct Scenario05ImuMatrixRunResult {
+    bool run_ok{false};
+    std::size_t status_samples{0};
+    std::size_t fault_samples{0};
+    std::vector<double> peak_command_velocity_samples_radps{};
+    std::vector<double> stability_margin_samples_m{};
+};
+
+Scenario05ImuMatrixRunResult runScaledScenario05Once(bool imu_reads_enabled) {
+    Scenario05ImuMatrixRunResult result{};
+    const auto logger = std::make_shared<logging::AsyncLogger>(
+        imu_reads_enabled ? "test-scenario-05-imu-enabled" : "test-scenario-05-imu-disabled",
+        logging::LogLevel::Info,
+        4096);
+    const auto collecting_sink = std::make_shared<CollectingSink>();
+    logger->AddSink(collecting_sink);
+
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<PassthroughEstimator>();
+    auto cfg = makeStrictFreshnessConfig();
+    cfg.runtime_imu.enable_reads = imu_reads_enabled;
+    RobotControl robot(std::move(bridge), std::move(estimator), logger, cfg);
+
+    if (!robot.init()) {
+        logger->Stop();
+        return result;
+    }
+    robot.start();
+
+    namespace fs = std::filesystem;
+    const fs::path test_file = fs::path(__FILE__);
+    const fs::path scenario_path = test_file.parent_path().parent_path() / "scenarios" / "05_long_walk_observability.toml";
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    if (!ScenarioDriver::loadFromToml(scenario_path.string(), scenario, error, ScenarioDriver::ValidationMode::Strict)) {
+        robot.stop();
+        logger->Stop();
+        return result;
+    }
+
+    constexpr uint64_t kScaleDivisor = 10;
+    scenario.duration_ms = std::max<uint64_t>(1, scenario.duration_ms / kScaleDivisor);
+    scenario.tick_ms = std::max<uint64_t>(1, scenario.tick_ms / kScaleDivisor);
+    scenario.motion_ramp_ms = scenario.motion_ramp_ms / kScaleDivisor;
+    for (auto& event : scenario.events) {
+        event.at_ms /= kScaleDivisor;
+    }
+
+    std::atomic<bool> run_done{false};
+    std::thread scenario_thread([&]() {
+        result.run_ok = ScenarioDriver::run(robot, scenario, nullptr);
+        run_done.store(true);
+    });
+
+    while (!run_done.load()) {
+        const ControlStatus status = robot.getStatus();
+        ++result.status_samples;
+        if (status.active_fault != FaultCode::NONE) {
+            ++result.fault_samples;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    scenario_thread.join();
+    robot.stop();
+    logger->Flush();
+    result.peak_command_velocity_samples_radps =
+        collectFieldValuesAcrossInfoLines(collecting_sink->entries, "runtime.metrics", "peak_velocity_radps");
+    result.stability_margin_samples_m =
+        collectEqualsFieldValuesAcrossInfoLines(collecting_sink->entries, "runtime.metrics", "safety_stability_margin_m");
+    logger->Stop();
+
+    return result;
 }
 
 bool test_refresh_motion_intent_monotonic_sample_ids_across_long_ramp_run() {
@@ -249,6 +410,47 @@ bool test_scaled_scenario_05_keeps_locomotion_active_without_freshness_faults() 
                   "scaled scenario 05 should expose movement distance metric for locomotion diagnosis");
 }
 
+bool test_scaled_scenario_05_imu_read_matrix_compares_fault_rate_velocity_and_stability_distribution() {
+    const Scenario05ImuMatrixRunResult imu_disabled = runScaledScenario05Once(false);
+    const Scenario05ImuMatrixRunResult imu_enabled = runScaledScenario05Once(true);
+
+    const double fault_rate_disabled = imu_disabled.status_samples > 0
+                                           ? static_cast<double>(imu_disabled.fault_samples) /
+                                                 static_cast<double>(imu_disabled.status_samples)
+                                           : 1.0;
+    const double fault_rate_enabled = imu_enabled.status_samples > 0
+                                          ? static_cast<double>(imu_enabled.fault_samples) /
+                                                static_cast<double>(imu_enabled.status_samples)
+                                          : 1.0;
+    const DistributionSummary peak_vel_disabled = summarizeDistribution(imu_disabled.peak_command_velocity_samples_radps);
+    const DistributionSummary peak_vel_enabled = summarizeDistribution(imu_enabled.peak_command_velocity_samples_radps);
+    const DistributionSummary stability_disabled = summarizeDistribution(imu_disabled.stability_margin_samples_m);
+    const DistributionSummary stability_enabled = summarizeDistribution(imu_enabled.stability_margin_samples_m);
+
+    return expect(imu_disabled.run_ok, "scaled scenario 05 should run with Runtime.Imu.EnableReads=false") &&
+           expect(imu_enabled.run_ok, "scaled scenario 05 should run with Runtime.Imu.EnableReads=true (sim/noop)") &&
+           expect(!imu_disabled.peak_command_velocity_samples_radps.empty(),
+                  "imu-disabled run should emit runtime.metrics peak command velocity samples") &&
+           expect(!imu_enabled.peak_command_velocity_samples_radps.empty(),
+                  "imu-enabled run should emit runtime.metrics peak command velocity samples") &&
+           expect(!imu_disabled.stability_margin_samples_m.empty(),
+                  "imu-disabled run should emit runtime.metrics stability margin samples") &&
+           expect(!imu_enabled.stability_margin_samples_m.empty(),
+                  "imu-enabled run should emit runtime.metrics stability margin samples") &&
+           expect(fault_rate_disabled < 0.05,
+                  "imu-disabled scenario 05 fault rate should remain low") &&
+           expect(fault_rate_enabled < 0.05,
+                  "imu-enabled scenario 05 fault rate should remain low") &&
+           expect(std::abs(fault_rate_disabled - fault_rate_enabled) < 0.03,
+                  "imu read matrix fault-rate delta should remain small for sim/noop IMU") &&
+           expect(std::abs(peak_vel_disabled.p90 - peak_vel_enabled.p90) < 0.25,
+                  "imu read matrix peak command velocity distributions should remain close at p90") &&
+           expect(std::abs(stability_disabled.p10 - stability_enabled.p10) < 0.02 &&
+                      std::abs(stability_disabled.p50 - stability_enabled.p50) < 0.02 &&
+                      std::abs(stability_disabled.p90 - stability_enabled.p90) < 0.02,
+                  "imu read matrix stability margin distribution (p10/p50/p90) should remain close");
+}
+
 } // namespace
 
 int main() {
@@ -256,6 +458,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!test_scaled_scenario_05_keeps_locomotion_active_without_freshness_faults()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_scaled_scenario_05_imu_read_matrix_compares_fault_rate_velocity_and_stability_distribution()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
