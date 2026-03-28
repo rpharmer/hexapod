@@ -382,6 +382,14 @@ void RobotRuntime::setMotionIntent(const MotionIntent& intent) {
     }
     if (stamped_intent.sample_id == 0) {
         stamped_intent.sample_id = intent_sample_seq_.fetch_add(1) + 1;
+    } else {
+        uint64_t known_sample_id = intent_sample_seq_.load(std::memory_order_relaxed);
+        while (known_sample_id < stamped_intent.sample_id &&
+               !intent_sample_seq_.compare_exchange_weak(known_sample_id,
+                                                         stamped_intent.sample_id,
+                                                         std::memory_order_relaxed,
+                                                         std::memory_order_relaxed)) {
+        }
     }
     motion_intent_.write(stamped_intent);
 }

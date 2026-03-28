@@ -9,6 +9,7 @@
 #include "types.hpp"
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 
@@ -32,6 +33,22 @@ struct GaitVariabilityDiagnostics {
     double peak_phase_delta_per_s{0.0};
     std::array<double, kNumLegs> peak_phase_delta_per_s_by_leg{};
     uint64_t rapid_change_events{0};
+};
+
+struct LocomotionRangeDiagnostics {
+    double min{std::numeric_limits<double>::infinity()};
+    double max{0.0};
+    double sum{0.0};
+    uint64_t count{0};
+};
+
+struct LocomotionDiagnostics {
+    LocomotionRangeDiagnostics stride_length_m{};
+    LocomotionRangeDiagnostics stride_height_m{};
+    LocomotionRangeDiagnostics foothold_length_m{};
+    LocomotionRangeDiagnostics foothold_directness{};
+    uint64_t strides_taken{0};
+    double total_body_movement_m{0.0};
 };
 
 class RuntimeDiagnosticsReporter {
@@ -80,10 +97,22 @@ private:
     GaitVariabilityDiagnostics gait_variability_diag_{};
     bool has_previous_leg_targets_{false};
     LegTargets previous_leg_targets_{};
+    std::array<Vec3, kNumLegs> last_foot_positions_{};
+    std::array<bool, kNumLegs> has_last_foot_positions_{};
+    std::array<Vec3, kNumLegs> swing_start_positions_{};
+    std::array<bool, kNumLegs> swing_active_{};
+    std::array<double, kNumLegs> swing_path_length_m_{};
+    std::array<double, kNumLegs> swing_min_z_m_{};
+    std::array<double, kNumLegs> swing_max_z_m_{};
+    std::array<bool, kNumLegs> previous_in_stance_{};
+    bool has_previous_in_stance_{false};
     bool has_previous_status_{false};
     ControlStatus previous_status_{};
+    bool has_previous_body_translation_{false};
+    Vec3 previous_body_translation_m_{};
     TimePointUs last_control_output_timestamp_{};
     bool diagnostics_tracking_active_{false};
     bool imu_reads_enabled_{false};
     uint64_t last_overrun_warning_consecutive_{0};
+    LocomotionDiagnostics locomotion_diag_{};
 };

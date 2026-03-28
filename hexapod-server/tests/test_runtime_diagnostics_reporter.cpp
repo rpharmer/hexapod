@@ -1,11 +1,13 @@
 #include "runtime_diagnostics_reporter.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -81,6 +83,34 @@ bool containsTokens(const std::vector<CapturedLog>& entries,
     return false;
 }
 
+std::optional<double> extractFieldValue(const std::string& message, const std::string& field) {
+    const std::string token = field + ":";
+    const std::size_t start = message.find(token);
+    if (start == std::string::npos) {
+        return std::nullopt;
+    }
+    const std::size_t value_start = start + token.size();
+    std::size_t value_end = value_start;
+    while (value_end < message.size() && message[value_end] != ',' && message[value_end] != '}') {
+        ++value_end;
+    }
+    try {
+        return std::stod(message.substr(value_start, value_end - value_start));
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+std::optional<std::string> latestInfoLineContaining(const std::vector<CapturedLog>& entries,
+                                                    const std::string& token) {
+    for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
+        if (it->level == logging::LogLevel::Info && it->message.find(token) != std::string::npos) {
+            return it->message;
+        }
+    }
+    return std::nullopt;
+}
+
 bool testRuntimeMetricsIncludeDroppedMessageAndQueueSignals() {
     FreshnessPolicy freshness_policy{};
     const auto logger = std::make_shared<logging::AsyncLogger>(
@@ -113,6 +143,8 @@ bool testRuntimeMetricsIncludeDroppedMessageAndQueueSignals() {
     SafetyState safety_state{};
 
     reporter.report(status,
+                    estimated_state,
+                    safety_state,
                     std::nullopt,
                     100,
                     1000,
@@ -142,10 +174,102 @@ bool testRuntimeMetricsIncludeDroppedMessageAndQueueSignals() {
                   "runtime.metrics should include non-zero dropped_messages and queue state fields");
 }
 
+bool testLocomotionDiagnosticsEmitSaneRanges() {
+    FreshnessPolicy freshness_policy{};
+    const auto logger = std::make_shared<logging::AsyncLogger>(
+        "test-runtime-locomotion-diag", logging::LogLevel::Trace, 256);
+    const auto collecting_sink = std::make_shared<CollectingSink>();
+    logger->AddSink(collecting_sink);
+
+    RuntimeDiagnosticsReporter reporter(logger, freshness_policy);
+    ControlStatus status{};
+    status.active_mode = RobotMode::WALK;
+    status.estimator_valid = true;
+    status.active_fault = FaultCode::NONE;
+
+    SafetyState safety_state{};
+    safety_state.stable = true;
+
+    JointTargets joints{};
+    LegTargets leg_targets{};
+    RobotState est{};
+    est.valid = true;
+    est.has_body_pose_state = true;
+
+    uint64_t now_us_value = 1'000'000;
+    constexpr double kPiValue = 3.14159265358979323846;
+    for (int step = 0; step < 9; ++step) {
+        const double progress = static_cast<double>(step) / 8.0;
+        if (step == 0) {
+            status.dynamic_gait.leg_in_stance.fill(true);
+            leg_targets.feet[0].pos_body_m = Vec3{0.0, 0.0, 0.0};
+        } else if (step <= 4) {
+            status.dynamic_gait.leg_in_stance.fill(false);
+            const double alpha = static_cast<double>(step - 1) / 3.0;
+            leg_targets.feet[0].pos_body_m = Vec3{0.10 * alpha, 0.0, 0.03 * std::sin(alpha * kPiValue)};
+        } else {
+            status.dynamic_gait.leg_in_stance.fill(true);
+            leg_targets.feet[0].pos_body_m = Vec3{0.10, 0.0, 0.0};
+        }
+        for (int leg = 1; leg < kNumLegs; ++leg) {
+            leg_targets.feet[leg].pos_body_m = leg_targets.feet[0].pos_body_m;
+        }
+
+        est.body_pose_state.body_trans_m = Vec3{0.02 * progress, 0.0, 0.0};
+
+        reporter.recordControlOutputs(joints, status, TimePointUs{now_us_value}, &leg_targets);
+        reporter.report(status,
+                        est,
+                        safety_state,
+                        std::nullopt,
+                        static_cast<uint64_t>(step + 1),
+                        4000,
+                        200,
+                        LoopTimingRollingMetrics{},
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0);
+        now_us_value += 20'000;
+    }
+    logger->Flush();
+
+    const auto latest = latestInfoLineContaining(collecting_sink->entries, "locomotion_diag={");
+    if (!expect(latest.has_value(), "runtime.metrics should include locomotion_diag payload")) {
+        logger->Stop();
+        return false;
+    }
+
+    const auto strides_taken = extractFieldValue(*latest, "strides_taken");
+    const auto stride_length_avg = extractFieldValue(*latest, "stride_length_avg_m");
+    const auto stride_height_max = extractFieldValue(*latest, "stride_height_max_m");
+    const auto foothold_directness_avg = extractFieldValue(*latest, "foothold_directness_avg");
+    const auto total_body_movement = extractFieldValue(*latest, "total_body_movement_m");
+
+    logger->Stop();
+    return expect(strides_taken.has_value() && *strides_taken >= 1.0,
+                  "locomotion diagnostics should report at least one completed stride") &&
+           expect(stride_length_avg.has_value() && *stride_length_avg > 0.05 && *stride_length_avg < 0.15,
+                  "stride length avg should be within a sane synthetic-walk range") &&
+           expect(stride_height_max.has_value() && *stride_height_max > 0.015 && *stride_height_max < 0.05,
+                  "stride height max should be within sane synthetic-walk range") &&
+           expect(foothold_directness_avg.has_value() && *foothold_directness_avg >= 0.0 &&
+                      *foothold_directness_avg <= 1.0,
+                  "foothold directness avg should stay normalized in [0, 1]") &&
+           expect(total_body_movement.has_value() && *total_body_movement > 0.01,
+                  "total body movement should accumulate over reported walk samples");
+}
+
 } // namespace
 
 int main() {
     if (!testRuntimeMetricsIncludeDroppedMessageAndQueueSignals()) {
+        return EXIT_FAILURE;
+    }
+    if (!testLocomotionDiagnosticsEmitSaneRanges()) {
         return EXIT_FAILURE;
     }
 

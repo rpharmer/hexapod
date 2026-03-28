@@ -18,6 +18,38 @@ const char* jointName(std::size_t joint_idx) {
     return joint_idx < kJointNames.size() ? kJointNames[joint_idx] : "unknown_joint";
 }
 
+double distance3d(const Vec3& a, const Vec3& b) {
+    const double dx = a.x - b.x;
+    const double dy = a.y - b.y;
+    const double dz = a.z - b.z;
+    return std::sqrt((dx * dx) + (dy * dy) + (dz * dz));
+}
+
+double distancePlanar(const Vec3& a, const Vec3& b) {
+    const double dx = a.x - b.x;
+    const double dy = a.y - b.y;
+    return std::sqrt((dx * dx) + (dy * dy));
+}
+
+void updateRange(LocomotionRangeDiagnostics& range, double value) {
+    range.min = std::min(range.min, value);
+    range.max = std::max(range.max, value);
+    range.sum += value;
+    ++range.count;
+}
+
+double rangeAverage(const LocomotionRangeDiagnostics& range) {
+    return range.count > 0 ? (range.sum / static_cast<double>(range.count)) : 0.0;
+}
+
+double rangeMin(const LocomotionRangeDiagnostics& range) {
+    return range.count > 0 ? range.min : 0.0;
+}
+
+double rangeMax(const LocomotionRangeDiagnostics& range) {
+    return range.count > 0 ? range.max : 0.0;
+}
+
 } // namespace
 
 RuntimeDiagnosticsReporter::RuntimeDiagnosticsReporter(std::shared_ptr<logging::AsyncLogger> logger,
@@ -70,6 +102,13 @@ void RuntimeDiagnosticsReporter::recordControlOutputs(const JointTargets& target
         diagnostics_tracking_active_ = false;
         has_previous_leg_targets_ = false;
         has_previous_status_ = false;
+        has_previous_in_stance_ = false;
+        has_previous_body_translation_ = false;
+        has_last_foot_positions_.fill(false);
+        swing_active_.fill(false);
+        swing_path_length_m_.fill(0.0);
+        swing_min_z_m_.fill(0.0);
+        swing_max_z_m_.fill(0.0);
         last_control_output_timestamp_ = now;
         return;
     }
@@ -83,6 +122,8 @@ void RuntimeDiagnosticsReporter::recordControlOutputs(const JointTargets& target
         }
         previous_status_ = status;
         has_previous_status_ = true;
+        previous_in_stance_ = status.dynamic_gait.leg_in_stance;
+        has_previous_in_stance_ = true;
         last_control_output_timestamp_ = now;
         return;
     }
@@ -143,7 +184,50 @@ void RuntimeDiagnosticsReporter::recordControlOutputs(const JointTargets& target
             if (velocity_mps > 0.75) {
                 ++leg_target_variability_diag_.rapid_change_events;
             }
+
+            if (has_last_foot_positions_[leg_idx]) {
+                const double segment_length = distance3d(current, last_foot_positions_[leg_idx]);
+                if (swing_active_[leg_idx]) {
+                    swing_path_length_m_[leg_idx] += segment_length;
+                }
+            }
+            last_foot_positions_[leg_idx] = current;
+            has_last_foot_positions_[leg_idx] = true;
+
+            const bool in_stance = status.dynamic_gait.leg_in_stance[leg_idx];
+            const bool was_in_stance = has_previous_in_stance_ ? previous_in_stance_[leg_idx] : in_stance;
+
+            if (was_in_stance && !in_stance) {
+                swing_active_[leg_idx] = true;
+                swing_start_positions_[leg_idx] = current;
+                swing_path_length_m_[leg_idx] = 0.0;
+                swing_min_z_m_[leg_idx] = current.z;
+                swing_max_z_m_[leg_idx] = current.z;
+            }
+            if (swing_active_[leg_idx]) {
+                swing_min_z_m_[leg_idx] = std::min(swing_min_z_m_[leg_idx], current.z);
+                swing_max_z_m_[leg_idx] = std::max(swing_max_z_m_[leg_idx], current.z);
+            }
+
+            if (!was_in_stance && in_stance && swing_active_[leg_idx]) {
+                const double stride_length_m = distancePlanar(current, swing_start_positions_[leg_idx]);
+                const double foothold_length_m = distance3d(current, swing_start_positions_[leg_idx]);
+                const double stride_height_m = std::max(0.0, swing_max_z_m_[leg_idx] - swing_min_z_m_[leg_idx]);
+                const double foothold_directness =
+                    swing_path_length_m_[leg_idx] > 1e-9
+                        ? std::clamp(foothold_length_m / swing_path_length_m_[leg_idx], 0.0, 1.0)
+                        : 1.0;
+                updateRange(locomotion_diag_.stride_length_m, stride_length_m);
+                updateRange(locomotion_diag_.stride_height_m, stride_height_m);
+                updateRange(locomotion_diag_.foothold_length_m, foothold_length_m);
+                updateRange(locomotion_diag_.foothold_directness, foothold_directness);
+                ++locomotion_diag_.strides_taken;
+                swing_active_[leg_idx] = false;
+            }
+
+            previous_in_stance_[leg_idx] = in_stance;
         }
+        has_previous_in_stance_ = true;
     }
 
     if (leg_targets != nullptr) {
@@ -193,6 +277,12 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
     const double est_pitch_rad = estimated_state.body_pose_state.orientation_rad.y;
     const double est_abs_max_roll_pitch_rad = std::max(std::abs(est_roll_rad), std::abs(est_pitch_rad));
     const JointOscillationMetrics joint_diag = joint_oscillation_tracker_.metrics();
+    const Vec3 current_body_translation = estimated_state.body_pose_state.body_trans_m;
+    if (has_previous_body_translation_) {
+        locomotion_diag_.total_body_movement_m += distance3d(current_body_translation, previous_body_translation_m_);
+    }
+    previous_body_translation_m_ = current_body_translation;
+    has_previous_body_translation_ = true;
     const std::size_t dropped_messages = logger_->DroppedMessageCount();
     const logging::AsyncLogger::QueueState log_queue_state = logger_->CurrentQueueState();
     std::size_t worst_reversal_joint = 0;
@@ -352,6 +442,34 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
              gait_variability_diag_.peak_phase_delta_per_s_by_leg[worst_phase_leg],
              ",rapid_change_events:",
              gait_variability_diag_.rapid_change_events,
+             "} locomotion_diag={strides_taken:",
+             locomotion_diag_.strides_taken,
+             ",stride_length_min_m:",
+             rangeMin(locomotion_diag_.stride_length_m),
+             ",stride_length_avg_m:",
+             rangeAverage(locomotion_diag_.stride_length_m),
+             ",stride_length_max_m:",
+             rangeMax(locomotion_diag_.stride_length_m),
+             ",stride_height_min_m:",
+             rangeMin(locomotion_diag_.stride_height_m),
+             ",stride_height_avg_m:",
+             rangeAverage(locomotion_diag_.stride_height_m),
+             ",stride_height_max_m:",
+             rangeMax(locomotion_diag_.stride_height_m),
+             ",foothold_length_min_m:",
+             rangeMin(locomotion_diag_.foothold_length_m),
+             ",foothold_length_avg_m:",
+             rangeAverage(locomotion_diag_.foothold_length_m),
+             ",foothold_length_max_m:",
+             rangeMax(locomotion_diag_.foothold_length_m),
+             ",foothold_directness_min:",
+             rangeMin(locomotion_diag_.foothold_directness),
+             ",foothold_directness_avg:",
+             rangeAverage(locomotion_diag_.foothold_directness),
+             ",foothold_directness_max:",
+             rangeMax(locomotion_diag_.foothold_directness),
+             ",total_body_movement_m:",
+             locomotion_diag_.total_body_movement_m,
              "}");
 
     maybeLogLoopTimingWarning(loop_timing_metrics);

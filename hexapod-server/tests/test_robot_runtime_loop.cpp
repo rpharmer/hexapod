@@ -399,6 +399,49 @@ bool runRuntimeFreshnessTelemetryCountersCase() {
                   "recovery telemetry should reset consecutive freshness rejects");
 }
 
+bool runMixedIntentPublisherSampleIdCase() {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<ScriptedEstimator>();
+    auto* scripted = estimator.get();
+
+    control_config::ControlConfig cfg{};
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.require_monotonic_sample_id = true;
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, cfg);
+
+    if (!expect(runtime.init(), "init should succeed (mixed intent publisher sample-id case)")) {
+        return false;
+    }
+
+    scripted->enqueue(makeEstimatorSample(800, now_us()));
+    runtime.setMotionIntent(makeIntentSample(800, now_us()));
+    runControlStep(runtime);
+    if (!expect(runtime.getStatus().active_mode == RobotMode::WALK,
+                "baseline explicit sample-id intent should allow WALK")) {
+        return false;
+    }
+
+    MotionIntent auto_stamped{};
+    auto_stamped.requested_mode = RobotMode::WALK;
+    auto_stamped.gait = GaitType::TRIPOD;
+    auto_stamped.speed_mps = LinearRateMps{0.08};
+    auto_stamped.heading_rad = AngleRad{0.0};
+    auto_stamped.body_pose_setpoint.body_trans_m = Vec3{0.0, 0.0, 0.20};
+    auto_stamped.sample_id = 0;
+    auto_stamped.timestamp_us = now_us();
+
+    scripted->enqueue(makeEstimatorSample(801, now_us()));
+    runtime.setMotionIntent(auto_stamped);
+    runControlStep(runtime);
+
+    const ControlStatus post_mix = runtime.getStatus();
+    return expect(post_mix.active_mode == RobotMode::WALK,
+                  "auto-stamped intent after high explicit sample-id should remain monotonic and keep WALK") &&
+           expect(post_mix.active_fault == FaultCode::NONE,
+                  "mixed intent publishers should not trigger freshness COMMAND_TIMEOUT");
+}
+
 } // namespace
 
 int main() {
@@ -478,6 +521,10 @@ int main() {
     }
 
     if (!runRuntimeFreshnessTelemetryCountersCase()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runMixedIntentPublisherSampleIdCase()) {
         return EXIT_FAILURE;
     }
 
