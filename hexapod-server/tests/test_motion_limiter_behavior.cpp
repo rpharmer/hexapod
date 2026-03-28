@@ -232,6 +232,57 @@ bool unit_motion_limiter_scales_with_dt_and_stays_bounded() {
                   "larger dt should allow a proportionally larger bounded step");
 }
 
+bool unit_motion_limiter_ignores_estimated_angular_velocity_spikes() {
+    control_config::MotionLimiterConfig limiter_cfg{};
+    limiter_cfg.foot_velocity_limit_mps = 100.0;
+    limiter_cfg.body_linear_accel_limit_xy_mps2 = 100.0;
+    limiter_cfg.body_linear_accel_limit_z_mps2 = 100.0;
+    limiter_cfg.body_angular_accel_limit_radps2 = Vec3{0.4, 0.6, 1.0};
+    MotionLimiter limiter{limiter_cfg};
+
+    RobotState est = nominalEstimatedState();
+    SafetyState safety{};
+    RuntimeGaitPolicy gait_policy{};
+    const DurationSec loop_dt{0.05};
+
+    MotionIntent intent = walkingIntent();
+    intent.body_pose_setpoint.angular_velocity_radps = Vec3{0.0, 0.0, 0.0};
+    (void)limiter.update(est, intent, gait_policy, safety, loop_dt);
+
+    intent.body_pose_setpoint.angular_velocity_radps = Vec3{10.0, -10.0, 8.0};
+
+    est.body_pose_state.angular_velocity_radps = AngularVelocityRadPerSec3{1200.0, -900.0, 700.0};
+    const MotionLimiterOutput first_limited =
+        limiter.update(est, intent, gait_policy, safety, loop_dt);
+
+    est.body_pose_state.angular_velocity_radps = AngularVelocityRadPerSec3{-1500.0, 1100.0, -950.0};
+    const MotionLimiterOutput second_limited =
+        limiter.update(est, intent, gait_policy, safety, loop_dt);
+
+    const Vec3 max_step = limiter_cfg.body_angular_accel_limit_radps2 * loop_dt.value;
+    const Vec3 first_ang = first_limited.limited_intent.body_pose_setpoint.angular_velocity_radps;
+    const Vec3 second_ang = second_limited.limited_intent.body_pose_setpoint.angular_velocity_radps;
+    const Vec3 observed_step = second_ang - first_ang;
+    const Vec3 requested_ang = intent.body_pose_setpoint.angular_velocity_radps;
+    const Vec3 expected_second = Vec3{
+        std::clamp(requested_ang.x - first_ang.x, -max_step.x, max_step.x) + first_ang.x,
+        std::clamp(requested_ang.y - first_ang.y, -max_step.y, max_step.y) + first_ang.y,
+        std::clamp(requested_ang.z - first_ang.z, -max_step.z, max_step.z) + first_ang.z};
+
+    return expect(first_limited.diagnostics.hard_clamp_yaw,
+                  "first step toward requested angular velocity should be accel-clamped") &&
+           expect(second_limited.diagnostics.hard_clamp_yaw,
+                  "second step should remain accel-clamped despite extreme estimated angular velocity") &&
+           expect(std::abs(observed_step.x) <= max_step.x + 1e-12 &&
+                      std::abs(observed_step.y) <= max_step.y + 1e-12 &&
+                      std::abs(observed_step.z) <= max_step.z + 1e-12,
+                  "limited angular velocity delta should be bounded only by configured accel limits") &&
+           expect(std::abs(second_ang.x - expected_second.x) < 1e-12 &&
+                      std::abs(second_ang.y - expected_second.y) < 1e-12 &&
+                      std::abs(second_ang.z - expected_second.z) < 1e-12,
+                  "limited angular velocity should depend only on previous limited intent and accel bounds");
+}
+
 bool integration_gait_scheduler_progress_tracks_elapsed_dt() {
     GaitScheduler scheduler;
     RobotState est = nominalEstimatedState();
@@ -276,6 +327,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!unit_motion_limiter_scales_with_dt_and_stays_bounded()) {
+        return EXIT_FAILURE;
+    }
+    if (!unit_motion_limiter_ignores_estimated_angular_velocity_spikes()) {
         return EXIT_FAILURE;
     }
     if (!integration_gait_scheduler_progress_tracks_elapsed_dt()) {
