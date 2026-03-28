@@ -493,6 +493,55 @@ bool unit_motion_limiter_rejects_non_finite_commands() {
                   "rejecting non-finite commands should mark limiter intent as modified");
 }
 
+bool unit_motion_limiter_optional_gait_policy_adaptation_toggle() {
+    control_config::MotionLimiterConfig disabled_cfg{};
+    disabled_cfg.adapt_gait_policy_on_limit = false;
+    disabled_cfg.foot_velocity_limit_mps = 0.02;
+
+    control_config::MotionLimiterConfig enabled_cfg = disabled_cfg;
+    enabled_cfg.adapt_gait_policy_on_limit = true;
+
+    MotionLimiter disabled_limiter{disabled_cfg};
+    MotionLimiter enabled_limiter{enabled_cfg};
+
+    RobotState est = nominalEstimatedState();
+    SafetyState safety{};
+    RuntimeGaitPolicy base_policy{};
+    base_policy.cadence_hz = FrequencyHz{2.0};
+    base_policy.adaptation_scale_cadence = 1.0;
+    base_policy.adaptation_scale_step = 1.0;
+    for (auto& leg : base_policy.per_leg) {
+        leg.step_length_m = LengthM{0.10};
+    }
+
+    MotionIntent walk = walkingIntent();
+    (void)disabled_limiter.update(est, walk, base_policy, safety, DurationSec{0.02});
+    (void)enabled_limiter.update(est, walk, base_policy, safety, DurationSec{0.02});
+
+    walk.body_pose_setpoint.body_trans_m = Vec3{0.30, 0.0, 0.0};
+    const MotionLimiterOutput disabled_out =
+        disabled_limiter.update(est, walk, base_policy, safety, DurationSec{0.02});
+    const MotionLimiterOutput enabled_out =
+        enabled_limiter.update(est, walk, base_policy, safety, DurationSec{0.02});
+
+    return expect(disabled_out.diagnostics.hard_clamp_linear && enabled_out.diagnostics.hard_clamp_linear,
+                  "both limiter modes should still enforce linear clamp semantics") &&
+           expect(!disabled_out.diagnostics.gait_policy_modified,
+                  "disabled gait adaptation should keep policy_modified false") &&
+           expect(!disabled_out.diagnostics.hard_clamp_reach,
+                  "disabled gait adaptation should keep limiter reach clamp false") &&
+           expect(std::abs(disabled_out.adapted_gait_policy.adaptation_scale_step - base_policy.adaptation_scale_step) < 1e-12 &&
+                      std::abs(disabled_out.adapted_gait_policy.adaptation_scale_cadence - base_policy.adaptation_scale_cadence) < 1e-12,
+                  "disabled gait adaptation should leave gait-policy adaptation scales unchanged") &&
+           expect(enabled_out.diagnostics.gait_policy_modified,
+                  "enabled gait adaptation should mark policy_modified when intent is clamped") &&
+           expect(enabled_out.diagnostics.hard_clamp_reach,
+                  "enabled gait adaptation should emit limiter reach clamp when linear clamp occurs") &&
+           expect(enabled_out.adapted_gait_policy.adaptation_scale_step < base_policy.adaptation_scale_step,
+                  "enabled gait adaptation should reduce policy step adaptation scale under clamp") &&
+           expect(enabled_out.adapted_gait_policy.adaptation_scale_cadence <= base_policy.adaptation_scale_cadence,
+                  "enabled gait adaptation should not increase policy cadence adaptation scale");
+  
 bool unit_motion_limiter_transition_phases_apply_policy_and_intent_behavior() {
     control_config::MotionLimiterConfig limiter_cfg{};
     limiter_cfg.startup_phase_threshold = std::chrono::milliseconds{100};
@@ -851,6 +900,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!unit_motion_limiter_rejects_non_finite_commands()) {
+        return EXIT_FAILURE;
+    }
+    if (!unit_motion_limiter_optional_gait_policy_adaptation_toggle()) {
         return EXIT_FAILURE;
     }
     if (!unit_motion_limiter_transition_phases_apply_policy_and_intent_behavior()) {

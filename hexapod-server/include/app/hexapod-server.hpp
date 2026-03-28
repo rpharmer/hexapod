@@ -117,6 +117,7 @@ struct ParsedToml
   double motionJointSoftAccelLimitRadps2{30.0};
   int motionStartupPhaseThresholdMs{350};
   int motionShutdownPhaseThresholdMs{450};
+  bool motionAdaptGaitPolicyOnLimit{false};
 
   double coxaLengthM{0.043};
   double femurLengthM{0.060};
