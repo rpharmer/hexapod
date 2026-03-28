@@ -273,5 +273,50 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    MotionIntent wrap_heading_intent{};
+    wrap_heading_intent.requested_mode = RobotMode::WALK;
+    wrap_heading_intent.speed_mps = LinearRateMps{0.2};
+    wrap_heading_intent.body_pose_setpoint.body_trans_m.z = 0.20;
+
+    GaitState wrap_heading_gait{};
+    wrap_heading_gait.in_stance.fill(true);
+    wrap_heading_gait.phase.fill(0.25);
+    wrap_heading_gait.stride_phase_rate_hz = FrequencyHz{1.0};
+
+    constexpr std::array<double, 4> kBoundaryHeadings{
+        kPi - 1e-4,
+        -kPi + 1e-4,
+        kPi - 2e-4,
+        -kPi + 2e-4,
+    };
+
+    std::array<Vec3, kBoundaryHeadings.size()> boundary_step_velocities{};
+    for (std::size_t i = 0; i < kBoundaryHeadings.size(); ++i) {
+        wrap_heading_intent.heading_rad = AngleRad{kBoundaryHeadings[i]};
+        const LegTargets boundary_targets =
+            controller.update(est, wrap_heading_intent, wrap_heading_gait, safety);
+        boundary_step_velocities[i] = boundary_targets.feet[0].vel_body_mps;
+    }
+
+    for (std::size_t i = 1; i < boundary_step_velocities.size(); ++i) {
+        const Vec3& previous = boundary_step_velocities[i - 1];
+        const Vec3& current = boundary_step_velocities[i];
+        const double planar_dot = previous.x * current.x + previous.y * current.y;
+        const double previous_norm = std::sqrt(previous.x * previous.x + previous.y * previous.y);
+        const double current_norm = std::sqrt(current.x * current.x + current.y * current.y);
+        const double continuity =
+            planar_dot / std::max(previous_norm * current_norm, 1e-9);
+
+        if (!expect(continuity > 0.995,
+                    "heading wrap across -pi/+pi should keep consecutive step directions continuous")) {
+            return EXIT_FAILURE;
+        }
+
+        if (!expect(planar_dot > 0.0,
+                    "heading wrap should not inject opposite-direction stride artifacts")) {
+            return EXIT_FAILURE;
+        }
+    }
+
     return EXIT_SUCCESS;
 }
