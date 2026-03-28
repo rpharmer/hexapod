@@ -205,14 +205,17 @@ public:
         }
 
         const double timestamp_us = static_cast<double>(telemetry.timestamp_us.value);
+        bool fallback_pose_reset = false;
         const bool should_reset_for_idle = telemetry.status.active_mode == RobotMode::SAFE_IDLE;
         if (should_reset_for_idle) {
-            resetFallbackOdometry(timestamp_us);
+            resetFallbackOdometryIntegrator(timestamp_us);
+            fallback_pose_reset = true;
         }
 
         bool should_integrate = true;
         if (!std::isfinite(timestamp_us) || timestamp_us <= 0.0) {
-            resetFallbackOdometry(0.0);
+            resetFallbackOdometryIntegrator(0.0);
+            fallback_pose_reset = true;
             should_integrate = false;
         }
 
@@ -224,7 +227,8 @@ public:
             } else {
                 dt_seconds = (timestamp_us - last_odometry_timestamp_us_) * 1e-6;
                 if (!std::isfinite(dt_seconds) || dt_seconds < 0.0 || dt_seconds > kFallbackLongPauseResetSeconds) {
-                    resetFallbackOdometry(timestamp_us);
+                    resetFallbackOdometryIntegrator(timestamp_us);
+                    fallback_pose_reset = true;
                     should_integrate = false;
                 } else {
                     dt_seconds = std::clamp(dt_seconds, 0.0, kFallbackMaxDtSeconds);
@@ -396,12 +400,18 @@ public:
                     << "},"
                     << "\"localization\":{"
                     << "\"frame_id\":\"" << pose.frame_id << "\","
+                    << "\"pose_reset\":" << (fallback_pose_reset ? "true" : "false") << ","
                     << "\"current_pose\":{"
                     << "\"x_m\":" << pose.x_m << ","
                     << "\"y_m\":" << pose.y_m << ","
                     << "\"yaw_rad\":" << pose.yaw_rad
                     << "}}";
         } else {
+            // Fallback odom frame semantics:
+            //  - frame_id "odom" is continuous during runtime; reset conditions pause integration
+            //    without zeroing the published pose.
+            //  - pose_reset indicates a consumer should re-seed smoothing on this sample.
+            //  - process restart naturally reinitializes odom origin at (0, 0, 0).
             payload << "\"current_pose\":{"
                     << "\"x_m\":" << odometry_pose_x_m_ << ","
                     << "\"y_m\":" << odometry_pose_y_m_ << ","
@@ -409,6 +419,7 @@ public:
                     << "},"
                     << "\"localization\":{"
                     << "\"frame_id\":\"odom\","
+                    << "\"pose_reset\":" << (fallback_pose_reset ? "true" : "false") << ","
                     << "\"current_pose\":{"
                     << "\"x_m\":" << odometry_pose_x_m_ << ","
                     << "\"y_m\":" << odometry_pose_y_m_ << ","
@@ -441,10 +452,7 @@ public:
     }
 
 private:
-    void resetFallbackOdometry(const double timestamp_us) {
-        odometry_pose_x_m_ = 0.0;
-        odometry_pose_y_m_ = 0.0;
-        odometry_pose_yaw_rad_ = 0.0;
+    void resetFallbackOdometryIntegrator(const double timestamp_us) {
         last_odometry_timestamp_us_ = timestamp_us;
     }
 

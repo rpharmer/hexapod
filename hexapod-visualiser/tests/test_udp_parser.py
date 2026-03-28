@@ -183,8 +183,8 @@ class TelemetryParserTests(unittest.TestCase):
             protocol.datagram_received(payload, ("127.0.0.1", 9000))
 
         self.assertEqual(loop.create_task_calls, 1)
-        self.assertEqual(scheduler.update_notifications, 1000)
-        self.assertGreaterEqual(scheduler.coalesced_notifications, 999)
+        self.assertEqual(scheduler.update_notifications, 1)
+        self.assertEqual(scheduler.coalesced_notifications, 0)
 
     def test_udp_protocol_drops_out_of_order_timestamp_updates(self):
         state = server.TelemetryState()
@@ -338,6 +338,32 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.geometry["femur"], 82.0)
         self.assertEqual(state.geometry["coxa"], before["coxa"])
         self.assertNotIn("coxxa", state.geometry)
+
+    def test_udp_protocol_does_not_broadcast_for_geometry_with_only_unknown_keys(self):
+        state = server.TelemetryState()
+        updates = []
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: updates.append("updated"))
+
+        protocol.datagram_received(
+            b'{"schema_version": 1, "geometry": {"unknown_a": 1, "unknown_b": 2}}',
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertEqual(updates, [])
+
+    def test_udp_protocol_does_not_broadcast_for_geometry_with_same_values(self):
+        state = server.TelemetryState()
+        updates = []
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: updates.append("updated"))
+
+        protocol.datagram_received(
+            b'{"schema_version": 1, "geometry": {"coxa": 35.0, "femur": 70.0}}',
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertEqual(updates, [])
 
     def test_frontend_contract_does_not_expect_optional_status_badges(self):
         static_dir = pathlib.Path(__file__).resolve().parents[1] / "static"

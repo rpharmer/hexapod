@@ -212,11 +212,107 @@ export function smoothPoseOffsetForRender({
   return { ...pose };
 }
 
-export function resolvePoseOffsetMm(model, poseState) {
-  return resolvePoseOffsetWithSource(model, poseState).pose;
+const POSE_SOURCE_SWITCH_CONFIG = {
+  invalidFramesBeforeSwitch: 3,
+  invalidMsBeforeSwitch: 220,
+  alternateStableFramesBeforeSwitch: 2,
+  alternateStableMsBeforeSwitch: 90,
+  jumpThresholdMm: 240,
+  jumpThresholdYawRad: 0.45,
+};
+
+function resolveNowMs(nowMs) {
+  if (Number.isFinite(nowMs)) {
+    return nowMs;
+  }
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
 }
 
-export function resolvePoseOffsetWithSource(model, poseState) {
+function ensurePoseStateDefaults(poseState) {
+  if (!poseState || typeof poseState !== "object") {
+    return;
+  }
+  if (!poseState.pose) {
+    poseState.pose = { x: 0, y: 0, yaw: 0 };
+  }
+  if (!poseState.poseSource) {
+    poseState.poseSource = "missing_pose";
+  }
+  if (!poseState.activeSource) {
+    poseState.activeSource = null;
+  }
+  if (!Number.isFinite(poseState.lastSwitchAtMs)) {
+    poseState.lastSwitchAtMs = Number.NaN;
+  }
+  if (!poseState.pendingSource) {
+    poseState.pendingSource = null;
+  }
+  if (!Number.isFinite(poseState.pendingSinceMs)) {
+    poseState.pendingSinceMs = Number.NaN;
+  }
+  if (!Number.isInteger(poseState.pendingFrames)) {
+    poseState.pendingFrames = 0;
+  }
+  if (!Number.isInteger(poseState.invalidFrames)) {
+    poseState.invalidFrames = 0;
+  }
+  if (!Number.isFinite(poseState.invalidSinceMs)) {
+    poseState.invalidSinceMs = Number.NaN;
+  }
+}
+
+function toResolvedPose(pose) {
+  return {
+    x: pose.x_m * 1000,
+    y: pose.y_m * 1000,
+    yaw: normalizeAngleRad(pose.yaw_rad),
+  };
+}
+
+function isJumpWithinSwitchThreshold(activePose, alternatePose) {
+  if (!activePose || !alternatePose) {
+    return false;
+  }
+  const dxMm = (alternatePose.x_m - activePose.x_m) * 1000;
+  const dyMm = (alternatePose.y_m - activePose.y_m) * 1000;
+  const translationJumpMm = Math.hypot(dxMm, dyMm);
+  const yawJumpRad = Math.abs(normalizeAngleRad(alternatePose.yaw_rad - activePose.yaw_rad));
+  return (
+    translationJumpMm <= POSE_SOURCE_SWITCH_CONFIG.jumpThresholdMm
+    && yawJumpRad <= POSE_SOURCE_SWITCH_CONFIG.jumpThresholdYawRad
+  );
+}
+
+function commitSourceSwitch({ poseState, source, sourcePose, nowMs }) {
+  const resolved = toResolvedPose(sourcePose);
+  poseState.pose = { ...resolved };
+  poseState.poseSource = source;
+  poseState.activeSource = source;
+  poseState.lastSwitchAtMs = nowMs;
+  poseState.pendingSource = null;
+  poseState.pendingSinceMs = Number.NaN;
+  poseState.pendingFrames = 0;
+  poseState.invalidFrames = 0;
+  poseState.invalidSinceMs = Number.NaN;
+  poseState.hasSeenAbsolutePose = true;
+  if (poseState.renderPoseState) {
+    poseState.renderPoseState.pose = { ...resolved };
+    poseState.renderPoseState.lastRenderAtMs = nowMs;
+  }
+  return { pose: resolved, poseSource: source };
+}
+
+export function resolvePoseOffsetMm(model, poseState, nowMs) {
+  return resolvePoseOffsetWithSource(model, poseState, nowMs).pose;
+}
+
+export function resolvePoseOffsetWithSource(model, poseState, nowMs) {
+  ensurePoseStateDefaults(poseState);
+  const resolvedNowMs = resolveNowMs(nowMs);
+
   const localizationFrameId = model.autonomy_debug?.localization?.frame_id;
   const localizationPose =
     localizationFrameId === "map" || localizationFrameId === "odom"
@@ -227,23 +323,79 @@ export function resolvePoseOffsetWithSource(model, poseState) {
     { source: "autonomy_current_pose", pose: normalizePoseCandidate(model.autonomy_debug?.current_pose) },
     { source: "localization_pose", pose: normalizePoseCandidate(localizationPose) },
   ];
+  const candidateBySource = new Map(
+    sourcedAbsoluteCandidates.filter((candidate) => candidate.pose).map((candidate) => [candidate.source, candidate.pose]),
+  );
 
-  const absolutePoseSource = sourcedAbsoluteCandidates.find((candidate) => candidate.pose);
-  if (!absolutePoseSource) {
-    poseState.poseSource = "missing_pose";
-    return { pose: poseState.pose, poseSource: poseState.poseSource };
+  const activeSource = poseState.activeSource;
+  const activePose = activeSource ? candidateBySource.get(activeSource) : null;
+
+  if (activePose) {
+    poseState.invalidFrames = 0;
+    poseState.invalidSinceMs = Number.NaN;
+
+    const alternate = sourcedAbsoluteCandidates.find(
+      (candidate) => candidate.pose && candidate.source !== activeSource,
+    );
+    const shouldQueueAlternate = alternate && isJumpWithinSwitchThreshold(activePose, alternate.pose);
+    if (shouldQueueAlternate) {
+      if (poseState.pendingSource !== alternate.source) {
+        poseState.pendingSource = alternate.source;
+        poseState.pendingSinceMs = resolvedNowMs;
+        poseState.pendingFrames = 1;
+      } else {
+        poseState.pendingFrames += 1;
+      }
+      const pendingAgeMs = resolvedNowMs - poseState.pendingSinceMs;
+      const pendingStable =
+        poseState.pendingFrames >= POSE_SOURCE_SWITCH_CONFIG.alternateStableFramesBeforeSwitch
+        || pendingAgeMs >= POSE_SOURCE_SWITCH_CONFIG.alternateStableMsBeforeSwitch;
+      if (pendingStable) {
+        return commitSourceSwitch({
+          poseState,
+          source: alternate.source,
+          sourcePose: alternate.pose,
+          nowMs: resolvedNowMs,
+        });
+      }
+    } else {
+      poseState.pendingSource = null;
+      poseState.pendingSinceMs = Number.NaN;
+      poseState.pendingFrames = 0;
+    }
+
+    const resolved = toResolvedPose(activePose);
+    poseState.pose = { ...resolved };
+    poseState.poseSource = activeSource;
+    poseState.hasSeenAbsolutePose = true;
+    return { pose: resolved, poseSource: activeSource };
   }
 
-  const absolutePose = absolutePoseSource.pose;
-  const resolved = {
-    x: absolutePose.x_m * 1000,
-    y: absolutePose.y_m * 1000,
-    yaw: absolutePose.yaw_rad,
-  };
-  poseState.pose = { ...resolved };
-  poseState.poseSource = absolutePoseSource.source;
-  poseState.hasSeenAbsolutePose = true;
-  return { pose: resolved, poseSource: absolutePoseSource.source };
+  if (activeSource) {
+    poseState.invalidFrames += 1;
+    if (!Number.isFinite(poseState.invalidSinceMs)) {
+      poseState.invalidSinceMs = resolvedNowMs;
+    }
+  }
+
+  const fallbackCandidate = sourcedAbsoluteCandidates.find((candidate) => candidate.pose);
+  const canSwitchFromInvalid =
+    !activeSource
+    || poseState.invalidFrames >= POSE_SOURCE_SWITCH_CONFIG.invalidFramesBeforeSwitch
+    || (Number.isFinite(poseState.invalidSinceMs)
+      && resolvedNowMs - poseState.invalidSinceMs >= POSE_SOURCE_SWITCH_CONFIG.invalidMsBeforeSwitch);
+
+  if (fallbackCandidate && canSwitchFromInvalid) {
+    return commitSourceSwitch({
+      poseState,
+      source: fallbackCandidate.source,
+      sourcePose: fallbackCandidate.pose,
+      nowMs: resolvedNowMs,
+    });
+  }
+
+  poseState.poseSource = "missing_pose";
+  return { pose: poseState.pose, poseSource: poseState.poseSource };
 }
 
 function transformWorldToBodyAnchored(point, poseOffset) {
@@ -256,6 +408,14 @@ function transformWorldToBodyAnchored(point, poseOffset) {
     y: -dx * sinYaw + dy * cosYaw,
     z: point.z,
   };
+}
+
+export function resolveCurrentPoseHeadingRad(autonomy, poseOffset) {
+  const worldYaw = autonomy?.current_pose?.yaw_rad;
+  if (!Number.isFinite(worldYaw)) {
+    return 0;
+  }
+  return worldYaw - poseOffset.yaw;
 }
 
 function transformBodyToWorld(point, poseOffset) {
@@ -431,7 +591,7 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model,
 
   if (autonomy.current_pose && Number.isFinite(autonomy.current_pose.x_m) && Number.isFinite(autonomy.current_pose.y_m)) {
     const posePoint = { x: 0, y: 0, z: groundPlaneZ };
-    const heading = 0;
+    const heading = resolveCurrentPoseHeadingRad(autonomy, poseOffset);
     const nosePoint = {
       x: posePoint.x + Math.cos(heading) * 45,
       y: posePoint.y + Math.sin(heading) * 45,
@@ -479,6 +639,13 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
   const poseState = {
     pose: { x: 0, y: 0, yaw: 0 },
     poseSource: "missing_pose",
+    activeSource: null,
+    lastSwitchAtMs: Number.NaN,
+    pendingSource: null,
+    pendingSinceMs: Number.NaN,
+    pendingFrames: 0,
+    invalidFrames: 0,
+    invalidSinceMs: Number.NaN,
     hasSeenAbsolutePose: false,
     renderPoseState: {
       pose: null,
@@ -506,7 +673,7 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     const centerX = width * 0.5 + camera.panX;
     const centerY = height * 0.58 + camera.panY;
     const nowMs = performance.now();
-    let { pose: poseOffset, poseSource } = resolvePoseOffsetWithSource(model, poseState);
+    let { pose: poseOffset, poseSource } = resolvePoseOffsetWithSource(model, poseState, nowMs);
     poseOffset = smoothPoseOffsetForRender({
       targetPose: poseOffset,
       renderPoseState: poseState.renderPoseState,

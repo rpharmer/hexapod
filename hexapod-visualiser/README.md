@@ -187,6 +187,16 @@ Leg keys expected: `LF`, `LM`, `LR`, `RF`, `RM`, `RR`.
 `schema_version` is required and must currently be `1`.
 Legacy packets without `schema_version`, and legacy pose aliases (`x/y/z`, `yaw`) are rejected by the parser.
 
+### State packet ordering contract
+
+For `type: "state"` payloads, `timestamp_ms` is treated as a monotonic ordering key in the browser transport.
+
+- Packets with older `timestamp_ms` are ignored.
+- Packets with the same `timestamp_ms` are ignored unless they include deterministic tie-breaker metadata (`sample_id`) that is strictly increasing for that timestamp.
+- Packets with strictly increasing `timestamp_ms` continue to apply normally.
+
+This contract prevents equal-timestamp replays from regressing model state and causing visual jitter.
+
 ## Integration idea for `hexapod-server`
 
 From the server loop, serialize latest geometry once at startup, then send joint angles each control cycle as UDP datagrams to the visualiser host/port.

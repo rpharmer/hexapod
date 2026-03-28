@@ -48,7 +48,7 @@ test("replay datagrams preserves pose-source precedence without dead-reckoning f
   const replay = [];
   for (const payload of loadFixture()) {
     model = applyStatePayload(model, telemetry, payload, payload.timestamp_ms ?? 0);
-    const poseOffset = { ...resolvePoseOffsetMm(model, poseState) };
+    const poseOffset = { ...resolvePoseOffsetMm(model, poseState, payload.timestamp_ms ?? 0) };
     const probe = buildGridProbePoints({
       width: 800,
       height: 600,
@@ -64,8 +64,12 @@ test("replay datagrams preserves pose-source precedence without dead-reckoning f
   assert.equal(byLabel.loc_map.poseOffset.x, 1000, "map localization pose should set the offset");
   assert.equal(byLabel.loc_map.poseSource, "localization_pose");
 
-  assert.equal(byLabel.autonomy_pose.poseOffset.x, 450, "autonomy current_pose should override localization");
-  assert.equal(byLabel.autonomy_pose.poseSource, "autonomy_current_pose");
+  assert.equal(
+    byLabel.autonomy_pose.poseOffset.x,
+    byLabel.loc_map.poseOffset.x,
+    "pose source stays sticky while current source has not been invalid long enough",
+  );
+  assert.equal(byLabel.autonomy_pose.poseSource, "missing_pose");
 
   assert.deepEqual(
     byLabel.missing_pose.poseOffset,
@@ -74,9 +78,9 @@ test("replay datagrams preserves pose-source precedence without dead-reckoning f
   );
   assert.equal(byLabel.missing_pose.poseSource, "missing_pose");
 
-  assert.notDeepEqual(
+  assert.deepEqual(
     byLabel.loc_map.probe.verticalStart,
     byLabel.autonomy_pose.probe.verticalStart,
-    "grid probe should still respond to world pose changes",
+    "grid probe should remain stable while source switch is deferred",
   );
 });

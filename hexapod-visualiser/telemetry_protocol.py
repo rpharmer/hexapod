@@ -66,10 +66,14 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
 
         geometry = message.get("geometry")
         if isinstance(geometry, dict):
-            merged = dict(self.state.geometry)
-            merged.update(self._sanitize_geometry_update(geometry, source="geometry"))
-            self.state.geometry = merged
-            changed = True
+            sanitized_geometry = self._sanitize_geometry_update(geometry, source="geometry")
+            if sanitized_geometry and any(
+                self.state.geometry.get(key) != value for key, value in sanitized_geometry.items()
+            ):
+                merged = dict(self.state.geometry)
+                merged.update(sanitized_geometry)
+                self.state.geometry = merged
+                changed = True
 
         angles = message.get("angles_deg")
         if isinstance(angles, dict):
@@ -82,7 +86,9 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
                     and all(_is_number(v) for v in values)
                 ):
                     sanitized[leg_name] = [float(v) for v in values]
-            if sanitized:
+            if sanitized and any(
+                self.state.angles_deg.get(leg_name) != values for leg_name, values in sanitized.items()
+            ):
                 merged_angles = dict(self.state.angles_deg)
                 merged_angles.update(sanitized)
                 self.state.angles_deg = merged_angles
@@ -105,8 +111,10 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
         changed = False
 
         if isinstance(message.get("timestamp_ms"), int):
-            self.state.timestamp_ms = int(message["timestamp_ms"])
-            changed = True
+            timestamp_ms = int(message["timestamp_ms"])
+            if self.state.timestamp_ms != timestamp_ms:
+                self.state.timestamp_ms = timestamp_ms
+                changed = True
 
         if isinstance(message.get("active_mode"), str):
             self.state.active_mode = message["active_mode"]
@@ -115,40 +123,58 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
             legacy_active_mode = _LEGACY_MODE_NAMES.get(message["mode"])
             if legacy_active_mode is not None:
                 self.state.active_mode = legacy_active_mode
+            active_mode = message["active_mode"]
+            if self.state.active_mode != active_mode:
+                self.state.active_mode = active_mode
                 changed = True
 
         if isinstance(message.get("active_fault"), str):
-            self.state.active_fault = message["active_fault"]
-            changed = True
+            active_fault = message["active_fault"]
+            if self.state.active_fault != active_fault:
+                self.state.active_fault = active_fault
+                changed = True
 
         if isinstance(message.get("bus_ok"), bool):
-            self.state.bus_ok = message["bus_ok"]
-            changed = True
+            bus_ok = message["bus_ok"]
+            if self.state.bus_ok != bus_ok:
+                self.state.bus_ok = bus_ok
+                changed = True
 
         if isinstance(message.get("estimator_valid"), bool):
-            self.state.estimator_valid = message["estimator_valid"]
-            changed = True
+            estimator_valid = message["estimator_valid"]
+            if self.state.estimator_valid != estimator_valid:
+                self.state.estimator_valid = estimator_valid
+                changed = True
 
         if isinstance(message.get("loop_counter"), int):
-            self.state.loop_counter = int(message["loop_counter"])
-            changed = True
+            loop_counter = int(message["loop_counter"])
+            if self.state.loop_counter != loop_counter:
+                self.state.loop_counter = loop_counter
+                changed = True
 
         if _is_number(message.get("voltage")):
-            self.state.voltage = float(message["voltage"])
-            changed = True
+            voltage = float(message["voltage"])
+            if self.state.voltage != voltage:
+                self.state.voltage = voltage
+                changed = True
 
         if _is_number(message.get("current")):
-            self.state.current = float(message["current"])
-            changed = True
+            current = float(message["current"])
+            if self.state.current != current:
+                self.state.current = current
+                changed = True
 
         if isinstance(message.get("dynamic_gait"), dict):
-            self.state.dynamic_gait = message["dynamic_gait"]
-            changed = True
+            dynamic_gait = message["dynamic_gait"]
+            if self.state.dynamic_gait != dynamic_gait:
+                self.state.dynamic_gait = dynamic_gait
+                changed = True
 
         autonomy_debug = self._sanitize_autonomy_debug(message.get("autonomy_debug"))
         if autonomy_debug is not None:
-            self.state.autonomy_debug = autonomy_debug
-            changed = True
+            if self.state.autonomy_debug != autonomy_debug:
+                self.state.autonomy_debug = autonomy_debug
+                changed = True
 
         return changed
 
