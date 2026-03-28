@@ -154,6 +154,48 @@ bool testUnstableSupportTriggersTipOver() {
            expect(state.torque_cut, "TIP_OVER from instability should request torque cut");
 }
 
+bool testTiltDebounceRequiresConsecutiveBreaches() {
+    SafetySupervisor supervisor;
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+    est.has_measured_body_pose_state = true;
+    est.has_body_pose_state = true;
+
+    est.body_pose_state.orientation_rad.x = 2.0;
+    const SafetyState first_breach = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+    if (!expect(first_breach.active_fault == FaultCode::NONE,
+                "first isolated tilt breach should be debounced")) {
+        return false;
+    }
+
+    est.body_pose_state.orientation_rad.x = 0.0;
+    const SafetyState cleared_sample = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+    if (!expect(cleared_sample.active_fault == FaultCode::NONE,
+                "non-breach sample should keep TIP_OVER clear")) {
+        return false;
+    }
+
+    for (int sample = 0; sample < 24; ++sample) {
+        est.body_pose_state.orientation_rad.x = 2.0;
+        const SafetyState pending = supervisor.evaluate(
+            raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+        if (!expect(pending.active_fault == FaultCode::NONE,
+                    "TIP_OVER should not trip before required consecutive tilt breaches")) {
+            return false;
+        }
+    }
+
+    est.body_pose_state.orientation_rad.x = 2.0;
+    const SafetyState tripped = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+    return expect(tripped.active_fault == FaultCode::TIP_OVER,
+                  "TIP_OVER should trip once required consecutive tilt breaches are reached") &&
+           expect(tripped.active_fault_trip_count == 1,
+                  "trip counter should increment once after debounce threshold is met");
+}
+
 bool testMotorFaultTorqueCut() {
     SafetySupervisor supervisor;
     RobotState raw = nominalRaw();
@@ -287,6 +329,7 @@ int main() {
         !testBusTimeoutBeatsFreshnessFaults() ||
         !testInferredTiltDoesNotTripMeasuredTiltPolicy() ||
         !testUnstableSupportTriggersTipOver() ||
+        !testTiltDebounceRequiresConsecutiveBreaches() ||
         !testMotorFaultTorqueCut() ||
         !testJointDiscontinuityTripsSafety() ||
         !testLatchedRemainsWhenIntentNotSafeIdle() ||
