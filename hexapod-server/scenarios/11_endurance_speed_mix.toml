@@ -3,6 +3,12 @@ duration_ms = 90000
 tick_ms = 20
 refresh_motion_intent = true
 motion_ramp_ms = 1500
+
+[acceptance.telemetry_metrics]
+min_median_stride_length_m = 0.030
+min_median_stride_height_m = 0.006
+max_hard_clamp_saturated_ratio = 0.45
+max_prolonged_freshness_reject_bursts = 0
 # Motion semantics:
 # - heading_rad: planar travel heading setpoint (rad).
 # - yaw_rad: body yaw-rate command (rad/s), mapped to angular_velocity_radps.z.

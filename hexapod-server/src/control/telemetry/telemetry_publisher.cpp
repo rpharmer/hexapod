@@ -388,6 +388,13 @@ public:
                     << "}}";
         }
         payload << "},"
+                << "\"runtime_freshness\":{"
+                << "\"consecutive_rejects\":" << telemetry.runtime_freshness.consecutive_rejects << ","
+                << "\"total_rejects\":" << telemetry.runtime_freshness.total_rejects << ","
+                << "\"stale_age_rejects\":" << telemetry.runtime_freshness.stale_age_rejects << ","
+                << "\"invalid_sample_id_rejects\":" << telemetry.runtime_freshness.invalid_sample_id_rejects << ","
+                << "\"non_monotonic_id_rejects\":" << telemetry.runtime_freshness.non_monotonic_id_rejects
+                << "},"
                 << "\"angles_deg\":{";
 
         for (int leg = 0; leg < kNumLegs; ++leg) {
