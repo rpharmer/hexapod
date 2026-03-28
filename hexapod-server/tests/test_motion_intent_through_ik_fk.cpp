@@ -160,6 +160,106 @@ bool gaitSchedulerRecoversWithoutPhaseSnapAfterTransientInstability() {
                   "phase should continue progressing after instability clears");
 }
 
+bool gaitSchedulerCadenceSlewRespectsUpDownLimitsAndWalkRestartSign() {
+    constexpr double kCadenceSlewUpHzPerSec = 150.0;
+    constexpr double kCadenceSlewDownHzPerSec = 200.0;
+    constexpr double kSlewToleranceHz = 0.02;
+
+    GaitScheduler gait;
+    RobotState est{};
+    est.timestamp_us = now_us();
+    est.foot_contacts = {true, true, true, true, true, true};
+    for (auto& leg : est.leg_states) {
+        leg.joint_state[1].pos_rad = AngleRad{-0.6};
+        leg.joint_state[2].pos_rad = AngleRad{-0.8};
+    }
+
+    MotionIntent walk{};
+    walk.requested_mode = RobotMode::WALK;
+    walk.gait = GaitType::TRIPOD;
+    walk.timestamp_us = now_us();
+
+    MotionIntent stop = walk;
+    stop.requested_mode = RobotMode::STAND;
+
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    safety.torque_cut = false;
+
+    RuntimeGaitPolicy low_policy{};
+    low_policy.cadence_hz = FrequencyHz{0.2};
+
+    RuntimeGaitPolicy high_policy = low_policy;
+    high_policy.cadence_hz = FrequencyHz{2.5};
+
+    gait.update(est, walk, safety, low_policy);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(8));
+    const GaitState ramp_start = gait.update(est, walk, safety, low_policy);
+    TimePointUs previous_time = ramp_start.timestamp_us;
+    double previous_rate = ramp_start.stride_phase_rate_hz.value;
+
+    for (int i = 0; i < 6; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(8));
+        const GaitState ramped = gait.update(est, walk, safety, high_policy);
+        const double dt_sec = static_cast<double>((ramped.timestamp_us - previous_time).value) * 1e-6;
+        const double delta_rate = ramped.stride_phase_rate_hz.value - previous_rate;
+        const double max_up = kCadenceSlewUpHzPerSec * std::max(0.0, dt_sec) + kSlewToleranceHz;
+        if (!expect(delta_rate <= max_up, "abrupt cadence increase exceeded up slew limit")) {
+            return false;
+        }
+        if (!expect(delta_rate >= -kSlewToleranceHz,
+                    "cadence increase produced negative slew delta (sign error)")) {
+            return false;
+        }
+        previous_time = ramped.timestamp_us;
+        previous_rate = ramped.stride_phase_rate_hz.value;
+    }
+
+    for (int i = 0; i < 6; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(8));
+        const GaitState ramped = gait.update(est, walk, safety, low_policy);
+        const double dt_sec = static_cast<double>((ramped.timestamp_us - previous_time).value) * 1e-6;
+        const double delta_rate = ramped.stride_phase_rate_hz.value - previous_rate;
+        const double max_down = kCadenceSlewDownHzPerSec * std::max(0.0, dt_sec) + kSlewToleranceHz;
+        if (!expect((-delta_rate) <= max_down, "abrupt cadence decrease exceeded down slew limit")) {
+            return false;
+        }
+        if (!expect(delta_rate <= kSlewToleranceHz,
+                    "cadence decrease produced positive slew delta (sign error)")) {
+            return false;
+        }
+        if (!expect(ramped.stride_phase_rate_hz.value >= -kSlewToleranceHz,
+                    "cadence should never cross negative while ramping down")) {
+            return false;
+        }
+        previous_time = ramped.timestamp_us;
+        previous_rate = ramped.stride_phase_rate_hz.value;
+    }
+
+    const GaitState stopped = gait.update(est, stop, safety, high_policy);
+    if (!expect(stopped.stride_phase_rate_hz.value == 0.0, "stopping walk should force zero cadence")) {
+        return false;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(8));
+    const GaitState restarted = gait.update(est, walk, safety, high_policy);
+    if (!expect(restarted.stride_phase_rate_hz.value >= 0.0, "restart should not produce negative cadence")) {
+        return false;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(8));
+    const GaitState restarted_2 = gait.update(est, walk, safety, high_policy);
+    const double restart_dt_sec = static_cast<double>((restarted_2.timestamp_us - restarted.timestamp_us).value) * 1e-6;
+    const double restart_delta = restarted_2.stride_phase_rate_hz.value - restarted.stride_phase_rate_hz.value;
+    const double restart_max_up = kCadenceSlewUpHzPerSec * std::max(0.0, restart_dt_sec) + kSlewToleranceHz;
+
+    return expect(restart_delta >= -kSlewToleranceHz,
+                  "restart cadence ramp should not flip sign") &&
+           expect(restart_delta <= restart_max_up,
+                  "restart cadence ramp should still obey up slew limit");
+}
+
 bool bodyControllerUsesGaitState() {
     BodyController body;
     RobotState est{};
@@ -348,6 +448,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!gaitSchedulerRecoversWithoutPhaseSnapAfterTransientInstability()) {
+        return EXIT_FAILURE;
+    }
+    if (!gaitSchedulerCadenceSlewRespectsUpDownLimitsAndWalkRestartSign()) {
         return EXIT_FAILURE;
     }
     if (!bodyControllerUsesGaitState()) {
