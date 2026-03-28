@@ -448,6 +448,170 @@ bool unit_motion_limiter_rejects_non_finite_commands() {
                   "rejecting non-finite commands should mark limiter intent as modified");
 }
 
+
+
+bool scenario_first_motion_startup_transients_not_history_sensitive() {
+    ControlPipeline fresh_pipeline;
+    ControlPipeline history_pipeline;
+
+    RobotState fresh_est = nominalEstimatedState();
+    RobotState history_est = nominalEstimatedState();
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    safety.torque_cut = false;
+    safety.stable = true;
+    safety.support_contact_count = 6;
+
+    const DurationSec loop_dt{0.02};
+
+    MotionIntent idle{};
+    idle.requested_mode = RobotMode::SAFE_IDLE;
+
+    auto runStep = [&](ControlPipeline& pipeline,
+                       RobotState& est,
+                       MotionIntent& intent,
+                       uint64_t cycle,
+                       bool update_estimate) {
+        intent.sample_id += 1;
+        intent.timestamp_us = now_us();
+        est.timestamp_us = now_us();
+        const PipelineStepResult result = pipeline.runStep(est, intent, safety, loop_dt, true, cycle);
+        if (update_estimate) {
+            est.leg_states = result.joint_targets.leg_states;
+        }
+        return result;
+    };
+
+    (void)runStep(fresh_pipeline, fresh_est, idle, 1, true);
+    (void)runStep(history_pipeline, history_est, idle, 1, true);
+
+    MotionIntent history_stand = idle;
+    history_stand.requested_mode = RobotMode::STAND;
+    history_stand.body_pose_setpoint.body_trans_m.z = 0.20;
+    MotionIntent history_walk = walkingIntent();
+    history_walk.speed_mps = LinearRateMps{0.18};
+    history_walk.heading_rad = AngleRad{0.35};
+    history_walk.body_pose_setpoint.body_trans_m = Vec3{0.03, -0.02, 0.22};
+
+    for (uint64_t cycle = 2; cycle <= 13; ++cycle) {
+        (void)runStep(history_pipeline, history_est, history_stand, cycle, true);
+    }
+    for (uint64_t cycle = 14; cycle <= 31; ++cycle) {
+        (void)runStep(history_pipeline, history_est, history_walk, cycle, true);
+    }
+    for (uint64_t cycle = 32; cycle <= 43; ++cycle) {
+        (void)runStep(history_pipeline, history_est, history_stand, cycle, true);
+    }
+
+    MotionIntent first_motion = walkingIntent();
+    first_motion.speed_mps = LinearRateMps{0.16};
+    first_motion.heading_rad = AngleRad{0.20};
+    first_motion.body_pose_setpoint.body_trans_m = Vec3{0.02, 0.01, 0.21};
+    first_motion.body_pose_setpoint.body_trans_mps = Vec3{0.06, 0.00, 0.00};
+    first_motion.body_pose_setpoint.angular_velocity_radps = Vec3{0.0, 0.0, 0.45};
+
+    MotionIntent fresh_first_motion = first_motion;
+    MotionIntent history_first_motion = first_motion;
+
+    RobotState fresh_pre_first = fresh_est;
+    RobotState history_pre_first = history_est;
+
+    const PipelineStepResult fresh_first = runStep(fresh_pipeline, fresh_est, fresh_first_motion, 44, true);
+    const PipelineStepResult history_first = runStep(history_pipeline, history_est, history_first_motion, 44, true);
+
+    constexpr int kTransientCycles = 6;
+    double fresh_peak_foot_vel = 0.0;
+    double history_peak_foot_vel = 0.0;
+    double fresh_peak_joint_vel = 0.0;
+    double history_peak_joint_vel = 0.0;
+    double fresh_first_cycle_joint_vel = 0.0;
+    double history_first_cycle_joint_vel = 0.0;
+    double fresh_followup_peak_joint_vel = 0.0;
+    double history_followup_peak_joint_vel = 0.0;
+
+    auto stepPeakJointVelocity = [&](const PipelineStepResult& result, const RobotState& est_before) {
+        double step_peak_joint_vel = 0.0;
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+                const double prev_pos = est_before.leg_states[leg].joint_state[joint].pos_rad.value;
+                const double next_pos = result.joint_targets.leg_states[leg].joint_state[joint].pos_rad.value;
+                step_peak_joint_vel = std::max(step_peak_joint_vel, std::abs(next_pos - prev_pos) / loop_dt.value);
+            }
+        }
+        return step_peak_joint_vel;
+    };
+
+    auto updateFootVelocityPeak = [&](const PipelineStepResult& result, double& peak_foot_vel) {
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            const Vec3 v = result.leg_targets.feet[leg].vel_body_mps;
+            peak_foot_vel = std::max(peak_foot_vel, std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z));
+        }
+    };
+
+    updateFootVelocityPeak(fresh_first, fresh_peak_foot_vel);
+    fresh_first_cycle_joint_vel = stepPeakJointVelocity(fresh_first, fresh_pre_first);
+    fresh_peak_joint_vel = std::max(fresh_peak_joint_vel, fresh_first_cycle_joint_vel);
+
+    updateFootVelocityPeak(history_first, history_peak_foot_vel);
+    history_first_cycle_joint_vel = stepPeakJointVelocity(history_first, history_pre_first);
+    history_peak_joint_vel = std::max(history_peak_joint_vel, history_first_cycle_joint_vel);
+
+    for (int i = 1; i < kTransientCycles; ++i) {
+        RobotState fresh_prev = fresh_est;
+        const PipelineStepResult fresh_step =
+            runStep(fresh_pipeline, fresh_est, fresh_first_motion, 44 + static_cast<uint64_t>(i), true);
+        updateFootVelocityPeak(fresh_step, fresh_peak_foot_vel);
+        const double fresh_step_peak_joint_vel = stepPeakJointVelocity(fresh_step, fresh_prev);
+        fresh_peak_joint_vel = std::max(fresh_peak_joint_vel, fresh_step_peak_joint_vel);
+        fresh_followup_peak_joint_vel = std::max(fresh_followup_peak_joint_vel, fresh_step_peak_joint_vel);
+
+        RobotState history_prev = history_est;
+        const PipelineStepResult history_step =
+            runStep(history_pipeline, history_est, history_first_motion, 44 + static_cast<uint64_t>(i), true);
+        updateFootVelocityPeak(history_step, history_peak_foot_vel);
+        const double history_step_peak_joint_vel = stepPeakJointVelocity(history_step, history_prev);
+        history_peak_joint_vel = std::max(history_peak_joint_vel, history_step_peak_joint_vel);
+        history_followup_peak_joint_vel = std::max(history_followup_peak_joint_vel, history_step_peak_joint_vel);
+    }
+
+    const double foot_vel_budget = control_config::kDefaultMotionFootVelocityLimitMps * 1.15;
+    const double startup_joint_vel_budget = 12.0;
+    const double followup_joint_vel_budget = control_config::kDefaultMotionJointSoftVelocityLimitRadps * 1.30;
+    const double peak_foot_vel_delta = std::abs(fresh_peak_foot_vel - history_peak_foot_vel);
+    const double first_cycle_joint_vel_delta =
+        std::abs(fresh_first_cycle_joint_vel - history_first_cycle_joint_vel);
+    const double followup_peak_joint_vel_delta =
+        std::abs(fresh_followup_peak_joint_vel - history_followup_peak_joint_vel);
+    const double first_command_delta_m = std::sqrt(
+        std::pow(fresh_first.leg_targets.feet[0].pos_body_m.x - history_first.leg_targets.feet[0].pos_body_m.x, 2.0) +
+        std::pow(fresh_first.leg_targets.feet[0].pos_body_m.y - history_first.leg_targets.feet[0].pos_body_m.y, 2.0) +
+        std::pow(fresh_first.leg_targets.feet[0].pos_body_m.z - history_first.leg_targets.feet[0].pos_body_m.z, 2.0));
+    return expect(fresh_first.status.active_fault == FaultCode::NONE,
+                  "fresh runtime first-motion command should not trip safety faults") &&
+           expect(history_first.status.active_fault == FaultCode::NONE,
+                  "history-conditioned first-motion command should not trip safety faults") &&
+           expect(fresh_peak_foot_vel <= foot_vel_budget,
+                  "fresh runtime first-motion startup transient should stay within foot-velocity budget") &&
+           expect(history_peak_foot_vel <= foot_vel_budget,
+                  "history-conditioned first-motion startup transient should stay within foot-velocity budget") &&
+           expect(fresh_peak_joint_vel <= startup_joint_vel_budget,
+                  "fresh runtime first-motion startup transient should stay within startup joint-velocity budget") &&
+           expect(history_peak_joint_vel <= startup_joint_vel_budget,
+                  "history-conditioned first-motion startup transient should stay within startup joint-velocity budget") &&
+           expect(fresh_followup_peak_joint_vel <= followup_joint_vel_budget,
+                  "fresh runtime post-startup transient should stay within follow-up joint-velocity budget") &&
+           expect(history_followup_peak_joint_vel <= followup_joint_vel_budget,
+                  "history-conditioned post-startup transient should stay within follow-up joint-velocity budget") &&
+           expect(peak_foot_vel_delta <= 0.12,
+                  "startup transient peak foot velocity should be insensitive to prior stand/walk/stand history") &&
+           expect(first_cycle_joint_vel_delta <= 8.0,
+                  "first-cycle startup joint transient may differ by history but should remain bounded") &&
+           expect(followup_peak_joint_vel_delta <= 2.5,
+                  "post-startup joint transient peak should remain bounded despite expected gait-phase history effects") &&
+           expect(first_command_delta_m <= 0.05,
+                  "first motion command output should only vary modestly with expected stateful history effects");
+}
+
 bool integration_gait_scheduler_progress_tracks_elapsed_dt() {
     GaitScheduler scheduler;
     RobotState est = nominalEstimatedState();
@@ -507,6 +671,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!integration_gait_scheduler_progress_tracks_elapsed_dt()) {
+        return EXIT_FAILURE;
+    }
+    if (!scenario_first_motion_startup_transients_not_history_sensitive()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
