@@ -14,6 +14,10 @@ bool expect(bool condition, const char* message) {
     return true;
 }
 
+bool almostEqual(double a, double b, double eps = 1e-9) {
+    return std::abs(a - b) < eps;
+}
+
 RobotState makeNeutralRaw(uint64_t sample_id, uint64_t timestamp_us) {
     RobotState raw{};
     raw.sample_id = sample_id;
@@ -32,10 +36,32 @@ RobotState makeNeutralRaw(uint64_t sample_id, uint64_t timestamp_us) {
 } // namespace
 
 int main() {
-    SimpleEstimator estimator{};
+    // Subcase 1: IMU-present raw pose => availability true (orientation source: measured/IMU).
+    SimpleEstimator imu_estimator{};
+    RobotState imu_raw = makeNeutralRaw(1, 1'000'000);
+    imu_raw.has_measured_body_pose_state = true;
+    imu_raw.has_body_pose_state = true;
+    imu_raw.body_pose_state.orientation_rad = EulerAnglesRad3{0.11, -0.07, 0.42};
+    const RobotState imu_est = imu_estimator.update(imu_raw);
+    if (!expect(imu_est.has_body_pose_state,
+                "IMU-present update should report aggregate body pose availability") ||
+        !expect(imu_est.has_measured_body_pose_state,
+                "IMU-present update should report measured body pose availability") ||
+        !expect(!imu_est.has_inferred_body_pose_state,
+                "IMU-present update should keep orientation source as measured, not inferred") ||
+        !expect(almostEqual(imu_est.body_pose_state.orientation_rad.x, imu_raw.body_pose_state.orientation_rad.x),
+                "IMU-present update should preserve IMU roll") ||
+        !expect(almostEqual(imu_est.body_pose_state.orientation_rad.y, imu_raw.body_pose_state.orientation_rad.y),
+                "IMU-present update should preserve IMU pitch") ||
+        !expect(almostEqual(imu_est.body_pose_state.orientation_rad.z, imu_raw.body_pose_state.orientation_rad.z),
+                "IMU-present update should preserve IMU yaw")) {
+        return EXIT_FAILURE;
+    }
 
+    // Subcase 2: IMU-absent but solvable ground plane => availability true (orientation source: inferred).
+    SimpleEstimator inferred_estimator{};
     const RobotState first = makeNeutralRaw(1, 1'000'000);
-    const RobotState first_est = estimator.update(first);
+    const RobotState first_est = inferred_estimator.update(first);
 
     if (!expect(first_est.has_inferred_body_pose_state,
                 "ground-plane estimate should mark inferred body pose as available") ||
@@ -43,6 +69,8 @@ int main() {
                 "ground-plane-only estimate should not claim measured body pose") ||
         !expect(first_est.has_body_pose_state,
                 "aggregate body pose availability should include inferred estimates") ||
+        !expect(almostEqual(first_est.body_pose_state.orientation_rad.z, 0.0),
+                "inferred orientation source should set yaw to zero") ||
         !expect(first_est.body_pose_state.body_trans_m.z > 0.0,
                 "neutral stance should estimate body above the ground plane")) {
         return EXIT_FAILURE;
@@ -54,9 +82,11 @@ int main() {
     no_contact_recent.foot_contacts = {false, false, false, false, false, false};
     no_contact_recent.leg_states[0].joint_state[COXA].pos_rad = AngleRad{0.1};
 
-    const RobotState recent_est = estimator.update(no_contact_recent);
+    const RobotState recent_est = inferred_estimator.update(no_contact_recent);
     if (!expect(recent_est.body_pose_state.body_trans_m.z > 0.0,
                 "recently touching feet should still support a ground estimate") ||
+        !expect(recent_est.has_inferred_body_pose_state && !recent_est.has_measured_body_pose_state,
+                "without IMU input, orientation source should remain inferred while memory is valid") ||
         !expect(std::abs(recent_est.leg_states[0].joint_state[COXA].vel_radps.value - 1.0) < 1e-6,
                 "joint velocity should be estimated from position delta over dt")) {
         return EXIT_FAILURE;
@@ -66,7 +96,7 @@ int main() {
     no_contact_stale.sample_id = 3;
     no_contact_stale.timestamp_us = TimePointUs{1'500'001};
 
-    const RobotState stale_est = estimator.update(no_contact_stale);
+    const RobotState stale_est = inferred_estimator.update(no_contact_stale);
     if (!expect(std::abs(stale_est.body_pose_state.body_trans_m.z) < 1e-9,
                 "stale no-contact window should clear ground estimate") ||
         !expect(!stale_est.has_inferred_body_pose_state,
@@ -78,9 +108,23 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    // Subcase 3: IMU-absent and unsolved ground plane => availability false (orientation source: none).
+    SimpleEstimator unsolved_estimator{};
+    RobotState unsolved_raw = makeNeutralRaw(1, 1'000'000);
+    unsolved_raw.foot_contacts = {false, false, false, false, false, false};
+    const RobotState unsolved_est = unsolved_estimator.update(unsolved_raw);
+    if (!expect(!unsolved_est.has_measured_body_pose_state,
+                "unsolved case should not have measured orientation source") ||
+        !expect(!unsolved_est.has_inferred_body_pose_state,
+                "unsolved case should not have inferred orientation source") ||
+        !expect(!unsolved_est.has_body_pose_state,
+                "unsolved case should report body pose unavailable")) {
+        return EXIT_FAILURE;
+    }
+
     RobotState stance_motion_a = makeNeutralRaw(4, 2'000'000);
     stance_motion_a.foot_contacts = {true, false, false, false, false, false};
-    const RobotState stance_motion_a_est = estimator.update(stance_motion_a);
+    const RobotState stance_motion_a_est = inferred_estimator.update(stance_motion_a);
     (void)stance_motion_a_est;
 
     RobotState stance_motion_b = stance_motion_a;
@@ -89,7 +133,7 @@ int main() {
     stance_motion_b.foot_contacts = {true, false, false, false, false, false};
     stance_motion_b.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{0.05};
 
-    const RobotState stance_motion_b_est = estimator.update(stance_motion_b);
+    const RobotState stance_motion_b_est = inferred_estimator.update(stance_motion_b);
     const double planar_speed =
         std::hypot(stance_motion_b_est.body_pose_state.body_trans_mps.x,
                    stance_motion_b_est.body_pose_state.body_trans_mps.y);
