@@ -8,7 +8,9 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <random>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -442,6 +444,135 @@ bool runMixedIntentPublisherSampleIdCase() {
                   "mixed intent publishers should not trigger freshness COMMAND_TIMEOUT");
 }
 
+bool runLoopInterleavingJitterStressCase() {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<ScriptedEstimator>();
+    auto* scripted = estimator.get();
+
+    control_config::ControlConfig cfg{};
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{2'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{2'000};
+    cfg.freshness.estimator.require_timestamp = true;
+    cfg.freshness.intent.require_timestamp = true;
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, cfg);
+
+    if (!expect(runtime.init(), "init should succeed (loop interleaving jitter stress case)")) {
+        return false;
+    }
+
+    std::mt19937 rng(0xC0FFEEu);
+    std::uniform_int_distribution<int> jitter_us_dist(0, 150);
+    std::uniform_int_distribution<int> interleave_dist(0, 5);
+
+    uint64_t est_sample_id = 1'000;
+    uint64_t intent_sample_id = 1'000;
+    bool observed_reject = false;
+    bool observed_walk = false;
+
+    for (int cycle = 0; cycle < 180; ++cycle) {
+        const bool stale_estimator = (cycle % 11) == 0;
+        const bool stale_intent = (cycle % 13) == 0;
+
+        RobotState estimator_sample = makeEstimatorSample(++est_sample_id, now_us());
+        if (stale_estimator) {
+            estimator_sample.timestamp_us = TimePointUs{1};
+        }
+        scripted->enqueue(estimator_sample);
+
+        MotionIntent intent = makeIntentSample(++intent_sample_id, now_us());
+        if (stale_intent) {
+            intent.timestamp_us = TimePointUs{1};
+        }
+        runtime.setMotionIntentForTest(intent);
+
+        switch (interleave_dist(rng)) {
+        case 0:
+            runtime.busStep();
+            std::this_thread::sleep_for(std::chrono::microseconds(jitter_us_dist(rng)));
+            runtime.estimatorStep();
+            std::this_thread::sleep_for(std::chrono::microseconds(jitter_us_dist(rng)));
+            runtime.safetyStep();
+            runtime.controlStep();
+            break;
+        case 1:
+            runtime.busStep();
+            runtime.safetyStep();
+            std::this_thread::sleep_for(std::chrono::microseconds(jitter_us_dist(rng)));
+            runtime.estimatorStep();
+            runtime.controlStep();
+            break;
+        case 2:
+            runtime.estimatorStep();
+            runtime.busStep();
+            runtime.safetyStep();
+            runtime.controlStep();
+            break;
+        case 3:
+            runtime.busStep();
+            runtime.estimatorStep();
+            runtime.controlStep();
+            runtime.safetyStep();
+            break;
+        case 4:
+            runtime.busStep();
+            runtime.estimatorStep();
+            runtime.safetyStep();
+            runtime.busStep();
+            runtime.controlStep();
+            break;
+        default:
+            runtime.safetyStep();
+            runtime.busStep();
+            runtime.estimatorStep();
+            runtime.safetyStep();
+            runtime.controlStep();
+            break;
+        }
+
+        const ControlStatus status = runtime.getStatus();
+        if (status.active_mode == RobotMode::WALK) {
+            observed_walk = true;
+        }
+        if (status.active_fault == FaultCode::COMMAND_TIMEOUT ||
+            status.active_fault == FaultCode::ESTIMATOR_INVALID) {
+            observed_reject = true;
+        }
+
+        if (!expect(status.active_fault == FaultCode::NONE || status.active_mode == RobotMode::SAFE_IDLE,
+                    "faulted status should always force SAFE_IDLE under interleaving jitter")) {
+            return false;
+        }
+
+        if (status.active_fault == FaultCode::ESTIMATOR_INVALID) {
+            if (!expect(!status.estimator_valid,
+                        "ESTIMATOR_INVALID should always set estimator_valid=false")) {
+                return false;
+            }
+        }
+
+        if (status.active_fault == FaultCode::COMMAND_TIMEOUT) {
+            if (!expect(status.estimator_valid,
+                        "COMMAND_TIMEOUT should preserve estimator_valid=true when only intent is stale")) {
+                return false;
+            }
+        }
+
+        if (status.active_mode == RobotMode::WALK) {
+            if (!expect(status.active_fault == FaultCode::NONE,
+                        "WALK mode should never report a fault under interleaving jitter")) {
+                return false;
+            }
+            if (!expect(status.estimator_valid,
+                        "WALK mode should require estimator_valid=true")) {
+                return false;
+            }
+        }
+    }
+
+    return expect(observed_walk, "jitter stress should include accepted WALK outputs") &&
+           expect(observed_reject, "jitter stress should include freshness rejects");
+}
+
 } // namespace
 
 int main() {
@@ -525,6 +656,10 @@ int main() {
     }
 
     if (!runMixedIntentPublisherSampleIdCase()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runLoopInterleavingJitterStressCase()) {
         return EXIT_FAILURE;
     }
 
