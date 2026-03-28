@@ -128,7 +128,7 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
             .is_triggered = [&](void) {
                 const bool hard_fault_context =
                     !raw.bus_ok || raw.voltage < config_.min_bus_voltage_v || raw.current > config_.max_bus_current_a;
-                return ((est.has_body_pose_state || hard_fault_context) &&
+                return ((est.has_measured_body_pose_state || hard_fault_context) &&
                         (std::abs(est.body_pose_state.orientation_rad.x) > config_.max_tilt_rad.value ||
                          std::abs(est.body_pose_state.orientation_rad.y) > config_.max_tilt_rad.value)) ||
                        (freshness.estimator_valid && !stability.com_inside_support_polygon);
@@ -206,7 +206,7 @@ SafetyState SafetySupervisor::evaluate(const RobotState& raw,
     const bool hard_fault_context =
         !raw.bus_ok || raw.voltage < config_.min_bus_voltage_v || raw.current > config_.max_bus_current_a;
     const bool tip_over_from_tilt =
-        est.has_body_pose_state &&
+        est.has_measured_body_pose_state &&
         (std::abs(est.body_pose_state.orientation_rad.x) > config_.max_tilt_rad.value ||
          std::abs(est.body_pose_state.orientation_rad.y) > config_.max_tilt_rad.value);
     const bool tip_over_from_support = freshness.estimator_valid && !stability.com_inside_support_polygon;

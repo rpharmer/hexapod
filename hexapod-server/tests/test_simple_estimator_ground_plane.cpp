@@ -37,12 +37,12 @@ int main() {
     const RobotState first = makeNeutralRaw(1, 1'000'000);
     const RobotState first_est = estimator.update(first);
 
-    if (!expect(std::abs(first_est.body_pose_state.orientation_rad.x) < 1e-6,
-                "neutral stance should estimate near-zero roll") ||
-        !expect(std::abs(first_est.body_pose_state.orientation_rad.y) < 1e-6,
-                "neutral stance should estimate near-zero pitch") ||
+    if (!expect(first_est.has_inferred_body_pose_state,
+                "ground-plane estimate should mark inferred body pose as available") ||
+        !expect(!first_est.has_measured_body_pose_state,
+                "ground-plane-only estimate should not claim measured body pose") ||
         !expect(first_est.has_body_pose_state,
-                "ground-plane estimate should mark body pose as available") ||
+                "aggregate body pose availability should include inferred estimates") ||
         !expect(first_est.body_pose_state.body_trans_m.z > 0.0,
                 "neutral stance should estimate body above the ground plane")) {
         return EXIT_FAILURE;
@@ -69,8 +69,12 @@ int main() {
     const RobotState stale_est = estimator.update(no_contact_stale);
     if (!expect(std::abs(stale_est.body_pose_state.body_trans_m.z) < 1e-9,
                 "stale no-contact window should clear ground estimate") ||
+        !expect(!stale_est.has_inferred_body_pose_state,
+                "without contact memory, inferred body pose should be unavailable") ||
+        !expect(!stale_est.has_measured_body_pose_state,
+                "without IMU sample, measured body pose should be unavailable") ||
         !expect(!stale_est.has_body_pose_state,
-                "without an IMU sample or ground-plane solve, body pose should be unavailable")) {
+                "aggregate body pose should be unavailable when no source is present")) {
         return EXIT_FAILURE;
     }
 

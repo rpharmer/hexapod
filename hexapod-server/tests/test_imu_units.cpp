@@ -48,6 +48,7 @@ int main() {
     RobotState raw{};
     raw.sample_id = 1;
     raw.timestamp_us = now_us();
+    raw.has_measured_body_pose_state = true;
     raw.has_body_pose_state = true;
     raw.body_pose_state.orientation_rad = EulerAnglesRad3{0.11, -0.07, 0.42};
     raw.body_pose_state.angular_velocity_radps = AngularVelocityRadPerSec3{0.5, 0.4, 0.3};

@@ -263,6 +263,64 @@ bool testLocomotionDiagnosticsEmitSaneRanges() {
                   "total body movement should accumulate over reported walk samples");
 }
 
+bool testPhaseRateUsesWrappedUnitIntervalDistance() {
+    FreshnessPolicy freshness_policy{};
+    const auto logger = std::make_shared<logging::AsyncLogger>(
+        "test-runtime-phase-wrap-diag", logging::LogLevel::Trace, 256);
+    const auto collecting_sink = std::make_shared<CollectingSink>();
+    logger->AddSink(collecting_sink);
+
+    RuntimeDiagnosticsReporter reporter(logger, freshness_policy);
+    ControlStatus status{};
+    status.active_mode = RobotMode::WALK;
+    status.estimator_valid = true;
+    status.active_fault = FaultCode::NONE;
+    status.dynamic_gait.leg_phase.fill(0.99);
+
+    JointTargets joints{};
+    LegTargets leg_targets{};
+
+    reporter.recordControlOutputs(joints, status, TimePointUs{1'000'000}, &leg_targets);
+
+    status.dynamic_gait.leg_phase.fill(0.01);
+    reporter.recordControlOutputs(joints, status, TimePointUs{1'100'000}, &leg_targets);
+
+    RobotState estimated_state{};
+    estimated_state.valid = true;
+    estimated_state.has_body_pose_state = true;
+    SafetyState safety_state{};
+    safety_state.stable = true;
+
+    reporter.report(status,
+                    estimated_state,
+                    safety_state,
+                    std::nullopt,
+                    2,
+                    1000,
+                    100,
+                    LoopTimingRollingMetrics{},
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0);
+    logger->Flush();
+
+    const auto latest = latestInfoLineContaining(collecting_sink->entries, "gait_variability_diag={");
+    if (!expect(latest.has_value(), "runtime.metrics should include gait_variability_diag payload")) {
+        logger->Stop();
+        return false;
+    }
+    const auto peak_phase_delta_per_s = extractFieldValue(*latest, "peak_phase_delta_per_s");
+    logger->Stop();
+
+    return expect(peak_phase_delta_per_s.has_value(), "gait variability should report peak_phase_delta_per_s") &&
+           expect(*peak_phase_delta_per_s < 1.0,
+                  "wrapped transition 0.99->0.01 over 0.1s should stay small, not spike-sized");
+}
+
 } // namespace
 
 int main() {
@@ -270,6 +328,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!testLocomotionDiagnosticsEmitSaneRanges()) {
+        return EXIT_FAILURE;
+    }
+    if (!testPhaseRateUsesWrappedUnitIntervalDistance()) {
         return EXIT_FAILURE;
     }
 

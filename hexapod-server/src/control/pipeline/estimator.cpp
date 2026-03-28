@@ -82,7 +82,9 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
     est.foot_contacts = raw.foot_contacts;
     est.sample_id = raw.sample_id;
     est.timestamp_us = raw.timestamp_us;
-    est.has_body_pose_state = raw.has_body_pose_state;
+    est.has_measured_body_pose_state = raw.has_measured_body_pose_state;
+    est.has_inferred_body_pose_state = raw.has_inferred_body_pose_state;
+    est.has_body_pose_state = est.has_measured_body_pose_state || est.has_inferred_body_pose_state;
     est.body_pose_state.body_trans_mps = Vec3{};
 
     double dt_s = 0.0;
@@ -157,7 +159,7 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
         est.body_pose_state.body_trans_mps = Vec3{};
     }
 
-    if (raw.has_body_pose_state) {
+    if (raw.has_measured_body_pose_state) {
         est.body_pose_state.orientation_rad = raw.body_pose_state.orientation_rad;
         est.body_pose_state.angular_velocity_radps = raw.body_pose_state.angular_velocity_radps;
 
@@ -178,11 +180,12 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
     double b = 0.0;
     double c = 0.0;
     if (solveGroundPlane(support_points_body_m, support_point_valid, a, b, c)) {
-        if (!raw.has_body_pose_state) {
+        if (!raw.has_measured_body_pose_state) {
             est.body_pose_state.orientation_rad.x = std::atan2(-b, 1.0);
             est.body_pose_state.orientation_rad.y = std::atan2(a, 1.0);
             est.body_pose_state.orientation_rad.z = 0.0;
-            est.has_body_pose_state = true;
+            est.has_inferred_body_pose_state = true;
+            est.has_body_pose_state = est.has_measured_body_pose_state || est.has_inferred_body_pose_state;
         }
 
         est.body_pose_state.body_trans_m.x = 0.0;
@@ -197,7 +200,7 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
                     static_cast<Vec3>(est.body_pose_state.orientation_rad) - last_orientation_rad_;
                 const Vec3 body_trans_delta =
                     static_cast<Vec3>(est.body_pose_state.body_trans_m) - last_body_translation_m_;
-                if (!raw.has_body_pose_state) {
+                if (!raw.has_measured_body_pose_state) {
                     est.body_pose_state.angular_velocity_radps =
                         AngularVelocityRadPerSec3{orientation_delta * (1.0 / dt_s)};
                 }
@@ -213,5 +216,6 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
         last_body_translation_m_ = est.body_pose_state.body_trans_m;
     }
 
+    est.has_body_pose_state = est.has_measured_body_pose_state || est.has_inferred_body_pose_state;
     return est;
 }

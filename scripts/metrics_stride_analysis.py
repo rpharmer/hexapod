@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 import statistics
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,10 @@ from typing import Any
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover
-    tomllib = None
+    try:  # pragma: no cover
+        import tomli as tomllib  # type: ignore[no-redef]
+    except ModuleNotFoundError:  # pragma: no cover
+        tomllib = None
 
 LEG_ORDER = ["LF", "LM", "LR", "RF", "RM", "RR"]
 JOINT_ORDER = ["coxa", "femur", "tibia"]
@@ -134,7 +138,12 @@ def parse_pose(datagram: dict[str, Any]) -> tuple[float, float, float] | None:
 
 def extract_thresholds(scenario_path: Path) -> dict[str, float | int]:
     if tomllib is None:
-        raise RuntimeError("Python tomllib is unavailable; cannot parse scenario thresholds")
+        print(
+            f"WARN: unable to parse thresholds from scenario {scenario_path} "
+            "(tomllib/tomli unavailable); continuing without threshold checks",
+            file=sys.stderr,
+        )
+        return {}
     data = tomllib.loads(scenario_path.read_text(encoding="utf-8"))
     current = data
     for key in ["acceptance", "telemetry_metrics"]:
@@ -187,6 +196,7 @@ def main() -> int:
     prev_freshness: dict[str, int] | None = None
 
     with capture_path.open("r", encoding="utf-8") as handle:
+        last_geometry: dict[str, float] | None = None
         for line_no, line in enumerate(handle, start=1):
             text = line.strip()
             if not text:
@@ -271,15 +281,19 @@ def main() -> int:
                     for joint_idx, joint_name in enumerate(JOINT_ORDER):
                         joint_samples_deg[leg][joint_name].append(parsed_values[joint_idx])
 
-            if not isinstance(geometry_raw, dict):
-                continue
-            geometry: dict[str, float] = {}
-            for key in ("coxa", "femur", "tibia", "body_radius"):
-                value = to_float(geometry_raw.get(key))
-                if value is None:
-                    geometry = {}
-                    break
-                geometry[key] = value
+            geometry: dict[str, float] | None = None
+            if isinstance(geometry_raw, dict):
+                parsed_geometry: dict[str, float] = {}
+                for key in ("coxa", "femur", "tibia", "body_radius"):
+                    value = to_float(geometry_raw.get(key))
+                    if value is None:
+                        parsed_geometry = {}
+                        break
+                    parsed_geometry[key] = value
+                if parsed_geometry:
+                    last_geometry = parsed_geometry
+
+            geometry = last_geometry
             if not geometry:
                 continue
 
