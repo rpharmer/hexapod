@@ -6,8 +6,13 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
-from scripts.scenario_regression_harness import analyze_log
+from scripts.scenario_regression_harness import (
+    analyze_log,
+    resolve_thresholds,
+    validate_thresholds,
+)
 
 
 class ScenarioRegressionHarnessTests(unittest.TestCase):
@@ -47,6 +52,56 @@ class ScenarioRegressionHarnessTests(unittest.TestCase):
         self.assertEqual(stats.peak_velocity_radps, 0.0)
         self.assertEqual(stats.tip_over_events, 0)
         self.assertEqual(stats.max_tip_over_streak, 0)
+
+    def test_threshold_profile_defaults_and_overrides(self) -> None:
+        strict = resolve_thresholds(
+            SimpleNamespace(
+                threshold_profile="strict",
+                max_peak_foot_vel_mps=None,
+                max_peak_velocity_radps=None,
+                tip_over_persist_streak=None,
+            )
+        )
+        self.assertAlmostEqual(strict.max_peak_foot_vel_mps, 12.2)
+        self.assertAlmostEqual(strict.max_peak_velocity_radps, 25.0)
+        self.assertEqual(strict.tip_over_persist_streak, 2)
+
+        current_with_override = resolve_thresholds(
+            SimpleNamespace(
+                threshold_profile="current-baseline",
+                max_peak_foot_vel_mps=13.0,
+                max_peak_velocity_radps=None,
+                tip_over_persist_streak=4,
+            )
+        )
+        self.assertAlmostEqual(current_with_override.max_peak_foot_vel_mps, 13.0)
+        self.assertAlmostEqual(current_with_override.max_peak_velocity_radps, 120.0)
+        self.assertEqual(current_with_override.tip_over_persist_streak, 4)
+
+    def test_validate_thresholds_rejects_non_finite_or_non_positive_values(self) -> None:
+        with self.assertRaises(SystemExit):
+            validate_thresholds(
+                resolve_thresholds(
+                    SimpleNamespace(
+                        threshold_profile="current-baseline",
+                        max_peak_foot_vel_mps=float("nan"),
+                        max_peak_velocity_radps=None,
+                        tip_over_persist_streak=None,
+                    )
+                )
+            )
+
+        with self.assertRaises(SystemExit):
+            validate_thresholds(
+                resolve_thresholds(
+                    SimpleNamespace(
+                        threshold_profile="current-baseline",
+                        max_peak_foot_vel_mps=None,
+                        max_peak_velocity_radps=0.0,
+                        tip_over_persist_streak=None,
+                    )
+                )
+            )
 
 
 if __name__ == "__main__":

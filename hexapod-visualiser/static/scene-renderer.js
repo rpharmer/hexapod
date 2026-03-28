@@ -159,6 +159,59 @@ function normalizePoseCandidate(candidate) {
   return { x_m: candidate.x_m, y_m: candidate.y_m, yaw_rad: candidate.yaw_rad };
 }
 
+function normalizeAngleRad(angle) {
+  if (!Number.isFinite(angle)) {
+    return 0;
+  }
+  let normalized = angle;
+  while (normalized <= -Math.PI) {
+    normalized += Math.PI * 2;
+  }
+  while (normalized > Math.PI) {
+    normalized -= Math.PI * 2;
+  }
+  return normalized;
+}
+
+function resolveSmoothingAlpha(dtMs, halfLifeMs) {
+  if (!Number.isFinite(dtMs) || dtMs <= 0 || !Number.isFinite(halfLifeMs) || halfLifeMs <= 0) {
+    return 1;
+  }
+  return 1 - Math.exp((-Math.LN2 * Math.min(dtMs, 250)) / halfLifeMs);
+}
+
+export function smoothPoseOffsetForRender({
+  targetPose,
+  renderPoseState,
+  nowMs,
+  halfLifeMs = 85,
+}) {
+  if (
+    !targetPose ||
+    !Number.isFinite(targetPose.x) ||
+    !Number.isFinite(targetPose.y) ||
+    !Number.isFinite(targetPose.yaw)
+  ) {
+    return { x: 0, y: 0, yaw: 0 };
+  }
+
+  if (!renderPoseState.pose) {
+    renderPoseState.pose = { ...targetPose, yaw: normalizeAngleRad(targetPose.yaw) };
+    renderPoseState.lastRenderAtMs = nowMs;
+    return { ...renderPoseState.pose };
+  }
+
+  const dtMs = Number.isFinite(renderPoseState.lastRenderAtMs) ? nowMs - renderPoseState.lastRenderAtMs : 0;
+  const alpha = resolveSmoothingAlpha(dtMs, halfLifeMs);
+  const pose = renderPoseState.pose;
+  pose.x += (targetPose.x - pose.x) * alpha;
+  pose.y += (targetPose.y - pose.y) * alpha;
+  const yawDelta = normalizeAngleRad(targetPose.yaw - pose.yaw);
+  pose.yaw = normalizeAngleRad(pose.yaw + yawDelta * alpha);
+  renderPoseState.lastRenderAtMs = nowMs;
+  return { ...pose };
+}
+
 export function resolvePoseOffsetMm(model, poseState) {
   return resolvePoseOffsetWithSource(model, poseState).pose;
 }
@@ -189,6 +242,7 @@ export function resolvePoseOffsetWithSource(model, poseState) {
   };
   poseState.pose = { ...resolved };
   poseState.poseSource = absolutePoseSource.source;
+  poseState.hasSeenAbsolutePose = true;
   return { pose: resolved, poseSource: absolutePoseSource.source };
 }
 
@@ -425,6 +479,11 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
   const poseState = {
     pose: { x: 0, y: 0, yaw: 0 },
     poseSource: "missing_pose",
+    hasSeenAbsolutePose: false,
+    renderPoseState: {
+      pose: null,
+      lastRenderAtMs: Number.NaN,
+    },
   };
   const stanceLockState = {
     worldAnchorsByLeg: {},
@@ -446,7 +505,13 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     const scale = (Math.min(width, height) / 420) * camera.zoom;
     const centerX = width * 0.5 + camera.panX;
     const centerY = height * 0.58 + camera.panY;
+    const nowMs = performance.now();
     let { pose: poseOffset, poseSource } = resolvePoseOffsetWithSource(model, poseState);
+    poseOffset = smoothPoseOffsetForRender({
+      targetPose: poseOffset,
+      renderPoseState: poseState.renderPoseState,
+      nowMs,
+    });
     telemetry.poseSource = poseSource;
     const gridSpacingMm = 55;
     const kinematics = LEG_ORDER.map((legName) => ({
@@ -463,7 +528,7 @@ export function createSceneRenderer({ canvas, ctx, camera, statusEl, metaEl, rol
     }
     const groundPlaneZ = Number.isFinite(stableGroundPlaneZ) ? stableGroundPlaneZ : -120;
 
-    const canApplyStanceCorrection = poseSource === "missing_pose";
+    const canApplyStanceCorrection = poseSource === "missing_pose" && !poseState.hasSeenAbsolutePose;
     if (canApplyStanceCorrection) {
       const correctedPoseOffset = applyStanceContactLockCorrection({
         model,

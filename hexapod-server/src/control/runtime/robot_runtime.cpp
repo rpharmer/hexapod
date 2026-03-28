@@ -56,6 +56,26 @@ DurationSec measureClampedControlLoopDt(const TimePointUs& now,
                                   kControlLoopMeasuredDtMaxSec)};
 }
 
+JointTargets applyJointTargetSlewLimit(const JointTargets& requested,
+                                       const JointTargets& previous,
+                                       bool has_previous,
+                                       double dt_s) {
+    if (!has_previous || dt_s <= 0.0 || !std::isfinite(dt_s)) {
+        return requested;
+    }
+    const double max_step = kJointTargetSlewLimitRadPerSec * dt_s;
+    JointTargets limited = requested;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+            const double prev = previous.leg_states[leg].joint_state[joint].pos_rad.value;
+            const double req = requested.leg_states[leg].joint_state[joint].pos_rad.value;
+            limited.leg_states[leg].joint_state[joint].pos_rad.value =
+                prev + std::clamp(req - prev, -max_step, max_step);
+        }
+    }
+    return limited;
+}
+
 } // namespace
 
 bool RobotRuntime::init() {
@@ -298,7 +318,7 @@ void RobotRuntime::controlStep() {
     const DurationSec control_loop_dt =
         measureClampedControlLoopDt(now, last_control_step_timestamp_, configured_control_loop_dt);
     last_control_step_timestamp_ = now;
-    const PipelineStepResult result = pipeline_.runStep(
+    const PipelineStepResult pipeline_result = pipeline_.runStep(
         est,
         effective_intent,
         safety_state,
@@ -306,13 +326,19 @@ void RobotRuntime::controlStep() {
         bus_ok,
         loop_counter);
 
-    joint_targets_.write(result.joint_targets);
-    last_pipeline_joint_targets_ = result.joint_targets;
+    const JointTargets limited_targets = applyJointTargetSlewLimit(
+        pipeline_result.joint_targets,
+        last_pipeline_joint_targets_,
+        has_last_pipeline_joint_targets_,
+        control_loop_dt.value);
+
+    joint_targets_.write(limited_targets);
+    last_pipeline_joint_targets_ = limited_targets;
     has_last_pipeline_joint_targets_ = true;
-    ControlStatus runtime_status = result.status;
+    ControlStatus runtime_status = pipeline_result.status;
     applyAutonomyStatus(runtime_status);
     status_.write(runtime_status);
-    diagnostics_reporter_.recordControlOutputs(result.joint_targets, runtime_status, now, &result.leg_targets);
+    diagnostics_reporter_.recordControlOutputs(limited_targets, runtime_status, now, &pipeline_result.leg_targets);
 
     maybePublishTelemetry(now);
 }

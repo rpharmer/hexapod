@@ -255,11 +255,11 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     runtime.setAutonomyNoProgress(false);
     runtime.setMotionIntent(makeFreshWalkIntent());
     runRuntimeStep(runtime);
-    auto resumed_output = runtime.lastAutonomyStepOutput();
-    if (!expect(resumed_output.has_value(), "autonomy output should exist after recovery clears")) {
+    const auto resumed_after_recovery = runtime.lastAutonomyStepOutput();
+    if (!expect(resumed_after_recovery.has_value(), "autonomy output should exist after recovery clears")) {
         return false;
     }
-    const double resumed_speed_mps = autonomyCommandSpeedMps(*resumed_output, cfg);
+    const double resumed_speed_mps = autonomyCommandSpeedMps(*resumed_after_recovery, cfg);
     if (!expect(std::isfinite(resumed_speed_mps), "post-recovery autonomy speed should remain finite")) {
         return false;
     }
@@ -268,6 +268,9 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     }
     if (!expect(resumed_speed_mps <= (cfg.gait.fallback_speed_mag.value + 1e-9),
                 "post-recovery autonomy speed should respect fallback speed cap")) {
+        return false;
+    }
+
     const auto recovery_clear_output = runtime.lastAutonomyStepOutput();
     if (!expect(recovery_clear_output.has_value(), "autonomy output should exist when recovery clears")) {
         return false;
@@ -317,15 +320,9 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
 bool testRuntimeWithoutAutonomyKeepsOperatorWalkIntentStable() {
     control_config::ControlConfig cfg{};
     cfg.autonomy.enabled = false;
-bool testInterleavedManualAndAutonomyIntentsPreserveFreshnessAndSampleMonotonicity() {
-    control_config::ControlConfig cfg{};
-    cfg.autonomy.enabled = true;
-    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
-    cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
     cfg.telemetry.enabled = true;
     cfg.telemetry.publish_period = std::chrono::milliseconds{0};
     cfg.telemetry.geometry_refresh_period = std::chrono::milliseconds{1000};
-
     auto bridge = std::make_unique<SimHardwareBridge>();
     auto estimator = std::make_unique<PassThroughEstimator>();
     auto telemetry_publisher = std::make_unique<CapturingTelemetryPublisher>();
@@ -365,6 +362,29 @@ bool testInterleavedManualAndAutonomyIntentsPreserveFreshnessAndSampleMonotonici
     }
     if (!expect(std::abs(telemetry_raw->last_sample->motion_intent.heading_rad.value - walk.heading_rad.value) < 1e-9,
                 "telemetry motion intent should preserve operator heading command")) {
+        return false;
+    }
+
+    runtime.stop();
+    return true;
+}
+
+bool testInterleavedManualAndAutonomyIntentsPreserveFreshnessAndSampleMonotonicity() {
+    control_config::ControlConfig cfg{};
+    cfg.autonomy.enabled = true;
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.telemetry.enabled = true;
+    cfg.telemetry.publish_period = std::chrono::milliseconds{0};
+    cfg.telemetry.geometry_refresh_period = std::chrono::milliseconds{1000};
+
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<PassThroughEstimator>();
+    auto telemetry_publisher = std::make_unique<CapturingTelemetryPublisher>();
+    auto* telemetry_raw = telemetry_publisher.get();
+    RobotRuntime runtime(
+        std::move(bridge), std::move(estimator), nullptr, cfg, std::move(telemetry_publisher));
+
     if (!expect(runtime.init(), "runtime init should succeed for source-switching monotonicity test")) {
         return false;
     }

@@ -36,6 +36,8 @@ bool exactlyEqual(const MotionIntent& lhs, const MotionIntent& rhs) {
            exactlyEqual(lhs.body_pose_setpoint.body_trans_mps, rhs.body_pose_setpoint.body_trans_mps) &&
            lhs.sample_id == rhs.sample_id &&
            lhs.timestamp_us.value == rhs.timestamp_us.value;
+}
+
 bool allFiniteVec3(const Vec3& value) {
     return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
@@ -400,6 +402,8 @@ bool unit_motion_limiter_ignores_estimated_angular_velocity_spikes() {
                       std::abs(second_ang.y - expected_second.y) < 1e-12 &&
                       std::abs(second_ang.z - expected_second.z) < 1e-12,
                   "limited angular velocity should depend only on previous limited intent and accel bounds");
+}
+
 bool unit_motion_limiter_rejects_non_finite_commands() {
     MotionLimiter limiter{};
     RobotState est = nominalEstimatedState();
@@ -497,6 +501,8 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!unit_motion_limiter_ignores_estimated_angular_velocity_spikes()) {
+        return EXIT_FAILURE;
+    }
     if (!unit_motion_limiter_rejects_non_finite_commands()) {
         return EXIT_FAILURE;
     }
