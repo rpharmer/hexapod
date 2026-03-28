@@ -4,6 +4,13 @@
 
 namespace {
 
+constexpr int kSlipEnterThreshold = 2;
+constexpr int kSlipExitThreshold = 0;
+constexpr double kStanceConfidenceEnterThreshold = 0.40;
+constexpr double kStanceConfidenceExitThreshold = 0.60;
+constexpr int kSlipDecayStableCycles = 3;
+constexpr int kDegradedRecoveryStableCycles = 6;
+
 double swingProgress(const GaitState& gait,
                      const RuntimeGaitPolicy& policy,
                      int leg) {
@@ -43,10 +50,16 @@ ContactManagerOutput ContactManager::update(const RobotState& estimated,
         const bool slip_event = scheduled_stance && (!contact);
         if (slip_event) {
             ++leg_state.slip_count;
+            leg_state.stable_contact_cycles = 0;
             leg_state.stance_confidence = std::max(0.0, leg_state.stance_confidence - 0.20);
         } else if (scheduled_stance && contact) {
+            ++leg_state.stable_contact_cycles;
+            if (leg_state.stable_contact_cycles >= kSlipDecayStableCycles) {
+                leg_state.slip_count = std::max(0, leg_state.slip_count - 1);
+            }
             leg_state.stance_confidence = std::min(1.0, leg_state.stance_confidence + 0.10);
         } else {
+            leg_state.stable_contact_cycles = 0;
             leg_state.stance_confidence = std::max(0.0, leg_state.stance_confidence - 0.05);
         }
 
@@ -76,7 +89,23 @@ ContactManagerOutput ContactManager::update(const RobotState& estimated,
                 LengthM{std::max(0.02, output.managed_policy.per_leg[leg].step_length_m.value * 0.9)};
         }
 
-        if ((leg_state.slip_count >= 2) || foot_search_active || (leg_state.stance_confidence < 0.4)) {
+        const bool enter_degraded =
+            (leg_state.slip_count >= kSlipEnterThreshold) ||
+            foot_search_active ||
+            (leg_state.stance_confidence < kStanceConfidenceEnterThreshold);
+        const bool exit_degraded =
+            (leg_state.slip_count <= kSlipExitThreshold) &&
+            (!foot_search_active) &&
+            (leg_state.stance_confidence > kStanceConfidenceExitThreshold) &&
+            (leg_state.stable_contact_cycles >= kDegradedRecoveryStableCycles);
+
+        if (!leg_state.degraded && enter_degraded) {
+            leg_state.degraded = true;
+        } else if (leg_state.degraded && exit_degraded) {
+            leg_state.degraded = false;
+        }
+
+        if (leg_state.degraded) {
             ++degraded_legs;
         }
 

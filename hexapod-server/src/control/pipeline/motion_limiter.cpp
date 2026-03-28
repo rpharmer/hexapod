@@ -110,7 +110,29 @@ MotionLimiterOutput MotionLimiter::update(const RobotState& estimated,
     }
     previous_walking_ = walking;
 
-    if (has_previous_limited_intent_ && dt_s > 0.0) {
+    if (output.diagnostics.phase == kLimiterPhaseBodyLeadsOnStart) {
+        output.adapted_gait_policy.cadence_hz = FrequencyHz{0.0};
+        output.adapted_gait_policy.suppression.suppress_stride_progression = true;
+        output.diagnostics.gait_policy_modified = true;
+    } else if (output.diagnostics.phase == kLimiterPhaseLegsLeadOnStop) {
+        output.adapted_gait_policy.cadence_hz = FrequencyHz{0.0};
+        output.adapted_gait_policy.suppression.suppress_stride_progression = true;
+        output.adapted_gait_policy.suppression.suppress_turning = true;
+        output.diagnostics.gait_policy_modified = true;
+
+        if (has_previous_limited_intent_) {
+            output.limited_intent.body_pose_setpoint.body_trans_m =
+                previous_limited_intent_.body_pose_setpoint.body_trans_m;
+            output.limited_intent.body_pose_setpoint.orientation_rad =
+                previous_limited_intent_.body_pose_setpoint.orientation_rad;
+            output.limited_intent.body_pose_setpoint.body_trans_mps = Vec3{};
+            output.limited_intent.body_pose_setpoint.angular_velocity_radps = Vec3{};
+            output.diagnostics.intent_modified = true;
+        }
+    }
+
+    if (has_previous_limited_intent_ && dt_s > 0.0 &&
+        output.diagnostics.phase != kLimiterPhaseLegsLeadOnStop) {
         const double linear_limit_mps = safePositive(config_.foot_velocity_limit_mps, 1e-6);
         const double max_linear_step = linear_limit_mps * dt_s;
         const Vec3 previous_body = previous_limited_intent_.body_pose_setpoint.body_trans_m;

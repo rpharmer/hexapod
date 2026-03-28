@@ -383,10 +383,8 @@ RuntimeGaitPolicy GaitPolicyPlanner::plan(const RobotState& est,
     policy.per_leg = computePerLegDynamicParameters(policy.gait_family);
     policy.suppression = computeSuppressionFlags(est, intent, safety, policy.turn_mode);
     policy.reach_utilization = maxReachUtilization(est);
-    const double normalized_command = std::clamp(
-        std::abs(intent.speed_mps.value) / config_.frequency.nominal_max_speed_mps.value,
-        0.0,
-        1.0);
+    const double nominal_max_speed = std::max(config_.frequency.nominal_max_speed_mps.value, 1e-6);
+    const double normalized_command = std::clamp(std::abs(intent.speed_mps.value) / nominal_max_speed, 0.0, 1.0);
 
     applyEnvelopeAndFallback(policy, est, intent, safety);
 

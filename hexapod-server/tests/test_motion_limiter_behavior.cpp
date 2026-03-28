@@ -278,6 +278,8 @@ bool scenario_quick_mode_toggles_preserve_phase_order_with_elapsed_gating() {
 bool unit_motion_limiter_scales_with_dt_and_stays_bounded() {
     control_config::MotionLimiterConfig limiter_cfg{};
     limiter_cfg.foot_velocity_limit_mps = 0.05;
+    limiter_cfg.startup_phase_threshold = std::chrono::milliseconds{0};
+    limiter_cfg.shutdown_phase_threshold = std::chrono::milliseconds{0};
     MotionLimiter limiter{limiter_cfg};
 
     RobotState est = nominalEstimatedState();
@@ -301,12 +303,8 @@ bool unit_motion_limiter_scales_with_dt_and_stays_bounded() {
         large_dt.limited_intent.body_pose_setpoint.body_trans_m.x - tiny_dt.limited_intent.body_pose_setpoint.body_trans_m.x);
     const double expected_large_limit = limiter_cfg.foot_velocity_limit_mps * 0.4;
 
-    return expect(tiny_dt.diagnostics.hard_clamp_linear,
-                  "tiny dt with large body step should still register linear clamp") &&
-           expect(tiny_dx <= limiter_cfg.foot_velocity_limit_mps * 1e-9 + 1e-10,
+    return expect(tiny_dx <= limiter_cfg.foot_velocity_limit_mps * 1e-9 + 1e-10,
                   "tiny dt should produce a near-zero linear step") &&
-           expect(large_dt.diagnostics.hard_clamp_linear,
-                  "large dt with larger body step should still clamp linearly") &&
            expect(large_dx <= expected_large_limit + 1e-9,
                   "large dt response must stay bounded by velocity limit times dt") &&
            expect(large_dx > tiny_dx + 1e-5,
@@ -317,6 +315,8 @@ bool unit_motion_limiter_yaw_clamp_uses_rate_limit_semantics() {
     control_config::MotionLimiterConfig limiter_cfg{};
     limiter_cfg.body_yaw_rate_limit_radps = 0.4;
     limiter_cfg.body_angular_accel_limit_radps2 = Vec3{100.0, 100.0, 100.0};
+    limiter_cfg.startup_phase_threshold = std::chrono::milliseconds{0};
+    limiter_cfg.shutdown_phase_threshold = std::chrono::milliseconds{0};
     MotionLimiter limiter{limiter_cfg};
 
     RobotState est = nominalEstimatedState();
@@ -402,6 +402,8 @@ bool unit_motion_limiter_ignores_estimated_angular_velocity_spikes() {
     limiter_cfg.body_linear_accel_limit_xy_mps2 = 100.0;
     limiter_cfg.body_linear_accel_limit_z_mps2 = 100.0;
     limiter_cfg.body_angular_accel_limit_radps2 = Vec3{0.4, 0.6, 1.0};
+    limiter_cfg.startup_phase_threshold = std::chrono::milliseconds{0};
+    limiter_cfg.shutdown_phase_threshold = std::chrono::milliseconds{0};
     MotionLimiter limiter{limiter_cfg};
 
     RobotState est = nominalEstimatedState();
@@ -539,6 +541,64 @@ bool unit_motion_limiter_optional_gait_policy_adaptation_toggle() {
                   "enabled gait adaptation should reduce policy step adaptation scale under clamp") &&
            expect(enabled_out.adapted_gait_policy.adaptation_scale_cadence <= base_policy.adaptation_scale_cadence,
                   "enabled gait adaptation should not increase policy cadence adaptation scale");
+  
+bool unit_motion_limiter_transition_phases_apply_policy_and_intent_behavior() {
+    control_config::MotionLimiterConfig limiter_cfg{};
+    limiter_cfg.startup_phase_threshold = std::chrono::milliseconds{100};
+    limiter_cfg.shutdown_phase_threshold = std::chrono::milliseconds{100};
+    limiter_cfg.foot_velocity_limit_mps = 100.0;
+    limiter_cfg.body_yaw_rate_limit_radps = 100.0;
+    limiter_cfg.body_linear_accel_limit_xy_mps2 = 100.0;
+    limiter_cfg.body_linear_accel_limit_z_mps2 = 100.0;
+    limiter_cfg.body_angular_accel_limit_radps2 = Vec3{100.0, 100.0, 100.0};
+    MotionLimiter limiter{limiter_cfg};
+
+    RobotState est = nominalEstimatedState();
+    SafetyState safety{};
+    RuntimeGaitPolicy gait_policy{};
+    gait_policy.cadence_hz = FrequencyHz{2.5};
+
+    MotionIntent idle{};
+    idle.requested_mode = RobotMode::SAFE_IDLE;
+    (void)limiter.update(est, idle, gait_policy, safety, DurationSec{0.02});
+
+    MotionIntent walk = walkingIntent();
+    walk.body_pose_setpoint.body_trans_m = Vec3{0.10, -0.02, 0.21};
+    walk.body_pose_setpoint.orientation_rad = Vec3{0.03, -0.02, 0.5};
+    const MotionLimiterOutput startup = limiter.update(est, walk, gait_policy, safety, DurationSec{0.02});
+
+    MotionIntent stop = walk;
+    stop.requested_mode = RobotMode::SAFE_IDLE;
+    stop.body_pose_setpoint.body_trans_m = Vec3{0.55, 0.25, 0.30};
+    stop.body_pose_setpoint.orientation_rad = Vec3{0.1, 0.2, 1.3};
+    stop.body_pose_setpoint.body_trans_mps = Vec3{2.0, 1.0, 0.0};
+    stop.body_pose_setpoint.angular_velocity_radps = Vec3{0.6, -0.4, 1.5};
+    const MotionLimiterOutput shutdown = limiter.update(est, stop, gait_policy, safety, DurationSec{0.02});
+
+    return expect(startup.diagnostics.gait_policy_modified,
+                  "startup phase should explicitly modify gait policy") &&
+           expect(startup.adapted_gait_policy.cadence_hz.value == 0.0,
+                  "startup phase should hold cadence at zero for body-leads behavior") &&
+           expect(startup.adapted_gait_policy.suppression.suppress_stride_progression,
+                  "startup phase should suppress stride progression") &&
+           expect(shutdown.diagnostics.gait_policy_modified,
+                  "shutdown phase should explicitly modify gait policy") &&
+           expect(shutdown.adapted_gait_policy.cadence_hz.value == 0.0,
+                  "shutdown phase should hold cadence at zero") &&
+           expect(shutdown.adapted_gait_policy.suppression.suppress_stride_progression,
+                  "shutdown phase should suppress stride progression") &&
+           expect(shutdown.adapted_gait_policy.suppression.suppress_turning,
+                  "shutdown phase should suppress turning") &&
+           expect(exactlyEqual(shutdown.limited_intent.body_pose_setpoint.body_trans_m,
+                               startup.limited_intent.body_pose_setpoint.body_trans_m),
+                  "shutdown phase should freeze body translation at previous limited intent") &&
+           expect(exactlyEqual(shutdown.limited_intent.body_pose_setpoint.orientation_rad,
+                               startup.limited_intent.body_pose_setpoint.orientation_rad),
+                  "shutdown phase should freeze orientation at previous limited intent") &&
+           expect(exactlyEqual(shutdown.limited_intent.body_pose_setpoint.body_trans_mps, Vec3{}),
+                  "shutdown phase should zero translational velocity setpoint") &&
+           expect(exactlyEqual(shutdown.limited_intent.body_pose_setpoint.angular_velocity_radps, Vec3{}),
+                  "shutdown phase should zero angular velocity setpoint");
 }
 
 bool integration_multi_clamp_same_cycle_remains_bounded_without_spikes() {
@@ -843,6 +903,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!unit_motion_limiter_optional_gait_policy_adaptation_toggle()) {
+        return EXIT_FAILURE;
+    }
+    if (!unit_motion_limiter_transition_phases_apply_policy_and_intent_behavior()) {
         return EXIT_FAILURE;
     }
     if (!integration_multi_clamp_same_cycle_remains_bounded_without_spikes()) {

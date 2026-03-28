@@ -5,9 +5,11 @@ export function createTransport({
   reconnectDelayMs = 1000,
 }) {
   let reconnectTimer = null;
+  let ws = null;
+  let shouldReconnect = true;
 
   function connect() {
-    const ws = new WebSocket(websocketUrl);
+    ws = new WebSocket(websocketUrl);
 
     ws.addEventListener("open", () => {
       statusEl.textContent = "Connected";
@@ -25,18 +27,27 @@ export function createTransport({
     ws.addEventListener("close", () => {
       statusEl.textContent = "Disconnected (retrying)";
       statusEl.style.color = "#f87171";
-      reconnectTimer = setTimeout(connect, reconnectDelayMs);
+      ws = null;
+      if (shouldReconnect) {
+        reconnectTimer = setTimeout(connect, reconnectDelayMs);
+      }
     });
   }
 
   return {
     start() {
+      shouldReconnect = true;
       connect();
     },
     stop() {
+      shouldReconnect = false;
       if (reconnectTimer !== null) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
+      }
+      if (ws) {
+        ws.close();
+        ws = null;
       }
     },
   };
