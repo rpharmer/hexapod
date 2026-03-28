@@ -280,10 +280,16 @@ bool testPhaseRateUsesWrappedUnitIntervalDistance() {
     JointTargets joints{};
     LegTargets leg_targets{};
 
-    reporter.recordControlOutputs(joints, status, TimePointUs{1'000'000}, &leg_targets);
+    constexpr uint64_t kStartTimeUs = 1'000'000;
+    constexpr uint64_t kRealisticDtUs = 20'000;
+    constexpr double kRealisticDtS = static_cast<double>(kRealisticDtUs) / 1'000'000.0;
+    constexpr double kWrappedDelta = 0.02;
+    constexpr double kNaiveSpikeDelta = 0.98;
+
+    reporter.recordControlOutputs(joints, status, TimePointUs{kStartTimeUs}, &leg_targets);
 
     status.dynamic_gait.leg_phase.fill(0.01);
-    reporter.recordControlOutputs(joints, status, TimePointUs{1'100'000}, &leg_targets);
+    reporter.recordControlOutputs(joints, status, TimePointUs{kStartTimeUs + kRealisticDtUs}, &leg_targets);
 
     RobotState estimated_state{};
     estimated_state.valid = true;
@@ -308,7 +314,7 @@ bool testPhaseRateUsesWrappedUnitIntervalDistance() {
                     0);
     logger->Flush();
 
-    const auto latest = latestInfoLineContaining(collecting_sink->entries, "gait_variability_diag={");
+    const auto latest = latestInfoLineContaining(collecting_sink->entries, "runtime.metrics");
     if (!expect(latest.has_value(), "runtime.metrics should include gait_variability_diag payload")) {
         logger->Stop();
         return false;
@@ -316,9 +322,14 @@ bool testPhaseRateUsesWrappedUnitIntervalDistance() {
     const auto peak_phase_delta_per_s = extractFieldValue(*latest, "peak_phase_delta_per_s");
     logger->Stop();
 
+    const double expected_wrapped_rate = kWrappedDelta / kRealisticDtS;
+    const double naive_spike_rate = kNaiveSpikeDelta / kRealisticDtS;
+
     return expect(peak_phase_delta_per_s.has_value(), "gait variability should report peak_phase_delta_per_s") &&
-           expect(*peak_phase_delta_per_s < 1.0,
-                  "wrapped transition 0.99->0.01 over 0.1s should stay small, not spike-sized");
+           expect(std::abs(*peak_phase_delta_per_s - expected_wrapped_rate) < 0.05,
+                  "phase-rate should use shortest wrapped distance for 0.99->0.01 transition") &&
+           expect(*peak_phase_delta_per_s < naive_spike_rate * 0.1,
+                  "phase-rate should not spike toward naive near-1/dt wrap discontinuity");
 }
 
 } // namespace
