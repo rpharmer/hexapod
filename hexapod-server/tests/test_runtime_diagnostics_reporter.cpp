@@ -101,6 +101,24 @@ std::optional<double> extractFieldValue(const std::string& message, const std::s
     }
 }
 
+std::optional<double> extractEqualsFieldValue(const std::string& message, const std::string& field) {
+    const std::string token = field + "=";
+    const std::size_t start = message.find(token);
+    if (start == std::string::npos) {
+        return std::nullopt;
+    }
+    const std::size_t value_start = start + token.size();
+    std::size_t value_end = value_start;
+    while (value_end < message.size() && message[value_end] != ' ') {
+        ++value_end;
+    }
+    try {
+        return std::stod(message.substr(value_start, value_end - value_start));
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
 std::optional<std::string> latestInfoLineContaining(const std::vector<CapturedLog>& entries,
                                                     const std::string& token) {
     for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
@@ -321,6 +339,102 @@ bool testPhaseRateUsesWrappedUnitIntervalDistance() {
                   "wrapped transition 0.99->0.01 over 0.1s should stay small, not spike-sized");
 }
 
+bool testRuntimeMetricsKeyDiagnosticsFieldsArePresentAndParseable() {
+    FreshnessPolicy freshness_policy{};
+    const auto logger = std::make_shared<logging::AsyncLogger>(
+        "test-runtime-key-diag-fields", logging::LogLevel::Trace, 256);
+    const auto collecting_sink = std::make_shared<CollectingSink>();
+    logger->AddSink(collecting_sink);
+
+    RuntimeDiagnosticsReporter reporter(logger, freshness_policy);
+    ControlStatus status{};
+    status.active_mode = RobotMode::WALK;
+    status.estimator_valid = true;
+    status.active_fault = FaultCode::NONE;
+    status.dynamic_gait.leg_phase.fill(0.25);
+
+    SafetyState safety_state{};
+    safety_state.stable = true;
+    safety_state.support_contact_count = 6;
+    safety_state.stability_margin_m = 0.13;
+
+    RobotState estimated_state{};
+    estimated_state.valid = true;
+    estimated_state.has_body_pose_state = true;
+    estimated_state.body_pose_state.orientation_rad = Vec3{0.12, -0.08, 0.0};
+    estimated_state.body_pose_state.body_trans_m = Vec3{0.05, 0.0, 0.0};
+
+    JointTargets joints{};
+    LegTargets leg_targets{};
+    reporter.recordControlOutputs(joints, status, TimePointUs{1'000'000}, &leg_targets);
+
+    status.dynamic_gait.leg_phase.fill(0.35);
+    leg_targets.feet[0].pos_body_m = Vec3{0.03, 0.0, 0.01};
+    reporter.recordControlOutputs(joints, status, TimePointUs{1'020'000}, &leg_targets);
+
+    reporter.report(status,
+                    estimated_state,
+                    safety_state,
+                    std::nullopt,
+                    11,
+                    1000,
+                    100,
+                    LoopTimingRollingMetrics{},
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0);
+    logger->Flush();
+
+    const auto latest = latestInfoLineContaining(collecting_sink->entries, "runtime.metrics");
+    if (!expect(latest.has_value(), "runtime.metrics log line should be emitted")) {
+        logger->Stop();
+        return false;
+    }
+
+    const auto est_roll_rad = extractEqualsFieldValue(*latest, "est_roll_rad");
+    const auto est_pitch_rad = extractEqualsFieldValue(*latest, "est_pitch_rad");
+    const auto est_abs_max_roll_pitch_rad = extractEqualsFieldValue(*latest, "est_abs_max_roll_pitch_rad");
+    const auto safety_stable = extractEqualsFieldValue(*latest, "safety_stable");
+    const auto safety_support_contact_count = extractEqualsFieldValue(*latest, "safety_support_contact_count");
+    const auto safety_stability_margin_m = extractEqualsFieldValue(*latest, "safety_stability_margin_m");
+    const auto leg_target_peak_foot_vel_mps = extractFieldValue(*latest, "peak_foot_vel_mps");
+    const auto leg_target_worst_leg_peak_foot_vel_mps = extractFieldValue(*latest, "worst_leg_peak_foot_vel_mps");
+    const auto leg_target_rapid_change_events = extractFieldValue(*latest, "rapid_change_events");
+    const auto gait_peak_cadence_delta_hz_per_s = extractFieldValue(*latest, "peak_cadence_delta_hz_per_s");
+    const auto gait_peak_reach_delta_per_s = extractFieldValue(*latest, "peak_reach_delta_per_s");
+    const auto gait_peak_phase_delta_per_s = extractFieldValue(*latest, "peak_phase_delta_per_s");
+    const auto gait_worst_phase_leg_delta_per_s = extractFieldValue(*latest, "worst_phase_leg_delta_per_s");
+
+    logger->Stop();
+    return expect(est_roll_rad.has_value(), "est_roll_rad should be present and parseable") &&
+           expect(est_pitch_rad.has_value(), "est_pitch_rad should be present and parseable") &&
+           expect(est_abs_max_roll_pitch_rad.has_value(),
+                  "est_abs_max_roll_pitch_rad should be present and parseable") &&
+           expect(safety_stable.has_value(), "safety_stable should be present and parseable") &&
+           expect(safety_support_contact_count.has_value(),
+                  "safety_support_contact_count should be present and parseable") &&
+           expect(safety_stability_margin_m.has_value(),
+                  "safety_stability_margin_m should be present and parseable") &&
+           expect(leg_target_peak_foot_vel_mps.has_value(),
+                  "leg_target_diag.peak_foot_vel_mps should be present and parseable") &&
+           expect(leg_target_worst_leg_peak_foot_vel_mps.has_value(),
+                  "leg_target_diag.worst_leg_peak_foot_vel_mps should be present and parseable") &&
+           expect(leg_target_rapid_change_events.has_value(),
+                  "leg_target_diag.rapid_change_events should be present and parseable") &&
+           expect(gait_peak_cadence_delta_hz_per_s.has_value(),
+                  "gait_variability_diag.peak_cadence_delta_hz_per_s should be present and parseable") &&
+           expect(gait_peak_reach_delta_per_s.has_value(),
+                  "gait_variability_diag.peak_reach_delta_per_s should be present and parseable") &&
+           expect(gait_peak_phase_delta_per_s.has_value(),
+                  "gait_variability_diag.peak_phase_delta_per_s should be present and parseable") &&
+           expect(gait_worst_phase_leg_delta_per_s.has_value(),
+                  "gait_variability_diag.worst_phase_leg_delta_per_s should be present and parseable");
+}
+
 } // namespace
 
 int main() {
@@ -331,6 +445,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!testPhaseRateUsesWrappedUnitIntervalDistance()) {
+        return EXIT_FAILURE;
+    }
+    if (!testRuntimeMetricsKeyDiagnosticsFieldsArePresentAndParseable()) {
         return EXIT_FAILURE;
     }
 
