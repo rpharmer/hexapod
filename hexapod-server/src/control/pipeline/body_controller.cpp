@@ -10,6 +10,9 @@ constexpr double kDefaultBodyHeightM = 0.20;
 constexpr double kLevelHoldRollPitchKp = 0.6;
 constexpr double kLevelHoldMaxCorrectionRad = 0.18;
 constexpr double kLevelHoldMaxCommandRad = 0.30;
+constexpr int kLevelHoldMinSupportContacts = 3;
+constexpr double kLevelHoldMinStabilityMarginM = 0.01;
+constexpr double kLevelHoldEstimateLpfAlpha = 0.25;
 
 } // namespace
 
@@ -92,12 +95,38 @@ LegTargets BodyController::update(const RobotState& est,
 
     const double roll_setpoint = intent.body_pose_setpoint.orientation_rad.x;
     const double pitch_setpoint = intent.body_pose_setpoint.orientation_rad.y;
-    const bool level_hold_enabled = est.has_body_pose_state;
+    const bool support_quality_sufficient =
+        (safety.support_contact_count >= kLevelHoldMinSupportContacts) &&
+        (safety.stability_margin_m >= kLevelHoldMinStabilityMarginM);
+    const bool level_hold_enabled =
+        est.has_measured_body_pose_state ||
+        (est.has_inferred_body_pose_state && support_quality_sufficient);
+
+    const auto updateLevelHoldEstimate = [&](double roll_est, double pitch_est) {
+        if (!std::isfinite(roll_est) || !std::isfinite(pitch_est)) {
+            return std::array<double, 2>{roll_est, pitch_est};
+        }
+
+        if (!level_hold_filter_state_.initialized) {
+            level_hold_filter_state_.roll_pitch_rad = {roll_est, pitch_est};
+            level_hold_filter_state_.initialized = true;
+            return level_hold_filter_state_.roll_pitch_rad;
+        }
+
+        level_hold_filter_state_.roll_pitch_rad[0] +=
+            kLevelHoldEstimateLpfAlpha * (roll_est - level_hold_filter_state_.roll_pitch_rad[0]);
+        level_hold_filter_state_.roll_pitch_rad[1] +=
+            kLevelHoldEstimateLpfAlpha * (pitch_est - level_hold_filter_state_.roll_pitch_rad[1]);
+        return level_hold_filter_state_.roll_pitch_rad;
+    };
+    const auto filtered_roll_pitch = updateLevelHoldEstimate(
+        est.body_pose_state.orientation_rad.x,
+        est.body_pose_state.orientation_rad.y);
     const double roll_cmd = level_hold_enabled
-                                ? applyLevelHoldAxis(roll_setpoint, est.body_pose_state.orientation_rad.x)
+                                ? applyLevelHoldAxis(roll_setpoint, filtered_roll_pitch[0])
                                 : roll_setpoint;
     const double pitch_cmd = level_hold_enabled
-                                 ? applyLevelHoldAxis(pitch_setpoint, est.body_pose_state.orientation_rad.y)
+                                 ? applyLevelHoldAxis(pitch_setpoint, filtered_roll_pitch[1])
                                  : pitch_setpoint;
     const double yaw_cmd_raw = policy.suppression.suppress_turning ? 0.0 : intent.body_pose_setpoint.orientation_rad.z;
     const double yaw_cmd = yaw_cmd_raw;

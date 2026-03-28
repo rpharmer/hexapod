@@ -33,9 +33,26 @@ telemetry::TelemetryPublishCounters readTelemetryCounters(
 }
 
 constexpr double kJointTargetSlewLimitRadPerSec = 18.0;
+constexpr double kControlLoopMeasuredDtMinSec = 1e-4;
+constexpr double kControlLoopMeasuredDtMaxSec = 0.25;
 
 uint8_t missionStateCode(autonomy::MissionState state) {
     return static_cast<uint8_t>(state);
+}
+
+DurationSec measureClampedControlLoopDt(const TimePointUs& now,
+                                        const TimePointUs& previous_now,
+                                        const DurationSec& configured_dt) {
+    if (previous_now.isZero() || now.value <= previous_now.value) {
+        return DurationSec{std::clamp(configured_dt.value,
+                                      kControlLoopMeasuredDtMinSec,
+                                      kControlLoopMeasuredDtMaxSec)};
+    }
+    const double measured_dt =
+        static_cast<double>(now.value - previous_now.value) / 1'000'000.0;
+    return DurationSec{std::clamp(measured_dt,
+                                  kControlLoopMeasuredDtMinSec,
+                                  kControlLoopMeasuredDtMaxSec)};
 }
 
 } // namespace
@@ -95,6 +112,7 @@ bool RobotRuntime::init() {
     has_last_pipeline_joint_targets_ = false;
     last_pipeline_joint_targets_ = JointTargets{};
     last_joint_write_timestamp_ = TimePointUs{};
+    last_control_step_timestamp_ = TimePointUs{};
     freshness_gate_.reset();
     timing_metrics_.reset();
     next_telemetry_publish_at_ = TimePointUs{};
@@ -177,12 +195,14 @@ void RobotRuntime::busStep() {
             if (imu_sample.has_body_linear_velocity) {
                 raw.body_pose_state.body_trans_mps = imu_sample.body_linear_velocity_mps;
             }
-            raw.has_body_pose_state = true;
+            raw.has_measured_body_pose_state = true;
+            raw.has_body_pose_state = raw.has_measured_body_pose_state || raw.has_inferred_body_pose_state;
         }
     }
     if (raw.sample_id == 0) {
         raw.sample_id = raw_sample_seq_.fetch_add(1) + 1;
     }
+    raw.has_body_pose_state = raw.has_measured_body_pose_state || raw.has_inferred_body_pose_state;
     raw_state_.write(raw);
 
     JointTargets cmd = joint_targets_.read();
@@ -266,8 +286,11 @@ void RobotRuntime::controlStep() {
     freshness_reject_consecutive_count_.store(0);
     const MotionIntent effective_intent = resolveAutonomyMotionIntent(intent, safety_state, now);
 
-    const DurationSec control_loop_dt{
+    const DurationSec configured_control_loop_dt{
         static_cast<double>(config_.loop_timing.control_loop_period.count()) / 1'000'000.0};
+    const DurationSec control_loop_dt =
+        measureClampedControlLoopDt(now, last_control_step_timestamp_, configured_control_loop_dt);
+    last_control_step_timestamp_ = now;
     const PipelineStepResult result = pipeline_.runStep(
         est,
         effective_intent,

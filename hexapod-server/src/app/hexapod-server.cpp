@@ -124,6 +124,7 @@ void applyTelemetryCliOverrides(ParsedToml& config,
              ", using 1.0");
     config.telemetryGeometryResendIntervalSec = 1.0;
   }
+
 }
 
 } // namespace

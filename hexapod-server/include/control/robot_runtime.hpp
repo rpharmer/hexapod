@@ -104,6 +104,7 @@ private:
     JointTargets last_pipeline_joint_targets_{};
     bool has_last_pipeline_joint_targets_{false};
     TimePointUs last_joint_write_timestamp_{};
+    TimePointUs last_control_step_timestamp_{};
 
     TimePointUs next_telemetry_publish_at_{};
     TimePointUs next_geometry_refresh_at_{};

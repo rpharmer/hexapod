@@ -52,6 +52,8 @@ bool testHigherPriorityFaultWins() {
 
     raw.bus_ok = false;
     est.body_pose_state.orientation_rad.x = 2.0; // clearly above default tilt limit
+    est.has_measured_body_pose_state = true;
+    est.has_body_pose_state = true;
 
     const SafetyState state = supervisor.evaluate(
         raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
@@ -70,6 +72,8 @@ bool testRulePrecedenceAcrossAllFaultTriggers() {
     raw.current = 999.0f;
     raw.foot_contacts = {false, false, false, false, false, false};
     est.body_pose_state.orientation_rad.x = 2.0;
+    est.has_measured_body_pose_state = true;
+    est.has_body_pose_state = true;
 
     const SafetyState state = supervisor.evaluate(
         raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{false, false});
@@ -113,6 +117,25 @@ bool testBusTimeoutBeatsFreshnessFaults() {
 }
 
 
+
+
+bool testInferredTiltDoesNotTripMeasuredTiltPolicy() {
+    SafetySupervisor supervisor;
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+
+    est.body_pose_state.orientation_rad.x = 2.0;
+    est.has_inferred_body_pose_state = true;
+    est.has_body_pose_state = true;
+
+    const SafetyState state = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+
+    return expect(state.active_fault != FaultCode::TIP_OVER,
+                  "inferred-only tilt should not trigger measured-only tilt policy") &&
+           expect(state.active_fault == FaultCode::NONE,
+                  "without other triggers, inferred-only tilt should keep safety clear");
+}
 
 bool testUnstableSupportTriggersTipOver() {
     SafetySupervisor supervisor;
@@ -262,6 +285,7 @@ int main() {
         !testRulePrecedenceAcrossAllFaultTriggers() ||
         !testEstimatorBeatsCommandTimeoutWithoutTorqueCut() ||
         !testBusTimeoutBeatsFreshnessFaults() ||
+        !testInferredTiltDoesNotTripMeasuredTiltPolicy() ||
         !testUnstableSupportTriggersTipOver() ||
         !testMotorFaultTorqueCut() ||
         !testJointDiscontinuityTripsSafety() ||

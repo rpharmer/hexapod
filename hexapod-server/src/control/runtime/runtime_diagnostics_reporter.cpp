@@ -50,6 +50,11 @@ double rangeMax(const LocomotionRangeDiagnostics& range) {
     return range.count > 0 ? range.max : 0.0;
 }
 
+double shortestUnitIntervalDistance(double a, double b) {
+    const double d = std::abs(a - b);
+    return std::min(d, 1.0 - d);
+}
+
 } // namespace
 
 RuntimeDiagnosticsReporter::RuntimeDiagnosticsReporter(std::shared_ptr<logging::AsyncLogger> logger,
@@ -133,7 +138,7 @@ void RuntimeDiagnosticsReporter::recordControlOutputs(const JointTargets& target
     if (!last_control_output_timestamp_.isZero() && now.value > last_control_output_timestamp_.value) {
         const double dt_s = static_cast<double>(now.value - last_control_output_timestamp_.value) / 1'000'000.0;
 
-        if (has_previous_status_) {
+        if (dt_s > 1e-9 && has_previous_status_) {
             const double cadence_rate =
                 std::abs(status.dynamic_gait.cadence_hz - previous_status_.dynamic_gait.cadence_hz) / dt_s;
             if (cadence_rate > gait_variability_diag_.peak_cadence_delta_hz_per_s) {
@@ -148,8 +153,9 @@ void RuntimeDiagnosticsReporter::recordControlOutputs(const JointTargets& target
             }
 
             for (std::size_t leg_idx = 0; leg_idx < static_cast<std::size_t>(kNumLegs); ++leg_idx) {
-                const double phase_rate = std::abs(status.dynamic_gait.leg_phase[leg_idx] -
-                                                   previous_status_.dynamic_gait.leg_phase[leg_idx]) /
+                const double phase_rate = shortestUnitIntervalDistance(
+                                              status.dynamic_gait.leg_phase[leg_idx],
+                                              previous_status_.dynamic_gait.leg_phase[leg_idx]) /
                                           dt_s;
                 if (phase_rate > gait_variability_diag_.peak_phase_delta_per_s_by_leg[leg_idx]) {
                     gait_variability_diag_.peak_phase_delta_per_s_by_leg[leg_idx] = phase_rate;

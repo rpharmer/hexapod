@@ -213,6 +213,9 @@ struct RobotState {
   TimePointUs timestamp_us{};
 
   // Optional-field validity flags for context-specific usage.
+  bool has_measured_body_pose_state{false};
+  bool has_inferred_body_pose_state{false};
+  // Compatibility aggregate during provenance transition.
   bool has_body_pose_state{false};
   bool has_power_state{false};
   bool has_valid_flag{false};
