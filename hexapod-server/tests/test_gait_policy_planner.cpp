@@ -1,8 +1,11 @@
 #include "gait_policy_planner.hpp"
+#include "gait_scheduler.hpp"
 #include "motion_intent_utils.hpp"
 
+#include <cmath>
 #include <iostream>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -49,6 +52,13 @@ RobotState nominalEstimate()
     return est;
 }
 
+
+
+double wrappedPositiveDelta(const double from, const double to)
+{
+    const double raw = std::fmod((to - from) + 1.0, 1.0);
+    return raw < 0.0 ? raw + 1.0 : raw;
+}
 control_config::GaitConfig enabledDynamicConfig()
 {
     control_config::GaitConfig cfg{};
@@ -286,6 +296,86 @@ void testFallbackEscalationPrecedence()
            "active fault should take highest fallback precedence over all lower stages");
 }
 
+
+
+void testRapidModeToggleMaintainsPhaseContinuityAndDutyExpectations()
+{
+    GaitScheduler scheduler{enabledDynamicConfig()};
+
+    RobotState est = nominalEstimate();
+    est.foot_contacts = {true, true, true, true, true, true};
+
+    SafetyState safety = safeState();
+
+    MotionIntent walk_intent = walkingIntent(0.70, 0.05, GaitType::TRIPOD);
+    MotionIntent idle_intent = walk_intent;
+    idle_intent.requested_mode = RobotMode::SAFE_IDLE;
+
+    RuntimeGaitPolicy policy{};
+    policy.dynamic_enabled = true;
+    policy.gait_family = GaitType::TRIPOD;
+    policy.cadence_hz = FrequencyHz{4.0};
+    policy.suppression.suppress_stride_progression = false;
+    policy.per_leg[0].phase_offset = 0.0;
+    policy.per_leg[1].phase_offset = 0.5;
+    policy.per_leg[2].phase_offset = 0.0;
+    policy.per_leg[3].phase_offset = 0.5;
+    policy.per_leg[4].phase_offset = 0.0;
+    policy.per_leg[5].phase_offset = 0.5;
+    for (auto& leg : policy.per_leg) {
+        leg.duty_cycle = 0.64;
+    }
+
+    GaitState previous{};
+    bool have_previous = false;
+    double previous_walk_rate_hz = 0.0;
+
+    constexpr int kSamples = 40;
+    for (int sample = 0; sample < kSamples; ++sample) {
+        const bool walking = (sample % 2) == 0;
+        const MotionIntent& intent = walking ? walk_intent : idle_intent;
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(4));
+        const GaitState current = scheduler.update(est, intent, safety, policy);
+
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            expect(current.phase[leg] >= 0.0 && current.phase[leg] < 1.0,
+                   "phase should remain in [0,1) under rapid mode toggles");
+
+            const bool expected_stance =
+                walking ? (current.phase[leg] < std::clamp(policy.per_leg[leg].duty_cycle, 0.05, 0.95)) : true;
+            expect(current.in_stance[leg] == expected_stance,
+                   "stance mask should match duty-cycle expectation for current phase/mode");
+        }
+
+        if (walking) {
+            expect(current.stride_phase_rate_hz.value >= 0.0,
+                   "walk samples should keep non-negative stride phase rate");
+            expect(current.stride_phase_rate_hz.value <= policy.cadence_hz.value + 1e-9,
+                   "walk samples should clamp stride phase rate to commanded cadence");
+            if (have_previous) {
+                expect(current.stride_phase_rate_hz.value <= previous_walk_rate_hz + 1.2,
+                       "walk samples should slew cadence upward instead of instant jumps");
+            }
+            previous_walk_rate_hz = current.stride_phase_rate_hz.value;
+        } else {
+            expect(current.stride_phase_rate_hz.value == 0.0,
+                   "non-walk samples should force zero stride phase rate");
+            previous_walk_rate_hz = 0.0;
+        }
+
+        if (have_previous) {
+            for (int leg = 0; leg < kNumLegs; ++leg) {
+                const double delta = wrappedPositiveDelta(previous.phase[leg], current.phase[leg]);
+                expect(delta < 0.08,
+                       "sequential gait samples should not exhibit large phase discontinuities");
+            }
+        }
+
+        previous = current;
+        have_previous = true;
+    }
+}
 void testScenarioDerivedYawRateFeedsRegionTurnModeAndSuppression()
 {
     GaitPolicyPlanner planner{enabledDynamicConfig()};
@@ -341,6 +431,7 @@ int main()
     testPivotHysteresisTransitionBoundary();
     testFallbackStages();
     testFallbackEscalationPrecedence();
+    testRapidModeToggleMaintainsPhaseContinuityAndDutyExpectations();
     testScenarioDerivedYawRateFeedsRegionTurnModeAndSuppression();
     testAcceptanceGatesDisableByDefault();
     testServoVelocityConstraintModifiesGait();
