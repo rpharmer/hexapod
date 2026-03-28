@@ -8,6 +8,14 @@ from runtime_support import Diagnostics, GEOMETRY_KEYS, LEG_KEYS, TelemetryState
 
 EXPECTED_SCHEMA_VERSION = 1
 
+_LEGACY_MODE_NAMES: dict[int, str] = {
+    0: "SAFE_IDLE",
+    1: "HOMING",
+    2: "STAND",
+    3: "WALK",
+    4: "FAULT",
+}
+
 
 class UdpTelemetryProtocol(asyncio.DatagramProtocol):
     def __init__(self, state: TelemetryState, diagnostics: Diagnostics, on_update: Callable[[], None]):
@@ -103,6 +111,11 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
         if isinstance(message.get("active_mode"), str):
             self.state.active_mode = message["active_mode"]
             changed = True
+        elif isinstance(message.get("mode"), int):
+            legacy_active_mode = _LEGACY_MODE_NAMES.get(message["mode"])
+            if legacy_active_mode is not None:
+                self.state.active_mode = legacy_active_mode
+                changed = True
 
         if isinstance(message.get("active_fault"), str):
             self.state.active_fault = message["active_fault"]

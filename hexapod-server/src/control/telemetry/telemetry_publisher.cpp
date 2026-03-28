@@ -100,6 +100,31 @@ const char* limiterConstraintReasonToString(uint8_t reason) {
     }
 }
 
+const char* robotModeToString(RobotMode mode) {
+    switch (mode) {
+        case RobotMode::SAFE_IDLE: return "SAFE_IDLE";
+        case RobotMode::HOMING: return "HOMING";
+        case RobotMode::STAND: return "STAND";
+        case RobotMode::WALK: return "WALK";
+        case RobotMode::FAULT: return "FAULT";
+    }
+    return "UNKNOWN";
+}
+
+const char* faultCodeToString(FaultCode code) {
+    switch (code) {
+        case FaultCode::NONE: return "NONE";
+        case FaultCode::BUS_TIMEOUT: return "BUS_TIMEOUT";
+        case FaultCode::ESTOP: return "ESTOP";
+        case FaultCode::TIP_OVER: return "TIP_OVER";
+        case FaultCode::ESTIMATOR_INVALID: return "ESTIMATOR_INVALID";
+        case FaultCode::MOTOR_FAULT: return "MOTOR_FAULT";
+        case FaultCode::JOINT_LIMIT: return "JOINT_LIMIT";
+        case FaultCode::COMMAND_TIMEOUT: return "COMMAND_TIMEOUT";
+    }
+    return "UNKNOWN";
+}
+
 const char* missionStateToString(uint8_t mission_state) {
     switch (static_cast<autonomy::MissionState>(mission_state)) {
         case autonomy::MissionState::Idle: return "idle";
@@ -242,6 +267,9 @@ public:
         payload << "{\"type\":\"joints\",\"schema_version\":1,"
                 << "\"timestamp_ms\":" << (telemetry.timestamp_us.value / 1000ULL) << ","
                 << "\"loop_counter\":" << telemetry.status.loop_counter << ","
+                << "\"active_mode\":\"" << robotModeToString(telemetry.status.active_mode) << "\","
+                << "\"active_fault\":\"" << faultCodeToString(telemetry.status.active_fault) << "\","
+                // Deprecated: keep legacy numeric mode while downstream clients migrate to active_mode.
                 << "\"mode\":" << static_cast<int>(telemetry.status.active_mode) << ","
                 << "\"bus_ok\":" << (telemetry.status.bus_ok ? "true" : "false") << ","
                 << "\"estimator_valid\":" << (telemetry.status.estimator_valid ? "true" : "false") << ","

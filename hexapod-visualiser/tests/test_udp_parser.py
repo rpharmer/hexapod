@@ -206,6 +206,31 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.angles_deg, before_angles)
         self.assertGreaterEqual(diagnostics.udp_rejected, 1)
 
+    def test_udp_parser_prefers_canonical_active_mode_field(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
+
+        protocol.datagram_received(
+            b'{"schema_version": 1, "type":"state", "timestamp_ms": 2100, "active_mode":"WALK", "mode":0, "active_fault":"NONE"}',
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertEqual(state.active_mode, "WALK")
+        self.assertEqual(state.active_fault, "NONE")
+
+    def test_udp_parser_supports_legacy_numeric_mode_field(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
+
+        protocol.datagram_received(
+            b'{"schema_version": 1, "type":"state", "timestamp_ms": 2200, "mode":3}',
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertEqual(state.active_mode, "WALK")
+
     def test_udp_parser_applies_status_and_health_fields(self):
         state = server.TelemetryState()
         updates = []
