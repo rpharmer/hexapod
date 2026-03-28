@@ -1,5 +1,8 @@
 #include "robot_control.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 namespace {
 
 std::unique_ptr<telemetry::ITelemetryPublisher> makeRuntimeTelemetryPublisher(
@@ -11,11 +14,25 @@ std::unique_ptr<telemetry::ITelemetryPublisher> makeRuntimeTelemetryPublisher(
 
     telemetry::TelemetryPublisherConfig telemetry_config{};
     telemetry_config.enabled = config.telemetry.enabled;
-    telemetry_config.udp_host = config.telemetry.udp_host;
-    telemetry_config.udp_port = config.telemetry.udp_port;
-    telemetry_config.publish_period_ms = static_cast<int>(config.telemetry.publish_period.count());
-    telemetry_config.geometry_refresh_period_ms =
-        static_cast<int>(config.telemetry.geometry_refresh_period.count());
+    telemetry_config.udp_host =
+        config.telemetry.host.empty() ? config.telemetry.udp_host : config.telemetry.host;
+
+    const bool canonical_port_valid = config.telemetry.port > 0 && config.telemetry.port <= 65535;
+    telemetry_config.udp_port = canonical_port_valid ? config.telemetry.port : config.telemetry.udp_port;
+
+    const bool publish_rate_valid =
+        std::isfinite(config.telemetry.publish_rate_hz) && config.telemetry.publish_rate_hz > 0.0;
+    telemetry_config.publish_period_ms = publish_rate_valid
+                                             ? std::max(1, static_cast<int>(std::lround(1000.0 / config.telemetry.publish_rate_hz)))
+                                             : std::max(1, static_cast<int>(config.telemetry.publish_period.count()));
+
+    const bool geometry_resend_valid =
+        std::isfinite(config.telemetry.geometry_resend_interval_sec) &&
+        config.telemetry.geometry_resend_interval_sec > 0.0;
+    telemetry_config.geometry_refresh_period_ms = geometry_resend_valid
+                                                      ? std::max(1, static_cast<int>(std::lround(
+                                                                        config.telemetry.geometry_resend_interval_sec * 1000.0)))
+                                                      : std::max(1, static_cast<int>(config.telemetry.geometry_refresh_period.count()));
     return telemetry::makeUdpTelemetryPublisher(telemetry_config, logger);
 }
 
