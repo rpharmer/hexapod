@@ -55,6 +55,8 @@ double wrappedAngleDistance(double a_rad, double b_rad) {
     const double wrapped =
         std::remainder(a_rad - b_rad, 2.0 * kPi);
     return std::abs(wrapped);
+}
+
 bool allFiniteTargets(const LegTargets& targets) {
     for (const auto& foot : targets.feet) {
         if (!std::isfinite(foot.pos_body_m.x) ||
@@ -592,6 +594,8 @@ int main() {
     if (!expect(allFiniteTargets(safeguarded_targets),
                 "body controller should clamp or reject non-finite state/intent fields to finite targets")) {
         return EXIT_FAILURE;
+    }
+
     MotionIntent wrap_heading_intent{};
     wrap_heading_intent.requested_mode = RobotMode::WALK;
     wrap_heading_intent.speed_mps = LinearRateMps{0.2};

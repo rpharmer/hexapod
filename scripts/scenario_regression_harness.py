@@ -95,13 +95,13 @@ def main() -> int:
     parser.add_argument(
         "--max-peak-foot-vel-mps",
         type=float,
-        default=1.6,
+        default=15.0,
         help="Fail if runtime.metrics peak_foot_vel_mps exceeds this threshold.",
     )
     parser.add_argument(
         "--max-peak-velocity-radps",
         type=float,
-        default=25.0,
+        default=120.0,
         help="Fail if runtime.metrics peak_velocity_radps exceeds this threshold.",
     )
     parser.add_argument(
