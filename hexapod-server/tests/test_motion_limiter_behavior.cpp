@@ -211,6 +211,65 @@ bool scenario_body_leads_on_start_and_legs_lead_on_stop() {
                   "pipeline telemetry should mark limiter enabled");
 }
 
+bool scenario_quick_mode_toggles_preserve_phase_order_with_elapsed_gating() {
+    constexpr uint8_t kLimiterPhaseTracking = 0;
+    constexpr uint8_t kLimiterPhaseBodyLeadsOnStart = 1;
+    constexpr uint8_t kLimiterPhaseLegsLeadOnStop = 2;
+
+    control_config::MotionLimiterConfig limiter_cfg{};
+    limiter_cfg.startup_phase_threshold = std::chrono::milliseconds{60};
+    limiter_cfg.shutdown_phase_threshold = std::chrono::milliseconds{60};
+
+    ControlPipeline pipeline(control_config::ControlConfig{
+        .gait = control_config::GaitConfig{},
+        .motion_limiter = limiter_cfg});
+
+    RobotState est = nominalEstimatedState();
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    safety.torque_cut = false;
+
+    MotionIntent idle{};
+    idle.requested_mode = RobotMode::SAFE_IDLE;
+    MotionIntent walk = walkingIntent();
+    const DurationSec loop_dt{0.02};
+
+    const PipelineStepResult idle_prime = pipeline.runStep(est, idle, safety, loop_dt, true, 100);
+    const PipelineStepResult walk_start = pipeline.runStep(est, walk, safety, loop_dt, true, 101);
+    const PipelineStepResult walk_gate_1 = pipeline.runStep(est, walk, safety, loop_dt, true, 102);
+    const PipelineStepResult walk_gate_2 = pipeline.runStep(est, walk, safety, loop_dt, true, 103);
+    const PipelineStepResult walk_gate_3 = pipeline.runStep(est, walk, safety, loop_dt, true, 104);
+    const PipelineStepResult walk_tracking = pipeline.runStep(est, walk, safety, loop_dt, true, 105);
+    const PipelineStepResult stop_start = pipeline.runStep(est, idle, safety, loop_dt, true, 106);
+    const PipelineStepResult stop_gate_1 = pipeline.runStep(est, idle, safety, loop_dt, true, 107);
+    const PipelineStepResult stop_gate_2 = pipeline.runStep(est, idle, safety, loop_dt, true, 108);
+    const PipelineStepResult stop_gate_3 = pipeline.runStep(est, idle, safety, loop_dt, true, 109);
+    const PipelineStepResult stop_tracking = pipeline.runStep(est, idle, safety, loop_dt, true, 110);
+
+    return expect(idle_prime.status.dynamic_gait.limiter_phase == kLimiterPhaseLegsLeadOnStop,
+                  "idle priming should begin in stop-gating phase") &&
+           expect(walk_start.status.dynamic_gait.limiter_phase == kLimiterPhaseBodyLeadsOnStart,
+                  "walk toggle should enter body-leads-on-start phase immediately") &&
+           expect(walk_gate_1.status.dynamic_gait.limiter_phase == kLimiterPhaseBodyLeadsOnStart &&
+                      walk_gate_2.status.dynamic_gait.limiter_phase == kLimiterPhaseBodyLeadsOnStart &&
+                      walk_gate_3.status.dynamic_gait.limiter_phase == kLimiterPhaseBodyLeadsOnStart,
+                  "startup gating should persist until elapsed time reaches threshold") &&
+           expect(walk_tracking.status.dynamic_gait.limiter_phase == kLimiterPhaseTracking,
+                  "startup gating should exit to tracking only after threshold elapsed") &&
+           expect(stop_start.status.dynamic_gait.limiter_phase == kLimiterPhaseLegsLeadOnStop,
+                  "stop toggle should enter legs-lead-on-stop phase immediately") &&
+           expect(stop_gate_1.status.dynamic_gait.limiter_phase == kLimiterPhaseLegsLeadOnStop &&
+                      stop_gate_2.status.dynamic_gait.limiter_phase == kLimiterPhaseLegsLeadOnStop &&
+                      stop_gate_3.status.dynamic_gait.limiter_phase == kLimiterPhaseLegsLeadOnStop,
+                  "shutdown gating should persist until elapsed time reaches threshold") &&
+           expect(stop_tracking.status.dynamic_gait.limiter_phase == kLimiterPhaseTracking,
+                  "shutdown gating should exit to tracking only after threshold elapsed") &&
+           expect(walk_start.status.dynamic_gait.limiter_phase == kLimiterPhaseBodyLeadsOnStart &&
+                      walk_tracking.status.dynamic_gait.limiter_phase == kLimiterPhaseTracking &&
+                      stop_start.status.dynamic_gait.limiter_phase == kLimiterPhaseLegsLeadOnStop,
+                  "phase ordering should be body-leads -> tracking -> legs-lead across quick toggles");
+}
+
 bool unit_motion_limiter_scales_with_dt_and_stays_bounded() {
     control_config::MotionLimiterConfig limiter_cfg{};
     limiter_cfg.foot_velocity_limit_mps = 0.05;
@@ -378,6 +437,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!scenario_body_leads_on_start_and_legs_lead_on_stop()) {
+        return EXIT_FAILURE;
+    }
+    if (!scenario_quick_mode_toggles_preserve_phase_order_with_elapsed_gating()) {
         return EXIT_FAILURE;
     }
     if (!scenario_motion_limiter_config_changes_clamp_behavior()) {
