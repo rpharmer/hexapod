@@ -158,9 +158,9 @@ void testShortAllFalseBurstTimeline() {
     ContactManagerOutput prev{};
     prev.managed_policy = policy;
     bool derating_on_burst = false;
-    bool fallback_remains_latched_after_burst = false;
+    bool derating_cleared_after_recovery = false;
 
-    for (int t = 0; t < 9; ++t) {
+    for (int t = 0; t < 16; ++t) {
         std::array<bool, kNumLegs> contacts = {true, true, true, true, true, true};
         if (t == 4 || t == 5) {
             contacts.fill(false);
@@ -171,8 +171,8 @@ void testShortAllFalseBurstTimeline() {
         if (t == 4 || t == 5) {
             derating_on_burst = derating_on_burst || out.derating_requested;
         }
-        if (t > 5) {
-            fallback_remains_latched_after_burst = fallback_remains_latched_after_burst || out.derating_requested;
+        if (t >= 12 && !out.derating_requested) {
+            derating_cleared_after_recovery = true;
         }
 
         prev = out;
@@ -180,8 +180,37 @@ void testShortAllFalseBurstTimeline() {
     }
 
     expect(derating_on_burst, "short all-false burst should trigger fallback derating/suppression");
-    expect(fallback_remains_latched_after_burst,
-           "with persistent slip counters, fallback derating is expected to remain latched after burst recovery");
+    expect(derating_cleared_after_recovery,
+           "fallback derating should clear after the healthy-contact recovery window");
+}
+
+void testDeratingRecoveryAfterHealthyWindow() {
+    ContactManager manager;
+    RuntimeGaitPolicy policy = makePolicy();
+    const GaitState scheduled = makeScheduledGait({true, true, true, true, true, true}, 0.55);
+
+    bool saw_derating = false;
+    bool recovered = false;
+
+    for (int t = 0; t < 20; ++t) {
+        std::array<bool, kNumLegs> contacts = {true, true, true, true, true, true};
+        if (t >= 2 && t <= 4) {
+            contacts[0] = false;
+            contacts[1] = false;
+        }
+
+        const ContactManagerOutput out = manager.update(makeStateWithContactMask(contacts), scheduled, policy);
+        if (t >= 2 && t <= 4) {
+            saw_derating = saw_derating || out.derating_requested;
+        }
+        if (t >= 12 && !out.derating_requested) {
+            recovered = true;
+        }
+        policy = out.managed_policy;
+    }
+
+    expect(saw_derating, "multi-leg stance loss should engage derating before recovery");
+    expect(recovered, "derating should clear after sustained healthy contact");
 }
 
 } // namespace
@@ -191,6 +220,7 @@ int main() {
     testSingleLegDropoutTimeline();
     testAlternatingDropoutsTimeline();
     testShortAllFalseBurstTimeline();
+    testDeratingRecoveryAfterHealthyWindow();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test(s) failed\n";
