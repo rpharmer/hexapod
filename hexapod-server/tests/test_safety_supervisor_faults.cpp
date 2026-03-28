@@ -154,6 +154,70 @@ bool testUnstableSupportTriggersTipOver() {
            expect(state.torque_cut, "TIP_OVER from instability should request torque cut");
 }
 
+bool testTiltOnlyTipOverRequiresConfirmationSamplesAndResetsOnClearSample() {
+    constexpr uint32_t kTipOverConfirmSamples = 25; // Mirrors SafetySupervisor policy constant.
+
+    {
+        SafetySupervisor supervisor;
+        RobotState raw = nominalRaw();
+        RobotState est = nominalEstimated();
+        est.body_pose_state.orientation_rad.x = 2.0;
+        est.has_measured_body_pose_state = true;
+        est.has_body_pose_state = true;
+
+        for (uint32_t sample = 1; sample < kTipOverConfirmSamples; ++sample) {
+            const SafetyState state = supervisor.evaluate(
+                raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+            if (!expect(state.stable, "tilt-only confirmation path requires stable support polygon")) {
+                return false;
+            }
+            if (!expect(state.active_fault != FaultCode::TIP_OVER,
+                        "tilt-only violations should not trip before kTipOverConfirmSamples")) {
+                return false;
+            }
+        }
+
+        const SafetyState tripped = supervisor.evaluate(
+            raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+        if (!expect(tripped.active_fault == FaultCode::TIP_OVER,
+                    "tilt-only violations should trip exactly at kTipOverConfirmSamples")) {
+            return false;
+        }
+    }
+
+    {
+        SafetySupervisor supervisor;
+        RobotState raw = nominalRaw();
+        RobotState violating_est = nominalEstimated();
+        violating_est.body_pose_state.orientation_rad.x = 2.0;
+        violating_est.has_measured_body_pose_state = true;
+        violating_est.has_body_pose_state = true;
+
+        for (uint32_t sample = 1; sample < kTipOverConfirmSamples; ++sample) {
+            const SafetyState state = supervisor.evaluate(
+                raw, violating_est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+            if (!expect(state.active_fault != FaultCode::TIP_OVER,
+                        "pre-reset violating samples should still be below trip threshold")) {
+                return false;
+            }
+        }
+
+        RobotState non_violating_est = violating_est;
+        non_violating_est.body_pose_state.orientation_rad.x = 0.0;
+        const SafetyState reset_sample = supervisor.evaluate(
+            raw, non_violating_est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+        if (!expect(reset_sample.active_fault != FaultCode::TIP_OVER,
+                    "single non-violating sample should prevent immediate tip-over trip")) {
+            return false;
+        }
+
+        const SafetyState after_reset = supervisor.evaluate(
+            raw, violating_est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+        return expect(after_reset.active_fault != FaultCode::TIP_OVER,
+                      "candidate counter should reset after one non-violating sample");
+    }
+}
+
 bool testMotorFaultTorqueCut() {
     SafetySupervisor supervisor;
     RobotState raw = nominalRaw();
@@ -287,6 +351,7 @@ int main() {
         !testBusTimeoutBeatsFreshnessFaults() ||
         !testInferredTiltDoesNotTripMeasuredTiltPolicy() ||
         !testUnstableSupportTriggersTipOver() ||
+        !testTiltOnlyTipOverRequiresConfirmationSamplesAndResetsOnClearSample() ||
         !testMotorFaultTorqueCut() ||
         !testJointDiscontinuityTripsSafety() ||
         !testLatchedRemainsWhenIntentNotSafeIdle() ||
