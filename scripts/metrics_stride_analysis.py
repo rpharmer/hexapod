@@ -17,6 +17,7 @@ except ModuleNotFoundError:  # pragma: no cover
     tomllib = None
 
 LEG_ORDER = ["LF", "LM", "LR", "RF", "RM", "RR"]
+JOINT_ORDER = ["coxa", "femur", "tibia"]
 RIGHT_SIDE_LEGS = {"RF", "RM", "RR"}
 MOUNT_ANGLES_RAD = {
     "LF": math.radians(40.0),
@@ -168,6 +169,9 @@ def main() -> int:
     duty_series: dict[str, list[float]] = {leg: [] for leg in LEG_ORDER}
     limiter_hard_counts = {"linear": 0, "yaw": 0, "reach": 0, "cadence": 0, "saturated": 0}
     limiter_adapt_lt1_counts = {"linear": 0, "yaw": 0, "cadence": 0, "step": 0}
+    joint_samples_deg: dict[str, dict[str, list[float]]] = {
+        leg: {joint: [] for joint in JOINT_ORDER} for leg in LEG_ORDER
+    }
 
     total_frames = 0
     gait_frames = 0
@@ -253,7 +257,21 @@ def main() -> int:
                         freshness_bursts.append(prev_consecutive)
                 prev_freshness = curr
 
-            if not isinstance(geometry_raw, dict) or not isinstance(angles, dict):
+            parsed_angles_by_leg: dict[str, list[float]] = {}
+            if isinstance(angles, dict):
+                for leg in LEG_ORDER:
+                    ang = angles.get(leg)
+                    if not (isinstance(ang, list) and len(ang) >= 3):
+                        continue
+                    values = [to_float(ang[0]), to_float(ang[1]), to_float(ang[2])]
+                    if any(v is None for v in values):
+                        continue
+                    parsed_values = [float(values[0]), float(values[1]), float(values[2])]
+                    parsed_angles_by_leg[leg] = parsed_values
+                    for joint_idx, joint_name in enumerate(JOINT_ORDER):
+                        joint_samples_deg[leg][joint_name].append(parsed_values[joint_idx])
+
+            if not isinstance(geometry_raw, dict):
                 continue
             geometry: dict[str, float] = {}
             for key in ("coxa", "femur", "tibia", "body_radius"):
@@ -268,11 +286,8 @@ def main() -> int:
             stance_arr = dynamic.get("leg_in_stance") if isinstance(dynamic, dict) else None
             duty_arr = dynamic.get("leg_duty_cycle") if isinstance(dynamic, dict) else None
             for idx, leg in enumerate(LEG_ORDER):
-                ang = angles.get(leg)
-                if not (isinstance(ang, list) and len(ang) >= 3):
-                    continue
-                values = [to_float(ang[0]), to_float(ang[1]), to_float(ang[2])]
-                if any(v is None for v in values):
+                values = parsed_angles_by_leg.get(leg)
+                if values is None:
                     continue
                 foot_body = fk_foot_body_mm(leg, [values[0], values[1], values[2]], geometry)
                 foot_world = body_to_world(foot_body, pose)
@@ -376,6 +391,27 @@ def main() -> int:
             },
         }
 
+    per_joint: dict[str, dict[str, Any]] = {}
+    all_joint_ranges: list[float] = []
+    for leg in LEG_ORDER:
+        per_joint[leg] = {}
+        for joint in JOINT_ORDER:
+            series = joint_samples_deg[leg][joint]
+            if not series:
+                per_joint[leg][joint] = {"sample_count": 0, "range_deg": None}
+                continue
+            min_deg = min(series)
+            max_deg = max(series)
+            range_deg = max_deg - min_deg
+            per_joint[leg][joint] = {
+                "sample_count": len(series),
+                "min_deg": min_deg,
+                "avg_deg": statistics.fmean(series),
+                "max_deg": max_deg,
+                "range_deg": range_deg,
+            }
+            all_joint_ranges.append(range_deg)
+
     cadence_median = percentile(gait_cadence, 0.5)
     cadence_p95 = percentile(gait_cadence, 0.95)
     cadence_dev_p95 = percentile([abs(v - cadence_median) for v in gait_cadence], 0.95) if cadence_median is not None else None
@@ -422,6 +458,12 @@ def main() -> int:
         },
         "limiter": limiter,
         "freshness": freshness,
+        "joint_range_deg": {
+            "joint_count": len(all_joint_ranges),
+            "min": min(all_joint_ranges) if all_joint_ranges else None,
+            "average": statistics.fmean(all_joint_ranges) if all_joint_ranges else None,
+            "max": max(all_joint_ranges) if all_joint_ranges else None,
+        },
     }
 
     checks: list[dict[str, Any]] = []
@@ -476,12 +518,25 @@ def main() -> int:
             "op": "<=",
         })
 
+    min_joint_range = thresholds.get("min_joint_range_deg")
+    if min_joint_range is not None:
+        observed = global_metrics["joint_range_deg"]["min"]
+        passed = observed is not None and observed >= float(min_joint_range)
+        checks.append({
+            "name": "min_joint_range_deg",
+            "passed": passed,
+            "observed": observed,
+            "threshold": float(min_joint_range),
+            "op": ">=",
+        })
+
     result = {
         "input": str(capture_path),
         "scenario": str(args.scenario) if args.scenario else None,
         "thresholds": thresholds,
         "global": global_metrics,
         "per_leg": per_leg,
+        "per_joint": per_joint,
         "checks": checks,
         "pass": all(item["passed"] for item in checks) if checks else True,
     }
