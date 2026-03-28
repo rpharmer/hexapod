@@ -9,6 +9,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -84,10 +85,12 @@ class CountingTelemetryPublisher final : public telemetry::ITelemetryPublisher {
 public:
     void publishGeometry(const HexapodGeometry&) override {
         ++geometry_count;
+        geometry_publish_timestamps_us.push_back(now_us().value);
     }
 
     void publishControlStep(const telemetry::ControlStepTelemetry& telemetry_sample) override {
         ++control_step_count;
+        control_publish_timestamps_us.push_back(telemetry_sample.timestamp_us.value);
         last_control_step = telemetry_sample;
     }
 
@@ -99,6 +102,8 @@ public:
 
     size_t geometry_count{0};
     size_t control_step_count{0};
+    std::vector<uint64_t> geometry_publish_timestamps_us{};
+    std::vector<uint64_t> control_publish_timestamps_us{};
     std::optional<telemetry::ControlStepTelemetry> last_control_step{};
 };
 
@@ -299,6 +304,94 @@ bool runTelemetryCadenceRejectCase() {
                   "second rejected control step inside publish period should not publish telemetry") &&
            expect(telemetry_raw->geometry_count == 1,
                   "rejected control steps should keep geometry refresh cadence");
+}
+
+bool runTelemetryRapidLoopCadenceCase() {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<ScriptedEstimator>();
+    auto* scripted = estimator.get();
+    auto telemetry = std::make_unique<CountingTelemetryPublisher>();
+    auto* telemetry_raw = telemetry.get();
+
+    control_config::ControlConfig cfg{};
+    cfg.telemetry.enabled = true;
+    cfg.telemetry.publish_period = std::chrono::milliseconds{25};
+    cfg.telemetry.geometry_refresh_period = std::chrono::milliseconds{80};
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, cfg, std::move(telemetry));
+
+    if (!expect(runtime.init(), "init should succeed (telemetry rapid loop cadence)")) {
+        return false;
+    }
+
+    runtime.startTelemetry();
+    if (!expect(telemetry_raw->geometry_count == 1,
+                "rapid loop cadence should publish geometry on startTelemetry")) {
+        return false;
+    }
+
+    const uint64_t publish_period_us = static_cast<uint64_t>(cfg.telemetry.publish_period.count()) * 1000ULL;
+    const uint64_t geometry_period_us =
+        static_cast<uint64_t>(cfg.telemetry.geometry_refresh_period.count()) * 1000ULL;
+
+    const auto rapid_window = std::chrono::milliseconds{240};
+    const auto start = std::chrono::steady_clock::now();
+    uint64_t sample_id = 900;
+    while (std::chrono::steady_clock::now() - start < rapid_window) {
+        scripted->enqueue(makeEstimatorSample(sample_id, now_us()));
+        runtime.setMotionIntent(makeIntentSample(sample_id, now_us()));
+        runControlStep(runtime);
+        ++sample_id;
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+
+    if (!expect(telemetry_raw->control_step_count > 0,
+                "rapid loop cadence should publish control telemetry during loop window")) {
+        return false;
+    }
+
+    const auto& control_timestamps = telemetry_raw->control_publish_timestamps_us;
+    if (!expect(!control_timestamps.empty(),
+                "rapid loop cadence should capture control publish timestamps")) {
+        return false;
+    }
+    for (size_t i = 1; i < control_timestamps.size(); ++i) {
+        const uint64_t delta_us = control_timestamps[i] - control_timestamps[i - 1];
+        if (!expect(delta_us >= publish_period_us,
+                    "publish period throttling should prevent sub-period control telemetry bursts")) {
+            return false;
+        }
+    }
+
+    const uint64_t elapsed_control_window_us =
+        control_timestamps.back() - control_timestamps.front() + publish_period_us;
+    const uint64_t theoretical_max_publishes =
+        (elapsed_control_window_us / publish_period_us) + 1;
+    if (!expect(telemetry_raw->control_step_count <= theoretical_max_publishes,
+                "rapid loop cadence should never over-publish beyond period budget")) {
+        return false;
+    }
+
+    if (!expect(telemetry_raw->geometry_count >= 3,
+                "geometry refresh should publish periodically during sustained rapid loops")) {
+        return false;
+    }
+
+    const auto& geometry_timestamps = telemetry_raw->geometry_publish_timestamps_us;
+    if (!expect(geometry_timestamps.size() == telemetry_raw->geometry_count,
+                "rapid loop cadence should capture all geometry publish timestamps")) {
+        return false;
+    }
+    for (size_t i = 1; i < geometry_timestamps.size(); ++i) {
+        const uint64_t delta_us = geometry_timestamps[i] - geometry_timestamps[i - 1];
+        if (!expect(delta_us >= geometry_period_us,
+                    "geometry refresh interval should be honored")) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 bool runImuReadGateCase(bool imu_reads_enabled, bool expect_body_pose_state) {
@@ -509,6 +602,10 @@ int main() {
     }
 
     if (!runTelemetryCadenceRejectCase()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runTelemetryRapidLoopCadenceCase()) {
         return EXIT_FAILURE;
     }
 
