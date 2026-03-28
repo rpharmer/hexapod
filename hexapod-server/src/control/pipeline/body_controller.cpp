@@ -7,6 +7,9 @@
 namespace {
 
 constexpr double kDefaultBodyHeightM = 0.20;
+constexpr double kLevelHoldRollPitchKp = 0.6;
+constexpr double kLevelHoldMaxCorrectionRad = 0.18;
+constexpr double kLevelHoldMaxCommandRad = 0.30;
 
 } // namespace
 
@@ -63,7 +66,6 @@ LegTargets BodyController::update(const RobotState& est,
     out.timestamp_us = now_us();
     MotionLimiterTelemetry limiter_telemetry{};
 
-    (void)est;
     (void)limiter_config_;
 
     const std::array<Vec3, kNumLegs> nominal = nominalStance();
@@ -73,8 +75,30 @@ LegTargets BodyController::update(const RobotState& est,
         !safety.torque_cut;
     (void)walking;
 
-    const double roll_cmd = intent.body_pose_setpoint.orientation_rad.x;
-    const double pitch_cmd = intent.body_pose_setpoint.orientation_rad.y;
+    const auto applyLevelHoldAxis = [](double setpoint_rad, double estimated_rad) {
+        if (!std::isfinite(setpoint_rad) || !std::isfinite(estimated_rad)) {
+            return setpoint_rad;
+        }
+        const double error_rad = setpoint_rad - estimated_rad;
+        const double correction_rad = std::clamp(
+            kLevelHoldRollPitchKp * error_rad,
+            -kLevelHoldMaxCorrectionRad,
+            kLevelHoldMaxCorrectionRad);
+        return std::clamp(
+            setpoint_rad + correction_rad,
+            -kLevelHoldMaxCommandRad,
+            kLevelHoldMaxCommandRad);
+    };
+
+    const double roll_setpoint = intent.body_pose_setpoint.orientation_rad.x;
+    const double pitch_setpoint = intent.body_pose_setpoint.orientation_rad.y;
+    const bool level_hold_enabled = est.has_body_pose_state;
+    const double roll_cmd = level_hold_enabled
+                                ? applyLevelHoldAxis(roll_setpoint, est.body_pose_state.orientation_rad.x)
+                                : roll_setpoint;
+    const double pitch_cmd = level_hold_enabled
+                                 ? applyLevelHoldAxis(pitch_setpoint, est.body_pose_state.orientation_rad.y)
+                                 : pitch_setpoint;
     const double yaw_cmd_raw = policy.suppression.suppress_turning ? 0.0 : intent.body_pose_setpoint.orientation_rad.z;
     const double yaw_cmd = yaw_cmd_raw;
     const Mat3 body_rotation = Mat3::rotZ(yaw_cmd) * Mat3::rotY(pitch_cmd) * Mat3::rotX(roll_cmd);

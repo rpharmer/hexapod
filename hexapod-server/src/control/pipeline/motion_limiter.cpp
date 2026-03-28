@@ -40,6 +40,7 @@ MotionLimiterOutput MotionLimiter::update(const RobotState& estimated,
     output.diagnostics.enabled = true;
     output.diagnostics.loop_dt = loop_dt;
     output.diagnostics.constraint_reason = kConstraintReasonNone;
+    (void)estimated;
 
     const double dt_s = std::max(loop_dt.value, 0.0);
     const bool walking =
@@ -103,13 +104,15 @@ MotionLimiterOutput MotionLimiter::update(const RobotState& estimated,
     }
 
     if (dt_s > 0.0) {
-        const Vec3 est_vel = estimated.body_pose_state.body_trans_mps;
         const Vec3 req_vel = output.limited_intent.body_pose_setpoint.body_trans_mps;
+        const Vec3 prev_vel = has_previous_limited_intent_
+                                  ? static_cast<Vec3>(previous_limited_intent_.body_pose_setpoint.body_trans_mps)
+                                  : req_vel;
         const double max_dxy = safePositive(config_.body_linear_accel_limit_xy_mps2, 1e-6) * dt_s;
         const double max_dz = safePositive(config_.body_linear_accel_limit_z_mps2, 1e-6) * dt_s;
-        const double limited_vx = clampDelta(est_vel.x, req_vel.x, max_dxy);
-        const double limited_vy = clampDelta(est_vel.y, req_vel.y, max_dxy);
-        const double limited_vz = clampDelta(est_vel.z, req_vel.z, max_dz);
+        const double limited_vx = clampDelta(prev_vel.x, req_vel.x, max_dxy);
+        const double limited_vy = clampDelta(prev_vel.y, req_vel.y, max_dxy);
+        const double limited_vz = clampDelta(prev_vel.z, req_vel.z, max_dz);
         if (std::abs(limited_vx - req_vel.x) > 1e-12 ||
             std::abs(limited_vy - req_vel.y) > 1e-12 ||
             std::abs(limited_vz - req_vel.z) > 1e-12) {
@@ -119,12 +122,14 @@ MotionLimiterOutput MotionLimiter::update(const RobotState& estimated,
             output.diagnostics.constraint_reason = kConstraintReasonSlewRate;
         }
 
-        const Vec3 est_ang = estimated.body_pose_state.angular_velocity_radps;
         const Vec3 req_ang = output.limited_intent.body_pose_setpoint.angular_velocity_radps;
+        const Vec3 prev_ang = has_previous_limited_intent_
+                                  ? static_cast<Vec3>(previous_limited_intent_.body_pose_setpoint.angular_velocity_radps)
+                                  : req_ang;
         const Vec3 ang_lim = config_.body_angular_accel_limit_radps2;
-        const double limited_wx = clampDelta(est_ang.x, req_ang.x, safePositive(ang_lim.x, 1e-6) * dt_s);
-        const double limited_wy = clampDelta(est_ang.y, req_ang.y, safePositive(ang_lim.y, 1e-6) * dt_s);
-        const double limited_wz = clampDelta(est_ang.z, req_ang.z, safePositive(ang_lim.z, 1e-6) * dt_s);
+        const double limited_wx = clampDelta(prev_ang.x, req_ang.x, safePositive(ang_lim.x, 1e-6) * dt_s);
+        const double limited_wy = clampDelta(prev_ang.y, req_ang.y, safePositive(ang_lim.y, 1e-6) * dt_s);
+        const double limited_wz = clampDelta(prev_ang.z, req_ang.z, safePositive(ang_lim.z, 1e-6) * dt_s);
         if (std::abs(limited_wx - req_ang.x) > 1e-12 ||
             std::abs(limited_wy - req_ang.y) > 1e-12 ||
             std::abs(limited_wz - req_ang.z) > 1e-12) {
