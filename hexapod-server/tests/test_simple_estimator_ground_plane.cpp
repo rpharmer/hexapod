@@ -142,5 +142,62 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    // Subcase 4: alternating contact around memory window should keep support only within window,
+    // and reacquisition after expiry should avoid pose discontinuity under slight joint drift.
+    SimpleEstimator alternating_contact_estimator{};
+    RobotState alternating_contact_true = makeNeutralRaw(10, 3'000'000);
+    const RobotState alternating_contact_true_est =
+        alternating_contact_estimator.update(alternating_contact_true);
+    if (!expect(alternating_contact_true_est.has_inferred_body_pose_state,
+                "initial contact sample should seed inferred support points")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState alternating_contact_false_within = alternating_contact_true;
+    alternating_contact_false_within.sample_id = 11;
+    alternating_contact_false_within.timestamp_us = TimePointUs{3'249'999}; // 249,999us age < 250,000us window.
+    alternating_contact_false_within.foot_contacts = {false, false, false, false, false, false};
+    alternating_contact_false_within.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{0.015};
+    const RobotState alternating_contact_false_within_est =
+        alternating_contact_estimator.update(alternating_contact_false_within);
+    if (!expect(alternating_contact_false_within_est.has_inferred_body_pose_state,
+                "support points should persist while no-contact age remains within memory window") ||
+        !expect(std::abs(alternating_contact_false_within_est.body_pose_state.body_trans_m.z -
+                         alternating_contact_true_est.body_pose_state.body_trans_m.z) < 1e-9,
+                "joint drift without contact should not perturb support-point-derived body height")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState alternating_contact_false_stale = alternating_contact_false_within;
+    alternating_contact_false_stale.sample_id = 12;
+    alternating_contact_false_stale.timestamp_us = TimePointUs{3'250'001}; // 250,001us age > 250,000us window.
+    const RobotState alternating_contact_false_stale_est =
+        alternating_contact_estimator.update(alternating_contact_false_stale);
+    if (!expect(!alternating_contact_false_stale_est.has_inferred_body_pose_state,
+                "support points should expire once no-contact age exceeds memory window")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState alternating_contact_reacquired = alternating_contact_false_stale;
+    alternating_contact_reacquired.sample_id = 13;
+    alternating_contact_reacquired.timestamp_us = TimePointUs{3'300'000};
+    alternating_contact_reacquired.foot_contacts = {true, true, true, true, true, true};
+    alternating_contact_reacquired.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{0.02};
+    const RobotState alternating_contact_reacquired_est =
+        alternating_contact_estimator.update(alternating_contact_reacquired);
+    if (!expect(alternating_contact_reacquired_est.has_inferred_body_pose_state,
+                "contact reacquisition should restore inferred pose availability") ||
+        !expect(std::abs(alternating_contact_reacquired_est.body_pose_state.body_trans_m.z -
+                         alternating_contact_false_within_est.body_pose_state.body_trans_m.z) < 0.02,
+                "contact reacquisition with slight drift should not introduce body-height discontinuity") ||
+        !expect(std::abs(alternating_contact_reacquired_est.body_pose_state.orientation_rad.x -
+                         alternating_contact_false_within_est.body_pose_state.orientation_rad.x) < 0.05,
+                "contact reacquisition with slight drift should keep roll continuity") ||
+        !expect(std::abs(alternating_contact_reacquired_est.body_pose_state.orientation_rad.y -
+                         alternating_contact_false_within_est.body_pose_state.orientation_rad.y) < 0.05,
+                "contact reacquisition with slight drift should keep pitch continuity")) {
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }
