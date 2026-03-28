@@ -113,8 +113,6 @@ bool testRuntimeMetricsIncludeDroppedMessageAndQueueSignals() {
     SafetyState safety_state{};
 
     reporter.report(status,
-                    estimated_state,
-                    safety_state,
                     std::nullopt,
                     100,
                     1000,
