@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include <fstream>
 #include <filesystem>
 #include <iostream>
@@ -388,6 +389,49 @@ bool test_autonomy_outcome_scenarios_load_strict() {
     }
     return true;
 }
+
+bool test_yaw_rad_is_treated_as_yaw_rate_command() {
+    const std::string path = "/tmp/scenario_yaw_rate_semantics.toml";
+    if (!writeScenarioFile(path, R"(
+name = "yaw-rate-semantics"
+duration_ms = 100
+tick_ms = 20
+events = [
+  { at_ms = 0, mode = "WALK", gait = "TRIPOD", speed_mps = 0.2, heading_rad = 0.1, yaw_rad = 0.4 }
+]
+)")) {
+        return false;
+    }
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    const bool ok = ScenarioDriver::loadFromToml(path, scenario, error, ScenarioDriver::ValidationMode::Strict);
+    std::remove(path.c_str());
+    return expect(ok, "strict mode should accept bounded yaw-rate yaw_rad values") &&
+           expect(!scenario.events.empty() && std::abs(scenario.events.front().motion.yaw_rad - 0.4) < 1e-9,
+                  "yaw_rad should parse as scenario yaw-rate command value");
+}
+
+bool test_yaw_rate_limit_rejected() {
+    const std::string path = "/tmp/scenario_yaw_rate_limit.toml";
+    if (!writeScenarioFile(path, R"(
+name = "yaw-rate-limit"
+duration_ms = 100
+tick_ms = 20
+events = [
+  { at_ms = 0, mode = "WALK", gait = "TRIPOD", yaw_rad = 4.2 }
+]
+)")) {
+        return false;
+    }
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    const bool ok = ScenarioDriver::loadFromToml(path, scenario, error, ScenarioDriver::ValidationMode::Strict);
+    std::remove(path.c_str());
+    return expect(!ok && error.find("yaw-rate") != std::string::npos,
+                  "strict mode should reject yaw_rad values outside yaw-rate safety limit");
+}
 } // namespace
 
 int main() {
@@ -419,6 +463,12 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!test_autonomy_outcome_scenarios_load_strict()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_yaw_rad_is_treated_as_yaw_rate_command()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_yaw_rate_limit_rejected()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

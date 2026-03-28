@@ -5,12 +5,14 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <optional>
 #include <set>
 #include <thread>
 #include <toml.hpp>
 
 namespace {
+constexpr double kMaxScenarioYawRateRadps = 3.0;
 
 std::optional<RobotMode> parseRobotMode(const std::string& mode) {
     if (mode == "SAFE_IDLE") {
@@ -74,7 +76,8 @@ MotionIntent blendMotionIntent(const MotionIntent& from, const MotionIntent& to,
     blended.speed_mps.value = lerp(from.speed_mps.value, to.speed_mps.value, t);
     blended.body_pose_setpoint.body_trans_m.z = lerp(from.body_pose_setpoint.body_trans_m.z, to.body_pose_setpoint.body_trans_m.z, t);
     blended.heading_rad.value = lerpAngleShortest(from.heading_rad.value, to.heading_rad.value, t);
-    blended.body_pose_setpoint.orientation_rad.z = lerpAngleShortest(from.body_pose_setpoint.orientation_rad.z, to.body_pose_setpoint.orientation_rad.z, t);
+    blended.body_pose_setpoint.angular_velocity_radps.z =
+        lerp(from.body_pose_setpoint.angular_velocity_radps.z, to.body_pose_setpoint.angular_velocity_radps.z, t);
     return blended;
 }
 
@@ -337,6 +340,15 @@ bool validateMotion(const parser::DecodedEvent& decoded_event,
     out_event.motion.speed_mps = decoded_event.speed_mps.value_or(0.0);
     out_event.motion.heading_rad = decoded_event.heading_rad.value_or(0.0);
     out_event.motion.yaw_rad = decoded_event.yaw_rad.value_or(0.0);
+    if (!std::isfinite(out_event.motion.yaw_rad)) {
+        error = "scenario yaw_rad must be finite (interpreted as yaw-rate rad/s)";
+        return false;
+    }
+    if (std::abs(out_event.motion.yaw_rad) > kMaxScenarioYawRateRadps) {
+        error = "scenario yaw_rad exceeds yaw-rate limit of " + std::to_string(kMaxScenarioYawRateRadps) +
+                " rad/s (yaw_rad is interpreted as yaw-rate, not absolute yaw)";
+        return false;
+    }
     return true;
 }
 

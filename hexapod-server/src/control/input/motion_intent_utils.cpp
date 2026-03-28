@@ -17,6 +17,6 @@ MotionIntent makeMotionIntent(const ScenarioMotionIntent& motion) {
     MotionIntent cmd = makeMotionIntent(motion.mode, motion.gait, motion.body_height_m);
     cmd.speed_mps = LinearRateMps{motion.speed_mps};
     cmd.heading_rad = AngleRad{motion.heading_rad};
-    cmd.body_pose_setpoint.orientation_rad.z = motion.yaw_rad;
+    cmd.body_pose_setpoint.angular_velocity_radps.z = motion.yaw_rad;
     return cmd;
 }
