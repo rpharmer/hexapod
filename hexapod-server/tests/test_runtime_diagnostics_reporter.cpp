@@ -109,8 +109,24 @@ bool testRuntimeMetricsIncludeDroppedMessageAndQueueSignals() {
     status.active_mode = RobotMode::STAND;
     status.estimator_valid = true;
     status.active_fault = FaultCode::NONE;
+    RobotState estimated_state{};
+    SafetyState safety_state{};
 
-    reporter.report(status, std::nullopt, 100, 1000, 50, LoopTimingRollingMetrics{}, 0, 0);
+    reporter.report(status,
+                    estimated_state,
+                    safety_state,
+                    std::nullopt,
+                    100,
+                    1000,
+                    50,
+                    LoopTimingRollingMetrics{},
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0);
     logger->Flush();
 
     const bool has_runtime_diag = containsTokens(

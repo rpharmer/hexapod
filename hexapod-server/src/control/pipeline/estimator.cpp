@@ -181,6 +181,7 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
             est.body_pose_state.orientation_rad.x = std::atan2(-b, 1.0);
             est.body_pose_state.orientation_rad.y = std::atan2(a, 1.0);
             est.body_pose_state.orientation_rad.z = 0.0;
+            est.has_body_pose_state = true;
         }
 
         est.body_pose_state.body_trans_m.x = 0.0;
