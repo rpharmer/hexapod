@@ -212,7 +212,7 @@ bool testPublishControlStepIncludesLocalizationPoseWhenPresent()
                   "autonomy_debug should deterministically place current_pose before localization") &&
            expect(payload->find("\"frame_id\":\"map\"") != std::string::npos,
                   "localization frame_id should come from provided localization pose") &&
-           expect(payload->find("\"localization\":{\"frame_id\":\"map\",\"current_pose\":{") != std::string::npos,
+           expect(payload->find("\"localization\":{\"frame_id\":\"map\",\"pose_reset\":false,\"current_pose\":{") != std::string::npos,
                   "localization.current_pose should be emitted under localization") &&
            expect(payload->find("\"current_pose\":{\"x_m\":4.5,\"y_m\":-2.1,\"yaw_rad\":1.57}") != std::string::npos,
                   "autonomy_debug.current_pose should reflect localization pose values") &&
@@ -256,7 +256,7 @@ bool testPublishControlStepFallsBackToOdometryWhenLocalizationAbsent()
                 "payload should include autonomy_debug object") ||
         !expect(payload->find("\"localization\":{\"frame_id\":\"odom\"") != std::string::npos,
                 "fallback frame_id should default to odom") ||
-        !expect(payload->find("\"localization\":{\"frame_id\":\"odom\",\"current_pose\":{") != std::string::npos,
+        !expect(payload->find("\"localization\":{\"frame_id\":\"odom\",\"pose_reset\":false,\"current_pose\":{") != std::string::npos,
                 "fallback should include localization.current_pose object") ||
         !expect(payload->find("\"type\":\"joints\"") != std::string::npos,
                 "fallback payload should remain schema-valid for joints packets") ||
