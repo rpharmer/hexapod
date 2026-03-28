@@ -329,11 +329,103 @@ bool testBodyHeightStepAndRampBoundedInStandAndWalk() {
                   "walk body height step/ramp should not create joint spikes");
 }
 
+bool testAbruptIntentJumpsBoundCommandRatesAndAvoidFalseTipOver() {
+    ControlPipeline pipeline{};
+    RobotState est = nominalEstimate();
+    MotionIntent intent = walkingIntent();
+    SafetyState safety = nominalSafety();
+
+    constexpr DurationSec kLoopDt{0.02};
+    constexpr double kLegVelocityPeakThresholdMps =
+        control_config::kDefaultMotionFootVelocityLimitMps * 1.10;
+    constexpr double kJointVelocityPeakThresholdRadps =
+        control_config::kDefaultMotionJointSoftVelocityLimitRadps * 1.25;
+
+    struct IntentJumpSample {
+        double speed_mps;
+        double heading_rad;
+        double yaw_rate_radps;
+        double body_height_m;
+    };
+
+    const std::array<IntentJumpSample, 10> kAbruptJumpSequence{{
+        {0.05, -0.60, -0.70, 0.18},
+        {0.40, +0.85, +0.75, 0.25},
+        {0.02, -0.95, -0.80, 0.17},
+        {0.42, +0.65, +0.80, 0.24},
+        {0.00, -0.50, -0.70, 0.19},
+        {0.36, +1.05, +0.70, 0.245},
+        {0.08, -1.10, -0.75, 0.175},
+        {0.34, +0.90, +0.80, 0.235},
+        {0.04, -0.80, -0.65, 0.185},
+        {0.32, +0.55, +0.70, 0.23},
+    }};
+
+    constexpr int kSequenceRepeats = 8;
+    constexpr int kTotalCycles = static_cast<int>(kAbruptJumpSequence.size()) * kSequenceRepeats;
+
+    std::array<std::array<double, kJointsPerLeg>, kNumLegs> previous_joint_positions{};
+    bool has_previous_joint_positions = false;
+
+    double peak_leg_velocity_mps = 0.0;
+    double peak_joint_velocity_radps = 0.0;
+    bool saw_tip_over = false;
+
+    for (int cycle = 0; cycle < kTotalCycles; ++cycle) {
+        const auto& sample = kAbruptJumpSequence[static_cast<std::size_t>(cycle % static_cast<int>(kAbruptJumpSequence.size()))];
+        intent.requested_mode = RobotMode::WALK;
+        intent.gait = GaitType::TRIPOD;
+        intent.speed_mps = LinearRateMps{sample.speed_mps};
+        intent.heading_rad = AngleRad{sample.heading_rad};
+        intent.body_pose_setpoint.angular_velocity_radps.z = sample.yaw_rate_radps;
+        intent.body_pose_setpoint.body_trans_m.z = sample.body_height_m;
+        intent.sample_id += 1;
+        intent.timestamp_us = now_us();
+        est.timestamp_us = now_us();
+
+        const PipelineStepResult step_result =
+            pipeline.runStep(est, intent, safety, kLoopDt, true, static_cast<uint64_t>(cycle));
+
+        saw_tip_over = saw_tip_over || (step_result.status.active_fault == FaultCode::TIP_OVER);
+
+        if (!expect(step_result.status.active_mode == RobotMode::WALK,
+                    "abrupt intent jump scenario should remain in WALK mode") ||
+            !expect(step_result.status.bus_ok,
+                    "abrupt intent jump scenario should keep bus health true")) {
+            return false;
+        }
+
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            peak_leg_velocity_mps = std::max(peak_leg_velocity_mps,
+                                             footVelocityMagnitude(step_result.leg_targets.feet[leg]));
+            for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+                const double position = step_result.joint_targets.leg_states[leg].joint_state[joint].pos_rad.value;
+                if (has_previous_joint_positions) {
+                    const double vel_radps =
+                        std::abs(position - previous_joint_positions[leg][joint]) / kLoopDt.value;
+                    peak_joint_velocity_radps = std::max(peak_joint_velocity_radps, vel_radps);
+                }
+                previous_joint_positions[leg][joint] = position;
+            }
+        }
+        has_previous_joint_positions = true;
+        est.leg_states = step_result.joint_targets.leg_states;
+    }
+
+    return expect(peak_leg_velocity_mps < kLegVelocityPeakThresholdMps,
+                  "abrupt intent jumps should keep leg command rates bounded") &&
+           expect(peak_joint_velocity_radps < kJointVelocityPeakThresholdRadps,
+                  "abrupt intent jumps should keep joint command rates bounded") &&
+           expect(!saw_tip_over,
+                  "abrupt intent jumps with nominal support should not falsely trigger TIP_OVER");
+}
+
 } // namespace
 
 int main() {
     if (!testWalkHeadingAndYawRateStepResponse() ||
-        !testBodyHeightStepAndRampBoundedInStandAndWalk()) {
+        !testBodyHeightStepAndRampBoundedInStandAndWalk() ||
+        !testAbruptIntentJumpsBoundCommandRatesAndAvoidFalseTipOver()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
