@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "reach_envelope.hpp"
 #include <cstdlib>
@@ -24,6 +25,20 @@ bool nearlyEqual(double lhs, double rhs, double eps = 1e-6) {
 double legVelocityMagnitude(const FootTarget& target) {
     const Vec3 v = target.vel_body_mps;
     return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+bool allFiniteTargets(const LegTargets& targets) {
+    for (const auto& foot : targets.feet) {
+        if (!std::isfinite(foot.pos_body_m.x) ||
+            !std::isfinite(foot.pos_body_m.y) ||
+            !std::isfinite(foot.pos_body_m.z) ||
+            !std::isfinite(foot.vel_body_mps.x) ||
+            !std::isfinite(foot.vel_body_mps.y) ||
+            !std::isfinite(foot.vel_body_mps.z)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 } // namespace
@@ -270,6 +285,36 @@ int main() {
     }
     if (!expect(max_velocity_spike < 0.5,
                 "switching confidence-aware level hold should not create large velocity spikes")) {
+        return EXIT_FAILURE;
+    }
+
+    MotionIntent non_finite_intent{};
+    non_finite_intent.requested_mode = RobotMode::WALK;
+    non_finite_intent.body_pose_setpoint.body_trans_m = Vec3{
+        std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::infinity(),
+        std::numeric_limits<double>::quiet_NaN()};
+    non_finite_intent.body_pose_setpoint.body_trans_mps = Vec3{
+        std::numeric_limits<double>::infinity(), 0.0, std::numeric_limits<double>::quiet_NaN()};
+    non_finite_intent.body_pose_setpoint.angular_velocity_radps = Vec3{
+        0.0, std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity()};
+    non_finite_intent.body_pose_setpoint.orientation_rad = Vec3{
+        std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::infinity(),
+        std::numeric_limits<double>::quiet_NaN()};
+
+    RobotState non_finite_state = est;
+    non_finite_state.has_measured_body_pose_state = true;
+    non_finite_state.has_body_pose_state = true;
+    non_finite_state.body_pose_state.orientation_rad = Vec3{
+        std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::infinity(),
+        0.0};
+
+    const LegTargets safeguarded_targets =
+        controller.update(non_finite_state, non_finite_intent, gait, safety);
+    if (!expect(allFiniteTargets(safeguarded_targets),
+                "body controller should clamp or reject non-finite state/intent fields to finite targets")) {
         return EXIT_FAILURE;
     }
 

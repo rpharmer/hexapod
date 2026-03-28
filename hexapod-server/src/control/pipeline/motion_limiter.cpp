@@ -24,6 +24,21 @@ double clampDelta(double previous, double requested, double max_step) {
     return previous + std::clamp(delta, -max_step, max_step);
 }
 
+double finiteOr(double value, double fallback) {
+    return std::isfinite(value) ? value : fallback;
+}
+
+Vec3 sanitizeVec3(const Vec3& requested, const Vec3& fallback, bool& modified) {
+    const Vec3 safe{
+        finiteOr(requested.x, fallback.x),
+        finiteOr(requested.y, fallback.y),
+        finiteOr(requested.z, fallback.z)};
+    if (safe.x != requested.x || safe.y != requested.y || safe.z != requested.z) {
+        modified = true;
+    }
+    return safe;
+}
+
 } // namespace
 
 MotionLimiter::MotionLimiter(control_config::MotionLimiterConfig config)
@@ -41,6 +56,24 @@ MotionLimiterOutput MotionLimiter::update(const RobotState& estimated,
     output.diagnostics.loop_dt = loop_dt;
     output.diagnostics.constraint_reason = kConstraintReasonNone;
     (void)estimated;
+
+    const MotionIntent& fallback_intent = has_previous_limited_intent_ ? previous_limited_intent_ : MotionIntent{};
+    output.limited_intent.body_pose_setpoint.body_trans_m = sanitizeVec3(
+        output.limited_intent.body_pose_setpoint.body_trans_m,
+        fallback_intent.body_pose_setpoint.body_trans_m,
+        output.diagnostics.intent_modified);
+    output.limited_intent.body_pose_setpoint.body_trans_mps = sanitizeVec3(
+        output.limited_intent.body_pose_setpoint.body_trans_mps,
+        fallback_intent.body_pose_setpoint.body_trans_mps,
+        output.diagnostics.intent_modified);
+    output.limited_intent.body_pose_setpoint.angular_velocity_radps = sanitizeVec3(
+        output.limited_intent.body_pose_setpoint.angular_velocity_radps,
+        fallback_intent.body_pose_setpoint.angular_velocity_radps,
+        output.diagnostics.intent_modified);
+    output.limited_intent.body_pose_setpoint.orientation_rad = sanitizeVec3(
+        output.limited_intent.body_pose_setpoint.orientation_rad,
+        fallback_intent.body_pose_setpoint.orientation_rad,
+        output.diagnostics.intent_modified);
 
     const double dt_s = std::max(loop_dt.value, 0.0);
     const bool walking =

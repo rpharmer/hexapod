@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 
 namespace {
 
@@ -12,6 +13,21 @@ bool expect(bool condition, const char* message) {
         return false;
     }
     return true;
+}
+
+bool allFiniteBodyPose(const BodyPoseKinematics& pose) {
+    return std::isfinite(pose.orientation_rad.x) &&
+           std::isfinite(pose.orientation_rad.y) &&
+           std::isfinite(pose.orientation_rad.z) &&
+           std::isfinite(pose.angular_velocity_radps.x) &&
+           std::isfinite(pose.angular_velocity_radps.y) &&
+           std::isfinite(pose.angular_velocity_radps.z) &&
+           std::isfinite(pose.body_trans_m.x) &&
+           std::isfinite(pose.body_trans_m.y) &&
+           std::isfinite(pose.body_trans_m.z) &&
+           std::isfinite(pose.body_trans_mps.x) &&
+           std::isfinite(pose.body_trans_mps.y) &&
+           std::isfinite(pose.body_trans_mps.z);
 }
 
 RobotState makeNeutralRaw(uint64_t sample_id, uint64_t timestamp_us) {
@@ -95,6 +111,30 @@ int main() {
                    stance_motion_b_est.body_pose_state.body_trans_mps.y);
     if (!expect(planar_speed > 1e-4,
                 "stance contact deltas should produce non-zero planar body velocity estimate")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState non_finite_imu = makeNeutralRaw(6, 2'100'000);
+    non_finite_imu.has_measured_body_pose_state = true;
+    non_finite_imu.body_pose_state.orientation_rad = Vec3{0.01, -0.01, 0.0};
+    non_finite_imu.body_pose_state.angular_velocity_radps = Vec3{
+        std::numeric_limits<double>::quiet_NaN(), 0.2, 0.3};
+    non_finite_imu.body_pose_state.body_trans_mps = Vec3{
+        std::numeric_limits<double>::infinity(),
+        -std::numeric_limits<double>::infinity(),
+        std::numeric_limits<double>::quiet_NaN()};
+    const RobotState non_finite_imu_est = estimator.update(non_finite_imu);
+    if (!expect(allFiniteBodyPose(non_finite_imu_est.body_pose_state),
+                "non-finite measured body velocity inputs should not produce non-finite estimator body pose outputs")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState non_finite_joint = makeNeutralRaw(7, 2'120'000);
+    non_finite_joint.leg_states[0].joint_state[FEMUR].pos_rad =
+        AngleRad{std::numeric_limits<double>::infinity()};
+    const RobotState non_finite_joint_est = estimator.update(non_finite_joint);
+    if (!expect(std::isfinite(non_finite_joint_est.leg_states[0].joint_state[FEMUR].vel_radps.value),
+                "non-finite joint telemetry should be safely rejected for velocity estimation")) {
         return EXIT_FAILURE;
     }
 

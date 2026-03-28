@@ -14,6 +14,10 @@ constexpr int kLevelHoldMinSupportContacts = 3;
 constexpr double kLevelHoldMinStabilityMarginM = 0.01;
 constexpr double kLevelHoldEstimateLpfAlpha = 0.25;
 
+double finiteOr(double value, double fallback) {
+    return std::isfinite(value) ? value : fallback;
+}
+
 } // namespace
 
 BodyController::BodyController(control_config::MotionLimiterConfig config)
@@ -72,8 +76,26 @@ LegTargets BodyController::update(const RobotState& est,
     (void)limiter_config_;
 
     const std::array<Vec3, kNumLegs> nominal = nominalStance();
+    MotionIntent safe_intent = intent;
+    safe_intent.body_pose_setpoint.body_trans_m = Vec3{
+        finiteOr(intent.body_pose_setpoint.body_trans_m.x, 0.0),
+        finiteOr(intent.body_pose_setpoint.body_trans_m.y, 0.0),
+        finiteOr(intent.body_pose_setpoint.body_trans_m.z, kDefaultBodyHeightM)};
+    safe_intent.body_pose_setpoint.body_trans_mps = Vec3{
+        finiteOr(intent.body_pose_setpoint.body_trans_mps.x, 0.0),
+        finiteOr(intent.body_pose_setpoint.body_trans_mps.y, 0.0),
+        finiteOr(intent.body_pose_setpoint.body_trans_mps.z, 0.0)};
+    safe_intent.body_pose_setpoint.angular_velocity_radps = Vec3{
+        finiteOr(intent.body_pose_setpoint.angular_velocity_radps.x, 0.0),
+        finiteOr(intent.body_pose_setpoint.angular_velocity_radps.y, 0.0),
+        finiteOr(intent.body_pose_setpoint.angular_velocity_radps.z, 0.0)};
+    safe_intent.body_pose_setpoint.orientation_rad = Vec3{
+        finiteOr(intent.body_pose_setpoint.orientation_rad.x, 0.0),
+        finiteOr(intent.body_pose_setpoint.orientation_rad.y, 0.0),
+        finiteOr(intent.body_pose_setpoint.orientation_rad.z, 0.0)};
+
     const bool walking =
-        (intent.requested_mode == RobotMode::WALK) &&
+        (safe_intent.requested_mode == RobotMode::WALK) &&
         !safety.inhibit_motion &&
         !safety.torque_cut;
     (void)walking;
@@ -93,8 +115,8 @@ LegTargets BodyController::update(const RobotState& est,
             kLevelHoldMaxCommandRad);
     };
 
-    const double roll_setpoint = intent.body_pose_setpoint.orientation_rad.x;
-    const double pitch_setpoint = intent.body_pose_setpoint.orientation_rad.y;
+    const double roll_setpoint = safe_intent.body_pose_setpoint.orientation_rad.x;
+    const double pitch_setpoint = safe_intent.body_pose_setpoint.orientation_rad.y;
     const bool support_quality_sufficient =
         (safety.support_contact_count >= kLevelHoldMinSupportContacts) &&
         (safety.stability_margin_m >= kLevelHoldMinStabilityMarginM);
@@ -120,23 +142,23 @@ LegTargets BodyController::update(const RobotState& est,
         return level_hold_filter_state_.roll_pitch_rad;
     };
     const auto filtered_roll_pitch = updateLevelHoldEstimate(
-        est.body_pose_state.orientation_rad.x,
-        est.body_pose_state.orientation_rad.y);
+        finiteOr(est.body_pose_state.orientation_rad.x, 0.0),
+        finiteOr(est.body_pose_state.orientation_rad.y, 0.0));
     const double roll_cmd = level_hold_enabled
                                 ? applyLevelHoldAxis(roll_setpoint, filtered_roll_pitch[0])
                                 : roll_setpoint;
     const double pitch_cmd = level_hold_enabled
                                  ? applyLevelHoldAxis(pitch_setpoint, filtered_roll_pitch[1])
                                  : pitch_setpoint;
-    const double yaw_cmd_raw = policy.suppression.suppress_turning ? 0.0 : intent.body_pose_setpoint.orientation_rad.z;
+    const double yaw_cmd_raw = policy.suppression.suppress_turning ? 0.0 : safe_intent.body_pose_setpoint.orientation_rad.z;
     const double yaw_cmd = yaw_cmd_raw;
     const Mat3 body_rotation = Mat3::rotZ(yaw_cmd) * Mat3::rotY(pitch_cmd) * Mat3::rotX(roll_cmd);
     const Vec3 planar_body_offset = Vec3{
-        intent.body_pose_setpoint.body_trans_m.x,
-        intent.body_pose_setpoint.body_trans_m.y,
+        safe_intent.body_pose_setpoint.body_trans_m.x,
+        safe_intent.body_pose_setpoint.body_trans_m.y,
         0.0};
 
-    double commanded_body_height_m = intent.body_pose_setpoint.body_trans_m.z;
+    double commanded_body_height_m = safe_intent.body_pose_setpoint.body_trans_m.z;
     if (commanded_body_height_m <= 1e-6) {
         commanded_body_height_m = kDefaultBodyHeightM;
     }
@@ -148,8 +170,7 @@ LegTargets BodyController::update(const RobotState& est,
         target = target - planar_body_offset;
 
         const PlannedFoothold foothold =
-            foothold_planner_.plan(leg, target, intent, gait, policy, walking);
-
+            foothold_planner_.plan(leg, target, safe_intent, gait, policy, walking);
         target = body_rotation * foothold.pos_body_m;
         Vec3 target_vel = body_rotation * foothold.vel_body_mps;
 
@@ -158,7 +179,7 @@ LegTargets BodyController::update(const RobotState& est,
         if (vecNorm(target - unclamped_reach_target) > 1e-9) {
             limiter_telemetry.hard_clamp_reach = true;
         }
-        target_vel = target_vel + cross(intent.body_pose_setpoint.angular_velocity_radps, target);
+        target_vel = target_vel + cross(safe_intent.body_pose_setpoint.angular_velocity_radps, target);
 
         out.feet[leg].pos_body_m = target;
         out.feet[leg].vel_body_mps = target_vel;

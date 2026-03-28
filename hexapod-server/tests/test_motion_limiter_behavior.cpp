@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <thread>
 
 namespace {
@@ -18,6 +19,10 @@ bool expect(bool condition, const std::string& message) {
         return false;
     }
     return true;
+}
+
+bool allFiniteVec3(const Vec3& value) {
+    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
 
 RobotState nominalEstimatedState() {
@@ -232,6 +237,50 @@ bool unit_motion_limiter_scales_with_dt_and_stays_bounded() {
                   "larger dt should allow a proportionally larger bounded step");
 }
 
+bool unit_motion_limiter_rejects_non_finite_commands() {
+    MotionLimiter limiter{};
+    RobotState est = nominalEstimatedState();
+    SafetyState safety{};
+    RuntimeGaitPolicy gait_policy{};
+
+    MotionIntent baseline = walkingIntent();
+    baseline.body_pose_setpoint.body_trans_m = Vec3{0.01, -0.01, 0.2};
+    baseline.body_pose_setpoint.body_trans_mps = Vec3{0.0, 0.0, 0.0};
+    baseline.body_pose_setpoint.angular_velocity_radps = Vec3{0.0, 0.0, 0.0};
+    (void)limiter.update(est, baseline, gait_policy, safety, DurationSec{0.02});
+
+    MotionIntent non_finite = baseline;
+    non_finite.body_pose_setpoint.body_trans_m = Vec3{
+        std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::infinity(),
+        0.2};
+    non_finite.body_pose_setpoint.body_trans_mps = Vec3{
+        std::numeric_limits<double>::quiet_NaN(),
+        -std::numeric_limits<double>::infinity(),
+        std::numeric_limits<double>::infinity()};
+    non_finite.body_pose_setpoint.angular_velocity_radps = Vec3{
+        std::numeric_limits<double>::infinity(),
+        std::numeric_limits<double>::quiet_NaN(),
+        -std::numeric_limits<double>::infinity()};
+    non_finite.body_pose_setpoint.orientation_rad.z = std::numeric_limits<double>::quiet_NaN();
+
+    const MotionLimiterOutput out =
+        limiter.update(est, non_finite, gait_policy, safety, DurationSec{0.02});
+
+    const Vec3 limited_pos = out.limited_intent.body_pose_setpoint.body_trans_m;
+    const Vec3 limited_vel = out.limited_intent.body_pose_setpoint.body_trans_mps;
+    const Vec3 limited_ang = out.limited_intent.body_pose_setpoint.angular_velocity_radps;
+    const bool finite_pose = allFiniteVec3(limited_pos) &&
+                             allFiniteVec3(limited_vel) &&
+                             allFiniteVec3(limited_ang) &&
+                             std::isfinite(out.limited_intent.body_pose_setpoint.orientation_rad.z);
+
+    return expect(finite_pose,
+                  "non-finite motion intent inputs should be clamped or rejected to finite limiter outputs") &&
+           expect(out.diagnostics.intent_modified,
+                  "rejecting non-finite commands should mark limiter intent as modified");
+}
+
 bool integration_gait_scheduler_progress_tracks_elapsed_dt() {
     GaitScheduler scheduler;
     RobotState est = nominalEstimatedState();
@@ -276,6 +325,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!unit_motion_limiter_scales_with_dt_and_stays_bounded()) {
+        return EXIT_FAILURE;
+    }
+    if (!unit_motion_limiter_rejects_non_finite_commands()) {
         return EXIT_FAILURE;
     }
     if (!integration_gait_scheduler_progress_tracks_elapsed_dt()) {
