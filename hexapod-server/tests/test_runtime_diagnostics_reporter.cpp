@@ -101,6 +101,21 @@ std::optional<double> extractFieldValue(const std::string& message, const std::s
     }
 }
 
+std::optional<double> extractSectionFieldValue(const std::string& message,
+                                               const std::string& section,
+                                               const std::string& field) {
+    const std::size_t section_start = message.find(section);
+    if (section_start == std::string::npos) {
+        return std::nullopt;
+    }
+    const std::size_t section_end = message.find('}', section_start);
+    if (section_end == std::string::npos || section_end <= section_start) {
+        return std::nullopt;
+    }
+    const std::string section_slice = message.substr(section_start, section_end - section_start + 1);
+    return extractFieldValue(section_slice, field);
+}
+
 std::optional<double> extractEqualsFieldValue(const std::string& message, const std::string& field) {
     const std::string token = field + "=";
     const std::size_t start = message.find(token);
@@ -563,6 +578,148 @@ bool testLongStandSafeIdleNoMotionRemainsStable() {
                   "long no-motion run should avoid drift-induced safety faults");
 }
 
+bool testRapidChangeCountersMonotonicResetAndLongRunStability() {
+    FreshnessPolicy freshness_policy{};
+    const auto logger = std::make_shared<logging::AsyncLogger>(
+        "test-runtime-rapid-change-counters", logging::LogLevel::Trace, 512);
+    const auto collecting_sink = std::make_shared<CollectingSink>();
+    logger->AddSink(collecting_sink);
+
+    RuntimeDiagnosticsReporter reporter(logger, freshness_policy);
+    ControlStatus status{};
+    status.active_mode = RobotMode::WALK;
+    status.estimator_valid = true;
+    status.active_fault = FaultCode::NONE;
+    status.dynamic_gait.valid = true;
+    status.dynamic_gait.leg_in_stance.fill(true);
+    status.dynamic_gait.cadence_hz = 0.0;
+    status.dynamic_gait.reach_utilization = 0.0;
+
+    SafetyState safety_state{};
+    safety_state.stable = true;
+
+    RobotState estimated_state{};
+    estimated_state.valid = true;
+    estimated_state.has_body_pose_state = true;
+
+    JointTargets joints{};
+    LegTargets legs{};
+    uint64_t now_us_value = 1'000'000;
+    uint64_t previous_leg_rapid_changes = 0;
+    uint64_t previous_gait_rapid_changes = 0;
+
+    reporter.recordControlOutputs(joints, status, TimePointUs{now_us_value}, &legs);
+    for (int step = 1; step <= 2'000; ++step) {
+        now_us_value += 20'000;
+        status.dynamic_gait.cadence_hz = (step % 2 == 0) ? 0.0 : 1.0;
+        status.dynamic_gait.reach_utilization = (step % 2 == 0) ? 0.0 : 0.2;
+        const double x_pos_m = (step % 2 == 0) ? 0.0 : 0.02;
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            legs.feet[leg].pos_body_m = Vec3{x_pos_m, 0.0, 0.0};
+        }
+
+        reporter.recordControlOutputs(joints, status, TimePointUs{now_us_value}, &legs);
+
+        if (step % 100 == 0 || step == 2'000) {
+            reporter.report(status,
+                            estimated_state,
+                            safety_state,
+                            std::nullopt,
+                            static_cast<uint64_t>(step),
+                            4'000,
+                            200,
+                            LoopTimingRollingMetrics{},
+                            0,
+                            0,
+                            0,
+                            0,
+                            0,
+                            0,
+                            0);
+            logger->Flush();
+
+            const auto latest = latestInfoLineContaining(collecting_sink->entries, "runtime.metrics");
+            if (!expect(latest.has_value(), "runtime.metrics should be emitted while tracking rapid changes")) {
+                logger->Stop();
+                return false;
+            }
+
+            const auto leg_rapid_change_events =
+                extractSectionFieldValue(*latest, "leg_target_diag={", "rapid_change_events");
+            const auto gait_rapid_change_events =
+                extractSectionFieldValue(*latest, "gait_variability_diag={", "rapid_change_events");
+            if (!expect(leg_rapid_change_events.has_value(),
+                        "leg_target_diag rapid_change_events should be present and parseable") ||
+                !expect(gait_rapid_change_events.has_value(),
+                        "gait_variability_diag rapid_change_events should be present and parseable")) {
+                logger->Stop();
+                return false;
+            }
+
+            if (!expect(*leg_rapid_change_events >= static_cast<double>(previous_leg_rapid_changes),
+                        "leg_target rapid-change counter should be monotonic under repeated events") ||
+                !expect(*gait_rapid_change_events >= static_cast<double>(previous_gait_rapid_changes),
+                        "gait rapid-change counter should be monotonic under repeated events")) {
+                logger->Stop();
+                return false;
+            }
+            previous_leg_rapid_changes = static_cast<uint64_t>(*leg_rapid_change_events);
+            previous_gait_rapid_changes = static_cast<uint64_t>(*gait_rapid_change_events);
+        }
+    }
+
+    if (!expect(previous_leg_rapid_changes >= 6'000,
+                "leg_target rapid-change counter should sustain large long-run totals without regression") ||
+        !expect(previous_gait_rapid_changes >= 1'000,
+                "gait rapid-change counter should sustain large long-run totals without regression")) {
+        logger->Stop();
+        return false;
+    }
+    logger->Stop();
+
+    const auto restarted_logger = std::make_shared<logging::AsyncLogger>(
+        "test-runtime-rapid-change-counters-restart", logging::LogLevel::Trace, 128);
+    const auto restarted_sink = std::make_shared<CollectingSink>();
+    restarted_logger->AddSink(restarted_sink);
+    RuntimeDiagnosticsReporter restarted_reporter(restarted_logger, freshness_policy);
+    restarted_reporter.recordControlOutputs(joints, status, TimePointUs{5'000'000}, &legs);
+    restarted_reporter.report(status,
+                              estimated_state,
+                              safety_state,
+                              std::nullopt,
+                              1,
+                              4'000,
+                              200,
+                              LoopTimingRollingMetrics{},
+                              0,
+                              0,
+                              0,
+                              0,
+                              0,
+                              0,
+                              0);
+    restarted_logger->Flush();
+
+    const auto restarted_metrics = latestInfoLineContaining(restarted_sink->entries, "runtime.metrics");
+    if (!expect(restarted_metrics.has_value(), "runtime restart should emit runtime.metrics line")) {
+        restarted_logger->Stop();
+        return false;
+    }
+
+    const auto restarted_leg_rapid_change_events =
+        extractSectionFieldValue(*restarted_metrics, "leg_target_diag={", "rapid_change_events");
+    const auto restarted_gait_rapid_change_events =
+        extractSectionFieldValue(*restarted_metrics, "gait_variability_diag={", "rapid_change_events");
+    restarted_logger->Stop();
+
+    return expect(restarted_leg_rapid_change_events.has_value() &&
+                      *restarted_leg_rapid_change_events == 0.0,
+                  "runtime restart should reset leg-target rapid-change counter to zero baseline") &&
+           expect(restarted_gait_rapid_change_events.has_value() &&
+                      *restarted_gait_rapid_change_events == 0.0,
+                  "runtime restart should reset gait rapid-change counter to zero baseline");
+}
+
 } // namespace
 
 int main() {
@@ -579,6 +736,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!testLongStandSafeIdleNoMotionRemainsStable()) {
+        return EXIT_FAILURE;
+    }
+    if (!testRapidChangeCountersMonotonicResetAndLongRunStability()) {
         return EXIT_FAILURE;
     }
 
