@@ -26,6 +26,11 @@ double legVelocityMagnitude(const FootTarget& target) {
     return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 }
 
+constexpr double kLevelHoldRollPitchKp = 0.6;
+constexpr double kLevelHoldMaxCorrectionRad = 0.18;
+constexpr double kLevelHoldMaxCommandRad = 0.30;
+constexpr double kLevelHoldEstimateLpfAlpha = 0.25;
+
 } // namespace
 
 int main() {
@@ -260,6 +265,97 @@ int main() {
     if (!expect(total_delta < 1e-6,
                 "level hold should be disabled when body pose state is unavailable")) {
         return EXIT_FAILURE;
+    }
+
+    MotionIntent noisy_level_hold_intent = level_hold_intent;
+    noisy_level_hold_intent.body_pose_setpoint.orientation_rad = Vec3{0.0, 0.0, 0.0};
+    noisy_level_hold_intent.body_pose_setpoint.body_trans_mps = Vec3{0.0, 0.0, 0.0};
+    noisy_level_hold_intent.body_pose_setpoint.angular_velocity_radps = Vec3{0.0, 0.0, 0.0};
+
+    BodyController noisy_controller{};
+    SafetyState reliable_support = safety;
+    reliable_support.support_contact_count = 6;
+    reliable_support.stability_margin_m = 0.05;
+
+    double filtered_roll = 0.0;
+    double filtered_pitch = 0.0;
+    bool filter_initialized = false;
+    double previous_roll_cmd = 0.0;
+    double previous_pitch_cmd = 0.0;
+    constexpr double kNoiseAmplitudeRad = 0.20;
+    constexpr double kVelocityBoundMps = 1e-6;
+    constexpr double kSignFlipAmplificationToleranceRad = 1e-3;
+    const double expected_flip_command_limit_rad =
+        std::min(kLevelHoldMaxCorrectionRad, kLevelHoldRollPitchKp * kNoiseAmplitudeRad);
+    constexpr int kNoisyUpdates = 12;
+
+    for (int step = 0; step < kNoisyUpdates; ++step) {
+        const double sign = (step % 2 == 0) ? 1.0 : -1.0;
+        const double roll_noise = sign * kNoiseAmplitudeRad;
+        const double pitch_noise = -sign * kNoiseAmplitudeRad;
+
+        RobotState noisy_est{};
+        noisy_est.body_pose_state.orientation_rad = Vec3{roll_noise, pitch_noise, 0.0};
+        noisy_est.has_inferred_body_pose_state = true;
+        noisy_est.has_body_pose_state = true;
+
+        if (!filter_initialized) {
+            filtered_roll = roll_noise;
+            filtered_pitch = pitch_noise;
+            filter_initialized = true;
+        } else {
+            filtered_roll += kLevelHoldEstimateLpfAlpha * (roll_noise - filtered_roll);
+            filtered_pitch += kLevelHoldEstimateLpfAlpha * (pitch_noise - filtered_pitch);
+        }
+
+        const double roll_correction = std::clamp(
+            kLevelHoldRollPitchKp * (0.0 - filtered_roll),
+            -kLevelHoldMaxCorrectionRad,
+            kLevelHoldMaxCorrectionRad);
+        const double pitch_correction = std::clamp(
+            kLevelHoldRollPitchKp * (0.0 - filtered_pitch),
+            -kLevelHoldMaxCorrectionRad,
+            kLevelHoldMaxCorrectionRad);
+        const double roll_cmd = std::clamp(roll_correction, -kLevelHoldMaxCommandRad, kLevelHoldMaxCommandRad);
+        const double pitch_cmd = std::clamp(pitch_correction, -kLevelHoldMaxCommandRad, kLevelHoldMaxCommandRad);
+
+        if (!expect(std::abs(roll_correction) <= kLevelHoldMaxCorrectionRad + 1e-9 &&
+                        std::abs(pitch_correction) <= kLevelHoldMaxCorrectionRad + 1e-9,
+                    "level hold correction should remain within clamp limits under alternating estimate noise")) {
+            return EXIT_FAILURE;
+        }
+        if (!expect(std::abs(roll_cmd) <= kLevelHoldMaxCommandRad + 1e-9 &&
+                        std::abs(pitch_cmd) <= kLevelHoldMaxCommandRad + 1e-9,
+                    "level hold commanded roll/pitch should remain within command clamp limits")) {
+            return EXIT_FAILURE;
+        }
+
+        const LegTargets noisy_targets = noisy_controller.update(
+            noisy_est, noisy_level_hold_intent, gait, reliable_support);
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            if (!expect(legVelocityMagnitude(noisy_targets.feet[leg]) <= kVelocityBoundMps,
+                        "alternating level-hold estimate noise should keep foot target velocity bounded")) {
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (step > 0) {
+            const bool roll_sign_flip = (roll_cmd * previous_roll_cmd) < 0.0;
+            const bool pitch_sign_flip = (pitch_cmd * previous_pitch_cmd) < 0.0;
+            if (roll_sign_flip &&
+                !expect(std::abs(roll_cmd) <= expected_flip_command_limit_rad + kSignFlipAmplificationToleranceRad,
+                        "roll command sign flips should not amplify beyond tolerance")) {
+                return EXIT_FAILURE;
+            }
+            if (pitch_sign_flip &&
+                !expect(std::abs(pitch_cmd) <= expected_flip_command_limit_rad + kSignFlipAmplificationToleranceRad,
+                        "pitch command sign flips should not amplify beyond tolerance")) {
+                return EXIT_FAILURE;
+            }
+        }
+
+        previous_roll_cmd = roll_cmd;
+        previous_pitch_cmd = pitch_cmd;
     }
 
     double max_velocity_spike = 0.0;
