@@ -73,6 +73,7 @@ inline constexpr double kDefaultMotionJointSoftVelocityLimitRadps{5.0};
 inline constexpr double kDefaultMotionJointSoftAccelLimitRadps2{30.0};
 inline constexpr int kDefaultMotionStartupPhaseThresholdMs{350};
 inline constexpr int kDefaultMotionShutdownPhaseThresholdMs{450};
+inline constexpr bool kDefaultMotionAdaptGaitPolicyOnLimit{false};
 
 struct LoopTimingConfig {
     std::chrono::microseconds bus_loop_period{std::chrono::microseconds{kDefaultBusLoopPeriodUs}};
@@ -218,6 +219,7 @@ struct MotionLimiterConfig {
     double joint_soft_accel_limit_radps2{kDefaultMotionJointSoftAccelLimitRadps2};
     std::chrono::milliseconds startup_phase_threshold{std::chrono::milliseconds{kDefaultMotionStartupPhaseThresholdMs}};
     std::chrono::milliseconds shutdown_phase_threshold{std::chrono::milliseconds{kDefaultMotionShutdownPhaseThresholdMs}};
+    bool adapt_gait_policy_on_limit{kDefaultMotionAdaptGaitPolicyOnLimit};
 };
 
 struct StageTimingBudgetConfig {

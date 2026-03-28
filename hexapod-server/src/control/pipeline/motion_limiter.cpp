@@ -28,6 +28,13 @@ double finiteOr(double value, double fallback) {
     return std::isfinite(value) ? value : fallback;
 }
 
+double clampUnit(double value) {
+    if (!std::isfinite(value)) {
+        return 1.0;
+    }
+    return std::clamp(value, 0.0, 1.0);
+}
+
 Vec3 sanitizeVec3(const Vec3& requested, const Vec3& fallback, bool& modified) {
     const Vec3 safe{
         finiteOr(requested.x, fallback.x),
@@ -171,6 +178,35 @@ MotionLimiterOutput MotionLimiter::update(const RobotState& estimated,
             output.diagnostics.hard_clamp_yaw = true;
             output.diagnostics.constraint_reason = kConstraintReasonSlewRate;
         }
+    }
+
+    if (config_.adapt_gait_policy_on_limit &&
+        (output.diagnostics.hard_clamp_linear || output.diagnostics.hard_clamp_yaw)) {
+        const double linear_scale = clampUnit(output.diagnostics.adaptation_scale_linear);
+        const double yaw_scale = clampUnit(output.diagnostics.adaptation_scale_yaw);
+        const double step_scale = std::min(output.adapted_gait_policy.adaptation_scale_step, linear_scale);
+        const double cadence_scale =
+            std::min(output.adapted_gait_policy.adaptation_scale_cadence, std::min(linear_scale, yaw_scale));
+
+        const double old_step_scale = output.adapted_gait_policy.adaptation_scale_step;
+        const double old_cadence_scale = output.adapted_gait_policy.adaptation_scale_cadence;
+        const double step_ratio = (old_step_scale > 1e-9) ? (step_scale / old_step_scale) : 1.0;
+        const double cadence_ratio = (old_cadence_scale > 1e-9) ? (cadence_scale / old_cadence_scale) : 1.0;
+
+        output.adapted_gait_policy.adaptation_scale_step = step_scale;
+        output.adapted_gait_policy.adaptation_scale_cadence = cadence_scale;
+        output.adapted_gait_policy.cadence_hz =
+            FrequencyHz{output.adapted_gait_policy.cadence_hz.value * cadence_ratio};
+        for (auto& leg : output.adapted_gait_policy.per_leg) {
+            leg.step_length_m = LengthM{leg.step_length_m.value * step_ratio};
+        }
+        if (cadence_scale + 1e-12 < old_cadence_scale) {
+            output.adapted_gait_policy.hard_clamp_cadence = true;
+        }
+        output.diagnostics.gait_policy_modified =
+            (std::abs(step_scale - old_step_scale) > 1e-12) ||
+            (std::abs(cadence_scale - old_cadence_scale) > 1e-12);
+        output.diagnostics.hard_clamp_reach = output.diagnostics.hard_clamp_linear;
     }
 
     previous_limited_intent_ = output.limited_intent;

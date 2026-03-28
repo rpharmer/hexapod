@@ -226,6 +226,9 @@ void parseTuningSection(const toml::value& root,
   out.motionShutdownPhaseThresholdMs = config_validation::parseIntWithFallback(
       root, "motion_limiter.shutdown_phase_threshold_ms",
       control_config::kDefaultMotionShutdownPhaseThresholdMs, 0, 60000, "tuning", logger);
+  out.motionAdaptGaitPolicyOnLimit = config_validation::parseBoolWithFallback(
+      root, "motion_limiter.adapt_gait_policy_on_limit",
+      control_config::kDefaultMotionAdaptGaitPolicyOnLimit);
 }
 
 } // namespace tuning_section_parser

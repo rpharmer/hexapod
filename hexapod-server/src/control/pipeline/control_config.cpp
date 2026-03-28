@@ -112,6 +112,7 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
         std::chrono::milliseconds{config.motionStartupPhaseThresholdMs};
     parsed.motion_limiter.shutdown_phase_threshold =
         std::chrono::milliseconds{config.motionShutdownPhaseThresholdMs};
+    parsed.motion_limiter.adapt_gait_policy_on_limit = config.motionAdaptGaitPolicyOnLimit;
     parsed.autonomy.enabled = config.autonomyEnabled;
     parsed.autonomy.no_progress_timeout_ms = config.autonomyNoProgressTimeoutMs;
     parsed.autonomy.recovery_retry_budget = config.autonomyRecoveryRetryBudget;
