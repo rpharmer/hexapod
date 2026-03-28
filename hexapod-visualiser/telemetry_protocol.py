@@ -246,6 +246,9 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
         frame_id = value.get("frame_id")
         if isinstance(frame_id, str) and frame_id:
             payload["frame_id"] = frame_id
+        pose_reset = value.get("pose_reset")
+        if isinstance(pose_reset, bool):
+            payload["pose_reset"] = pose_reset
         return payload
 
 

@@ -6,13 +6,19 @@ import {
   smoothPoseOffsetForRender,
 } from "../static/scene-renderer.js";
 
-function buildModel({ currentPose = null, localizationPose = null, localizationFrameId = "map" } = {}) {
+function buildModel({
+  currentPose = null,
+  localizationPose = null,
+  localizationFrameId = "map",
+  localizationPoseReset = false,
+} = {}) {
   return {
     autonomy_debug: {
       current_pose: currentPose,
       localization: {
         frame_id: localizationFrameId,
         current_pose: localizationPose,
+        pose_reset: localizationPoseReset,
       },
     },
   };
@@ -114,4 +120,51 @@ test("alternating availability does not produce large discontinuous smoothed jum
     }
     previousRender = renderPose;
   }
+});
+
+test("localization pose_reset reseeds render smoothing to current absolute pose", () => {
+  const poseState = {
+    pose: { x: 0, y: 0, yaw: 0 },
+    poseSource: "missing_pose",
+    renderPoseState: { pose: null, lastRenderAtMs: Number.NaN },
+  };
+
+  resolvePoseOffsetWithSource(
+    buildModel({ localizationPose: { x_m: 0.0, y_m: 0.0, yaw_rad: 0.0 } }),
+    poseState,
+    0,
+  );
+
+  const staleSmoothedPose = smoothPoseOffsetForRender({
+    targetPose: { x: 0, y: 0, yaw: 0 },
+    renderPoseState: poseState.renderPoseState,
+    nowMs: 16,
+  });
+  assert.equal(staleSmoothedPose.x, 0);
+
+  const resolvedWithReset = resolvePoseOffsetWithSource(
+    buildModel({
+      localizationPose: { x_m: 2.0, y_m: -1.0, yaw_rad: 0.3 },
+      localizationPoseReset: true,
+    }),
+    poseState,
+    32,
+  );
+
+  assert.equal(resolvedWithReset.poseSource, "localization_pose");
+  assert.deepEqual(resolvedWithReset.pose, { x: 2000, y: -1000, yaw: 0.3 });
+  assert.deepEqual(
+    poseState.renderPoseState.pose,
+    resolvedWithReset.pose,
+    "pose_reset should reseed render pose immediately",
+  );
+
+  const afterResetRender = smoothPoseOffsetForRender({
+    targetPose: resolvedWithReset.pose,
+    renderPoseState: poseState.renderPoseState,
+    nowMs: 48,
+  });
+  assert.equal(afterResetRender.x, 2000);
+  assert.equal(afterResetRender.y, -1000);
+  assert.equal(afterResetRender.yaw, 0.3);
 });

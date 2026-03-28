@@ -336,6 +336,24 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(state.autonomy_debug["current_pose"]["x_m"], 1.5)
         self.assertEqual(state.autonomy_debug["localization"]["current_pose"]["yaw_rad"], -0.3)
 
+    def test_udp_parser_preserves_localization_pose_reset_boolean(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
+
+        protocol.datagram_received(
+            (
+                b'{"schema_version":1,"type":"state","timestamp_ms":1240,'
+                b'"autonomy_debug":{"current_pose":{"x_m":0.1,"y_m":0.2,"yaw_rad":0.3},'
+                b'"localization":{"frame_id":"map","current_pose":{"x_m":0.1,"y_m":0.2,"yaw_rad":0.3},"pose_reset":true}}}'
+            ),
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertIsNotNone(state.autonomy_debug)
+        self.assertIn("localization", state.autonomy_debug)
+        self.assertTrue(state.autonomy_debug["localization"]["pose_reset"])
+
 
     def test_udp_protocol_ignores_unknown_geometry_keys_in_geometry_object(self):
         state = server.TelemetryState()
