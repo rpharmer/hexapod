@@ -1,5 +1,6 @@
 #include "safety_supervisor.hpp"
 
+#include <array>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -114,6 +115,99 @@ bool testBusTimeoutBeatsFreshnessFaults() {
     return expect(state.active_fault == FaultCode::BUS_TIMEOUT,
                   "BUS_TIMEOUT should beat estimator/intent freshness faults") &&
            expect(state.torque_cut, "BUS_TIMEOUT should keep torque_cut enabled");
+}
+
+bool testCombinationPriorityOrderIsDeterministic() {
+    struct FaultTriggerCase {
+        bool trigger_timeout{false};
+        bool trigger_estimator_invalid{false};
+        bool trigger_bus_timeout{false};
+        bool trigger_motor_fault{false};
+        bool trigger_tip_over{false};
+        FaultCode expected_fault{FaultCode::NONE};
+        const char* label{""};
+    };
+
+    const std::array<FaultTriggerCase, 6> cases{{
+        FaultTriggerCase{
+            .trigger_timeout = true,
+            .trigger_motor_fault = true,
+            .expected_fault = FaultCode::MOTOR_FAULT,
+            .label = "timeout + low voltage should select MOTOR_FAULT",
+        },
+        FaultTriggerCase{
+            .trigger_timeout = true,
+            .trigger_tip_over = true,
+            .expected_fault = FaultCode::TIP_OVER,
+            .label = "timeout + tilt should select TIP_OVER",
+        },
+        FaultTriggerCase{
+            .trigger_timeout = true,
+            .trigger_estimator_invalid = true,
+            .trigger_motor_fault = true,
+            .expected_fault = FaultCode::MOTOR_FAULT,
+            .label = "timeout + estimator invalid + low voltage should select MOTOR_FAULT",
+        },
+        FaultTriggerCase{
+            .trigger_timeout = true,
+            .trigger_estimator_invalid = true,
+            .trigger_bus_timeout = true,
+            .expected_fault = FaultCode::BUS_TIMEOUT,
+            .label = "timeout + estimator invalid + bus timeout should select BUS_TIMEOUT",
+        },
+        FaultTriggerCase{
+            .trigger_timeout = true,
+            .trigger_motor_fault = true,
+            .trigger_tip_over = true,
+            .expected_fault = FaultCode::TIP_OVER,
+            .label = "timeout + low voltage + tilt should select TIP_OVER",
+        },
+        FaultTriggerCase{
+            .trigger_timeout = true,
+            .trigger_estimator_invalid = true,
+            .trigger_bus_timeout = true,
+            .trigger_motor_fault = true,
+            .trigger_tip_over = true,
+            .expected_fault = FaultCode::TIP_OVER,
+            .label = "all simultaneous triggers should select TIP_OVER",
+        },
+    }};
+
+    for (int run = 0; run < 12; ++run) {
+        for (const FaultTriggerCase& test_case : cases) {
+            SafetySupervisor supervisor;
+            RobotState raw = nominalRaw();
+            RobotState est = nominalEstimated();
+            MotionIntent intent = intentNow(RobotMode::WALK);
+            SafetySupervisor::FreshnessInputs freshness{true, true};
+
+            if (test_case.trigger_timeout) {
+                freshness.intent_valid = false;
+                intent = staleIntent(RobotMode::WALK);
+            }
+            if (test_case.trigger_estimator_invalid) {
+                raw.foot_contacts = {false, false, false, false, false, false};
+            }
+            if (test_case.trigger_bus_timeout) {
+                raw.bus_ok = false;
+            }
+            if (test_case.trigger_motor_fault) {
+                raw.voltage = 1.0f;
+            }
+            if (test_case.trigger_tip_over) {
+                est.body_pose_state.orientation_rad.x = 2.0;
+                est.has_measured_body_pose_state = true;
+                est.has_body_pose_state = true;
+            }
+
+            const SafetyState state = supervisor.evaluate(raw, est, intent, freshness);
+            if (!expect(state.active_fault == test_case.expected_fault, test_case.label)) {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 
@@ -285,6 +379,7 @@ int main() {
         !testRulePrecedenceAcrossAllFaultTriggers() ||
         !testEstimatorBeatsCommandTimeoutWithoutTorqueCut() ||
         !testBusTimeoutBeatsFreshnessFaults() ||
+        !testCombinationPriorityOrderIsDeterministic() ||
         !testInferredTiltDoesNotTripMeasuredTiltPolicy() ||
         !testUnstableSupportTriggersTipOver() ||
         !testMotorFaultTorqueCut() ||
