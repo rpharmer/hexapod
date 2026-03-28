@@ -221,7 +221,6 @@ with path.open("r", encoding="utf-8") as handle:
             print(f"ERROR: non-finite commanded speed at line {line_no}: {cmd_speed}", file=sys.stderr)
 
         if pose is None or cmd_speed is None:
-            prev_pose = pose
             continue
 
         if prev_pose is not None and abs(cmd_speed) > SPEED_EPS:

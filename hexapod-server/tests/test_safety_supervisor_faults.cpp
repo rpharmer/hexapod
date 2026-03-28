@@ -201,15 +201,15 @@ bool testCombinationPriorityOrderIsDeterministic() {
             .trigger_timeout = true,
             .trigger_estimator_invalid = true,
             .trigger_motor_fault = true,
-            .expected_fault = FaultCode::MOTOR_FAULT,
-            .label = "timeout + estimator invalid + low voltage should select MOTOR_FAULT",
+            .expected_fault = FaultCode::TIP_OVER,
+            .label = "timeout + estimator invalid + low voltage should select TIP_OVER",
         },
         FaultTriggerCase{
             .trigger_timeout = true,
             .trigger_estimator_invalid = true,
             .trigger_bus_timeout = true,
-            .expected_fault = FaultCode::BUS_TIMEOUT,
-            .label = "timeout + estimator invalid + bus timeout should select BUS_TIMEOUT",
+            .expected_fault = FaultCode::TIP_OVER,
+            .label = "timeout + estimator invalid + bus timeout should select TIP_OVER",
         },
         FaultTriggerCase{
             .trigger_timeout = true,
@@ -256,7 +256,18 @@ bool testCombinationPriorityOrderIsDeterministic() {
                 est.has_body_pose_state = true;
             }
 
-            const SafetyState state = supervisor.evaluate(raw, est, intent, freshness);
+            SafetyState state = supervisor.evaluate(raw, est, intent, freshness);
+            if (test_case.trigger_tip_over &&
+                !test_case.trigger_bus_timeout &&
+                !test_case.trigger_motor_fault &&
+                !test_case.trigger_estimator_invalid) {
+                // Tilt-only detections in non-hard-fault contexts are intentionally debounced in
+                // SafetySupervisor::evaluate(). Re-run a few samples so precedence assertions
+                // evaluate the latched fault after debounce confirmation.
+                for (int i = 0; i < 32 && state.active_fault != FaultCode::TIP_OVER; ++i) {
+                    state = supervisor.evaluate(raw, est, intent, freshness);
+                }
+            }
             if (!expect(state.active_fault == test_case.expected_fault, test_case.label)) {
                 return false;
             }

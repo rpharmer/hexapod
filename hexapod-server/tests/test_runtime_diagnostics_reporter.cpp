@@ -117,6 +117,8 @@ std::optional<double> extractEqualsFieldValue(const std::string& message, const 
     } catch (...) {
         return std::nullopt;
     }
+}
+
 std::optional<std::string> extractFieldToken(const std::string& message, const std::string& field) {
     const std::size_t colon_start = message.find(field + ":");
     const std::size_t equals_start = message.find(field + "=");
@@ -574,6 +576,8 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!testRuntimeMetricsKeyDiagnosticsFieldsArePresentAndParseable()) {
+        return EXIT_FAILURE;
+    }
     if (!testLongStandSafeIdleNoMotionRemainsStable()) {
         return EXIT_FAILURE;
     }
