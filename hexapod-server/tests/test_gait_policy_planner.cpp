@@ -230,6 +230,39 @@ void testMotionLimiterUsesJointMarginBeforeHardClamp()
            "motion limiter should increase duty cycle as margin shrinks");
 }
 
+void testZeroNominalMaxSpeedKeepsOutputsFiniteAndBounded()
+{
+    control_config::GaitConfig cfg = enabledDynamicConfig();
+    cfg.frequency.nominal_max_speed_mps = LinearRateMps{0.0};
+    GaitPolicyPlanner planner{cfg};
+
+    const SafetyState safety = safeState();
+    RobotState est = nominalEstimate();
+    const MotionIntent intent = walkingIntent(0.80, 0.20, GaitType::TRIPOD);
+
+    warmPlanner(planner, intent, safety, 12);
+    const RuntimeGaitPolicy policy = planner.plan(est, intent, safety);
+
+    expect(std::isfinite(policy.cadence_hz.value), "cadence should remain finite when nominal max speed is zero");
+    expect(policy.cadence_hz.value >= cfg.frequency.min_hz.value &&
+               policy.cadence_hz.value <= cfg.frequency.max_hz.value,
+           "cadence should remain bounded by configured limits when nominal max speed is zero");
+    expect(std::isfinite(policy.adaptation_scale_cadence), "cadence adaptation scale should remain finite");
+    expect(policy.adaptation_scale_cadence >= 0.0 && policy.adaptation_scale_cadence <= 1.0,
+           "cadence adaptation scale should remain in [0, 1]");
+
+    for (const auto& leg : policy.per_leg) {
+        expect(std::isfinite(leg.phase_offset), "phase offset should remain finite");
+        expect(leg.phase_offset >= 0.0 && leg.phase_offset <= 1.0, "phase offset should remain bounded to [0, 1]");
+        expect(std::isfinite(leg.duty_cycle), "duty cycle should remain finite");
+        expect(leg.duty_cycle >= 0.05 && leg.duty_cycle <= 0.95, "duty cycle should remain bounded to [0.05, 0.95]");
+        expect(std::isfinite(leg.step_length_m.value), "step length should remain finite");
+        expect(leg.step_length_m.value >= 0.0, "step length should remain non-negative");
+        expect(std::isfinite(leg.swing_height_m.value), "swing height should remain finite");
+        expect(leg.swing_height_m.value >= 0.0, "swing height should remain non-negative");
+    }
+}
+
 void testRegionThresholdBoundaries()
 {
     GaitPolicyPlanner planner{enabledDynamicConfig()};
@@ -546,6 +579,7 @@ int main()
     testAcceptanceGatesDisableByDefault();
     testServoVelocityConstraintModifiesGait();
     testMotionLimiterUsesJointMarginBeforeHardClamp();
+    testZeroNominalMaxSpeedKeepsOutputsFiniteAndBounded();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test(s) failed\n";
