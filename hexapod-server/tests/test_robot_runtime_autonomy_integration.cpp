@@ -4,6 +4,7 @@
 #include "sim_hardware_bridge.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -153,6 +154,20 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     }
 
     runtime.setAutonomyBlocked(false);
+    runtime.setMotionIntent(makeFreshWalkIntent());
+    runRuntimeStep(runtime);
+    const auto resumed_output = runtime.lastAutonomyStepOutput();
+    if (!expect(resumed_output.has_value(), "autonomy output should exist after blocked signal clears")) {
+        return false;
+    }
+    if (!expect(!resumed_output->motion_decision.allow_motion,
+                "blocked mission should remain gated until mission is re-armed")) {
+        return false;
+    }
+    if (!expect(runtime.getStatus().active_mode == RobotMode::SAFE_IDLE,
+                "mode transition should remain safety-gated after blocked signal clears")) {
+        return false;
+    }
     runtime.setAutonomyNoProgress(true);
     runtime.setMotionIntent(makeFreshWalkIntent());
     runRuntimeStep(runtime);
@@ -180,6 +195,10 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     runtime.setAutonomyNoProgress(false);
     runtime.setMotionIntent(makeFreshWalkIntent());
     runRuntimeStep(runtime);
+    const auto recovery_clear_output = runtime.lastAutonomyStepOutput();
+    if (!expect(recovery_clear_output.has_value(), "autonomy output should exist when recovery clears")) {
+        return false;
+    }
     if (!expect(runtime.getStatus().autonomy.mission_state == static_cast<uint8_t>(autonomy::MissionState::Exec),
                 "runtime status should return mission to EXEC when recovery clears")) {
         return false;
@@ -222,10 +241,66 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     return true;
 }
 
+bool testRuntimeWithoutAutonomyKeepsOperatorWalkIntentStable() {
+    control_config::ControlConfig cfg{};
+    cfg.autonomy.enabled = false;
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.telemetry.enabled = true;
+    cfg.telemetry.publish_period = std::chrono::milliseconds{0};
+    cfg.telemetry.geometry_refresh_period = std::chrono::milliseconds{1000};
+
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<PassThroughEstimator>();
+    auto telemetry_publisher = std::make_unique<CapturingTelemetryPublisher>();
+    auto* telemetry_raw = telemetry_publisher.get();
+    RobotRuntime runtime(
+        std::move(bridge), std::move(estimator), nullptr, cfg, std::move(telemetry_publisher));
+
+    if (!expect(runtime.init(), "runtime init should succeed with autonomy disabled")) {
+        return false;
+    }
+    runtime.startTelemetry();
+
+    MotionIntent walk = makeFreshWalkIntent();
+    walk.speed_mps = LinearRateMps{0.22};
+    walk.heading_rad = AngleRad{0.3};
+    runtime.setMotionIntent(walk);
+    runRuntimeStep(runtime);
+
+    if (!expect(!runtime.lastAutonomyStepOutput().has_value(),
+                "autonomy disabled runtime should not emit autonomy step output")) {
+        return false;
+    }
+    if (!expect(runtime.getStatus().active_mode == RobotMode::WALK,
+                "autonomy disabled runtime should keep operator WALK mode")) {
+        return false;
+    }
+    if (!expect(telemetry_raw->last_sample.has_value(), "autonomy disabled runtime should still publish telemetry")) {
+        return false;
+    }
+    if (!expect(!telemetry_raw->last_sample->status.autonomy.enabled,
+                "telemetry autonomy state should remain disabled when stack is disabled")) {
+        return false;
+    }
+    if (!expect(std::abs(telemetry_raw->last_sample->motion_intent.speed_mps.value - walk.speed_mps.value) < 1e-9,
+                "telemetry motion intent should preserve operator speed command")) {
+        return false;
+    }
+    if (!expect(std::abs(telemetry_raw->last_sample->motion_intent.heading_rad.value - walk.heading_rad.value) < 1e-9,
+                "telemetry motion intent should preserve operator heading command")) {
+        return false;
+    }
+
+    runtime.stop();
+    return true;
+}
+
 } // namespace
 
 int main() {
-    if (!testRuntimeRoutesAutonomyOutputIntoControlPath()) {
+    if (!testRuntimeRoutesAutonomyOutputIntoControlPath() ||
+        !testRuntimeWithoutAutonomyKeepsOperatorWalkIntentStable()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
