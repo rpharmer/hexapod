@@ -45,6 +45,9 @@ bool allEstimatedValuesFinite(const RobotState& state) {
     return std::isfinite(body_velocity.x) && std::isfinite(body_velocity.y) &&
            std::isfinite(body_velocity.z);
 }
+double planarMagnitude(const Vec3& v) {
+    return std::hypot(v.x, v.y);
+}
 
 RobotState makeNeutralRaw(uint64_t sample_id, uint64_t timestamp_us) {
     RobotState raw{};
@@ -310,6 +313,119 @@ int main() {
         !expect(std::abs(alternating_contact_reacquired_est.body_pose_state.orientation_rad.y -
                          alternating_contact_false_within_est.body_pose_state.orientation_rad.y) < 0.05,
                 "contact reacquisition with slight drift should keep pitch continuity")) {
+        return EXIT_FAILURE;
+    }
+
+    // Subcase 5: sustained realistic topology transitions (tripod alternation with transient slip
+    // and re-contact) should keep estimated orientation/velocity finite without unbounded derivative
+    // artifacts over many cycles.
+    SimpleEstimator topology_transition_estimator{};
+    constexpr uint64_t kDtUs = 20'000; // 50 Hz estimator cadence.
+    constexpr int kCycles = 150;
+
+    auto setTripodContacts = [](RobotState& state, bool tripod_a) {
+        // Alternating tripods: A={LF, LM, RR}, B={RF, RM, LR}.
+        // Leg indices: 0..5 in fixed hardware order.
+        state.foot_contacts = {tripod_a, !tripod_a, !tripod_a, tripod_a, !tripod_a, tripod_a};
+    };
+
+    RobotState topology_raw = makeNeutralRaw(100, 4'000'000);
+    setTripodContacts(topology_raw, true);
+    RobotState prev_est = topology_transition_estimator.update(topology_raw);
+    if (!expect(prev_est.has_inferred_body_pose_state,
+                "initial tripod contact should produce inferred body pose")) {
+        return EXIT_FAILURE;
+    }
+
+    double max_roll_rate_radps = 0.0;
+    double max_pitch_rate_radps = 0.0;
+    double max_planar_accel_mps2 = 0.0;
+    double max_roll_jerk_radps2 = 0.0;
+    double max_pitch_jerk_radps2 = 0.0;
+    double max_planar_jerk_mps3 = 0.0;
+    bool has_prev_derivative = false;
+    double prev_roll_rate_radps = 0.0;
+    double prev_pitch_rate_radps = 0.0;
+    double prev_planar_accel_mps2 = 0.0;
+
+    for (int cycle = 1; cycle <= kCycles; ++cycle) {
+        const bool tripod_a = (cycle % 2) == 0;
+        topology_raw.sample_id += 1;
+        topology_raw.timestamp_us = TimePointUs{topology_raw.timestamp_us.value + kDtUs};
+        setTripodContacts(topology_raw, tripod_a);
+
+        // Inject transient slip for one support leg every 6th cycle then re-contact next cycle.
+        if ((cycle % 6) == 0) {
+            topology_raw.foot_contacts[tripod_a ? 0 : 1] = false;
+        }
+
+        // Modulate joints smoothly to emulate gait progression and load transfer.
+        for (std::size_t leg_idx = 0; leg_idx < topology_raw.leg_states.size(); ++leg_idx) {
+            const double phase = (static_cast<double>(cycle) * 0.22) + static_cast<double>(leg_idx) * 0.31;
+            topology_raw.leg_states[leg_idx].joint_state[COXA].pos_rad = AngleRad{0.06 * std::sin(phase)};
+            topology_raw.leg_states[leg_idx].joint_state[FEMUR].pos_rad =
+                AngleRad{-0.28 + 0.07 * std::cos(phase * 0.9)};
+            topology_raw.leg_states[leg_idx].joint_state[TIBIA].pos_rad =
+                AngleRad{0.52 + 0.08 * std::sin(phase * 1.1)};
+        }
+
+        const RobotState est = topology_transition_estimator.update(topology_raw);
+        if (!expect(est.has_inferred_body_pose_state,
+                    "tripod alternation with short slip should preserve inferred support estimate") ||
+            !expect(allEstimatedValuesFinite(est),
+                    "topology transition sequence should keep estimates finite")) {
+            return EXIT_FAILURE;
+        }
+
+        const double dt_s =
+            static_cast<double>(topology_raw.timestamp_us.value - prev_est.timestamp_us.value) * 1e-6;
+        const double roll_rate_radps = (est.body_pose_state.orientation_rad.x -
+                                        prev_est.body_pose_state.orientation_rad.x) / dt_s;
+        const double pitch_rate_radps = (est.body_pose_state.orientation_rad.y -
+                                         prev_est.body_pose_state.orientation_rad.y) / dt_s;
+        const double planar_accel_mps2 =
+            (planarMagnitude(est.body_pose_state.body_trans_mps) -
+             planarMagnitude(prev_est.body_pose_state.body_trans_mps)) / dt_s;
+
+        if (!expect(std::isfinite(roll_rate_radps) && std::isfinite(pitch_rate_radps) &&
+                        std::isfinite(planar_accel_mps2),
+                    "first-order orientation/velocity derivatives should remain finite")) {
+            return EXIT_FAILURE;
+        }
+
+        max_roll_rate_radps = std::max(max_roll_rate_radps, std::abs(roll_rate_radps));
+        max_pitch_rate_radps = std::max(max_pitch_rate_radps, std::abs(pitch_rate_radps));
+        max_planar_accel_mps2 = std::max(max_planar_accel_mps2, std::abs(planar_accel_mps2));
+
+        if (has_prev_derivative) {
+            const double roll_jerk_radps2 = (roll_rate_radps - prev_roll_rate_radps) / dt_s;
+            const double pitch_jerk_radps2 = (pitch_rate_radps - prev_pitch_rate_radps) / dt_s;
+            const double planar_jerk_mps3 = (planar_accel_mps2 - prev_planar_accel_mps2) / dt_s;
+            if (!expect(std::isfinite(roll_jerk_radps2) && std::isfinite(pitch_jerk_radps2) &&
+                            std::isfinite(planar_jerk_mps3),
+                        "second-order derivative checks should remain finite")) {
+                return EXIT_FAILURE;
+            }
+            max_roll_jerk_radps2 = std::max(max_roll_jerk_radps2, std::abs(roll_jerk_radps2));
+            max_pitch_jerk_radps2 = std::max(max_pitch_jerk_radps2, std::abs(pitch_jerk_radps2));
+            max_planar_jerk_mps3 = std::max(max_planar_jerk_mps3, std::abs(planar_jerk_mps3));
+        }
+
+        has_prev_derivative = true;
+        prev_roll_rate_radps = roll_rate_radps;
+        prev_pitch_rate_radps = pitch_rate_radps;
+        prev_planar_accel_mps2 = planar_accel_mps2;
+        prev_est = est;
+    }
+
+    if (!expect(max_roll_rate_radps < 200.0 && max_pitch_rate_radps < 200.0,
+                "tripod/slip transitions should not create unbounded orientation derivative spikes") ||
+        !expect(max_planar_accel_mps2 < 500.0,
+                "tripod/slip transitions should not create unbounded velocity derivative spikes") ||
+        !expect(max_roll_jerk_radps2 < 20'000.0 && max_pitch_jerk_radps2 < 20'000.0,
+                "tripod/slip transitions should keep orientation jerk bounded") ||
+        !expect(max_planar_jerk_mps3 < 50'000.0,
+                "tripod/slip transitions should keep velocity jerk bounded")) {
         return EXIT_FAILURE;
     }
 
