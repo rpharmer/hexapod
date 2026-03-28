@@ -32,6 +32,11 @@ bool finiteJointTargets(const JointTargets& targets) {
     return true;
 }
 
+double wrappedPositiveDelta(double from, double to) {
+    const double raw = std::fmod((to - from) + 1.0, 1.0);
+    return raw < 0.0 ? raw + 1.0 : raw;
+}
+
 bool gaitSchedulerRespondsToWalkIntent() {
     GaitScheduler gait;
     RobotState est{};
@@ -112,6 +117,46 @@ bool gaitSchedulerHoldsWhenUnstable() {
            expect(output.support_contact_count == 2, "gait output should track support contact count") &&
            expect(output.stride_phase_rate_hz.value == 0.0, "unstable support should stop gait phase progression") &&
            expect(all_stance, "unstable support should keep all legs in stance");
+}
+
+bool gaitSchedulerRecoversWithoutPhaseSnapAfterTransientInstability() {
+    GaitScheduler gait;
+    RobotState stable{};
+    stable.timestamp_us = now_us();
+    stable.foot_contacts = {true, true, true, true, true, true};
+    for (auto& leg : stable.leg_states) {
+        leg.joint_state[1].pos_rad = AngleRad{-0.6};
+        leg.joint_state[2].pos_rad = AngleRad{-0.8};
+    }
+
+    MotionIntent walk{};
+    walk.requested_mode = RobotMode::WALK;
+    walk.gait = GaitType::TRIPOD;
+    walk.timestamp_us = now_us();
+
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    safety.torque_cut = false;
+
+    gait.update(stable, walk, safety);
+    std::this_thread::sleep_for(std::chrono::milliseconds(6));
+    const GaitState before_blip = gait.update(stable, walk, safety);
+
+    RobotState unstable = stable;
+    unstable.foot_contacts = {true, false, true, false, false, false};
+    const GaitState hold = gait.update(unstable, walk, safety);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(6));
+    const GaitState resumed = gait.update(stable, walk, safety);
+
+    const double resumed_progress = wrappedPositiveDelta(before_blip.phase[0], resumed.phase[0]);
+    const double hold_deviation = std::abs(hold.phase[0] - before_blip.phase[0]);
+
+    return expect(hold.stride_phase_rate_hz.value == 0.0, "transient instability should pause cadence") &&
+           expect(hold_deviation < 0.02, "transient instability should not snap phase to nominal offset") &&
+           expect(resumed.stride_phase_rate_hz.value > 0.0, "scheduler should resume cadence once stable") &&
+           expect(resumed_progress > 0.001,
+                  "phase should continue progressing after instability clears");
 }
 
 bool bodyControllerUsesGaitState() {
@@ -247,6 +292,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!gaitSchedulerHoldsWhenUnstable()) {
+        return EXIT_FAILURE;
+    }
+    if (!gaitSchedulerRecoversWithoutPhaseSnapAfterTransientInstability()) {
         return EXIT_FAILURE;
     }
     if (!bodyControllerUsesGaitState()) {
