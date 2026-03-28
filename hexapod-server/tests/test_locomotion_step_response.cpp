@@ -72,6 +72,23 @@ double commandEnergy(const PipelineStepResult& result) {
     return sum / static_cast<double>(kNumLegs);
 }
 
+double absMaxVerticalFootPositionDelta(const LegTargets& previous, const LegTargets& current) {
+    double max_delta = 0.0;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        max_delta = std::max(max_delta,
+                             std::abs(current.feet[leg].pos_body_m.z - previous.feet[leg].pos_body_m.z));
+    }
+    return max_delta;
+}
+
+double absMaxVerticalFootVelocity(const LegTargets& current) {
+    double max_abs_velocity = 0.0;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        max_abs_velocity = std::max(max_abs_velocity, std::abs(current.feet[leg].vel_body_mps.z));
+    }
+    return max_abs_velocity;
+}
+
 bool commandSettlesWithinCycles(const std::vector<double>& signal,
                                 int step_cycle,
                                 int segment_end_cycle,
@@ -198,10 +215,125 @@ bool testWalkHeadingAndYawRateStepResponse() {
                   "command should settle within expected cycles after second heading+yaw-rate step");
 }
 
+bool testBodyHeightStepAndRampBoundedInStandAndWalk() {
+    ControlPipeline pipeline{};
+    RobotState est = nominalEstimate();
+    MotionIntent intent = walkingIntent();
+    SafetyState safety = nominalSafety();
+
+    constexpr DurationSec kLoopDt{0.02};
+    constexpr int kStandCycles = 80;
+    constexpr int kWalkCycles = 80;
+    constexpr int kStepCycle = 18;
+    constexpr int kRampStartCycle = 45;
+    constexpr int kRampDurationCycles = 20;
+    constexpr double kStandHeightM = 0.20;
+    constexpr double kStepHeightM = 0.245;
+    constexpr double kRampTargetHeightM = 0.175;
+    constexpr double kLegVerticalVelocityLimitMps = control_config::kDefaultMotionFootVelocityLimitMps * 1.10;
+    constexpr double kJointVelocityLimitRadps =
+        control_config::kDefaultMotionJointSoftVelocityLimitRadps * 1.25;
+    constexpr double kVerticalPosDeltaBoundM = 0.060;
+
+    struct SegmentMetrics {
+        double peak_abs_vertical_vel_mps{0.0};
+        double peak_abs_vertical_pos_delta_m{0.0};
+        double peak_joint_velocity_radps{0.0};
+        bool saw_fault{false};
+    };
+
+    auto runSegment = [&](RobotMode mode, int cycles, uint64_t cycle_offset) {
+        std::array<std::array<double, kJointsPerLeg>, kNumLegs> previous_joint_positions{};
+        bool has_previous_joint_positions = false;
+        LegTargets previous_targets{};
+        bool has_previous_targets = false;
+
+        SegmentMetrics metrics{};
+
+        intent.requested_mode = mode;
+        if (mode == RobotMode::WALK) {
+            intent.gait = GaitType::TRIPOD;
+            intent.speed_mps = LinearRateMps{0.16};
+            intent.heading_rad = AngleRad{0.0};
+        } else {
+            intent.speed_mps = LinearRateMps{0.0};
+        }
+
+        for (int cycle = 0; cycle < cycles; ++cycle) {
+            if (cycle == 0) {
+                intent.body_pose_setpoint.body_trans_m.z = kStandHeightM;
+            } else if (cycle == kStepCycle) {
+                intent.body_pose_setpoint.body_trans_m.z = kStepHeightM;
+            } else if (cycle >= kRampStartCycle && cycle < (kRampStartCycle + kRampDurationCycles)) {
+                const double t =
+                    static_cast<double>(cycle - kRampStartCycle + 1) / static_cast<double>(kRampDurationCycles);
+                intent.body_pose_setpoint.body_trans_m.z = kStepHeightM + ((kRampTargetHeightM - kStepHeightM) * t);
+            } else if (cycle >= (kRampStartCycle + kRampDurationCycles)) {
+                intent.body_pose_setpoint.body_trans_m.z = kRampTargetHeightM;
+            }
+
+            intent.sample_id += 1;
+            intent.timestamp_us = now_us();
+            est.timestamp_us = now_us();
+
+            const PipelineStepResult step_result = pipeline.runStep(
+                est, intent, safety, kLoopDt, true, cycle_offset + static_cast<uint64_t>(cycle));
+
+            metrics.saw_fault = metrics.saw_fault || (step_result.status.active_fault != FaultCode::NONE);
+            metrics.peak_abs_vertical_vel_mps =
+                std::max(metrics.peak_abs_vertical_vel_mps, absMaxVerticalFootVelocity(step_result.leg_targets));
+            if (has_previous_targets) {
+                metrics.peak_abs_vertical_pos_delta_m =
+                    std::max(metrics.peak_abs_vertical_pos_delta_m,
+                             absMaxVerticalFootPositionDelta(previous_targets, step_result.leg_targets));
+            }
+
+            for (int leg = 0; leg < kNumLegs; ++leg) {
+                for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+                    const double position = step_result.joint_targets.leg_states[leg].joint_state[joint].pos_rad.value;
+                    if (has_previous_joint_positions) {
+                        const double vel_radps =
+                            std::abs(position - previous_joint_positions[leg][joint]) / kLoopDt.value;
+                        metrics.peak_joint_velocity_radps = std::max(metrics.peak_joint_velocity_radps, vel_radps);
+                    }
+                    previous_joint_positions[leg][joint] = position;
+                }
+            }
+            has_previous_joint_positions = true;
+            previous_targets = step_result.leg_targets;
+            has_previous_targets = true;
+            est.leg_states = step_result.joint_targets.leg_states;
+        }
+
+        return metrics;
+    };
+
+    const auto stand_metrics = runSegment(RobotMode::STAND, kStandCycles, 0);
+    const auto walk_metrics = runSegment(RobotMode::WALK, kWalkCycles, static_cast<uint64_t>(kStandCycles));
+
+    return expect(!stand_metrics.saw_fault,
+                  "stand body height step/ramp should not trigger transient safety faults") &&
+           expect(stand_metrics.peak_abs_vertical_vel_mps < kLegVerticalVelocityLimitMps,
+                  "stand body height step/ramp should keep vertical foot velocity bounded") &&
+           expect(stand_metrics.peak_abs_vertical_pos_delta_m < kVerticalPosDeltaBoundM,
+                  "stand body height step/ramp should keep vertical foot target transitions bounded") &&
+           expect(stand_metrics.peak_joint_velocity_radps < kJointVelocityLimitRadps,
+                  "stand body height step/ramp should not create joint spikes") &&
+           expect(!walk_metrics.saw_fault,
+                  "walk body height step/ramp should not trigger transient safety faults") &&
+           expect(walk_metrics.peak_abs_vertical_vel_mps < kLegVerticalVelocityLimitMps,
+                  "walk body height step/ramp should keep vertical foot velocity bounded") &&
+           expect(walk_metrics.peak_abs_vertical_pos_delta_m < kVerticalPosDeltaBoundM,
+                  "walk body height step/ramp should keep vertical foot target transitions bounded") &&
+           expect(walk_metrics.peak_joint_velocity_radps < kJointVelocityLimitRadps,
+                  "walk body height step/ramp should not create joint spikes");
+}
+
 } // namespace
 
 int main() {
-    if (!testWalkHeadingAndYawRateStepResponse()) {
+    if (!testWalkHeadingAndYawRateStepResponse() ||
+        !testBodyHeightStepAndRampBoundedInStandAndWalk()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
