@@ -44,14 +44,26 @@ public:
 };
 
 std::optional<double> extractFieldValue(const std::string& message, const std::string& field) {
-    const std::string token = field + ":";
-    const std::size_t start = message.find(token);
-    if (start == std::string::npos) {
+    const std::string colon_token = field + ":";
+    const std::string equals_token = field + "=";
+
+    std::size_t start = message.find(colon_token);
+    std::size_t value_start = std::string::npos;
+    if (start != std::string::npos) {
+        value_start = start + colon_token.size();
+    } else {
+        start = message.find(equals_token);
+        if (start != std::string::npos) {
+            value_start = start + equals_token.size();
+        }
+    }
+
+    if (value_start == std::string::npos) {
         return std::nullopt;
     }
-    const std::size_t value_start = start + token.size();
     std::size_t value_end = value_start;
-    while (value_end < message.size() && message[value_end] != ',' && message[value_end] != '}') {
+    while (value_end < message.size() && message[value_end] != ',' && message[value_end] != '}' &&
+           message[value_end] != ' ') {
         ++value_end;
     }
     try {
@@ -88,6 +100,25 @@ std::optional<double> maxFieldValueAcrossInfoLines(const std::vector<CapturedLog
         }
     }
     return max_value;
+}
+
+std::optional<double> minFieldValueAcrossInfoLines(const std::vector<CapturedLog>& entries,
+                                                   const std::string& token,
+                                                   const std::string& field) {
+    std::optional<double> min_value;
+    for (const auto& entry : entries) {
+        if (entry.level != logging::LogLevel::Info || entry.message.find(token) == std::string::npos) {
+            continue;
+        }
+        const auto value = extractFieldValue(entry.message, field);
+        if (!value.has_value()) {
+            continue;
+        }
+        if (!min_value.has_value() || value.value() < min_value.value()) {
+            min_value = value.value();
+        }
+    }
+    return min_value;
 }
 
 class PassthroughEstimator final : public IEstimator {
@@ -249,6 +280,106 @@ bool test_scaled_scenario_05_keeps_locomotion_active_without_freshness_faults() 
                   "scaled scenario 05 should expose movement distance metric for locomotion diagnosis");
 }
 
+bool test_scaled_scenario_10_long_duration_bounds_faults_velocity_stability_and_freshness() {
+    const auto logger = std::make_shared<logging::AsyncLogger>(
+        "test-scenario-10-cruise-bounds", logging::LogLevel::Info, 4096);
+    const auto collecting_sink = std::make_shared<CollectingSink>();
+    logger->AddSink(collecting_sink);
+
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<PassthroughEstimator>();
+    RobotControl robot(std::move(bridge), std::move(estimator), logger, makeStrictFreshnessConfig());
+
+    if (!expect(robot.init(), "robot init should succeed (scenario 10 scaled)")) {
+        logger->Stop();
+        return false;
+    }
+    robot.start();
+
+    namespace fs = std::filesystem;
+    const fs::path test_file = fs::path(__FILE__);
+    const fs::path scenario_path = test_file.parent_path().parent_path() / "scenarios" / "10_sustained_fast_cruise.toml";
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    if (!expect(ScenarioDriver::loadFromToml(scenario_path.string(), scenario, error,
+                                             ScenarioDriver::ValidationMode::Strict),
+                "scenario 10 should parse in strict mode: " + error)) {
+        robot.stop();
+        logger->Stop();
+        return false;
+    }
+
+    constexpr uint64_t kScaleDivisor = 30;
+    scenario.duration_ms = std::max<uint64_t>(1, scenario.duration_ms / kScaleDivisor);
+    scenario.tick_ms = std::max<uint64_t>(1, scenario.tick_ms / kScaleDivisor);
+    scenario.motion_ramp_ms = scenario.motion_ramp_ms / kScaleDivisor;
+    for (auto& event : scenario.events) {
+        event.at_ms /= kScaleDivisor;
+    }
+
+    std::atomic<bool> run_ok{false};
+    std::atomic<bool> run_done{false};
+    std::thread scenario_thread([&]() {
+        run_ok.store(ScenarioDriver::run(robot, scenario, nullptr));
+        run_done.store(true);
+    });
+
+    std::size_t samples = 0;
+    std::size_t walk_samples = 0;
+    std::size_t fault_samples = 0;
+    std::size_t command_timeout_samples = 0;
+    while (!run_done.load()) {
+        const ControlStatus status = robot.getStatus();
+        ++samples;
+        if (status.active_mode == RobotMode::WALK) {
+            ++walk_samples;
+        }
+        if (status.active_fault != FaultCode::NONE) {
+            ++fault_samples;
+        }
+        if (status.active_fault == FaultCode::COMMAND_TIMEOUT) {
+            ++command_timeout_samples;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    scenario_thread.join();
+    robot.stop();
+    logger->Flush();
+
+    const auto peak_joint_velocity_radps =
+        maxFieldValueAcrossInfoLines(collecting_sink->entries, "joint_cmd_diag={", "peak_velocity_radps");
+    const auto peak_foot_velocity_mps =
+        maxFieldValueAcrossInfoLines(collecting_sink->entries, "leg_target_diag={", "peak_foot_vel_mps");
+    const auto min_stability_margin_m =
+        minFieldValueAcrossInfoLines(collecting_sink->entries, "runtime.metrics", "safety_stability_margin_m");
+    const auto freshness_rejects_total =
+        maxFieldValueAcrossInfoLines(collecting_sink->entries, "runtime.metrics", "freshness_rejects_total");
+    logger->Stop();
+
+    const double walk_ratio =
+        samples > 0 ? static_cast<double>(walk_samples) / static_cast<double>(samples) : 0.0;
+
+    constexpr double kMaxAllowedPeakJointVelocityRadps = 25.0;
+    constexpr double kMaxAllowedPeakFootVelocityMps = 2.0;
+    constexpr double kMinAllowedSafetyStabilityMarginM = 0.005;
+
+    return expect(run_ok.load(), "scaled scenario 10 run should succeed") &&
+           expect(command_timeout_samples == 0,
+                  "scaled scenario 10 should keep command freshness valid (no COMMAND_TIMEOUT samples)") &&
+           expect(fault_samples == 0, "scaled scenario 10 should not latch unexpected non-NONE faults") &&
+           expect(walk_ratio > 0.40, "scaled scenario 10 should spend significant runtime in WALK mode") &&
+           expect(peak_joint_velocity_radps.has_value() && *peak_joint_velocity_radps < kMaxAllowedPeakJointVelocityRadps,
+                  "scaled scenario 10 should keep peak joint velocity within bounded regression threshold") &&
+           expect(peak_foot_velocity_mps.has_value() && *peak_foot_velocity_mps < kMaxAllowedPeakFootVelocityMps,
+                  "scaled scenario 10 should keep peak foot target velocity within bounded regression threshold") &&
+           expect(min_stability_margin_m.has_value() && *min_stability_margin_m > kMinAllowedSafetyStabilityMarginM,
+                  "scaled scenario 10 should avoid excessive stability margin degradation") &&
+           expect(freshness_rejects_total.has_value() && *freshness_rejects_total == 0.0,
+                  "scaled scenario 10 should sustain zero freshness rejects");
+}
+
 } // namespace
 
 int main() {
@@ -256,6 +387,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!test_scaled_scenario_05_keeps_locomotion_active_without_freshness_faults()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_scaled_scenario_10_long_duration_bounds_faults_velocity_stability_and_freshness()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
