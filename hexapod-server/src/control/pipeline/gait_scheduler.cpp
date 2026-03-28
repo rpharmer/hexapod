@@ -14,7 +14,8 @@ constexpr double kCadenceSlewDownHzPerSec = 200.0;
 }
 
 GaitScheduler::GaitScheduler(control_config::GaitConfig config)
-    : config_(config) {}
+    : config_(config),
+      planner_(config_) {}
 
 FrequencyHz GaitScheduler::applyCadenceSlew(const FrequencyHz& target_rate_hz, const DurationSec& dt) {
     const double up_limit = kCadenceSlewUpHzPerSec * std::max(dt.value, 0.0);
@@ -28,8 +29,7 @@ FrequencyHz GaitScheduler::applyCadenceSlew(const FrequencyHz& target_rate_hz, c
 GaitState GaitScheduler::update(const RobotState& est,
                                 const MotionIntent& intent,
                                 const SafetyState& safety) {
-    GaitPolicyPlanner planner{config_};
-    const RuntimeGaitPolicy policy = planner.plan(est, intent, safety);
+    const RuntimeGaitPolicy policy = planner_.plan(est, intent, safety);
     return update(est, intent, safety, policy);
 }
 

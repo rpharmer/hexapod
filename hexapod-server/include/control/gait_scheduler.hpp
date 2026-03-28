@@ -14,6 +14,7 @@ public:
 
 private:
     control_config::GaitConfig config_{};
+    GaitPolicyPlanner planner_;
     FrequencyHz applyCadenceSlew(const FrequencyHz& target_rate_hz, const DurationSec& dt);
     double phase_accum_{0.0};
     FrequencyHz cadence_hz_{FrequencyHz{0.0}};
