@@ -1,4 +1,5 @@
 #include "body_controller.hpp"
+#include "leg_ik.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -21,9 +22,26 @@ bool nearlyEqual(double lhs, double rhs, double eps = 1e-6) {
     return std::abs(lhs - rhs) <= eps;
 }
 
+bool finiteJointTargets(const JointTargets& targets) {
+    for (const auto& leg : targets.leg_states) {
+        for (const auto& joint : leg.joint_state) {
+            if (!std::isfinite(joint.pos_rad.value)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 double legVelocityMagnitude(const FootTarget& target) {
     const Vec3 v = target.vel_body_mps;
     return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+double wrappedAngleDistance(double a_rad, double b_rad) {
+    const double wrapped =
+        std::remainder(a_rad - b_rad, 2.0 * kPi);
+    return std::abs(wrapped);
 }
 
 } // namespace
@@ -77,13 +95,91 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    MotionIntent aggressive_intent{};
+    aggressive_intent.requested_mode = RobotMode::WALK;
+    aggressive_intent.speed_mps = LinearRateMps{0.30};
+    aggressive_intent.heading_rad = AngleRad{0.0};
+    aggressive_intent.body_pose_setpoint.body_trans_m = Vec3{0.38, 0.14, 0.20};
+    aggressive_intent.body_pose_setpoint.body_trans_mps = Vec3{0.40, -0.30, 0.00};
+    aggressive_intent.body_pose_setpoint.angular_velocity_radps = Vec3{0.0, 0.0, 1.2};
+
+    GaitState aggressive_gait{};
+    aggressive_gait.in_stance.fill(true);
+    aggressive_gait.phase.fill(0.20);
+    aggressive_gait.stride_phase_rate_hz = FrequencyHz{1.40};
+
+    const LegTargets aggressive_targets = controller.update(est, aggressive_intent, aggressive_gait, safety);
+    if (!expect(controller.lastMotionLimiterTelemetry().hard_clamp_reach,
+                "aggressive body commands should activate hard reach clamp telemetry")) {
+        return EXIT_FAILURE;
+    }
+
+    const HexapodGeometry geometry = defaultHexapodGeometry();
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        const LegGeometry& leg_geo = geometry.legGeometry[leg];
+        const Vec3 relative = aggressive_targets.feet[leg].pos_body_m - leg_geo.bodyCoxaOffset;
+        const Vec3 foot_leg = Mat3::rotZ(-leg_geo.mountAngle.value) * relative;
+        if (!expect(kinematics::legReachUtilization(foot_leg, leg_geo) <= 1.0 + 1e-6,
+                    "hard-clamped aggressive commands must remain in reachable envelope")) {
+            return EXIT_FAILURE;
+        }
+    }
+
+    LegIK ik{geometry};
+    RobotState ik_est{};
+    for (auto& leg : ik_est.leg_states) {
+        leg.joint_state[0].pos_rad = AngleRad{0.0};
+        leg.joint_state[1].pos_rad = AngleRad{-0.6};
+        leg.joint_state[2].pos_rad = AngleRad{-0.9};
+    }
+
+    double max_joint_step = 0.0;
+    for (int step = 0; step < 12; ++step) {
+        MotionIntent iter_intent = aggressive_intent;
+        const double step_fraction = static_cast<double>(step) / 11.0;
+        iter_intent.body_pose_setpoint.body_trans_m.x += 0.06 * std::sin(step_fraction * 2.0 * kPi);
+        iter_intent.body_pose_setpoint.body_trans_m.y += 0.03 * std::cos(step_fraction * 2.0 * kPi);
+        iter_intent.body_pose_setpoint.angular_velocity_radps.z += 0.4 * std::sin(step_fraction * 2.0 * kPi);
+
+        const LegTargets iter_targets = controller.update(ik_est, iter_intent, aggressive_gait, safety);
+        const JointTargets iter_joints = ik.solve(ik_est, iter_targets, safety);
+        if (!expect(finiteJointTargets(iter_joints),
+                    "clamped aggressive commands should produce finite IK joint outputs")) {
+            return EXIT_FAILURE;
+        }
+
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+                const double delta = std::abs(
+                    wrappedAngleDistance(
+                        iter_joints.leg_states[leg].joint_state[joint].pos_rad.value,
+                        ik_est.leg_states[leg].joint_state[joint].pos_rad.value));
+                max_joint_step = std::max(max_joint_step, delta);
+            }
+        }
+        ik_est.leg_states = iter_joints.leg_states;
+    }
+
+    if (!expect(max_joint_step < 3.0,
+                "aggressive clamped commands should not cause extreme inter-step joint jumps")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(max_joint_step > 1e-3,
+                "IK output should respond to aggressive commands (no persistent fallback behavior)")) {
+        return EXIT_FAILURE;
+    }
+
     MotionIntent offset_intent{};
     offset_intent.requested_mode = RobotMode::STAND;
     offset_intent.body_pose_setpoint.body_trans_m = Vec3{0.25, 0.0, 0.20};
 
     const LegTargets offset_targets = controller.update(est, offset_intent, gait, safety);
+    if (!expect(controller.lastMotionLimiterTelemetry().hard_clamp_reach,
+                "large body offset should report hard reach clamp telemetry")) {
+        return EXIT_FAILURE;
+    }
     for (int leg = 0; leg < kNumLegs; ++leg) {
-        const LegGeometry& leg_geo = defaultHexapodGeometry().legGeometry[leg];
+        const LegGeometry& leg_geo = geometry.legGeometry[leg];
         const Vec3 relative = offset_targets.feet[leg].pos_body_m - leg_geo.bodyCoxaOffset;
         const Vec3 foot_leg = Mat3::rotZ(-leg_geo.mountAngle.value) * relative;
         if (!expect(kinematics::legReachUtilization(foot_leg, leg_geo) <= 1.0 + 1e-6,
@@ -115,7 +211,6 @@ int main() {
     const LegTargets neutral_turn_targets = controller.update(est, neutral_turn_intent, turn_gait, turn_policy, safety);
     const LegTargets turn_targets = controller.update(est, turn_intent, turn_gait, turn_policy, safety);
 
-    const HexapodGeometry geometry = defaultHexapodGeometry();
     double outer_sum = 0.0;
     double inner_sum = 0.0;
     int outer_count = 0;
