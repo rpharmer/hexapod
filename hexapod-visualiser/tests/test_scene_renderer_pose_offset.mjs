@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildGridProbePoints,
+  resolveCurrentPoseHeadingRad,
   resolvePoseOffsetMm,
 } from "../static/scene-renderer.js";
 
@@ -94,4 +95,24 @@ test("buildGridProbePoints still shifts world anchors as pose offset changes", (
 
   assert.notDeepEqual(probeA.horizontalStart, probeB.horizontalStart);
   assert.notDeepEqual(probeA.verticalStart, probeB.verticalStart);
+});
+
+test("resolveCurrentPoseHeadingRad aligns nose direction with waypoint frame transform", () => {
+  const poseOffset = { x: 0, y: 0, yaw: 0.7 };
+  const headingA = resolveCurrentPoseHeadingRad({ current_pose: { yaw_rad: 0.7 } }, poseOffset);
+  const headingB = resolveCurrentPoseHeadingRad({ current_pose: { yaw_rad: 1.2 } }, poseOffset);
+
+  assert.equal(headingA, 0);
+  assert.equal(headingB, 0.5);
+
+  const noseA = { x: Math.cos(headingA), y: Math.sin(headingA) };
+  const noseB = { x: Math.cos(headingB), y: Math.sin(headingB) };
+  assert.ok(noseB.y > noseA.y, "nose direction should change as yaw changes");
+  assert.equal(headingB, 1.2 - poseOffset.yaw, "must use same yaw - poseOffset.yaw convention as waypoint arrows");
+});
+
+test("resolveCurrentPoseHeadingRad falls back to zero when current pose yaw is invalid", () => {
+  assert.equal(resolveCurrentPoseHeadingRad({ current_pose: { yaw_rad: Number.NaN } }, { yaw: 2.0 }), 0);
+  assert.equal(resolveCurrentPoseHeadingRad({ current_pose: {} }, { yaw: 2.0 }), 0);
+  assert.equal(resolveCurrentPoseHeadingRad(null, { yaw: 2.0 }), 0);
 });

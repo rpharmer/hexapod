@@ -258,6 +258,14 @@ function transformWorldToBodyAnchored(point, poseOffset) {
   };
 }
 
+export function resolveCurrentPoseHeadingRad(autonomy, poseOffset) {
+  const worldYaw = autonomy?.current_pose?.yaw_rad;
+  if (!Number.isFinite(worldYaw)) {
+    return 0;
+  }
+  return worldYaw - poseOffset.yaw;
+}
+
 function transformBodyToWorld(point, poseOffset) {
   const cosYaw = Math.cos(poseOffset.yaw);
   const sinYaw = Math.sin(poseOffset.yaw);
@@ -431,7 +439,7 @@ function drawAutonomyDebugOverlay({ ctx, camera, scale, centerX, centerY, model,
 
   if (autonomy.current_pose && Number.isFinite(autonomy.current_pose.x_m) && Number.isFinite(autonomy.current_pose.y_m)) {
     const posePoint = { x: 0, y: 0, z: groundPlaneZ };
-    const heading = 0;
+    const heading = resolveCurrentPoseHeadingRad(autonomy, poseOffset);
     const nosePoint = {
       x: posePoint.x + Math.cos(heading) * 45,
       y: posePoint.y + Math.sin(heading) * 45,
