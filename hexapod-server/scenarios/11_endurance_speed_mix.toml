@@ -3,6 +3,9 @@ duration_ms = 90000
 tick_ms = 20
 refresh_motion_intent = true
 motion_ramp_ms = 1500
+# Motion semantics:
+# - heading_rad: planar travel heading setpoint (rad).
+# - yaw_rad: body yaw-rate command (rad/s), mapped to angular_velocity_radps.z.
 
 [[events]]
 at_ms = 0

@@ -1,4 +1,5 @@
 #include "gait_policy_planner.hpp"
+#include "motion_intent_utils.hpp"
 
 #include <iostream>
 #include <string>
@@ -285,6 +286,50 @@ void testFallbackEscalationPrecedence()
            "active fault should take highest fallback precedence over all lower stages");
 }
 
+void testScenarioDerivedYawRateFeedsRegionTurnModeAndSuppression()
+{
+    GaitPolicyPlanner planner{enabledDynamicConfig()};
+    const SafetyState safety = safeState();
+    RobotState est = nominalEstimate();
+
+    ScenarioMotionIntent scenario_motion{};
+    scenario_motion.enabled = true;
+    scenario_motion.mode = RobotMode::WALK;
+    scenario_motion.gait = GaitType::TRIPOD;
+    scenario_motion.body_height_m = 0.20;
+    scenario_motion.speed_mps = 0.03;
+    scenario_motion.heading_rad = 0.0;
+    scenario_motion.yaw_rad = 0.52;
+    const MotionIntent near_exit_intent = makeMotionIntent(scenario_motion);
+
+    warmPlanner(planner, near_exit_intent, safety, 20);
+    const DynamicGaitRegion near_exit_region = planner.selectRegion(near_exit_intent);
+    expect(near_exit_region == DynamicGaitRegion::PIVOT,
+           "scenario yaw-rate should drive selectRegion classification into PIVOT");
+    expect(planner.selectTurnMode(near_exit_region) == TurnMode::IN_PLACE,
+           "scenario-derived PIVOT region should map to IN_PLACE turn mode");
+
+    const GaitSuppressionFlags pivot_flags =
+        planner.computeSuppressionFlags(est, near_exit_intent, safety, planner.selectTurnMode(near_exit_region));
+    expect(!pivot_flags.suppress_turning,
+           "IN_PLACE turn mode from scenario-derived yaw-rate should not suppress turning");
+
+    scenario_motion.speed_mps = 0.45;
+    scenario_motion.yaw_rad = 0.0;
+    const MotionIntent straight_intent = makeMotionIntent(scenario_motion);
+    warmPlanner(planner, straight_intent, safety, 20);
+    const DynamicGaitRegion straight_region = planner.selectRegion(straight_intent);
+    expect(straight_region == DynamicGaitRegion::ARC,
+           "scenario zero yaw-rate with forward speed should classify ARC");
+    expect(planner.selectTurnMode(straight_region) == TurnMode::CRAB,
+           "scenario-derived ARC region should map to CRAB turn mode");
+
+    const GaitSuppressionFlags crab_flags =
+        planner.computeSuppressionFlags(est, straight_intent, safety, planner.selectTurnMode(straight_region));
+    expect(crab_flags.suppress_turning,
+           "CRAB mode with near-zero scenario yaw-rate should suppress turning");
+}
+
 } // namespace
 
 int main()
@@ -296,6 +341,7 @@ int main()
     testPivotHysteresisTransitionBoundary();
     testFallbackStages();
     testFallbackEscalationPrecedence();
+    testScenarioDerivedYawRateFeedsRegionTurnModeAndSuppression();
     testAcceptanceGatesDisableByDefault();
     testServoVelocityConstraintModifiesGait();
     testMotionLimiterUsesJointMarginBeforeHardClamp();

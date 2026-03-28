@@ -22,6 +22,8 @@ struct ScenarioMotionIntent {
     double body_height_m{0.20};
     double speed_mps{0.0};
     double heading_rad{0.0};
+    // Scenario yaw command is interpreted as body yaw-rate in rad/s.
+    // It is mapped to MotionIntent.body_pose_setpoint.angular_velocity_radps.z.
     double yaw_rad{0.0};
 };
 
