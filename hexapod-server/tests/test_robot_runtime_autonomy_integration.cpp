@@ -20,6 +20,52 @@ bool expect(bool condition, const char* message) {
     return true;
 }
 
+bool expectAutonomyMissionLocomotionCorrelation(const autonomy::AutonomyStepOutput& output,
+                                                const ControlStatus& status,
+                                                const char* context) {
+    const auto mission_state = output.mission_event.state;
+    const bool mission_blocks_locomotion = mission_state == autonomy::MissionState::Paused ||
+                                           mission_state == autonomy::MissionState::Aborted ||
+                                           mission_state == autonomy::MissionState::Complete;
+
+    if (mission_blocks_locomotion && !expect(!output.motion_decision.allow_motion,
+                                             "mission-blocked state must gate allow_motion")) {
+        std::cerr << "Context: " << context << '\n';
+        return false;
+    }
+    if (mission_blocks_locomotion &&
+        !expect(!output.locomotion_command.sent, "mission-blocked state must gate locomotion_sent")) {
+        std::cerr << "Context: " << context << '\n';
+        return false;
+    }
+    if (mission_blocks_locomotion &&
+        !expect(status.active_mode == RobotMode::SAFE_IDLE, "mission-blocked state must force SAFE_IDLE mode")) {
+        std::cerr << "Context: " << context << '\n';
+        return false;
+    }
+
+    const bool mission_exec = mission_state == autonomy::MissionState::Exec;
+    if (mission_exec &&
+        !expect(output.motion_decision.allow_motion == output.locomotion_command.sent,
+                "EXEC mission state must keep allow_motion and locomotion_sent in sync")) {
+        std::cerr << "Context: " << context << '\n';
+        return false;
+    }
+    if (mission_exec && output.motion_decision.allow_motion &&
+        !expect(status.active_mode == RobotMode::WALK,
+                "EXEC mission with locomotion permission must map to WALK mode")) {
+        std::cerr << "Context: " << context << '\n';
+        return false;
+    }
+    if (mission_exec && !output.motion_decision.allow_motion &&
+        !expect(status.active_mode == RobotMode::SAFE_IDLE,
+                "EXEC mission without locomotion permission must map to SAFE_IDLE mode")) {
+        std::cerr << "Context: " << context << '\n';
+        return false;
+    }
+    return true;
+}
+
 class PassThroughEstimator final : public IEstimator {
 public:
     RobotState update(const RobotState& raw) override {
@@ -123,6 +169,11 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     if (!expect(first_output->locomotion_command.sent, "nominal locomotion command should be dispatched")) {
         return false;
     }
+    if (!expectAutonomyMissionLocomotionCorrelation(*first_output,
+                                                    runtime.getStatus(),
+                                                    "first autonomy step should correlate mission and locomotion")) {
+        return false;
+    }
     const double first_speed_mps = autonomyCommandSpeedMps(*first_output, cfg);
     if (!expect(std::isfinite(first_speed_mps), "autonomy handoff speed should remain finite")) {
         return false;
@@ -146,6 +197,10 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     }
     if (!expect(second_output->locomotion_command.sent,
                 "autonomy locomotion command should continue dispatching after handoff")) {
+        return false;
+    }
+    if (!expectAutonomyMissionLocomotionCorrelation(
+            *second_output, runtime.getStatus(), "second autonomy step should correlate mission and locomotion")) {
         return false;
     }
     const double second_speed_mps = autonomyCommandSpeedMps(*second_output, cfg);
@@ -201,6 +256,11 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
                 "blocked autonomy decision should suppress motion")) {
         return false;
     }
+    if (!expectAutonomyMissionLocomotionCorrelation(*blocked_output,
+                                                    runtime.getStatus(),
+                                                    "blocked autonomy step should correlate mission and locomotion")) {
+        return false;
+    }
     if (!expect(runtime.getStatus().active_mode == RobotMode::SAFE_IDLE,
                 "blocked autonomy decision should map to SAFE_IDLE control mode")) {
         return false;
@@ -224,6 +284,10 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
                 "blocked mission should remain gated until mission is re-armed")) {
         return false;
     }
+    if (!expectAutonomyMissionLocomotionCorrelation(
+            *resumed_output, runtime.getStatus(), "resumed autonomy step should correlate mission and locomotion")) {
+        return false;
+    }
     if (!expect(runtime.getStatus().active_mode == RobotMode::SAFE_IDLE,
                 "mode transition should remain safety-gated after blocked signal clears")) {
         return false;
@@ -233,6 +297,10 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     runRuntimeStep(runtime);
     const auto recovery_output = runtime.lastAutonomyStepOutput();
     if (!expect(recovery_output.has_value(), "autonomy output should exist in recovery step")) {
+        return false;
+    }
+    if (!expectAutonomyMissionLocomotionCorrelation(
+            *recovery_output, runtime.getStatus(), "recovery autonomy step should correlate mission and locomotion")) {
         return false;
     }
     if (!expect(runtime.getStatus().active_mode == RobotMode::SAFE_IDLE,
@@ -257,6 +325,11 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     runRuntimeStep(runtime);
     const auto resumed_after_recovery = runtime.lastAutonomyStepOutput();
     if (!expect(resumed_after_recovery.has_value(), "autonomy output should exist after recovery clears")) {
+        return false;
+    }
+    if (!expectAutonomyMissionLocomotionCorrelation(*resumed_after_recovery,
+                                                    runtime.getStatus(),
+                                                    "post-recovery autonomy step should correlate mission and locomotion")) {
         return false;
     }
     const double resumed_speed_mps = autonomyCommandSpeedMps(*resumed_after_recovery, cfg);
@@ -287,6 +360,11 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     if (!expect(reached_output.has_value(), "autonomy output should exist for waypoint event")) {
         return false;
     }
+    if (!expectAutonomyMissionLocomotionCorrelation(*reached_output,
+                                                    runtime.getStatus(),
+                                                    "waypoint autonomy step should correlate mission and locomotion")) {
+        return false;
+    }
     if (!expect(reached_output->mission_event.progress.completed_waypoints >= 1,
                 "waypoint reached signal should advance mission progress")) {
         return false;
@@ -299,6 +377,15 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     runtime.signalAutonomyWaypointReached();
     runtime.setMotionIntent(makeFreshWalkIntent());
     runRuntimeStep(runtime);
+    const auto completion_output = runtime.lastAutonomyStepOutput();
+    if (!expect(completion_output.has_value(), "autonomy output should exist when mission completes")) {
+        return false;
+    }
+    if (!expectAutonomyMissionLocomotionCorrelation(*completion_output,
+                                                    runtime.getStatus(),
+                                                    "completed autonomy step should correlate mission and locomotion")) {
+        return false;
+    }
     if (!expect(runtime.getStatus().autonomy.mission_state == static_cast<uint8_t>(autonomy::MissionState::Complete),
                 "runtime status should report mission COMPLETE when final waypoint is reached")) {
         return false;
