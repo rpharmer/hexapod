@@ -1,6 +1,5 @@
 #include "body_controller.hpp"
 
-#include <algorithm>
 #include <cmath>
 
 #include "reach_envelope.hpp"
@@ -8,19 +7,11 @@
 namespace {
 
 constexpr double kDefaultBodyHeightM = 0.20;
-constexpr double kYawCommandSlewLimitRadPerSec = 1.2;
-constexpr double kLegTargetSlewLimitMps = 0.9;
-constexpr double kLegTargetTransitionSlewLimitMps = 0.35;
-constexpr uint32_t kLegTargetTransitionSlewSteps = 20;
-constexpr uint8_t kLimiterPhaseTracking = 0;
-constexpr uint8_t kLimiterPhaseBodyLeadsOnStart = 1;
-constexpr uint8_t kLimiterPhaseLegsLeadOnStop = 2;
-constexpr uint8_t kConstraintReasonNone = 0;
-constexpr uint8_t kConstraintReasonTransition = 1;
-constexpr uint8_t kConstraintReasonSlewRate = 2;
-constexpr uint8_t kConstraintReasonReachClamp = 3;
 
 } // namespace
+
+BodyController::BodyController(control_config::MotionLimiterConfig config)
+    : limiter_config_(config) {}
 
 std::array<Vec3, kNumLegs> BodyController::nominalStance() const {
     std::array<Vec3, kNumLegs> nominal{};
@@ -47,10 +38,7 @@ Vec3 BodyController::clampToReachEnvelope(int leg, const Vec3& target_body) cons
 
 
 void BodyController::setYawCommandSlewEnabled(bool enabled) {
-    yaw_command_slew_enabled_ = enabled;
-    if (!enabled) {
-        yaw_filter_initialized_ = false;
-    }
+    (void)enabled;
 }
 
 LegTargets BodyController::update(const RobotState& est,
@@ -76,54 +64,19 @@ LegTargets BodyController::update(const RobotState& est,
     MotionLimiterTelemetry limiter_telemetry{};
 
     (void)est;
+    (void)limiter_config_;
 
     const std::array<Vec3, kNumLegs> nominal = nominalStance();
     const bool walking =
         (intent.requested_mode == RobotMode::WALK) &&
         !safety.inhibit_motion &&
         !safety.torque_cut;
-    const bool was_walking = previous_walking_;
-    if (walking != previous_walking_) {
-        transition_slew_steps_remaining_ = kLegTargetTransitionSlewSteps;
-    } else if (transition_slew_steps_remaining_ > 0) {
-        --transition_slew_steps_remaining_;
-    }
-    previous_walking_ = walking;
-    if (!was_walking && walking) {
-        limiter_telemetry.phase = kLimiterPhaseBodyLeadsOnStart;
-        limiter_telemetry.constraint_reason = kConstraintReasonTransition;
-    } else if (was_walking && !walking) {
-        limiter_telemetry.phase = kLimiterPhaseLegsLeadOnStop;
-        limiter_telemetry.constraint_reason = kConstraintReasonTransition;
-    } else {
-        limiter_telemetry.phase = kLimiterPhaseTracking;
-    }
+    (void)walking;
 
     const double roll_cmd = intent.body_pose_setpoint.orientation_rad.x;
     const double pitch_cmd = intent.body_pose_setpoint.orientation_rad.y;
     const double yaw_cmd_raw = policy.suppression.suppress_turning ? 0.0 : intent.body_pose_setpoint.orientation_rad.z;
-    const TimePointUs now = out.timestamp_us;
-    const TimePointUs previous_update_ts = last_update_timestamp_;
-    const bool has_positive_dt = !previous_update_ts.isZero() && now.value > previous_update_ts.value;
-    const double update_dt_s =
-        has_positive_dt ? static_cast<double>(now.value - previous_update_ts.value) / 1'000'000.0 : 0.0;
-    if (!yaw_command_slew_enabled_ || !yaw_filter_initialized_ || !has_positive_dt) {
-        filtered_yaw_cmd_rad_ = yaw_cmd_raw;
-        yaw_filter_initialized_ = true;
-    } else {
-        const double max_step = kYawCommandSlewLimitRadPerSec * update_dt_s;
-        const double delta = yaw_cmd_raw - filtered_yaw_cmd_rad_;
-        const double clamped_delta = std::clamp(delta, -max_step, max_step);
-        if (std::abs(delta) > std::abs(clamped_delta) + 1e-12) {
-            limiter_telemetry.hard_clamp_yaw = true;
-            limiter_telemetry.constraint_reason = kConstraintReasonSlewRate;
-        }
-        filtered_yaw_cmd_rad_ += clamped_delta;
-        const double delta_abs = std::abs(delta);
-        limiter_telemetry.adaptation_scale_yaw = delta_abs > 1e-9 ? std::abs(clamped_delta) / delta_abs : 1.0;
-    }
-    last_update_timestamp_ = now;
-    const double yaw_cmd = filtered_yaw_cmd_rad_;
+    const double yaw_cmd = yaw_cmd_raw;
     const Mat3 body_rotation = Mat3::rotZ(yaw_cmd) * Mat3::rotY(pitch_cmd) * Mat3::rotX(roll_cmd);
     const Vec3 planar_body_offset = Vec3{
         intent.body_pose_setpoint.body_trans_m.x,
@@ -151,23 +104,6 @@ LegTargets BodyController::update(const RobotState& est,
         target = clampToReachEnvelope(leg, target);
         if (vecNorm(target - unclamped_reach_target) > 1e-9) {
             limiter_telemetry.hard_clamp_reach = true;
-            limiter_telemetry.constraint_reason = kConstraintReasonReachClamp;
-        }
-        if (has_previous_targets_ && has_positive_dt) {
-            const double speed_limit = transition_slew_steps_remaining_ > 0
-                                           ? kLegTargetTransitionSlewLimitMps
-                                           : kLegTargetSlewLimitMps;
-            const double max_step_m = speed_limit * update_dt_s;
-            const Vec3 previous = previous_targets_.feet[leg].pos_body_m;
-            const Vec3 delta = target - previous;
-            const double delta_mag = vecNorm(delta);
-            if (delta_mag > max_step_m && delta_mag > 1e-9) {
-                limiter_telemetry.hard_clamp_linear = true;
-                limiter_telemetry.constraint_reason =
-                    (transition_slew_steps_remaining_ > 0) ? kConstraintReasonTransition : kConstraintReasonSlewRate;
-                limiter_telemetry.adaptation_scale_linear = max_step_m / delta_mag;
-                target = previous + (delta * (max_step_m / delta_mag));
-            }
         }
         target_vel = target_vel + cross(intent.body_pose_setpoint.angular_velocity_radps, target);
 
@@ -175,8 +111,6 @@ LegTargets BodyController::update(const RobotState& est,
         out.feet[leg].vel_body_mps = target_vel;
     }
 
-    previous_targets_ = out;
-    has_previous_targets_ = true;
     last_motion_limiter_telemetry_ = limiter_telemetry;
     return out;
 }

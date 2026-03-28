@@ -16,9 +16,11 @@ bool contactManagerBypassed() {
 
 } // namespace
 
-ControlPipeline::ControlPipeline(control_config::GaitConfig config)
-    : planner_(config),
-      gait_(config) {}
+ControlPipeline::ControlPipeline(control_config::ControlConfig config)
+    : planner_(config.gait),
+      motion_limiter_(config.motion_limiter),
+      gait_(config.gait),
+      body_(config.motion_limiter) {}
 
 PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
                                             const MotionIntent& intent,
@@ -45,7 +47,7 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     }
     const LegTargets leg_targets = body_.update(estimated, limiter_output.limited_intent, contact_adjusted.managed_gait, contact_adjusted.managed_policy, safety_state);
     const JointTargets joint_targets = ik_.solve(estimated, leg_targets, safety_state);
-    const BodyController::MotionLimiterTelemetry limiter = body_.lastMotionLimiterTelemetry();
+    const BodyController::MotionLimiterTelemetry body_limiter = body_.lastMotionLimiterTelemetry();
 
     ControlStatus status{};
     status.active_mode = active_mode;
@@ -79,16 +81,17 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
         status.dynamic_gait.leg_duty_cycle[leg] = contact_adjusted.managed_policy.per_leg[leg].duty_cycle;
         status.dynamic_gait.leg_in_stance[leg] = contact_adjusted.managed_gait.in_stance[leg];
     }
-    status.dynamic_gait.limiter_enabled = limiter.enabled;
-    status.dynamic_gait.limiter_phase = limiter.phase;
-    status.dynamic_gait.active_constraint_reason = limiter.constraint_reason;
-    status.dynamic_gait.adaptation_scale_linear = limiter.adaptation_scale_linear;
-    status.dynamic_gait.adaptation_scale_yaw = limiter.adaptation_scale_yaw;
+    status.dynamic_gait.limiter_enabled = limiter_output.diagnostics.enabled;
+    status.dynamic_gait.limiter_phase = limiter_output.diagnostics.phase;
+    status.dynamic_gait.active_constraint_reason = limiter_output.diagnostics.constraint_reason;
+    status.dynamic_gait.adaptation_scale_linear = limiter_output.diagnostics.adaptation_scale_linear;
+    status.dynamic_gait.adaptation_scale_yaw = limiter_output.diagnostics.adaptation_scale_yaw;
     status.dynamic_gait.adaptation_scale_cadence = contact_adjusted.managed_policy.adaptation_scale_cadence;
     status.dynamic_gait.adaptation_scale_step = contact_adjusted.managed_policy.adaptation_scale_step;
-    status.dynamic_gait.hard_clamp_linear = limiter.hard_clamp_linear;
-    status.dynamic_gait.hard_clamp_yaw = limiter.hard_clamp_yaw;
-    status.dynamic_gait.hard_clamp_reach = limiter.hard_clamp_reach;
+    status.dynamic_gait.hard_clamp_linear = limiter_output.diagnostics.hard_clamp_linear;
+    status.dynamic_gait.hard_clamp_yaw = limiter_output.diagnostics.hard_clamp_yaw;
+    status.dynamic_gait.hard_clamp_reach =
+        limiter_output.diagnostics.hard_clamp_reach || body_limiter.hard_clamp_reach;
     status.dynamic_gait.hard_clamp_cadence = contact_adjusted.managed_policy.hard_clamp_cadence;
     status.dynamic_gait.saturated =
         status.dynamic_gait.hard_clamp_linear ||

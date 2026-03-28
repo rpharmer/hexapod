@@ -17,7 +17,7 @@ struct PipelineStepResult {
 
 class ControlPipeline {
 public:
-    explicit ControlPipeline(control_config::GaitConfig config = {});
+    explicit ControlPipeline(control_config::ControlConfig config = {});
 
     PipelineStepResult runStep(const RobotState& estimated,
                                const MotionIntent& intent,
@@ -28,7 +28,7 @@ public:
 
 private:
     GaitPolicyPlanner planner_;
-    MotionLimiter motion_limiter_{};
+    MotionLimiter motion_limiter_;
     GaitScheduler gait_;
     ContactManager contact_manager_;
     BodyController body_;
