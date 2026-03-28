@@ -1238,6 +1238,211 @@ bool runBusFaultDuringMixedStanceSwingCase() {
                   "bus fault transition should avoid large per-step joint output transients");
 }
 
+bool runPhaseSpecificFaultInjectionLifecycleRecoveryCase() {
+    struct PhaseFaultCase {
+        const char* name;
+        FaultCode expected_fault;
+        SimHardwareFaultToggles toggles;
+        bool (*phase_match)(const ControlStatus::DynamicGaitTelemetry& gait);
+    };
+
+    const auto is_early_stance = [](const ControlStatus::DynamicGaitTelemetry& gait) {
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            if (gait.leg_in_stance[leg] && gait.leg_phase[leg] <= 0.20) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto is_late_stance = [](const ControlStatus::DynamicGaitTelemetry& gait) {
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            if (gait.leg_in_stance[leg] && gait.leg_phase[leg] >= 0.30) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto is_swing = [](const ControlStatus::DynamicGaitTelemetry& gait) {
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            if (gait.leg_phase[leg] >= 0.50) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const std::array<PhaseFaultCase, 3> fault_cases{{
+        {"bus_timeout_early_stance", FaultCode::BUS_TIMEOUT, SimHardwareFaultToggles{.drop_bus = true},
+         is_early_stance},
+        {"motor_fault_late_stance", FaultCode::MOTOR_FAULT, SimHardwareFaultToggles{.low_voltage = true},
+         is_late_stance},
+        {"tip_over_swing",
+         FaultCode::TIP_OVER,
+         SimHardwareFaultToggles{.forced_contacts = std::array<bool, kNumLegs>{true, false, true, false, false,
+                                                                             false}},
+         is_swing},
+    }};
+
+    struct FaultRunSignature {
+        FaultCode baseline_fault{FaultCode::NONE};
+        FaultCode injected_fault{FaultCode::NONE};
+        FaultCode latched_fault{FaultCode::NONE};
+        FaultLifecycle lifecycle_after_injection{FaultLifecycle::ACTIVE};
+        FaultLifecycle lifecycle_after_recover_start{FaultLifecycle::ACTIVE};
+        FaultCode recovered_fault{FaultCode::NONE};
+        FaultLifecycle lifecycle_after_clear{FaultLifecycle::ACTIVE};
+    };
+
+    std::array<FaultRunSignature, fault_cases.size()> expected_signatures{};
+
+    for (int repetition = 0; repetition < 3; ++repetition) {
+        for (size_t case_index = 0; case_index < fault_cases.size(); ++case_index) {
+            const PhaseFaultCase& fault_case = fault_cases[case_index];
+            auto bridge = std::make_unique<SimHardwareBridge>();
+            auto estimator = std::make_unique<CapturingEstimator>();
+            auto* estimator_raw = estimator.get();
+
+            control_config::ControlConfig cfg{};
+            cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+            cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+            RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, cfg);
+
+            if (!expect(runtime.init(),
+                        "init should succeed (phase-specific safety fault lifecycle case)")) {
+                return false;
+            }
+
+            MotionIntent walk{};
+            walk.requested_mode = RobotMode::WALK;
+            walk.gait = GaitType::TRIPOD;
+            walk.speed_mps = LinearRateMps{0.60};
+            walk.heading_rad = AngleRad{0.0};
+            walk.body_pose_setpoint.body_trans_m = Vec3{0.0, 0.0, 0.20};
+
+            uint64_t sample_id = 1;
+
+            const auto step_with_intent = [&](RobotMode mode, const SimHardwareFaultToggles& toggles) {
+                runtime.setSimFaultToggles(toggles);
+                walk.requested_mode = mode;
+                walk.sample_id = sample_id++;
+                walk.timestamp_us = now_us();
+                runtime.setMotionIntentForTest(walk);
+                runControlStep(runtime);
+                return std::pair{runtime.getStatus(), estimator_raw->last_raw};
+            };
+
+            bool reached_phase = false;
+            for (int guard = 0; guard < 300; ++guard) {
+                const auto [status, raw] = step_with_intent(RobotMode::WALK, SimHardwareFaultToggles{});
+                (void)raw;
+                if (fault_case.phase_match(status.dynamic_gait)) {
+                    reached_phase = true;
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds{2});
+            }
+            if (!expect(reached_phase,
+                        std::string{"walking runtime should reach phase window before fault injection for "} +
+                            fault_case.name)) {
+                return false;
+            }
+
+            const auto [baseline, baseline_raw] = step_with_intent(RobotMode::WALK, SimHardwareFaultToggles{});
+            (void)baseline_raw;
+            if (!expect(baseline.active_mode == RobotMode::WALK,
+                        std::string{"baseline mode should remain WALK before injecting "} + fault_case.name) ||
+                !expect(baseline.active_fault == FaultCode::NONE,
+                        std::string{"baseline fault should be NONE before injecting "} + fault_case.name)) {
+                return false;
+            }
+
+            const auto [injected, fault_raw] = step_with_intent(RobotMode::WALK, fault_case.toggles);
+            if (!expect(injected.active_mode == RobotMode::FAULT,
+                        std::string{"injection should transition runtime mode to FAULT for "} + fault_case.name) ||
+                !expect(injected.active_fault == fault_case.expected_fault,
+                        std::string{"injection should latch expected fault class for "} + fault_case.name)) {
+                return false;
+            }
+            const auto [latched, latched_raw] = step_with_intent(RobotMode::WALK, SimHardwareFaultToggles{});
+            if (!expect(latched.active_mode == RobotMode::FAULT,
+                        std::string{"fault should remain in FAULT mode after toggle clear for "} +
+                            fault_case.name) ||
+                !expect(latched.active_fault == fault_case.expected_fault,
+                        std::string{"fault should remain latched after toggle clear for "} + fault_case.name)) {
+                return false;
+            }
+
+            SafetySupervisor safety{};
+            MotionIntent active_mode_intent{};
+            active_mode_intent.requested_mode = RobotMode::WALK;
+            active_mode_intent.timestamp_us = now_us();
+            MotionIntent safe_idle_intent{};
+            safe_idle_intent.requested_mode = RobotMode::SAFE_IDLE;
+            safe_idle_intent.timestamp_us = now_us();
+
+            const SafetyState local_latched = safety.evaluate(
+                fault_raw, fault_raw, active_mode_intent, SafetySupervisor::FreshnessInputs{true, true});
+            if (!expect(local_latched.active_fault == fault_case.expected_fault,
+                        std::string{"local safety should latch expected fault for "} + fault_case.name) ||
+                !expect(local_latched.fault_lifecycle == FaultLifecycle::LATCHED,
+                        std::string{"local safety lifecycle should enter LATCHED for "} + fault_case.name)) {
+                return false;
+            }
+
+            const SafetyState recovering = safety.evaluate(
+                latched_raw, latched_raw, safe_idle_intent, SafetySupervisor::FreshnessInputs{true, true});
+            if (!expect(recovering.active_fault == fault_case.expected_fault,
+                        std::string{"local safety should keep fault set while RECOVERING for "} +
+                            fault_case.name) ||
+                !expect(recovering.fault_lifecycle == FaultLifecycle::RECOVERING,
+                        std::string{"local safety lifecycle should become RECOVERING for "} + fault_case.name)) {
+                return false;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds{550});
+            const SafetyState cleared = safety.evaluate(
+                latched_raw, latched_raw, safe_idle_intent, SafetySupervisor::FreshnessInputs{true, true});
+            if (!expect(cleared.active_fault == FaultCode::NONE,
+                        std::string{"local safety should clear fault after recovery hold for "} + fault_case.name) ||
+                !expect(cleared.fault_lifecycle == FaultLifecycle::ACTIVE,
+                        std::string{"local safety lifecycle should return ACTIVE after clear for "} +
+                            fault_case.name)) {
+                return false;
+            }
+
+            const FaultRunSignature observed{
+                .baseline_fault = baseline.active_fault,
+                .injected_fault = injected.active_fault,
+                .latched_fault = latched.active_fault,
+                .lifecycle_after_injection = local_latched.fault_lifecycle,
+                .lifecycle_after_recover_start = recovering.fault_lifecycle,
+                .recovered_fault = cleared.active_fault,
+                .lifecycle_after_clear = cleared.fault_lifecycle,
+            };
+
+            if (repetition == 0) {
+                expected_signatures[case_index] = observed;
+            } else {
+                const FaultRunSignature& expected = expected_signatures[case_index];
+                if (!expect(observed.baseline_fault == expected.baseline_fault &&
+                                observed.injected_fault == expected.injected_fault &&
+                                observed.latched_fault == expected.latched_fault &&
+                                observed.lifecycle_after_injection == expected.lifecycle_after_injection &&
+                                observed.lifecycle_after_recover_start == expected.lifecycle_after_recover_start &&
+                                observed.recovered_fault == expected.recovered_fault &&
+                                observed.lifecycle_after_clear == expected.lifecycle_after_clear,
+                            std::string{"fault lifecycle/recovery signature should be deterministic across "
+                                        "repetitions for "} +
+                                fault_case.name)) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -1350,6 +1555,10 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!runBusFaultDuringMixedStanceSwingCase()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runPhaseSpecificFaultInjectionLifecycleRecoveryCase()) {
         return EXIT_FAILURE;
     }
 
