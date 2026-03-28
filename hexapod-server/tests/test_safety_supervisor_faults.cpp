@@ -154,6 +154,39 @@ bool testUnstableSupportTriggersTipOver() {
            expect(state.torque_cut, "TIP_OVER from instability should request torque cut");
 }
 
+bool testSupportInstabilityBypassesTiltDebounce() {
+    SafetySupervisor supervisor;
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+
+    // Keep measured tilt below threshold so only support-polygon instability can trip TIP_OVER.
+    est.body_pose_state.orientation_rad = Vec3{0.05, 0.05, 0.0};
+    est.has_measured_body_pose_state = true;
+    est.has_body_pose_state = true;
+    raw.foot_contacts = {true, false, true, false, false, false};
+
+    const SafetyState immediate = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+    if (!expect(immediate.active_fault == FaultCode::TIP_OVER,
+                "support-polygon TIP_OVER should trigger immediately without debounce samples")) {
+        return false;
+    }
+
+    SafetySupervisor fresh_supervisor;
+    const SafetyState first_tilt_sample = [&]() {
+        RobotState tilt_raw = nominalRaw();
+        RobotState tilt_est = nominalEstimated();
+        tilt_est.body_pose_state.orientation_rad = Vec3{2.0, 0.0, 0.0};
+        tilt_est.has_measured_body_pose_state = true;
+        tilt_est.has_body_pose_state = true;
+        return fresh_supervisor.evaluate(
+            tilt_raw, tilt_est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+    }();
+
+    return expect(first_tilt_sample.active_fault == FaultCode::NONE,
+                  "tilt-only TIP_OVER should still be debounced on first sample");
+}
+
 bool testMotorFaultTorqueCut() {
     SafetySupervisor supervisor;
     RobotState raw = nominalRaw();
@@ -287,6 +320,7 @@ int main() {
         !testBusTimeoutBeatsFreshnessFaults() ||
         !testInferredTiltDoesNotTripMeasuredTiltPolicy() ||
         !testUnstableSupportTriggersTipOver() ||
+        !testSupportInstabilityBypassesTiltDebounce() ||
         !testMotorFaultTorqueCut() ||
         !testJointDiscontinuityTripsSafety() ||
         !testLatchedRemainsWhenIntentNotSafeIdle() ||
