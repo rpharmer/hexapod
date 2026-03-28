@@ -39,39 +39,39 @@ MotionIntent walkingIntent() {
 }
 
 bool unit_body_accel_limiter_and_phase_transitions() {
-    BodyController controller;
+    control_config::MotionLimiterConfig limiter_config{};
+    limiter_config.foot_velocity_limit_mps = 0.05;
+    limiter_config.startup_phase_threshold = std::chrono::milliseconds{200};
+    limiter_config.shutdown_phase_threshold = std::chrono::milliseconds{200};
+    ControlPipeline pipeline(control_config::ControlConfig{
+        .gait = control_config::GaitConfig{},
+        .motion_limiter = limiter_config});
+
     RobotState est = nominalEstimatedState();
-    GaitState gait{};
-    gait.in_stance.fill(true);
-    RuntimeGaitPolicy policy{};
     SafetyState safety{};
     safety.inhibit_motion = false;
     safety.torque_cut = false;
 
     MotionIntent idle{};
     idle.requested_mode = RobotMode::SAFE_IDLE;
-    controller.update(est, idle, gait, policy, safety);
+    const DurationSec loop_dt{0.02};
+    (void)pipeline.runStep(est, idle, safety, loop_dt, true, 1);
 
     MotionIntent walk = walkingIntent();
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    controller.update(est, walk, gait, policy, safety);
-    const auto start_diag = controller.lastMotionLimiterTelemetry();
+    const PipelineStepResult start = pipeline.runStep(est, walk, safety, loop_dt, true, 2);
 
     walk.body_pose_setpoint.body_trans_m.x = 0.25;
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    controller.update(est, walk, gait, policy, safety);
-    const auto limited_diag = controller.lastMotionLimiterTelemetry();
+    const PipelineStepResult limited = pipeline.runStep(est, walk, safety, loop_dt, true, 3);
 
     MotionIntent stop = walk;
     stop.requested_mode = RobotMode::SAFE_IDLE;
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    controller.update(est, stop, gait, policy, safety);
-    const auto stop_diag = controller.lastMotionLimiterTelemetry();
+    const PipelineStepResult stop_result = pipeline.runStep(est, stop, safety, loop_dt, true, 4);
 
-    return expect(start_diag.enabled, "limiter telemetry should be enabled during transition") &&
-           expect(limited_diag.hard_clamp_linear, "large body step should activate linear hard clamp") &&
-           expect(limited_diag.adaptation_scale_linear < 1.0, "linear adaptation scale should drop below unity when clamped") &&
-           expect(stop_diag.phase == 2, "stop transition should report legs-lead phase");
+    return expect(start.status.dynamic_gait.limiter_enabled, "limiter telemetry should be enabled during transition") &&
+           expect(start.status.dynamic_gait.limiter_phase == 1, "start transition should report body-leads phase") &&
+           expect(limited.status.dynamic_gait.hard_clamp_linear, "large body step should activate linear hard clamp") &&
+           expect(limited.status.dynamic_gait.adaptation_scale_linear < 1.0, "linear adaptation scale should drop below unity when clamped") &&
+           expect(stop_result.status.dynamic_gait.limiter_phase == 2, "stop transition should report legs-lead phase");
 }
 
 bool unit_gait_adaptation_scaling_behavior() {
@@ -107,28 +107,60 @@ bool unit_gait_adaptation_scaling_behavior() {
 }
 
 bool integration_bounded_ramp_response_to_step_commands() {
-    BodyController controller;
+    ControlPipeline pipeline;
     RobotState est = nominalEstimatedState();
-    GaitState gait{};
-    gait.in_stance.fill(true);
-    RuntimeGaitPolicy policy{};
     SafetyState safety{};
     safety.inhibit_motion = false;
     safety.torque_cut = false;
+    const DurationSec loop_dt{0.03};
 
     MotionIntent walk = walkingIntent();
-    const LegTargets first = controller.update(est, walk, gait, policy, safety);
+    const PipelineStepResult first = pipeline.runStep(est, walk, safety, loop_dt, true, 10);
 
     walk.body_pose_setpoint.body_trans_m.x = 0.35;
-    std::this_thread::sleep_for(std::chrono::milliseconds(30));
-    const LegTargets second = controller.update(est, walk, gait, policy, safety);
-
-    const double dt = (second.timestamp_us.value - first.timestamp_us.value) / 1'000'000.0;
-    const double dx = std::abs(second.feet[0].pos_body_m.x - first.feet[0].pos_body_m.x);
-    const double observed_speed = dx / std::max(dt, 1e-6);
+    const PipelineStepResult second = pipeline.runStep(est, walk, safety, loop_dt, true, 11);
+    const double dx = std::abs(second.leg_targets.feet[0].pos_body_m.x - first.leg_targets.feet[0].pos_body_m.x);
+    const double observed_speed = dx / loop_dt.value;
 
     return expect(observed_speed <= 0.5,
                   "step command response should remain bounded by transition ramp speed");
+}
+
+bool scenario_motion_limiter_config_changes_clamp_behavior() {
+    control_config::ControlConfig strict_cfg{};
+    strict_cfg.motion_limiter.foot_velocity_limit_mps = 0.02;
+
+    control_config::ControlConfig relaxed_cfg{};
+    relaxed_cfg.motion_limiter.foot_velocity_limit_mps = 20.0;
+
+    ControlPipeline strict_pipeline(strict_cfg);
+    ControlPipeline relaxed_pipeline(relaxed_cfg);
+
+    RobotState est = nominalEstimatedState();
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    safety.torque_cut = false;
+    const DurationSec loop_dt{0.02};
+
+    MotionIntent walk = walkingIntent();
+    const PipelineStepResult strict_base = strict_pipeline.runStep(est, walk, safety, loop_dt, true, 21);
+    const PipelineStepResult relaxed_base = relaxed_pipeline.runStep(est, walk, safety, loop_dt, true, 21);
+
+    walk.body_pose_setpoint.body_trans_m.x = 0.25;
+    const PipelineStepResult strict_step = strict_pipeline.runStep(est, walk, safety, loop_dt, true, 22);
+    const PipelineStepResult relaxed_step = relaxed_pipeline.runStep(est, walk, safety, loop_dt, true, 22);
+
+    const double strict_dx = std::abs(
+        strict_step.leg_targets.feet[0].pos_body_m.x - strict_base.leg_targets.feet[0].pos_body_m.x);
+    const double relaxed_dx = std::abs(
+        relaxed_step.leg_targets.feet[0].pos_body_m.x - relaxed_base.leg_targets.feet[0].pos_body_m.x);
+
+    return expect(strict_step.status.dynamic_gait.hard_clamp_linear,
+                  "strict limiter config should clamp linear command") &&
+           expect(!relaxed_step.status.dynamic_gait.hard_clamp_linear,
+                  "relaxed limiter config should avoid linear clamp for same command") &&
+           expect(relaxed_dx > strict_dx + 1e-4,
+                  "relaxed limiter should allow larger per-step displacement than strict limiter");
 }
 
 bool scenario_body_leads_on_start_and_legs_lead_on_stop() {
@@ -173,6 +205,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!scenario_body_leads_on_start_and_legs_lead_on_stop()) {
+        return EXIT_FAILURE;
+    }
+    if (!scenario_motion_limiter_config_changes_clamp_behavior()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
