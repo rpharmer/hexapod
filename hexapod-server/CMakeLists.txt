@@ -348,6 +348,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     hexapod_server_add_test(test_gait_dynamics_turn_safety gait_dynamics_turn_safety
         tests/test_gait_dynamics_turn_safety.cpp
     )
+    hexapod_server_add_test(test_gait_family_locomotion_profiles gait_family_locomotion_profiles
+        tests/test_gait_family_locomotion_profiles.cpp
+    )
     hexapod_server_add_test(test_stability_tracker stability_tracker
         tests/test_stability_tracker.cpp
     )
