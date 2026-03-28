@@ -28,7 +28,7 @@ bool testFreshnessGateDecisionMatrix() {
     fresh.estimator.valid = true;
     fresh.intent.valid = true;
 
-    const auto allow = gate.computeControlDecision(fresh, true, 11);
+    const auto allow = gate.computeControlDecision(fresh, true, 11, JointTargets{}, false, 0);
     if (!expect(allow.allow_pipeline, "fresh estimator+intent should allow pipeline")) {
         return false;
     }
@@ -36,22 +36,28 @@ bool testFreshnessGateDecisionMatrix() {
     FreshnessPolicy::Evaluation stale_intent{};
     stale_intent.estimator.valid = true;
     stale_intent.intent.valid = false;
-    const auto reject_intent = gate.computeControlDecision(stale_intent, true, 12);
+    JointTargets previous{};
+    previous.leg_states[0].joint_state[0].pos_rad.value = 0.8;
+    const auto reject_intent = gate.computeControlDecision(stale_intent, true, 12, previous, true, 1);
     if (!expect(!reject_intent.allow_pipeline, "stale intent should reject pipeline") ||
         !expect(reject_intent.status.active_fault == FaultCode::COMMAND_TIMEOUT,
-                "stale intent should map to COMMAND_TIMEOUT")) {
+                "stale intent should map to COMMAND_TIMEOUT") ||
+        !expect(reject_intent.joint_targets.leg_states[0].joint_state[0].pos_rad.value == 0.8,
+                "first reject should hold previous joint targets")) {
         return false;
     }
 
     FreshnessPolicy::Evaluation stale_both{};
     stale_both.estimator.valid = false;
     stale_both.intent.valid = false;
-    const auto reject_both = gate.computeControlDecision(stale_both, false, 13);
+    const auto reject_both = gate.computeControlDecision(stale_both, false, 13, previous, true, 8);
     return expect(!reject_both.allow_pipeline, "stale estimator+intent should reject pipeline") &&
            expect(reject_both.status.active_fault == FaultCode::ESTIMATOR_INVALID,
                   "stale estimator should take precedence for fault mapping") &&
            expect(reject_both.status.bus_ok == false, "rejected status should preserve bus flag") &&
-           expect(reject_both.status.loop_counter == 13, "rejected status should preserve loop counter");
+           expect(reject_both.status.loop_counter == 13, "rejected status should preserve loop counter") &&
+           expect(reject_both.joint_targets.leg_states[0].joint_state[0].pos_rad.value < 0.8,
+                  "extended reject streak should decay previous joint targets");
 }
 
 bool testStrictMetricsOnlyCountInvalidStreams() {

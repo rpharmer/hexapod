@@ -83,10 +83,17 @@ bool RobotRuntime::init() {
     control_jitter_max_us_.store(0);
     stale_intent_count_.store(0);
     stale_estimator_count_.store(0);
+    freshness_reject_consecutive_count_.store(0);
+    freshness_reject_count_.store(0);
+    freshness_reject_stale_age_count_.store(0);
+    freshness_reject_invalid_sample_id_count_.store(0);
+    freshness_reject_non_monotonic_id_count_.store(0);
     raw_sample_seq_.store(0);
     intent_sample_seq_.store(1);
     has_last_written_joint_targets_ = false;
     last_written_joint_targets_ = JointTargets{};
+    has_last_pipeline_joint_targets_ = false;
+    last_pipeline_joint_targets_ = JointTargets{};
     last_joint_write_timestamp_ = TimePointUs{};
     freshness_gate_.reset();
     timing_metrics_.reset();
@@ -220,10 +227,33 @@ void RobotRuntime::controlStep() {
     freshness_gate_.recordStrictMetrics(freshness, stale_intent_count_, stale_estimator_count_);
 
     const uint64_t loop_counter = control_loop_counter_.fetch_add(1) + 1;
-    const RuntimeFreshnessGate::Decision decision =
-        freshness_gate_.computeControlDecision(freshness, bus_ok, loop_counter);
-    if (!decision.allow_pipeline) {
-        RuntimeFreshnessGate::maybeLogReject(logger_, freshness, est, intent);
+    const bool reject = !freshness.estimator.valid || !freshness.intent.valid;
+    if (reject) {
+        const bool stale_age_reject = freshness.estimator.stale_age || freshness.intent.stale_age;
+        const bool invalid_sample_reject =
+            freshness.estimator.invalid_sample_id || freshness.intent.invalid_sample_id;
+        const bool non_monotonic_reject =
+            freshness.estimator.non_monotonic_sample_id || freshness.intent.non_monotonic_sample_id;
+        freshness_reject_count_.fetch_add(1);
+        const uint64_t consecutive_rejects = freshness_reject_consecutive_count_.fetch_add(1) + 1;
+        if (stale_age_reject) {
+            freshness_reject_stale_age_count_.fetch_add(1);
+        }
+        if (invalid_sample_reject) {
+            freshness_reject_invalid_sample_id_count_.fetch_add(1);
+        }
+        if (non_monotonic_reject) {
+            freshness_reject_non_monotonic_id_count_.fetch_add(1);
+        }
+        const RuntimeFreshnessGate::Decision decision =
+            freshness_gate_.computeControlDecision(freshness,
+                                                   bus_ok,
+                                                   loop_counter,
+                                                   last_pipeline_joint_targets_,
+                                                   has_last_pipeline_joint_targets_,
+                                                   consecutive_rejects);
+        RuntimeFreshnessGate::maybeLogReject(
+            logger_, now, freshness, est, intent, loop_counter, consecutive_rejects);
         ControlStatus runtime_status = decision.status;
         applyAutonomyStatus(runtime_status);
         status_.write(runtime_status);
@@ -233,6 +263,7 @@ void RobotRuntime::controlStep() {
         return;
     }
 
+    freshness_reject_consecutive_count_.store(0);
     const MotionIntent effective_intent = resolveAutonomyMotionIntent(intent, safety_state, now);
 
     const DurationSec control_loop_dt{
@@ -246,6 +277,8 @@ void RobotRuntime::controlStep() {
         loop_counter);
 
     joint_targets_.write(result.joint_targets);
+    last_pipeline_joint_targets_ = result.joint_targets;
+    has_last_pipeline_joint_targets_ = true;
     ControlStatus runtime_status = result.status;
     applyAutonomyStatus(runtime_status);
     status_.write(runtime_status);
@@ -281,6 +314,13 @@ void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
     telemetry_sample.status = status_.read();
     telemetry_sample.timestamp_us = now;
     telemetry_sample.imu_reads_enabled = config_.runtime_imu.enable_reads;
+    telemetry_sample.runtime_freshness.consecutive_rejects = freshness_reject_consecutive_count_.load();
+    telemetry_sample.runtime_freshness.total_rejects = freshness_reject_count_.load();
+    telemetry_sample.runtime_freshness.stale_age_rejects = freshness_reject_stale_age_count_.load();
+    telemetry_sample.runtime_freshness.invalid_sample_id_rejects =
+        freshness_reject_invalid_sample_id_count_.load();
+    telemetry_sample.runtime_freshness.non_monotonic_id_rejects =
+        freshness_reject_non_monotonic_id_count_.load();
     if (last_autonomy_step_output_.has_value()) {
         const auto& localization = last_autonomy_step_output_->localization_estimate;
         if (localization.valid) {
@@ -323,7 +363,12 @@ void RobotRuntime::diagnosticsStep() {
                                  control_jitter_max_us_.load(),
                                  loop_timing_metrics,
                                  stale_intent_count_.load(),
-                                 stale_estimator_count_.load());
+                                 stale_estimator_count_.load(),
+                                 freshness_reject_consecutive_count_.load(),
+                                 freshness_reject_count_.load(),
+                                 freshness_reject_stale_age_count_.load(),
+                                 freshness_reject_invalid_sample_id_count_.load(),
+                                 freshness_reject_non_monotonic_id_count_.load());
 }
 
 void RobotRuntime::setMotionIntent(const MotionIntent& intent) {

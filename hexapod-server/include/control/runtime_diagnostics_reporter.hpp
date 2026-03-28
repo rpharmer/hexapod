@@ -54,7 +54,12 @@ public:
                 uint64_t max_control_jitter_us,
                 const LoopTimingRollingMetrics& loop_timing_metrics,
                 uint64_t stale_intent_events,
-                uint64_t stale_estimator_events);
+                uint64_t stale_estimator_events,
+                uint64_t freshness_reject_consecutive,
+                uint64_t freshness_reject_total,
+                uint64_t freshness_reject_stale_age_total,
+                uint64_t freshness_reject_invalid_sample_id_total,
+                uint64_t freshness_reject_non_monotonic_id_total);
 
 private:
     bool isTransitionStep(const ControlStatus& status) const;

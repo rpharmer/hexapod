@@ -82,6 +82,11 @@ private:
     std::atomic<uint64_t> control_jitter_max_us_{0};
     std::atomic<uint64_t> stale_intent_count_{0};
     std::atomic<uint64_t> stale_estimator_count_{0};
+    std::atomic<uint64_t> freshness_reject_consecutive_count_{0};
+    std::atomic<uint64_t> freshness_reject_count_{0};
+    std::atomic<uint64_t> freshness_reject_stale_age_count_{0};
+    std::atomic<uint64_t> freshness_reject_invalid_sample_id_count_{0};
+    std::atomic<uint64_t> freshness_reject_non_monotonic_id_count_{0};
     std::atomic<uint64_t> raw_sample_seq_{0};
     std::atomic<uint64_t> intent_sample_seq_{0};
     RuntimeFreshnessGate freshness_gate_;
@@ -96,6 +101,8 @@ private:
     DoubleBuffer<ControlStatus> status_;
     JointTargets last_written_joint_targets_{};
     bool has_last_written_joint_targets_{false};
+    JointTargets last_pipeline_joint_targets_{};
+    bool has_last_pipeline_joint_targets_{false};
     TimePointUs last_joint_write_timestamp_{};
 
     TimePointUs next_telemetry_publish_at_{};
