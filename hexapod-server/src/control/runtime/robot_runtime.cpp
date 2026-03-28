@@ -167,6 +167,9 @@ void RobotRuntime::busStep() {
         if (imu_ && imu_->read(imu_sample) && imu_sample.valid) {
             raw.body_pose_state.orientation_rad = imu_sample.orientation_rad;
             raw.body_pose_state.angular_velocity_radps = imu_sample.angular_velocity_radps;
+            if (imu_sample.has_body_linear_velocity) {
+                raw.body_pose_state.body_trans_mps = imu_sample.body_linear_velocity_mps;
+            }
             raw.has_body_pose_state = true;
         }
     }

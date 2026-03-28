@@ -19,6 +19,8 @@ private:
 
     std::array<Vec3, kNumLegs> last_contact_points_body_m_{};
     std::array<TimePointUs, kNumLegs> last_contact_timestamps_{};
+    std::array<Vec3, kNumLegs> last_stance_points_body_m_{};
+    std::array<bool, kNumLegs> last_stance_valid_{};
     std::array<LegState, kNumLegs> last_leg_states_{};
     TimePointUs last_leg_timestamp_{};
     TimePointUs last_body_pose_timestamp_{};
