@@ -53,8 +53,14 @@ GaitState GaitScheduler::update(const RobotState& est,
         !policy.suppression.suppress_stride_progression;
 
     if (!walking) {
+        if (!last_phase_initialized_) {
+            for (int i = 0; i < kNumLegs; ++i) {
+                last_phase_[i] = wrap01(policy.per_leg[i].phase_offset);
+            }
+            last_phase_initialized_ = true;
+        }
         for (int i = 0; i < kNumLegs; ++i) {
-            out.phase[i] = wrap01(policy.per_leg[i].phase_offset);
+            out.phase[i] = last_phase_[i];
             out.in_stance[i] = true;
         }
         out.stride_phase_rate_hz = FrequencyHz{0.0};
@@ -83,8 +89,10 @@ GaitState GaitScheduler::update(const RobotState& est,
     for (int leg = 0; leg < kNumLegs; ++leg) {
         const double p = wrap01(phase_accum_ + policy.per_leg[leg].phase_offset);
         out.phase[leg] = p;
+        last_phase_[leg] = p;
         out.in_stance[leg] = (p < std::clamp(policy.per_leg[leg].duty_cycle, 0.05, 0.95));
     }
+    last_phase_initialized_ = true;
 
     return out;
 }
