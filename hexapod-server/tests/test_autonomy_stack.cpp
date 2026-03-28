@@ -1,5 +1,6 @@
 #include "autonomy/modules/autonomy_stack.hpp"
 
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 
@@ -13,6 +14,17 @@ bool expect(bool condition, const char* message) {
         return false;
     }
     return true;
+}
+
+bool outputWithinConservativeEnvelope(const autonomy::AutonomyStepOutput& output) {
+    constexpr double kMaxAbsTargetM = 0.05;
+    constexpr double kMaxAbsTargetYawRad = 0.05;
+    return std::abs(output.local_plan.target.x_m) <= kMaxAbsTargetM &&
+           std::abs(output.local_plan.target.y_m) <= kMaxAbsTargetM &&
+           std::abs(output.local_plan.target.yaw_rad) <= kMaxAbsTargetYawRad &&
+           std::abs(output.locomotion_command.target.x_m) <= kMaxAbsTargetM &&
+           std::abs(output.locomotion_command.target.y_m) <= kMaxAbsTargetM &&
+           std::abs(output.locomotion_command.target.yaw_rad) <= kMaxAbsTargetYawRad;
 }
 
 RobotState makeEstimatorState(uint64_t timestamp_us,
@@ -676,6 +688,111 @@ bool testStepValidationFailureKeepsOutputUntouched() {
            expect(output.localization_estimate.valid, "failed step should not mutate localization output");
 }
 
+bool testInvalidIngressReasonsKeepSafeConservativeOutputEnvelope() {
+    autonomy::AutonomyStack stack;
+    if (!expect(stack.init(), "stack init should succeed")) {
+        return false;
+    }
+    if (!expect(stack.start(), "stack start should succeed")) {
+        return false;
+    }
+    if (!expect(stack.loadMission(makeMission()).accepted, "load mission should succeed")) {
+        return false;
+    }
+    if (!expect(stack.startMission().accepted, "start mission should succeed")) {
+        return false;
+    }
+
+    const auto safe_output = autonomy::AutonomyStepOutput{};
+    const auto safe_assertions = [](const autonomy::AutonomyStepOutput& output) {
+        return expect(!output.motion_decision.allow_motion, "invalid ingress must keep motion disallowed") &&
+               expect(!output.local_plan.has_command, "invalid ingress must keep local plan command suppressed") &&
+               expect(!output.locomotion_command.sent, "invalid ingress must not dispatch locomotion command") &&
+               expect(output.locomotion_command.status == autonomy::LocomotionCommand::DispatchStatus::Suppressed,
+                      "invalid ingress must keep locomotion command suppressed") &&
+               expect(outputWithinConservativeEnvelope(output),
+                      "invalid ingress must keep targets within conservative command envelope");
+    };
+
+    {
+        autonomy::AutonomyStepOutput output = safe_output;
+        const autonomy::ContractEnvelope missing_timestamp_envelope{
+            .contract_version = "v1.0",
+            .frame_id = "map",
+            .correlation_id = "corr-missing-ts",
+            .stream_id = kAutonomyStepIngressStreamId,
+            .sample_id = 1,
+            .timestamp_ms = 0,
+        };
+        autonomy::ContractValidationConfig config{};
+        config.max_age_ms = 5;
+        if (!expect(!stack.step(autonomy::AutonomyStepInput{.now_ms = 200}, missing_timestamp_envelope, &output, config),
+                    "missing timestamp ingress should be rejected")) {
+            return false;
+        }
+        if (!safe_assertions(output)) {
+            return false;
+        }
+    }
+
+    {
+        autonomy::AutonomyStepOutput first{};
+        const autonomy::ContractEnvelope envelope_a{
+            .contract_version = "v1.0",
+            .frame_id = "map",
+            .correlation_id = "corr-monotonic-seed",
+            .stream_id = kAutonomyStepIngressStreamId,
+            .sample_id = 10,
+            .timestamp_ms = 10,
+        };
+        if (!expect(stack.step(autonomy::AutonomyStepInput{.now_ms = 10}, envelope_a, &first),
+                    "seed envelope for monotonic invalidity should be accepted")) {
+            return false;
+        }
+
+        autonomy::AutonomyStepOutput output = safe_output;
+        const autonomy::ContractEnvelope non_monotonic_envelope{
+            .contract_version = "v1.0",
+            .frame_id = "map",
+            .correlation_id = "corr-monotonic-reject",
+            .stream_id = kAutonomyStepIngressStreamId,
+            .sample_id = 10,
+            .timestamp_ms = 20,
+        };
+        if (!expect(!stack.step(autonomy::AutonomyStepInput{.now_ms = 20}, non_monotonic_envelope, &output),
+                    "non-monotonic sample id ingress should be rejected")) {
+            return false;
+        }
+        if (!safe_assertions(output)) {
+            return false;
+        }
+    }
+
+    {
+        autonomy::AutonomyStepOutput output = safe_output;
+        const autonomy::ContractEnvelope stale_age_envelope{
+            .contract_version = "v1.0",
+            .frame_id = "map",
+            .correlation_id = "corr-stale-age",
+            .stream_id = kAutonomyStepIngressStreamId,
+            .sample_id = 11,
+            .timestamp_ms = 20,
+        };
+        autonomy::ContractValidationConfig config{};
+        config.max_age_ms = 1;
+        if (!expect(!stack.step(autonomy::AutonomyStepInput{.now_ms = 200}, stale_age_envelope, &output, config),
+                    "stale-age ingress should be rejected")) {
+            return false;
+        }
+        if (!safe_assertions(output)) {
+            return false;
+        }
+    }
+
+    stack.stop();
+    return true;
+}
+
 bool testStepRejectsNonMonotonicSamplePerStream() {
     autonomy::AutonomyStack stack;
     if (!expect(stack.init(), "stack init should succeed")) {
@@ -891,6 +1008,7 @@ int main() {
         !testAutonomyStackPolicyOverridesPassThroughToModules() ||
         !testStepRejectsStaleEnvelope() ||
         !testStepValidationFailureKeepsOutputUntouched() ||
+        !testInvalidIngressReasonsKeepSafeConservativeOutputEnvelope() ||
         !testStepRejectsNonMonotonicSamplePerStream() ||
         !testStepRejectsInvalidContractVersion() ||
         !testStepRejectsMissingFrameAndCorrelationMetadata() ||
