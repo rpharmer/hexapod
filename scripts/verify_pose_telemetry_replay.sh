@@ -9,6 +9,8 @@ HOST="127.0.0.1"
 MODE="sim"
 SCENARIO="scenarios/05_long_walk_observability.toml"
 OUTPUT_PATH=""
+METRICS_OUTPUT_PATH=""
+ANALYZE_STRIDE_METRICS=1
 SKIP_BUILD=0
 KEEP_CAPTURE=0
 
@@ -28,6 +30,8 @@ Options:
   --port <port>            UDP capture port + server telemetry port (default: 9871).
   --scenario <path>        Scenario path relative to hexapod-server/ (default: scenarios/05_long_walk_observability.toml).
   --output <path>          NDJSON output path (default: temp file under .tmp/).
+  --metrics-output <path>  JSON metrics output path (default: sibling .metrics.json).
+  --no-metrics             Skip stride/limiter/freshness metric extraction.
   --skip-build             Pass through to run_server_with_telemetry.sh --skip-build.
   --keep-capture           Keep capture file (default temp file is removed on success).
   -h, --help               Show this help text.
@@ -55,6 +59,14 @@ while [[ $# -gt 0 ]]; do
     --output)
       OUTPUT_PATH="$2"
       shift 2
+      ;;
+    --metrics-output)
+      METRICS_OUTPUT_PATH="$2"
+      shift 2
+      ;;
+    --no-metrics)
+      ANALYZE_STRIDE_METRICS=0
+      shift
       ;;
     --skip-build)
       SKIP_BUILD=1
@@ -241,6 +253,20 @@ print(
     f"movement_detected={movement_detected} capture={path}"
 )
 PY
+
+if [[ "$ANALYZE_STRIDE_METRICS" -eq 1 ]]; then
+  section "Compute stride/limiter/freshness metrics"
+  if [[ -z "$METRICS_OUTPUT_PATH" ]]; then
+    METRICS_OUTPUT_PATH="${OUTPUT_PATH%.ndjson}.metrics.json"
+  fi
+  METRICS_OUTPUT_PATH="$(resolve_from_root "$METRICS_OUTPUT_PATH")"
+  run python3 "$HEXAPOD_ROOT_DIR/scripts/metrics_stride_analysis.py" \
+    --input "$OUTPUT_PATH" \
+    --scenario "$(resolve_server_path "$SCENARIO")" \
+    --json-output "$METRICS_OUTPUT_PATH" \
+    --pretty
+  echo "Metrics JSON written to: $METRICS_OUTPUT_PATH"
+fi
 
 if [[ "$KEEP_CAPTURE" -eq 0 ]]; then
   rm -f "$OUTPUT_PATH"
