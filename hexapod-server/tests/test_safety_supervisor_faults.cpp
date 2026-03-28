@@ -62,6 +62,60 @@ bool testHigherPriorityFaultWins() {
            expect(state.torque_cut, "tip-over should request torque cut");
 }
 
+bool testTiltViolationBeatsBusTimeoutInHardFaultContext() {
+    SafetySupervisor supervisor;
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+
+    raw.bus_ok = false;
+    est.body_pose_state.orientation_rad.x = 2.0; // clearly above default tilt limit
+    est.has_measured_body_pose_state = true;
+    est.has_body_pose_state = true;
+
+    const SafetyState state = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+    return expect(state.active_fault == FaultCode::TIP_OVER,
+                  "bus fault + measured tilt violation should immediately select TIP_OVER by priority") &&
+           expect(state.torque_cut,
+                  "TIP_OVER selected by priority in bus-fault context should keep torque cut enabled");
+}
+
+bool testTiltViolationBeatsMotorFaultWhenVoltageLow() {
+    SafetySupervisor supervisor;
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+
+    raw.voltage = 1.0f; // below min_bus_voltage_v
+    est.body_pose_state.orientation_rad.x = 2.0; // clearly above default tilt limit
+    est.has_measured_body_pose_state = true;
+    est.has_body_pose_state = true;
+
+    const SafetyState state = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+    return expect(state.active_fault == FaultCode::TIP_OVER,
+                  "low voltage + measured tilt violation should immediately select TIP_OVER by priority") &&
+           expect(state.torque_cut,
+                  "TIP_OVER selected by priority in low-voltage context should keep torque cut enabled");
+}
+
+bool testTiltViolationBeatsMotorFaultWhenCurrentHigh() {
+    SafetySupervisor supervisor;
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+
+    raw.current = 999.0f; // above max_bus_current_a
+    est.body_pose_state.orientation_rad.x = 2.0; // clearly above default tilt limit
+    est.has_measured_body_pose_state = true;
+    est.has_body_pose_state = true;
+
+    const SafetyState state = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+    return expect(state.active_fault == FaultCode::TIP_OVER,
+                  "high current + measured tilt violation should immediately select TIP_OVER by priority") &&
+           expect(state.torque_cut,
+                  "TIP_OVER selected by priority in high-current context should keep torque cut enabled");
+}
+
 bool testRulePrecedenceAcrossAllFaultTriggers() {
     SafetySupervisor supervisor;
     RobotState raw = nominalRaw();
@@ -282,6 +336,9 @@ bool testRecoveryRequiresBothConditionsAndHoldTime() {
 
 int main() {
     if (!testHigherPriorityFaultWins() ||
+        !testTiltViolationBeatsBusTimeoutInHardFaultContext() ||
+        !testTiltViolationBeatsMotorFaultWhenVoltageLow() ||
+        !testTiltViolationBeatsMotorFaultWhenCurrentHigh() ||
         !testRulePrecedenceAcrossAllFaultTriggers() ||
         !testEstimatorBeatsCommandTimeoutWithoutTorqueCut() ||
         !testBusTimeoutBeatsFreshnessFaults() ||
