@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -81,8 +82,19 @@ bool isFullyBlockedContacts(const ScenarioSensorOverrides& sensors) {
     return true;
 }
 
-bool runScenarioAndCheckOutcomes(const std::filesystem::path& scenario_path,
-                                 uint64_t retry_budget) {
+struct ScenarioRunResult {
+    std::vector<std::string> mission_states{};
+    std::vector<std::string> recovery_actions{};
+    std::string final_mission_state{};
+    bool mission_aborted{false};
+    bool locomotion_gated{false};
+};
+
+bool runScenario(const std::filesystem::path& scenario_path,
+                 uint64_t no_progress_timeout_ms,
+                 uint64_t retry_budget,
+                 ScenarioRunResult* result_out,
+                 ScenarioDefinition* scenario_out = nullptr) {
     ScenarioDefinition scenario{};
     std::string error;
     if (!expect(ScenarioDriver::loadFromToml(scenario_path.string(), scenario, error,
@@ -97,7 +109,7 @@ bool runScenarioAndCheckOutcomes(const std::filesystem::path& scenario_path,
     }
 
     autonomy::AutonomyStack stack(autonomy::AutonomyStackConfig{
-        .no_progress_timeout_ms = 1000,
+        .no_progress_timeout_ms = no_progress_timeout_ms,
         .recovery_retry_budget = retry_budget,
     });
     if (!expect(stack.init(), "stack init should succeed")) {
@@ -169,19 +181,43 @@ bool runScenarioAndCheckOutcomes(const std::filesystem::path& scenario_path,
 
     stack.stop();
 
-    return expect(state_signature == scenario.expected.mission_states,
+    if (result_out != nullptr) {
+        *result_out = ScenarioRunResult{
+            .mission_states = state_signature,
+            .recovery_actions = recovery_signature,
+            .final_mission_state = final_state,
+            .mission_aborted = aborted,
+            .locomotion_gated = saw_locomotion_gate,
+        };
+    }
+    if (scenario_out != nullptr) {
+        *scenario_out = scenario;
+    }
+
+    return true;
+}
+
+bool runScenarioAndCheckOutcomes(const std::filesystem::path& scenario_path,
+                                 uint64_t retry_budget) {
+    ScenarioRunResult result{};
+    ScenarioDefinition scenario{};
+    if (!runScenario(scenario_path, 1000, retry_budget, &result, &scenario)) {
+        return false;
+    }
+
+    return expect(result.mission_states == scenario.expected.mission_states,
                   "mission state signature mismatch in " + scenario.name +
                       " expected=[" + join(scenario.expected.mission_states) +
-                      "] actual=[" + join(state_signature) + "]") &&
-           expect(recovery_signature == scenario.expected.recovery_actions,
+                      "] actual=[" + join(result.mission_states) + "]") &&
+           expect(result.recovery_actions == scenario.expected.recovery_actions,
                   "recovery signature mismatch in " + scenario.name +
                       " expected=[" + join(scenario.expected.recovery_actions) +
-                      "] actual=[" + join(recovery_signature) + "]") &&
-           expect(final_state == scenario.expected.final_mission_state,
+                      "] actual=[" + join(result.recovery_actions) + "]") &&
+           expect(result.final_mission_state == scenario.expected.final_mission_state,
                   "final mission state mismatch in " + scenario.name) &&
-           expect(aborted == scenario.expected.mission_should_abort,
+           expect(result.mission_aborted == scenario.expected.mission_should_abort,
                   "abort expectation mismatch in " + scenario.name) &&
-           expect(saw_locomotion_gate == scenario.expected.locomotion_should_be_gated,
+           expect(result.locomotion_gated == scenario.expected.locomotion_should_be_gated,
                   "locomotion gate expectation mismatch in " + scenario.name);
 }
 
@@ -195,10 +231,82 @@ bool testScenarioTelemetrySignatures() {
            runScenarioAndCheckOutcomes(scenarios_dir / "09_abort_on_budget_exhaustion.toml", 2);
 }
 
+bool testScenarioOutcomeStabilityUnderSmallPerturbations() {
+    namespace fs = std::filesystem;
+    const fs::path test_file = fs::path(__FILE__).lexically_normal();
+    const fs::path scenarios_dir = test_file.parent_path().parent_path() / "scenarios";
+
+    const fs::path no_fault_path = scenarios_dir / "07_blocked_navigation_pause_resume.toml";
+    const fs::path fault_path = scenarios_dir / "09_abort_on_budget_exhaustion.toml";
+    const std::vector<uint64_t> timeout_variants_ms{900, 1000, 1100}; // +/-10%
+    const std::vector<uint64_t> retry_budget_variants{18, 20, 22};     // +/-10%
+
+    uint64_t min_complexity = std::numeric_limits<uint64_t>::max();
+    uint64_t max_complexity = 0;
+    bool baseline_fault_outcome_set = false;
+    bool baseline_fault_outcome = false;
+    bool baseline_no_fault_outcome_set = false;
+    bool baseline_no_fault_outcome = false;
+
+    for (uint64_t timeout_ms : timeout_variants_ms) {
+        ScenarioRunResult no_fault_result{};
+        if (!runScenario(no_fault_path, timeout_ms, 1, &no_fault_result)) {
+            return false;
+        }
+        if (!baseline_no_fault_outcome_set) {
+            baseline_no_fault_outcome = no_fault_result.mission_aborted;
+            baseline_no_fault_outcome_set = true;
+        }
+        if (!expect(no_fault_result.mission_aborted == baseline_no_fault_outcome,
+                    "no-fault scenario should not flip abort outcome for timeout=" +
+                        std::to_string(timeout_ms))) {
+            return false;
+        }
+        const uint64_t complexity = static_cast<uint64_t>(no_fault_result.mission_states.size()) +
+                                    static_cast<uint64_t>(no_fault_result.recovery_actions.size());
+        if (complexity < min_complexity) {
+            min_complexity = complexity;
+        }
+        if (complexity > max_complexity) {
+            max_complexity = complexity;
+        }
+    }
+
+    for (uint64_t budget : retry_budget_variants) {
+        ScenarioRunResult fault_result{};
+        if (!runScenario(fault_path, 1000, budget, &fault_result)) {
+            return false;
+        }
+        if (!baseline_fault_outcome_set) {
+            baseline_fault_outcome = fault_result.mission_aborted;
+            baseline_fault_outcome_set = true;
+        }
+        if (!expect(fault_result.mission_aborted == baseline_fault_outcome,
+                    "fault scenario should not flip abort outcome for retry_budget=" +
+                        std::to_string(budget))) {
+            return false;
+        }
+        const uint64_t complexity = static_cast<uint64_t>(fault_result.mission_states.size()) +
+                                    static_cast<uint64_t>(fault_result.recovery_actions.size());
+        if (complexity < min_complexity) {
+            min_complexity = complexity;
+        }
+        if (complexity > max_complexity) {
+            max_complexity = complexity;
+        }
+    }
+
+    return expect(max_complexity - min_complexity <= 2,
+                  "perturbed scenarios should evolve smoothly without cliff-edge signature expansion; "
+                  "complexity range=[" +
+                      std::to_string(min_complexity) + ", " + std::to_string(max_complexity) + "]");
+}
+
 } // namespace
 
 int main() {
-    if (!testScenarioTelemetrySignatures()) {
+    if (!testScenarioTelemetrySignatures() ||
+        !testScenarioOutcomeStabilityUnderSmallPerturbations()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
