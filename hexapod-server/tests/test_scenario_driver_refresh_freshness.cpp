@@ -1,4 +1,5 @@
 #include "estimator.hpp"
+#include "logger.hpp"
 #include "robot_control.hpp"
 #include "scenario_driver.hpp"
 #include "sim_hardware_bridge.hpp"
@@ -9,8 +10,11 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -20,6 +24,70 @@ bool expect(bool condition, const std::string& message) {
         return false;
     }
     return true;
+}
+
+struct CapturedLog {
+    logging::LogLevel level;
+    std::string message;
+};
+
+class CollectingSink final : public logging::LogSink {
+public:
+    void Write(logging::LogLevel level,
+               std::string_view,
+               std::string_view message,
+               const logging::SourceLocation&) override {
+        entries.push_back(CapturedLog{level, std::string(message)});
+    }
+
+    std::vector<CapturedLog> entries;
+};
+
+std::optional<double> extractFieldValue(const std::string& message, const std::string& field) {
+    const std::string token = field + ":";
+    const std::size_t start = message.find(token);
+    if (start == std::string::npos) {
+        return std::nullopt;
+    }
+    const std::size_t value_start = start + token.size();
+    std::size_t value_end = value_start;
+    while (value_end < message.size() && message[value_end] != ',' && message[value_end] != '}') {
+        ++value_end;
+    }
+    try {
+        return std::stod(message.substr(value_start, value_end - value_start));
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+std::optional<std::string> latestInfoLineContaining(const std::vector<CapturedLog>& entries,
+                                                    const std::string& token) {
+    for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
+        if (it->level == logging::LogLevel::Info && it->message.find(token) != std::string::npos) {
+            return it->message;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<double> maxFieldValueAcrossInfoLines(const std::vector<CapturedLog>& entries,
+                                                   const std::string& token,
+                                                   const std::string& field) {
+    std::optional<double> max_value;
+    for (const auto& entry : entries) {
+        if (entry.level != logging::LogLevel::Info || entry.message.find(token) == std::string::npos) {
+            continue;
+        }
+        const auto value = extractFieldValue(entry.message, field);
+        if (!value.has_value()) {
+            continue;
+        }
+        if (!max_value.has_value() || value.value() > max_value.value()) {
+            max_value = value.value();
+        }
+    }
+    return max_value;
 }
 
 class PassthroughEstimator final : public IEstimator {
@@ -99,11 +167,17 @@ bool test_refresh_motion_intent_monotonic_sample_ids_across_long_ramp_run() {
 }
 
 bool test_scaled_scenario_05_keeps_locomotion_active_without_freshness_faults() {
+    const auto logger = std::make_shared<logging::AsyncLogger>(
+        "test-scenario-05-locomotion", logging::LogLevel::Info, 2048);
+    const auto collecting_sink = std::make_shared<CollectingSink>();
+    logger->AddSink(collecting_sink);
+
     auto bridge = std::make_unique<SimHardwareBridge>();
     auto estimator = std::make_unique<PassthroughEstimator>();
-    RobotControl robot(std::move(bridge), std::move(estimator), nullptr, makeStrictFreshnessConfig());
+    RobotControl robot(std::move(bridge), std::move(estimator), logger, makeStrictFreshnessConfig());
 
     if (!expect(robot.init(), "robot init should succeed (scenario 05 scaled)")) {
+        logger->Stop();
         return false;
     }
     robot.start();
@@ -118,10 +192,11 @@ bool test_scaled_scenario_05_keeps_locomotion_active_without_freshness_faults() 
                                              ScenarioDriver::ValidationMode::Strict),
                 "scenario 05 should parse in strict mode: " + error)) {
         robot.stop();
+        logger->Stop();
         return false;
     }
 
-    constexpr uint64_t kScaleDivisor = 20;
+    constexpr uint64_t kScaleDivisor = 10;
     scenario.duration_ms = std::max<uint64_t>(1, scenario.duration_ms / kScaleDivisor);
     scenario.tick_ms = std::max<uint64_t>(1, scenario.tick_ms / kScaleDivisor);
     scenario.motion_ramp_ms = scenario.motion_ramp_ms / kScaleDivisor;
@@ -153,6 +228,12 @@ bool test_scaled_scenario_05_keeps_locomotion_active_without_freshness_faults() 
 
     scenario_thread.join();
     robot.stop();
+    logger->Flush();
+
+    const auto latest_metrics = latestInfoLineContaining(collecting_sink->entries, "locomotion_diag={");
+    const auto peak_total_body_movement =
+        maxFieldValueAcrossInfoLines(collecting_sink->entries, "locomotion_diag={", "total_body_movement_m");
+    logger->Stop();
 
     const double walk_ratio = status_samples > 0
                                   ? static_cast<double>(walk_samples) / static_cast<double>(status_samples)
@@ -161,7 +242,11 @@ bool test_scaled_scenario_05_keeps_locomotion_active_without_freshness_faults() 
            expect(command_timeout_samples == 0,
                   "scaled scenario 05 should not trigger COMMAND_TIMEOUT freshness faults") &&
            expect(walk_ratio > 0.30,
-                  "scaled scenario 05 should spend most of runtime in WALK without faults");
+                  "scaled scenario 05 should spend most of runtime in WALK without faults") &&
+           expect(latest_metrics.has_value(),
+                  "scaled scenario 05 should emit runtime locomotion diagnostics") &&
+           expect(peak_total_body_movement.has_value(),
+                  "scaled scenario 05 should expose movement distance metric for locomotion diagnosis");
 }
 
 } // namespace
