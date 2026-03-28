@@ -4,6 +4,7 @@
 #include "geometry_config.hpp"
 #include "leg_fk.hpp"
 #include "leg_ik.hpp"
+#include "stability_tracker.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -30,6 +31,11 @@ bool finiteJointTargets(const JointTargets& targets) {
         }
     }
     return true;
+}
+
+double wrappedPositiveDelta(double from, double to) {
+    const double raw = std::fmod((to - from) + 1.0, 1.0);
+    return raw < 0.0 ? raw + 1.0 : raw;
 }
 
 bool gaitSchedulerRespondsToWalkIntent() {
@@ -112,6 +118,46 @@ bool gaitSchedulerHoldsWhenUnstable() {
            expect(output.support_contact_count == 2, "gait output should track support contact count") &&
            expect(output.stride_phase_rate_hz.value == 0.0, "unstable support should stop gait phase progression") &&
            expect(all_stance, "unstable support should keep all legs in stance");
+}
+
+bool gaitSchedulerRecoversWithoutPhaseSnapAfterTransientInstability() {
+    GaitScheduler gait;
+    RobotState stable{};
+    stable.timestamp_us = now_us();
+    stable.foot_contacts = {true, true, true, true, true, true};
+    for (auto& leg : stable.leg_states) {
+        leg.joint_state[1].pos_rad = AngleRad{-0.6};
+        leg.joint_state[2].pos_rad = AngleRad{-0.8};
+    }
+
+    MotionIntent walk{};
+    walk.requested_mode = RobotMode::WALK;
+    walk.gait = GaitType::TRIPOD;
+    walk.timestamp_us = now_us();
+
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    safety.torque_cut = false;
+
+    gait.update(stable, walk, safety);
+    std::this_thread::sleep_for(std::chrono::milliseconds(6));
+    const GaitState before_blip = gait.update(stable, walk, safety);
+
+    RobotState unstable = stable;
+    unstable.foot_contacts = {true, false, true, false, false, false};
+    const GaitState hold = gait.update(unstable, walk, safety);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(6));
+    const GaitState resumed = gait.update(stable, walk, safety);
+
+    const double resumed_progress = wrappedPositiveDelta(before_blip.phase[0], resumed.phase[0]);
+    const double hold_deviation = std::abs(hold.phase[0] - before_blip.phase[0]);
+
+    return expect(hold.stride_phase_rate_hz.value == 0.0, "transient instability should pause cadence") &&
+           expect(hold_deviation < 0.02, "transient instability should not snap phase to nominal offset") &&
+           expect(resumed.stride_phase_rate_hz.value > 0.0, "scheduler should resume cadence once stable") &&
+           expect(resumed_progress > 0.001,
+                  "phase should continue progressing after instability clears");
 }
 
 bool bodyControllerUsesGaitState() {
@@ -217,6 +263,58 @@ bool ikFkChainTracksBodyTargets() {
     return expect(finiteJointTargets(joints), "ik output should stay finite for reachable body targets");
 }
 
+bool ikMaintainsCoxaContinuityAcrossAtanBranchCut() {
+    const HexapodGeometry geometry = defaultHexapodGeometry();
+    LegIK ik(geometry);
+
+    RobotState est{};
+    SafetyState safety{};
+    safety.leg_enabled.fill(true);
+
+    const int leg = 0;
+    const LegGeometry& leg_geo = geometry.legGeometry[leg];
+    LegState previous_joint{};
+    previous_joint.joint_state[0].pos_rad = AngleRad{kPi - 0.01};
+    previous_joint.joint_state[1].pos_rad = AngleRad{-0.30};
+    previous_joint.joint_state[2].pos_rad = AngleRad{-0.90};
+    est.leg_states[leg] = leg_geo.servo.toServoAngles(previous_joint);
+
+    const Vec3 foot_leg_frame{-0.05, -1e-4, -0.08};
+    const Vec3 relative_to_body = Mat3::rotZ(leg_geo.mountAngle.value) * foot_leg_frame;
+    LegTargets targets{};
+    targets.feet[leg].pos_body_m = leg_geo.bodyCoxaOffset + relative_to_body;
+
+    const JointTargets solved = ik.solve(est, targets, safety);
+    const double previous_servo = est.leg_states[leg].joint_state[0].pos_rad.value;
+    const double solved_servo = solved.leg_states[leg].joint_state[0].pos_rad.value;
+    const double delta = std::abs(solved_servo - previous_servo);
+
+    return expect(delta < 0.5,
+                  "ik coxa command should stay continuous near +/-pi branch cut");
+}
+
+bool stabilityTrackerUsesJointSpaceForServoFeedbackState() {
+    const HexapodGeometry geometry = defaultHexapodGeometry();
+    RobotState est{};
+    est.foot_contacts = {true, true, true, true, true, true};
+
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        LegState joint_state{};
+        joint_state.joint_state[0].pos_rad = AngleRad{0.0};
+        joint_state.joint_state[1].pos_rad = AngleRad{-0.6};
+        joint_state.joint_state[2].pos_rad = AngleRad{-0.8};
+        est.leg_states[leg] = geometry.legGeometry[leg].servo.toServoAngles(joint_state);
+    }
+
+    const StabilityAssessment stability = assessStability(est);
+    return expect(stability.support_contact_count == kNumLegs,
+                  "stability tracker should count all servo-feedback contacts") &&
+           expect(stability.has_support_polygon,
+                  "stability tracker should produce support polygon from servo-feedback state") &&
+           expect(stability.com_inside_support_polygon,
+                  "servo-feedback stance should keep COM inside support polygon");
+}
+
 bool controlPipelineProducesStableOutputs() {
     ControlPipeline pipeline;
 
@@ -249,6 +347,9 @@ int main() {
     if (!gaitSchedulerHoldsWhenUnstable()) {
         return EXIT_FAILURE;
     }
+    if (!gaitSchedulerRecoversWithoutPhaseSnapAfterTransientInstability()) {
+        return EXIT_FAILURE;
+    }
     if (!bodyControllerUsesGaitState()) {
         return EXIT_FAILURE;
     }
@@ -256,6 +357,12 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!ikFkChainTracksBodyTargets()) {
+        return EXIT_FAILURE;
+    }
+    if (!ikMaintainsCoxaContinuityAcrossAtanBranchCut()) {
+        return EXIT_FAILURE;
+    }
+    if (!stabilityTrackerUsesJointSpaceForServoFeedbackState()) {
         return EXIT_FAILURE;
     }
     if (!controlPipelineProducesStableOutputs()) {
