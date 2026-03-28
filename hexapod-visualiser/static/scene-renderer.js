@@ -312,6 +312,7 @@ export function resolvePoseOffsetMm(model, poseState, nowMs) {
 export function resolvePoseOffsetWithSource(model, poseState, nowMs) {
   ensurePoseStateDefaults(poseState);
   const resolvedNowMs = resolveNowMs(nowMs);
+  const localizationPoseReset = model.autonomy_debug?.localization?.pose_reset === true;
 
   const localizationFrameId = model.autonomy_debug?.localization?.frame_id;
   const localizationPose =
@@ -351,12 +352,17 @@ export function resolvePoseOffsetWithSource(model, poseState, nowMs) {
         poseState.pendingFrames >= POSE_SOURCE_SWITCH_CONFIG.alternateStableFramesBeforeSwitch
         || pendingAgeMs >= POSE_SOURCE_SWITCH_CONFIG.alternateStableMsBeforeSwitch;
       if (pendingStable) {
-        return commitSourceSwitch({
+        const switched = commitSourceSwitch({
           poseState,
           source: alternate.source,
           sourcePose: alternate.pose,
           nowMs: resolvedNowMs,
         });
+        if (localizationPoseReset && poseState.renderPoseState) {
+          poseState.renderPoseState.pose = { ...switched.pose };
+          poseState.renderPoseState.lastRenderAtMs = resolvedNowMs;
+        }
+        return switched;
       }
     } else {
       poseState.pendingSource = null;
@@ -368,6 +374,10 @@ export function resolvePoseOffsetWithSource(model, poseState, nowMs) {
     poseState.pose = { ...resolved };
     poseState.poseSource = activeSource;
     poseState.hasSeenAbsolutePose = true;
+    if (localizationPoseReset && poseState.renderPoseState) {
+      poseState.renderPoseState.pose = { ...resolved };
+      poseState.renderPoseState.lastRenderAtMs = resolvedNowMs;
+    }
     return { pose: resolved, poseSource: activeSource };
   }
 
@@ -386,12 +396,17 @@ export function resolvePoseOffsetWithSource(model, poseState, nowMs) {
       && resolvedNowMs - poseState.invalidSinceMs >= POSE_SOURCE_SWITCH_CONFIG.invalidMsBeforeSwitch);
 
   if (fallbackCandidate && canSwitchFromInvalid) {
-    return commitSourceSwitch({
+    const switched = commitSourceSwitch({
       poseState,
       source: fallbackCandidate.source,
       sourcePose: fallbackCandidate.pose,
       nowMs: resolvedNowMs,
     });
+    if (localizationPoseReset && poseState.renderPoseState) {
+      poseState.renderPoseState.pose = { ...switched.pose };
+      poseState.renderPoseState.lastRenderAtMs = resolvedNowMs;
+    }
+    return switched;
   }
 
   poseState.poseSource = "missing_pose";
