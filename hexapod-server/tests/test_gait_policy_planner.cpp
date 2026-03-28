@@ -1,8 +1,11 @@
 #include "gait_policy_planner.hpp"
 #include "motion_intent_utils.hpp"
 
+#include <array>
+#include <cmath>
 #include <iostream>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -259,6 +262,110 @@ void testPivotHysteresisTransitionBoundary()
            "crossing PIVOT exit thresholds should move to reorientation");
 }
 
+void testYawRateThresholdNoiseSweepMaintainsHysteresisAndCoherence()
+{
+    GaitPolicyPlanner planner{enabledDynamicConfig()};
+    const SafetyState safety = safeState();
+    RobotState est = nominalEstimate();
+
+    const std::array<double, 12> low_noise{
+        -0.010, 0.006, -0.004, 0.009, -0.007, 0.003, -0.005, 0.008, -0.002, 0.005, -0.006, 0.004};
+    const std::array<double, 16> high_noise{
+        0.010, -0.006, 0.005, -0.007, 0.003, -0.004, 0.009, -0.005,
+        0.006, -0.003, 0.004, -0.008, 0.007, -0.002, 0.005, -0.006};
+
+    // ARC hold: hover around arc exit yaw (0.60) without crossing.
+    warmPlanner(planner, walkingIntent(0.90, 0.10), safety, 24);
+    std::vector<DynamicGaitRegion> arc_regions;
+    for (const double noise : low_noise) {
+        const double yaw_norm = 0.60 + noise;
+        const RuntimeGaitPolicy policy = planner.plan(est, walkingIntent(0.20, yaw_norm), safety);
+        arc_regions.push_back(policy.region);
+        expect(policy.region == DynamicGaitRegion::ARC,
+               "yaw sweep just below ARC exit threshold should remain ARC");
+        expect(policy.turn_mode == TurnMode::CRAB, "ARC region should keep CRAB turn mode under noisy yaw input");
+        expect(policy.envelope.allow_tripod, "ARC region should keep tripod gait allowance coherent");
+        expect(policy.suppression.suppress_turning,
+               "CRAB with low absolute yaw-rate should suppress turning near arc exit boundary");
+    }
+
+    // Cross ARC exit threshold with small noise and verify one-way transition into REORIENTATION.
+    std::vector<DynamicGaitRegion> arc_exit_regions;
+    for (const double noise : high_noise) {
+        const double yaw_norm = 0.62 + noise;
+        const RuntimeGaitPolicy policy = planner.plan(est, walkingIntent(0.30, yaw_norm), safety);
+        arc_exit_regions.push_back(policy.region);
+    }
+    int arc_transitions = 0;
+    bool arc_seen_reorientation = false;
+    for (std::size_t i = 0; i < arc_exit_regions.size(); ++i) {
+        if (arc_exit_regions[i] == DynamicGaitRegion::REORIENTATION) {
+            arc_seen_reorientation = true;
+        }
+        if (i > 0 && arc_exit_regions[i] != arc_exit_regions[i - 1]) {
+            ++arc_transitions;
+        }
+    }
+    expect(arc_seen_reorientation, "yaw sweep above ARC exit threshold should leave ARC within hysteresis window");
+    expect(arc_transitions <= 1, "ARC threshold sweep should not oscillate region every cycle");
+    for (std::size_t i = arc_exit_regions.size() - 5; i < arc_exit_regions.size(); ++i) {
+        expect(arc_exit_regions[i] == DynamicGaitRegion::REORIENTATION,
+               "post-transition ARC sweep should settle in REORIENTATION");
+    }
+
+    // PIVOT hold: hover around pivot exit yaw (0.52) from above without crossing.
+    warmPlanner(planner, walkingIntent(0.05, 0.95), safety, 24);
+    std::vector<DynamicGaitRegion> pivot_regions;
+    for (const double noise : low_noise) {
+        const double yaw_norm = 0.52 + std::abs(noise);
+        const RuntimeGaitPolicy policy = planner.plan(est, walkingIntent(0.20, yaw_norm), safety);
+        pivot_regions.push_back(policy.region);
+        expect(policy.region == DynamicGaitRegion::PIVOT,
+               "yaw sweep just above PIVOT exit threshold should remain PIVOT");
+        expect(policy.turn_mode == TurnMode::IN_PLACE, "PIVOT region should keep IN_PLACE turn mode under noise");
+        expect(!policy.envelope.allow_tripod, "PIVOT region should keep tripod suppression coherent");
+        expect(policy.gait_family != GaitType::TRIPOD,
+               "PIVOT envelope should continue forcing non-tripod gait family");
+    }
+
+    // Cross pivot exit threshold with noise and verify no boundary ping-pong.
+    std::vector<DynamicGaitRegion> pivot_exit_regions;
+    for (const double noise : high_noise) {
+        const double yaw_norm = 0.50 + noise;
+        const RuntimeGaitPolicy policy = planner.plan(est, walkingIntent(0.20, yaw_norm), safety);
+        pivot_exit_regions.push_back(policy.region);
+    }
+
+    int transitions = 0;
+    for (std::size_t i = 1; i < pivot_exit_regions.size(); ++i) {
+        if (pivot_exit_regions[i] != pivot_exit_regions[i - 1]) {
+            ++transitions;
+        }
+    }
+    bool pivot_seen_reorientation = false;
+    for (const DynamicGaitRegion region : pivot_exit_regions) {
+        if (region == DynamicGaitRegion::REORIENTATION) {
+            pivot_seen_reorientation = true;
+        }
+    }
+    expect(pivot_seen_reorientation, "yaw sweep below PIVOT exit threshold should leave PIVOT");
+    expect(transitions <= 1, "region should not oscillate every cycle around PIVOT exit boundary");
+    for (std::size_t i = pivot_exit_regions.size() - 5; i < pivot_exit_regions.size(); ++i) {
+        expect(pivot_exit_regions[i] == DynamicGaitRegion::REORIENTATION,
+               "after crossing PIVOT exit threshold, region should settle in REORIENTATION");
+    }
+
+    const RuntimeGaitPolicy settled = planner.plan(est, walkingIntent(0.20, 0.50), safety);
+    expect(settled.region == DynamicGaitRegion::REORIENTATION,
+           "post-sweep command should preserve REORIENTATION after hysteresis transition");
+    expect(settled.turn_mode == TurnMode::CRAB, "REORIENTATION should map coherently to CRAB turn mode");
+    expect(!settled.envelope.allow_tripod, "REORIENTATION envelope should keep tripod disallowed");
+    expect(settled.gait_family != GaitType::TRIPOD,
+           "tripod suppression should remain coherent after pivot-exit transition");
+    expect(settled.suppression.suppress_turning,
+           "CRAB mode with low yaw should coherently suppress turning in settled state");
+}
+
 void testFallbackEscalationPrecedence()
 {
     GaitPolicyPlanner planner{enabledDynamicConfig()};
@@ -339,6 +446,7 @@ int main()
     testAntiChatterHysteresis();
     testRegionThresholdBoundaries();
     testPivotHysteresisTransitionBoundary();
+    testYawRateThresholdNoiseSweepMaintainsHysteresisAndCoherence();
     testFallbackStages();
     testFallbackEscalationPrecedence();
     testScenarioDerivedYawRateFeedsRegionTurnModeAndSuppression();
