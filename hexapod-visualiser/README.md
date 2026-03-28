@@ -149,6 +149,8 @@ You can send partial updates or full state.
   "schema_version": 1,
   "type": "joints",
   "timestamp_ms": 1712345678901,
+  "active_mode": "WALK",
+  "active_fault": "NONE",
   "angles_deg": {
     "LF": [0.0, 20.0, -40.0],
     "LM": [0.0, 20.0, -40.0],
@@ -181,6 +183,7 @@ Include `autonomy_debug` in schema-v1 state packets when using world-anchored ov
 ```
 
 Leg keys expected: `LF`, `LM`, `LR`, `RF`, `RM`, `RR`.
+`active_mode` (string) is the canonical mode field; legacy numeric `mode` is deprecated and accepted only for backward compatibility.
 `schema_version` is required and must currently be `1`.
 Legacy packets without `schema_version`, and legacy pose aliases (`x/y/z`, `yaw`) are rejected by the parser.
 
