@@ -39,6 +39,164 @@ double wrappedPositiveDelta(double from, double to) {
     return raw < 0.0 ? raw + 1.0 : raw;
 }
 
+Vec3 mirrorAcrossSagittal(const Vec3& v) {
+    return Vec3{v.x, -v.y, v.z};
+}
+
+MotionIntent mirroredLeftRightIntent(const MotionIntent& source) {
+    MotionIntent mirrored = source;
+    mirrored.heading_rad = AngleRad{-source.heading_rad.value};
+    mirrored.body_pose_setpoint.body_trans_m = mirrorAcrossSagittal(source.body_pose_setpoint.body_trans_m);
+    mirrored.body_pose_setpoint.body_trans_mps = mirrorAcrossSagittal(source.body_pose_setpoint.body_trans_mps);
+    mirrored.body_pose_setpoint.angular_velocity_radps = Vec3{
+        -source.body_pose_setpoint.angular_velocity_radps.x,
+        source.body_pose_setpoint.angular_velocity_radps.y,
+        -source.body_pose_setpoint.angular_velocity_radps.z};
+    mirrored.body_pose_setpoint.orientation_rad = Vec3{
+        -source.body_pose_setpoint.orientation_rad.x,
+        source.body_pose_setpoint.orientation_rad.y,
+        -source.body_pose_setpoint.orientation_rad.z};
+    return mirrored;
+}
+
+bool plannerBodyIkRemainLeftRightMirrored() {
+    constexpr std::array<std::pair<int, int>, 3> kLeftRightLegPairs{
+        std::pair<int, int>{0, 1},
+        std::pair<int, int>{2, 3},
+        std::pair<int, int>{4, 5}};
+    constexpr double kPhaseTolerance = 1e-6;
+    constexpr double kPositionToleranceM = 8e-3;
+    constexpr double kVelocityToleranceMps = 6e-2;
+    constexpr double kJointToleranceRad = 6e-2;
+
+    const HexapodGeometry geometry = defaultHexapodGeometry();
+    BodyController body;
+    LegIK ik(geometry);
+
+    RobotState estimate{};
+    estimate.timestamp_us = now_us();
+    estimate.foot_contacts = {true, true, true, true, true, true};
+    estimate.has_measured_body_pose_state = true;
+    estimate.body_pose_state.orientation_rad = Vec3{0.04, -0.03, 0.02};
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        LegState joint{};
+        joint.joint_state[0].pos_rad = AngleRad{0.10};
+        joint.joint_state[1].pos_rad = AngleRad{-0.55};
+        joint.joint_state[2].pos_rad = AngleRad{-0.95};
+        estimate.leg_states[leg] = geometry.legGeometry[leg].servo.toServoAngles(joint);
+    }
+
+    RobotState mirrored_estimate = estimate;
+    mirrored_estimate.body_pose_state.orientation_rad =
+        Vec3{-estimate.body_pose_state.orientation_rad.x,
+             estimate.body_pose_state.orientation_rad.y,
+             -estimate.body_pose_state.orientation_rad.z};
+
+    MotionIntent intent{};
+    intent.requested_mode = RobotMode::WALK;
+    intent.heading_rad = AngleRad{0.38};
+    intent.body_pose_setpoint.body_trans_m = Vec3{0.010, 0.018, 0.205};
+    intent.body_pose_setpoint.body_trans_mps = Vec3{0.12, -0.05, 0.0};
+    intent.body_pose_setpoint.angular_velocity_radps = Vec3{0.02, -0.01, 0.35};
+    intent.body_pose_setpoint.orientation_rad = Vec3{0.08, -0.04, 0.16};
+
+    const MotionIntent mirrored_intent = mirroredLeftRightIntent(intent);
+
+    RuntimeGaitPolicy policy{};
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        policy.per_leg[leg].step_length_m = LengthM{0.065 + 0.004 * leg};
+        policy.per_leg[leg].swing_height_m = LengthM{0.028 + 0.001 * leg};
+        policy.per_leg[leg].duty_cycle = 0.58;
+    }
+
+    GaitState gait{};
+    gait.stride_phase_rate_hz = FrequencyHz{1.35};
+    gait.phase = {0.16, 0.61, 0.34, 0.86, 0.08, 0.57};
+    gait.in_stance = {true, false, true, false, false, true};
+
+    GaitState mirrored_gait = gait;
+    for (const auto& [right, left] : kLeftRightLegPairs) {
+        mirrored_gait.phase[left] = gait.phase[right];
+        mirrored_gait.phase[right] = gait.phase[left];
+        mirrored_gait.in_stance[left] = gait.in_stance[right];
+        mirrored_gait.in_stance[right] = gait.in_stance[left];
+    }
+
+    for (const auto& [right, left] : kLeftRightLegPairs) {
+        if (!expect(std::abs(gait.phase[right] - mirrored_gait.phase[left]) <= kPhaseTolerance,
+                    "mirrored gait must preserve left/right phase timing")) {
+            return false;
+        }
+        if (!expect(gait.in_stance[right] == mirrored_gait.in_stance[left],
+                    "mirrored gait must preserve left/right stance timing")) {
+            return false;
+        }
+    }
+
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    safety.torque_cut = false;
+    safety.support_contact_count = kNumLegs;
+    safety.stability_margin_m = 0.03;
+    safety.leg_enabled.fill(true);
+
+    const LegTargets body_targets = body.update(estimate, intent, gait, policy, safety);
+    const LegTargets mirrored_body_targets =
+        body.update(mirrored_estimate, mirrored_intent, mirrored_gait, policy, safety);
+
+    for (const auto& [right, left] : kLeftRightLegPairs) {
+        const Vec3 mirrored_position_error =
+            mirrorAcrossSagittal(body_targets.feet[right].pos_body_m) -
+            mirrored_body_targets.feet[left].pos_body_m;
+        const double position_error_norm = vecNorm(mirrored_position_error);
+        if (!expect(position_error_norm < kPositionToleranceM,
+                    "body-controller left/right mirrored foot position mismatch")) {
+            return false;
+        }
+
+        const Vec3 mirrored_velocity_error =
+            mirrorAcrossSagittal(body_targets.feet[right].vel_body_mps) -
+            mirrored_body_targets.feet[left].vel_body_mps;
+        const double velocity_error_norm = vecNorm(mirrored_velocity_error);
+        if (!expect(velocity_error_norm < kVelocityToleranceMps,
+                    "body-controller left/right mirrored foot velocity mismatch")) {
+            return false;
+        }
+    }
+
+    const JointTargets joints = ik.solve(estimate, body_targets, safety);
+    const JointTargets mirrored_joints = ik.solve(mirrored_estimate, mirrored_body_targets, safety);
+
+    for (const auto& [right, left] : kLeftRightLegPairs) {
+        const LegState right_joint_frame =
+            geometry.legGeometry[right].servo.toJointAngles(joints.leg_states[right]);
+        const LegState left_joint_frame =
+            geometry.legGeometry[left].servo.toJointAngles(mirrored_joints.leg_states[left]);
+
+        const double coxa_sum = std::abs(right_joint_frame.joint_state[0].pos_rad.value +
+                                         left_joint_frame.joint_state[0].pos_rad.value);
+        const double femur_diff = std::abs(right_joint_frame.joint_state[1].pos_rad.value -
+                                           left_joint_frame.joint_state[1].pos_rad.value);
+        const double tibia_diff = std::abs(right_joint_frame.joint_state[2].pos_rad.value -
+                                           left_joint_frame.joint_state[2].pos_rad.value);
+
+        if (!expect(coxa_sum < kJointToleranceRad,
+                    "ik mirrored coxa joints should have opposite signs")) {
+            return false;
+        }
+        if (!expect(femur_diff < kJointToleranceRad,
+                    "ik mirrored femur joints should match")) {
+            return false;
+        }
+        if (!expect(tibia_diff < kJointToleranceRad,
+                    "ik mirrored tibia joints should match")) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool gaitSchedulerRespondsToWalkIntent() {
     GaitScheduler gait;
     RobotState est{};
@@ -526,6 +684,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!gaitSchedulerCadenceSlewRespectsUpDownLimitsAndWalkRestartSign()) {
+        return EXIT_FAILURE;
+    }
+    if (!plannerBodyIkRemainLeftRightMirrored()) {
         return EXIT_FAILURE;
     }
     if (!bodyControllerUsesGaitState()) {
