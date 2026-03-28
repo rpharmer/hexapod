@@ -5,6 +5,7 @@
 
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -18,6 +19,19 @@ bool expect(bool condition, const std::string& message) {
     if (!condition) {
         std::cerr << "FAIL: " << message << '\n';
         return false;
+    }
+    return true;
+}
+
+bool jointTargetsEqual(const JointTargets& lhs, const JointTargets& rhs, double tolerance = 1e-12) {
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+            const double lhs_pos = lhs.leg_states[leg].joint_state[joint].pos_rad.value;
+            const double rhs_pos = rhs.leg_states[leg].joint_state[joint].pos_rad.value;
+            if (std::abs(lhs_pos - rhs_pos) > tolerance) {
+                return false;
+            }
+        }
     }
     return true;
 }
@@ -144,6 +158,15 @@ MotionIntent makeIntentSample(uint64_t sample_id, TimePointUs timestamp_us) {
     intent.requested_mode = RobotMode::WALK;
     intent.sample_id = sample_id;
     intent.timestamp_us = timestamp_us;
+    return intent;
+}
+
+MotionIntent makeWalkingIntentSample(uint64_t sample_id, TimePointUs timestamp_us) {
+    MotionIntent intent = makeIntentSample(sample_id, timestamp_us);
+    intent.gait = GaitType::TRIPOD;
+    intent.speed_mps = LinearRateMps{0.08};
+    intent.heading_rad = AngleRad{0.0};
+    intent.body_pose_setpoint.body_trans_m = Vec3{0.0, 0.0, 0.20};
     return intent;
 }
 
@@ -442,6 +465,115 @@ bool runMixedIntentPublisherSampleIdCase() {
                   "mixed intent publishers should not trigger freshness COMMAND_TIMEOUT");
 }
 
+bool runWalkingFreshnessRejectRecoveryCase() {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<ScriptedEstimator>();
+    auto* scripted = estimator.get();
+    auto telemetry = std::make_unique<CountingTelemetryPublisher>();
+    auto* telemetry_raw = telemetry.get();
+
+    control_config::ControlConfig cfg{};
+    cfg.telemetry.enabled = true;
+    cfg.telemetry.publish_period = std::chrono::milliseconds{0};
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{500};
+
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, cfg, std::move(telemetry));
+    if (!expect(runtime.init(), "init should succeed (walking freshness reject/recovery case)")) {
+        return false;
+    }
+    runtime.startTelemetry();
+
+    const TimePointUs t0 = now_us();
+    scripted->enqueue(makeEstimatorSample(900, t0));
+    runtime.setMotionIntent(makeWalkingIntentSample(900, t0));
+    runControlStep(runtime);
+    if (!expect(telemetry_raw->last_control_step.has_value(),
+                "walking freshness case should capture initial walking telemetry")) {
+        return false;
+    }
+    const auto baseline_first = telemetry_raw->last_control_step.value();
+    if (!expect(baseline_first.status.active_mode == RobotMode::WALK,
+                "initial walking step should run in WALK mode")) {
+        return false;
+    }
+
+    scripted->enqueue(makeEstimatorSample(901, now_us()));
+    runtime.setMotionIntent(makeWalkingIntentSample(901, now_us()));
+    runControlStep(runtime);
+    if (!expect(telemetry_raw->last_control_step.has_value(),
+                "walking freshness case should capture second walking telemetry")) {
+        return false;
+    }
+    const auto baseline_second = telemetry_raw->last_control_step.value();
+    if (!expect(baseline_second.status.active_mode == RobotMode::WALK,
+                "second walking step should remain in WALK mode")) {
+        return false;
+    }
+
+    scripted->enqueue(makeEstimatorSample(902, now_us()));
+    runtime.setMotionIntentForTest(makeWalkingIntentSample(902, TimePointUs{1}));
+    runControlStep(runtime);
+    if (!expect(telemetry_raw->last_control_step.has_value(),
+                "walking freshness case should capture first reject telemetry")) {
+        return false;
+    }
+    const auto reject_first = telemetry_raw->last_control_step.value();
+    if (!expect(reject_first.status.active_mode == RobotMode::SAFE_IDLE,
+                "strict-control reject should force SAFE_IDLE in walking context") ||
+        !expect(reject_first.status.active_fault == FaultCode::COMMAND_TIMEOUT,
+                "strict-control stale-intent reject should report COMMAND_TIMEOUT") ||
+        !expect(jointTargetsEqual(reject_first.joint_targets, baseline_second.joint_targets),
+                "first strict-control reject should hold previous walking-safe joint targets")) {
+        return false;
+    }
+
+    scripted->enqueue(makeEstimatorSample(903, now_us()));
+    runtime.setMotionIntentForTest(makeWalkingIntentSample(903, TimePointUs{1}));
+    runControlStep(runtime);
+    if (!expect(telemetry_raw->last_control_step.has_value(),
+                "walking freshness case should capture second reject telemetry")) {
+        return false;
+    }
+    const auto reject_second = telemetry_raw->last_control_step.value();
+    if (!expect(reject_second.status.active_mode == RobotMode::SAFE_IDLE,
+                "reject window should remain in SAFE_IDLE") ||
+        !expect(jointTargetsEqual(reject_second.joint_targets, reject_first.joint_targets),
+                "reject window should suppress locomotion progression by holding joint targets")) {
+        return false;
+    }
+
+    scripted->enqueue(makeEstimatorSample(904, now_us()));
+    runtime.setMotionIntent(makeWalkingIntentSample(904, now_us()));
+    runControlStep(runtime);
+    if (!expect(telemetry_raw->last_control_step.has_value(),
+                "walking freshness case should capture recovery telemetry")) {
+        return false;
+    }
+    const auto recovered_first = telemetry_raw->last_control_step.value();
+    if (!expect(recovered_first.status.active_mode == RobotMode::WALK,
+                "freshness recovery should resume WALK mode cleanly") ||
+        !expect(recovered_first.status.active_fault == FaultCode::NONE,
+                "freshness recovery should clear COMMAND_TIMEOUT fault")) {
+        return false;
+    }
+
+    scripted->enqueue(makeEstimatorSample(905, now_us()));
+    runtime.setMotionIntent(makeWalkingIntentSample(905, now_us()));
+    runControlStep(runtime);
+    if (!expect(telemetry_raw->last_control_step.has_value(),
+                "walking freshness case should capture post-recovery walking telemetry")) {
+        return false;
+    }
+    const auto recovered_second = telemetry_raw->last_control_step.value();
+    return expect(recovered_second.status.active_mode == RobotMode::WALK,
+                  "post-recovery walking step should stay in WALK mode") &&
+           expect(recovered_second.status.active_fault == FaultCode::NONE,
+                  "post-recovery walking step should keep fault cleared") &&
+           expect(recovered_second.runtime_freshness.consecutive_rejects == 0,
+                  "post-recovery walking step should clear consecutive freshness reject window");
+}
+
 } // namespace
 
 int main() {
@@ -525,6 +657,10 @@ int main() {
     }
 
     if (!runMixedIntentPublisherSampleIdCase()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runWalkingFreshnessRejectRecoveryCase()) {
         return EXIT_FAILURE;
     }
 
