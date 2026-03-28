@@ -442,6 +442,116 @@ bool runMixedIntentPublisherSampleIdCase() {
                   "mixed intent publishers should not trigger freshness COMMAND_TIMEOUT");
 }
 
+bool jointTargetsEqual(const JointTargets& lhs, const JointTargets& rhs) {
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+            if (lhs.leg_states[leg].joint_state[joint].pos_rad.value !=
+                rhs.leg_states[leg].joint_state[joint].pos_rad.value) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool runFreshnessRejectFallbackAndCountersCase() {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<ScriptedEstimator>();
+    auto* scripted = estimator.get();
+    auto telemetry = std::make_unique<CountingTelemetryPublisher>();
+    auto* telemetry_raw = telemetry.get();
+
+    control_config::ControlConfig cfg{};
+    cfg.telemetry.enabled = true;
+    cfg.telemetry.publish_period = std::chrono::milliseconds{0};
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.estimator.require_monotonic_sample_id = true;
+    cfg.freshness.intent.require_monotonic_sample_id = true;
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, cfg, std::move(telemetry));
+
+    if (!expect(runtime.init(), "init should succeed (freshness reject fallback counters case)")) {
+        return false;
+    }
+    runtime.startTelemetry();
+
+    MotionIntent nominal{};
+    nominal.requested_mode = RobotMode::WALK;
+    nominal.gait = GaitType::TRIPOD;
+    nominal.speed_mps = LinearRateMps{0.10};
+    nominal.heading_rad = AngleRad{0.0};
+    nominal.body_pose_setpoint.body_trans_m = Vec3{0.0, 0.0, 0.20};
+    nominal.sample_id = 900;
+    nominal.timestamp_us = now_us();
+
+    scripted->enqueue(makeEstimatorSample(900, now_us()));
+    runtime.setMotionIntentForTest(nominal);
+    runControlStep(runtime);
+
+    if (!expect(telemetry_raw->last_control_step.has_value(),
+                "freshness fallback case should capture baseline telemetry")) {
+        return false;
+    }
+    const auto baseline = telemetry_raw->last_control_step.value();
+    if (!expect(baseline.status.active_mode == RobotMode::WALK,
+                "baseline freshness fallback case should allow WALK")) {
+        return false;
+    }
+
+    MotionIntent non_monotonic_intent = nominal;
+    non_monotonic_intent.sample_id = 899;
+    non_monotonic_intent.timestamp_us = now_us();
+    non_monotonic_intent.speed_mps = LinearRateMps{0.35};
+    non_monotonic_intent.heading_rad = AngleRad{0.5};
+
+    scripted->enqueue(makeEstimatorSample(899, now_us()));
+    runtime.setMotionIntentForTest(non_monotonic_intent);
+    runControlStep(runtime);
+
+    if (!expect(telemetry_raw->last_control_step.has_value(),
+                "freshness fallback case should capture rejected telemetry")) {
+        return false;
+    }
+    const auto first_reject = telemetry_raw->last_control_step.value();
+    if (!expect(first_reject.status.active_mode == RobotMode::SAFE_IDLE,
+                "non-monotonic samples should force SAFE_IDLE") ||
+        !expect(first_reject.status.active_fault == FaultCode::ESTIMATOR_INVALID,
+                "non-monotonic estimator sample should set ESTIMATOR_INVALID fault") ||
+        !expect(first_reject.status.estimator_valid == false,
+                "non-monotonic estimator sample should mark estimator invalid") ||
+        !expect(jointTargetsEqual(first_reject.joint_targets, baseline.joint_targets),
+                "reject path should keep safe fallback joint targets and skip pipeline output overwrite") ||
+        !expect(first_reject.runtime_freshness.total_rejects == 1,
+                "first reject should increment total freshness reject counter") ||
+        !expect(first_reject.runtime_freshness.consecutive_rejects == 1,
+                "first reject should increment consecutive freshness reject counter") ||
+        !expect(first_reject.runtime_freshness.non_monotonic_id_rejects == 1,
+                "first reject should increment non-monotonic freshness reject counter") ||
+        !expect(first_reject.runtime_freshness.invalid_sample_id_rejects == 0,
+                "non-monotonic case should not increment invalid-sample freshness reject counter")) {
+        return false;
+    }
+
+    MotionIntent recovered = nominal;
+    recovered.sample_id = 901;
+    recovered.timestamp_us = now_us();
+    scripted->enqueue(makeEstimatorSample(901, now_us()));
+    runtime.setMotionIntentForTest(recovered);
+    runControlStep(runtime);
+
+    if (!expect(telemetry_raw->last_control_step.has_value(),
+                "freshness fallback case should capture recovery telemetry")) {
+        return false;
+    }
+    const auto recovered_step = telemetry_raw->last_control_step.value();
+    return expect(recovered_step.status.loop_counter > first_reject.status.loop_counter,
+                  "recovery step should continue incrementing runtime status loop counter") &&
+           expect(recovered_step.runtime_freshness.total_rejects == 1,
+                  "recovery should keep freshness total rejects cumulative") &&
+           expect(recovered_step.runtime_freshness.consecutive_rejects == 0,
+                  "recovery should reset consecutive freshness rejects");
+}
+
 } // namespace
 
 int main() {
@@ -525,6 +635,10 @@ int main() {
     }
 
     if (!runMixedIntentPublisherSampleIdCase()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runFreshnessRejectFallbackAndCountersCase()) {
         return EXIT_FAILURE;
     }
 
