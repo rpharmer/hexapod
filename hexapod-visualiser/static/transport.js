@@ -63,9 +63,22 @@ export function applyStatePayload(model, telemetry, payload, nowMs = Date.now())
     ? telemetry.lastModelTimestampMs
     : Number.NEGATIVE_INFINITY;
   const hasStaleTimestamp = payloadTimestampMs !== null && payloadTimestampMs < lastTimestampMs;
+  const hasEqualTimestamp = payloadTimestampMs !== null && payloadTimestampMs === lastTimestampMs;
 
   if (hasStaleTimestamp) {
     return model;
+  }
+
+  if (hasEqualTimestamp) {
+    const payloadSampleId = payload.sample_id;
+    const hasSampleId = typeof payloadSampleId === "string" || typeof payloadSampleId === "number";
+    const lastSampleId = telemetry.lastModelSampleId;
+    const canOrderBySampleId =
+      hasSampleId && (typeof lastSampleId === "string" || typeof lastSampleId === "number");
+
+    if (!canOrderBySampleId || payloadSampleId <= lastSampleId) {
+      return model;
+    }
   }
 
   const nextModel = {
@@ -86,6 +99,9 @@ export function applyStatePayload(model, telemetry, payload, nowMs = Date.now())
 
   if (payloadTimestampMs !== null) {
     telemetry.lastModelTimestampMs = payloadTimestampMs;
+  }
+  if (typeof payload.sample_id === "string" || typeof payload.sample_id === "number") {
+    telemetry.lastModelSampleId = payload.sample_id;
   }
 
   return nextModel;
