@@ -123,10 +123,9 @@ class UdpTelemetryProtocol(asyncio.DatagramProtocol):
                 changed = True
         elif isinstance(message.get("mode"), int):
             legacy_active_mode = _LEGACY_MODE_NAMES.get(message["mode"])
-            if legacy_active_mode is not None:
-                if self.state.active_mode != legacy_active_mode:
-                    self.state.active_mode = legacy_active_mode
-                    changed = True
+            if legacy_active_mode is not None and self.state.active_mode != legacy_active_mode:
+                self.state.active_mode = legacy_active_mode
+                changed = True
 
         if isinstance(message.get("active_fault"), str):
             active_fault = message["active_fault"]

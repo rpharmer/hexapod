@@ -231,6 +231,19 @@ class TelemetryParserTests(unittest.TestCase):
 
         self.assertEqual(state.active_mode, "WALK")
 
+    def test_udp_parser_ignores_unknown_legacy_numeric_mode_field(self):
+        state = server.TelemetryState()
+        diagnostics = server.Diagnostics()
+        protocol = server.UdpTelemetryProtocol(state, diagnostics, lambda: None)
+        state.active_mode = "SAFE_IDLE"
+
+        protocol.datagram_received(
+            b'{"schema_version": 1, "type":"state", "timestamp_ms": 2201, "mode":99}',
+            ("127.0.0.1", 9000),
+        )
+
+        self.assertEqual(state.active_mode, "SAFE_IDLE")
+
     def test_udp_parser_applies_status_and_health_fields(self):
         state = server.TelemetryState()
         updates = []
