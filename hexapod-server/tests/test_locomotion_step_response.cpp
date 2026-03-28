@@ -89,6 +89,81 @@ double absMaxVerticalFootVelocity(const LegTargets& current) {
     return max_abs_velocity;
 }
 
+struct TrajectoryMetrics {
+    double distance_proxy_m{0.0};
+    double cadence_min_hz{std::numeric_limits<double>::infinity()};
+    double cadence_max_hz{0.0};
+    double cadence_mean_hz{0.0};
+    double peak_leg_velocity_mps{0.0};
+    bool saw_fault{false};
+};
+
+double percentile(std::vector<double>& values, double p) {
+    if (values.empty()) {
+        return 0.0;
+    }
+    const double clamped = std::clamp(p, 0.0, 1.0);
+    const std::size_t index =
+        static_cast<std::size_t>(std::lround(clamped * static_cast<double>(values.size() - 1)));
+    std::nth_element(values.begin(), values.begin() + static_cast<std::ptrdiff_t>(index), values.end());
+    return values[index];
+}
+
+TrajectoryMetrics runEquivalentTrajectoryAtRate(DurationSec loop_dt, int total_cycles) {
+    ControlPipeline pipeline{};
+    RobotState est = nominalEstimate();
+    MotionIntent intent = walkingIntent();
+    SafetyState safety = nominalSafety();
+
+    double cadence_sum_hz = 0.0;
+    std::vector<double> leg_velocity_samples;
+    leg_velocity_samples.reserve(static_cast<std::size_t>(total_cycles) * kNumLegs);
+
+    TrajectoryMetrics metrics{};
+
+    for (int cycle = 0; cycle < total_cycles; ++cycle) {
+        const double t = static_cast<double>(cycle) * loop_dt.value;
+        intent.speed_mps = LinearRateMps{0.16 + 0.02 * std::sin(2.0 * kPi * 0.40 * t)};
+        intent.heading_rad = AngleRad{0.35 * std::sin(2.0 * kPi * 0.23 * t)};
+        intent.body_pose_setpoint.angular_velocity_radps.z = 0.45 * std::sin(2.0 * kPi * 0.31 * t);
+        intent.body_pose_setpoint.body_trans_m.z = 0.20 + 0.008 * std::sin(2.0 * kPi * 0.17 * t);
+
+        intent.sample_id += 1;
+        intent.timestamp_us = now_us();
+        est.timestamp_us = now_us();
+
+        const PipelineStepResult step_result =
+            pipeline.runStep(est, intent, safety, loop_dt, true, static_cast<uint64_t>(cycle));
+        metrics.saw_fault = metrics.saw_fault || (step_result.status.active_fault != FaultCode::NONE);
+
+        const double cadence_hz = std::max(0.0, step_result.status.dynamic_gait.cadence_hz);
+        metrics.cadence_min_hz = std::min(metrics.cadence_min_hz, cadence_hz);
+        metrics.cadence_max_hz = std::max(metrics.cadence_max_hz, cadence_hz);
+        cadence_sum_hz += cadence_hz;
+
+        double command_sum = 0.0;
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            const double foot_vel = footVelocityMagnitude(step_result.leg_targets.feet[leg]);
+            leg_velocity_samples.push_back(foot_vel);
+            command_sum += foot_vel;
+        }
+
+        const double mean_leg_command_mps = command_sum / static_cast<double>(kNumLegs);
+        metrics.distance_proxy_m += mean_leg_command_mps * loop_dt.value;
+        est.leg_states = step_result.joint_targets.leg_states;
+    }
+
+    if (total_cycles > 0) {
+        metrics.cadence_mean_hz = cadence_sum_hz / static_cast<double>(total_cycles);
+    }
+    if (!std::isfinite(metrics.cadence_min_hz)) {
+        metrics.cadence_min_hz = 0.0;
+    }
+    metrics.peak_leg_velocity_mps = percentile(leg_velocity_samples, 0.99);
+
+    return metrics;
+}
+
 bool commandSettlesWithinCycles(const std::vector<double>& signal,
                                 int step_cycle,
                                 int segment_end_cycle,
@@ -329,11 +404,49 @@ bool testBodyHeightStepAndRampBoundedInStandAndWalk() {
                   "walk body height step/ramp should not create joint spikes");
 }
 
+bool testEquivalentTrajectoryMetricsStayStableAcrossLoopRates() {
+    constexpr double kTrajectoryDurationSec = 3.0;
+    constexpr DurationSec kFastDt{1.0 / 250.0};
+    constexpr DurationSec kSlowDt{1.0 / 125.0};
+    const int fast_cycles = static_cast<int>(std::lround(kTrajectoryDurationSec / kFastDt.value));
+    const int slow_cycles = static_cast<int>(std::lround(kTrajectoryDurationSec / kSlowDt.value));
+
+    const TrajectoryMetrics fast = runEquivalentTrajectoryAtRate(kFastDt, fast_cycles);
+    const TrajectoryMetrics slow = runEquivalentTrajectoryAtRate(kSlowDt, slow_cycles);
+
+    const auto ratio = [](double a, double b) {
+        const double denom = std::max(std::abs(a), std::abs(b));
+        if (denom <= 1e-9) {
+            return 1.0;
+        }
+        return std::abs(a - b) / denom;
+    };
+
+    constexpr double kDistanceProxyRatioTolerance = 0.14;
+    constexpr double kCadenceEnvelopeTolerance = 0.10;
+    constexpr double kCadenceMeanTolerance = 0.08;
+    constexpr double kPeakLegRateTolerance = 0.12;
+
+    return expect(!fast.saw_fault && !slow.saw_fault,
+                  "equivalent trajectory replay at 250 Hz and 125 Hz should not trigger faults") &&
+           expect(ratio(fast.distance_proxy_m, slow.distance_proxy_m) < kDistanceProxyRatioTolerance,
+                  "distance proxy should remain proportionally consistent across equivalent trajectory loop rates") &&
+           expect(ratio(fast.cadence_min_hz, slow.cadence_min_hz) < kCadenceEnvelopeTolerance,
+                  "cadence envelope minimum should stay stable across equivalent trajectory loop rates") &&
+           expect(ratio(fast.cadence_max_hz, slow.cadence_max_hz) < kCadenceEnvelopeTolerance,
+                  "cadence envelope maximum should stay stable across equivalent trajectory loop rates") &&
+           expect(ratio(fast.cadence_mean_hz, slow.cadence_mean_hz) < kCadenceMeanTolerance,
+                  "cadence envelope mean should remain proportionally consistent across equivalent trajectory loop rates") &&
+           expect(ratio(fast.peak_leg_velocity_mps, slow.peak_leg_velocity_mps) < kPeakLegRateTolerance,
+                  "peak commanded foot velocity should remain stable across equivalent trajectory loop rates");
+}
+
 } // namespace
 
 int main() {
     if (!testWalkHeadingAndYawRateStepResponse() ||
-        !testBodyHeightStepAndRampBoundedInStandAndWalk()) {
+        !testBodyHeightStepAndRampBoundedInStandAndWalk() ||
+        !testEquivalentTrajectoryMetricsStayStableAcrossLoopRates()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
