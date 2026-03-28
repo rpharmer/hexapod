@@ -2,6 +2,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -217,6 +218,20 @@ struct MotionLimiterConfig {
     std::chrono::milliseconds shutdown_phase_threshold{std::chrono::milliseconds{kDefaultMotionShutdownPhaseThresholdMs}};
 };
 
+struct StageTimingBudgetConfig {
+    uint64_t p95_max_us{2'500};
+    uint64_t p99_max_us{3'500};
+};
+
+struct PipelineStageTimingConfig {
+    std::size_t rolling_window_samples{512};
+    StageTimingBudgetConfig estimator{};
+    StageTimingBudgetConfig limiter{};
+    StageTimingBudgetConfig gait{};
+    StageTimingBudgetConfig body{};
+    StageTimingBudgetConfig ik{};
+};
+
 struct AutonomyRuntimeConfig {
     struct TraversabilityConfig {
         double occupancy_risk_weight{kDefaultTraversabilityOccupancyRiskWeight};
@@ -245,6 +260,7 @@ struct ControlConfig {
     TelemetryConfig telemetry{};
     RuntimeImuConfig runtime_imu{};
     MotionLimiterConfig motion_limiter{};
+    PipelineStageTimingConfig pipeline_stage_timing{};
     AutonomyRuntimeConfig autonomy{};
 };
 
