@@ -200,6 +200,13 @@ Convenience script from repository root:
 scripts/run_server_scenarios.sh
 ```
 
+Scenario-05 regression harness (runs `05_long_walk_observability` and enforces log gates for
+`runtime.metrics`, `peak_foot_vel_mps`, `peak_velocity_radps`, and persistent `fault=TIP_OVER`):
+
+```bash
+scripts/run_scenario_05_regression.sh
+```
+
 Launch server + visualiser together (sim mode, telemetry linked):
 
 ```bash

@@ -336,6 +336,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     hexapod_server_add_test(test_body_controller_velocity body_controller_velocity
         tests/test_body_controller_velocity.cpp
     )
+    hexapod_server_add_test(test_estimator_body_controller_integration estimator_body_controller_integration
+        tests/test_estimator_body_controller_integration.cpp
+    )
     hexapod_server_add_test(test_gait_plausibility_flat_plane gait_plausibility_flat_plane
         tests/test_gait_plausibility_flat_plane.cpp
     )
@@ -347,6 +350,12 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     )
     hexapod_server_add_test(test_gait_dynamics_turn_safety gait_dynamics_turn_safety
         tests/test_gait_dynamics_turn_safety.cpp
+    )
+    hexapod_server_add_test(test_locomotion_step_response locomotion_step_response
+        tests/test_locomotion_step_response.cpp
+    )
+    hexapod_server_add_test(test_gait_family_locomotion_profiles gait_family_locomotion_profiles
+        tests/test_gait_family_locomotion_profiles.cpp
     )
     hexapod_server_add_test(test_stability_tracker stability_tracker
         tests/test_stability_tracker.cpp

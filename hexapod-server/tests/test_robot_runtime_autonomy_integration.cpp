@@ -4,6 +4,7 @@
 #include "sim_hardware_bridge.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -59,6 +60,18 @@ MotionIntent makeFreshWalkIntent() {
     return intent;
 }
 
+double autonomyCommandSpeedMps(const autonomy::AutonomyStepOutput& output,
+                               const control_config::ControlConfig& cfg) {
+    const double target_x = output.locomotion_command.target.x_m;
+    const double target_y = output.locomotion_command.target.y_m;
+    const double distance = std::sqrt((target_x * target_x) + (target_y * target_y));
+    return std::min(distance, cfg.gait.fallback_speed_mag.value);
+}
+
+double autonomyCommandHeadingRad(const autonomy::AutonomyStepOutput& output) {
+    return std::atan2(output.locomotion_command.target.y_m, output.locomotion_command.target.x_m);
+}
+
 autonomy::WaypointMission makeMission() {
     autonomy::WaypointMission mission{};
     mission.mission_id = "runtime-autonomy";
@@ -108,6 +121,54 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
         return false;
     }
     if (!expect(first_output->locomotion_command.sent, "nominal locomotion command should be dispatched")) {
+        return false;
+    }
+    const double first_speed_mps = autonomyCommandSpeedMps(*first_output, cfg);
+    if (!expect(std::isfinite(first_speed_mps), "autonomy handoff speed should remain finite")) {
+        return false;
+    }
+    if (!expect(first_speed_mps >= 0.0, "autonomy handoff speed should remain non-negative")) {
+        return false;
+    }
+    if (!expect(first_speed_mps <= (cfg.gait.fallback_speed_mag.value + 1e-9),
+                "autonomy handoff speed should be capped by fallback speed bound")) {
+        return false;
+    }
+    const double first_heading_rad = autonomyCommandHeadingRad(*first_output);
+    if (!expect(std::isfinite(first_heading_rad), "autonomy handoff heading should remain finite")) {
+        return false;
+    }
+    runtime.setMotionIntent(makeFreshWalkIntent());
+    runRuntimeStep(runtime);
+    const auto second_output = runtime.lastAutonomyStepOutput();
+    if (!expect(second_output.has_value(), "autonomy output should remain available on nominal follow-up step")) {
+        return false;
+    }
+    if (!expect(second_output->locomotion_command.sent,
+                "autonomy locomotion command should continue dispatching after handoff")) {
+        return false;
+    }
+    const double second_speed_mps = autonomyCommandSpeedMps(*second_output, cfg);
+    if (!expect(std::isfinite(second_speed_mps), "post-handoff autonomy speed should remain finite")) {
+        return false;
+    }
+    if (!expect(second_speed_mps >= 0.0, "post-handoff autonomy speed should remain non-negative")) {
+        return false;
+    }
+    if (!expect(second_speed_mps <= (cfg.gait.fallback_speed_mag.value + 1e-9),
+                "post-handoff autonomy speed should remain bounded by fallback speed")) {
+        return false;
+    }
+    if (!expect(std::abs(second_speed_mps - first_speed_mps) <= (cfg.gait.fallback_speed_mag.value + 1e-9),
+                "autonomy handoff should avoid discontinuous speed jumps")) {
+        return false;
+    }
+    const double second_heading_rad = autonomyCommandHeadingRad(*second_output);
+    if (!expect(std::isfinite(second_heading_rad), "post-handoff autonomy heading should remain finite")) {
+        return false;
+    }
+    if (!expect(std::abs(second_heading_rad - first_heading_rad) <= 3.14159265358979323846,
+                "autonomy handoff should avoid discontinuous heading jumps")) {
         return false;
     }
     if (!expect(runtime.getStatus().active_mode == RobotMode::WALK,
@@ -180,6 +241,21 @@ bool testRuntimeRoutesAutonomyOutputIntoControlPath() {
     runtime.setAutonomyNoProgress(false);
     runtime.setMotionIntent(makeFreshWalkIntent());
     runRuntimeStep(runtime);
+    auto resumed_output = runtime.lastAutonomyStepOutput();
+    if (!expect(resumed_output.has_value(), "autonomy output should exist after recovery clears")) {
+        return false;
+    }
+    const double resumed_speed_mps = autonomyCommandSpeedMps(*resumed_output, cfg);
+    if (!expect(std::isfinite(resumed_speed_mps), "post-recovery autonomy speed should remain finite")) {
+        return false;
+    }
+    if (!expect(resumed_speed_mps >= 0.0, "post-recovery autonomy speed should remain non-negative")) {
+        return false;
+    }
+    if (!expect(resumed_speed_mps <= (cfg.gait.fallback_speed_mag.value + 1e-9),
+                "post-recovery autonomy speed should respect fallback speed cap")) {
+        return false;
+    }
     if (!expect(runtime.getStatus().autonomy.mission_state == static_cast<uint8_t>(autonomy::MissionState::Exec),
                 "runtime status should return mission to EXEC when recovery clears")) {
         return false;
