@@ -85,6 +85,52 @@ bool testStrictMetricsOnlyCountInvalidStreams() {
            expect(stale_estimator_count.load() == 2, "strict metrics should count stale estimators");
 }
 
+bool testStrictMetricsMonotonicAndResetOnRestart() {
+    FreshnessPolicy policy{};
+    RuntimeFreshnessGate gate(policy);
+    std::atomic<uint64_t> stale_intent_count{0};
+    std::atomic<uint64_t> stale_estimator_count{0};
+
+    FreshnessPolicy::Evaluation stale_both{};
+    stale_both.estimator.valid = false;
+    stale_both.intent.valid = false;
+
+    uint64_t prev_intent = 0;
+    uint64_t prev_estimator = 0;
+    for (int step = 0; step < 1'000; ++step) {
+        gate.recordStrictMetrics(stale_both, stale_intent_count, stale_estimator_count);
+        const uint64_t current_intent = stale_intent_count.load();
+        const uint64_t current_estimator = stale_estimator_count.load();
+        if (!expect(current_intent >= prev_intent,
+                    "stale_intent counter should be monotonic during repeated rejects") ||
+            !expect(current_estimator >= prev_estimator,
+                    "stale_estimator counter should be monotonic during repeated rejects")) {
+            return false;
+        }
+        prev_intent = current_intent;
+        prev_estimator = current_estimator;
+    }
+
+    if (!expect(stale_intent_count.load() == 1'000,
+                "stale_intent counter should increment once per invalid intent event") ||
+        !expect(stale_estimator_count.load() == 1'000,
+                "stale_estimator counter should increment once per invalid estimator event")) {
+        return false;
+    }
+
+    std::atomic<uint64_t> restarted_stale_intent_count{0};
+    std::atomic<uint64_t> restarted_stale_estimator_count{0};
+    FreshnessPolicy restarted_policy{};
+    RuntimeFreshnessGate restarted_gate(restarted_policy);
+    restarted_gate.recordStrictMetrics(
+        stale_both, restarted_stale_intent_count, restarted_stale_estimator_count);
+
+    return expect(restarted_stale_intent_count.load() == 1,
+                  "runtime restart should begin stale_intent counters from zero baseline") &&
+           expect(restarted_stale_estimator_count.load() == 1,
+                  "runtime restart should begin stale_estimator counters from zero baseline");
+}
+
 bool testSafetyLenientEvaluationIgnoresAgeExpiry() {
     control_config::FreshnessConfig cfg{};
     cfg.estimator.max_allowed_age_us = DurationUs{1'000};
@@ -149,7 +195,7 @@ bool testTimingMetricsRollingWindowAndOverrunThresholds() {
     std::atomic<uint64_t> jitter_max_us{0};
     RuntimeTimingMetrics timing(cfg, dt_sum_us, jitter_max_us);
 
-    TimePointUs now{0};
+    TimePointUs now{1};
     timing.update(now);
 
     for (int i = 0; i < 2; ++i) {
@@ -221,6 +267,59 @@ bool testTimingMetricsControlledDelayOverrunEscalations() {
                   "max consecutive overruns should retain longest post-reset streak") &&
            expect(rolling.hard_overrun_escalation_crossings == 2,
                   "hard escalation crossings should count once per threshold crossing event");
+}
+
+bool testOverrunCountersMonotonicResetAndLongRunStability() {
+    control_config::ControlConfig cfg{};
+    cfg.loop_timing.control_loop_period = std::chrono::microseconds{1'000};
+
+    std::atomic<uint64_t> dt_sum_us{0};
+    std::atomic<uint64_t> jitter_max_us{0};
+    RuntimeTimingMetrics timing(cfg, dt_sum_us, jitter_max_us);
+
+    TimePointUs now{0};
+    timing.update(now);
+
+    uint64_t prev_overrun_events = 0;
+    uint64_t prev_overrun_periods = 0;
+    uint64_t prev_max_consecutive = 0;
+    for (int step = 0; step < 5'000; ++step) {
+        now.value += 2'000;
+        timing.update(now);
+        const LoopTimingRollingMetrics rolling = timing.rollingMetrics();
+        if (!expect(rolling.overrun_events_total >= prev_overrun_events,
+                    "overrun event counter should be monotonic during persistent overruns") ||
+            !expect(rolling.overrun_periods_total >= prev_overrun_periods,
+                    "overrun period counter should be monotonic during persistent overruns") ||
+            !expect(rolling.max_consecutive_overruns >= prev_max_consecutive,
+                    "max consecutive overrun counter should be monotonic")) {
+            return false;
+        }
+        prev_overrun_events = rolling.overrun_events_total;
+        prev_overrun_periods = rolling.overrun_periods_total;
+        prev_max_consecutive = rolling.max_consecutive_overruns;
+    }
+
+    const LoopTimingRollingMetrics long_run = timing.rollingMetrics();
+    if (!expect(long_run.overrun_events_total >= 4'900,
+                "long overrun run should retain a large monotonic overrun-event total without wraparound artifacts") ||
+        !expect(long_run.overrun_periods_total >= 9'800,
+                "long overrun run should retain a large monotonic overrun-period total without wraparound artifacts") ||
+        !expect(long_run.max_consecutive_overruns >= 4'900,
+                "max consecutive overrun counter should retain long-run streak scale")) {
+        return false;
+    }
+
+    timing.reset();
+    timing.update(TimePointUs{50'000});
+    timing.update(TimePointUs{51'000});
+    const LoopTimingRollingMetrics after_reset = timing.rollingMetrics();
+    return expect(after_reset.overrun_events_total == 0,
+                  "runtime restart/reset should clear cumulative overrun events") &&
+           expect(after_reset.overrun_periods_total == 0,
+                  "runtime restart/reset should clear cumulative overrun periods") &&
+           expect(after_reset.max_consecutive_overruns == 0,
+                  "runtime restart/reset should clear max consecutive overrun streak");
 }
 
 
@@ -338,10 +437,12 @@ bool testJointOscillationTrackerWrapAwareDelta() {
 int main() {
     if (!testFreshnessGateDecisionMatrix() ||
         !testStrictMetricsOnlyCountInvalidStreams() ||
+        !testStrictMetricsMonotonicAndResetOnRestart() ||
         !testSafetyLenientEvaluationIgnoresAgeExpiry() ||
         !testTimingMetricsTracksDeltaJitterAndAverage() ||
         !testTimingMetricsRollingWindowAndOverrunThresholds() ||
         !testTimingMetricsControlledDelayOverrunEscalations() ||
+        !testOverrunCountersMonotonicResetAndLongRunStability() ||
         !testJointOscillationTrackerIgnoresSubThresholdDirectionChanges() ||
         !testJointOscillationTrackerHandlesNonMonotonicTimestamps() ||
         !testJointOscillationTrackerCountsDirectionReversals() ||
