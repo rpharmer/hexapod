@@ -41,6 +41,22 @@ std::optional<double> extractNumberAfter(const std::string& text, const std::str
     }
 }
 
+std::optional<bool> extractBoolAfter(const std::string& text, const std::string& key)
+{
+    const std::size_t key_pos = text.find(key);
+    if (key_pos == std::string::npos) {
+        return std::nullopt;
+    }
+    const std::size_t start = key_pos + key.size();
+    if (text.compare(start, 4, "true") == 0) {
+        return true;
+    }
+    if (text.compare(start, 5, "false") == 0) {
+        return false;
+    }
+    return std::nullopt;
+}
+
 std::optional<std::string> recvPacket(const int socket_fd)
 {
     char buffer[16384];
@@ -74,7 +90,7 @@ telemetry::ControlStepTelemetry makeStep(const uint64_t timestamp_us,
     return step;
 }
 
-bool testFallbackIntegratorResetsOnTimestampRegressionAndLongPause()
+bool testFallbackIntegratorHoldsPoseOnTimestampRegressionAndLongPause()
 {
     const int recv_socket = ::socket(AF_INET, SOCK_DGRAM, 0);
     if (!expect(recv_socket >= 0, "should create UDP receiver socket")) {
@@ -134,12 +150,19 @@ bool testFallbackIntegratorResetsOnTimestampRegressionAndLongPause()
     publisher->publishControlStep(makeStep(1'400'000, 1.0, 0.0, 0.0, 1.0, 0.0));
     packet = recvPacket(recv_socket);
     const auto x_after_regression = packet ? extractNumberAfter(*packet, "\"x_m\":") : std::nullopt;
+    const auto reset_after_regression = packet ? extractBoolAfter(*packet, "\"pose_reset\":") : std::nullopt;
     if (!expect(packet.has_value() && x_after_regression.has_value(),
                 "should decode fallback x pose after timestamp regression")) {
         ::close(recv_socket);
         return false;
     }
-    if (!expect(closeEnough(*x_after_regression, 0.0), "timestamp regression should reset fallback pose")) {
+    if (!expect(closeEnough(*x_after_regression, *x_after_motion),
+                "timestamp regression should preserve fallback pose continuity")) {
+        ::close(recv_socket);
+        return false;
+    }
+    if (!expect(reset_after_regression.has_value() && *reset_after_regression,
+                "timestamp regression should publish pose_reset flag")) {
         ::close(recv_socket);
         return false;
     }
@@ -147,12 +170,19 @@ bool testFallbackIntegratorResetsOnTimestampRegressionAndLongPause()
     publisher->publishControlStep(makeStep(2'900'000, 1.0, 0.0, 0.0, 1.0, 0.0));
     packet = recvPacket(recv_socket);
     const auto x_after_pause = packet ? extractNumberAfter(*packet, "\"x_m\":") : std::nullopt;
+    const auto reset_after_pause = packet ? extractBoolAfter(*packet, "\"pose_reset\":") : std::nullopt;
     if (!expect(packet.has_value() && x_after_pause.has_value(),
                 "should decode fallback x pose after long pause")) {
         ::close(recv_socket);
         return false;
     }
-    if (!expect(closeEnough(*x_after_pause, 0.0), "long pause should reset fallback pose")) {
+    if (!expect(closeEnough(*x_after_pause, *x_after_motion),
+                "long pause should preserve fallback pose continuity")) {
+        ::close(recv_socket);
+        return false;
+    }
+    if (!expect(reset_after_pause.has_value() && *reset_after_pause,
+                "long pause should publish pose_reset flag")) {
         ::close(recv_socket);
         return false;
     }
@@ -223,16 +253,49 @@ bool testFallbackIntegratorIgnoresNonFiniteInputsAndResetsOnIdle()
         return false;
     }
 
+    publisher->publishControlStep(makeStep(1'600'000, 1.0, 0.0, 0.0, 1.0, 0.0));
+    packet = recvPacket(recv_socket);
+    const auto x_before_idle = packet ? extractNumberAfter(*packet, "\"x_m\":") : std::nullopt;
+    if (!expect(packet.has_value() && x_before_idle.has_value(), "should decode fallback x pose before idle")) {
+        ::close(recv_socket);
+        return false;
+    }
+    if (!expect(closeEnough(*x_before_idle, 0.25),
+                "pre-idle movement should integrate to a non-zero fallback pose")) {
+        ::close(recv_socket);
+        return false;
+    }
+
     telemetry::ControlStepTelemetry idle_step = makeStep(1'200'000, 1.0, 0.0, 0.0);
     idle_step.status.active_mode = RobotMode::SAFE_IDLE;
     publisher->publishControlStep(idle_step);
     packet = recvPacket(recv_socket);
     const auto x_after_idle = packet ? extractNumberAfter(*packet, "\"x_m\":") : std::nullopt;
+    const auto reset_after_idle = packet ? extractBoolAfter(*packet, "\"pose_reset\":") : std::nullopt;
     if (!expect(packet.has_value() && x_after_idle.has_value(), "should decode fallback x pose in idle mode")) {
         ::close(recv_socket);
         return false;
     }
-    if (!expect(closeEnough(*x_after_idle, 0.0), "idle mode should reset fallback pose")) {
+    if (!expect(closeEnough(*x_after_idle, *x_before_idle),
+                "idle transition should hold last valid fallback pose")) {
+        ::close(recv_socket);
+        return false;
+    }
+    if (!expect(reset_after_idle.has_value() && *reset_after_idle,
+                "idle transition should publish pose_reset flag")) {
+        ::close(recv_socket);
+        return false;
+    }
+
+    publisher->publishControlStep(makeStep(1'300'000, 0.0, 0.0, 0.0, 0.0, 0.0));
+    packet = recvPacket(recv_socket);
+    const auto reset_after_recovery = packet ? extractBoolAfter(*packet, "\"pose_reset\":") : std::nullopt;
+    if (!expect(packet.has_value() && reset_after_recovery.has_value(),
+                "should decode pose_reset after SAFE_IDLE recovery sample")) {
+        ::close(recv_socket);
+        return false;
+    }
+    if (!expect(!*reset_after_recovery, "pose_reset should clear after non-reset samples")) {
         ::close(recv_socket);
         return false;
     }
@@ -306,7 +369,7 @@ bool testFallbackIntegratorDoesNotUseCommandedVelocityWhenEstimatorVelocityIsZer
 
 int main()
 {
-    if (!testFallbackIntegratorResetsOnTimestampRegressionAndLongPause()) {
+    if (!testFallbackIntegratorHoldsPoseOnTimestampRegressionAndLongPause()) {
         return EXIT_FAILURE;
     }
     if (!testFallbackIntegratorIgnoresNonFiniteInputsAndResetsOnIdle()) {
