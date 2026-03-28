@@ -442,6 +442,156 @@ bool runMixedIntentPublisherSampleIdCase() {
                   "mixed intent publishers should not trigger freshness COMMAND_TIMEOUT");
 }
 
+bool runSimFaultToggleLifecycleCase(RobotMode injection_mode) {
+    const std::string mode_label = injection_mode == RobotMode::WALK ? "WALK" : "STAND";
+
+    struct FaultToggleCase {
+        const char* name;
+        SimHardwareFaultToggles toggles;
+        FaultCode expected_fault;
+    };
+
+    const std::array<FaultToggleCase, 3> cases{{
+        {"drop_bus", SimHardwareFaultToggles{.drop_bus = true}, FaultCode::BUS_TIMEOUT},
+        {"low_voltage", SimHardwareFaultToggles{.low_voltage = true}, FaultCode::MOTOR_FAULT},
+        {"forced_unstable_contacts",
+         SimHardwareFaultToggles{.forced_contacts = std::array<bool, kNumLegs>{true, false, true, false, false, false}},
+         FaultCode::TIP_OVER},
+    }};
+
+    for (const auto& fault_case : cases) {
+        auto bridge = std::make_unique<SimHardwareBridge>();
+        auto estimator = std::make_unique<CapturingEstimator>();
+        auto* estimator_raw = estimator.get();
+
+        control_config::ControlConfig cfg{};
+        cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+        cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+        cfg.freshness.estimator.require_nonzero_sample_id = false;
+        cfg.freshness.estimator.require_monotonic_sample_id = false;
+        cfg.freshness.intent.require_nonzero_sample_id = false;
+        cfg.freshness.intent.require_monotonic_sample_id = false;
+        RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, cfg);
+
+        if (!expect(runtime.init(), std::string{"init should succeed (sim fault toggles "} + mode_label + "/" +
+                                     fault_case.name + ")")) {
+            return false;
+        }
+
+        const auto evaluate_with = [&](const SimHardwareFaultToggles& toggles, RobotMode mode) {
+            runtime.setSimFaultToggles(toggles);
+            MotionIntent intent{};
+            intent.requested_mode = mode;
+            intent.timestamp_us = now_us();
+            runtime.setMotionIntentForTest(intent);
+            runControlStep(runtime);
+            const ControlStatus status = runtime.getStatus();
+            return std::pair{status, estimator_raw->last_raw};
+        };
+
+        const auto [baseline_status, baseline_raw] = evaluate_with(SimHardwareFaultToggles{}, injection_mode);
+        if (!expect(baseline_status.active_fault == FaultCode::NONE,
+                    std::string{"baseline should be fault-free before "} + fault_case.name + " in " + mode_label)) {
+            return false;
+        }
+        if (!expect(baseline_status.active_mode == injection_mode,
+                    std::string{"baseline should honor "} + mode_label + " before " + fault_case.name)) {
+            return false;
+        }
+
+        const auto [fault_status, fault_raw] = evaluate_with(fault_case.toggles, injection_mode);
+        if (!expect(fault_status.active_fault == fault_case.expected_fault,
+                    std::string{"fault toggle should trip expected fault for "} + fault_case.name + " in " +
+                        mode_label)) {
+            return false;
+        }
+        if (!expect(fault_status.active_mode == RobotMode::FAULT,
+                    std::string{"active mode should transition to FAULT for "} + fault_case.name + " in " +
+                        mode_label)) {
+            return false;
+        }
+
+        const auto [latched_status, latched_raw] = evaluate_with(SimHardwareFaultToggles{}, injection_mode);
+        if (!expect(latched_status.active_fault == fault_case.expected_fault,
+                    std::string{"fault should remain latched after clearing toggle for "} + fault_case.name +
+                        " in " + mode_label)) {
+            return false;
+        }
+        if (!expect(latched_status.active_mode == RobotMode::FAULT,
+                    std::string{"latched fault should keep active mode in FAULT for "} + fault_case.name + " in " +
+                        mode_label)) {
+            return false;
+        }
+
+        SafetySupervisor local_supervisor{};
+        MotionIntent active_mode_intent{};
+        active_mode_intent.requested_mode = injection_mode;
+        active_mode_intent.timestamp_us = now_us();
+        MotionIntent safe_idle_intent{};
+        safe_idle_intent.requested_mode = RobotMode::SAFE_IDLE;
+        safe_idle_intent.timestamp_us = now_us();
+
+        SafetyState latched_safety = local_supervisor.evaluate(
+            fault_raw, fault_raw, active_mode_intent, SafetySupervisor::FreshnessInputs{true, true});
+        if (!expect(latched_safety.active_fault == fault_case.expected_fault,
+                    std::string{"safety should report expected active fault for "} + fault_case.name + " in " +
+                        mode_label) ||
+            !expect(latched_safety.fault_lifecycle == FaultLifecycle::LATCHED,
+                    std::string{"safety lifecycle should be LATCHED for "} + fault_case.name + " in " + mode_label) ||
+            !expect(latched_safety.inhibit_motion,
+                    std::string{"fault should inhibit motion for "} + fault_case.name + " in " + mode_label) ||
+            !expect(latched_safety.torque_cut,
+                    std::string{"fault should request torque cut for "} + fault_case.name + " in " + mode_label)) {
+            return false;
+        }
+
+        SafetyState held_latched = local_supervisor.evaluate(
+            latched_raw, latched_raw, active_mode_intent, SafetySupervisor::FreshnessInputs{true, true});
+        if (!expect(held_latched.active_fault == fault_case.expected_fault,
+                    std::string{"safety should hold latched fault until SAFE_IDLE for "} + fault_case.name + " in " +
+                        mode_label) ||
+            !expect(held_latched.fault_lifecycle == FaultLifecycle::LATCHED,
+                    std::string{"safety lifecycle should remain LATCHED while not in SAFE_IDLE for "} +
+                        fault_case.name + " in " + mode_label) ||
+            !expect(held_latched.inhibit_motion,
+                    std::string{"latched safety should continue inhibiting motion for "} + fault_case.name + " in " +
+                        mode_label) ||
+            !expect(held_latched.torque_cut,
+                    std::string{"latched safety should keep torque-cut asserted for "} + fault_case.name + " in " +
+                        mode_label)) {
+            return false;
+        }
+
+        SafetyState recovering = local_supervisor.evaluate(
+            latched_raw, latched_raw, safe_idle_intent, SafetySupervisor::FreshnessInputs{true, true});
+        if (!expect(recovering.active_fault == fault_case.expected_fault,
+                    std::string{"fault should remain active while recovering for "} + fault_case.name + " in " +
+                        mode_label) ||
+            !expect(recovering.fault_lifecycle == FaultLifecycle::RECOVERING,
+                    std::string{"safety should enter RECOVERING after SAFE_IDLE for "} + fault_case.name + " in " +
+                        mode_label)) {
+            return false;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds{550});
+        const SafetyState cleared = local_supervisor.evaluate(
+            latched_raw, latched_raw, safe_idle_intent, SafetySupervisor::FreshnessInputs{true, true});
+        if (!expect(cleared.active_fault == FaultCode::NONE,
+                    std::string{"fault should clear after recovery hold for "} + fault_case.name + " in " +
+                        mode_label) ||
+            !expect(cleared.fault_lifecycle == FaultLifecycle::ACTIVE,
+                    std::string{"fault lifecycle should return ACTIVE after recovery for "} + fault_case.name +
+                        " in " + mode_label) ||
+            !expect(!cleared.torque_cut,
+                    std::string{"torque-cut should clear after recovery for "} + fault_case.name + " in " +
+                        mode_label)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -525,6 +675,14 @@ int main() {
     }
 
     if (!runMixedIntentPublisherSampleIdCase()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runSimFaultToggleLifecycleCase(RobotMode::WALK)) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runSimFaultToggleLifecycleCase(RobotMode::STAND)) {
         return EXIT_FAILURE;
     }
 
