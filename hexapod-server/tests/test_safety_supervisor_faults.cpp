@@ -3,7 +3,9 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <string_view>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -278,6 +280,197 @@ bool testRecoveryRequiresBothConditionsAndHoldTime() {
                   "lifecycle should return ACTIVE after clear");
 }
 
+struct LifecycleFaultCase {
+    std::string_view name;
+    FaultCode expected_fault;
+    RobotMode trip_mode;
+    SafetySupervisor::FreshnessInputs trip_freshness;
+    void (*mutate)(RobotState& raw, RobotState& est);
+};
+
+void setBusTimeoutFault(RobotState& raw, RobotState&) {
+    raw.bus_ok = false;
+}
+
+void setMotorFault(RobotState& raw, RobotState&) {
+    raw.current = 999.0f;
+}
+
+void setCommandTimeoutFault(RobotState&, RobotState&) {}
+
+void setEstimatorInvalidFault(RobotState& raw, RobotState&) {
+    raw.foot_contacts = {false, false, false, false, false, false};
+}
+
+void setJointLimitFault(RobotState&, RobotState& est) {
+    est.sample_id = 1;
+    est.leg_states[0].joint_state[0].pos_rad = AngleRad{0.0};
+}
+
+bool testFaultLifecycleTransitionsAndTripMetadataTableDriven() {
+    const std::vector<LifecycleFaultCase> cases{
+        LifecycleFaultCase{
+            .name = "BUS_TIMEOUT",
+            .expected_fault = FaultCode::BUS_TIMEOUT,
+            .trip_mode = RobotMode::WALK,
+            .trip_freshness = SafetySupervisor::FreshnessInputs{true, true},
+            .mutate = setBusTimeoutFault,
+        },
+        LifecycleFaultCase{
+            .name = "MOTOR_FAULT",
+            .expected_fault = FaultCode::MOTOR_FAULT,
+            .trip_mode = RobotMode::WALK,
+            .trip_freshness = SafetySupervisor::FreshnessInputs{true, true},
+            .mutate = setMotorFault,
+        },
+        LifecycleFaultCase{
+            .name = "COMMAND_TIMEOUT",
+            .expected_fault = FaultCode::COMMAND_TIMEOUT,
+            .trip_mode = RobotMode::WALK,
+            .trip_freshness = SafetySupervisor::FreshnessInputs{true, false},
+            .mutate = setCommandTimeoutFault,
+        },
+        LifecycleFaultCase{
+            .name = "ESTIMATOR_INVALID",
+            .expected_fault = FaultCode::ESTIMATOR_INVALID,
+            .trip_mode = RobotMode::WALK,
+            .trip_freshness = SafetySupervisor::FreshnessInputs{false, true},
+            .mutate = setEstimatorInvalidFault,
+        },
+        LifecycleFaultCase{
+            .name = "JOINT_LIMIT",
+            .expected_fault = FaultCode::JOINT_LIMIT,
+            .trip_mode = RobotMode::WALK,
+            .trip_freshness = SafetySupervisor::FreshnessInputs{true, true},
+            .mutate = setJointLimitFault,
+        },
+    };
+
+    for (const LifecycleFaultCase& test_case : cases) {
+        SafetySupervisor supervisor;
+        RobotState raw = nominalRaw();
+        RobotState est = nominalEstimated();
+
+        if (test_case.expected_fault == FaultCode::JOINT_LIMIT) {
+            test_case.mutate(raw, est);
+            const SafetyState baseline = supervisor.evaluate(
+                raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+            if (!expect(baseline.active_fault == FaultCode::NONE, "joint-limit baseline sample should be clear")) {
+                return false;
+            }
+            est.sample_id = 2;
+            est.leg_states[0].joint_state[0].pos_rad = AngleRad{2.0};
+        } else {
+            test_case.mutate(raw, est);
+        }
+
+        const MotionIntent trip_intent =
+            test_case.trip_freshness.intent_valid ? intentNow(test_case.trip_mode) : staleIntent(test_case.trip_mode);
+
+        const SafetyState latched = supervisor.evaluate(raw, est, trip_intent, test_case.trip_freshness);
+        if (!expect(latched.active_fault == test_case.expected_fault,
+                    "table-driven trip should latch expected fault code")) {
+            return false;
+        }
+        if (!expect(latched.fault_lifecycle == FaultLifecycle::LATCHED,
+                    "table-driven trip should enter LATCHED lifecycle")) {
+            return false;
+        }
+        if (!expect(latched.active_fault_trip_count == 1,
+                    "first trip should set active_fault_trip_count to 1")) {
+            return false;
+        }
+        if (!expect(!latched.active_fault_last_trip_us.isZero(),
+                    "first trip should stamp active_fault_last_trip_us")) {
+            return false;
+        }
+
+        raw = nominalRaw();
+        est = nominalEstimated();
+        const SafetyState recovering = supervisor.evaluate(
+            raw, est, intentNow(RobotMode::SAFE_IDLE), SafetySupervisor::FreshnessInputs{true, true});
+        if (!expect(recovering.fault_lifecycle == FaultLifecycle::RECOVERING,
+                    "clear path should transition LATCHED -> RECOVERING")) {
+            return false;
+        }
+        if (!expect(recovering.active_fault == test_case.expected_fault,
+                    "fault should remain set while RECOVERING hold is active")) {
+            return false;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(450));
+        const SafetyState pre_hold = supervisor.evaluate(
+            raw, est, intentNow(RobotMode::SAFE_IDLE), SafetySupervisor::FreshnessInputs{true, true});
+        if (!expect(pre_hold.fault_lifecycle == FaultLifecycle::RECOVERING,
+                    "fault should remain RECOVERING before hold window elapses")) {
+            return false;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        const SafetyState near_boundary = supervisor.evaluate(
+            raw, est, intentNow(RobotMode::SAFE_IDLE), SafetySupervisor::FreshnessInputs{true, true});
+        if (!expect(near_boundary.fault_lifecycle == FaultLifecycle::RECOVERING,
+                    "fault should remain RECOVERING at edge timing boundary before 500ms hold")) {
+            return false;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(70));
+        const SafetyState cleared = supervisor.evaluate(
+            raw, est, intentNow(RobotMode::SAFE_IDLE), SafetySupervisor::FreshnessInputs{true, true});
+        if (!expect(cleared.active_fault == FaultCode::NONE,
+                    "fault should clear after hold window is exceeded")) {
+            return false;
+        }
+        if (!expect(cleared.fault_lifecycle == FaultLifecycle::ACTIVE,
+                    "lifecycle should return to ACTIVE after clear")) {
+            return false;
+        }
+        if (!expect(cleared.active_fault_trip_count == 0,
+                    "clear should zero active fault trip counter for NONE state")) {
+            return false;
+        }
+        if (!expect(cleared.active_fault_last_trip_us.isZero(),
+                    "clear should zero active fault last-trip timestamp for NONE state")) {
+            return false;
+        }
+
+        raw = nominalRaw();
+        est = nominalEstimated();
+        if (test_case.expected_fault == FaultCode::JOINT_LIMIT) {
+            est.sample_id = 100;
+            est.leg_states[0].joint_state[0].pos_rad = AngleRad{0.0};
+            const SafetyState rebaseline = supervisor.evaluate(
+                raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+            if (!expect(rebaseline.active_fault == FaultCode::NONE,
+                        "joint-limit rebaseline should be clear before second trip")) {
+                return false;
+            }
+            est.sample_id = 101;
+            est.leg_states[0].joint_state[0].pos_rad = AngleRad{2.0};
+        } else {
+            test_case.mutate(raw, est);
+        }
+
+        const MotionIntent retrip_intent =
+            test_case.trip_freshness.intent_valid ? intentNow(test_case.trip_mode) : staleIntent(test_case.trip_mode);
+        const SafetyState retripped = supervisor.evaluate(raw, est, retrip_intent, test_case.trip_freshness);
+        if (!expect(retripped.active_fault == test_case.expected_fault,
+                    "second trip should latch same fault class")) {
+            return false;
+        }
+        if (!expect(retripped.active_fault_trip_count == 2,
+                    "fault-class trip counter should increment across clears")) {
+            return false;
+        }
+        if (!expect(retripped.active_fault_last_trip_us.value >= latched.active_fault_last_trip_us.value,
+                    "fault-class timestamp should update on second trip")) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -291,7 +484,8 @@ int main() {
         !testJointDiscontinuityTripsSafety() ||
         !testLatchedRemainsWhenIntentNotSafeIdle() ||
         !testLatchedRemainsWhenIntentStale() ||
-        !testRecoveryRequiresBothConditionsAndHoldTime()) {
+        !testRecoveryRequiresBothConditionsAndHoldTime() ||
+        !testFaultLifecycleTransitionsAndTripMetadataTableDriven()) {
         return EXIT_FAILURE;
     }
 
