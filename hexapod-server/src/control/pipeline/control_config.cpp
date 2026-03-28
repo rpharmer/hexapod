@@ -103,6 +103,7 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.motion_limiter.body_angular_accel_limit_radps2.x = config.motionBodyAngularAccelLimitXRadps2;
     parsed.motion_limiter.body_angular_accel_limit_radps2.y = config.motionBodyAngularAccelLimitYRadps2;
     parsed.motion_limiter.body_angular_accel_limit_radps2.z = config.motionBodyAngularAccelLimitZRadps2;
+    parsed.motion_limiter.body_yaw_rate_limit_radps = config.motionBodyYawRateLimitRadps;
     parsed.motion_limiter.foot_velocity_limit_mps = config.motionFootVelocityLimitMps;
     parsed.motion_limiter.foot_accel_limit_mps2 = config.motionFootAccelLimitMps2;
     parsed.motion_limiter.joint_soft_velocity_limit_radps = config.motionJointSoftVelocityLimitRadps;

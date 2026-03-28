@@ -119,8 +119,8 @@ MotionLimiterOutput MotionLimiter::update(const RobotState& estimated,
             output.diagnostics.constraint_reason = kConstraintReasonSlewRate;
         }
 
-        const double yaw_limit = safePositive(config_.body_angular_accel_limit_radps2.z, 1e-6);
-        const double max_yaw_step = yaw_limit * dt_s;
+        const double yaw_rate_limit = safePositive(config_.body_yaw_rate_limit_radps, 1e-6);
+        const double max_yaw_step = yaw_rate_limit * dt_s;
         const double previous_yaw = previous_limited_intent_.body_pose_setpoint.orientation_rad.z;
         const double requested_yaw = output.limited_intent.body_pose_setpoint.orientation_rad.z;
         const double limited_yaw = clampDelta(previous_yaw, requested_yaw, max_yaw_step);
