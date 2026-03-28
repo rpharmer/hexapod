@@ -48,6 +48,8 @@ public:
                               const LegTargets* leg_targets = nullptr);
 
     void report(const ControlStatus& status,
+                const RobotState& estimated_state,
+                const SafetyState& safety_state,
                 const std::optional<BridgeCommandResultMetadata>& bridge_result,
                 uint64_t loops,
                 uint64_t avg_control_dt_us,

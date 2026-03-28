@@ -41,6 +41,8 @@ int main() {
                 "neutral stance should estimate near-zero roll") ||
         !expect(std::abs(first_est.body_pose_state.orientation_rad.y) < 1e-6,
                 "neutral stance should estimate near-zero pitch") ||
+        !expect(first_est.has_body_pose_state,
+                "ground-plane estimate should mark body pose as available") ||
         !expect(first_est.body_pose_state.body_trans_m.z > 0.0,
                 "neutral stance should estimate body above the ground plane")) {
         return EXIT_FAILURE;
@@ -66,7 +68,9 @@ int main() {
 
     const RobotState stale_est = estimator.update(no_contact_stale);
     if (!expect(std::abs(stale_est.body_pose_state.body_trans_m.z) < 1e-9,
-                "stale no-contact window should clear ground estimate")) {
+                "stale no-contact window should clear ground estimate") ||
+        !expect(!stale_est.has_body_pose_state,
+                "without an IMU sample or ground-plane solve, body pose should be unavailable")) {
         return EXIT_FAILURE;
     }
 
