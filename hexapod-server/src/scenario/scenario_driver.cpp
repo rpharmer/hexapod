@@ -494,7 +494,6 @@ public:
         : robot_(robot), logger_(std::move(logger)) {
         current_intent_.requested_mode = RobotMode::SAFE_IDLE;
         current_intent_.gait = GaitType::TRIPOD;
-        current_intent_.sample_id = next_intent_sample_id_++;
     }
 
     bool run(const ScenarioDefinition& scenario) {
@@ -511,8 +510,7 @@ public:
             }
 
             if (scenario.refresh_motion_intent) {
-                current_intent_.timestamp_us = now_us();
-                robot_.setMotionIntent(current_intent_);
+                publishIntent(current_intent_);
             }
 
             const auto target_time = start + std::chrono::milliseconds(elapsed_ms + scenario.tick_ms);
@@ -545,7 +543,6 @@ private:
 
     void applyMotionEvent(const ScenarioDefinition& scenario, uint64_t elapsed_ms, const ScenarioEvent& event) {
         MotionIntent target_intent = makeMotionIntent(event.motion);
-        target_intent.sample_id = next_intent_sample_id_++;
         if (scenario.motion_ramp_ms > 0 && isRampEligible(current_intent_, target_intent)) {
             ramp_active_ = true;
             ramp_start_intent_ = current_intent_;
@@ -555,7 +552,7 @@ private:
         } else {
             current_intent_ = target_intent;
             ramp_active_ = false;
-            robot_.setMotionIntent(current_intent_);
+            publishIntent(current_intent_);
         }
 
         if (logger_) {
@@ -576,12 +573,18 @@ private:
                              ? (static_cast<double>(elapsed_in_ramp_ms) / duration_ms)
                              : 1.0;
         current_intent_ = blendMotionIntent(ramp_start_intent_, ramp_target_intent_, t);
-        robot_.setMotionIntent(current_intent_);
+        publishIntent(current_intent_);
 
         if (elapsed_ms >= ramp_end_ms_) {
             current_intent_ = ramp_target_intent_;
             ramp_active_ = false;
         }
+    }
+
+    void publishIntent(MotionIntent& intent) {
+        intent.sample_id = next_intent_sample_id_++;
+        intent.timestamp_us = now_us();
+        robot_.setMotionIntent(intent);
     }
 
     RobotControl& robot_;

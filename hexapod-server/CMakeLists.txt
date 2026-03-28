@@ -319,6 +319,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     hexapod_server_add_test(test_scenario_driver_validation scenario_driver_validation
         tests/test_scenario_driver_validation.cpp
     )
+    hexapod_server_add_test(test_scenario_driver_refresh_freshness scenario_driver_refresh_freshness
+        tests/test_scenario_driver_refresh_freshness.cpp
+    )
     hexapod_server_add_test(test_scenario_autonomy_outcomes scenario_autonomy_outcomes
         tests/test_scenario_autonomy_outcomes.cpp
     )
