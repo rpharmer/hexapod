@@ -20,6 +20,23 @@ bool expect(bool condition, const std::string& message) {
     return true;
 }
 
+bool exactlyEqual(const Vec3& lhs, const Vec3& rhs) {
+    return lhs.x == rhs.x && lhs.y == rhs.y && lhs.z == rhs.z;
+}
+
+bool exactlyEqual(const MotionIntent& lhs, const MotionIntent& rhs) {
+    return lhs.requested_mode == rhs.requested_mode &&
+           lhs.gait == rhs.gait &&
+           lhs.speed_mps.value == rhs.speed_mps.value &&
+           lhs.heading_rad.value == rhs.heading_rad.value &&
+           exactlyEqual(lhs.body_pose_setpoint.orientation_rad, rhs.body_pose_setpoint.orientation_rad) &&
+           exactlyEqual(lhs.body_pose_setpoint.angular_velocity_radps, rhs.body_pose_setpoint.angular_velocity_radps) &&
+           exactlyEqual(lhs.body_pose_setpoint.body_trans_m, rhs.body_pose_setpoint.body_trans_m) &&
+           exactlyEqual(lhs.body_pose_setpoint.body_trans_mps, rhs.body_pose_setpoint.body_trans_mps) &&
+           lhs.sample_id == rhs.sample_id &&
+           lhs.timestamp_us.value == rhs.timestamp_us.value;
+}
+
 RobotState nominalEstimatedState() {
     RobotState est{};
     est.timestamp_us = now_us();
@@ -232,6 +249,46 @@ bool unit_motion_limiter_scales_with_dt_and_stays_bounded() {
                   "larger dt should allow a proportionally larger bounded step");
 }
 
+bool unit_motion_limiter_replay_is_deterministic_for_fixed_dt() {
+    control_config::MotionLimiterConfig limiter_cfg{};
+    limiter_cfg.foot_velocity_limit_mps = 0.05;
+    MotionLimiter first_pass_limiter{limiter_cfg};
+    MotionLimiter second_pass_limiter{limiter_cfg};
+
+    RobotState est = nominalEstimatedState();
+    SafetyState safety{};
+    RuntimeGaitPolicy gait_policy{};
+    const DurationSec fixed_dt{0.02};
+
+    std::array<MotionIntent, 4> sequence{};
+    sequence[0] = walkingIntent();
+    sequence[0].body_pose_setpoint.body_trans_m = Vec3{0.00, 0.00, 0.00};
+    sequence[1] = sequence[0];
+    sequence[1].body_pose_setpoint.body_trans_m = Vec3{0.20, -0.08, 0.03};
+    sequence[1].body_pose_setpoint.orientation_rad.z = 0.6;
+    sequence[2] = sequence[1];
+    sequence[2].body_pose_setpoint.body_trans_m = Vec3{0.50, -0.08, 0.03};
+    sequence[2].body_pose_setpoint.body_trans_mps = Vec3{0.40, -0.20, 0.10};
+    sequence[3] = sequence[2];
+    sequence[3].body_pose_setpoint.angular_velocity_radps = Vec3{0.5, -0.3, 2.0};
+
+    std::array<MotionLimiterOutput, 4> first_outputs{};
+    std::array<MotionLimiterOutput, 4> second_outputs{};
+    for (size_t i = 0; i < sequence.size(); ++i) {
+        first_outputs[i] = first_pass_limiter.update(est, sequence[i], gait_policy, safety, fixed_dt);
+        second_outputs[i] = second_pass_limiter.update(est, sequence[i], gait_policy, safety, fixed_dt);
+    }
+
+    for (size_t i = 0; i < sequence.size(); ++i) {
+        if (!expect(exactlyEqual(first_outputs[i].limited_intent, second_outputs[i].limited_intent),
+                    "identical intent replay with fixed dt should produce identical limited_intent")) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool integration_gait_scheduler_progress_tracks_elapsed_dt() {
     GaitScheduler scheduler;
     RobotState est = nominalEstimatedState();
@@ -276,6 +333,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!unit_motion_limiter_scales_with_dt_and_stays_bounded()) {
+        return EXIT_FAILURE;
+    }
+    if (!unit_motion_limiter_replay_is_deterministic_for_fixed_dt()) {
         return EXIT_FAILURE;
     }
     if (!integration_gait_scheduler_progress_tracks_elapsed_dt()) {
