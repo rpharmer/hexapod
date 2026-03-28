@@ -313,5 +313,65 @@ int main() {
         return EXIT_FAILURE;
     }
 
+
+    // Subcase 5: insufficiently diverse / near-collinear support points should degrade gracefully.
+    SimpleEstimator sparse_support_estimator{};
+    RobotState sparse_support = makeNeutralRaw(20, 4'000'000);
+    sparse_support.foot_contacts = {true, false, true, false, false, false};
+    sparse_support.leg_states[0].joint_state[COXA].pos_rad = AngleRad{0.12};
+    sparse_support.leg_states[2].joint_state[COXA].pos_rad = AngleRad{0.10};
+    const RobotState sparse_support_est = sparse_support_estimator.update(sparse_support);
+    if (!expect(!sparse_support_est.has_inferred_body_pose_state,
+                "two-contact support set should not claim inferred plane availability") ||
+        !expect(!sparse_support_est.has_body_pose_state,
+                "aggregate availability should remain false when support set is insufficient") ||
+        !expect(allFiniteBodyPose(sparse_support_est.body_pose_state),
+                "insufficient support should not produce non-finite orientation or translation outputs")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState sparse_support_repeat = sparse_support;
+    sparse_support_repeat.sample_id = 21;
+    sparse_support_repeat.timestamp_us = TimePointUs{4'050'000};
+    sparse_support_repeat.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{0.01};
+    const RobotState sparse_support_repeat_est = sparse_support_estimator.update(sparse_support_repeat);
+    if (!expect(!sparse_support_repeat_est.has_inferred_body_pose_state &&
+                    !sparse_support_repeat_est.has_body_pose_state,
+                "repeated insufficient support should not flip availability true") ||
+        !expect(allFiniteBodyPose(sparse_support_repeat_est.body_pose_state),
+                "repeated insufficient support should keep pose outputs finite")) {
+        return EXIT_FAILURE;
+    }
+
+    SimpleEstimator near_collinear_estimator{};
+    RobotState near_collinear_a = makeNeutralRaw(30, 5'000'000);
+    near_collinear_a.foot_contacts = {true, false, true, false, true, false};
+    near_collinear_a.leg_states[0].joint_state[COXA].pos_rad = AngleRad{0.08};
+    near_collinear_a.leg_states[2].joint_state[COXA].pos_rad = AngleRad{0.075};
+    near_collinear_a.leg_states[4].joint_state[COXA].pos_rad = AngleRad{0.07};
+    near_collinear_a.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{-0.02};
+    near_collinear_a.leg_states[2].joint_state[FEMUR].pos_rad = AngleRad{-0.015};
+    near_collinear_a.leg_states[4].joint_state[FEMUR].pos_rad = AngleRad{-0.01};
+    const RobotState near_collinear_a_est = near_collinear_estimator.update(near_collinear_a);
+
+    RobotState near_collinear_b = near_collinear_a;
+    near_collinear_b.sample_id = 31;
+    near_collinear_b.timestamp_us = TimePointUs{5'020'000};
+    near_collinear_b.leg_states[0].joint_state[TIBIA].pos_rad = AngleRad{0.01};
+    near_collinear_b.leg_states[2].joint_state[TIBIA].pos_rad = AngleRad{0.008};
+    near_collinear_b.leg_states[4].joint_state[TIBIA].pos_rad = AngleRad{0.006};
+    const RobotState near_collinear_b_est = near_collinear_estimator.update(near_collinear_b);
+
+    if (!expect(allFiniteBodyPose(near_collinear_a_est.body_pose_state) &&
+                    allFiniteBodyPose(near_collinear_b_est.body_pose_state),
+                "near-collinear support should not yield non-finite orientation outputs") ||
+        !expect(near_collinear_a_est.has_inferred_body_pose_state ==
+                    near_collinear_b_est.has_inferred_body_pose_state,
+                "near-collinear support with small perturbations should not flap inferred availability") ||
+        !expect(near_collinear_a_est.has_body_pose_state == near_collinear_b_est.has_body_pose_state,
+                "near-collinear support with small perturbations should not flap aggregate availability")) {
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }
