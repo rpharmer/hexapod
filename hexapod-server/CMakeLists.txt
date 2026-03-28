@@ -275,6 +275,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     hexapod_server_add_test(test_control_pipeline_sanity control_pipeline_output_sanity
         tests/test_control_pipeline_sanity.cpp
     )
+    hexapod_server_add_test(test_control_replay_harness control_replay_harness
+        tests/test_control_replay_harness.cpp
+    )
     hexapod_server_add_test(test_hardware_bridge_transport hardware_bridge_transport_behavior
         tests/test_hardware_bridge_transport_main.cpp
         tests/test_hardware_bridge_transport_handshake.cpp
