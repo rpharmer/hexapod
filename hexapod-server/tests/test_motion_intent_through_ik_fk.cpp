@@ -4,6 +4,7 @@
 #include "geometry_config.hpp"
 #include "leg_fk.hpp"
 #include "leg_ik.hpp"
+#include "stability_tracker.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -262,6 +263,58 @@ bool ikFkChainTracksBodyTargets() {
     return expect(finiteJointTargets(joints), "ik output should stay finite for reachable body targets");
 }
 
+bool ikMaintainsCoxaContinuityAcrossAtanBranchCut() {
+    const HexapodGeometry geometry = defaultHexapodGeometry();
+    LegIK ik(geometry);
+
+    RobotState est{};
+    SafetyState safety{};
+    safety.leg_enabled.fill(true);
+
+    const int leg = 0;
+    const LegGeometry& leg_geo = geometry.legGeometry[leg];
+    LegState previous_joint{};
+    previous_joint.joint_state[0].pos_rad = AngleRad{kPi - 0.01};
+    previous_joint.joint_state[1].pos_rad = AngleRad{-0.30};
+    previous_joint.joint_state[2].pos_rad = AngleRad{-0.90};
+    est.leg_states[leg] = leg_geo.servo.toServoAngles(previous_joint);
+
+    const Vec3 foot_leg_frame{-0.05, -1e-4, -0.08};
+    const Vec3 relative_to_body = Mat3::rotZ(leg_geo.mountAngle.value) * foot_leg_frame;
+    LegTargets targets{};
+    targets.feet[leg].pos_body_m = leg_geo.bodyCoxaOffset + relative_to_body;
+
+    const JointTargets solved = ik.solve(est, targets, safety);
+    const double previous_servo = est.leg_states[leg].joint_state[0].pos_rad.value;
+    const double solved_servo = solved.leg_states[leg].joint_state[0].pos_rad.value;
+    const double delta = std::abs(solved_servo - previous_servo);
+
+    return expect(delta < 0.5,
+                  "ik coxa command should stay continuous near +/-pi branch cut");
+}
+
+bool stabilityTrackerUsesJointSpaceForServoFeedbackState() {
+    const HexapodGeometry geometry = defaultHexapodGeometry();
+    RobotState est{};
+    est.foot_contacts = {true, true, true, true, true, true};
+
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        LegState joint_state{};
+        joint_state.joint_state[0].pos_rad = AngleRad{0.0};
+        joint_state.joint_state[1].pos_rad = AngleRad{-0.6};
+        joint_state.joint_state[2].pos_rad = AngleRad{-0.8};
+        est.leg_states[leg] = geometry.legGeometry[leg].servo.toServoAngles(joint_state);
+    }
+
+    const StabilityAssessment stability = assessStability(est);
+    return expect(stability.support_contact_count == kNumLegs,
+                  "stability tracker should count all servo-feedback contacts") &&
+           expect(stability.has_support_polygon,
+                  "stability tracker should produce support polygon from servo-feedback state") &&
+           expect(stability.com_inside_support_polygon,
+                  "servo-feedback stance should keep COM inside support polygon");
+}
+
 bool controlPipelineProducesStableOutputs() {
     ControlPipeline pipeline;
 
@@ -304,6 +357,12 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!ikFkChainTracksBodyTargets()) {
+        return EXIT_FAILURE;
+    }
+    if (!ikMaintainsCoxaContinuityAcrossAtanBranchCut()) {
+        return EXIT_FAILURE;
+    }
+    if (!stabilityTrackerUsesJointSpaceForServoFeedbackState()) {
         return EXIT_FAILURE;
     }
     if (!controlPipelineProducesStableOutputs()) {
