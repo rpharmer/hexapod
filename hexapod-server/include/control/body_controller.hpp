@@ -33,6 +33,11 @@ public:
     }
 
 private:
+    struct LevelHoldFilterState {
+        bool initialized{false};
+        std::array<double, 2> roll_pitch_rad{};
+    };
+
     std::array<Vec3, kNumLegs> nominalStance() const;
     Vec3 clampToReachEnvelope(int leg, const Vec3& target_body) const;
 
@@ -40,4 +45,5 @@ private:
     FootholdPlanner foothold_planner_{geometry_};
     control_config::MotionLimiterConfig limiter_config_{};
     MotionLimiterTelemetry last_motion_limiter_telemetry_{};
+    LevelHoldFilterState level_hold_filter_state_{};
 };

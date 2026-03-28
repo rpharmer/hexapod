@@ -21,6 +21,11 @@ bool nearlyEqual(double lhs, double rhs, double eps = 1e-6) {
     return std::abs(lhs - rhs) <= eps;
 }
 
+double legVelocityMagnitude(const FootTarget& target) {
+    const Vec3 v = target.vel_body_mps;
+    return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
 } // namespace
 
 int main() {
@@ -159,29 +164,61 @@ int main() {
     level_hold_intent.body_pose_setpoint.body_trans_m.z = 0.20;
     level_hold_intent.body_pose_setpoint.orientation_rad = Vec3{0.0, 0.0, 0.0};
 
+    SafetyState poor_support_safety = safety;
+    poor_support_safety.support_contact_count = 2;
+    poor_support_safety.stability_margin_m = 0.002;
+
+    SafetyState good_support_safety = safety;
+    good_support_safety.support_contact_count = 4;
+    good_support_safety.stability_margin_m = 0.03;
+
     RobotState level_est{};
     level_est.body_pose_state.orientation_rad = Vec3{0.0, 0.0, 0.0};
     level_est.has_body_pose_state = true;
-    const LegTargets level_targets = controller.update(level_est, level_hold_intent, gait, safety);
+    const LegTargets level_targets = controller.update(level_est, level_hold_intent, gait, good_support_safety);
 
     RobotState tilted_est{};
     tilted_est.body_pose_state.orientation_rad = Vec3{0.12, -0.10, 0.0};
     tilted_est.has_body_pose_state = true;
-    const LegTargets corrected_targets = controller.update(tilted_est, level_hold_intent, gait, safety);
+    const LegTargets poor_support_targets = controller.update(tilted_est, level_hold_intent, gait, poor_support_safety);
 
     double total_delta = 0.0;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        const Vec3 delta = poor_support_targets.feet[leg].pos_body_m - level_targets.feet[leg].pos_body_m;
+        total_delta += std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+    }
+    if (!expect(total_delta < 1e-6,
+                "level hold should be disabled with inferred pose but poor support quality")) {
+        return EXIT_FAILURE;
+    }
+
+    const LegTargets corrected_targets = controller.update(tilted_est, level_hold_intent, gait, good_support_safety);
+    total_delta = 0.0;
     for (int leg = 0; leg < kNumLegs; ++leg) {
         const Vec3 delta = corrected_targets.feet[leg].pos_body_m - level_targets.feet[leg].pos_body_m;
         total_delta += std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
     }
     if (!expect(total_delta > 1e-4,
-                "level hold should adjust targets when estimated roll/pitch deviates from setpoint")) {
+                "level hold should engage with inferred pose when support quality is sufficient")) {
         return EXIT_FAILURE;
     }
 
     MotionIntent tilted_setpoint_intent = level_hold_intent;
     tilted_setpoint_intent.body_pose_setpoint.orientation_rad = Vec3{0.12, -0.10, 0.0};
-    const LegTargets respected_setpoint_targets = controller.update(tilted_est, tilted_setpoint_intent, gait, safety);
+    const LegTargets respected_setpoint_poor_support =
+        controller.update(tilted_est, tilted_setpoint_intent, gait, poor_support_safety);
+    total_delta = 0.0;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        const Vec3 delta = respected_setpoint_poor_support.feet[leg].pos_body_m - poor_support_targets.feet[leg].pos_body_m;
+        total_delta += std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+    }
+    if (!expect(total_delta > 1e-4,
+                "non-zero setpoints should remain effective when level hold is disabled")) {
+        return EXIT_FAILURE;
+    }
+
+    const LegTargets respected_setpoint_targets =
+        controller.update(tilted_est, tilted_setpoint_intent, gait, good_support_safety);
     total_delta = 0.0;
     for (int leg = 0; leg < kNumLegs; ++leg) {
         const Vec3 delta = respected_setpoint_targets.feet[leg].pos_body_m - corrected_targets.feet[leg].pos_body_m;
@@ -194,7 +231,8 @@ int main() {
 
     RobotState tilted_without_pose = tilted_est;
     tilted_without_pose.has_body_pose_state = false;
-    const LegTargets disabled_level_hold_targets = controller.update(tilted_without_pose, level_hold_intent, gait, safety);
+    const LegTargets disabled_level_hold_targets =
+        controller.update(tilted_without_pose, level_hold_intent, gait, good_support_safety);
     total_delta = 0.0;
     for (int leg = 0; leg < kNumLegs; ++leg) {
         const Vec3 delta = disabled_level_hold_targets.feet[leg].pos_body_m - level_targets.feet[leg].pos_body_m;
@@ -202,6 +240,17 @@ int main() {
     }
     if (!expect(total_delta < 1e-6,
                 "level hold should be disabled when body pose state is unavailable")) {
+        return EXIT_FAILURE;
+    }
+
+    double max_velocity_spike = 0.0;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        const double poor_mag = legVelocityMagnitude(poor_support_targets.feet[leg]);
+        const double good_mag = legVelocityMagnitude(corrected_targets.feet[leg]);
+        max_velocity_spike = std::max(max_velocity_spike, std::abs(good_mag - poor_mag));
+    }
+    if (!expect(max_velocity_spike < 0.5,
+                "switching confidence-aware level hold should not create large velocity spikes")) {
         return EXIT_FAILURE;
     }
 
