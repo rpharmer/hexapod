@@ -12,6 +12,8 @@ namespace hardware {
 struct ImuSample {
     EulerAnglesRad3 orientation_rad{};
     AngularVelocityRadPerSec3 angular_velocity_radps{};
+    VelocityMps3 body_linear_velocity_mps{};
+    bool has_body_linear_velocity{false};
     Vec3 linear_accel_mps2{};
     Vec3 magnetic_field_ut{};
     TimePointUs timestamp_us{};
@@ -52,6 +54,8 @@ public:
 
 private:
     std::array<std::array<double, kJointsPerLeg>, kNumLegs> simulated_joint_pos_{};
+    std::array<Vec3, kNumLegs> last_stance_points_body_m_{};
+    std::array<bool, kNumLegs> last_stance_valid_{};
     EulerAnglesRad3 last_orientation_rad_{};
     AngularVelocityRadPerSec3 last_angular_velocity_radps_{};
     std::chrono::milliseconds sample_period_;

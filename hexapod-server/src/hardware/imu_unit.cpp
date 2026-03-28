@@ -9,6 +9,9 @@
 #include <string_view>
 #include <unistd.h>
 
+#include "geometry_config.hpp"
+#include "leg_kinematics_utils.hpp"
+
 namespace hardware {
 namespace {
 
@@ -134,6 +137,8 @@ DummyImuUnit::DummyImuUnit(std::chrono::milliseconds sample_period)
 
 bool DummyImuUnit::init() {
     simulated_joint_pos_ = {};
+    last_stance_points_body_m_ = {};
+    last_stance_valid_ = {};
     last_orientation_rad_ = EulerAnglesRad3{};
     last_angular_velocity_radps_ = AngularVelocityRadPerSec3{};
     sample_counter_ = 0;
@@ -152,9 +157,11 @@ bool DummyImuUnit::read(ImuSample& out) {
     const double stride_omega = 2.0 * 3.14159265358979323846 * 0.55;
     const std::array<double, kJointsPerLeg> tau_s{0.08, 0.11, 0.13};
     const std::array<double, kJointsPerLeg> vmax_radps{2.8, 3.2, 3.8};
+    std::array<double, kNumLegs> phase_per_leg{};
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
         const double phase = stride_omega * t + kTripodLegPhaseOffset[leg];
+        phase_per_leg[leg] = phase;
         const std::array<double, kJointsPerLeg> desired{
             0.17 * std::sin(phase),
             -0.42 + 0.25 * std::sin(phase + 0.85),
@@ -218,6 +225,35 @@ bool DummyImuUnit::read(ImuSample& out) {
     out.timestamp_us = now;
     out.orientation_rad = orientation;
     out.angular_velocity_radps = angular_velocity;
+
+    const HexapodGeometry& geometry = geometry_config::activeHexapodGeometry();
+    Vec3 summed_planar_body_velocity_mps{};
+    int stance_velocity_samples = 0;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        LegState synthetic_leg{};
+        synthetic_leg.joint_state[COXA].pos_rad = AngleRad{simulated_joint_pos_[leg][COXA]};
+        synthetic_leg.joint_state[FEMUR].pos_rad = AngleRad{simulated_joint_pos_[leg][FEMUR]};
+        synthetic_leg.joint_state[TIBIA].pos_rad = AngleRad{simulated_joint_pos_[leg][TIBIA]};
+        const Vec3 current_foot_point = kinematics::footInBodyFrame(synthetic_leg, geometry.legGeometry[leg]);
+
+        const double cycle_phase = std::fmod(phase_per_leg[leg], 2.0 * 3.14159265358979323846);
+        const bool in_stance = cycle_phase < 3.14159265358979323846;
+        if (in_stance && last_stance_valid_[leg]) {
+            const Vec3 contact_delta_body = current_foot_point - last_stance_points_body_m_[leg];
+            summed_planar_body_velocity_mps =
+                summed_planar_body_velocity_mps + ((-1.0 / dt) * contact_delta_body);
+            ++stance_velocity_samples;
+        }
+        last_stance_points_body_m_[leg] = current_foot_point;
+        last_stance_valid_[leg] = in_stance;
+    }
+    if (stance_velocity_samples > 0) {
+        const Vec3 averaged_planar =
+            summed_planar_body_velocity_mps * (1.0 / static_cast<double>(stance_velocity_samples));
+        out.body_linear_velocity_mps = VelocityMps3{Vec3{averaged_planar.x, averaged_planar.y, 0.0}};
+        out.has_body_linear_velocity = true;
+    }
+
     out.linear_accel_mps2 = Vec3{
         0.42 * std::sin(2.0 * stride_omega * t) + 0.16 * angular_velocity.y,
         0.33 * std::cos(2.0 * stride_omega * t + 0.35) - 0.12 * angular_velocity.x,

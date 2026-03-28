@@ -11,6 +11,10 @@ Vec3 computeFootInBodyFrame(const LegState& leg_state, const LegGeometry& leg_ge
     return kinematics::footInBodyFrame(leg_state, leg_geometry);
 }
 
+bool isFiniteOrZero(const double value) {
+    return std::isfinite(value);
+}
+
 bool solveGroundPlane(const std::array<Vec3, kNumLegs>& points,
                       const std::array<bool, kNumLegs>& valid,
                       double& a,
@@ -80,6 +84,11 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
     est.has_body_pose_state = raw.has_body_pose_state;
     est.body_pose_state.body_trans_mps = Vec3{};
 
+    double dt_s = 0.0;
+    if (!last_leg_timestamp_.isZero() && raw.timestamp_us.value > last_leg_timestamp_.value) {
+        dt_s = static_cast<double>((raw.timestamp_us - last_leg_timestamp_).value) * 1e-6;
+    }
+
     if (!last_leg_timestamp_.isZero()) {
         const DurationUs dt_us = raw.timestamp_us - last_leg_timestamp_;
         if (dt_us.value > 0) {
@@ -107,23 +116,29 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
     last_leg_states_ = raw.leg_states;
     last_leg_timestamp_ = raw.timestamp_us;
 
-    if (raw.has_body_pose_state) {
-        est.body_pose_state.orientation_rad = raw.body_pose_state.orientation_rad;
-        est.body_pose_state.angular_velocity_radps = raw.body_pose_state.angular_velocity_radps;
-        last_body_pose_timestamp_ = raw.timestamp_us;
-        last_orientation_rad_ = est.body_pose_state.orientation_rad;
-        return est;
-    }
-
     const HexapodGeometry& geometry = geometry_config::activeHexapodGeometry();
     std::array<Vec3, kNumLegs> support_points_body_m{};
     std::array<bool, kNumLegs> support_point_valid{};
+    Vec3 summed_planar_body_velocity_mps{};
+    int stance_velocity_samples = 0;
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
         if (raw.foot_contacts[leg]) {
-            last_contact_points_body_m_[leg] =
+            const Vec3 current_contact_point =
                 computeFootInBodyFrame(raw.leg_states[leg], geometry.legGeometry[leg]);
+            last_contact_points_body_m_[leg] = current_contact_point;
             last_contact_timestamps_[leg] = raw.timestamp_us;
+
+            if (last_stance_valid_[leg] && dt_s > 0.0) {
+                const Vec3 contact_delta_body = current_contact_point - last_stance_points_body_m_[leg];
+                summed_planar_body_velocity_mps =
+                    summed_planar_body_velocity_mps + ((-1.0 / dt_s) * contact_delta_body);
+                ++stance_velocity_samples;
+            }
+            last_stance_points_body_m_[leg] = current_contact_point;
+            last_stance_valid_[leg] = true;
+        } else {
+            last_stance_valid_[leg] = false;
         }
 
         const DurationUs age = raw.timestamp_us - last_contact_timestamps_[leg];
@@ -133,13 +148,40 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
         }
     }
 
+    if (stance_velocity_samples > 0) {
+        const Vec3 averaged =
+            summed_planar_body_velocity_mps * (1.0 / static_cast<double>(stance_velocity_samples));
+        est.body_pose_state.body_trans_mps = VelocityMps3{Vec3{averaged.x, averaged.y, 0.0}};
+    } else {
+        est.body_pose_state.body_trans_mps = Vec3{};
+    }
+
+    if (raw.has_body_pose_state) {
+        est.body_pose_state.orientation_rad = raw.body_pose_state.orientation_rad;
+        est.body_pose_state.angular_velocity_radps = raw.body_pose_state.angular_velocity_radps;
+
+        const Vec3 imu_linear_velocity = raw.body_pose_state.body_trans_mps;
+        if (isFiniteOrZero(imu_linear_velocity.x) && isFiniteOrZero(imu_linear_velocity.y) &&
+            isFiniteOrZero(imu_linear_velocity.z)) {
+            Vec3 fused_linear_velocity = imu_linear_velocity;
+            if (stance_velocity_samples > 0) {
+                const Vec3 stance_linear_velocity = static_cast<Vec3>(est.body_pose_state.body_trans_mps);
+                fused_linear_velocity.x = 0.5 * (imu_linear_velocity.x + stance_linear_velocity.x);
+                fused_linear_velocity.y = 0.5 * (imu_linear_velocity.y + stance_linear_velocity.y);
+            }
+            est.body_pose_state.body_trans_mps = VelocityMps3{fused_linear_velocity};
+        }
+    }
+
     double a = 0.0;
     double b = 0.0;
     double c = 0.0;
     if (solveGroundPlane(support_points_body_m, support_point_valid, a, b, c)) {
-        est.body_pose_state.orientation_rad.x = std::atan2(-b, 1.0);
-        est.body_pose_state.orientation_rad.y = std::atan2(a, 1.0);
-        est.body_pose_state.orientation_rad.z = 0.0;
+        if (!raw.has_body_pose_state) {
+            est.body_pose_state.orientation_rad.x = std::atan2(-b, 1.0);
+            est.body_pose_state.orientation_rad.y = std::atan2(a, 1.0);
+            est.body_pose_state.orientation_rad.z = 0.0;
+        }
 
         est.body_pose_state.body_trans_m.x = 0.0;
         est.body_pose_state.body_trans_m.y = 0.0;
@@ -153,9 +195,14 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
                     static_cast<Vec3>(est.body_pose_state.orientation_rad) - last_orientation_rad_;
                 const Vec3 body_trans_delta =
                     static_cast<Vec3>(est.body_pose_state.body_trans_m) - last_body_translation_m_;
-                est.body_pose_state.angular_velocity_radps =
-                    AngularVelocityRadPerSec3{orientation_delta * (1.0 / dt_s)};
-                est.body_pose_state.body_trans_mps = VelocityMps3{body_trans_delta * (1.0 / dt_s)};
+                if (!raw.has_body_pose_state) {
+                    est.body_pose_state.angular_velocity_radps =
+                        AngularVelocityRadPerSec3{orientation_delta * (1.0 / dt_s)};
+                }
+                const Vec3 z_velocity_component = body_trans_delta * (1.0 / dt_s);
+                Vec3 planar_velocity = static_cast<Vec3>(est.body_pose_state.body_trans_mps);
+                planar_velocity.z = z_velocity_component.z;
+                est.body_pose_state.body_trans_mps = VelocityMps3{planar_velocity};
             }
         }
 

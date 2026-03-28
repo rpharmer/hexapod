@@ -70,5 +70,25 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    RobotState stance_motion_a = makeNeutralRaw(4, 2'000'000);
+    stance_motion_a.foot_contacts = {true, false, false, false, false, false};
+    const RobotState stance_motion_a_est = estimator.update(stance_motion_a);
+    (void)stance_motion_a_est;
+
+    RobotState stance_motion_b = stance_motion_a;
+    stance_motion_b.sample_id = 5;
+    stance_motion_b.timestamp_us = TimePointUs{2'050'000};
+    stance_motion_b.foot_contacts = {true, false, false, false, false, false};
+    stance_motion_b.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{0.05};
+
+    const RobotState stance_motion_b_est = estimator.update(stance_motion_b);
+    const double planar_speed =
+        std::hypot(stance_motion_b_est.body_pose_state.body_trans_mps.x,
+                   stance_motion_b_est.body_pose_state.body_trans_mps.y);
+    if (!expect(planar_speed > 1e-4,
+                "stance contact deltas should produce non-zero planar body velocity estimate")) {
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }
