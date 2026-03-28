@@ -72,7 +72,7 @@ PlannedFoothold FootholdPlanner::plan(int leg,
 
     const double swing_height = policy.per_leg[leg].swing_height_m.value;
     const double swing_lift = 0.5 * (1.0 - std::cos(2.0 * kPi * swing_alpha));
-    const double swing_z_vel = 2.0 * kPi * alpha_rate * swing_height * std::sin(2.0 * kPi * swing_alpha);
+    const double swing_z_vel = kPi * alpha_rate * swing_height * std::sin(2.0 * kPi * swing_alpha);
     foothold.pos_body_m.z += swing_lift * swing_height;
     foothold.vel_body_mps.z += swing_z_vel;
 
