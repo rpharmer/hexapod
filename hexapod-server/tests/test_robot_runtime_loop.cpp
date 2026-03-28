@@ -5,10 +5,12 @@
 
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -61,6 +63,21 @@ public:
         return raw;
     }
 
+    RobotState last_raw{};
+};
+
+class StableCapturingEstimator final : public IEstimator {
+public:
+    RobotState update(const RobotState& raw) override {
+        last_raw = raw;
+        RobotState stable = stable_estimate;
+        stable.sample_id = raw.sample_id;
+        stable.timestamp_us = raw.timestamp_us;
+        stable.valid = true;
+        return stable;
+    }
+
+    RobotState stable_estimate{};
     RobotState last_raw{};
 };
 
@@ -442,6 +459,110 @@ bool runMixedIntentPublisherSampleIdCase() {
                   "mixed intent publishers should not trigger freshness COMMAND_TIMEOUT");
 }
 
+bool runBusFaultDuringMixedStanceSwingCase() {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<StableCapturingEstimator>();
+    auto* estimator_raw = estimator.get();
+    estimator_raw->stable_estimate.foot_contacts = {true, true, true, true, true, true};
+    for (auto& leg : estimator_raw->stable_estimate.leg_states) {
+        leg.joint_state[0].pos_rad = AngleRad{0.0};
+        leg.joint_state[1].pos_rad = AngleRad{-0.6};
+        leg.joint_state[2].pos_rad = AngleRad{-0.8};
+    }
+
+    control_config::ControlConfig cfg{};
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, cfg);
+
+    if (!expect(runtime.init(), "init should succeed (bus fault during mixed stance/swing case)")) {
+        return false;
+    }
+
+    MotionIntent walk{};
+    walk.requested_mode = RobotMode::WALK;
+    walk.gait = GaitType::TRIPOD;
+    walk.speed_mps = LinearRateMps{0.60};
+    walk.heading_rad = AngleRad{0.0};
+    walk.body_pose_setpoint.body_trans_m = Vec3{0.0, 0.0, 0.20};
+
+    bool reached_mixed_stance_swing = false;
+    ControlStatus mixed_status{};
+    RobotState pre_fault_raw{};
+    for (uint64_t sample_id = 1; sample_id <= 150; ++sample_id) {
+        walk.sample_id = sample_id;
+        walk.timestamp_us = now_us();
+        runtime.setMotionIntentForTest(walk);
+        runControlStep(runtime);
+        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+
+        const ControlStatus status = runtime.getStatus();
+        bool any_stance = false;
+        bool any_swing = false;
+        for (const bool in_stance : status.dynamic_gait.leg_in_stance) {
+            any_stance = any_stance || in_stance;
+            any_swing = any_swing || !in_stance;
+        }
+
+        if (any_stance && any_swing) {
+            reached_mixed_stance_swing = true;
+            mixed_status = status;
+            pre_fault_raw = estimator_raw->last_raw;
+            break;
+        }
+    }
+
+    if (!expect(reached_mixed_stance_swing,
+                "walking runtime should reach a mixed stance/swing gait state before fault injection")) {
+        return false;
+    }
+    if (!expect(mixed_status.active_mode == RobotMode::WALK,
+                "pre-fault mixed stance/swing step should still run in WALK mode")) {
+        return false;
+    }
+
+    SimHardwareFaultToggles fault_toggles{};
+    fault_toggles.drop_bus = true;
+    if (!expect(runtime.setSimFaultToggles(fault_toggles),
+                "runtime should support toggling simulated bus faults")) {
+        return false;
+    }
+
+    walk.sample_id += 1;
+    walk.timestamp_us = now_us();
+    runtime.setMotionIntentForTest(walk);
+    runControlStep(runtime);
+
+    const ControlStatus post_fault = runtime.getStatus();
+    if (!expect(post_fault.active_fault == FaultCode::BUS_TIMEOUT,
+                "bus drop in mixed stance/swing should trigger immediate BUS_TIMEOUT safety fault") ||
+        !expect(post_fault.active_mode == RobotMode::FAULT,
+                "bus drop in mixed stance/swing should transition runtime mode to FAULT immediately")) {
+        return false;
+    }
+
+    const bool gait_motion_inhibited =
+        post_fault.dynamic_gait.suppress_stride_progression ||
+        post_fault.dynamic_gait.fallback_stage != 0;
+    if (!expect(gait_motion_inhibited,
+                "BUS_TIMEOUT torque-cut/inhibit policy should gate gait progression immediately")) {
+        return false;
+    }
+
+    const RobotState post_fault_raw = estimator_raw->last_raw;
+    double max_joint_step_rad = 0.0;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+            const double before = pre_fault_raw.leg_states[leg].joint_state[joint].pos_rad.value;
+            const double after = post_fault_raw.leg_states[leg].joint_state[joint].pos_rad.value;
+            max_joint_step_rad = std::max(max_joint_step_rad, std::abs(after - before));
+        }
+    }
+
+    return expect(max_joint_step_rad < 0.35,
+                  "bus fault transition should avoid large per-step joint output transients");
+}
+
 } // namespace
 
 int main() {
@@ -525,6 +646,10 @@ int main() {
     }
 
     if (!runMixedIntentPublisherSampleIdCase()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runBusFaultDuringMixedStanceSwingCase()) {
         return EXIT_FAILURE;
     }
 
