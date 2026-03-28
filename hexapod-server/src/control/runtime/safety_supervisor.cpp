@@ -126,8 +126,11 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
         },
         FaultRule{
             .is_triggered = [&](void) {
-                return std::abs(est.body_pose_state.orientation_rad.x) > config_.max_tilt_rad.value ||
-                       std::abs(est.body_pose_state.orientation_rad.y) > config_.max_tilt_rad.value ||
+                const bool hard_fault_context =
+                    !raw.bus_ok || raw.voltage < config_.min_bus_voltage_v || raw.current > config_.max_bus_current_a;
+                return ((est.has_body_pose_state || hard_fault_context) &&
+                        (std::abs(est.body_pose_state.orientation_rad.x) > config_.max_tilt_rad.value ||
+                         std::abs(est.body_pose_state.orientation_rad.y) > config_.max_tilt_rad.value)) ||
                        (freshness.estimator_valid && !stability.com_inside_support_polygon);
             },
             .fault = FaultCode::TIP_OVER,
@@ -198,7 +201,28 @@ SafetyState SafetySupervisor::evaluate(const RobotState& raw,
                                        FreshnessInputs freshness) {
     const TimePointUs now = now_us();
     StabilityAssessment stability{};
-    const FaultDecision fault = evaluateCurrentFault(raw, est, intent, freshness, stability);
+    FaultDecision fault = evaluateCurrentFault(raw, est, intent, freshness, stability);
+
+    const bool hard_fault_context =
+        !raw.bus_ok || raw.voltage < config_.min_bus_voltage_v || raw.current > config_.max_bus_current_a;
+    const bool tip_over_from_tilt =
+        est.has_body_pose_state &&
+        (std::abs(est.body_pose_state.orientation_rad.x) > config_.max_tilt_rad.value ||
+         std::abs(est.body_pose_state.orientation_rad.y) > config_.max_tilt_rad.value);
+    const bool tip_over_from_support = freshness.estimator_valid && !stability.com_inside_support_polygon;
+
+    if (fault.code == FaultCode::TIP_OVER &&
+        tip_over_from_tilt &&
+        !tip_over_from_support &&
+        !hard_fault_context) {
+        ++tip_over_candidate_samples_;
+        if (tip_over_candidate_samples_ < kTipOverConfirmSamples) {
+            fault.code = FaultCode::NONE;
+            fault.torque_cut = false;
+        }
+    } else {
+        tip_over_candidate_samples_ = 0;
+    }
 
     state_.stable = stability.com_inside_support_polygon;
     state_.support_contact_count = stability.support_contact_count;

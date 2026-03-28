@@ -29,6 +29,7 @@ public:
 
 private:
     static constexpr DurationUs kRecoveryHoldTimeUs{500000};
+    static constexpr uint32_t kTipOverConfirmSamples{25};
     static constexpr std::size_t kFaultCodeCount =
         static_cast<std::size_t>(FaultCode::COMMAND_TIMEOUT) + 1;
 
@@ -77,6 +78,7 @@ private:
     TimePointUs recovery_started_at_us_{};
     std::array<uint32_t, kFaultCodeCount> trip_counts_{};
     std::array<TimePointUs, kFaultCodeCount> last_trip_timestamps_{};
+    uint32_t tip_over_candidate_samples_{0};
     mutable bool has_previous_estimate_{false};
     mutable RobotState previous_estimate_{};
 };

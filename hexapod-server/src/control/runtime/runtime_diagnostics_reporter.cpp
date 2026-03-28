@@ -156,6 +156,8 @@ void RuntimeDiagnosticsReporter::recordControlOutputs(const JointTargets& target
 }
 
 void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
+                                        const RobotState& estimated_state,
+                                        const SafetyState& safety_state,
                                         const std::optional<BridgeCommandResultMetadata>& bridge_result,
                                         uint64_t loops,
                                         uint64_t avg_control_dt_us,
@@ -187,6 +189,9 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
                                                            ? static_cast<double>(freshness_reject_non_monotonic_id_total) /
                                                                  static_cast<double>(freshness_reject_total)
                                                            : 0.0;
+    const double est_roll_rad = estimated_state.body_pose_state.orientation_rad.x;
+    const double est_pitch_rad = estimated_state.body_pose_state.orientation_rad.y;
+    const double est_abs_max_roll_pitch_rad = std::max(std::abs(est_roll_rad), std::abs(est_pitch_rad));
     const JointOscillationMetrics joint_diag = joint_oscillation_tracker_.metrics();
     const std::size_t dropped_messages = logger_->DroppedMessageCount();
     const logging::AsyncLogger::QueueState log_queue_state = logger_->CurrentQueueState();
@@ -265,6 +270,18 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
              freshness_invalid_sample_reject_rate,
              " freshness_reject_rate_non_monotonic_id=",
              freshness_non_monotonic_reject_rate,
+             " est_roll_rad=",
+             est_roll_rad,
+             " est_pitch_rad=",
+             est_pitch_rad,
+             " est_abs_max_roll_pitch_rad=",
+             est_abs_max_roll_pitch_rad,
+             " safety_stable=",
+             safety_state.stable ? 1 : 0,
+             " safety_support_contact_count=",
+             safety_state.support_contact_count,
+             " safety_stability_margin_m=",
+             safety_state.stability_margin_m,
              " estimator_diag={stale_age:",
              estimator_diag.stale_age_count,
              ",missing_ts:",

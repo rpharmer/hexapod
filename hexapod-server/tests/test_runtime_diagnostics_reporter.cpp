@@ -109,6 +109,8 @@ bool testRuntimeMetricsIncludeDroppedMessageAndQueueSignals() {
     status.active_mode = RobotMode::STAND;
     status.estimator_valid = true;
     status.active_fault = FaultCode::NONE;
+    RobotState estimated_state{};
+    SafetyState safety_state{};
 
     reporter.report(status,
                     std::nullopt,
