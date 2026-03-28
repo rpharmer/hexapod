@@ -155,14 +155,14 @@ def main() -> int:
     parser.add_argument(
         "--max-peak-foot-vel-mps",
         type=float,
-        default=None,
-        help="Override profile max for runtime.metrics peak_foot_vel_mps.",
+        default=15.0,
+        help="Fail if runtime.metrics peak_foot_vel_mps exceeds this threshold.",
     )
     parser.add_argument(
         "--max-peak-velocity-radps",
         type=float,
-        default=None,
-        help="Override profile max for runtime.metrics peak_velocity_radps.",
+        default=120.0,
+        help="Fail if runtime.metrics peak_velocity_radps exceeds this threshold.",
     )
     parser.add_argument(
         "--tip-over-persist-streak",
