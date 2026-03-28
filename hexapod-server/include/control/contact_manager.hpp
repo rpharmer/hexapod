@@ -27,9 +27,11 @@ private:
         bool previous_contact{false};
         bool previous_scheduled_stance{true};
         bool touchdown_latched{false};
+        bool degraded{false};
         double stance_confidence{1.0};
         int missed_touchdown_count{0};
         int slip_count{0};
+        int stable_contact_cycles{0};
     };
 
     std::array<LegContactState, kNumLegs> leg_states_{};
