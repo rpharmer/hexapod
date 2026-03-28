@@ -161,11 +161,13 @@ int main() {
 
     RobotState level_est{};
     level_est.body_pose_state.orientation_rad = Vec3{0.0, 0.0, 0.0};
+    level_est.has_inferred_body_pose_state = true;
     level_est.has_body_pose_state = true;
     const LegTargets level_targets = controller.update(level_est, level_hold_intent, gait, safety);
 
     RobotState tilted_est{};
     tilted_est.body_pose_state.orientation_rad = Vec3{0.12, -0.10, 0.0};
+    tilted_est.has_inferred_body_pose_state = true;
     tilted_est.has_body_pose_state = true;
     const LegTargets corrected_targets = controller.update(tilted_est, level_hold_intent, gait, safety);
 
@@ -176,6 +178,21 @@ int main() {
     }
     if (!expect(total_delta > 1e-4,
                 "level hold should adjust targets when estimated roll/pitch deviates from setpoint")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState tilted_measured_only = tilted_est;
+    tilted_measured_only.has_inferred_body_pose_state = false;
+    tilted_measured_only.has_measured_body_pose_state = true;
+    tilted_measured_only.has_body_pose_state = true;
+    const LegTargets measured_level_hold_targets = controller.update(tilted_measured_only, level_hold_intent, gait, safety);
+    total_delta = 0.0;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        const Vec3 delta = measured_level_hold_targets.feet[leg].pos_body_m - level_targets.feet[leg].pos_body_m;
+        total_delta += std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+    }
+    if (!expect(total_delta > 1e-4,
+                "level hold should work when measured body pose provenance is available")) {
         return EXIT_FAILURE;
     }
 
@@ -193,6 +210,8 @@ int main() {
     }
 
     RobotState tilted_without_pose = tilted_est;
+    tilted_without_pose.has_inferred_body_pose_state = false;
+    tilted_without_pose.has_measured_body_pose_state = false;
     tilted_without_pose.has_body_pose_state = false;
     const LegTargets disabled_level_hold_targets = controller.update(tilted_without_pose, level_hold_intent, gait, safety);
     total_delta = 0.0;

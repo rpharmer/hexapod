@@ -92,7 +92,8 @@ LegTargets BodyController::update(const RobotState& est,
 
     const double roll_setpoint = intent.body_pose_setpoint.orientation_rad.x;
     const double pitch_setpoint = intent.body_pose_setpoint.orientation_rad.y;
-    const bool level_hold_enabled = est.has_body_pose_state;
+    const bool level_hold_enabled =
+        est.has_measured_body_pose_state || est.has_inferred_body_pose_state;
     const double roll_cmd = level_hold_enabled
                                 ? applyLevelHoldAxis(roll_setpoint, est.body_pose_state.orientation_rad.x)
                                 : roll_setpoint;

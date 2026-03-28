@@ -177,12 +177,14 @@ void RobotRuntime::busStep() {
             if (imu_sample.has_body_linear_velocity) {
                 raw.body_pose_state.body_trans_mps = imu_sample.body_linear_velocity_mps;
             }
-            raw.has_body_pose_state = true;
+            raw.has_measured_body_pose_state = true;
+            raw.has_body_pose_state = raw.has_measured_body_pose_state || raw.has_inferred_body_pose_state;
         }
     }
     if (raw.sample_id == 0) {
         raw.sample_id = raw_sample_seq_.fetch_add(1) + 1;
     }
+    raw.has_body_pose_state = raw.has_measured_body_pose_state || raw.has_inferred_body_pose_state;
     raw_state_.write(raw);
 
     JointTargets cmd = joint_targets_.read();
