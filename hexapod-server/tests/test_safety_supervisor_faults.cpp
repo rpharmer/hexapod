@@ -269,12 +269,24 @@ bool testRecoveryRequiresBothConditionsAndHoldTime() {
         return false;
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(550));
-    const SafetyState cleared = supervisor.evaluate(
+    // kRecoveryHoldTimeUs is 500ms. Verify the fault remains RECOVERING
+    // immediately before the threshold and only clears once we are past it.
+    std::this_thread::sleep_for(std::chrono::milliseconds(490));
+    const SafetyState before_threshold = supervisor.evaluate(
         raw, est, intentNow(RobotMode::SAFE_IDLE), SafetySupervisor::FreshnessInputs{true, true});
-    return expect(cleared.active_fault == FaultCode::NONE,
+    if (!expect(before_threshold.active_fault == FaultCode::BUS_TIMEOUT,
+                "fault should remain latched just below recovery hold threshold") ||
+        !expect(before_threshold.fault_lifecycle == FaultLifecycle::RECOVERING,
+                "lifecycle should remain RECOVERING just below recovery hold threshold")) {
+        return false;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    const SafetyState after_threshold = supervisor.evaluate(
+        raw, est, intentNow(RobotMode::SAFE_IDLE), SafetySupervisor::FreshnessInputs{true, true});
+    return expect(after_threshold.active_fault == FaultCode::NONE,
                   "fault should clear after recovery hold time") &&
-           expect(cleared.fault_lifecycle == FaultLifecycle::ACTIVE,
+           expect(after_threshold.fault_lifecycle == FaultLifecycle::ACTIVE,
                   "lifecycle should return ACTIVE after clear");
 }
 
