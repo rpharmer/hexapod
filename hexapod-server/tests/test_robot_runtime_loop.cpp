@@ -86,8 +86,9 @@ public:
         ++geometry_count;
     }
 
-    void publishControlStep(const telemetry::ControlStepTelemetry&) override {
+    void publishControlStep(const telemetry::ControlStepTelemetry& telemetry_sample) override {
         ++control_step_count;
+        last_control_step = telemetry_sample;
     }
 
     telemetry::TelemetryPublishCounters counters() const override {
@@ -98,6 +99,7 @@ public:
 
     size_t geometry_count{0};
     size_t control_step_count{0};
+    std::optional<telemetry::ControlStepTelemetry> last_control_step{};
 };
 
 struct FlagScenario {
@@ -335,6 +337,68 @@ bool runImuReadGateCase(bool imu_reads_enabled, bool expect_body_pose_state) {
     return expect(imu_raw->read_count == 0, "disabled IMU reads should not poll IMU");
 }
 
+bool runRuntimeFreshnessTelemetryCountersCase() {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<ScriptedEstimator>();
+    auto* scripted = estimator.get();
+    auto telemetry = std::make_unique<CountingTelemetryPublisher>();
+    auto* telemetry_raw = telemetry.get();
+
+    control_config::ControlConfig cfg{};
+    cfg.telemetry.enabled = true;
+    cfg.telemetry.publish_period = std::chrono::milliseconds{0};
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{500};
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, cfg, std::move(telemetry));
+
+    if (!expect(runtime.init(), "init should succeed (freshness telemetry counters case)")) {
+        return false;
+    }
+    runtime.startTelemetry();
+
+    const TimePointUs baseline_now = now_us();
+    scripted->enqueue(makeEstimatorSample(700, baseline_now));
+    runtime.setMotionIntent(makeIntentSample(700, baseline_now));
+    runControlStep(runtime);
+
+    if (!expect(telemetry_raw->last_control_step.has_value(),
+                "freshness telemetry case should capture baseline telemetry")) {
+        return false;
+    }
+
+    scripted->enqueue(makeEstimatorSample(701, now_us()));
+    runtime.setMotionIntentForTest(makeIntentSample(701, TimePointUs{1}));
+    runControlStep(runtime);
+
+    if (!expect(telemetry_raw->last_control_step.has_value(),
+                "freshness telemetry case should capture reject telemetry")) {
+        return false;
+    }
+    const auto rejected = telemetry_raw->last_control_step.value();
+    if (!expect(rejected.runtime_freshness.total_rejects == 1,
+                "reject telemetry should increment total freshness rejects") ||
+        !expect(rejected.runtime_freshness.consecutive_rejects == 1,
+                "reject telemetry should increment consecutive freshness rejects") ||
+        !expect(rejected.runtime_freshness.stale_age_rejects == 1,
+                "reject telemetry should attribute stale-age reject reason")) {
+        return false;
+    }
+
+    scripted->enqueue(makeEstimatorSample(702, now_us()));
+    runtime.setMotionIntent(makeIntentSample(702, now_us()));
+    runControlStep(runtime);
+
+    if (!expect(telemetry_raw->last_control_step.has_value(),
+                "freshness telemetry case should capture recovery telemetry")) {
+        return false;
+    }
+    const auto recovered = telemetry_raw->last_control_step.value();
+    return expect(recovered.runtime_freshness.total_rejects == 1,
+                  "recovery telemetry should keep total freshness rejects cumulative") &&
+           expect(recovered.runtime_freshness.consecutive_rejects == 0,
+                  "recovery telemetry should reset consecutive freshness rejects");
+}
+
 } // namespace
 
 int main() {
@@ -410,6 +474,10 @@ int main() {
     }
 
     if (!runImuReadGateCase(true, true)) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runRuntimeFreshnessTelemetryCountersCase()) {
         return EXIT_FAILURE;
     }
 

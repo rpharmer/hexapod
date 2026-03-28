@@ -35,6 +35,14 @@ struct ControlStepTelemetry {
         std::optional<AutonomyDebugPose> localization_pose{};
     };
 
+    struct RuntimeFreshnessTelemetry {
+        uint64_t consecutive_rejects{0};
+        uint64_t total_rejects{0};
+        uint64_t stale_age_rejects{0};
+        uint64_t invalid_sample_id_rejects{0};
+        uint64_t non_monotonic_id_rejects{0};
+    };
+
     RobotState estimated_state{};
     MotionIntent motion_intent{};
     JointTargets joint_targets{};
@@ -42,6 +50,7 @@ struct ControlStepTelemetry {
     TimePointUs timestamp_us{};
     bool imu_reads_enabled{false};
     AutonomyDebugTelemetry autonomy_debug{};
+    RuntimeFreshnessTelemetry runtime_freshness{};
 };
 
 struct TelemetryPublishCounters {

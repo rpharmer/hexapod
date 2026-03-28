@@ -162,7 +162,12 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
                                         uint64_t max_control_jitter_us,
                                         const LoopTimingRollingMetrics& loop_timing_metrics,
                                         uint64_t stale_intent_events,
-                                        uint64_t stale_estimator_events) {
+                                        uint64_t stale_estimator_events,
+                                        uint64_t freshness_reject_consecutive,
+                                        uint64_t freshness_reject_total,
+                                        uint64_t freshness_reject_stale_age_total,
+                                        uint64_t freshness_reject_invalid_sample_id_total,
+                                        uint64_t freshness_reject_non_monotonic_id_total) {
     status_reporter::logStatus(logger_, status, bridge_result);
     if (!logger_) {
         return;
@@ -170,6 +175,18 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
 
     const auto& estimator_diag = freshness_policy_.estimatorDiagnostics();
     const auto& intent_diag = freshness_policy_.intentDiagnostics();
+    const double freshness_stale_age_reject_rate = freshness_reject_total > 0
+                                                       ? static_cast<double>(freshness_reject_stale_age_total) /
+                                                             static_cast<double>(freshness_reject_total)
+                                                       : 0.0;
+    const double freshness_invalid_sample_reject_rate = freshness_reject_total > 0
+                                                            ? static_cast<double>(freshness_reject_invalid_sample_id_total) /
+                                                                  static_cast<double>(freshness_reject_total)
+                                                            : 0.0;
+    const double freshness_non_monotonic_reject_rate = freshness_reject_total > 0
+                                                           ? static_cast<double>(freshness_reject_non_monotonic_id_total) /
+                                                                 static_cast<double>(freshness_reject_total)
+                                                           : 0.0;
     const JointOscillationMetrics joint_diag = joint_oscillation_tracker_.metrics();
     const std::size_t dropped_messages = logger_->DroppedMessageCount();
     const logging::AsyncLogger::QueueState log_queue_state = logger_->CurrentQueueState();
@@ -232,6 +249,22 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
              stale_intent_events,
              " stale_estimator_events=",
              stale_estimator_events,
+             " freshness_rejects_consecutive=",
+             freshness_reject_consecutive,
+             " freshness_rejects_total=",
+             freshness_reject_total,
+             " freshness_rejects_stale_age_total=",
+             freshness_reject_stale_age_total,
+             " freshness_rejects_invalid_sample_id_total=",
+             freshness_reject_invalid_sample_id_total,
+             " freshness_rejects_non_monotonic_id_total=",
+             freshness_reject_non_monotonic_id_total,
+             " freshness_reject_rate_stale_age=",
+             freshness_stale_age_reject_rate,
+             " freshness_reject_rate_invalid_sample_id=",
+             freshness_invalid_sample_reject_rate,
+             " freshness_reject_rate_non_monotonic_id=",
+             freshness_non_monotonic_reject_rate,
              " estimator_diag={stale_age:",
              estimator_diag.stale_age_count,
              ",missing_ts:",

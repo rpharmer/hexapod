@@ -36,12 +36,18 @@ public:
 
     Decision computeControlDecision(const FreshnessPolicy::Evaluation& freshness,
                                     bool bus_ok,
-                                    uint64_t loop_counter) const;
+                                    uint64_t loop_counter,
+                                    const JointTargets& last_joint_targets,
+                                    bool has_last_joint_targets,
+                                    uint64_t consecutive_rejects) const;
 
     static void maybeLogReject(const std::shared_ptr<logging::AsyncLogger>& logger,
+                               TimePointUs now,
                                const FreshnessPolicy::Evaluation& freshness,
                                const RobotState& est,
-                               const MotionIntent& intent);
+                               const MotionIntent& intent,
+                               uint64_t loop_counter,
+                               uint64_t consecutive_rejects);
 
 private:
     FreshnessPolicy& freshness_policy_;
