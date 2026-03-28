@@ -9,8 +9,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from scripts.scenario_regression_harness import (
+    ScenarioFingerprint,
     analyze_log,
+    build_fingerprint,
+    load_fingerprint_store,
     resolve_thresholds,
+    save_fingerprint_store,
     validate_thresholds,
 )
 
@@ -43,6 +47,9 @@ class ScenarioRegressionHarnessTests(unittest.TestCase):
         self.assertAlmostEqual(stats.peak_velocity_radps, 6.8)
         self.assertEqual(stats.tip_over_events, 3)
         self.assertEqual(stats.max_tip_over_streak, 2)
+        self.assertEqual(stats.fault_timeline_hash, "bffbfb4a2c65")
+        self.assertEqual(stats.peak_command_tuple, (1.3, 6.8))
+        self.assertEqual(stats.final_status_summary, "mode=WALK;fault=TIP_OVER;loops=5")
 
     def test_handles_logs_without_metrics(self) -> None:
         log = self.write_log("[info] [diag] mode=IDLE fault=NONE loops=1\n")
@@ -52,6 +59,35 @@ class ScenarioRegressionHarnessTests(unittest.TestCase):
         self.assertEqual(stats.peak_velocity_radps, 0.0)
         self.assertEqual(stats.tip_over_events, 0)
         self.assertEqual(stats.max_tip_over_streak, 0)
+        self.assertEqual(stats.fault_timeline_hash, "c627c09c14e5")
+        self.assertEqual(stats.final_status_summary, "mode=IDLE;fault=NONE;loops=1")
+
+    def test_fingerprint_store_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store_path = Path(tmpdir) / "fingerprints.json"
+            store = {
+                "scenarios/example.toml": ScenarioFingerprint(
+                    fault_timeline_hash="abc123",
+                    peak_command_tuple=(0.1, 2.3),
+                    final_status_summary="mode=WALK;fault=NONE;loops=42",
+                )
+            }
+
+            save_fingerprint_store(store_path, store)
+            loaded = load_fingerprint_store(store_path)
+            self.assertEqual(loaded, store)
+
+    def test_build_fingerprint_uses_compact_fields(self) -> None:
+        stats = analyze_log(self.write_log("[info] [diag] mode=IDLE fault=NONE loops=1\n"))
+        fingerprint = build_fingerprint(stats)
+        self.assertEqual(
+            fingerprint,
+            ScenarioFingerprint(
+                fault_timeline_hash="c627c09c14e5",
+                peak_command_tuple=(0.0, 0.0),
+                final_status_summary="mode=IDLE;fault=NONE;loops=1",
+            ),
+        )
 
     def test_threshold_profile_defaults_and_overrides(self) -> None:
         strict = resolve_thresholds(

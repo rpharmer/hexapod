@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import math
 import re
 import subprocess
@@ -13,6 +15,7 @@ from pathlib import Path
 
 
 FAULT_RE = re.compile(r"\bfault=([A-Z_]+)")
+MODE_RE = re.compile(r"\bmode=([A-Z_]+)")
 PEAK_FOOT_RE = re.compile(r"peak_foot_vel_mps:([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)")
 PEAK_JOINT_RE = re.compile(r"peak_velocity_radps:([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)")
 
@@ -24,6 +27,9 @@ class LogStats:
     peak_velocity_radps: float = 0.0
     tip_over_events: int = 0
     max_tip_over_streak: int = 0
+    fault_timeline_hash: str = ""
+    peak_command_tuple: tuple[float, float] = (0.0, 0.0)
+    final_status_summary: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -31,6 +37,13 @@ class ThresholdPreset:
     max_peak_foot_vel_mps: float
     max_peak_velocity_radps: float
     tip_over_persist_streak: int
+
+
+@dataclass(frozen=True)
+class ScenarioFingerprint:
+    fault_timeline_hash: str
+    peak_command_tuple: tuple[float, float]
+    final_status_summary: str
 
 
 THRESHOLD_PRESETS: dict[str, ThresholdPreset] = {
@@ -80,6 +93,10 @@ def validate_thresholds(thresholds: ThresholdPreset) -> None:
 def analyze_log(log_path: Path) -> LogStats:
     stats = LogStats()
     tip_over_streak = 0
+    fault_timeline: list[str] = []
+    final_mode = "UNKNOWN"
+    final_fault = "UNKNOWN"
+    final_loops = "?"
 
     with log_path.open("r", encoding="utf-8", errors="replace") as handle:
         for line in handle:
@@ -98,14 +115,72 @@ def analyze_log(log_path: Path) -> LogStats:
             if not fault_match:
                 continue
 
-            if fault_match.group(1) == "TIP_OVER":
+            mode_match = MODE_RE.search(line)
+            if mode_match:
+                final_mode = mode_match.group(1)
+            final_fault = fault_match.group(1)
+            loops_match = re.search(r"\bloops=(\d+)", line)
+            if loops_match:
+                final_loops = loops_match.group(1)
+
+            fault_timeline.append(final_fault)
+
+            if final_fault == "TIP_OVER":
                 stats.tip_over_events += 1
                 tip_over_streak += 1
                 stats.max_tip_over_streak = max(stats.max_tip_over_streak, tip_over_streak)
             else:
                 tip_over_streak = 0
 
+    timeline_text = ",".join(fault_timeline)
+    stats.fault_timeline_hash = hashlib.sha256(timeline_text.encode("utf-8")).hexdigest()[:12]
+    stats.peak_command_tuple = (
+        round(stats.peak_foot_vel_mps, 3),
+        round(stats.peak_velocity_radps, 3),
+    )
+    stats.final_status_summary = f"mode={final_mode};fault={final_fault};loops={final_loops}"
+
     return stats
+
+
+def build_fingerprint(stats: LogStats) -> ScenarioFingerprint:
+    return ScenarioFingerprint(
+        fault_timeline_hash=stats.fault_timeline_hash,
+        peak_command_tuple=stats.peak_command_tuple,
+        final_status_summary=stats.final_status_summary,
+    )
+
+
+def load_fingerprint_store(path: Path) -> dict[str, ScenarioFingerprint]:
+    if not path.exists():
+        return {}
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    fingerprints: dict[str, ScenarioFingerprint] = {}
+    for scenario, value in payload.items():
+        tuple_values = value.get("peak_command_tuple", [0.0, 0.0])
+        fingerprints[scenario] = ScenarioFingerprint(
+            fault_timeline_hash=str(value.get("fault_timeline_hash", "")),
+            peak_command_tuple=(float(tuple_values[0]), float(tuple_values[1])),
+            final_status_summary=str(value.get("final_status_summary", "unknown")),
+        )
+    return fingerprints
+
+
+def save_fingerprint_store(path: Path, store: dict[str, ScenarioFingerprint]) -> None:
+    serializable = {
+        scenario: {
+            "fault_timeline_hash": fingerprint.fault_timeline_hash,
+            "peak_command_tuple": [
+                fingerprint.peak_command_tuple[0],
+                fingerprint.peak_command_tuple[1],
+            ],
+            "final_status_summary": fingerprint.final_status_summary,
+        }
+        for scenario, fingerprint in sorted(store.items())
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(serializable, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def run_cmd(command: list[str], cwd: Path) -> int:
@@ -175,6 +250,16 @@ def main() -> int:
         default="build/scenario_05_long_walk_regression.log",
         help="Log output path relative to server dir.",
     )
+    parser.add_argument(
+        "--fingerprint-store",
+        default="scripts/fixtures/scenario_regression_fingerprints.json",
+        help="Fingerprint store path relative to repository root.",
+    )
+    parser.add_argument(
+        "--refresh-fingerprint",
+        action="store_true",
+        help="Update stored fingerprint for the scenario instead of validating drift.",
+    )
     args = parser.parse_args()
     thresholds = resolve_thresholds(args)
     validate_thresholds(thresholds)
@@ -186,6 +271,7 @@ def main() -> int:
     sim_cfg = server_dir / "config.sim.txt"
     active_cfg = server_dir / "config.txt"
     log_path = server_dir / args.output_log
+    fingerprint_store_path = repo_root / args.fingerprint_store
 
     if not server_dir.exists():
         raise SystemExit(f"ERROR: server dir does not exist: {server_dir}")
@@ -221,6 +307,8 @@ def main() -> int:
 
         exit_ok = proc.returncode == 0
         stats = analyze_log(log_path)
+        fingerprint = build_fingerprint(stats)
+        store = load_fingerprint_store(fingerprint_store_path)
 
         failures: list[str] = []
         if not exit_ok:
@@ -247,6 +335,16 @@ def main() -> int:
                 f"(max consecutive streak={stats.max_tip_over_streak}, threshold={thresholds.tip_over_persist_streak})"
             )
 
+        expected_fingerprint = store.get(scenario_rel)
+        if args.refresh_fingerprint or expected_fingerprint is None:
+            store[scenario_rel] = fingerprint
+            save_fingerprint_store(fingerprint_store_path, store)
+        elif expected_fingerprint != fingerprint:
+            failures.append(
+                "scenario fingerprint drift detected "
+                f"(expected={expected_fingerprint}, actual={fingerprint})"
+            )
+
         print("Scenario regression summary")
         print(f"  scenario: {scenario_rel}")
         print(f"  threshold profile: {args.threshold_profile}")
@@ -256,6 +354,14 @@ def main() -> int:
         print(f"  peak_velocity_radps: {stats.peak_velocity_radps:.6g}")
         print(f"  fault=TIP_OVER events: {stats.tip_over_events}")
         print(f"  fault=TIP_OVER max consecutive streak: {stats.max_tip_over_streak}")
+        print("  fingerprint:")
+        print(f"    store: {fingerprint_store_path}")
+        print(f"    fault_timeline_hash: {fingerprint.fault_timeline_hash}")
+        print(
+            "    peak_command_tuple: "
+            f"({fingerprint.peak_command_tuple[0]:.3f}, {fingerprint.peak_command_tuple[1]:.3f})"
+        )
+        print(f"    final_status_summary: {fingerprint.final_status_summary}")
         print("  thresholds:")
         print(f"    max_peak_foot_vel_mps: {thresholds.max_peak_foot_vel_mps:.6g}")
         print(f"    max_peak_velocity_radps: {thresholds.max_peak_velocity_radps:.6g}")
