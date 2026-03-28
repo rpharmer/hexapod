@@ -14,6 +14,20 @@ bool expect(bool condition, const char* message) {
     return true;
 }
 
+bool allEstimatedValuesFinite(const RobotState& state) {
+    for (const auto& leg : state.leg_states) {
+        for (const auto& joint : leg.joint_state) {
+            if (!std::isfinite(joint.pos_rad.value) || !std::isfinite(joint.vel_radps.value)) {
+                return false;
+            }
+        }
+    }
+
+    const Vec3 body_velocity = state.body_pose_state.body_trans_mps;
+    return std::isfinite(body_velocity.x) && std::isfinite(body_velocity.y) &&
+           std::isfinite(body_velocity.z);
+}
+
 RobotState makeNeutralRaw(uint64_t sample_id, uint64_t timestamp_us) {
     RobotState raw{};
     raw.sample_id = sample_id;
@@ -95,6 +109,38 @@ int main() {
                    stance_motion_b_est.body_pose_state.body_trans_mps.y);
     if (!expect(planar_speed > 1e-4,
                 "stance contact deltas should produce non-zero planar body velocity estimate")) {
+        return EXIT_FAILURE;
+    }
+
+    // Feed non-increasing timestamps while joints continue changing to ensure
+    // velocity estimation does not divide by zero or emit non-finite artifacts.
+    RobotState non_increasing_a = makeNeutralRaw(6, 3'000'000);
+    non_increasing_a.foot_contacts = {true, true, true, true, true, true};
+    non_increasing_a.leg_states[0].joint_state[COXA].pos_rad = AngleRad{0.20};
+    non_increasing_a.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{-0.15};
+    const RobotState non_increasing_a_est = estimator.update(non_increasing_a);
+
+    RobotState equal_timestamp = non_increasing_a;
+    equal_timestamp.sample_id = 7;
+    equal_timestamp.leg_states[0].joint_state[COXA].pos_rad = AngleRad{0.23};
+    equal_timestamp.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{-0.10};
+    const RobotState equal_timestamp_est = estimator.update(equal_timestamp);
+
+    RobotState decreasing_timestamp = equal_timestamp;
+    decreasing_timestamp.sample_id = 8;
+    decreasing_timestamp.timestamp_us = TimePointUs{2'999'500};
+    decreasing_timestamp.leg_states[0].joint_state[COXA].pos_rad = AngleRad{0.19};
+    decreasing_timestamp.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{-0.05};
+    const RobotState decreasing_timestamp_est = estimator.update(decreasing_timestamp);
+
+    if (!expect(std::abs(equal_timestamp_est.leg_states[0].joint_state[COXA].vel_radps.value) < 1e-12,
+                "equal timestamps should not synthesize divide-by-zero joint velocity spikes") ||
+        !expect(std::abs(decreasing_timestamp_est.leg_states[0].joint_state[COXA].vel_radps.value) < 1e-12,
+                "decreasing timestamps should not synthesize divide-by-zero joint velocity spikes") ||
+        !expect(allEstimatedValuesFinite(non_increasing_a_est) &&
+                    allEstimatedValuesFinite(equal_timestamp_est) &&
+                    allEstimatedValuesFinite(decreasing_timestamp_est),
+                "non-increasing timestamp samples should keep estimator outputs finite")) {
         return EXIT_FAILURE;
     }
 
