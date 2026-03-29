@@ -10,6 +10,7 @@ namespace {
 
 constexpr double kCadenceSlewUpHzPerSec = 150.0;
 constexpr double kCadenceSlewDownHzPerSec = 200.0;
+constexpr double kPhaseAlignmentRateCyclesPerSec = 0.25;
 
 }
 
@@ -56,6 +57,7 @@ GaitState GaitScheduler::update(const RobotState& est,
         if (!last_phase_initialized_) {
             for (int i = 0; i < kNumLegs; ++i) {
                 last_phase_[i] = wrap01(policy.per_leg[i].phase_offset);
+                phase_alignment_offset_[i] = wrap01(policy.per_leg[i].phase_offset);
             }
             last_phase_initialized_ = true;
         }
@@ -87,7 +89,18 @@ GaitState GaitScheduler::update(const RobotState& est,
     phase_accum_ = wrap01(phase_accum_ + dt.value * step_rate_hz.value);
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
-        const double p = wrap01(phase_accum_ + policy.per_leg[leg].phase_offset);
+        const double desired_offset = wrap01(policy.per_leg[leg].phase_offset);
+        double offset_error = desired_offset - phase_alignment_offset_[leg];
+        if (offset_error > 0.5) {
+            offset_error -= 1.0;
+        } else if (offset_error < -0.5) {
+            offset_error += 1.0;
+        }
+        const double max_offset_step = kPhaseAlignmentRateCyclesPerSec * std::max(dt.value, 0.0);
+        phase_alignment_offset_[leg] =
+            wrap01(phase_alignment_offset_[leg] + std::clamp(offset_error, -max_offset_step, max_offset_step));
+
+        const double p = wrap01(phase_accum_ + phase_alignment_offset_[leg]);
         out.phase[leg] = p;
         last_phase_[leg] = p;
         out.in_stance[leg] = (p < std::clamp(policy.per_leg[leg].duty_cycle, 0.05, 0.95));

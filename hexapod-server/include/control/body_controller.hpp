@@ -46,4 +46,7 @@ private:
     control_config::MotionLimiterConfig limiter_config_{};
     MotionLimiterTelemetry last_motion_limiter_telemetry_{};
     LevelHoldFilterState level_hold_filter_state_{};
+    std::array<Vec3, kNumLegs> previous_targets_body_{};
+    TimePointUs previous_targets_timestamp_{};
+    bool has_previous_targets_{false};
 };

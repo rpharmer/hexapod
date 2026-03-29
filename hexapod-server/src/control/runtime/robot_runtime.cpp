@@ -33,7 +33,7 @@ telemetry::TelemetryPublishCounters readTelemetryCounters(
     return telemetry_publisher ? telemetry_publisher->counters() : telemetry::TelemetryPublishCounters{};
 }
 
-constexpr double kJointTargetSlewLimitRadPerSec = 18.0;
+constexpr double kJointTargetSlewHardMaxRadPerSec = 6.0;
 constexpr double kControlLoopMeasuredDtMinSec = 1e-4;
 constexpr double kControlLoopMeasuredDtMaxSec = 0.25;
 
@@ -59,11 +59,16 @@ DurationSec measureClampedControlLoopDt(const TimePointUs& now,
 JointTargets applyJointTargetSlewLimit(const JointTargets& requested,
                                        const JointTargets& previous,
                                        bool has_previous,
-                                       double dt_s) {
+                                       double dt_s,
+                                       double joint_velocity_limit_radps) {
     if (!has_previous || dt_s <= 0.0 || !std::isfinite(dt_s)) {
         return requested;
     }
-    const double max_step = kJointTargetSlewLimitRadPerSec * dt_s;
+    const double safe_joint_velocity_limit = std::clamp(
+        joint_velocity_limit_radps,
+        1e-3,
+        kJointTargetSlewHardMaxRadPerSec);
+    const double max_step = safe_joint_velocity_limit * dt_s;
     JointTargets limited = requested;
     for (int leg = 0; leg < kNumLegs; ++leg) {
         for (int joint = 0; joint < kJointsPerLeg; ++joint) {
@@ -231,7 +236,11 @@ void RobotRuntime::busStep() {
     if (has_last_written_joint_targets_ && !last_joint_write_timestamp_.isZero() &&
         now.value > last_joint_write_timestamp_.value) {
         const double dt_s = static_cast<double>(now.value - last_joint_write_timestamp_.value) / 1'000'000.0;
-        const double max_step = kJointTargetSlewLimitRadPerSec * dt_s;
+        const double safe_joint_velocity_limit = std::clamp(
+            config_.motion_limiter.joint_soft_velocity_limit_radps,
+            1e-3,
+            kJointTargetSlewHardMaxRadPerSec);
+        const double max_step = safe_joint_velocity_limit * dt_s;
         for (int leg = 0; leg < kNumLegs; ++leg) {
             for (int joint = 0; joint < kJointsPerLeg; ++joint) {
                 const double previous = last_written_joint_targets_.leg_states[leg].joint_state[joint].pos_rad.value;
@@ -330,7 +339,8 @@ void RobotRuntime::controlStep() {
         pipeline_result.joint_targets,
         last_pipeline_joint_targets_,
         has_last_pipeline_joint_targets_,
-        control_loop_dt.value);
+        control_loop_dt.value,
+        config_.motion_limiter.joint_soft_velocity_limit_radps);
 
     joint_targets_.write(limited_targets);
     last_pipeline_joint_targets_ = limited_targets;

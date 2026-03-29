@@ -18,6 +18,17 @@ double finiteOr(double value, double fallback) {
     return std::isfinite(value) ? value : fallback;
 }
 
+Vec3 clampVectorMagnitude(const Vec3& value, double max_magnitude) {
+    if (!std::isfinite(max_magnitude) || max_magnitude <= 0.0) {
+        return Vec3{};
+    }
+    const double magnitude = vecNorm(value);
+    if (magnitude <= max_magnitude || magnitude <= 1e-12) {
+        return value;
+    }
+    return value * (max_magnitude / magnitude);
+}
+
 } // namespace
 
 BodyController::BodyController(control_config::MotionLimiterConfig config)
@@ -73,8 +84,6 @@ LegTargets BodyController::update(const RobotState& est,
     out.timestamp_us = now_us();
     MotionLimiterTelemetry limiter_telemetry{};
 
-    (void)limiter_config_;
-
     const std::array<Vec3, kNumLegs> nominal = nominalStance();
     MotionIntent safe_intent = intent;
     safe_intent.body_pose_setpoint.body_trans_m = Vec3{
@@ -98,7 +107,6 @@ LegTargets BodyController::update(const RobotState& est,
         (safe_intent.requested_mode == RobotMode::WALK) &&
         !safety.inhibit_motion &&
         !safety.torque_cut;
-    (void)walking;
 
     const auto applyLevelHoldAxis = [](double setpoint_rad, double estimated_rad) {
         if (!std::isfinite(setpoint_rad) || !std::isfinite(estimated_rad)) {
@@ -181,10 +189,29 @@ LegTargets BodyController::update(const RobotState& est,
         }
         target_vel = target_vel + cross(safe_intent.body_pose_setpoint.angular_velocity_radps, target);
 
+        const double velocity_limit_mps = std::max(1e-3, limiter_config_.foot_velocity_limit_mps);
+        if (has_previous_targets_ &&
+            !previous_targets_timestamp_.isZero() &&
+            out.timestamp_us.value > previous_targets_timestamp_.value) {
+            const double dt_s = static_cast<double>(out.timestamp_us.value - previous_targets_timestamp_.value) / 1'000'000.0;
+            const double max_step_m = velocity_limit_mps * dt_s;
+            const Vec3 previous = previous_targets_body_[leg];
+            const Vec3 delta = target - previous;
+            const double delta_norm = vecNorm(delta);
+            if (delta_norm > max_step_m && delta_norm > 1e-12) {
+                target = previous + (delta * (max_step_m / delta_norm));
+                limiter_telemetry.hard_clamp_reach = true;
+            }
+        }
+        target_vel = clampVectorMagnitude(target_vel, velocity_limit_mps);
+
         out.feet[leg].pos_body_m = target;
         out.feet[leg].vel_body_mps = target_vel;
+        previous_targets_body_[leg] = target;
     }
 
+    previous_targets_timestamp_ = out.timestamp_us;
+    has_previous_targets_ = true;
     last_motion_limiter_telemetry_ = limiter_telemetry;
     return out;
 }
