@@ -526,6 +526,9 @@ void RobotRuntime::applyAutonomyStatus(ControlStatus& status) const {
         return;
     }
 
+    const bool has_active_mission = !last_autonomy_mission_event_.progress.mission_id.empty() &&
+                                    last_autonomy_mission_event_.state != autonomy::MissionState::Idle;
+
     status.autonomy.enabled = true;
     status.autonomy.step_ok = autonomy_step_ok_;
     status.autonomy.blocked = autonomy_blocked_signal_.load();
@@ -538,10 +541,19 @@ void RobotRuntime::applyAutonomyStatus(ControlStatus& status) const {
     status.autonomy.mission_state = missionStateCode(last_autonomy_mission_event_.state);
     status.autonomy.mission_completed_waypoints = last_autonomy_mission_event_.progress.completed_waypoints;
     status.autonomy.mission_total_waypoints = last_autonomy_mission_event_.progress.total_waypoints;
-    status.autonomy.mission_loaded = !last_autonomy_mission_event_.progress.mission_id.empty() &&
-                                     last_autonomy_mission_event_.state != autonomy::MissionState::Idle;
+    status.autonomy.mission_loaded = has_active_mission;
     status.autonomy.mission_running = last_autonomy_mission_event_.state == autonomy::MissionState::Exec ||
                                       last_autonomy_mission_event_.state == autonomy::MissionState::Paused;
+    status.autonomy.stages.navigation = has_active_mission;
+    status.autonomy.stages.localization = true;
+    status.autonomy.stages.world_model = true;
+    status.autonomy.stages.traversability = true;
+    status.autonomy.stages.global_planner = true;
+    status.autonomy.stages.local_planner = true;
+    status.autonomy.stages.progress_monitor = true;
+    status.autonomy.stages.recovery_manager = true;
+    status.autonomy.stages.motion_arbiter = true;
+    status.autonomy.stages.locomotion_interface = true;
 }
 
 bool RobotRuntime::loadAutonomyMission(const autonomy::WaypointMission& mission) {

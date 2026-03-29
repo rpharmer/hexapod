@@ -255,6 +255,19 @@ struct ControlStatus {
     };
 
     struct AutonomyTelemetry {
+        struct StageEnabledFlags {
+            bool navigation{false};
+            bool localization{false};
+            bool world_model{false};
+            bool traversability{false};
+            bool global_planner{false};
+            bool local_planner{false};
+            bool progress_monitor{false};
+            bool recovery_manager{false};
+            bool motion_arbiter{false};
+            bool locomotion_interface{false};
+        };
+
         bool enabled{false};
         bool step_ok{false};
         bool blocked{false};
@@ -267,6 +280,7 @@ struct ControlStatus {
         uint8_t mission_state{0};
         uint64_t mission_completed_waypoints{0};
         uint64_t mission_total_waypoints{0};
+        StageEnabledFlags stages{};
     };
 
     RobotMode active_mode{RobotMode::SAFE_IDLE};

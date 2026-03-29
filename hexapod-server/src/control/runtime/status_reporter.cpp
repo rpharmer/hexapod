@@ -164,6 +164,18 @@ void logStatus(const std::shared_ptr<logging::AsyncLogger>& logger,
             " mission_state=", toStringMissionState(status.autonomy.mission_state),
             " mission_progress=", status.autonomy.mission_completed_waypoints, "/",
             status.autonomy.mission_total_waypoints);
+        LOG_INFO(
+            logger,
+            "[diag.autonomy.stages] navigation=", (status.autonomy.stages.navigation ? "yes" : "no"),
+            " localization=", (status.autonomy.stages.localization ? "yes" : "no"),
+            " world_model=", (status.autonomy.stages.world_model ? "yes" : "no"),
+            " traversability=", (status.autonomy.stages.traversability ? "yes" : "no"),
+            " global_planner=", (status.autonomy.stages.global_planner ? "yes" : "no"),
+            " local_planner=", (status.autonomy.stages.local_planner ? "yes" : "no"),
+            " progress_monitor=", (status.autonomy.stages.progress_monitor ? "yes" : "no"),
+            " recovery_manager=", (status.autonomy.stages.recovery_manager ? "yes" : "no"),
+            " motion_arbiter=", (status.autonomy.stages.motion_arbiter ? "yes" : "no"),
+            " locomotion_interface=", (status.autonomy.stages.locomotion_interface ? "yes" : "no"));
     }
 
     if (bridge_result.has_value() && bridge_result->error != BridgeError::None) {
