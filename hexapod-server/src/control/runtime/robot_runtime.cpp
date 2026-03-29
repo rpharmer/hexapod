@@ -233,24 +233,16 @@ void RobotRuntime::busStep() {
 
     JointTargets cmd = joint_targets_.read();
     const TimePointUs now = now_us();
+    double bus_dt_s = 0.0;
     if (has_last_written_joint_targets_ && !last_joint_write_timestamp_.isZero() &&
         now.value > last_joint_write_timestamp_.value) {
-        const double dt_s = static_cast<double>(now.value - last_joint_write_timestamp_.value) / 1'000'000.0;
-        const double safe_joint_velocity_limit = std::clamp(
-            config_.motion_limiter.joint_soft_velocity_limit_radps,
-            1e-3,
-            kJointTargetSlewHardMaxRadPerSec);
-        const double max_step = safe_joint_velocity_limit * dt_s;
-        for (int leg = 0; leg < kNumLegs; ++leg) {
-            for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-                const double previous = last_written_joint_targets_.leg_states[leg].joint_state[joint].pos_rad.value;
-                const double requested = cmd.leg_states[leg].joint_state[joint].pos_rad.value;
-                const double delta = requested - previous;
-                cmd.leg_states[leg].joint_state[joint].pos_rad.value =
-                    previous + std::clamp(delta, -max_step, max_step);
-            }
-        }
+        bus_dt_s = static_cast<double>(now.value - last_joint_write_timestamp_.value) / 1'000'000.0;
     }
+    cmd = applyJointTargetSlewLimit(cmd,
+                                    last_written_joint_targets_,
+                                    has_last_written_joint_targets_,
+                                    bus_dt_s,
+                                    config_.motion_limiter.joint_soft_velocity_limit_radps);
     (void)hw_->write(cmd);
     last_written_joint_targets_ = cmd;
     has_last_written_joint_targets_ = true;

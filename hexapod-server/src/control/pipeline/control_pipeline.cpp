@@ -4,12 +4,12 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
-#include <vector>
 #include <string_view>
+#include <vector>
 
 namespace {
 
-bool contactManagerBypassed() {
+bool contactManagerBypassedFromEnv() {
     const char* raw = std::getenv("HEXAPOD_BYPASS_CONTACT_MANAGER");
     if (raw == nullptr) {
         return false;
@@ -25,7 +25,8 @@ ControlPipeline::ControlPipeline(control_config::ControlConfig config)
       planner_(config_.gait),
       motion_limiter_(config.motion_limiter),
       gait_(config_.gait),
-      body_(config_.motion_limiter) {
+      body_(config_.motion_limiter),
+      contact_manager_bypassed_(contactManagerBypassedFromEnv()) {
     timing_window_size_ = std::clamp<std::size_t>(
         config_.pipeline_stage_timing.rolling_window_samples,
         1U,
@@ -62,7 +63,7 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
                                                   gait_finish - gait_start)
                                                   .count()));
     ContactManagerOutput contact_adjusted{};
-    if (contactManagerBypassed()) {
+    if (contact_manager_bypassed_) {
         contact_adjusted.managed_gait = gait_state;
         contact_adjusted.managed_policy = limiter_output.adapted_gait_policy;
     } else {

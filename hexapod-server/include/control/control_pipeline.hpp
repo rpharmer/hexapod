@@ -81,6 +81,7 @@ private:
     BodyController body_;
     LegIK ik_;
     std::size_t timing_window_size_{0};
+    bool contact_manager_bypassed_{false};
     mutable std::mutex timing_mutex_{};
     std::array<StageTimingWindow, static_cast<std::size_t>(PipelineStage::Count)> stage_timings_{};
 };
