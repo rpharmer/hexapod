@@ -167,6 +167,27 @@ Optionality semantics:
 - The UI must treat every status/health field as optional data.
 - UDP parsing accepts these fields on any schema-v1 payload type (`geometry`, `joints`, or additive telemetry payloads) and merges them into the current state.
 
+### Runtime autonomy stage-enabled flags
+
+`metadata.runtime.autonomy.stages` is emitted by `hexapod-server` on `joints` payloads and contains per-stage booleans:
+
+- `navigation`
+- `localization`
+- `world_model`
+- `traversability`
+- `global_planner`
+- `local_planner`
+- `progress_monitor`
+- `recovery_manager`
+- `motion_arbiter`
+- `locomotion_interface`
+
+Operator interpretation for approval-step debugging:
+
+- During each approval cycle, use these flags to verify which autonomy stage is currently enabled.
+- `navigation` is only enabled when a mission is loaded and not in `IDLE`.
+- The other stage flags indicate whether their stage is enabled in the autonomy pipeline for this runtime.
+
 ## Troubleshooting: grid moves wrong direction
 
 Symptoms:
