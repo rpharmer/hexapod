@@ -80,6 +80,20 @@ private:
     ContactManager contact_manager_;
     BodyController body_;
     LegIK ik_;
+    // Last-known-good stage outputs used to bridge disable/re-enable edges so downstream
+    // stages consume stable data rather than default-initialized structs.
+    GaitState cached_gait_state_{};
+    RuntimeGaitPolicy cached_managed_policy_{};
+    LegTargets cached_leg_targets_{};
+    JointTargets cached_joint_targets_{};
+    bool has_cached_gait_state_{false};
+    bool has_cached_managed_policy_{false};
+    bool has_cached_leg_targets_{false};
+    bool has_cached_joint_targets_{false};
+    bool gait_stage_enabled_last_cycle_{false};
+    bool contact_stage_enabled_last_cycle_{false};
+    bool body_stage_enabled_last_cycle_{false};
+    bool ik_stage_enabled_last_cycle_{false};
     std::size_t timing_window_size_{0};
     mutable std::mutex timing_mutex_{};
     std::array<StageTimingWindow, static_cast<std::size_t>(PipelineStage::Count)> stage_timings_{};

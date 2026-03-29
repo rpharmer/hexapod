@@ -38,10 +38,21 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
                                             const DurationSec& loop_dt,
                                             bool bus_ok,
                                             uint64_t loop_counter) {
+    // Freeze/hold semantics used during operator-guided bring-up:
+    //  - "All-off" (inhibit_motion or torque_cut) holds the last known-good joint targets.
+    //  - On a stage re-enable edge, that stage executes once for internal reseed/reset, but
+    //    downstream stages consume the previous stable cached output for that cycle.
+    //  - The next cycle after reseed uses the newly produced outputs, avoiding uninitialized
+    //    defaults and reducing transition transients.
     RobotMode active_mode = intent.requested_mode;
     if (safety_state.active_fault != FaultCode::NONE) {
         active_mode = RobotMode::FAULT;
     }
+    const bool all_off_mode = safety_state.inhibit_motion || safety_state.torque_cut;
+    const bool gait_stage_enabled = !all_off_mode;
+    const bool contact_stage_enabled = gait_stage_enabled;
+    const bool body_stage_enabled = !all_off_mode;
+    const bool ik_stage_enabled = !all_off_mode;
 
     const RuntimeGaitPolicy gait_policy = planner_.plan(estimated, intent, safety_state);
     const auto limiter_start = std::chrono::steady_clock::now();
@@ -53,6 +64,16 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
                                                   limiter_finish - limiter_start)
                                                   .count()));
 
+    RuntimeGaitPolicy stable_managed_policy = gait_policy;
+    if (has_cached_managed_policy_) {
+        stable_managed_policy = cached_managed_policy_;
+    }
+
+    GaitState stable_gait_state{};
+    if (has_cached_gait_state_) {
+        stable_gait_state = cached_gait_state_;
+    }
+
     const auto gait_start = std::chrono::steady_clock::now();
     const GaitState gait_state =
         gait_.update(estimated, limiter_output.limited_intent, safety_state, limiter_output.adapted_gait_policy);
@@ -61,6 +82,16 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
                         static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
                                                   gait_finish - gait_start)
                                                   .count()));
+
+    if (gait_stage_enabled && gait_stage_enabled_last_cycle_) {
+        stable_gait_state = gait_state;
+        cached_gait_state_ = gait_state;
+        has_cached_gait_state_ = true;
+    } else if (gait_stage_enabled && !gait_stage_enabled_last_cycle_) {
+        cached_gait_state_ = gait_state;
+        has_cached_gait_state_ = true;
+    }
+
     ContactManagerOutput contact_adjusted{};
     if (contactManagerBypassed()) {
         contact_adjusted.managed_gait = gait_state;
@@ -68,21 +99,83 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     } else {
         contact_adjusted = contact_manager_.update(estimated, gait_state, limiter_output.adapted_gait_policy);
     }
+    if (contact_stage_enabled && contact_stage_enabled_last_cycle_) {
+        stable_managed_policy = contact_adjusted.managed_policy;
+        cached_managed_policy_ = contact_adjusted.managed_policy;
+        has_cached_managed_policy_ = true;
+    } else if (contact_stage_enabled && !contact_stage_enabled_last_cycle_) {
+        cached_managed_policy_ = contact_adjusted.managed_policy;
+        has_cached_managed_policy_ = true;
+    }
+
+    if (has_cached_gait_state_) {
+        contact_adjusted.managed_gait = stable_gait_state;
+    } else {
+        contact_adjusted.managed_gait = gait_state;
+    }
+    if (has_cached_managed_policy_) {
+        contact_adjusted.managed_policy = stable_managed_policy;
+    } else {
+        contact_adjusted.managed_policy = limiter_output.adapted_gait_policy;
+    }
+
     const auto body_start = std::chrono::steady_clock::now();
-    const LegTargets leg_targets = body_.update(estimated, limiter_output.limited_intent, contact_adjusted.managed_gait, contact_adjusted.managed_policy, safety_state);
+    const LegTargets computed_leg_targets = body_.update(
+        estimated,
+        limiter_output.limited_intent,
+        contact_adjusted.managed_gait,
+        contact_adjusted.managed_policy,
+        safety_state);
     const auto body_finish = std::chrono::steady_clock::now();
     recordStageDuration(PipelineStage::Body,
                         static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
                                                   body_finish - body_start)
                                                   .count()));
+    LegTargets leg_targets = computed_leg_targets;
+    if (body_stage_enabled && body_stage_enabled_last_cycle_) {
+        cached_leg_targets_ = computed_leg_targets;
+        has_cached_leg_targets_ = true;
+    } else if (body_stage_enabled && !body_stage_enabled_last_cycle_) {
+        if (has_cached_leg_targets_) {
+            leg_targets = cached_leg_targets_;
+        }
+        cached_leg_targets_ = computed_leg_targets;
+        has_cached_leg_targets_ = true;
+    } else if (has_cached_leg_targets_) {
+        leg_targets = cached_leg_targets_;
+    }
 
     const auto ik_start = std::chrono::steady_clock::now();
-    const JointTargets joint_targets = ik_.solve(estimated, leg_targets, safety_state);
+    const JointTargets computed_joint_targets = ik_.solve(estimated, leg_targets, safety_state);
     const auto ik_finish = std::chrono::steady_clock::now();
     recordStageDuration(PipelineStage::Ik,
                         static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
                                                   ik_finish - ik_start)
                                                   .count()));
+    JointTargets joint_targets = computed_joint_targets;
+    if (ik_stage_enabled && ik_stage_enabled_last_cycle_) {
+        cached_joint_targets_ = computed_joint_targets;
+        has_cached_joint_targets_ = true;
+    } else if (ik_stage_enabled && !ik_stage_enabled_last_cycle_) {
+        if (has_cached_joint_targets_) {
+            joint_targets = cached_joint_targets_;
+        }
+        cached_joint_targets_ = computed_joint_targets;
+        has_cached_joint_targets_ = true;
+    } else if (has_cached_joint_targets_) {
+        joint_targets = cached_joint_targets_;
+    } else {
+        cached_joint_targets_ = computed_joint_targets;
+        has_cached_joint_targets_ = true;
+    }
+    if (all_off_mode && has_cached_joint_targets_) {
+        joint_targets = cached_joint_targets_;
+    }
+    gait_stage_enabled_last_cycle_ = gait_stage_enabled;
+    contact_stage_enabled_last_cycle_ = contact_stage_enabled;
+    body_stage_enabled_last_cycle_ = body_stage_enabled;
+    ik_stage_enabled_last_cycle_ = ik_stage_enabled;
+
     const BodyController::MotionLimiterTelemetry body_limiter = body_.lastMotionLimiterTelemetry();
 
     ControlStatus status{};
