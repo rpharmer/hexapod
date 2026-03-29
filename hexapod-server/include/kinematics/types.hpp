@@ -268,6 +268,15 @@ struct ControlStatus {
         uint64_t mission_completed_waypoints{0};
         uint64_t mission_total_waypoints{0};
     };
+    struct RuntimeStageApprovalTelemetry {
+        bool limiter_enabled{true};
+        bool gait_enabled{true};
+        bool body_enabled{true};
+        bool ik_enabled{true};
+        uint8_t current_enabled_stage_index{3};
+        uint8_t max_stage_index{3};
+        bool approval_required_for_next_stage{false};
+    };
 
     RobotMode active_mode{RobotMode::SAFE_IDLE};
     bool estimator_valid{false};
@@ -276,6 +285,7 @@ struct ControlStatus {
     uint64_t loop_counter{0};
     DynamicGaitTelemetry dynamic_gait{};
     AutonomyTelemetry autonomy{};
+    RuntimeStageApprovalTelemetry runtime_stage_approval{};
 };
 
 // ============================================================

@@ -102,6 +102,14 @@ bool RobotControl::setSimFaultToggles(const SimHardwareFaultToggles& toggles) {
     return runtime_.setSimFaultToggles(toggles);
 }
 
+void RobotControl::setRuntimeStageToggles(const RuntimeStageToggles& toggles) {
+    runtime_.setRuntimeStageToggles(toggles);
+}
+
+bool RobotControl::approveNextRuntimeStage() {
+    return runtime_.approveNextRuntimeStage();
+}
+
 ControlStatus RobotControl::getStatus() const {
     return runtime_.getStatus();
 }

@@ -25,6 +25,8 @@ public:
 
     void setMotionIntent(const MotionIntent& intent);
     bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
+    void setRuntimeStageToggles(const RuntimeStageToggles& toggles);
+    bool approveNextRuntimeStage();
     ControlStatus getStatus() const;
 
 private:

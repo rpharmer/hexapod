@@ -1,6 +1,47 @@
 #include "cli_options.hpp"
 
 #include <cstdlib>
+#include <sstream>
+
+namespace {
+
+bool parseRuntimeStageTogglesValue(const std::string& raw,
+                                   RuntimeStageToggles& parsed,
+                                   std::string& error) {
+  RuntimeStageToggles toggles{};
+  if (raw == "all") {
+    parsed = toggles;
+    return true;
+  }
+  if (raw == "none") {
+    parsed = RuntimeStageToggles{false, false, false, false};
+    return true;
+  }
+
+  toggles = RuntimeStageToggles{false, false, false, false};
+  std::stringstream stream(raw);
+  std::string token;
+  while (std::getline(stream, token, ',')) {
+    if (token == "limiter") {
+      toggles.limiter = true;
+    } else if (token == "gait") {
+      toggles.gait = true;
+    } else if (token == "body") {
+      toggles.body = true;
+    } else if (token == "ik") {
+      toggles.ik = true;
+    } else if (!token.empty()) {
+      error =
+          "--runtime-stage-toggles accepts comma-separated limiter,gait,body,ik (or all/none)";
+      return false;
+    }
+  }
+
+  parsed = toggles;
+  return true;
+}
+
+} // namespace
 
 bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error)
 {
@@ -108,6 +149,18 @@ bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error)
         return false;
       }
       out.telemetryGeometryResendIntervalSecOverride = value;
+    } else if (arg == "--runtime-stage-toggles") {
+      const char* value = consumeRequiredValue(i, arg, "a stage list (all, none, or limiter,gait,body,ik)");
+      if (value == nullptr) {
+        return false;
+      }
+      RuntimeStageToggles toggles{};
+      if (!parseRuntimeStageTogglesValue(value, toggles, error)) {
+        return false;
+      }
+      out.runtimeStageTogglesOverride = toggles;
+    } else if (arg == "--approve-next-stage") {
+      ++out.runtimeStageApproveNextCount;
     } else {
       if (arg.rfind("--", 0) == 0) {
         error = "Unknown option: " + arg;

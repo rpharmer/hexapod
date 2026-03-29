@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 
+#include "runtime_stage_approval.hpp"
 #include "scenario_driver.hpp"
 
 enum class ServerMode
@@ -27,6 +28,8 @@ struct CliOptions
   std::optional<int> telemetryPortOverride;
   std::optional<double> telemetryPublishRateHzOverride;
   std::optional<double> telemetryGeometryResendIntervalSecOverride;
+  std::optional<RuntimeStageToggles> runtimeStageTogglesOverride;
+  int runtimeStageApproveNextCount{0};
 };
 
 bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error);

@@ -165,6 +165,22 @@ void logStatus(const std::shared_ptr<logging::AsyncLogger>& logger,
             " mission_progress=", status.autonomy.mission_completed_waypoints, "/",
             status.autonomy.mission_total_waypoints);
     }
+    LOG_INFO(
+        logger,
+        "[diag.stage_approval] toggles={limiter:",
+        (status.runtime_stage_approval.limiter_enabled ? "on" : "off"),
+        ",gait:",
+        (status.runtime_stage_approval.gait_enabled ? "on" : "off"),
+        ",body:",
+        (status.runtime_stage_approval.body_enabled ? "on" : "off"),
+        ",ik:",
+        (status.runtime_stage_approval.ik_enabled ? "on" : "off"),
+        "} current_enabled_stage_index=",
+        static_cast<unsigned>(status.runtime_stage_approval.current_enabled_stage_index),
+        " max_stage_index=",
+        static_cast<unsigned>(status.runtime_stage_approval.max_stage_index),
+        " approval_required_for_next_stage=",
+        (status.runtime_stage_approval.approval_required_for_next_stage ? "yes" : "no"));
 
     if (bridge_result.has_value() && bridge_result->error != BridgeError::None) {
         LOG_WARN(logger,

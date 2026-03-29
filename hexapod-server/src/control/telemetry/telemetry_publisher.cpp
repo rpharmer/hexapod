@@ -294,6 +294,19 @@ public:
                 << "\"mission_state\":\"" << missionStateToString(telemetry.status.autonomy.mission_state) << "\","
                 << "\"mission_completed_waypoints\":" << telemetry.status.autonomy.mission_completed_waypoints << ","
                 << "\"mission_total_waypoints\":" << telemetry.status.autonomy.mission_total_waypoints
+                << "},\"stage_approval\":{"
+                << "\"toggles\":{"
+                << "\"limiter\":" << (telemetry.status.runtime_stage_approval.limiter_enabled ? "true" : "false") << ","
+                << "\"gait\":" << (telemetry.status.runtime_stage_approval.gait_enabled ? "true" : "false") << ","
+                << "\"body\":" << (telemetry.status.runtime_stage_approval.body_enabled ? "true" : "false") << ","
+                << "\"ik\":" << (telemetry.status.runtime_stage_approval.ik_enabled ? "true" : "false")
+                << "},"
+                << "\"current_enabled_stage_index\":"
+                << static_cast<unsigned>(telemetry.status.runtime_stage_approval.current_enabled_stage_index) << ","
+                << "\"max_stage_index\":"
+                << static_cast<unsigned>(telemetry.status.runtime_stage_approval.max_stage_index) << ","
+                << "\"approval_required_for_next_stage\":"
+                << (telemetry.status.runtime_stage_approval.approval_required_for_next_stage ? "true" : "false")
                 << "}}},"
                 << "\"dynamic_gait\":{"
                 << "\"valid\":" << (telemetry.status.dynamic_gait.valid ? "true" : "false") << ","

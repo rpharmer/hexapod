@@ -11,6 +11,7 @@
 #include "logger.hpp"
 #include "runtime_diagnostics_reporter.hpp"
 #include "runtime_freshness_gate.hpp"
+#include "runtime_stage_approval.hpp"
 #include "runtime_timing_metrics.hpp"
 #include "safety_supervisor.hpp"
 #include "telemetry_publisher.hpp"
@@ -52,6 +53,9 @@ public:
     void setMotionIntentForTest(const MotionIntent& intent);
     void setJointTargetsForTest(const JointTargets& targets);
     bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
+    void setRuntimeStageToggles(const RuntimeStageToggles& toggles);
+    bool approveNextRuntimeStage();
+    RuntimeStageApprovalState runtimeStageApprovalState() const;
     ControlStatus getStatus() const;
     void setAutonomyBlockedForTest(bool blocked);
     void setAutonomyNoProgressForTest(bool no_progress);
@@ -66,6 +70,10 @@ private:
                                              const SafetyState& safety_state,
                                              const TimePointUs& now);
     void applyAutonomyStatus(ControlStatus& status) const;
+    void applyRuntimeStageApprovalStatus(ControlStatus& status) const;
+    bool isRuntimeStageExecutionApproved() const;
+    static uint8_t findMaxEnabledStageIndex(const RuntimeStageToggles& toggles);
+    static const char* runtimeStageName(uint8_t stage_index);
 
     std::unique_ptr<IHardwareBridge> hw_;
     std::unique_ptr<hardware::IImuUnit> imu_;
@@ -117,4 +125,9 @@ private:
     std::atomic<bool> autonomy_blocked_signal_{false};
     std::atomic<bool> autonomy_no_progress_signal_{false};
     std::atomic<bool> autonomy_waypoint_reached_event_{false};
+    std::atomic<bool> runtime_stage_limiter_enabled_{true};
+    std::atomic<bool> runtime_stage_gait_enabled_{true};
+    std::atomic<bool> runtime_stage_body_enabled_{true};
+    std::atomic<bool> runtime_stage_ik_enabled_{true};
+    std::atomic<uint8_t> current_enabled_stage_index_{3};
 };

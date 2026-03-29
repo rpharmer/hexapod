@@ -197,6 +197,20 @@ int main(int argc, char** argv)
     return 1;
   }
 
+  if (options.runtimeStageTogglesOverride.has_value()) {
+    robot.setRuntimeStageToggles(options.runtimeStageTogglesOverride.value());
+    LOG_INFO(logger,
+             "Runtime.StageApproval.Cli set toggles via --runtime-stage-toggles");
+  }
+  for (int approval_count = 0; approval_count < options.runtimeStageApproveNextCount; ++approval_count) {
+    const bool approved = robot.approveNextRuntimeStage();
+    LOG_INFO(logger,
+             "Runtime.StageApproval.Cli --approve-next-stage[",
+             approval_count + 1,
+             "] result=",
+             (approved ? "advanced" : "no-op"));
+  }
+
   robot.start();
 
   int runner_rc = 0;

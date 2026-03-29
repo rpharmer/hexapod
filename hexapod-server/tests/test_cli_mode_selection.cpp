@@ -346,6 +346,46 @@ bool testTelemetryPortRequiresInteger()
                 "telemetry-port parse failure should mention option name");
 }
 
+bool testRuntimeStageApprovalOptions()
+{
+  std::vector<std::string> args{"hexapod-server",
+                                "--runtime-stage-toggles",
+                                "limiter,gait",
+                                "--approve-next-stage",
+                                "--approve-next-stage"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(ok, "runtime stage approval options should parse") &&
+         expect(options.runtimeStageTogglesOverride.has_value(),
+                "runtime-stage-toggles should persist toggles override") &&
+         expect(options.runtimeStageTogglesOverride->limiter,
+                "runtime-stage-toggles should enable limiter") &&
+         expect(options.runtimeStageTogglesOverride->gait,
+                "runtime-stage-toggles should enable gait") &&
+         expect(!options.runtimeStageTogglesOverride->body,
+                "runtime-stage-toggles should disable body when omitted") &&
+         expect(!options.runtimeStageTogglesOverride->ik,
+                "runtime-stage-toggles should disable ik when omitted") &&
+         expect(options.runtimeStageApproveNextCount == 2,
+                "approve-next-stage count should increment per explicit flag");
+}
+
+bool testRuntimeStageToggleRejectsUnknownStage()
+{
+  std::vector<std::string> args{"hexapod-server", "--runtime-stage-toggles", "limiter,foo"};
+  std::vector<char*> argv = argvFrom(args);
+
+  CliOptions options{};
+  std::string error;
+  const bool ok = parseCliOptions(static_cast<int>(argv.size()), argv.data(), options, error);
+  return expect(!ok, "runtime-stage-toggles should reject unknown stage names") &&
+         expect(error.find("--runtime-stage-toggles") != std::string::npos,
+                "runtime-stage-toggles parse failure should mention option name");
+}
+
 } // namespace
 
 int main()
@@ -372,6 +412,8 @@ int main()
   testLogFileOptionRequiresValue();
   testTelemetryOverrideOptions();
   testTelemetryPortRequiresInteger();
+  testRuntimeStageApprovalOptions();
+  testRuntimeStageToggleRejectsUnknownStage();
 
   if (g_failures != 0) {
     std::cerr << g_failures << " test(s) failed\n";

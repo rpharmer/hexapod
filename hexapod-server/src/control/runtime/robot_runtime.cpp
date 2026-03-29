@@ -36,6 +36,10 @@ telemetry::TelemetryPublishCounters readTelemetryCounters(
 constexpr double kJointTargetSlewHardMaxRadPerSec = 6.0;
 constexpr double kControlLoopMeasuredDtMinSec = 1e-4;
 constexpr double kControlLoopMeasuredDtMaxSec = 0.25;
+constexpr uint8_t kRuntimeStageLimiterIndex = 0;
+constexpr uint8_t kRuntimeStageGaitIndex = 1;
+constexpr uint8_t kRuntimeStageBodyIndex = 2;
+constexpr uint8_t kRuntimeStageIkIndex = 3;
 
 uint8_t missionStateCode(autonomy::MissionState state) {
     return static_cast<uint8_t>(state);
@@ -150,6 +154,11 @@ bool RobotRuntime::init() {
     autonomy_blocked_signal_.store(false);
     autonomy_no_progress_signal_.store(false);
     autonomy_waypoint_reached_event_.store(false);
+    runtime_stage_limiter_enabled_.store(true);
+    runtime_stage_gait_enabled_.store(true);
+    runtime_stage_body_enabled_.store(true);
+    runtime_stage_ik_enabled_.store(true);
+    current_enabled_stage_index_.store(kRuntimeStageIkIndex);
 
     if (config_.autonomy.enabled) {
         autonomy_stack_ = std::make_unique<autonomy::AutonomyStack>(autonomy::AutonomyStackConfig{
@@ -312,6 +321,7 @@ void RobotRuntime::controlStep() {
             logger_, now, freshness, est, intent, loop_counter, consecutive_rejects);
         ControlStatus runtime_status = decision.status;
         applyAutonomyStatus(runtime_status);
+        applyRuntimeStageApprovalStatus(runtime_status);
         status_.write(runtime_status);
         joint_targets_.write(decision.joint_targets);
         diagnostics_reporter_.recordControlOutputs(decision.joint_targets, runtime_status, now, nullptr);
@@ -335,8 +345,15 @@ void RobotRuntime::controlStep() {
         bus_ok,
         loop_counter);
 
+    ControlStatus runtime_status = pipeline_result.status;
+    const bool runtime_stage_execution_approved = isRuntimeStageExecutionApproved();
+    JointTargets runtime_targets = pipeline_result.joint_targets;
+    if (!runtime_stage_execution_approved) {
+        runtime_targets = JointTargets{};
+        runtime_status.active_mode = RobotMode::SAFE_IDLE;
+    }
     const JointTargets limited_targets = applyJointTargetSlewLimit(
-        pipeline_result.joint_targets,
+        runtime_targets,
         last_pipeline_joint_targets_,
         has_last_pipeline_joint_targets_,
         control_loop_dt.value,
@@ -345,8 +362,8 @@ void RobotRuntime::controlStep() {
     joint_targets_.write(limited_targets);
     last_pipeline_joint_targets_ = limited_targets;
     has_last_pipeline_joint_targets_ = true;
-    ControlStatus runtime_status = pipeline_result.status;
     applyAutonomyStatus(runtime_status);
+    applyRuntimeStageApprovalStatus(runtime_status);
     status_.write(runtime_status);
     diagnostics_reporter_.recordControlOutputs(limited_targets, runtime_status, now, &pipeline_result.leg_targets);
 
@@ -544,6 +561,56 @@ void RobotRuntime::applyAutonomyStatus(ControlStatus& status) const {
                                       last_autonomy_mission_event_.state == autonomy::MissionState::Paused;
 }
 
+void RobotRuntime::applyRuntimeStageApprovalStatus(ControlStatus& status) const {
+    const RuntimeStageApprovalState approval_state = runtimeStageApprovalState();
+    status.runtime_stage_approval.limiter_enabled = approval_state.toggles.limiter;
+    status.runtime_stage_approval.gait_enabled = approval_state.toggles.gait;
+    status.runtime_stage_approval.body_enabled = approval_state.toggles.body;
+    status.runtime_stage_approval.ik_enabled = approval_state.toggles.ik;
+    status.runtime_stage_approval.current_enabled_stage_index =
+        approval_state.current_enabled_stage_index;
+    status.runtime_stage_approval.max_stage_index = approval_state.max_stage_index;
+    status.runtime_stage_approval.approval_required_for_next_stage =
+        approval_state.approval_required_for_next_stage;
+}
+
+bool RobotRuntime::isRuntimeStageExecutionApproved() const {
+    const RuntimeStageApprovalState state = runtimeStageApprovalState();
+    return state.toggles.limiter && state.toggles.gait && state.toggles.body && state.toggles.ik &&
+           state.current_enabled_stage_index >= kRuntimeStageIkIndex;
+}
+
+uint8_t RobotRuntime::findMaxEnabledStageIndex(const RuntimeStageToggles& toggles) {
+    if (toggles.ik) {
+        return kRuntimeStageIkIndex;
+    }
+    if (toggles.body) {
+        return kRuntimeStageBodyIndex;
+    }
+    if (toggles.gait) {
+        return kRuntimeStageGaitIndex;
+    }
+    if (toggles.limiter) {
+        return kRuntimeStageLimiterIndex;
+    }
+    return 0;
+}
+
+const char* RobotRuntime::runtimeStageName(uint8_t stage_index) {
+    switch (stage_index) {
+        case kRuntimeStageLimiterIndex:
+            return "limiter";
+        case kRuntimeStageGaitIndex:
+            return "gait";
+        case kRuntimeStageBodyIndex:
+            return "body";
+        case kRuntimeStageIkIndex:
+            return "ik";
+        default:
+            return "unknown";
+    }
+}
+
 bool RobotRuntime::loadAutonomyMission(const autonomy::WaypointMission& mission) {
     if (!autonomy_stack_) {
         return false;
@@ -599,8 +666,78 @@ bool RobotRuntime::setSimFaultToggles(const SimHardwareFaultToggles& toggles) {
     return true;
 }
 
+void RobotRuntime::setRuntimeStageToggles(const RuntimeStageToggles& toggles) {
+    runtime_stage_limiter_enabled_.store(toggles.limiter);
+    runtime_stage_gait_enabled_.store(toggles.gait);
+    runtime_stage_body_enabled_.store(toggles.body);
+    runtime_stage_ik_enabled_.store(toggles.ik);
+    const uint8_t max_enabled_stage = findMaxEnabledStageIndex(toggles);
+    uint8_t expected = current_enabled_stage_index_.load();
+    while (expected > max_enabled_stage &&
+           !current_enabled_stage_index_.compare_exchange_weak(expected, max_enabled_stage)) {
+    }
+    if (logger_) {
+        LOG_INFO(logger_,
+                 "Runtime.StageApproval.Toggles limiter=",
+                 toggles.limiter,
+                 " gait=",
+                 toggles.gait,
+                 " body=",
+                 toggles.body,
+                 " ik=",
+                 toggles.ik,
+                 " current_enabled_stage_index=",
+                 current_enabled_stage_index_.load());
+    }
+}
+
+bool RobotRuntime::approveNextRuntimeStage() {
+    RuntimeStageApprovalState state = runtimeStageApprovalState();
+    if (state.current_enabled_stage_index >= state.max_stage_index) {
+        return false;
+    }
+    for (uint8_t next = static_cast<uint8_t>(state.current_enabled_stage_index + 1);
+         next <= state.max_stage_index;
+         ++next) {
+        const bool stage_enabled =
+            (next == kRuntimeStageLimiterIndex && state.toggles.limiter) ||
+            (next == kRuntimeStageGaitIndex && state.toggles.gait) ||
+            (next == kRuntimeStageBodyIndex && state.toggles.body) ||
+            (next == kRuntimeStageIkIndex && state.toggles.ik);
+        if (!stage_enabled) {
+            continue;
+        }
+        current_enabled_stage_index_.store(next);
+        if (logger_) {
+            LOG_INFO(logger_,
+                     "Runtime.StageApproval.Approved next_stage=",
+                     runtimeStageName(next),
+                     " current_enabled_stage_index=",
+                     next);
+        }
+        return true;
+    }
+    return false;
+}
+
+RuntimeStageApprovalState RobotRuntime::runtimeStageApprovalState() const {
+    RuntimeStageApprovalState state{};
+    state.toggles.limiter = runtime_stage_limiter_enabled_.load();
+    state.toggles.gait = runtime_stage_gait_enabled_.load();
+    state.toggles.body = runtime_stage_body_enabled_.load();
+    state.toggles.ik = runtime_stage_ik_enabled_.load();
+    state.max_stage_index = findMaxEnabledStageIndex(state.toggles);
+    state.current_enabled_stage_index = std::min<uint8_t>(current_enabled_stage_index_.load(),
+                                                          state.max_stage_index);
+    state.approval_required_for_next_stage =
+        state.current_enabled_stage_index < state.max_stage_index;
+    return state;
+}
+
 ControlStatus RobotRuntime::getStatus() const {
-    return status_.read();
+    ControlStatus status = status_.read();
+    applyRuntimeStageApprovalStatus(status);
+    return status;
 }
 
 void RobotRuntime::setAutonomyBlockedForTest(bool blocked) {
