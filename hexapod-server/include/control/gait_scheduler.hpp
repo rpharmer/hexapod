@@ -20,5 +20,6 @@ private:
     FrequencyHz cadence_hz_{FrequencyHz{0.0}};
     TimePointUs last_update_us_{};
     std::array<double, kNumLegs> last_phase_{};
+    std::array<double, kNumLegs> phase_alignment_offset_{};
     bool last_phase_initialized_{false};
 };
