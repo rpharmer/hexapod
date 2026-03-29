@@ -236,6 +236,14 @@ struct PipelineStageTimingConfig {
     StageTimingBudgetConfig ik{};
 };
 
+struct PipelineStageToggles {
+    bool motion_limiter{true};
+    bool gait_scheduler{true};
+    bool contact_manager{true};
+    bool body_controller{true};
+    bool leg_ik{true};
+};
+
 struct AutonomyRuntimeConfig {
     struct TraversabilityConfig {
         double occupancy_risk_weight{kDefaultTraversabilityOccupancyRiskWeight};
@@ -264,6 +272,7 @@ struct ControlConfig {
     TelemetryConfig telemetry{};
     RuntimeImuConfig runtime_imu{};
     MotionLimiterConfig motion_limiter{};
+    PipelineStageToggles pipeline_stage_toggles{};
     PipelineStageTimingConfig pipeline_stage_timing{};
     AutonomyRuntimeConfig autonomy{};
 };

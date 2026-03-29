@@ -229,6 +229,17 @@ void parseTuningSection(const toml::value& root,
   out.motionAdaptGaitPolicyOnLimit = config_validation::parseBoolWithFallback(
       root, "motion_limiter.adapt_gait_policy_on_limit",
       control_config::kDefaultMotionAdaptGaitPolicyOnLimit);
+
+  out.pipelineStageMotionLimiterEnabled = config_validation::parseBoolWithFallback(
+      root, "pipeline_stage_toggles.motion_limiter", true);
+  out.pipelineStageGaitSchedulerEnabled = config_validation::parseBoolWithFallback(
+      root, "pipeline_stage_toggles.gait_scheduler", true);
+  out.pipelineStageContactManagerEnabled = config_validation::parseBoolWithFallback(
+      root, "pipeline_stage_toggles.contact_manager", true);
+  out.pipelineStageBodyControllerEnabled = config_validation::parseBoolWithFallback(
+      root, "pipeline_stage_toggles.body_controller", true);
+  out.pipelineStageLegIkEnabled = config_validation::parseBoolWithFallback(
+      root, "pipeline_stage_toggles.leg_ik", true);
 }
 
 } // namespace tuning_section_parser
