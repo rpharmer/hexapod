@@ -35,7 +35,12 @@ JointTargets LegIK::solve(const RobotState& est,
   JointTargets joints{};
 
   for (int legID = 0; legID < kNumLegs; legID++) {
-    const bool solved = solveOneLeg(est.leg_states[legID],
+    const LegState& unwrap_ref =
+        unwrap_initialized_[static_cast<std::size_t>(legID)]
+            ? last_unwrapped_command_.leg_states[legID]
+            : est.leg_states[legID];
+
+    const bool solved = solveOneLeg(unwrap_ref,
                                     joints.leg_states[legID],
                                     targets.feet[legID],
                                     hexGeo.legGeometry[legID]);
@@ -43,12 +48,15 @@ JointTargets LegIK::solve(const RobotState& est,
     if (use_fallback) {
       apply_estimated_leg_fallback(est, joints, legID);
     }
+
+    unwrap_initialized_[static_cast<std::size_t>(legID)] = true;
+    last_unwrapped_command_.leg_states[legID] = joints.leg_states[legID];
   }
 
   return joints;
 }
 
-bool LegIK::solveOneLeg(const LegState& est,
+bool LegIK::solveOneLeg(const LegState& unwrap_reference,
                         LegState& out,
                         const FootTarget& foot,
                         const LegGeometry& leg) {
@@ -100,11 +108,12 @@ bool LegIK::solveOneLeg(const LegState& est,
   out.joint_state[2].pos_rad = AngleRad{q3};
   out = leg.servo.toServoAngles(out);
 
-  // Keep servo command continuity across +/-pi branch cuts by selecting the
-  // equivalent angle nearest to current estimated feedback.
+  // Keep servo command continuity across +/-pi branch cuts. Unwrapping against
+  // raw encoder feedback couples IK to measurement noise and causes hunting;
+  // use the previous commanded solution once available (see solve()).
   for (int joint = 0; joint < kJointsPerLeg; ++joint) {
     out.joint_state[joint].pos_rad.value =
-        unwrapToNearest(est.joint_state[joint].pos_rad.value,
+        unwrapToNearest(unwrap_reference.joint_state[joint].pos_rad.value,
                         out.joint_state[joint].pos_rad.value);
   }
 

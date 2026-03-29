@@ -97,6 +97,9 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.telemetry.udp_port = config.telemetryUdpPort;
     parsed.telemetry.publish_period = std::chrono::milliseconds{config.telemetryPublishPeriodMs};
     parsed.telemetry.geometry_refresh_period = std::chrono::milliseconds{config.telemetryGeometryRefreshPeriodMs};
+    parsed.debug.log_joint_targets = config.debugLogJointTargets;
+    parsed.debug.joint_targets_log_period = std::chrono::milliseconds{config.debugJointTargetsLogPeriodMs};
+    parsed.pipeline.bypass_contact_manager = config.bypassContactManager;
     parsed.runtime_imu.enable_reads = config.imuEnableReads;
     parsed.motion_limiter.body_linear_accel_limit_xy_mps2 = config.motionBodyLinearAccelLimitXYMps2;
     parsed.motion_limiter.body_linear_accel_limit_z_mps2 = config.motionBodyLinearAccelLimitZMps2;

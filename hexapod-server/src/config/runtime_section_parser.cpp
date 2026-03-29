@@ -256,6 +256,10 @@ bool parseRuntimeSection(const toml::value& root,
   out.telemetryGeometryResendIntervalSec = config_validation::parseDoubleWithFallback(
       root, schema[27].key, schema[27].default_double, schema[27].min_value,
       schema[27].max_value, "runtime", logger, diagnostics);
+
+  out.debugLogJointTargets = findOrByPath<bool>(root, "Runtime.Debug.LogJointTargets", false);
+  out.debugJointTargetsLogPeriodMs = static_cast<int>(config_validation::parseDoubleWithFallback(
+      root, "Runtime.Debug.JointTargetsLogPeriodMs", 250.0, 50.0, 10000.0, "runtime", logger, diagnostics));
   return true;
 }
 

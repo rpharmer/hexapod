@@ -26,6 +26,8 @@ Runtime.Autonomy.Traversability.RiskBlockThreshold = 0.85
 Runtime.Autonomy.Traversability.ConfidenceBlockThreshold = 0.3
 Runtime.Log.FilePath = "app.log"
 Runtime.Log.EnableFile = true
+Runtime.Debug.LogJointTargets = false
+Runtime.Debug.JointTargetsLogPeriodMs = 250
 Runtime.Telemetry.Enable = false
 Runtime.Telemetry.Host = "127.0.0.1"
 Runtime.Telemetry.Port = 9870
@@ -59,6 +61,8 @@ MotorCalibrations = [
 ["L13", 1035, 2027]] #//L13 M15
 
 [Tuning]
+# Set true to skip ContactManager (touchdown overrides, slip/degraded policy tweaks).
+BypassContactManager = true
 BusLoopPeriodUs = 2000
 EstimatorLoopPeriodUs = 2000
 ControlLoopPeriodUs = 4000

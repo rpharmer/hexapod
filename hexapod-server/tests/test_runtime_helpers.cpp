@@ -56,8 +56,8 @@ bool testFreshnessGateDecisionMatrix() {
                   "stale estimator should take precedence for fault mapping") &&
            expect(reject_both.status.bus_ok == false, "rejected status should preserve bus flag") &&
            expect(reject_both.status.loop_counter == 13, "rejected status should preserve loop counter") &&
-           expect(reject_both.joint_targets.leg_states[0].joint_state[0].pos_rad.value < 0.8,
-                  "extended reject streak should decay previous joint targets");
+           expect(reject_both.joint_targets.leg_states[0].joint_state[0].pos_rad.value == 0.8,
+                  "extended reject streak should keep holding previous joint targets");
 }
 
 bool testStrictMetricsOnlyCountInvalidStreams() {

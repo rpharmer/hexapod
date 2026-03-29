@@ -1,7 +1,5 @@
 #include "runtime_freshness_gate.hpp"
 
-#include <algorithm>
-
 namespace {
 
 ControlStatus makeFreshnessGateRejectedStatus(bool estimator_fresh,
@@ -16,30 +14,17 @@ ControlStatus makeFreshnessGateRejectedStatus(bool estimator_fresh,
     return status;
 }
 
-constexpr uint64_t kRejectHoldCycles = 3;
-constexpr double kRejectDecayPerCycle = 0.15;
-
 JointTargets computeRejectTargets(const JointTargets& last_joint_targets,
                                   bool has_last_joint_targets,
                                   uint64_t consecutive_rejects) {
+    (void)consecutive_rejects;
     if (!has_last_joint_targets) {
         return JointTargets{};
     }
-
-    if (consecutive_rejects <= kRejectHoldCycles) {
-        return last_joint_targets;
-    }
-
-    const uint64_t decay_cycles = consecutive_rejects - kRejectHoldCycles;
-    const double decay_factor = std::max(0.0, 1.0 - (kRejectDecayPerCycle * static_cast<double>(decay_cycles)));
-
-    JointTargets decayed = last_joint_targets;
-    for (int leg = 0; leg < kNumLegs; ++leg) {
-        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-            decayed.leg_states[leg].joint_state[joint].pos_rad.value *= decay_factor;
-        }
-    }
-    return decayed;
+    // Hold the last pipeline pose for the whole reject streak. Decaying toward zero
+    // caused rapid joint collapses whenever estimator/intent were briefly stale during
+    // locomotion (visible on hardware and in UDP joint telemetry).
+    return last_joint_targets;
 }
 
 } // namespace

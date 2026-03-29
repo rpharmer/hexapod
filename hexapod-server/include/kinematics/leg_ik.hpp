@@ -1,7 +1,9 @@
 #pragma once
 
-#include "types.hpp"
 #include "geometry_config.hpp"
+#include "types.hpp"
+
+#include <array>
 
 class LegIK {
 public:
@@ -11,9 +13,11 @@ public:
                        const LegTargets& targets, const SafetyState& safety);
 
 private:
-    bool solveOneLeg(const LegState& est,
-                        LegState& out,
-                        const FootTarget& foot,
-                        const LegGeometry& leg);
+    bool solveOneLeg(const LegState& unwrap_reference,
+                     LegState& out,
+                     const FootTarget& foot,
+                     const LegGeometry& leg);
     HexapodGeometry hexGeo;
+    JointTargets last_unwrapped_command_{};
+    std::array<bool, kNumLegs> unwrap_initialized_{};
 };

@@ -229,6 +229,8 @@ void parseTuningSection(const toml::value& root,
   out.motionAdaptGaitPolicyOnLimit = config_validation::parseBoolWithFallback(
       root, "motion_limiter.adapt_gait_policy_on_limit",
       control_config::kDefaultMotionAdaptGaitPolicyOnLimit);
+  out.bypassContactManager =
+      config_validation::parseBoolWithFallback(root, "Tuning.BypassContactManager", false);
 }
 
 } // namespace tuning_section_parser

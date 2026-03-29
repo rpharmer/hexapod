@@ -26,6 +26,8 @@ Runtime.Autonomy.Traversability.RiskBlockThreshold = 0.85
 Runtime.Autonomy.Traversability.ConfidenceBlockThreshold = 0.3
 Runtime.Log.FilePath = "app.log"
 Runtime.Log.EnableFile = true
+Runtime.Debug.LogJointTargets = false
+Runtime.Debug.JointTargetsLogPeriodMs = 250
 
 # Kept for compatibility; ignored by runtime when Mode = "sim"
 SerialDevice = '/dev/ttyACM0'
@@ -54,6 +56,8 @@ MotorCalibrations = [
 ["L13", 1035, 2027]]
 
 [Tuning]
+# Set true to skip ContactManager (touchdown overrides, slip/degraded policy tweaks).
+BypassContactManager = false
 BusLoopPeriodUs = 2000
 EstimatorLoopPeriodUs = 2000
 ControlLoopPeriodUs = 4000

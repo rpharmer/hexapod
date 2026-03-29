@@ -48,6 +48,8 @@ struct ParsedToml
   int telemetryUdpPort{9870};
   int telemetryPublishPeriodMs{50};
   int telemetryGeometryRefreshPeriodMs{2000};
+  bool debugLogJointTargets{false};
+  int debugJointTargetsLogPeriodMs{250};
 
   int busLoopPeriodUs{2000};
   int estimatorLoopPeriodUs{2000};
@@ -118,6 +120,7 @@ struct ParsedToml
   int motionStartupPhaseThresholdMs{350};
   int motionShutdownPhaseThresholdMs{450};
   bool motionAdaptGaitPolicyOnLimit{false};
+  bool bypassContactManager{false};
 
   double coxaLengthM{0.043};
   double femurLengthM{0.060};

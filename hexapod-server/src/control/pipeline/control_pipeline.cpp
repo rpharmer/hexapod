@@ -26,7 +26,8 @@ ControlPipeline::ControlPipeline(control_config::ControlConfig config)
       motion_limiter_(config.motion_limiter),
       gait_(config_.gait),
       body_(config_.motion_limiter),
-      contact_manager_bypassed_(contactManagerBypassedFromEnv()) {
+      contact_manager_bypassed_(config_.pipeline.bypass_contact_manager ||
+                                contactManagerBypassedFromEnv()) {
     timing_window_size_ = std::clamp<std::size_t>(
         config_.pipeline_stage_timing.rolling_window_samples,
         1U,

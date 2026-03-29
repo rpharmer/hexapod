@@ -81,6 +81,33 @@ JointTargets applyJointTargetSlewLimit(const JointTargets& requested,
     return limited;
 }
 
+double maxAbsJointRad(const JointTargets& joints) {
+    double m = 0.0;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+            const double v = std::abs(joints.leg_states[leg].joint_state[joint].pos_rad.value);
+            if (v > m) {
+                m = v;
+            }
+        }
+    }
+    return m;
+}
+
+double maxJointStepRad(const JointTargets& cur, const JointTargets& prev) {
+    double m = 0.0;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+            const double d = std::abs(cur.leg_states[leg].joint_state[joint].pos_rad.value -
+                                     prev.leg_states[leg].joint_state[joint].pos_rad.value);
+            if (d > m) {
+                m = d;
+            }
+        }
+    }
+    return m;
+}
+
 } // namespace
 
 bool RobotRuntime::init() {
@@ -143,6 +170,7 @@ bool RobotRuntime::init() {
     timing_metrics_.reset();
     next_telemetry_publish_at_ = TimePointUs{};
     next_geometry_refresh_at_ = TimePointUs{};
+    last_joint_targets_debug_log_at_ = TimePointUs{};
     last_autonomy_step_output_.reset();
     last_autonomy_mission_event_ = autonomy::MissionEvent{};
     last_autonomy_recovery_decision_ = autonomy::RecoveryDecision{};
@@ -184,6 +212,12 @@ bool RobotRuntime::init() {
         }
     } else {
         autonomy_stack_.reset();
+    }
+
+    if (config_.debug.log_joint_targets && logger_) {
+        LOG_INFO(logger_,
+                 "Runtime.Debug.LogJointTargets=true JointTargetsLogPeriodMs=",
+                 config_.debug.joint_targets_log_period.count());
     }
 
     return true;
@@ -269,6 +303,7 @@ void RobotRuntime::controlStep() {
     const MotionIntent intent = motion_intent_.read();
     const SafetyState safety_state = safety_state_.read();
     const bool bus_ok = raw_state_.read().bus_ok;
+    const JointTargets previous_joint_cmd = joint_targets_.read();
 
     const FreshnessPolicy::Evaluation freshness = freshness_gate_.evaluate(
         RuntimeFreshnessGate::EvaluationMode::StrictControl, now, est, intent);
@@ -307,6 +342,8 @@ void RobotRuntime::controlStep() {
         status_.write(runtime_status);
         joint_targets_.write(decision.joint_targets);
         diagnostics_reporter_.recordControlOutputs(decision.joint_targets, runtime_status, now, nullptr);
+        maybeLogJointTargetsDebug(
+            decision.joint_targets, previous_joint_cmd, true, consecutive_rejects, runtime_status, now);
         maybePublishTelemetry(now);
         return;
     }
@@ -342,7 +379,68 @@ void RobotRuntime::controlStep() {
     status_.write(runtime_status);
     diagnostics_reporter_.recordControlOutputs(limited_targets, runtime_status, now, &pipeline_result.leg_targets);
 
+    maybeLogJointTargetsDebug(limited_targets, previous_joint_cmd, false, 0, runtime_status, now);
     maybePublishTelemetry(now);
+}
+
+void RobotRuntime::maybeLogJointTargetsDebug(const JointTargets& written,
+                                             const JointTargets& previous_cmd,
+                                             const bool freshness_reject,
+                                             const uint64_t consecutive_rejects,
+                                             const ControlStatus& status,
+                                             const TimePointUs& now) {
+    if (!config_.debug.log_joint_targets || !logger_) {
+        return;
+    }
+
+    constexpr double kNearZeroRad = 1e-5;
+    constexpr double kLargeStepRad = 0.35;
+
+    const double max_abs = maxAbsJointRad(written);
+    const double prev_max = maxAbsJointRad(previous_cmd);
+    const double step = maxJointStepRad(written, previous_cmd);
+
+    const bool prev_near = prev_max < kNearZeroRad;
+    const bool cur_near = max_abs < kNearZeroRad;
+    const bool locomoting =
+        status.active_mode == RobotMode::WALK || status.active_mode == RobotMode::STAND;
+    const bool near_zero_enter = locomoting && !prev_near && cur_near;
+
+    const bool large_step = status.loop_counter > 2 && step > kLargeStepRad;
+
+    const int period_ms = std::max(static_cast<int>(config_.debug.joint_targets_log_period.count()), 50);
+    const uint64_t period_us = static_cast<uint64_t>(period_ms) * 1000ULL;
+    const bool throttle_ok = last_joint_targets_debug_log_at_.isZero() ||
+                             (now.value >= last_joint_targets_debug_log_at_.value + period_us);
+
+    const bool immediate = near_zero_enter;
+    const bool throttled_event = throttle_ok && (freshness_reject || large_step);
+
+    if (!immediate && !throttled_event) {
+        return;
+    }
+
+    LOG_INFO(logger_,
+             "debug.joint_targets loop=",
+             status.loop_counter,
+             " freshness_reject=",
+             freshness_reject ? 1 : 0,
+             " consec_rej=",
+             consecutive_rejects,
+             " mode=",
+             static_cast<int>(status.active_mode),
+             " fault=",
+             static_cast<int>(status.active_fault),
+             " bus_ok=",
+             status.bus_ok ? 1 : 0,
+             " est_valid=",
+             status.estimator_valid ? 1 : 0,
+             " max_abs_rad=",
+             max_abs,
+             " max_step_rad=",
+             step);
+
+    last_joint_targets_debug_log_at_ = now;
 }
 
 void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {

@@ -22,6 +22,7 @@ inline constexpr int kDefaultStandSettlingDelayMs = 2000;
 inline constexpr int kDefaultTelemetryPublishPeriodMs = 50;
 inline constexpr int kDefaultTelemetryGeometryRefreshPeriodMs = 2000;
 inline constexpr int kDefaultTelemetryUdpPort = 9870;
+inline constexpr int kDefaultDebugJointTargetsLogPeriodMs = 250;
 inline constexpr bool kDefaultImuEnableReads = false;
 inline constexpr AngleRad kDefaultMaxTiltRad{0.70};
 inline constexpr DurationUs kDefaultCommandTimeoutUs{300000};
@@ -201,6 +202,17 @@ struct TelemetryConfig {
     std::chrono::milliseconds geometry_refresh_period{std::chrono::milliseconds{kDefaultTelemetryGeometryRefreshPeriodMs}};
 };
 
+struct DebugConfig {
+    bool log_joint_targets{false};
+    std::chrono::milliseconds joint_targets_log_period{std::chrono::milliseconds{kDefaultDebugJointTargetsLogPeriodMs}};
+};
+
+struct PipelineConfig {
+    /// When true, skip ContactManager (no touchdown override, slip policy, degraded scaling).
+    /// Also settable via env HEXAPOD_BYPASS_CONTACT_MANAGER=1.
+    bool bypass_contact_manager{false};
+};
+
 struct RuntimeImuConfig {
     bool enable_reads{kDefaultImuEnableReads};
 };
@@ -262,6 +274,8 @@ struct ControlConfig {
     GaitConfig gait{};
     FreshnessConfig freshness{};
     TelemetryConfig telemetry{};
+    DebugConfig debug{};
+    PipelineConfig pipeline{};
     RuntimeImuConfig runtime_imu{};
     MotionLimiterConfig motion_limiter{};
     PipelineStageTimingConfig pipeline_stage_timing{};

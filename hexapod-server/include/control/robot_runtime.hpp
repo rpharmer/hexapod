@@ -62,6 +62,12 @@ public:
 
 private:
     void maybePublishTelemetry(const TimePointUs& now);
+    void maybeLogJointTargetsDebug(const JointTargets& written,
+                                   const JointTargets& previous_cmd,
+                                   bool freshness_reject,
+                                   uint64_t consecutive_rejects,
+                                   const ControlStatus& status,
+                                   const TimePointUs& now);
     MotionIntent resolveAutonomyMotionIntent(const MotionIntent& base_intent,
                                              const SafetyState& safety_state,
                                              const TimePointUs& now);
@@ -109,6 +115,7 @@ private:
 
     TimePointUs next_telemetry_publish_at_{};
     TimePointUs next_geometry_refresh_at_{};
+    TimePointUs last_joint_targets_debug_log_at_{};
     std::unique_ptr<autonomy::AutonomyStack> autonomy_stack_;
     std::optional<autonomy::AutonomyStepOutput> last_autonomy_step_output_{};
     autonomy::MissionEvent last_autonomy_mission_event_{};
