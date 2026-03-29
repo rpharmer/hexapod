@@ -80,6 +80,16 @@ private:
     ContactManager contact_manager_;
     BodyController body_;
     LegIK ik_;
+    MotionLimiterOutput last_limiter_output_{};
+    GaitState last_gait_state_{};
+    ContactManagerOutput last_contact_output_{};
+    LegTargets last_leg_targets_{};
+    JointTargets last_joint_targets_{};
+    bool has_last_limiter_output_{false};
+    bool has_last_gait_state_{false};
+    bool has_last_contact_output_{false};
+    bool has_last_leg_targets_{false};
+    bool has_last_joint_targets_{false};
     std::size_t timing_window_size_{0};
     mutable std::mutex timing_mutex_{};
     std::array<StageTimingWindow, static_cast<std::size_t>(PipelineStage::Count)> stage_timings_{};

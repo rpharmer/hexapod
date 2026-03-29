@@ -118,6 +118,11 @@ struct ParsedToml
   int motionStartupPhaseThresholdMs{350};
   int motionShutdownPhaseThresholdMs{450};
   bool motionAdaptGaitPolicyOnLimit{false};
+  bool pipelineStageMotionLimiterEnabled{true};
+  bool pipelineStageGaitSchedulerEnabled{true};
+  bool pipelineStageContactManagerEnabled{true};
+  bool pipelineStageBodyControllerEnabled{true};
+  bool pipelineStageLegIkEnabled{true};
 
   double coxaLengthM{0.043};
   double femurLengthM{0.060};

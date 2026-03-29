@@ -3,22 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstdlib>
 #include <vector>
-#include <string_view>
-
-namespace {
-
-bool contactManagerBypassed() {
-    const char* raw = std::getenv("HEXAPOD_BYPASS_CONTACT_MANAGER");
-    if (raw == nullptr) {
-        return false;
-    }
-    const std::string_view value{raw};
-    return value == "1" || value == "true" || value == "TRUE" || value == "yes" || value == "YES";
-}
-
-} // namespace
 
 ControlPipeline::ControlPipeline(control_config::ControlConfig config)
     : config_(config),
@@ -44,45 +29,91 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     }
 
     const RuntimeGaitPolicy gait_policy = planner_.plan(estimated, intent, safety_state);
-    const auto limiter_start = std::chrono::steady_clock::now();
-    const MotionLimiterOutput limiter_output =
-        motion_limiter_.update(estimated, intent, gait_policy, safety_state, loop_dt);
-    const auto limiter_finish = std::chrono::steady_clock::now();
-    recordStageDuration(PipelineStage::Limiter,
-                        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-                                                  limiter_finish - limiter_start)
-                                                  .count()));
+    MotionLimiterOutput limiter_output{};
+    if (config_.pipeline_stage_toggles.motion_limiter) {
+        const auto limiter_start = std::chrono::steady_clock::now();
+        limiter_output = motion_limiter_.update(estimated, intent, gait_policy, safety_state, loop_dt);
+        const auto limiter_finish = std::chrono::steady_clock::now();
+        recordStageDuration(PipelineStage::Limiter,
+                            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                                      limiter_finish - limiter_start)
+                                                      .count()));
+        last_limiter_output_ = limiter_output;
+        has_last_limiter_output_ = true;
+    } else if (has_last_limiter_output_) {
+        limiter_output = last_limiter_output_;
+    } else {
+        limiter_output.limited_intent = intent;
+        limiter_output.adapted_gait_policy = gait_policy;
+    }
 
-    const auto gait_start = std::chrono::steady_clock::now();
-    const GaitState gait_state =
-        gait_.update(estimated, limiter_output.limited_intent, safety_state, limiter_output.adapted_gait_policy);
-    const auto gait_finish = std::chrono::steady_clock::now();
-    recordStageDuration(PipelineStage::Gait,
-                        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-                                                  gait_finish - gait_start)
-                                                  .count()));
+    GaitState gait_state{};
+    if (config_.pipeline_stage_toggles.gait_scheduler) {
+        const auto gait_start = std::chrono::steady_clock::now();
+        gait_state = gait_.update(
+            estimated, limiter_output.limited_intent, safety_state, limiter_output.adapted_gait_policy);
+        const auto gait_finish = std::chrono::steady_clock::now();
+        recordStageDuration(PipelineStage::Gait,
+                            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                                      gait_finish - gait_start)
+                                                      .count()));
+        last_gait_state_ = gait_state;
+        has_last_gait_state_ = true;
+    } else if (has_last_gait_state_) {
+        gait_state = last_gait_state_;
+    } else {
+        gait_state.timestamp_us = estimated.timestamp_us;
+    }
+
     ContactManagerOutput contact_adjusted{};
-    if (contactManagerBypassed()) {
-        contact_adjusted.managed_gait = gait_state;
-        contact_adjusted.managed_policy = limiter_output.adapted_gait_policy;
+    if (!config_.pipeline_stage_toggles.contact_manager) {
+        if (has_last_contact_output_) {
+            contact_adjusted = last_contact_output_;
+        } else {
+            contact_adjusted.managed_gait = gait_state;
+            contact_adjusted.managed_policy = limiter_output.adapted_gait_policy;
+        }
     } else {
         contact_adjusted = contact_manager_.update(estimated, gait_state, limiter_output.adapted_gait_policy);
+        last_contact_output_ = contact_adjusted;
+        has_last_contact_output_ = true;
     }
-    const auto body_start = std::chrono::steady_clock::now();
-    const LegTargets leg_targets = body_.update(estimated, limiter_output.limited_intent, contact_adjusted.managed_gait, contact_adjusted.managed_policy, safety_state);
-    const auto body_finish = std::chrono::steady_clock::now();
-    recordStageDuration(PipelineStage::Body,
-                        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-                                                  body_finish - body_start)
-                                                  .count()));
 
-    const auto ik_start = std::chrono::steady_clock::now();
-    const JointTargets joint_targets = ik_.solve(estimated, leg_targets, safety_state);
-    const auto ik_finish = std::chrono::steady_clock::now();
-    recordStageDuration(PipelineStage::Ik,
-                        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-                                                  ik_finish - ik_start)
-                                                  .count()));
+    LegTargets leg_targets{};
+    if (config_.pipeline_stage_toggles.body_controller) {
+        const auto body_start = std::chrono::steady_clock::now();
+        leg_targets = body_.update(
+            estimated, limiter_output.limited_intent, contact_adjusted.managed_gait, contact_adjusted.managed_policy, safety_state);
+        const auto body_finish = std::chrono::steady_clock::now();
+        recordStageDuration(PipelineStage::Body,
+                            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                                      body_finish - body_start)
+                                                      .count()));
+        last_leg_targets_ = leg_targets;
+        has_last_leg_targets_ = true;
+    } else if (has_last_leg_targets_) {
+        leg_targets = last_leg_targets_;
+    } else {
+        leg_targets.timestamp_us = estimated.timestamp_us;
+    }
+
+    JointTargets joint_targets{};
+    if (config_.pipeline_stage_toggles.leg_ik) {
+        const auto ik_start = std::chrono::steady_clock::now();
+        joint_targets = ik_.solve(estimated, leg_targets, safety_state);
+        const auto ik_finish = std::chrono::steady_clock::now();
+        recordStageDuration(PipelineStage::Ik,
+                            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                                      ik_finish - ik_start)
+                                                      .count()));
+        last_joint_targets_ = joint_targets;
+        has_last_joint_targets_ = true;
+    } else if (has_last_joint_targets_) {
+        joint_targets = last_joint_targets_;
+    } else {
+        joint_targets.leg_states = estimated.leg_states;
+    }
+
     const BodyController::MotionLimiterTelemetry body_limiter = body_.lastMotionLimiterTelemetry();
 
     ControlStatus status{};
