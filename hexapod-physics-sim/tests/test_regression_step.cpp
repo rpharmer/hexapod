@@ -53,5 +53,41 @@ int main() {
     assert(std::isfinite(outB.position.x) && std::isfinite(outB.position.y) && std::isfinite(outB.position.z));
     assert(Length(outB.position - outA.position) > 0.001f);
     }
+
+    {
+    auto runFastSphereAtThinBox = []() {
+        World world({0.0f, 0.0f, 0.0f});
+
+        Body target;
+        target.shape = ShapeType::Box;
+        target.isStatic = true;
+        target.position = {0.0f, 0.8f, 0.0f};
+        target.halfExtents = {0.08f, 0.45f, 0.45f};
+        world.CreateBody(target);
+
+        Body sphere;
+        sphere.shape = ShapeType::Sphere;
+        sphere.radius = 0.2f;
+        sphere.position = {-3.0f, 0.8f, 0.0f};
+        sphere.velocity = {70.0f, 0.0f, 0.0f};
+        sphere.mass = 1.0f;
+        sphere.restitution = 0.0f;
+        const auto sphereId = world.CreateBody(sphere);
+
+        for (int i = 0; i < 20; ++i) {
+            world.Step(1.0f / 60.0f, 8);
+        }
+
+        return world.GetBody(sphereId).position;
+    };
+
+    const Vec3 firstRun = runFastSphereAtThinBox();
+    const Vec3 secondRun = runFastSphereAtThinBox();
+
+    assert(firstRun.x <= 0.30f);
+    assert(std::abs(firstRun.x - secondRun.x) <= 1e-5f);
+    assert(std::abs(firstRun.y - secondRun.y) <= 1e-5f);
+    assert(std::abs(firstRun.z - secondRun.z) <= 1e-5f);
+    }
     return 0;
 }
