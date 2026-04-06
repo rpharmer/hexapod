@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -1294,6 +1295,7 @@ private:
             int type = 0; // 0 = face A, 1 = face B, 2 = edge-edge
             int indexA = -1;
             int indexB = -1;
+            float overlap = 0.0f;
         };
 
         AxisCandidate candidates[15];
@@ -1307,13 +1309,16 @@ private:
         }
 
         const Vec3 centerDelta = b.position - a.position;
+        constexpr float kParallelAxisEps = 1e-8f;
+        constexpr float kFaceAxisBias = 0.0025f;
         float bestOverlap = std::numeric_limits<float>::infinity();
+        float bestScore = std::numeric_limits<float>::infinity();
         AxisCandidate best{};
 
         for (int i = 0; i < axisCount; ++i) {
             Vec3 axis = candidates[i].axis;
             const float lenSq = LengthSquared(axis);
-            if (lenSq <= 1e-8f) {
+            if (lenSq <= kParallelAxisEps) {
                 continue;
             }
             axis = axis / std::sqrt(lenSq);
@@ -1325,10 +1330,13 @@ private:
             if (overlap < 0.0f) {
                 return;
             }
-            if (overlap < bestOverlap) {
+            const float biasedOverlap = overlap + ((candidates[i].type == 2) ? kFaceAxisBias : 0.0f);
+            if (biasedOverlap < bestScore) {
+                bestScore = biasedOverlap;
                 bestOverlap = overlap;
                 best = candidates[i];
                 best.axis = axis;
+                best.overlap = overlap;
                 if (Dot(centerDelta, best.axis) < 0.0f) {
                     best.axis = -best.axis;
                 }
@@ -1343,6 +1351,7 @@ private:
             Vec3 point{};
             std::uint8_t incidentFeature = 0; // 0..3 face vertices, 4..7 clipped face edges
             std::uint8_t clipMask = 0; // reference-side clipping planes touched
+            float depth = 0.0f;
         };
 
         auto localFaceVertices = [](const Vec3& he, int axis, float sign) {
@@ -1393,11 +1402,11 @@ private:
                 } else if (ina && !inb) {
                     const float t = da / (da - db + kEpsilon);
                     const std::uint8_t edgeId = static_cast<std::uint8_t>(4u + (i & 3u));
-                    out.push_back({va.point + (vb.point - va.point) * t, edgeId, static_cast<std::uint8_t>((va.clipMask | vb.clipMask) | (1u << planeBit))});
+                    out.push_back({va.point + (vb.point - va.point) * t, edgeId, static_cast<std::uint8_t>((va.clipMask | vb.clipMask) | (1u << planeBit)), 0.0f});
                 } else if (!ina && inb) {
                     const float t = da / (da - db + kEpsilon);
                     const std::uint8_t edgeId = static_cast<std::uint8_t>(4u + (i & 3u));
-                    out.push_back({va.point + (vb.point - va.point) * t, edgeId, static_cast<std::uint8_t>((va.clipMask | vb.clipMask) | (1u << planeBit))});
+                    out.push_back({va.point + (vb.point - va.point) * t, edgeId, static_cast<std::uint8_t>((va.clipMask | vb.clipMask) | (1u << planeBit)), 0.0f});
                     ClipVertex kept = vb;
                     if (std::abs(db) <= 1e-4f) {
                         kept.clipMask = static_cast<std::uint8_t>(kept.clipMask | (1u << planeBit));
@@ -1486,7 +1495,8 @@ private:
                 const float depth = Dot(planePoint - p.point, refNormal);
                 if (depth >= -0.02f) {
                     ClipVertex c = p;
-                    c.point = p.point + refNormal * std::min(depth, 0.0f);
+                    c.point = p.point;
+                    c.depth = depth;
                     addUniqueContact(contacts, c);
                 }
             }
@@ -1494,7 +1504,57 @@ private:
             if (contacts.empty()) {
                 const Vec3 pointA = ClosestPointOnBox(a, b.position);
                 const Vec3 pointB = ClosestPointOnBox(b, a.position);
-                contacts.push_back({0.5f * (pointA + pointB), 0, 0});
+                contacts.push_back({0.5f * (pointA + pointB), 0, 0, best.overlap});
+            }
+
+            const auto coordOnAxis = [](const Vec3& p, const Vec3& origin, const Vec3& axis) {
+                return Dot(p - origin, axis);
+            };
+            std::sort(contacts.begin(), contacts.end(), [&](const ClipVertex& lhs, const ClipVertex& rhs) {
+                const float lu = coordOnAxis(lhs.point, ref.position, sideU);
+                const float ru = coordOnAxis(rhs.point, ref.position, sideU);
+                if (std::abs(lu - ru) > 1e-4f) return lu < ru;
+                const float lv = coordOnAxis(lhs.point, ref.position, sideV);
+                const float rv = coordOnAxis(rhs.point, ref.position, sideV);
+                return lv < rv;
+            });
+
+            if (contacts.size() > 4) {
+                const auto pickIndex = [&](bool maxU, bool maxV) {
+                    std::size_t bestIndex = 0;
+                    float bestScore = -std::numeric_limits<float>::infinity();
+                    for (std::size_t i = 0; i < contacts.size(); ++i) {
+                        const float uCoord = coordOnAxis(contacts[i].point, ref.position, sideU);
+                        const float vCoord = coordOnAxis(contacts[i].point, ref.position, sideV);
+                        const float score = (maxU ? uCoord : -uCoord) + (maxV ? vCoord : -vCoord);
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestIndex = i;
+                        }
+                    }
+                    return bestIndex;
+                };
+
+                std::array<std::size_t, 4> picked = {
+                    pickIndex(false, false),
+                    pickIndex(true, false),
+                    pickIndex(true, true),
+                    pickIndex(false, true),
+                };
+                std::vector<ClipVertex> reduced;
+                reduced.reserve(4);
+                for (std::size_t idx : picked) {
+                    addUniqueContact(reduced, contacts[idx]);
+                }
+                contacts = std::move(reduced);
+                std::sort(contacts.begin(), contacts.end(), [&](const ClipVertex& lhs, const ClipVertex& rhs) {
+                    const float lu = coordOnAxis(lhs.point, ref.position, sideU);
+                    const float ru = coordOnAxis(rhs.point, ref.position, sideU);
+                    if (std::abs(lu - ru) > 1e-4f) return lu < ru;
+                    const float lv = coordOnAxis(lhs.point, ref.position, sideV);
+                    const float rv = coordOnAxis(rhs.point, ref.position, sideV);
+                    return lv < rv;
+                });
             }
 
             const Vec3 normalAB = aReference ? best.axis : -best.axis;
@@ -1510,12 +1570,70 @@ private:
             return;
         }
 
-        const Vec3 pointA = ClosestPointOnBox(a, b.position);
-        const Vec3 pointB = ClosestPointOnBox(b, a.position);
+        const auto halfExtentAxis = [](const Vec3& he, int axis) {
+            return (axis == 0) ? he.x : ((axis == 1) ? he.y : he.z);
+        };
+        const auto edgeSegment = [&](const Body& box, const Vec3 axes[3], int axis, const Vec3& n) {
+            Vec3 local{0.0f, 0.0f, 0.0f};
+            for (int i = 0; i < 3; ++i) {
+                if (i == axis) continue;
+                const float extent = halfExtentAxis(box.halfExtents, i);
+                const float value = (Dot(axes[i], n) >= 0.0f) ? extent : -extent;
+                if (i == 0) local.x = value;
+                else if (i == 1) local.y = value;
+                else local.z = value;
+            }
+            const float edgeExtent = halfExtentAxis(box.halfExtents, axis);
+            const Vec3 p0 = box.position + Rotate(box.orientation, local - Vec3{axis == 0 ? edgeExtent : 0.0f, axis == 1 ? edgeExtent : 0.0f, axis == 2 ? edgeExtent : 0.0f});
+            const Vec3 p1 = box.position + Rotate(box.orientation, local + Vec3{axis == 0 ? edgeExtent : 0.0f, axis == 1 ? edgeExtent : 0.0f, axis == 2 ? edgeExtent : 0.0f});
+            return std::pair<Vec3, Vec3>{p0, p1};
+        };
+        const auto closestPointsOnSegments = [](const Vec3& p1, const Vec3& q1, const Vec3& p2, const Vec3& q2) {
+            const Vec3 d1 = q1 - p1;
+            const Vec3 d2 = q2 - p2;
+            const Vec3 r = p1 - p2;
+            const float aLen = Dot(d1, d1);
+            const float eLen = Dot(d2, d2);
+            const float f = Dot(d2, r);
+
+            float s = 0.0f;
+            float t = 0.0f;
+            if (aLen <= kEpsilon && eLen <= kEpsilon) {
+                return std::pair<Vec3, Vec3>{p1, p2};
+            }
+            if (aLen <= kEpsilon) {
+                t = std::clamp(f / (eLen + kEpsilon), 0.0f, 1.0f);
+            } else {
+                const float c = Dot(d1, r);
+                if (eLen <= kEpsilon) {
+                    s = std::clamp(-c / (aLen + kEpsilon), 0.0f, 1.0f);
+                } else {
+                    const float bDot = Dot(d1, d2);
+                    const float denom = aLen * eLen - bDot * bDot;
+                    if (denom > kEpsilon) {
+                        s = std::clamp((bDot * f - c * eLen) / denom, 0.0f, 1.0f);
+                    }
+                    t = (bDot * s + f) / (eLen + kEpsilon);
+                    if (t < 0.0f) {
+                        t = 0.0f;
+                        s = std::clamp(-c / (aLen + kEpsilon), 0.0f, 1.0f);
+                    } else if (t > 1.0f) {
+                        t = 1.0f;
+                        s = std::clamp((bDot - c) / (aLen + kEpsilon), 0.0f, 1.0f);
+                    }
+                }
+            }
+            return std::pair<Vec3, Vec3>{p1 + d1 * s, p2 + d2 * t};
+        };
+
         const std::uint8_t edgeA = static_cast<std::uint8_t>(best.indexA < 0 ? 0 : best.indexA);
         const std::uint8_t edgeB = static_cast<std::uint8_t>(best.indexB < 0 ? 0 : best.indexB);
+        const auto [a0, a1] = edgeSegment(a, aAxes, edgeA, best.axis);
+        const auto [b0, b1] = edgeSegment(b, bAxes, edgeB, -best.axis);
+        const auto [pointA, pointB] = closestPointsOnSegments(a0, a1, b0, b1);
+
         const std::uint64_t featureKey = PackFeatureKey(10, edgeA, edgeB, edgeA, edgeB, 0);
-        AddContact(aId, bId, best.axis, 0.5f * (pointA + pointB), bestOverlap, featureKey);
+        AddContact(aId, bId, best.axis, 0.5f * (pointA + pointB), best.overlap, featureKey);
     }
 
     void WarmStartContacts() {
