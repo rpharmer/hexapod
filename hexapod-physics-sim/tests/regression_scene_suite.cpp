@@ -128,6 +128,61 @@ float ComputePenetrationBoxBox(const Body& a, const Body& b) {
     return std::min({px, py, pz});
 }
 
+std::pair<float, float> ClosestSegmentParameters(const Vec3& p1, const Vec3& q1, const Vec3& p2, const Vec3& q2) {
+    const Vec3 d1 = q1 - p1;
+    const Vec3 d2 = q2 - p2;
+    const Vec3 r = p1 - p2;
+    const float aLen = Dot(d1, d1);
+    const float eLen = Dot(d2, d2);
+    const float f = Dot(d2, r);
+
+    float s = 0.0f;
+    float t = 0.0f;
+    if (aLen <= minphys3d::kEpsilon && eLen <= minphys3d::kEpsilon) {
+        return {0.0f, 0.0f};
+    }
+    if (aLen <= minphys3d::kEpsilon) {
+        t = std::clamp(f / eLen, 0.0f, 1.0f);
+        return {0.0f, t};
+    }
+
+    const float cTerm = Dot(d1, r);
+    if (eLen <= minphys3d::kEpsilon) {
+        s = std::clamp(-cTerm / aLen, 0.0f, 1.0f);
+        return {s, 0.0f};
+    }
+
+    const float bDot = Dot(d1, d2);
+    const float denom = aLen * eLen - bDot * bDot;
+    if (std::abs(denom) > minphys3d::kEpsilon) {
+        s = std::clamp((bDot * f - cTerm * eLen) / denom, 0.0f, 1.0f);
+    }
+
+    t = (bDot * s + f) / eLen;
+    if (t < 0.0f) {
+        t = 0.0f;
+        s = std::clamp(-cTerm / aLen, 0.0f, 1.0f);
+    } else if (t > 1.0f) {
+        t = 1.0f;
+        s = std::clamp((bDot - cTerm) / aLen, 0.0f, 1.0f);
+    }
+    return {s, t};
+}
+
+float ComputePenetrationCapsuleCapsule(const Body& a, const Body& b) {
+    const Vec3 axisA = Normalize(Rotate(a.orientation, {0.0f, 1.0f, 0.0f}));
+    const Vec3 axisB = Normalize(Rotate(b.orientation, {0.0f, 1.0f, 0.0f}));
+    const Vec3 p1 = a.position - axisA * a.halfHeight;
+    const Vec3 q1 = a.position + axisA * a.halfHeight;
+    const Vec3 p2 = b.position - axisB * b.halfHeight;
+    const Vec3 q2 = b.position + axisB * b.halfHeight;
+    const auto [s, t] = ClosestSegmentParameters(p1, q1, p2, q2);
+    const Vec3 c1 = p1 + (q1 - p1) * s;
+    const Vec3 c2 = p2 + (q2 - p2) * t;
+    const float distance = Length(c2 - c1);
+    return std::max(0.0f, (a.radius + b.radius) - distance);
+}
+
 float ComputePairPenetration(const Body& a, const Body& b) {
     if (a.shape == ShapeType::Sphere && b.shape == ShapeType::Plane) return ComputePenetrationSpherePlane(a, b);
     if (a.shape == ShapeType::Plane && b.shape == ShapeType::Sphere) return ComputePenetrationSpherePlane(b, a);
@@ -138,6 +193,7 @@ float ComputePairPenetration(const Body& a, const Body& b) {
     if (a.shape == ShapeType::Sphere && b.shape == ShapeType::Box) return ComputePenetrationSphereBox(a, b);
     if (a.shape == ShapeType::Box && b.shape == ShapeType::Sphere) return ComputePenetrationSphereBox(b, a);
     if (a.shape == ShapeType::Box && b.shape == ShapeType::Box) return ComputePenetrationBoxBox(a, b);
+    if (a.shape == ShapeType::Capsule && b.shape == ShapeType::Capsule) return ComputePenetrationCapsuleCapsule(a, b);
     return 0.0f;
 }
 
@@ -343,6 +399,7 @@ ScenarioConfig BuildCapsuleRestingOnPlane() {
     cfg.expectedFinalPositions = {{capsuleId, {0.0f, 0.90f, 0.0f}, 0.25f}};
     return cfg;
 }
+
 
 ScenarioConfig BuildSphereFiredFastAtPlane() {
     ScenarioConfig cfg;
