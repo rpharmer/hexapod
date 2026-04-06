@@ -860,8 +860,51 @@ private:
             }
         }
 
+#ifndef NDEBUG
+        const std::vector<Pair> bruteForcePairs = ComputePotentialPairsBruteForce();
+        assert(PairSetFromPairs(pairs) == PairSetFromPairs(bruteForcePairs));
+#endif
+
         return pairs;
     }
+
+#ifndef NDEBUG
+    std::vector<Pair> ComputePotentialPairsBruteForce() const {
+        std::vector<Pair> pairs;
+        if (bodies_.size() < 2) {
+            return pairs;
+        }
+        pairs.reserve((bodies_.size() * (bodies_.size() - 1)) / 2);
+        for (std::uint32_t i = 0; i < proxies_.size(); ++i) {
+            const BroadphaseProxy& proxyA = proxies_[i];
+            if (!proxyA.valid || proxyA.leaf < 0) {
+                continue;
+            }
+            for (std::uint32_t j = i + 1; j < proxies_.size(); ++j) {
+                const BroadphaseProxy& proxyB = proxies_[j];
+                if (!proxyB.valid || proxyB.leaf < 0 || !Overlaps(proxyA.fatBox, proxyB.fatBox)) {
+                    continue;
+                }
+                const Body& a = bodies_[i];
+                const Body& b = bodies_[j];
+                if ((a.invMass == 0.0f && b.invMass == 0.0f) || (a.isSleeping && b.isSleeping)) {
+                    continue;
+                }
+                pairs.push_back({i, j});
+            }
+        }
+        return pairs;
+    }
+
+    static std::unordered_set<std::uint64_t> PairSetFromPairs(const std::vector<Pair>& pairs) {
+        std::unordered_set<std::uint64_t> pairSet;
+        pairSet.reserve(pairs.size());
+        for (const Pair& pair : pairs) {
+            pairSet.insert((static_cast<std::uint64_t>(pair.a) << 32) | pair.b);
+        }
+        return pairSet;
+    }
+#endif
 
     void GenerateContacts() {
         const std::vector<Pair> pairs = ComputePotentialPairs();
