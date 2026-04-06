@@ -1,9 +1,11 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -90,6 +92,7 @@ public:
             return;
         }
 
+        AssertBodyInvariants();
         previousContacts_ = contacts_;
         previousManifolds_ = manifolds_;
 
@@ -124,6 +127,7 @@ public:
             ClearAccumulators();
             previousContacts_ = contacts_;
             previousManifolds_ = manifolds_;
+            AssertBodyInvariants();
         }
     }
 
@@ -174,6 +178,81 @@ public:
     }
 
 private:
+    static constexpr float kQuaternionNormalizationTolerance = 1e-3f;
+    static constexpr std::size_t kMaxContactsPerManifold = 4;
+
+    static bool IsFinite(float value) {
+        return std::isfinite(value);
+    }
+
+    static bool IsFinite(const Vec3& v) {
+        return IsFinite(v.x) && IsFinite(v.y) && IsFinite(v.z);
+    }
+
+    static bool IsFinite(const Quat& q) {
+        return IsFinite(q.w) && IsFinite(q.x) && IsFinite(q.y) && IsFinite(q.z);
+    }
+
+    static bool IsFinite(const Mat3& m) {
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 3; ++col) {
+                if (!IsFinite(m.m[row][col])) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    static bool IsZeroInertia(const Mat3& m) {
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 3; ++col) {
+                if (std::abs(m.m[row][col]) > kEpsilon) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    static void AssertBodyStateFinite(const Body& body) {
+        assert(IsFinite(body.position));
+        assert(IsFinite(body.orientation));
+        assert(IsFinite(body.velocity));
+        assert(IsFinite(body.angularVelocity));
+    }
+
+    static void AssertMassInertiaConsistency(const Body& body) {
+        assert(IsFinite(body.mass) || body.invMass == 0.0f);
+        assert(IsFinite(body.invMass));
+        assert(IsFinite(body.invInertiaLocal));
+        if (body.invMass == 0.0f) {
+            assert(body.isStatic || !std::isfinite(body.mass));
+            assert(IsZeroInertia(body.invInertiaLocal));
+            return;
+        }
+
+        assert(body.mass > kEpsilon);
+        assert(std::isfinite(body.mass));
+        assert(std::abs(body.invMass - (1.0f / body.mass)) <= 1e-4f);
+        assert(body.invInertiaLocal.m[0][0] >= -kEpsilon);
+        assert(body.invInertiaLocal.m[1][1] >= -kEpsilon);
+        assert(body.invInertiaLocal.m[2][2] >= -kEpsilon);
+    }
+
+    void AssertBodyInvariants() const {
+        for (const Body& body : bodies_) {
+            AssertBodyStateFinite(body);
+            AssertMassInertiaConsistency(body);
+        }
+    }
+
+    static void AssertQuaternionNormalized(const Quat& q) {
+        const float lenSq = q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z;
+        assert(IsFinite(lenSq));
+        assert(std::abs(lenSq - 1.0f) <= kQuaternionNormalizationTolerance);
+    }
+
     static AABB ExpandAABB(const AABB& aabb, float margin) {
         AABB out = aabb;
         out.min.x -= margin;
@@ -580,6 +659,7 @@ private:
             const Quat omega{0.0f, body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z};
             const Quat dq = (omega * body.orientation) * (0.5f * dt);
             body.orientation = Normalize(body.orientation + dq);
+            AssertQuaternionNormalized(body.orientation);
         }
     }
 
@@ -589,8 +669,12 @@ private:
         c.b = b;
         c.normal = normal;
         c.point = point;
-        c.penetration = penetration;
+        c.penetration = std::max(penetration, 0.0f);
         c.key = MakeContactKey(a, b, point);
+        assert(IsFinite(c.normal));
+        assert(IsFinite(c.point));
+        assert(IsFinite(c.penetration));
+        assert(c.penetration >= 0.0f);
 
         for (const Contact& old : previousContacts_) {
             if (old.key == c.key) {
@@ -611,6 +695,7 @@ private:
             for (Manifold& m : manifolds_) {
                 if ((m.a == c.a && m.b == c.b) || (m.a == c.b && m.b == c.a)) {
                     m.contacts.push_back(c);
+                    assert(m.contacts.size() <= kMaxContactsPerManifold);
                     m.normal = c.normal;
                     found = true;
                     break;
@@ -641,6 +726,14 @@ private:
                     break;
                 }
             }
+        }
+
+        std::unordered_map<std::uint64_t, std::size_t> manifoldCountByPair;
+        for (const Manifold& m : manifolds_) {
+            const std::uint64_t key = m.pairKey();
+            ++manifoldCountByPair[key];
+            assert(manifoldCountByPair[key] == 1);
+            assert(m.contacts.size() <= kMaxContactsPerManifold);
         }
     }
 
