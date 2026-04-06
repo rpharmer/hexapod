@@ -12,6 +12,17 @@ constexpr float kSleepAngularThreshold = 0.05f;
 constexpr int kSleepFramesThreshold = 120;
 constexpr float kMaxSubstepDistanceFactor = 0.5f;
 
+struct ContactSolverConfig {
+    float bounceVelocityThreshold = 0.0f;
+    float restitutionSuppressionSpeed = 0.0f;
+    float staticToDynamicTransitionSpeed = 0.0f;
+    float penetrationSlop = 0.01f;
+    float penetrationBiasFactor = 0.0f;
+    float positionalCorrectionPercent = 0.8f;
+    bool useSplitImpulse = false;
+    float splitImpulseCorrectionFactor = 0.8f;
+};
+
 struct Contact {
     std::uint32_t a = 0;
     std::uint32_t b = 0;

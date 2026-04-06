@@ -8,6 +8,42 @@ int main() {
 
     {
     World world({0.0f, -9.81f, 0.0f});
+    ContactSolverConfig config = world.GetContactSolverConfig();
+    config.bounceVelocityThreshold = 2.0f;
+    config.restitutionSuppressionSpeed = 1.5f;
+    config.staticToDynamicTransitionSpeed = 0.15f;
+    config.useSplitImpulse = true;
+    world.SetContactSolverConfig(config);
+    const ContactSolverConfig roundtrip = world.GetContactSolverConfig();
+    assert(roundtrip.useSplitImpulse);
+    assert(std::abs(roundtrip.bounceVelocityThreshold - 2.0f) < 1e-6f);
+    assert(std::abs(roundtrip.restitutionSuppressionSpeed - 1.5f) < 1e-6f);
+    assert(std::abs(roundtrip.staticToDynamicTransitionSpeed - 0.15f) < 1e-6f);
+
+    Body plane;
+    plane.shape = ShapeType::Plane;
+    plane.restitution = 1.0f;
+    world.CreateBody(plane);
+
+    Body sphere;
+    sphere.shape = ShapeType::Sphere;
+    sphere.position = {0.0f, 0.8f, 0.0f};
+    sphere.velocity = {0.0f, -1.0f, 0.0f};
+    sphere.radius = 0.25f;
+    sphere.mass = 1.0f;
+    sphere.restitution = 1.0f;
+    const auto id = world.CreateBody(sphere);
+
+    for (int i = 0; i < 180; ++i) {
+        world.Step(1.0f / 120.0f, 10);
+    }
+    const Body& settled = world.GetBody(id);
+    assert(std::isfinite(settled.position.y));
+    assert(settled.position.y > 0.18f);
+    }
+
+    {
+    World world({0.0f, -9.81f, 0.0f});
 
     Body plane;
     plane.shape = ShapeType::Plane;

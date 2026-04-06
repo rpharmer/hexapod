@@ -23,6 +23,14 @@ class World {
 public:
     explicit World(Vec3 gravity = {0.0f, -9.81f, 0.0f}) : gravity_(gravity) {}
 
+    void SetContactSolverConfig(const ContactSolverConfig& config) {
+        contactSolverConfig_ = config;
+    }
+
+    const ContactSolverConfig& GetContactSolverConfig() const {
+        return contactSolverConfig_;
+    }
+
     std::uint32_t CreateBody(const Body& bodyDef) {
         Body body = bodyDef;
         body.RecomputeMassProperties();
@@ -101,6 +109,7 @@ public:
         const float subDt = dt / static_cast<float>(substeps);
 
         for (int stepIndex = 0; stepIndex < substeps; ++stepIndex) {
+            currentSubstepDt_ = subDt;
             if (stepIndex == 0) {
                 previousContacts_ = contacts_;
                 previousManifolds_ = manifolds_;
@@ -571,6 +580,11 @@ private:
         return std::clamp(Dot(p - a, ab) / denom, 0.0f, 1.0f);
     }
 
+    static float SmoothStep01(float t) {
+        const float x = std::clamp(t, 0.0f, 1.0f);
+        return x * x * (3.0f - 2.0f * x);
+    }
+
     void AdvanceDynamicBodies(float dt) {
         if (dt <= 0.0f) {
             return;
@@ -592,7 +606,12 @@ private:
         if (vn < 0.0f) {
             const float invMassSum = a.invMass + b.invMass;
             if (invMassSum > kEpsilon) {
-                const float restitution = std::clamp(std::max(a.restitution, b.restitution), 0.0f, 1.0f);
+                float restitution = std::clamp(std::max(a.restitution, b.restitution), 0.0f, 1.0f);
+                const float speedIntoContact = -vn;
+                if ((speedIntoContact > 0.0f && speedIntoContact < contactSolverConfig_.bounceVelocityThreshold)
+                    || (speedIntoContact > 0.0f && speedIntoContact < contactSolverConfig_.restitutionSuppressionSpeed)) {
+                    restitution = 0.0f;
+                }
                 const float impulse = -(1.0f + restitution) * vn / invMassSum;
                 const Vec3 impulseVector = n * impulse;
                 if (a.invMass > 0.0f) {
@@ -2037,7 +2056,12 @@ private:
             const Vec3 relativeVelocity = vb - va;
             const float separatingVelocity = Dot(relativeVelocity, c.normal);
 
-            const float restitution = std::min(a.restitution, b.restitution);
+            const float speedIntoContact = -separatingVelocity;
+            float restitution = std::min(a.restitution, b.restitution);
+            if ((speedIntoContact > 0.0f && speedIntoContact < contactSolverConfig_.bounceVelocityThreshold)
+                || (speedIntoContact > 0.0f && speedIntoContact < contactSolverConfig_.restitutionSuppressionSpeed)) {
+                restitution = 0.0f;
+            }
             const Vec3 raCrossN = Cross(ra, c.normal);
             const Vec3 rbCrossN = Cross(rb, c.normal);
             const float angularTermA = Dot(raCrossN, invIA * raCrossN);
@@ -2047,7 +2071,30 @@ private:
                 continue;
             }
 
+            float biasTerm = 0.0f;
+            const float penetrationError = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0f);
+            if (contactSolverConfig_.useSplitImpulse) {
+                if (penetrationError > 0.0f) {
+                    const float invMassSum = a.invMass + b.invMass;
+                    if (invMassSum > kEpsilon) {
+                        const float correctionMagnitude = contactSolverConfig_.splitImpulseCorrectionFactor * penetrationError / invMassSum;
+                        const Vec3 correction = correctionMagnitude * c.normal;
+                        if (!a.isSleeping) {
+                            a.position -= correction * a.invMass;
+                        }
+                        if (!b.isSleeping) {
+                            b.position += correction * b.invMass;
+                        }
+                    }
+                }
+            } else if (currentSubstepDt_ > kEpsilon) {
+                biasTerm = (contactSolverConfig_.penetrationBiasFactor * penetrationError) / currentSubstepDt_;
+            }
+
             float lambdaN = -(1.0f + restitution) * separatingVelocity / normalMass;
+            if (biasTerm > 0.0f) {
+                lambdaN += biasTerm / normalMass;
+            }
             const float oldNormalImpulse = c.normalImpulseSum;
             c.normalImpulseSum = std::max(0.0f, c.normalImpulseSum + lambdaN);
             lambdaN = c.normalImpulseSum - oldNormalImpulse;
@@ -2074,7 +2121,14 @@ private:
 
             float lambdaT = -Dot(rv2, tangent) / tangentMass;
             const float muS = 0.5f * (a.staticFriction + b.staticFriction);
-            const float maxFriction = muS * c.normalImpulseSum;
+            const float muD = 0.5f * (a.dynamicFriction + b.dynamicFriction);
+            float mu = muS;
+            if (contactSolverConfig_.staticToDynamicTransitionSpeed > kEpsilon) {
+                const float slipSpeed = std::sqrt(tangentLenSq);
+                const float transitionT = SmoothStep01(slipSpeed / contactSolverConfig_.staticToDynamicTransitionSpeed);
+                mu = muS + (muD - muS) * transitionT;
+            }
+            const float maxFriction = std::max(mu, 0.0f) * c.normalImpulseSum;
             const float oldTangentImpulse = c.tangentImpulseSum;
             c.tangentImpulseSum = std::clamp(c.tangentImpulseSum + lambdaT, -maxFriction, maxFriction);
             lambdaT = c.tangentImpulseSum - oldTangentImpulse;
@@ -2302,8 +2356,9 @@ private:
     }
 
     void PositionalCorrection() {
-        constexpr float percent = 0.8f;
-        constexpr float slop = 0.01f;
+        if (contactSolverConfig_.useSplitImpulse) {
+            return;
+        }
 
         for (const Manifold& manifold : manifolds_) {
             for (const Contact& c : manifold.contacts) {
@@ -2315,7 +2370,8 @@ private:
                     continue;
                 }
 
-                const float correctionMagnitude = std::max(c.penetration - slop, 0.0f) * percent / invMassSum;
+                const float correctionMagnitude = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0f)
+                    * contactSolverConfig_.positionalCorrectionPercent / invMassSum;
                 const Vec3 correction = correctionMagnitude * c.normal;
 
                 if (!a.isSleeping) {
@@ -2362,6 +2418,8 @@ private:
 
 private:
     Vec3 gravity_{};
+    ContactSolverConfig contactSolverConfig_{};
+    float currentSubstepDt_ = 1.0f / 60.0f;
     std::vector<Body> bodies_;
     std::vector<BroadphaseProxy> proxies_;
     std::vector<TreeNode> treeNodes_;
