@@ -119,8 +119,7 @@ public:
                 SolveIslands();
             }
 
-            IntegrateVelocities(subDt);
-            ApplySphereTOIPlane(subDt);
+            ResolveTOIPipeline(subDt);
             IntegrateOrientation(subDt);
             SolveJointPositions();
             PositionalCorrection();
@@ -554,33 +553,266 @@ private:
         return std::clamp(static_cast<int>(std::ceil(std::max(1.0f, maxRatio))), 1, 8);
     }
 
-    void ApplySphereTOIPlane(float dt) {
+    struct TOIEvent {
+        bool hit = false;
+        float toi = 0.0f;
+        std::uint32_t a = 0;
+        std::uint32_t b = 0;
+        Vec3 normal{0.0f, 1.0f, 0.0f};
+        Vec3 point{0.0f, 0.0f, 0.0f};
+    };
+
+    static float ClosestPointParameter(const Vec3& a, const Vec3& b, const Vec3& p) {
+        const Vec3 ab = b - a;
+        const float denom = Dot(ab, ab);
+        if (denom <= kEpsilon) {
+            return 0.0f;
+        }
+        return std::clamp(Dot(p - a, ab) / denom, 0.0f, 1.0f);
+    }
+
+    void AdvanceDynamicBodies(float dt) {
+        if (dt <= 0.0f) {
+            return;
+        }
+        for (Body& body : bodies_) {
+            if (body.invMass == 0.0f || body.isSleeping) {
+                continue;
+            }
+            body.position += body.velocity * dt;
+        }
+    }
+
+    void ResolveTOIImpact(const TOIEvent& hit) {
+        Body& a = bodies_[hit.a];
+        Body& b = bodies_[hit.b];
+        const Vec3 n = Normalize(hit.normal);
+        const Vec3 relativeVelocity = a.velocity - b.velocity;
+        const float vn = Dot(relativeVelocity, n);
+        if (vn < 0.0f) {
+            const float invMassSum = a.invMass + b.invMass;
+            if (invMassSum > kEpsilon) {
+                const float restitution = std::clamp(std::max(a.restitution, b.restitution), 0.0f, 1.0f);
+                const float impulse = -(1.0f + restitution) * vn / invMassSum;
+                const Vec3 impulseVector = n * impulse;
+                if (a.invMass > 0.0f) {
+                    a.velocity += impulseVector * a.invMass;
+                }
+                if (b.invMass > 0.0f) {
+                    b.velocity -= impulseVector * b.invMass;
+                }
+            }
+        }
+
+        const float correctionSlop = 1e-4f;
+        const float push = 4e-4f;
+        const float invMassSum = a.invMass + b.invMass;
+        if (invMassSum > kEpsilon) {
+            const Vec3 correction = n * std::max(push, correctionSlop);
+            if (a.invMass > 0.0f) {
+                a.position += correction * (a.invMass / invMassSum);
+            }
+            if (b.invMass > 0.0f) {
+                b.position -= correction * (b.invMass / invMassSum);
+            }
+        }
+    }
+
+    TOIEvent SweepSpherePlane(std::uint32_t sphereId, std::uint32_t planeId, float maxDt) const {
+        const Body& s = bodies_[sphereId];
+        const Body& p = bodies_[planeId];
+        const Vec3 n = Normalize(p.planeNormal);
+        const float d0 = Dot(n, s.position) - p.planeOffset - s.radius;
+        const float vn = Dot(n, s.velocity);
+        if (d0 <= 0.0f || vn >= -kEpsilon) {
+            return {};
+        }
+        const float toi = -d0 / vn;
+        if (toi < 0.0f || toi > maxDt) {
+            return {};
+        }
+        TOIEvent hit;
+        hit.hit = true;
+        hit.toi = toi;
+        hit.a = sphereId;
+        hit.b = planeId;
+        hit.normal = n;
+        hit.point = (s.position + s.velocity * toi) - n * s.radius;
+        return hit;
+    }
+
+    TOIEvent SweepSphereBox(std::uint32_t sphereId, std::uint32_t boxId, float maxDt) const {
+        const Body& s = bodies_[sphereId];
+        const Body& b = bodies_[boxId];
+        const Quat invQ = Conjugate(Normalize(b.orientation));
+        const Vec3 p0 = Rotate(invQ, s.position - b.position);
+        const Vec3 vRel = Rotate(invQ, s.velocity - b.velocity);
+        const Vec3 ext = b.halfExtents + Vec3{s.radius, s.radius, s.radius};
+
+        float tEnter = 0.0f;
+        float tExit = maxDt;
+        int enteringAxis = -1;
+        float enteringSign = 0.0f;
+        for (int axis = 0; axis < 3; ++axis) {
+            const float p = (axis == 0) ? p0.x : (axis == 1) ? p0.y : p0.z;
+            const float v = (axis == 0) ? vRel.x : (axis == 1) ? vRel.y : vRel.z;
+            const float e = (axis == 0) ? ext.x : (axis == 1) ? ext.y : ext.z;
+
+            if (std::abs(v) <= kEpsilon) {
+                if (p < -e || p > e) {
+                    return {};
+                }
+                continue;
+            }
+
+            float t1 = (-e - p) / v;
+            float t2 = (e - p) / v;
+            float sign = -1.0f;
+            if (t1 > t2) {
+                std::swap(t1, t2);
+                sign = 1.0f;
+            }
+            if (t1 > tEnter) {
+                tEnter = t1;
+                enteringAxis = axis;
+                enteringSign = sign;
+            }
+            tExit = std::min(tExit, t2);
+            if (tEnter > tExit) {
+                return {};
+            }
+        }
+
+        if (tEnter < 0.0f || tEnter > maxDt || enteringAxis < 0) {
+            return {};
+        }
+
+        Vec3 normalLocal{0.0f, 0.0f, 0.0f};
+        if (enteringAxis == 0) {
+            normalLocal.x = enteringSign;
+        } else if (enteringAxis == 1) {
+            normalLocal.y = enteringSign;
+        } else {
+            normalLocal.z = enteringSign;
+        }
+
+        TOIEvent hit;
+        hit.hit = true;
+        hit.toi = tEnter;
+        hit.a = sphereId;
+        hit.b = boxId;
+        hit.normal = Rotate(b.orientation, normalLocal);
+        const Vec3 centerAtHit = s.position + s.velocity * tEnter;
+        hit.point = centerAtHit - hit.normal * s.radius;
+        return hit;
+    }
+
+    TOIEvent SweepSphereCapsule(std::uint32_t sphereId, std::uint32_t capsuleId, float maxDt) const {
+        const Body& s = bodies_[sphereId];
+        const Body& c = bodies_[capsuleId];
+        const Vec3 axis = Normalize(Rotate(c.orientation, {0.0f, 1.0f, 0.0f}));
+        const Vec3 segA = c.position - axis * c.halfHeight;
+        const Vec3 segB = c.position + axis * c.halfHeight;
+        const Vec3 vRel = s.velocity - c.velocity;
+        const float combinedRadius = s.radius + c.radius;
+
+        float t = 0.0f;
+        for (int i = 0; i < 12 && t <= maxDt; ++i) {
+            const Vec3 center = s.position + vRel * t;
+            const float segT = ClosestPointParameter(segA, segB, center);
+            const Vec3 closest = segA + (segB - segA) * segT;
+            Vec3 delta = center - closest;
+            float dist = Length(delta);
+            if (dist <= combinedRadius + 1e-4f) {
+                TOIEvent hit;
+                hit.hit = true;
+                hit.toi = std::clamp(t, 0.0f, maxDt);
+                if (dist <= kEpsilon) {
+                    delta = StableDirection(vRel, {{axis, -axis, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}}});
+                    dist = 1.0f;
+                }
+                hit.normal = delta * (1.0f / dist);
+                hit.a = sphereId;
+                hit.b = capsuleId;
+                hit.point = center - hit.normal * s.radius;
+                return hit;
+            }
+
+            const Vec3 n = delta / std::max(dist, kEpsilon);
+            const float closingSpeed = Dot(vRel, n);
+            if (closingSpeed >= -kEpsilon) {
+                break;
+            }
+            const float dt = (dist - combinedRadius) / -closingSpeed;
+            if (dt <= 1e-5f) {
+                t += 1e-5f;
+            } else {
+                t += dt;
+            }
+        }
+        return {};
+    }
+
+    TOIEvent FindEarliestTOI(float maxDt) const {
+        TOIEvent earliest;
+        earliest.toi = maxDt + 1.0f;
+
         for (std::uint32_t i = 0; i < bodies_.size(); ++i) {
-            Body& s = bodies_[i];
-            if (s.shape != ShapeType::Sphere || s.invMass == 0.0f || s.isSleeping) {
+            const Body& a = bodies_[i];
+            if (a.shape != ShapeType::Sphere || a.invMass == 0.0f || a.isSleeping) {
                 continue;
             }
             for (std::uint32_t j = 0; j < bodies_.size(); ++j) {
-                const Body& p = bodies_[j];
-                if (p.shape != ShapeType::Plane) {
+                if (i == j) {
                     continue;
                 }
-                const Vec3 n = Normalize(p.planeNormal);
-                const float d0 = Dot(n, s.position) - p.planeOffset - s.radius;
-                const float vn = Dot(n, s.velocity);
-                if (d0 > 0.0f && vn < -kEpsilon) {
-                    const float toi = -d0 / vn;
-                    if (toi >= 0.0f && toi <= dt) {
-                        s.position += s.velocity * toi;
-                        const float vnNow = Dot(s.velocity, n);
-                        if (vnNow < 0.0f) {
-                            s.velocity -= (1.0f + s.restitution) * vnNow * n;
-                        }
-                        const float remaining = dt - toi;
-                        s.position += s.velocity * remaining;
-                    }
+                const Body& b = bodies_[j];
+                TOIEvent hit;
+                if (b.shape == ShapeType::Plane) {
+                    hit = SweepSpherePlane(i, j, maxDt);
+                } else if (b.shape == ShapeType::Box) {
+                    hit = SweepSphereBox(i, j, maxDt);
+                } else if (b.shape == ShapeType::Capsule) {
+                    hit = SweepSphereCapsule(i, j, maxDt);
+                }
+                if (!hit.hit) {
+                    continue;
+                }
+                if (!earliest.hit || hit.toi < earliest.toi - 1e-6f || (std::abs(hit.toi - earliest.toi) <= 1e-6f && ((hit.a < earliest.a) || (hit.a == earliest.a && hit.b < earliest.b)))) {
+                    earliest = hit;
                 }
             }
+        }
+
+        return earliest.hit ? earliest : TOIEvent{};
+    }
+
+    void ResolveTOIPipeline(float dt) {
+        float remaining = dt;
+        constexpr int kMaxTOIIterations = 8;
+        int iterations = 0;
+        while (remaining > 1e-6f && iterations < kMaxTOIIterations) {
+            const TOIEvent hit = FindEarliestTOI(remaining);
+            if (!hit.hit) {
+                AdvanceDynamicBodies(remaining);
+                remaining = 0.0f;
+                break;
+            }
+
+            const float advanceTime = std::max(0.0f, hit.toi);
+            if (advanceTime > 0.0f) {
+                AdvanceDynamicBodies(advanceTime);
+                remaining -= advanceTime;
+            }
+            ResolveTOIImpact(hit);
+            if (hit.toi <= 1e-6f) {
+                remaining = std::max(0.0f, remaining - 1e-6f);
+            }
+            ++iterations;
+        }
+
+        if (remaining > 0.0f) {
+            AdvanceDynamicBodies(remaining);
         }
     }
 
