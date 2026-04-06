@@ -583,20 +583,27 @@ private:
         }
     }
 
-    static std::uint64_t MakeContactKey(std::uint32_t a, std::uint32_t b, const Vec3& point) {
+    static std::uint64_t PackFeatureKey(
+        std::uint8_t kind,
+        std::uint8_t referenceFace,
+        std::uint8_t incidentFace,
+        std::uint8_t referenceFeature,
+        std::uint8_t incidentFeature,
+        std::uint8_t clippedFeature) {
+        return (static_cast<std::uint64_t>(kind) << 40)
+             | (static_cast<std::uint64_t>(referenceFace) << 32)
+             | (static_cast<std::uint64_t>(incidentFace) << 24)
+             | (static_cast<std::uint64_t>(referenceFeature) << 16)
+             | (static_cast<std::uint64_t>(incidentFeature) << 8)
+             | static_cast<std::uint64_t>(clippedFeature);
+    }
+
+    static std::uint64_t MakeContactKey(std::uint32_t a, std::uint32_t b, std::uint64_t featureKey) {
         const std::uint32_t lo = std::min(a, b);
         const std::uint32_t hi = std::max(a, b);
-        const auto q = [](float v) -> std::uint32_t {
-            return static_cast<std::uint32_t>(std::floor((v + 1000.0f) * 20.0f));
-        };
-        const std::uint64_t px = static_cast<std::uint64_t>(q(point.x) & 0x7FFu);
-        const std::uint64_t py = static_cast<std::uint64_t>(q(point.y) & 0x7FFu);
-        const std::uint64_t pz = static_cast<std::uint64_t>(q(point.z) & 0x7FFu);
         return (static_cast<std::uint64_t>(lo) << 48)
              ^ (static_cast<std::uint64_t>(hi) << 32)
-             ^ (px << 22)
-             ^ (py << 11)
-             ^ pz;
+             ^ featureKey;
     }
 
     static void WakeBody(Body& body) {
@@ -663,14 +670,14 @@ private:
         }
     }
 
-    void AddContact(std::uint32_t a, std::uint32_t b, const Vec3& normal, const Vec3& point, float penetration) {
+    void AddContact(std::uint32_t a, std::uint32_t b, const Vec3& normal, const Vec3& point, float penetration, std::uint64_t featureKey = 0) {
         Contact c;
         c.a = a;
         c.b = b;
         c.normal = normal;
         c.point = point;
         c.penetration = std::max(penetration, 0.0f);
-        c.key = MakeContactKey(a, b, point);
+        c.key = MakeContactKey(a, b, featureKey);
         assert(IsFinite(c.normal));
         assert(IsFinite(c.point));
         assert(IsFinite(c.penetration));
@@ -958,7 +965,8 @@ private:
 
         const float dist = std::sqrt(std::max(distSq, kEpsilon));
         const Vec3 normal = (dist > kEpsilon) ? (delta / dist) : Vec3{1.0f, 0.0f, 0.0f};
-        AddContact(ia, ib, normal, a.position + normal * a.radius, radiusSum - dist);
+        const std::uint64_t featureKey = PackFeatureKey(1, 0, 0, 0, 0, 0);
+        AddContact(ia, ib, normal, a.position + normal * a.radius, radiusSum - dist, featureKey);
     }
 
     void SpherePlane(std::uint32_t sphereId, std::uint32_t planeId) {
@@ -969,7 +977,8 @@ private:
         if (signedDistance >= s.radius) {
             return;
         }
-        AddContact(sphereId, planeId, -n, s.position - n * s.radius, s.radius - signedDistance);
+        const std::uint64_t featureKey = PackFeatureKey(2, 0, 0, 0, 0, 0);
+        AddContact(sphereId, planeId, -n, s.position - n * s.radius, s.radius - signedDistance, featureKey);
     }
 
     void CapsulePlane(std::uint32_t capsuleId, std::uint32_t planeId) {
@@ -978,10 +987,12 @@ private:
         const Vec3 axis = Normalize(Rotate(c.orientation, {0.0f, 1.0f, 0.0f}));
         const Vec3 ends[2] = {c.position - axis * c.halfHeight, c.position + axis * c.halfHeight};
         const Vec3 n = Normalize(p.planeNormal);
-        for (const Vec3& center : ends) {
+        for (int endpoint = 0; endpoint < 2; ++endpoint) {
+            const Vec3& center = ends[endpoint];
             const float signedDistance = Dot(n, center) - p.planeOffset;
             if (signedDistance < c.radius) {
-                AddContact(capsuleId, planeId, -n, center - n * c.radius, c.radius - signedDistance);
+                const std::uint64_t featureKey = PackFeatureKey(3, 0, 0, 0, static_cast<std::uint8_t>(endpoint), 0);
+                AddContact(capsuleId, planeId, -n, center - n * c.radius, c.radius - signedDistance, featureKey);
             }
         }
     }
@@ -1007,7 +1018,9 @@ private:
         }
         const float dist = std::sqrt(std::max(distSq, kEpsilon));
         const Vec3 normal = (dist > kEpsilon) ? (delta / dist) : Vec3{0.0f, 1.0f, 0.0f};
-        AddContact(sphereId, capsuleId, normal, s.position + normal * s.radius, radiusSum - dist);
+        const std::uint8_t capsuleFeature = (t <= 1e-3f) ? 0u : ((t >= 1.0f - 1e-3f) ? 1u : 2u);
+        const std::uint64_t featureKey = PackFeatureKey(4, 0, 0, 0, capsuleFeature, 0);
+        AddContact(sphereId, capsuleId, normal, s.position + normal * s.radius, radiusSum - dist, featureKey);
     }
 
     void CapsuleCapsule(std::uint32_t aId, std::uint32_t bId) {
@@ -1073,7 +1086,10 @@ private:
         const float dist = std::sqrt(std::max(distSq, kEpsilon));
         const Vec3 normal = (dist > kEpsilon) ? (delta / dist) : Vec3{0.0f, 1.0f, 0.0f};
         const Vec3 point = c1 + normal * a.radius;
-        AddContact(aId, bId, normal, point, radiusSum - dist);
+        const std::uint8_t featureA = (s <= 1e-3f) ? 0u : ((s >= 1.0f - 1e-3f) ? 1u : 2u);
+        const std::uint8_t featureB = (t <= 1e-3f) ? 0u : ((t >= 1.0f - 1e-3f) ? 1u : 2u);
+        const std::uint64_t featureKey = PackFeatureKey(5, 0, 0, featureA, featureB, 0);
+        AddContact(aId, bId, normal, point, radiusSum - dist, featureKey);
     }
 
     void CapsuleBox(std::uint32_t capsuleId, std::uint32_t boxId) {
@@ -1135,7 +1151,14 @@ private:
         const Vec3 normalLocal = (dist > kEpsilon) ? ((bestSeg - bestBox) / dist) : Vec3{0.0f, 1.0f, 0.0f};
         const Vec3 normalWorld = Rotate(b.orientation, normalLocal);
         const Vec3 pointWorld = b.position + Rotate(b.orientation, bestBox);
-        AddContact(capsuleId, boxId, -normalWorld, pointWorld, c.radius - dist);
+        const float segDenom = Dot(d, d);
+        float segT = 0.0f;
+        if (segDenom > kEpsilon) {
+            segT = std::clamp(Dot(bestSeg - segA, d) / segDenom, 0.0f, 1.0f);
+        }
+        const std::uint8_t capsuleFeature = (segT <= 1e-3f) ? 0u : ((segT >= 1.0f - 1e-3f) ? 1u : 2u);
+        const std::uint64_t featureKey = PackFeatureKey(6, 0, 0, 0, capsuleFeature, 0);
+        AddContact(capsuleId, boxId, -normalWorld, pointWorld, c.radius - dist, featureKey);
     }
 
     void BoxPlane(std::uint32_t boxId, std::uint32_t planeId) {
@@ -1164,7 +1187,9 @@ private:
                         + axes[2] * local.z;
                     const float signedDistance = Dot(n, worldPoint) - plane.planeOffset;
                     if (signedDistance < 0.0f) {
-                        AddContact(boxId, planeId, -n, worldPoint, -signedDistance);
+                        const std::uint8_t vertexId = static_cast<std::uint8_t>((sx > 0 ? 1 : 0) | ((sy > 0 ? 1 : 0) << 1) | ((sz > 0 ? 1 : 0) << 2));
+                        const std::uint64_t featureKey = PackFeatureKey(7, 0, 0, vertexId, 0, 0);
+                        AddContact(boxId, planeId, -n, worldPoint, -signedDistance, featureKey);
                         ++added;
                         if (added >= 4) {
                             return;
@@ -1231,7 +1256,22 @@ private:
             pointWorld = b.position + Rotate(b.orientation, facePointLocal);
         }
 
-        AddContact(sphereId, boxId, -normalWorld, pointWorld, penetration);
+        std::uint8_t referenceFace = 0;
+        std::uint8_t incidentFeature = 0;
+        const Vec3 localPoint = Rotate(invBoxOrientation, pointWorld - b.position);
+        const float dx = std::abs(std::abs(localPoint.x) - b.halfExtents.x);
+        const float dy = std::abs(std::abs(localPoint.y) - b.halfExtents.y);
+        const float dz = std::abs(std::abs(localPoint.z) - b.halfExtents.z);
+        if (dx <= dy && dx <= dz) {
+            referenceFace = static_cast<std::uint8_t>((localPoint.x >= 0.0f) ? 0 : 1);
+        } else if (dy <= dz) {
+            referenceFace = static_cast<std::uint8_t>((localPoint.y >= 0.0f) ? 2 : 3);
+        } else {
+            referenceFace = static_cast<std::uint8_t>((localPoint.z >= 0.0f) ? 4 : 5);
+        }
+        incidentFeature = 0;
+        const std::uint64_t featureKey = PackFeatureKey(8, referenceFace, 0, 0, incidentFeature, 0);
+        AddContact(sphereId, boxId, -normalWorld, pointWorld, penetration, featureKey);
     }
 
     void BoxBox(std::uint32_t aId, std::uint32_t bId) {
@@ -1299,24 +1339,30 @@ private:
             return;
         }
 
+        struct ClipVertex {
+            Vec3 point{};
+            std::uint8_t incidentFeature = 0; // 0..3 face vertices, 4..7 clipped face edges
+            std::uint8_t clipMask = 0; // reference-side clipping planes touched
+        };
+
         auto localFaceVertices = [](const Vec3& he, int axis, float sign) {
-            std::vector<Vec3> verts;
+            std::vector<ClipVertex> verts;
             verts.reserve(4);
             if (axis == 0) {
-                verts.push_back({sign * he.x, -he.y, -he.z});
-                verts.push_back({sign * he.x,  he.y, -he.z});
-                verts.push_back({sign * he.x,  he.y,  he.z});
-                verts.push_back({sign * he.x, -he.y,  he.z});
+                verts.push_back({{sign * he.x, -he.y, -he.z}, 0, 0});
+                verts.push_back({{sign * he.x,  he.y, -he.z}, 1, 0});
+                verts.push_back({{sign * he.x,  he.y,  he.z}, 2, 0});
+                verts.push_back({{sign * he.x, -he.y,  he.z}, 3, 0});
             } else if (axis == 1) {
-                verts.push_back({-he.x, sign * he.y, -he.z});
-                verts.push_back({ he.x, sign * he.y, -he.z});
-                verts.push_back({ he.x, sign * he.y,  he.z});
-                verts.push_back({-he.x, sign * he.y,  he.z});
+                verts.push_back({{-he.x, sign * he.y, -he.z}, 0, 0});
+                verts.push_back({{ he.x, sign * he.y, -he.z}, 1, 0});
+                verts.push_back({{ he.x, sign * he.y,  he.z}, 2, 0});
+                verts.push_back({{-he.x, sign * he.y,  he.z}, 3, 0});
             } else {
-                verts.push_back({-he.x, -he.y, sign * he.z});
-                verts.push_back({ he.x, -he.y, sign * he.z});
-                verts.push_back({ he.x,  he.y, sign * he.z});
-                verts.push_back({-he.x,  he.y, sign * he.z});
+                verts.push_back({{-he.x, -he.y, sign * he.z}, 0, 0});
+                verts.push_back({{ he.x, -he.y, sign * he.z}, 1, 0});
+                verts.push_back({{ he.x,  he.y, sign * he.z}, 2, 0});
+                verts.push_back({{-he.x,  he.y, sign * he.z}, 3, 0});
             }
             return verts;
         };
@@ -1325,40 +1371,51 @@ private:
             return body.position + Rotate(body.orientation, p);
         };
 
-        auto clipPolygonAgainstPlane = [](const std::vector<Vec3>& poly, const Vec3& n, float d) {
-            std::vector<Vec3> out;
+        auto clipPolygonAgainstPlane = [](const std::vector<ClipVertex>& poly, const Vec3& n, float d, std::uint8_t planeBit) {
+            std::vector<ClipVertex> out;
             if (poly.empty()) {
                 return out;
             }
             for (std::size_t i = 0; i < poly.size(); ++i) {
-                const Vec3 a = poly[i];
-                const Vec3 b = poly[(i + 1) % poly.size()];
-                const float da = Dot(n, a) - d;
-                const float db = Dot(n, b) - d;
+                const ClipVertex& va = poly[i];
+                const ClipVertex& vb = poly[(i + 1) % poly.size()];
+                const float da = Dot(n, va.point) - d;
+                const float db = Dot(n, vb.point) - d;
                 const bool ina = da <= 0.0f;
                 const bool inb = db <= 0.0f;
 
                 if (ina && inb) {
-                    out.push_back(b);
+                    ClipVertex kept = vb;
+                    if (std::abs(db) <= 1e-4f) {
+                        kept.clipMask = static_cast<std::uint8_t>(kept.clipMask | (1u << planeBit));
+                    }
+                    out.push_back(kept);
                 } else if (ina && !inb) {
                     const float t = da / (da - db + kEpsilon);
-                    out.push_back(a + (b - a) * t);
+                    const std::uint8_t edgeId = static_cast<std::uint8_t>(4u + (i & 3u));
+                    out.push_back({va.point + (vb.point - va.point) * t, edgeId, static_cast<std::uint8_t>((va.clipMask | vb.clipMask) | (1u << planeBit))});
                 } else if (!ina && inb) {
                     const float t = da / (da - db + kEpsilon);
-                    out.push_back(a + (b - a) * t);
-                    out.push_back(b);
+                    const std::uint8_t edgeId = static_cast<std::uint8_t>(4u + (i & 3u));
+                    out.push_back({va.point + (vb.point - va.point) * t, edgeId, static_cast<std::uint8_t>((va.clipMask | vb.clipMask) | (1u << planeBit))});
+                    ClipVertex kept = vb;
+                    if (std::abs(db) <= 1e-4f) {
+                        kept.clipMask = static_cast<std::uint8_t>(kept.clipMask | (1u << planeBit));
+                    }
+                    out.push_back(kept);
                 }
             }
             return out;
         };
 
-        auto addUniquePoint = [&](std::vector<Vec3>& pts, const Vec3& p) {
-            for (const Vec3& e : pts) {
-                if (LengthSquared(e - p) < 1e-4f) {
+        auto addUniqueContact = [&](std::vector<ClipVertex>& pts, const ClipVertex& candidate) {
+            for (ClipVertex& existing : pts) {
+                if (LengthSquared(existing.point - candidate.point) < 1e-4f) {
+                    existing.clipMask = static_cast<std::uint8_t>(existing.clipMask | candidate.clipMask);
                     return;
                 }
             }
-            pts.push_back(p);
+            pts.push_back(candidate);
         };
 
         if (best.type == 0 || best.type == 1) {
@@ -1401,9 +1458,9 @@ private:
             }
             float incSign = (Dot(incBasis[incidentAxis], refNormal) > 0.0f) ? -1.0f : 1.0f;
 
-            std::vector<Vec3> poly = localFaceVertices(inc.halfExtents, incidentAxis, incSign);
-            for (Vec3& p : poly) {
-                p = worldFromLocal(inc, p);
+            std::vector<ClipVertex> poly = localFaceVertices(inc.halfExtents, incidentAxis, incSign);
+            for (ClipVertex& p : poly) {
+                p.point = worldFromLocal(inc, p.point);
             }
 
             const int u = (refAxis + 1) % 3;
@@ -1413,10 +1470,10 @@ private:
             const float limitU = (u == 0 ? ref.halfExtents.x : (u == 1 ? ref.halfExtents.y : ref.halfExtents.z));
             const float limitV = (v == 0 ? ref.halfExtents.x : (v == 1 ? ref.halfExtents.y : ref.halfExtents.z));
 
-            poly = clipPolygonAgainstPlane(poly,  sideU, Dot(sideU, ref.position) + limitU);
-            poly = clipPolygonAgainstPlane(poly, -sideU, Dot(-sideU, ref.position) + limitU);
-            poly = clipPolygonAgainstPlane(poly,  sideV, Dot(sideV, ref.position) + limitV);
-            poly = clipPolygonAgainstPlane(poly, -sideV, Dot(-sideV, ref.position) + limitV);
+            poly = clipPolygonAgainstPlane(poly,  sideU, Dot(sideU, ref.position) + limitU, 0);
+            poly = clipPolygonAgainstPlane(poly, -sideU, Dot(-sideU, ref.position) + limitU, 1);
+            poly = clipPolygonAgainstPlane(poly,  sideV, Dot(sideV, ref.position) + limitV, 2);
+            poly = clipPolygonAgainstPlane(poly, -sideV, Dot(-sideV, ref.position) + limitV, 3);
 
             Vec3 localPlanePoint{};
             if (refAxis == 0) localPlanePoint = {refSign * ref.halfExtents.x, 0.0f, 0.0f};
@@ -1424,30 +1481,41 @@ private:
             if (refAxis == 2) localPlanePoint = {0.0f, 0.0f, refSign * ref.halfExtents.z};
             const Vec3 planePoint = worldFromLocal(ref, localPlanePoint);
 
-            std::vector<Vec3> contacts;
-            for (const Vec3& p : poly) {
-                const float depth = Dot(planePoint - p, refNormal);
+            std::vector<ClipVertex> contacts;
+            for (const ClipVertex& p : poly) {
+                const float depth = Dot(planePoint - p.point, refNormal);
                 if (depth >= -0.02f) {
-                    addUniquePoint(contacts, p + refNormal * std::min(depth, 0.0f));
+                    ClipVertex c = p;
+                    c.point = p.point + refNormal * std::min(depth, 0.0f);
+                    addUniqueContact(contacts, c);
                 }
             }
 
             if (contacts.empty()) {
                 const Vec3 pointA = ClosestPointOnBox(a, b.position);
                 const Vec3 pointB = ClosestPointOnBox(b, a.position);
-                contacts.push_back(0.5f * (pointA + pointB));
+                contacts.push_back({0.5f * (pointA + pointB), 0, 0});
             }
 
             const Vec3 normalAB = aReference ? best.axis : -best.axis;
+            const std::uint8_t referenceFaceIndex = static_cast<std::uint8_t>(refAxis * 2 + (refSign > 0.0f ? 0 : 1));
+            const std::uint8_t incidentFaceIndex = static_cast<std::uint8_t>(incidentAxis * 2 + (incSign > 0.0f ? 0 : 1));
             for (std::size_t i = 0; i < std::min<std::size_t>(4, contacts.size()); ++i) {
-                AddContact(aId, bId, normalAB, contacts[i], bestOverlap);
+                const std::uint8_t referenceFeature = contacts[i].clipMask;
+                const std::uint8_t incidentFeature = contacts[i].incidentFeature;
+                const std::uint8_t clippedMap = static_cast<std::uint8_t>(contacts[i].clipMask ^ ((contacts[i].incidentFeature & 0xFu) << 4));
+                const std::uint64_t featureKey = PackFeatureKey(9, referenceFaceIndex, incidentFaceIndex, referenceFeature, incidentFeature, clippedMap);
+                AddContact(aId, bId, normalAB, contacts[i].point, bestOverlap, featureKey);
             }
             return;
         }
 
         const Vec3 pointA = ClosestPointOnBox(a, b.position);
         const Vec3 pointB = ClosestPointOnBox(b, a.position);
-        AddContact(aId, bId, best.axis, 0.5f * (pointA + pointB), bestOverlap);
+        const std::uint8_t edgeA = static_cast<std::uint8_t>(best.indexA < 0 ? 0 : best.indexA);
+        const std::uint8_t edgeB = static_cast<std::uint8_t>(best.indexB < 0 ? 0 : best.indexB);
+        const std::uint64_t featureKey = PackFeatureKey(10, edgeA, edgeB, edgeA, edgeB, 0);
+        AddContact(aId, bId, best.axis, 0.5f * (pointA + pointB), bestOverlap, featureKey);
     }
 
     void WarmStartContacts() {
