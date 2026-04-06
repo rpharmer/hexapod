@@ -1,0 +1,46 @@
+#pragma once
+
+#include <cstdint>
+#include <vector>
+
+#include "minphys3d/math/vec3.hpp"
+
+namespace minphys3d {
+
+constexpr float kSleepLinearThreshold = 0.05f;
+constexpr float kSleepAngularThreshold = 0.05f;
+constexpr int kSleepFramesThreshold = 120;
+constexpr float kMaxSubstepDistanceFactor = 0.5f;
+
+struct Contact {
+    std::uint32_t a = 0;
+    std::uint32_t b = 0;
+    Vec3 normal{};
+    Vec3 point{};
+    float penetration = 0.0f;
+    float normalImpulseSum = 0.0f;
+    float tangentImpulseSum = 0.0f;
+    std::uint64_t key = 0;
+};
+
+struct Manifold {
+    std::uint32_t a = 0;
+    std::uint32_t b = 0;
+    Vec3 normal{};
+    std::vector<Contact> contacts;
+
+    std::uint64_t pairKey() const {
+        const std::uint32_t lo = std::min(a, b);
+        const std::uint32_t hi = std::max(a, b);
+        return (static_cast<std::uint64_t>(lo) << 32) | hi;
+    }
+};
+
+struct Island {
+    std::vector<std::uint32_t> bodies;
+    std::vector<std::size_t> manifolds;
+    std::vector<std::size_t> joints;
+    std::vector<std::size_t> hinges;
+};
+
+} // namespace minphys3d
