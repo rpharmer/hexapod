@@ -6,6 +6,7 @@ TARGET := hexapod-physics-sim
 SRC := src/main.cpp
 UNIT_TEST := tests/test_unit_math
 REGRESSION_TEST := tests/test_regression_step
+BROADPHASE_TEST := tests/test_broadphase_dynamic_tree
 
 all: $(TARGET)
 
@@ -18,14 +19,18 @@ $(UNIT_TEST): tests/test_unit_math.cpp
 $(REGRESSION_TEST): tests/test_regression_step.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDES) tests/test_regression_step.cpp -o $(REGRESSION_TEST)
 
-test: $(UNIT_TEST) $(REGRESSION_TEST)
+$(BROADPHASE_TEST): tests/test_broadphase_dynamic_tree.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDES) tests/test_broadphase_dynamic_tree.cpp -o $(BROADPHASE_TEST)
+
+test: $(UNIT_TEST) $(REGRESSION_TEST) $(BROADPHASE_TEST)
 	./$(UNIT_TEST)
 	./$(REGRESSION_TEST)
+	./$(BROADPHASE_TEST)
 
 run: $(TARGET)
 	./$(TARGET)
 
 clean:
-	rm -f $(TARGET) $(UNIT_TEST) $(REGRESSION_TEST)
+	rm -f $(TARGET) $(UNIT_TEST) $(REGRESSION_TEST) $(BROADPHASE_TEST)
 
 .PHONY: all test run clean
