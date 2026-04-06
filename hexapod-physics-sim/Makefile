@@ -7,6 +7,7 @@ SRC := src/main.cpp
 UNIT_TEST := tests/test_unit_math
 REGRESSION_TEST := tests/test_regression_step
 BROADPHASE_TEST := tests/test_broadphase_dynamic_tree
+SCENE_SUITE := tests/regression_scene_suite
 
 all: $(TARGET)
 
@@ -22,15 +23,19 @@ $(REGRESSION_TEST): tests/test_regression_step.cpp
 $(BROADPHASE_TEST): tests/test_broadphase_dynamic_tree.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDES) tests/test_broadphase_dynamic_tree.cpp -o $(BROADPHASE_TEST)
 
-test: $(UNIT_TEST) $(REGRESSION_TEST) $(BROADPHASE_TEST)
+$(SCENE_SUITE): tests/regression_scene_suite.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDES) tests/regression_scene_suite.cpp -o $(SCENE_SUITE)
+
+test: $(UNIT_TEST) $(REGRESSION_TEST) $(BROADPHASE_TEST) $(SCENE_SUITE)
 	./$(UNIT_TEST)
 	./$(REGRESSION_TEST)
 	./$(BROADPHASE_TEST)
+	./$(SCENE_SUITE)
 
 run: $(TARGET)
 	./$(TARGET)
 
 clean:
-	rm -f $(TARGET) $(UNIT_TEST) $(REGRESSION_TEST) $(BROADPHASE_TEST)
+	rm -f $(TARGET) $(UNIT_TEST) $(REGRESSION_TEST) $(BROADPHASE_TEST) $(SCENE_SUITE)
 
 .PHONY: all test run clean
