@@ -17,11 +17,14 @@ struct TreeNode {
     std::int32_t right = -1;
     std::int32_t parent = -1;
     std::int32_t bodyId = -1;
+    std::int32_t height = 0;
+    std::int32_t next = -1;
     bool IsLeaf() const { return bodyId >= 0; }
 };
 
 struct BroadphaseProxy {
     AABB fatBox{};
+    std::int32_t leaf = -1;
     bool valid = false;
 };
 
