@@ -954,6 +954,125 @@ private:
         }
     }
 
+    static Vec3 ClampPointToExtents(const Vec3& p, const Vec3& extents) {
+        return {
+            std::clamp(p.x, -extents.x, extents.x),
+            std::clamp(p.y, -extents.y, extents.y),
+            std::clamp(p.z, -extents.z, extents.z),
+        };
+    }
+
+    static Vec3 StableDirection(const Vec3& primary, const std::array<Vec3, 4>& fallbacks) {
+        if (LengthSquared(primary) > kEpsilon * kEpsilon) {
+            return Normalize(primary);
+        }
+        for (const Vec3& candidate : fallbacks) {
+            if (LengthSquared(candidate) > kEpsilon * kEpsilon) {
+                return Normalize(candidate);
+            }
+        }
+        return {0.0f, 1.0f, 0.0f};
+    }
+
+    static std::pair<float, float> ClosestSegmentParameters(const Vec3& p1, const Vec3& q1, const Vec3& p2, const Vec3& q2) {
+        const Vec3 d1 = q1 - p1;
+        const Vec3 d2 = q2 - p2;
+        const Vec3 r = p1 - p2;
+        const float aLen = Dot(d1, d1);
+        const float eLen = Dot(d2, d2);
+        const float f = Dot(d2, r);
+
+        float s = 0.0f;
+        float t = 0.0f;
+        if (aLen <= kEpsilon && eLen <= kEpsilon) {
+            return {0.0f, 0.0f};
+        }
+        if (aLen <= kEpsilon) {
+            t = std::clamp(f / eLen, 0.0f, 1.0f);
+            return {0.0f, t};
+        }
+
+        const float cTerm = Dot(d1, r);
+        if (eLen <= kEpsilon) {
+            s = std::clamp(-cTerm / aLen, 0.0f, 1.0f);
+            return {s, 0.0f};
+        }
+
+        const float bDot = Dot(d1, d2);
+        const float denom = aLen * eLen - bDot * bDot;
+        if (std::abs(denom) > kEpsilon) {
+            s = std::clamp((bDot * f - cTerm * eLen) / denom, 0.0f, 1.0f);
+        } else {
+            s = 0.0f;
+        }
+
+        t = (bDot * s + f) / eLen;
+        if (t < 0.0f) {
+            t = 0.0f;
+            s = std::clamp(-cTerm / aLen, 0.0f, 1.0f);
+        } else if (t > 1.0f) {
+            t = 1.0f;
+            s = std::clamp((bDot - cTerm) / aLen, 0.0f, 1.0f);
+        }
+
+        return {s, t};
+    }
+
+    struct SegmentBoxClosest {
+        float t = 0.0f;
+        Vec3 segmentPoint{};
+        Vec3 boxPoint{};
+        float distSq = 0.0f;
+    };
+
+    static SegmentBoxClosest ClosestSegmentPointToBox(const Vec3& segA, const Vec3& segB, const Vec3& extents) {
+        const Vec3 d = segB - segA;
+        auto eval = [&](float t) {
+            SegmentBoxClosest result;
+            result.t = std::clamp(t, 0.0f, 1.0f);
+            result.segmentPoint = segA + d * result.t;
+            result.boxPoint = ClampPointToExtents(result.segmentPoint, extents);
+            result.distSq = LengthSquared(result.segmentPoint - result.boxPoint);
+            return result;
+        };
+
+        SegmentBoxClosest best = eval(0.0f);
+        auto consider = [&](float t) {
+            const SegmentBoxClosest candidate = eval(t);
+            if (candidate.distSq < best.distSq) {
+                best = candidate;
+            }
+        };
+
+        consider(1.0f);
+
+        for (int axisIndex = 0; axisIndex < 3; ++axisIndex) {
+            const float p0 = (axisIndex == 0) ? segA.x : (axisIndex == 1 ? segA.y : segA.z);
+            const float vd = (axisIndex == 0) ? d.x : (axisIndex == 1 ? d.y : d.z);
+            const float extent = (axisIndex == 0) ? extents.x : (axisIndex == 1 ? extents.y : extents.z);
+            if (std::abs(vd) <= kEpsilon) {
+                continue;
+            }
+            consider((-extent - p0) / vd);
+            consider(( extent - p0) / vd);
+        }
+
+        float lo = 0.0f;
+        float hi = 1.0f;
+        for (int i = 0; i < 32; ++i) {
+            const float m1 = lo + (hi - lo) / 3.0f;
+            const float m2 = hi - (hi - lo) / 3.0f;
+            if (eval(m1).distSq < eval(m2).distSq) {
+                hi = m2;
+            } else {
+                lo = m1;
+            }
+        }
+        consider(0.5f * (lo + hi));
+
+        return best;
+    }
+
     void SphereSphere(std::uint32_t ia, std::uint32_t ib) {
         const Body& a = bodies_[ia];
         const Body& b = bodies_[ib];
@@ -1037,43 +1156,7 @@ private:
 
         const Vec3 d1 = q1 - p1;
         const Vec3 d2 = q2 - p2;
-        const Vec3 r = p1 - p2;
-        const float aLen = Dot(d1, d1);
-        const float eLen = Dot(d2, d2);
-        const float f = Dot(d2, r);
-
-        float s = 0.0f;
-        float t = 0.0f;
-
-        if (aLen <= kEpsilon && eLen <= kEpsilon) {
-            s = 0.0f;
-            t = 0.0f;
-        } else if (aLen <= kEpsilon) {
-            s = 0.0f;
-            t = std::clamp(f / eLen, 0.0f, 1.0f);
-        } else {
-            const float cTerm = Dot(d1, r);
-            if (eLen <= kEpsilon) {
-                t = 0.0f;
-                s = std::clamp(-cTerm / aLen, 0.0f, 1.0f);
-            } else {
-                const float bDot = Dot(d1, d2);
-                const float denom2 = aLen * eLen - bDot * bDot;
-                if (std::abs(denom2) > kEpsilon) {
-                    s = std::clamp((bDot * f - cTerm * eLen) / denom2, 0.0f, 1.0f);
-                } else {
-                    s = 0.0f;
-                }
-                t = (bDot * s + f) / eLen;
-                if (t < 0.0f) {
-                    t = 0.0f;
-                    s = std::clamp(-cTerm / aLen, 0.0f, 1.0f);
-                } else if (t > 1.0f) {
-                    t = 1.0f;
-                    s = std::clamp((bDot - cTerm) / aLen, 0.0f, 1.0f);
-                }
-            }
-        }
+        const auto [s, t] = ClosestSegmentParameters(p1, q1, p2, q2);
 
         const Vec3 c1 = p1 + d1 * s;
         const Vec3 c2 = p2 + d2 * t;
@@ -1084,13 +1167,43 @@ private:
             return;
         }
 
-        const float dist = std::sqrt(std::max(distSq, kEpsilon));
-        const Vec3 normal = (dist > kEpsilon) ? (delta / dist) : Vec3{0.0f, 1.0f, 0.0f};
+        const float dist = std::sqrt(std::max(distSq, 0.0f));
+        const Vec3 centerDelta = b.position - a.position;
+        Vec3 normal = StableDirection(delta, {centerDelta, axisA, axisB, Cross(axisA, axisB)});
+        if (Dot(normal, centerDelta) < 0.0f) {
+            normal = -normal;
+        }
+
         const Vec3 point = c1 + normal * a.radius;
         const std::uint8_t featureA = (s <= 1e-3f) ? 0u : ((s >= 1.0f - 1e-3f) ? 1u : 2u);
         const std::uint8_t featureB = (t <= 1e-3f) ? 0u : ((t >= 1.0f - 1e-3f) ? 1u : 2u);
         const std::uint64_t featureKey = PackFeatureKey(5, 0, 0, featureA, featureB, 0);
         AddContact(aId, bId, normal, point, radiusSum - dist, featureKey);
+
+        const float parallelFactor = std::abs(Dot(axisA, axisB));
+        if (parallelFactor > 0.98f && featureA == 2u && featureB == 2u) {
+            auto addProjectedEndpointContact = [&](const Vec3& endpointA, std::uint8_t endpointFeature) {
+                const auto [sProj, tProj] = ClosestSegmentParameters(endpointA, endpointA, p2, q2);
+                (void)sProj;
+                const Vec3 onB = p2 + d2 * tProj;
+                const Vec3 endpointDelta = onB - endpointA;
+                const float endpointDistSq = LengthSquared(endpointDelta);
+                if (endpointDistSq > radiusSum * radiusSum) {
+                    return;
+                }
+                Vec3 endpointNormal = StableDirection(endpointDelta, {centerDelta, axisA, axisB, Cross(axisA, axisB)});
+                if (Dot(endpointNormal, centerDelta) < 0.0f) {
+                    endpointNormal = -endpointNormal;
+                }
+                const float endpointDist = std::sqrt(std::max(endpointDistSq, 0.0f));
+                const std::uint8_t featureBProj = (tProj <= 1e-3f) ? 0u : ((tProj >= 1.0f - 1e-3f) ? 1u : 2u);
+                const std::uint64_t manifoldFeatureKey = PackFeatureKey(5, 0, 0, endpointFeature, featureBProj, 1);
+                AddContact(aId, bId, endpointNormal, endpointA + endpointNormal * a.radius, radiusSum - endpointDist, manifoldFeatureKey);
+            };
+
+            addProjectedEndpointContact(p1, 0u);
+            addProjectedEndpointContact(q1, 1u);
+        }
     }
 
     void CapsuleBox(std::uint32_t capsuleId, std::uint32_t boxId) {
@@ -1103,60 +1216,29 @@ private:
         const Quat invBoxOrientation = Conjugate(Normalize(b.orientation));
         const Vec3 segA = Rotate(invBoxOrientation, segAWorld - b.position);
         const Vec3 segB = Rotate(invBoxOrientation, segBWorld - b.position);
-        const Vec3 d = segB - segA;
-
-        auto clampToBox = [&](const Vec3& p) {
-            return Vec3{
-                std::clamp(p.x, -b.halfExtents.x, b.halfExtents.x),
-                std::clamp(p.y, -b.halfExtents.y, b.halfExtents.y),
-                std::clamp(p.z, -b.halfExtents.z, b.halfExtents.z),
-            };
-        };
-
-        float bestDistSq = std::numeric_limits<float>::infinity();
-        Vec3 bestSeg{};
-        Vec3 bestBox{};
-
-        auto testPoint = [&](float t) {
-            const Vec3 p = segA + d * t;
-            const Vec3 q = clampToBox(p);
-            const float distSq = LengthSquared(p - q);
-            if (distSq < bestDistSq) {
-                bestDistSq = distSq;
-                bestSeg = p;
-                bestBox = q;
-            }
-        };
-
-        testPoint(0.0f);
-        testPoint(1.0f);
-        for (int axisIndex = 0; axisIndex < 3; ++axisIndex) {
-            const float p0 = (axisIndex == 0) ? segA.x : (axisIndex == 1 ? segA.y : segA.z);
-            const float vd = (axisIndex == 0) ? d.x : (axisIndex == 1 ? d.y : d.z);
-            const float minB = -(axisIndex == 0 ? b.halfExtents.x : (axisIndex == 1 ? b.halfExtents.y : b.halfExtents.z));
-            const float maxB =  (axisIndex == 0 ? b.halfExtents.x : (axisIndex == 1 ? b.halfExtents.y : b.halfExtents.z));
-            if (std::abs(vd) <= kEpsilon) {
-                continue;
-            }
-            const float t1 = (minB - p0) / vd;
-            const float t2 = (maxB - p0) / vd;
-            if (t1 >= 0.0f && t1 <= 1.0f) testPoint(t1);
-            if (t2 >= 0.0f && t2 <= 1.0f) testPoint(t2);
-        }
-
-        if (bestDistSq > c.radius * c.radius) {
+        const SegmentBoxClosest closest = ClosestSegmentPointToBox(segA, segB, b.halfExtents);
+        if (closest.distSq > c.radius * c.radius) {
             return;
         }
 
-        const float dist = std::sqrt(std::max(bestDistSq, kEpsilon));
-        const Vec3 normalLocal = (dist > kEpsilon) ? ((bestSeg - bestBox) / dist) : Vec3{0.0f, 1.0f, 0.0f};
-        const Vec3 normalWorld = Rotate(b.orientation, normalLocal);
-        const Vec3 pointWorld = b.position + Rotate(b.orientation, bestBox);
-        const float segDenom = Dot(d, d);
-        float segT = 0.0f;
-        if (segDenom > kEpsilon) {
-            segT = std::clamp(Dot(bestSeg - segA, d) / segDenom, 0.0f, 1.0f);
+        const Vec3 localDelta = closest.segmentPoint - closest.boxPoint;
+        const float dist = std::sqrt(std::max(closest.distSq, 0.0f));
+        Vec3 normalLocal = StableDirection(localDelta, {closest.segmentPoint, segB - segA, axis, {0.0f, 1.0f, 0.0f}});
+        if (closest.distSq <= kEpsilon * kEpsilon) {
+            const float dx = b.halfExtents.x - std::abs(closest.segmentPoint.x);
+            const float dy = b.halfExtents.y - std::abs(closest.segmentPoint.y);
+            const float dz = b.halfExtents.z - std::abs(closest.segmentPoint.z);
+            if (dx <= dy && dx <= dz) {
+                normalLocal = {(closest.segmentPoint.x >= 0.0f) ? 1.0f : -1.0f, 0.0f, 0.0f};
+            } else if (dy <= dz) {
+                normalLocal = {0.0f, (closest.segmentPoint.y >= 0.0f) ? 1.0f : -1.0f, 0.0f};
+            } else {
+                normalLocal = {0.0f, 0.0f, (closest.segmentPoint.z >= 0.0f) ? 1.0f : -1.0f};
+            }
         }
+        const Vec3 normalWorld = Rotate(b.orientation, normalLocal);
+        const Vec3 pointWorld = b.position + Rotate(b.orientation, closest.boxPoint);
+        const float segT = closest.t;
         const std::uint8_t capsuleFeature = (segT <= 1e-3f) ? 0u : ((segT >= 1.0f - 1e-3f) ? 1u : 2u);
         const std::uint64_t featureKey = PackFeatureKey(6, 0, 0, 0, capsuleFeature, 0);
         AddContact(capsuleId, boxId, -normalWorld, pointWorld, c.radius - dist, featureKey);
