@@ -125,5 +125,42 @@ int main() {
     assert(std::abs(firstRun.y - secondRun.y) <= 1e-5f);
     assert(std::abs(firstRun.z - secondRun.z) <= 1e-5f);
     }
+
+    {
+    World world({0.0f, 0.0f, 0.0f});
+
+    Body left;
+    left.shape = ShapeType::Sphere;
+    left.radius = 0.25f;
+    left.mass = 1.0f;
+    left.position = {-0.7f, 0.0f, 0.0f};
+    const auto leftId = world.CreateBody(left);
+
+    Body mid = left;
+    mid.position = {0.0f, 0.0f, 0.0f};
+    const auto midId = world.CreateBody(mid);
+
+    Body right = left;
+    right.position = {0.7f, 0.0f, 0.0f};
+    const auto rightId = world.CreateBody(right);
+
+    world.CreateDistanceJoint(leftId, midId, world.GetBody(leftId).position, world.GetBody(midId).position, 1.0f, 0.2f);
+    world.CreateDistanceJoint(midId, rightId, world.GetBody(midId).position, world.GetBody(rightId).position, 1.0f, 0.2f);
+
+    for (int i = 0; i < 180; ++i) {
+        world.Step(1.0f / 120.0f, 16);
+    }
+
+    assert(world.GetBody(leftId).isSleeping);
+    assert(world.GetBody(midId).isSleeping);
+    assert(world.GetBody(rightId).isSleeping);
+
+    world.AddForce(leftId, {50.0f, 0.0f, 0.0f});
+    world.Step(1.0f / 120.0f, 16);
+
+    assert(!world.GetBody(leftId).isSleeping);
+    assert(!world.GetBody(midId).isSleeping);
+    assert(!world.GetBody(rightId).isSleeping);
+    }
     return 0;
 }
