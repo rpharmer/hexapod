@@ -2107,35 +2107,119 @@ private:
         }
     }
 
-    void SolveContactsInManifold(Manifold& manifold) {
-        for (Contact& c : manifold.contacts) {
-            Body& a = bodies_[c.a];
-            Body& b = bodies_[c.b];
+    void SolveNormalScalar(Contact& c) {
+        Body& a = bodies_[c.a];
+        Body& b = bodies_[c.b];
 
-            const Mat3 invIA = a.InvInertiaWorld();
-            const Mat3 invIB = b.InvInertiaWorld();
+        const Mat3 invIA = a.InvInertiaWorld();
+        const Mat3 invIB = b.InvInertiaWorld();
 
-            const Vec3 ra = c.point - a.position;
-            const Vec3 rb = c.point - b.position;
+        const Vec3 ra = c.point - a.position;
+        const Vec3 rb = c.point - b.position;
 
-            const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
-            const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
-            const Vec3 relativeVelocity = vb - va;
-            const float separatingVelocity = Dot(relativeVelocity, c.normal);
+        const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
+        const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
+        const Vec3 relativeVelocity = vb - va;
+        const float separatingVelocity = Dot(relativeVelocity, c.normal);
 
+        const float speedIntoContact = -separatingVelocity;
+        float restitution = std::min(a.restitution, b.restitution);
+        if ((speedIntoContact > 0.0f && speedIntoContact < contactSolverConfig_.bounceVelocityThreshold)
+            || (speedIntoContact > 0.0f && speedIntoContact < contactSolverConfig_.restitutionSuppressionSpeed)) {
+            restitution = 0.0f;
+        }
+        const Vec3 raCrossN = Cross(ra, c.normal);
+        const Vec3 rbCrossN = Cross(rb, c.normal);
+        const float angularTermA = Dot(raCrossN, invIA * raCrossN);
+        const float angularTermB = Dot(rbCrossN, invIB * rbCrossN);
+        const float normalMass = a.invMass + b.invMass + angularTermA + angularTermB;
+        if (normalMass <= kEpsilon) {
+            return;
+        }
+
+        float biasTerm = 0.0f;
+        const float penetrationError = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0f);
+        if (contactSolverConfig_.useSplitImpulse) {
+            if (penetrationError > 0.0f) {
+                const float invMassSum = a.invMass + b.invMass;
+                if (invMassSum > kEpsilon) {
+                    const float correctionMagnitude = contactSolverConfig_.splitImpulseCorrectionFactor * penetrationError / invMassSum;
+                    const Vec3 correction = correctionMagnitude * c.normal;
+                    if (!a.isSleeping) {
+                        a.position -= correction * a.invMass;
+                    }
+                    if (!b.isSleeping) {
+                        b.position += correction * b.invMass;
+                    }
+                }
+            }
+        } else if (currentSubstepDt_ > kEpsilon) {
+            biasTerm = (contactSolverConfig_.penetrationBiasFactor * penetrationError) / currentSubstepDt_;
+        }
+
+        float lambdaN = -(1.0f + restitution) * separatingVelocity / normalMass;
+        if (biasTerm > 0.0f) {
+            lambdaN += biasTerm / normalMass;
+        }
+        const float oldNormalImpulse = c.normalImpulseSum;
+        c.normalImpulseSum = std::max(0.0f, c.normalImpulseSum + lambdaN);
+        lambdaN = c.normalImpulseSum - oldNormalImpulse;
+        ApplyImpulse(a, b, invIA, invIB, ra, rb, lambdaN * c.normal);
+    }
+
+    bool SolveNormalBlock2(Manifold& manifold) {
+        if (manifold.contacts.size() != 2) {
+            return false;
+        }
+
+        Contact& c0 = manifold.contacts[0];
+        Contact& c1 = manifold.contacts[1];
+        Body& a = bodies_[c0.a];
+        Body& b = bodies_[c0.b];
+
+        const Vec3 manifoldNormal = Normalize(manifold.normal);
+        if (LengthSquared(manifoldNormal) <= kEpsilon) {
+            return false;
+        }
+        if (Dot(c0.normal, manifoldNormal) < 0.95f || Dot(c1.normal, manifoldNormal) < 0.95f) {
+            return false;
+        }
+
+        const Mat3 invIA = a.InvInertiaWorld();
+        const Mat3 invIB = b.InvInertiaWorld();
+        const Vec3 ra0 = c0.point - a.position;
+        const Vec3 rb0 = c0.point - b.position;
+        const Vec3 ra1 = c1.point - a.position;
+        const Vec3 rb1 = c1.point - b.position;
+
+        const Vec3 ra0CrossN = Cross(ra0, manifoldNormal);
+        const Vec3 rb0CrossN = Cross(rb0, manifoldNormal);
+        const Vec3 ra1CrossN = Cross(ra1, manifoldNormal);
+        const Vec3 rb1CrossN = Cross(rb1, manifoldNormal);
+
+        const float k11 = a.invMass + b.invMass + Dot(ra0CrossN, invIA * ra0CrossN) + Dot(rb0CrossN, invIB * rb0CrossN);
+        const float k22 = a.invMass + b.invMass + Dot(ra1CrossN, invIA * ra1CrossN) + Dot(rb1CrossN, invIB * rb1CrossN);
+        const float k12 = a.invMass + b.invMass + Dot(ra0CrossN, invIA * ra1CrossN) + Dot(rb0CrossN, invIB * rb1CrossN);
+        const float k21 = k12;
+
+        const float det = k11 * k22 - k12 * k21;
+        if (k11 <= kEpsilon || k22 <= kEpsilon || std::abs(det) <= 1e-8f) {
+            return false;
+        }
+
+        const Vec3 va0 = a.velocity + Cross(a.angularVelocity, ra0);
+        const Vec3 vb0 = b.velocity + Cross(b.angularVelocity, rb0);
+        const Vec3 va1 = a.velocity + Cross(a.angularVelocity, ra1);
+        const Vec3 vb1 = b.velocity + Cross(b.angularVelocity, rb1);
+        const float vn0 = Dot(vb0 - va0, manifoldNormal);
+        const float vn1 = Dot(vb1 - va1, manifoldNormal);
+
+        const auto computeRhs = [&](Contact& c, float separatingVelocity) {
             const float speedIntoContact = -separatingVelocity;
             float restitution = std::min(a.restitution, b.restitution);
             if ((speedIntoContact > 0.0f && speedIntoContact < contactSolverConfig_.bounceVelocityThreshold)
                 || (speedIntoContact > 0.0f && speedIntoContact < contactSolverConfig_.restitutionSuppressionSpeed)) {
                 restitution = 0.0f;
-            }
-            const Vec3 raCrossN = Cross(ra, c.normal);
-            const Vec3 rbCrossN = Cross(rb, c.normal);
-            const float angularTermA = Dot(raCrossN, invIA * raCrossN);
-            const float angularTermB = Dot(rbCrossN, invIB * rbCrossN);
-            const float normalMass = a.invMass + b.invMass + angularTermA + angularTermB;
-            if (normalMass <= kEpsilon) {
-                continue;
             }
 
             float biasTerm = 0.0f;
@@ -2145,7 +2229,7 @@ private:
                     const float invMassSum = a.invMass + b.invMass;
                     if (invMassSum > kEpsilon) {
                         const float correctionMagnitude = contactSolverConfig_.splitImpulseCorrectionFactor * penetrationError / invMassSum;
-                        const Vec3 correction = correctionMagnitude * c.normal;
+                        const Vec3 correction = correctionMagnitude * manifoldNormal;
                         if (!a.isSleeping) {
                             a.position -= correction * a.invMass;
                         }
@@ -2158,14 +2242,105 @@ private:
                 biasTerm = (contactSolverConfig_.penetrationBiasFactor * penetrationError) / currentSubstepDt_;
             }
 
-            float lambdaN = -(1.0f + restitution) * separatingVelocity / normalMass;
-            if (biasTerm > 0.0f) {
-                lambdaN += biasTerm / normalMass;
+            return -(1.0f + restitution) * separatingVelocity + std::max(biasTerm, 0.0f);
+        };
+
+        const float rhs0 = computeRhs(c0, vn0);
+        const float rhs1 = computeRhs(c1, vn1);
+
+        const float old0 = c0.normalImpulseSum;
+        const float old1 = c1.normalImpulseSum;
+        const float q0 = rhs0 + k11 * old0 + k12 * old1;
+        const float q1 = rhs1 + k21 * old0 + k22 * old1;
+
+        auto residualW = [&](float lambda0, float lambda1) {
+            return std::array<float, 2>{
+                k11 * lambda0 + k12 * lambda1 - q0,
+                k21 * lambda0 + k22 * lambda1 - q1,
+            };
+        };
+
+        constexpr float lcpEpsilon = 1e-5f;
+        bool solved = false;
+        float new0 = old0;
+        float new1 = old1;
+
+        const float invDet = 1.0f / det;
+        const float both0 = (k22 * q0 - k12 * q1) * invDet;
+        const float both1 = (-k21 * q0 + k11 * q1) * invDet;
+        if (both0 >= -lcpEpsilon && both1 >= -lcpEpsilon) {
+            const auto w = residualW(both0, both1);
+            if (w[0] >= -lcpEpsilon && w[1] >= -lcpEpsilon) {
+                new0 = std::max(0.0f, both0);
+                new1 = std::max(0.0f, both1);
+                solved = true;
             }
-            const float oldNormalImpulse = c.normalImpulseSum;
-            c.normalImpulseSum = std::max(0.0f, c.normalImpulseSum + lambdaN);
-            lambdaN = c.normalImpulseSum - oldNormalImpulse;
-            ApplyImpulse(a, b, invIA, invIB, ra, rb, lambdaN * c.normal);
+        }
+
+        if (!solved && k11 > kEpsilon) {
+            const float one0 = std::max(0.0f, q0 / k11);
+            const float one1 = 0.0f;
+            const auto w = residualW(one0, one1);
+            if (w[1] >= -lcpEpsilon) {
+                new0 = one0;
+                new1 = one1;
+                solved = true;
+            }
+        }
+
+        if (!solved && k22 > kEpsilon) {
+            const float one0 = 0.0f;
+            const float one1 = std::max(0.0f, q1 / k22);
+            const auto w = residualW(one0, one1);
+            if (w[0] >= -lcpEpsilon) {
+                new0 = one0;
+                new1 = one1;
+                solved = true;
+            }
+        }
+
+        if (!solved) {
+            const auto w = residualW(0.0f, 0.0f);
+            if (w[0] >= -lcpEpsilon && w[1] >= -lcpEpsilon) {
+                new0 = 0.0f;
+                new1 = 0.0f;
+                solved = true;
+            }
+        }
+
+        if (!solved || !std::isfinite(new0) || !std::isfinite(new1)) {
+            return false;
+        }
+
+        c0.normalImpulseSum = new0;
+        c1.normalImpulseSum = new1;
+        const float delta0 = c0.normalImpulseSum - old0;
+        const float delta1 = c1.normalImpulseSum - old1;
+        ApplyImpulse(a, b, invIA, invIB, ra0, rb0, delta0 * manifoldNormal);
+        ApplyImpulse(a, b, invIA, invIB, ra1, rb1, delta1 * manifoldNormal);
+        return true;
+    }
+
+    void SolveContactsInManifold(Manifold& manifold) {
+        if (manifold.contacts.size() == 2) {
+            if (!SolveNormalBlock2(manifold)) {
+                SolveNormalScalar(manifold.contacts[0]);
+                SolveNormalScalar(manifold.contacts[1]);
+            }
+        } else {
+            for (Contact& c : manifold.contacts) {
+                SolveNormalScalar(c);
+            }
+        }
+
+        for (Contact& c : manifold.contacts) {
+            Body& a = bodies_[c.a];
+            Body& b = bodies_[c.b];
+
+            const Mat3 invIA = a.InvInertiaWorld();
+            const Mat3 invIB = b.InvInertiaWorld();
+            const Vec3 ra = c.point - a.position;
+            const Vec3 rb = c.point - b.position;
 
             const Vec3 va2 = a.velocity + Cross(a.angularVelocity, ra);
             const Vec3 vb2 = b.velocity + Cross(b.angularVelocity, rb);
