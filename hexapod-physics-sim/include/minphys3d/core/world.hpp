@@ -189,6 +189,9 @@ public:
 private:
     static constexpr float kQuaternionNormalizationTolerance = 1e-3f;
     static constexpr std::size_t kMaxContactsPerManifold = 4;
+    static constexpr float kWakeContactRelativeSpeedThreshold = 0.35f;
+    static constexpr float kWakeContactPenetrationThreshold = 0.02f;
+    static constexpr float kWakeJointRelativeSpeedThreshold = 0.15f;
 
     static bool IsFinite(float value) {
         return std::isfinite(value);
@@ -866,6 +869,60 @@ private:
         body.sleepCounter = 0;
     }
 
+    void WakeConnectedBodies(std::uint32_t start) {
+        if (start >= bodies_.size()) {
+            return;
+        }
+        if (bodies_[start].invMass == 0.0f) {
+            return;
+        }
+
+        std::vector<bool> visited(bodies_.size(), false);
+        std::vector<std::uint32_t> stack{start};
+        visited[start] = true;
+        while (!stack.empty()) {
+            const std::uint32_t id = stack.back();
+            stack.pop_back();
+            WakeBody(bodies_[id]);
+
+            for (const Manifold& m : manifolds_) {
+                std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
+                if (m.a == id) other = m.b;
+                else if (m.b == id) other = m.a;
+                else continue;
+
+                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0f) {
+                    visited[other] = true;
+                    stack.push_back(other);
+                }
+            }
+
+            for (const DistanceJoint& j : joints_) {
+                std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
+                if (j.a == id) other = j.b;
+                else if (j.b == id) other = j.a;
+                else continue;
+
+                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0f) {
+                    visited[other] = true;
+                    stack.push_back(other);
+                }
+            }
+
+            for (const HingeJoint& j : hingeJoints_) {
+                std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
+                if (j.a == id) other = j.b;
+                else if (j.b == id) other = j.a;
+                else continue;
+
+                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0f) {
+                    visited[other] = true;
+                    stack.push_back(other);
+                }
+            }
+        }
+    }
+
     static float ProjectBoxOntoAxis(const Body& box, const Vec3& axis) {
         const Vec3 u0 = Rotate(box.orientation, {1.0f, 0.0f, 0.0f});
         const Vec3 u1 = Rotate(box.orientation, {0.0f, 1.0f, 0.0f});
@@ -944,8 +1001,18 @@ private:
         }
 
         contacts_.push_back(c);
-        WakeBody(bodies_[a]);
-        WakeBody(bodies_[b]);
+        const Body& bodyA = bodies_[a];
+        const Body& bodyB = bodies_[b];
+        const float relSpeed = Length(bodyB.velocity - bodyA.velocity);
+        const bool contactTouchesSleepingBody = (bodyA.isSleeping && !bodyB.isSleeping)
+                                             || (!bodyA.isSleeping && bodyB.isSleeping);
+        const bool strongContact = relSpeed >= kWakeContactRelativeSpeedThreshold
+                                || c.penetration >= kWakeContactPenetrationThreshold
+                                || contactTouchesSleepingBody;
+        if (strongContact) {
+            WakeConnectedBodies(a);
+            WakeConnectedBodies(b);
+        }
     }
 
     void BuildManifolds() {
@@ -2157,6 +2224,11 @@ private:
         const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
         const float relVel = Dot(vb - va, n);
         const float error = len - j.restLength;
+        if (std::abs(error) > kWakeContactPenetrationThreshold
+            || std::abs(relVel) > kWakeJointRelativeSpeedThreshold) {
+            WakeConnectedBodies(j.a);
+            WakeConnectedBodies(j.b);
+        }
 
         const Vec3 raCrossN = Cross(ra, n);
         const Vec3 rbCrossN = Cross(rb, n);
@@ -2187,6 +2259,14 @@ private:
         const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
         const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
         const Vec3 relVel = vb - va;
+        const float relAngSpeed = Length(b.angularVelocity - a.angularVelocity);
+        if (Length(error) > kWakeContactPenetrationThreshold
+            || Length(relVel) > kWakeJointRelativeSpeedThreshold
+            || relAngSpeed > kWakeJointRelativeSpeedThreshold
+            || j.motorEnabled) {
+            WakeConnectedBodies(j.a);
+            WakeConnectedBodies(j.b);
+        }
 
         const Vec3 axes[3] = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
         float* impulseSums[3] = {&j.impulseX, &j.impulseY, &j.impulseZ};
@@ -2385,26 +2465,79 @@ private:
     }
 
     void UpdateSleeping() {
-        for (Body& body : bodies_) {
-            if (body.invMass == 0.0f) {
+        std::vector<bool> visited(bodies_.size(), false);
+        for (std::uint32_t start = 0; start < bodies_.size(); ++start) {
+            if (visited[start] || bodies_[start].invMass == 0.0f) {
                 continue;
             }
 
-            const float linearSpeedSq = LengthSquared(body.velocity);
-            const float angularSpeedSq = LengthSquared(body.angularVelocity);
-            const bool nearlyStill = linearSpeedSq < (kSleepLinearThreshold * kSleepLinearThreshold)
-                                  && angularSpeedSq < (kSleepAngularThreshold * kSleepAngularThreshold);
+            std::vector<std::uint32_t> islandBodies;
+            std::vector<std::uint32_t> stack{start};
+            visited[start] = true;
+            bool islandNearlyStill = true;
 
-            if (nearlyStill) {
-                ++body.sleepCounter;
-                if (body.sleepCounter >= kSleepFramesThreshold) {
-                    body.isSleeping = true;
-                    body.velocity = {0.0f, 0.0f, 0.0f};
-                    body.angularVelocity = {0.0f, 0.0f, 0.0f};
+            while (!stack.empty()) {
+                const std::uint32_t id = stack.back();
+                stack.pop_back();
+                Body& body = bodies_[id];
+                islandBodies.push_back(id);
+
+                const float linearSpeedSq = LengthSquared(body.velocity);
+                const float angularSpeedSq = LengthSquared(body.angularVelocity);
+                const bool nearlyStill = linearSpeedSq < (kSleepLinearThreshold * kSleepLinearThreshold)
+                                      && angularSpeedSq < (kSleepAngularThreshold * kSleepAngularThreshold);
+                islandNearlyStill = islandNearlyStill && nearlyStill;
+
+                for (const Manifold& m : manifolds_) {
+                    std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
+                    if (m.a == id) other = m.b;
+                    else if (m.b == id) other = m.a;
+                    else continue;
+                    if (other < bodies_.size() && bodies_[other].invMass != 0.0f && !visited[other]) {
+                        visited[other] = true;
+                        stack.push_back(other);
+                    }
+                }
+
+                for (const DistanceJoint& j : joints_) {
+                    std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
+                    if (j.a == id) other = j.b;
+                    else if (j.b == id) other = j.a;
+                    else continue;
+                    if (other < bodies_.size() && bodies_[other].invMass != 0.0f && !visited[other]) {
+                        visited[other] = true;
+                        stack.push_back(other);
+                    }
+                }
+
+                for (const HingeJoint& j : hingeJoints_) {
+                    std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
+                    if (j.a == id) other = j.b;
+                    else if (j.b == id) other = j.a;
+                    else continue;
+                    if (other < bodies_.size() && bodies_[other].invMass != 0.0f && !visited[other]) {
+                        visited[other] = true;
+                        stack.push_back(other);
+                    }
+                }
+            }
+
+            if (islandNearlyStill) {
+                for (std::uint32_t id : islandBodies) {
+                    Body& body = bodies_[id];
+                    ++body.sleepCounter;
+                    if (body.sleepCounter >= kSleepFramesThreshold) {
+                        body.isSleeping = true;
+                        body.velocity = {0.0f, 0.0f, 0.0f};
+                        body.angularVelocity = {0.0f, 0.0f, 0.0f};
+                    }
                 }
             } else {
-                body.isSleeping = false;
-                body.sleepCounter = 0;
+                for (std::uint32_t id : islandBodies) {
+                    Body& body = bodies_[id];
+                    body.isSleeping = false;
+                    body.sleepCounter = 0;
+                }
             }
         }
     }
