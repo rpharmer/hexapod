@@ -1015,6 +1015,76 @@ private:
         }
     }
 
+    static int FindBlockSlot(const Manifold& manifold, std::uint64_t contactKey) {
+        for (int slot = 0; slot < 2; ++slot) {
+            if (manifold.blockSlotValid[slot] && manifold.blockContactKeys[slot] == contactKey) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    static int FindFirstFreeBlockSlot(const std::array<bool, 2>& slotOccupied) {
+        for (int slot = 0; slot < 2; ++slot) {
+            if (!slotOccupied[slot]) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    static int EnsureBlockSlotForContact(
+        Manifold& manifold,
+        const Contact& contact,
+        std::array<bool, 2>& slotOccupied) {
+        int slot = FindBlockSlot(manifold, contact.key);
+        if (slot >= 0) {
+            slotOccupied[slot] = true;
+            return slot;
+        }
+
+        slot = FindFirstFreeBlockSlot(slotOccupied);
+        if (slot < 0) {
+            return -1;
+        }
+
+        manifold.blockSlotValid[slot] = true;
+        manifold.blockContactKeys[slot] = contact.key;
+        manifold.blockNormalImpulseSum[slot] = std::max(contact.normalImpulseSum, 0.0f);
+        slotOccupied[slot] = true;
+        return slot;
+    }
+
+    static void RefreshManifoldBlockCache(Manifold& manifold) {
+        std::array<bool, 2> slotOccupied{false, false};
+        std::array<int, 2> slotToContactIndex{-1, -1};
+
+        for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
+            Contact& contact = manifold.contacts[i];
+            const int slot = EnsureBlockSlotForContact(manifold, contact, slotOccupied);
+            if (slot >= 0 && slotToContactIndex[slot] < 0) {
+                slotToContactIndex[slot] = static_cast<int>(i);
+            }
+        }
+
+        for (int slot = 0; slot < 2; ++slot) {
+            if (!slotOccupied[slot]) {
+                manifold.blockSlotValid[slot] = false;
+                manifold.blockContactKeys[slot] = 0u;
+                manifold.blockNormalImpulseSum[slot] = 0.0f;
+                continue;
+            }
+            if (slotToContactIndex[slot] < 0) {
+                continue;
+            }
+            manifold.contacts[slotToContactIndex[slot]].normalImpulseSum = manifold.blockNormalImpulseSum[slot];
+        }
+
+        if (manifold.contacts.size() == 2 && slotToContactIndex[0] == 1 && slotToContactIndex[1] == 0) {
+            std::swap(manifold.contacts[0], manifold.contacts[1]);
+        }
+    }
+
     void BuildManifolds() {
         for (const Contact& c : contacts_) {
             bool found = false;
@@ -1038,8 +1108,13 @@ private:
         }
 
         for (Manifold& m : manifolds_) {
+            const Manifold* previous = nullptr;
             for (const Manifold& old : previousManifolds_) {
                 if (old.pairKey() == m.pairKey()) {
+                    previous = &old;
+                    m.blockNormalImpulseSum = old.blockNormalImpulseSum;
+                    m.blockContactKeys = old.blockContactKeys;
+                    m.blockSlotValid = old.blockSlotValid;
                     for (Contact& c : m.contacts) {
                         for (const Contact& oldc : old.contacts) {
                             if (oldc.key == c.key) {
@@ -1052,6 +1127,14 @@ private:
                     break;
                 }
             }
+
+            if (previous == nullptr) {
+                m.blockNormalImpulseSum = {0.0f, 0.0f};
+                m.blockContactKeys = {0u, 0u};
+                m.blockSlotValid = {false, false};
+            }
+
+            RefreshManifoldBlockCache(m);
         }
 
         std::unordered_map<std::uint64_t, std::size_t> manifoldCountByPair;
@@ -2248,8 +2331,14 @@ private:
         const float rhs0 = computeRhs(c0, vn0);
         const float rhs1 = computeRhs(c1, vn1);
 
-        const float old0 = c0.normalImpulseSum;
-        const float old1 = c1.normalImpulseSum;
+        const int slot0 = FindBlockSlot(manifold, c0.key);
+        const int slot1 = FindBlockSlot(manifold, c1.key);
+        if (slot0 < 0 || slot1 < 0 || slot0 == slot1) {
+            return false;
+        }
+
+        const float old0 = manifold.blockNormalImpulseSum[slot0];
+        const float old1 = manifold.blockNormalImpulseSum[slot1];
         const float q0 = rhs0 + k11 * old0 + k12 * old1;
         const float q1 = rhs1 + k21 * old0 + k22 * old1;
 
@@ -2312,10 +2401,12 @@ private:
             return false;
         }
 
+        manifold.blockNormalImpulseSum[slot0] = new0;
+        manifold.blockNormalImpulseSum[slot1] = new1;
         c0.normalImpulseSum = new0;
         c1.normalImpulseSum = new1;
-        const float delta0 = c0.normalImpulseSum - old0;
-        const float delta1 = c1.normalImpulseSum - old1;
+        const float delta0 = new0 - old0;
+        const float delta1 = new1 - old1;
         ApplyImpulse(a, b, invIA, invIB, ra0, rb0, delta0 * manifoldNormal);
         ApplyImpulse(a, b, invIA, invIB, ra1, rb1, delta1 * manifoldNormal);
         return true;
@@ -2330,6 +2421,15 @@ private:
         } else {
             for (Contact& c : manifold.contacts) {
                 SolveNormalScalar(c);
+            }
+        }
+
+        if (manifold.contacts.size() == 2) {
+            for (Contact& c : manifold.contacts) {
+                const int slot = FindBlockSlot(manifold, c.key);
+                if (slot >= 0) {
+                    manifold.blockNormalImpulseSum[slot] = c.normalImpulseSum;
+                }
             }
         }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -39,6 +40,9 @@ struct Manifold {
     std::uint32_t b = 0;
     Vec3 normal{};
     std::vector<Contact> contacts;
+    std::array<float, 2> blockNormalImpulseSum{0.0f, 0.0f};
+    std::array<std::uint64_t, 2> blockContactKeys{0u, 0u};
+    std::array<bool, 2> blockSlotValid{false, false};
 
     std::uint64_t pairKey() const {
         const std::uint32_t lo = std::min(a, b);
