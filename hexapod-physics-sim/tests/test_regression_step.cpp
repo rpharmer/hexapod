@@ -1,5 +1,7 @@
 #include <cassert>
 #include <cmath>
+#include <cstdint>
+#include <vector>
 
 #include "minphys3d/minphys3d.hpp"
 
@@ -165,6 +167,61 @@ int main() {
     assert(!world.GetBody(leftId).isSleeping);
     assert(!world.GetBody(midId).isSleeping);
     assert(!world.GetBody(rightId).isSleeping);
+    }
+
+    {
+    auto captureSelectedPairSequence = []() {
+        World world({0.0f, -9.81f, 0.0f});
+        ContactSolverConfig cfg = world.GetContactSolverConfig();
+        cfg.useBlockSolver = true;
+        cfg.useSplitImpulse = true;
+        cfg.penetrationSlop = 0.005f;
+        cfg.splitImpulseCorrectionFactor = 0.85f;
+        world.SetContactSolverConfig(cfg);
+
+        Body plane;
+        plane.shape = ShapeType::Plane;
+        world.CreateBody(plane);
+
+        Body box;
+        box.shape = ShapeType::Box;
+        box.halfExtents = {0.55f, 0.20f, 0.35f};
+        box.mass = 2.0f;
+        box.position = {0.0f, 1.1f, 0.0f};
+        box.orientation = Normalize(Quat{0.9990482f, 0.0f, 0.0436194f, 0.0f});
+        box.velocity = {0.45f, 0.0f, 0.12f};
+        box.angularVelocity = {0.0f, 0.3f, 0.0f};
+        world.CreateBody(box);
+
+        std::vector<std::uint64_t> sequence;
+        sequence.reserve(640);
+        std::uint64_t previousPair = 0;
+        int transitions = 0;
+        for (int i = 0; i < 640; ++i) {
+            world.Step(1.0f / 120.0f, 16);
+            std::uint64_t selectedPair = 0;
+            for (const Manifold& manifold : world.DebugManifolds()) {
+                if (manifold.contacts.size() != 4) {
+                    continue;
+                }
+                const std::uint64_t lo = std::min(manifold.selectedBlockContactKeys[0], manifold.selectedBlockContactKeys[1]);
+                const std::uint64_t hi = std::max(manifold.selectedBlockContactKeys[0], manifold.selectedBlockContactKeys[1]);
+                selectedPair = (lo << 1) ^ (hi * 1099511628211ull);
+                break;
+            }
+            if (selectedPair != 0 && previousPair != 0 && selectedPair != previousPair) {
+                ++transitions;
+            }
+            previousPair = selectedPair;
+            sequence.push_back(selectedPair);
+        }
+        assert(transitions <= 24);
+        return sequence;
+    };
+
+    const std::vector<std::uint64_t> first = captureSelectedPairSequence();
+    const std::vector<std::uint64_t> second = captureSelectedPairSequence();
+    assert(first == second);
     }
     return 0;
 }

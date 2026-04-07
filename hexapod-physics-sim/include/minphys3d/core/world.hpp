@@ -1237,6 +1237,7 @@ private:
                     m.blockNormalImpulseSum = old.blockNormalImpulseSum;
                     m.blockContactKeys = old.blockContactKeys;
                     m.blockSlotValid = old.blockSlotValid;
+                    m.selectedBlockContactKeys = old.selectedBlockContactKeys;
                     break;
                 }
             }
@@ -1245,6 +1246,7 @@ private:
                 m.blockNormalImpulseSum = {0.0f, 0.0f};
                 m.blockContactKeys = {0u, 0u};
                 m.blockSlotValid = {false, false};
+                m.selectedBlockContactKeys = {0u, 0u};
             }
 
             const std::uint64_t manifoldId = MakeManifoldId(m.pairKey(), m.manifoldType);
@@ -1260,9 +1262,11 @@ private:
                 if (stateIt != persistentPointImpulses_.end()) {
                     c.normalImpulseSum = stateIt->second.normalImpulseSum;
                     c.tangentImpulseSum = stateIt->second.tangentImpulseSum;
+                    c.persistenceAge = stateIt->second.persistenceAge;
                 } else {
                     c.normalImpulseSum = 0.0f;
                     c.tangentImpulseSum = 0.0f;
+                    c.persistenceAge = 0;
 #ifndef NDEBUG
                     ++solverTelemetry_.impulseResetPoints;
                     if (debugContactPersistence_) {
@@ -1328,6 +1332,7 @@ private:
 #endif
 
             RefreshManifoldBlockCache(m);
+            SelectBlockSolvePair(m);
         }
 
         std::unordered_map<std::uint64_t, std::size_t> manifoldCountByPair;
@@ -1342,9 +1347,11 @@ private:
     struct PersistentPointImpulseState {
         float normalImpulseSum = 0.0f;
         float tangentImpulseSum = 0.0f;
+        std::uint16_t persistenceAge = 0;
     };
 
     void CapturePersistentPointImpulseState(const std::vector<Manifold>& manifolds) {
+        const auto previousState = persistentPointImpulses_;
         persistentPointImpulses_.clear();
         for (const Manifold& manifold : manifolds) {
             const std::uint64_t manifoldId = MakeManifoldId(manifold.pairKey(), manifold.manifoldType);
@@ -1353,7 +1360,14 @@ private:
             for (const Contact& contact : manifold.contacts) {
                 const std::uint8_t ordinal = featureOrdinal[contact.featureKey]++;
                 const std::uint64_t pointKey = MakePersistentPointKey(manifoldId, contact.featureKey, ordinal);
-                persistentPointImpulses_[pointKey] = {contact.normalImpulseSum, contact.tangentImpulseSum};
+                std::uint16_t persistenceAge = 1;
+                const auto previousIt = previousState.find(pointKey);
+                if (previousIt != previousState.end()) {
+                    persistenceAge = static_cast<std::uint16_t>(
+                        std::min<std::uint32_t>(static_cast<std::uint32_t>(previousIt->second.persistenceAge) + 1u,
+                                                static_cast<std::uint32_t>(std::numeric_limits<std::uint16_t>::max())));
+                }
+                persistentPointImpulses_[pointKey] = {contact.normalImpulseSum, contact.tangentImpulseSum, persistenceAge};
             }
         }
     }
@@ -2523,8 +2537,130 @@ private:
         return LengthSquared(contact.normal) > kEpsilon;
     }
 
+    static bool ContactPairStableOrder(const Contact& lhs, const Contact& rhs) {
+        if (lhs.key != rhs.key) {
+            return lhs.key < rhs.key;
+        }
+        return StableContactFallbackKey(lhs) <= StableContactFallbackKey(rhs);
+    }
+
+    void SelectBlockSolvePair(Manifold& manifold) const {
+        const std::array<std::uint64_t, 2> previousSelectedKeys = manifold.selectedBlockContactKeys;
+        manifold.selectedBlockContactIndices = {-1, -1};
+        manifold.selectedBlockContactKeys = {0u, 0u};
+        manifold.selectedBlockPairPersistent = false;
+        manifold.selectedBlockPairQualityPass = false;
+
+        if (manifold.contacts.size() < 2) {
+            return;
+        }
+
+        if (manifold.contacts.size() == 2) {
+            manifold.selectedBlockContactIndices = {0, 1};
+            manifold.selectedBlockContactKeys = {manifold.contacts[0].key, manifold.contacts[1].key};
+            manifold.selectedBlockPairPersistent = true;
+            manifold.selectedBlockPairQualityPass = true;
+            return;
+        }
+
+        if (manifold.contacts.size() != 4) {
+            return;
+        }
+
+        struct PairSelection {
+            int i = -1;
+            int j = -1;
+            float penetration = -1.0f;
+            float spread = -1.0f;
+            float lever = -1.0f;
+            int ageMin = -1;
+            int ageSum = -1;
+            float continuity = 0.0f;
+        };
+
+        const Vec3 centers = 0.5f * (bodies_[manifold.a].position + bodies_[manifold.b].position);
+        PairSelection best{};
+        constexpr float kScoreEpsilon = 1e-6f;
+        for (int i = 0; i < 4; ++i) {
+            const Contact& a = manifold.contacts[static_cast<std::size_t>(i)];
+            if (!IsValidBlockContactPoint(a)) {
+                continue;
+            }
+            for (int j = i + 1; j < 4; ++j) {
+                const Contact& b = manifold.contacts[static_cast<std::size_t>(j)];
+                if (!IsValidBlockContactPoint(b)) {
+                    continue;
+                }
+
+                PairSelection candidate;
+                candidate.i = i;
+                candidate.j = j;
+                candidate.penetration = a.penetration + b.penetration;
+                candidate.spread = LengthSquared(a.point - b.point);
+                const Vec3 midPoint = 0.5f * (a.point + b.point);
+                candidate.lever = LengthSquared(midPoint - centers);
+                candidate.ageMin = static_cast<int>(std::min(a.persistenceAge, b.persistenceAge));
+                candidate.ageSum = static_cast<int>(a.persistenceAge + b.persistenceAge);
+                const bool keyMatch = (a.key == previousSelectedKeys[0] || a.key == previousSelectedKeys[1])
+                                   && (b.key == previousSelectedKeys[0] || b.key == previousSelectedKeys[1]);
+                candidate.continuity = keyMatch ? 1.0f : 0.0f;
+
+                const bool betterPenetration = candidate.penetration > (best.penetration + kScoreEpsilon);
+                const bool tiePenetration = std::abs(candidate.penetration - best.penetration) <= kScoreEpsilon;
+                const bool betterSpread = tiePenetration && candidate.spread > (best.spread + kScoreEpsilon);
+                const bool tieSpread = tiePenetration && std::abs(candidate.spread - best.spread) <= kScoreEpsilon;
+                const bool betterLever = tieSpread && candidate.lever > (best.lever + kScoreEpsilon);
+                const bool tieLever = tieSpread && std::abs(candidate.lever - best.lever) <= kScoreEpsilon;
+                const bool betterAgeMin = tieLever && candidate.ageMin > best.ageMin;
+                const bool tieAgeMin = tieLever && candidate.ageMin == best.ageMin;
+                const bool betterAgeSum = tieAgeMin && candidate.ageSum > best.ageSum;
+                const bool tieAgeSum = tieAgeMin && candidate.ageSum == best.ageSum;
+                const bool betterContinuity = tieAgeSum && candidate.continuity > best.continuity;
+                const bool tieContinuity = tieAgeSum && candidate.continuity == best.continuity;
+                const bool betterDeterministic = tieContinuity
+                    && ContactPairStableOrder(a, b)
+                    && (best.i < 0
+                        || manifold.contacts[static_cast<std::size_t>(best.i)].key > a.key
+                        || (manifold.contacts[static_cast<std::size_t>(best.i)].key == a.key
+                            && manifold.contacts[static_cast<std::size_t>(best.j)].key > b.key));
+
+                if (best.i < 0
+                    || betterPenetration
+                    || betterSpread
+                    || betterLever
+                    || betterAgeMin
+                    || betterAgeSum
+                    || betterContinuity
+                    || betterDeterministic) {
+                    best = candidate;
+                }
+            }
+        }
+
+        if (best.i < 0 || best.j < 0) {
+            return;
+        }
+
+        int idx0 = best.i;
+        int idx1 = best.j;
+        const Contact& c0 = manifold.contacts[static_cast<std::size_t>(idx0)];
+        const Contact& c1 = manifold.contacts[static_cast<std::size_t>(idx1)];
+        if (!ContactPairStableOrder(c0, c1)) {
+            std::swap(idx0, idx1);
+        }
+
+        manifold.selectedBlockContactIndices = {idx0, idx1};
+        manifold.selectedBlockContactKeys = {
+            manifold.contacts[static_cast<std::size_t>(idx0)].key,
+            manifold.contacts[static_cast<std::size_t>(idx1)].key};
+        manifold.selectedBlockPairPersistent =
+            manifold.contacts[static_cast<std::size_t>(idx0)].persistenceAge > 0
+            && manifold.contacts[static_cast<std::size_t>(idx1)].persistenceAge > 0;
+        manifold.selectedBlockPairQualityPass = best.spread > 1e-6f && best.penetration > 0.0f;
+    }
+
     bool IsBlockSolveEligible(const Manifold& manifold) const {
-        if (manifold.contacts.size() != 2) {
+        if (manifold.contacts.size() < 2) {
             return false;
         }
 
@@ -2539,6 +2675,12 @@ private:
         if (manifold.lowQuality) {
             return false;
         }
+        if (!manifold.selectedBlockPairQualityPass) {
+            return false;
+        }
+        if (manifold.contacts.size() == 4 && !manifold.selectedBlockPairPersistent) {
+            return false;
+        }
 
         const Vec3 manifoldNormal = Normalize(manifold.normal);
         if (!std::isfinite(manifoldNormal.x) || !std::isfinite(manifoldNormal.y) || !std::isfinite(manifoldNormal.z)) {
@@ -2548,19 +2690,27 @@ private:
             return false;
         }
 
-        for (const Contact& contact : manifold.contacts) {
-            if (!IsValidBlockContactPoint(contact)) {
+        const int idx0 = manifold.selectedBlockContactIndices[0];
+        const int idx1 = manifold.selectedBlockContactIndices[1];
+        if (idx0 < 0 || idx1 < 0 || idx0 == idx1
+            || static_cast<std::size_t>(std::max(idx0, idx1)) >= manifold.contacts.size()) {
+            return false;
+        }
+
+        const Contact& selected0 = manifold.contacts[static_cast<std::size_t>(idx0)];
+        const Contact& selected1 = manifold.contacts[static_cast<std::size_t>(idx1)];
+        for (const Contact* contact : {&selected0, &selected1}) {
+            if (!IsValidBlockContactPoint(*contact)) {
                 return false;
             }
-            if (Dot(contact.normal, manifoldNormal) < 0.95f) {
+            if (Dot(contact->normal, manifoldNormal) < 0.95f) {
                 return false;
             }
         }
 
-        if (!manifold.blockSlotValid[0] || !manifold.blockSlotValid[1]) {
-            return false;
-        }
-        if (manifold.blockContactKeys[0] == manifold.blockContactKeys[1]) {
+        const int slot0 = FindBlockSlot(manifold, selected0.key);
+        const int slot1 = FindBlockSlot(manifold, selected1.key);
+        if (slot0 < 0 || slot1 < 0 || slot0 == slot1) {
             return false;
         }
         return true;
@@ -2592,9 +2742,16 @@ private:
             return false;
         }
 
-        EnsureStableTwoPointOrder(manifold);
-        Contact& c0 = manifold.contacts[0];
-        Contact& c1 = manifold.contacts[1];
+        const int idx0 = manifold.selectedBlockContactIndices[0];
+        const int idx1 = manifold.selectedBlockContactIndices[1];
+        if (idx0 < 0 || idx1 < 0 || idx0 == idx1
+            || static_cast<std::size_t>(std::max(idx0, idx1)) >= manifold.contacts.size()) {
+            fallbackReason = BlockSolveFallbackReason::Ineligible;
+            return false;
+        }
+
+        Contact& c0 = manifold.contacts[static_cast<std::size_t>(idx0)];
+        Contact& c1 = manifold.contacts[static_cast<std::size_t>(idx1)];
         Body& a = bodies_[c0.a];
         Body& b = bodies_[c0.b];
 
@@ -2821,7 +2978,12 @@ private:
                     manifold.contacts.size());
             }
 #endif
-            for (std::size_t i = 2; i < manifold.contacts.size(); ++i) {
+            const int blockIdx0 = manifold.selectedBlockContactIndices[0];
+            const int blockIdx1 = manifold.selectedBlockContactIndices[1];
+            for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
+                if (static_cast<int>(i) == blockIdx0 || static_cast<int>(i) == blockIdx1) {
+                    continue;
+                }
                 SolveNormalScalar(manifold.contacts[i]);
             }
             return;
@@ -2872,7 +3034,6 @@ private:
     }
 
     void SolveContactsInManifold(Manifold& manifold) {
-        EnsureStableTwoPointOrder(manifold);
         SolveManifoldNormalImpulses(manifold);
 
         if (manifold.contacts.size() >= 2) {

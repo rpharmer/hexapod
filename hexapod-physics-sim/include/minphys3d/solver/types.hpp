@@ -40,6 +40,7 @@ struct Contact {
     float tangentImpulseSum = 0.0f;
     std::uint64_t key = 0;
     std::uint64_t featureKey = 0;
+    std::uint16_t persistenceAge = 0;
 };
 
 struct Manifold {
@@ -51,6 +52,10 @@ struct Manifold {
     std::array<float, 2> blockNormalImpulseSum{0.0f, 0.0f};
     std::array<std::uint64_t, 2> blockContactKeys{0u, 0u};
     std::array<bool, 2> blockSlotValid{false, false};
+    std::array<int, 2> selectedBlockContactIndices{-1, -1};
+    std::array<std::uint64_t, 2> selectedBlockContactKeys{0u, 0u};
+    bool selectedBlockPairPersistent = false;
+    bool selectedBlockPairQualityPass = false;
     bool lowQuality = false;
     bool blockSolveEligible = false;
     bool usedBlockSolve = false;
