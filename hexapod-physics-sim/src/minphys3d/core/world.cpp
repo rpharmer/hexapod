@@ -16,6 +16,44 @@ const ContactSolverConfig& World::GetContactSolverConfig() const {
     return contactSolverConfig_;
 }
 
+bool World::ComputeStableTangentFrame(
+    const Vec3& manifoldNormal,
+    const Vec3& relativeVelocity,
+    Vec3& outT0,
+    Vec3& outT1,
+    const Vec3* preferredTangent) {
+    Vec3 n{};
+    if (!TryNormalize(manifoldNormal, n)) {
+        return false;
+    }
+
+    auto projectToTangent = [&](const Vec3& candidate, Vec3& tangentOut) -> bool {
+        const Vec3 projected = candidate - Dot(candidate, n) * n;
+        return TryNormalize(projected, tangentOut);
+    };
+
+    Vec3 t0{};
+    if (preferredTangent != nullptr && projectToTangent(*preferredTangent, t0)) {
+        // keep previous basis when possible
+    } else if (projectToTangent(relativeVelocity, t0)) {
+        // align with current slip direction
+    } else {
+        const Vec3 fallbackAxis = (std::abs(n.y) < 0.9f) ? Vec3{0.0f, 1.0f, 0.0f} : Vec3{1.0f, 0.0f, 0.0f};
+        if (!projectToTangent(fallbackAxis, t0)) {
+            return false;
+        }
+    }
+
+    Vec3 t1 = Cross(n, t0);
+    if (!TryNormalize(t1, t1)) {
+        return false;
+    }
+
+    outT0 = t0;
+    outT1 = t1;
+    return true;
+}
+
 #ifndef NDEBUG
 const World::SolverTelemetry& World::GetSolverTelemetry() const {
     return solverTelemetry_;

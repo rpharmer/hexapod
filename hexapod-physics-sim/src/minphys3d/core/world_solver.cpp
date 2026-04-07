@@ -59,6 +59,7 @@ void World::WarmStartContacts() {
                                 const Vec3 rb = c.point - b.position;
                                 ApplyImpulse(a, b, invIA, invIB, ra, rb, cachedNormalImpulse * m.normal);
                             }
+                            c.normalImpulseSum = cachedNormalImpulse;
                         }
                         skipPerContactNormal[static_cast<std::size_t>(contactIndex)] = true;
                     }
@@ -67,6 +68,10 @@ void World::WarmStartContacts() {
 
             std::size_t contactIndex = 0;
             for (Contact& c : m.contacts) {
+                if (const std::array<float, 2>* cached = FindPerContactImpulseCache(m, c.key)) {
+                    c.normalImpulseSum = std::max((*cached)[0], 0.0f);
+                    c.tangentImpulseSum = (*cached)[1];
+                }
                 const bool skipNormal = skipPerContactNormal[contactIndex];
                 if (!skipNormal && c.normalImpulseSum == 0.0f && c.tangentImpulseSum == 0.0f) {
                     ++contactIndex;
@@ -96,6 +101,9 @@ void World::WarmStartContacts() {
                 const Vec3 normalImpulse = skipNormal ? Vec3{0.0f, 0.0f, 0.0f} : c.normalImpulseSum * c.normal;
                 const Vec3 impulse = normalImpulse + c.tangentImpulseSum * tangent;
                 ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
+                std::array<float, 2>& cacheEntry = EnsurePerContactImpulseCache(m, c.key);
+                cacheEntry[0] = std::max(c.normalImpulseSum, 0.0f);
+                cacheEntry[1] = c.tangentImpulseSum;
                 ++contactIndex;
             }
         }
@@ -304,6 +312,8 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
         manifold.blockNormalImpulseSum[slot1] = new1;
         c0.normalImpulseSum = new0;
         c1.normalImpulseSum = new1;
+        EnsurePerContactImpulseCache(manifold, c0.key)[0] = new0;
+        EnsurePerContactImpulseCache(manifold, c1.key)[0] = new1;
 #ifndef NDEBUG
         manifold.blockSolveDebug.selectedPostNormalImpulses = {new0, new1};
 #endif
@@ -311,6 +321,151 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
         const float delta1 = new1 - old1;
         ApplyImpulse(a, b, invIA, invIB, ra0, rb0, delta0 * normal0);
         ApplyImpulse(a, b, invIA, invIB, ra1, rb1, delta1 * normal1);
+        return true;
+    }
+
+bool World::SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& fallbackReason, float& conditionEstimate) {
+        fallbackReason = BlockSolveFallbackReason::None;
+        conditionEstimate = std::numeric_limits<float>::quiet_NaN();
+        if (manifold.contacts.size() != 4 || manifold.manifoldType != 9) {
+            fallbackReason = BlockSolveFallbackReason::TypePolicy;
+            return false;
+        }
+
+        Body& a = bodies_[manifold.contacts[0].a];
+        Body& b = bodies_[manifold.contacts[0].b];
+        const Mat3 invIA = a.InvInertiaWorld();
+        const Mat3 invIB = b.InvInertiaWorld();
+        const Vec3 manifoldNormal = Normalize(manifold.normal);
+        if (LengthSquared(manifoldNormal) <= kEpsilon) {
+            fallbackReason = BlockSolveFallbackReason::InvalidManifoldNormal;
+            return false;
+        }
+
+        std::array<Vec3, 4> normals{};
+        std::array<Vec3, 4> ra{};
+        std::array<Vec3, 4> rb{};
+        std::array<Vec3, 4> raCrossN{};
+        std::array<Vec3, 4> rbCrossN{};
+        std::array<float, 4> diagonal{};
+        std::array<float, 4> rhs{};
+        std::array<float, 4> oldLambda{};
+        std::array<std::array<float, 4>, 4> K{};
+
+        const float invMassSum = a.invMass + b.invMass;
+        Vec3 centroid{0.0f, 0.0f, 0.0f};
+        for (const Contact& c : manifold.contacts) {
+            centroid += c.point;
+        }
+        centroid = centroid / 4.0f;
+        float spreadSq = 0.0f;
+        float areaProxy = 0.0f;
+        for (int i = 0; i < 4; ++i) {
+            const Contact& c = manifold.contacts[static_cast<std::size_t>(i)];
+            spreadSq = std::max(spreadSq, LengthSquared(c.point - centroid));
+            for (int j = i + 1; j < 4; ++j) {
+                areaProxy = std::max(areaProxy, LengthSquared(Cross(c.point - centroid, manifold.contacts[static_cast<std::size_t>(j)].point - centroid)));
+            }
+            normals[static_cast<std::size_t>(i)] = Normalize(c.normal);
+            if (Dot(normals[static_cast<std::size_t>(i)], manifoldNormal) < 0.95f) {
+                fallbackReason = BlockSolveFallbackReason::ContactNormalMismatch;
+                return false;
+            }
+            ra[static_cast<std::size_t>(i)] = c.point - a.position;
+            rb[static_cast<std::size_t>(i)] = c.point - b.position;
+            raCrossN[static_cast<std::size_t>(i)] = Cross(ra[static_cast<std::size_t>(i)], normals[static_cast<std::size_t>(i)]);
+            rbCrossN[static_cast<std::size_t>(i)] = Cross(rb[static_cast<std::size_t>(i)], normals[static_cast<std::size_t>(i)]);
+            oldLambda[static_cast<std::size_t>(i)] = std::max(c.normalImpulseSum, 0.0f);
+        }
+        if (spreadSq < contactSolverConfig_.face4MinSpreadSq || areaProxy < contactSolverConfig_.face4MinArea) {
+            fallbackReason = BlockSolveFallbackReason::QualityGate;
+            return false;
+        }
+
+        for (int i = 0; i < 4; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                const float nd = Dot(normals[static_cast<std::size_t>(i)], normals[static_cast<std::size_t>(j)]);
+                K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] =
+                    invMassSum * nd
+                    + Dot(raCrossN[static_cast<std::size_t>(i)], invIA * raCrossN[static_cast<std::size_t>(j)])
+                    + Dot(rbCrossN[static_cast<std::size_t>(i)], invIB * rbCrossN[static_cast<std::size_t>(j)]);
+            }
+            diagonal[static_cast<std::size_t>(i)] = K[static_cast<std::size_t>(i)][static_cast<std::size_t>(i)];
+            if (diagonal[static_cast<std::size_t>(i)] <= contactSolverConfig_.blockDiagonalMinimum) {
+                fallbackReason = BlockSolveFallbackReason::DegenerateMassMatrix;
+                return false;
+            }
+        }
+
+        const float diagMin = *std::min_element(diagonal.begin(), diagonal.end());
+        const float diagMax = *std::max_element(diagonal.begin(), diagonal.end());
+        conditionEstimate = (diagMin > kEpsilon) ? (diagMax / diagMin) : std::numeric_limits<float>::infinity();
+        const float conditionCap =
+            (contactSolverConfig_.face4ConditionEstimateMax > 0.0f)
+                ? contactSolverConfig_.face4ConditionEstimateMax
+                : contactSolverConfig_.blockConditionEstimateMax;
+        if (conditionCap > 0.0f && (!std::isfinite(conditionEstimate) || conditionEstimate > conditionCap)) {
+            fallbackReason = BlockSolveFallbackReason::ConditionEstimateExceeded;
+            return false;
+        }
+
+        for (int i = 0; i < 4; ++i) {
+            const Contact& c = manifold.contacts[static_cast<std::size_t>(i)];
+            const Vec3 va = a.velocity + Cross(a.angularVelocity, ra[static_cast<std::size_t>(i)]);
+            const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb[static_cast<std::size_t>(i)]);
+            const float vn = Dot(vb - va, normals[static_cast<std::size_t>(i)]);
+            const float speedIntoContact = -vn;
+            const float restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
+            float biasTerm = 0.0f;
+            const float penetrationError = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0f);
+            if (currentSubstepDt_ > kEpsilon && !contactSolverConfig_.useSplitImpulse) {
+                const float maxSafeSeparatingSpeed = penetrationError / currentSubstepDt_;
+                if (vn <= maxSafeSeparatingSpeed) {
+                    biasTerm = (contactSolverConfig_.penetrationBiasFactor * penetrationError) / currentSubstepDt_;
+                }
+            }
+            const float localRhs = -(1.0f + restitution) * vn + std::max(biasTerm, 0.0f);
+            float shifted = localRhs;
+            for (int j = 0; j < 4; ++j) {
+                shifted += K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] * oldLambda[static_cast<std::size_t>(j)];
+            }
+            rhs[static_cast<std::size_t>(i)] = shifted;
+        }
+
+        std::array<float, 4> lambda = oldLambda;
+        const int iterations = std::max<int>(contactSolverConfig_.face4Iterations, 1);
+        for (int iter = 0; iter < iterations; ++iter) {
+            float maxDelta = 0.0f;
+            for (int i = 0; i < 4; ++i) {
+                float sum = 0.0f;
+                for (int j = 0; j < 4; ++j) {
+                    if (i == j) continue;
+                    sum += K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] * lambda[static_cast<std::size_t>(j)];
+                }
+                const float newValue = std::max(0.0f, (rhs[static_cast<std::size_t>(i)] - sum) / diagonal[static_cast<std::size_t>(i)]);
+                maxDelta = std::max(maxDelta, std::abs(newValue - lambda[static_cast<std::size_t>(i)]));
+                lambda[static_cast<std::size_t>(i)] = newValue;
+            }
+            if (maxDelta <= contactSolverConfig_.face4ProjectedGaussSeidelEpsilon) {
+                break;
+            }
+        }
+
+        for (int i = 0; i < 4; ++i) {
+            if (!std::isfinite(lambda[static_cast<std::size_t>(i)])) {
+                fallbackReason = BlockSolveFallbackReason::NonFiniteResult;
+                return false;
+            }
+            Contact& c = manifold.contacts[static_cast<std::size_t>(i)];
+            const float delta = lambda[static_cast<std::size_t>(i)] - oldLambda[static_cast<std::size_t>(i)];
+            c.normalImpulseSum = lambda[static_cast<std::size_t>(i)];
+            EnsurePerContactImpulseCache(manifold, c.key)[0] = c.normalImpulseSum;
+            ApplyImpulse(a, b, invIA, invIB, ra[static_cast<std::size_t>(i)], rb[static_cast<std::size_t>(i)], delta * normals[static_cast<std::size_t>(i)]);
+            const int slot = FindBlockSlot(manifold, c.key);
+            if (slot >= 0) {
+                manifold.blockNormalImpulseSum[slot] = c.normalImpulseSum;
+            }
+        }
         return true;
     }
 
@@ -483,6 +638,17 @@ void World::SolveContactsInManifold(Manifold& manifold) {
             [this](Body& a, Body& b, const Mat3& invIA, const Mat3& invIB, const Vec3& ra, const Vec3& rb, const Vec3& impulse) {
                 ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
             },
+            [this](bool reusedBasis) {
+#ifndef NDEBUG
+                if (reusedBasis) {
+                    ++solverTelemetry_.tangentBasisReused;
+                } else {
+                    ++solverTelemetry_.tangentBasisResets;
+                }
+#else
+                (void)reusedBasis;
+#endif
+            },
             contactSolverConfig_,
         };
         solver.SolveContactsInManifold(context, manifold);
@@ -523,6 +689,17 @@ void World::SolveIslands() {
             [](const Manifold& manifold, std::uint64_t contactKey) { return FindBlockSlot(manifold, contactKey); },
             [this](Body& a, Body& b, const Mat3& invIA, const Mat3& invIB, const Vec3& ra, const Vec3& rb, const Vec3& impulse) {
                 ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
+            },
+            [this](bool reusedBasis) {
+#ifndef NDEBUG
+                if (reusedBasis) {
+                    ++solverTelemetry_.tangentBasisReused;
+                } else {
+                    ++solverTelemetry_.tangentBasisResets;
+                }
+#else
+                (void)reusedBasis;
+#endif
             },
             contactSolverConfig_,
         };

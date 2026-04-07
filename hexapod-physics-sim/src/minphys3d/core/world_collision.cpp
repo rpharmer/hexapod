@@ -32,6 +32,17 @@ void World::BuildManifolds() {
             [this](Body& a, Body& b, const Mat3& invIA, const Mat3& invIB, const Vec3& ra, const Vec3& rb, const Vec3& impulse) {
                 ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
             },
+            [this](bool reusedBasis) {
+#ifndef NDEBUG
+                if (reusedBasis) {
+                    ++solverTelemetry_.tangentBasisReused;
+                } else {
+                    ++solverTelemetry_.tangentBasisResets;
+                }
+#else
+                (void)reusedBasis;
+#endif
+            },
             contactSolverConfig_,
         };
         solver.BuildManifolds(context);

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 #include "minphys3d/math/vec3.hpp"
@@ -28,6 +29,15 @@ struct ContactSolverConfig {
     float blockDiagonalMinimum = 1e-6f;
     float blockConditionEstimateMax = 0.0f;
     bool useBlockSolver = true;
+    std::uint32_t blockManifoldTypeMask = (1u << 7u) | (1u << 9u);
+    std::array<std::uint8_t, 256> blockMinPersistenceByType{};
+    bool useFace4PointNormalBlock = false;
+    std::uint16_t face4MinPersistenceAge = 1;
+    float face4MinSpreadSq = 1e-6f;
+    float face4MinArea = 1e-6f;
+    float face4ConditionEstimateMax = 0.0f;
+    std::uint8_t face4Iterations = 8;
+    float face4ProjectedGaussSeidelEpsilon = 1e-5f;
 };
 
 struct Contact {
@@ -54,6 +64,12 @@ struct Manifold {
     std::array<bool, 2> blockSlotValid{false, false};
     std::array<int, 2> selectedBlockContactIndices{-1, -1};
     std::array<std::uint64_t, 2> selectedBlockContactKeys{0u, 0u};
+    Vec3 t0{};
+    Vec3 t1{};
+    bool tangentBasisValid = false;
+    std::array<float, 2> manifoldTangentImpulseSum{0.0f, 0.0f};
+    bool manifoldTangentImpulseValid = false;
+    std::unordered_map<std::uint64_t, std::array<float, 2>> cachedImpulseByContactKey{};
     bool selectedBlockPairPersistent = false;
     bool selectedBlockPairQualityPass = false;
     bool lowQuality = false;
