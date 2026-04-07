@@ -9,6 +9,34 @@ int main() {
     using namespace minphys3d;
 
     {
+    World world({0.0f, 0.0f, 0.0f});
+
+    Body a;
+    a.shape = ShapeType::Sphere;
+    a.radius = 0.25f;
+    a.mass = 1.0f;
+    a.position = {-0.5f, 0.0f, 0.0f};
+    const auto aId = world.CreateBody(a);
+
+    Body b = a;
+    b.position = {0.5f, 0.0f, 0.0f};
+    const auto bId = world.CreateBody(b);
+
+    const std::uint32_t hingeId = world.CreateHingeJoint(
+        aId,
+        bId,
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 0.0f});
+    assert(hingeId == World::kInvalidJointId);
+
+    world.Step(1.0f / 120.0f, 8);
+    const Body& outA = world.GetBody(aId);
+    const Body& outB = world.GetBody(bId);
+    assert(std::isfinite(outA.position.x) && std::isfinite(outA.position.y) && std::isfinite(outA.position.z));
+    assert(std::isfinite(outB.position.x) && std::isfinite(outB.position.y) && std::isfinite(outB.position.z));
+    }
+
+    {
     World world({0.0f, -9.81f, 0.0f});
     ContactSolverConfig config = world.GetContactSolverConfig();
     config.bounceVelocityThreshold = 2.0f;
