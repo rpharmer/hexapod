@@ -675,6 +675,7 @@ int main(int argc, char** argv) {
     std::string metricsPath = "tests/block_solver_metrics.json";
     bool logReorderContactCounts = false;
     bool logReorderManifoldIds = false;
+    bool printHumanSummary = false;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--metrics-out" && i + 1 < argc) {
@@ -683,6 +684,8 @@ int main(int argc, char** argv) {
             logReorderContactCounts = true;
         } else if (arg == "--log-reorder-manifold-ids") {
             logReorderManifoldIds = true;
+        } else if (arg == "--print-human-summary") {
+            printHumanSummary = true;
         }
     }
 
@@ -704,7 +707,9 @@ int main(int argc, char** argv) {
     bool allPass = true;
     for (const SceneConfig& scene : scenes) {
         ComparisonResult result = CompareScene(scene);
-        PrintHumanSummary(result);
+        if (printHumanSummary) {
+            PrintHumanSummary(result);
+        }
         allPass = allPass && result.pass;
         results.push_back(std::move(result));
     }
