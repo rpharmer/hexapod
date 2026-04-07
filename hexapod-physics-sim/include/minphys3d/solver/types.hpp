@@ -66,6 +66,7 @@ struct Manifold {
         float selectedPairPenetrationStep = 0.0f;
         std::uint32_t blockSolveUsedCount = 0;
         std::uint32_t scalarFallbackIneligibleCount = 0;
+        std::uint32_t scalarFallbackPersistenceGateCount = 0;
         std::uint32_t scalarFallbackInvalidNormalCount = 0;
         std::uint32_t scalarFallbackNormalMismatchCount = 0;
         std::uint32_t scalarFallbackMissingSlotsCount = 0;

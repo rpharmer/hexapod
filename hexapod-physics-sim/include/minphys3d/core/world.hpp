@@ -39,6 +39,7 @@ public:
         struct FallbackReasonCounters {
             std::uint64_t none = 0;
             std::uint64_t ineligible = 0;
+            std::uint64_t persistenceGate = 0;
             std::uint64_t invalidManifoldNormal = 0;
             std::uint64_t contactNormalMismatch = 0;
             std::uint64_t missingBlockSlots = 0;
@@ -64,6 +65,7 @@ public:
         std::uint64_t blockSolveEligible = 0;
         std::uint64_t blockSolveUsed = 0;
         std::uint64_t scalarPathIneligible = 0;
+        std::uint64_t scalarFallbackPersistenceGate = 0;
         std::uint64_t scalarFallbackInvalidNormal = 0;
         std::uint64_t scalarFallbackNormalMismatch = 0;
         std::uint64_t scalarFallbackMissingSlots = 0;
@@ -1397,6 +1399,7 @@ private:
     enum class BlockSolveFallbackReason {
         None,
         Ineligible,
+        PersistenceGate,
         InvalidManifoldNormal,
         ContactNormalMismatch,
         MissingBlockSlots,
@@ -1417,6 +1420,9 @@ private:
         switch (reason) {
             case BlockSolveFallbackReason::Ineligible:
                 ++manifold.blockSolveDebug.scalarFallbackIneligibleCount;
+                break;
+            case BlockSolveFallbackReason::PersistenceGate:
+                ++manifold.blockSolveDebug.scalarFallbackPersistenceGateCount;
                 break;
             case BlockSolveFallbackReason::InvalidManifoldNormal:
                 ++manifold.blockSolveDebug.scalarFallbackInvalidNormalCount;
@@ -1449,6 +1455,9 @@ private:
         switch (reason) {
             case BlockSolveFallbackReason::Ineligible:
                 ++counters.ineligible;
+                break;
+            case BlockSolveFallbackReason::PersistenceGate:
+                ++counters.persistenceGate;
                 break;
             case BlockSolveFallbackReason::InvalidManifoldNormal:
                 ++counters.invalidManifoldNormal;
@@ -1680,13 +1689,6 @@ private:
             return;
         }
 
-        if (manifold.contacts.size() > kMaxContactsPerManifold) {
-#ifndef NDEBUG
-            logSelection();
-#endif
-            return;
-        }
-
         struct PairSelection {
             int i = -1;
             int j = -1;
@@ -1783,7 +1785,10 @@ private:
 #endif
     }
 
-    bool IsBlockSolveEligible(const Manifold& manifold) const {
+    bool IsBlockSolveEligible(const Manifold& manifold, BlockSolveFallbackReason* outIneligibleReason = nullptr) const {
+        if (outIneligibleReason != nullptr) {
+            *outIneligibleReason = BlockSolveFallbackReason::Ineligible;
+        }
         if (manifold.contacts.size() < 2) {
             return false;
         }
@@ -1797,6 +1802,12 @@ private:
         }
 
         if (manifold.lowQuality) {
+            return false;
+        }
+        if (manifold.contacts.size() >= 3 && !manifold.selectedBlockPairPersistent) {
+            if (outIneligibleReason != nullptr) {
+                *outIneligibleReason = BlockSolveFallbackReason::PersistenceGate;
+            }
             return false;
         }
         if (!manifold.selectedBlockPairQualityPass) {
@@ -1876,7 +1887,9 @@ private:
         }
 #endif
 
-        manifold.blockSolveEligible = contactSolverConfig_.useBlockSolver && IsBlockSolveEligible(manifold);
+        BlockSolveFallbackReason ineligibleReason = BlockSolveFallbackReason::Ineligible;
+        manifold.blockSolveEligible = contactSolverConfig_.useBlockSolver
+            && IsBlockSolveEligible(manifold, &ineligibleReason);
         manifold.usedBlockSolve = false;
 
 #ifndef NDEBUG
@@ -1888,16 +1901,21 @@ private:
         if (!manifold.blockSolveEligible) {
 #ifndef NDEBUG
             ++solverTelemetry_.scalarPathIneligible;
-            IncrementBlockSolveFallbackCounter(manifold, BlockSolveFallbackReason::Ineligible);
+            if (ineligibleReason == BlockSolveFallbackReason::PersistenceGate) {
+                ++solverTelemetry_.scalarFallbackPersistenceGate;
+            }
+            IncrementBlockSolveFallbackCounter(manifold, ineligibleReason);
             if (debugBlockSolveRouting_) {
                 std::fprintf(
                     stderr,
-                    "[minphys3d] scalar route (ineligible) pair=(%u,%u) type=%u contacts=%zu lowQuality=%d\n",
+                    "[minphys3d] scalar route (ineligible) pair=(%u,%u) type=%u contacts=%zu lowQuality=%d reason=%d persistent=%d\n",
                     manifold.a,
                     manifold.b,
                     static_cast<unsigned>(manifold.manifoldType),
                     manifold.contacts.size(),
-                    manifold.lowQuality ? 1 : 0);
+                    manifold.lowQuality ? 1 : 0,
+                    static_cast<int>(ineligibleReason),
+                    manifold.selectedBlockPairPersistent ? 1 : 0);
             }
 #endif
             for (Contact& c : manifold.contacts) {
@@ -1912,7 +1930,7 @@ private:
             }
             const float impulseContinuityMetric = std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[0] - manifold.blockSolveDebug.selectedPreNormalImpulses[0])
                 + std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[1] - manifold.blockSolveDebug.selectedPreNormalImpulses[1]);
-            RecordManifoldSolveTelemetry(manifold, BlockSolveFallbackReason::Ineligible, std::numeric_limits<float>::quiet_NaN(), impulseContinuityMetric);
+            RecordManifoldSolveTelemetry(manifold, ineligibleReason, std::numeric_limits<float>::quiet_NaN(), impulseContinuityMetric);
 #endif
             return;
         }
@@ -1955,6 +1973,9 @@ private:
         switch (fallbackReason) {
             case BlockSolveFallbackReason::InvalidManifoldNormal:
                 ++solverTelemetry_.scalarFallbackInvalidNormal;
+                break;
+            case BlockSolveFallbackReason::PersistenceGate:
+                ++solverTelemetry_.scalarFallbackPersistenceGate;
                 break;
             case BlockSolveFallbackReason::ContactNormalMismatch:
                 ++solverTelemetry_.scalarFallbackNormalMismatch;

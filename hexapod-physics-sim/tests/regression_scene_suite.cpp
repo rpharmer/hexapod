@@ -30,6 +30,7 @@ struct RunMetrics {
         struct FallbackReasonSnapshot {
             std::uint64_t none = 0;
             std::uint64_t ineligible = 0;
+            std::uint64_t persistenceGate = 0;
             std::uint64_t invalidManifoldNormal = 0;
             std::uint64_t contactNormalMismatch = 0;
             std::uint64_t missingBlockSlots = 0;
@@ -54,6 +55,7 @@ struct RunMetrics {
         std::uint64_t blockSolveEligible = 0;
         std::uint64_t blockSolveUsed = 0;
         std::uint64_t scalarPathIneligible = 0;
+        std::uint64_t scalarFallbackPersistenceGate = 0;
         std::uint64_t scalarFallbackInvalidNormal = 0;
         std::uint64_t scalarFallbackNormalMismatch = 0;
         std::uint64_t scalarFallbackMissingSlots = 0;
@@ -101,15 +103,34 @@ struct ComparisonResult {
     std::vector<std::string> failures;
 };
 
-struct RegressionThresholds {
+// Block solver safety rails:
+// - penetration: absolute ceiling + block-vs-scalar regression budget
+// - jitter/contact variance: stddev and step-delta regression budgets
+// - fallback rate: scalar fallback ratio regression budget
+// - settle time: block-vs-scalar regression budget
+// - impulse continuity: max/mean impulse delta + telemetry continuity regression budgets
+struct BlockSolverSafetyRails {
     static constexpr float kMaxAbsolutePenetration = 6.5f;
     static constexpr float kMaxPenetrationRegression = 3.0f;
     static constexpr float kMaxContactStdDevRegression = 1.2f;
     static constexpr float kMaxContactStepDeltaRegression = 0.65f;
+    static constexpr float kMaxFallbackRateRegression = 0.25f;
+    static constexpr float kMaxSettleTimeRegressionSeconds = 1.0f;
     static constexpr float kMaxImpulseDeltaRegression = 0.30f;
     static constexpr float kMaxMeanImpulseDeltaRegression = 0.16f;
-    static constexpr float kMaxSettleTimeRegressionSeconds = 1.0f;
+    static constexpr float kMaxTelemetryImpulseContinuityRegression = 0.20f;
 };
+
+double SafeRatio(double num, double den) {
+    if (den <= 0.0) {
+        return 0.0;
+    }
+    return num / den;
+}
+
+double AverageImpulseContinuity(const RunMetrics::SolverTelemetrySnapshot::ManifoldSolveScopeSnapshot& scope) {
+    return SafeRatio(scope.impulseContinuityMetric, static_cast<double>(scope.impulseContinuityMetricSamples));
+}
 
 Body MakePlane() {
     Body plane;
@@ -246,6 +267,7 @@ RunMetrics RunScene(SceneConfig config, bool useBlockSolver) {
         dst.fallbackUsed = src.fallbackUsed;
         dst.fallbackReason.none = src.fallbackReason.none;
         dst.fallbackReason.ineligible = src.fallbackReason.ineligible;
+        dst.fallbackReason.persistenceGate = src.fallbackReason.persistenceGate;
         dst.fallbackReason.invalidManifoldNormal = src.fallbackReason.invalidManifoldNormal;
         dst.fallbackReason.contactNormalMismatch = src.fallbackReason.contactNormalMismatch;
         dst.fallbackReason.missingBlockSlots = src.fallbackReason.missingBlockSlots;
@@ -262,6 +284,7 @@ RunMetrics RunScene(SceneConfig config, bool useBlockSolver) {
     metrics.telemetry.blockSolveEligible = telemetry.blockSolveEligible;
     metrics.telemetry.blockSolveUsed = telemetry.blockSolveUsed;
     metrics.telemetry.scalarPathIneligible = telemetry.scalarPathIneligible;
+    metrics.telemetry.scalarFallbackPersistenceGate = telemetry.scalarFallbackPersistenceGate;
     metrics.telemetry.scalarFallbackInvalidNormal = telemetry.scalarFallbackInvalidNormal;
     metrics.telemetry.scalarFallbackNormalMismatch = telemetry.scalarFallbackNormalMismatch;
     metrics.telemetry.scalarFallbackMissingSlots = telemetry.scalarFallbackMissingSlots;
@@ -324,41 +347,141 @@ ComparisonResult CompareScene(const SceneConfig& source) {
             out.failures.push_back(reason);
         }
     };
+    const auto failRegression = [&](double regression,
+                                    double threshold,
+                                    double scalarValue,
+                                    double blockValue,
+                                    const std::string& label) {
+        if (regression > threshold) {
+            std::ostringstream msg;
+            msg << std::fixed << std::setprecision(6)
+                << label
+                << " regression: scalar=" << scalarValue
+                << " block=" << blockValue
+                << " delta=" << regression
+                << " threshold=" << threshold
+                << " exceed_by=" << (regression - threshold);
+            fail(true, msg.str());
+        }
+    };
+    const auto failAbsolute = [&](double value, double threshold, const std::string& label) {
+        if (value > threshold) {
+            std::ostringstream msg;
+            msg << std::fixed << std::setprecision(6)
+                << label
+                << " absolute limit: value=" << value
+                << " threshold=" << threshold
+                << " exceed_by=" << (value - threshold);
+            fail(true, msg.str());
+        }
+    };
 
     const bool isMinimizedPenetrationCase = out.scene == "minimized penetration stack case";
     const bool isMinimizedStdDevCase = out.scene == "minimized contact variance reorder case";
 
     if (!isMinimizedPenetrationCase && !isMinimizedStdDevCase) {
-        fail(out.scalar.maxPenetration > RegressionThresholds::kMaxAbsolutePenetration,
-             "scalar max penetration exceeded absolute threshold");
-        fail(out.block.maxPenetration > RegressionThresholds::kMaxAbsolutePenetration,
-             "block max penetration exceeded absolute threshold");
+        failAbsolute(out.scalar.maxPenetration, BlockSolverSafetyRails::kMaxAbsolutePenetration, "penetration(scalar)");
+        failAbsolute(out.block.maxPenetration, BlockSolverSafetyRails::kMaxAbsolutePenetration, "penetration(block)");
     }
 
+    failRegression(out.block.maxPenetration - out.scalar.maxPenetration,
+                   BlockSolverSafetyRails::kMaxPenetrationRegression,
+                   out.scalar.maxPenetration,
+                   out.block.maxPenetration,
+                   isMinimizedPenetrationCase
+                       ? "minimized penetration stack case / penetration"
+                       : "penetration");
 
-    fail((out.block.maxPenetration - out.scalar.maxPenetration) > RegressionThresholds::kMaxPenetrationRegression,
-         isMinimizedPenetrationCase
-             ? "minimized penetration stack case: penetration regression beyond tolerance"
-             : "block penetration regression beyond tolerance");
+    failRegression(out.block.contactCountStdDev - out.scalar.contactCountStdDev,
+                   BlockSolverSafetyRails::kMaxContactStdDevRegression,
+                   out.scalar.contactCountStdDev,
+                   out.block.contactCountStdDev,
+                   isMinimizedStdDevCase
+                       ? "minimized contact variance reorder case / jitter_stddev"
+                       : "jitter_stddev");
 
-    fail((out.block.contactCountStdDev - out.scalar.contactCountStdDev) > RegressionThresholds::kMaxContactStdDevRegression,
-         isMinimizedStdDevCase
-             ? "minimized contact variance reorder case: contact-count stddev regression beyond tolerance"
-             : "block contact-count stddev regression beyond tolerance");
+    const double scalarFallbackRate = SafeRatio(static_cast<double>(out.scalar.telemetry.manifoldSolveScope.fallbackUsed),
+                                                static_cast<double>(out.scalar.telemetry.manifoldSolveScope.solveCount));
+    const double blockFallbackRate = SafeRatio(static_cast<double>(out.block.telemetry.manifoldSolveScope.fallbackUsed),
+                                               static_cast<double>(out.block.telemetry.manifoldSolveScope.solveCount));
+    failRegression(blockFallbackRate - scalarFallbackRate,
+                   BlockSolverSafetyRails::kMaxFallbackRateRegression,
+                   scalarFallbackRate,
+                   blockFallbackRate,
+                   "fallback_rate");
 
     if (!isMinimizedPenetrationCase && !isMinimizedStdDevCase) {
-        fail((out.block.contactCountMeanStepDelta - out.scalar.contactCountMeanStepDelta) > RegressionThresholds::kMaxContactStepDeltaRegression,
-             "block contact-count step delta regression beyond tolerance");
-        fail((out.block.maxImpulseDelta - out.scalar.maxImpulseDelta) > RegressionThresholds::kMaxImpulseDeltaRegression,
-             "block max impulse continuity regression beyond tolerance");
-        fail((out.block.meanImpulseDelta - out.scalar.meanImpulseDelta) > RegressionThresholds::kMaxMeanImpulseDeltaRegression,
-             "block mean impulse continuity regression beyond tolerance");
+        failRegression(out.block.contactCountMeanStepDelta - out.scalar.contactCountMeanStepDelta,
+                       BlockSolverSafetyRails::kMaxContactStepDeltaRegression,
+                       out.scalar.contactCountMeanStepDelta,
+                       out.block.contactCountMeanStepDelta,
+                       "jitter_step_delta");
+        failRegression(out.block.maxImpulseDelta - out.scalar.maxImpulseDelta,
+                       BlockSolverSafetyRails::kMaxImpulseDeltaRegression,
+                       out.scalar.maxImpulseDelta,
+                       out.block.maxImpulseDelta,
+                       "impulse_continuity_max_delta");
+        failRegression(out.block.meanImpulseDelta - out.scalar.meanImpulseDelta,
+                       BlockSolverSafetyRails::kMaxMeanImpulseDeltaRegression,
+                       out.scalar.meanImpulseDelta,
+                       out.block.meanImpulseDelta,
+                       "impulse_continuity_mean_delta");
     }
 
     if (out.scalar.settleTimeSeconds >= 0.0f && out.block.settleTimeSeconds >= 0.0f) {
-        fail((out.block.settleTimeSeconds - out.scalar.settleTimeSeconds)
-                 > RegressionThresholds::kMaxSettleTimeRegressionSeconds,
-             "block settle-time regression beyond tolerance");
+        failRegression(out.block.settleTimeSeconds - out.scalar.settleTimeSeconds,
+                       BlockSolverSafetyRails::kMaxSettleTimeRegressionSeconds,
+                       out.scalar.settleTimeSeconds,
+                       out.block.settleTimeSeconds,
+                       "settle_time_seconds");
+    }
+
+    const double scalarContinuity = AverageImpulseContinuity(out.scalar.telemetry.manifoldSolveScope);
+    const double blockContinuity = AverageImpulseContinuity(out.block.telemetry.manifoldSolveScope);
+    failRegression(blockContinuity - scalarContinuity,
+                   BlockSolverSafetyRails::kMaxTelemetryImpulseContinuityRegression,
+                   scalarContinuity,
+                   blockContinuity,
+                   "telemetry_impulse_continuity");
+
+    std::unordered_map<std::uint8_t, RunMetrics::SolverTelemetrySnapshot::ManifoldSolveScopeSnapshot> allTypes =
+        out.scalar.telemetry.manifoldTypeScope;
+    for (const auto& [type, scope] : out.block.telemetry.manifoldTypeScope) {
+        allTypes[type] = scope;
+    }
+    for (const auto& [type, _] : allTypes) {
+        const auto scalarIt = out.scalar.telemetry.manifoldTypeScope.find(type);
+        const auto blockIt = out.block.telemetry.manifoldTypeScope.find(type);
+        const RunMetrics::SolverTelemetrySnapshot::ManifoldSolveScopeSnapshot scalarScope =
+            scalarIt != out.scalar.telemetry.manifoldTypeScope.end()
+                ? scalarIt->second
+                : RunMetrics::SolverTelemetrySnapshot::ManifoldSolveScopeSnapshot{};
+        const RunMetrics::SolverTelemetrySnapshot::ManifoldSolveScopeSnapshot blockScope =
+            blockIt != out.block.telemetry.manifoldTypeScope.end()
+                ? blockIt->second
+                : RunMetrics::SolverTelemetrySnapshot::ManifoldSolveScopeSnapshot{};
+
+        const double scalarTypeFallbackRate = SafeRatio(static_cast<double>(scalarScope.fallbackUsed),
+                                                        static_cast<double>(scalarScope.solveCount));
+        const double blockTypeFallbackRate = SafeRatio(static_cast<double>(blockScope.fallbackUsed),
+                                                       static_cast<double>(blockScope.solveCount));
+        std::ostringstream typeFallbackLabel;
+        typeFallbackLabel << "manifold_type[" << static_cast<unsigned>(type) << "] fallback_rate";
+        failRegression(blockTypeFallbackRate - scalarTypeFallbackRate,
+                       BlockSolverSafetyRails::kMaxFallbackRateRegression,
+                       scalarTypeFallbackRate,
+                       blockTypeFallbackRate,
+                       typeFallbackLabel.str());
+
+        const double scalarTypeContinuity = AverageImpulseContinuity(scalarScope);
+        const double blockTypeContinuity = AverageImpulseContinuity(blockScope);
+        std::ostringstream typeContinuityLabel;
+        typeContinuityLabel << "manifold_type[" << static_cast<unsigned>(type) << "] impulse_continuity";
+        failRegression(blockTypeContinuity - scalarTypeContinuity,
+                       BlockSolverSafetyRails::kMaxTelemetryImpulseContinuityRegression,
+                       scalarTypeContinuity,
+                       blockTypeContinuity,
+                       typeContinuityLabel.str());
     }
 
     return out;
@@ -537,6 +660,7 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "          \"blockSolveUsed\": " << t.blockSolveUsed << ",\n";
         out << "          \"scalarFallbackBuckets\": {\n";
         out << "            \"scalarPathIneligible\": " << t.scalarPathIneligible << ",\n";
+        out << "            \"persistenceGate\": " << t.scalarFallbackPersistenceGate << ",\n";
         out << "            \"invalidNormal\": " << t.scalarFallbackInvalidNormal << ",\n";
         out << "            \"normalMismatch\": " << t.scalarFallbackNormalMismatch << ",\n";
         out << "            \"missingSlots\": " << t.scalarFallbackMissingSlots << ",\n";
@@ -557,6 +681,7 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "            \"fallback_reason\": {\n";
         out << "              \"none\": " << t.manifoldSolveScope.fallbackReason.none << ",\n";
         out << "              \"ineligible\": " << t.manifoldSolveScope.fallbackReason.ineligible << ",\n";
+        out << "              \"persistence_gate\": " << t.manifoldSolveScope.fallbackReason.persistenceGate << ",\n";
         out << "              \"invalid_manifold_normal\": " << t.manifoldSolveScope.fallbackReason.invalidManifoldNormal << ",\n";
         out << "              \"contact_normal_mismatch\": " << t.manifoldSolveScope.fallbackReason.contactNormalMismatch << ",\n";
         out << "              \"missing_block_slots\": " << t.manifoldSolveScope.fallbackReason.missingBlockSlots << ",\n";
@@ -650,6 +775,7 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
 void PrintHumanSummary(const ComparisonResult& result) {
     const auto totalScalarFallbacks = [](const RunMetrics::SolverTelemetrySnapshot& t) {
         return t.scalarPathIneligible
+             + t.scalarFallbackPersistenceGate
              + t.scalarFallbackInvalidNormal
              + t.scalarFallbackNormalMismatch
              + t.scalarFallbackMissingSlots
@@ -665,6 +791,7 @@ void PrintHumanSummary(const ComparisonResult& result) {
                   << " blockSolveUsed=" << t.blockSolveUsed
                   << " scalarFallbackTotal=" << totalScalarFallbacks(t)
                   << " scalarPathIneligible=" << t.scalarPathIneligible
+                  << " persistenceGate=" << t.scalarFallbackPersistenceGate
                   << " invalidNormal=" << t.scalarFallbackInvalidNormal
                   << " normalMismatch=" << t.scalarFallbackNormalMismatch
                   << " missingSlots=" << t.scalarFallbackMissingSlots
@@ -763,6 +890,19 @@ void PrintHumanSummary(const ComparisonResult& result) {
     }
 }
 
+void PrintBlockSolverSafetyRails() {
+    std::cout << "block solver safety rails:\n"
+              << "  penetration: abs<=" << BlockSolverSafetyRails::kMaxAbsolutePenetration
+              << ", regression<=" << BlockSolverSafetyRails::kMaxPenetrationRegression << "\n"
+              << "  jitter/contact variance: stddev regression<=" << BlockSolverSafetyRails::kMaxContactStdDevRegression
+              << ", step-delta regression<=" << BlockSolverSafetyRails::kMaxContactStepDeltaRegression << "\n"
+              << "  fallback rate: regression<=" << BlockSolverSafetyRails::kMaxFallbackRateRegression << "\n"
+              << "  settle time: regression<=" << BlockSolverSafetyRails::kMaxSettleTimeRegressionSeconds << " s\n"
+              << "  impulse continuity: max-delta regression<=" << BlockSolverSafetyRails::kMaxImpulseDeltaRegression
+              << ", mean-delta regression<=" << BlockSolverSafetyRails::kMaxMeanImpulseDeltaRegression
+              << ", telemetry regression<=" << BlockSolverSafetyRails::kMaxTelemetryImpulseContinuityRegression << "\n";
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -797,12 +937,20 @@ int main(int argc, char** argv) {
 
     std::vector<ComparisonResult> results;
     results.reserve(scenes.size());
+    if (printHumanSummary) {
+        PrintBlockSolverSafetyRails();
+    }
 
     bool allPass = true;
     for (const SceneConfig& scene : scenes) {
         ComparisonResult result = CompareScene(scene);
         if (printHumanSummary) {
             PrintHumanSummary(result);
+        } else if (!result.pass) {
+            std::cout << "FAIL | " << result.scene << "\n";
+            for (const std::string& failure : result.failures) {
+                std::cout << "  - " << failure << "\n";
+            }
         }
         allPass = allPass && result.pass;
         results.push_back(std::move(result));
