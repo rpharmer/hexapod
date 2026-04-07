@@ -1,4 +1,5 @@
 #include "minphys3d/core/world.hpp"
+#include "subsystems.hpp"
 
 namespace minphys3d {
 
@@ -240,174 +241,31 @@ void World::ResolveTOIPipeline(float dt) {
     }
 
 void World::BuildManifolds() {
-        for (const Contact& c : contacts_) {
-            bool found = false;
-            for (Manifold& m : manifolds_) {
-                if ((m.a == c.a && m.b == c.b) || (m.a == c.b && m.b == c.a)) {
-                    m.contacts.push_back(c);
-                    assert(m.contacts.size() <= kMaxContactsPerManifold);
-                    m.normal = c.normal;
-                    found = true;
-                    break;
+        core_internal::ContactSolver solver;
+        core_internal::ContactSolverContext context{
+            bodies_,
+            contacts_,
+            manifolds_,
+            previousManifolds_,
+            [this](const PersistentPointKey& key, float& normal, float& tangent, std::uint16_t& age) {
+                const auto it = persistentPointImpulses_.find(key);
+                if (it == persistentPointImpulses_.end()) {
+                    return false;
                 }
-            }
-            if (!found) {
-                Manifold m;
-                m.a = c.a;
-                m.b = c.b;
-                m.normal = c.normal;
-                m.manifoldType = ManifoldTypeFromFeatureKey(c.featureKey);
-                m.contacts.push_back(c);
-                manifolds_.push_back(m);
-            }
-        }
-
-        for (Manifold& m : manifolds_) {
-            if (!m.contacts.empty()) {
-                m.manifoldType = ManifoldTypeFromFeatureKey(m.contacts.front().featureKey);
-            }
-            m.lowQuality = false;
-            m.blockSolveEligible = false;
-            m.usedBlockSolve = false;
-            SortManifoldContacts(m.contacts);
-            const Manifold* previous = nullptr;
-            for (const Manifold& old : previousManifolds_) {
-                if (old.pairKey() == m.pairKey()) {
-                    previous = &old;
-                    m.blockNormalImpulseSum = old.blockNormalImpulseSum;
-                    m.blockContactKeys = old.blockContactKeys;
-                    m.blockSlotValid = old.blockSlotValid;
-                    m.selectedBlockContactKeys = old.selectedBlockContactKeys;
-                    break;
-                }
-            }
-
-            if (previous == nullptr) {
-                m.blockNormalImpulseSum = {0.0f, 0.0f};
-                m.blockContactKeys = {0u, 0u};
-                m.blockSlotValid = {false, false};
-                m.selectedBlockContactKeys = {0u, 0u};
-            }
-
-#ifndef NDEBUG
-            if (previous != nullptr) {
-                DebugLogContactTransitions(*previous, m);
-            }
-#endif
-
-            const ManifoldKey manifoldId = MakeManifoldId(m.a, m.b, m.manifoldType);
-            std::unordered_map<std::uint64_t, std::uint8_t> currentFeatureOrdinal;
-            std::unordered_map<std::uint64_t, std::uint8_t> currentFeatureCounts;
-            currentFeatureOrdinal.reserve(m.contacts.size());
-            currentFeatureCounts.reserve(m.contacts.size());
-            for (Contact& c : m.contacts) {
-                const std::uint8_t ordinal = currentFeatureOrdinal[c.featureKey]++;
-                ++currentFeatureCounts[c.featureKey];
-                const PersistentPointKey pointKey = MakePersistentPointKey(manifoldId, c.featureKey, ordinal);
-                const auto stateIt = persistentPointImpulses_.find(pointKey);
-                if (stateIt != persistentPointImpulses_.end()) {
-                    c.normalImpulseSum = stateIt->second.normalImpulseSum;
-                    c.tangentImpulseSum = stateIt->second.tangentImpulseSum;
-                    c.persistenceAge = stateIt->second.persistenceAge;
-                } else {
-                    c.normalImpulseSum = 0.0f;
-                    c.tangentImpulseSum = 0.0f;
-                    c.persistenceAge = 0;
-#ifndef NDEBUG
-                    ++solverTelemetry_.impulseResetPoints;
-                    if (debugContactPersistence_) {
-                        std::fprintf(
-                            stderr,
-                            "[minphys3d] impulse reset pair=(%u,%u) type=%u feature=0x%llx\n",
-                            m.a,
-                            m.b,
-                            static_cast<unsigned>(m.manifoldType),
-                            static_cast<unsigned long long>(c.featureKey));
-                    }
-#endif
-                }
-            }
-
-#ifndef NDEBUG
-            if (previous != nullptr) {
-                bool manifoldTypeChanged = previous->manifoldType != m.manifoldType;
-                bool removedOrAdded = previous->contacts.size() != m.contacts.size();
-                bool featureMismatch = false;
-                std::unordered_map<std::uint64_t, std::uint8_t> previousFeatures;
-                previousFeatures.reserve(previous->contacts.size());
-                for (const Contact& oldContact : previous->contacts) {
-                    ++previousFeatures[oldContact.featureKey];
-                }
-                for (const auto& [feature, count] : currentFeatureCounts) {
-                    const auto previousIt = previousFeatures.find(feature);
-                    if (previousIt == previousFeatures.end() || previousIt->second != count) {
-                        featureMismatch = true;
-                        break;
-                    }
-                }
-                if (!featureMismatch) {
-                    for (const auto& [feature, count] : previousFeatures) {
-                        const auto currentIt = currentFeatureCounts.find(feature);
-                        if (currentIt == currentFeatureCounts.end() || currentIt->second != count) {
-                            featureMismatch = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (manifoldTypeChanged || removedOrAdded || featureMismatch) {
-                    m.lowQuality = true;
-                    ++solverTelemetry_.topologyChangeEvents;
-                    if (featureMismatch) {
-                        ++solverTelemetry_.featureIdChurnEvents;
-                    }
-                    if (debugContactPersistence_) {
-                        std::fprintf(
-                            stderr,
-                            "[minphys3d] contact topology change pair=(%u,%u) type:%u->%u contacts:%zu->%zu featureMismatch=%d\n",
-                            m.a,
-                            m.b,
-                            static_cast<unsigned>(previous->manifoldType),
-                            static_cast<unsigned>(m.manifoldType),
-                            previous->contacts.size(),
-                            m.contacts.size(),
-                            featureMismatch ? 1 : 0);
-                    }
-                }
-            }
-#endif
-
-            RefreshManifoldBlockCache(m);
-#ifndef NDEBUG
-            DebugLogManifoldContactKeys(m);
-            if (debugContactPersistence_) {
-                std::fprintf(stderr,
-                             "[minphys3d] frame=%llu block_slots pair=(%u,%u) type=%u slots=[(%d,%llu),(%d,%llu)] selected_keys=(%llu,%llu)\n",
-                             static_cast<unsigned long long>(debugFrameIndex_),
-                             m.a,
-                             m.b,
-                             static_cast<unsigned>(m.manifoldType),
-                             m.blockSlotValid[0] ? 1 : 0,
-                             static_cast<unsigned long long>(m.blockContactKeys[0]),
-                             m.blockSlotValid[1] ? 1 : 0,
-                             static_cast<unsigned long long>(m.blockContactKeys[1]),
-                             static_cast<unsigned long long>(m.selectedBlockContactKeys[0]),
-                             static_cast<unsigned long long>(m.selectedBlockContactKeys[1]));
-            }
-#endif
-            SelectBlockSolvePair(m);
-#ifndef NDEBUG
-            RecordSelectedPairHistory(m);
-#endif
-        }
-
-        std::unordered_map<ManifoldKey, std::size_t, ManifoldKeyHash> manifoldCountByPair;
-        for (const Manifold& m : manifolds_) {
-            const ManifoldKey key = MakeManifoldId(m.a, m.b, m.manifoldType);
-            ++manifoldCountByPair[key];
-            assert(manifoldCountByPair[key] == 1);
-            assert(m.contacts.size() <= kMaxContactsPerManifold);
-        }
+                normal = it->second.normalImpulseSum;
+                tangent = it->second.tangentImpulseSum;
+                age = it->second.persistenceAge;
+                return true;
+            },
+            [](std::vector<Contact>& manifoldContacts) { SortManifoldContacts(manifoldContacts); },
+            [this](Manifold& manifold) { SolveManifoldNormalImpulses(manifold); },
+            [](const Manifold& manifold, std::uint64_t contactKey) { return FindBlockSlot(manifold, contactKey); },
+            [this](Body& a, Body& b, const Mat3& invIA, const Mat3& invIB, const Vec3& ra, const Vec3& rb, const Vec3& impulse) {
+                ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
+            },
+            contactSolverConfig_,
+        };
+        solver.BuildManifolds(context);
     }
 
 std::vector<Pair> World::ComputePotentialPairs() const {
@@ -462,43 +320,24 @@ std::vector<Pair> World::ComputePotentialPairs() const {
     }
 
 void World::GenerateContacts() {
-        const std::vector<Pair> pairs = ComputePotentialPairs();
-        for (const Pair& pair : pairs) {
-            const Body& a = bodies_[pair.a];
-            const Body& b = bodies_[pair.b];
+        const core_internal::BroadphaseSystem broadphaseSystem;
+        const std::vector<Pair> pairs = broadphaseSystem.ComputePotentialPairs({[this]() { return ComputePotentialPairs(); }});
 
-            if (a.shape == ShapeType::Sphere && b.shape == ShapeType::Sphere) {
-                SphereSphere(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Sphere && b.shape == ShapeType::Capsule) {
-                SphereCapsule(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Capsule && b.shape == ShapeType::Sphere) {
-                SphereCapsule(pair.b, pair.a);
-            } else if (a.shape == ShapeType::Capsule && b.shape == ShapeType::Capsule) {
-                CapsuleCapsule(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Capsule && b.shape == ShapeType::Plane) {
-                CapsulePlane(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Plane && b.shape == ShapeType::Capsule) {
-                CapsulePlane(pair.b, pair.a);
-            } else if (a.shape == ShapeType::Capsule && b.shape == ShapeType::Box) {
-                CapsuleBox(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Box && b.shape == ShapeType::Capsule) {
-                CapsuleBox(pair.b, pair.a);
-            } else if (a.shape == ShapeType::Sphere && b.shape == ShapeType::Plane) {
-                SpherePlane(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Plane && b.shape == ShapeType::Sphere) {
-                SpherePlane(pair.b, pair.a);
-            } else if (a.shape == ShapeType::Box && b.shape == ShapeType::Plane) {
-                BoxPlane(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Plane && b.shape == ShapeType::Box) {
-                BoxPlane(pair.b, pair.a);
-            } else if (a.shape == ShapeType::Sphere && b.shape == ShapeType::Box) {
-                SphereBox(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Box && b.shape == ShapeType::Sphere) {
-                SphereBox(pair.b, pair.a);
-            } else if (a.shape == ShapeType::Box && b.shape == ShapeType::Box) {
-                BoxBox(pair.a, pair.b);
-            }
-        }
+        const core_internal::NarrowphaseSystem narrowphaseSystem;
+        const core_internal::NarrowphaseContext context{
+            bodies_,
+            pairs,
+            [this](std::uint32_t a, std::uint32_t b) { SphereSphere(a, b); },
+            [this](std::uint32_t a, std::uint32_t b) { SphereCapsule(a, b); },
+            [this](std::uint32_t a, std::uint32_t b) { CapsuleCapsule(a, b); },
+            [this](std::uint32_t a, std::uint32_t b) { CapsulePlane(a, b); },
+            [this](std::uint32_t a, std::uint32_t b) { CapsuleBox(a, b); },
+            [this](std::uint32_t a, std::uint32_t b) { SpherePlane(a, b); },
+            [this](std::uint32_t a, std::uint32_t b) { BoxPlane(a, b); },
+            [this](std::uint32_t a, std::uint32_t b) { SphereBox(a, b); },
+            [this](std::uint32_t a, std::uint32_t b) { BoxBox(a, b); },
+        };
+        narrowphaseSystem.GenerateContacts(context);
     }
 
 void World::SphereSphere(std::uint32_t ia, std::uint32_t ib) {
@@ -1295,10 +1134,70 @@ void World::SolveHingeJoint(HingeJoint& j) {
         }
     }
 
+
+void World::SolveContactsInManifold(Manifold& manifold) {
+        core_internal::ContactSolver solver;
+        core_internal::ContactSolverContext context{
+            bodies_,
+            contacts_,
+            manifolds_,
+            previousManifolds_,
+            [this](const PersistentPointKey& key, float& normal, float& tangent, std::uint16_t& age) {
+                const auto it = persistentPointImpulses_.find(key);
+                if (it == persistentPointImpulses_.end()) {
+                    return false;
+                }
+                normal = it->second.normalImpulseSum;
+                tangent = it->second.tangentImpulseSum;
+                age = it->second.persistenceAge;
+                return true;
+            },
+            [](std::vector<Contact>& manifoldContacts) { SortManifoldContacts(manifoldContacts); },
+            [this](Manifold& m) { SolveManifoldNormalImpulses(m); },
+            [](const Manifold& m, std::uint64_t key) { return FindBlockSlot(m, key); },
+            [this](Body& a, Body& b, const Mat3& invIA, const Mat3& invIB, const Vec3& ra, const Vec3& rb, const Vec3& impulse) {
+                ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
+            },
+            contactSolverConfig_,
+        };
+        solver.SolveContactsInManifold(context, manifold);
+    }
+
+void World::SolveJointPositions() {
+        core_internal::JointSolver jointSolver;
+        core_internal::JointSolverContext context{bodies_, joints_, hingeJoints_};
+        jointSolver.SolveJointPositions(context);
+    }
+
 void World::SolveIslands() {
+        core_internal::ContactSolver solver;
+        core_internal::ContactSolverContext contactContext{
+            bodies_,
+            contacts_,
+            manifolds_,
+            previousManifolds_,
+            [this](const PersistentPointKey& key, float& normal, float& tangent, std::uint16_t& age) {
+                const auto it = persistentPointImpulses_.find(key);
+                if (it == persistentPointImpulses_.end()) {
+                    return false;
+                }
+                normal = it->second.normalImpulseSum;
+                tangent = it->second.tangentImpulseSum;
+                age = it->second.persistenceAge;
+                return true;
+            },
+            [](std::vector<Contact>& manifoldContacts) { SortManifoldContacts(manifoldContacts); },
+            [this](Manifold& manifold) { SolveManifoldNormalImpulses(manifold); },
+            [](const Manifold& manifold, std::uint64_t contactKey) { return FindBlockSlot(manifold, contactKey); },
+            [this](Body& a, Body& b, const Mat3& invIA, const Mat3& invIB, const Vec3& ra, const Vec3& rb, const Vec3& impulse) {
+                ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
+            },
+            contactSolverConfig_,
+        };
+
         for (const Island& island : islands_) {
             for (std::size_t mi : island.manifolds) {
-                SolveContactsInManifold(manifolds_[mi]);
+                solver.SolveContactsInManifold(contactContext, manifolds_[mi]);
             }
             for (std::size_t ji : island.joints) {
                 SolveDistanceJoint(joints_[ji]);
@@ -1310,81 +1209,17 @@ void World::SolveIslands() {
     }
 
 void World::UpdateSleeping() {
-        std::vector<bool> visited(bodies_.size(), false);
-        for (std::uint32_t start = 0; start < bodies_.size(); ++start) {
-            if (visited[start] || bodies_[start].invMass == 0.0f) {
-                continue;
-            }
-
-            std::vector<std::uint32_t> islandBodies;
-            std::vector<std::uint32_t> stack{start};
-            visited[start] = true;
-            bool islandNearlyStill = true;
-
-            while (!stack.empty()) {
-                const std::uint32_t id = stack.back();
-                stack.pop_back();
-                Body& body = bodies_[id];
-                islandBodies.push_back(id);
-
-                const float linearSpeedSq = LengthSquared(body.velocity);
-                const float angularSpeedSq = LengthSquared(body.angularVelocity);
-                const bool nearlyStill = linearSpeedSq < (kSleepLinearThreshold * kSleepLinearThreshold)
-                                      && angularSpeedSq < (kSleepAngularThreshold * kSleepAngularThreshold);
-                islandNearlyStill = islandNearlyStill && nearlyStill;
-
-                for (const Manifold& m : manifolds_) {
-                    std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
-                    if (m.a == id) other = m.b;
-                    else if (m.b == id) other = m.a;
-                    else continue;
-                    if (other < bodies_.size() && bodies_[other].invMass != 0.0f && !visited[other]) {
-                        visited[other] = true;
-                        stack.push_back(other);
-                    }
-                }
-
-                for (const DistanceJoint& j : joints_) {
-                    std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
-                    if (j.a == id) other = j.b;
-                    else if (j.b == id) other = j.a;
-                    else continue;
-                    if (other < bodies_.size() && bodies_[other].invMass != 0.0f && !visited[other]) {
-                        visited[other] = true;
-                        stack.push_back(other);
-                    }
-                }
-
-                for (const HingeJoint& j : hingeJoints_) {
-                    std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
-                    if (j.a == id) other = j.b;
-                    else if (j.b == id) other = j.a;
-                    else continue;
-                    if (other < bodies_.size() && bodies_[other].invMass != 0.0f && !visited[other]) {
-                        visited[other] = true;
-                        stack.push_back(other);
-                    }
-                }
-            }
-
-            if (islandNearlyStill) {
-                for (std::uint32_t id : islandBodies) {
-                    Body& body = bodies_[id];
-                    ++body.sleepCounter;
-                    if (body.sleepCounter >= kSleepFramesThreshold) {
-                        body.isSleeping = true;
-                        body.velocity = {0.0f, 0.0f, 0.0f};
-                        body.angularVelocity = {0.0f, 0.0f, 0.0f};
-                    }
-                }
-            } else {
-                for (std::uint32_t id : islandBodies) {
-                    Body& body = bodies_[id];
-                    body.isSleeping = false;
-                    body.sleepCounter = 0;
-                }
-            }
-        }
+        const core_internal::SleepSystem sleepSystem;
+        const core_internal::SleepSystemContext context{
+            bodies_,
+            manifolds_,
+            joints_,
+            hingeJoints_,
+            kSleepLinearThreshold,
+            kSleepAngularThreshold,
+            kSleepFramesThreshold,
+        };
+        sleepSystem.UpdateSleeping(context);
     }
 
 } // namespace minphys3d

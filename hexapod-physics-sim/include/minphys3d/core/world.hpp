@@ -2248,70 +2248,7 @@ private:
 #endif
     }
 
-    void SolveContactsInManifold(Manifold& manifold) {
-        SolveManifoldNormalImpulses(manifold);
-
-        if (manifold.contacts.size() >= 2) {
-            for (Contact& c : manifold.contacts) {
-                const int slot = FindBlockSlot(manifold, c.key);
-                if (slot >= 0) {
-                    manifold.blockNormalImpulseSum[slot] = c.normalImpulseSum;
-                }
-            }
-        }
-
-        for (Contact& c : manifold.contacts) {
-            Body& a = bodies_[c.a];
-            Body& b = bodies_[c.b];
-
-            const Mat3 invIA = a.InvInertiaWorld();
-            const Mat3 invIB = b.InvInertiaWorld();
-            const Vec3 ra = c.point - a.position;
-            const Vec3 rb = c.point - b.position;
-
-            const Vec3 va2 = a.velocity + Cross(a.angularVelocity, ra);
-            const Vec3 vb2 = b.velocity + Cross(b.angularVelocity, rb);
-            const Vec3 rv2 = vb2 - va2;
-            Vec3 tangent = rv2 - Dot(rv2, c.normal) * c.normal;
-            const float tangentLenSq = LengthSquared(tangent);
-            if (tangentLenSq <= kEpsilon) {
-                continue;
-            }
-            tangent = tangent / std::sqrt(tangentLenSq);
-
-            const Vec3 raCrossT = Cross(ra, tangent);
-            const Vec3 rbCrossT = Cross(rb, tangent);
-            const float tangentMass = a.invMass + b.invMass
-                + Dot(raCrossT, invIA * raCrossT)
-                + Dot(rbCrossT, invIB * rbCrossT);
-            if (tangentMass <= kEpsilon) {
-                continue;
-            }
-
-            float lambdaT = -Dot(rv2, tangent) / tangentMass;
-            const float muS = 0.5f * (a.staticFriction + b.staticFriction);
-            const float muD = 0.5f * (a.dynamicFriction + b.dynamicFriction);
-            const float oldTangentImpulse = c.tangentImpulseSum;
-            const float slipSpeed = std::sqrt(tangentLenSq);
-            const float normalImpulseMagnitude = std::max(c.normalImpulseSum, 0.0f);
-            const float staticLimit = std::max(muS, 0.0f) * normalImpulseMagnitude;
-            const float candidateImpulse = c.tangentImpulseSum + lambdaT;
-            const bool stickPhase = slipSpeed <= std::max(contactSolverConfig_.staticFrictionSpeedThreshold, 0.0f);
-            if (stickPhase && std::abs(candidateImpulse) <= staticLimit) {
-                c.tangentImpulseSum = candidateImpulse;
-            } else {
-                float mu = muS;
-                if (contactSolverConfig_.staticToDynamicTransitionSpeed > kEpsilon) {
-                    const float transitionT = SmoothStep01(slipSpeed / contactSolverConfig_.staticToDynamicTransitionSpeed);
-                    mu = muS + (muD - muS) * transitionT;
-                }
-                const float maxFriction = std::max(mu, 0.0f) * normalImpulseMagnitude;
-                c.tangentImpulseSum = std::clamp(candidateImpulse, -maxFriction, maxFriction);
-            }
-            lambdaT = c.tangentImpulseSum - oldTangentImpulse;
-            ApplyImpulse(a, b, invIA, invIB, ra, rb, lambdaT * tangent);
-        }
-    }
+    void SolveContactsInManifold(Manifold& manifold);
 
     void SolveDistanceJoint(DistanceJoint& j);
 
@@ -2319,53 +2256,7 @@ private:
 
     void SolveIslands();
 
-    void SolveJointPositions() {
-        for (DistanceJoint& j : joints_) {
-            Body& a = bodies_[j.a];
-            Body& b = bodies_[j.b];
-            if (a.invMass + b.invMass <= kEpsilon) {
-                continue;
-            }
-
-            const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
-            const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
-            const Vec3 pa = a.position + ra;
-            const Vec3 pb = b.position + rb;
-            const Vec3 delta = pb - pa;
-            const float len = Length(delta);
-            if (len <= kEpsilon) {
-                continue;
-            }
-
-            const Vec3 n = delta / len;
-            const float error = len - j.restLength;
-            const float invMassSum = a.invMass + b.invMass;
-            if (invMassSum <= kEpsilon) {
-                continue;
-            }
-            const Vec3 correction = (0.15f * error / invMassSum) * n;
-            if (!a.isSleeping) a.position += correction * a.invMass;
-            if (!b.isSleeping) b.position -= correction * b.invMass;
-        }
-
-        for (HingeJoint& j : hingeJoints_) {
-            Body& a = bodies_[j.a];
-            Body& b = bodies_[j.b];
-            if (a.invMass + b.invMass <= kEpsilon) {
-                continue;
-            }
-
-            const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
-            const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
-            const Vec3 pa = a.position + ra;
-            const Vec3 pb = b.position + rb;
-            const Vec3 error = pb - pa;
-            const float invMassSum = a.invMass + b.invMass;
-            const Vec3 correction = (0.2f / std::max(invMassSum, kEpsilon)) * error;
-            if (!a.isSleeping) a.position += correction * a.invMass;
-            if (!b.isSleeping) b.position -= correction * b.invMass;
-        }
-    }
+    void SolveJointPositions();
 
     void ApplyImpulse(
         Body& a,
