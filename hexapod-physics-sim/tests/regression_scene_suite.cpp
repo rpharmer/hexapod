@@ -27,6 +27,30 @@ using minphys3d::World;
 
 struct RunMetrics {
     struct SolverTelemetrySnapshot {
+        struct FallbackReasonSnapshot {
+            std::uint64_t none = 0;
+            std::uint64_t ineligible = 0;
+            std::uint64_t invalidManifoldNormal = 0;
+            std::uint64_t contactNormalMismatch = 0;
+            std::uint64_t missingBlockSlots = 0;
+            std::uint64_t degenerateMassMatrix = 0;
+            std::uint64_t conditionEstimateExceeded = 0;
+            std::uint64_t lcpFailure = 0;
+            std::uint64_t nonFiniteResult = 0;
+        };
+        struct ManifoldSolveScopeSnapshot {
+            std::uint64_t solveCount = 0;
+            std::uint64_t manifoldContactCount = 0;
+            std::uint64_t selectedBlockSize = 0;
+            std::uint64_t blockUsed = 0;
+            std::uint64_t fallbackUsed = 0;
+            FallbackReasonSnapshot fallbackReason{};
+            double determinantOrConditionEstimate = 0.0;
+            std::uint64_t determinantOrConditionEstimateSamples = 0;
+            double impulseContinuityMetric = 0.0;
+            std::uint64_t impulseContinuityMetricSamples = 0;
+        };
+
         std::uint64_t blockSolveEligible = 0;
         std::uint64_t blockSolveUsed = 0;
         std::uint64_t scalarPathIneligible = 0;
@@ -41,6 +65,8 @@ struct RunMetrics {
         std::uint64_t featureIdChurnEvents = 0;
         std::uint64_t impulseResetPoints = 0;
         std::uint64_t reorderDetected = 0;
+        ManifoldSolveScopeSnapshot manifoldSolveScope;
+        std::unordered_map<std::uint8_t, ManifoldSolveScopeSnapshot> manifoldTypeScope;
     };
 
     float maxPenetration = 0.0f;
@@ -211,6 +237,27 @@ RunMetrics RunScene(SceneConfig config, bool useBlockSolver) {
 
 #ifndef NDEBUG
     const World::SolverTelemetry& telemetry = config.world.GetSolverTelemetry();
+    const auto assignBucket = [](const World::SolverTelemetry::ManifoldSolveBucket& src,
+                                 RunMetrics::SolverTelemetrySnapshot::ManifoldSolveScopeSnapshot& dst) {
+        dst.solveCount = src.solveCount;
+        dst.manifoldContactCount = src.manifoldContactCount;
+        dst.selectedBlockSize = src.selectedBlockSize;
+        dst.blockUsed = src.blockUsed;
+        dst.fallbackUsed = src.fallbackUsed;
+        dst.fallbackReason.none = src.fallbackReason.none;
+        dst.fallbackReason.ineligible = src.fallbackReason.ineligible;
+        dst.fallbackReason.invalidManifoldNormal = src.fallbackReason.invalidManifoldNormal;
+        dst.fallbackReason.contactNormalMismatch = src.fallbackReason.contactNormalMismatch;
+        dst.fallbackReason.missingBlockSlots = src.fallbackReason.missingBlockSlots;
+        dst.fallbackReason.degenerateMassMatrix = src.fallbackReason.degenerateMassMatrix;
+        dst.fallbackReason.conditionEstimateExceeded = src.fallbackReason.conditionEstimateExceeded;
+        dst.fallbackReason.lcpFailure = src.fallbackReason.lcpFailure;
+        dst.fallbackReason.nonFiniteResult = src.fallbackReason.nonFiniteResult;
+        dst.determinantOrConditionEstimate = src.determinantOrConditionEstimate;
+        dst.determinantOrConditionEstimateSamples = src.determinantOrConditionEstimateSamples;
+        dst.impulseContinuityMetric = src.impulseContinuityMetric;
+        dst.impulseContinuityMetricSamples = src.impulseContinuityMetricSamples;
+    };
     metrics.reorderEvents = telemetry.reorderDetected;
     metrics.telemetry.blockSolveEligible = telemetry.blockSolveEligible;
     metrics.telemetry.blockSolveUsed = telemetry.blockSolveUsed;
@@ -226,6 +273,10 @@ RunMetrics RunScene(SceneConfig config, bool useBlockSolver) {
     metrics.telemetry.featureIdChurnEvents = telemetry.featureIdChurnEvents;
     metrics.telemetry.impulseResetPoints = telemetry.impulseResetPoints;
     metrics.telemetry.reorderDetected = telemetry.reorderDetected;
+    assignBucket(telemetry.manifoldSolveScope, metrics.telemetry.manifoldSolveScope);
+    for (const auto& [manifoldType, bucket] : telemetry.manifoldTypeBuckets) {
+        assignBucket(bucket, metrics.telemetry.manifoldTypeScope[manifoldType]);
+    }
 #endif
 
     const float count = static_cast<float>(contactCounts.size());
@@ -497,7 +548,50 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "          \"topologyChangeEvents\": " << t.topologyChangeEvents << ",\n";
         out << "          \"featureIdChurnEvents\": " << t.featureIdChurnEvents << ",\n";
         out << "          \"impulseResetPoints\": " << t.impulseResetPoints << ",\n";
-        out << "          \"reorderDetected\": " << t.reorderDetected << "\n";
+        out << "          \"reorderDetected\": " << t.reorderDetected << ",\n";
+        out << "          \"manifold_solve_scope\": {\n";
+        out << "            \"manifold_contact_count\": " << t.manifoldSolveScope.manifoldContactCount << ",\n";
+        out << "            \"selected_block_size\": " << t.manifoldSolveScope.selectedBlockSize << ",\n";
+        out << "            \"block_used\": " << t.manifoldSolveScope.blockUsed << ",\n";
+        out << "            \"fallback_used\": " << t.manifoldSolveScope.fallbackUsed << ",\n";
+        out << "            \"fallback_reason\": {\n";
+        out << "              \"none\": " << t.manifoldSolveScope.fallbackReason.none << ",\n";
+        out << "              \"ineligible\": " << t.manifoldSolveScope.fallbackReason.ineligible << ",\n";
+        out << "              \"invalid_manifold_normal\": " << t.manifoldSolveScope.fallbackReason.invalidManifoldNormal << ",\n";
+        out << "              \"contact_normal_mismatch\": " << t.manifoldSolveScope.fallbackReason.contactNormalMismatch << ",\n";
+        out << "              \"missing_block_slots\": " << t.manifoldSolveScope.fallbackReason.missingBlockSlots << ",\n";
+        out << "              \"degenerate_mass_matrix\": " << t.manifoldSolveScope.fallbackReason.degenerateMassMatrix << ",\n";
+        out << "              \"condition_estimate_exceeded\": " << t.manifoldSolveScope.fallbackReason.conditionEstimateExceeded << ",\n";
+        out << "              \"lcp_failure\": " << t.manifoldSolveScope.fallbackReason.lcpFailure << ",\n";
+        out << "              \"non_finite_result\": " << t.manifoldSolveScope.fallbackReason.nonFiniteResult << "\n";
+        out << "            },\n";
+        out << "            \"determinant_or_condition_estimate_sum\": " << t.manifoldSolveScope.determinantOrConditionEstimate << ",\n";
+        out << "            \"determinant_or_condition_estimate_samples\": " << t.manifoldSolveScope.determinantOrConditionEstimateSamples << ",\n";
+        out << "            \"impulse_continuity_metric_sum\": " << t.manifoldSolveScope.impulseContinuityMetric << ",\n";
+        out << "            \"impulse_continuity_metric_samples\": " << t.manifoldSolveScope.impulseContinuityMetricSamples << "\n";
+        out << "          },\n";
+        out << "          \"manifold_type_scope\": {";
+        if (t.manifoldTypeScope.empty()) {
+            out << "}\n";
+        } else {
+            out << "\n";
+            std::vector<std::uint8_t> keys;
+            keys.reserve(t.manifoldTypeScope.size());
+            for (const auto& [key, _] : t.manifoldTypeScope) keys.push_back(key);
+            std::sort(keys.begin(), keys.end());
+            for (std::size_t i = 0; i < keys.size(); ++i) {
+                const auto& b = t.manifoldTypeScope.at(keys[i]);
+                out << "            \"" << static_cast<unsigned>(keys[i]) << "\": {"
+                    << "\"manifold_contact_count\": " << b.manifoldContactCount
+                    << ", \"selected_block_size\": " << b.selectedBlockSize
+                    << ", \"block_used\": " << b.blockUsed
+                    << ", \"fallback_used\": " << b.fallbackUsed
+                    << ", \"determinant_or_condition_estimate_sum\": " << b.determinantOrConditionEstimate
+                    << ", \"impulse_continuity_metric_sum\": " << b.impulseContinuityMetric
+                    << "}" << (i + 1 == keys.size() ? "\n" : ",\n");
+            }
+            out << "          }\n";
+        }
         out << "        }";
     };
 
