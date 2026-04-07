@@ -17,84 +17,22 @@
 
 #include "minphys3d/broadphase/types.hpp"
 #include "minphys3d/core/body.hpp"
+#include "minphys3d/core/world_types.hpp"
 #include "minphys3d/joints/types.hpp"
 #include "minphys3d/narrowphase/dispatch.hpp"
 #include "minphys3d/solver/types.hpp"
 
 namespace minphys3d {
 
-struct ContactKey {
-    std::uint32_t loBody = 0;
-    std::uint32_t hiBody = 0;
-    std::uint64_t featureKey = 0;
-
-    bool operator==(const ContactKey& other) const {
-        return loBody == other.loBody && hiBody == other.hiBody && featureKey == other.featureKey;
-    }
-};
-
-struct ManifoldKey {
-    std::uint32_t loBody = 0;
-    std::uint32_t hiBody = 0;
-    std::uint8_t manifoldType = 0;
-
-    bool operator==(const ManifoldKey& other) const {
-        return loBody == other.loBody && hiBody == other.hiBody && manifoldType == other.manifoldType;
-    }
-};
-
-struct PersistentPointKey {
-    ManifoldKey manifold{};
-    std::uint64_t featureKey = 0;
-    std::uint8_t ordinal = 0;
-
-    bool operator==(const PersistentPointKey& other) const {
-        return manifold == other.manifold && featureKey == other.featureKey && ordinal == other.ordinal;
-    }
-};
-
-struct ContactKeyHash {
-    std::size_t operator()(const ContactKey& key) const noexcept {
-        std::size_t seed = static_cast<std::size_t>(key.loBody);
-        seed ^= static_cast<std::size_t>(key.hiBody) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
-        seed ^= static_cast<std::size_t>(key.featureKey) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
-        seed ^= static_cast<std::size_t>(key.featureKey >> 32u) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
-        return seed;
-    }
-};
-
-struct ManifoldKeyHash {
-    std::size_t operator()(const ManifoldKey& key) const noexcept {
-        std::size_t seed = static_cast<std::size_t>(key.loBody);
-        seed ^= static_cast<std::size_t>(key.hiBody) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
-        seed ^= static_cast<std::size_t>(key.manifoldType) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
-        return seed;
-    }
-};
-
-struct PersistentPointKeyHash {
-    std::size_t operator()(const PersistentPointKey& key) const noexcept {
-        std::size_t seed = ManifoldKeyHash{}(key.manifold);
-        seed ^= static_cast<std::size_t>(key.featureKey) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
-        seed ^= static_cast<std::size_t>(key.featureKey >> 32u) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
-        seed ^= static_cast<std::size_t>(key.ordinal) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
-        return seed;
-    }
-};
-
 class World {
 public:
     static constexpr std::uint32_t kInvalidJointId = std::numeric_limits<std::uint32_t>::max();
 
-    explicit World(Vec3 gravity = {0.0f, -9.81f, 0.0f}) : gravity_(gravity) {}
+    explicit World(Vec3 gravity = {0.0f, -9.81f, 0.0f});
 
-    void SetContactSolverConfig(const ContactSolverConfig& config) {
-        contactSolverConfig_ = config;
-    }
+    void SetContactSolverConfig(const ContactSolverConfig& config);
 
-    const ContactSolverConfig& GetContactSolverConfig() const {
-        return contactSolverConfig_;
-    }
+    const ContactSolverConfig& GetContactSolverConfig() const;
 
 #ifndef NDEBUG
     struct SolverTelemetry {
@@ -143,54 +81,20 @@ public:
         std::unordered_map<std::uint8_t, ManifoldSolveBucket> manifoldTypeBuckets{};
     };
 
-    const SolverTelemetry& GetSolverTelemetry() const {
-        return solverTelemetry_;
-    }
+    const SolverTelemetry& GetSolverTelemetry() const;
 
-    void SetContactPersistenceDebugLogging(bool enabled) {
-        debugContactPersistence_ = enabled;
-    }
+    void SetContactPersistenceDebugLogging(bool enabled);
 
-    void SetBlockSolveDebugLogging(bool enabled) {
-        debugBlockSolveRouting_ = enabled;
-    }
+    void SetBlockSolveDebugLogging(bool enabled);
 #endif
 
-    std::uint32_t CreateBody(const Body& bodyDef) {
-        Body body = bodyDef;
-        body.RecomputeMassProperties();
-        bodies_.push_back(body);
+    std::uint32_t CreateBody(const Body& bodyDef);
 
-        BroadphaseProxy proxy;
-        proxy.fatBox = ExpandAABB(body.ComputeAABB(), 0.1f);
-        proxy.leaf = -1;
-        proxy.valid = true;
-        proxies_.push_back(proxy);
-        EnsureProxyInTree(static_cast<std::uint32_t>(bodies_.size() - 1));
+    Body& GetBody(std::uint32_t id);
 
-        return static_cast<std::uint32_t>(bodies_.size() - 1);
-    }
+    const Body& GetBody(std::uint32_t id) const;
 
-    Body& GetBody(std::uint32_t id) {
-        return bodies_.at(id);
-    }
-
-    const Body& GetBody(std::uint32_t id) const {
-        return bodies_.at(id);
-    }
-
-    std::uint32_t CreateDistanceJoint(std::uint32_t a, std::uint32_t b, const Vec3& worldAnchorA, const Vec3& worldAnchorB, float stiffness = 1.0f, float damping = 0.1f) {
-        DistanceJoint j;
-        j.a = a;
-        j.b = b;
-        j.localAnchorA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), worldAnchorA - bodies_.at(a).position);
-        j.localAnchorB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), worldAnchorB - bodies_.at(b).position);
-        j.restLength = Length(worldAnchorB - worldAnchorA);
-        j.stiffness = stiffness;
-        j.damping = damping;
-        joints_.push_back(j);
-        return static_cast<std::uint32_t>(joints_.size() - 1);
-    }
+    std::uint32_t CreateDistanceJoint(std::uint32_t a, std::uint32_t b, const Vec3& worldAnchorA, const Vec3& worldAnchorB, float stiffness = 1.0f, float damping = 0.1f);
 
     std::uint32_t CreateHingeJoint(
         std::uint32_t a,
@@ -202,132 +106,24 @@ public:
         float upperAngle = 0.0f,
         bool enableMotor = false,
         float motorSpeed = 0.0f,
-        float maxMotorTorque = 0.0f) {
-        HingeJoint j;
-        j.a = a;
-        j.b = b;
-        j.localAnchorA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), worldAnchor - bodies_.at(a).position);
-        j.localAnchorB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), worldAnchor - bodies_.at(b).position);
-        Vec3 axisN{};
-        if (!TryNormalize(worldAxis, axisN)) {
-            return kInvalidJointId;
-        }
-        j.localAxisA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), axisN);
-        j.localAxisB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), axisN);
-        j.limitsEnabled = enableLimits;
-        j.lowerAngle = lowerAngle;
-        j.upperAngle = upperAngle;
-        j.motorEnabled = enableMotor;
-        j.motorSpeed = motorSpeed;
-        j.maxMotorTorque = maxMotorTorque;
-        hingeJoints_.push_back(j);
-        return static_cast<std::uint32_t>(hingeJoints_.size() - 1);
-    }
+        float maxMotorTorque = 0.0f);
 
-    void Step(float dt, int solverIterations = 8) {
-        if (dt <= 0.0f) {
-            return;
-        }
+    void Step(float dt, int solverIterations = 8);
 
-#ifndef NDEBUG
-        solverTelemetry_ = {};
-#endif
+    void AddForce(std::uint32_t id, const Vec3& force);
 
-        AssertBodyInvariants();
-        previousContacts_ = contacts_;
-        previousManifolds_ = manifolds_;
-        CapturePersistentPointImpulseState(previousManifolds_);
+    void AddTorque(std::uint32_t id, const Vec3& torque);
 
-        const int substeps = ComputeSubsteps(dt);
-        const float subDt = dt / static_cast<float>(substeps);
+    void AddForceAtPoint(std::uint32_t id, const Vec3& force, const Vec3& worldPoint);
 
-        for (int stepIndex = 0; stepIndex < substeps; ++stepIndex) {
-#ifndef NDEBUG
-            ++debugFrameIndex_;
-#endif
-            currentSubstepDt_ = subDt;
-            if (stepIndex == 0) {
-                previousContacts_ = contacts_;
-                previousManifolds_ = manifolds_;
-                CapturePersistentPointImpulseState(previousManifolds_);
-            }
-            IntegrateForces(subDt);
-            contacts_.clear();
-            manifolds_.clear();
-            UpdateBroadphaseProxies();
-            GenerateContacts();
-            BuildManifolds();
-            BuildIslands();
-            WarmStartContacts();
-            WarmStartJoints();
+    std::size_t LastBroadphaseMovedProxyCount() const;
 
-            for (int i = 0; i < solverIterations; ++i) {
-                SolveIslands();
-            }
-
-            ResolveTOIPipeline(subDt);
-            IntegrateOrientation(subDt);
-            SolveJointPositions();
-            PositionalCorrection();
-            UpdateSleeping();
-            ClearAccumulators();
-            previousContacts_ = contacts_;
-            previousManifolds_ = manifolds_;
-            CapturePersistentPointImpulseState(previousManifolds_);
-            AssertBodyInvariants();
-        }
-    }
-
-    void AddForce(std::uint32_t id, const Vec3& force) {
-        Body& b = bodies_.at(id);
-        WakeBody(b);
-        b.force += force;
-    }
-
-    void AddTorque(std::uint32_t id, const Vec3& torque) {
-        Body& b = bodies_.at(id);
-        WakeBody(b);
-        b.torque += torque;
-    }
-
-    void AddForceAtPoint(std::uint32_t id, const Vec3& force, const Vec3& worldPoint) {
-        Body& body = bodies_.at(id);
-        WakeBody(body);
-        body.force += force;
-        const Vec3 r = worldPoint - body.position;
-        body.torque += Cross(r, force);
-    }
-
-    std::size_t LastBroadphaseMovedProxyCount() const {
-        return lastBroadphaseMovedProxyCount_;
-    }
-
-    std::size_t BroadphasePairCount() const {
-        return ComputePotentialPairs().size();
-    }
+    std::size_t BroadphasePairCount() const;
 
 
-    const std::vector<Manifold>& DebugManifolds() const {
-        return manifolds_;
-    }
+    const std::vector<Manifold>& DebugManifolds() const;
 
-    std::size_t BruteForcePairCount() const {
-        std::size_t count = 0;
-        for (std::uint32_t i = 0; i < bodies_.size(); ++i) {
-            const AABB ai = bodies_[i].ComputeAABB();
-            for (std::uint32_t j = i + 1; j < bodies_.size(); ++j) {
-                const Body& a = bodies_[i];
-                const Body& b = bodies_[j];
-                if ((a.invMass == 0.0f && b.invMass == 0.0f) || (a.isSleeping && b.isSleeping)) {
-                    continue;
-                }
-                if (Overlaps(ai, bodies_[j].ComputeAABB())) {
-                    ++count;
-                }
-            }
-        }
-        return count;
-    }
+    std::size_t BruteForcePairCount() const;
 
 private:
     static constexpr float kQuaternionNormalizationTolerance = 1e-3f;
@@ -336,75 +132,15 @@ private:
     static constexpr float kWakeContactPenetrationThreshold = 0.02f;
     static constexpr float kWakeJointRelativeSpeedThreshold = 0.15f;
 
-    static bool IsFinite(float value) {
-        return std::isfinite(value);
-    }
-
-    static bool IsFinite(const Vec3& v) {
-        return IsFinite(v.x) && IsFinite(v.y) && IsFinite(v.z);
-    }
-
-    static bool IsFinite(const Quat& q) {
-        return IsFinite(q.w) && IsFinite(q.x) && IsFinite(q.y) && IsFinite(q.z);
-    }
-
-    static bool IsFinite(const Mat3& m) {
-        for (int row = 0; row < 3; ++row) {
-            for (int col = 0; col < 3; ++col) {
-                if (!IsFinite(m.m[row][col])) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    static bool IsZeroInertia(const Mat3& m) {
-        for (int row = 0; row < 3; ++row) {
-            for (int col = 0; col < 3; ++col) {
-                if (std::abs(m.m[row][col]) > kEpsilon) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    static bool TryGetPlaneNormal(const Body& plane, Vec3& outNormal) {
-        return TryNormalize(plane.planeNormal, outNormal);
-    }
-
-    static void AssertBodyStateFinite(const Body& body) {
-        assert(IsFinite(body.position));
-        assert(IsFinite(body.orientation));
-        assert(IsFinite(body.velocity));
-        assert(IsFinite(body.angularVelocity));
-    }
-
-    static void AssertMassInertiaConsistency(const Body& body) {
-        assert(IsFinite(body.mass) || body.invMass == 0.0f);
-        assert(IsFinite(body.invMass));
-        assert(IsFinite(body.invInertiaLocal));
-        if (body.invMass == 0.0f) {
-            assert(body.isStatic || !std::isfinite(body.mass));
-            assert(IsZeroInertia(body.invInertiaLocal));
-            return;
-        }
-
-        assert(body.mass > kEpsilon);
-        assert(std::isfinite(body.mass));
-        assert(std::abs(body.invMass - (1.0f / body.mass)) <= 1e-4f);
-        assert(body.invInertiaLocal.m[0][0] >= -kEpsilon);
-        assert(body.invInertiaLocal.m[1][1] >= -kEpsilon);
-        assert(body.invInertiaLocal.m[2][2] >= -kEpsilon);
-    }
-
-    void AssertBodyInvariants() const {
-        for (const Body& body : bodies_) {
-            AssertBodyStateFinite(body);
-            AssertMassInertiaConsistency(body);
-        }
-    }
+    static bool IsFinite(float value);
+    static bool IsFinite(const Vec3& v);
+    static bool IsFinite(const Quat& q);
+    static bool IsFinite(const Mat3& m);
+    static bool IsZeroInertia(const Mat3& m);
+    static bool TryGetPlaneNormal(const Body& plane, Vec3& outNormal);
+    static void AssertBodyStateFinite(const Body& body);
+    static void AssertMassInertiaConsistency(const Body& body);
+    void AssertBodyInvariants() const;
 
     static void AssertQuaternionNormalized(const Quat& q) {
         const float lenSq = q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z;
@@ -412,79 +148,16 @@ private:
         assert(std::abs(lenSq - 1.0f) <= kQuaternionNormalizationTolerance);
     }
 
-    static AABB ExpandAABB(const AABB& aabb, float margin) {
-        AABB out = aabb;
-        out.min.x -= margin;
-        out.min.y -= margin;
-        out.min.z -= margin;
-        out.max.x += margin;
-        out.max.y += margin;
-        out.max.z += margin;
-        return out;
-    }
-
-    static bool Contains(const AABB& outer, const AABB& inner) {
-        return outer.min.x <= inner.min.x && outer.min.y <= inner.min.y && outer.min.z <= inner.min.z
-            && outer.max.x >= inner.max.x && outer.max.y >= inner.max.y && outer.max.z >= inner.max.z;
-    }
-
-    static AABB MergeAABB(const AABB& a, const AABB& b) {
-        AABB out;
-        out.min = {std::min(a.min.x, b.min.x), std::min(a.min.y, b.min.y), std::min(a.min.z, b.min.z)};
-        out.max = {std::max(a.max.x, b.max.x), std::max(a.max.y, b.max.y), std::max(a.max.z, b.max.z)};
-        return out;
-    }
-
-    static float SurfaceArea(const AABB& aabb) {
-        const Vec3 e = aabb.max - aabb.min;
-        return 2.0f * (e.x * e.y + e.y * e.z + e.z * e.x);
-    }
-
-    void UpdateBroadphaseProxies() {
-        if (proxies_.size() != bodies_.size()) {
-            proxies_.resize(bodies_.size());
-        }
-        lastBroadphaseMovedProxyCount_ = 0;
-        for (std::size_t i = 0; i < bodies_.size(); ++i) {
-            const AABB current = bodies_[i].ComputeAABB();
-            if (!proxies_[i].valid) {
-                proxies_[i].fatBox = ExpandAABB(current, 0.1f);
-                proxies_[i].leaf = -1;
-                proxies_[i].valid = true;
-                EnsureProxyInTree(static_cast<std::uint32_t>(i));
-            } else if (!Contains(proxies_[i].fatBox, current)) {
-                if (proxies_[i].leaf >= 0) {
-                    RemoveLeaf(proxies_[i].leaf);
-                }
-                proxies_[i].fatBox = ExpandAABB(current, 0.1f);
-                proxies_[i].leaf = InsertLeaf(static_cast<std::uint32_t>(i), proxies_[i].fatBox);
-                ++lastBroadphaseMovedProxyCount_;
-            } else {
-                EnsureProxyInTree(static_cast<std::uint32_t>(i));
-            }
-        }
-    }
-
-    void EnsureProxyInTree(std::uint32_t bodyId) {
-        if (bodyId >= proxies_.size() || !proxies_[bodyId].valid) {
-            return;
-        }
-        if (proxies_[bodyId].leaf < 0) {
-            proxies_[bodyId].leaf = InsertLeaf(bodyId, proxies_[bodyId].fatBox);
-        }
-    }
+    static AABB ExpandAABB(const AABB& aabb, float margin);
+    static bool Contains(const AABB& outer, const AABB& inner);
+    static AABB MergeAABB(const AABB& a, const AABB& b);
+    static float SurfaceArea(const AABB& aabb);
+    void UpdateBroadphaseProxies();
+    void EnsureProxyInTree(std::uint32_t bodyId);
 
     std::int32_t AllocateNode();
 
-    void FreeNode(std::int32_t nodeId) {
-        treeNodes_[nodeId].next = freeNode_;
-        treeNodes_[nodeId].height = -1;
-        treeNodes_[nodeId].left = -1;
-        treeNodes_[nodeId].right = -1;
-        treeNodes_[nodeId].parent = -1;
-        treeNodes_[nodeId].bodyId = -1;
-        freeNode_ = nodeId;
-    }
+    void FreeNode(std::int32_t nodeId);
 
     std::int32_t InsertLeaf(std::uint32_t bodyId, const AABB& fatBox);
 
@@ -492,25 +165,7 @@ private:
 
     std::int32_t Balance(std::int32_t iA);
 
-    int ComputeSubsteps(float dt) const {
-        float maxRatio = 0.0f;
-        for (const Body& body : bodies_) {
-            if (body.invMass == 0.0f || body.isSleeping) {
-                continue;
-            }
-            float characteristic = 1.0f;
-            if (body.shape == ShapeType::Sphere) {
-                characteristic = std::max(body.radius, 0.05f);
-            } else if (body.shape == ShapeType::Box) {
-                characteristic = std::max({body.halfExtents.x, body.halfExtents.y, body.halfExtents.z, 0.05f});
-            } else if (body.shape == ShapeType::Capsule) {
-                characteristic = std::max(body.radius, 0.05f);
-            }
-            const float travel = Length(body.velocity) * dt;
-            maxRatio = std::max(maxRatio, travel / (characteristic * kMaxSubstepDistanceFactor));
-        }
-        return std::clamp(static_cast<int>(std::ceil(std::max(1.0f, maxRatio))), 1, 8);
-    }
+    int ComputeSubsteps(float dt) const;
 
     struct TOIEvent {
         bool hit = false;
