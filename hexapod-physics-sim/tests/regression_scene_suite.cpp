@@ -78,6 +78,10 @@ ContactSolverConfig MakeSolverConfig(bool useBlockSolver) {
     ContactSolverConfig cfg;
     cfg.useSplitImpulse = true;
     cfg.penetrationSlop = 0.005f;
+    cfg.splitImpulseCorrectionFactor = 0.85f;
+    cfg.penetrationBiasFactor = 0.05f;
+    cfg.restitutionVelocityCutoff = 0.5f;
+    cfg.staticFrictionSpeedThreshold = 0.0f;
     cfg.staticToDynamicTransitionSpeed = 0.2f;
     cfg.useBlockSolver = useBlockSolver;
     return cfg;
@@ -374,7 +378,17 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "]\n";
         out << "    }" << (i + 1 == results.size() ? "\n" : ",\n");
     }
-    out << "  ]\n}\n";
+    const ContactSolverConfig cfg = MakeSolverConfig(false);
+    out << "  ],\n";
+    out << "  \"solver_config\": {\n";
+    out << "    \"use_split_impulse\": " << (cfg.useSplitImpulse ? "true" : "false") << ",\n";
+    out << "    \"split_impulse_correction_factor\": " << cfg.splitImpulseCorrectionFactor << ",\n";
+    out << "    \"penetration_bias_factor\": " << cfg.penetrationBiasFactor << ",\n";
+    out << "    \"penetration_slop\": " << cfg.penetrationSlop << ",\n";
+    out << "    \"restitution_velocity_cutoff\": " << cfg.restitutionVelocityCutoff << ",\n";
+    out << "    \"static_friction_speed_threshold\": " << cfg.staticFrictionSpeedThreshold << ",\n";
+    out << "    \"static_to_dynamic_transition_speed\": " << cfg.staticToDynamicTransitionSpeed << "\n";
+    out << "  }\n}\n";
     return out.str();
 }
 

@@ -632,6 +632,22 @@ private:
         return x * x * (3.0f - 2.0f * x);
     }
 
+    float EffectiveRestitutionCutoffSpeed() const {
+        return std::max({
+            0.0f,
+            contactSolverConfig_.bounceVelocityThreshold,
+            contactSolverConfig_.restitutionSuppressionSpeed,
+            contactSolverConfig_.restitutionVelocityCutoff,
+        });
+    }
+
+    float ComputeRestitution(float speedIntoContact, float restitutionA, float restitutionB) const {
+        if (speedIntoContact <= 0.0f || speedIntoContact < EffectiveRestitutionCutoffSpeed()) {
+            return 0.0f;
+        }
+        return std::clamp(std::min(restitutionA, restitutionB), 0.0f, 1.0f);
+    }
+
     void AdvanceDynamicBodies(float dt) {
         if (dt <= 0.0f) {
             return;
@@ -653,12 +669,8 @@ private:
         if (vn < 0.0f) {
             const float invMassSum = a.invMass + b.invMass;
             if (invMassSum > kEpsilon) {
-                float restitution = std::clamp(std::max(a.restitution, b.restitution), 0.0f, 1.0f);
                 const float speedIntoContact = -vn;
-                if ((speedIntoContact > 0.0f && speedIntoContact < contactSolverConfig_.bounceVelocityThreshold)
-                    || (speedIntoContact > 0.0f && speedIntoContact < contactSolverConfig_.restitutionSuppressionSpeed)) {
-                    restitution = 0.0f;
-                }
+                const float restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
                 const float impulse = -(1.0f + restitution) * vn / invMassSum;
                 const Vec3 impulseVector = n * impulse;
                 if (a.invMass > 0.0f) {
@@ -2446,11 +2458,7 @@ private:
         const float separatingVelocity = Dot(relativeVelocity, c.normal);
 
         const float speedIntoContact = -separatingVelocity;
-        float restitution = std::min(a.restitution, b.restitution);
-        if ((speedIntoContact > 0.0f && speedIntoContact < contactSolverConfig_.bounceVelocityThreshold)
-            || (speedIntoContact > 0.0f && speedIntoContact < contactSolverConfig_.restitutionSuppressionSpeed)) {
-            restitution = 0.0f;
-        }
+        const float restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
         const Vec3 raCrossN = Cross(ra, c.normal);
         const Vec3 rbCrossN = Cross(rb, c.normal);
         const float angularTermA = Dot(raCrossN, invIA * raCrossN);
@@ -2477,7 +2485,10 @@ private:
                 }
             }
         } else if (currentSubstepDt_ > kEpsilon) {
-            biasTerm = (contactSolverConfig_.penetrationBiasFactor * penetrationError) / currentSubstepDt_;
+            const float maxSafeSeparatingSpeed = penetrationError / currentSubstepDt_;
+            if (separatingVelocity <= maxSafeSeparatingSpeed) {
+                biasTerm = (contactSolverConfig_.penetrationBiasFactor * penetrationError) / currentSubstepDt_;
+            }
         }
 
         float lambdaN = -(1.0f + restitution) * separatingVelocity / normalMass;
@@ -2649,11 +2660,7 @@ private:
 
         const auto computeRhs = [&](Contact& c, float separatingVelocity) {
             const float speedIntoContact = -separatingVelocity;
-            float restitution = std::min(a.restitution, b.restitution);
-            if ((speedIntoContact > 0.0f && speedIntoContact < contactSolverConfig_.bounceVelocityThreshold)
-                || (speedIntoContact > 0.0f && speedIntoContact < contactSolverConfig_.restitutionSuppressionSpeed)) {
-                restitution = 0.0f;
-            }
+            const float restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
 
             float biasTerm = 0.0f;
             const float penetrationError = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0f);
@@ -2672,7 +2679,10 @@ private:
                     }
                 }
             } else if (currentSubstepDt_ > kEpsilon) {
-                biasTerm = (contactSolverConfig_.penetrationBiasFactor * penetrationError) / currentSubstepDt_;
+                const float maxSafeSeparatingSpeed = penetrationError / currentSubstepDt_;
+                if (separatingVelocity <= maxSafeSeparatingSpeed) {
+                    biasTerm = (contactSolverConfig_.penetrationBiasFactor * penetrationError) / currentSubstepDt_;
+                }
             }
 
             return -(1.0f + restitution) * separatingVelocity + std::max(biasTerm, 0.0f);
@@ -2905,15 +2915,23 @@ private:
             float lambdaT = -Dot(rv2, tangent) / tangentMass;
             const float muS = 0.5f * (a.staticFriction + b.staticFriction);
             const float muD = 0.5f * (a.dynamicFriction + b.dynamicFriction);
-            float mu = muS;
-            if (contactSolverConfig_.staticToDynamicTransitionSpeed > kEpsilon) {
-                const float slipSpeed = std::sqrt(tangentLenSq);
-                const float transitionT = SmoothStep01(slipSpeed / contactSolverConfig_.staticToDynamicTransitionSpeed);
-                mu = muS + (muD - muS) * transitionT;
-            }
-            const float maxFriction = std::max(mu, 0.0f) * c.normalImpulseSum;
             const float oldTangentImpulse = c.tangentImpulseSum;
-            c.tangentImpulseSum = std::clamp(c.tangentImpulseSum + lambdaT, -maxFriction, maxFriction);
+            const float slipSpeed = std::sqrt(tangentLenSq);
+            const float normalImpulseMagnitude = std::max(c.normalImpulseSum, 0.0f);
+            const float staticLimit = std::max(muS, 0.0f) * normalImpulseMagnitude;
+            const float candidateImpulse = c.tangentImpulseSum + lambdaT;
+            const bool stickPhase = slipSpeed <= std::max(contactSolverConfig_.staticFrictionSpeedThreshold, 0.0f);
+            if (stickPhase && std::abs(candidateImpulse) <= staticLimit) {
+                c.tangentImpulseSum = candidateImpulse;
+            } else {
+                float mu = muS;
+                if (contactSolverConfig_.staticToDynamicTransitionSpeed > kEpsilon) {
+                    const float transitionT = SmoothStep01(slipSpeed / contactSolverConfig_.staticToDynamicTransitionSpeed);
+                    mu = muS + (muD - muS) * transitionT;
+                }
+                const float maxFriction = std::max(mu, 0.0f) * normalImpulseMagnitude;
+                c.tangentImpulseSum = std::clamp(candidateImpulse, -maxFriction, maxFriction);
+            }
             lambdaT = c.tangentImpulseSum - oldTangentImpulse;
             ApplyImpulse(a, b, invIA, invIB, ra, rb, lambdaT * tangent);
         }

@@ -11,6 +11,8 @@ int main() {
     ContactSolverConfig config = world.GetContactSolverConfig();
     config.bounceVelocityThreshold = 2.0f;
     config.restitutionSuppressionSpeed = 1.5f;
+    config.restitutionVelocityCutoff = 1.25f;
+    config.staticFrictionSpeedThreshold = 0.04f;
     config.staticToDynamicTransitionSpeed = 0.15f;
     config.useSplitImpulse = true;
     world.SetContactSolverConfig(config);
@@ -18,6 +20,8 @@ int main() {
     assert(roundtrip.useSplitImpulse);
     assert(std::abs(roundtrip.bounceVelocityThreshold - 2.0f) < 1e-6f);
     assert(std::abs(roundtrip.restitutionSuppressionSpeed - 1.5f) < 1e-6f);
+    assert(std::abs(roundtrip.restitutionVelocityCutoff - 1.25f) < 1e-6f);
+    assert(std::abs(roundtrip.staticFrictionSpeedThreshold - 0.04f) < 1e-6f);
     assert(std::abs(roundtrip.staticToDynamicTransitionSpeed - 0.15f) < 1e-6f);
 
     Body plane;
