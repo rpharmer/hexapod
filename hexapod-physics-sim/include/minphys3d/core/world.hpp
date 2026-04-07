@@ -4,6 +4,7 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <limits>
 #include <unordered_map>
@@ -42,10 +43,17 @@ public:
         std::uint64_t scalarFallbackLcpFailure = 0;
         std::uint64_t scalarFallbackNonFinite = 0;
         std::uint64_t reorderDetected = 0;
+        std::uint64_t featureIdChurnEvents = 0;
+        std::uint64_t topologyChangeEvents = 0;
+        std::uint64_t impulseResetPoints = 0;
     };
 
     const SolverTelemetry& GetSolverTelemetry() const {
         return solverTelemetry_;
+    }
+
+    void SetContactPersistenceDebugLogging(bool enabled) {
+        debugContactPersistence_ = enabled;
     }
 #endif
 
@@ -126,6 +134,7 @@ public:
         AssertBodyInvariants();
         previousContacts_ = contacts_;
         previousManifolds_ = manifolds_;
+        CapturePersistentPointImpulseState(previousManifolds_);
 
         const int substeps = ComputeSubsteps(dt);
         const float subDt = dt / static_cast<float>(substeps);
@@ -135,6 +144,7 @@ public:
             if (stepIndex == 0) {
                 previousContacts_ = contacts_;
                 previousManifolds_ = manifolds_;
+                CapturePersistentPointImpulseState(previousManifolds_);
             }
             IntegrateForces(subDt);
             contacts_.clear();
@@ -158,6 +168,7 @@ public:
             ClearAccumulators();
             previousContacts_ = contacts_;
             previousManifolds_ = manifolds_;
+            CapturePersistentPointImpulseState(previousManifolds_);
             AssertBodyInvariants();
         }
     }
@@ -883,6 +894,20 @@ private:
              ^ featureKey;
     }
 
+    static std::uint8_t ManifoldTypeFromFeatureKey(std::uint64_t featureKey) {
+        return static_cast<std::uint8_t>((featureKey >> 40) & 0xffu);
+    }
+
+    static std::uint64_t MakeManifoldId(std::uint64_t pairKey, std::uint8_t manifoldType) {
+        return (pairKey << 8) ^ static_cast<std::uint64_t>(manifoldType);
+    }
+
+    static std::uint64_t MakePersistentPointKey(std::uint64_t manifoldId, std::uint64_t featureKey, std::uint8_t ordinal) {
+        return (manifoldId * 1469598103934665603ull)
+             ^ (featureKey * 1099511628211ull)
+             ^ static_cast<std::uint64_t>(ordinal);
+    }
+
     static void WakeBody(Body& body) {
         if (body.invMass == 0.0f) {
             return;
@@ -1008,19 +1033,12 @@ private:
         c.normal = normal;
         c.point = point;
         c.penetration = std::max(penetration, 0.0f);
+        c.featureKey = featureKey;
         c.key = MakeContactKey(a, b, featureKey);
         assert(IsFinite(c.normal));
         assert(IsFinite(c.point));
         assert(IsFinite(c.penetration));
         assert(c.penetration >= 0.0f);
-
-        for (const Contact& old : previousContacts_) {
-            if (old.key == c.key) {
-                c.normalImpulseSum = old.normalImpulseSum;
-                c.tangentImpulseSum = old.tangentImpulseSum;
-                break;
-            }
-        }
 
         contacts_.push_back(c);
         const Body& bodyA = bodies_[a];
@@ -1175,12 +1193,16 @@ private:
                 m.a = c.a;
                 m.b = c.b;
                 m.normal = c.normal;
+                m.manifoldType = ManifoldTypeFromFeatureKey(c.featureKey);
                 m.contacts.push_back(c);
                 manifolds_.push_back(m);
             }
         }
 
         for (Manifold& m : manifolds_) {
+            if (!m.contacts.empty()) {
+                m.manifoldType = ManifoldTypeFromFeatureKey(m.contacts.front().featureKey);
+            }
             SortManifoldContacts(m.contacts);
             const Manifold* previous = nullptr;
             for (const Manifold& old : previousManifolds_) {
@@ -1189,16 +1211,6 @@ private:
                     m.blockNormalImpulseSum = old.blockNormalImpulseSum;
                     m.blockContactKeys = old.blockContactKeys;
                     m.blockSlotValid = old.blockSlotValid;
-                    std::size_t oldIndex = 0;
-                    for (Contact& c : m.contacts) {
-                        while (oldIndex < old.contacts.size() && old.contacts[oldIndex].key < c.key) {
-                            ++oldIndex;
-                        }
-                        if (oldIndex < old.contacts.size() && old.contacts[oldIndex].key == c.key) {
-                            c.normalImpulseSum = old.contacts[oldIndex].normalImpulseSum;
-                            c.tangentImpulseSum = old.contacts[oldIndex].tangentImpulseSum;
-                        }
-                    }
                     break;
                 }
             }
@@ -1209,6 +1221,85 @@ private:
                 m.blockSlotValid = {false, false};
             }
 
+            const std::uint64_t manifoldId = MakeManifoldId(m.pairKey(), m.manifoldType);
+            std::unordered_map<std::uint64_t, std::uint8_t> currentFeatureOrdinal;
+            std::unordered_map<std::uint64_t, std::uint8_t> currentFeatureCounts;
+            currentFeatureOrdinal.reserve(m.contacts.size());
+            currentFeatureCounts.reserve(m.contacts.size());
+            for (Contact& c : m.contacts) {
+                const std::uint8_t ordinal = currentFeatureOrdinal[c.featureKey]++;
+                ++currentFeatureCounts[c.featureKey];
+                const std::uint64_t pointKey = MakePersistentPointKey(manifoldId, c.featureKey, ordinal);
+                const auto stateIt = persistentPointImpulses_.find(pointKey);
+                if (stateIt != persistentPointImpulses_.end()) {
+                    c.normalImpulseSum = stateIt->second.normalImpulseSum;
+                    c.tangentImpulseSum = stateIt->second.tangentImpulseSum;
+                } else {
+                    c.normalImpulseSum = 0.0f;
+                    c.tangentImpulseSum = 0.0f;
+#ifndef NDEBUG
+                    ++solverTelemetry_.impulseResetPoints;
+                    if (debugContactPersistence_) {
+                        std::fprintf(
+                            stderr,
+                            "[minphys3d] impulse reset pair=(%u,%u) type=%u feature=0x%llx\n",
+                            m.a,
+                            m.b,
+                            static_cast<unsigned>(m.manifoldType),
+                            static_cast<unsigned long long>(c.featureKey));
+                    }
+#endif
+                }
+            }
+
+#ifndef NDEBUG
+            if (previous != nullptr) {
+                bool manifoldTypeChanged = previous->manifoldType != m.manifoldType;
+                bool removedOrAdded = previous->contacts.size() != m.contacts.size();
+                bool featureMismatch = false;
+                std::unordered_map<std::uint64_t, std::uint8_t> previousFeatures;
+                previousFeatures.reserve(previous->contacts.size());
+                for (const Contact& oldContact : previous->contacts) {
+                    ++previousFeatures[oldContact.featureKey];
+                }
+                for (const auto& [feature, count] : currentFeatureCounts) {
+                    const auto previousIt = previousFeatures.find(feature);
+                    if (previousIt == previousFeatures.end() || previousIt->second != count) {
+                        featureMismatch = true;
+                        break;
+                    }
+                }
+                if (!featureMismatch) {
+                    for (const auto& [feature, count] : previousFeatures) {
+                        const auto currentIt = currentFeatureCounts.find(feature);
+                        if (currentIt == currentFeatureCounts.end() || currentIt->second != count) {
+                            featureMismatch = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (manifoldTypeChanged || removedOrAdded || featureMismatch) {
+                    ++solverTelemetry_.topologyChangeEvents;
+                    if (featureMismatch) {
+                        ++solverTelemetry_.featureIdChurnEvents;
+                    }
+                    if (debugContactPersistence_) {
+                        std::fprintf(
+                            stderr,
+                            "[minphys3d] contact topology change pair=(%u,%u) type:%u->%u contacts:%zu->%zu featureMismatch=%d\n",
+                            m.a,
+                            m.b,
+                            static_cast<unsigned>(previous->manifoldType),
+                            static_cast<unsigned>(m.manifoldType),
+                            previous->contacts.size(),
+                            m.contacts.size(),
+                            featureMismatch ? 1 : 0);
+                    }
+                }
+            }
+#endif
+
             RefreshManifoldBlockCache(m);
         }
 
@@ -1218,6 +1309,25 @@ private:
             ++manifoldCountByPair[key];
             assert(manifoldCountByPair[key] == 1);
             assert(m.contacts.size() <= kMaxContactsPerManifold);
+        }
+    }
+
+    struct PersistentPointImpulseState {
+        float normalImpulseSum = 0.0f;
+        float tangentImpulseSum = 0.0f;
+    };
+
+    void CapturePersistentPointImpulseState(const std::vector<Manifold>& manifolds) {
+        persistentPointImpulses_.clear();
+        for (const Manifold& manifold : manifolds) {
+            const std::uint64_t manifoldId = MakeManifoldId(manifold.pairKey(), manifold.manifoldType);
+            std::unordered_map<std::uint64_t, std::uint8_t> featureOrdinal;
+            featureOrdinal.reserve(manifold.contacts.size());
+            for (const Contact& contact : manifold.contacts) {
+                const std::uint8_t ordinal = featureOrdinal[contact.featureKey]++;
+                const std::uint64_t pointKey = MakePersistentPointKey(manifoldId, contact.featureKey, ordinal);
+                persistentPointImpulses_[pointKey] = {contact.normalImpulseSum, contact.tangentImpulseSum};
+            }
         }
     }
 
@@ -3061,8 +3171,10 @@ private:
     std::vector<Island> islands_;
     std::vector<DistanceJoint> joints_;
     std::vector<HingeJoint> hingeJoints_;
+    std::unordered_map<std::uint64_t, PersistentPointImpulseState> persistentPointImpulses_;
 #ifndef NDEBUG
     SolverTelemetry solverTelemetry_{};
+    bool debugContactPersistence_ = false;
 #endif
 };
 

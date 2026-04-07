@@ -36,12 +36,14 @@ struct Contact {
     float normalImpulseSum = 0.0f;
     float tangentImpulseSum = 0.0f;
     std::uint64_t key = 0;
+    std::uint64_t featureKey = 0;
 };
 
 struct Manifold {
     std::uint32_t a = 0;
     std::uint32_t b = 0;
     Vec3 normal{};
+    std::uint8_t manifoldType = 0;
     std::vector<Contact> contacts;
     std::array<float, 2> blockNormalImpulseSum{0.0f, 0.0f};
     std::array<std::uint64_t, 2> blockContactKeys{0u, 0u};
