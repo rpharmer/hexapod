@@ -100,8 +100,9 @@ void World::WarmStartContacts() {
         }
     }
 
-bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fallbackReason) {
+bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fallbackReason, float& determinantOrConditionEstimate) {
         fallbackReason = BlockSolveFallbackReason::None;
+        determinantOrConditionEstimate = std::numeric_limits<float>::quiet_NaN();
         if (manifold.contacts.size() < 2) {
             fallbackReason = BlockSolveFallbackReason::LcpFailure;
             return false;
@@ -156,6 +157,7 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
         const float k21 = k12;
 
         const float det = k11 * k22 - k12 * k21;
+        determinantOrConditionEstimate = det;
         if (k11 <= contactSolverConfig_.blockDiagonalMinimum || k22 <= contactSolverConfig_.blockDiagonalMinimum) {
             fallbackReason = BlockSolveFallbackReason::DegenerateMassMatrix;
             return false;
@@ -168,6 +170,7 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
             const float matrixNorm = std::max(std::abs(k11) + std::abs(k12), std::abs(k21) + std::abs(k22));
             const float invNorm = std::max(std::abs(k22) + std::abs(k12), std::abs(k21) + std::abs(k11)) / std::abs(det);
             const float conditionEstimate = matrixNorm * invNorm;
+            determinantOrConditionEstimate = conditionEstimate;
             if (!std::isfinite(conditionEstimate) || conditionEstimate > contactSolverConfig_.blockConditionEstimateMax) {
                 fallbackReason = BlockSolveFallbackReason::ConditionEstimateExceeded;
                 return false;

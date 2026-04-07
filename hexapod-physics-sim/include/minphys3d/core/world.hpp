@@ -98,6 +98,31 @@ public:
 
 #ifndef NDEBUG
     struct SolverTelemetry {
+        struct FallbackReasonCounters {
+            std::uint64_t none = 0;
+            std::uint64_t ineligible = 0;
+            std::uint64_t invalidManifoldNormal = 0;
+            std::uint64_t contactNormalMismatch = 0;
+            std::uint64_t missingBlockSlots = 0;
+            std::uint64_t degenerateMassMatrix = 0;
+            std::uint64_t conditionEstimateExceeded = 0;
+            std::uint64_t lcpFailure = 0;
+            std::uint64_t nonFiniteResult = 0;
+        };
+
+        struct ManifoldSolveBucket {
+            std::uint64_t solveCount = 0;
+            std::uint64_t manifoldContactCount = 0;
+            std::uint64_t selectedBlockSize = 0;
+            std::uint64_t blockUsed = 0;
+            std::uint64_t fallbackUsed = 0;
+            FallbackReasonCounters fallbackReason{};
+            double determinantOrConditionEstimate = 0.0;
+            std::uint64_t determinantOrConditionEstimateSamples = 0;
+            double impulseContinuityMetric = 0.0;
+            std::uint64_t impulseContinuityMetricSamples = 0;
+        };
+
         std::uint64_t blockSolveEligible = 0;
         std::uint64_t blockSolveUsed = 0;
         std::uint64_t scalarPathIneligible = 0;
@@ -113,6 +138,9 @@ public:
         std::uint64_t topologyChangeEvents = 0;
         std::uint64_t impulseResetPoints = 0;
         std::uint64_t selectedPairOscillationEvents = 0;
+
+        ManifoldSolveBucket manifoldSolveScope{};
+        std::unordered_map<std::uint8_t, ManifoldSolveBucket> manifoldTypeBuckets{};
     };
 
     const SolverTelemetry& GetSolverTelemetry() const {
@@ -1761,6 +1789,70 @@ private:
         }
     }
 #endif
+#ifndef NDEBUG
+    void IncrementFallbackReasonTelemetry(SolverTelemetry::FallbackReasonCounters& counters, BlockSolveFallbackReason reason) {
+        switch (reason) {
+            case BlockSolveFallbackReason::Ineligible:
+                ++counters.ineligible;
+                break;
+            case BlockSolveFallbackReason::InvalidManifoldNormal:
+                ++counters.invalidManifoldNormal;
+                break;
+            case BlockSolveFallbackReason::ContactNormalMismatch:
+                ++counters.contactNormalMismatch;
+                break;
+            case BlockSolveFallbackReason::MissingBlockSlots:
+                ++counters.missingBlockSlots;
+                break;
+            case BlockSolveFallbackReason::DegenerateMassMatrix:
+                ++counters.degenerateMassMatrix;
+                break;
+            case BlockSolveFallbackReason::ConditionEstimateExceeded:
+                ++counters.conditionEstimateExceeded;
+                break;
+            case BlockSolveFallbackReason::LcpFailure:
+                ++counters.lcpFailure;
+                break;
+            case BlockSolveFallbackReason::NonFiniteResult:
+                ++counters.nonFiniteResult;
+                break;
+            case BlockSolveFallbackReason::None:
+                ++counters.none;
+                break;
+        }
+    }
+
+    void RecordManifoldSolveTelemetry(const Manifold& manifold,
+                                      BlockSolveFallbackReason fallbackReason,
+                                      float determinantOrConditionEstimate,
+                                      float impulseContinuityMetric) {
+        auto accumulate = [&](SolverTelemetry::ManifoldSolveBucket& bucket) {
+            ++bucket.solveCount;
+            bucket.manifoldContactCount += manifold.contacts.size();
+            int selectedBlockSize = 0;
+            for (int idx : manifold.selectedBlockContactIndices) {
+                if (idx >= 0 && static_cast<std::size_t>(idx) < manifold.contacts.size()) {
+                    ++selectedBlockSize;
+                }
+            }
+            bucket.selectedBlockSize += static_cast<std::uint64_t>(selectedBlockSize);
+            bucket.blockUsed += manifold.usedBlockSolve ? 1u : 0u;
+            bucket.fallbackUsed += (!manifold.usedBlockSolve) ? 1u : 0u;
+            IncrementFallbackReasonTelemetry(bucket.fallbackReason, fallbackReason);
+            if (std::isfinite(determinantOrConditionEstimate)) {
+                bucket.determinantOrConditionEstimate += static_cast<double>(determinantOrConditionEstimate);
+                ++bucket.determinantOrConditionEstimateSamples;
+            }
+            if (std::isfinite(impulseContinuityMetric)) {
+                bucket.impulseContinuityMetric += static_cast<double>(impulseContinuityMetric);
+                ++bucket.impulseContinuityMetricSamples;
+            }
+        };
+
+        accumulate(solverTelemetry_.manifoldSolveScope);
+        accumulate(solverTelemetry_.manifoldTypeBuckets[manifold.manifoldType]);
+    }
+#endif
 
     static bool IsValidBlockContactPoint(const Contact& contact) {
         if (!std::isfinite(contact.penetration) || contact.penetration <= 0.0f) {
@@ -2108,7 +2200,7 @@ private:
         return true;
     }
 
-    bool SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fallbackReason);
+    bool SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fallbackReason, float& determinantOrConditionEstimate);
 
     void SolveManifoldNormalImpulses(Manifold& manifold) {
         if (manifold.contacts.empty()) {
@@ -2163,12 +2255,16 @@ private:
                     manifold.contacts[static_cast<std::size_t>(selectedIdx0)].normalImpulseSum,
                     manifold.contacts[static_cast<std::size_t>(selectedIdx1)].normalImpulseSum};
             }
+            const float impulseContinuityMetric = std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[0] - manifold.blockSolveDebug.selectedPreNormalImpulses[0])
+                + std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[1] - manifold.blockSolveDebug.selectedPreNormalImpulses[1]);
+            RecordManifoldSolveTelemetry(manifold, BlockSolveFallbackReason::Ineligible, std::numeric_limits<float>::quiet_NaN(), impulseContinuityMetric);
 #endif
             return;
         }
 
         BlockSolveFallbackReason fallbackReason = BlockSolveFallbackReason::None;
-        const bool blockSolved = SolveNormalBlock2(manifold, fallbackReason);
+        float determinantOrConditionEstimate = std::numeric_limits<float>::quiet_NaN();
+        const bool blockSolved = SolveNormalBlock2(manifold, fallbackReason, determinantOrConditionEstimate);
         if (blockSolved) {
             manifold.usedBlockSolve = true;
 #ifndef NDEBUG
@@ -2192,6 +2288,11 @@ private:
                 }
                 SolveNormalScalar(manifold.contacts[i]);
             }
+#ifndef NDEBUG
+            const float impulseContinuityMetric = std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[0] - manifold.blockSolveDebug.selectedPreNormalImpulses[0])
+                + std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[1] - manifold.blockSolveDebug.selectedPreNormalImpulses[1]);
+            RecordManifoldSolveTelemetry(manifold, fallbackReason, determinantOrConditionEstimate, impulseContinuityMetric);
+#endif
             return;
         }
 
@@ -2245,6 +2346,9 @@ private:
                 manifold.contacts[static_cast<std::size_t>(selectedIdx0)].normalImpulseSum,
                 manifold.contacts[static_cast<std::size_t>(selectedIdx1)].normalImpulseSum};
         }
+        const float impulseContinuityMetric = std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[0] - manifold.blockSolveDebug.selectedPreNormalImpulses[0])
+            + std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[1] - manifold.blockSolveDebug.selectedPreNormalImpulses[1]);
+        RecordManifoldSolveTelemetry(manifold, fallbackReason, determinantOrConditionEstimate, impulseContinuityMetric);
 #endif
     }
 
