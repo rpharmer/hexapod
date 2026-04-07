@@ -9,13 +9,13 @@ void World::BuildManifolds() {
             contacts_,
             manifolds_,
             previousManifolds_,
-            [this](const PersistentPointKey& key, float& normal, float& tangent, std::uint16_t& age) {
+            [this](const PersistentPointKey& key, float& normal, std::array<float, 2>& tangent, std::uint16_t& age) {
                 const auto it = persistentPointImpulses_.find(key);
                 if (it == persistentPointImpulses_.end()) {
                     return false;
                 }
                 normal = it->second.normalImpulseSum;
-                tangent = it->second.tangentImpulseSum;
+                tangent = {it->second.tangentImpulseSum0, it->second.tangentImpulseSum1};
                 age = it->second.persistenceAge;
                 return true;
             },
@@ -43,6 +43,16 @@ void World::BuildManifolds() {
                 (void)reusedBasis;
 #endif
             },
+#ifndef NDEBUG
+            [this]() { ++solverTelemetry_.manifoldFrictionBudgetSaturated; },
+            [this](bool reprojected) {
+                if (reprojected) {
+                    ++solverTelemetry_.tangentImpulseReprojected;
+                } else {
+                    ++solverTelemetry_.tangentImpulseReset;
+                }
+            },
+#endif
             contactSolverConfig_,
         };
         solver.BuildManifolds(context);

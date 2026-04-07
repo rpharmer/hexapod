@@ -86,12 +86,16 @@ public:
         std::uint64_t selectedPairOscillationEvents = 0;
         std::uint64_t tangentBasisResets = 0;
         std::uint64_t tangentBasisReused = 0;
+        std::uint64_t tangentImpulseReprojected = 0;
+        std::uint64_t tangentImpulseReset = 0;
+        std::uint64_t manifoldFrictionBudgetSaturated = 0;
         std::uint64_t blockRejectedByTypePolicy = 0;
         std::uint64_t blockRejectedByQualityOrPersistence = 0;
         std::uint64_t face4Attempted = 0;
         std::uint64_t face4Used = 0;
         std::uint64_t face4FallbackToBlock2 = 0;
         std::uint64_t face4FallbackToScalar = 0;
+        std::uint64_t face4BlockedByFrictionCoherenceGate = 0;
 
         ManifoldSolveBucket manifoldSolveScope{};
         std::unordered_map<std::uint8_t, ManifoldSolveBucket> manifoldTypeBuckets{};
@@ -643,7 +647,7 @@ private:
         return -1;
     }
 
-    static std::array<float, 2>* FindPerContactImpulseCache(Manifold& manifold, std::uint64_t contactKey) {
+    static std::array<float, 3>* FindPerContactImpulseCache(Manifold& manifold, std::uint64_t contactKey) {
         auto it = manifold.cachedImpulseByContactKey.find(contactKey);
         if (it == manifold.cachedImpulseByContactKey.end()) {
             return nullptr;
@@ -651,7 +655,7 @@ private:
         return &it->second;
     }
 
-    static const std::array<float, 2>* FindPerContactImpulseCache(const Manifold& manifold, std::uint64_t contactKey) {
+    static const std::array<float, 3>* FindPerContactImpulseCache(const Manifold& manifold, std::uint64_t contactKey) {
         auto it = manifold.cachedImpulseByContactKey.find(contactKey);
         if (it == manifold.cachedImpulseByContactKey.end()) {
             return nullptr;
@@ -659,7 +663,7 @@ private:
         return &it->second;
     }
 
-    static std::array<float, 2>& EnsurePerContactImpulseCache(Manifold& manifold, std::uint64_t contactKey) {
+    static std::array<float, 3>& EnsurePerContactImpulseCache(Manifold& manifold, std::uint64_t contactKey) {
         return manifold.cachedImpulseByContactKey[contactKey];
     }
 
@@ -679,23 +683,25 @@ private:
         int slot = FindBlockSlot(manifold, contact.key);
         if (slot >= 0) {
             slotOccupied[slot] = true;
-            std::array<float, 2>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
+            std::array<float, 3>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
             entry[0] = std::max(contact.normalImpulseSum, 0.0f);
-            entry[1] = contact.tangentImpulseSum;
+            entry[1] = contact.tangentImpulseSum0;
+            entry[2] = contact.tangentImpulseSum1;
             return slot;
         }
 
         slot = FindFirstFreeBlockSlot(slotOccupied);
         if (slot < 0) {
-            std::array<float, 2>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
+            std::array<float, 3>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
             entry[0] = std::max(contact.normalImpulseSum, 0.0f);
-            entry[1] = contact.tangentImpulseSum;
+            entry[1] = contact.tangentImpulseSum0;
+            entry[2] = contact.tangentImpulseSum1;
             return -1;
         }
 
         manifold.blockSlotValid[slot] = true;
         manifold.blockContactKeys[slot] = contact.key;
-        const std::array<float, 2>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
+        const std::array<float, 3>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
         manifold.blockNormalImpulseSum[slot] = std::max(entry[0], 0.0f);
         slotOccupied[slot] = true;
         return slot;
@@ -710,10 +716,12 @@ private:
         for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
             Contact& contact = manifold.contacts[i];
             currentKeys.insert(contact.key);
-            std::array<float, 2>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
+            std::array<float, 3>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
             entry[0] = std::max(entry[0], 0.0f);
             contact.normalImpulseSum = std::max(entry[0], 0.0f);
-            contact.tangentImpulseSum = entry[1];
+            contact.tangentImpulseSum0 = entry[1];
+            contact.tangentImpulseSum1 = entry[2];
+            contact.tangentImpulseSum = contact.tangentImpulseSum0;
             const int slot = EnsureBlockSlotForContact(manifold, contact, slotOccupied);
             if (slot >= 0 && slotToContactIndex[slot] < 0) {
                 slotToContactIndex[slot] = static_cast<int>(i);
@@ -739,7 +747,7 @@ private:
                 continue;
             }
             manifold.contacts[slotToContactIndex[slot]].normalImpulseSum = manifold.blockNormalImpulseSum[slot];
-            std::array<float, 2>& entry = EnsurePerContactImpulseCache(
+            std::array<float, 3>& entry = EnsurePerContactImpulseCache(
                 manifold, manifold.contacts[slotToContactIndex[slot]].key);
             entry[0] = manifold.blockNormalImpulseSum[slot];
         }
@@ -804,7 +812,8 @@ private:
 
     struct PersistentPointImpulseState {
         float normalImpulseSum = 0.0f;
-        float tangentImpulseSum = 0.0f;
+        float tangentImpulseSum0 = 0.0f;
+        float tangentImpulseSum1 = 0.0f;
         std::uint16_t persistenceAge = 0;
     };
 
@@ -825,7 +834,11 @@ private:
                         std::min<std::uint32_t>(static_cast<std::uint32_t>(previousIt->second.persistenceAge) + 1u,
                                                 static_cast<std::uint32_t>(std::numeric_limits<std::uint16_t>::max())));
                 }
-                persistentPointImpulses_[pointKey] = {contact.normalImpulseSum, contact.tangentImpulseSum, persistenceAge};
+                persistentPointImpulses_[pointKey] = {
+                    contact.normalImpulseSum,
+                    contact.tangentImpulseSum0,
+                    contact.tangentImpulseSum1,
+                    persistenceAge};
             }
         }
     }
@@ -1713,6 +1726,14 @@ private:
 #endif
 
     void SelectBlockSolvePair(Manifold& manifold) const {
+        // Geometry-first pair selection tuning knobs for 3+ contact manifolds.
+        constexpr float kPairScoreEpsilon = 1e-6f;
+        constexpr float kSupportAreaProxyScale = 0.25f;
+        constexpr float kQualityMinSpreadSq = 1e-6f;
+        constexpr float kQualityMinSupportAreaProxy = 1e-7f;
+        constexpr float kQualityMinLeverSq = 1e-8f;
+        constexpr float kQualityMinPenetrationSum = 1e-6f;
+
         const std::array<std::uint64_t, 2> previousSelectedKeys = manifold.selectedBlockContactKeys;
         manifold.selectedBlockContactIndices = {-1, -1};
         manifold.selectedBlockContactKeys = {0u, 0u};
@@ -1757,6 +1778,7 @@ private:
         struct PairSelection {
             int i = -1;
             int j = -1;
+            float supportAreaProxy = -1.0f;
             float penetration = -1.0f;
             float spread = -1.0f;
             float lever = -1.0f;
@@ -1768,7 +1790,6 @@ private:
 
         const Vec3 centers = 0.5f * (bodies_[manifold.a].position + bodies_[manifold.b].position);
         PairSelection best{};
-        constexpr float kScoreEpsilon = 1e-6f;
         for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
             const Contact& a = manifold.contacts[static_cast<std::size_t>(i)];
             if (!IsValidBlockContactPoint(a)) {
@@ -1785,6 +1806,8 @@ private:
                 candidate.j = static_cast<int>(j);
                 candidate.penetration = a.penetration + b.penetration;
                 candidate.spread = LengthSquared(a.point - b.point);
+                candidate.supportAreaProxy =
+                    candidate.spread * std::max(0.0f, candidate.penetration) * kSupportAreaProxyScale;
                 const Vec3 midPoint = 0.5f * (a.point + b.point);
                 candidate.lever = LengthSquared(midPoint - centers);
                 candidate.ageMin = static_cast<int>(std::min(a.persistenceAge, b.persistenceAge));
@@ -1794,27 +1817,33 @@ private:
                 candidate.continuity = keyMatch ? 1.0f : 0.0f;
                 candidate.sortedKeys = SortedContactKeyPair(a.key, b.key);
 
-                const bool betterPenetration = candidate.penetration > (best.penetration + kScoreEpsilon);
-                const bool tiePenetration = std::abs(candidate.penetration - best.penetration) <= kScoreEpsilon;
-                const bool betterSpread = tiePenetration && candidate.spread > (best.spread + kScoreEpsilon);
-                const bool tieSpread = tiePenetration && std::abs(candidate.spread - best.spread) <= kScoreEpsilon;
-                const bool betterLever = tieSpread && candidate.lever > (best.lever + kScoreEpsilon);
-                const bool tieLever = tieSpread && std::abs(candidate.lever - best.lever) <= kScoreEpsilon;
-                const bool betterAgeMin = tieLever && candidate.ageMin > best.ageMin;
-                const bool tieAgeMin = tieLever && candidate.ageMin == best.ageMin;
+                const bool betterSupportAreaProxy =
+                    candidate.supportAreaProxy > (best.supportAreaProxy + kPairScoreEpsilon);
+                const bool tieSupportAreaProxy =
+                    std::abs(candidate.supportAreaProxy - best.supportAreaProxy) <= kPairScoreEpsilon;
+                const bool betterAgeMin = tieSupportAreaProxy && candidate.ageMin > best.ageMin;
+                const bool tieAgeMin = tieSupportAreaProxy && candidate.ageMin == best.ageMin;
                 const bool betterAgeSum = tieAgeMin && candidate.ageSum > best.ageSum;
                 const bool tieAgeSum = tieAgeMin && candidate.ageSum == best.ageSum;
-                const bool betterContinuity = tieAgeSum && candidate.continuity > best.continuity;
-                const bool tieContinuity = tieAgeSum && candidate.continuity == best.continuity;
-                const bool betterDeterministic = tieContinuity && (best.i < 0 || candidate.sortedKeys < best.sortedKeys);
+                const bool betterContinuity =
+                    tieAgeSum && candidate.continuity > (best.continuity + kPairScoreEpsilon);
+                const bool tieContinuity =
+                    tieAgeSum && std::abs(candidate.continuity - best.continuity) <= kPairScoreEpsilon;
+                const bool betterLever = tieContinuity && candidate.lever > (best.lever + kPairScoreEpsilon);
+                const bool tieLever = tieContinuity && std::abs(candidate.lever - best.lever) <= kPairScoreEpsilon;
+                const bool betterPenetration = tieLever && candidate.penetration > (best.penetration + kPairScoreEpsilon);
+                const bool tiePenetration =
+                    tieLever && std::abs(candidate.penetration - best.penetration) <= kPairScoreEpsilon;
+                const bool betterDeterministic =
+                    tiePenetration && (best.i < 0 || candidate.sortedKeys < best.sortedKeys);
 
                 if (best.i < 0
-                    || betterPenetration
-                    || betterSpread
-                    || betterLever
+                    || betterSupportAreaProxy
                     || betterAgeMin
                     || betterAgeSum
                     || betterContinuity
+                    || betterLever
+                    || betterPenetration
                     || betterDeterministic) {
                     best = candidate;
                 }
@@ -1843,7 +1872,11 @@ private:
         manifold.selectedBlockPairPersistent =
             manifold.contacts[static_cast<std::size_t>(idx0)].persistenceAge > 0
             && manifold.contacts[static_cast<std::size_t>(idx1)].persistenceAge > 0;
-        manifold.selectedBlockPairQualityPass = best.spread > 1e-6f && best.penetration > 0.0f;
+        manifold.selectedBlockPairQualityPass =
+            best.spread >= kQualityMinSpreadSq
+            && best.supportAreaProxy >= kQualityMinSupportAreaProxy
+            && best.lever >= kQualityMinLeverSq
+            && best.penetration >= kQualityMinPenetrationSum;
 
 #ifndef NDEBUG
         logSelection();
@@ -2001,6 +2034,35 @@ private:
                 if (outReason != nullptr) {
                     *outReason = BlockSolveFallbackReason::PersistenceGate;
                 }
+                return false;
+            }
+        }
+        if (contactSolverConfig_.face4RequireFrictionCoherence) {
+            if (!manifold.tangentBasisValid
+                || !manifold.manifoldTangentImpulseValid
+                || !manifold.selectedBlockPairPersistent
+                || !manifold.selectedBlockPairQualityPass) {
+                if (outReason != nullptr) {
+                    *outReason = BlockSolveFallbackReason::PersistenceGate;
+                }
+#ifndef NDEBUG
+                ++solverTelemetry_.face4BlockedByFrictionCoherenceGate;
+#endif
+                return false;
+            }
+            int stableContacts = 0;
+            for (const Contact& c : manifold.contacts) {
+                if (c.persistenceAge >= contactSolverConfig_.face4MinCoherentPersistenceAge) {
+                    ++stableContacts;
+                }
+            }
+            if (stableContacts < static_cast<int>(contactSolverConfig_.face4MinStableContactCount)) {
+                if (outReason != nullptr) {
+                    *outReason = BlockSolveFallbackReason::PersistenceGate;
+                }
+#ifndef NDEBUG
+                ++solverTelemetry_.face4BlockedByFrictionCoherenceGate;
+#endif
                 return false;
             }
         }

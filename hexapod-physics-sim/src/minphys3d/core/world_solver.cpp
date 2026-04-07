@@ -67,17 +67,34 @@ void World::WarmStartContacts() {
             }
 
             std::size_t contactIndex = 0;
+            if (m.tangentBasisValid && m.manifoldTangentImpulseValid && !m.contacts.empty()) {
+                float totalNormal = 0.0f;
+                for (const Contact& c : m.contacts) {
+                    totalNormal += std::max(c.normalImpulseSum, 0.0f);
+                }
+                if (totalNormal > kEpsilon) {
+                    for (Contact& c : m.contacts) {
+                        const float w = std::max(c.normalImpulseSum, 0.0f) / totalNormal;
+                        c.tangentImpulseSum0 = w * m.manifoldTangentImpulseSum[0];
+                        c.tangentImpulseSum1 = w * m.manifoldTangentImpulseSum[1];
+                        c.tangentImpulseSum = c.tangentImpulseSum0;
+                    }
+                }
+            }
             for (Contact& c : m.contacts) {
-                if (const std::array<float, 2>* cached = FindPerContactImpulseCache(m, c.key)) {
+                if (const std::array<float, 3>* cached = FindPerContactImpulseCache(m, c.key)) {
                     c.normalImpulseSum = std::max((*cached)[0], 0.0f);
-                    c.tangentImpulseSum = (*cached)[1];
+                    c.tangentImpulseSum0 = (*cached)[1];
+                    c.tangentImpulseSum1 = (*cached)[2];
+                    c.tangentImpulseSum = c.tangentImpulseSum0;
                 }
                 const bool skipNormal = skipPerContactNormal[contactIndex];
-                if (!skipNormal && c.normalImpulseSum == 0.0f && c.tangentImpulseSum == 0.0f) {
+                if (!skipNormal && c.normalImpulseSum == 0.0f
+                    && c.tangentImpulseSum0 == 0.0f && c.tangentImpulseSum1 == 0.0f) {
                     ++contactIndex;
                     continue;
                 }
-                if (skipNormal && c.tangentImpulseSum == 0.0f) {
+                if (skipNormal && c.tangentImpulseSum0 == 0.0f && c.tangentImpulseSum1 == 0.0f) {
                     ++contactIndex;
                     continue;
                 }
@@ -89,21 +106,19 @@ void World::WarmStartContacts() {
                 const Vec3 ra = c.point - a.position;
                 const Vec3 rb = c.point - b.position;
 
-                Vec3 tangent{0.0f, 0.0f, 0.0f};
-                const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
-                const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
-                const Vec3 rv = vb - va;
-                Vec3 trial = rv - Dot(rv, c.normal) * c.normal;
-                if (LengthSquared(trial) > kEpsilon) {
-                    tangent = Normalize(trial);
-                }
-
                 const Vec3 normalImpulse = skipNormal ? Vec3{0.0f, 0.0f, 0.0f} : c.normalImpulseSum * c.normal;
-                const Vec3 impulse = normalImpulse + c.tangentImpulseSum * tangent;
+                Vec3 tangentImpulse{0.0f, 0.0f, 0.0f};
+                if (m.tangentBasisValid) {
+                    tangentImpulse = c.tangentImpulseSum0 * m.t0 + c.tangentImpulseSum1 * m.t1;
+                } else {
+                    tangentImpulse = c.tangentImpulseSum * m.t0;
+                }
+                const Vec3 impulse = normalImpulse + tangentImpulse;
                 ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
-                std::array<float, 2>& cacheEntry = EnsurePerContactImpulseCache(m, c.key);
+                std::array<float, 3>& cacheEntry = EnsurePerContactImpulseCache(m, c.key);
                 cacheEntry[0] = std::max(c.normalImpulseSum, 0.0f);
-                cacheEntry[1] = c.tangentImpulseSum;
+                cacheEntry[1] = c.tangentImpulseSum0;
+                cacheEntry[2] = c.tangentImpulseSum1;
                 ++contactIndex;
             }
         }
@@ -615,13 +630,13 @@ void World::SolveContactsInManifold(Manifold& manifold) {
             contacts_,
             manifolds_,
             previousManifolds_,
-            [this](const PersistentPointKey& key, float& normal, float& tangent, std::uint16_t& age) {
+            [this](const PersistentPointKey& key, float& normal, std::array<float, 2>& tangent, std::uint16_t& age) {
                 const auto it = persistentPointImpulses_.find(key);
                 if (it == persistentPointImpulses_.end()) {
                     return false;
                 }
                 normal = it->second.normalImpulseSum;
-                tangent = it->second.tangentImpulseSum;
+                tangent = {it->second.tangentImpulseSum0, it->second.tangentImpulseSum1};
                 age = it->second.persistenceAge;
                 return true;
             },
@@ -649,6 +664,16 @@ void World::SolveContactsInManifold(Manifold& manifold) {
                 (void)reusedBasis;
 #endif
             },
+#ifndef NDEBUG
+            [this]() { ++solverTelemetry_.manifoldFrictionBudgetSaturated; },
+            [this](bool reprojected) {
+                if (reprojected) {
+                    ++solverTelemetry_.tangentImpulseReprojected;
+                } else {
+                    ++solverTelemetry_.tangentImpulseReset;
+                }
+            },
+#endif
             contactSolverConfig_,
         };
         solver.SolveContactsInManifold(context, manifold);
@@ -667,13 +692,13 @@ void World::SolveIslands() {
             contacts_,
             manifolds_,
             previousManifolds_,
-            [this](const PersistentPointKey& key, float& normal, float& tangent, std::uint16_t& age) {
+            [this](const PersistentPointKey& key, float& normal, std::array<float, 2>& tangent, std::uint16_t& age) {
                 const auto it = persistentPointImpulses_.find(key);
                 if (it == persistentPointImpulses_.end()) {
                     return false;
                 }
                 normal = it->second.normalImpulseSum;
-                tangent = it->second.tangentImpulseSum;
+                tangent = {it->second.tangentImpulseSum0, it->second.tangentImpulseSum1};
                 age = it->second.persistenceAge;
                 return true;
             },
@@ -701,6 +726,16 @@ void World::SolveIslands() {
                 (void)reusedBasis;
 #endif
             },
+#ifndef NDEBUG
+            [this]() { ++solverTelemetry_.manifoldFrictionBudgetSaturated; },
+            [this](bool reprojected) {
+                if (reprojected) {
+                    ++solverTelemetry_.tangentImpulseReprojected;
+                } else {
+                    ++solverTelemetry_.tangentImpulseReset;
+                }
+            },
+#endif
             contactSolverConfig_,
         };
 
