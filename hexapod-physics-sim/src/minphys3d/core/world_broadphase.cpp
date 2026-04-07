@@ -2,6 +2,40 @@
 #include "subsystems.hpp"
 
 namespace minphys3d {
+void World::UpdateBroadphaseProxies() {
+    if (proxies_.size() != bodies_.size()) {
+        proxies_.resize(bodies_.size());
+    }
+    lastBroadphaseMovedProxyCount_ = 0;
+    for (std::size_t i = 0; i < bodies_.size(); ++i) {
+        const AABB current = bodies_[i].ComputeAABB();
+        if (!proxies_[i].valid) {
+            proxies_[i].fatBox = ExpandAABB(current, 0.1f);
+            proxies_[i].leaf = -1;
+            proxies_[i].valid = true;
+            EnsureProxyInTree(static_cast<std::uint32_t>(i));
+        } else if (!Contains(proxies_[i].fatBox, current)) {
+            if (proxies_[i].leaf >= 0) {
+                RemoveLeaf(proxies_[i].leaf);
+            }
+            proxies_[i].fatBox = ExpandAABB(current, 0.1f);
+            proxies_[i].leaf = InsertLeaf(static_cast<std::uint32_t>(i), proxies_[i].fatBox);
+            ++lastBroadphaseMovedProxyCount_;
+        } else {
+            EnsureProxyInTree(static_cast<std::uint32_t>(i));
+        }
+    }
+}
+
+void World::EnsureProxyInTree(std::uint32_t bodyId) {
+    if (bodyId >= proxies_.size() || !proxies_[bodyId].valid) {
+        return;
+    }
+    if (proxies_[bodyId].leaf < 0) {
+        proxies_[bodyId].leaf = InsertLeaf(bodyId, proxies_[bodyId].fatBox);
+    }
+}
+
 std::int32_t World::AllocateNode() {
         if (freeNode_ != -1) {
             const std::int32_t nodeId = freeNode_;
