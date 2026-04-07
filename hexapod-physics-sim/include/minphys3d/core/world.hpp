@@ -33,6 +33,12 @@ public:
     void SetContactSolverConfig(const ContactSolverConfig& config);
 
     const ContactSolverConfig& GetContactSolverConfig() const;
+    static bool ComputeStableTangentFrame(
+        const Vec3& manifoldNormal,
+        const Vec3& relativeVelocity,
+        Vec3& outT0,
+        Vec3& outT1,
+        const Vec3* preferredTangent = nullptr);
 
 #ifndef NDEBUG
     struct SolverTelemetry {
@@ -78,6 +84,14 @@ public:
         std::uint64_t topologyChangeEvents = 0;
         std::uint64_t impulseResetPoints = 0;
         std::uint64_t selectedPairOscillationEvents = 0;
+        std::uint64_t tangentBasisResets = 0;
+        std::uint64_t tangentBasisReused = 0;
+        std::uint64_t blockRejectedByTypePolicy = 0;
+        std::uint64_t blockRejectedByQualityOrPersistence = 0;
+        std::uint64_t face4Attempted = 0;
+        std::uint64_t face4Used = 0;
+        std::uint64_t face4FallbackToBlock2 = 0;
+        std::uint64_t face4FallbackToScalar = 0;
 
         ManifoldSolveBucket manifoldSolveScope{};
         std::unordered_map<std::uint8_t, ManifoldSolveBucket> manifoldTypeBuckets{};
@@ -629,6 +643,26 @@ private:
         return -1;
     }
 
+    static std::array<float, 2>* FindPerContactImpulseCache(Manifold& manifold, std::uint64_t contactKey) {
+        auto it = manifold.cachedImpulseByContactKey.find(contactKey);
+        if (it == manifold.cachedImpulseByContactKey.end()) {
+            return nullptr;
+        }
+        return &it->second;
+    }
+
+    static const std::array<float, 2>* FindPerContactImpulseCache(const Manifold& manifold, std::uint64_t contactKey) {
+        auto it = manifold.cachedImpulseByContactKey.find(contactKey);
+        if (it == manifold.cachedImpulseByContactKey.end()) {
+            return nullptr;
+        }
+        return &it->second;
+    }
+
+    static std::array<float, 2>& EnsurePerContactImpulseCache(Manifold& manifold, std::uint64_t contactKey) {
+        return manifold.cachedImpulseByContactKey[contactKey];
+    }
+
     static int FindFirstFreeBlockSlot(const std::array<bool, 2>& slotOccupied) {
         for (int slot = 0; slot < 2; ++slot) {
             if (!slotOccupied[slot]) {
@@ -645,30 +679,52 @@ private:
         int slot = FindBlockSlot(manifold, contact.key);
         if (slot >= 0) {
             slotOccupied[slot] = true;
+            std::array<float, 2>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
+            entry[0] = std::max(contact.normalImpulseSum, 0.0f);
+            entry[1] = contact.tangentImpulseSum;
             return slot;
         }
 
         slot = FindFirstFreeBlockSlot(slotOccupied);
         if (slot < 0) {
+            std::array<float, 2>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
+            entry[0] = std::max(contact.normalImpulseSum, 0.0f);
+            entry[1] = contact.tangentImpulseSum;
             return -1;
         }
 
         manifold.blockSlotValid[slot] = true;
         manifold.blockContactKeys[slot] = contact.key;
-        manifold.blockNormalImpulseSum[slot] = std::max(contact.normalImpulseSum, 0.0f);
+        const std::array<float, 2>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
+        manifold.blockNormalImpulseSum[slot] = std::max(entry[0], 0.0f);
         slotOccupied[slot] = true;
         return slot;
     }
 
     static void RefreshManifoldBlockCache(Manifold& manifold) {
+        std::unordered_set<std::uint64_t> currentKeys;
+        currentKeys.reserve(manifold.contacts.size());
         std::array<bool, 2> slotOccupied{false, false};
         std::array<int, 2> slotToContactIndex{-1, -1};
 
         for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
             Contact& contact = manifold.contacts[i];
+            currentKeys.insert(contact.key);
+            std::array<float, 2>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
+            entry[0] = std::max(entry[0], 0.0f);
+            contact.normalImpulseSum = std::max(entry[0], 0.0f);
+            contact.tangentImpulseSum = entry[1];
             const int slot = EnsureBlockSlotForContact(manifold, contact, slotOccupied);
             if (slot >= 0 && slotToContactIndex[slot] < 0) {
                 slotToContactIndex[slot] = static_cast<int>(i);
+            }
+        }
+
+        for (auto it = manifold.cachedImpulseByContactKey.begin(); it != manifold.cachedImpulseByContactKey.end();) {
+            if (currentKeys.find(it->first) == currentKeys.end()) {
+                it = manifold.cachedImpulseByContactKey.erase(it);
+            } else {
+                ++it;
             }
         }
 
@@ -683,6 +739,9 @@ private:
                 continue;
             }
             manifold.contacts[slotToContactIndex[slot]].normalImpulseSum = manifold.blockNormalImpulseSum[slot];
+            std::array<float, 2>& entry = EnsurePerContactImpulseCache(
+                manifold, manifold.contacts[slotToContactIndex[slot]].key);
+            entry[0] = manifold.blockNormalImpulseSum[slot];
         }
 
         if (manifold.contacts.size() == 2 && slotToContactIndex[0] == 1 && slotToContactIndex[1] == 0) {
@@ -1399,6 +1458,8 @@ private:
     enum class BlockSolveFallbackReason {
         None,
         Ineligible,
+        TypePolicy,
+        QualityGate,
         PersistenceGate,
         InvalidManifoldNormal,
         ContactNormalMismatch,
@@ -1421,6 +1482,8 @@ private:
             case BlockSolveFallbackReason::Ineligible:
                 ++manifold.blockSolveDebug.scalarFallbackIneligibleCount;
                 break;
+            case BlockSolveFallbackReason::TypePolicy:
+            case BlockSolveFallbackReason::QualityGate:
             case BlockSolveFallbackReason::PersistenceGate:
                 ++manifold.blockSolveDebug.scalarFallbackPersistenceGateCount;
                 break;
@@ -1456,6 +1519,8 @@ private:
             case BlockSolveFallbackReason::Ineligible:
                 ++counters.ineligible;
                 break;
+            case BlockSolveFallbackReason::TypePolicy:
+            case BlockSolveFallbackReason::QualityGate:
             case BlockSolveFallbackReason::PersistenceGate:
                 ++counters.persistenceGate;
                 break;
@@ -1793,24 +1858,52 @@ private:
             return false;
         }
 
-        // Allow only box-plane vertex manifolds and box-box face-contact manifolds.
-        constexpr std::uint8_t kBoxPlaneManifoldType = 7;
-        constexpr std::uint8_t kBoxBoxFaceManifoldType = 9;
-        if (manifold.manifoldType != kBoxPlaneManifoldType
-            && manifold.manifoldType != kBoxBoxFaceManifoldType) {
+        const std::uint32_t typeBit = (manifold.manifoldType < 32u) ? (1u << manifold.manifoldType) : 0u;
+        if (typeBit == 0u || (contactSolverConfig_.blockManifoldTypeMask & typeBit) == 0u) {
+            if (outIneligibleReason != nullptr) {
+                *outIneligibleReason = BlockSolveFallbackReason::TypePolicy;
+            }
             return false;
         }
 
         if (manifold.lowQuality) {
+            if (outIneligibleReason != nullptr) {
+                *outIneligibleReason = BlockSolveFallbackReason::QualityGate;
+            }
             return false;
         }
-        if (manifold.contacts.size() >= 3 && !manifold.selectedBlockPairPersistent) {
+        const std::uint8_t configuredMinAge =
+            contactSolverConfig_.blockMinPersistenceByType[static_cast<std::size_t>(manifold.manifoldType)];
+        const std::uint8_t requiredAge = static_cast<std::uint8_t>(
+            std::max<std::uint8_t>(configuredMinAge, manifold.contacts.size() >= 3 ? 1u : 0u));
+        if (requiredAge > 0) {
+            const int idx0 = manifold.selectedBlockContactIndices[0];
+            const int idx1 = manifold.selectedBlockContactIndices[1];
+            if (idx0 < 0 || idx1 < 0 || idx0 == idx1
+                || static_cast<std::size_t>(std::max(idx0, idx1)) >= manifold.contacts.size()) {
+                if (outIneligibleReason != nullptr) {
+                    *outIneligibleReason = BlockSolveFallbackReason::PersistenceGate;
+                }
+                return false;
+            }
+            const Contact& p0 = manifold.contacts[static_cast<std::size_t>(idx0)];
+            const Contact& p1 = manifold.contacts[static_cast<std::size_t>(idx1)];
+            if (p0.persistenceAge < requiredAge || p1.persistenceAge < requiredAge) {
+                if (outIneligibleReason != nullptr) {
+                    *outIneligibleReason = BlockSolveFallbackReason::PersistenceGate;
+                }
+                return false;
+            }
+        } else if (manifold.contacts.size() >= 3 && !manifold.selectedBlockPairPersistent) {
             if (outIneligibleReason != nullptr) {
                 *outIneligibleReason = BlockSolveFallbackReason::PersistenceGate;
             }
             return false;
         }
         if (!manifold.selectedBlockPairQualityPass) {
+            if (outIneligibleReason != nullptr) {
+                *outIneligibleReason = BlockSolveFallbackReason::QualityGate;
+            }
             return false;
         }
         const Vec3 manifoldNormal = Normalize(manifold.normal);
@@ -1866,7 +1959,56 @@ private:
         return true;
     }
 
+    bool IsFace4PointBlockEligible(const Manifold& manifold, BlockSolveFallbackReason* outReason = nullptr) const {
+        if (outReason != nullptr) {
+            *outReason = BlockSolveFallbackReason::Ineligible;
+        }
+        if (!contactSolverConfig_.useFace4PointNormalBlock) {
+            return false;
+        }
+        if (manifold.manifoldType != 9 || manifold.contacts.size() != 4) {
+            if (outReason != nullptr) {
+                *outReason = BlockSolveFallbackReason::TypePolicy;
+            }
+            return false;
+        }
+        if (manifold.lowQuality || !manifold.selectedBlockPairQualityPass) {
+            if (outReason != nullptr) {
+                *outReason = BlockSolveFallbackReason::QualityGate;
+            }
+            return false;
+        }
+        const int idx0 = manifold.selectedBlockContactIndices[0];
+        const int idx1 = manifold.selectedBlockContactIndices[1];
+        if (idx0 < 0 || idx1 < 0 || idx0 == idx1
+            || static_cast<std::size_t>(std::max(idx0, idx1)) >= manifold.contacts.size()) {
+            if (outReason != nullptr) {
+                *outReason = BlockSolveFallbackReason::PersistenceGate;
+            }
+            return false;
+        }
+        const Contact& selected0 = manifold.contacts[static_cast<std::size_t>(idx0)];
+        const Contact& selected1 = manifold.contacts[static_cast<std::size_t>(idx1)];
+        if (selected0.persistenceAge < contactSolverConfig_.face4MinPersistenceAge
+            || selected1.persistenceAge < contactSolverConfig_.face4MinPersistenceAge) {
+            if (outReason != nullptr) {
+                *outReason = BlockSolveFallbackReason::PersistenceGate;
+            }
+            return false;
+        }
+        for (const Contact& c : manifold.contacts) {
+            if (c.persistenceAge < contactSolverConfig_.face4MinPersistenceAge || c.key == 0u) {
+                if (outReason != nullptr) {
+                    *outReason = BlockSolveFallbackReason::PersistenceGate;
+                }
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fallbackReason, float& determinantOrConditionEstimate);
+    bool SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& fallbackReason, float& conditionEstimate);
 
     void SolveManifoldNormalImpulses(Manifold& manifold) {
         if (manifold.contacts.empty()) {
@@ -1901,6 +2043,12 @@ private:
         if (!manifold.blockSolveEligible) {
 #ifndef NDEBUG
             ++solverTelemetry_.scalarPathIneligible;
+            if (ineligibleReason == BlockSolveFallbackReason::TypePolicy) {
+                ++solverTelemetry_.blockRejectedByTypePolicy;
+            } else if (ineligibleReason == BlockSolveFallbackReason::QualityGate
+                       || ineligibleReason == BlockSolveFallbackReason::PersistenceGate) {
+                ++solverTelemetry_.blockRejectedByQualityOrPersistence;
+            }
             if (ineligibleReason == BlockSolveFallbackReason::PersistenceGate) {
                 ++solverTelemetry_.scalarFallbackPersistenceGate;
             }
@@ -1937,7 +2085,26 @@ private:
 
         BlockSolveFallbackReason fallbackReason = BlockSolveFallbackReason::None;
         float determinantOrConditionEstimate = std::numeric_limits<float>::quiet_NaN();
-        const bool blockSolved = SolveNormalBlock2(manifold, fallbackReason, determinantOrConditionEstimate);
+        bool blockSolved = false;
+        if (contactSolverConfig_.useFace4PointNormalBlock
+            && IsFace4PointBlockEligible(manifold, &fallbackReason)) {
+#ifndef NDEBUG
+            ++solverTelemetry_.face4Attempted;
+#endif
+            blockSolved = SolveNormalProjected4(manifold, fallbackReason, determinantOrConditionEstimate);
+            if (blockSolved) {
+#ifndef NDEBUG
+                ++solverTelemetry_.face4Used;
+#endif
+            } else {
+#ifndef NDEBUG
+                ++solverTelemetry_.face4FallbackToBlock2;
+#endif
+            }
+        }
+        if (!blockSolved) {
+            blockSolved = SolveNormalBlock2(manifold, fallbackReason, determinantOrConditionEstimate);
+        }
         if (blockSolved) {
             manifold.usedBlockSolve = true;
 #ifndef NDEBUG
@@ -1974,8 +2141,15 @@ private:
             case BlockSolveFallbackReason::InvalidManifoldNormal:
                 ++solverTelemetry_.scalarFallbackInvalidNormal;
                 break;
+            case BlockSolveFallbackReason::TypePolicy:
+                ++solverTelemetry_.blockRejectedByTypePolicy;
+                break;
+            case BlockSolveFallbackReason::QualityGate:
+                ++solverTelemetry_.blockRejectedByQualityOrPersistence;
+                break;
             case BlockSolveFallbackReason::PersistenceGate:
                 ++solverTelemetry_.scalarFallbackPersistenceGate;
+                ++solverTelemetry_.blockRejectedByQualityOrPersistence;
                 break;
             case BlockSolveFallbackReason::ContactNormalMismatch:
                 ++solverTelemetry_.scalarFallbackNormalMismatch;
@@ -2016,6 +2190,11 @@ private:
             SolveNormalScalar(c);
         }
 #ifndef NDEBUG
+        if (contactSolverConfig_.useFace4PointNormalBlock
+            && manifold.manifoldType == 9
+            && manifold.contacts.size() == 4) {
+            ++solverTelemetry_.face4FallbackToScalar;
+        }
         if (selectedIdx0 >= 0 && selectedIdx1 >= 0
             && static_cast<std::size_t>(std::max(selectedIdx0, selectedIdx1)) < manifold.contacts.size()) {
             manifold.blockSolveDebug.selectedPostNormalImpulses = {

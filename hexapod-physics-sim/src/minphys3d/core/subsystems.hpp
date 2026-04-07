@@ -93,6 +93,7 @@ struct ContactSolverContext {
     std::function<void(Manifold&)> solveManifoldNormalImpulses;
     std::function<int(const Manifold&, std::uint64_t)> findBlockSlot;
     std::function<void(Body&, Body&, const Mat3&, const Mat3&, const Vec3&, const Vec3&, const Vec3&)> applyImpulse;
+    std::function<void(bool)> recordTangentBasisState;
     const ContactSolverConfig& config;
 };
 
@@ -147,6 +148,18 @@ public:
                 m.blockContactKeys = {0u, 0u};
                 m.blockSlotValid = {false, false};
                 m.selectedBlockContactKeys = {0u, 0u};
+                m.t0 = {};
+                m.t1 = {};
+                m.tangentBasisValid = false;
+                m.manifoldTangentImpulseSum = {0.0f, 0.0f};
+                m.manifoldTangentImpulseValid = false;
+            } else {
+                m.t0 = previous->t0;
+                m.t1 = previous->t1;
+                m.tangentBasisValid = previous->tangentBasisValid;
+                m.manifoldTangentImpulseSum = previous->manifoldTangentImpulseSum;
+                m.manifoldTangentImpulseValid = previous->manifoldTangentImpulseValid;
+                m.cachedImpulseByContactKey = previous->cachedImpulseByContactKey;
             }
 
             const ManifoldKey manifoldId{std::min(m.a, m.b), std::max(m.a, m.b), m.manifoldType};
@@ -204,6 +217,36 @@ public:
             }
         }
 
+        Vec3 manifoldRelativeVelocity = context.bodies[manifold.b].velocity - context.bodies[manifold.a].velocity;
+        if (!manifold.contacts.empty()) {
+            manifoldRelativeVelocity = {};
+            for (const Contact& c : manifold.contacts) {
+                const Body& a = context.bodies[c.a];
+                const Body& b = context.bodies[c.b];
+                const Vec3 ra = c.point - a.position;
+                const Vec3 rb = c.point - b.position;
+                const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
+                const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
+                manifoldRelativeVelocity += (vb - va);
+            }
+            manifoldRelativeVelocity = manifoldRelativeVelocity / static_cast<float>(manifold.contacts.size());
+        }
+
+        Vec3 manifoldT0{};
+        Vec3 manifoldT1{};
+        const bool reuseBasisHint = manifold.tangentBasisValid;
+        const Vec3* preferredTangent = manifold.tangentBasisValid ? &manifold.t0 : nullptr;
+        const bool basisValid = World::ComputeStableTangentFrame(
+            manifold.normal, manifoldRelativeVelocity, manifoldT0, manifoldT1, preferredTangent);
+        manifold.t0 = manifoldT0;
+        manifold.t1 = manifoldT1;
+        manifold.tangentBasisValid = basisValid;
+        if (context.recordTangentBasisState) {
+            context.recordTangentBasisState(basisValid && reuseBasisHint);
+        }
+        manifold.manifoldTangentImpulseSum = {0.0f, 0.0f};
+        manifold.manifoldTangentImpulseValid = manifold.tangentBasisValid;
+
         for (Contact& c : manifold.contacts) {
             Body& a = context.bodies[c.a];
             Body& b = context.bodies[c.b];
@@ -216,7 +259,15 @@ public:
             const Vec3 va2 = a.velocity + Cross(a.angularVelocity, ra);
             const Vec3 vb2 = b.velocity + Cross(b.angularVelocity, rb);
             const Vec3 rv2 = vb2 - va2;
-            Vec3 tangent = rv2 - Dot(rv2, c.normal) * c.normal;
+            const Vec3 contactNormal = Normalize(c.normal);
+            Vec3 tangent = manifold.t0;
+            if (!manifold.tangentBasisValid) {
+                tangent = rv2 - Dot(rv2, contactNormal) * contactNormal;
+            } else {
+                const float tangentAlongBasis = Dot(rv2, manifold.t0);
+                const float tangentAlongOrtho = Dot(rv2, manifold.t1);
+                tangent = tangentAlongBasis * manifold.t0 + tangentAlongOrtho * manifold.t1;
+            }
             const float tangentLenSq = LengthSquared(tangent);
             if (tangentLenSq <= kEpsilon) {
                 continue;
@@ -253,6 +304,7 @@ public:
             }
             lambdaT = c.tangentImpulseSum - oldTangentImpulse;
             context.applyImpulse(a, b, invIA, invIB, ra, rb, lambdaT * tangent);
+            manifold.manifoldTangentImpulseSum[0] += c.tangentImpulseSum;
         }
     }
 };
