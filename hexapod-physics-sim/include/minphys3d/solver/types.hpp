@@ -22,6 +22,9 @@ struct ContactSolverConfig {
     float positionalCorrectionPercent = 0.8f;
     bool useSplitImpulse = false;
     float splitImpulseCorrectionFactor = 0.8f;
+    float blockDeterminantEpsilon = 1e-8f;
+    float blockDiagonalMinimum = 1e-6f;
+    float blockConditionEstimateMax = 0.0f;
 };
 
 struct Contact {
