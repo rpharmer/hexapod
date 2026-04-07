@@ -2158,8 +2158,41 @@ private:
 
     void WarmStartContacts() {
         for (Manifold& m : manifolds_) {
+            std::array<bool, 2> skipPerContactNormal{false, false};
+            if (m.contacts.size() == 2 && m.blockSlotValid[0] && m.blockSlotValid[1]) {
+                const int contactIndex0 = FindBlockSlot(m, m.contacts[0].key);
+                const int contactIndex1 = FindBlockSlot(m, m.contacts[1].key);
+                const bool blockCacheMatchesPair = contactIndex0 >= 0 && contactIndex1 >= 0 && contactIndex0 != contactIndex1;
+                if (blockCacheMatchesPair) {
+                    for (int slot = 0; slot < 2; ++slot) {
+                        Contact& c = m.contacts[slot];
+                        const float cachedNormalImpulse = m.blockNormalImpulseSum[slot];
+                        if (cachedNormalImpulse == 0.0f) {
+                            skipPerContactNormal[slot] = true;
+                            continue;
+                        }
+
+                        Body& a = bodies_[c.a];
+                        Body& b = bodies_[c.b];
+                        const Mat3 invIA = a.InvInertiaWorld();
+                        const Mat3 invIB = b.InvInertiaWorld();
+                        const Vec3 ra = c.point - a.position;
+                        const Vec3 rb = c.point - b.position;
+                        ApplyImpulse(a, b, invIA, invIB, ra, rb, cachedNormalImpulse * m.normal);
+                        skipPerContactNormal[slot] = true;
+                    }
+                }
+            }
+
+            std::size_t contactIndex = 0;
             for (Contact& c : m.contacts) {
-                if (c.normalImpulseSum == 0.0f && c.tangentImpulseSum == 0.0f) {
+                const bool skipNormal = contactIndex < skipPerContactNormal.size() && skipPerContactNormal[contactIndex];
+                if (!skipNormal && c.normalImpulseSum == 0.0f && c.tangentImpulseSum == 0.0f) {
+                    ++contactIndex;
+                    continue;
+                }
+                if (skipNormal && c.tangentImpulseSum == 0.0f) {
+                    ++contactIndex;
                     continue;
                 }
 
@@ -2179,8 +2212,10 @@ private:
                     tangent = Normalize(trial);
                 }
 
-                const Vec3 impulse = c.normalImpulseSum * c.normal + c.tangentImpulseSum * tangent;
+                const Vec3 normalImpulse = skipNormal ? Vec3{0.0f, 0.0f, 0.0f} : c.normalImpulseSum * c.normal;
+                const Vec3 impulse = normalImpulse + c.tangentImpulseSum * tangent;
                 ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
+                ++contactIndex;
             }
         }
     }
