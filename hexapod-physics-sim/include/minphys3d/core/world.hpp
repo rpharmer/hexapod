@@ -2960,9 +2960,6 @@ private:
         if (manifold.contacts.size() < 2) {
             return false;
         }
-        if (manifold.contacts.size() != 2) {
-            return false;
-        }
 
         // Allow only box-plane vertex manifolds and box-box face-contact manifolds.
         constexpr std::uint8_t kBoxPlaneManifoldType = 7;
