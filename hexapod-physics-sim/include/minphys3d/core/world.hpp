@@ -31,6 +31,24 @@ public:
         return contactSolverConfig_;
     }
 
+#ifndef NDEBUG
+    struct SolverTelemetry {
+        std::uint64_t blockSolveUsed = 0;
+        std::uint64_t scalarFallbackInvalidNormal = 0;
+        std::uint64_t scalarFallbackNormalMismatch = 0;
+        std::uint64_t scalarFallbackMissingSlots = 0;
+        std::uint64_t scalarFallbackDegenerateSystem = 0;
+        std::uint64_t scalarFallbackConditionEstimate = 0;
+        std::uint64_t scalarFallbackLcpFailure = 0;
+        std::uint64_t scalarFallbackNonFinite = 0;
+        std::uint64_t reorderDetected = 0;
+    };
+
+    const SolverTelemetry& GetSolverTelemetry() const {
+        return solverTelemetry_;
+    }
+#endif
+
     std::uint32_t CreateBody(const Body& bodyDef) {
         Body body = bodyDef;
         body.RecomputeMassProperties();
@@ -100,6 +118,10 @@ public:
         if (dt <= 0.0f) {
             return;
         }
+
+#ifndef NDEBUG
+        solverTelemetry_ = {};
+#endif
 
         AssertBodyInvariants();
         previousContacts_ = contacts_;
@@ -1085,21 +1107,31 @@ private:
         }
     }
 
+    static std::uint64_t StableContactFallbackKey(const Contact& contact) {
+        std::uint64_t h = contact.key;
+        h ^= static_cast<std::uint64_t>(contact.a) << 32;
+        h ^= static_cast<std::uint64_t>(contact.b);
+        const auto quantize = [](float value) {
+            return static_cast<std::int32_t>(std::lround(value * 10000.0f));
+        };
+        h ^= static_cast<std::uint64_t>(static_cast<std::uint32_t>(quantize(contact.normal.x))) << 1;
+        h ^= static_cast<std::uint64_t>(static_cast<std::uint32_t>(quantize(contact.normal.y))) << 11;
+        h ^= static_cast<std::uint64_t>(static_cast<std::uint32_t>(quantize(contact.normal.z))) << 21;
+        return h;
+    }
+
     static bool ContactComesBefore(const Contact& lhs, const Contact& rhs) {
         if (lhs.key != rhs.key) {
             return lhs.key < rhs.key;
         }
+        if (lhs.a != rhs.a) {
+            return lhs.a < rhs.a;
+        }
+        if (lhs.b != rhs.b) {
+            return lhs.b < rhs.b;
+        }
         if (lhs.penetration != rhs.penetration) {
             return lhs.penetration > rhs.penetration;
-        }
-        if (lhs.point.x != rhs.point.x) {
-            return lhs.point.x < rhs.point.x;
-        }
-        if (lhs.point.y != rhs.point.y) {
-            return lhs.point.y < rhs.point.y;
-        }
-        if (lhs.point.z != rhs.point.z) {
-            return lhs.point.z < rhs.point.z;
         }
         if (lhs.normal.x != rhs.normal.x) {
             return lhs.normal.x < rhs.normal.x;
@@ -1110,10 +1142,16 @@ private:
         if (lhs.normal.z != rhs.normal.z) {
             return lhs.normal.z < rhs.normal.z;
         }
-        if (lhs.a != rhs.a) {
-            return lhs.a < rhs.a;
+        if (lhs.point.x != rhs.point.x) {
+            return lhs.point.x < rhs.point.x;
         }
-        return lhs.b < rhs.b;
+        if (lhs.point.y != rhs.point.y) {
+            return lhs.point.y < rhs.point.y;
+        }
+        if (lhs.point.z != rhs.point.z) {
+            return lhs.point.z < rhs.point.z;
+        }
+        return StableContactFallbackKey(lhs) < StableContactFallbackKey(rhs);
     }
 
     static void SortManifoldContacts(std::vector<Contact>& contacts) {
@@ -2158,17 +2196,22 @@ private:
 
     void WarmStartContacts() {
         for (Manifold& m : manifolds_) {
+            EnsureStableTwoPointOrder(m);
             std::array<bool, 2> skipPerContactNormal{false, false};
             if (m.contacts.size() == 2 && m.blockSlotValid[0] && m.blockSlotValid[1]) {
-                const int contactIndex0 = FindBlockSlot(m, m.contacts[0].key);
-                const int contactIndex1 = FindBlockSlot(m, m.contacts[1].key);
-                const bool blockCacheMatchesPair = contactIndex0 >= 0 && contactIndex1 >= 0 && contactIndex0 != contactIndex1;
+                const int slotForContact0 = FindBlockSlot(m, m.contacts[0].key);
+                const int slotForContact1 = FindBlockSlot(m, m.contacts[1].key);
+                const bool blockCacheMatchesPair = slotForContact0 >= 0 && slotForContact1 >= 0 && slotForContact0 != slotForContact1;
                 if (blockCacheMatchesPair) {
-                    for (int slot = 0; slot < 2; ++slot) {
-                        Contact& c = m.contacts[slot];
+                    for (int contactIndex = 0; contactIndex < 2; ++contactIndex) {
+                        Contact& c = m.contacts[contactIndex];
+                        const int slot = FindBlockSlot(m, c.key);
+                        if (slot < 0) {
+                            continue;
+                        }
                         const float cachedNormalImpulse = m.blockNormalImpulseSum[slot];
                         if (cachedNormalImpulse == 0.0f) {
-                            skipPerContactNormal[slot] = true;
+                            skipPerContactNormal[contactIndex] = true;
                             continue;
                         }
 
@@ -2179,7 +2222,7 @@ private:
                         const Vec3 ra = c.point - a.position;
                         const Vec3 rb = c.point - b.position;
                         ApplyImpulse(a, b, invIA, invIB, ra, rb, cachedNormalImpulse * m.normal);
-                        skipPerContactNormal[slot] = true;
+                        skipPerContactNormal[contactIndex] = true;
                     }
                 }
             }
@@ -2322,11 +2365,44 @@ private:
         ApplyImpulse(a, b, invIA, invIB, ra, rb, lambdaN * c.normal);
     }
 
-    bool SolveNormalBlock2(Manifold& manifold) {
+    enum class BlockSolveFallbackReason {
+        None,
+        InvalidManifoldNormal,
+        ContactNormalMismatch,
+        MissingBlockSlots,
+        DegenerateMassMatrix,
+        ConditionEstimateExceeded,
+        LcpFailure,
+        NonFiniteResult,
+    };
+
+    bool EnsureStableTwoPointOrder(Manifold& manifold) {
+        if (manifold.contacts.size() != 2) {
+            return false;
+        }
+        const Contact& c0 = manifold.contacts[0];
+        const Contact& c1 = manifold.contacts[1];
+        const bool orderedByFeature = c0.key < c1.key;
+        const bool sameFeatureUsesFallback = c0.key == c1.key
+            && StableContactFallbackKey(c0) <= StableContactFallbackKey(c1);
+        if (orderedByFeature || sameFeatureUsesFallback) {
+            return false;
+        }
+        std::swap(manifold.contacts[0], manifold.contacts[1]);
+#ifndef NDEBUG
+        ++solverTelemetry_.reorderDetected;
+#endif
+        return true;
+    }
+
+    bool SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fallbackReason) {
+        fallbackReason = BlockSolveFallbackReason::None;
         if (manifold.contacts.size() < 2) {
+            fallbackReason = BlockSolveFallbackReason::LcpFailure;
             return false;
         }
 
+        EnsureStableTwoPointOrder(manifold);
         Contact& c0 = manifold.contacts[0];
         Contact& c1 = manifold.contacts[1];
         Body& a = bodies_[c0.a];
@@ -2334,9 +2410,11 @@ private:
 
         const Vec3 manifoldNormal = Normalize(manifold.normal);
         if (LengthSquared(manifoldNormal) <= kEpsilon) {
+            fallbackReason = BlockSolveFallbackReason::InvalidManifoldNormal;
             return false;
         }
         if (Dot(c0.normal, manifoldNormal) < 0.95f || Dot(c1.normal, manifoldNormal) < 0.95f) {
+            fallbackReason = BlockSolveFallbackReason::ContactNormalMismatch;
             return false;
         }
 
@@ -2358,7 +2436,28 @@ private:
         const float k21 = k12;
 
         const float det = k11 * k22 - k12 * k21;
-        if (k11 <= kEpsilon || k22 <= kEpsilon || std::abs(det) <= 1e-8f) {
+        if (k11 <= contactSolverConfig_.blockDiagonalMinimum || k22 <= contactSolverConfig_.blockDiagonalMinimum) {
+            fallbackReason = BlockSolveFallbackReason::DegenerateMassMatrix;
+            return false;
+        }
+        if (std::abs(det) <= contactSolverConfig_.blockDeterminantEpsilon) {
+            fallbackReason = BlockSolveFallbackReason::DegenerateMassMatrix;
+            return false;
+        }
+        if (contactSolverConfig_.blockConditionEstimateMax > 0.0f) {
+            const float matrixNorm = std::max(std::abs(k11) + std::abs(k12), std::abs(k21) + std::abs(k22));
+            const float invNorm = std::max(std::abs(k22) + std::abs(k12), std::abs(k21) + std::abs(k11)) / std::abs(det);
+            const float conditionEstimate = matrixNorm * invNorm;
+            if (!std::isfinite(conditionEstimate) || conditionEstimate > contactSolverConfig_.blockConditionEstimateMax) {
+                fallbackReason = BlockSolveFallbackReason::ConditionEstimateExceeded;
+                return false;
+            }
+        }
+
+        const int slot0 = FindBlockSlot(manifold, c0.key);
+        const int slot1 = FindBlockSlot(manifold, c1.key);
+        if (slot0 < 0 || slot1 < 0 || slot0 == slot1) {
+            fallbackReason = BlockSolveFallbackReason::MissingBlockSlots;
             return false;
         }
 
@@ -2402,12 +2501,6 @@ private:
 
         const float rhs0 = computeRhs(c0, vn0);
         const float rhs1 = computeRhs(c1, vn1);
-
-        const int slot0 = FindBlockSlot(manifold, c0.key);
-        const int slot1 = FindBlockSlot(manifold, c1.key);
-        if (slot0 < 0 || slot1 < 0 || slot0 == slot1) {
-            return false;
-        }
 
         const float old0 = manifold.blockNormalImpulseSum[slot0];
         const float old1 = manifold.blockNormalImpulseSum[slot1];
@@ -2469,7 +2562,12 @@ private:
             }
         }
 
-        if (!solved || !std::isfinite(new0) || !std::isfinite(new1)) {
+        if (!solved) {
+            fallbackReason = BlockSolveFallbackReason::LcpFailure;
+            return false;
+        }
+        if (!std::isfinite(new0) || !std::isfinite(new1)) {
+            fallbackReason = BlockSolveFallbackReason::NonFiniteResult;
             return false;
         }
 
@@ -2484,17 +2582,67 @@ private:
         return true;
     }
 
-    void SolveContactsInManifold(Manifold& manifold) {
-        const bool blockSolved = manifold.contacts.size() >= 2 && SolveNormalBlock2(manifold);
-        if (!blockSolved) {
+    void SolveManifoldNormalImpulses(Manifold& manifold) {
+        if (manifold.contacts.empty()) {
+            return;
+        }
+
+        const bool shouldAttemptBlock = manifold.contacts.size() >= 2;
+        if (!shouldAttemptBlock) {
             for (Contact& c : manifold.contacts) {
                 SolveNormalScalar(c);
             }
-        } else {
+            return;
+        }
+
+        BlockSolveFallbackReason fallbackReason = BlockSolveFallbackReason::None;
+        const bool blockSolved = SolveNormalBlock2(manifold, fallbackReason);
+        if (blockSolved) {
+#ifndef NDEBUG
+            ++solverTelemetry_.blockSolveUsed;
+#endif
             for (std::size_t i = 2; i < manifold.contacts.size(); ++i) {
                 SolveNormalScalar(manifold.contacts[i]);
             }
+            return;
         }
+
+#ifndef NDEBUG
+        switch (fallbackReason) {
+            case BlockSolveFallbackReason::InvalidManifoldNormal:
+                ++solverTelemetry_.scalarFallbackInvalidNormal;
+                break;
+            case BlockSolveFallbackReason::ContactNormalMismatch:
+                ++solverTelemetry_.scalarFallbackNormalMismatch;
+                break;
+            case BlockSolveFallbackReason::MissingBlockSlots:
+                ++solverTelemetry_.scalarFallbackMissingSlots;
+                break;
+            case BlockSolveFallbackReason::DegenerateMassMatrix:
+                ++solverTelemetry_.scalarFallbackDegenerateSystem;
+                break;
+            case BlockSolveFallbackReason::ConditionEstimateExceeded:
+                ++solverTelemetry_.scalarFallbackConditionEstimate;
+                break;
+            case BlockSolveFallbackReason::LcpFailure:
+                ++solverTelemetry_.scalarFallbackLcpFailure;
+                break;
+            case BlockSolveFallbackReason::NonFiniteResult:
+                ++solverTelemetry_.scalarFallbackNonFinite;
+                break;
+            case BlockSolveFallbackReason::None:
+                break;
+        }
+#endif
+
+        for (Contact& c : manifold.contacts) {
+            SolveNormalScalar(c);
+        }
+    }
+
+    void SolveContactsInManifold(Manifold& manifold) {
+        EnsureStableTwoPointOrder(manifold);
+        SolveManifoldNormalImpulses(manifold);
 
         if (manifold.contacts.size() >= 2) {
             for (Contact& c : manifold.contacts) {
@@ -2913,6 +3061,9 @@ private:
     std::vector<Island> islands_;
     std::vector<DistanceJoint> joints_;
     std::vector<HingeJoint> hingeJoints_;
+#ifndef NDEBUG
+    SolverTelemetry solverTelemetry_{};
+#endif
 };
 
 
