@@ -26,6 +26,23 @@ using minphys3d::Vec3;
 using minphys3d::World;
 
 struct RunMetrics {
+    struct SolverTelemetrySnapshot {
+        std::uint64_t blockSolveEligible = 0;
+        std::uint64_t blockSolveUsed = 0;
+        std::uint64_t scalarPathIneligible = 0;
+        std::uint64_t scalarFallbackInvalidNormal = 0;
+        std::uint64_t scalarFallbackNormalMismatch = 0;
+        std::uint64_t scalarFallbackMissingSlots = 0;
+        std::uint64_t scalarFallbackDegenerateSystem = 0;
+        std::uint64_t scalarFallbackConditionEstimate = 0;
+        std::uint64_t scalarFallbackLcpFailure = 0;
+        std::uint64_t scalarFallbackNonFinite = 0;
+        std::uint64_t topologyChangeEvents = 0;
+        std::uint64_t featureIdChurnEvents = 0;
+        std::uint64_t impulseResetPoints = 0;
+        std::uint64_t reorderDetected = 0;
+    };
+
     float maxPenetration = 0.0f;
     float contactCountStdDev = 0.0f;
     float contactCountMeanStepDelta = 0.0f;
@@ -34,6 +51,7 @@ struct RunMetrics {
     float settleTimeSeconds = -1.0f;
     int settleStep = -1;
     std::uint64_t reorderEvents = 0;
+    SolverTelemetrySnapshot telemetry;
     std::vector<float> stepMaxPenetration;
 };
 
@@ -190,7 +208,22 @@ RunMetrics RunScene(SceneConfig config, bool useBlockSolver) {
     }
 
 #ifndef NDEBUG
-    metrics.reorderEvents = config.world.GetSolverTelemetry().reorderDetected;
+    const World::SolverTelemetry& telemetry = config.world.GetSolverTelemetry();
+    metrics.reorderEvents = telemetry.reorderDetected;
+    metrics.telemetry.blockSolveEligible = telemetry.blockSolveEligible;
+    metrics.telemetry.blockSolveUsed = telemetry.blockSolveUsed;
+    metrics.telemetry.scalarPathIneligible = telemetry.scalarPathIneligible;
+    metrics.telemetry.scalarFallbackInvalidNormal = telemetry.scalarFallbackInvalidNormal;
+    metrics.telemetry.scalarFallbackNormalMismatch = telemetry.scalarFallbackNormalMismatch;
+    metrics.telemetry.scalarFallbackMissingSlots = telemetry.scalarFallbackMissingSlots;
+    metrics.telemetry.scalarFallbackDegenerateSystem = telemetry.scalarFallbackDegenerateSystem;
+    metrics.telemetry.scalarFallbackConditionEstimate = telemetry.scalarFallbackConditionEstimate;
+    metrics.telemetry.scalarFallbackLcpFailure = telemetry.scalarFallbackLcpFailure;
+    metrics.telemetry.scalarFallbackNonFinite = telemetry.scalarFallbackNonFinite;
+    metrics.telemetry.topologyChangeEvents = telemetry.topologyChangeEvents;
+    metrics.telemetry.featureIdChurnEvents = telemetry.featureIdChurnEvents;
+    metrics.telemetry.impulseResetPoints = telemetry.impulseResetPoints;
+    metrics.telemetry.reorderDetected = telemetry.reorderDetected;
 #endif
 
     const float count = static_cast<float>(contactCounts.size());
@@ -376,6 +409,27 @@ SceneConfig BuildManifoldReorderStressCase() {
 }
 
 std::string ToJson(const std::vector<ComparisonResult>& results) {
+    const auto writeTelemetryJson = [&](std::ostringstream& out, const RunMetrics::SolverTelemetrySnapshot& t) {
+        out << "        \"telemetry\": {\n";
+        out << "          \"blockSolveEligible\": " << t.blockSolveEligible << ",\n";
+        out << "          \"blockSolveUsed\": " << t.blockSolveUsed << ",\n";
+        out << "          \"scalarFallbackBuckets\": {\n";
+        out << "            \"scalarPathIneligible\": " << t.scalarPathIneligible << ",\n";
+        out << "            \"invalidNormal\": " << t.scalarFallbackInvalidNormal << ",\n";
+        out << "            \"normalMismatch\": " << t.scalarFallbackNormalMismatch << ",\n";
+        out << "            \"missingSlots\": " << t.scalarFallbackMissingSlots << ",\n";
+        out << "            \"degenerateSystem\": " << t.scalarFallbackDegenerateSystem << ",\n";
+        out << "            \"conditionEstimate\": " << t.scalarFallbackConditionEstimate << ",\n";
+        out << "            \"lcpFailure\": " << t.scalarFallbackLcpFailure << ",\n";
+        out << "            \"nonFinite\": " << t.scalarFallbackNonFinite << "\n";
+        out << "          },\n";
+        out << "          \"topologyChangeEvents\": " << t.topologyChangeEvents << ",\n";
+        out << "          \"featureIdChurnEvents\": " << t.featureIdChurnEvents << ",\n";
+        out << "          \"impulseResetPoints\": " << t.impulseResetPoints << ",\n";
+        out << "          \"reorderDetected\": " << t.reorderDetected << "\n";
+        out << "        }";
+    };
+
     std::ostringstream out;
     out << std::fixed << std::setprecision(6);
     out << "{\n  \"suite\": \"block_solver_regression\",\n  \"scenes\": [\n";
@@ -391,7 +445,9 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "        \"max_impulse_delta\": " << r.scalar.maxImpulseDelta << ",\n";
         out << "        \"mean_impulse_delta\": " << r.scalar.meanImpulseDelta << ",\n";
         out << "        \"settle_time_seconds\": " << r.scalar.settleTimeSeconds << ",\n";
-        out << "        \"reorder_events\": " << r.scalar.reorderEvents << "\n";
+        out << "        \"reorder_events\": " << r.scalar.reorderEvents << ",\n";
+        writeTelemetryJson(out, r.scalar.telemetry);
+        out << "\n";
         out << "      },\n";
         out << "      \"block\": {\n";
         out << "        \"max_penetration\": " << r.block.maxPenetration << ",\n";
@@ -400,7 +456,9 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "        \"max_impulse_delta\": " << r.block.maxImpulseDelta << ",\n";
         out << "        \"mean_impulse_delta\": " << r.block.meanImpulseDelta << ",\n";
         out << "        \"settle_time_seconds\": " << r.block.settleTimeSeconds << ",\n";
-        out << "        \"reorder_events\": " << r.block.reorderEvents << "\n";
+        out << "        \"reorder_events\": " << r.block.reorderEvents << ",\n";
+        writeTelemetryJson(out, r.block.telemetry);
+        out << "\n";
         out << "      },\n";
         out << "      \"failures\": [";
         for (std::size_t fi = 0; fi < r.failures.size(); ++fi) {
@@ -425,6 +483,37 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
 }
 
 void PrintHumanSummary(const ComparisonResult& result) {
+    const auto totalScalarFallbacks = [](const RunMetrics::SolverTelemetrySnapshot& t) {
+        return t.scalarPathIneligible
+             + t.scalarFallbackInvalidNormal
+             + t.scalarFallbackNormalMismatch
+             + t.scalarFallbackMissingSlots
+             + t.scalarFallbackDegenerateSystem
+             + t.scalarFallbackConditionEstimate
+             + t.scalarFallbackLcpFailure
+             + t.scalarFallbackNonFinite;
+    };
+
+    const auto printTelemetry = [&](const char* label, const RunMetrics::SolverTelemetrySnapshot& t) {
+        std::cout << "    telemetry(" << label << "):"
+                  << " blockSolveEligible=" << t.blockSolveEligible
+                  << " blockSolveUsed=" << t.blockSolveUsed
+                  << " scalarFallbackTotal=" << totalScalarFallbacks(t)
+                  << " scalarPathIneligible=" << t.scalarPathIneligible
+                  << " invalidNormal=" << t.scalarFallbackInvalidNormal
+                  << " normalMismatch=" << t.scalarFallbackNormalMismatch
+                  << " missingSlots=" << t.scalarFallbackMissingSlots
+                  << " degenerateSystem=" << t.scalarFallbackDegenerateSystem
+                  << " conditionEstimate=" << t.scalarFallbackConditionEstimate
+                  << " lcpFailure=" << t.scalarFallbackLcpFailure
+                  << " nonFinite=" << t.scalarFallbackNonFinite
+                  << " topologyChangeEvents=" << t.topologyChangeEvents
+                  << " featureIdChurnEvents=" << t.featureIdChurnEvents
+                  << " impulseResetPoints=" << t.impulseResetPoints
+                  << " reorderDetected=" << t.reorderDetected
+                  << "\n";
+    };
+
     const auto printRun = [&](const char* label, const RunMetrics& m) {
         std::cout << "  " << label
                   << " | pen=" << std::fixed << std::setprecision(4) << m.maxPenetration
@@ -439,8 +528,23 @@ void PrintHumanSummary(const ComparisonResult& result) {
     std::cout << (result.pass ? "PASS" : "FAIL") << " | " << result.scene << "\n";
     printRun("scalar", result.scalar);
     printRun("block ", result.block);
+    printTelemetry("scalar", result.scalar.telemetry);
+    printTelemetry("block ", result.block.telemetry);
     for (const std::string& failure : result.failures) {
         std::cout << "    - " << failure << "\n";
+    }
+
+    const std::uint64_t scalarFallbacks = totalScalarFallbacks(result.scalar.telemetry);
+    const std::uint64_t blockFallbacks = totalScalarFallbacks(result.block.telemetry);
+    if (blockFallbacks > scalarFallbacks) {
+        std::cout << "    diagnosis: block path is hitting scalar fallback more often (possible fallback thrash)\n";
+    }
+    if (result.block.telemetry.impulseResetPoints > result.scalar.telemetry.impulseResetPoints) {
+        std::cout << "    diagnosis: block path has more impulse reset points (possible persistence reset)\n";
+    }
+    if (result.block.telemetry.topologyChangeEvents > result.scalar.telemetry.topologyChangeEvents
+        || result.block.telemetry.featureIdChurnEvents > result.scalar.telemetry.featureIdChurnEvents) {
+        std::cout << "    diagnosis: block path shows more topology/churn events (possible topology churn)\n";
     }
 
     if (result.scene == "slightly offset box stacks") {
