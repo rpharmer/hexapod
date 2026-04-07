@@ -207,6 +207,11 @@ public:
         return ComputePotentialPairs().size();
     }
 
+
+    const std::vector<Manifold>& DebugManifolds() const {
+        return manifolds_;
+    }
+
     std::size_t BruteForcePairCount() const {
         std::size_t count = 0;
         for (std::uint32_t i = 0; i < bodies_.size(); ++i) {
@@ -2761,7 +2766,7 @@ private:
             return;
         }
 
-        manifold.blockSolveEligible = IsBlockSolveEligible(manifold);
+        manifold.blockSolveEligible = contactSolverConfig_.useBlockSolver && IsBlockSolveEligible(manifold);
         manifold.usedBlockSolve = false;
 
 #ifndef NDEBUG

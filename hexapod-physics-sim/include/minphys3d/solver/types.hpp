@@ -25,6 +25,7 @@ struct ContactSolverConfig {
     float blockDeterminantEpsilon = 1e-8f;
     float blockDiagonalMinimum = 1e-6f;
     float blockConditionEstimateMax = 0.0f;
+    bool useBlockSolver = true;
 };
 
 struct Contact {
