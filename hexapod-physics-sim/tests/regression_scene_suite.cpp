@@ -34,6 +34,7 @@ struct RunMetrics {
     float settleTimeSeconds = -1.0f;
     int settleStep = -1;
     std::uint64_t reorderEvents = 0;
+    std::vector<float> stepMaxPenetration;
 };
 
 struct SceneConfig {
@@ -115,11 +116,13 @@ RunMetrics RunScene(SceneConfig config, bool useBlockSolver) {
 
         const std::vector<Manifold>& manifolds = config.world.DebugManifolds();
         float totalContacts = 0.0f;
+        float stepMaxPenetration = 0.0f;
 
         for (const Manifold& manifold : manifolds) {
             std::unordered_map<std::uint64_t, std::uint8_t> ordinalCount;
             for (const Contact& contact : manifold.contacts) {
                 metrics.maxPenetration = std::max(metrics.maxPenetration, std::max(contact.penetration, 0.0f));
+                stepMaxPenetration = std::max(stepMaxPenetration, std::max(contact.penetration, 0.0f));
                 totalContacts += 1.0f;
 
                 const std::uint8_t ordinal = ordinalCount[contact.featureKey]++;
@@ -138,6 +141,7 @@ RunMetrics RunScene(SceneConfig config, bool useBlockSolver) {
         }
 
         contactCounts.push_back(totalContacts);
+        metrics.stepMaxPenetration.push_back(stepMaxPenetration);
         if (previousContactCount >= 0.0f) {
             contactCountStepDeltas.push_back(std::abs(totalContacts - previousContactCount));
         }
@@ -409,6 +413,31 @@ void PrintHumanSummary(const ComparisonResult& result) {
     printRun("block ", result.block);
     for (const std::string& failure : result.failures) {
         std::cout << "    - " << failure << "\n";
+    }
+
+    if (result.scene == "slightly offset box stacks") {
+        std::vector<std::pair<int, float>> divergingFrames;
+        const std::size_t frameCount = std::min(result.scalar.stepMaxPenetration.size(), result.block.stepMaxPenetration.size());
+        for (std::size_t i = 0; i < frameCount; ++i) {
+            const float delta = result.block.stepMaxPenetration[i] - result.scalar.stepMaxPenetration[i];
+            if (delta > 0.20f) {
+                divergingFrames.emplace_back(static_cast<int>(i), delta);
+            }
+        }
+        std::sort(divergingFrames.begin(), divergingFrames.end(), [](const auto& lhs, const auto& rhs) {
+            return lhs.second > rhs.second;
+        });
+        std::cout << "    divergence_frames(block-pen - scalar-pen > 0.20):";
+        if (divergingFrames.empty()) {
+            std::cout << " none\n";
+        } else {
+            const std::size_t limit = std::min<std::size_t>(12, divergingFrames.size());
+            for (std::size_t i = 0; i < limit; ++i) {
+                std::cout << " [step=" << divergingFrames[i].first
+                          << " delta=" << std::fixed << std::setprecision(4) << divergingFrames[i].second << "]";
+            }
+            std::cout << "\n";
+        }
     }
 }
 

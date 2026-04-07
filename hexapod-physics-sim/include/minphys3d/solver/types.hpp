@@ -59,6 +59,22 @@ struct Manifold {
     bool lowQuality = false;
     bool blockSolveEligible = false;
     bool usedBlockSolve = false;
+#ifndef NDEBUG
+    struct BlockSolveDebugCounters {
+        std::array<float, 2> selectedPreNormalImpulses{0.0f, 0.0f};
+        std::array<float, 2> selectedPostNormalImpulses{0.0f, 0.0f};
+        float selectedPairPenetrationStep = 0.0f;
+        std::uint32_t blockSolveUsedCount = 0;
+        std::uint32_t scalarFallbackIneligibleCount = 0;
+        std::uint32_t scalarFallbackInvalidNormalCount = 0;
+        std::uint32_t scalarFallbackNormalMismatchCount = 0;
+        std::uint32_t scalarFallbackMissingSlotsCount = 0;
+        std::uint32_t scalarFallbackDegenerateMassCount = 0;
+        std::uint32_t scalarFallbackConditionEstimateCount = 0;
+        std::uint32_t scalarFallbackLcpFailureCount = 0;
+        std::uint32_t scalarFallbackNonFiniteCount = 0;
+    } blockSolveDebug{};
+#endif
 
     std::uint64_t pairKey() const {
         const std::uint32_t lo = std::min(a, b);

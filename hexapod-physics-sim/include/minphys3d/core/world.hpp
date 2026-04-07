@@ -2613,6 +2613,45 @@ private:
         NonFiniteResult,
     };
 
+#ifndef NDEBUG
+    static void ResetBlockSolveDebugStep(Manifold& manifold) {
+        manifold.blockSolveDebug.selectedPreNormalImpulses = {0.0f, 0.0f};
+        manifold.blockSolveDebug.selectedPostNormalImpulses = {0.0f, 0.0f};
+        manifold.blockSolveDebug.selectedPairPenetrationStep = 0.0f;
+    }
+
+    static void IncrementBlockSolveFallbackCounter(Manifold& manifold, BlockSolveFallbackReason reason) {
+        switch (reason) {
+            case BlockSolveFallbackReason::Ineligible:
+                ++manifold.blockSolveDebug.scalarFallbackIneligibleCount;
+                break;
+            case BlockSolveFallbackReason::InvalidManifoldNormal:
+                ++manifold.blockSolveDebug.scalarFallbackInvalidNormalCount;
+                break;
+            case BlockSolveFallbackReason::ContactNormalMismatch:
+                ++manifold.blockSolveDebug.scalarFallbackNormalMismatchCount;
+                break;
+            case BlockSolveFallbackReason::MissingBlockSlots:
+                ++manifold.blockSolveDebug.scalarFallbackMissingSlotsCount;
+                break;
+            case BlockSolveFallbackReason::DegenerateMassMatrix:
+                ++manifold.blockSolveDebug.scalarFallbackDegenerateMassCount;
+                break;
+            case BlockSolveFallbackReason::ConditionEstimateExceeded:
+                ++manifold.blockSolveDebug.scalarFallbackConditionEstimateCount;
+                break;
+            case BlockSolveFallbackReason::LcpFailure:
+                ++manifold.blockSolveDebug.scalarFallbackLcpFailureCount;
+                break;
+            case BlockSolveFallbackReason::NonFiniteResult:
+                ++manifold.blockSolveDebug.scalarFallbackNonFiniteCount;
+                break;
+            case BlockSolveFallbackReason::None:
+                break;
+        }
+    }
+#endif
+
     static bool IsValidBlockContactPoint(const Contact& contact) {
         if (!std::isfinite(contact.penetration) || contact.penetration <= 0.0f) {
             return false;
@@ -2749,6 +2788,9 @@ private:
         if (manifold.contacts.size() < 2) {
             return false;
         }
+        if (manifold.contacts.size() != 2) {
+            return false;
+        }
 
         // Allow only box-plane vertex manifolds and box-box face-contact manifolds.
         constexpr std::uint8_t kBoxPlaneManifoldType = 7;
@@ -2764,10 +2806,6 @@ private:
         if (!manifold.selectedBlockPairQualityPass) {
             return false;
         }
-        if (manifold.contacts.size() == 4 && !manifold.selectedBlockPairPersistent) {
-            return false;
-        }
-
         const Vec3 manifoldNormal = Normalize(manifold.normal);
         if (!std::isfinite(manifoldNormal.x) || !std::isfinite(manifoldNormal.y) || !std::isfinite(manifoldNormal.z)) {
             return false;
@@ -2850,6 +2888,12 @@ private:
             fallbackReason = BlockSolveFallbackReason::ContactNormalMismatch;
             return false;
         }
+        Vec3 normal0 = Normalize(c0.normal);
+        Vec3 normal1 = Normalize(c1.normal);
+        if (LengthSquared(normal0) <= kEpsilon || LengthSquared(normal1) <= kEpsilon) {
+            fallbackReason = BlockSolveFallbackReason::InvalidManifoldNormal;
+            return false;
+        }
 
         const Mat3 invIA = a.InvInertiaWorld();
         const Mat3 invIB = b.InvInertiaWorld();
@@ -2858,14 +2902,16 @@ private:
         const Vec3 ra1 = c1.point - a.position;
         const Vec3 rb1 = c1.point - b.position;
 
-        const Vec3 ra0CrossN = Cross(ra0, manifoldNormal);
-        const Vec3 rb0CrossN = Cross(rb0, manifoldNormal);
-        const Vec3 ra1CrossN = Cross(ra1, manifoldNormal);
-        const Vec3 rb1CrossN = Cross(rb1, manifoldNormal);
+        const Vec3 ra0CrossN0 = Cross(ra0, normal0);
+        const Vec3 rb0CrossN0 = Cross(rb0, normal0);
+        const Vec3 ra1CrossN1 = Cross(ra1, normal1);
+        const Vec3 rb1CrossN1 = Cross(rb1, normal1);
 
-        const float k11 = a.invMass + b.invMass + Dot(ra0CrossN, invIA * ra0CrossN) + Dot(rb0CrossN, invIB * rb0CrossN);
-        const float k22 = a.invMass + b.invMass + Dot(ra1CrossN, invIA * ra1CrossN) + Dot(rb1CrossN, invIB * rb1CrossN);
-        const float k12 = a.invMass + b.invMass + Dot(ra0CrossN, invIA * ra1CrossN) + Dot(rb0CrossN, invIB * rb1CrossN);
+        const float invMassSum = a.invMass + b.invMass;
+        const float normalDot = Dot(normal0, normal1);
+        const float k11 = invMassSum + Dot(ra0CrossN0, invIA * ra0CrossN0) + Dot(rb0CrossN0, invIB * rb0CrossN0);
+        const float k22 = invMassSum + Dot(ra1CrossN1, invIA * ra1CrossN1) + Dot(rb1CrossN1, invIB * rb1CrossN1);
+        const float k12 = invMassSum * normalDot + Dot(ra0CrossN0, invIA * ra1CrossN1) + Dot(rb0CrossN0, invIB * rb1CrossN1);
         const float k21 = k12;
 
         const float det = k11 * k22 - k12 * k21;
@@ -2898,10 +2944,10 @@ private:
         const Vec3 vb0 = b.velocity + Cross(b.angularVelocity, rb0);
         const Vec3 va1 = a.velocity + Cross(a.angularVelocity, ra1);
         const Vec3 vb1 = b.velocity + Cross(b.angularVelocity, rb1);
-        const float vn0 = Dot(vb0 - va0, manifoldNormal);
-        const float vn1 = Dot(vb1 - va1, manifoldNormal);
+        const float vn0 = Dot(vb0 - va0, normal0);
+        const float vn1 = Dot(vb1 - va1, normal1);
 
-        const auto computeRhs = [&](Contact& c, float separatingVelocity) {
+        const auto computeRhs = [&](Contact& c, const Vec3& contactNormal, float separatingVelocity) {
             const float speedIntoContact = -separatingVelocity;
             const float restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
 
@@ -2912,7 +2958,7 @@ private:
                     const float invMassSum = a.invMass + b.invMass;
                     if (invMassSum > kEpsilon) {
                         const float correctionMagnitude = contactSolverConfig_.splitImpulseCorrectionFactor * penetrationError / invMassSum;
-                        const Vec3 correction = correctionMagnitude * manifoldNormal;
+                        const Vec3 correction = correctionMagnitude * contactNormal;
                         if (!a.isSleeping) {
                             a.position -= correction * a.invMass;
                         }
@@ -2931,11 +2977,15 @@ private:
             return -(1.0f + restitution) * separatingVelocity + std::max(biasTerm, 0.0f);
         };
 
-        const float rhs0 = computeRhs(c0, vn0);
-        const float rhs1 = computeRhs(c1, vn1);
+        const float rhs0 = computeRhs(c0, normal0, vn0);
+        const float rhs1 = computeRhs(c1, normal1, vn1);
 
-        const float old0 = manifold.blockNormalImpulseSum[slot0];
-        const float old1 = manifold.blockNormalImpulseSum[slot1];
+        const float old0 = std::max(c0.normalImpulseSum, 0.0f);
+        const float old1 = std::max(c1.normalImpulseSum, 0.0f);
+#ifndef NDEBUG
+        manifold.blockSolveDebug.selectedPreNormalImpulses = {old0, old1};
+        manifold.blockSolveDebug.selectedPairPenetrationStep = c0.penetration + c1.penetration;
+#endif
         const float q0 = rhs0 + k11 * old0 + k12 * old1;
         const float q1 = rhs1 + k21 * old0 + k22 * old1;
 
@@ -2954,11 +3004,11 @@ private:
         const float invDet = 1.0f / det;
         const float both0 = (k22 * q0 - k12 * q1) * invDet;
         const float both1 = (-k21 * q0 + k11 * q1) * invDet;
-        if (both0 >= -lcpEpsilon && both1 >= -lcpEpsilon) {
+        if (both0 >= 0.0f && both1 >= 0.0f) {
             const auto w = residualW(both0, both1);
             if (w[0] >= -lcpEpsilon && w[1] >= -lcpEpsilon) {
-                new0 = std::max(0.0f, both0);
-                new1 = std::max(0.0f, both1);
+                new0 = both0;
+                new1 = both1;
                 solved = true;
             }
         }
@@ -3003,14 +3053,19 @@ private:
             return false;
         }
 
+        new0 = std::max(0.0f, new0);
+        new1 = std::max(0.0f, new1);
         manifold.blockNormalImpulseSum[slot0] = new0;
         manifold.blockNormalImpulseSum[slot1] = new1;
         c0.normalImpulseSum = new0;
         c1.normalImpulseSum = new1;
+#ifndef NDEBUG
+        manifold.blockSolveDebug.selectedPostNormalImpulses = {new0, new1};
+#endif
         const float delta0 = new0 - old0;
         const float delta1 = new1 - old1;
-        ApplyImpulse(a, b, invIA, invIB, ra0, rb0, delta0 * manifoldNormal);
-        ApplyImpulse(a, b, invIA, invIB, ra1, rb1, delta1 * manifoldNormal);
+        ApplyImpulse(a, b, invIA, invIB, ra0, rb0, delta0 * normal0);
+        ApplyImpulse(a, b, invIA, invIB, ra1, rb1, delta1 * normal1);
         return true;
     }
 
@@ -3018,6 +3073,20 @@ private:
         if (manifold.contacts.empty()) {
             return;
         }
+
+#ifndef NDEBUG
+        ResetBlockSolveDebugStep(manifold);
+        const int selectedIdx0 = manifold.selectedBlockContactIndices[0];
+        const int selectedIdx1 = manifold.selectedBlockContactIndices[1];
+        if (selectedIdx0 >= 0 && selectedIdx1 >= 0
+            && selectedIdx0 != selectedIdx1
+            && static_cast<std::size_t>(std::max(selectedIdx0, selectedIdx1)) < manifold.contacts.size()) {
+            const Contact& selected0 = manifold.contacts[static_cast<std::size_t>(selectedIdx0)];
+            const Contact& selected1 = manifold.contacts[static_cast<std::size_t>(selectedIdx1)];
+            manifold.blockSolveDebug.selectedPreNormalImpulses = {selected0.normalImpulseSum, selected1.normalImpulseSum};
+            manifold.blockSolveDebug.selectedPairPenetrationStep = selected0.penetration + selected1.penetration;
+        }
+#endif
 
         manifold.blockSolveEligible = contactSolverConfig_.useBlockSolver && IsBlockSolveEligible(manifold);
         manifold.usedBlockSolve = false;
@@ -3031,6 +3100,7 @@ private:
         if (!manifold.blockSolveEligible) {
 #ifndef NDEBUG
             ++solverTelemetry_.scalarPathIneligible;
+            IncrementBlockSolveFallbackCounter(manifold, BlockSolveFallbackReason::Ineligible);
             if (debugBlockSolveRouting_) {
                 std::fprintf(
                     stderr,
@@ -3045,6 +3115,14 @@ private:
             for (Contact& c : manifold.contacts) {
                 SolveNormalScalar(c);
             }
+#ifndef NDEBUG
+            if (selectedIdx0 >= 0 && selectedIdx1 >= 0
+                && static_cast<std::size_t>(std::max(selectedIdx0, selectedIdx1)) < manifold.contacts.size()) {
+                manifold.blockSolveDebug.selectedPostNormalImpulses = {
+                    manifold.contacts[static_cast<std::size_t>(selectedIdx0)].normalImpulseSum,
+                    manifold.contacts[static_cast<std::size_t>(selectedIdx1)].normalImpulseSum};
+            }
+#endif
             return;
         }
 
@@ -3054,6 +3132,7 @@ private:
             manifold.usedBlockSolve = true;
 #ifndef NDEBUG
             ++solverTelemetry_.blockSolveUsed;
+            ++manifold.blockSolveDebug.blockSolveUsedCount;
             if (debugBlockSolveRouting_) {
                 std::fprintf(
                     stderr,
@@ -3103,6 +3182,7 @@ private:
             case BlockSolveFallbackReason::None:
                 break;
         }
+        IncrementBlockSolveFallbackCounter(manifold, fallbackReason);
         if (debugBlockSolveRouting_) {
             std::fprintf(
                 stderr,
@@ -3117,6 +3197,14 @@ private:
         for (Contact& c : manifold.contacts) {
             SolveNormalScalar(c);
         }
+#ifndef NDEBUG
+        if (selectedIdx0 >= 0 && selectedIdx1 >= 0
+            && static_cast<std::size_t>(std::max(selectedIdx0, selectedIdx1)) < manifold.contacts.size()) {
+            manifold.blockSolveDebug.selectedPostNormalImpulses = {
+                manifold.contacts[static_cast<std::size_t>(selectedIdx0)].normalImpulseSum,
+                manifold.contacts[static_cast<std::size_t>(selectedIdx1)].normalImpulseSum};
+        }
+#endif
     }
 
     void SolveContactsInManifold(Manifold& manifold) {
