@@ -34,7 +34,9 @@ public:
 
 #ifndef NDEBUG
     struct SolverTelemetry {
+        std::uint64_t blockSolveEligible = 0;
         std::uint64_t blockSolveUsed = 0;
+        std::uint64_t scalarPathIneligible = 0;
         std::uint64_t scalarFallbackInvalidNormal = 0;
         std::uint64_t scalarFallbackNormalMismatch = 0;
         std::uint64_t scalarFallbackMissingSlots = 0;
@@ -54,6 +56,10 @@ public:
 
     void SetContactPersistenceDebugLogging(bool enabled) {
         debugContactPersistence_ = enabled;
+    }
+
+    void SetBlockSolveDebugLogging(bool enabled) {
+        debugBlockSolveRouting_ = enabled;
     }
 #endif
 
@@ -1203,6 +1209,9 @@ private:
             if (!m.contacts.empty()) {
                 m.manifoldType = ManifoldTypeFromFeatureKey(m.contacts.front().featureKey);
             }
+            m.lowQuality = false;
+            m.blockSolveEligible = false;
+            m.usedBlockSolve = false;
             SortManifoldContacts(m.contacts);
             const Manifold* previous = nullptr;
             for (const Manifold& old : previousManifolds_) {
@@ -1280,6 +1289,7 @@ private:
                 }
 
                 if (manifoldTypeChanged || removedOrAdded || featureMismatch) {
+                    m.lowQuality = true;
                     ++solverTelemetry_.topologyChangeEvents;
                     if (featureMismatch) {
                         ++solverTelemetry_.featureIdChurnEvents;
@@ -2477,6 +2487,7 @@ private:
 
     enum class BlockSolveFallbackReason {
         None,
+        Ineligible,
         InvalidManifoldNormal,
         ContactNormalMismatch,
         MissingBlockSlots,
@@ -2485,6 +2496,59 @@ private:
         LcpFailure,
         NonFiniteResult,
     };
+
+    static bool IsValidBlockContactPoint(const Contact& contact) {
+        if (!std::isfinite(contact.penetration) || contact.penetration <= 0.0f) {
+            return false;
+        }
+        if (!std::isfinite(contact.normal.x) || !std::isfinite(contact.normal.y) || !std::isfinite(contact.normal.z)) {
+            return false;
+        }
+        return LengthSquared(contact.normal) > kEpsilon;
+    }
+
+    bool IsBlockSolveEligible(const Manifold& manifold) const {
+        if (manifold.contacts.size() != 2) {
+            return false;
+        }
+
+        // Allow only box-plane vertex manifolds and box-box face-contact manifolds.
+        constexpr std::uint8_t kBoxPlaneManifoldType = 7;
+        constexpr std::uint8_t kBoxBoxFaceManifoldType = 9;
+        if (manifold.manifoldType != kBoxPlaneManifoldType
+            && manifold.manifoldType != kBoxBoxFaceManifoldType) {
+            return false;
+        }
+
+        if (manifold.lowQuality) {
+            return false;
+        }
+
+        const Vec3 manifoldNormal = Normalize(manifold.normal);
+        if (!std::isfinite(manifoldNormal.x) || !std::isfinite(manifoldNormal.y) || !std::isfinite(manifoldNormal.z)) {
+            return false;
+        }
+        if (LengthSquared(manifoldNormal) <= kEpsilon) {
+            return false;
+        }
+
+        for (const Contact& contact : manifold.contacts) {
+            if (!IsValidBlockContactPoint(contact)) {
+                return false;
+            }
+            if (Dot(contact.normal, manifoldNormal) < 0.95f) {
+                return false;
+            }
+        }
+
+        if (!manifold.blockSlotValid[0] || !manifold.blockSlotValid[1]) {
+            return false;
+        }
+        if (manifold.blockContactKeys[0] == manifold.blockContactKeys[1]) {
+            return false;
+        }
+        return true;
+    }
 
     bool EnsureStableTwoPointOrder(Manifold& manifold) {
         if (manifold.contacts.size() != 2) {
@@ -2697,8 +2761,29 @@ private:
             return;
         }
 
-        const bool shouldAttemptBlock = manifold.contacts.size() >= 2;
-        if (!shouldAttemptBlock) {
+        manifold.blockSolveEligible = IsBlockSolveEligible(manifold);
+        manifold.usedBlockSolve = false;
+
+#ifndef NDEBUG
+        if (manifold.blockSolveEligible) {
+            ++solverTelemetry_.blockSolveEligible;
+        }
+#endif
+
+        if (!manifold.blockSolveEligible) {
+#ifndef NDEBUG
+            ++solverTelemetry_.scalarPathIneligible;
+            if (debugBlockSolveRouting_) {
+                std::fprintf(
+                    stderr,
+                    "[minphys3d] scalar route (ineligible) pair=(%u,%u) type=%u contacts=%zu lowQuality=%d\n",
+                    manifold.a,
+                    manifold.b,
+                    static_cast<unsigned>(manifold.manifoldType),
+                    manifold.contacts.size(),
+                    manifold.lowQuality ? 1 : 0);
+            }
+#endif
             for (Contact& c : manifold.contacts) {
                 SolveNormalScalar(c);
             }
@@ -2708,8 +2793,18 @@ private:
         BlockSolveFallbackReason fallbackReason = BlockSolveFallbackReason::None;
         const bool blockSolved = SolveNormalBlock2(manifold, fallbackReason);
         if (blockSolved) {
+            manifold.usedBlockSolve = true;
 #ifndef NDEBUG
             ++solverTelemetry_.blockSolveUsed;
+            if (debugBlockSolveRouting_) {
+                std::fprintf(
+                    stderr,
+                    "[minphys3d] block route pair=(%u,%u) type=%u contacts=%zu\n",
+                    manifold.a,
+                    manifold.b,
+                    static_cast<unsigned>(manifold.manifoldType),
+                    manifold.contacts.size());
+            }
 #endif
             for (std::size_t i = 2; i < manifold.contacts.size(); ++i) {
                 SolveNormalScalar(manifold.contacts[i]);
@@ -2740,8 +2835,19 @@ private:
             case BlockSolveFallbackReason::NonFiniteResult:
                 ++solverTelemetry_.scalarFallbackNonFinite;
                 break;
+            case BlockSolveFallbackReason::Ineligible:
+                break;
             case BlockSolveFallbackReason::None:
                 break;
+        }
+        if (debugBlockSolveRouting_) {
+            std::fprintf(
+                stderr,
+                "[minphys3d] scalar fallback pair=(%u,%u) type=%u reason=%d\n",
+                manifold.a,
+                manifold.b,
+                static_cast<unsigned>(manifold.manifoldType),
+                static_cast<int>(fallbackReason));
         }
 #endif
 
@@ -3175,6 +3281,7 @@ private:
 #ifndef NDEBUG
     SolverTelemetry solverTelemetry_{};
     bool debugContactPersistence_ = false;
+    bool debugBlockSolveRouting_ = false;
 #endif
 };
 

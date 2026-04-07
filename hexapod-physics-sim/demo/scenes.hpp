@@ -9,6 +9,9 @@ namespace minphys3d::demo {
 
 inline int RunDefaultScene() {
     World world({0.0f, -9.81f, 0.0f});
+#ifndef NDEBUG
+    world.SetBlockSolveDebugLogging(true);
+#endif
 
     Body plane;
     plane.shape = ShapeType::Plane;
