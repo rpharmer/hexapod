@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "minphys3d/minphys3d.hpp"
+#include "minphys3d/core/world.hpp"
 
 namespace {
 
