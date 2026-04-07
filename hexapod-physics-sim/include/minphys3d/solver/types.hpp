@@ -38,6 +38,18 @@ struct ContactSolverConfig {
     float face4ConditionEstimateMax = 0.0f;
     std::uint8_t face4Iterations = 8;
     float face4ProjectedGaussSeidelEpsilon = 1e-5f;
+    // Conservative default: keep 4-point projected normal solve off until friction coherence
+    // telemetry indicates stable basis reuse/churn in target scenarios.
+    bool face4RequireFrictionCoherence = true;
+    std::uint16_t face4MinCoherentPersistenceAge = 2;
+    std::uint16_t face4MinStableContactCount = 4;
+    float face4MaxBasisChurnRatio = 0.5f;
+
+    // Staged rollout controls for manifold-level 2D friction budgeting.
+    bool enableTwoAxisFrictionSolve = true;
+    bool enableManifoldFrictionBudget = true;
+    bool frictionBudgetUseRadialClamp = true;
+    float manifoldFrictionBudgetScale = 1.0f;
 };
 
 struct Contact {
@@ -47,7 +59,10 @@ struct Contact {
     Vec3 point{};
     float penetration = 0.0f;
     float normalImpulseSum = 0.0f;
+    // Legacy scalar tangent accumulator retained for compatibility/migration.
     float tangentImpulseSum = 0.0f;
+    float tangentImpulseSum0 = 0.0f;
+    float tangentImpulseSum1 = 0.0f;
     std::uint64_t key = 0;
     std::uint64_t featureKey = 0;
     std::uint16_t persistenceAge = 0;
@@ -69,7 +84,8 @@ struct Manifold {
     bool tangentBasisValid = false;
     std::array<float, 2> manifoldTangentImpulseSum{0.0f, 0.0f};
     bool manifoldTangentImpulseValid = false;
-    std::unordered_map<std::uint64_t, std::array<float, 2>> cachedImpulseByContactKey{};
+    // Cached per-contact impulse state: [normal, tangent0, tangent1].
+    std::unordered_map<std::uint64_t, std::array<float, 3>> cachedImpulseByContactKey{};
     bool selectedBlockPairPersistent = false;
     bool selectedBlockPairQualityPass = false;
     bool lowQuality = false;
