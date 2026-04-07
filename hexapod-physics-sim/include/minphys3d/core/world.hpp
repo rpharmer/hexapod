@@ -2853,7 +2853,7 @@ private:
             return;
         }
 
-        if (manifold.contacts.size() != 4) {
+        if (manifold.contacts.size() > kMaxContactsPerManifold) {
 #ifndef NDEBUG
             logSelection();
 #endif
@@ -2875,20 +2875,20 @@ private:
         const Vec3 centers = 0.5f * (bodies_[manifold.a].position + bodies_[manifold.b].position);
         PairSelection best{};
         constexpr float kScoreEpsilon = 1e-6f;
-        for (int i = 0; i < 4; ++i) {
+        for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
             const Contact& a = manifold.contacts[static_cast<std::size_t>(i)];
             if (!IsValidBlockContactPoint(a)) {
                 continue;
             }
-            for (int j = i + 1; j < 4; ++j) {
+            for (std::size_t j = i + 1; j < manifold.contacts.size(); ++j) {
                 const Contact& b = manifold.contacts[static_cast<std::size_t>(j)];
                 if (!IsValidBlockContactPoint(b)) {
                     continue;
                 }
 
                 PairSelection candidate;
-                candidate.i = i;
-                candidate.j = j;
+                candidate.i = static_cast<int>(i);
+                candidate.j = static_cast<int>(j);
                 candidate.penetration = a.penetration + b.penetration;
                 candidate.spread = LengthSquared(a.point - b.point);
                 const Vec3 midPoint = 0.5f * (a.point + b.point);
