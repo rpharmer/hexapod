@@ -1085,6 +1085,41 @@ private:
         }
     }
 
+    static bool ContactComesBefore(const Contact& lhs, const Contact& rhs) {
+        if (lhs.key != rhs.key) {
+            return lhs.key < rhs.key;
+        }
+        if (lhs.penetration != rhs.penetration) {
+            return lhs.penetration > rhs.penetration;
+        }
+        if (lhs.point.x != rhs.point.x) {
+            return lhs.point.x < rhs.point.x;
+        }
+        if (lhs.point.y != rhs.point.y) {
+            return lhs.point.y < rhs.point.y;
+        }
+        if (lhs.point.z != rhs.point.z) {
+            return lhs.point.z < rhs.point.z;
+        }
+        if (lhs.normal.x != rhs.normal.x) {
+            return lhs.normal.x < rhs.normal.x;
+        }
+        if (lhs.normal.y != rhs.normal.y) {
+            return lhs.normal.y < rhs.normal.y;
+        }
+        if (lhs.normal.z != rhs.normal.z) {
+            return lhs.normal.z < rhs.normal.z;
+        }
+        if (lhs.a != rhs.a) {
+            return lhs.a < rhs.a;
+        }
+        return lhs.b < rhs.b;
+    }
+
+    static void SortManifoldContacts(std::vector<Contact>& contacts) {
+        std::stable_sort(contacts.begin(), contacts.end(), ContactComesBefore);
+    }
+
     void BuildManifolds() {
         for (const Contact& c : contacts_) {
             bool found = false;
@@ -1108,6 +1143,7 @@ private:
         }
 
         for (Manifold& m : manifolds_) {
+            SortManifoldContacts(m.contacts);
             const Manifold* previous = nullptr;
             for (const Manifold& old : previousManifolds_) {
                 if (old.pairKey() == m.pairKey()) {
@@ -1115,13 +1151,14 @@ private:
                     m.blockNormalImpulseSum = old.blockNormalImpulseSum;
                     m.blockContactKeys = old.blockContactKeys;
                     m.blockSlotValid = old.blockSlotValid;
+                    std::size_t oldIndex = 0;
                     for (Contact& c : m.contacts) {
-                        for (const Contact& oldc : old.contacts) {
-                            if (oldc.key == c.key) {
-                                c.normalImpulseSum = oldc.normalImpulseSum;
-                                c.tangentImpulseSum = oldc.tangentImpulseSum;
-                                break;
-                            }
+                        while (oldIndex < old.contacts.size() && old.contacts[oldIndex].key < c.key) {
+                            ++oldIndex;
+                        }
+                        if (oldIndex < old.contacts.size() && old.contacts[oldIndex].key == c.key) {
+                            c.normalImpulseSum = old.contacts[oldIndex].normalImpulseSum;
+                            c.tangentImpulseSum = old.contacts[oldIndex].tangentImpulseSum;
                         }
                     }
                     break;
@@ -2251,7 +2288,7 @@ private:
     }
 
     bool SolveNormalBlock2(Manifold& manifold) {
-        if (manifold.contacts.size() != 2) {
+        if (manifold.contacts.size() < 2) {
             return false;
         }
 
@@ -2413,18 +2450,18 @@ private:
     }
 
     void SolveContactsInManifold(Manifold& manifold) {
-        if (manifold.contacts.size() == 2) {
-            if (!SolveNormalBlock2(manifold)) {
-                SolveNormalScalar(manifold.contacts[0]);
-                SolveNormalScalar(manifold.contacts[1]);
-            }
-        } else {
+        const bool blockSolved = manifold.contacts.size() >= 2 && SolveNormalBlock2(manifold);
+        if (!blockSolved) {
             for (Contact& c : manifold.contacts) {
                 SolveNormalScalar(c);
             }
+        } else {
+            for (std::size_t i = 2; i < manifold.contacts.size(); ++i) {
+                SolveNormalScalar(manifold.contacts[i]);
+            }
         }
 
-        if (manifold.contacts.size() == 2) {
+        if (manifold.contacts.size() >= 2) {
             for (Contact& c : manifold.contacts) {
                 const int slot = FindBlockSlot(manifold, c.key);
                 if (slot >= 0) {
