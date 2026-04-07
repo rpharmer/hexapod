@@ -53,6 +53,7 @@ struct RunMetrics {
     std::uint64_t reorderEvents = 0;
     SolverTelemetrySnapshot telemetry;
     std::vector<float> stepMaxPenetration;
+    std::vector<float> stepContactCounts;
 };
 
 struct SceneConfig {
@@ -162,6 +163,7 @@ RunMetrics RunScene(SceneConfig config, bool useBlockSolver) {
 
         contactCounts.push_back(totalContacts);
         metrics.stepMaxPenetration.push_back(stepMaxPenetration);
+        metrics.stepContactCounts.push_back(totalContacts);
         if (config.logStepContactCount) {
             std::cout << "[manifold-reorder-step] solver=" << (useBlockSolver ? "block" : "scalar")
                       << " step=" << step
@@ -272,21 +274,35 @@ ComparisonResult CompareScene(const SceneConfig& source) {
         }
     };
 
-    fail(out.scalar.maxPenetration > RegressionThresholds::kMaxAbsolutePenetration,
-         "scalar max penetration exceeded absolute threshold");
-    fail(out.block.maxPenetration > RegressionThresholds::kMaxAbsolutePenetration,
-         "block max penetration exceeded absolute threshold");
+    const bool isMinimizedPenetrationCase = out.scene == "minimized penetration stack case";
+    const bool isMinimizedStdDevCase = out.scene == "minimized contact variance reorder case";
+
+    if (!isMinimizedPenetrationCase && !isMinimizedStdDevCase) {
+        fail(out.scalar.maxPenetration > RegressionThresholds::kMaxAbsolutePenetration,
+             "scalar max penetration exceeded absolute threshold");
+        fail(out.block.maxPenetration > RegressionThresholds::kMaxAbsolutePenetration,
+             "block max penetration exceeded absolute threshold");
+    }
+
 
     fail((out.block.maxPenetration - out.scalar.maxPenetration) > RegressionThresholds::kMaxPenetrationRegression,
-         "block penetration regression beyond tolerance");
+         isMinimizedPenetrationCase
+             ? "minimized penetration stack case: penetration regression beyond tolerance"
+             : "block penetration regression beyond tolerance");
+
     fail((out.block.contactCountStdDev - out.scalar.contactCountStdDev) > RegressionThresholds::kMaxContactStdDevRegression,
-         "block contact-count stddev regression beyond tolerance");
-    fail((out.block.contactCountMeanStepDelta - out.scalar.contactCountMeanStepDelta) > RegressionThresholds::kMaxContactStepDeltaRegression,
-         "block contact-count step delta regression beyond tolerance");
-    fail((out.block.maxImpulseDelta - out.scalar.maxImpulseDelta) > RegressionThresholds::kMaxImpulseDeltaRegression,
-         "block max impulse continuity regression beyond tolerance");
-    fail((out.block.meanImpulseDelta - out.scalar.meanImpulseDelta) > RegressionThresholds::kMaxMeanImpulseDeltaRegression,
-         "block mean impulse continuity regression beyond tolerance");
+         isMinimizedStdDevCase
+             ? "minimized contact variance reorder case: contact-count stddev regression beyond tolerance"
+             : "block contact-count stddev regression beyond tolerance");
+
+    if (!isMinimizedPenetrationCase && !isMinimizedStdDevCase) {
+        fail((out.block.contactCountMeanStepDelta - out.scalar.contactCountMeanStepDelta) > RegressionThresholds::kMaxContactStepDeltaRegression,
+             "block contact-count step delta regression beyond tolerance");
+        fail((out.block.maxImpulseDelta - out.scalar.maxImpulseDelta) > RegressionThresholds::kMaxImpulseDeltaRegression,
+             "block max impulse continuity regression beyond tolerance");
+        fail((out.block.meanImpulseDelta - out.scalar.meanImpulseDelta) > RegressionThresholds::kMaxMeanImpulseDeltaRegression,
+             "block mean impulse continuity regression beyond tolerance");
+    }
 
     if (out.scalar.settleTimeSeconds >= 0.0f && out.block.settleTimeSeconds >= 0.0f) {
         fail((out.block.settleTimeSeconds - out.scalar.settleTimeSeconds)
@@ -364,6 +380,36 @@ SceneConfig BuildSlightlyOffsetBoxStacks() {
     return cfg;
 }
 
+SceneConfig BuildMinimizedPenetrationStackCase() {
+    SceneConfig cfg;
+    // Purpose: short stack derived from BuildSlightlyOffsetBoxStacks that keeps
+    // the penetration-regression signature while reducing total simulation length.
+    cfg.name = "minimized penetration stack case";
+    cfg.world = World({0.0f, -9.81f, 0.0f});
+    cfg.world.CreateBody(MakePlane());
+
+    Body bottom;
+    bottom.shape = ShapeType::Box;
+    bottom.halfExtents = {0.45f, 0.25f, 0.45f};
+    bottom.mass = 3.0f;
+    bottom.position = {0.0f, 0.9f, 0.0f};
+    const auto bottomId = cfg.world.CreateBody(bottom);
+
+    Body middle = bottom;
+    middle.mass = 2.2f;
+    middle.position = {0.05f, 1.55f, -0.03f};
+    const auto middleId = cfg.world.CreateBody(middle);
+
+    Body top = bottom;
+    top.mass = 1.4f;
+    top.position = {0.10f, 2.20f, 0.02f};
+    const auto topId = cfg.world.CreateBody(top);
+
+    cfg.trackedDynamicBodies = {bottomId, middleId, topId};
+    cfg.steps = 520;
+    return cfg;
+}
+
 SceneConfig BuildSlidingBoxComingToRest() {
     SceneConfig cfg;
     cfg.name = "sliding box coming to rest";
@@ -403,6 +449,31 @@ SceneConfig BuildManifoldReorderStressCase() {
 
     cfg.trackedDynamicBodies = {boxId};
     cfg.steps = 960;
+    cfg.logStepContactCount = false;
+    cfg.logStepManifoldIds = false;
+    return cfg;
+}
+
+SceneConfig BuildMinimizedContactVarianceReorderCase() {
+    SceneConfig cfg;
+    // Purpose: compact manifold-reorder case for contact-cardinality variance.
+    // If this fails, prioritize contact-count stddev/reordering diagnostics.
+    cfg.name = "minimized contact variance reorder case";
+    cfg.world = World({0.0f, -9.81f, 0.0f});
+    cfg.world.CreateBody(MakePlane());
+
+    Body box;
+    box.shape = ShapeType::Box;
+    box.halfExtents = {0.60f, 0.18f, 0.28f};
+    box.mass = 2.6f;
+    box.position = {0.0f, 1.25f, 0.0f};
+    box.orientation = minphys3d::Normalize(Quat{0.9848077f, 0.0f, 0.1736482f, 0.0f});
+    box.velocity = {0.40f, 0.0f, -0.35f};
+    box.angularVelocity = {0.0f, 1.0f, 0.0f};
+    const auto boxId = cfg.world.CreateBody(box);
+
+    cfg.trackedDynamicBodies = {boxId};
+    cfg.steps = 480;
     cfg.logStepContactCount = false;
     cfg.logStepManifoldIds = false;
     return cfg;
@@ -547,7 +618,7 @@ void PrintHumanSummary(const ComparisonResult& result) {
         std::cout << "    diagnosis: block path shows more topology/churn events (possible topology churn)\n";
     }
 
-    if (result.scene == "slightly offset box stacks") {
+    if (result.scene == "slightly offset box stacks" || result.scene == "minimized penetration stack case") {
         std::vector<std::pair<int, float>> divergingFrames;
         const std::size_t frameCount = std::min(result.scalar.stepMaxPenetration.size(), result.block.stepMaxPenetration.size());
         for (std::size_t i = 0; i < frameCount; ++i) {
@@ -559,7 +630,7 @@ void PrintHumanSummary(const ComparisonResult& result) {
         std::sort(divergingFrames.begin(), divergingFrames.end(), [](const auto& lhs, const auto& rhs) {
             return lhs.second > rhs.second;
         });
-        std::cout << "    divergence_frames(block-pen - scalar-pen > 0.20):";
+        std::cout << "    penetration_trace(block-pen - scalar-pen > 0.20):";
         if (divergingFrames.empty()) {
             std::cout << " none\n";
         } else {
@@ -567,6 +638,31 @@ void PrintHumanSummary(const ComparisonResult& result) {
             for (std::size_t i = 0; i < limit; ++i) {
                 std::cout << " [step=" << divergingFrames[i].first
                           << " delta=" << std::fixed << std::setprecision(4) << divergingFrames[i].second << "]";
+            }
+            std::cout << "\n";
+        }
+    }
+
+    if (result.scene == "manifold reorder stress case" || result.scene == "minimized contact variance reorder case") {
+        std::vector<std::pair<int, float>> contactDeltaFrames;
+        const std::size_t frameCount = std::min(result.scalar.stepContactCounts.size(), result.block.stepContactCounts.size());
+        for (std::size_t i = 0; i < frameCount; ++i) {
+            const float delta = result.block.stepContactCounts[i] - result.scalar.stepContactCounts[i];
+            if (std::abs(delta) >= 1.0f) {
+                contactDeltaFrames.emplace_back(static_cast<int>(i), delta);
+            }
+        }
+        std::sort(contactDeltaFrames.begin(), contactDeltaFrames.end(), [](const auto& lhs, const auto& rhs) {
+            return std::abs(lhs.second) > std::abs(rhs.second);
+        });
+        std::cout << "    contact_count_trace(|block-scalar| >= 1):";
+        if (contactDeltaFrames.empty()) {
+            std::cout << " none\n";
+        } else {
+            const std::size_t limit = std::min<std::size_t>(10, contactDeltaFrames.size());
+            for (std::size_t i = 0; i < limit; ++i) {
+                std::cout << " [step=" << contactDeltaFrames[i].first
+                          << " delta=" << std::fixed << std::setprecision(1) << contactDeltaFrames[i].second << "]";
             }
             std::cout << "\n";
         }
@@ -598,6 +694,8 @@ int main(int argc, char** argv) {
     scenes.push_back(BuildTwoPointBoxRestingOnPlane());
     scenes.push_back(BuildTiltedBoxSettling());
     scenes.push_back(BuildSlightlyOffsetBoxStacks());
+    scenes.push_back(BuildMinimizedPenetrationStackCase());
+    scenes.push_back(BuildMinimizedContactVarianceReorderCase());
     scenes.push_back(BuildSlidingBoxComingToRest());
 
     std::vector<ComparisonResult> results;
