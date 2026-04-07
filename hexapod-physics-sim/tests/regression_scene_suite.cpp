@@ -44,6 +44,8 @@ struct SceneConfig {
     float dt = 1.0f / 120.0f;
     int solverIterations = 16;
     int steps = 900;
+    bool logStepContactCount = false;
+    bool logStepManifoldIds = false;
 };
 
 struct ComparisonResult {
@@ -142,6 +144,30 @@ RunMetrics RunScene(SceneConfig config, bool useBlockSolver) {
 
         contactCounts.push_back(totalContacts);
         metrics.stepMaxPenetration.push_back(stepMaxPenetration);
+        if (config.logStepContactCount) {
+            std::cout << "[manifold-reorder-step] solver=" << (useBlockSolver ? "block" : "scalar")
+                      << " step=" << step
+                      << " contact_count=" << totalContacts << "\n";
+        }
+        if (config.logStepManifoldIds) {
+            std::cout << "[manifold-reorder-step] solver=" << (useBlockSolver ? "block" : "scalar")
+                      << " step=" << step
+                      << " manifold_ids=";
+            bool first = true;
+            for (const Manifold& manifold : manifolds) {
+                const std::uint32_t lo = std::min(manifold.a, manifold.b);
+                const std::uint32_t hi = std::max(manifold.a, manifold.b);
+                if (!first) {
+                    std::cout << ",";
+                }
+                first = false;
+                std::cout << lo << ":" << hi << ":" << static_cast<unsigned>(manifold.manifoldType);
+            }
+            if (first) {
+                std::cout << "none";
+            }
+            std::cout << "\n";
+        }
         if (previousContactCount >= 0.0f) {
             contactCountStepDeltas.push_back(std::abs(totalContacts - previousContactCount));
         }
@@ -344,6 +370,8 @@ SceneConfig BuildManifoldReorderStressCase() {
 
     cfg.trackedDynamicBodies = {boxId};
     cfg.steps = 960;
+    cfg.logStepContactCount = false;
+    cfg.logStepManifoldIds = false;
     return cfg;
 }
 
@@ -445,19 +473,28 @@ void PrintHumanSummary(const ComparisonResult& result) {
 
 int main(int argc, char** argv) {
     std::string metricsPath = "tests/block_solver_metrics.json";
+    bool logReorderContactCounts = false;
+    bool logReorderManifoldIds = false;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--metrics-out" && i + 1 < argc) {
             metricsPath = argv[++i];
+        } else if (arg == "--log-reorder-contact-count") {
+            logReorderContactCounts = true;
+        } else if (arg == "--log-reorder-manifold-ids") {
+            logReorderManifoldIds = true;
         }
     }
 
     std::vector<SceneConfig> scenes;
+    SceneConfig reorderStress = BuildManifoldReorderStressCase();
+    reorderStress.logStepContactCount = logReorderContactCounts;
+    reorderStress.logStepManifoldIds = logReorderManifoldIds;
+    scenes.push_back(std::move(reorderStress));
     scenes.push_back(BuildTwoPointBoxRestingOnPlane());
     scenes.push_back(BuildTiltedBoxSettling());
     scenes.push_back(BuildSlightlyOffsetBoxStacks());
     scenes.push_back(BuildSlidingBoxComingToRest());
-    scenes.push_back(BuildManifoldReorderStressCase());
 
     std::vector<ComparisonResult> results;
     results.reserve(scenes.size());

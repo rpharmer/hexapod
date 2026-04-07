@@ -109,6 +109,7 @@ public:
         std::uint64_t featureIdChurnEvents = 0;
         std::uint64_t topologyChangeEvents = 0;
         std::uint64_t impulseResetPoints = 0;
+        std::uint64_t selectedPairOscillationEvents = 0;
     };
 
     const SolverTelemetry& GetSolverTelemetry() const {
@@ -210,6 +211,9 @@ public:
         const float subDt = dt / static_cast<float>(substeps);
 
         for (int stepIndex = 0; stepIndex < substeps; ++stepIndex) {
+#ifndef NDEBUG
+            ++debugFrameIndex_;
+#endif
             currentSubstepDt_ = subDt;
             if (stepIndex == 0) {
                 previousContacts_ = contacts_;
@@ -1326,6 +1330,12 @@ private:
                 m.selectedBlockContactKeys = {0u, 0u};
             }
 
+#ifndef NDEBUG
+            if (previous != nullptr) {
+                DebugLogContactTransitions(*previous, m);
+            }
+#endif
+
             const ManifoldKey manifoldId = MakeManifoldId(m.a, m.b, m.manifoldType);
             std::unordered_map<std::uint64_t, std::uint8_t> currentFeatureOrdinal;
             std::unordered_map<std::uint64_t, std::uint8_t> currentFeatureCounts;
@@ -1409,7 +1419,27 @@ private:
 #endif
 
             RefreshManifoldBlockCache(m);
+#ifndef NDEBUG
+            DebugLogManifoldContactKeys(m);
+            if (debugContactPersistence_) {
+                std::fprintf(stderr,
+                             "[minphys3d] frame=%llu block_slots pair=(%u,%u) type=%u slots=[(%d,%llu),(%d,%llu)] selected_keys=(%llu,%llu)\n",
+                             static_cast<unsigned long long>(debugFrameIndex_),
+                             m.a,
+                             m.b,
+                             static_cast<unsigned>(m.manifoldType),
+                             m.blockSlotValid[0] ? 1 : 0,
+                             static_cast<unsigned long long>(m.blockContactKeys[0]),
+                             m.blockSlotValid[1] ? 1 : 0,
+                             static_cast<unsigned long long>(m.blockContactKeys[1]),
+                             static_cast<unsigned long long>(m.selectedBlockContactKeys[0]),
+                             static_cast<unsigned long long>(m.selectedBlockContactKeys[1]));
+            }
+#endif
             SelectBlockSolvePair(m);
+#ifndef NDEBUG
+            RecordSelectedPairHistory(m);
+#endif
         }
 
         std::unordered_map<ManifoldKey, std::size_t, ManifoldKeyHash> manifoldCountByPair;
@@ -2669,14 +2699,146 @@ private:
         return StableContactFallbackKey(lhs) <= StableContactFallbackKey(rhs);
     }
 
+    static std::array<std::uint64_t, 2> SortedContactKeyPair(std::uint64_t k0, std::uint64_t k1) {
+        if (k1 < k0) {
+            std::swap(k0, k1);
+        }
+        return {k0, k1};
+    }
+
+#ifndef NDEBUG
+    struct SelectionHistory {
+        std::array<std::uint64_t, 2> lastPair{0u, 0u};
+        std::array<std::uint64_t, 2> previousPair{0u, 0u};
+        bool hasLast = false;
+        bool hasPrevious = false;
+    };
+
+    void RecordSelectedPairHistory(const Manifold& manifold) {
+        if (manifold.selectedBlockContactIndices[0] < 0 || manifold.selectedBlockContactIndices[1] < 0) {
+            return;
+        }
+        const ManifoldKey manifoldId = MakeManifoldId(manifold.a, manifold.b, manifold.manifoldType);
+        const std::array<std::uint64_t, 2> currentPair =
+            SortedContactKeyPair(manifold.selectedBlockContactKeys[0], manifold.selectedBlockContactKeys[1]);
+        SelectionHistory& history = selectedPairHistory_[manifoldId];
+        if (history.hasPrevious && history.hasLast && currentPair == history.previousPair && currentPair != history.lastPair) {
+            ++solverTelemetry_.selectedPairOscillationEvents;
+            if (debugContactPersistence_) {
+                std::fprintf(stderr,
+                             "[minphys3d] frame=%llu selected_pair_oscillation pair=(%u,%u) type=%u prev=(%llu,%llu) last=(%llu,%llu) current=(%llu,%llu)\n",
+                             static_cast<unsigned long long>(debugFrameIndex_),
+                             manifold.a,
+                             manifold.b,
+                             static_cast<unsigned>(manifold.manifoldType),
+                             static_cast<unsigned long long>(history.previousPair[0]),
+                             static_cast<unsigned long long>(history.previousPair[1]),
+                             static_cast<unsigned long long>(history.lastPair[0]),
+                             static_cast<unsigned long long>(history.lastPair[1]),
+                             static_cast<unsigned long long>(currentPair[0]),
+                             static_cast<unsigned long long>(currentPair[1]));
+            }
+        }
+        history.previousPair = history.lastPair;
+        history.hasPrevious = history.hasLast;
+        history.lastPair = currentPair;
+        history.hasLast = true;
+    }
+
+    void DebugLogManifoldContactKeys(const Manifold& manifold) const {
+        if (!debugContactPersistence_) {
+            return;
+        }
+        std::fprintf(stderr,
+                     "[minphys3d] frame=%llu manifold pair=(%u,%u) type=%u contact_keys=",
+                     static_cast<unsigned long long>(debugFrameIndex_),
+                     manifold.a,
+                     manifold.b,
+                     static_cast<unsigned>(manifold.manifoldType));
+        if (manifold.contacts.empty()) {
+            std::fprintf(stderr, "none");
+        } else {
+            for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
+                const Contact& c = manifold.contacts[i];
+                std::fprintf(stderr,
+                             "%s%llu(age=%u)",
+                             (i == 0 ? "" : ","),
+                             static_cast<unsigned long long>(c.key),
+                             static_cast<unsigned>(c.persistenceAge));
+            }
+        }
+        std::fprintf(stderr, "\n");
+    }
+
+    void DebugLogContactTransitions(const Manifold& previous, const Manifold& current) const {
+        if (!debugContactPersistence_) {
+            return;
+        }
+        std::unordered_map<std::uint64_t, int> previousCounts;
+        std::unordered_map<std::uint64_t, int> currentCounts;
+        for (const Contact& c : previous.contacts) {
+            ++previousCounts[c.key];
+        }
+        for (const Contact& c : current.contacts) {
+            ++currentCounts[c.key];
+        }
+        for (const auto& [key, oldCount] : previousCounts) {
+            const int newCount = currentCounts.count(key) > 0 ? currentCounts.at(key) : 0;
+            if (newCount < oldCount) {
+                std::fprintf(stderr,
+                             "[minphys3d] frame=%llu manifold pair=(%u,%u) type=%u contact_remove key=%llu count=%d\n",
+                             static_cast<unsigned long long>(debugFrameIndex_),
+                             current.a,
+                             current.b,
+                             static_cast<unsigned>(current.manifoldType),
+                             static_cast<unsigned long long>(key),
+                             oldCount - newCount);
+            }
+        }
+        for (const auto& [key, newCount] : currentCounts) {
+            const int oldCount = previousCounts.count(key) > 0 ? previousCounts.at(key) : 0;
+            if (newCount > oldCount) {
+                std::fprintf(stderr,
+                             "[minphys3d] frame=%llu manifold pair=(%u,%u) type=%u contact_add key=%llu count=%d\n",
+                             static_cast<unsigned long long>(debugFrameIndex_),
+                             current.a,
+                             current.b,
+                             static_cast<unsigned>(current.manifoldType),
+                             static_cast<unsigned long long>(key),
+                             newCount - oldCount);
+            }
+        }
+    }
+#endif
+
     void SelectBlockSolvePair(Manifold& manifold) const {
         const std::array<std::uint64_t, 2> previousSelectedKeys = manifold.selectedBlockContactKeys;
         manifold.selectedBlockContactIndices = {-1, -1};
         manifold.selectedBlockContactKeys = {0u, 0u};
         manifold.selectedBlockPairPersistent = false;
         manifold.selectedBlockPairQualityPass = false;
+#ifndef NDEBUG
+        const auto logSelection = [&]() {
+            if (!debugContactPersistence_) {
+                return;
+            }
+            std::fprintf(stderr,
+                         "[minphys3d] frame=%llu selected_block pair=(%u,%u) type=%u idx=(%d,%d) keys=(%llu,%llu)\n",
+                         static_cast<unsigned long long>(debugFrameIndex_),
+                         manifold.a,
+                         manifold.b,
+                         static_cast<unsigned>(manifold.manifoldType),
+                         manifold.selectedBlockContactIndices[0],
+                         manifold.selectedBlockContactIndices[1],
+                         static_cast<unsigned long long>(manifold.selectedBlockContactKeys[0]),
+                         static_cast<unsigned long long>(manifold.selectedBlockContactKeys[1]));
+        };
+#endif
 
         if (manifold.contacts.size() < 2) {
+#ifndef NDEBUG
+            logSelection();
+#endif
             return;
         }
 
@@ -2685,10 +2847,16 @@ private:
             manifold.selectedBlockContactKeys = {manifold.contacts[0].key, manifold.contacts[1].key};
             manifold.selectedBlockPairPersistent = true;
             manifold.selectedBlockPairQualityPass = true;
+#ifndef NDEBUG
+            logSelection();
+#endif
             return;
         }
 
         if (manifold.contacts.size() != 4) {
+#ifndef NDEBUG
+            logSelection();
+#endif
             return;
         }
 
@@ -2701,6 +2869,7 @@ private:
             int ageMin = -1;
             int ageSum = -1;
             float continuity = 0.0f;
+            std::array<std::uint64_t, 2> sortedKeys{0u, 0u};
         };
 
         const Vec3 centers = 0.5f * (bodies_[manifold.a].position + bodies_[manifold.b].position);
@@ -2729,6 +2898,7 @@ private:
                 const bool keyMatch = (a.key == previousSelectedKeys[0] || a.key == previousSelectedKeys[1])
                                    && (b.key == previousSelectedKeys[0] || b.key == previousSelectedKeys[1]);
                 candidate.continuity = keyMatch ? 1.0f : 0.0f;
+                candidate.sortedKeys = SortedContactKeyPair(a.key, b.key);
 
                 const bool betterPenetration = candidate.penetration > (best.penetration + kScoreEpsilon);
                 const bool tiePenetration = std::abs(candidate.penetration - best.penetration) <= kScoreEpsilon;
@@ -2742,12 +2912,7 @@ private:
                 const bool tieAgeSum = tieAgeMin && candidate.ageSum == best.ageSum;
                 const bool betterContinuity = tieAgeSum && candidate.continuity > best.continuity;
                 const bool tieContinuity = tieAgeSum && candidate.continuity == best.continuity;
-                const bool betterDeterministic = tieContinuity
-                    && ContactPairStableOrder(a, b)
-                    && (best.i < 0
-                        || manifold.contacts[static_cast<std::size_t>(best.i)].key > a.key
-                        || (manifold.contacts[static_cast<std::size_t>(best.i)].key == a.key
-                            && manifold.contacts[static_cast<std::size_t>(best.j)].key > b.key));
+                const bool betterDeterministic = tieContinuity && (best.i < 0 || candidate.sortedKeys < best.sortedKeys);
 
                 if (best.i < 0
                     || betterPenetration
@@ -2763,6 +2928,9 @@ private:
         }
 
         if (best.i < 0 || best.j < 0) {
+#ifndef NDEBUG
+            logSelection();
+#endif
             return;
         }
 
@@ -2782,6 +2950,10 @@ private:
             manifold.contacts[static_cast<std::size_t>(idx0)].persistenceAge > 0
             && manifold.contacts[static_cast<std::size_t>(idx1)].persistenceAge > 0;
         manifold.selectedBlockPairQualityPass = best.spread > 1e-6f && best.penetration > 0.0f;
+
+#ifndef NDEBUG
+        logSelection();
+#endif
     }
 
     bool IsBlockSolveEligible(const Manifold& manifold) const {
@@ -3640,6 +3812,8 @@ private:
     SolverTelemetry solverTelemetry_{};
     bool debugContactPersistence_ = false;
     bool debugBlockSolveRouting_ = false;
+    std::uint64_t debugFrameIndex_ = 0;
+    std::unordered_map<ManifoldKey, SelectionHistory, ManifoldKeyHash> selectedPairHistory_;
 #endif
 };
 
