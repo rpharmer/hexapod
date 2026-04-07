@@ -470,6 +470,13 @@ void World::SolveContactsInManifold(Manifold& manifold) {
                 return true;
             },
             [](std::vector<Contact>& manifoldContacts) { SortManifoldContacts(manifoldContacts); },
+            [](Manifold& manifold) { RefreshManifoldBlockCache(manifold); },
+            [this](Manifold& manifold) { SelectBlockSolvePair(manifold); },
+#ifndef NDEBUG
+            [this](const Manifold& manifold) { RecordSelectedPairHistory(manifold); },
+#else
+            [](const Manifold&) {},
+#endif
             [this](Manifold& m) { SolveManifoldNormalImpulses(m); },
             [](const Manifold& m, std::uint64_t key) { return FindBlockSlot(m, key); },
             [this](Body& a, Body& b, const Mat3& invIA, const Mat3& invIB, const Vec3& ra, const Vec3& rb, const Vec3& impulse) {
@@ -504,6 +511,13 @@ void World::SolveIslands() {
                 return true;
             },
             [](std::vector<Contact>& manifoldContacts) { SortManifoldContacts(manifoldContacts); },
+            [](Manifold& manifold) { RefreshManifoldBlockCache(manifold); },
+            [this](Manifold& manifold) { SelectBlockSolvePair(manifold); },
+#ifndef NDEBUG
+            [this](const Manifold& manifold) { RecordSelectedPairHistory(manifold); },
+#else
+            [](const Manifold&) {},
+#endif
             [this](Manifold& manifold) { SolveManifoldNormalImpulses(manifold); },
             [](const Manifold& manifold, std::uint64_t contactKey) { return FindBlockSlot(manifold, contactKey); },
             [this](Body& a, Body& b, const Mat3& invIA, const Mat3& invIB, const Vec3& ra, const Vec3& rb, const Vec3& impulse) {
