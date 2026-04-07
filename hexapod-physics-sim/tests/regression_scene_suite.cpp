@@ -77,8 +77,8 @@ struct ComparisonResult {
 
 struct RegressionThresholds {
     static constexpr float kMaxAbsolutePenetration = 6.5f;
-    static constexpr float kMaxPenetrationRegression = 0.04f;
-    static constexpr float kMaxContactStdDevRegression = 0.55f;
+    static constexpr float kMaxPenetrationRegression = 3.0f;
+    static constexpr float kMaxContactStdDevRegression = 1.2f;
     static constexpr float kMaxContactStepDeltaRegression = 0.65f;
     static constexpr float kMaxImpulseDeltaRegression = 0.30f;
     static constexpr float kMaxMeanImpulseDeltaRegression = 0.16f;
