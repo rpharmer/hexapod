@@ -3,7 +3,8 @@
 #include <cstdint>
 #include <iostream>
 
-#include "minphys3d/minphys3d.hpp"
+#include "minphys3d/core/body.hpp"
+#include "minphys3d/core/world.hpp"
 
 namespace minphys3d::demo {
 

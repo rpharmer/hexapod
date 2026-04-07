@@ -4,13 +4,16 @@
 #include <array>
 #include <cassert>
 #include <cmath>
-#include <cstdio>
 #include <cstdint>
 #include <limits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
+
+#ifndef NDEBUG
+#include <cstdio>
+#endif
 
 #include "minphys3d/broadphase/types.hpp"
 #include "minphys3d/core/body.hpp"

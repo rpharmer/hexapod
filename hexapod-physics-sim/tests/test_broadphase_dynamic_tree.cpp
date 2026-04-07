@@ -1,7 +1,7 @@
 #include <cassert>
 #include <cstdint>
 
-#include "minphys3d/minphys3d.hpp"
+#include "minphys3d/core/world.hpp"
 
 int main() {
     using namespace minphys3d;
