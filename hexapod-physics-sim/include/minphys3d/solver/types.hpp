@@ -48,6 +48,9 @@ struct Manifold {
     std::array<float, 2> blockNormalImpulseSum{0.0f, 0.0f};
     std::array<std::uint64_t, 2> blockContactKeys{0u, 0u};
     std::array<bool, 2> blockSlotValid{false, false};
+    bool lowQuality = false;
+    bool blockSolveEligible = false;
+    bool usedBlockSolve = false;
 
     std::uint64_t pairKey() const {
         const std::uint32_t lo = std::min(a, b);
