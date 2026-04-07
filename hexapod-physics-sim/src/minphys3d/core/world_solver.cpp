@@ -34,39 +34,40 @@ void World::ResolveTOIPipeline(float dt) {
 void World::WarmStartContacts() {
         for (Manifold& m : manifolds_) {
             EnsureStableTwoPointOrder(m);
-            std::array<bool, 2> skipPerContactNormal{false, false};
-            if (m.contacts.size() == 2 && m.blockSlotValid[0] && m.blockSlotValid[1]) {
-                const int slotForContact0 = FindBlockSlot(m, m.contacts[0].key);
-                const int slotForContact1 = FindBlockSlot(m, m.contacts[1].key);
-                const bool blockCacheMatchesPair = slotForContact0 >= 0 && slotForContact1 >= 0 && slotForContact0 != slotForContact1;
-                if (blockCacheMatchesPair) {
-                    for (int contactIndex = 0; contactIndex < 2; ++contactIndex) {
-                        Contact& c = m.contacts[contactIndex];
+            std::vector<bool> skipPerContactNormal(m.contacts.size(), false);
+            const int selected0 = m.selectedBlockContactIndices[0];
+            const int selected1 = m.selectedBlockContactIndices[1];
+            const bool selectedIndicesValid = selected0 >= 0 && selected1 >= 0 && selected0 != selected1
+                && static_cast<std::size_t>(std::max(selected0, selected1)) < m.contacts.size();
+            if (selectedIndicesValid && m.blockSlotValid[0] && m.blockSlotValid[1]) {
+                const int slotForSelected0 = FindBlockSlot(m, m.contacts[static_cast<std::size_t>(selected0)].key);
+                const int slotForSelected1 = FindBlockSlot(m, m.contacts[static_cast<std::size_t>(selected1)].key);
+                const bool blockCacheMatchesSelectedPair = slotForSelected0 >= 0 && slotForSelected1 >= 0 && slotForSelected0 != slotForSelected1;
+                if (blockCacheMatchesSelectedPair) {
+                    const std::array<int, 2> selectedContactIndices{selected0, selected1};
+                    for (int contactIndex : selectedContactIndices) {
+                        Contact& c = m.contacts[static_cast<std::size_t>(contactIndex)];
                         const int slot = FindBlockSlot(m, c.key);
-                        if (slot < 0) {
-                            continue;
+                        if (slot >= 0) {
+                            const float cachedNormalImpulse = m.blockNormalImpulseSum[slot];
+                            if (cachedNormalImpulse != 0.0f) {
+                                Body& a = bodies_[c.a];
+                                Body& b = bodies_[c.b];
+                                const Mat3 invIA = a.InvInertiaWorld();
+                                const Mat3 invIB = b.InvInertiaWorld();
+                                const Vec3 ra = c.point - a.position;
+                                const Vec3 rb = c.point - b.position;
+                                ApplyImpulse(a, b, invIA, invIB, ra, rb, cachedNormalImpulse * m.normal);
+                            }
                         }
-                        const float cachedNormalImpulse = m.blockNormalImpulseSum[slot];
-                        if (cachedNormalImpulse == 0.0f) {
-                            skipPerContactNormal[contactIndex] = true;
-                            continue;
-                        }
-
-                        Body& a = bodies_[c.a];
-                        Body& b = bodies_[c.b];
-                        const Mat3 invIA = a.InvInertiaWorld();
-                        const Mat3 invIB = b.InvInertiaWorld();
-                        const Vec3 ra = c.point - a.position;
-                        const Vec3 rb = c.point - b.position;
-                        ApplyImpulse(a, b, invIA, invIB, ra, rb, cachedNormalImpulse * m.normal);
-                        skipPerContactNormal[contactIndex] = true;
+                        skipPerContactNormal[static_cast<std::size_t>(contactIndex)] = true;
                     }
                 }
             }
 
             std::size_t contactIndex = 0;
             for (Contact& c : m.contacts) {
-                const bool skipNormal = contactIndex < skipPerContactNormal.size() && skipPerContactNormal[contactIndex];
+                const bool skipNormal = skipPerContactNormal[contactIndex];
                 if (!skipNormal && c.normalImpulseSum == 0.0f && c.tangentImpulseSum == 0.0f) {
                     ++contactIndex;
                     continue;
