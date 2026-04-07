@@ -20,6 +20,65 @@
 
 namespace minphys3d {
 
+struct ContactKey {
+    std::uint32_t loBody = 0;
+    std::uint32_t hiBody = 0;
+    std::uint64_t featureKey = 0;
+
+    bool operator==(const ContactKey& other) const {
+        return loBody == other.loBody && hiBody == other.hiBody && featureKey == other.featureKey;
+    }
+};
+
+struct ManifoldKey {
+    std::uint32_t loBody = 0;
+    std::uint32_t hiBody = 0;
+    std::uint8_t manifoldType = 0;
+
+    bool operator==(const ManifoldKey& other) const {
+        return loBody == other.loBody && hiBody == other.hiBody && manifoldType == other.manifoldType;
+    }
+};
+
+struct PersistentPointKey {
+    ManifoldKey manifold{};
+    std::uint64_t featureKey = 0;
+    std::uint8_t ordinal = 0;
+
+    bool operator==(const PersistentPointKey& other) const {
+        return manifold == other.manifold && featureKey == other.featureKey && ordinal == other.ordinal;
+    }
+};
+
+struct ContactKeyHash {
+    std::size_t operator()(const ContactKey& key) const noexcept {
+        std::size_t seed = static_cast<std::size_t>(key.loBody);
+        seed ^= static_cast<std::size_t>(key.hiBody) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
+        seed ^= static_cast<std::size_t>(key.featureKey) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
+        seed ^= static_cast<std::size_t>(key.featureKey >> 32u) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
+        return seed;
+    }
+};
+
+struct ManifoldKeyHash {
+    std::size_t operator()(const ManifoldKey& key) const noexcept {
+        std::size_t seed = static_cast<std::size_t>(key.loBody);
+        seed ^= static_cast<std::size_t>(key.hiBody) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
+        seed ^= static_cast<std::size_t>(key.manifoldType) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
+        return seed;
+    }
+};
+
+struct PersistentPointKeyHash {
+    std::size_t operator()(const PersistentPointKey& key) const noexcept {
+        std::size_t seed = ManifoldKeyHash{}(key.manifold);
+        seed ^= static_cast<std::size_t>(key.featureKey) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
+        seed ^= static_cast<std::size_t>(key.featureKey >> 32u) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
+        seed ^= static_cast<std::size_t>(key.ordinal) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
+        return seed;
+    }
+};
+
 class World {
 public:
     static constexpr std::uint32_t kInvalidJointId = std::numeric_limits<std::uint32_t>::max();
@@ -921,26 +980,32 @@ private:
              | static_cast<std::uint64_t>(clippedFeature);
     }
 
-    static std::uint64_t MakeContactKey(std::uint32_t a, std::uint32_t b, std::uint64_t featureKey) {
-        const std::uint32_t lo = std::min(a, b);
-        const std::uint32_t hi = std::max(a, b);
-        return (static_cast<std::uint64_t>(lo) << 48)
-             ^ (static_cast<std::uint64_t>(hi) << 32)
-             ^ featureKey;
+    static std::pair<std::uint32_t, std::uint32_t> CanonicalBodyOrder(std::uint32_t a, std::uint32_t b) {
+        return {std::min(a, b), std::max(a, b)};
+    }
+
+    static ContactKey MakeContactKey(std::uint32_t a, std::uint32_t b, std::uint64_t featureKey) {
+        const auto [lo, hi] = CanonicalBodyOrder(a, b);
+        return ContactKey{lo, hi, featureKey};
+    }
+
+    static std::uint64_t ContactKeyStableValue(const ContactKey& key) {
+        return (static_cast<std::uint64_t>(key.loBody) << 48)
+             ^ (static_cast<std::uint64_t>(key.hiBody) << 32)
+             ^ key.featureKey;
     }
 
     static std::uint8_t ManifoldTypeFromFeatureKey(std::uint64_t featureKey) {
         return static_cast<std::uint8_t>((featureKey >> 40) & 0xffu);
     }
 
-    static std::uint64_t MakeManifoldId(std::uint64_t pairKey, std::uint8_t manifoldType) {
-        return (pairKey << 8) ^ static_cast<std::uint64_t>(manifoldType);
+    static ManifoldKey MakeManifoldId(std::uint32_t a, std::uint32_t b, std::uint8_t manifoldType) {
+        const auto [lo, hi] = CanonicalBodyOrder(a, b);
+        return ManifoldKey{lo, hi, manifoldType};
     }
 
-    static std::uint64_t MakePersistentPointKey(std::uint64_t manifoldId, std::uint64_t featureKey, std::uint8_t ordinal) {
-        return (manifoldId * 1469598103934665603ull)
-             ^ (featureKey * 1099511628211ull)
-             ^ static_cast<std::uint64_t>(ordinal);
+    static PersistentPointKey MakePersistentPointKey(const ManifoldKey& manifoldId, std::uint64_t featureKey, std::uint8_t ordinal) {
+        return PersistentPointKey{manifoldId, featureKey, ordinal};
     }
 
     static void WakeBody(Body& body) {
@@ -1069,7 +1134,7 @@ private:
         c.point = point;
         c.penetration = std::max(penetration, 0.0f);
         c.featureKey = featureKey;
-        c.key = MakeContactKey(a, b, featureKey);
+        c.key = ContactKeyStableValue(MakeContactKey(a, b, featureKey));
         assert(IsFinite(c.normal));
         assert(IsFinite(c.point));
         assert(IsFinite(c.penetration));
@@ -1261,7 +1326,7 @@ private:
                 m.selectedBlockContactKeys = {0u, 0u};
             }
 
-            const std::uint64_t manifoldId = MakeManifoldId(m.pairKey(), m.manifoldType);
+            const ManifoldKey manifoldId = MakeManifoldId(m.a, m.b, m.manifoldType);
             std::unordered_map<std::uint64_t, std::uint8_t> currentFeatureOrdinal;
             std::unordered_map<std::uint64_t, std::uint8_t> currentFeatureCounts;
             currentFeatureOrdinal.reserve(m.contacts.size());
@@ -1269,7 +1334,7 @@ private:
             for (Contact& c : m.contacts) {
                 const std::uint8_t ordinal = currentFeatureOrdinal[c.featureKey]++;
                 ++currentFeatureCounts[c.featureKey];
-                const std::uint64_t pointKey = MakePersistentPointKey(manifoldId, c.featureKey, ordinal);
+                const PersistentPointKey pointKey = MakePersistentPointKey(manifoldId, c.featureKey, ordinal);
                 const auto stateIt = persistentPointImpulses_.find(pointKey);
                 if (stateIt != persistentPointImpulses_.end()) {
                     c.normalImpulseSum = stateIt->second.normalImpulseSum;
@@ -1347,9 +1412,9 @@ private:
             SelectBlockSolvePair(m);
         }
 
-        std::unordered_map<std::uint64_t, std::size_t> manifoldCountByPair;
+        std::unordered_map<ManifoldKey, std::size_t, ManifoldKeyHash> manifoldCountByPair;
         for (const Manifold& m : manifolds_) {
-            const std::uint64_t key = m.pairKey();
+            const ManifoldKey key = MakeManifoldId(m.a, m.b, m.manifoldType);
             ++manifoldCountByPair[key];
             assert(manifoldCountByPair[key] == 1);
             assert(m.contacts.size() <= kMaxContactsPerManifold);
@@ -1366,12 +1431,12 @@ private:
         const auto previousState = persistentPointImpulses_;
         persistentPointImpulses_.clear();
         for (const Manifold& manifold : manifolds) {
-            const std::uint64_t manifoldId = MakeManifoldId(manifold.pairKey(), manifold.manifoldType);
+            const ManifoldKey manifoldId = MakeManifoldId(manifold.a, manifold.b, manifold.manifoldType);
             std::unordered_map<std::uint64_t, std::uint8_t> featureOrdinal;
             featureOrdinal.reserve(manifold.contacts.size());
             for (const Contact& contact : manifold.contacts) {
                 const std::uint8_t ordinal = featureOrdinal[contact.featureKey]++;
-                const std::uint64_t pointKey = MakePersistentPointKey(manifoldId, contact.featureKey, ordinal);
+                const PersistentPointKey pointKey = MakePersistentPointKey(manifoldId, contact.featureKey, ordinal);
                 std::uint16_t persistenceAge = 1;
                 const auto previousIt = previousState.find(pointKey);
                 if (previousIt != previousState.end()) {
@@ -3482,7 +3547,7 @@ private:
     std::vector<Island> islands_;
     std::vector<DistanceJoint> joints_;
     std::vector<HingeJoint> hingeJoints_;
-    std::unordered_map<std::uint64_t, PersistentPointImpulseState> persistentPointImpulses_;
+    std::unordered_map<PersistentPointKey, PersistentPointImpulseState, PersistentPointKeyHash> persistentPointImpulses_;
 #ifndef NDEBUG
     SolverTelemetry solverTelemetry_{};
     bool debugContactPersistence_ = false;

@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <unordered_set>
 #include <vector>
 
 #include "minphys3d/minphys3d.hpp"
@@ -249,6 +250,101 @@ int main() {
 
     const std::vector<std::uint64_t> first = captureSelectedPairSequence();
     const std::vector<std::uint64_t> second = captureSelectedPairSequence();
+    assert(first == second);
+    }
+
+    {
+    using minphys3d::ContactKey;
+    using minphys3d::ContactKeyHash;
+    using minphys3d::ManifoldKey;
+    using minphys3d::ManifoldKeyHash;
+    using minphys3d::PersistentPointKey;
+    using minphys3d::PersistentPointKeyHash;
+
+    const ContactKey k1{1u, 65537u, 0x1234u};
+    const ContactKey k2{65537u, 1u, 0x1234u};
+    const ContactKey k3{1u, 65537u, 0x1235u};
+    std::unordered_set<ContactKey, ContactKeyHash> contacts;
+    assert(contacts.insert(k1).second);
+    assert(contacts.insert(k2).second);
+    assert(contacts.insert(k3).second);
+    assert(contacts.size() == 3u);
+
+    const ManifoldKey m1{1u, 2u, 4u};
+    const ManifoldKey m2{1u, 2u, 5u};
+    std::unordered_set<ManifoldKey, ManifoldKeyHash> manifolds;
+    assert(manifolds.insert(m1).second);
+    assert(manifolds.insert(m2).second);
+    assert(manifolds.size() == 2u);
+
+    std::unordered_set<PersistentPointKey, PersistentPointKeyHash> points;
+    assert(points.insert(PersistentPointKey{m1, 0xabu, 0u}).second);
+    assert(points.insert(PersistentPointKey{m1, 0xabu, 1u}).second);
+    assert(points.insert(PersistentPointKey{m2, 0xabu, 0u}).second);
+    assert(points.size() == 3u);
+    }
+
+    {
+    auto runFrequentFeatureReplay = []() {
+        World world({0.0f, -9.81f, 0.0f});
+        ContactSolverConfig cfg = world.GetContactSolverConfig();
+        cfg.useBlockSolver = true;
+        cfg.useSplitImpulse = true;
+        world.SetContactSolverConfig(cfg);
+
+        Body plane;
+        plane.shape = ShapeType::Plane;
+        world.CreateBody(plane);
+
+        std::vector<std::uint32_t> ids;
+        for (int z = 0; z < 4; ++z) {
+            for (int x = 0; x < 4; ++x) {
+                Body sphere;
+                sphere.shape = ShapeType::Sphere;
+                sphere.radius = 0.18f;
+                sphere.mass = 1.0f;
+                sphere.position = {-1.2f + 0.8f * static_cast<float>(x), 0.8f + 0.45f * static_cast<float>(z), 0.15f * static_cast<float>((x + z) % 2)};
+                sphere.velocity = {0.1f * static_cast<float>((x % 2) ? 1 : -1), 0.0f, 0.0f};
+                ids.push_back(world.CreateBody(sphere));
+            }
+        }
+
+        std::vector<std::uint64_t> replaySignature;
+        replaySignature.reserve(320);
+        int stableWarmStartContacts = 0;
+        for (int step = 0; step < 320; ++step) {
+            world.Step(1.0f / 120.0f, 16);
+            std::unordered_set<PersistentPointKey, PersistentPointKeyHash> uniqueKeys;
+            std::uint64_t stepHash = 1469598103934665603ull;
+
+            for (const Manifold& manifold : world.DebugManifolds()) {
+                const ManifoldKey manifoldKey{std::min(manifold.a, manifold.b), std::max(manifold.a, manifold.b), manifold.manifoldType};
+                std::uint8_t ordinal = 0;
+                for (const Contact& contact : manifold.contacts) {
+                    const PersistentPointKey pointKey{manifoldKey, contact.featureKey, ordinal++};
+                    assert(uniqueKeys.insert(pointKey).second);
+                    if (step > 60 && contact.persistenceAge >= 2 && std::abs(contact.normalImpulseSum) > 1e-5f) {
+                        ++stableWarmStartContacts;
+                    }
+
+                    stepHash ^= static_cast<std::uint64_t>(pointKey.manifold.loBody + 1u) * 1099511628211ull;
+                    stepHash ^= static_cast<std::uint64_t>(pointKey.manifold.hiBody + 7u) * 1469598103934665603ull;
+                    stepHash ^= static_cast<std::uint64_t>(pointKey.manifold.manifoldType + 13u);
+                    stepHash ^= pointKey.featureKey * 1099511628211ull;
+                    stepHash ^= static_cast<std::uint64_t>(pointKey.ordinal + 17u);
+                    stepHash ^= static_cast<std::uint64_t>(std::lround(contact.normalImpulseSum * 10000.0f));
+                    stepHash ^= static_cast<std::uint64_t>(contact.persistenceAge + 31u);
+                }
+            }
+            replaySignature.push_back(stepHash);
+        }
+
+        assert(stableWarmStartContacts > 900);
+        return replaySignature;
+    };
+
+    const std::vector<std::uint64_t> first = runFrequentFeatureReplay();
+    const std::vector<std::uint64_t> second = runFrequentFeatureReplay();
     assert(first == second);
     }
     return 0;
