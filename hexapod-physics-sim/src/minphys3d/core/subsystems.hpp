@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <functional>
@@ -86,6 +87,9 @@ struct ContactSolverContext {
     const std::vector<Manifold>& previousManifolds;
     std::function<bool(const PersistentPointKey&, float&, float&, std::uint16_t&)> tryGetPersistentImpulseState;
     std::function<void(std::vector<Contact>&)> sortManifoldContacts;
+    std::function<void(Manifold&)> refreshManifoldBlockCache;
+    std::function<void(Manifold&)> selectBlockSolvePair;
+    std::function<void(const Manifold&)> recordSelectedPairHistory;
     std::function<void(Manifold&)> solveManifoldNormalImpulses;
     std::function<int(const Manifold&, std::uint64_t)> findBlockSlot;
     std::function<void(Body&, Body&, const Mat3&, const Mat3&, const Vec3&, const Vec3&, const Vec3&)> applyImpulse;
@@ -164,10 +168,32 @@ public:
                     c.persistenceAge = 0;
                 }
             }
+
+            context.refreshManifoldBlockCache(m);
+            context.selectBlockSolvePair(m);
+            context.recordSelectedPairHistory(m);
         }
     }
 
     void SolveContactsInManifold(const ContactSolverContext& context, Manifold& manifold) const {
+        if (manifold.contacts.size() >= 2) {
+            const int selected0 = manifold.selectedBlockContactIndices[0];
+            const int selected1 = manifold.selectedBlockContactIndices[1];
+            const bool selectedIndicesValid = selected0 >= 0 && selected1 >= 0 && selected0 != selected1
+                && static_cast<std::size_t>(std::max(selected0, selected1)) < manifold.contacts.size();
+            const bool selectedKeysPopulated = manifold.selectedBlockContactKeys[0] != 0u && manifold.selectedBlockContactKeys[1] != 0u;
+            const bool blockSlotsPopulated = manifold.blockSlotValid[0] && manifold.blockSlotValid[1];
+            const bool blockKeysPopulated = manifold.blockContactKeys[0] != 0u && manifold.blockContactKeys[1] != 0u;
+            (void)selectedIndicesValid;
+            (void)selectedKeysPopulated;
+            (void)blockSlotsPopulated;
+            (void)blockKeysPopulated;
+            assert(selectedIndicesValid);
+            assert(selectedKeysPopulated);
+            assert(blockSlotsPopulated);
+            assert(blockKeysPopulated);
+        }
+
         context.solveManifoldNormalImpulses(manifold);
         if (manifold.contacts.size() >= 2) {
             for (Contact& c : manifold.contacts) {
