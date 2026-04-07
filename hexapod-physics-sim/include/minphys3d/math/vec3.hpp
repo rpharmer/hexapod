@@ -30,10 +30,19 @@ inline float Dot(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + 
 inline Vec3 Cross(const Vec3& a, const Vec3& b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
 inline float LengthSquared(const Vec3& v) { return Dot(v, v); }
 inline float Length(const Vec3& v) { return std::sqrt(LengthSquared(v)); }
+inline bool TryNormalize(const Vec3& in, Vec3& out) {
+    const float len = Length(in);
+    if (len <= kEpsilon) {
+        out = {};
+        return false;
+    }
+    out = in / len;
+    return true;
+}
 inline Vec3 Normalize(const Vec3& v) {
-    const float len = Length(v);
-    if (len <= kEpsilon) return {1.0f, 0.0f, 0.0f};
-    return v / len;
+    Vec3 out{};
+    if (!TryNormalize(v, out)) return {1.0f, 0.0f, 0.0f};
+    return out;
 }
 
 } // namespace minphys3d

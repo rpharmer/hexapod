@@ -22,6 +22,8 @@ namespace minphys3d {
 
 class World {
 public:
+    static constexpr std::uint32_t kInvalidJointId = std::numeric_limits<std::uint32_t>::max();
+
     explicit World(Vec3 gravity = {0.0f, -9.81f, 0.0f}) : gravity_(gravity) {}
 
     void SetContactSolverConfig(const ContactSolverConfig& config) {
@@ -115,7 +117,10 @@ public:
         j.b = b;
         j.localAnchorA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), worldAnchor - bodies_.at(a).position);
         j.localAnchorB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), worldAnchor - bodies_.at(b).position);
-        const Vec3 axisN = Normalize(worldAxis);
+        Vec3 axisN{};
+        if (!TryNormalize(worldAxis, axisN)) {
+            return kInvalidJointId;
+        }
         j.localAxisA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), axisN);
         j.localAxisB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), axisN);
         j.limitsEnabled = enableLimits;
@@ -269,6 +274,10 @@ private:
             }
         }
         return true;
+    }
+
+    static bool TryGetPlaneNormal(const Body& plane, Vec3& outNormal) {
+        return TryNormalize(plane.planeNormal, outNormal);
     }
 
     static void AssertBodyStateFinite(const Body& body) {
@@ -699,7 +708,10 @@ private:
     TOIEvent SweepSpherePlane(std::uint32_t sphereId, std::uint32_t planeId, float maxDt) const {
         const Body& s = bodies_[sphereId];
         const Body& p = bodies_[planeId];
-        const Vec3 n = Normalize(p.planeNormal);
+        Vec3 n{};
+        if (!TryGetPlaneNormal(p, n)) {
+            return {};
+        }
         const float d0 = Dot(n, s.position) - p.planeOffset - s.radius;
         const float vn = Dot(n, s.velocity);
         if (d0 <= 0.0f || vn >= -kEpsilon) {
@@ -1719,7 +1731,10 @@ private:
     void SpherePlane(std::uint32_t sphereId, std::uint32_t planeId) {
         const Body& s = bodies_[sphereId];
         const Body& p = bodies_[planeId];
-        const Vec3 n = Normalize(p.planeNormal);
+        Vec3 n{};
+        if (!TryGetPlaneNormal(p, n)) {
+            return;
+        }
         const float signedDistance = Dot(n, s.position) - p.planeOffset;
         if (signedDistance >= s.radius) {
             return;
@@ -1733,7 +1748,10 @@ private:
         const Body& p = bodies_[planeId];
         const Vec3 axis = Normalize(Rotate(c.orientation, {0.0f, 1.0f, 0.0f}));
         const Vec3 ends[2] = {c.position - axis * c.halfHeight, c.position + axis * c.halfHeight};
-        const Vec3 n = Normalize(p.planeNormal);
+        Vec3 n{};
+        if (!TryGetPlaneNormal(p, n)) {
+            return;
+        }
         for (int endpoint = 0; endpoint < 2; ++endpoint) {
             const Vec3& center = ends[endpoint];
             const float signedDistance = Dot(n, center) - p.planeOffset;
@@ -1874,7 +1892,10 @@ private:
     void BoxPlane(std::uint32_t boxId, std::uint32_t planeId) {
         const Body& box = bodies_[boxId];
         const Body& plane = bodies_[planeId];
-        const Vec3 n = Normalize(plane.planeNormal);
+        Vec3 n{};
+        if (!TryGetPlaneNormal(plane, n)) {
+            return;
+        }
 
         const Vec3 axes[3] = {
             Rotate(box.orientation, {1.0f, 0.0f, 0.0f}),
