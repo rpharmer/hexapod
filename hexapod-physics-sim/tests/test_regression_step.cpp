@@ -397,5 +397,63 @@ int main() {
     const std::vector<std::uint64_t> second = runFrequentFeatureReplay();
     assert(first == second);
     }
+
+    {
+    auto runPersistenceScenario = [](const Vec3& initialVelocity, const Vec3& angularVelocity, int steps) {
+        World world({0.0f, -9.81f, 0.0f});
+        ContactSolverConfig cfg = world.GetContactSolverConfig();
+        cfg.useBlockSolver = true;
+        cfg.useSplitImpulse = true;
+        cfg.penetrationSlop = 0.004f;
+        world.SetContactSolverConfig(cfg);
+
+        Body base;
+        base.shape = ShapeType::Box;
+        base.isStatic = true;
+        base.position = {0.0f, 0.0f, 0.0f};
+        base.halfExtents = {1.2f, 0.25f, 1.2f};
+        world.CreateBody(base);
+
+        Body top;
+        top.shape = ShapeType::Box;
+        top.mass = 2.0f;
+        top.position = {0.0f, 0.70f, 0.0f};
+        top.halfExtents = {0.55f, 0.35f, 0.55f};
+        top.velocity = initialVelocity;
+        top.angularVelocity = angularVelocity;
+        const std::uint32_t topId = world.CreateBody(top);
+
+        std::uint64_t matched = 0;
+        std::uint64_t dropped = 0;
+        std::uint64_t created = 0;
+        float maxChurn = 0.0f;
+        int persistentSteps = 0;
+        for (int i = 0; i < steps; ++i) {
+            if (i == steps / 2) {
+                world.GetBody(topId).velocity.x *= -1.0f;
+            }
+            world.Step(1.0f / 120.0f, 14);
+            const World::PersistenceMatchDiagnostics& diag = world.GetPersistenceMatchDiagnostics();
+            matched += diag.matchedPoints;
+            dropped += diag.droppedPoints;
+            created += diag.newPoints;
+            maxChurn = std::max(maxChurn, diag.churnRatio);
+            if (diag.matchedPoints > 0u) {
+                ++persistentSteps;
+            }
+        }
+        assert(matched + created > 40u);
+        assert(dropped < static_cast<std::uint64_t>(steps) * 8u);
+        assert(std::isfinite(maxChurn));
+        assert(persistentSteps > 10);
+    };
+
+    // Resting box-on-box.
+    runPersistenceScenario({0.0f, 0.0f, 0.0f}, {0.02f, 0.0f, -0.02f}, 260);
+    // Mild rocking.
+    runPersistenceScenario({0.0f, 0.0f, 0.0f}, {0.8f, 0.0f, 0.5f}, 300);
+    // Stick-slip with ordering churn from direction reversal.
+    runPersistenceScenario({0.9f, 0.0f, 0.0f}, {0.0f, 0.6f, 0.0f}, 320);
+    }
     return 0;
 }
