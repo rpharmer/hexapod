@@ -149,7 +149,7 @@ public:
                 m.a = c.a;
                 m.b = c.b;
                 m.normal = c.normal;
-                m.manifoldType = static_cast<std::uint8_t>(c.featureKey >> 56u);
+                m.manifoldType = c.manifoldType;
                 m.contacts.push_back(c);
                 context.manifolds.push_back(m);
             }
@@ -157,7 +157,7 @@ public:
 
         for (Manifold& m : context.manifolds) {
             if (!m.contacts.empty()) {
-                m.manifoldType = static_cast<std::uint8_t>(m.contacts.front().featureKey >> 56u);
+                m.manifoldType = m.contacts.front().manifoldType;
             }
             m.lowQuality = false;
             m.blockSolveEligible = false;

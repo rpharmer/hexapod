@@ -93,6 +93,7 @@ struct Contact {
     float tangentImpulseSum = 0.0f;
     float tangentImpulseSum0 = 0.0f;
     float tangentImpulseSum1 = 0.0f;
+    std::uint8_t manifoldType = 0;
     std::uint64_t key = 0;
     std::uint64_t featureKey = 0;
     std::uint16_t persistenceAge = 0;

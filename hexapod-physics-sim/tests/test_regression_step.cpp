@@ -311,14 +311,14 @@ int main() {
     using minphys3d::PersistentPointKey;
     using minphys3d::PersistentPointKeyHash;
 
-    const ContactKey k1{1u, 65537u, 0x1234u};
-    const ContactKey k2{65537u, 1u, 0x1234u};
-    const ContactKey k3{1u, 65537u, 0x1235u};
+    const ContactKey k1{1u, 65537u, 9u, 0x1234u};
+    const ContactKey k2{1u, 65537u, 9u, 0x1234u};
+    const ContactKey k3{1u, 65537u, 9u, 0x1235u};
     std::unordered_set<ContactKey, ContactKeyHash> contacts;
     assert(contacts.insert(k1).second);
-    assert(contacts.insert(k2).second);
+    assert(!contacts.insert(k2).second);
     assert(contacts.insert(k3).second);
-    assert(contacts.size() == 3u);
+    assert(contacts.size() == 2u);
 
     const ManifoldKey m1{1u, 2u, 4u};
     const ManifoldKey m2{1u, 2u, 5u};
@@ -380,7 +380,7 @@ int main() {
                     stepHash ^= static_cast<std::uint64_t>(pointKey.manifold.loBody + 1u) * 1099511628211ull;
                     stepHash ^= static_cast<std::uint64_t>(pointKey.manifold.hiBody + 7u) * 1469598103934665603ull;
                     stepHash ^= static_cast<std::uint64_t>(pointKey.manifold.manifoldType + 13u);
-                    stepHash ^= pointKey.featureKey * 1099511628211ull;
+                    stepHash ^= pointKey.canonicalFeatureId * 1099511628211ull;
                     stepHash ^= static_cast<std::uint64_t>(pointKey.ordinal + 17u);
                     stepHash ^= static_cast<std::uint64_t>(std::lround(contact.normalImpulseSum * 10000.0f));
                     stepHash ^= static_cast<std::uint64_t>(contact.persistenceAge + 31u);
