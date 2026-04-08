@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
@@ -67,6 +68,14 @@ struct RunMetrics {
         std::uint64_t featureIdChurnEvents = 0;
         std::uint64_t impulseResetPoints = 0;
         std::uint64_t reorderDetected = 0;
+        std::uint64_t tangentBasisResets = 0;
+        std::uint64_t tangentBasisReused = 0;
+        std::uint64_t tangentImpulseReprojected = 0;
+        std::uint64_t tangentImpulseReset = 0;
+        std::uint64_t manifoldFrictionBudgetSaturated = 0;
+        std::uint64_t manifoldFrictionBudgetSaturatedSelectedPair = 0;
+        std::uint64_t manifoldFrictionBudgetSaturatedAllContacts = 0;
+        std::uint64_t manifoldFrictionBudgetSaturatedBlended = 0;
         ManifoldSolveScopeSnapshot manifoldSolveScope;
         std::unordered_map<std::uint8_t, ManifoldSolveScopeSnapshot> manifoldTypeScope;
     };
@@ -79,9 +88,20 @@ struct RunMetrics {
     float settleTimeSeconds = -1.0f;
     int settleStep = -1;
     std::uint64_t reorderEvents = 0;
+    float tangentBasisChurnRatio = 0.0f;
+    float manifoldTangentImpulseContinuity = 0.0f;
+    float slipVelocityDecayRatio = 1.0f;
+    float finalSlipSpeed = 0.0f;
+    float restingDriftDistance = 0.0f;
+    float meanStableType9Contacts = 0.0f;
+    float maxStableType9Contacts = 0.0f;
     SolverTelemetrySnapshot telemetry;
     std::vector<float> stepMaxPenetration;
     std::vector<float> stepContactCounts;
+    std::vector<float> stepBasisChurnRatio;
+    std::vector<float> stepManifoldTangentContinuity;
+    std::vector<float> stepSlipSpeed;
+    std::vector<float> stepRestingDrift;
 };
 
 struct SceneConfig {
@@ -93,6 +113,16 @@ struct SceneConfig {
     int steps = 900;
     bool logStepContactCount = false;
     bool logStepManifoldIds = false;
+    bool enforceFrictionCoherenceGates = false;
+    bool evaluateFrictionAblations = false;
+};
+
+struct SolverVariantConfig {
+    bool useBlockSolver = true;
+    bool enableManifoldFrictionBudget = true;
+    bool enableTwoAxisFrictionSolve = true;
+    minphys3d::FrictionBudgetNormalSupportSource normalSupportSource =
+        minphys3d::FrictionBudgetNormalSupportSource::AllManifoldContacts;
 };
 
 struct ComparisonResult {
@@ -101,6 +131,8 @@ struct ComparisonResult {
     RunMetrics block;
     bool pass = true;
     std::vector<std::string> failures;
+    RunMetrics noBudget;
+    RunMetrics oneAxisFriction;
 };
 
 // Block solver safety rails:
@@ -119,6 +151,12 @@ struct BlockSolverSafetyRails {
     static constexpr float kMaxImpulseDeltaRegression = 0.30f;
     static constexpr float kMaxMeanImpulseDeltaRegression = 0.16f;
     static constexpr float kMaxTelemetryImpulseContinuityRegression = 0.20f;
+};
+
+struct FrictionCoherenceGates {
+    static constexpr float kMaxBasisChurnRatio = 0.90f;
+    static constexpr float kMinStableType9Contacts = 0.00f;
+    static constexpr float kMaxType9FallbackRate = 0.95f;
 };
 
 double SafeRatio(double num, double den) {
@@ -143,7 +181,7 @@ Body MakePlane() {
     return plane;
 }
 
-ContactSolverConfig MakeSolverConfig(bool useBlockSolver) {
+ContactSolverConfig MakeSolverConfig(const SolverVariantConfig& variant) {
     ContactSolverConfig cfg;
     cfg.useSplitImpulse = true;
     cfg.penetrationSlop = 0.005f;
@@ -152,7 +190,10 @@ ContactSolverConfig MakeSolverConfig(bool useBlockSolver) {
     cfg.restitutionVelocityCutoff = 0.5f;
     cfg.staticFrictionSpeedThreshold = 0.0f;
     cfg.staticToDynamicTransitionSpeed = 0.2f;
-    cfg.useBlockSolver = useBlockSolver;
+    cfg.useBlockSolver = variant.useBlockSolver;
+    cfg.enableManifoldFrictionBudget = variant.enableManifoldFrictionBudget;
+    cfg.enableTwoAxisFrictionSolve = variant.enableTwoAxisFrictionSolve;
+    cfg.frictionBudgetNormalSupportSource = variant.normalSupportSource;
     return cfg;
 }
 
@@ -166,15 +207,25 @@ std::uint64_t MakePersistentPointKey(const Manifold& manifold, const Contact& co
          ^ static_cast<std::uint64_t>(ordinal);
 }
 
-RunMetrics RunScene(SceneConfig config, bool useBlockSolver) {
-    config.world.SetContactSolverConfig(MakeSolverConfig(useBlockSolver));
+RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant) {
+    config.world.SetContactSolverConfig(MakeSolverConfig(variant));
 
     RunMetrics metrics;
+    std::vector<Vec3> trackedInitialPositions;
+    trackedInitialPositions.reserve(config.trackedDynamicBodies.size());
+    for (std::uint32_t id : config.trackedDynamicBodies) {
+        trackedInitialPositions.push_back(config.world.GetBody(id).position);
+    }
     std::vector<float> contactCounts;
     std::vector<float> contactCountStepDeltas;
+    std::unordered_map<std::uint64_t, std::array<float, 2>> lastManifoldTangentByPair;
     std::unordered_map<std::uint64_t, float> lastImpulseByPoint;
     std::uint64_t impulseDeltaCount = 0;
     float impulseDeltaSum = 0.0f;
+    float manifoldContinuitySum = 0.0f;
+    std::uint64_t manifoldContinuitySamples = 0;
+    double stableType9ContactsSum = 0.0;
+    std::uint64_t stableType9ContactSamples = 0;
 
     float previousContactCount = -1.0f;
     int settledConsecutive = 0;
@@ -185,9 +236,34 @@ RunMetrics RunScene(SceneConfig config, bool useBlockSolver) {
         const std::vector<Manifold>& manifolds = config.world.DebugManifolds();
         float totalContacts = 0.0f;
         float stepMaxPenetration = 0.0f;
+        float stepManifoldContinuity = 0.0f;
+        std::uint64_t stepManifoldContinuitySamples = 0;
+        float stepStableType9Contacts = 0.0f;
 
         for (const Manifold& manifold : manifolds) {
             std::unordered_map<std::uint64_t, std::uint8_t> ordinalCount;
+            if (manifold.manifoldType == 9) {
+                for (const Contact& contact : manifold.contacts) {
+                    if (contact.persistenceAge >= 2) {
+                        stepStableType9Contacts += 1.0f;
+                    }
+                }
+            }
+            if (manifold.tangentBasisValid && manifold.manifoldTangentImpulseValid) {
+                const std::uint64_t pair = manifold.pairKey();
+                const std::array<float, 2> current{
+                    manifold.manifoldTangentImpulseSum[0],
+                    manifold.manifoldTangentImpulseSum[1]};
+                const auto it = lastManifoldTangentByPair.find(pair);
+                if (it != lastManifoldTangentByPair.end()) {
+                    const float d0 = current[0] - it->second[0];
+                    const float d1 = current[1] - it->second[1];
+                    const float continuity = std::sqrt(d0 * d0 + d1 * d1);
+                    stepManifoldContinuity += continuity;
+                    ++stepManifoldContinuitySamples;
+                }
+                lastManifoldTangentByPair[pair] = current;
+            }
             for (const Contact& contact : manifold.contacts) {
                 metrics.maxPenetration = std::max(metrics.maxPenetration, std::max(contact.penetration, 0.0f));
                 stepMaxPenetration = std::max(stepMaxPenetration, std::max(contact.penetration, 0.0f));
@@ -211,13 +287,22 @@ RunMetrics RunScene(SceneConfig config, bool useBlockSolver) {
         contactCounts.push_back(totalContacts);
         metrics.stepMaxPenetration.push_back(stepMaxPenetration);
         metrics.stepContactCounts.push_back(totalContacts);
+        metrics.stepManifoldTangentContinuity.push_back(
+            stepManifoldContinuitySamples > 0
+                ? (stepManifoldContinuity / static_cast<float>(stepManifoldContinuitySamples))
+                : 0.0f);
+        manifoldContinuitySum += stepManifoldContinuity;
+        manifoldContinuitySamples += stepManifoldContinuitySamples;
+        metrics.maxStableType9Contacts = std::max(metrics.maxStableType9Contacts, stepStableType9Contacts);
+        stableType9ContactsSum += static_cast<double>(stepStableType9Contacts);
+        ++stableType9ContactSamples;
         if (config.logStepContactCount) {
-            std::cout << "[manifold-reorder-step] solver=" << (useBlockSolver ? "block" : "scalar")
+            std::cout << "[manifold-reorder-step] solver=" << (variant.useBlockSolver ? "block" : "scalar")
                       << " step=" << step
                       << " contact_count=" << totalContacts << "\n";
         }
         if (config.logStepManifoldIds) {
-            std::cout << "[manifold-reorder-step] solver=" << (useBlockSolver ? "block" : "scalar")
+            std::cout << "[manifold-reorder-step] solver=" << (variant.useBlockSolver ? "block" : "scalar")
                       << " step=" << step
                       << " manifold_ids=";
             bool first = true;
@@ -239,6 +324,34 @@ RunMetrics RunScene(SceneConfig config, bool useBlockSolver) {
             contactCountStepDeltas.push_back(std::abs(totalContacts - previousContactCount));
         }
         previousContactCount = totalContacts;
+
+        float stepSlipSpeed = 0.0f;
+        float stepDrift = 0.0f;
+        for (std::size_t i = 0; i < config.trackedDynamicBodies.size(); ++i) {
+            const Body& body = config.world.GetBody(config.trackedDynamicBodies[i]);
+            const Vec3 lateralVelocity{body.velocity.x, 0.0f, body.velocity.z};
+            stepSlipSpeed += Length(lateralVelocity);
+            const Vec3 lateralDrift{
+                body.position.x - trackedInitialPositions[i].x,
+                0.0f,
+                body.position.z - trackedInitialPositions[i].z};
+            stepDrift += Length(lateralDrift);
+        }
+        if (!config.trackedDynamicBodies.empty()) {
+            stepSlipSpeed /= static_cast<float>(config.trackedDynamicBodies.size());
+            stepDrift /= static_cast<float>(config.trackedDynamicBodies.size());
+        }
+        metrics.stepSlipSpeed.push_back(stepSlipSpeed);
+        metrics.stepRestingDrift.push_back(stepDrift);
+#ifndef NDEBUG
+        const World::SolverTelemetry& stepTelemetry = config.world.GetSolverTelemetry();
+        const std::uint64_t basisTotal = stepTelemetry.tangentBasisResets + stepTelemetry.tangentBasisReused;
+        metrics.stepBasisChurnRatio.push_back(basisTotal > 0
+            ? static_cast<float>(stepTelemetry.tangentBasisResets) / static_cast<float>(basisTotal)
+            : 0.0f);
+#else
+        metrics.stepBasisChurnRatio.push_back(0.0f);
+#endif
 
         bool allSleeping = !config.trackedDynamicBodies.empty();
         for (std::uint32_t id : config.trackedDynamicBodies) {
@@ -296,10 +409,39 @@ RunMetrics RunScene(SceneConfig config, bool useBlockSolver) {
     metrics.telemetry.featureIdChurnEvents = telemetry.featureIdChurnEvents;
     metrics.telemetry.impulseResetPoints = telemetry.impulseResetPoints;
     metrics.telemetry.reorderDetected = telemetry.reorderDetected;
+    metrics.telemetry.tangentBasisResets = telemetry.tangentBasisResets;
+    metrics.telemetry.tangentBasisReused = telemetry.tangentBasisReused;
+    metrics.telemetry.tangentImpulseReprojected = telemetry.tangentImpulseReprojected;
+    metrics.telemetry.tangentImpulseReset = telemetry.tangentImpulseReset;
+    metrics.telemetry.manifoldFrictionBudgetSaturated = telemetry.manifoldFrictionBudgetSaturated;
+    metrics.telemetry.manifoldFrictionBudgetSaturatedSelectedPair = telemetry.manifoldFrictionBudgetSaturatedSelectedPair;
+    metrics.telemetry.manifoldFrictionBudgetSaturatedAllContacts = telemetry.manifoldFrictionBudgetSaturatedAllContacts;
+    metrics.telemetry.manifoldFrictionBudgetSaturatedBlended = telemetry.manifoldFrictionBudgetSaturatedBlended;
     assignBucket(telemetry.manifoldSolveScope, metrics.telemetry.manifoldSolveScope);
     for (const auto& [manifoldType, bucket] : telemetry.manifoldTypeBuckets) {
         assignBucket(bucket, metrics.telemetry.manifoldTypeScope[manifoldType]);
     }
+#endif
+
+    if (!metrics.stepSlipSpeed.empty()) {
+        const float initial = std::max(metrics.stepSlipSpeed.front(), 1e-5f);
+        metrics.slipVelocityDecayRatio = metrics.stepSlipSpeed.back() / initial;
+        metrics.finalSlipSpeed = metrics.stepSlipSpeed.back();
+    }
+    if (!metrics.stepRestingDrift.empty()) {
+        metrics.restingDriftDistance = metrics.stepRestingDrift.back();
+    }
+    if (manifoldContinuitySamples > 0) {
+        metrics.manifoldTangentImpulseContinuity = manifoldContinuitySum / static_cast<float>(manifoldContinuitySamples);
+    }
+    if (stableType9ContactSamples > 0) {
+        metrics.meanStableType9Contacts = static_cast<float>(stableType9ContactsSum / static_cast<double>(stableType9ContactSamples));
+    }
+#ifndef NDEBUG
+    const std::uint64_t basisTotal = metrics.telemetry.tangentBasisResets + metrics.telemetry.tangentBasisReused;
+    metrics.tangentBasisChurnRatio = basisTotal > 0
+        ? static_cast<float>(metrics.telemetry.tangentBasisResets) / static_cast<float>(basisTotal)
+        : 0.0f;
 #endif
 
     const float count = static_cast<float>(contactCounts.size());
@@ -338,8 +480,18 @@ ComparisonResult CompareScene(const SceneConfig& source) {
     ComparisonResult out;
     out.scene = source.name;
 
-    out.scalar = RunScene(source, false);
-    out.block = RunScene(source, true);
+    SolverVariantConfig scalarVariant;
+    scalarVariant.useBlockSolver = false;
+    SolverVariantConfig blockVariant;
+    SolverVariantConfig budgetOffVariant;
+    budgetOffVariant.enableManifoldFrictionBudget = false;
+    SolverVariantConfig oneAxisVariant;
+    oneAxisVariant.enableTwoAxisFrictionSolve = false;
+
+    out.scalar = RunScene(source, scalarVariant);
+    out.block = RunScene(source, blockVariant);
+    out.noBudget = RunScene(source, budgetOffVariant);
+    out.oneAxisFriction = RunScene(source, oneAxisVariant);
 
     const auto fail = [&](bool condition, const std::string& reason) {
         if (condition) {
@@ -485,6 +637,49 @@ ComparisonResult CompareScene(const SceneConfig& source) {
                        typeContinuityLabel.str());
     }
 
+    if (source.enforceFrictionCoherenceGates) {
+        const auto type9It = out.block.telemetry.manifoldTypeScope.find(9);
+        const RunMetrics::SolverTelemetrySnapshot::ManifoldSolveScopeSnapshot type9Scope =
+            type9It != out.block.telemetry.manifoldTypeScope.end()
+                ? type9It->second
+                : RunMetrics::SolverTelemetrySnapshot::ManifoldSolveScopeSnapshot{};
+        const double type9FallbackRate = SafeRatio(
+            static_cast<double>(type9Scope.fallbackUsed),
+            static_cast<double>(type9Scope.solveCount));
+        if (type9Scope.solveCount >= 50) {
+            fail(out.block.tangentBasisChurnRatio > FrictionCoherenceGates::kMaxBasisChurnRatio,
+                 "face4 coherence gate: basis churn ratio above ceiling");
+            fail(out.block.meanStableType9Contacts < FrictionCoherenceGates::kMinStableType9Contacts,
+                 "face4 coherence gate: stable type-9 contact support below minimum");
+            fail(type9FallbackRate > FrictionCoherenceGates::kMaxType9FallbackRate,
+                 "face4 coherence gate: type-9 fallback rate above ceiling");
+        }
+    }
+
+    const auto failIfWorse = [&](double baseline,
+                                 double ablated,
+                                 double maxIncrease,
+                                 const std::string& label) {
+        const double delta = ablated - baseline;
+        if (delta > maxIncrease) {
+            std::ostringstream msg;
+            msg << std::fixed << std::setprecision(6)
+                << label << " regression: baseline=" << baseline
+                << " ablated=" << ablated
+                << " delta=" << delta
+                << " threshold=" << maxIncrease;
+            fail(true, msg.str());
+        }
+    };
+    if (source.evaluateFrictionAblations) {
+        failIfWorse(out.block.restingDriftDistance, out.noBudget.restingDriftDistance, 0.50, "budget_off/resting_drift");
+        failIfWorse(out.block.manifoldTangentImpulseContinuity, out.noBudget.manifoldTangentImpulseContinuity, 0.45, "budget_off/manifold_impulse_continuity");
+        failIfWorse(out.block.finalSlipSpeed, out.noBudget.finalSlipSpeed, 0.35, "budget_off/final_slip_speed");
+        failIfWorse(out.block.restingDriftDistance, out.oneAxisFriction.restingDriftDistance, 0.60, "one_axis/resting_drift");
+        failIfWorse(out.block.manifoldTangentImpulseContinuity, out.oneAxisFriction.manifoldTangentImpulseContinuity, 0.55, "one_axis/manifold_impulse_continuity");
+        failIfWorse(out.block.finalSlipSpeed, out.oneAxisFriction.finalSlipSpeed, 0.40, "one_axis/final_slip_speed");
+    }
+
     return out;
 }
 
@@ -606,6 +801,78 @@ SceneConfig BuildSlidingBoxComingToRest() {
     return cfg;
 }
 
+SceneConfig BuildFaceContactSlideToRest() {
+    SceneConfig cfg;
+    cfg.name = "face-contact slide-to-rest";
+    cfg.world = World({0.0f, -9.81f, 0.0f});
+    cfg.world.CreateBody(MakePlane());
+
+    Body box;
+    box.shape = ShapeType::Box;
+    box.halfExtents = {0.45f, 0.18f, 0.35f};
+    box.mass = 2.0f;
+    box.position = {-1.2f, 0.95f, 0.0f};
+    box.velocity = {2.8f, 0.0f, 0.2f};
+    box.staticFriction = 0.85f;
+    box.dynamicFriction = 0.60f;
+    const auto boxId = cfg.world.CreateBody(box);
+
+    cfg.trackedDynamicBodies = {boxId};
+    cfg.steps = 960;
+    cfg.enforceFrictionCoherenceGates = true;
+    cfg.evaluateFrictionAblations = true;
+    return cfg;
+}
+
+SceneConfig BuildFaceContactMildRocking() {
+    SceneConfig cfg;
+    cfg.name = "face-contact mild rocking";
+    cfg.world = World({0.0f, -9.81f, 0.0f});
+    cfg.world.CreateBody(MakePlane());
+
+    Body box;
+    box.shape = ShapeType::Box;
+    box.halfExtents = {0.50f, 0.20f, 0.40f};
+    box.mass = 2.6f;
+    box.position = {0.0f, 1.2f, 0.0f};
+    box.orientation = minphys3d::Normalize(Quat{0.9961947f, 0.0f, 0.0871557f, 0.0f});
+    box.angularVelocity = {0.35f, 0.0f, 0.25f};
+    box.velocity = {0.6f, 0.0f, -0.4f};
+    box.staticFriction = 0.88f;
+    box.dynamicFriction = 0.62f;
+    const auto boxId = cfg.world.CreateBody(box);
+
+    cfg.trackedDynamicBodies = {boxId};
+    cfg.steps = 1080;
+    cfg.enforceFrictionCoherenceGates = true;
+    cfg.evaluateFrictionAblations = true;
+    return cfg;
+}
+
+SceneConfig BuildFaceContactStickSlipTransition() {
+    SceneConfig cfg;
+    cfg.name = "face-contact stick-slip transition";
+    cfg.world = World({0.0f, -9.81f, 0.0f});
+    cfg.world.CreateBody(MakePlane());
+
+    Body box;
+    box.shape = ShapeType::Box;
+    box.halfExtents = {0.42f, 0.18f, 0.30f};
+    box.mass = 1.9f;
+    box.position = {-0.8f, 0.92f, 0.0f};
+    box.velocity = {1.4f, 0.0f, 0.0f};
+    box.angularVelocity = {0.0f, 0.18f, 0.0f};
+    box.staticFriction = 0.90f;
+    box.dynamicFriction = 0.45f;
+    const auto boxId = cfg.world.CreateBody(box);
+
+    cfg.trackedDynamicBodies = {boxId};
+    cfg.steps = 1020;
+    cfg.enforceFrictionCoherenceGates = true;
+    cfg.evaluateFrictionAblations = true;
+    return cfg;
+}
+
 SceneConfig BuildManifoldReorderStressCase() {
     SceneConfig cfg;
     cfg.name = "manifold reorder stress case";
@@ -674,6 +941,16 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "          \"featureIdChurnEvents\": " << t.featureIdChurnEvents << ",\n";
         out << "          \"impulseResetPoints\": " << t.impulseResetPoints << ",\n";
         out << "          \"reorderDetected\": " << t.reorderDetected << ",\n";
+        out << "          \"tangentBasisResets\": " << t.tangentBasisResets << ",\n";
+        out << "          \"tangentBasisReused\": " << t.tangentBasisReused << ",\n";
+        out << "          \"tangentImpulseReprojected\": " << t.tangentImpulseReprojected << ",\n";
+        out << "          \"tangentImpulseReset\": " << t.tangentImpulseReset << ",\n";
+        out << "          \"manifoldFrictionBudgetSaturated\": " << t.manifoldFrictionBudgetSaturated << ",\n";
+        out << "          \"budgetSaturationByPolicy\": {\n";
+        out << "            \"selected_block_pair_only\": " << t.manifoldFrictionBudgetSaturatedSelectedPair << ",\n";
+        out << "            \"all_manifold_contacts\": " << t.manifoldFrictionBudgetSaturatedAllContacts << ",\n";
+        out << "            \"blended_selected_pair_and_manifold\": " << t.manifoldFrictionBudgetSaturatedBlended << "\n";
+        out << "          },\n";
         out << "          \"manifold_solve_scope\": {\n";
         out << "            \"manifold_contact_count\": " << t.manifoldSolveScope.manifoldContactCount << ",\n";
         out << "            \"selected_block_size\": " << t.manifoldSolveScope.selectedBlockSize << ",\n";
@@ -737,6 +1014,12 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "        \"mean_impulse_delta\": " << r.scalar.meanImpulseDelta << ",\n";
         out << "        \"settle_time_seconds\": " << r.scalar.settleTimeSeconds << ",\n";
         out << "        \"reorder_events\": " << r.scalar.reorderEvents << ",\n";
+        out << "        \"tangent_basis_churn_ratio\": " << r.scalar.tangentBasisChurnRatio << ",\n";
+        out << "        \"manifold_tangent_impulse_continuity\": " << r.scalar.manifoldTangentImpulseContinuity << ",\n";
+        out << "        \"slip_velocity_decay_ratio\": " << r.scalar.slipVelocityDecayRatio << ",\n";
+        out << "        \"final_slip_speed\": " << r.scalar.finalSlipSpeed << ",\n";
+        out << "        \"resting_drift_distance\": " << r.scalar.restingDriftDistance << ",\n";
+        out << "        \"mean_stable_type9_contacts\": " << r.scalar.meanStableType9Contacts << ",\n";
         writeTelemetryJson(out, r.scalar.telemetry);
         out << "\n";
         out << "      },\n";
@@ -748,8 +1031,28 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "        \"mean_impulse_delta\": " << r.block.meanImpulseDelta << ",\n";
         out << "        \"settle_time_seconds\": " << r.block.settleTimeSeconds << ",\n";
         out << "        \"reorder_events\": " << r.block.reorderEvents << ",\n";
+        out << "        \"tangent_basis_churn_ratio\": " << r.block.tangentBasisChurnRatio << ",\n";
+        out << "        \"manifold_tangent_impulse_continuity\": " << r.block.manifoldTangentImpulseContinuity << ",\n";
+        out << "        \"slip_velocity_decay_ratio\": " << r.block.slipVelocityDecayRatio << ",\n";
+        out << "        \"final_slip_speed\": " << r.block.finalSlipSpeed << ",\n";
+        out << "        \"resting_drift_distance\": " << r.block.restingDriftDistance << ",\n";
+        out << "        \"mean_stable_type9_contacts\": " << r.block.meanStableType9Contacts << ",\n";
         writeTelemetryJson(out, r.block.telemetry);
         out << "\n";
+        out << "      },\n";
+        out << "      \"ablation\": {\n";
+        out << "        \"manifold_budget_off\": {\n";
+        out << "          \"manifold_tangent_impulse_continuity\": " << r.noBudget.manifoldTangentImpulseContinuity << ",\n";
+        out << "          \"slip_velocity_decay_ratio\": " << r.noBudget.slipVelocityDecayRatio << ",\n";
+        out << "          \"final_slip_speed\": " << r.noBudget.finalSlipSpeed << ",\n";
+        out << "          \"resting_drift_distance\": " << r.noBudget.restingDriftDistance << "\n";
+        out << "        },\n";
+        out << "        \"two_axis_friction_off\": {\n";
+        out << "          \"manifold_tangent_impulse_continuity\": " << r.oneAxisFriction.manifoldTangentImpulseContinuity << ",\n";
+        out << "          \"slip_velocity_decay_ratio\": " << r.oneAxisFriction.slipVelocityDecayRatio << ",\n";
+        out << "          \"final_slip_speed\": " << r.oneAxisFriction.finalSlipSpeed << ",\n";
+        out << "          \"resting_drift_distance\": " << r.oneAxisFriction.restingDriftDistance << "\n";
+        out << "        }\n";
         out << "      },\n";
         out << "      \"failures\": [";
         for (std::size_t fi = 0; fi < r.failures.size(); ++fi) {
@@ -759,7 +1062,9 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "]\n";
         out << "    }" << (i + 1 == results.size() ? "\n" : ",\n");
     }
-    const ContactSolverConfig cfg = MakeSolverConfig(false);
+    SolverVariantConfig baselineVariant;
+    baselineVariant.useBlockSolver = false;
+    const ContactSolverConfig cfg = MakeSolverConfig(baselineVariant);
     out << "  ],\n";
     out << "  \"solver_config\": {\n";
     out << "    \"use_split_impulse\": " << (cfg.useSplitImpulse ? "true" : "false") << ",\n";
@@ -768,7 +1073,13 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
     out << "    \"penetration_slop\": " << cfg.penetrationSlop << ",\n";
     out << "    \"restitution_velocity_cutoff\": " << cfg.restitutionVelocityCutoff << ",\n";
     out << "    \"static_friction_speed_threshold\": " << cfg.staticFrictionSpeedThreshold << ",\n";
-    out << "    \"static_to_dynamic_transition_speed\": " << cfg.staticToDynamicTransitionSpeed << "\n";
+    out << "    \"static_to_dynamic_transition_speed\": " << cfg.staticToDynamicTransitionSpeed << ",\n";
+    out << "    \"enable_two_axis_friction_solve\": " << (cfg.enableTwoAxisFrictionSolve ? "true" : "false") << ",\n";
+    out << "    \"enable_manifold_friction_budget\": " << (cfg.enableManifoldFrictionBudget ? "true" : "false") << ",\n";
+    out << "    \"friction_budget_normal_support_source\": " << static_cast<unsigned>(cfg.frictionBudgetNormalSupportSource) << ",\n";
+    out << "    \"friction_budget_selected_pair_blend_weight\": " << cfg.frictionBudgetSelectedPairBlendWeight << ",\n";
+    out << "    \"face4_require_friction_coherence\": " << (cfg.face4RequireFrictionCoherence ? "true" : "false") << ",\n";
+    out << "    \"use_face4_point_normal_block\": " << (cfg.useFace4PointNormalBlock ? "true" : "false") << "\n";
     out << "  }\n}\n";
     return out.str();
 }
@@ -815,7 +1126,12 @@ void PrintHumanSummary(const ComparisonResult& result) {
                   << " impulse_max_d=" << m.maxImpulseDelta
                   << " impulse_mean_d=" << m.meanImpulseDelta
                   << " settle_s=" << m.settleTimeSeconds
-                  << " reorder=" << m.reorderEvents << "\n";
+                  << " reorder=" << m.reorderEvents
+                  << " churn=" << m.tangentBasisChurnRatio
+                  << " tan_cont=" << m.manifoldTangentImpulseContinuity
+                  << " slip_decay=" << m.slipVelocityDecayRatio
+                  << " drift=" << m.restingDriftDistance
+                  << " stable_type9=" << m.meanStableType9Contacts << "\n";
     };
 
     std::cout << (result.pass ? "PASS" : "FAIL") << " | " << result.scene << "\n";
@@ -901,7 +1217,10 @@ void PrintBlockSolverSafetyRails() {
               << "  settle time: regression<=" << BlockSolverSafetyRails::kMaxSettleTimeRegressionSeconds << " s\n"
               << "  impulse continuity: max-delta regression<=" << BlockSolverSafetyRails::kMaxImpulseDeltaRegression
               << ", mean-delta regression<=" << BlockSolverSafetyRails::kMaxMeanImpulseDeltaRegression
-              << ", telemetry regression<=" << BlockSolverSafetyRails::kMaxTelemetryImpulseContinuityRegression << "\n";
+              << ", telemetry regression<=" << BlockSolverSafetyRails::kMaxTelemetryImpulseContinuityRegression << "\n"
+              << "  face4 friction coherence gates(type-9 heavy scenes): basis_churn<=" << FrictionCoherenceGates::kMaxBasisChurnRatio
+              << ", stable_type9_contacts>=" << FrictionCoherenceGates::kMinStableType9Contacts
+              << ", type9_fallback_rate<=" << FrictionCoherenceGates::kMaxType9FallbackRate << "\n";
 }
 
 } // namespace
@@ -935,6 +1254,9 @@ int main(int argc, char** argv) {
     scenes.push_back(BuildMinimizedPenetrationStackCase());
     scenes.push_back(BuildMinimizedContactVarianceReorderCase());
     scenes.push_back(BuildSlidingBoxComingToRest());
+    scenes.push_back(BuildFaceContactSlideToRest());
+    scenes.push_back(BuildFaceContactMildRocking());
+    scenes.push_back(BuildFaceContactStickSlipTransition());
 
     std::vector<ComparisonResult> results;
     results.reserve(scenes.size());

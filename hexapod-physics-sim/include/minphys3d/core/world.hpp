@@ -91,6 +91,9 @@ public:
         std::uint64_t tangentImpulseReprojected = 0;
         std::uint64_t tangentImpulseReset = 0;
         std::uint64_t manifoldFrictionBudgetSaturated = 0;
+        std::uint64_t manifoldFrictionBudgetSaturatedSelectedPair = 0;
+        std::uint64_t manifoldFrictionBudgetSaturatedAllContacts = 0;
+        std::uint64_t manifoldFrictionBudgetSaturatedBlended = 0;
         std::uint64_t blockRejectedByTypePolicy = 0;
         std::uint64_t blockRejectedByQualityOrPersistence = 0;
         std::uint64_t face4Attempted = 0;

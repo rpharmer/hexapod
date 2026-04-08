@@ -44,7 +44,20 @@ void World::BuildManifolds() {
 #endif
             },
 #ifndef NDEBUG
-            [this]() { ++solverTelemetry_.manifoldFrictionBudgetSaturated; },
+            [this](FrictionBudgetNormalSupportSource source) {
+                ++solverTelemetry_.manifoldFrictionBudgetSaturated;
+                switch (source) {
+                    case FrictionBudgetNormalSupportSource::SelectedBlockPairOnly:
+                        ++solverTelemetry_.manifoldFrictionBudgetSaturatedSelectedPair;
+                        break;
+                    case FrictionBudgetNormalSupportSource::AllManifoldContacts:
+                        ++solverTelemetry_.manifoldFrictionBudgetSaturatedAllContacts;
+                        break;
+                    case FrictionBudgetNormalSupportSource::BlendedSelectedPairAndManifold:
+                        ++solverTelemetry_.manifoldFrictionBudgetSaturatedBlended;
+                        break;
+                }
+            },
             [this](bool reprojected) {
                 if (reprojected) {
                     ++solverTelemetry_.tangentImpulseReprojected;

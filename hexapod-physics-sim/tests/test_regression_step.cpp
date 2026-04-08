@@ -45,6 +45,8 @@ int main() {
     config.restitutionVelocityCutoff = 1.25f;
     config.staticFrictionSpeedThreshold = 0.04f;
     config.staticToDynamicTransitionSpeed = 0.15f;
+    config.frictionBudgetNormalSupportSource = FrictionBudgetNormalSupportSource::BlendedSelectedPairAndManifold;
+    config.frictionBudgetSelectedPairBlendWeight = 3.5f;
     config.useSplitImpulse = true;
     world.SetContactSolverConfig(config);
     const ContactSolverConfig roundtrip = world.GetContactSolverConfig();
@@ -54,6 +56,9 @@ int main() {
     assert(std::abs(roundtrip.restitutionVelocityCutoff - 1.25f) < 1e-6f);
     assert(std::abs(roundtrip.staticFrictionSpeedThreshold - 0.04f) < 1e-6f);
     assert(std::abs(roundtrip.staticToDynamicTransitionSpeed - 0.15f) < 1e-6f);
+    assert(roundtrip.frictionBudgetNormalSupportSource == FrictionBudgetNormalSupportSource::BlendedSelectedPairAndManifold);
+    assert(std::abs(roundtrip.frictionBudgetSelectedPairBlendWeight - 3.5f) < 1e-6f);
+    assert(!roundtrip.useFace4PointNormalBlock);
 
     Body plane;
     plane.shape = ShapeType::Plane;

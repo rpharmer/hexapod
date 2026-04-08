@@ -9,6 +9,12 @@
 
 namespace minphys3d {
 
+enum class FrictionBudgetNormalSupportSource : std::uint8_t {
+    SelectedBlockPairOnly = 0,
+    AllManifoldContacts = 1,
+    BlendedSelectedPairAndManifold = 2,
+};
+
 constexpr float kSleepLinearThreshold = 0.05f;
 constexpr float kSleepAngularThreshold = 0.05f;
 constexpr int kSleepFramesThreshold = 120;
@@ -50,6 +56,11 @@ struct ContactSolverConfig {
     bool enableManifoldFrictionBudget = true;
     bool frictionBudgetUseRadialClamp = true;
     float manifoldFrictionBudgetScale = 1.0f;
+    // Defaults preserve prior behavior: manifold budget normal support from all manifold contacts.
+    FrictionBudgetNormalSupportSource frictionBudgetNormalSupportSource =
+        FrictionBudgetNormalSupportSource::AllManifoldContacts;
+    // Used only when support source is BlendedSelectedPairAndManifold.
+    float frictionBudgetSelectedPairBlendWeight = 2.0f;
 };
 
 struct JointSolverConfig {

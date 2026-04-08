@@ -67,26 +67,35 @@ void World::WarmStartContacts() {
             }
 
             std::size_t contactIndex = 0;
-            if (m.tangentBasisValid && m.manifoldTangentImpulseValid && !m.contacts.empty()) {
+            const bool useManifoldTangentWarmStart =
+                m.tangentBasisValid && m.manifoldTangentImpulseValid && !m.contacts.empty();
+            if (useManifoldTangentWarmStart) {
                 float totalNormal = 0.0f;
                 for (const Contact& c : m.contacts) {
                     totalNormal += std::max(c.normalImpulseSum, 0.0f);
                 }
-                if (totalNormal > kEpsilon) {
-                    for (Contact& c : m.contacts) {
-                        const float w = std::max(c.normalImpulseSum, 0.0f) / totalNormal;
-                        c.tangentImpulseSum0 = w * m.manifoldTangentImpulseSum[0];
-                        c.tangentImpulseSum1 = w * m.manifoldTangentImpulseSum[1];
-                        c.tangentImpulseSum = c.tangentImpulseSum0;
-                    }
+                const float equalWeight = 1.0f / static_cast<float>(m.contacts.size());
+                for (Contact& c : m.contacts) {
+                    const float w = totalNormal > kEpsilon
+                        ? std::max(c.normalImpulseSum, 0.0f) / totalNormal
+                        : equalWeight;
+                    c.tangentImpulseSum0 = w * m.manifoldTangentImpulseSum[0];
+                    c.tangentImpulseSum1 = w * m.manifoldTangentImpulseSum[1];
+                    c.tangentImpulseSum = c.tangentImpulseSum0;
                 }
             }
             for (Contact& c : m.contacts) {
                 if (const std::array<float, 3>* cached = FindPerContactImpulseCache(m, c.key)) {
+                    // Normal impulse warm-start source precedence is unchanged: per-contact cache always applies.
                     c.normalImpulseSum = std::max((*cached)[0], 0.0f);
-                    c.tangentImpulseSum0 = (*cached)[1];
-                    c.tangentImpulseSum1 = (*cached)[2];
-                    c.tangentImpulseSum = c.tangentImpulseSum0;
+                    // Tangent warm-start precedence:
+                    // 1) Manifold tangent accumulator (when manifold basis + impulses are valid).
+                    // 2) Per-contact cache fallback only when manifold tangent basis is unavailable/invalid.
+                    if (!useManifoldTangentWarmStart) {
+                        c.tangentImpulseSum0 = (*cached)[1];
+                        c.tangentImpulseSum1 = (*cached)[2];
+                        c.tangentImpulseSum = c.tangentImpulseSum0;
+                    }
                 }
                 const bool skipNormal = skipPerContactNormal[contactIndex];
                 if (!skipNormal && c.normalImpulseSum == 0.0f
@@ -1057,7 +1066,20 @@ void World::SolveContactsInManifold(Manifold& manifold) {
 #endif
             },
 #ifndef NDEBUG
-            [this]() { ++solverTelemetry_.manifoldFrictionBudgetSaturated; },
+            [this](FrictionBudgetNormalSupportSource source) {
+                ++solverTelemetry_.manifoldFrictionBudgetSaturated;
+                switch (source) {
+                    case FrictionBudgetNormalSupportSource::SelectedBlockPairOnly:
+                        ++solverTelemetry_.manifoldFrictionBudgetSaturatedSelectedPair;
+                        break;
+                    case FrictionBudgetNormalSupportSource::AllManifoldContacts:
+                        ++solverTelemetry_.manifoldFrictionBudgetSaturatedAllContacts;
+                        break;
+                    case FrictionBudgetNormalSupportSource::BlendedSelectedPairAndManifold:
+                        ++solverTelemetry_.manifoldFrictionBudgetSaturatedBlended;
+                        break;
+                }
+            },
             [this](bool reprojected) {
                 if (reprojected) {
                     ++solverTelemetry_.tangentImpulseReprojected;
@@ -1119,7 +1141,20 @@ void World::SolveIslands() {
 #endif
             },
 #ifndef NDEBUG
-            [this]() { ++solverTelemetry_.manifoldFrictionBudgetSaturated; },
+            [this](FrictionBudgetNormalSupportSource source) {
+                ++solverTelemetry_.manifoldFrictionBudgetSaturated;
+                switch (source) {
+                    case FrictionBudgetNormalSupportSource::SelectedBlockPairOnly:
+                        ++solverTelemetry_.manifoldFrictionBudgetSaturatedSelectedPair;
+                        break;
+                    case FrictionBudgetNormalSupportSource::AllManifoldContacts:
+                        ++solverTelemetry_.manifoldFrictionBudgetSaturatedAllContacts;
+                        break;
+                    case FrictionBudgetNormalSupportSource::BlendedSelectedPairAndManifold:
+                        ++solverTelemetry_.manifoldFrictionBudgetSaturatedBlended;
+                        break;
+                }
+            },
             [this](bool reprojected) {
                 if (reprojected) {
                     ++solverTelemetry_.tangentImpulseReprojected;

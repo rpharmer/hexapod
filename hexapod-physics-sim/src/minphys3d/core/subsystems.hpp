@@ -96,7 +96,7 @@ struct ContactSolverContext {
     std::function<void(Body&, Body&, const Mat3&, const Mat3&, const Vec3&, const Vec3&, const Vec3&)> applyImpulse;
     std::function<void(bool)> recordTangentBasisState;
 #ifndef NDEBUG
-    std::function<void()> recordFrictionBudgetSaturation;
+    std::function<void(FrictionBudgetNormalSupportSource)> recordFrictionBudgetSaturation;
     std::function<void(bool)> recordManifoldTangentReprojection;
 #endif
     const ContactSolverConfig& config;
@@ -293,9 +293,41 @@ public:
             return;
         }
 
-        float totalNormalSupport = 0.0f;
-        for (const Contact& c : manifold.contacts) {
-            totalNormalSupport += std::max(c.normalImpulseSum, 0.0f);
+        const auto sumAllContactSupport = [&]() {
+            float total = 0.0f;
+            for (const Contact& c : manifold.contacts) {
+                total += std::max(c.normalImpulseSum, 0.0f);
+            }
+            return total;
+        };
+        const auto sumSelectedPairSupport = [&]() {
+            float total = 0.0f;
+            for (int idx : manifold.selectedBlockContactIndices) {
+                if (idx >= 0 && static_cast<std::size_t>(idx) < manifold.contacts.size()) {
+                    total += std::max(manifold.contacts[static_cast<std::size_t>(idx)].normalImpulseSum, 0.0f);
+                }
+            }
+            return total;
+        };
+
+        const float allContactSupport = sumAllContactSupport();
+        const float selectedPairSupport = sumSelectedPairSupport();
+        float totalNormalSupport = allContactSupport;
+        switch (context.config.frictionBudgetNormalSupportSource) {
+            case FrictionBudgetNormalSupportSource::SelectedBlockPairOnly:
+                totalNormalSupport = selectedPairSupport > kEpsilon ? selectedPairSupport : allContactSupport;
+                break;
+            case FrictionBudgetNormalSupportSource::AllManifoldContacts:
+                totalNormalSupport = allContactSupport;
+                break;
+            case FrictionBudgetNormalSupportSource::BlendedSelectedPairAndManifold: {
+                const float selectedWeight = std::max(context.config.frictionBudgetSelectedPairBlendWeight, 0.0f);
+                const float manifoldWeight = 1.0f;
+                const float weightedSum = selectedWeight * selectedPairSupport + manifoldWeight * allContactSupport;
+                const float denom = selectedWeight + manifoldWeight;
+                totalNormalSupport = denom > kEpsilon ? (weightedSum / denom) : allContactSupport;
+                break;
+            }
         }
         const Body& firstA = context.bodies[manifold.contacts.front().a];
         const Body& firstB = context.bodies[manifold.contacts.front().b];
@@ -366,7 +398,7 @@ public:
                         newT[1] = oldT[1] + (newT[1] - oldT[1]) * scale;
 #ifndef NDEBUG
                         if (context.recordFrictionBudgetSaturation) {
-                            context.recordFrictionBudgetSaturation();
+                            context.recordFrictionBudgetSaturation(context.config.frictionBudgetNormalSupportSource);
                         }
 #endif
                     }
