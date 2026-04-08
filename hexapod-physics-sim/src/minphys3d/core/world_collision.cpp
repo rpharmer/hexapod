@@ -2,6 +2,7 @@
 #include "minphys3d/collision/convex_support.hpp"
 #include "subsystems.hpp"
 #include <cmath>
+#include <cstring>
 
 namespace minphys3d {
 namespace {
@@ -65,6 +66,61 @@ ConvexSupport BuildConvexSupport(const Body& body) {
 }
 
 } // namespace
+
+std::uint64_t World::ComputeShapeGeometrySignature(const Body& body) {
+    std::uint64_t seed = static_cast<std::uint64_t>(body.shape);
+    auto mixFloat = [&seed](float value) {
+        std::uint32_t bits = 0;
+        static_assert(sizeof(bits) == sizeof(value), "float size mismatch");
+        std::memcpy(&bits, &value, sizeof(bits));
+        seed ^= static_cast<std::uint64_t>(bits) + 0x9e3779b97f4a7c15ull + (seed << 6u) + (seed >> 2u);
+    };
+    mixFloat(body.radius);
+    mixFloat(body.halfHeight);
+    mixFloat(body.halfExtents.x);
+    mixFloat(body.halfExtents.y);
+    mixFloat(body.halfExtents.z);
+    mixFloat(body.planeNormal.x);
+    mixFloat(body.planeNormal.y);
+    mixFloat(body.planeNormal.z);
+    mixFloat(body.planeOffset);
+    return seed;
+}
+
+void World::RefreshShapeRevisionCounters() {
+    if (shapeRevisionCounters_.size() != bodies_.size()) {
+        shapeRevisionCounters_.assign(bodies_.size(), 0);
+        shapeGeometrySignatures_.assign(bodies_.size(), 0);
+    }
+    for (std::size_t i = 0; i < bodies_.size(); ++i) {
+        const std::uint64_t signature = ComputeShapeGeometrySignature(bodies_[i]);
+        if (shapeGeometrySignatures_[i] == 0) {
+            shapeGeometrySignatures_[i] = signature;
+            continue;
+        }
+        if (shapeGeometrySignatures_[i] != signature) {
+            shapeGeometrySignatures_[i] = signature;
+            ++shapeRevisionCounters_[i];
+        }
+    }
+}
+
+bool World::ConvexOverlapWithCache(std::uint32_t a, std::uint32_t b) {
+    const std::uint32_t lo = std::min(a, b);
+    const std::uint32_t hi = std::max(a, b);
+    const NarrowphaseCacheKey key{
+        lo,
+        hi,
+        shapeRevisionCounters_[lo],
+        shapeRevisionCounters_[hi],
+    };
+    auto [it, inserted] = narrowphaseCache_.try_emplace(key);
+    if (inserted && narrowphaseCache_.size() > 4096) {
+        narrowphaseCache_.clear();
+        it = narrowphaseCache_.try_emplace(key).first;
+    }
+    return GjkOverlap(BuildConvexSupport(bodies_[a]), BuildConvexSupport(bodies_[b]), {}, &it->second);
+}
 
 void World::SetNarrowphaseDispatchPolicy(NarrowphaseDispatchPolicy policy) {
     narrowphaseDispatchPolicy_ = policy;
@@ -167,6 +223,7 @@ void World::BuildManifolds() {
     }
 
 void World::GenerateContacts() {
+        RefreshShapeRevisionCounters();
         const core_internal::BroadphaseSystem broadphaseSystem;
         const std::vector<Pair> pairs = broadphaseSystem.ComputePotentialPairs({[this]() { return ComputePotentialPairs(); }});
 
@@ -176,7 +233,7 @@ void World::GenerateContacts() {
             pairs,
             [this](ShapeType a, ShapeType b) { return SelectConvexDispatchRoute(a, b); },
             [this](std::uint32_t a, std::uint32_t b) {
-                return ConvexOverlapGJK(BuildConvexSupport(bodies_[a]), BuildConvexSupport(bodies_[b]));
+                return ConvexOverlapWithCache(a, b);
             },
             [this](std::uint32_t a, std::uint32_t b) { SphereSphere(a, b); },
             [this](std::uint32_t a, std::uint32_t b) { SphereCapsule(a, b); },

@@ -80,6 +80,8 @@ std::uint32_t World::CreateBody(const Body& bodyDef) {
     Body body = bodyDef;
     body.RecomputeMassProperties();
     bodies_.push_back(body);
+    shapeRevisionCounters_.push_back(0);
+    shapeGeometrySignatures_.push_back(ComputeShapeGeometrySignature(body));
 
     BroadphaseProxy proxy;
     proxy.fatBox = ExpandAABB(body.ComputeAABB(), 0.1f);
