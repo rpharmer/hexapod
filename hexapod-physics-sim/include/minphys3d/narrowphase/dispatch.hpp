@@ -7,4 +7,15 @@ namespace minphys3d {
 
 struct NarrowphaseTag {};
 
+enum class ConvexDispatchRoute {
+    SpecializedOnly,
+    GenericGateThenSpecialized,
+    GenericOnly,
+};
+
+enum class NarrowphaseDispatchPolicy {
+    PreferSpecializedFastPaths,
+    PreferGenericConvexCore,
+};
+
 } // namespace minphys3d

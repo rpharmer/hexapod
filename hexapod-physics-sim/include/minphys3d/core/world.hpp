@@ -35,6 +35,8 @@ public:
 
     const ContactSolverConfig& GetContactSolverConfig() const;
     const JointSolverConfig& GetJointSolverConfig() const;
+    void SetNarrowphaseDispatchPolicy(NarrowphaseDispatchPolicy policy);
+    NarrowphaseDispatchPolicy GetNarrowphaseDispatchPolicy() const;
     static bool ComputeStableTangentFrame(
         const Vec3& manifoldNormal,
         const Vec3& relativeVelocity,
@@ -1121,6 +1123,10 @@ private:
 #endif
 
     void GenerateContacts();
+    static bool IsConvexShape(ShapeType shape) {
+        return shape == ShapeType::Sphere || shape == ShapeType::Box || shape == ShapeType::Capsule;
+    }
+    ConvexDispatchRoute SelectConvexDispatchRoute(ShapeType a, ShapeType b) const;
 
     static Vec3 ClampPointToExtents(const Vec3& p, const Vec3& extents) {
         return {
@@ -2637,6 +2643,7 @@ private:
     Vec3 gravity_{};
     ContactSolverConfig contactSolverConfig_{};
     JointSolverConfig jointSolverConfig_{};
+    NarrowphaseDispatchPolicy narrowphaseDispatchPolicy_ = NarrowphaseDispatchPolicy::PreferSpecializedFastPaths;
     float currentSubstepDt_ = 1.0f / 60.0f;
     bool solverRelaxationPassActive_ = false;
     std::vector<Body> bodies_;
