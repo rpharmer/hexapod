@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "minphys3d/math/quat.hpp"
 #include "minphys3d/math/vec3.hpp"
 
 namespace minphys3d {
@@ -36,6 +37,68 @@ struct HingeJoint {
     float motorSpeed = 0.0f;
     float maxMotorTorque = 0.0f;
     float motorImpulseSum = 0.0f;
+};
+
+struct BallSocketJoint {
+    std::uint32_t a = 0;
+    std::uint32_t b = 0;
+    Vec3 localAnchorA{};
+    Vec3 localAnchorB{};
+    float impulseX = 0.0f;
+    float impulseY = 0.0f;
+    float impulseZ = 0.0f;
+};
+
+struct FixedJoint {
+    std::uint32_t a = 0;
+    std::uint32_t b = 0;
+    Vec3 localAnchorA{};
+    Vec3 localAnchorB{};
+    Quat referenceRotation{};
+    float impulseX = 0.0f;
+    float impulseY = 0.0f;
+    float impulseZ = 0.0f;
+    float angularImpulseX = 0.0f;
+    float angularImpulseY = 0.0f;
+    float angularImpulseZ = 0.0f;
+};
+
+struct PrismaticJoint {
+    std::uint32_t a = 0;
+    std::uint32_t b = 0;
+    Vec3 localAnchorA{};
+    Vec3 localAnchorB{};
+    Vec3 localAxisA{1.0f, 0.0f, 0.0f};
+    Vec3 localAxisB{1.0f, 0.0f, 0.0f};
+    float impulseT1 = 0.0f;
+    float impulseT2 = 0.0f;
+    float impulseAxis = 0.0f;
+    bool limitsEnabled = false;
+    float lowerTranslation = 0.0f;
+    float upperTranslation = 0.0f;
+    bool motorEnabled = false;
+    float motorSpeed = 0.0f;
+    float maxMotorForce = 0.0f;
+    float motorImpulseSum = 0.0f;
+};
+
+struct ServoJoint {
+    std::uint32_t a = 0;
+    std::uint32_t b = 0;
+    Vec3 localAnchorA{};
+    Vec3 localAnchorB{};
+    Vec3 localAxisA{0.0f, 1.0f, 0.0f};
+    Vec3 localAxisB{0.0f, 1.0f, 0.0f};
+    float impulseX = 0.0f;
+    float impulseY = 0.0f;
+    float impulseZ = 0.0f;
+    float angularImpulse1 = 0.0f;
+    float angularImpulse2 = 0.0f;
+    float servoImpulseSum = 0.0f;
+    float targetAngle = 0.0f;
+    float maxServoTorque = 0.0f;
+    float positionGain = 6.0f;
+    float dampingGain = 0.8f;
 };
 
 } // namespace minphys3d

@@ -144,6 +144,93 @@ std::uint32_t World::CreateHingeJoint(
     return static_cast<std::uint32_t>(hingeJoints_.size() - 1);
 }
 
+std::uint32_t World::CreateBallSocketJoint(
+    std::uint32_t a,
+    std::uint32_t b,
+    const Vec3& worldAnchor) {
+    BallSocketJoint j;
+    j.a = a;
+    j.b = b;
+    j.localAnchorA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), worldAnchor - bodies_.at(a).position);
+    j.localAnchorB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), worldAnchor - bodies_.at(b).position);
+    ballSocketJoints_.push_back(j);
+    return static_cast<std::uint32_t>(ballSocketJoints_.size() - 1);
+}
+
+std::uint32_t World::CreateFixedJoint(
+    std::uint32_t a,
+    std::uint32_t b,
+    const Vec3& worldAnchor) {
+    FixedJoint j;
+    j.a = a;
+    j.b = b;
+    j.localAnchorA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), worldAnchor - bodies_.at(a).position);
+    j.localAnchorB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), worldAnchor - bodies_.at(b).position);
+    j.referenceRotation = Normalize(Conjugate(Normalize(bodies_.at(a).orientation)) * Normalize(bodies_.at(b).orientation));
+    fixedJoints_.push_back(j);
+    return static_cast<std::uint32_t>(fixedJoints_.size() - 1);
+}
+
+std::uint32_t World::CreatePrismaticJoint(
+    std::uint32_t a,
+    std::uint32_t b,
+    const Vec3& worldAnchor,
+    const Vec3& worldAxis,
+    bool enableLimits,
+    float lowerTranslation,
+    float upperTranslation,
+    bool enableMotor,
+    float motorSpeed,
+    float maxMotorForce) {
+    Vec3 axisN{};
+    if (!TryNormalize(worldAxis, axisN)) {
+        return kInvalidJointId;
+    }
+    PrismaticJoint j;
+    j.a = a;
+    j.b = b;
+    j.localAnchorA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), worldAnchor - bodies_.at(a).position);
+    j.localAnchorB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), worldAnchor - bodies_.at(b).position);
+    j.localAxisA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), axisN);
+    j.localAxisB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), axisN);
+    j.limitsEnabled = enableLimits;
+    j.lowerTranslation = lowerTranslation;
+    j.upperTranslation = upperTranslation;
+    j.motorEnabled = enableMotor;
+    j.motorSpeed = motorSpeed;
+    j.maxMotorForce = maxMotorForce;
+    prismaticJoints_.push_back(j);
+    return static_cast<std::uint32_t>(prismaticJoints_.size() - 1);
+}
+
+std::uint32_t World::CreateServoJoint(
+    std::uint32_t a,
+    std::uint32_t b,
+    const Vec3& worldAnchor,
+    const Vec3& worldAxis,
+    float targetAngle,
+    float maxServoTorque,
+    float positionGain,
+    float dampingGain) {
+    Vec3 axisN{};
+    if (!TryNormalize(worldAxis, axisN)) {
+        return kInvalidJointId;
+    }
+    ServoJoint j;
+    j.a = a;
+    j.b = b;
+    j.localAnchorA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), worldAnchor - bodies_.at(a).position);
+    j.localAnchorB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), worldAnchor - bodies_.at(b).position);
+    j.localAxisA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), axisN);
+    j.localAxisB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), axisN);
+    j.targetAngle = targetAngle;
+    j.maxServoTorque = std::max(0.0f, maxServoTorque);
+    j.positionGain = std::max(0.0f, positionGain);
+    j.dampingGain = std::max(0.0f, dampingGain);
+    servoJoints_.push_back(j);
+    return static_cast<std::uint32_t>(servoJoints_.size() - 1);
+}
+
 void World::Step(float dt, int solverIterations) {
     if (dt <= 0.0f) {
         return;

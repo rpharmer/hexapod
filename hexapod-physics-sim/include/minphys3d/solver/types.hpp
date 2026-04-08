@@ -130,6 +130,10 @@ struct Island {
     std::vector<std::size_t> manifolds;
     std::vector<std::size_t> joints;
     std::vector<std::size_t> hinges;
+    std::vector<std::size_t> ballSockets;
+    std::vector<std::size_t> fixeds;
+    std::vector<std::size_t> prismatics;
+    std::vector<std::size_t> servos;
 };
 
 } // namespace minphys3d

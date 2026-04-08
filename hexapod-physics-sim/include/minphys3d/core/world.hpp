@@ -133,6 +133,34 @@ public:
         bool enableMotor = false,
         float motorSpeed = 0.0f,
         float maxMotorTorque = 0.0f);
+    std::uint32_t CreateBallSocketJoint(
+        std::uint32_t a,
+        std::uint32_t b,
+        const Vec3& worldAnchor);
+    std::uint32_t CreateFixedJoint(
+        std::uint32_t a,
+        std::uint32_t b,
+        const Vec3& worldAnchor);
+    std::uint32_t CreatePrismaticJoint(
+        std::uint32_t a,
+        std::uint32_t b,
+        const Vec3& worldAnchor,
+        const Vec3& worldAxis = {1.0f, 0.0f, 0.0f},
+        bool enableLimits = false,
+        float lowerTranslation = 0.0f,
+        float upperTranslation = 0.0f,
+        bool enableMotor = false,
+        float motorSpeed = 0.0f,
+        float maxMotorForce = 0.0f);
+    std::uint32_t CreateServoJoint(
+        std::uint32_t a,
+        std::uint32_t b,
+        const Vec3& worldAnchor,
+        const Vec3& worldAxis = {0.0f, 1.0f, 0.0f},
+        float targetAngle = 0.0f,
+        float maxServoTorque = 1.0f,
+        float positionGain = 6.0f,
+        float dampingGain = 0.8f);
 
     void Step(float dt, int solverIterations = 8);
 
@@ -556,6 +584,54 @@ private:
                     stack.push_back(other);
                 }
             }
+
+            for (const BallSocketJoint& j : ballSocketJoints_) {
+                std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
+                if (j.a == id) other = j.b;
+                else if (j.b == id) other = j.a;
+                else continue;
+
+                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0f) {
+                    visited[other] = true;
+                    stack.push_back(other);
+                }
+            }
+
+            for (const FixedJoint& j : fixedJoints_) {
+                std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
+                if (j.a == id) other = j.b;
+                else if (j.b == id) other = j.a;
+                else continue;
+
+                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0f) {
+                    visited[other] = true;
+                    stack.push_back(other);
+                }
+            }
+
+            for (const PrismaticJoint& j : prismaticJoints_) {
+                std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
+                if (j.a == id) other = j.b;
+                else if (j.b == id) other = j.a;
+                else continue;
+
+                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0f) {
+                    visited[other] = true;
+                    stack.push_back(other);
+                }
+            }
+
+            for (const ServoJoint& j : servoJoints_) {
+                std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
+                if (j.a == id) other = j.b;
+                else if (j.b == id) other = j.a;
+                else continue;
+
+                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0f) {
+                    visited[other] = true;
+                    stack.push_back(other);
+                }
+            }
         }
     }
 
@@ -914,6 +990,74 @@ private:
 
                     if (std::find(island.hinges.begin(), island.hinges.end(), hi) == island.hinges.end()) {
                         island.hinges.push_back(hi);
+                    }
+
+                    if (!visited[other] && bodies_[other].invMass != 0.0f && !bodies_[other].isSleeping) {
+                        visited[other] = true;
+                        stack.push_back(other);
+                    }
+                }
+
+                for (std::size_t bi = 0; bi < ballSocketJoints_.size(); ++bi) {
+                    const BallSocketJoint& j = ballSocketJoints_[bi];
+                    std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
+                    if (j.a == bodyId) other = j.b;
+                    else if (j.b == bodyId) other = j.a;
+                    else continue;
+
+                    if (std::find(island.ballSockets.begin(), island.ballSockets.end(), bi) == island.ballSockets.end()) {
+                        island.ballSockets.push_back(bi);
+                    }
+
+                    if (!visited[other] && bodies_[other].invMass != 0.0f && !bodies_[other].isSleeping) {
+                        visited[other] = true;
+                        stack.push_back(other);
+                    }
+                }
+
+                for (std::size_t fi = 0; fi < fixedJoints_.size(); ++fi) {
+                    const FixedJoint& j = fixedJoints_[fi];
+                    std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
+                    if (j.a == bodyId) other = j.b;
+                    else if (j.b == bodyId) other = j.a;
+                    else continue;
+
+                    if (std::find(island.fixeds.begin(), island.fixeds.end(), fi) == island.fixeds.end()) {
+                        island.fixeds.push_back(fi);
+                    }
+
+                    if (!visited[other] && bodies_[other].invMass != 0.0f && !bodies_[other].isSleeping) {
+                        visited[other] = true;
+                        stack.push_back(other);
+                    }
+                }
+
+                for (std::size_t pi = 0; pi < prismaticJoints_.size(); ++pi) {
+                    const PrismaticJoint& j = prismaticJoints_[pi];
+                    std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
+                    if (j.a == bodyId) other = j.b;
+                    else if (j.b == bodyId) other = j.a;
+                    else continue;
+
+                    if (std::find(island.prismatics.begin(), island.prismatics.end(), pi) == island.prismatics.end()) {
+                        island.prismatics.push_back(pi);
+                    }
+
+                    if (!visited[other] && bodies_[other].invMass != 0.0f && !bodies_[other].isSleeping) {
+                        visited[other] = true;
+                        stack.push_back(other);
+                    }
+                }
+
+                for (std::size_t si = 0; si < servoJoints_.size(); ++si) {
+                    const ServoJoint& j = servoJoints_[si];
+                    std::uint32_t other = std::numeric_limits<std::uint32_t>::max();
+                    if (j.a == bodyId) other = j.b;
+                    else if (j.b == bodyId) other = j.a;
+                    else continue;
+
+                    if (std::find(island.servos.begin(), island.servos.end(), si) == island.servos.end()) {
+                        island.servos.push_back(si);
                     }
 
                     if (!visited[other] && bodies_[other].invMass != 0.0f && !bodies_[other].isSleeping) {
@@ -1412,6 +1556,77 @@ private:
             ApplyAngularImpulse(a, b, a.InvInertiaWorld(), b.InvInertiaWorld(), j.angularImpulse1 * t1);
             ApplyAngularImpulse(a, b, a.InvInertiaWorld(), b.InvInertiaWorld(), j.angularImpulse2 * t2);
             ApplyAngularImpulse(a, b, a.InvInertiaWorld(), b.InvInertiaWorld(), j.motorImpulseSum * axisA);
+        }
+
+        for (BallSocketJoint& j : ballSocketJoints_) {
+            if (std::abs(j.impulseX) + std::abs(j.impulseY) + std::abs(j.impulseZ) <= kEpsilon) {
+                continue;
+            }
+            Body& a = bodies_[j.a];
+            Body& b = bodies_[j.b];
+            const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
+            const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
+            ApplyImpulse(a, b, a.InvInertiaWorld(), b.InvInertiaWorld(), ra, rb, {j.impulseX, j.impulseY, j.impulseZ});
+        }
+
+        for (FixedJoint& j : fixedJoints_) {
+            const float linearSum = std::abs(j.impulseX) + std::abs(j.impulseY) + std::abs(j.impulseZ);
+            const float angularSum = std::abs(j.angularImpulseX) + std::abs(j.angularImpulseY) + std::abs(j.angularImpulseZ);
+            if (linearSum + angularSum <= kEpsilon) {
+                continue;
+            }
+            Body& a = bodies_[j.a];
+            Body& b = bodies_[j.b];
+            const Mat3 invIA = a.InvInertiaWorld();
+            const Mat3 invIB = b.InvInertiaWorld();
+            const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
+            const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
+            ApplyImpulse(a, b, invIA, invIB, ra, rb, {j.impulseX, j.impulseY, j.impulseZ});
+            ApplyAngularImpulse(a, b, invIA, invIB, {j.angularImpulseX, j.angularImpulseY, j.angularImpulseZ});
+        }
+
+        for (PrismaticJoint& j : prismaticJoints_) {
+            const float sum = std::abs(j.impulseT1) + std::abs(j.impulseT2) + std::abs(j.impulseAxis) + std::abs(j.motorImpulseSum);
+            if (sum <= kEpsilon) {
+                continue;
+            }
+            Body& a = bodies_[j.a];
+            Body& b = bodies_[j.b];
+            const Mat3 invIA = a.InvInertiaWorld();
+            const Mat3 invIB = b.InvInertiaWorld();
+            const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
+            const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
+            Vec3 axis = Normalize(Rotate(a.orientation, j.localAxisA));
+            Vec3 t1 = Cross(axis, {0.0f, 1.0f, 0.0f});
+            if (LengthSquared(t1) <= 1e-5f) t1 = Cross(axis, {0.0f, 0.0f, 1.0f});
+            t1 = Normalize(t1);
+            const Vec3 t2 = Normalize(Cross(axis, t1));
+            const Vec3 impulse = j.impulseT1 * t1 + j.impulseT2 * t2 + (j.impulseAxis + j.motorImpulseSum) * axis;
+            ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
+        }
+
+        for (ServoJoint& j : servoJoints_) {
+            const float linearSum = std::abs(j.impulseX) + std::abs(j.impulseY) + std::abs(j.impulseZ);
+            const float angularSum = std::abs(j.angularImpulse1) + std::abs(j.angularImpulse2) + std::abs(j.servoImpulseSum);
+            if (linearSum + angularSum <= kEpsilon) {
+                continue;
+            }
+            Body& a = bodies_[j.a];
+            Body& b = bodies_[j.b];
+            const Mat3 invIA = a.InvInertiaWorld();
+            const Mat3 invIB = b.InvInertiaWorld();
+            const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
+            const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
+            ApplyImpulse(a, b, invIA, invIB, ra, rb, {j.impulseX, j.impulseY, j.impulseZ});
+
+            const Vec3 axisA = Normalize(Rotate(a.orientation, j.localAxisA));
+            Vec3 t1 = Cross(axisA, {1.0f, 0.0f, 0.0f});
+            if (LengthSquared(t1) <= 1e-5f) t1 = Cross(axisA, {0.0f, 0.0f, 1.0f});
+            t1 = Normalize(t1);
+            const Vec3 t2 = Normalize(Cross(axisA, t1));
+            ApplyAngularImpulse(a, b, invIA, invIB, j.angularImpulse1 * t1);
+            ApplyAngularImpulse(a, b, invIA, invIB, j.angularImpulse2 * t2);
+            ApplyAngularImpulse(a, b, invIA, invIB, j.servoImpulseSum * axisA);
         }
     }
 
@@ -2296,7 +2511,11 @@ private:
         Vec3& outLambda,
         JointBlockFallbackReason& outReason) const;
 
+    void SolveBallSocketJoint(BallSocketJoint& j);
     void SolveHingeJoint(HingeJoint& j);
+    void SolveFixedJoint(FixedJoint& j);
+    void SolvePrismaticJoint(PrismaticJoint& j);
+    void SolveServoJoint(ServoJoint& j);
 
     void SolveIslands();
 
@@ -2390,6 +2609,10 @@ private:
     std::vector<Island> islands_;
     std::vector<DistanceJoint> joints_;
     std::vector<HingeJoint> hingeJoints_;
+    std::vector<BallSocketJoint> ballSocketJoints_;
+    std::vector<FixedJoint> fixedJoints_;
+    std::vector<PrismaticJoint> prismaticJoints_;
+    std::vector<ServoJoint> servoJoints_;
     std::unordered_map<PersistentPointKey, PersistentPointImpulseState, PersistentPointKeyHash> persistentPointImpulses_;
 #ifndef NDEBUG
     SolverTelemetry solverTelemetry_{};

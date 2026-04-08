@@ -395,6 +395,10 @@ struct JointSolverContext {
     std::vector<Body>& bodies;
     std::vector<DistanceJoint>& joints;
     std::vector<HingeJoint>& hingeJoints;
+    std::vector<BallSocketJoint>& ballSocketJoints;
+    std::vector<FixedJoint>& fixedJoints;
+    std::vector<PrismaticJoint>& prismaticJoints;
+    std::vector<ServoJoint>& servoJoints;
 };
 
 class JointSolver {
@@ -425,6 +429,87 @@ public:
             if (!a.isSleeping) a.position += correction * a.invMass;
             if (!b.isSleeping) b.position -= correction * b.invMass;
         }
+
+        for (BallSocketJoint& j : context.ballSocketJoints) {
+            Body& a = context.bodies[j.a];
+            Body& b = context.bodies[j.b];
+            if (a.invMass + b.invMass <= kEpsilon) continue;
+            const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
+            const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
+            const Vec3 error = (b.position + rb) - (a.position + ra);
+            const Vec3 correction = (0.2f / std::max(a.invMass + b.invMass, kEpsilon)) * error;
+            if (!a.isSleeping) a.position += correction * a.invMass;
+            if (!b.isSleeping) b.position -= correction * b.invMass;
+        }
+
+        for (FixedJoint& j : context.fixedJoints) {
+            Body& a = context.bodies[j.a];
+            Body& b = context.bodies[j.b];
+            if (a.invMass + b.invMass <= kEpsilon) continue;
+            const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
+            const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
+            const Vec3 anchorError = (b.position + rb) - (a.position + ra);
+            const Vec3 correction = (0.2f / std::max(a.invMass + b.invMass, kEpsilon)) * anchorError;
+            if (!a.isSleeping) a.position += correction * a.invMass;
+            if (!b.isSleeping) b.position -= correction * b.invMass;
+
+            const Quat target = Normalize(Normalize(a.orientation) * j.referenceRotation);
+            Quat dq = Normalize(Conjugate(Normalize(b.orientation)) * target);
+            if (dq.w < 0.0f) {
+                dq = {-dq.w, -dq.x, -dq.y, -dq.z};
+            }
+            Vec3 angularError{dq.x, dq.y, dq.z};
+            if (LengthSquared(angularError) > kEpsilon * kEpsilon) {
+                angularError = 0.3f * angularError;
+                if (!a.isSleeping) {
+                    a.orientation = Normalize(a.orientation * Quat{1.0f, -angularError.x * a.invMass, -angularError.y * a.invMass, -angularError.z * a.invMass});
+                }
+                if (!b.isSleeping) {
+                    b.orientation = Normalize(b.orientation * Quat{1.0f, angularError.x * b.invMass, angularError.y * b.invMass, angularError.z * b.invMass});
+                }
+            }
+        }
+
+        for (PrismaticJoint& j : context.prismaticJoints) {
+            Body& a = context.bodies[j.a];
+            Body& b = context.bodies[j.b];
+            if (a.invMass + b.invMass <= kEpsilon) continue;
+            const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
+            const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
+            const Vec3 axis = Normalize(Rotate(a.orientation, j.localAxisA));
+            Vec3 error = (b.position + rb) - (a.position + ra);
+            const float along = Dot(error, axis);
+            error -= along * axis;
+            const Vec3 correction = (0.2f / std::max(a.invMass + b.invMass, kEpsilon)) * error;
+            if (!a.isSleeping) a.position += correction * a.invMass;
+            if (!b.isSleeping) b.position -= correction * b.invMass;
+
+            if (j.limitsEnabled) {
+                float limitError = 0.0f;
+                if (along < j.lowerTranslation) {
+                    limitError = along - j.lowerTranslation;
+                } else if (along > j.upperTranslation) {
+                    limitError = along - j.upperTranslation;
+                }
+                if (std::abs(limitError) > kEpsilon) {
+                    const Vec3 limitCorrection = (0.15f * limitError / std::max(a.invMass + b.invMass, kEpsilon)) * axis;
+                    if (!a.isSleeping) a.position += limitCorrection * a.invMass;
+                    if (!b.isSleeping) b.position -= limitCorrection * b.invMass;
+                }
+            }
+        }
+
+        for (ServoJoint& j : context.servoJoints) {
+            Body& a = context.bodies[j.a];
+            Body& b = context.bodies[j.b];
+            if (a.invMass + b.invMass <= kEpsilon) continue;
+            const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
+            const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
+            const Vec3 error = (b.position + rb) - (a.position + ra);
+            const Vec3 correction = (0.2f / std::max(a.invMass + b.invMass, kEpsilon)) * error;
+            if (!a.isSleeping) a.position += correction * a.invMass;
+            if (!b.isSleeping) b.position -= correction * b.invMass;
+        }
     }
 };
 
@@ -433,6 +518,10 @@ struct SleepSystemContext {
     const std::vector<Manifold>& manifolds;
     const std::vector<DistanceJoint>& joints;
     const std::vector<HingeJoint>& hingeJoints;
+    const std::vector<BallSocketJoint>& ballSocketJoints;
+    const std::vector<FixedJoint>& fixedJoints;
+    const std::vector<PrismaticJoint>& prismaticJoints;
+    const std::vector<ServoJoint>& servoJoints;
     float linearThreshold;
     float angularThreshold;
     std::uint32_t framesThreshold;
@@ -476,6 +565,22 @@ public:
                     else if (j.b == id) enqueueConnectedBodies(j.a);
                 }
                 for (const HingeJoint& j : context.hingeJoints) {
+                    if (j.a == id) enqueueConnectedBodies(j.b);
+                    else if (j.b == id) enqueueConnectedBodies(j.a);
+                }
+                for (const BallSocketJoint& j : context.ballSocketJoints) {
+                    if (j.a == id) enqueueConnectedBodies(j.b);
+                    else if (j.b == id) enqueueConnectedBodies(j.a);
+                }
+                for (const FixedJoint& j : context.fixedJoints) {
+                    if (j.a == id) enqueueConnectedBodies(j.b);
+                    else if (j.b == id) enqueueConnectedBodies(j.a);
+                }
+                for (const PrismaticJoint& j : context.prismaticJoints) {
+                    if (j.a == id) enqueueConnectedBodies(j.b);
+                    else if (j.b == id) enqueueConnectedBodies(j.a);
+                }
+                for (const ServoJoint& j : context.servoJoints) {
                     if (j.a == id) enqueueConnectedBodies(j.b);
                     else if (j.b == id) enqueueConnectedBodies(j.a);
                 }
