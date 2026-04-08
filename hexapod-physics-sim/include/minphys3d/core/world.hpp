@@ -31,8 +31,10 @@ public:
     explicit World(Vec3 gravity = {0.0f, -9.81f, 0.0f});
 
     void SetContactSolverConfig(const ContactSolverConfig& config);
+    void SetJointSolverConfig(const JointSolverConfig& config);
 
     const ContactSolverConfig& GetContactSolverConfig() const;
+    const JointSolverConfig& GetJointSolverConfig() const;
     static bool ComputeStableTangentFrame(
         const Vec3& manifoldNormal,
         const Vec3& relativeVelocity,
@@ -96,6 +98,10 @@ public:
         std::uint64_t face4FallbackToBlock2 = 0;
         std::uint64_t face4FallbackToScalar = 0;
         std::uint64_t face4BlockedByFrictionCoherenceGate = 0;
+        std::uint64_t jointBlockSolveUsed = 0;
+        std::uint64_t jointBlockFallbackDegenerate = 0;
+        std::uint64_t jointBlockFallbackConditionEstimate = 0;
+        std::uint64_t jointBlockFallbackNonFinite = 0;
 
         ManifoldSolveBucket manifoldSolveScope{};
         std::unordered_map<std::uint8_t, ManifoldSolveBucket> manifoldTypeBuckets{};
@@ -2272,6 +2278,23 @@ private:
     void SolveContactsInManifold(Manifold& manifold);
 
     void SolveDistanceJoint(DistanceJoint& j);
+    enum class JointBlockFallbackReason {
+        None,
+        DegenerateMassMatrix,
+        ConditionEstimateExceeded,
+        NonFiniteResult,
+    };
+    bool SolveHingeAnchorBlock3x3(
+        Body& a,
+        Body& b,
+        const Mat3& invIA,
+        const Mat3& invIB,
+        const Vec3& ra,
+        const Vec3& rb,
+        const Vec3& error,
+        const Vec3& relVel,
+        Vec3& outLambda,
+        JointBlockFallbackReason& outReason) const;
 
     void SolveHingeJoint(HingeJoint& j);
 
@@ -2352,6 +2375,7 @@ private:
 private:
     Vec3 gravity_{};
     ContactSolverConfig contactSolverConfig_{};
+    JointSolverConfig jointSolverConfig_{};
     float currentSubstepDt_ = 1.0f / 60.0f;
     std::vector<Body> bodies_;
     std::vector<BroadphaseProxy> proxies_;

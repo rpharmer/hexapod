@@ -78,6 +78,51 @@ int main() {
     }
 
     {
+    World world({0.0f, 0.0f, 0.0f});
+    JointSolverConfig jointConfig = world.GetJointSolverConfig();
+    jointConfig.useBlockSolver = true;
+    jointConfig.blockDeterminantEpsilon = 1e-9f;
+    jointConfig.blockDiagonalMinimum = 1e-7f;
+    jointConfig.blockConditionEstimateMax = 1e6f;
+    jointConfig.hingeAnchorBiasFactor = 0.25f;
+    jointConfig.hingeAnchorDampingFactor = 0.12f;
+    world.SetJointSolverConfig(jointConfig);
+    const JointSolverConfig roundtrip = world.GetJointSolverConfig();
+    assert(roundtrip.useBlockSolver);
+    assert(std::abs(roundtrip.blockDeterminantEpsilon - 1e-9f) < 1e-12f);
+    assert(std::abs(roundtrip.blockDiagonalMinimum - 1e-7f) < 1e-10f);
+    assert(std::abs(roundtrip.blockConditionEstimateMax - 1e6f) < 1e-3f);
+    assert(std::abs(roundtrip.hingeAnchorBiasFactor - 0.25f) < 1e-6f);
+    assert(std::abs(roundtrip.hingeAnchorDampingFactor - 0.12f) < 1e-6f);
+
+    Body heavy;
+    heavy.shape = ShapeType::Sphere;
+    heavy.radius = 0.25f;
+    heavy.mass = 50.0f;
+    heavy.position = {-0.35f, 0.0f, 0.0f};
+    const auto heavyId = world.CreateBody(heavy);
+
+    Body light = heavy;
+    light.mass = 0.5f;
+    light.position = {0.35f, 0.0f, 0.0f};
+    const auto lightId = world.CreateBody(light);
+
+    const auto hingeId = world.CreateHingeJoint(heavyId, lightId, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f});
+    assert(hingeId != World::kInvalidJointId);
+    world.GetBody(lightId).velocity = {0.0f, 1.5f, 0.0f};
+
+    for (int i = 0; i < 180; ++i) {
+        world.Step(1.0f / 120.0f, 12);
+    }
+
+    const Body& outHeavy = world.GetBody(heavyId);
+    const Body& outLight = world.GetBody(lightId);
+    assert(std::isfinite(outHeavy.position.x) && std::isfinite(outHeavy.position.y) && std::isfinite(outHeavy.position.z));
+    assert(std::isfinite(outLight.position.x) && std::isfinite(outLight.position.y) && std::isfinite(outLight.position.z));
+    assert(Length(outLight.position - outHeavy.position) < 1.2f);
+    }
+
+    {
     World world({0.0f, -9.81f, 0.0f});
 
     Body plane;

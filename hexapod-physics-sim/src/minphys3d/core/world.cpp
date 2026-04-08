@@ -12,8 +12,16 @@ void World::SetContactSolverConfig(const ContactSolverConfig& config) {
     contactSolverConfig_ = config;
 }
 
+void World::SetJointSolverConfig(const JointSolverConfig& config) {
+    jointSolverConfig_ = config;
+}
+
 const ContactSolverConfig& World::GetContactSolverConfig() const {
     return contactSolverConfig_;
+}
+
+const JointSolverConfig& World::GetJointSolverConfig() const {
+    return jointSolverConfig_;
 }
 
 bool World::ComputeStableTangentFrame(
