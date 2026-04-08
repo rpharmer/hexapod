@@ -2372,6 +2372,7 @@ private:
         BlockSolveFallbackReason fallbackReason = BlockSolveFallbackReason::None;
         float determinantOrConditionEstimate = std::numeric_limits<float>::quiet_NaN();
         bool blockSolved = false;
+        bool usedFace4 = false;
         if (contactSolverConfig_.useFace4PointNormalBlock
             && IsFace4PointBlockEligible(manifold, &fallbackReason)) {
 #ifndef NDEBUG
@@ -2379,6 +2380,7 @@ private:
 #endif
             blockSolved = SolveNormalProjected4(manifold, fallbackReason, determinantOrConditionEstimate);
             if (blockSolved) {
+                usedFace4 = true;
 #ifndef NDEBUG
                 ++solverTelemetry_.face4Used;
 #endif
@@ -2406,13 +2408,17 @@ private:
                     manifold.contacts.size());
             }
 #endif
-            const int blockIdx0 = manifold.selectedBlockContactIndices[0];
-            const int blockIdx1 = manifold.selectedBlockContactIndices[1];
-            for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
-                if (static_cast<int>(i) == blockIdx0 || static_cast<int>(i) == blockIdx1) {
-                    continue;
+            // Face-4 projected solve already resolves all contact normals in a 4-point manifold.
+            // Only run scalar extras for Block2, where the selected pair covers a strict subset.
+            if (!usedFace4) {
+                const int blockIdx0 = manifold.selectedBlockContactIndices[0];
+                const int blockIdx1 = manifold.selectedBlockContactIndices[1];
+                for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
+                    if (static_cast<int>(i) == blockIdx0 || static_cast<int>(i) == blockIdx1) {
+                        continue;
+                    }
+                    SolveNormalScalar(manifold.contacts[i]);
                 }
-                SolveNormalScalar(manifold.contacts[i]);
             }
 #ifndef NDEBUG
             const float impulseContinuityMetric = std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[0] - manifold.blockSolveDebug.selectedPreNormalImpulses[0])
