@@ -34,5 +34,10 @@ int main() {
     assert(first.manifoldOrder == second.manifoldOrder);
     assert(first.supportDepthApplied);
 
+    ContactSolverConfig legacy = cfg;
+    legacy.ordering.support_depth_relaxation_passes = 4;
+    const IslandOrderResult legacyOrder = ComputeIslandOrder(island, bodies, manifolds, legacy);
+    assert(first.manifoldOrder == legacyOrder.manifoldOrder);
+
     return 0;
 }

@@ -36,7 +36,7 @@ IslandOrderResult ComputeIslandOrder(const Island& island,
         for (std::uint32_t id : island.bodies) {
             supportDepth[id] = (bodies[id].invMass == 0.0f) ? 0u : 1u;
         }
-        for (int iter = 0; iter < 4; ++iter) {
+        for (std::uint32_t iter = 0; iter < config.ordering.support_depth_relaxation_passes; ++iter) {
             for (std::size_t mi : island.manifolds) {
                 const Manifold& m = manifolds[mi];
                 const std::uint32_t da = supportDepth[m.a];

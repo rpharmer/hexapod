@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
@@ -25,6 +26,19 @@ constexpr float kSleepLinearThreshold = 0.05f;
 constexpr float kSleepAngularThreshold = 0.05f;
 constexpr int kSleepFramesThreshold = 120;
 constexpr float kMaxSubstepDistanceFactor = 0.5f;
+
+struct ToiSolverConfig {
+    int max_iterations = 8;
+    float min_time_step = 1e-6f;
+};
+
+struct Block4MatrixConfig {
+    float symmetry_tolerance = 2e-3f;
+};
+
+struct OrderingConfig {
+    std::uint8_t support_depth_relaxation_passes = 4;
+};
 
 struct ContactSolverConfig {
     float bounceVelocityThreshold = 0.0f;
@@ -72,6 +86,10 @@ struct ContactSolverConfig {
     std::uint16_t face4MinCoherentPersistenceAge = 2;
     std::uint16_t face4MinStableContactCount = 4;
     float face4MaxBasisChurnRatio = 0.5f;
+
+    ToiSolverConfig toi{};
+    Block4MatrixConfig block4{};
+    OrderingConfig ordering{};
 
     // Staged rollout controls for manifold-level 2D friction budgeting.
     bool enableTwoAxisFrictionSolve = true;
@@ -217,5 +235,37 @@ struct Island {
     std::vector<std::size_t> prismatics;
     std::vector<std::size_t> servos;
 };
+
+
+inline bool ValidateContactSolverConfig(const ContactSolverConfig& config) {
+    constexpr float kMinSaneToiStep = 1e-9f;
+    if (config.toi.max_iterations < 1) {
+        return false;
+    }
+    if (!std::isfinite(config.toi.min_time_step) || config.toi.min_time_step < kMinSaneToiStep) {
+        return false;
+    }
+    if (!std::isfinite(config.block4.symmetry_tolerance) || config.block4.symmetry_tolerance < 0.0f) {
+        return false;
+    }
+    return true;
+}
+
+inline ContactSolverConfig SanitizeContactSolverConfig(const ContactSolverConfig& config) {
+    ContactSolverConfig sanitized = config;
+    const ContactSolverConfig defaults{};
+
+    if (sanitized.toi.max_iterations < 1) {
+        sanitized.toi.max_iterations = defaults.toi.max_iterations;
+    }
+    if (!std::isfinite(sanitized.toi.min_time_step) || sanitized.toi.min_time_step < 1e-9f) {
+        sanitized.toi.min_time_step = defaults.toi.min_time_step;
+    }
+    if (!std::isfinite(sanitized.block4.symmetry_tolerance) || sanitized.block4.symmetry_tolerance < 0.0f) {
+        sanitized.block4.symmetry_tolerance = defaults.block4.symmetry_tolerance;
+    }
+
+    return sanitized;
+}
 
 } // namespace minphys3d

@@ -40,7 +40,6 @@ Block4SolveResult SolveBlock4ProjectedGaussSeidel(const Block4SolveInput& input)
         oldLambda[i] = std::max(input.contacts[i].oldImpulse, 0.0f);
     }
 
-    constexpr float kSymmetryTolerance = 2e-3f;
     for (int i = 0; i < 4; ++i) {
         for (int j = 0; j < 4; ++j) {
             K[i][j] = input.invMassSum * Dot(input.contacts[i].normal, input.contacts[j].normal)
@@ -58,7 +57,7 @@ Block4SolveResult SolveBlock4ProjectedGaussSeidel(const Block4SolveInput& input)
         }
         for (int j = i + 1; j < 4; ++j) {
             const float scale = std::max(1.0f, std::max(std::abs(K[i][j]), std::abs(K[j][i])));
-            if (std::abs(K[i][j] - K[j][i]) > kSymmetryTolerance * scale) {
+            if (std::abs(K[i][j] - K[j][i]) > input.symmetryTolerance * scale) {
                 result.fallbackReason = BlockSolveFallbackCode::DegenerateMassMatrix;
                 return result;
             }
