@@ -164,9 +164,11 @@ struct BlockSolverSafetyRails {
 };
 
 struct FrictionCoherenceGates {
+    static constexpr std::uint64_t kMinType9SolveCount = 50u;
     static constexpr float kMaxBasisChurnRatio = 0.90f;
     static constexpr float kMinStableType9Contacts = 0.00f;
     static constexpr float kMaxType9FallbackRate = 0.95f;
+    static constexpr std::uint64_t kMinFace4AttemptedCount = 1u;
     static constexpr float kMaxFace4FallbackToScalarRate = 0.25f;
     static constexpr float kMaxFace4PenetrationRegression = 0.75f;
     static constexpr float kMaxFace4JitterStdDevRegression = 0.35f;
@@ -683,14 +685,14 @@ ComparisonResult CompareScene(const SceneConfig& source) {
         const double face4FallbackToScalarRate = SafeRatio(
             static_cast<double>(out.face4.telemetry.face4FallbackToScalar),
             static_cast<double>(out.face4.telemetry.face4Attempted));
-        if (type9Scope.solveCount >= 50) {
+        if (type9Scope.solveCount >= FrictionCoherenceGates::kMinType9SolveCount) {
             fail(out.block.tangentBasisChurnRatio > FrictionCoherenceGates::kMaxBasisChurnRatio,
                  "face4 coherence gate: basis churn ratio above ceiling");
             fail(out.block.meanStableType9Contacts < FrictionCoherenceGates::kMinStableType9Contacts,
                  "face4 coherence gate: stable type-9 contact support below minimum");
             fail(type9FallbackRate > FrictionCoherenceGates::kMaxType9FallbackRate,
                  "face4 coherence gate: type-9 fallback rate above ceiling");
-            fail(out.face4.telemetry.face4Attempted == 0 || face4Type9Scope.solveCount == 0,
+            fail(out.face4.telemetry.face4Attempted < FrictionCoherenceGates::kMinFace4AttemptedCount || face4Type9Scope.solveCount == 0,
                  "face4 readiness: expected face4 attempts for eligible type-9-heavy scene");
             fail(face4FallbackToScalarRate > FrictionCoherenceGates::kMaxFace4FallbackToScalarRate,
                  "face4 readiness: fallback-to-scalar rate exceeded budget");
@@ -709,7 +711,7 @@ ComparisonResult CompareScene(const SceneConfig& source) {
     }
 
     if (source.requireFace4FallbackRoute) {
-        if (out.face4.telemetry.face4Attempted > 0) {
+        if (out.face4.telemetry.face4Attempted >= FrictionCoherenceGates::kMinFace4AttemptedCount) {
             fail(out.face4.telemetry.face4FallbackToBlock2 == 0,
                  "face4 fallback route: expected fallback-to-block2 on ill-conditioned manifold");
         }
@@ -893,7 +895,7 @@ SceneConfig BuildFaceContactMildRocking() {
     box.shape = ShapeType::Box;
     box.halfExtents = {0.50f, 0.20f, 0.40f};
     box.mass = 2.6f;
-    box.position = {0.0f, 1.2f, 0.0f};
+    box.position = {0.0f, 0.70f, 0.0f};
     box.orientation = minphys3d::Normalize(Quat{0.9961947f, 0.0f, 0.0871557f, 0.0f});
     box.angularVelocity = {0.35f, 0.0f, 0.25f};
     box.velocity = {0.6f, 0.0f, -0.4f};
@@ -1361,6 +1363,8 @@ void PrintBlockSolverSafetyRails() {
               << "  face4 friction coherence gates(type-9 heavy scenes): basis_churn<=" << FrictionCoherenceGates::kMaxBasisChurnRatio
               << ", stable_type9_contacts>=" << FrictionCoherenceGates::kMinStableType9Contacts
               << ", type9_fallback_rate<=" << FrictionCoherenceGates::kMaxType9FallbackRate
+              << ", type9_solve_count>=" << FrictionCoherenceGates::kMinType9SolveCount
+              << ", face4_attempted>=" << FrictionCoherenceGates::kMinFace4AttemptedCount
               << ", face4_fallback_to_scalar_rate<=" << FrictionCoherenceGates::kMaxFace4FallbackToScalarRate << "\n";
 }
 
