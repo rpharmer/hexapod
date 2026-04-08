@@ -766,6 +766,254 @@ void World::SolveHingeJoint(HingeJoint& j) {
         }
     }
 
+void World::SolveBallSocketJoint(BallSocketJoint& j) {
+        Body& a = bodies_[j.a];
+        Body& b = bodies_[j.b];
+        const Mat3 invIA = a.InvInertiaWorld();
+        const Mat3 invIB = b.InvInertiaWorld();
+
+        const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
+        const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
+        const Vec3 pa = a.position + ra;
+        const Vec3 pb = b.position + rb;
+        const Vec3 error = pb - pa;
+        const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
+        const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
+        const Vec3 relVel = vb - va;
+        if (Length(error) > kWakeContactPenetrationThreshold || Length(relVel) > kWakeJointRelativeSpeedThreshold) {
+            WakeConnectedBodies(j.a);
+            WakeConnectedBodies(j.b);
+        }
+
+        Vec3 lambda{};
+        JointBlockFallbackReason fallbackReason = JointBlockFallbackReason::None;
+        if (!SolveHingeAnchorBlock3x3(a, b, invIA, invIB, ra, rb, error, relVel, lambda, fallbackReason)) {
+            const Vec3 axes[3] = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
+            float* impulseSums[3] = {&j.impulseX, &j.impulseY, &j.impulseZ};
+            for (int i = 0; i < 3; ++i) {
+                const Vec3 n = axes[i];
+                const Vec3 raCrossN = Cross(ra, n);
+                const Vec3 rbCrossN = Cross(rb, n);
+                const float effMass = a.invMass + b.invMass
+                    + Dot(raCrossN, invIA * raCrossN)
+                    + Dot(rbCrossN, invIB * rbCrossN);
+                if (effMass <= kEpsilon) {
+                    continue;
+                }
+                const float bias = jointSolverConfig_.hingeAnchorBiasFactor * Dot(error, n)
+                    + jointSolverConfig_.hingeAnchorDampingFactor * Dot(relVel, n);
+                const float dl = -bias / effMass;
+                *impulseSums[i] += dl;
+                ApplyImpulse(a, b, invIA, invIB, ra, rb, dl * n);
+            }
+            return;
+        }
+
+        j.impulseX += lambda.x;
+        j.impulseY += lambda.y;
+        j.impulseZ += lambda.z;
+        ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda);
+    }
+
+void World::SolveFixedJoint(FixedJoint& j) {
+        Body& a = bodies_[j.a];
+        Body& b = bodies_[j.b];
+        const Mat3 invIA = a.InvInertiaWorld();
+        const Mat3 invIB = b.InvInertiaWorld();
+
+        const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
+        const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
+        const Vec3 pa = a.position + ra;
+        const Vec3 pb = b.position + rb;
+        const Vec3 error = pb - pa;
+        const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
+        const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
+        const Vec3 relVel = vb - va;
+
+        Vec3 linearLambda{};
+        JointBlockFallbackReason fallbackReason = JointBlockFallbackReason::None;
+        if (SolveHingeAnchorBlock3x3(a, b, invIA, invIB, ra, rb, error, relVel, linearLambda, fallbackReason)) {
+            j.impulseX += linearLambda.x;
+            j.impulseY += linearLambda.y;
+            j.impulseZ += linearLambda.z;
+            ApplyImpulse(a, b, invIA, invIB, ra, rb, linearLambda);
+        }
+
+        const Quat target = Normalize(Normalize(a.orientation) * j.referenceRotation);
+        Quat dq = Normalize(Conjugate(Normalize(b.orientation)) * target);
+        if (dq.w < 0.0f) {
+            dq = {-dq.w, -dq.x, -dq.y, -dq.z};
+        }
+        const Vec3 angularError{dq.x, dq.y, dq.z};
+        const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
+        const Vec3 axes[3] = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
+        float* angularSums[3] = {&j.angularImpulseX, &j.angularImpulseY, &j.angularImpulseZ};
+        for (int i = 0; i < 3; ++i) {
+            const Vec3 n = axes[i];
+            const float effMass = Dot(n, invIA * n) + Dot(n, invIB * n);
+            if (effMass <= kEpsilon) {
+                continue;
+            }
+            const float bias = 0.3f * Dot(angularError, n) + 0.08f * Dot(relAngVel, n);
+            const float lambda = -bias / effMass;
+            *angularSums[i] += lambda;
+            ApplyAngularImpulse(a, b, invIA, invIB, lambda * n);
+        }
+    }
+
+void World::SolvePrismaticJoint(PrismaticJoint& j) {
+        Body& a = bodies_[j.a];
+        Body& b = bodies_[j.b];
+        const Mat3 invIA = a.InvInertiaWorld();
+        const Mat3 invIB = b.InvInertiaWorld();
+
+        const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
+        const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
+        const Vec3 pa = a.position + ra;
+        const Vec3 pb = b.position + rb;
+        const Vec3 rawError = pb - pa;
+        const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
+        const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
+        const Vec3 relVel = vb - va;
+
+        Vec3 axis = Normalize(Rotate(a.orientation, j.localAxisA));
+        Vec3 t1 = Cross(axis, {0.0f, 1.0f, 0.0f});
+        if (LengthSquared(t1) <= 1e-5f) t1 = Cross(axis, {0.0f, 0.0f, 1.0f});
+        t1 = Normalize(t1);
+        const Vec3 t2 = Normalize(Cross(axis, t1));
+
+        const Vec3 errorPerp = rawError - Dot(rawError, axis) * axis;
+        const Vec3 relVelPerp = relVel - Dot(relVel, axis) * axis;
+        if (Length(errorPerp) > kWakeContactPenetrationThreshold || Length(relVel) > kWakeJointRelativeSpeedThreshold) {
+            WakeConnectedBodies(j.a);
+            WakeConnectedBodies(j.b);
+        }
+
+        const Vec3 perpAxes[2] = {t1, t2};
+        float* perpSums[2] = {&j.impulseT1, &j.impulseT2};
+        for (int i = 0; i < 2; ++i) {
+            const Vec3 n = perpAxes[i];
+            const Vec3 raCrossN = Cross(ra, n);
+            const Vec3 rbCrossN = Cross(rb, n);
+            const float effMass = a.invMass + b.invMass
+                + Dot(raCrossN, invIA * raCrossN)
+                + Dot(rbCrossN, invIB * rbCrossN);
+            if (effMass <= kEpsilon) {
+                continue;
+            }
+            const float bias = jointSolverConfig_.hingeAnchorBiasFactor * Dot(errorPerp, n)
+                + jointSolverConfig_.hingeAnchorDampingFactor * Dot(relVelPerp, n);
+            const float lambda = -bias / effMass;
+            *perpSums[i] += lambda;
+            ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda * n);
+        }
+
+        const float translation = Dot(rawError, axis);
+        float axisBias = 0.0f;
+        if (j.limitsEnabled) {
+            if (translation < j.lowerTranslation) {
+                axisBias = jointSolverConfig_.hingeAnchorBiasFactor * (translation - j.lowerTranslation);
+            } else if (translation > j.upperTranslation) {
+                axisBias = jointSolverConfig_.hingeAnchorBiasFactor * (translation - j.upperTranslation);
+            }
+        }
+        if (axisBias != 0.0f) {
+            const Vec3 raCrossAxis = Cross(ra, axis);
+            const Vec3 rbCrossAxis = Cross(rb, axis);
+            const float effMass = a.invMass + b.invMass
+                + Dot(raCrossAxis, invIA * raCrossAxis)
+                + Dot(rbCrossAxis, invIB * rbCrossAxis);
+            if (effMass > kEpsilon) {
+                const float lambda = -(axisBias + jointSolverConfig_.hingeAnchorDampingFactor * Dot(relVel, axis)) / effMass;
+                j.impulseAxis += lambda;
+                ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda * axis);
+            }
+        }
+
+        if (j.motorEnabled) {
+            const Vec3 raCrossAxis = Cross(ra, axis);
+            const Vec3 rbCrossAxis = Cross(rb, axis);
+            const float effMass = a.invMass + b.invMass
+                + Dot(raCrossAxis, invIA * raCrossAxis)
+                + Dot(rbCrossAxis, invIB * rbCrossAxis);
+            if (effMass > kEpsilon) {
+                float lambda = -(Dot(relVel, axis) - j.motorSpeed) / effMass;
+                const float oldImpulse = j.motorImpulseSum;
+                j.motorImpulseSum = std::clamp(j.motorImpulseSum + lambda, -j.maxMotorForce, j.maxMotorForce);
+                lambda = j.motorImpulseSum - oldImpulse;
+                ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda * axis);
+            }
+        }
+    }
+
+void World::SolveServoJoint(ServoJoint& j) {
+        Body& a = bodies_[j.a];
+        Body& b = bodies_[j.b];
+        const Mat3 invIA = a.InvInertiaWorld();
+        const Mat3 invIB = b.InvInertiaWorld();
+
+        const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
+        const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
+        const Vec3 pa = a.position + ra;
+        const Vec3 pb = b.position + rb;
+        const Vec3 error = pb - pa;
+        const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
+        const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
+        const Vec3 relVel = vb - va;
+        const float relAngSpeed = Length(b.angularVelocity - a.angularVelocity);
+        if (Length(error) > kWakeContactPenetrationThreshold
+            || Length(relVel) > kWakeJointRelativeSpeedThreshold
+            || relAngSpeed > kWakeJointRelativeSpeedThreshold) {
+            WakeConnectedBodies(j.a);
+            WakeConnectedBodies(j.b);
+        }
+
+        Vec3 lambda{};
+        JointBlockFallbackReason fallbackReason = JointBlockFallbackReason::None;
+        if (SolveHingeAnchorBlock3x3(a, b, invIA, invIB, ra, rb, error, relVel, lambda, fallbackReason)) {
+            j.impulseX += lambda.x;
+            j.impulseY += lambda.y;
+            j.impulseZ += lambda.z;
+            ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda);
+        }
+
+        const Vec3 axisA = Normalize(Rotate(a.orientation, j.localAxisA));
+        const Vec3 axisB = Normalize(Rotate(b.orientation, j.localAxisB));
+        Vec3 t1 = Cross(axisA, {1.0f, 0.0f, 0.0f});
+        if (LengthSquared(t1) <= 1e-5f) t1 = Cross(axisA, {0.0f, 0.0f, 1.0f});
+        t1 = Normalize(t1);
+        const Vec3 t2 = Normalize(Cross(axisA, t1));
+
+        const Vec3 angularError = Cross(axisA, axisB);
+        const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
+        const Vec3 angAxes[2] = {t1, t2};
+        float* angImpulseSums[2] = {&j.angularImpulse1, &j.angularImpulse2};
+        for (int i = 0; i < 2; ++i) {
+            const Vec3 n = angAxes[i];
+            const float effMass = Dot(n, invIA * n) + Dot(n, invIB * n);
+            if (effMass <= kEpsilon) {
+                continue;
+            }
+            const float bias = 0.2f * Dot(angularError, n) + 0.1f * Dot(relAngVel, n);
+            const float angLambda = -bias / effMass;
+            *angImpulseSums[i] += angLambda;
+            ApplyAngularImpulse(a, b, invIA, invIB, angLambda * n);
+        }
+
+        const float hingeAngle = std::atan2(Dot(Cross(axisA, axisB), t1), Dot(axisA, axisB));
+        const float positionError = hingeAngle - j.targetAngle;
+        const float desiredOmega = -j.positionGain * positionError;
+        const float omegaError = Dot(relAngVel, axisA) - desiredOmega;
+        const float effMass = Dot(axisA, invIA * axisA) + Dot(axisA, invIB * axisA);
+        if (effMass > kEpsilon) {
+            float servoLambda = -(omegaError + j.dampingGain * Dot(relAngVel, axisA)) / effMass;
+            const float oldImpulse = j.servoImpulseSum;
+            j.servoImpulseSum = std::clamp(j.servoImpulseSum + servoLambda, -j.maxServoTorque, j.maxServoTorque);
+            servoLambda = j.servoImpulseSum - oldImpulse;
+            ApplyAngularImpulse(a, b, invIA, invIB, servoLambda * axisA);
+        }
+    }
+
 
 void World::SolveContactsInManifold(Manifold& manifold) {
         core_internal::ContactSolver solver;
@@ -825,7 +1073,7 @@ void World::SolveContactsInManifold(Manifold& manifold) {
 
 void World::SolveJointPositions() {
         core_internal::JointSolver jointSolver;
-        core_internal::JointSolverContext context{bodies_, joints_, hingeJoints_};
+        core_internal::JointSolverContext context{bodies_, joints_, hingeJoints_, ballSocketJoints_, fixedJoints_, prismaticJoints_, servoJoints_};
         jointSolver.SolveJointPositions(context);
     }
 
@@ -893,6 +1141,18 @@ void World::SolveIslands() {
             for (std::size_t hi : island.hinges) {
                 SolveHingeJoint(hingeJoints_[hi]);
             }
+            for (std::size_t bi : island.ballSockets) {
+                SolveBallSocketJoint(ballSocketJoints_[bi]);
+            }
+            for (std::size_t fi : island.fixeds) {
+                SolveFixedJoint(fixedJoints_[fi]);
+            }
+            for (std::size_t pi : island.prismatics) {
+                SolvePrismaticJoint(prismaticJoints_[pi]);
+            }
+            for (std::size_t si : island.servos) {
+                SolveServoJoint(servoJoints_[si]);
+            }
         }
     }
 
@@ -903,6 +1163,10 @@ void World::UpdateSleeping() {
             manifolds_,
             joints_,
             hingeJoints_,
+            ballSocketJoints_,
+            fixedJoints_,
+            prismaticJoints_,
+            servoJoints_,
             kSleepLinearThreshold,
             kSleepAngularThreshold,
             kSleepFramesThreshold,
