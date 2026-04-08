@@ -1,5 +1,7 @@
 #include "minphys3d/core/world.hpp"
 #include "subsystems.hpp"
+#include "constraint_solver.hpp"
+#include "sleep_system.hpp"
 
 namespace minphys3d {
 void World::ResolveTOIPipeline(float dt) {
@@ -1279,7 +1281,6 @@ bool World::TryComputeAnchorSeparation(const Contact& c, float& outPenetration) 
     }
 
 void World::SolveIslands() {
-        core_internal::ContactSolver solver;
         std::unordered_map<ManifoldKey, std::unordered_set<PersistentPointKey, PersistentPointKeyHash>, ManifoldKeyHash> warmStartUsedKeys;
         core_internal::ContactSolverContext contactContext{
             bodies_,
@@ -1348,88 +1349,34 @@ void World::SolveIslands() {
             contactSolverConfig_,
         };
 
-        for (const Island& island : islands_) {
-            std::vector<std::size_t> manifoldOrder = island.manifolds;
-            if (contactSolverConfig_.enableDeterministicOrdering) {
-                std::stable_sort(manifoldOrder.begin(), manifoldOrder.end(), [&](std::size_t lhs, std::size_t rhs) {
-                    const Manifold& ml = manifolds_[lhs];
-                    const Manifold& mr = manifolds_[rhs];
-                    if (ml.pairKey() != mr.pairKey()) {
-                        return ml.pairKey() < mr.pairKey();
-                    }
-                    if (ml.manifoldType != mr.manifoldType) {
-                        return ml.manifoldType < mr.manifoldType;
-                    }
-                    return lhs < rhs;
-                });
-            }
+        const core_internal::ConstraintSolver constraintSolver;
+        const core_internal::ConstraintSolverContext context{
+            bodies_,
+            manifolds_,
+            islands_,
+            joints_,
+            hingeJoints_,
+            ballSocketJoints_,
+            fixedJoints_,
+            prismaticJoints_,
+            servoJoints_,
+            contactContext,
+            contactSolverConfig_,
+#ifndef NDEBUG
+            &solverTelemetry_,
+#endif
+            [](core_internal::ContactSolver& solver, const core_internal::ContactSolverContext& context, Manifold& manifold) {
+                solver.SolveContactsInManifold(context, manifold);
+            },
+            [this](DistanceJoint& joint) { SolveDistanceJoint(joint); },
+            [this](HingeJoint& joint) { SolveHingeJoint(joint); },
+            [this](BallSocketJoint& joint) { SolveBallSocketJoint(joint); },
+            [this](FixedJoint& joint) { SolveFixedJoint(joint); },
+            [this](PrismaticJoint& joint) { SolvePrismaticJoint(joint); },
+            [this](ServoJoint& joint) { SolveServoJoint(joint); },
+        };
 
-            IslandSolveOrdering ordering = contactSolverConfig_.islandSolveOrdering;
-            if (ordering == IslandSolveOrdering::Insertion && contactSolverConfig_.enableSupportDepthOrdering) {
-                ordering = IslandSolveOrdering::SupportDepth;
-            }
-            if (ordering == IslandSolveOrdering::SupportDepth || ordering == IslandSolveOrdering::ShockPropagation) {
-                std::unordered_map<std::uint32_t, std::uint32_t> supportDepth;
-                for (std::uint32_t id : island.bodies) {
-                    supportDepth[id] = (bodies_[id].invMass == 0.0f) ? 0u : 1u;
-                }
-                for (int iter = 0; iter < 4; ++iter) {
-                    for (std::size_t mi : island.manifolds) {
-                        const Manifold& m = manifolds_[mi];
-                        const std::uint32_t da = supportDepth[m.a];
-                        const std::uint32_t db = supportDepth[m.b];
-                        if (bodies_[m.a].invMass == 0.0f && bodies_[m.b].invMass > 0.0f) {
-                            supportDepth[m.b] = std::max(supportDepth[m.b], da + 1);
-                        } else if (bodies_[m.b].invMass == 0.0f && bodies_[m.a].invMass > 0.0f) {
-                            supportDepth[m.a] = std::max(supportDepth[m.a], db + 1);
-                        }
-                    }
-                }
-                std::sort(manifoldOrder.begin(), manifoldOrder.end(), [&](std::size_t lhs, std::size_t rhs) {
-                    const Manifold& ml = manifolds_[lhs];
-                    const Manifold& mr = manifolds_[rhs];
-                    const std::uint32_t dl = std::min(supportDepth[ml.a], supportDepth[ml.b]);
-                    const std::uint32_t dr = std::min(supportDepth[mr.a], supportDepth[mr.b]);
-                    return dl < dr;
-                });
-#ifndef NDEBUG
-                ++solverTelemetry_.supportDepthOrderApplied;
-#endif
-            } else {
-#ifndef NDEBUG
-                ++solverTelemetry_.supportDepthOrderBypassed;
-#endif
-            }
-            auto solveOrder = [&](const std::vector<std::size_t>& order) {
-                for (std::size_t mi : order) {
-                    solver.SolveContactsInManifold(contactContext, manifolds_[mi]);
-                }
-            };
-            solveOrder(manifoldOrder);
-            if (ordering == IslandSolveOrdering::ShockPropagation && manifoldOrder.size() > 1) {
-                std::vector<std::size_t> reverseOrder = manifoldOrder;
-                std::reverse(reverseOrder.begin(), reverseOrder.end());
-                solveOrder(reverseOrder);
-            }
-            for (std::size_t ji : island.joints) {
-                SolveDistanceJoint(joints_[ji]);
-            }
-            for (std::size_t hi : island.hinges) {
-                SolveHingeJoint(hingeJoints_[hi]);
-            }
-            for (std::size_t bi : island.ballSockets) {
-                SolveBallSocketJoint(ballSocketJoints_[bi]);
-            }
-            for (std::size_t fi : island.fixeds) {
-                SolveFixedJoint(fixedJoints_[fi]);
-            }
-            for (std::size_t pi : island.prismatics) {
-                SolvePrismaticJoint(prismaticJoints_[pi]);
-            }
-            for (std::size_t si : island.servos) {
-                SolveServoJoint(servoJoints_[si]);
-            }
-        }
+        constraintSolver.SolveIslands(context);
     }
 
 void World::UpdateSleeping() {

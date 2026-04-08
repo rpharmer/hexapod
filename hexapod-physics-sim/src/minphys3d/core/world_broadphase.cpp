@@ -1,5 +1,5 @@
 #include "minphys3d/core/world.hpp"
-#include "subsystems.hpp"
+#include "broadphase_system.hpp"
 
 #include <chrono>
 
@@ -21,53 +21,27 @@ float World::ComputeProxyMargin(const Body& body) const {
 }
 
 void World::UpdateBroadphaseProxies() {
-    if (proxies_.size() != bodies_.size()) {
-        proxies_.resize(bodies_.size());
-    }
-    ++broadphaseStepCounter_;
-    lastBroadphaseMovedProxyCount_ = 0;
-    movedProxyIds_.clear();
-    broadphaseMetrics_.partialRebuildTriggered = false;
-    broadphaseMetrics_.fullRebuildTriggered = false;
-    for (std::size_t i = 0; i < bodies_.size(); ++i) {
-        const Body& body = bodies_[i];
-        const AABB current = bodies_[i].ComputeAABB();
-        const float margin = ComputeProxyMargin(body);
-        if (!proxies_[i].valid) {
-            proxies_[i].fatBox = ExpandAABB(current, margin);
-            proxies_[i].leaf = -1;
-            proxies_[i].valid = true;
-            EnsureProxyInTree(static_cast<std::uint32_t>(i));
-        } else if (!Contains(proxies_[i].fatBox, current)) {
-            if (proxies_[i].leaf >= 0) {
-                RemoveLeaf(proxies_[i].leaf);
-            }
-            proxies_[i].fatBox = ExpandAABB(current, margin);
-            proxies_[i].leaf = InsertLeaf(static_cast<std::uint32_t>(i), proxies_[i].fatBox);
-            ++lastBroadphaseMovedProxyCount_;
-            movedProxyIds_.push_back(static_cast<std::uint32_t>(i));
-        } else {
-            EnsureProxyInTree(static_cast<std::uint32_t>(i));
-        }
-    }
-    if (previousBodyActiveState_.size() != bodies_.size()) {
-        previousBodyActiveState_.assign(bodies_.size(), 0u);
-        for (std::size_t i = 0; i < bodies_.size(); ++i) {
-            const bool active = !(bodies_[i].invMass == 0.0f || bodies_[i].isSleeping);
-            previousBodyActiveState_[i] = active ? 1u : 0u;
-        }
-    } else {
-        for (std::size_t i = 0; i < bodies_.size(); ++i) {
-            const bool active = !(bodies_[i].invMass == 0.0f || bodies_[i].isSleeping);
-            const std::uint8_t current = active ? 1u : 0u;
-            if (previousBodyActiveState_[i] != current) {
-                movedProxyIds_.push_back(static_cast<std::uint32_t>(i));
-                previousBodyActiveState_[i] = current;
-            }
-        }
-    }
-    UpdateBroadphaseQualityMetrics();
-    MaybeTriggerBroadphaseRebuild();
+    const core_internal::BroadphaseSystem broadphaseSystem;
+    const core_internal::BroadphaseUpdateContext context{
+        bodies_,
+        proxies_,
+        movedProxyIds_,
+        previousBodyActiveState_,
+        broadphaseMetrics_,
+        broadphaseConfig_,
+        broadphaseStepCounter_,
+        lastBroadphaseRebuildStep_,
+        lastBroadphaseMovedProxyCount_,
+        [this](const Body& body) { return ComputeProxyMargin(body); },
+        [this](std::uint32_t bodyId) { EnsureProxyInTree(bodyId); },
+        [this](std::int32_t leaf) { RemoveLeaf(leaf); },
+        [this](std::uint32_t bodyId, const AABB& fatBox) { return InsertLeaf(bodyId, fatBox); },
+        [](const AABB& aabb, float margin) { return ExpandAABB(aabb, margin); },
+        [](const AABB& outer, const AABB& inner) { return Contains(outer, inner); },
+        [this]() { UpdateBroadphaseQualityMetrics(); },
+        [this]() { MaybeTriggerBroadphaseRebuild(); },
+    };
+    broadphaseSystem.UpdateProxies(context);
 }
 
 void World::ReinsertProxy(std::uint32_t bodyId) {
