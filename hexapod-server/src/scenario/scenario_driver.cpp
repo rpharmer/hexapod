@@ -225,7 +225,7 @@ bool ScenarioDriver::run(RobotControl& robot, const ScenarioDefinition& scenario
                 current_intent = makeMotionIntent(event.motion);
                 robot.setMotionIntent(current_intent);
                 if (logger) {
-                    LOG_INFO(logger, "Scenario event @", event.at_ms, "ms mode update");
+                    LOG_DEBUG(logger, "Scenario event @", event.at_ms, "ms mode update");
                 }
             }
 
