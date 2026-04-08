@@ -1998,7 +1998,7 @@ private:
         return true;
     }
 
-    bool IsFace4PointBlockEligible(const Manifold& manifold, BlockSolveFallbackReason* outReason = nullptr) const {
+    bool IsFace4PointBlockEligible(const Manifold& manifold, BlockSolveFallbackReason* outReason = nullptr) {
         if (outReason != nullptr) {
             *outReason = BlockSolveFallbackReason::Ineligible;
         }
