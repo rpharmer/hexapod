@@ -97,6 +97,8 @@ struct BroadphaseConfig {
     float fullRebuildMaxDepthThreshold = 96.0f;
     float fullRebuildMovedProxyRatioThreshold = 0.50f;
     float fullRebuildQueryNodeVisitsPerProxyThreshold = 256.0f;
+    bool enableMovedSetOnlyUpdates = true;
+    bool enablePairCacheReuseForQuasiStatic = true;
 
     std::uint32_t minStepsBetweenRebuilds = 8;
 };
@@ -107,8 +109,13 @@ struct BroadphaseMetrics {
     float avgDepth = 0.0f;
     float movedProxyRatio = 0.0f;
     float queryNodeVisitsPerProxy = 0.0f;
+    float pairGenerationMs = 0.0f;
+    float pairCacheHitRate = 0.0f;
     std::uint32_t queryNodeVisits = 0;
+    std::uint32_t pairCacheQueries = 0;
+    std::uint32_t pairCacheHits = 0;
     std::uint32_t validProxyCount = 0;
+    bool usedMovedSetOnlyUpdate = false;
     bool partialRebuildTriggered = false;
     bool fullRebuildTriggered = false;
 };

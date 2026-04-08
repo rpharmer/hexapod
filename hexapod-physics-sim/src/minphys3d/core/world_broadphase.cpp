@@ -1,6 +1,8 @@
 #include "minphys3d/core/world.hpp"
 #include "subsystems.hpp"
 
+#include <chrono>
+
 namespace minphys3d {
 float World::ComputeProxyMargin(const Body& body) const {
     const float linearSweep = Length(body.velocity) * currentSubstepDt_ * broadphaseConfig_.linearVelocityMarginScale;
@@ -46,6 +48,22 @@ void World::UpdateBroadphaseProxies() {
             movedProxyIds_.push_back(static_cast<std::uint32_t>(i));
         } else {
             EnsureProxyInTree(static_cast<std::uint32_t>(i));
+        }
+    }
+    if (previousBodyActiveState_.size() != bodies_.size()) {
+        previousBodyActiveState_.assign(bodies_.size(), 0u);
+        for (std::size_t i = 0; i < bodies_.size(); ++i) {
+            const bool active = !(bodies_[i].invMass == 0.0f || bodies_[i].isSleeping);
+            previousBodyActiveState_[i] = active ? 1u : 0u;
+        }
+    } else {
+        for (std::size_t i = 0; i < bodies_.size(); ++i) {
+            const bool active = !(bodies_[i].invMass == 0.0f || bodies_[i].isSleeping);
+            const std::uint8_t current = active ? 1u : 0u;
+            if (previousBodyActiveState_[i] != current) {
+                movedProxyIds_.push_back(static_cast<std::uint32_t>(i));
+                previousBodyActiveState_[i] = current;
+            }
         }
     }
     UpdateBroadphaseQualityMetrics();
@@ -377,64 +395,151 @@ std::int32_t World::Balance(std::int32_t iA) {
     }
 
 std::vector<Pair> World::ComputePotentialPairs() const {
+    const auto startTime = std::chrono::steady_clock::now();
     std::vector<Pair> pairs;
     broadphaseMetrics_.queryNodeVisits = 0;
     broadphaseMetrics_.queryNodeVisitsPerProxy = 0.0f;
+    broadphaseMetrics_.pairGenerationMs = 0.0f;
+    broadphaseMetrics_.pairCacheHitRate = 0.0f;
+    broadphaseMetrics_.pairCacheQueries = 0;
+    broadphaseMetrics_.pairCacheHits = 0;
+    broadphaseMetrics_.usedMovedSetOnlyUpdate = false;
     if (bodies_.empty() || rootNode_ == -1) {
         return pairs;
     }
-        std::unordered_set<std::uint64_t> seenPairs;
-        seenPairs.reserve(bodies_.size() * 4);
-        std::vector<std::int32_t> stack;
-        stack.reserve(treeNodes_.size());
-        for (std::uint32_t i = 0; i < proxies_.size(); ++i) {
-            const BroadphaseProxy& proxy = proxies_[i];
-            if (!proxy.valid || proxy.leaf < 0) {
+
+    std::unordered_set<std::uint32_t> movedSet;
+    movedSet.reserve(movedProxyIds_.size() * 2);
+    for (const std::uint32_t movedId : movedProxyIds_) {
+        if (movedId < proxies_.size()) {
+            movedSet.insert(movedId);
+        }
+    }
+
+    std::unordered_set<std::uint64_t> seenPairs;
+    seenPairs.reserve(std::max<std::size_t>(bodies_.size() * 4, cachedPotentialPairKeySet_.size() * 2));
+    if (broadphaseConfig_.enablePairCacheReuseForQuasiStatic && !cachedPotentialPairs_.empty()) {
+        for (const Pair& cachedPair : cachedPotentialPairs_) {
+            ++broadphaseMetrics_.pairCacheQueries;
+            if (!IsPairEligible(cachedPair.a, cachedPair.b)) {
                 continue;
             }
-            stack.clear();
-            stack.push_back(rootNode_);
-            while (!stack.empty()) {
-                const std::int32_t nodeId = stack.back();
-                stack.pop_back();
-                ++broadphaseMetrics_.queryNodeVisits;
-                if (nodeId < 0 || nodeId == proxy.leaf || !Overlaps(proxy.fatBox, treeNodes_[nodeId].box)) {
-                    continue;
-                }
-                if (treeNodes_[nodeId].IsLeaf()) {
-                    const std::uint32_t j = static_cast<std::uint32_t>(treeNodes_[nodeId].bodyId);
-                    if (i >= j) {
-                        continue;
-                    }
-                    const Body& a = bodies_[i];
-                    const Body& b = bodies_[j];
-                    if ((a.invMass == 0.0f && b.invMass == 0.0f) || (a.isSleeping && b.isSleeping)) {
-                        continue;
-                    }
-                    const std::uint64_t key = (static_cast<std::uint64_t>(i) << 32) | j;
-                    if (seenPairs.insert(key).second) {
-                        pairs.push_back({i, j});
-                    }
-                    continue;
-                }
-                stack.push_back(treeNodes_[nodeId].left);
-                stack.push_back(treeNodes_[nodeId].right);
+            if (broadphaseConfig_.enableMovedSetOnlyUpdates
+                && !movedSet.empty()
+                && (movedSet.find(cachedPair.a) != movedSet.end() || movedSet.find(cachedPair.b) != movedSet.end())) {
+                continue;
+            }
+            const std::uint64_t key = MakePairKey(cachedPair.a, cachedPair.b);
+            if (seenPairs.insert(key).second) {
+                ++broadphaseMetrics_.pairCacheHits;
+                pairs.push_back(cachedPair);
             }
         }
+    }
 
-        const std::uint32_t validProxyCount = broadphaseMetrics_.validProxyCount;
-        if (validProxyCount > 0) {
-            broadphaseMetrics_.queryNodeVisitsPerProxy =
-                static_cast<float>(broadphaseMetrics_.queryNodeVisits) / static_cast<float>(validProxyCount);
+    std::vector<std::int32_t> stack;
+    stack.reserve(treeNodes_.size());
+    auto traverseProxy = [&](std::uint32_t bodyId) {
+        if (bodyId >= proxies_.size()) {
+            return;
         }
+        const BroadphaseProxy& proxy = proxies_[bodyId];
+        if (!proxy.valid || proxy.leaf < 0) {
+            return;
+        }
+        stack.clear();
+        stack.push_back(rootNode_);
+        while (!stack.empty()) {
+            const std::int32_t nodeId = stack.back();
+            stack.pop_back();
+            ++broadphaseMetrics_.queryNodeVisits;
+            if (nodeId < 0 || nodeId == proxy.leaf || !Overlaps(proxy.fatBox, treeNodes_[nodeId].box)) {
+                continue;
+            }
+            if (treeNodes_[nodeId].IsLeaf()) {
+                const std::uint32_t other = static_cast<std::uint32_t>(treeNodes_[nodeId].bodyId);
+                if (bodyId == other || !IsPairEligible(bodyId, other)) {
+                    continue;
+                }
+                const std::uint64_t key = MakePairKey(bodyId, other);
+                if (seenPairs.insert(key).second) {
+                    pairs.push_back({std::min(bodyId, other), std::max(bodyId, other)});
+                }
+                continue;
+            }
+            stack.push_back(treeNodes_[nodeId].left);
+            stack.push_back(treeNodes_[nodeId].right);
+        }
+    };
+
+    const bool useMovedSetOnlyTraversal =
+        broadphaseConfig_.enableMovedSetOnlyUpdates
+        && broadphaseConfig_.enablePairCacheReuseForQuasiStatic
+        && !cachedPotentialPairs_.empty()
+        && !movedSet.empty()
+        && movedSet.size() < proxies_.size();
+
+    if (useMovedSetOnlyTraversal) {
+        broadphaseMetrics_.usedMovedSetOnlyUpdate = true;
+        for (const std::uint32_t movedId : movedSet) {
+            traverseProxy(movedId);
+        }
+    } else {
+        for (std::uint32_t bodyId = 0; bodyId < proxies_.size(); ++bodyId) {
+            traverseProxy(bodyId);
+        }
+    }
+
+    const std::uint32_t validProxyCount = broadphaseMetrics_.validProxyCount;
+    if (validProxyCount > 0) {
+        broadphaseMetrics_.queryNodeVisitsPerProxy =
+            static_cast<float>(broadphaseMetrics_.queryNodeVisits) / static_cast<float>(validProxyCount);
+    }
+    if (broadphaseMetrics_.pairCacheQueries > 0) {
+        broadphaseMetrics_.pairCacheHitRate =
+            static_cast<float>(broadphaseMetrics_.pairCacheHits) / static_cast<float>(broadphaseMetrics_.pairCacheQueries);
+    }
 
 #ifndef NDEBUG
-        const std::vector<Pair> bruteForcePairs = ComputePotentialPairsBruteForce();
-        assert(PairSetFromPairs(pairs) == PairSetFromPairs(bruteForcePairs));
+    const std::vector<Pair> bruteForcePairs = ComputePotentialPairsBruteForce();
+    assert(PairSetFromPairs(pairs) == PairSetFromPairs(bruteForcePairs));
 #endif
 
-        return pairs;
+    cachedPotentialPairs_ = pairs;
+    cachedPotentialPairKeySet_.clear();
+    cachedPotentialPairKeySet_.reserve(cachedPotentialPairs_.size() * 2);
+    for (const Pair& pair : cachedPotentialPairs_) {
+        cachedPotentialPairKeySet_.insert(MakePairKey(pair.a, pair.b));
     }
+
+    const auto endTime = std::chrono::steady_clock::now();
+    broadphaseMetrics_.pairGenerationMs =
+        std::chrono::duration<float, std::milli>(endTime - startTime).count();
+    return pairs;
+}
+
+bool World::IsPairEligible(std::uint32_t a, std::uint32_t b) const {
+    if (a >= proxies_.size() || b >= proxies_.size()) {
+        return false;
+    }
+    const BroadphaseProxy& proxyA = proxies_[a];
+    const BroadphaseProxy& proxyB = proxies_[b];
+    if (!proxyA.valid || proxyA.leaf < 0 || !proxyB.valid || proxyB.leaf < 0) {
+        return false;
+    }
+    if (!Overlaps(proxyA.fatBox, proxyB.fatBox)) {
+        return false;
+    }
+    const Body& bodyA = bodies_[a];
+    const Body& bodyB = bodies_[b];
+    return !((bodyA.invMass == 0.0f && bodyB.invMass == 0.0f) || (bodyA.isSleeping && bodyB.isSleeping));
+}
+
+std::uint64_t World::MakePairKey(std::uint32_t a, std::uint32_t b) const {
+    const std::uint32_t lo = std::min(a, b);
+    const std::uint32_t hi = std::max(a, b);
+    return (static_cast<std::uint64_t>(lo) << 32) | hi;
+}
 
 
 } // namespace minphys3d
