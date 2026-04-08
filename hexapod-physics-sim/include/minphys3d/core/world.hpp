@@ -251,6 +251,8 @@ private:
     void UpdateBroadphaseQualityMetrics();
     void MaybeTriggerBroadphaseRebuild();
     void EnsureProxyInTree(std::uint32_t bodyId);
+    bool IsPairEligible(std::uint32_t a, std::uint32_t b) const;
+    std::uint64_t MakePairKey(std::uint32_t a, std::uint32_t b) const;
 
     std::int32_t AllocateNode();
 
@@ -3006,6 +3008,9 @@ private:
     std::int32_t freeNode_ = -1;
     std::size_t lastBroadphaseMovedProxyCount_ = 0;
     std::vector<std::uint32_t> movedProxyIds_;
+    mutable std::vector<Pair> cachedPotentialPairs_{};
+    mutable std::unordered_set<std::uint64_t> cachedPotentialPairKeySet_{};
+    mutable std::vector<std::uint8_t> previousBodyActiveState_{};
     std::vector<Contact> contacts_;
     std::vector<Contact> previousContacts_;
     std::vector<Manifold> manifolds_;
