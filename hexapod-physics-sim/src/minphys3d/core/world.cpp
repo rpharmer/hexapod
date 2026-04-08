@@ -117,12 +117,35 @@ const Body& World::GetBody(std::uint32_t id) const {
     return bodies_.at(id);
 }
 
+Vec3 World::ComputeLocalAnchor(std::uint32_t bodyId, const Vec3& worldAnchor) const {
+    const Body& body = bodies_.at(bodyId);
+    return Rotate(Conjugate(Normalize(body.orientation)), worldAnchor - body.position);
+}
+
+bool World::TryComputeLocalJointAxes(
+    std::uint32_t a,
+    std::uint32_t b,
+    const Vec3& worldAxis,
+    Vec3& outAxisA,
+    Vec3& outAxisB) const {
+    Vec3 axisN{};
+    if (!TryNormalize(worldAxis, axisN)) {
+        outAxisA = {};
+        outAxisB = {};
+        return false;
+    }
+
+    outAxisA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), axisN);
+    outAxisB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), axisN);
+    return true;
+}
+
 std::uint32_t World::CreateDistanceJoint(std::uint32_t a, std::uint32_t b, const Vec3& worldAnchorA, const Vec3& worldAnchorB, float stiffness, float damping) {
     DistanceJoint j;
     j.a = a;
     j.b = b;
-    j.localAnchorA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), worldAnchorA - bodies_.at(a).position);
-    j.localAnchorB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), worldAnchorB - bodies_.at(b).position);
+    j.localAnchorA = ComputeLocalAnchor(a, worldAnchorA);
+    j.localAnchorB = ComputeLocalAnchor(b, worldAnchorB);
     j.restLength = Length(worldAnchorB - worldAnchorA);
     j.stiffness = stiffness;
     j.damping = damping;
@@ -144,14 +167,11 @@ std::uint32_t World::CreateHingeJoint(
     HingeJoint j;
     j.a = a;
     j.b = b;
-    j.localAnchorA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), worldAnchor - bodies_.at(a).position);
-    j.localAnchorB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), worldAnchor - bodies_.at(b).position);
-    Vec3 axisN{};
-    if (!TryNormalize(worldAxis, axisN)) {
+    if (!TryComputeLocalJointAxes(a, b, worldAxis, j.localAxisA, j.localAxisB)) {
         return kInvalidJointId;
     }
-    j.localAxisA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), axisN);
-    j.localAxisB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), axisN);
+    j.localAnchorA = ComputeLocalAnchor(a, worldAnchor);
+    j.localAnchorB = ComputeLocalAnchor(b, worldAnchor);
     j.limitsEnabled = enableLimits;
     j.lowerAngle = lowerAngle;
     j.upperAngle = upperAngle;
@@ -169,8 +189,8 @@ std::uint32_t World::CreateBallSocketJoint(
     BallSocketJoint j;
     j.a = a;
     j.b = b;
-    j.localAnchorA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), worldAnchor - bodies_.at(a).position);
-    j.localAnchorB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), worldAnchor - bodies_.at(b).position);
+    j.localAnchorA = ComputeLocalAnchor(a, worldAnchor);
+    j.localAnchorB = ComputeLocalAnchor(b, worldAnchor);
     ballSocketJoints_.push_back(j);
     return static_cast<std::uint32_t>(ballSocketJoints_.size() - 1);
 }
@@ -182,8 +202,8 @@ std::uint32_t World::CreateFixedJoint(
     FixedJoint j;
     j.a = a;
     j.b = b;
-    j.localAnchorA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), worldAnchor - bodies_.at(a).position);
-    j.localAnchorB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), worldAnchor - bodies_.at(b).position);
+    j.localAnchorA = ComputeLocalAnchor(a, worldAnchor);
+    j.localAnchorB = ComputeLocalAnchor(b, worldAnchor);
     j.referenceRotation = Normalize(Conjugate(Normalize(bodies_.at(a).orientation)) * Normalize(bodies_.at(b).orientation));
     fixedJoints_.push_back(j);
     return static_cast<std::uint32_t>(fixedJoints_.size() - 1);
@@ -200,17 +220,14 @@ std::uint32_t World::CreatePrismaticJoint(
     bool enableMotor,
     float motorSpeed,
     float maxMotorForce) {
-    Vec3 axisN{};
-    if (!TryNormalize(worldAxis, axisN)) {
-        return kInvalidJointId;
-    }
     PrismaticJoint j;
     j.a = a;
     j.b = b;
-    j.localAnchorA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), worldAnchor - bodies_.at(a).position);
-    j.localAnchorB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), worldAnchor - bodies_.at(b).position);
-    j.localAxisA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), axisN);
-    j.localAxisB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), axisN);
+    if (!TryComputeLocalJointAxes(a, b, worldAxis, j.localAxisA, j.localAxisB)) {
+        return kInvalidJointId;
+    }
+    j.localAnchorA = ComputeLocalAnchor(a, worldAnchor);
+    j.localAnchorB = ComputeLocalAnchor(b, worldAnchor);
     j.limitsEnabled = enableLimits;
     j.lowerTranslation = lowerTranslation;
     j.upperTranslation = upperTranslation;
@@ -230,17 +247,14 @@ std::uint32_t World::CreateServoJoint(
     float maxServoTorque,
     float positionGain,
     float dampingGain) {
-    Vec3 axisN{};
-    if (!TryNormalize(worldAxis, axisN)) {
-        return kInvalidJointId;
-    }
     ServoJoint j;
     j.a = a;
     j.b = b;
-    j.localAnchorA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), worldAnchor - bodies_.at(a).position);
-    j.localAnchorB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), worldAnchor - bodies_.at(b).position);
-    j.localAxisA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), axisN);
-    j.localAxisB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), axisN);
+    if (!TryComputeLocalJointAxes(a, b, worldAxis, j.localAxisA, j.localAxisB)) {
+        return kInvalidJointId;
+    }
+    j.localAnchorA = ComputeLocalAnchor(a, worldAnchor);
+    j.localAnchorB = ComputeLocalAnchor(b, worldAnchor);
     j.targetAngle = targetAngle;
     j.maxServoTorque = std::max(0.0f, maxServoTorque);
     j.positionGain = std::max(0.0f, positionGain);

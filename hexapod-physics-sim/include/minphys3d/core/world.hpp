@@ -223,6 +223,13 @@ private:
     static bool IsFinite(const Vec3& v);
     static bool IsFinite(const Quat& q);
     static bool IsFinite(const Mat3& m);
+    Vec3 ComputeLocalAnchor(std::uint32_t bodyId, const Vec3& worldAnchor) const;
+    bool TryComputeLocalJointAxes(
+        std::uint32_t a,
+        std::uint32_t b,
+        const Vec3& worldAxis,
+        Vec3& outAxisA,
+        Vec3& outAxisB) const;
     static std::uint64_t ComputeShapeGeometrySignature(const Body& body);
     void RefreshShapeRevisionCounters();
     bool ConvexOverlapWithCache(std::uint32_t a, std::uint32_t b);
