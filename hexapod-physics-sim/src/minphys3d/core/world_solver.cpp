@@ -8,9 +8,10 @@
 namespace minphys3d {
 void World::ResolveTOIPipeline(float dt) {
         float remaining = dt;
-        constexpr int kMaxTOIIterations = 8;
+        const int maxToiIterations = std::max(contactSolverConfig_.toi.max_iterations, 1);
+        const float toiMinTimeStep = std::max(contactSolverConfig_.toi.min_time_step, 1e-9f);
         int iterations = 0;
-        while (remaining > 1e-6f && iterations < kMaxTOIIterations) {
+        while (remaining > toiMinTimeStep && iterations < maxToiIterations) {
             const TOIEvent hit = FindEarliestTOI(remaining);
             if (!hit.hit) {
                 AdvanceDynamicBodies(remaining);
@@ -24,8 +25,8 @@ void World::ResolveTOIPipeline(float dt) {
                 remaining -= advanceTime;
             }
             ResolveTOIImpact(hit);
-            if (hit.toi <= 1e-6f) {
-                remaining = std::max(0.0f, remaining - 1e-6f);
+            if (hit.toi <= toiMinTimeStep) {
+                remaining = std::max(0.0f, remaining - toiMinTimeStep);
             }
             ++iterations;
         }
@@ -292,6 +293,7 @@ bool World::SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& 
         solveInput.face4ProjectedGaussSeidelEpsilon = contactSolverConfig_.face4ProjectedGaussSeidelEpsilon;
         solveInput.face4MinSpreadSq = contactSolverConfig_.face4MinSpreadSq;
         solveInput.face4MinArea = contactSolverConfig_.face4MinArea;
+        solveInput.symmetryTolerance = contactSolverConfig_.block4.symmetry_tolerance;
 
         for (int i = 0; i < 4; ++i) {
             Contact& c = manifold.contacts[static_cast<std::size_t>(i)];

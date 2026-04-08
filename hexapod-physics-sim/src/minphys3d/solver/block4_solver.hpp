@@ -28,6 +28,7 @@ struct Block4SolveInput {
     float face4ProjectedGaussSeidelEpsilon = 1e-5f;
     float face4MinSpreadSq = 0.0f;
     float face4MinArea = 0.0f;
+    float symmetryTolerance = 2e-3f;
     std::array<Block4ContactInput, 4> contacts{};
 };
 

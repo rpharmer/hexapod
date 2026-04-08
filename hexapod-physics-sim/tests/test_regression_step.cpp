@@ -1,4 +1,5 @@
 #include <cassert>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <unordered_set>
@@ -455,5 +456,69 @@ int main() {
     // Stick-slip with ordering churn from direction reversal.
     runPersistenceScenario({0.9f, 0.0f, 0.0f}, {0.0f, 0.6f, 0.0f}, 320);
     }
+
+    {
+    ContactSolverConfig defaults{};
+    assert(ValidateContactSolverConfig(defaults));
+
+    ContactSolverConfig invalid = defaults;
+    invalid.toi.max_iterations = 0;
+    assert(!ValidateContactSolverConfig(invalid));
+
+    invalid = defaults;
+    invalid.toi.min_time_step = -1.0f;
+    assert(!ValidateContactSolverConfig(invalid));
+
+    invalid = defaults;
+    invalid.block4.symmetry_tolerance = -0.1f;
+    assert(!ValidateContactSolverConfig(invalid));
+
+    const ContactSolverConfig sanitized = SanitizeContactSolverConfig(invalid);
+    assert(ValidateContactSolverConfig(sanitized));
+    assert(std::abs(sanitized.block4.symmetry_tolerance - defaults.block4.symmetry_tolerance) < 1e-6f);
+    }
+
+    {
+    auto runFastSphereAtThinBoxWithConfig = [](const ContactSolverConfig& config) {
+        World world({0.0f, 0.0f, 0.0f});
+        world.SetContactSolverConfig(config);
+
+        Body target;
+        target.shape = ShapeType::Box;
+        target.isStatic = true;
+        target.position = {0.0f, 0.8f, 0.0f};
+        target.halfExtents = {0.08f, 0.45f, 0.45f};
+        world.CreateBody(target);
+
+        Body sphere;
+        sphere.shape = ShapeType::Sphere;
+        sphere.radius = 0.2f;
+        sphere.position = {-3.0f, 0.8f, 0.0f};
+        sphere.velocity = {70.0f, 0.0f, 0.0f};
+        sphere.mass = 1.0f;
+        sphere.restitution = 0.0f;
+        const auto sphereId = world.CreateBody(sphere);
+
+        for (int i = 0; i < 20; ++i) {
+            world.Step(1.0f / 60.0f, 8);
+        }
+
+        const Body& out = world.GetBody(sphereId);
+        return std::array<float, 6>{out.position.x, out.position.y, out.position.z, out.velocity.x, out.velocity.y, out.velocity.z};
+    };
+
+    ContactSolverConfig legacyConfig{};
+    legacyConfig.toi.max_iterations = 8;
+    legacyConfig.toi.min_time_step = 1e-6f;
+    legacyConfig.block4.symmetry_tolerance = 2e-3f;
+    legacyConfig.ordering.support_depth_relaxation_passes = 4;
+
+    const std::array<float, 6> defaultOutcome = runFastSphereAtThinBoxWithConfig(ContactSolverConfig{});
+    const std::array<float, 6> legacyOutcome = runFastSphereAtThinBoxWithConfig(legacyConfig);
+    for (std::size_t i = 0; i < defaultOutcome.size(); ++i) {
+        assert(std::abs(defaultOutcome[i] - legacyOutcome[i]) <= 1e-6f);
+    }
+    }
+
     return 0;
 }

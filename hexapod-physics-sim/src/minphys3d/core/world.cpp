@@ -9,7 +9,7 @@ namespace minphys3d {
 World::World(Vec3 gravity) : gravity_(gravity) {}
 
 void World::SetContactSolverConfig(const ContactSolverConfig& config) {
-    contactSolverConfig_ = config;
+    contactSolverConfig_ = SanitizeContactSolverConfig(config);
 }
 
 void World::SetJointSolverConfig(const JointSolverConfig& config) {

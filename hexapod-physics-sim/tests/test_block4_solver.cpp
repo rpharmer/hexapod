@@ -45,5 +45,13 @@ int main() {
     assert(!conditioned.success);
     assert(conditioned.fallbackReason != BlockSolveFallbackCode::None);
 
+    Block4SolveInput legacyInput = input;
+    legacyInput.symmetryTolerance = 2e-3f;
+    const Block4SolveResult defaultTolerance = SolveBlock4ProjectedGaussSeidel(input);
+    const Block4SolveResult legacyTolerance = SolveBlock4ProjectedGaussSeidel(legacyInput);
+    assert(defaultTolerance.success == legacyTolerance.success);
+    assert(defaultTolerance.fallbackReason == legacyTolerance.fallbackReason);
+
+
     return 0;
 }
