@@ -224,7 +224,7 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
         const float vn0 = Dot(vb0 - va0, normal0);
         const float vn1 = Dot(vb1 - va1, normal1);
 
-        const auto computeRhs = [&](Contact& c, const Vec3& contactNormal, float separatingVelocity) {
+        const auto computeRhs = [&](Contact& c, const Vec3& contactNormal, float separatingVelocity, float contactNormalMass) {
             const float speedIntoContact = -separatingVelocity;
             const float restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
             const float massRatioBoost = ComputeHighMassRatioBoost(a, b);
@@ -233,11 +233,10 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
             const float penetrationError = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0f);
             if (contactSolverConfig_.useSplitImpulse && !solverRelaxationPassActive_) {
                 if (penetrationError > 0.0f) {
-                    const float invMassSum = a.invMass + b.invMass;
-                    if (invMassSum > kEpsilon) {
+                    if (contactNormalMass > kEpsilon) {
                         const float boostedFactor = contactSolverConfig_.splitImpulseCorrectionFactor
                             * (1.0f + contactSolverConfig_.highMassRatioSplitImpulseBoost * (massRatioBoost - 1.0f));
-                        const float correctionMagnitude = boostedFactor * penetrationError / invMassSum;
+                        const float correctionMagnitude = boostedFactor * penetrationError / contactNormalMass;
                         const Vec3 correction = correctionMagnitude * contactNormal;
                         AccumulateSplitImpulseCorrection(c.a, -correction * a.invMass, {0.0f, 0.0f, 0.0f});
                         AccumulateSplitImpulseCorrection(c.b, correction * b.invMass, {0.0f, 0.0f, 0.0f});
@@ -256,8 +255,8 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
             return -(1.0f + restitution) * separatingVelocity + std::max(biasTerm, 0.0f);
         };
 
-        const float rhs0 = computeRhs(c0, normal0, vn0);
-        const float rhs1 = computeRhs(c1, normal1, vn1);
+        const float rhs0 = computeRhs(c0, normal0, vn0, k11);
+        const float rhs1 = computeRhs(c1, normal1, vn1, k22);
 
         const float old0 = std::max(c0.normalImpulseSum, 0.0f);
         const float old1 = std::max(c1.normalImpulseSum, 0.0f);

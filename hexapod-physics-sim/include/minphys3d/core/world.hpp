@@ -2031,11 +2031,10 @@ private:
         const float massRatioBoost = ComputeHighMassRatioBoost(a, b);
         if (contactSolverConfig_.useSplitImpulse && !solverRelaxationPassActive_) {
             if (penetrationError > 0.0f) {
-                const float invMassSum = a.invMass + b.invMass;
-                if (invMassSum > kEpsilon) {
+                if (normalMass > kEpsilon) {
                     const float boostedFactor = contactSolverConfig_.splitImpulseCorrectionFactor
                         * (1.0f + contactSolverConfig_.highMassRatioSplitImpulseBoost * (massRatioBoost - 1.0f));
-                    const float correctionMagnitude = boostedFactor * penetrationError / invMassSum;
+                    const float correctionMagnitude = boostedFactor * penetrationError / normalMass;
                     const Vec3 correction = correctionMagnitude * c.normal;
                     AccumulateSplitImpulseCorrection(c.a, -correction * a.invMass, {0.0f, 0.0f, 0.0f});
                     AccumulateSplitImpulseCorrection(c.b, correction * b.invMass, {0.0f, 0.0f, 0.0f});
