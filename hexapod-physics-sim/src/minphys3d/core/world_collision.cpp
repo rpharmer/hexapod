@@ -1,9 +1,13 @@
 #include "minphys3d/core/world.hpp"
 #include "minphys3d/collision/convex_support.hpp"
 #include "subsystems.hpp"
+#include "broadphase_system.hpp"
+#include "contact_pipeline.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace minphys3d {
 namespace {
@@ -174,9 +178,8 @@ ConvexDispatchRoute World::SelectConvexDispatchRoute(ShapeType a, ShapeType b) c
 }
 
 void World::BuildManifolds() {
-        core_internal::ContactSolver solver;
         std::unordered_map<ManifoldKey, std::unordered_set<PersistentPointKey, PersistentPointKeyHash>, ManifoldKeyHash> warmStartUsedKeys;
-        core_internal::ContactSolverContext context{
+        core_internal::ContactSolverContext solverContext{
             bodies_,
             contacts_,
             manifolds_,
@@ -242,7 +245,8 @@ void World::BuildManifolds() {
 #endif
             contactSolverConfig_,
         };
-        solver.BuildManifolds(context);
+        const core_internal::ContactPipeline pipeline;
+        pipeline.BuildManifolds({solverContext});
         for (Manifold& manifold : manifolds_) {
             for (Contact& c : manifold.contacts) {
                 if (c.a >= bodies_.size() || c.b >= bodies_.size()) {

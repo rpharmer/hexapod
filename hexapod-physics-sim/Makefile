@@ -7,6 +7,10 @@ CORE_SRC := src/minphys3d/core/world.cpp \
 	src/minphys3d/core/world_broadphase.cpp \
 	src/minphys3d/core/world_collision.cpp \
 	src/minphys3d/core/world_solver.cpp \
+	src/minphys3d/core/broadphase_system.cpp \
+	src/minphys3d/core/contact_pipeline.cpp \
+	src/minphys3d/core/constraint_solver.cpp \
+	src/minphys3d/core/sleep_system.cpp \
 	src/minphys3d/narrowphase/gjk.cpp \
 	src/minphys3d/narrowphase/epa.cpp
 DEMO_SRC := src/demo/scenes.cpp
