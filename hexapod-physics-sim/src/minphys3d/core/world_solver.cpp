@@ -526,6 +526,116 @@ void World::SolveDistanceJoint(DistanceJoint& j) {
         ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda * n);
     }
 
+bool World::SolveHingeAnchorBlock3x3(
+        Body& a,
+        Body& b,
+        const Mat3& invIA,
+        const Mat3& invIB,
+        const Vec3& ra,
+        const Vec3& rb,
+        const Vec3& error,
+        const Vec3& relVel,
+        Vec3& outLambda,
+        JointBlockFallbackReason& outReason) const {
+        outReason = JointBlockFallbackReason::None;
+        const Vec3 basis[3] = {
+            {1.0f, 0.0f, 0.0f},
+            {0.0f, 1.0f, 0.0f},
+            {0.0f, 0.0f, 1.0f},
+        };
+        float K[3][3]{};
+        const float invMassSum = a.invMass + b.invMass;
+        for (int i = 0; i < 3; ++i) {
+            const Vec3 raCrossNi = Cross(ra, basis[i]);
+            const Vec3 rbCrossNi = Cross(rb, basis[i]);
+            for (int j = 0; j < 3; ++j) {
+                const Vec3 raCrossNj = Cross(ra, basis[j]);
+                const Vec3 rbCrossNj = Cross(rb, basis[j]);
+                K[i][j] = invMassSum * Dot(basis[i], basis[j])
+                    + Dot(raCrossNi, invIA * raCrossNj)
+                    + Dot(rbCrossNi, invIB * rbCrossNj);
+            }
+        }
+
+        for (int i = 0; i < 3; ++i) {
+            if (K[i][i] <= jointSolverConfig_.blockDiagonalMinimum) {
+                outReason = JointBlockFallbackReason::DegenerateMassMatrix;
+                return false;
+            }
+        }
+
+        const float det =
+            K[0][0] * (K[1][1] * K[2][2] - K[1][2] * K[2][1])
+            - K[0][1] * (K[1][0] * K[2][2] - K[1][2] * K[2][0])
+            + K[0][2] * (K[1][0] * K[2][1] - K[1][1] * K[2][0]);
+        if (std::abs(det) <= jointSolverConfig_.blockDeterminantEpsilon) {
+            outReason = JointBlockFallbackReason::DegenerateMassMatrix;
+            return false;
+        }
+
+        if (jointSolverConfig_.blockConditionEstimateMax > 0.0f) {
+            const float rowNorm = std::max({
+                std::abs(K[0][0]) + std::abs(K[0][1]) + std::abs(K[0][2]),
+                std::abs(K[1][0]) + std::abs(K[1][1]) + std::abs(K[1][2]),
+                std::abs(K[2][0]) + std::abs(K[2][1]) + std::abs(K[2][2]),
+            });
+            float adj[3][3]{};
+            adj[0][0] = K[1][1] * K[2][2] - K[1][2] * K[2][1];
+            adj[0][1] = -(K[1][0] * K[2][2] - K[1][2] * K[2][0]);
+            adj[0][2] = K[1][0] * K[2][1] - K[1][1] * K[2][0];
+            adj[1][0] = -(K[0][1] * K[2][2] - K[0][2] * K[2][1]);
+            adj[1][1] = K[0][0] * K[2][2] - K[0][2] * K[2][0];
+            adj[1][2] = -(K[0][0] * K[2][1] - K[0][1] * K[2][0]);
+            adj[2][0] = K[0][1] * K[1][2] - K[0][2] * K[1][1];
+            adj[2][1] = -(K[0][0] * K[1][2] - K[0][2] * K[1][0]);
+            adj[2][2] = K[0][0] * K[1][1] - K[0][1] * K[1][0];
+            const float invAbsDet = 1.0f / std::abs(det);
+            const float invNorm = std::max({
+                (std::abs(adj[0][0]) + std::abs(adj[0][1]) + std::abs(adj[0][2])) * invAbsDet,
+                (std::abs(adj[1][0]) + std::abs(adj[1][1]) + std::abs(adj[1][2])) * invAbsDet,
+                (std::abs(adj[2][0]) + std::abs(adj[2][1]) + std::abs(adj[2][2])) * invAbsDet,
+            });
+            const float conditionEstimate = rowNorm * invNorm;
+            if (!std::isfinite(conditionEstimate)
+                || conditionEstimate > jointSolverConfig_.blockConditionEstimateMax) {
+                outReason = JointBlockFallbackReason::ConditionEstimateExceeded;
+                return false;
+            }
+        }
+
+        const Vec3 rhs{
+            jointSolverConfig_.hingeAnchorBiasFactor * error.x + jointSolverConfig_.hingeAnchorDampingFactor * relVel.x,
+            jointSolverConfig_.hingeAnchorBiasFactor * error.y + jointSolverConfig_.hingeAnchorDampingFactor * relVel.y,
+            jointSolverConfig_.hingeAnchorBiasFactor * error.z + jointSolverConfig_.hingeAnchorDampingFactor * relVel.z,
+        };
+        const Vec3 negRhs = -1.0f * rhs;
+
+        float adj[3][3]{};
+        adj[0][0] = K[1][1] * K[2][2] - K[1][2] * K[2][1];
+        adj[0][1] = -(K[1][0] * K[2][2] - K[1][2] * K[2][0]);
+        adj[0][2] = K[1][0] * K[2][1] - K[1][1] * K[2][0];
+        adj[1][0] = -(K[0][1] * K[2][2] - K[0][2] * K[2][1]);
+        adj[1][1] = K[0][0] * K[2][2] - K[0][2] * K[2][0];
+        adj[1][2] = -(K[0][0] * K[2][1] - K[0][1] * K[2][0]);
+        adj[2][0] = K[0][1] * K[1][2] - K[0][2] * K[1][1];
+        adj[2][1] = -(K[0][0] * K[1][2] - K[0][2] * K[1][0]);
+        adj[2][2] = K[0][0] * K[1][1] - K[0][1] * K[1][0];
+        const float invDet = 1.0f / det;
+        const Mat3 invK{
+            {
+                {adj[0][0] * invDet, adj[1][0] * invDet, adj[2][0] * invDet},
+                {adj[0][1] * invDet, adj[1][1] * invDet, adj[2][1] * invDet},
+                {adj[0][2] * invDet, adj[1][2] * invDet, adj[2][2] * invDet},
+            }
+        };
+        outLambda = invK * negRhs;
+        if (!std::isfinite(outLambda.x) || !std::isfinite(outLambda.y) || !std::isfinite(outLambda.z)) {
+            outReason = JointBlockFallbackReason::NonFiniteResult;
+            return false;
+        }
+        return true;
+    }
+
 void World::SolveHingeJoint(HingeJoint& j) {
         Body& a = bodies_[j.a];
         Body& b = bodies_[j.b];
@@ -549,24 +659,58 @@ void World::SolveHingeJoint(HingeJoint& j) {
             WakeConnectedBodies(j.b);
         }
 
-        const Vec3 axes[3] = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
-        float* impulseSums[3] = {&j.impulseX, &j.impulseY, &j.impulseZ};
-
-        for (int i = 0; i < 3; ++i) {
-            const Vec3 n = axes[i];
-            const Vec3 raCrossN = Cross(ra, n);
-            const Vec3 rbCrossN = Cross(rb, n);
-            const float effMass = a.invMass + b.invMass
-                + Dot(raCrossN, invIA * raCrossN)
-                + Dot(rbCrossN, invIB * rbCrossN);
-            if (effMass <= kEpsilon) {
-                continue;
+        bool usedBlockSolve = false;
+        if (jointSolverConfig_.useBlockSolver) {
+            Vec3 lambda{};
+            JointBlockFallbackReason fallbackReason = JointBlockFallbackReason::None;
+            if (SolveHingeAnchorBlock3x3(a, b, invIA, invIB, ra, rb, error, relVel, lambda, fallbackReason)) {
+                j.impulseX += lambda.x;
+                j.impulseY += lambda.y;
+                j.impulseZ += lambda.z;
+                ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda);
+                usedBlockSolve = true;
+#ifndef NDEBUG
+                ++solverTelemetry_.jointBlockSolveUsed;
+#endif
+            } else {
+#ifndef NDEBUG
+                switch (fallbackReason) {
+                    case JointBlockFallbackReason::DegenerateMassMatrix:
+                        ++solverTelemetry_.jointBlockFallbackDegenerate;
+                        break;
+                    case JointBlockFallbackReason::ConditionEstimateExceeded:
+                        ++solverTelemetry_.jointBlockFallbackConditionEstimate;
+                        break;
+                    case JointBlockFallbackReason::NonFiniteResult:
+                        ++solverTelemetry_.jointBlockFallbackNonFinite;
+                        break;
+                    case JointBlockFallbackReason::None:
+                        break;
+                }
+#endif
             }
+        }
 
-            const float bias = 0.2f * Dot(error, n) + 0.1f * Dot(relVel, n);
-            const float lambda = -bias / effMass;
-            *impulseSums[i] += lambda;
-            ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda * n);
+        if (!usedBlockSolve) {
+            const Vec3 axes[3] = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
+            float* impulseSums[3] = {&j.impulseX, &j.impulseY, &j.impulseZ};
+            for (int i = 0; i < 3; ++i) {
+                const Vec3 n = axes[i];
+                const Vec3 raCrossN = Cross(ra, n);
+                const Vec3 rbCrossN = Cross(rb, n);
+                const float effMass = a.invMass + b.invMass
+                    + Dot(raCrossN, invIA * raCrossN)
+                    + Dot(rbCrossN, invIB * rbCrossN);
+                if (effMass <= kEpsilon) {
+                    continue;
+                }
+
+                const float bias = jointSolverConfig_.hingeAnchorBiasFactor * Dot(error, n)
+                    + jointSolverConfig_.hingeAnchorDampingFactor * Dot(relVel, n);
+                const float lambda = -bias / effMass;
+                *impulseSums[i] += lambda;
+                ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda * n);
+            }
         }
 
         const Vec3 axisA = Normalize(Rotate(a.orientation, j.localAxisA));

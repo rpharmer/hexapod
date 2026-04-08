@@ -52,6 +52,15 @@ struct ContactSolverConfig {
     float manifoldFrictionBudgetScale = 1.0f;
 };
 
+struct JointSolverConfig {
+    bool useBlockSolver = false;
+    float blockDeterminantEpsilon = 1e-8f;
+    float blockDiagonalMinimum = 1e-6f;
+    float blockConditionEstimateMax = 0.0f;
+    float hingeAnchorBiasFactor = 0.2f;
+    float hingeAnchorDampingFactor = 0.1f;
+};
+
 struct Contact {
     std::uint32_t a = 0;
     std::uint32_t b = 0;
