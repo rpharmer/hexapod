@@ -28,6 +28,8 @@ public:
 struct NarrowphaseContext {
     const std::vector<Body>& bodies;
     const std::vector<Pair>& pairs;
+    std::function<ConvexDispatchRoute(ShapeType, ShapeType)> selectConvexDispatchRoute;
+    std::function<bool(std::uint32_t, std::uint32_t)> genericConvexOverlap;
     std::function<void(std::uint32_t, std::uint32_t)> sphereSphere;
     std::function<void(std::uint32_t, std::uint32_t)> sphereCapsule;
     std::function<void(std::uint32_t, std::uint32_t)> capsuleCapsule;
@@ -41,42 +43,68 @@ struct NarrowphaseContext {
 
 class NarrowphaseSystem {
 public:
+    static bool IsConvexShape(const ShapeType shape) {
+        return shape == ShapeType::Sphere || shape == ShapeType::Box || shape == ShapeType::Capsule;
+    }
+    static void DispatchSpecialized(const NarrowphaseContext& context, const Pair& pair, const Body& a, const Body& b) {
+        if (a.shape == ShapeType::Sphere && b.shape == ShapeType::Sphere) {
+            context.sphereSphere(pair.a, pair.b);
+        } else if (a.shape == ShapeType::Sphere && b.shape == ShapeType::Capsule) {
+            context.sphereCapsule(pair.a, pair.b);
+        } else if (a.shape == ShapeType::Capsule && b.shape == ShapeType::Sphere) {
+            context.sphereCapsule(pair.b, pair.a);
+        } else if (a.shape == ShapeType::Capsule && b.shape == ShapeType::Capsule) {
+            context.capsuleCapsule(pair.a, pair.b);
+        } else if (a.shape == ShapeType::Capsule && b.shape == ShapeType::Plane) {
+            context.capsulePlane(pair.a, pair.b);
+        } else if (a.shape == ShapeType::Plane && b.shape == ShapeType::Capsule) {
+            context.capsulePlane(pair.b, pair.a);
+        } else if (a.shape == ShapeType::Capsule && b.shape == ShapeType::Box) {
+            context.capsuleBox(pair.a, pair.b);
+        } else if (a.shape == ShapeType::Box && b.shape == ShapeType::Capsule) {
+            context.capsuleBox(pair.b, pair.a);
+        } else if (a.shape == ShapeType::Sphere && b.shape == ShapeType::Plane) {
+            context.spherePlane(pair.a, pair.b);
+        } else if (a.shape == ShapeType::Plane && b.shape == ShapeType::Sphere) {
+            context.spherePlane(pair.b, pair.a);
+        } else if (a.shape == ShapeType::Box && b.shape == ShapeType::Plane) {
+            context.boxPlane(pair.a, pair.b);
+        } else if (a.shape == ShapeType::Plane && b.shape == ShapeType::Box) {
+            context.boxPlane(pair.b, pair.a);
+        } else if (a.shape == ShapeType::Sphere && b.shape == ShapeType::Box) {
+            context.sphereBox(pair.a, pair.b);
+        } else if (a.shape == ShapeType::Box && b.shape == ShapeType::Sphere) {
+            context.sphereBox(pair.b, pair.a);
+        } else if (a.shape == ShapeType::Box && b.shape == ShapeType::Box) {
+            context.boxBox(pair.a, pair.b);
+        }
+    }
+
     void GenerateContacts(const NarrowphaseContext& context) const {
         for (const Pair& pair : context.pairs) {
             const Body& a = context.bodies[pair.a];
             const Body& b = context.bodies[pair.b];
+            const bool eligibleConvex = IsConvexShape(a.shape) && IsConvexShape(b.shape);
+            const ConvexDispatchRoute route = (eligibleConvex && context.selectConvexDispatchRoute)
+                ? context.selectConvexDispatchRoute(a.shape, b.shape)
+                : ConvexDispatchRoute::SpecializedOnly;
 
-            if (a.shape == ShapeType::Sphere && b.shape == ShapeType::Sphere) {
-                context.sphereSphere(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Sphere && b.shape == ShapeType::Capsule) {
-                context.sphereCapsule(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Capsule && b.shape == ShapeType::Sphere) {
-                context.sphereCapsule(pair.b, pair.a);
-            } else if (a.shape == ShapeType::Capsule && b.shape == ShapeType::Capsule) {
-                context.capsuleCapsule(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Capsule && b.shape == ShapeType::Plane) {
-                context.capsulePlane(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Plane && b.shape == ShapeType::Capsule) {
-                context.capsulePlane(pair.b, pair.a);
-            } else if (a.shape == ShapeType::Capsule && b.shape == ShapeType::Box) {
-                context.capsuleBox(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Box && b.shape == ShapeType::Capsule) {
-                context.capsuleBox(pair.b, pair.a);
-            } else if (a.shape == ShapeType::Sphere && b.shape == ShapeType::Plane) {
-                context.spherePlane(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Plane && b.shape == ShapeType::Sphere) {
-                context.spherePlane(pair.b, pair.a);
-            } else if (a.shape == ShapeType::Box && b.shape == ShapeType::Plane) {
-                context.boxPlane(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Plane && b.shape == ShapeType::Box) {
-                context.boxPlane(pair.b, pair.a);
-            } else if (a.shape == ShapeType::Sphere && b.shape == ShapeType::Box) {
-                context.sphereBox(pair.a, pair.b);
-            } else if (a.shape == ShapeType::Box && b.shape == ShapeType::Sphere) {
-                context.sphereBox(pair.b, pair.a);
-            } else if (a.shape == ShapeType::Box && b.shape == ShapeType::Box) {
-                context.boxBox(pair.a, pair.b);
+            const bool genericOverlap = (!eligibleConvex || !context.genericConvexOverlap)
+                ? true
+                : context.genericConvexOverlap(pair.a, pair.b);
+
+            if (route == ConvexDispatchRoute::GenericOnly) {
+                if (!genericOverlap) {
+                    continue;
+                }
+                DispatchSpecialized(context, pair, a, b);
+                continue;
             }
+
+            if (route == ConvexDispatchRoute::GenericGateThenSpecialized && !genericOverlap) {
+                continue;
+            }
+            DispatchSpecialized(context, pair, a, b);
         }
     }
 };

@@ -1,8 +1,88 @@
 #include "minphys3d/core/world.hpp"
+#include "minphys3d/collision/convex_support.hpp"
 #include "subsystems.hpp"
 #include <cmath>
 
 namespace minphys3d {
+namespace {
+
+ConvexSupport BuildConvexSupport(const Body& body) {
+    if (body.shape == ShapeType::Sphere) {
+        return ConvexSupport{
+            body.position,
+            body.orientation,
+            [center = body.position, radius = body.radius](const Vec3& direction) {
+                Vec3 dir = direction;
+                if (LengthSquared(dir) <= kEpsilon * kEpsilon) {
+                    dir = {1.0f, 0.0f, 0.0f};
+                }
+                dir = Normalize(dir);
+                return ConvexSupportPoint{center + dir * radius, ConvexTopologyMetadata{}};
+            }};
+    }
+
+    if (body.shape == ShapeType::Box) {
+        return ConvexSupport{
+            body.position,
+            body.orientation,
+            [center = body.position, orientation = body.orientation, ext = body.halfExtents](const Vec3& direction) {
+                const Vec3 localDir = Rotate(Conjugate(orientation), direction);
+                Vec3 local{
+                    localDir.x >= 0.0f ? ext.x : -ext.x,
+                    localDir.y >= 0.0f ? ext.y : -ext.y,
+                    localDir.z >= 0.0f ? ext.z : -ext.z,
+                };
+                const std::uint8_t vertexId = static_cast<std::uint8_t>((local.x > 0.0f ? 1u : 0u) | (local.y > 0.0f ? 2u : 0u) | (local.z > 0.0f ? 4u : 0u));
+                return ConvexSupportPoint{
+                    center + Rotate(orientation, local),
+                    ConvexTopologyMetadata{vertexId, std::nullopt, std::nullopt},
+                };
+            }};
+    }
+
+    if (body.shape == ShapeType::Capsule) {
+        return ConvexSupport{
+            body.position,
+            body.orientation,
+            [center = body.position, orientation = body.orientation, halfHeight = body.halfHeight, radius = body.radius](const Vec3& direction) {
+                const Vec3 axis = Normalize(Rotate(orientation, {0.0f, 1.0f, 0.0f}));
+                Vec3 dir = direction;
+                if (LengthSquared(dir) <= kEpsilon * kEpsilon) {
+                    dir = axis;
+                }
+                dir = Normalize(dir);
+                const float side = Dot(dir, axis);
+                const bool upper = side >= 0.0f;
+                const Vec3 segmentPoint = center + axis * (upper ? halfHeight : -halfHeight);
+                return ConvexSupportPoint{
+                    segmentPoint + dir * radius,
+                    ConvexTopologyMetadata{std::nullopt, std::nullopt, std::optional<std::uint8_t>(upper ? 1u : 0u)},
+                };
+            }};
+    }
+
+    return {};
+}
+
+} // namespace
+
+void World::SetNarrowphaseDispatchPolicy(NarrowphaseDispatchPolicy policy) {
+    narrowphaseDispatchPolicy_ = policy;
+}
+
+NarrowphaseDispatchPolicy World::GetNarrowphaseDispatchPolicy() const {
+    return narrowphaseDispatchPolicy_;
+}
+
+ConvexDispatchRoute World::SelectConvexDispatchRoute(ShapeType a, ShapeType b) const {
+    if (narrowphaseDispatchPolicy_ == NarrowphaseDispatchPolicy::PreferGenericConvexCore) {
+        return ConvexDispatchRoute::GenericGateThenSpecialized;
+    }
+    (void)a;
+    (void)b;
+    return ConvexDispatchRoute::SpecializedOnly;
+}
+
 void World::BuildManifolds() {
         core_internal::ContactSolver solver;
         core_internal::ContactSolverContext context{
@@ -94,6 +174,10 @@ void World::GenerateContacts() {
         const core_internal::NarrowphaseContext context{
             bodies_,
             pairs,
+            [this](ShapeType a, ShapeType b) { return SelectConvexDispatchRoute(a, b); },
+            [this](std::uint32_t a, std::uint32_t b) {
+                return ConvexOverlapGJK(BuildConvexSupport(bodies_[a]), BuildConvexSupport(bodies_[b]));
+            },
             [this](std::uint32_t a, std::uint32_t b) { SphereSphere(a, b); },
             [this](std::uint32_t a, std::uint32_t b) { SphereCapsule(a, b); },
             [this](std::uint32_t a, std::uint32_t b) { CapsuleCapsule(a, b); },
