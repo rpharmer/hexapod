@@ -1,6 +1,7 @@
 #include "minphys3d/core/world.hpp"
 #include "minphys3d/collision/convex_support.hpp"
 #include "subsystems.hpp"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -119,7 +120,40 @@ bool World::ConvexOverlapWithCache(std::uint32_t a, std::uint32_t b) {
         narrowphaseCache_.clear();
         it = narrowphaseCache_.try_emplace(key).first;
     }
-    return GjkOverlap(BuildConvexSupport(bodies_[a]), BuildConvexSupport(bodies_[b]), {}, &it->second);
+    const ConvexSupport supportA = BuildConvexSupport(bodies_[a]);
+    const ConvexSupport supportB = BuildConvexSupport(bodies_[b]);
+    const GjkDistanceResult gjk = GjkDistance(supportA, supportB, {}, &it->second);
+    if (!gjk.intersecting) {
+        return false;
+    }
+
+    if (gjk.simplex.size >= 3) {
+        EpaPenetrationResult epa = ComputePenetrationEPA(supportA, supportB, gjk.simplex);
+        if (epa.valid) {
+            const auto [lo, hi] = CanonicalBodyOrder(a, b);
+            if (a != lo) {
+                std::swap(epa.witnessA, epa.witnessB);
+                epa.normal = -epa.normal;
+            }
+            convexManifoldSeeds_[ConvexSeedKey{lo, hi}] = epa;
+#ifndef NDEBUG
+            if (epa.usedFallback) {
+                ++solverTelemetry_.epaFallbackUsed;
+            }
+            if (epa.reachedIterationLimit) {
+                ++solverTelemetry_.epaIterationBailout;
+            }
+            if (!epa.converged && !epa.reachedIterationLimit) {
+                ++solverTelemetry_.epaDegenerateFaces;
+            }
+#endif
+        } else {
+#ifndef NDEBUG
+            ++solverTelemetry_.epaDuplicateSupports;
+#endif
+        }
+    }
+    return true;
 }
 
 void World::SetNarrowphaseDispatchPolicy(NarrowphaseDispatchPolicy policy) {
@@ -224,6 +258,7 @@ void World::BuildManifolds() {
 
 void World::GenerateContacts() {
         RefreshShapeRevisionCounters();
+        convexManifoldSeeds_.clear();
         const core_internal::BroadphaseSystem broadphaseSystem;
         const std::vector<Pair> pairs = broadphaseSystem.ComputePotentialPairs({[this]() { return ComputePotentialPairs(); }});
 
@@ -246,6 +281,29 @@ void World::GenerateContacts() {
             [this](std::uint32_t a, std::uint32_t b) { BoxBox(a, b); },
         };
         narrowphaseSystem.GenerateContacts(context);
+        EmitConvexManifoldSeeds();
+    }
+
+void World::EmitConvexManifoldSeeds() {
+        for (const auto& [key, seed] : convexManifoldSeeds_) {
+            if (!seed.valid || seed.depth <= 0.0f) {
+                continue;
+            }
+            bool hasPairContact = false;
+            for (const Contact& c : contacts_) {
+                const auto [lo, hi] = CanonicalBodyOrder(c.a, c.b);
+                if (lo == key.loBody && hi == key.hiBody) {
+                    hasPairContact = true;
+                    break;
+                }
+            }
+            if (hasPairContact) {
+                continue;
+            }
+            const Vec3 point = 0.5f * (seed.witnessA + seed.witnessB);
+            const std::uint64_t featureKey = PackFeatureKey(10, 0, 0, 0, 0, 0);
+            AddContact(key.loBody, key.hiBody, seed.normal, point, seed.depth, featureKey);
+        }
     }
 
 void World::SphereSphere(std::uint32_t ia, std::uint32_t ib) {

@@ -19,6 +19,7 @@
 #include "minphys3d/core/body.hpp"
 #include "minphys3d/core/world_types.hpp"
 #include "minphys3d/joints/types.hpp"
+#include "minphys3d/narrowphase/epa.hpp"
 #include "minphys3d/narrowphase/gjk.hpp"
 #include "minphys3d/narrowphase/dispatch.hpp"
 #include "minphys3d/solver/types.hpp"
@@ -112,6 +113,10 @@ public:
         std::uint64_t jointBlockFallbackDegenerate = 0;
         std::uint64_t jointBlockFallbackConditionEstimate = 0;
         std::uint64_t jointBlockFallbackNonFinite = 0;
+        std::uint64_t epaFallbackUsed = 0;
+        std::uint64_t epaIterationBailout = 0;
+        std::uint64_t epaDegenerateFaces = 0;
+        std::uint64_t epaDuplicateSupports = 0;
 
         ManifoldSolveBucket manifoldSolveScope{};
         std::unordered_map<std::uint8_t, ManifoldSolveBucket> manifoldTypeBuckets{};
@@ -203,6 +208,7 @@ private:
     static std::uint64_t ComputeShapeGeometrySignature(const Body& body);
     void RefreshShapeRevisionCounters();
     bool ConvexOverlapWithCache(std::uint32_t a, std::uint32_t b);
+    void EmitConvexManifoldSeeds();
     static bool IsZeroInertia(const Mat3& m);
     static bool TryGetPlaneNormal(const Body& plane, Vec3& outNormal);
     static void AssertBodyStateFinite(const Body& body);
@@ -2668,6 +2674,23 @@ private:
         }
     };
 
+    struct ConvexSeedKey {
+        std::uint32_t loBody = 0;
+        std::uint32_t hiBody = 0;
+
+        bool operator==(const ConvexSeedKey& other) const {
+            return loBody == other.loBody && hiBody == other.hiBody;
+        }
+    };
+
+    struct ConvexSeedKeyHash {
+        std::size_t operator()(const ConvexSeedKey& key) const noexcept {
+            std::size_t seed = static_cast<std::size_t>(key.loBody);
+            seed ^= static_cast<std::size_t>(key.hiBody) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
+            return seed;
+        }
+    };
+
     Vec3 gravity_{};
     ContactSolverConfig contactSolverConfig_{};
     JointSolverConfig jointSolverConfig_{};
@@ -2697,6 +2720,7 @@ private:
     std::vector<ServoJoint> servoJoints_;
     std::unordered_map<PersistentPointKey, PersistentPointImpulseState, PersistentPointKeyHash> persistentPointImpulses_;
     std::unordered_map<NarrowphaseCacheKey, NarrowphaseCache, NarrowphaseCacheKeyHash> narrowphaseCache_;
+    std::unordered_map<ConvexSeedKey, EpaPenetrationResult, ConvexSeedKeyHash> convexManifoldSeeds_;
 #ifndef NDEBUG
     SolverTelemetry solverTelemetry_{};
     bool debugContactPersistence_ = false;

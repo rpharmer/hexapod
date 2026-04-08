@@ -7,7 +7,8 @@ CORE_SRC := src/minphys3d/core/world.cpp \
 	src/minphys3d/core/world_broadphase.cpp \
 	src/minphys3d/core/world_collision.cpp \
 	src/minphys3d/core/world_solver.cpp \
-	src/minphys3d/narrowphase/gjk.cpp
+	src/minphys3d/narrowphase/gjk.cpp \
+	src/minphys3d/narrowphase/epa.cpp
 DEMO_SRC := src/demo/scenes.cpp
 SRC := src/main.cpp $(CORE_SRC) $(DEMO_SRC)
 UNIT_TEST := tests/test_unit_math
