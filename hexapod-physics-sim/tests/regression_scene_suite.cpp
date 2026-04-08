@@ -66,6 +66,7 @@ struct RunMetrics {
         std::uint64_t scalarFallbackNonFinite = 0;
         std::uint64_t topologyChangeEvents = 0;
         std::uint64_t featureIdChurnEvents = 0;
+        std::uint64_t selectedPairOscillationEvents = 0;
         std::uint64_t impulseResetPoints = 0;
         std::uint64_t reorderDetected = 0;
         std::uint64_t manifoldPointAdds = 0;
@@ -196,6 +197,15 @@ struct FrictionCoherenceGates {
     static constexpr float kMaxFace4FallbackToScalarRate = 0.25f;
     static constexpr float kMaxFace4PenetrationRegression = 0.75f;
     static constexpr float kMaxFace4JitterStdDevRegression = 0.35f;
+};
+
+struct Face4RolloutPolicy {
+    static constexpr std::array<const char*, 4> kRequiredScenes = {
+        "face-contact slide-to-rest",
+        "face-contact mild rocking",
+        "face-contact stick-slip transition",
+        "face4 ill-conditioned fallback case",
+    };
 };
 
 double SafeRatio(double num, double den) {
@@ -498,6 +508,7 @@ RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant) {
     metrics.telemetry.scalarFallbackNonFinite = telemetry.scalarFallbackNonFinite;
     metrics.telemetry.topologyChangeEvents = telemetry.topologyChangeEvents;
     metrics.telemetry.featureIdChurnEvents = telemetry.featureIdChurnEvents;
+    metrics.telemetry.selectedPairOscillationEvents = telemetry.selectedPairOscillationEvents;
     metrics.telemetry.impulseResetPoints = telemetry.impulseResetPoints;
     metrics.telemetry.reorderDetected = telemetry.reorderDetected;
     metrics.telemetry.manifoldPointAdds = telemetry.manifoldPointAdds;
@@ -1252,6 +1263,7 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "          },\n";
         out << "          \"topologyChangeEvents\": " << t.topologyChangeEvents << ",\n";
         out << "          \"featureIdChurnEvents\": " << t.featureIdChurnEvents << ",\n";
+        out << "          \"selectedPairOscillationEvents\": " << t.selectedPairOscillationEvents << ",\n";
         out << "          \"impulseResetPoints\": " << t.impulseResetPoints << ",\n";
         out << "          \"reorderDetected\": " << t.reorderDetected << ",\n";
         out << "          \"manifoldPointAdds\": " << t.manifoldPointAdds << ",\n";
@@ -1491,6 +1503,7 @@ void PrintHumanSummary(const ComparisonResult& result) {
                   << " supportDepthBypassed=" << t.supportDepthOrderBypassed
                   << " topologyChangeEvents=" << t.topologyChangeEvents
                   << " featureIdChurnEvents=" << t.featureIdChurnEvents
+                  << " selectedPairOscillationEvents=" << t.selectedPairOscillationEvents
                   << " impulseResetPoints=" << t.impulseResetPoints
                   << " reorderDetected=" << t.reorderDetected
                   << "\n";
@@ -1631,6 +1644,57 @@ void PrintBlockSolverSafetyRails() {
               << ", face4_fallback_to_scalar_rate<=" << FrictionCoherenceGates::kMaxFace4FallbackToScalarRate << "\n";
 }
 
+bool EvaluateFace4DefaultRolloutReadiness(const std::vector<ComparisonResult>& results, std::vector<std::string>& failures) {
+    const auto findScene = [&](const std::string& sceneName) -> const ComparisonResult* {
+        for (const ComparisonResult& result : results) {
+            if (result.scene == sceneName) {
+                return &result;
+            }
+        }
+        return nullptr;
+    };
+
+    bool ready = true;
+    for (const char* requiredScene : Face4RolloutPolicy::kRequiredScenes) {
+        const ComparisonResult* result = findScene(requiredScene);
+        if (result == nullptr) {
+            ready = false;
+            failures.push_back("face4 rollout policy: missing required scene '" + std::string(requiredScene) + "'");
+        }
+    }
+    if (!ready) {
+        return false;
+    }
+
+    for (const char* requiredScene : Face4RolloutPolicy::kRequiredScenes) {
+        const ComparisonResult* result = findScene(requiredScene);
+        if (result == nullptr) {
+            continue;
+        }
+        if (!result->pass) {
+            ready = false;
+            failures.push_back("face4 rollout policy: required scene failed '" + result->scene + "'");
+        }
+        if (result->scene.find("face-contact") != std::string::npos && !result->readinessPass) {
+            ready = false;
+            failures.push_back("face4 rollout policy: friction-coherence gates failed in '" + result->scene + "'");
+        }
+    }
+
+    const ComparisonResult* illConditioned = findScene("face4 ill-conditioned fallback case");
+    if (illConditioned != nullptr) {
+        if (illConditioned->face4.telemetry.face4Attempted < FrictionCoherenceGates::kMinFace4AttemptedCount) {
+            ready = false;
+            failures.push_back("face4 rollout policy: ill-conditioned fallback scene did not attempt face4 solve");
+        }
+        if (illConditioned->face4.telemetry.face4FallbackToBlock2 == 0) {
+            ready = false;
+            failures.push_back("face4 rollout policy: ill-conditioned fallback scene missing face4->block2 fallback");
+        }
+    }
+    return ready;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1690,6 +1754,17 @@ int main(int argc, char** argv) {
         }
         allPass = allPass && result.pass;
         results.push_back(std::move(result));
+    }
+    std::vector<std::string> rolloutFailures;
+    const bool rolloutReady = EvaluateFace4DefaultRolloutReadiness(results, rolloutFailures);
+    if (!rolloutReady) {
+        allPass = false;
+        std::cout << "FAIL | face4 default rollout policy\n";
+        for (const std::string& failure : rolloutFailures) {
+            std::cout << "  - " << failure << "\n";
+        }
+    } else if (printHumanSummary) {
+        std::cout << "PASS | face4 default rollout policy (keep useFace4PointNormalBlock=false until multi-run CI stability)\n";
     }
 
     const std::string json = ToJson(results);

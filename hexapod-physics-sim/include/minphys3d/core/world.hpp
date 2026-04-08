@@ -862,8 +862,30 @@ private:
         currentKeys.reserve(manifold.contacts.size());
         std::array<bool, 2> slotOccupied{false, false};
         std::array<int, 2> slotToContactIndex{-1, -1};
-
+        std::vector<std::size_t> contactVisitOrder;
+        contactVisitOrder.reserve(manifold.contacts.size());
         for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
+            contactVisitOrder.push_back(i);
+        }
+        if (manifold.contacts.size() >= 2
+            && manifold.selectedBlockContactKeys[0] != 0u
+            && manifold.selectedBlockContactKeys[1] != 0u) {
+            std::stable_sort(
+                contactVisitOrder.begin(),
+                contactVisitOrder.end(),
+                [&](std::size_t lhs, std::size_t rhs) {
+                    const bool lhsSelected = manifold.contacts[lhs].key == manifold.selectedBlockContactKeys[0]
+                        || manifold.contacts[lhs].key == manifold.selectedBlockContactKeys[1];
+                    const bool rhsSelected = manifold.contacts[rhs].key == manifold.selectedBlockContactKeys[0]
+                        || manifold.contacts[rhs].key == manifold.selectedBlockContactKeys[1];
+                    if (lhsSelected != rhsSelected) {
+                        return lhsSelected;
+                    }
+                    return lhs < rhs;
+                });
+        }
+
+        for (const std::size_t i : contactVisitOrder) {
             Contact& contact = manifold.contacts[i];
             currentKeys.insert(contact.key);
             std::array<float, 3>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
@@ -2374,6 +2396,57 @@ private:
             std::array<std::uint64_t, 2> sortedKeys{0u, 0u};
         };
 
+        const auto computePairQuality = [&](const Contact& a, const Contact& b) {
+            const float penetration = a.penetration + b.penetration;
+            const float spread = LengthSquared(a.point - b.point);
+            const float supportAreaProxy = spread * std::max(0.0f, penetration) * kSupportAreaProxyScale;
+            const Vec3 midPoint = 0.5f * (a.point + b.point);
+            const Vec3 centers = 0.5f * (bodies_[manifold.a].position + bodies_[manifold.b].position);
+            const float lever = LengthSquared(midPoint - centers);
+            return spread >= kQualityMinSpreadSq
+                && supportAreaProxy >= kQualityMinSupportAreaProxy
+                && lever >= kQualityMinLeverSq
+                && penetration >= kQualityMinPenetrationSum;
+        };
+
+        if (previousSelectedKeys[0] != 0u && previousSelectedKeys[1] != 0u) {
+            int prevIdx0 = -1;
+            int prevIdx1 = -1;
+            for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
+                const std::uint64_t key = manifold.contacts[i].key;
+                if (key == previousSelectedKeys[0] && prevIdx0 < 0) {
+                    prevIdx0 = static_cast<int>(i);
+                } else if (key == previousSelectedKeys[1] && prevIdx1 < 0) {
+                    prevIdx1 = static_cast<int>(i);
+                }
+            }
+            if (prevIdx0 >= 0 && prevIdx1 >= 0 && prevIdx0 != prevIdx1) {
+                const Contact& c0 = manifold.contacts[static_cast<std::size_t>(prevIdx0)];
+                const Contact& c1 = manifold.contacts[static_cast<std::size_t>(prevIdx1)];
+                if (IsValidBlockContactPoint(c0)
+                    && IsValidBlockContactPoint(c1)
+                    && computePairQuality(c0, c1)) {
+                    int idx0 = prevIdx0;
+                    int idx1 = prevIdx1;
+                    if (!ContactPairStableOrder(c0, c1)) {
+                        std::swap(idx0, idx1);
+                    }
+                    manifold.selectedBlockContactIndices = {idx0, idx1};
+                    manifold.selectedBlockContactKeys = {
+                        manifold.contacts[static_cast<std::size_t>(idx0)].key,
+                        manifold.contacts[static_cast<std::size_t>(idx1)].key};
+                    manifold.selectedBlockPairPersistent =
+                        manifold.contacts[static_cast<std::size_t>(idx0)].persistenceAge > 0
+                        && manifold.contacts[static_cast<std::size_t>(idx1)].persistenceAge > 0;
+                    manifold.selectedBlockPairQualityPass = true;
+#ifndef NDEBUG
+                    logSelection();
+#endif
+                    return;
+                }
+            }
+        }
+
         const Vec3 centers = 0.5f * (bodies_[manifold.a].position + bodies_[manifold.b].position);
         PairSelection best{};
         for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
@@ -2398,8 +2471,10 @@ private:
                 candidate.lever = LengthSquared(midPoint - centers);
                 candidate.ageMin = static_cast<int>(std::min(a.persistenceAge, b.persistenceAge));
                 candidate.ageSum = static_cast<int>(a.persistenceAge + b.persistenceAge);
-                const bool keyMatch = (a.key == previousSelectedKeys[0] || a.key == previousSelectedKeys[1])
-                                   && (b.key == previousSelectedKeys[0] || b.key == previousSelectedKeys[1]);
+                const bool keyMatch = previousSelectedKeys[0] != 0u
+                    && previousSelectedKeys[1] != 0u
+                    && (a.key == previousSelectedKeys[0] || a.key == previousSelectedKeys[1])
+                    && (b.key == previousSelectedKeys[0] || b.key == previousSelectedKeys[1]);
                 candidate.continuity = keyMatch ? 1.0f : 0.0f;
                 candidate.sortedKeys = SortedContactKeyPair(a.key, b.key);
 
