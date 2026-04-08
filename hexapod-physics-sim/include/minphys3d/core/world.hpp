@@ -19,6 +19,7 @@
 #include "minphys3d/core/body.hpp"
 #include "minphys3d/core/world_types.hpp"
 #include "minphys3d/joints/types.hpp"
+#include "minphys3d/narrowphase/gjk.hpp"
 #include "minphys3d/narrowphase/dispatch.hpp"
 #include "minphys3d/solver/types.hpp"
 
@@ -199,6 +200,9 @@ private:
     static bool IsFinite(const Vec3& v);
     static bool IsFinite(const Quat& q);
     static bool IsFinite(const Mat3& m);
+    static std::uint64_t ComputeShapeGeometrySignature(const Body& body);
+    void RefreshShapeRevisionCounters();
+    bool ConvexOverlapWithCache(std::uint32_t a, std::uint32_t b);
     static bool IsZeroInertia(const Mat3& m);
     static bool TryGetPlaneNormal(const Body& plane, Vec3& outNormal);
     static void AssertBodyStateFinite(const Body& body);
@@ -2640,6 +2644,30 @@ private:
     }
 
 private:
+    struct NarrowphaseCacheKey {
+        std::uint32_t loBody = 0;
+        std::uint32_t hiBody = 0;
+        std::uint32_t loRevision = 0;
+        std::uint32_t hiRevision = 0;
+
+        bool operator==(const NarrowphaseCacheKey& other) const {
+            return loBody == other.loBody
+                && hiBody == other.hiBody
+                && loRevision == other.loRevision
+                && hiRevision == other.hiRevision;
+        }
+    };
+
+    struct NarrowphaseCacheKeyHash {
+        std::size_t operator()(const NarrowphaseCacheKey& key) const noexcept {
+            std::size_t seed = static_cast<std::size_t>(key.loBody);
+            seed ^= static_cast<std::size_t>(key.hiBody) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
+            seed ^= static_cast<std::size_t>(key.loRevision) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
+            seed ^= static_cast<std::size_t>(key.hiRevision) + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
+            return seed;
+        }
+    };
+
     Vec3 gravity_{};
     ContactSolverConfig contactSolverConfig_{};
     JointSolverConfig jointSolverConfig_{};
@@ -2647,6 +2675,8 @@ private:
     float currentSubstepDt_ = 1.0f / 60.0f;
     bool solverRelaxationPassActive_ = false;
     std::vector<Body> bodies_;
+    std::vector<std::uint32_t> shapeRevisionCounters_;
+    std::vector<std::uint64_t> shapeGeometrySignatures_;
     std::vector<Vec3> splitLinearPositionDelta_;
     std::vector<Vec3> splitAngularPositionDelta_;
     std::vector<BroadphaseProxy> proxies_;
@@ -2666,6 +2696,7 @@ private:
     std::vector<PrismaticJoint> prismaticJoints_;
     std::vector<ServoJoint> servoJoints_;
     std::unordered_map<PersistentPointKey, PersistentPointImpulseState, PersistentPointKeyHash> persistentPointImpulses_;
+    std::unordered_map<NarrowphaseCacheKey, NarrowphaseCache, NarrowphaseCacheKeyHash> narrowphaseCache_;
 #ifndef NDEBUG
     SolverTelemetry solverTelemetry_{};
     bool debugContactPersistence_ = false;
