@@ -19,7 +19,7 @@ ConvexSupport BuildConvexSupport(const Body& body) {
                     dir = {1.0f, 0.0f, 0.0f};
                 }
                 dir = Normalize(dir);
-                return ConvexSupportPoint{center + dir * radius, ConvexTopologyMetadata{}};
+                return ConvexSupportPoint{center + dir * radius, ShapeTopology{}};
             }};
     }
 
@@ -37,7 +37,7 @@ ConvexSupport BuildConvexSupport(const Body& body) {
                 const std::uint8_t vertexId = static_cast<std::uint8_t>((local.x > 0.0f ? 1u : 0u) | (local.y > 0.0f ? 2u : 0u) | (local.z > 0.0f ? 4u : 0u));
                 return ConvexSupportPoint{
                     center + Rotate(orientation, local),
-                    ConvexTopologyMetadata{vertexId, std::nullopt, std::nullopt},
+                    ShapeTopology{vertexId, std::nullopt, std::nullopt},
                 };
             }};
     }
@@ -58,7 +58,7 @@ ConvexSupport BuildConvexSupport(const Body& body) {
                 const Vec3 segmentPoint = center + axis * (upper ? halfHeight : -halfHeight);
                 return ConvexSupportPoint{
                     segmentPoint + dir * radius,
-                    ConvexTopologyMetadata{std::nullopt, std::nullopt, std::optional<std::uint8_t>(upper ? 1u : 0u)},
+                    ShapeTopology{std::nullopt, std::nullopt, std::optional<std::uint16_t>(upper ? 1u : 0u)},
                 };
             }};
     }
@@ -301,8 +301,8 @@ void World::EmitConvexManifoldSeeds() {
                 continue;
             }
             const Vec3 point = 0.5f * (seed.witnessA + seed.witnessB);
-            const std::uint64_t featureKey = PackFeatureKey(10, 0, 0, 0, 0, 0);
-            AddContact(key.loBody, key.hiBody, seed.normal, point, seed.depth, featureKey);
+            const std::uint64_t featureId = CanonicalFeaturePairId(key.loBody, key.hiBody, 0u, 0u);
+            AddContact(key.loBody, key.hiBody, seed.normal, point, seed.depth, 10u, featureId);
         }
     }
 
@@ -318,8 +318,8 @@ void World::SphereSphere(std::uint32_t ia, std::uint32_t ib) {
 
         const float dist = std::sqrt(std::max(distSq, kEpsilon));
         const Vec3 normal = (dist > kEpsilon) ? (delta / dist) : Vec3{1.0f, 0.0f, 0.0f};
-        const std::uint64_t featureKey = PackFeatureKey(1, 0, 0, 0, 0, 0);
-        AddContact(ia, ib, normal, a.position + normal * a.radius, radiusSum - dist, featureKey);
+        const std::uint64_t featureId = CanonicalFeaturePairId(ia, ib, 0u, 0u);
+        AddContact(ia, ib, normal, a.position + normal * a.radius, radiusSum - dist, 1u, featureId);
     }
 
 void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
@@ -608,11 +608,13 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
             const std::uint8_t referenceFaceIndex = static_cast<std::uint8_t>(refAxis * 2 + (refSign > 0.0f ? 0 : 1));
             const std::uint8_t incidentFaceIndex = static_cast<std::uint8_t>(incidentAxis * 2 + (incSign > 0.0f ? 0 : 1));
             for (std::size_t i = 0; i < std::min<std::size_t>(4, contacts.size()); ++i) {
-                const std::uint8_t referenceFeature = contacts[i].clipMask;
-                const std::uint8_t incidentFeature = contacts[i].incidentFeature;
-                const std::uint8_t clippedMap = static_cast<std::uint8_t>(contacts[i].clipMask ^ ((contacts[i].incidentFeature & 0xFu) << 4));
-                const std::uint64_t featureKey = PackFeatureKey(9, referenceFaceIndex, incidentFaceIndex, referenceFeature, incidentFeature, clippedMap);
-                AddContact(aId, bId, normalAB, contacts[i].point, bestOverlap, featureKey);
+                const std::uint32_t referenceFeature =
+                    (static_cast<std::uint32_t>(referenceFaceIndex) << 8u) | static_cast<std::uint32_t>(contacts[i].clipMask);
+                const std::uint32_t incidentFeature =
+                    (static_cast<std::uint32_t>(incidentFaceIndex) << 8u) | static_cast<std::uint32_t>(contacts[i].incidentFeature);
+                const std::uint16_t detail = static_cast<std::uint16_t>(contacts[i].clipMask ^ ((contacts[i].incidentFeature & 0xFu) << 4));
+                const std::uint64_t featureId = CanonicalFeaturePairId(aId, bId, referenceFeature, incidentFeature, detail);
+                AddContact(aId, bId, normalAB, contacts[i].point, bestOverlap, 9u, featureId);
             }
             return;
         }
@@ -679,8 +681,8 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
         const auto [b0, b1] = edgeSegment(b, bAxes, edgeB, -best.axis);
         const auto [pointA, pointB] = closestPointsOnSegments(a0, a1, b0, b1);
 
-        const std::uint64_t featureKey = PackFeatureKey(10, edgeA, edgeB, edgeA, edgeB, 0);
-        AddContact(aId, bId, best.axis, 0.5f * (pointA + pointB), best.overlap, featureKey);
+        const std::uint64_t featureId = CanonicalFeaturePairId(aId, bId, edgeA, edgeB);
+        AddContact(aId, bId, best.axis, 0.5f * (pointA + pointB), best.overlap, 10u, featureId);
     }
 
 

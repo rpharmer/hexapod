@@ -501,38 +501,38 @@ private:
 
     void ResolveTOIPipeline(float dt);
 
-    static std::uint64_t PackFeatureKey(
-        std::uint8_t kind,
-        std::uint8_t referenceFace,
-        std::uint8_t incidentFace,
-        std::uint8_t referenceFeature,
-        std::uint8_t incidentFeature,
-        std::uint8_t clippedFeature) {
-        return (static_cast<std::uint64_t>(kind) << 40)
-             | (static_cast<std::uint64_t>(referenceFace) << 32)
-             | (static_cast<std::uint64_t>(incidentFace) << 24)
-             | (static_cast<std::uint64_t>(referenceFeature) << 16)
-             | (static_cast<std::uint64_t>(incidentFeature) << 8)
-             | static_cast<std::uint64_t>(clippedFeature);
-    }
-
     static std::pair<std::uint32_t, std::uint32_t> CanonicalBodyOrder(std::uint32_t a, std::uint32_t b) {
         return {std::min(a, b), std::max(a, b)};
     }
 
-    static ContactKey MakeContactKey(std::uint32_t a, std::uint32_t b, std::uint64_t featureKey) {
+    static std::uint64_t CanonicalFeaturePairId(
+        std::uint32_t a,
+        std::uint32_t b,
+        std::uint32_t featureOnA,
+        std::uint32_t featureOnB,
+        std::uint16_t detail = 0u) {
+        const bool canonicalOrder = a <= b;
+        const std::uint32_t loFeature = canonicalOrder ? featureOnA : featureOnB;
+        const std::uint32_t hiFeature = canonicalOrder ? featureOnB : featureOnA;
+        return (static_cast<std::uint64_t>(loFeature) << 32u)
+             | (static_cast<std::uint64_t>(hiFeature) << 16u)
+             | static_cast<std::uint64_t>(detail);
+    }
+
+    static ContactKey MakeContactKey(
+        std::uint32_t a,
+        std::uint32_t b,
+        std::uint8_t manifoldType,
+        std::uint64_t canonicalFeatureId) {
         const auto [lo, hi] = CanonicalBodyOrder(a, b);
-        return ContactKey{lo, hi, featureKey};
+        return ContactKey{lo, hi, manifoldType, canonicalFeatureId};
     }
 
     static std::uint64_t ContactKeyStableValue(const ContactKey& key) {
-        return (static_cast<std::uint64_t>(key.loBody) << 48)
-             ^ (static_cast<std::uint64_t>(key.hiBody) << 32)
-             ^ key.featureKey;
-    }
-
-    static std::uint8_t ManifoldTypeFromFeatureKey(std::uint64_t featureKey) {
-        return static_cast<std::uint8_t>((featureKey >> 40) & 0xffu);
+        return (static_cast<std::uint64_t>(key.manifoldType) << 56u)
+             ^ (static_cast<std::uint64_t>(key.loBody) << 28u)
+             ^ static_cast<std::uint64_t>(key.hiBody)
+             ^ key.canonicalFeatureId;
     }
 
     static ManifoldKey MakeManifoldId(std::uint32_t a, std::uint32_t b, std::uint8_t manifoldType) {
@@ -540,8 +540,8 @@ private:
         return ManifoldKey{lo, hi, manifoldType};
     }
 
-    static PersistentPointKey MakePersistentPointKey(const ManifoldKey& manifoldId, std::uint64_t featureKey, std::uint8_t ordinal) {
-        return PersistentPointKey{manifoldId, featureKey, ordinal};
+    static PersistentPointKey MakePersistentPointKey(const ManifoldKey& manifoldId, std::uint64_t canonicalFeatureId, std::uint8_t ordinal) {
+        return PersistentPointKey{manifoldId, canonicalFeatureId, ordinal};
     }
 
     static void WakeBody(Body& body) {
@@ -710,15 +710,23 @@ private:
         }
     }
 
-    void AddContact(std::uint32_t a, std::uint32_t b, const Vec3& normal, const Vec3& point, float penetration, std::uint64_t featureKey = 0) {
+    void AddContact(
+        std::uint32_t a,
+        std::uint32_t b,
+        const Vec3& normal,
+        const Vec3& point,
+        float penetration,
+        std::uint8_t manifoldType = 0,
+        std::uint64_t canonicalFeatureId = 0) {
         Contact c;
         c.a = a;
         c.b = b;
         c.normal = normal;
         c.point = point;
         c.penetration = std::max(penetration, 0.0f);
-        c.featureKey = featureKey;
-        c.key = ContactKeyStableValue(MakeContactKey(a, b, featureKey));
+        c.manifoldType = manifoldType;
+        c.featureKey = canonicalFeatureId;
+        c.key = ContactKeyStableValue(MakeContactKey(a, b, manifoldType, canonicalFeatureId));
         assert(IsFinite(c.normal));
         assert(IsFinite(c.point));
         assert(IsFinite(c.penetration));
@@ -1270,8 +1278,8 @@ private:
         if (signedDistance >= s.radius) {
             return;
         }
-        const std::uint64_t featureKey = PackFeatureKey(2, 0, 0, 0, 0, 0);
-        AddContact(sphereId, planeId, -n, s.position - n * s.radius, s.radius - signedDistance, featureKey);
+        const std::uint64_t featureId = CanonicalFeaturePairId(sphereId, planeId, 0u, 0u);
+        AddContact(sphereId, planeId, -n, s.position - n * s.radius, s.radius - signedDistance, 2u, featureId);
     }
 
     void CapsulePlane(std::uint32_t capsuleId, std::uint32_t planeId) {
@@ -1287,8 +1295,9 @@ private:
             const Vec3& center = ends[endpoint];
             const float signedDistance = Dot(n, center) - p.planeOffset;
             if (signedDistance < c.radius) {
-                const std::uint64_t featureKey = PackFeatureKey(3, 0, 0, 0, static_cast<std::uint8_t>(endpoint), 0);
-                AddContact(capsuleId, planeId, -n, center - n * c.radius, c.radius - signedDistance, featureKey);
+                const std::uint32_t capsuleFeature = static_cast<std::uint32_t>(endpoint);
+                const std::uint64_t featureId = CanonicalFeaturePairId(capsuleId, planeId, capsuleFeature, 0u);
+                AddContact(capsuleId, planeId, -n, center - n * c.radius, c.radius - signedDistance, 3u, featureId);
             }
         }
     }
@@ -1315,8 +1324,8 @@ private:
         const float dist = std::sqrt(std::max(distSq, kEpsilon));
         const Vec3 normal = (dist > kEpsilon) ? (delta / dist) : Vec3{0.0f, 1.0f, 0.0f};
         const std::uint8_t capsuleFeature = (t <= 1e-3f) ? 0u : ((t >= 1.0f - 1e-3f) ? 1u : 2u);
-        const std::uint64_t featureKey = PackFeatureKey(4, 0, 0, 0, capsuleFeature, 0);
-        AddContact(sphereId, capsuleId, normal, s.position + normal * s.radius, radiusSum - dist, featureKey);
+        const std::uint64_t featureId = CanonicalFeaturePairId(sphereId, capsuleId, 0u, capsuleFeature);
+        AddContact(sphereId, capsuleId, normal, s.position + normal * s.radius, radiusSum - dist, 4u, featureId);
     }
 
     void CapsuleCapsule(std::uint32_t aId, std::uint32_t bId) {
@@ -1353,8 +1362,8 @@ private:
         const Vec3 point = c1 + normal * a.radius;
         const std::uint8_t featureA = (s <= 1e-3f) ? 0u : ((s >= 1.0f - 1e-3f) ? 1u : 2u);
         const std::uint8_t featureB = (t <= 1e-3f) ? 0u : ((t >= 1.0f - 1e-3f) ? 1u : 2u);
-        const std::uint64_t featureKey = PackFeatureKey(5, 0, 0, featureA, featureB, 0);
-        AddContact(aId, bId, normal, point, radiusSum - dist, featureKey);
+        const std::uint64_t featureId = CanonicalFeaturePairId(aId, bId, featureA, featureB);
+        AddContact(aId, bId, normal, point, radiusSum - dist, 5u, featureId);
 
         const float parallelFactor = std::abs(Dot(axisA, axisB));
         if (parallelFactor > 0.98f && featureA == 2u && featureB == 2u) {
@@ -1373,8 +1382,8 @@ private:
                 }
                 const float endpointDist = std::sqrt(std::max(endpointDistSq, 0.0f));
                 const std::uint8_t featureBProj = (tProj <= 1e-3f) ? 0u : ((tProj >= 1.0f - 1e-3f) ? 1u : 2u);
-                const std::uint64_t manifoldFeatureKey = PackFeatureKey(5, 0, 0, endpointFeature, featureBProj, 1);
-                AddContact(aId, bId, endpointNormal, endpointA + endpointNormal * a.radius, radiusSum - endpointDist, manifoldFeatureKey);
+                const std::uint64_t manifoldFeatureId = CanonicalFeaturePairId(aId, bId, endpointFeature, featureBProj, 1u);
+                AddContact(aId, bId, endpointNormal, endpointA + endpointNormal * a.radius, radiusSum - endpointDist, 5u, manifoldFeatureId);
             };
 
             addProjectedEndpointContact(p1, 0u);
@@ -1416,8 +1425,8 @@ private:
         const Vec3 pointWorld = b.position + Rotate(b.orientation, closest.boxPoint);
         const float segT = closest.t;
         const std::uint8_t capsuleFeature = (segT <= 1e-3f) ? 0u : ((segT >= 1.0f - 1e-3f) ? 1u : 2u);
-        const std::uint64_t featureKey = PackFeatureKey(6, 0, 0, 0, capsuleFeature, 0);
-        AddContact(capsuleId, boxId, -normalWorld, pointWorld, c.radius - dist, featureKey);
+        const std::uint64_t featureId = CanonicalFeaturePairId(capsuleId, boxId, capsuleFeature, 0u);
+        AddContact(capsuleId, boxId, -normalWorld, pointWorld, c.radius - dist, 6u, featureId);
     }
 
     void BoxPlane(std::uint32_t boxId, std::uint32_t planeId) {
@@ -1450,8 +1459,8 @@ private:
                     const float signedDistance = Dot(n, worldPoint) - plane.planeOffset;
                     if (signedDistance < 0.0f) {
                         const std::uint8_t vertexId = static_cast<std::uint8_t>((sx > 0 ? 1 : 0) | ((sy > 0 ? 1 : 0) << 1) | ((sz > 0 ? 1 : 0) << 2));
-                        const std::uint64_t featureKey = PackFeatureKey(7, 0, 0, vertexId, 0, 0);
-                        AddContact(boxId, planeId, -n, worldPoint, -signedDistance, featureKey);
+                        const std::uint64_t featureId = CanonicalFeaturePairId(boxId, planeId, vertexId, 0u);
+                        AddContact(boxId, planeId, -n, worldPoint, -signedDistance, 7u, featureId);
                         ++added;
                         if (added >= 4) {
                             return;
@@ -1532,8 +1541,8 @@ private:
             referenceFace = static_cast<std::uint8_t>((localPoint.z >= 0.0f) ? 4 : 5);
         }
         incidentFeature = 0;
-        const std::uint64_t featureKey = PackFeatureKey(8, referenceFace, 0, 0, incidentFeature, 0);
-        AddContact(sphereId, boxId, -normalWorld, pointWorld, penetration, featureKey);
+        const std::uint64_t featureId = CanonicalFeaturePairId(sphereId, boxId, incidentFeature, referenceFace);
+        AddContact(sphereId, boxId, -normalWorld, pointWorld, penetration, 8u, featureId);
     }
 
     void BoxBox(std::uint32_t aId, std::uint32_t bId);

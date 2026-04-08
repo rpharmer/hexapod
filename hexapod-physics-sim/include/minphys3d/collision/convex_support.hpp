@@ -10,15 +10,15 @@
 
 namespace minphys3d {
 
-struct ConvexTopologyMetadata {
-    std::optional<std::uint8_t> vertexId{};
-    std::optional<std::uint8_t> edgeId{};
-    std::optional<std::uint8_t> faceId{};
+struct ShapeTopology {
+    std::optional<std::uint16_t> vertexIndex{};
+    std::optional<std::uint16_t> edgeIndex{};
+    std::optional<std::uint16_t> faceIndex{};
 };
 
 struct ConvexSupportPoint {
     Vec3 point{};
-    ConvexTopologyMetadata topology{};
+    ShapeTopology topology{};
 };
 
 class ConvexSupport {
