@@ -76,6 +76,11 @@ struct RunMetrics {
         std::uint64_t manifoldFrictionBudgetSaturatedSelectedPair = 0;
         std::uint64_t manifoldFrictionBudgetSaturatedAllContacts = 0;
         std::uint64_t manifoldFrictionBudgetSaturatedBlended = 0;
+        std::uint64_t face4Attempted = 0;
+        std::uint64_t face4Used = 0;
+        std::uint64_t face4FallbackToBlock2 = 0;
+        std::uint64_t face4FallbackToScalar = 0;
+        std::uint64_t face4BlockedByFrictionCoherenceGate = 0;
         ManifoldSolveScopeSnapshot manifoldSolveScope;
         std::unordered_map<std::uint8_t, ManifoldSolveScopeSnapshot> manifoldTypeScope;
     };
@@ -115,10 +120,13 @@ struct SceneConfig {
     bool logStepManifoldIds = false;
     bool enforceFrictionCoherenceGates = false;
     bool evaluateFrictionAblations = false;
+    bool requireFace4FallbackRoute = false;
 };
 
 struct SolverVariantConfig {
     bool useBlockSolver = true;
+    bool useFace4PointNormalBlock = false;
+    float face4ConditionEstimateMax = 0.0f;
     bool enableManifoldFrictionBudget = true;
     bool enableTwoAxisFrictionSolve = true;
     minphys3d::FrictionBudgetNormalSupportSource normalSupportSource =
@@ -129,6 +137,8 @@ struct ComparisonResult {
     std::string scene;
     RunMetrics scalar;
     RunMetrics block;
+    RunMetrics face4;
+    bool readinessPass = true;
     bool pass = true;
     std::vector<std::string> failures;
     RunMetrics noBudget;
@@ -157,6 +167,9 @@ struct FrictionCoherenceGates {
     static constexpr float kMaxBasisChurnRatio = 0.90f;
     static constexpr float kMinStableType9Contacts = 0.00f;
     static constexpr float kMaxType9FallbackRate = 0.95f;
+    static constexpr float kMaxFace4FallbackToScalarRate = 0.25f;
+    static constexpr float kMaxFace4PenetrationRegression = 0.75f;
+    static constexpr float kMaxFace4JitterStdDevRegression = 0.35f;
 };
 
 double SafeRatio(double num, double den) {
@@ -191,6 +204,10 @@ ContactSolverConfig MakeSolverConfig(const SolverVariantConfig& variant) {
     cfg.staticFrictionSpeedThreshold = 0.0f;
     cfg.staticToDynamicTransitionSpeed = 0.2f;
     cfg.useBlockSolver = variant.useBlockSolver;
+    cfg.useFace4PointNormalBlock = variant.useFace4PointNormalBlock;
+    if (variant.face4ConditionEstimateMax > 0.0f) {
+        cfg.face4ConditionEstimateMax = variant.face4ConditionEstimateMax;
+    }
     cfg.enableManifoldFrictionBudget = variant.enableManifoldFrictionBudget;
     cfg.enableTwoAxisFrictionSolve = variant.enableTwoAxisFrictionSolve;
     cfg.frictionBudgetNormalSupportSource = variant.normalSupportSource;
@@ -417,6 +434,11 @@ RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant) {
     metrics.telemetry.manifoldFrictionBudgetSaturatedSelectedPair = telemetry.manifoldFrictionBudgetSaturatedSelectedPair;
     metrics.telemetry.manifoldFrictionBudgetSaturatedAllContacts = telemetry.manifoldFrictionBudgetSaturatedAllContacts;
     metrics.telemetry.manifoldFrictionBudgetSaturatedBlended = telemetry.manifoldFrictionBudgetSaturatedBlended;
+    metrics.telemetry.face4Attempted = telemetry.face4Attempted;
+    metrics.telemetry.face4Used = telemetry.face4Used;
+    metrics.telemetry.face4FallbackToBlock2 = telemetry.face4FallbackToBlock2;
+    metrics.telemetry.face4FallbackToScalar = telemetry.face4FallbackToScalar;
+    metrics.telemetry.face4BlockedByFrictionCoherenceGate = telemetry.face4BlockedByFrictionCoherenceGate;
     assignBucket(telemetry.manifoldSolveScope, metrics.telemetry.manifoldSolveScope);
     for (const auto& [manifoldType, bucket] : telemetry.manifoldTypeBuckets) {
         assignBucket(bucket, metrics.telemetry.manifoldTypeScope[manifoldType]);
@@ -483,6 +505,12 @@ ComparisonResult CompareScene(const SceneConfig& source) {
     SolverVariantConfig scalarVariant;
     scalarVariant.useBlockSolver = false;
     SolverVariantConfig blockVariant;
+    SolverVariantConfig face4Variant;
+    face4Variant.useBlockSolver = true;
+    face4Variant.useFace4PointNormalBlock = true;
+    if (source.requireFace4FallbackRoute) {
+        face4Variant.face4ConditionEstimateMax = 3.0f;
+    }
     SolverVariantConfig budgetOffVariant;
     budgetOffVariant.enableManifoldFrictionBudget = false;
     SolverVariantConfig oneAxisVariant;
@@ -490,6 +518,7 @@ ComparisonResult CompareScene(const SceneConfig& source) {
 
     out.scalar = RunScene(source, scalarVariant);
     out.block = RunScene(source, blockVariant);
+    out.face4 = RunScene(source, face4Variant);
     out.noBudget = RunScene(source, budgetOffVariant);
     out.oneAxisFriction = RunScene(source, oneAxisVariant);
 
@@ -646,6 +675,14 @@ ComparisonResult CompareScene(const SceneConfig& source) {
         const double type9FallbackRate = SafeRatio(
             static_cast<double>(type9Scope.fallbackUsed),
             static_cast<double>(type9Scope.solveCount));
+        const auto face4Type9It = out.face4.telemetry.manifoldTypeScope.find(9);
+        const RunMetrics::SolverTelemetrySnapshot::ManifoldSolveScopeSnapshot face4Type9Scope =
+            face4Type9It != out.face4.telemetry.manifoldTypeScope.end()
+                ? face4Type9It->second
+                : RunMetrics::SolverTelemetrySnapshot::ManifoldSolveScopeSnapshot{};
+        const double face4FallbackToScalarRate = SafeRatio(
+            static_cast<double>(out.face4.telemetry.face4FallbackToScalar),
+            static_cast<double>(out.face4.telemetry.face4Attempted));
         if (type9Scope.solveCount >= 50) {
             fail(out.block.tangentBasisChurnRatio > FrictionCoherenceGates::kMaxBasisChurnRatio,
                  "face4 coherence gate: basis churn ratio above ceiling");
@@ -653,6 +690,28 @@ ComparisonResult CompareScene(const SceneConfig& source) {
                  "face4 coherence gate: stable type-9 contact support below minimum");
             fail(type9FallbackRate > FrictionCoherenceGates::kMaxType9FallbackRate,
                  "face4 coherence gate: type-9 fallback rate above ceiling");
+            fail(out.face4.telemetry.face4Attempted == 0 || face4Type9Scope.solveCount == 0,
+                 "face4 readiness: expected face4 attempts for eligible type-9-heavy scene");
+            fail(face4FallbackToScalarRate > FrictionCoherenceGates::kMaxFace4FallbackToScalarRate,
+                 "face4 readiness: fallback-to-scalar rate exceeded budget");
+            failRegression(out.face4.maxPenetration - out.block.maxPenetration,
+                           FrictionCoherenceGates::kMaxFace4PenetrationRegression,
+                           out.block.maxPenetration,
+                           out.face4.maxPenetration,
+                           "face4_vs_block/penetration");
+            failRegression(out.face4.contactCountStdDev - out.block.contactCountStdDev,
+                           FrictionCoherenceGates::kMaxFace4JitterStdDevRegression,
+                           out.block.contactCountStdDev,
+                           out.face4.contactCountStdDev,
+                           "face4_vs_block/jitter_stddev");
+        }
+        out.readinessPass = out.failures.empty();
+    }
+
+    if (source.requireFace4FallbackRoute) {
+        if (out.face4.telemetry.face4Attempted > 0) {
+            fail(out.face4.telemetry.face4FallbackToBlock2 == 0,
+                 "face4 fallback route: expected fallback-to-block2 on ill-conditioned manifold");
         }
     }
 
@@ -873,6 +932,34 @@ SceneConfig BuildFaceContactStickSlipTransition() {
     return cfg;
 }
 
+SceneConfig BuildFace4IllConditionedFallbackCase() {
+    SceneConfig cfg;
+    cfg.name = "face4 ill-conditioned fallback case";
+    cfg.world = World({0.0f, -9.81f, 0.0f});
+
+    Body support;
+    support.shape = ShapeType::Box;
+    support.halfExtents = {3.0f, 0.25f, 3.0f};
+    support.mass = 0.0f;
+    support.position = {0.0f, 0.25f, 0.0f};
+    cfg.world.CreateBody(support);
+
+    Body box;
+    box.shape = ShapeType::Box;
+    box.halfExtents = {2.5f, 0.04f, 0.04f};
+    box.mass = 0.75f;
+    box.position = {0.0f, 0.58f, 0.0f};
+    box.orientation = minphys3d::Normalize(Quat{0.9996573f, 0.0f, 0.0261769f, 0.0f});
+    box.velocity = {0.1f, 0.0f, 0.0f};
+    box.angularVelocity = {0.0f, 0.25f, 0.0f};
+    const auto boxId = cfg.world.CreateBody(box);
+
+    cfg.trackedDynamicBodies = {boxId};
+    cfg.steps = 780;
+    cfg.requireFace4FallbackRoute = true;
+    return cfg;
+}
+
 SceneConfig BuildManifoldReorderStressCase() {
     SceneConfig cfg;
     cfg.name = "manifold reorder stress case";
@@ -946,6 +1033,13 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "          \"tangentImpulseReprojected\": " << t.tangentImpulseReprojected << ",\n";
         out << "          \"tangentImpulseReset\": " << t.tangentImpulseReset << ",\n";
         out << "          \"manifoldFrictionBudgetSaturated\": " << t.manifoldFrictionBudgetSaturated << ",\n";
+        out << "          \"face4\": {\n";
+        out << "            \"attempted\": " << t.face4Attempted << ",\n";
+        out << "            \"used\": " << t.face4Used << ",\n";
+        out << "            \"fallback_to_block2\": " << t.face4FallbackToBlock2 << ",\n";
+        out << "            \"fallback_to_scalar\": " << t.face4FallbackToScalar << ",\n";
+        out << "            \"blocked_by_friction_coherence_gate\": " << t.face4BlockedByFrictionCoherenceGate << "\n";
+        out << "          },\n";
         out << "          \"budgetSaturationByPolicy\": {\n";
         out << "            \"selected_block_pair_only\": " << t.manifoldFrictionBudgetSaturatedSelectedPair << ",\n";
         out << "            \"all_manifold_contacts\": " << t.manifoldFrictionBudgetSaturatedAllContacts << ",\n";
@@ -1006,6 +1100,7 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "    {\n";
         out << "      \"name\": \"" << r.scene << "\",\n";
         out << "      \"pass\": " << (r.pass ? "true" : "false") << ",\n";
+        out << "      \"readiness_pass\": " << (r.readinessPass ? "true" : "false") << ",\n";
         out << "      \"scalar\": {\n";
         out << "        \"max_penetration\": " << r.scalar.maxPenetration << ",\n";
         out << "        \"contact_count_stddev\": " << r.scalar.contactCountStdDev << ",\n";
@@ -1040,6 +1135,23 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         writeTelemetryJson(out, r.block.telemetry);
         out << "\n";
         out << "      },\n";
+        out << "      \"face4\": {\n";
+        out << "        \"max_penetration\": " << r.face4.maxPenetration << ",\n";
+        out << "        \"contact_count_stddev\": " << r.face4.contactCountStdDev << ",\n";
+        out << "        \"contact_count_mean_step_delta\": " << r.face4.contactCountMeanStepDelta << ",\n";
+        out << "        \"max_impulse_delta\": " << r.face4.maxImpulseDelta << ",\n";
+        out << "        \"mean_impulse_delta\": " << r.face4.meanImpulseDelta << ",\n";
+        out << "        \"settle_time_seconds\": " << r.face4.settleTimeSeconds << ",\n";
+        out << "        \"reorder_events\": " << r.face4.reorderEvents << ",\n";
+        out << "        \"tangent_basis_churn_ratio\": " << r.face4.tangentBasisChurnRatio << ",\n";
+        out << "        \"manifold_tangent_impulse_continuity\": " << r.face4.manifoldTangentImpulseContinuity << ",\n";
+        out << "        \"slip_velocity_decay_ratio\": " << r.face4.slipVelocityDecayRatio << ",\n";
+        out << "        \"final_slip_speed\": " << r.face4.finalSlipSpeed << ",\n";
+        out << "        \"resting_drift_distance\": " << r.face4.restingDriftDistance << ",\n";
+        out << "        \"mean_stable_type9_contacts\": " << r.face4.meanStableType9Contacts << ",\n";
+        writeTelemetryJson(out, r.face4.telemetry);
+        out << "\n";
+        out << "      },\n";
         out << "      \"ablation\": {\n";
         out << "        \"manifold_budget_off\": {\n";
         out << "          \"manifold_tangent_impulse_continuity\": " << r.noBudget.manifoldTangentImpulseContinuity << ",\n";
@@ -1065,7 +1177,11 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
     SolverVariantConfig baselineVariant;
     baselineVariant.useBlockSolver = false;
     const ContactSolverConfig cfg = MakeSolverConfig(baselineVariant);
+    const bool readinessPassAll = std::all_of(results.begin(), results.end(), [](const ComparisonResult& r) {
+        return r.readinessPass;
+    });
     out << "  ],\n";
+    out << "  \"readiness_pass\": " << (readinessPassAll ? "true" : "false") << ",\n";
     out << "  \"solver_config\": {\n";
     out << "    \"use_split_impulse\": " << (cfg.useSplitImpulse ? "true" : "false") << ",\n";
     out << "    \"split_impulse_correction_factor\": " << cfg.splitImpulseCorrectionFactor << ",\n";
@@ -1111,6 +1227,11 @@ void PrintHumanSummary(const ComparisonResult& result) {
                   << " conditionEstimate=" << t.scalarFallbackConditionEstimate
                   << " lcpFailure=" << t.scalarFallbackLcpFailure
                   << " nonFinite=" << t.scalarFallbackNonFinite
+                  << " face4Attempted=" << t.face4Attempted
+                  << " face4Used=" << t.face4Used
+                  << " face4FallbackToBlock2=" << t.face4FallbackToBlock2
+                  << " face4FallbackToScalar=" << t.face4FallbackToScalar
+                  << " face4BlockedByGate=" << t.face4BlockedByFrictionCoherenceGate
                   << " topologyChangeEvents=" << t.topologyChangeEvents
                   << " featureIdChurnEvents=" << t.featureIdChurnEvents
                   << " impulseResetPoints=" << t.impulseResetPoints
@@ -1137,8 +1258,10 @@ void PrintHumanSummary(const ComparisonResult& result) {
     std::cout << (result.pass ? "PASS" : "FAIL") << " | " << result.scene << "\n";
     printRun("scalar", result.scalar);
     printRun("block ", result.block);
+    printRun("face4 ", result.face4);
     printTelemetry("scalar", result.scalar.telemetry);
     printTelemetry("block ", result.block.telemetry);
+    printTelemetry("face4 ", result.face4.telemetry);
     for (const std::string& failure : result.failures) {
         std::cout << "    - " << failure << "\n";
     }
@@ -1154,6 +1277,23 @@ void PrintHumanSummary(const ComparisonResult& result) {
     if (result.block.telemetry.topologyChangeEvents > result.scalar.telemetry.topologyChangeEvents
         || result.block.telemetry.featureIdChurnEvents > result.scalar.telemetry.featureIdChurnEvents) {
         std::cout << "    diagnosis: block path shows more topology/churn events (possible topology churn)\n";
+    }
+    if (result.scene.find("face-contact") != std::string::npos || result.scene.find("face4") != std::string::npos) {
+        const auto type9It = result.block.telemetry.manifoldTypeScope.find(9);
+        const auto type9Scope = type9It != result.block.telemetry.manifoldTypeScope.end()
+            ? type9It->second
+            : RunMetrics::SolverTelemetrySnapshot::ManifoldSolveScopeSnapshot{};
+        const double type9FallbackRate = SafeRatio(static_cast<double>(type9Scope.fallbackUsed), static_cast<double>(type9Scope.solveCount));
+        const double face4UseRatio = SafeRatio(
+            static_cast<double>(result.face4.telemetry.face4Used),
+            static_cast<double>(result.face4.telemetry.face4Attempted));
+        std::cout << "    face4 readiness report:"
+                  << " basis_churn_ratio=" << result.block.tangentBasisChurnRatio
+                  << " stable_type9_contact_support=" << result.block.meanStableType9Contacts
+                  << " type9_fallback_rate=" << type9FallbackRate
+                  << " face4_used_attempted_ratio=" << face4UseRatio
+                  << " readiness_pass=" << (result.readinessPass ? "true" : "false")
+                  << "\n";
     }
 
     if (result.scene == "slightly offset box stacks" || result.scene == "minimized penetration stack case") {
@@ -1220,7 +1360,8 @@ void PrintBlockSolverSafetyRails() {
               << ", telemetry regression<=" << BlockSolverSafetyRails::kMaxTelemetryImpulseContinuityRegression << "\n"
               << "  face4 friction coherence gates(type-9 heavy scenes): basis_churn<=" << FrictionCoherenceGates::kMaxBasisChurnRatio
               << ", stable_type9_contacts>=" << FrictionCoherenceGates::kMinStableType9Contacts
-              << ", type9_fallback_rate<=" << FrictionCoherenceGates::kMaxType9FallbackRate << "\n";
+              << ", type9_fallback_rate<=" << FrictionCoherenceGates::kMaxType9FallbackRate
+              << ", face4_fallback_to_scalar_rate<=" << FrictionCoherenceGates::kMaxFace4FallbackToScalarRate << "\n";
 }
 
 } // namespace
@@ -1257,6 +1398,7 @@ int main(int argc, char** argv) {
     scenes.push_back(BuildFaceContactSlideToRest());
     scenes.push_back(BuildFaceContactMildRocking());
     scenes.push_back(BuildFaceContactStickSlipTransition());
+    scenes.push_back(BuildFace4IllConditionedFallbackCase());
 
     std::vector<ComparisonResult> results;
     results.reserve(scenes.size());

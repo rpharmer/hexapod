@@ -421,9 +421,107 @@ bool World::SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& 
             }
         }
 
-        const float diagMin = *std::min_element(diagonal.begin(), diagonal.end());
-        const float diagMax = *std::max_element(diagonal.begin(), diagonal.end());
-        conditionEstimate = (diagMin > kEpsilon) ? (diagMax / diagMin) : std::numeric_limits<float>::infinity();
+        constexpr float kSymmetryTolerance = 2e-3f;
+        for (int i = 0; i < 4; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                const float kij = K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)];
+                if (!std::isfinite(kij)) {
+                    fallbackReason = BlockSolveFallbackReason::NonFiniteResult;
+                    return false;
+                }
+            }
+            for (int j = i + 1; j < 4; ++j) {
+                const float aij = K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)];
+                const float aji = K[static_cast<std::size_t>(j)][static_cast<std::size_t>(i)];
+                if (!std::isfinite(aij) || !std::isfinite(aji)) {
+                    fallbackReason = BlockSolveFallbackReason::NonFiniteResult;
+                    return false;
+                }
+                const float scale = std::max(1.0f, std::max(std::abs(aij), std::abs(aji)));
+                if (std::abs(aij - aji) > kSymmetryTolerance * scale) {
+                    fallbackReason = BlockSolveFallbackReason::DegenerateMassMatrix;
+                    return false;
+                }
+            }
+        }
+
+        // Stronger condition estimate: ||K||_inf * ||K^-1||_inf (4x4 Gauss-Jordan inverse estimate).
+        float matrixNormInf = 0.0f;
+        for (int i = 0; i < 4; ++i) {
+            float rowSum = 0.0f;
+            for (int j = 0; j < 4; ++j) {
+                rowSum += std::abs(K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)]);
+            }
+            matrixNormInf = std::max(matrixNormInf, rowSum);
+        }
+        float augmented[4][8]{};
+        for (int i = 0; i < 4; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                augmented[i][j] = K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)];
+            }
+            augmented[i][4 + i] = 1.0f;
+        }
+        bool inverseFinite = true;
+        for (int col = 0; col < 4; ++col) {
+            int pivot = col;
+            float pivotAbs = std::abs(augmented[pivot][col]);
+            for (int row = col + 1; row < 4; ++row) {
+                const float cand = std::abs(augmented[row][col]);
+                if (cand > pivotAbs) {
+                    pivot = row;
+                    pivotAbs = cand;
+                }
+            }
+            if (pivotAbs <= contactSolverConfig_.blockDiagonalMinimum || !std::isfinite(pivotAbs)) {
+                fallbackReason = BlockSolveFallbackReason::DegenerateMassMatrix;
+                return false;
+            }
+            if (pivot != col) {
+                for (int k = 0; k < 8; ++k) {
+                    std::swap(augmented[col][k], augmented[pivot][k]);
+                }
+            }
+            const float pivotValue = augmented[col][col];
+            if (!std::isfinite(pivotValue) || std::abs(pivotValue) <= contactSolverConfig_.blockDiagonalMinimum) {
+                fallbackReason = BlockSolveFallbackReason::DegenerateMassMatrix;
+                return false;
+            }
+            const float invPivot = 1.0f / pivotValue;
+            for (int k = 0; k < 8; ++k) {
+                augmented[col][k] *= invPivot;
+            }
+            for (int row = 0; row < 4; ++row) {
+                if (row == col) {
+                    continue;
+                }
+                const float factor = augmented[row][col];
+                if (factor == 0.0f) {
+                    continue;
+                }
+                for (int k = 0; k < 8; ++k) {
+                    augmented[row][k] -= factor * augmented[col][k];
+                }
+            }
+        }
+        float inverseNormInf = 0.0f;
+        for (int i = 0; i < 4; ++i) {
+            float rowSum = 0.0f;
+            for (int j = 0; j < 4; ++j) {
+                const float vij = augmented[i][4 + j];
+                if (!std::isfinite(vij)) {
+                    inverseFinite = false;
+                    break;
+                }
+                rowSum += std::abs(vij);
+            }
+            if (!inverseFinite) {
+                break;
+            }
+            inverseNormInf = std::max(inverseNormInf, rowSum);
+        }
+        conditionEstimate = (inverseFinite && matrixNormInf > 0.0f)
+            ? (matrixNormInf * inverseNormInf)
+            : std::numeric_limits<float>::infinity();
         const float conditionCap =
             (contactSolverConfig_.face4ConditionEstimateMax > 0.0f)
                 ? contactSolverConfig_.face4ConditionEstimateMax
@@ -453,6 +551,10 @@ bool World::SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& 
             for (int j = 0; j < 4; ++j) {
                 shifted += K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] * oldLambda[static_cast<std::size_t>(j)];
             }
+            if (!std::isfinite(shifted)) {
+                fallbackReason = BlockSolveFallbackReason::NonFiniteResult;
+                return false;
+            }
             rhs[static_cast<std::size_t>(i)] = shifted;
         }
 
@@ -473,6 +575,29 @@ bool World::SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& 
             if (maxDelta <= contactSolverConfig_.face4ProjectedGaussSeidelEpsilon) {
                 break;
             }
+        }
+
+        float complementarityResidual = 0.0f;
+        for (int i = 0; i < 4; ++i) {
+            float wi = -rhs[static_cast<std::size_t>(i)];
+            for (int j = 0; j < 4; ++j) {
+                wi += K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] * lambda[static_cast<std::size_t>(j)];
+            }
+            if (!std::isfinite(wi) || !std::isfinite(lambda[static_cast<std::size_t>(i)])) {
+                fallbackReason = BlockSolveFallbackReason::NonFiniteResult;
+                return false;
+            }
+            const float primalViolation = std::max(0.0f, -lambda[static_cast<std::size_t>(i)]);
+            const float dualViolation = std::max(0.0f, -wi);
+            const float compViolation = std::abs(lambda[static_cast<std::size_t>(i)] * wi);
+            complementarityResidual = std::max(complementarityResidual, std::max(primalViolation, std::max(dualViolation, compViolation)));
+        }
+        const float residualThreshold = std::max(5e-4f, 20.0f * contactSolverConfig_.face4ProjectedGaussSeidelEpsilon);
+        if (complementarityResidual > residualThreshold) {
+            fallbackReason = (conditionCap > 0.0f && std::isfinite(conditionEstimate) && conditionEstimate > 0.5f * conditionCap)
+                ? BlockSolveFallbackReason::ConditionEstimateExceeded
+                : BlockSolveFallbackReason::LcpFailure;
+            return false;
         }
 
         for (int i = 0; i < 4; ++i) {
