@@ -82,6 +82,37 @@ struct JointSolverConfig {
     float hingeAnchorDampingFactor = 0.1f;
 };
 
+struct BroadphaseConfig {
+    float baseFatAabbMargin = 0.1f;
+    float linearVelocityMarginScale = 1.0f;
+    float angularVelocityMarginScale = 0.5f;
+    float minSweptMargin = 0.05f;
+    float maxSweptMargin = 1.0f;
+
+    float partialRebuildAreaRatioThreshold = 2.5f;
+    float partialRebuildAvgDepthThreshold = 24.0f;
+    float partialRebuildMovedProxyRatioThreshold = 0.20f;
+
+    float fullRebuildAreaRatioThreshold = 4.0f;
+    float fullRebuildMaxDepthThreshold = 96.0f;
+    float fullRebuildMovedProxyRatioThreshold = 0.50f;
+    float fullRebuildQueryNodeVisitsPerProxyThreshold = 256.0f;
+
+    std::uint32_t minStepsBetweenRebuilds = 8;
+};
+
+struct BroadphaseMetrics {
+    float areaRatio = 0.0f;
+    float maxDepth = 0.0f;
+    float avgDepth = 0.0f;
+    float movedProxyRatio = 0.0f;
+    float queryNodeVisitsPerProxy = 0.0f;
+    std::uint32_t queryNodeVisits = 0;
+    std::uint32_t validProxyCount = 0;
+    bool partialRebuildTriggered = false;
+    bool fullRebuildTriggered = false;
+};
+
 struct Contact {
     std::uint32_t a = 0;
     std::uint32_t b = 0;
