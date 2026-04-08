@@ -97,6 +97,12 @@ public:
         std::uint64_t topologyChangeEvents = 0;
         std::uint64_t impulseResetPoints = 0;
         std::uint64_t selectedPairOscillationEvents = 0;
+        std::uint64_t manifoldPointAdds = 0;
+        std::uint64_t manifoldPointRemoves = 0;
+        std::uint64_t manifoldPointReorders = 0;
+        std::uint64_t manifoldQualityLow = 0;
+        std::uint64_t manifoldQualityMedium = 0;
+        std::uint64_t manifoldQualityHigh = 0;
         std::uint64_t tangentBasisResets = 0;
         std::uint64_t tangentBasisReused = 0;
         std::uint64_t tangentImpulseReprojected = 0;
@@ -924,6 +930,162 @@ private:
 
     static void SortManifoldContacts(std::vector<Contact>& contacts) {
         std::stable_sort(contacts.begin(), contacts.end(), ContactComesBefore);
+    }
+
+    struct ManifoldQualityScore {
+        float penetration = 0.0f;
+        float spreadArea = 0.0f;
+        float normalCoherence = 0.0f;
+        float total = 0.0f;
+    };
+
+    static ManifoldQualityScore ComputeManifoldQualityScore(const Manifold& manifold) {
+        ManifoldQualityScore score{};
+        if (manifold.contacts.empty()) {
+            return score;
+        }
+        Vec3 normal = Normalize(manifold.normal);
+        if (LengthSquared(normal) <= kEpsilon) {
+            normal = manifold.contacts.front().normal;
+        }
+        normal = Normalize(normal);
+        Vec3 centroid{0.0f, 0.0f, 0.0f};
+        for (const Contact& c : manifold.contacts) {
+            score.penetration += std::max(c.penetration, 0.0f);
+            centroid += c.point;
+            score.normalCoherence += std::max(0.0f, Dot(Normalize(c.normal), normal));
+        }
+        const float invN = 1.0f / static_cast<float>(manifold.contacts.size());
+        centroid *= invN;
+        score.penetration *= invN;
+        score.normalCoherence *= invN;
+        for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
+            const Vec3 ai = manifold.contacts[i].point - centroid;
+            for (std::size_t j = i + 1; j < manifold.contacts.size(); ++j) {
+                const Vec3 aj = manifold.contacts[j].point - centroid;
+                score.spreadArea = std::max(score.spreadArea, Length(Cross(ai, aj)));
+            }
+        }
+        score.total = score.penetration + (0.5f * score.spreadArea) + (0.25f * score.normalCoherence);
+        return score;
+    }
+
+    static void ReduceManifoldToMaxPoints(Manifold& manifold, std::size_t maxPoints = 4) {
+        if (manifold.contacts.size() <= maxPoints) {
+            return;
+        }
+        const Vec3 centroid = [&]() {
+            Vec3 c{0.0f, 0.0f, 0.0f};
+            for (const Contact& contact : manifold.contacts) {
+                c += contact.point;
+            }
+            return c * (1.0f / static_cast<float>(manifold.contacts.size()));
+        }();
+        Vec3 manifoldNormal = Normalize(manifold.normal);
+        if (LengthSquared(manifoldNormal) <= kEpsilon) {
+            manifoldNormal = {0.0f, 1.0f, 0.0f};
+        }
+        std::stable_sort(manifold.contacts.begin(), manifold.contacts.end(), [&](const Contact& lhs, const Contact& rhs) {
+            const float lhsSpread = LengthSquared(lhs.point - centroid);
+            const float rhsSpread = LengthSquared(rhs.point - centroid);
+            const float lhsScore = std::max(lhs.penetration, 0.0f) + (0.25f * lhsSpread) + 0.25f * std::max(0.0f, Dot(lhs.normal, manifoldNormal));
+            const float rhsScore = std::max(rhs.penetration, 0.0f) + (0.25f * rhsSpread) + 0.25f * std::max(0.0f, Dot(rhs.normal, manifoldNormal));
+            if (lhsScore != rhsScore) {
+                return lhsScore > rhsScore;
+            }
+            return ContactComesBefore(lhs, rhs);
+        });
+        manifold.contacts.resize(maxPoints);
+    }
+
+    class ManifoldManager {
+    public:
+        explicit ManifoldManager(World& world)
+            : world_(world) {}
+
+        void Process(Manifold& manifold, const Manifold* previous) const {
+            const std::vector<Contact> originalContacts = manifold.contacts;
+            std::unordered_map<std::uint64_t, Contact> mergedByKey;
+            mergedByKey.reserve(manifold.contacts.size());
+            for (const Contact& contact : manifold.contacts) {
+                if (!std::isfinite(contact.penetration) || contact.penetration <= 0.0f) {
+                    continue;
+                }
+                auto it = mergedByKey.find(contact.key);
+                if (it == mergedByKey.end()) {
+                    mergedByKey.emplace(contact.key, contact);
+                    continue;
+                }
+                Contact& existing = it->second;
+                if (contact.persistenceAge > existing.persistenceAge
+                    || (contact.persistenceAge == existing.persistenceAge && contact.penetration > existing.penetration)) {
+                    existing = contact;
+                }
+            }
+            manifold.contacts.clear();
+            manifold.contacts.reserve(mergedByKey.size());
+            for (const auto& [_, contact] : mergedByKey) {
+                manifold.contacts.push_back(contact);
+            }
+            ReduceManifoldToMaxPoints(manifold, 4);
+            SortManifoldContacts(manifold.contacts);
+            const ManifoldQualityScore qualityScore = ComputeManifoldQualityScore(manifold);
+            manifold.lowQuality = qualityScore.total < 0.05f || qualityScore.normalCoherence < 0.5f;
+#ifndef NDEBUG
+            if (qualityScore.total < 0.05f) {
+                ++world_.solverTelemetry_.manifoldQualityLow;
+            } else if (qualityScore.total < 0.2f) {
+                ++world_.solverTelemetry_.manifoldQualityMedium;
+            } else {
+                ++world_.solverTelemetry_.manifoldQualityHigh;
+            }
+            if (originalContacts.size() > manifold.contacts.size()) {
+                world_.solverTelemetry_.manifoldPointRemoves += (originalContacts.size() - manifold.contacts.size());
+            }
+            if (previous != nullptr) {
+                std::unordered_map<std::uint64_t, int> oldCounts;
+                std::unordered_map<std::uint64_t, int> newCounts;
+                for (const Contact& c : previous->contacts) {
+                    ++oldCounts[c.key];
+                }
+                for (const Contact& c : manifold.contacts) {
+                    ++newCounts[c.key];
+                }
+                for (const auto& [key, oldCount] : oldCounts) {
+                    const int newCount = newCounts.count(key) > 0 ? newCounts.at(key) : 0;
+                    if (newCount < oldCount) {
+                        world_.solverTelemetry_.manifoldPointRemoves += static_cast<std::uint64_t>(oldCount - newCount);
+                    }
+                }
+                for (const auto& [key, newCount] : newCounts) {
+                    const int oldCount = oldCounts.count(key) > 0 ? oldCounts.at(key) : 0;
+                    if (newCount > oldCount) {
+                        world_.solverTelemetry_.manifoldPointAdds += static_cast<std::uint64_t>(newCount - oldCount);
+                    }
+                }
+                if (previous->contacts.size() == manifold.contacts.size()) {
+                    bool orderChanged = false;
+                    for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
+                        if (previous->contacts[i].key != manifold.contacts[i].key) {
+                            orderChanged = true;
+                            break;
+                        }
+                    }
+                    if (orderChanged) {
+                        ++world_.solverTelemetry_.manifoldPointReorders;
+                    }
+                }
+            }
+#endif
+        }
+
+    private:
+        World& world_;
+    };
+
+    void ManageManifoldContacts(Manifold& manifold, const Manifold* previous) {
+        ManifoldManager manager(*this);
+        manager.Process(manifold, previous);
     }
 
     void BuildManifolds();
