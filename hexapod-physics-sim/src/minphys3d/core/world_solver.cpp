@@ -2,6 +2,8 @@
 #include "subsystems.hpp"
 #include "constraint_solver.hpp"
 #include "sleep_system.hpp"
+#include "../solver/block2_solver.hpp"
+#include "../solver/block4_solver.hpp"
 
 namespace minphys3d {
 void World::ResolveTOIPipeline(float dt) {
@@ -161,14 +163,11 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
             fallbackReason = BlockSolveFallbackReason::InvalidManifoldNormal;
             return false;
         }
-        if (Dot(c0.normal, manifoldNormal) < 0.95f || Dot(c1.normal, manifoldNormal) < 0.95f) {
-            fallbackReason = BlockSolveFallbackReason::ContactNormalMismatch;
-            return false;
-        }
         Vec3 normal0 = Normalize(c0.normal);
         Vec3 normal1 = Normalize(c1.normal);
-        if (LengthSquared(normal0) <= kEpsilon || LengthSquared(normal1) <= kEpsilon) {
-            fallbackReason = BlockSolveFallbackReason::InvalidManifoldNormal;
+        if (Dot(c0.normal, manifoldNormal) < 0.95f || Dot(c1.normal, manifoldNormal) < 0.95f
+            || LengthSquared(normal0) <= kEpsilon || LengthSquared(normal1) <= kEpsilon) {
+            fallbackReason = BlockSolveFallbackReason::ContactNormalMismatch;
             return false;
         }
 
@@ -178,39 +177,6 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
         const Vec3 rb0 = c0.point - b.position;
         const Vec3 ra1 = c1.point - a.position;
         const Vec3 rb1 = c1.point - b.position;
-
-        const Vec3 ra0CrossN0 = Cross(ra0, normal0);
-        const Vec3 rb0CrossN0 = Cross(rb0, normal0);
-        const Vec3 ra1CrossN1 = Cross(ra1, normal1);
-        const Vec3 rb1CrossN1 = Cross(rb1, normal1);
-
-        const float invMassSum = a.invMass + b.invMass;
-        const float normalDot = Dot(normal0, normal1);
-        const float k11 = invMassSum + Dot(ra0CrossN0, invIA * ra0CrossN0) + Dot(rb0CrossN0, invIB * rb0CrossN0);
-        const float k22 = invMassSum + Dot(ra1CrossN1, invIA * ra1CrossN1) + Dot(rb1CrossN1, invIB * rb1CrossN1);
-        const float k12 = invMassSum * normalDot + Dot(ra0CrossN0, invIA * ra1CrossN1) + Dot(rb0CrossN0, invIB * rb1CrossN1);
-        const float k21 = k12;
-
-        const float det = k11 * k22 - k12 * k21;
-        determinantOrConditionEstimate = det;
-        if (k11 <= contactSolverConfig_.blockDiagonalMinimum || k22 <= contactSolverConfig_.blockDiagonalMinimum) {
-            fallbackReason = BlockSolveFallbackReason::DegenerateMassMatrix;
-            return false;
-        }
-        if (std::abs(det) <= contactSolverConfig_.blockDeterminantEpsilon) {
-            fallbackReason = BlockSolveFallbackReason::DegenerateMassMatrix;
-            return false;
-        }
-        if (contactSolverConfig_.blockConditionEstimateMax > 0.0f) {
-            const float matrixNorm = std::max(std::abs(k11) + std::abs(k12), std::abs(k21) + std::abs(k22));
-            const float invNorm = std::max(std::abs(k22) + std::abs(k12), std::abs(k21) + std::abs(k11)) / std::abs(det);
-            const float conditionEstimate = matrixNorm * invNorm;
-            determinantOrConditionEstimate = conditionEstimate;
-            if (!std::isfinite(conditionEstimate) || conditionEstimate > contactSolverConfig_.blockConditionEstimateMax) {
-                fallbackReason = BlockSolveFallbackReason::ConditionEstimateExceeded;
-                return false;
-            }
-        }
 
         const int slot0 = FindBlockSlot(manifold, c0.key);
         const int slot1 = FindBlockSlot(manifold, c1.key);
@@ -226,6 +192,13 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
         const float vn0 = Dot(vb0 - va0, normal0);
         const float vn1 = Dot(vb1 - va1, normal1);
 
+        const Vec3 ra0CrossN0 = Cross(ra0, normal0);
+        const Vec3 rb0CrossN0 = Cross(rb0, normal0);
+        const Vec3 ra1CrossN1 = Cross(ra1, normal1);
+        const Vec3 rb1CrossN1 = Cross(rb1, normal1);
+        const float k11 = a.invMass + b.invMass + Dot(ra0CrossN0, invIA * ra0CrossN0) + Dot(rb0CrossN0, invIB * rb0CrossN0);
+        const float k22 = a.invMass + b.invMass + Dot(ra1CrossN1, invIA * ra1CrossN1) + Dot(rb1CrossN1, invIB * rb1CrossN1);
+
         const auto computeRhs = [&](Contact& c, const Vec3& contactNormal, float separatingVelocity, float contactNormalMass) {
             const float speedIntoContact = -separatingVelocity;
             const float restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
@@ -234,15 +207,13 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
             float biasTerm = 0.0f;
             const float penetrationError = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0f);
             if (contactSolverConfig_.useSplitImpulse && !solverRelaxationPassActive_) {
-                if (penetrationError > 0.0f) {
-                    if (contactNormalMass > kEpsilon) {
-                        const float boostedFactor = contactSolverConfig_.splitImpulseCorrectionFactor
-                            * (1.0f + contactSolverConfig_.highMassRatioSplitImpulseBoost * (massRatioBoost - 1.0f));
-                        const float correctionMagnitude = boostedFactor * penetrationError / contactNormalMass;
-                        const Vec3 correction = correctionMagnitude * contactNormal;
-                        AccumulateSplitImpulseCorrection(c.a, -correction * a.invMass, {0.0f, 0.0f, 0.0f});
-                        AccumulateSplitImpulseCorrection(c.b, correction * b.invMass, {0.0f, 0.0f, 0.0f});
-                    }
+                if (penetrationError > 0.0f && contactNormalMass > kEpsilon) {
+                    const float boostedFactor = contactSolverConfig_.splitImpulseCorrectionFactor
+                        * (1.0f + contactSolverConfig_.highMassRatioSplitImpulseBoost * (massRatioBoost - 1.0f));
+                    const float correctionMagnitude = boostedFactor * penetrationError / contactNormalMass;
+                    const Vec3 correction = correctionMagnitude * contactNormal;
+                    AccumulateSplitImpulseCorrection(c.a, -correction * a.invMass, {0.0f, 0.0f, 0.0f});
+                    AccumulateSplitImpulseCorrection(c.b, correction * b.invMass, {0.0f, 0.0f, 0.0f});
                 }
             } else if (currentSubstepDt_ > kEpsilon && !solverRelaxationPassActive_) {
                 const float maxSafeSeparatingSpeed = penetrationError / currentSubstepDt_;
@@ -253,101 +224,42 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
                     biasTerm = std::min(biasTerm, std::max(contactSolverConfig_.penetrationBiasMaxSpeed, 0.0f));
                 }
             }
-
             return -(1.0f + restitution) * separatingVelocity + std::max(biasTerm, 0.0f);
         };
 
-        const float rhs0 = computeRhs(c0, normal0, vn0, k11);
-        const float rhs1 = computeRhs(c1, normal1, vn1, k22);
+        solver_internal::Block2SolveInput solveInput{};
+        solveInput.invIA = invIA;
+        solveInput.invIB = invIB;
+        solveInput.invMassSum = a.invMass + b.invMass;
+        solveInput.blockDiagonalMinimum = contactSolverConfig_.blockDiagonalMinimum;
+        solveInput.blockDeterminantEpsilon = contactSolverConfig_.blockDeterminantEpsilon;
+        solveInput.blockConditionEstimateMax = contactSolverConfig_.blockConditionEstimateMax;
+        solveInput.contacts[0] = {normal0, ra0, rb0, std::max(c0.normalImpulseSum, 0.0f), computeRhs(c0, normal0, vn0, k11)};
+        solveInput.contacts[1] = {normal1, ra1, rb1, std::max(c1.normalImpulseSum, 0.0f), computeRhs(c1, normal1, vn1, k22)};
 
-        const float old0 = std::max(c0.normalImpulseSum, 0.0f);
-        const float old1 = std::max(c1.normalImpulseSum, 0.0f);
+        const solver_internal::Block2SolveResult result = solver_internal::SolveBlock2NormalLcp(solveInput);
+        determinantOrConditionEstimate = result.conditionEstimate;
+        fallbackReason = static_cast<BlockSolveFallbackReason>(result.fallbackReason);
+        if (!result.success) {
+            return false;
+        }
+
 #ifndef NDEBUG
-        manifold.blockSolveDebug.selectedPreNormalImpulses = {old0, old1};
+        manifold.blockSolveDebug.selectedPreNormalImpulses = {solveInput.contacts[0].oldImpulse, solveInput.contacts[1].oldImpulse};
         manifold.blockSolveDebug.selectedPairPenetrationStep = c0.penetration + c1.penetration;
 #endif
-        const float q0 = rhs0 + k11 * old0 + k12 * old1;
-        const float q1 = rhs1 + k21 * old0 + k22 * old1;
 
-        auto residualW = [&](float lambda0, float lambda1) {
-            return std::array<float, 2>{
-                k11 * lambda0 + k12 * lambda1 - q0,
-                k21 * lambda0 + k22 * lambda1 - q1,
-            };
-        };
-
-        constexpr float lcpEpsilon = 1e-5f;
-        bool solved = false;
-        float new0 = old0;
-        float new1 = old1;
-
-        const float invDet = 1.0f / det;
-        const float both0 = (k22 * q0 - k12 * q1) * invDet;
-        const float both1 = (-k21 * q0 + k11 * q1) * invDet;
-        if (both0 >= 0.0f && both1 >= 0.0f) {
-            const auto w = residualW(both0, both1);
-            if (w[0] >= -lcpEpsilon && w[1] >= -lcpEpsilon) {
-                new0 = both0;
-                new1 = both1;
-                solved = true;
-            }
-        }
-
-        if (!solved && k11 > kEpsilon) {
-            const float one0 = std::max(0.0f, q0 / k11);
-            const float one1 = 0.0f;
-            const auto w = residualW(one0, one1);
-            if (w[1] >= -lcpEpsilon) {
-                new0 = one0;
-                new1 = one1;
-                solved = true;
-            }
-        }
-
-        if (!solved && k22 > kEpsilon) {
-            const float one0 = 0.0f;
-            const float one1 = std::max(0.0f, q1 / k22);
-            const auto w = residualW(one0, one1);
-            if (w[0] >= -lcpEpsilon) {
-                new0 = one0;
-                new1 = one1;
-                solved = true;
-            }
-        }
-
-        if (!solved) {
-            const auto w = residualW(0.0f, 0.0f);
-            if (w[0] >= -lcpEpsilon && w[1] >= -lcpEpsilon) {
-                new0 = 0.0f;
-                new1 = 0.0f;
-                solved = true;
-            }
-        }
-
-        if (!solved) {
-            fallbackReason = BlockSolveFallbackReason::LcpFailure;
-            return false;
-        }
-        if (!std::isfinite(new0) || !std::isfinite(new1)) {
-            fallbackReason = BlockSolveFallbackReason::NonFiniteResult;
-            return false;
-        }
-
-        new0 = std::max(0.0f, new0);
-        new1 = std::max(0.0f, new1);
-        manifold.blockNormalImpulseSum[slot0] = new0;
-        manifold.blockNormalImpulseSum[slot1] = new1;
-        c0.normalImpulseSum = new0;
-        c1.normalImpulseSum = new1;
-        EnsurePerContactImpulseCache(manifold, c0.key)[0] = new0;
-        EnsurePerContactImpulseCache(manifold, c1.key)[0] = new1;
+        manifold.blockNormalImpulseSum[slot0] = result.solvedImpulses[0];
+        manifold.blockNormalImpulseSum[slot1] = result.solvedImpulses[1];
+        c0.normalImpulseSum = result.solvedImpulses[0];
+        c1.normalImpulseSum = result.solvedImpulses[1];
+        EnsurePerContactImpulseCache(manifold, c0.key)[0] = c0.normalImpulseSum;
+        EnsurePerContactImpulseCache(manifold, c1.key)[0] = c1.normalImpulseSum;
 #ifndef NDEBUG
-        manifold.blockSolveDebug.selectedPostNormalImpulses = {new0, new1};
+        manifold.blockSolveDebug.selectedPostNormalImpulses = {c0.normalImpulseSum, c1.normalImpulseSum};
 #endif
-        const float delta0 = new0 - old0;
-        const float delta1 = new1 - old1;
-        ApplyImpulse(a, b, invIA, invIB, ra0, rb0, delta0 * normal0);
-        ApplyImpulse(a, b, invIA, invIB, ra1, rb1, delta1 * normal1);
+        ApplyImpulse(a, b, invIA, invIB, ra0, rb0, result.impulseDeltas[0] * normal0);
+        ApplyImpulse(a, b, invIA, invIB, ra1, rb1, result.impulseDeltas[1] * normal1);
         return true;
     }
 
@@ -369,176 +281,30 @@ bool World::SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& 
             return false;
         }
 
-        std::array<Vec3, 4> normals{};
-        std::array<Vec3, 4> ra{};
-        std::array<Vec3, 4> rb{};
-        std::array<Vec3, 4> raCrossN{};
-        std::array<Vec3, 4> rbCrossN{};
-        std::array<float, 4> diagonal{};
-        std::array<float, 4> rhs{};
-        std::array<float, 4> oldLambda{};
-        std::array<std::array<float, 4>, 4> K{};
+        solver_internal::Block4SolveInput solveInput{};
+        solveInput.invIA = invIA;
+        solveInput.invIB = invIB;
+        solveInput.invMassSum = a.invMass + b.invMass;
+        solveInput.blockDiagonalMinimum = contactSolverConfig_.blockDiagonalMinimum;
+        solveInput.blockConditionEstimateMax = contactSolverConfig_.blockConditionEstimateMax;
+        solveInput.face4ConditionEstimateMax = contactSolverConfig_.face4ConditionEstimateMax;
+        solveInput.face4Iterations = std::max<int>(contactSolverConfig_.face4Iterations, 1);
+        solveInput.face4ProjectedGaussSeidelEpsilon = contactSolverConfig_.face4ProjectedGaussSeidelEpsilon;
+        solveInput.face4MinSpreadSq = contactSolverConfig_.face4MinSpreadSq;
+        solveInput.face4MinArea = contactSolverConfig_.face4MinArea;
 
-        const float invMassSum = a.invMass + b.invMass;
-        Vec3 centroid{0.0f, 0.0f, 0.0f};
-        for (const Contact& c : manifold.contacts) {
-            centroid += c.point;
-        }
-        centroid = centroid / 4.0f;
-        float spreadSq = 0.0f;
-        float areaProxy = 0.0f;
         for (int i = 0; i < 4; ++i) {
-            const Contact& c = manifold.contacts[static_cast<std::size_t>(i)];
-            spreadSq = std::max(spreadSq, LengthSquared(c.point - centroid));
-            for (int j = i + 1; j < 4; ++j) {
-                areaProxy = std::max(areaProxy, LengthSquared(Cross(c.point - centroid, manifold.contacts[static_cast<std::size_t>(j)].point - centroid)));
-            }
-            normals[static_cast<std::size_t>(i)] = Normalize(c.normal);
-            if (Dot(normals[static_cast<std::size_t>(i)], manifoldNormal) < 0.95f) {
+            Contact& c = manifold.contacts[static_cast<std::size_t>(i)];
+            const Vec3 normal = Normalize(c.normal);
+            if (Dot(normal, manifoldNormal) < 0.95f) {
                 fallbackReason = BlockSolveFallbackReason::ContactNormalMismatch;
                 return false;
             }
-            ra[static_cast<std::size_t>(i)] = c.point - a.position;
-            rb[static_cast<std::size_t>(i)] = c.point - b.position;
-            raCrossN[static_cast<std::size_t>(i)] = Cross(ra[static_cast<std::size_t>(i)], normals[static_cast<std::size_t>(i)]);
-            rbCrossN[static_cast<std::size_t>(i)] = Cross(rb[static_cast<std::size_t>(i)], normals[static_cast<std::size_t>(i)]);
-            oldLambda[static_cast<std::size_t>(i)] = std::max(c.normalImpulseSum, 0.0f);
-        }
-        if (spreadSq < contactSolverConfig_.face4MinSpreadSq || areaProxy < contactSolverConfig_.face4MinArea) {
-            fallbackReason = BlockSolveFallbackReason::QualityGate;
-            return false;
-        }
-
-        for (int i = 0; i < 4; ++i) {
-            for (int j = 0; j < 4; ++j) {
-                const float nd = Dot(normals[static_cast<std::size_t>(i)], normals[static_cast<std::size_t>(j)]);
-                K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] =
-                    invMassSum * nd
-                    + Dot(raCrossN[static_cast<std::size_t>(i)], invIA * raCrossN[static_cast<std::size_t>(j)])
-                    + Dot(rbCrossN[static_cast<std::size_t>(i)], invIB * rbCrossN[static_cast<std::size_t>(j)]);
-            }
-            diagonal[static_cast<std::size_t>(i)] = K[static_cast<std::size_t>(i)][static_cast<std::size_t>(i)];
-            if (diagonal[static_cast<std::size_t>(i)] <= contactSolverConfig_.blockDiagonalMinimum) {
-                fallbackReason = BlockSolveFallbackReason::DegenerateMassMatrix;
-                return false;
-            }
-        }
-
-        constexpr float kSymmetryTolerance = 2e-3f;
-        for (int i = 0; i < 4; ++i) {
-            for (int j = 0; j < 4; ++j) {
-                const float kij = K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)];
-                if (!std::isfinite(kij)) {
-                    fallbackReason = BlockSolveFallbackReason::NonFiniteResult;
-                    return false;
-                }
-            }
-            for (int j = i + 1; j < 4; ++j) {
-                const float aij = K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)];
-                const float aji = K[static_cast<std::size_t>(j)][static_cast<std::size_t>(i)];
-                if (!std::isfinite(aij) || !std::isfinite(aji)) {
-                    fallbackReason = BlockSolveFallbackReason::NonFiniteResult;
-                    return false;
-                }
-                const float scale = std::max(1.0f, std::max(std::abs(aij), std::abs(aji)));
-                if (std::abs(aij - aji) > kSymmetryTolerance * scale) {
-                    fallbackReason = BlockSolveFallbackReason::DegenerateMassMatrix;
-                    return false;
-                }
-            }
-        }
-
-        // Stronger condition estimate: ||K||_inf * ||K^-1||_inf (4x4 Gauss-Jordan inverse estimate).
-        float matrixNormInf = 0.0f;
-        for (int i = 0; i < 4; ++i) {
-            float rowSum = 0.0f;
-            for (int j = 0; j < 4; ++j) {
-                rowSum += std::abs(K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)]);
-            }
-            matrixNormInf = std::max(matrixNormInf, rowSum);
-        }
-        float augmented[4][8]{};
-        for (int i = 0; i < 4; ++i) {
-            for (int j = 0; j < 4; ++j) {
-                augmented[i][j] = K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)];
-            }
-            augmented[i][4 + i] = 1.0f;
-        }
-        bool inverseFinite = true;
-        for (int col = 0; col < 4; ++col) {
-            int pivot = col;
-            float pivotAbs = std::abs(augmented[pivot][col]);
-            for (int row = col + 1; row < 4; ++row) {
-                const float cand = std::abs(augmented[row][col]);
-                if (cand > pivotAbs) {
-                    pivot = row;
-                    pivotAbs = cand;
-                }
-            }
-            if (pivotAbs <= contactSolverConfig_.blockDiagonalMinimum || !std::isfinite(pivotAbs)) {
-                fallbackReason = BlockSolveFallbackReason::DegenerateMassMatrix;
-                return false;
-            }
-            if (pivot != col) {
-                for (int k = 0; k < 8; ++k) {
-                    std::swap(augmented[col][k], augmented[pivot][k]);
-                }
-            }
-            const float pivotValue = augmented[col][col];
-            if (!std::isfinite(pivotValue) || std::abs(pivotValue) <= contactSolverConfig_.blockDiagonalMinimum) {
-                fallbackReason = BlockSolveFallbackReason::DegenerateMassMatrix;
-                return false;
-            }
-            const float invPivot = 1.0f / pivotValue;
-            for (int k = 0; k < 8; ++k) {
-                augmented[col][k] *= invPivot;
-            }
-            for (int row = 0; row < 4; ++row) {
-                if (row == col) {
-                    continue;
-                }
-                const float factor = augmented[row][col];
-                if (factor == 0.0f) {
-                    continue;
-                }
-                for (int k = 0; k < 8; ++k) {
-                    augmented[row][k] -= factor * augmented[col][k];
-                }
-            }
-        }
-        float inverseNormInf = 0.0f;
-        for (int i = 0; i < 4; ++i) {
-            float rowSum = 0.0f;
-            for (int j = 0; j < 4; ++j) {
-                const float vij = augmented[i][4 + j];
-                if (!std::isfinite(vij)) {
-                    inverseFinite = false;
-                    break;
-                }
-                rowSum += std::abs(vij);
-            }
-            if (!inverseFinite) {
-                break;
-            }
-            inverseNormInf = std::max(inverseNormInf, rowSum);
-        }
-        conditionEstimate = (inverseFinite && matrixNormInf > 0.0f)
-            ? (matrixNormInf * inverseNormInf)
-            : std::numeric_limits<float>::infinity();
-        const float conditionCap =
-            (contactSolverConfig_.face4ConditionEstimateMax > 0.0f)
-                ? contactSolverConfig_.face4ConditionEstimateMax
-                : contactSolverConfig_.blockConditionEstimateMax;
-        if (conditionCap > 0.0f && (!std::isfinite(conditionEstimate) || conditionEstimate > conditionCap)) {
-            fallbackReason = BlockSolveFallbackReason::ConditionEstimateExceeded;
-            return false;
-        }
-
-        for (int i = 0; i < 4; ++i) {
-            const Contact& c = manifold.contacts[static_cast<std::size_t>(i)];
-            const Vec3 va = a.velocity + Cross(a.angularVelocity, ra[static_cast<std::size_t>(i)]);
-            const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb[static_cast<std::size_t>(i)]);
-            const float vn = Dot(vb - va, normals[static_cast<std::size_t>(i)]);
+            const Vec3 ra = c.point - a.position;
+            const Vec3 rb = c.point - b.position;
+            const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
+            const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
+            const float vn = Dot(vb - va, normal);
             const float speedIntoContact = -vn;
             const float restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
             float biasTerm = 0.0f;
@@ -553,70 +319,34 @@ bool World::SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& 
                     biasTerm = std::min(biasTerm, std::max(contactSolverConfig_.penetrationBiasMaxSpeed, 0.0f));
                 }
             }
-            const float localRhs = -(1.0f + restitution) * vn + std::max(biasTerm, 0.0f);
-            float shifted = localRhs;
-            for (int j = 0; j < 4; ++j) {
-                shifted += K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] * oldLambda[static_cast<std::size_t>(j)];
-            }
-            if (!std::isfinite(shifted)) {
-                fallbackReason = BlockSolveFallbackReason::NonFiniteResult;
-                return false;
-            }
-            rhs[static_cast<std::size_t>(i)] = shifted;
+            solveInput.contacts[static_cast<std::size_t>(i)] = {
+                c.point,
+                normal,
+                ra,
+                rb,
+                std::max(c.normalImpulseSum, 0.0f),
+                -(1.0f + restitution) * vn + std::max(biasTerm, 0.0f),
+            };
         }
 
-        std::array<float, 4> lambda = oldLambda;
-        const int iterations = std::max<int>(contactSolverConfig_.face4Iterations, 1);
-        for (int iter = 0; iter < iterations; ++iter) {
-            float maxDelta = 0.0f;
-            for (int i = 0; i < 4; ++i) {
-                float sum = 0.0f;
-                for (int j = 0; j < 4; ++j) {
-                    if (i == j) continue;
-                    sum += K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] * lambda[static_cast<std::size_t>(j)];
-                }
-                const float newValue = std::max(0.0f, (rhs[static_cast<std::size_t>(i)] - sum) / diagonal[static_cast<std::size_t>(i)]);
-                maxDelta = std::max(maxDelta, std::abs(newValue - lambda[static_cast<std::size_t>(i)]));
-                lambda[static_cast<std::size_t>(i)] = newValue;
-            }
-            if (maxDelta <= contactSolverConfig_.face4ProjectedGaussSeidelEpsilon) {
-                break;
-            }
-        }
-
-        float complementarityResidual = 0.0f;
-        for (int i = 0; i < 4; ++i) {
-            float wi = -rhs[static_cast<std::size_t>(i)];
-            for (int j = 0; j < 4; ++j) {
-                wi += K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] * lambda[static_cast<std::size_t>(j)];
-            }
-            if (!std::isfinite(wi) || !std::isfinite(lambda[static_cast<std::size_t>(i)])) {
-                fallbackReason = BlockSolveFallbackReason::NonFiniteResult;
-                return false;
-            }
-            const float primalViolation = std::max(0.0f, -lambda[static_cast<std::size_t>(i)]);
-            const float dualViolation = std::max(0.0f, -wi);
-            const float compViolation = std::abs(lambda[static_cast<std::size_t>(i)] * wi);
-            complementarityResidual = std::max(complementarityResidual, std::max(primalViolation, std::max(dualViolation, compViolation)));
-        }
-        const float residualThreshold = std::max(5e-4f, 20.0f * contactSolverConfig_.face4ProjectedGaussSeidelEpsilon);
-        if (complementarityResidual > residualThreshold) {
-            fallbackReason = (conditionCap > 0.0f && std::isfinite(conditionEstimate) && conditionEstimate > 0.5f * conditionCap)
-                ? BlockSolveFallbackReason::ConditionEstimateExceeded
-                : BlockSolveFallbackReason::LcpFailure;
+        const solver_internal::Block4SolveResult result = solver_internal::SolveBlock4ProjectedGaussSeidel(solveInput);
+        conditionEstimate = result.conditionEstimate;
+        fallbackReason = static_cast<BlockSolveFallbackReason>(result.fallbackReason);
+        if (!result.success) {
             return false;
         }
 
         for (int i = 0; i < 4; ++i) {
-            if (!std::isfinite(lambda[static_cast<std::size_t>(i)])) {
-                fallbackReason = BlockSolveFallbackReason::NonFiniteResult;
-                return false;
-            }
             Contact& c = manifold.contacts[static_cast<std::size_t>(i)];
-            const float delta = lambda[static_cast<std::size_t>(i)] - oldLambda[static_cast<std::size_t>(i)];
-            c.normalImpulseSum = lambda[static_cast<std::size_t>(i)];
+            c.normalImpulseSum = result.solvedImpulses[static_cast<std::size_t>(i)];
             EnsurePerContactImpulseCache(manifold, c.key)[0] = c.normalImpulseSum;
-            ApplyImpulse(a, b, invIA, invIB, ra[static_cast<std::size_t>(i)], rb[static_cast<std::size_t>(i)], delta * normals[static_cast<std::size_t>(i)]);
+            ApplyImpulse(a,
+                         b,
+                         invIA,
+                         invIB,
+                         solveInput.contacts[static_cast<std::size_t>(i)].ra,
+                         solveInput.contacts[static_cast<std::size_t>(i)].rb,
+                         result.impulseDeltas[static_cast<std::size_t>(i)] * solveInput.contacts[static_cast<std::size_t>(i)].normal);
             const int slot = FindBlockSlot(manifold, c.key);
             if (slot >= 0) {
                 manifold.blockNormalImpulseSum[slot] = c.normalImpulseSum;
