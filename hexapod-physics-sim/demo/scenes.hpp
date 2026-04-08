@@ -2,6 +2,11 @@
 
 namespace minphys3d::demo {
 
-int RunDefaultScene();
+enum class SinkKind {
+    Dummy,
+    Udp,
+};
+
+int RunDefaultScene(SinkKind sink_kind = SinkKind::Dummy);
 
 } // namespace minphys3d::demo

@@ -2,13 +2,15 @@
 
 #include <cstdint>
 #include <iostream>
+#include <memory>
 
+#include "demo/frame_sink.hpp"
 #include "minphys3d/core/body.hpp"
 #include "minphys3d/core/world.hpp"
 
 namespace minphys3d::demo {
 
-int RunDefaultScene() {
+int RunDefaultScene(SinkKind sink_kind) {
     World world({0.0f, -9.81f, 0.0f});
 #ifndef NDEBUG
     world.SetBlockSolveDebugLogging(true);
@@ -21,7 +23,7 @@ int RunDefaultScene() {
     plane.restitution = 0.05f;
     plane.staticFriction = 0.9f;
     plane.dynamicFriction = 0.65f;
-    world.CreateBody(plane);
+    const std::uint32_t planeId = world.CreateBody(plane);
 
     Body boxA;
     boxA.shape = ShapeType::Box;
@@ -74,9 +76,20 @@ int RunDefaultScene() {
         0.5f,
         0.2f);
 
+    std::unique_ptr<FrameSink> sink =
+        sink_kind == SinkKind::Udp ? MakeUdpSink() : MakeDummySink();
+
     constexpr float dt = 1.0f / 60.0f;
     for (int frame = 0; frame < 120; ++frame) {
         world.Step(dt, 16);
+
+        sink->begin_frame(frame, static_cast<float>(frame + 1) * dt);
+        sink->emit_body(planeId, world.GetBody(planeId));
+        sink->emit_body(boxAId, world.GetBody(boxAId));
+        sink->emit_body(boxBId, world.GetBody(boxBId));
+        sink->emit_body(sphereId, world.GetBody(sphereId));
+        sink->end_frame();
+
         const Body& a = world.GetBody(boxAId);
         const Body& b = world.GetBody(boxBId);
         const Body& s = world.GetBody(sphereId);

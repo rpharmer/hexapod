@@ -35,6 +35,7 @@ if(MINPHYS3D_BUILD_DEMO)
         src/main.cpp
         ${MINPHYS3D_CORE_SOURCES}
         src/demo/scenes.cpp
+        src/demo/frame_sink.cpp
     )
     target_include_directories(hexapod-physics-sim PRIVATE ${MINPHYS3D_INCLUDE_DIRS})
     if(MSVC)
