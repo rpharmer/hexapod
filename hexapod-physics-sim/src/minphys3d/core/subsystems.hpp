@@ -115,7 +115,7 @@ struct ContactSolverContext {
     std::vector<Manifold>& manifolds;
     const std::vector<Manifold>& previousManifolds;
     std::function<bool(const ManifoldKey&, const Contact&, float&, std::array<float, 2>&, std::uint16_t&)> tryGetPersistentImpulseState;
-    std::function<void(std::vector<Contact>&)> sortManifoldContacts;
+    std::function<void(Manifold&, const Manifold*)> manageManifoldContacts;
     std::function<void(Manifold&)> refreshManifoldBlockCache;
     std::function<void(Manifold&)> selectBlockSolvePair;
     std::function<void(const Manifold&)> recordSelectedPairHistory;
@@ -159,11 +159,6 @@ public:
             if (!m.contacts.empty()) {
                 m.manifoldType = m.contacts.front().manifoldType;
             }
-            m.lowQuality = false;
-            m.blockSolveEligible = false;
-            m.usedBlockSolve = false;
-            context.sortManifoldContacts(m.contacts);
-
             const Manifold* previous = nullptr;
             for (const Manifold& old : context.previousManifolds) {
                 if (old.pairKey() == m.pairKey()) {
@@ -175,6 +170,10 @@ public:
                     break;
                 }
             }
+            m.lowQuality = false;
+            m.blockSolveEligible = false;
+            m.usedBlockSolve = false;
+            context.manageManifoldContacts(m, previous);
 
             if (previous == nullptr) {
                 m.blockNormalImpulseSum = {0.0f, 0.0f};

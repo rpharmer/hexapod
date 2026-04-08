@@ -193,7 +193,7 @@ void World::BuildManifolds() {
                 age = match.state.persistenceAge;
                 return true;
             },
-            [](std::vector<Contact>& manifoldContacts) { SortManifoldContacts(manifoldContacts); },
+            [this](Manifold& manifold, const Manifold* previous) { ManageManifoldContacts(manifold, previous); },
             [](Manifold& manifold) { RefreshManifoldBlockCache(manifold); },
             [this](Manifold& manifold) { SelectBlockSolvePair(manifold); },
 #ifndef NDEBUG
