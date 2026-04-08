@@ -1147,19 +1147,22 @@ void World::SolveServoJoint(ServoJoint& j) {
 
 void World::SolveContactsInManifold(Manifold& manifold) {
         core_internal::ContactSolver solver;
+        std::unordered_map<ManifoldKey, std::unordered_set<PersistentPointKey, PersistentPointKeyHash>, ManifoldKeyHash> warmStartUsedKeys;
         core_internal::ContactSolverContext context{
             bodies_,
             contacts_,
             manifolds_,
             previousManifolds_,
-            [this](const PersistentPointKey& key, float& normal, std::array<float, 2>& tangent, std::uint16_t& age) {
-                const auto it = persistentPointImpulses_.find(key);
-                if (it == persistentPointImpulses_.end()) {
+            [this, &warmStartUsedKeys](const ManifoldKey& manifoldId, const Contact& contact, float& normal, std::array<float, 2>& tangent, std::uint16_t& age) {
+                PersistentPointMatchCandidate match{};
+                std::unordered_set<PersistentPointKey, PersistentPointKeyHash>& usedKeys = warmStartUsedKeys[manifoldId];
+                if (!TryMatchPersistentPoint(persistentPointImpulses_, manifoldId, contact, usedKeys, match)) {
                     return false;
                 }
-                normal = it->second.normalImpulseSum;
-                tangent = {it->second.tangentImpulseSum0, it->second.tangentImpulseSum1};
-                age = it->second.persistenceAge;
+                usedKeys.insert(match.key);
+                normal = match.state.normalImpulseSum;
+                tangent = {match.state.tangentImpulseSum0, match.state.tangentImpulseSum1};
+                age = match.state.persistenceAge;
                 return true;
             },
             [](std::vector<Contact>& manifoldContacts) { SortManifoldContacts(manifoldContacts); },
@@ -1268,19 +1271,22 @@ bool World::TryComputeAnchorSeparation(const Contact& c, float& outPenetration) 
 
 void World::SolveIslands() {
         core_internal::ContactSolver solver;
+        std::unordered_map<ManifoldKey, std::unordered_set<PersistentPointKey, PersistentPointKeyHash>, ManifoldKeyHash> warmStartUsedKeys;
         core_internal::ContactSolverContext contactContext{
             bodies_,
             contacts_,
             manifolds_,
             previousManifolds_,
-            [this](const PersistentPointKey& key, float& normal, std::array<float, 2>& tangent, std::uint16_t& age) {
-                const auto it = persistentPointImpulses_.find(key);
-                if (it == persistentPointImpulses_.end()) {
+            [this, &warmStartUsedKeys](const ManifoldKey& manifoldId, const Contact& contact, float& normal, std::array<float, 2>& tangent, std::uint16_t& age) {
+                PersistentPointMatchCandidate match{};
+                std::unordered_set<PersistentPointKey, PersistentPointKeyHash>& usedKeys = warmStartUsedKeys[manifoldId];
+                if (!TryMatchPersistentPoint(persistentPointImpulses_, manifoldId, contact, usedKeys, match)) {
                     return false;
                 }
-                normal = it->second.normalImpulseSum;
-                tangent = {it->second.tangentImpulseSum0, it->second.tangentImpulseSum1};
-                age = it->second.persistenceAge;
+                usedKeys.insert(match.key);
+                normal = match.state.normalImpulseSum;
+                tangent = {match.state.tangentImpulseSum0, match.state.tangentImpulseSum1};
+                age = match.state.persistenceAge;
                 return true;
             },
             [](std::vector<Contact>& manifoldContacts) { SortManifoldContacts(manifoldContacts); },

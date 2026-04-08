@@ -114,7 +114,7 @@ struct ContactSolverContext {
     std::vector<Contact>& contacts;
     std::vector<Manifold>& manifolds;
     const std::vector<Manifold>& previousManifolds;
-    std::function<bool(const PersistentPointKey&, float&, std::array<float, 2>&, std::uint16_t&)> tryGetPersistentImpulseState;
+    std::function<bool(const ManifoldKey&, const Contact&, float&, std::array<float, 2>&, std::uint16_t&)> tryGetPersistentImpulseState;
     std::function<void(std::vector<Contact>&)> sortManifoldContacts;
     std::function<void(Manifold&)> refreshManifoldBlockCache;
     std::function<void(Manifold&)> selectBlockSolvePair;
@@ -196,15 +196,11 @@ public:
             }
 
             const ManifoldKey manifoldId{std::min(m.a, m.b), std::max(m.a, m.b), m.manifoldType};
-            std::unordered_map<std::uint64_t, std::uint8_t> currentFeatureOrdinal;
-            currentFeatureOrdinal.reserve(m.contacts.size());
             for (Contact& c : m.contacts) {
-                const std::uint8_t ordinal = currentFeatureOrdinal[c.featureKey]++;
-                const PersistentPointKey pointKey{manifoldId, c.featureKey, ordinal};
                 float normalImpulse = 0.0f;
                 std::array<float, 2> tangentImpulse{0.0f, 0.0f};
                 std::uint16_t persistenceAge = 0;
-                if (context.tryGetPersistentImpulseState(pointKey, normalImpulse, tangentImpulse, persistenceAge)) {
+                if (context.tryGetPersistentImpulseState(manifoldId, c, normalImpulse, tangentImpulse, persistenceAge)) {
                     c.normalImpulseSum = normalImpulse;
                     c.tangentImpulseSum0 = tangentImpulse[0];
                     c.tangentImpulseSum1 = tangentImpulse[1];

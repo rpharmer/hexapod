@@ -24,6 +24,10 @@ const JointSolverConfig& World::GetJointSolverConfig() const {
     return jointSolverConfig_;
 }
 
+const World::PersistenceMatchDiagnostics& World::GetPersistenceMatchDiagnostics() const {
+    return persistenceMatchDiagnostics_;
+}
+
 bool World::ComputeStableTangentFrame(
     const Vec3& manifoldNormal,
     const Vec3& relativeVelocity,

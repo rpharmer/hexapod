@@ -37,6 +37,13 @@ public:
 
     const ContactSolverConfig& GetContactSolverConfig() const;
     const JointSolverConfig& GetJointSolverConfig() const;
+    struct PersistenceMatchDiagnostics {
+        std::uint64_t matchedPoints = 0;
+        std::uint64_t droppedPoints = 0;
+        std::uint64_t newPoints = 0;
+        float churnRatio = 0.0f;
+    };
+    const PersistenceMatchDiagnostics& GetPersistenceMatchDiagnostics() const;
     void SetNarrowphaseDispatchPolicy(NarrowphaseDispatchPolicy policy);
     NarrowphaseDispatchPolicy GetNarrowphaseDispatchPolicy() const;
     static bool ComputeStableTangentFrame(
@@ -200,6 +207,8 @@ private:
     static constexpr float kWakeContactRelativeSpeedThreshold = 0.35f;
     static constexpr float kWakeContactPenetrationThreshold = 0.02f;
     static constexpr float kWakeJointRelativeSpeedThreshold = 0.15f;
+    static constexpr float kPersistenceLocalAnchorDriftThreshold = 0.06f;
+    static constexpr float kPersistenceWorldAnchorDriftThreshold = 0.08f;
 
     static bool IsFinite(float value);
     static bool IsFinite(const Vec3& v);
@@ -924,32 +933,137 @@ private:
         float tangentImpulseSum0 = 0.0f;
         float tangentImpulseSum1 = 0.0f;
         std::uint16_t persistenceAge = 0;
+        bool anchorsValid = false;
+        Vec3 localAnchorA{0.0f, 0.0f, 0.0f};
+        Vec3 localAnchorB{0.0f, 0.0f, 0.0f};
+        Vec3 worldPoint{0.0f, 0.0f, 0.0f};
     };
+
+    struct PersistentPointMatchCandidate {
+        PersistentPointKey key{};
+        PersistentPointImpulseState state{};
+        float localAnchorDriftSq = 0.0f;
+        float worldAnchorDriftSq = 0.0f;
+    };
+
+    static bool PersistentPointCandidateLess(
+        const PersistentPointMatchCandidate& lhs,
+        const PersistentPointMatchCandidate& rhs) {
+        const float lhsScore = lhs.localAnchorDriftSq + lhs.worldAnchorDriftSq;
+        const float rhsScore = rhs.localAnchorDriftSq + rhs.worldAnchorDriftSq;
+        if (lhsScore != rhsScore) {
+            return lhsScore < rhsScore;
+        }
+        if (lhs.localAnchorDriftSq != rhs.localAnchorDriftSq) {
+            return lhs.localAnchorDriftSq < rhs.localAnchorDriftSq;
+        }
+        if (lhs.worldAnchorDriftSq != rhs.worldAnchorDriftSq) {
+            return lhs.worldAnchorDriftSq < rhs.worldAnchorDriftSq;
+        }
+        if (lhs.key.ordinal != rhs.key.ordinal) {
+            return lhs.key.ordinal < rhs.key.ordinal;
+        }
+        return PersistentPointKeyHash{}(lhs.key) < PersistentPointKeyHash{}(rhs.key);
+    }
+
+    static bool TryMatchPersistentPoint(
+        const std::unordered_map<PersistentPointKey, PersistentPointImpulseState, PersistentPointKeyHash>& previousState,
+        const ManifoldKey& manifoldId,
+        const Contact& contact,
+        const std::unordered_set<PersistentPointKey, PersistentPointKeyHash>& usedKeys,
+        PersistentPointMatchCandidate& outCandidate) {
+        bool found = false;
+        PersistentPointMatchCandidate bestCandidate{};
+        const float localThresholdSq = kPersistenceLocalAnchorDriftThreshold * kPersistenceLocalAnchorDriftThreshold;
+        const float worldThresholdSq = kPersistenceWorldAnchorDriftThreshold * kPersistenceWorldAnchorDriftThreshold;
+        for (const auto& [key, state] : previousState) {
+            if (!(key.manifold == manifoldId) || key.canonicalFeatureId != contact.featureKey) {
+                continue;
+            }
+            if (usedKeys.find(key) != usedKeys.end()) {
+                continue;
+            }
+
+            float localDriftSq = worldThresholdSq;
+            float worldDriftSq = worldThresholdSq;
+            if (state.anchorsValid && contact.anchorsValid) {
+                const Vec3 dA = contact.localAnchorA - state.localAnchorA;
+                const Vec3 dB = contact.localAnchorB - state.localAnchorB;
+                localDriftSq = Dot(dA, dA) + Dot(dB, dB);
+            }
+            const Vec3 dWorld = contact.point - state.worldPoint;
+            worldDriftSq = Dot(dWorld, dWorld);
+
+            const bool localPass = !(state.anchorsValid && contact.anchorsValid) || localDriftSq <= localThresholdSq;
+            const bool worldPass = worldDriftSq <= worldThresholdSq;
+            if (!localPass || !worldPass) {
+                continue;
+            }
+
+            PersistentPointMatchCandidate candidate;
+            candidate.key = key;
+            candidate.state = state;
+            candidate.localAnchorDriftSq = localDriftSq;
+            candidate.worldAnchorDriftSq = worldDriftSq;
+            if (!found || PersistentPointCandidateLess(candidate, bestCandidate)) {
+                found = true;
+                bestCandidate = candidate;
+            }
+        }
+        if (found) {
+            outCandidate = bestCandidate;
+        }
+        return found;
+    }
 
     void CapturePersistentPointImpulseState(const std::vector<Manifold>& manifolds) {
         const auto previousState = persistentPointImpulses_;
         persistentPointImpulses_.clear();
+        std::unordered_set<PersistentPointKey, PersistentPointKeyHash> usedKeys;
+        std::uint64_t matchedPoints = 0;
+        std::uint64_t newPoints = 0;
         for (const Manifold& manifold : manifolds) {
             const ManifoldKey manifoldId = MakeManifoldId(manifold.a, manifold.b, manifold.manifoldType);
-            std::unordered_map<std::uint64_t, std::uint8_t> featureOrdinal;
-            featureOrdinal.reserve(manifold.contacts.size());
             for (const Contact& contact : manifold.contacts) {
-                const std::uint8_t ordinal = featureOrdinal[contact.featureKey]++;
-                const PersistentPointKey pointKey = MakePersistentPointKey(manifoldId, contact.featureKey, ordinal);
+                PersistentPointKey pointKey = MakePersistentPointKey(manifoldId, contact.featureKey, 0u);
                 std::uint16_t persistenceAge = 1;
-                const auto previousIt = previousState.find(pointKey);
-                if (previousIt != previousState.end()) {
+                PersistentPointMatchCandidate match{};
+                if (TryMatchPersistentPoint(previousState, manifoldId, contact, usedKeys, match)) {
+                    pointKey = match.key;
                     persistenceAge = static_cast<std::uint16_t>(
-                        std::min<std::uint32_t>(static_cast<std::uint32_t>(previousIt->second.persistenceAge) + 1u,
+                        std::min<std::uint32_t>(static_cast<std::uint32_t>(match.state.persistenceAge) + 1u,
                                                 static_cast<std::uint32_t>(std::numeric_limits<std::uint16_t>::max())));
+                    usedKeys.insert(match.key);
+                    ++matchedPoints;
+                } else {
+                    std::uint8_t maxOrdinal = 0u;
+                    for (const auto& [key, _] : previousState) {
+                        if (key.manifold == manifoldId && key.canonicalFeatureId == contact.featureKey) {
+                            maxOrdinal = static_cast<std::uint8_t>(std::max<std::uint32_t>(maxOrdinal, static_cast<std::uint32_t>(key.ordinal + 1u)));
+                        }
+                    }
+                    pointKey.ordinal = maxOrdinal;
+                    ++newPoints;
                 }
                 persistentPointImpulses_[pointKey] = {
                     contact.normalImpulseSum,
                     contact.tangentImpulseSum0,
                     contact.tangentImpulseSum1,
-                    persistenceAge};
+                    persistenceAge,
+                    contact.anchorsValid,
+                    contact.localAnchorA,
+                    contact.localAnchorB,
+                    contact.point};
             }
         }
+        persistenceMatchDiagnostics_.matchedPoints = matchedPoints;
+        persistenceMatchDiagnostics_.newPoints = newPoints;
+        persistenceMatchDiagnostics_.droppedPoints = previousState.size() >= usedKeys.size()
+            ? static_cast<std::uint64_t>(previousState.size() - usedKeys.size())
+            : 0u;
+        const float denom = static_cast<float>(std::max<std::uint64_t>(1u, previousState.size()));
+        persistenceMatchDiagnostics_.churnRatio = static_cast<float>(
+            static_cast<double>(persistenceMatchDiagnostics_.droppedPoints + persistenceMatchDiagnostics_.newPoints) / denom);
     }
 
     void BuildIslands() {
@@ -2728,6 +2842,7 @@ private:
     std::vector<PrismaticJoint> prismaticJoints_;
     std::vector<ServoJoint> servoJoints_;
     std::unordered_map<PersistentPointKey, PersistentPointImpulseState, PersistentPointKeyHash> persistentPointImpulses_;
+    PersistenceMatchDiagnostics persistenceMatchDiagnostics_{};
     std::unordered_map<NarrowphaseCacheKey, NarrowphaseCache, NarrowphaseCacheKeyHash> narrowphaseCache_;
     std::unordered_map<ConvexSeedKey, EpaPenetrationResult, ConvexSeedKeyHash> convexManifoldSeeds_;
 #ifndef NDEBUG
