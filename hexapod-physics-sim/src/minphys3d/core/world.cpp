@@ -16,12 +16,24 @@ void World::SetJointSolverConfig(const JointSolverConfig& config) {
     jointSolverConfig_ = config;
 }
 
+void World::SetBroadphaseConfig(const BroadphaseConfig& config) {
+    broadphaseConfig_ = config;
+}
+
 const ContactSolverConfig& World::GetContactSolverConfig() const {
     return contactSolverConfig_;
 }
 
 const JointSolverConfig& World::GetJointSolverConfig() const {
     return jointSolverConfig_;
+}
+
+const BroadphaseConfig& World::GetBroadphaseConfig() const {
+    return broadphaseConfig_;
+}
+
+const BroadphaseMetrics& World::GetBroadphaseMetrics() const {
+    return broadphaseMetrics_;
 }
 
 const World::PersistenceMatchDiagnostics& World::GetPersistenceMatchDiagnostics() const {
@@ -88,7 +100,7 @@ std::uint32_t World::CreateBody(const Body& bodyDef) {
     shapeGeometrySignatures_.push_back(ComputeShapeGeometrySignature(body));
 
     BroadphaseProxy proxy;
-    proxy.fatBox = ExpandAABB(body.ComputeAABB(), 0.1f);
+    proxy.fatBox = ExpandAABB(body.ComputeAABB(), ComputeProxyMargin(body));
     proxy.leaf = -1;
     proxy.valid = true;
     proxies_.push_back(proxy);
@@ -335,17 +347,22 @@ const std::vector<Manifold>& World::DebugManifolds() const {
 
 std::size_t World::BruteForcePairCount() const {
     std::size_t count = 0;
-    for (std::uint32_t i = 0; i < bodies_.size(); ++i) {
-        const AABB ai = bodies_[i].ComputeAABB();
-        for (std::uint32_t j = i + 1; j < bodies_.size(); ++j) {
+    for (std::uint32_t i = 0; i < proxies_.size(); ++i) {
+        const BroadphaseProxy& proxyA = proxies_[i];
+        if (!proxyA.valid || proxyA.leaf < 0) {
+            continue;
+        }
+        for (std::uint32_t j = i + 1; j < proxies_.size(); ++j) {
+            const BroadphaseProxy& proxyB = proxies_[j];
+            if (!proxyB.valid || proxyB.leaf < 0 || !Overlaps(proxyA.fatBox, proxyB.fatBox)) {
+                continue;
+            }
             const Body& a = bodies_[i];
             const Body& b = bodies_[j];
             if ((a.invMass == 0.0f && b.invMass == 0.0f) || (a.isSleeping && b.isSleeping)) {
                 continue;
             }
-            if (Overlaps(ai, bodies_[j].ComputeAABB())) {
-                ++count;
-            }
+            ++count;
         }
     }
     return count;

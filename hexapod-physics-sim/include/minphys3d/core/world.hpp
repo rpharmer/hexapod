@@ -34,9 +34,12 @@ public:
 
     void SetContactSolverConfig(const ContactSolverConfig& config);
     void SetJointSolverConfig(const JointSolverConfig& config);
+    void SetBroadphaseConfig(const BroadphaseConfig& config);
 
     const ContactSolverConfig& GetContactSolverConfig() const;
     const JointSolverConfig& GetJointSolverConfig() const;
+    const BroadphaseConfig& GetBroadphaseConfig() const;
+    const BroadphaseMetrics& GetBroadphaseMetrics() const;
     struct PersistenceMatchDiagnostics {
         std::uint64_t matchedPoints = 0;
         std::uint64_t droppedPoints = 0;
@@ -241,6 +244,12 @@ private:
     static AABB MergeAABB(const AABB& a, const AABB& b);
     static float SurfaceArea(const AABB& aabb);
     void UpdateBroadphaseProxies();
+    float ComputeProxyMargin(const Body& body) const;
+    void ReinsertProxy(std::uint32_t bodyId);
+    void PartialRebuildBroadphase();
+    void FullRebuildBroadphase();
+    void UpdateBroadphaseQualityMetrics();
+    void MaybeTriggerBroadphaseRebuild();
     void EnsureProxyInTree(std::uint32_t bodyId);
 
     std::int32_t AllocateNode();
@@ -2979,6 +2988,10 @@ private:
     Vec3 gravity_{};
     ContactSolverConfig contactSolverConfig_{};
     JointSolverConfig jointSolverConfig_{};
+    BroadphaseConfig broadphaseConfig_{};
+    mutable BroadphaseMetrics broadphaseMetrics_{};
+    std::uint64_t broadphaseStepCounter_ = 0;
+    std::uint64_t lastBroadphaseRebuildStep_ = 0;
     NarrowphaseDispatchPolicy narrowphaseDispatchPolicy_ = NarrowphaseDispatchPolicy::PreferSpecializedFastPaths;
     float currentSubstepDt_ = 1.0f / 60.0f;
     bool solverRelaxationPassActive_ = false;
@@ -2992,6 +3005,7 @@ private:
     std::int32_t rootNode_ = -1;
     std::int32_t freeNode_ = -1;
     std::size_t lastBroadphaseMovedProxyCount_ = 0;
+    std::vector<std::uint32_t> movedProxyIds_;
     std::vector<Contact> contacts_;
     std::vector<Contact> previousContacts_;
     std::vector<Manifold> manifolds_;

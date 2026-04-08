@@ -2,15 +2,37 @@
 #include "subsystems.hpp"
 
 namespace minphys3d {
+float World::ComputeProxyMargin(const Body& body) const {
+    const float linearSweep = Length(body.velocity) * currentSubstepDt_ * broadphaseConfig_.linearVelocityMarginScale;
+    float radiusLike = 0.5f;
+    if (body.shape == ShapeType::Sphere) {
+        radiusLike = body.radius;
+    } else if (body.shape == ShapeType::Box) {
+        radiusLike = Length(body.halfExtents);
+    } else if (body.shape == ShapeType::Capsule) {
+        radiusLike = body.halfHeight + body.radius;
+    }
+    const float angularSweep = Length(body.angularVelocity) * radiusLike * currentSubstepDt_ * broadphaseConfig_.angularVelocityMarginScale;
+    const float sweptMargin = linearSweep + angularSweep;
+    const float dynamicMargin = std::clamp(sweptMargin, broadphaseConfig_.minSweptMargin, broadphaseConfig_.maxSweptMargin);
+    return std::max(broadphaseConfig_.baseFatAabbMargin, dynamicMargin);
+}
+
 void World::UpdateBroadphaseProxies() {
     if (proxies_.size() != bodies_.size()) {
         proxies_.resize(bodies_.size());
     }
+    ++broadphaseStepCounter_;
     lastBroadphaseMovedProxyCount_ = 0;
+    movedProxyIds_.clear();
+    broadphaseMetrics_.partialRebuildTriggered = false;
+    broadphaseMetrics_.fullRebuildTriggered = false;
     for (std::size_t i = 0; i < bodies_.size(); ++i) {
+        const Body& body = bodies_[i];
         const AABB current = bodies_[i].ComputeAABB();
+        const float margin = ComputeProxyMargin(body);
         if (!proxies_[i].valid) {
-            proxies_[i].fatBox = ExpandAABB(current, 0.1f);
+            proxies_[i].fatBox = ExpandAABB(current, margin);
             proxies_[i].leaf = -1;
             proxies_[i].valid = true;
             EnsureProxyInTree(static_cast<std::uint32_t>(i));
@@ -18,12 +40,122 @@ void World::UpdateBroadphaseProxies() {
             if (proxies_[i].leaf >= 0) {
                 RemoveLeaf(proxies_[i].leaf);
             }
-            proxies_[i].fatBox = ExpandAABB(current, 0.1f);
+            proxies_[i].fatBox = ExpandAABB(current, margin);
             proxies_[i].leaf = InsertLeaf(static_cast<std::uint32_t>(i), proxies_[i].fatBox);
             ++lastBroadphaseMovedProxyCount_;
+            movedProxyIds_.push_back(static_cast<std::uint32_t>(i));
         } else {
             EnsureProxyInTree(static_cast<std::uint32_t>(i));
         }
+    }
+    UpdateBroadphaseQualityMetrics();
+    MaybeTriggerBroadphaseRebuild();
+}
+
+void World::ReinsertProxy(std::uint32_t bodyId) {
+    if (bodyId >= proxies_.size() || !proxies_[bodyId].valid) {
+        return;
+    }
+    if (proxies_[bodyId].leaf >= 0) {
+        RemoveLeaf(proxies_[bodyId].leaf);
+    }
+    proxies_[bodyId].leaf = InsertLeaf(bodyId, proxies_[bodyId].fatBox);
+}
+
+void World::PartialRebuildBroadphase() {
+    for (const std::uint32_t movedId : movedProxyIds_) {
+        ReinsertProxy(movedId);
+    }
+}
+
+void World::FullRebuildBroadphase() {
+    rootNode_ = -1;
+    freeNode_ = -1;
+    treeNodes_.clear();
+    for (BroadphaseProxy& proxy : proxies_) {
+        if (!proxy.valid) {
+            continue;
+        }
+        proxy.leaf = -1;
+    }
+    for (std::uint32_t bodyId = 0; bodyId < proxies_.size(); ++bodyId) {
+        EnsureProxyInTree(bodyId);
+    }
+}
+
+void World::UpdateBroadphaseQualityMetrics() {
+    broadphaseMetrics_ = {};
+    if (rootNode_ < 0 || proxies_.empty()) {
+        return;
+    }
+
+    std::uint32_t validProxyCount = 0;
+    for (const BroadphaseProxy& proxy : proxies_) {
+        if (proxy.valid && proxy.leaf >= 0) {
+            ++validProxyCount;
+        }
+    }
+    broadphaseMetrics_.validProxyCount = validProxyCount;
+    if (validProxyCount == 0) {
+        return;
+    }
+
+    float totalArea = 0.0f;
+    std::uint32_t maxDepth = 0;
+    std::uint32_t leafCount = 0;
+    std::uint64_t depthSum = 0;
+    std::vector<std::pair<std::int32_t, std::uint32_t>> stack;
+    stack.reserve(treeNodes_.size());
+    stack.push_back({rootNode_, 0u});
+    while (!stack.empty()) {
+        const auto [nodeId, depth] = stack.back();
+        stack.pop_back();
+        if (nodeId < 0) {
+            continue;
+        }
+        const TreeNode& node = treeNodes_[nodeId];
+        totalArea += SurfaceArea(node.box);
+        if (node.IsLeaf()) {
+            ++leafCount;
+            depthSum += depth;
+            maxDepth = std::max(maxDepth, depth);
+            continue;
+        }
+        stack.push_back({node.left, depth + 1u});
+        stack.push_back({node.right, depth + 1u});
+    }
+
+    const float rootArea = std::max(SurfaceArea(treeNodes_[rootNode_].box), kEpsilon);
+    broadphaseMetrics_.areaRatio = totalArea / rootArea;
+    broadphaseMetrics_.maxDepth = static_cast<float>(maxDepth);
+    broadphaseMetrics_.avgDepth = (leafCount > 0) ? static_cast<float>(depthSum) / static_cast<float>(leafCount) : 0.0f;
+    broadphaseMetrics_.movedProxyRatio = static_cast<float>(lastBroadphaseMovedProxyCount_) / static_cast<float>(validProxyCount);
+}
+
+void World::MaybeTriggerBroadphaseRebuild() {
+    if (broadphaseStepCounter_ - lastBroadphaseRebuildStep_ < broadphaseConfig_.minStepsBetweenRebuilds) {
+        return;
+    }
+    const bool fullRebuild =
+        broadphaseMetrics_.areaRatio >= broadphaseConfig_.fullRebuildAreaRatioThreshold
+        || broadphaseMetrics_.maxDepth >= broadphaseConfig_.fullRebuildMaxDepthThreshold
+        || broadphaseMetrics_.movedProxyRatio >= broadphaseConfig_.fullRebuildMovedProxyRatioThreshold
+        || broadphaseMetrics_.queryNodeVisitsPerProxy >= broadphaseConfig_.fullRebuildQueryNodeVisitsPerProxyThreshold;
+    const bool partialRebuild =
+        broadphaseMetrics_.areaRatio >= broadphaseConfig_.partialRebuildAreaRatioThreshold
+        || broadphaseMetrics_.avgDepth >= broadphaseConfig_.partialRebuildAvgDepthThreshold
+        || broadphaseMetrics_.movedProxyRatio >= broadphaseConfig_.partialRebuildMovedProxyRatioThreshold;
+
+    if (fullRebuild) {
+        FullRebuildBroadphase();
+        broadphaseMetrics_.fullRebuildTriggered = true;
+        lastBroadphaseRebuildStep_ = broadphaseStepCounter_;
+        UpdateBroadphaseQualityMetrics();
+    } else if (partialRebuild) {
+        PartialRebuildBroadphase();
+        broadphaseMetrics_.partialRebuildTriggered = true;
+        lastBroadphaseRebuildStep_ = broadphaseStepCounter_;
+        UpdateBroadphaseQualityMetrics();
     }
 }
 
@@ -245,10 +377,12 @@ std::int32_t World::Balance(std::int32_t iA) {
     }
 
 std::vector<Pair> World::ComputePotentialPairs() const {
-        std::vector<Pair> pairs;
-        if (bodies_.empty() || rootNode_ == -1) {
-            return pairs;
-        }
+    std::vector<Pair> pairs;
+    broadphaseMetrics_.queryNodeVisits = 0;
+    broadphaseMetrics_.queryNodeVisitsPerProxy = 0.0f;
+    if (bodies_.empty() || rootNode_ == -1) {
+        return pairs;
+    }
         std::unordered_set<std::uint64_t> seenPairs;
         seenPairs.reserve(bodies_.size() * 4);
         std::vector<std::int32_t> stack;
@@ -263,6 +397,7 @@ std::vector<Pair> World::ComputePotentialPairs() const {
             while (!stack.empty()) {
                 const std::int32_t nodeId = stack.back();
                 stack.pop_back();
+                ++broadphaseMetrics_.queryNodeVisits;
                 if (nodeId < 0 || nodeId == proxy.leaf || !Overlaps(proxy.fatBox, treeNodes_[nodeId].box)) {
                     continue;
                 }
@@ -285,6 +420,12 @@ std::vector<Pair> World::ComputePotentialPairs() const {
                 stack.push_back(treeNodes_[nodeId].left);
                 stack.push_back(treeNodes_[nodeId].right);
             }
+        }
+
+        const std::uint32_t validProxyCount = broadphaseMetrics_.validProxyCount;
+        if (validProxyCount > 0) {
+            broadphaseMetrics_.queryNodeVisitsPerProxy =
+                static_cast<float>(broadphaseMetrics_.queryNodeVisits) / static_cast<float>(validProxyCount);
         }
 
 #ifndef NDEBUG
