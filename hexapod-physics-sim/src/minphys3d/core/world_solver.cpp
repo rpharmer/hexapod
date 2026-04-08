@@ -230,21 +230,17 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
 
             float biasTerm = 0.0f;
             const float penetrationError = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0f);
-            if (contactSolverConfig_.useSplitImpulse) {
+            if (contactSolverConfig_.useSplitImpulse && !solverRelaxationPassActive_) {
                 if (penetrationError > 0.0f) {
                     const float invMassSum = a.invMass + b.invMass;
                     if (invMassSum > kEpsilon) {
                         const float correctionMagnitude = contactSolverConfig_.splitImpulseCorrectionFactor * penetrationError / invMassSum;
                         const Vec3 correction = correctionMagnitude * contactNormal;
-                        if (!a.isSleeping) {
-                            a.position -= correction * a.invMass;
-                        }
-                        if (!b.isSleeping) {
-                            b.position += correction * b.invMass;
-                        }
+                        AccumulateSplitImpulseCorrection(c.a, -correction * a.invMass, {0.0f, 0.0f, 0.0f});
+                        AccumulateSplitImpulseCorrection(c.b, correction * b.invMass, {0.0f, 0.0f, 0.0f});
                     }
                 }
-            } else if (currentSubstepDt_ > kEpsilon) {
+            } else if (currentSubstepDt_ > kEpsilon && !solverRelaxationPassActive_) {
                 const float maxSafeSeparatingSpeed = penetrationError / currentSubstepDt_;
                 if (separatingVelocity <= maxSafeSeparatingSpeed) {
                     biasTerm = (contactSolverConfig_.penetrationBiasFactor * penetrationError) / currentSubstepDt_;
@@ -540,7 +536,7 @@ bool World::SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& 
             const float restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
             float biasTerm = 0.0f;
             const float penetrationError = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0f);
-            if (currentSubstepDt_ > kEpsilon && !contactSolverConfig_.useSplitImpulse) {
+            if (currentSubstepDt_ > kEpsilon && !contactSolverConfig_.useSplitImpulse && !solverRelaxationPassActive_) {
                 const float maxSafeSeparatingSpeed = penetrationError / currentSubstepDt_;
                 if (vn <= maxSafeSeparatingSpeed) {
                     biasTerm = (contactSolverConfig_.penetrationBiasFactor * penetrationError) / currentSubstepDt_;
@@ -1224,6 +1220,52 @@ void World::SolveJointPositions() {
         jointSolver.SolveJointPositions(context);
     }
 
+void World::BeginSplitImpulseSubstep() {
+        splitLinearPositionDelta_.assign(bodies_.size(), Vec3{0.0f, 0.0f, 0.0f});
+        splitAngularPositionDelta_.assign(bodies_.size(), Vec3{0.0f, 0.0f, 0.0f});
+    }
+
+void World::AccumulateSplitImpulseCorrection(std::uint32_t bodyId, const Vec3& linearDelta, const Vec3& angularDelta) {
+        if (bodyId >= splitLinearPositionDelta_.size()) {
+            return;
+        }
+        if (bodies_[bodyId].isSleeping) {
+            return;
+        }
+        splitLinearPositionDelta_[bodyId] += linearDelta;
+        splitAngularPositionDelta_[bodyId] += angularDelta;
+    }
+
+void World::ApplySplitStabilization() {
+        if (!contactSolverConfig_.useSplitImpulse) {
+            return;
+        }
+        for (std::size_t i = 0; i < bodies_.size(); ++i) {
+            Body& body = bodies_[i];
+            if (body.invMass == 0.0f || body.isSleeping) {
+                continue;
+            }
+            body.position += splitLinearPositionDelta_[i];
+        }
+    }
+
+bool World::TryComputeAnchorSeparation(const Contact& c, float& outPenetration) const {
+        if (!c.anchorsValid || c.a >= bodies_.size() || c.b >= bodies_.size()) {
+            return false;
+        }
+        const Body& a = bodies_[c.a];
+        const Body& b = bodies_[c.b];
+        const Vec3 worldAnchorA = a.position + Rotate(a.orientation, c.localAnchorA);
+        const Vec3 worldAnchorB = b.position + Rotate(b.orientation, c.localAnchorB);
+        const float separation = Dot(worldAnchorB - worldAnchorA, c.normal);
+        const float penetration = std::max(0.0f, c.referenceSeparation - separation);
+        if (!std::isfinite(penetration)) {
+            return false;
+        }
+        outPenetration = penetration;
+        return true;
+    }
+
 void World::SolveIslands() {
         core_internal::ContactSolver solver;
         core_internal::ContactSolverContext contactContext{
@@ -1292,7 +1334,40 @@ void World::SolveIslands() {
         };
 
         for (const Island& island : islands_) {
-            for (std::size_t mi : island.manifolds) {
+            std::vector<std::size_t> manifoldOrder = island.manifolds;
+            if (contactSolverConfig_.enableSupportDepthOrdering) {
+                std::unordered_map<std::uint32_t, std::uint32_t> supportDepth;
+                for (std::uint32_t id : island.bodies) {
+                    supportDepth[id] = (bodies_[id].invMass == 0.0f) ? 0u : 1u;
+                }
+                for (int iter = 0; iter < 4; ++iter) {
+                    for (std::size_t mi : island.manifolds) {
+                        const Manifold& m = manifolds_[mi];
+                        const std::uint32_t da = supportDepth[m.a];
+                        const std::uint32_t db = supportDepth[m.b];
+                        if (bodies_[m.a].invMass == 0.0f && bodies_[m.b].invMass > 0.0f) {
+                            supportDepth[m.b] = std::max(supportDepth[m.b], da + 1);
+                        } else if (bodies_[m.b].invMass == 0.0f && bodies_[m.a].invMass > 0.0f) {
+                            supportDepth[m.a] = std::max(supportDepth[m.a], db + 1);
+                        }
+                    }
+                }
+                std::sort(manifoldOrder.begin(), manifoldOrder.end(), [&](std::size_t lhs, std::size_t rhs) {
+                    const Manifold& ml = manifolds_[lhs];
+                    const Manifold& mr = manifolds_[rhs];
+                    const std::uint32_t dl = std::min(supportDepth[ml.a], supportDepth[ml.b]);
+                    const std::uint32_t dr = std::min(supportDepth[mr.a], supportDepth[mr.b]);
+                    return dl < dr;
+                });
+#ifndef NDEBUG
+                ++solverTelemetry_.supportDepthOrderApplied;
+#endif
+            } else {
+#ifndef NDEBUG
+                ++solverTelemetry_.supportDepthOrderBypassed;
+#endif
+            }
+            for (std::size_t mi : manifoldOrder) {
                 solver.SolveContactsInManifold(contactContext, manifolds_[mi]);
             }
             for (std::size_t ji : island.joints) {
