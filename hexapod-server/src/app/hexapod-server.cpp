@@ -29,10 +29,12 @@ std::shared_ptr<AsyncLogger> makeLogger(bool enableFileLogging,
                                         const std::shared_ptr<AsyncLogger>& fallbackLogger = nullptr)
 {
   auto logger = std::make_shared<AsyncLogger>("app", LogLevel::Debug, 10000);
-  logger->AddSink(std::make_shared<ConsoleSink>());
+  logger->AddSink(
+      std::make_shared<LevelFilterSink>(std::make_shared<ConsoleSink>(), LogLevel::Info));
   if (enableFileLogging) {
     try {
-      logger->AddSink(std::make_shared<FileSink>(logFilePath));
+      logger->AddSink(
+          std::make_shared<LevelFilterSink>(std::make_shared<FileSink>(logFilePath), LogLevel::Debug));
     } catch (const std::exception& ex) {
       if (fallbackLogger) {
         LOG_WARN(fallbackLogger,

@@ -74,7 +74,7 @@ void logStatus(const std::shared_ptr<logging::AsyncLogger>& logger,
         return;
     }
 
-    LOG_INFO(
+    LOG_DEBUG(
         logger,
         "[diag] mode=", toString(status.active_mode),
         " est=", (status.estimator_valid ? "ok" : "bad"),

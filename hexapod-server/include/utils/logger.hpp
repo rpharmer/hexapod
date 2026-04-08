@@ -52,6 +52,33 @@ public:
     virtual void Flush() {}
 };
 
+class LevelFilterSink final : public LogSink {
+public:
+    LevelFilterSink(std::shared_ptr<LogSink> sink, LogLevel minLevel)
+        : sink_(std::move(sink)), minLevel_(minLevel) {}
+
+    void Write(
+        LogLevel level,
+        std::string_view loggerName,
+        std::string_view message,
+        const SourceLocation& location) override {
+        if (!sink_ || level < minLevel_) {
+            return;
+        }
+        sink_->Write(level, loggerName, message, location);
+    }
+
+    void Flush() override {
+        if (sink_) {
+            sink_->Flush();
+        }
+    }
+
+private:
+    std::shared_ptr<LogSink> sink_;
+    LogLevel minLevel_;
+};
+
 class ConsoleSink final : public LogSink {
 public:
     void Write(

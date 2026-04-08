@@ -48,7 +48,7 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
 
     const auto& estimator_diag = freshness_policy_.estimatorDiagnostics();
     const auto& intent_diag = freshness_policy_.intentDiagnostics();
-    LOG_INFO(logger_,
+    LOG_DEBUG(logger_,
              "runtime.metrics loops=",
              loops,
              " avg_control_dt_us=",
@@ -117,7 +117,7 @@ void RuntimeDiagnosticsReporter::maybeLogVisualizerRecovery() {
     if (!logger_ || consecutive_failures_ == 0) {
         return;
     }
-    LOG_INFO(logger_,
+    LOG_DEBUG(logger_,
              "visualizer.transport recovered after_failures=",
              consecutive_failures_,
              " policy=auto_recovery");
