@@ -15,6 +15,12 @@ enum class FrictionBudgetNormalSupportSource : std::uint8_t {
     BlendedSelectedPairAndManifold = 2,
 };
 
+enum class IslandSolveOrdering : std::uint8_t {
+    Insertion = 0,
+    SupportDepth = 1,
+    ShockPropagation = 2,
+};
+
 constexpr float kSleepLinearThreshold = 0.05f;
 constexpr float kSleepAngularThreshold = 0.05f;
 constexpr int kSleepFramesThreshold = 120;
@@ -33,7 +39,13 @@ struct ContactSolverConfig {
     bool enableRelaxationPass = false;
     std::uint8_t relaxationIterations = 0;
     float splitImpulseCorrectionFactor = 0.8f;
+    float highMassRatioSplitImpulseBoost = 0.35f;
+    float highMassRatioBiasBoost = 0.30f;
+    float highMassRatioThreshold = 8.0f;
+    float penetrationBiasMaxSpeed = 3.0f;
     bool enableSupportDepthOrdering = false;
+    bool enableDeterministicOrdering = true;
+    IslandSolveOrdering islandSolveOrdering = IslandSolveOrdering::Insertion;
     std::uint16_t manifoldAnchorReuseMinAge = 2;
     float manifoldAnchorReuseMaxSeparationDelta = 0.03f;
     std::uint32_t manifoldAnchorReuseMaxFallbackPerStep = 64;
@@ -71,6 +83,10 @@ struct ContactSolverConfig {
         FrictionBudgetNormalSupportSource::AllManifoldContacts;
     // Used only when support source is BlendedSelectedPairAndManifold.
     float frictionBudgetSelectedPairBlendWeight = 2.0f;
+    bool enablePersistentStickConstraints = true;
+    float stickVelocityThreshold = 0.08f;
+    std::uint16_t stickMinPersistenceAge = 2;
+    float stickImpulseRetention = 0.92f;
 };
 
 struct JointSolverConfig {
@@ -157,6 +173,8 @@ struct Manifold {
     bool tangentBasisValid = false;
     std::array<float, 2> manifoldTangentImpulseSum{0.0f, 0.0f};
     bool manifoldTangentImpulseValid = false;
+    bool stickConstraintActive = false;
+    std::uint16_t stickConstraintAge = 0;
     // Cached per-contact impulse state: [normal, tangent0, tangent1].
     std::unordered_map<std::uint64_t, std::array<float, 3>> cachedImpulseByContactKey{};
     bool selectedBlockPairPersistent = false;

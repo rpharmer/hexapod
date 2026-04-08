@@ -305,6 +305,21 @@ private:
         return std::clamp(std::min(restitutionA, restitutionB), 0.0f, 1.0f);
     }
 
+    float ComputeHighMassRatioBoost(const Body& a, const Body& b) const {
+        if (a.invMass <= 0.0f || b.invMass <= 0.0f) {
+            return 1.0f;
+        }
+        const float massA = 1.0f / a.invMass;
+        const float massB = 1.0f / b.invMass;
+        const float massRatio = std::max(massA, massB) / std::max(std::min(massA, massB), kEpsilon);
+        if (massRatio <= contactSolverConfig_.highMassRatioThreshold) {
+            return 1.0f;
+        }
+        const float extra = (massRatio - contactSolverConfig_.highMassRatioThreshold)
+            / std::max(contactSolverConfig_.highMassRatioThreshold, 1.0f);
+        return 1.0f + std::max(extra, 0.0f);
+    }
+
     void AdvanceDynamicBodies(float dt) {
         if (dt <= 0.0f) {
             return;
@@ -1991,11 +2006,14 @@ private:
             }
         }
         const float penetrationError = std::max(penetration - contactSolverConfig_.penetrationSlop, 0.0f);
+        const float massRatioBoost = ComputeHighMassRatioBoost(a, b);
         if (contactSolverConfig_.useSplitImpulse && !solverRelaxationPassActive_) {
             if (penetrationError > 0.0f) {
                 const float invMassSum = a.invMass + b.invMass;
                 if (invMassSum > kEpsilon) {
-                    const float correctionMagnitude = contactSolverConfig_.splitImpulseCorrectionFactor * penetrationError / invMassSum;
+                    const float boostedFactor = contactSolverConfig_.splitImpulseCorrectionFactor
+                        * (1.0f + contactSolverConfig_.highMassRatioSplitImpulseBoost * (massRatioBoost - 1.0f));
+                    const float correctionMagnitude = boostedFactor * penetrationError / invMassSum;
                     const Vec3 correction = correctionMagnitude * c.normal;
                     AccumulateSplitImpulseCorrection(c.a, -correction * a.invMass, {0.0f, 0.0f, 0.0f});
                     AccumulateSplitImpulseCorrection(c.b, correction * b.invMass, {0.0f, 0.0f, 0.0f});
@@ -2004,7 +2022,10 @@ private:
         } else if (currentSubstepDt_ > kEpsilon && !solverRelaxationPassActive_) {
             const float maxSafeSeparatingSpeed = penetrationError / currentSubstepDt_;
             if (separatingVelocity <= maxSafeSeparatingSpeed) {
-                biasTerm = (contactSolverConfig_.penetrationBiasFactor * penetrationError) / currentSubstepDt_;
+                const float boostedBias = contactSolverConfig_.penetrationBiasFactor
+                    * (1.0f + contactSolverConfig_.highMassRatioBiasBoost * (massRatioBoost - 1.0f));
+                biasTerm = (boostedBias * penetrationError) / currentSubstepDt_;
+                biasTerm = std::min(biasTerm, std::max(contactSolverConfig_.penetrationBiasMaxSpeed, 0.0f));
             }
         }
         if (contactSolverConfig_.softContactBiasRate > 0.0f

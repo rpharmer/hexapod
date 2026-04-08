@@ -148,6 +148,8 @@ struct SolverVariantConfig {
     bool enableRelaxationPass = false;
     std::uint8_t relaxationIterations = 0;
     bool enableSupportDepthOrdering = false;
+    bool enableDeterministicOrdering = true;
+    minphys3d::IslandSolveOrdering islandSolveOrdering = minphys3d::IslandSolveOrdering::Insertion;
     bool enableSoftContacts = false;
     minphys3d::FrictionBudgetNormalSupportSource normalSupportSource =
         minphys3d::FrictionBudgetNormalSupportSource::AllManifoldContacts;
@@ -237,6 +239,8 @@ ContactSolverConfig MakeSolverConfig(const SolverVariantConfig& variant) {
     cfg.enableRelaxationPass = variant.enableRelaxationPass;
     cfg.relaxationIterations = variant.relaxationIterations;
     cfg.enableSupportDepthOrdering = variant.enableSupportDepthOrdering;
+    cfg.enableDeterministicOrdering = variant.enableDeterministicOrdering;
+    cfg.islandSolveOrdering = variant.islandSolveOrdering;
     if (variant.enableSoftContacts) {
         cfg.softContactMinAge = 3;
         cfg.softContactMaxNormalSpeed = 0.15f;
@@ -625,6 +629,7 @@ ComparisonResult CompareScene(const SceneConfig& source) {
     relaxationVariant.relaxationIterations = 2;
     SolverVariantConfig supportOrderedVariant = blockVariant;
     supportOrderedVariant.enableSupportDepthOrdering = true;
+    supportOrderedVariant.islandSolveOrdering = minphys3d::IslandSolveOrdering::ShockPropagation;
     SolverVariantConfig softContactVariant = blockVariant;
     softContactVariant.enableSoftContacts = true;
 
@@ -675,10 +680,22 @@ ComparisonResult CompareScene(const SceneConfig& source) {
     const bool isSlightlyOffsetPenetrationCase = out.scene == "slightly offset box stacks";
     const bool isMinimizedPenetrationCase = out.scene == "minimized penetration stack case";
     const bool isMinimizedStdDevCase = out.scene == "minimized contact variance reorder case";
+    const bool isFocusedStackCase = out.scene == "tall stack tower";
+    const bool isHeavyOnLightCase = out.scene == "heavy-on-light resting";
+    const bool isEdgeEdgeCase = out.scene == "edge-edge resting";
+    const bool isSlideToRestJitterCase = out.scene == "slide-to-rest jitter";
 
     if (!isSlightlyOffsetPenetrationCase && !isMinimizedPenetrationCase && !isMinimizedStdDevCase) {
         failAbsolute(out.scalar.maxPenetration, BlockSolverSafetyRails::kMaxAbsolutePenetration, "penetration(scalar)");
         failAbsolute(out.block.maxPenetration, BlockSolverSafetyRails::kMaxAbsolutePenetration, "penetration(block)");
+    }
+    if (isFocusedStackCase || isHeavyOnLightCase || isEdgeEdgeCase || isSlideToRestJitterCase) {
+        const float focusedMaxPenetration = isHeavyOnLightCase ? 0.40f : 0.28f;
+        const float focusedMaxJitter = isSlideToRestJitterCase ? 0.070f : 0.045f;
+        const std::uint32_t focusedMaxSleepThrash = isFocusedStackCase ? 12u : 8u;
+        failAbsolute(out.block.maxPenetration, focusedMaxPenetration, "focused/max_penetration");
+        failAbsolute(out.block.restWindowAngularJitterRms, focusedMaxJitter, "focused/angular_jitter_rms");
+        failAbsolute(static_cast<double>(out.block.wakeFlapCount), static_cast<double>(focusedMaxSleepThrash), "focused/sleep_thrash");
     }
 
     failRegression(out.block.maxPenetration - out.scalar.maxPenetration,
@@ -1129,6 +1146,94 @@ SceneConfig BuildMinimizedContactVarianceReorderCase() {
     return cfg;
 }
 
+SceneConfig BuildTallStackTower() {
+    SceneConfig cfg;
+    cfg.name = "tall stack tower";
+    cfg.world = World({0.0f, -9.81f, 0.0f});
+    cfg.world.CreateBody(MakePlane());
+
+    std::vector<std::uint32_t> ids;
+    for (int i = 0; i < 7; ++i) {
+        Body box;
+        box.shape = ShapeType::Box;
+        box.halfExtents = {0.28f, 0.20f, 0.28f};
+        box.mass = 1.0f + 0.15f * static_cast<float>(i);
+        box.position = {((i % 2 == 0) ? 0.012f : -0.012f), 0.55f + 0.44f * static_cast<float>(i), 0.0f};
+        ids.push_back(cfg.world.CreateBody(box));
+    }
+    cfg.trackedDynamicBodies = ids;
+    cfg.steps = 1200;
+    return cfg;
+}
+
+SceneConfig BuildHeavyOnLightResting() {
+    SceneConfig cfg;
+    cfg.name = "heavy-on-light resting";
+    cfg.world = World({0.0f, -9.81f, 0.0f});
+    cfg.world.CreateBody(MakePlane());
+
+    Body light;
+    light.shape = ShapeType::Box;
+    light.halfExtents = {0.35f, 0.18f, 0.35f};
+    light.mass = 0.8f;
+    light.position = {0.0f, 0.62f, 0.0f};
+    const auto lightId = cfg.world.CreateBody(light);
+
+    Body heavy = light;
+    heavy.mass = 24.0f;
+    heavy.position = {0.02f, 1.08f, 0.0f};
+    const auto heavyId = cfg.world.CreateBody(heavy);
+    cfg.trackedDynamicBodies = {lightId, heavyId};
+    cfg.steps = 1080;
+    return cfg;
+}
+
+SceneConfig BuildEdgeEdgeResting() {
+    SceneConfig cfg;
+    cfg.name = "edge-edge resting";
+    cfg.world = World({0.0f, -9.81f, 0.0f});
+    cfg.world.CreateBody(MakePlane());
+
+    Body base;
+    base.shape = ShapeType::Box;
+    base.halfExtents = {0.55f, 0.16f, 0.08f};
+    base.mass = 0.0f;
+    base.position = {0.0f, 0.16f, 0.0f};
+    cfg.world.CreateBody(base);
+
+    Body top;
+    top.shape = ShapeType::Box;
+    top.halfExtents = {0.52f, 0.16f, 0.08f};
+    top.mass = 2.8f;
+    top.position = {0.0f, 0.58f, 0.0f};
+    top.orientation = minphys3d::Normalize(Quat{0.9993908f, 0.0f, 0.0348995f, 0.0f});
+    const auto id = cfg.world.CreateBody(top);
+    cfg.trackedDynamicBodies = {id};
+    cfg.steps = 1040;
+    return cfg;
+}
+
+SceneConfig BuildSlideToRestJitterCase() {
+    SceneConfig cfg;
+    cfg.name = "slide-to-rest jitter";
+    cfg.world = World({0.0f, -9.81f, 0.0f});
+    cfg.world.CreateBody(MakePlane());
+
+    Body box;
+    box.shape = ShapeType::Box;
+    box.halfExtents = {0.36f, 0.19f, 0.30f};
+    box.mass = 1.9f;
+    box.position = {-1.6f, 0.88f, 0.0f};
+    box.velocity = {3.2f, 0.0f, 0.15f};
+    box.angularVelocity = {0.0f, 0.35f, 0.0f};
+    box.staticFriction = 0.90f;
+    box.dynamicFriction = 0.58f;
+    const auto id = cfg.world.CreateBody(box);
+    cfg.trackedDynamicBodies = {id};
+    cfg.steps = 1100;
+    return cfg;
+}
+
 std::string ToJson(const std::vector<ComparisonResult>& results) {
     const auto writeTelemetryJson = [&](std::ostringstream& out, const RunMetrics::SolverTelemetrySnapshot& t) {
         out << "        \"telemetry\": {\n";
@@ -1561,6 +1666,10 @@ int main(int argc, char** argv) {
     scenes.push_back(BuildFaceContactMildRocking());
     scenes.push_back(BuildFaceContactStickSlipTransition());
     scenes.push_back(BuildFace4IllConditionedFallbackCase());
+    scenes.push_back(BuildTallStackTower());
+    scenes.push_back(BuildHeavyOnLightResting());
+    scenes.push_back(BuildEdgeEdgeResting());
+    scenes.push_back(BuildSlideToRestJitterCase());
 
     std::vector<ComparisonResult> results;
     results.reserve(scenes.size());
