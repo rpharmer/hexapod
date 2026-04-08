@@ -30,7 +30,17 @@ struct ContactSolverConfig {
     float penetrationBiasFactor = 0.0f;
     float positionalCorrectionPercent = 0.8f;
     bool useSplitImpulse = false;
+    bool enableRelaxationPass = false;
+    std::uint8_t relaxationIterations = 0;
     float splitImpulseCorrectionFactor = 0.8f;
+    bool enableSupportDepthOrdering = false;
+    std::uint16_t manifoldAnchorReuseMinAge = 2;
+    float manifoldAnchorReuseMaxSeparationDelta = 0.03f;
+    std::uint32_t manifoldAnchorReuseMaxFallbackPerStep = 64;
+    std::uint16_t softContactMinAge = 4;
+    float softContactMaxNormalSpeed = 0.2f;
+    float softContactBiasRate = 0.0f;
+    float softContactCompliance = 0.0f;
     float blockDeterminantEpsilon = 1e-8f;
     float blockDiagonalMinimum = 1e-6f;
     float blockConditionEstimateMax = 0.0f;
@@ -86,6 +96,10 @@ struct Contact {
     std::uint64_t key = 0;
     std::uint64_t featureKey = 0;
     std::uint16_t persistenceAge = 0;
+    Vec3 localAnchorA{};
+    Vec3 localAnchorB{};
+    float referenceSeparation = 0.0f;
+    bool anchorsValid = false;
 };
 
 struct Manifold {

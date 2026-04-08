@@ -101,6 +101,10 @@ public:
         std::uint64_t face4FallbackToBlock2 = 0;
         std::uint64_t face4FallbackToScalar = 0;
         std::uint64_t face4BlockedByFrictionCoherenceGate = 0;
+        std::uint64_t anchorReuseHitCount = 0;
+        std::uint64_t anchorReuseFallbackCount = 0;
+        std::uint64_t supportDepthOrderApplied = 0;
+        std::uint64_t supportDepthOrderBypassed = 0;
         std::uint64_t jointBlockSolveUsed = 0;
         std::uint64_t jointBlockFallbackDegenerate = 0;
         std::uint64_t jointBlockFallbackConditionEstimate = 0;
@@ -1660,26 +1664,51 @@ private:
         }
 
         float biasTerm = 0.0f;
-        const float penetrationError = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0f);
-        if (contactSolverConfig_.useSplitImpulse) {
+        float penetration = c.penetration;
+        if (c.anchorsValid && c.persistenceAge >= contactSolverConfig_.manifoldAnchorReuseMinAge) {
+            float anchorPenetration = 0.0f;
+            if (TryComputeAnchorSeparation(c, anchorPenetration)) {
+                penetration = anchorPenetration;
+#ifndef NDEBUG
+                ++solverTelemetry_.anchorReuseHitCount;
+#endif
+            } else {
+#ifndef NDEBUG
+                ++solverTelemetry_.anchorReuseFallbackCount;
+#endif
+            }
+        }
+        const float penetrationError = std::max(penetration - contactSolverConfig_.penetrationSlop, 0.0f);
+        if (contactSolverConfig_.useSplitImpulse && !solverRelaxationPassActive_) {
             if (penetrationError > 0.0f) {
                 const float invMassSum = a.invMass + b.invMass;
                 if (invMassSum > kEpsilon) {
                     const float correctionMagnitude = contactSolverConfig_.splitImpulseCorrectionFactor * penetrationError / invMassSum;
                     const Vec3 correction = correctionMagnitude * c.normal;
-                    if (!a.isSleeping) {
-                        a.position -= correction * a.invMass;
-                    }
-                    if (!b.isSleeping) {
-                        b.position += correction * b.invMass;
-                    }
+                    AccumulateSplitImpulseCorrection(c.a, -correction * a.invMass, {0.0f, 0.0f, 0.0f});
+                    AccumulateSplitImpulseCorrection(c.b, correction * b.invMass, {0.0f, 0.0f, 0.0f});
                 }
             }
-        } else if (currentSubstepDt_ > kEpsilon) {
+        } else if (currentSubstepDt_ > kEpsilon && !solverRelaxationPassActive_) {
             const float maxSafeSeparatingSpeed = penetrationError / currentSubstepDt_;
             if (separatingVelocity <= maxSafeSeparatingSpeed) {
                 biasTerm = (contactSolverConfig_.penetrationBiasFactor * penetrationError) / currentSubstepDt_;
             }
+        }
+        if (contactSolverConfig_.softContactBiasRate > 0.0f
+            && contactSolverConfig_.softContactCompliance > 0.0f
+            && c.persistenceAge >= contactSolverConfig_.softContactMinAge
+            && std::abs(separatingVelocity) <= contactSolverConfig_.softContactMaxNormalSpeed
+            && separatingVelocity <= 0.0f) {
+            const float softBias = (contactSolverConfig_.softContactBiasRate * penetrationError)
+                / std::max(currentSubstepDt_, kEpsilon);
+            const float softenedMass = normalMass + contactSolverConfig_.softContactCompliance;
+            const float lambdaSoft = (softBias - separatingVelocity) / std::max(softenedMass, kEpsilon);
+            const float oldNormalImpulse = c.normalImpulseSum;
+            c.normalImpulseSum = std::max(0.0f, c.normalImpulseSum + lambdaSoft);
+            const float softDelta = c.normalImpulseSum - oldNormalImpulse;
+            ApplyImpulse(a, b, invIA, invIB, ra, rb, softDelta * c.normal);
+            return;
         }
 
         float lambdaN = -(1.0f + restitution) * separatingVelocity / normalMass;
@@ -2529,6 +2558,10 @@ private:
     void SolveIslands();
 
     void SolveJointPositions();
+    void BeginSplitImpulseSubstep();
+    void ApplySplitStabilization();
+    void AccumulateSplitImpulseCorrection(std::uint32_t bodyId, const Vec3& linearDelta, const Vec3& angularDelta);
+    bool TryComputeAnchorSeparation(const Contact& c, float& outPenetration) const;
 
     void ApplyImpulse(
         Body& a,
@@ -2605,7 +2638,10 @@ private:
     ContactSolverConfig contactSolverConfig_{};
     JointSolverConfig jointSolverConfig_{};
     float currentSubstepDt_ = 1.0f / 60.0f;
+    bool solverRelaxationPassActive_ = false;
     std::vector<Body> bodies_;
+    std::vector<Vec3> splitLinearPositionDelta_;
+    std::vector<Vec3> splitAngularPositionDelta_;
     std::vector<BroadphaseProxy> proxies_;
     std::vector<TreeNode> treeNodes_;
     std::int32_t rootNode_ = -1;

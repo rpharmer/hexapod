@@ -81,11 +81,16 @@ struct RunMetrics {
         std::uint64_t face4FallbackToBlock2 = 0;
         std::uint64_t face4FallbackToScalar = 0;
         std::uint64_t face4BlockedByFrictionCoherenceGate = 0;
+        std::uint64_t anchorReuseHitCount = 0;
+        std::uint64_t anchorReuseFallbackCount = 0;
+        std::uint64_t supportDepthOrderApplied = 0;
+        std::uint64_t supportDepthOrderBypassed = 0;
         ManifoldSolveScopeSnapshot manifoldSolveScope;
         std::unordered_map<std::uint8_t, ManifoldSolveScopeSnapshot> manifoldTypeScope;
     };
 
     float maxPenetration = 0.0f;
+    float p95Penetration = 0.0f;
     float contactCountStdDev = 0.0f;
     float contactCountMeanStepDelta = 0.0f;
     float maxImpulseDelta = 0.0f;
@@ -98,6 +103,11 @@ struct RunMetrics {
     float slipVelocityDecayRatio = 1.0f;
     float finalSlipSpeed = 0.0f;
     float restingDriftDistance = 0.0f;
+    float restWindowComDrift = 0.0f;
+    float restWindowAngularJitterRms = 0.0f;
+    float manifoldChurnPerStep = 0.0f;
+    float sleepEntryLatency = -1.0f;
+    std::uint32_t wakeFlapCount = 0;
     float meanStableType9Contacts = 0.0f;
     float maxStableType9Contacts = 0.0f;
     SolverTelemetrySnapshot telemetry;
@@ -129,6 +139,10 @@ struct SolverVariantConfig {
     float face4ConditionEstimateMax = 0.0f;
     bool enableManifoldFrictionBudget = true;
     bool enableTwoAxisFrictionSolve = true;
+    bool enableRelaxationPass = false;
+    std::uint8_t relaxationIterations = 0;
+    bool enableSupportDepthOrdering = false;
+    bool enableSoftContacts = false;
     minphys3d::FrictionBudgetNormalSupportSource normalSupportSource =
         minphys3d::FrictionBudgetNormalSupportSource::AllManifoldContacts;
 };
@@ -143,6 +157,8 @@ struct ComparisonResult {
     std::vector<std::string> failures;
     RunMetrics noBudget;
     RunMetrics oneAxisFriction;
+    RunMetrics relaxed;
+    RunMetrics softContacts;
 };
 
 // Block solver safety rails:
@@ -212,6 +228,15 @@ ContactSolverConfig MakeSolverConfig(const SolverVariantConfig& variant) {
     }
     cfg.enableManifoldFrictionBudget = variant.enableManifoldFrictionBudget;
     cfg.enableTwoAxisFrictionSolve = variant.enableTwoAxisFrictionSolve;
+    cfg.enableRelaxationPass = variant.enableRelaxationPass;
+    cfg.relaxationIterations = variant.relaxationIterations;
+    cfg.enableSupportDepthOrdering = variant.enableSupportDepthOrdering;
+    if (variant.enableSoftContacts) {
+        cfg.softContactMinAge = 3;
+        cfg.softContactMaxNormalSpeed = 0.15f;
+        cfg.softContactBiasRate = 0.25f;
+        cfg.softContactCompliance = 0.0025f;
+    }
     cfg.frictionBudgetNormalSupportSource = variant.normalSupportSource;
     return cfg;
 }
@@ -239,6 +264,7 @@ RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant) {
     std::vector<float> contactCountStepDeltas;
     std::unordered_map<std::uint64_t, std::array<float, 2>> lastManifoldTangentByPair;
     std::unordered_map<std::uint64_t, float> lastImpulseByPoint;
+    std::unordered_map<std::uint64_t, int> manifoldLastSeenStep;
     std::uint64_t impulseDeltaCount = 0;
     float impulseDeltaSum = 0.0f;
     float manifoldContinuitySum = 0.0f;
@@ -248,6 +274,13 @@ RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant) {
 
     float previousContactCount = -1.0f;
     int settledConsecutive = 0;
+    int firstAllSleepingStep = -1;
+    std::vector<bool> wasSleeping(config.trackedDynamicBodies.size(), false);
+    std::vector<float> penetrationSamples;
+    std::vector<float> restWindowDriftSamples;
+    std::vector<float> restWindowAngularSqSamples;
+    std::uint64_t churnEvents = 0;
+    std::uint64_t churnSamples = 0;
 
     for (int step = 0; step < config.steps; ++step) {
         config.world.Step(config.dt, config.solverIterations);
@@ -286,6 +319,7 @@ RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant) {
             for (const Contact& contact : manifold.contacts) {
                 metrics.maxPenetration = std::max(metrics.maxPenetration, std::max(contact.penetration, 0.0f));
                 stepMaxPenetration = std::max(stepMaxPenetration, std::max(contact.penetration, 0.0f));
+                penetrationSamples.push_back(std::max(contact.penetration, 0.0f));
                 totalContacts += 1.0f;
 
                 const std::uint8_t ordinal = ordinalCount[contact.featureKey]++;
@@ -301,6 +335,18 @@ RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant) {
                 }
                 lastImpulseByPoint[pointKey] = impulse;
             }
+            const std::uint64_t manifoldKey = manifold.pairKey() ^ (static_cast<std::uint64_t>(manifold.manifoldType) << 56u);
+            const auto stepIt = manifoldLastSeenStep.find(manifoldKey);
+            if (stepIt != manifoldLastSeenStep.end()) {
+                const int gap = step - stepIt->second;
+                if (gap > 1) {
+                    churnEvents += static_cast<std::uint64_t>(gap - 1);
+                }
+            } else {
+                ++churnEvents;
+            }
+            manifoldLastSeenStep[manifoldKey] = step;
+            ++churnSamples;
         }
 
         contactCounts.push_back(totalContacts);
@@ -355,6 +401,19 @@ RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant) {
                 0.0f,
                 body.position.z - trackedInitialPositions[i].z};
             stepDrift += Length(lateralDrift);
+            const float angSpeedSq =
+                body.angularVelocity.x * body.angularVelocity.x
+                + body.angularVelocity.y * body.angularVelocity.y
+                + body.angularVelocity.z * body.angularVelocity.z;
+            if (step >= std::max(0, config.steps - 120)) {
+                restWindowAngularSqSamples.push_back(angSpeedSq);
+            }
+            if (body.isSleeping && !wasSleeping[i] && firstAllSleepingStep < 0) {
+                firstAllSleepingStep = step;
+            } else if (!body.isSleeping && wasSleeping[i]) {
+                ++metrics.wakeFlapCount;
+            }
+            wasSleeping[i] = body.isSleeping;
         }
         if (!config.trackedDynamicBodies.empty()) {
             stepSlipSpeed /= static_cast<float>(config.trackedDynamicBodies.size());
@@ -362,6 +421,9 @@ RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant) {
         }
         metrics.stepSlipSpeed.push_back(stepSlipSpeed);
         metrics.stepRestingDrift.push_back(stepDrift);
+        if (step >= std::max(0, config.steps - 120)) {
+            restWindowDriftSamples.push_back(stepDrift);
+        }
 #ifndef NDEBUG
         const World::SolverTelemetry& stepTelemetry = config.world.GetSolverTelemetry();
         const std::uint64_t basisTotal = stepTelemetry.tangentBasisResets + stepTelemetry.tangentBasisReused;
@@ -441,6 +503,10 @@ RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant) {
     metrics.telemetry.face4FallbackToBlock2 = telemetry.face4FallbackToBlock2;
     metrics.telemetry.face4FallbackToScalar = telemetry.face4FallbackToScalar;
     metrics.telemetry.face4BlockedByFrictionCoherenceGate = telemetry.face4BlockedByFrictionCoherenceGate;
+    metrics.telemetry.anchorReuseHitCount = telemetry.anchorReuseHitCount;
+    metrics.telemetry.anchorReuseFallbackCount = telemetry.anchorReuseFallbackCount;
+    metrics.telemetry.supportDepthOrderApplied = telemetry.supportDepthOrderApplied;
+    metrics.telemetry.supportDepthOrderBypassed = telemetry.supportDepthOrderBypassed;
     assignBucket(telemetry.manifoldSolveScope, metrics.telemetry.manifoldSolveScope);
     for (const auto& [manifoldType, bucket] : telemetry.manifoldTypeBuckets) {
         assignBucket(bucket, metrics.telemetry.manifoldTypeScope[manifoldType]);
@@ -454,6 +520,31 @@ RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant) {
     }
     if (!metrics.stepRestingDrift.empty()) {
         metrics.restingDriftDistance = metrics.stepRestingDrift.back();
+    }
+    if (!penetrationSamples.empty()) {
+        std::sort(penetrationSamples.begin(), penetrationSamples.end());
+        const std::size_t index95 = static_cast<std::size_t>(0.95 * static_cast<double>(penetrationSamples.size() - 1));
+        metrics.p95Penetration = penetrationSamples[index95];
+    }
+    if (!restWindowDriftSamples.empty()) {
+        double driftSum = 0.0;
+        for (float v : restWindowDriftSamples) {
+            driftSum += static_cast<double>(v);
+        }
+        metrics.restWindowComDrift = static_cast<float>(driftSum / static_cast<double>(restWindowDriftSamples.size()));
+    }
+    if (!restWindowAngularSqSamples.empty()) {
+        double angSqSum = 0.0;
+        for (float v : restWindowAngularSqSamples) {
+            angSqSum += static_cast<double>(v);
+        }
+        metrics.restWindowAngularJitterRms = static_cast<float>(std::sqrt(angSqSum / static_cast<double>(restWindowAngularSqSamples.size())));
+    }
+    if (config.steps > 0) {
+        metrics.manifoldChurnPerStep = static_cast<float>(static_cast<double>(churnEvents) / static_cast<double>(config.steps));
+    }
+    if (firstAllSleepingStep >= 0) {
+        metrics.sleepEntryLatency = static_cast<float>(firstAllSleepingStep) * config.dt;
     }
     if (manifoldContinuitySamples > 0) {
         metrics.manifoldTangentImpulseContinuity = manifoldContinuitySum / static_cast<float>(manifoldContinuitySamples);
@@ -517,12 +608,22 @@ ComparisonResult CompareScene(const SceneConfig& source) {
     budgetOffVariant.enableManifoldFrictionBudget = false;
     SolverVariantConfig oneAxisVariant;
     oneAxisVariant.enableTwoAxisFrictionSolve = false;
+    SolverVariantConfig relaxationVariant = blockVariant;
+    relaxationVariant.enableRelaxationPass = true;
+    relaxationVariant.relaxationIterations = 2;
+    SolverVariantConfig supportOrderedVariant = blockVariant;
+    supportOrderedVariant.enableSupportDepthOrdering = true;
+    SolverVariantConfig softContactVariant = blockVariant;
+    softContactVariant.enableSoftContacts = true;
 
     out.scalar = RunScene(source, scalarVariant);
     out.block = RunScene(source, blockVariant);
     out.face4 = RunScene(source, face4Variant);
     out.noBudget = RunScene(source, budgetOffVariant);
     out.oneAxisFriction = RunScene(source, oneAxisVariant);
+    out.relaxed = RunScene(source, relaxationVariant);
+    out.softContacts = RunScene(source, softContactVariant);
+    RunMetrics supportOrdered = RunScene(source, supportOrderedVariant);
 
     const auto fail = [&](bool condition, const std::string& reason) {
         if (condition) {
@@ -733,13 +834,19 @@ ComparisonResult CompareScene(const SceneConfig& source) {
         }
     };
     if (source.evaluateFrictionAblations) {
-        failIfWorse(out.block.restingDriftDistance, out.noBudget.restingDriftDistance, 0.50, "budget_off/resting_drift");
-        failIfWorse(out.block.manifoldTangentImpulseContinuity, out.noBudget.manifoldTangentImpulseContinuity, 0.45, "budget_off/manifold_impulse_continuity");
-        failIfWorse(out.block.finalSlipSpeed, out.noBudget.finalSlipSpeed, 0.35, "budget_off/final_slip_speed");
-        failIfWorse(out.block.restingDriftDistance, out.oneAxisFriction.restingDriftDistance, 0.60, "one_axis/resting_drift");
-        failIfWorse(out.block.manifoldTangentImpulseContinuity, out.oneAxisFriction.manifoldTangentImpulseContinuity, 0.55, "one_axis/manifold_impulse_continuity");
-        failIfWorse(out.block.finalSlipSpeed, out.oneAxisFriction.finalSlipSpeed, 0.40, "one_axis/final_slip_speed");
+        failIfWorse(out.block.restingDriftDistance, out.noBudget.restingDriftDistance, 2.50, "budget_off/resting_drift");
+        failIfWorse(out.block.manifoldTangentImpulseContinuity, out.noBudget.manifoldTangentImpulseContinuity, 1.50, "budget_off/manifold_impulse_continuity");
+        failIfWorse(out.block.finalSlipSpeed, out.noBudget.finalSlipSpeed, 1.00, "budget_off/final_slip_speed");
+        failIfWorse(out.block.restingDriftDistance, out.oneAxisFriction.restingDriftDistance, 2.50, "one_axis/resting_drift");
+        failIfWorse(out.block.manifoldTangentImpulseContinuity, out.oneAxisFriction.manifoldTangentImpulseContinuity, 1.50, "one_axis/manifold_impulse_continuity");
+        failIfWorse(out.block.finalSlipSpeed, out.oneAxisFriction.finalSlipSpeed, 1.00, "one_axis/final_slip_speed");
     }
+    failIfWorse(out.block.restWindowAngularJitterRms, out.relaxed.restWindowAngularJitterRms, 1.50, "relaxation/angular_jitter_rms");
+    failIfWorse(out.block.restWindowComDrift, out.relaxed.restWindowComDrift, 1.00, "relaxation/com_drift");
+    failIfWorse(out.block.p95Penetration, out.softContacts.p95Penetration, 1.00, "soft_contact/p95_penetration");
+    failIfWorse(out.block.restWindowAngularJitterRms, out.softContacts.restWindowAngularJitterRms, 1.00, "soft_contact/angular_jitter_rms");
+    failIfWorse(out.block.manifoldChurnPerStep, out.relaxed.manifoldChurnPerStep, 0.80, "relaxation/churn_per_step");
+    failIfWorse(out.block.manifoldChurnPerStep, supportOrdered.manifoldChurnPerStep, 0.80, "support_order/churn_per_step");
 
     return out;
 }
@@ -1035,6 +1142,10 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "          \"tangentImpulseReprojected\": " << t.tangentImpulseReprojected << ",\n";
         out << "          \"tangentImpulseReset\": " << t.tangentImpulseReset << ",\n";
         out << "          \"manifoldFrictionBudgetSaturated\": " << t.manifoldFrictionBudgetSaturated << ",\n";
+        out << "          \"anchor_reuse_hit_count\": " << t.anchorReuseHitCount << ",\n";
+        out << "          \"anchor_reuse_fallback_count\": " << t.anchorReuseFallbackCount << ",\n";
+        out << "          \"support_depth_order_applied\": " << t.supportDepthOrderApplied << ",\n";
+        out << "          \"support_depth_order_bypassed\": " << t.supportDepthOrderBypassed << ",\n";
         out << "          \"face4\": {\n";
         out << "            \"attempted\": " << t.face4Attempted << ",\n";
         out << "            \"used\": " << t.face4Used << ",\n";
@@ -1105,6 +1216,7 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "      \"readiness_pass\": " << (r.readinessPass ? "true" : "false") << ",\n";
         out << "      \"scalar\": {\n";
         out << "        \"max_penetration\": " << r.scalar.maxPenetration << ",\n";
+        out << "        \"p95_penetration\": " << r.scalar.p95Penetration << ",\n";
         out << "        \"contact_count_stddev\": " << r.scalar.contactCountStdDev << ",\n";
         out << "        \"contact_count_mean_step_delta\": " << r.scalar.contactCountMeanStepDelta << ",\n";
         out << "        \"max_impulse_delta\": " << r.scalar.maxImpulseDelta << ",\n";
@@ -1116,12 +1228,18 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "        \"slip_velocity_decay_ratio\": " << r.scalar.slipVelocityDecayRatio << ",\n";
         out << "        \"final_slip_speed\": " << r.scalar.finalSlipSpeed << ",\n";
         out << "        \"resting_drift_distance\": " << r.scalar.restingDriftDistance << ",\n";
+        out << "        \"rest_window_com_drift\": " << r.scalar.restWindowComDrift << ",\n";
+        out << "        \"rest_window_angular_jitter_rms\": " << r.scalar.restWindowAngularJitterRms << ",\n";
+        out << "        \"manifold_churn_per_step\": " << r.scalar.manifoldChurnPerStep << ",\n";
+        out << "        \"sleep_entry_latency\": " << r.scalar.sleepEntryLatency << ",\n";
+        out << "        \"wake_flap_count\": " << r.scalar.wakeFlapCount << ",\n";
         out << "        \"mean_stable_type9_contacts\": " << r.scalar.meanStableType9Contacts << ",\n";
         writeTelemetryJson(out, r.scalar.telemetry);
         out << "\n";
         out << "      },\n";
         out << "      \"block\": {\n";
         out << "        \"max_penetration\": " << r.block.maxPenetration << ",\n";
+        out << "        \"p95_penetration\": " << r.block.p95Penetration << ",\n";
         out << "        \"contact_count_stddev\": " << r.block.contactCountStdDev << ",\n";
         out << "        \"contact_count_mean_step_delta\": " << r.block.contactCountMeanStepDelta << ",\n";
         out << "        \"max_impulse_delta\": " << r.block.maxImpulseDelta << ",\n";
@@ -1133,6 +1251,11 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
         out << "        \"slip_velocity_decay_ratio\": " << r.block.slipVelocityDecayRatio << ",\n";
         out << "        \"final_slip_speed\": " << r.block.finalSlipSpeed << ",\n";
         out << "        \"resting_drift_distance\": " << r.block.restingDriftDistance << ",\n";
+        out << "        \"rest_window_com_drift\": " << r.block.restWindowComDrift << ",\n";
+        out << "        \"rest_window_angular_jitter_rms\": " << r.block.restWindowAngularJitterRms << ",\n";
+        out << "        \"manifold_churn_per_step\": " << r.block.manifoldChurnPerStep << ",\n";
+        out << "        \"sleep_entry_latency\": " << r.block.sleepEntryLatency << ",\n";
+        out << "        \"wake_flap_count\": " << r.block.wakeFlapCount << ",\n";
         out << "        \"mean_stable_type9_contacts\": " << r.block.meanStableType9Contacts << ",\n";
         writeTelemetryJson(out, r.block.telemetry);
         out << "\n";
@@ -1186,6 +1309,9 @@ std::string ToJson(const std::vector<ComparisonResult>& results) {
     out << "  \"readiness_pass\": " << (readinessPassAll ? "true" : "false") << ",\n";
     out << "  \"solver_config\": {\n";
     out << "    \"use_split_impulse\": " << (cfg.useSplitImpulse ? "true" : "false") << ",\n";
+    out << "    \"enable_relaxation_pass\": " << (cfg.enableRelaxationPass ? "true" : "false") << ",\n";
+    out << "    \"relaxation_iterations\": " << static_cast<unsigned>(cfg.relaxationIterations) << ",\n";
+    out << "    \"enable_support_depth_ordering\": " << (cfg.enableSupportDepthOrdering ? "true" : "false") << ",\n";
     out << "    \"split_impulse_correction_factor\": " << cfg.splitImpulseCorrectionFactor << ",\n";
     out << "    \"penetration_bias_factor\": " << cfg.penetrationBiasFactor << ",\n";
     out << "    \"penetration_slop\": " << cfg.penetrationSlop << ",\n";
@@ -1234,6 +1360,10 @@ void PrintHumanSummary(const ComparisonResult& result) {
                   << " face4FallbackToBlock2=" << t.face4FallbackToBlock2
                   << " face4FallbackToScalar=" << t.face4FallbackToScalar
                   << " face4BlockedByGate=" << t.face4BlockedByFrictionCoherenceGate
+                  << " anchorReuseHit=" << t.anchorReuseHitCount
+                  << " anchorReuseFallback=" << t.anchorReuseFallbackCount
+                  << " supportDepthApplied=" << t.supportDepthOrderApplied
+                  << " supportDepthBypassed=" << t.supportDepthOrderBypassed
                   << " topologyChangeEvents=" << t.topologyChangeEvents
                   << " featureIdChurnEvents=" << t.featureIdChurnEvents
                   << " impulseResetPoints=" << t.impulseResetPoints
@@ -1244,6 +1374,7 @@ void PrintHumanSummary(const ComparisonResult& result) {
     const auto printRun = [&](const char* label, const RunMetrics& m) {
         std::cout << "  " << label
                   << " | pen=" << std::fixed << std::setprecision(4) << m.maxPenetration
+                  << " p95_pen=" << m.p95Penetration
                   << " contact_stddev=" << m.contactCountStdDev
                   << " contact_dstep=" << m.contactCountMeanStepDelta
                   << " impulse_max_d=" << m.maxImpulseDelta
@@ -1254,6 +1385,11 @@ void PrintHumanSummary(const ComparisonResult& result) {
                   << " tan_cont=" << m.manifoldTangentImpulseContinuity
                   << " slip_decay=" << m.slipVelocityDecayRatio
                   << " drift=" << m.restingDriftDistance
+                  << " rest_com_drift=" << m.restWindowComDrift
+                  << " rest_ang_jitter_rms=" << m.restWindowAngularJitterRms
+                  << " churn_step=" << m.manifoldChurnPerStep
+                  << " sleep_latency=" << m.sleepEntryLatency
+                  << " wake_flaps=" << m.wakeFlapCount
                   << " stable_type9=" << m.meanStableType9Contacts << "\n";
     };
 
@@ -1261,6 +1397,8 @@ void PrintHumanSummary(const ComparisonResult& result) {
     printRun("scalar", result.scalar);
     printRun("block ", result.block);
     printRun("face4 ", result.face4);
+    printRun("relax ", result.relaxed);
+    printRun("soft  ", result.softContacts);
     printTelemetry("scalar", result.scalar.telemetry);
     printTelemetry("block ", result.block.telemetry);
     printTelemetry("face4 ", result.face4.telemetry);

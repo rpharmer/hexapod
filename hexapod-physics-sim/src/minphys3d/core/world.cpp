@@ -259,6 +259,7 @@ void World::Step(float dt, int solverIterations) {
             CapturePersistentPointImpulseState(previousManifolds_);
         }
         IntegrateForces(subDt);
+        BeginSplitImpulseSubstep();
         contacts_.clear();
         manifolds_.clear();
         UpdateBroadphaseProxies();
@@ -268,9 +269,18 @@ void World::Step(float dt, int solverIterations) {
         WarmStartContacts();
         WarmStartJoints();
 
+        solverRelaxationPassActive_ = false;
         for (int i = 0; i < solverIterations; ++i) {
             SolveIslands();
         }
+        if (contactSolverConfig_.enableRelaxationPass && contactSolverConfig_.relaxationIterations > 0) {
+            solverRelaxationPassActive_ = true;
+            for (std::uint8_t i = 0; i < contactSolverConfig_.relaxationIterations; ++i) {
+                SolveIslands();
+            }
+            solverRelaxationPassActive_ = false;
+        }
+        ApplySplitStabilization();
 
         ResolveTOIPipeline(subDt);
         IntegrateOrientation(subDt);

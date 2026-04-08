@@ -1,5 +1,6 @@
 #include "minphys3d/core/world.hpp"
 #include "subsystems.hpp"
+#include <cmath>
 
 namespace minphys3d {
 void World::BuildManifolds() {
@@ -69,6 +70,20 @@ void World::BuildManifolds() {
             contactSolverConfig_,
         };
         solver.BuildManifolds(context);
+        for (Manifold& manifold : manifolds_) {
+            for (Contact& c : manifold.contacts) {
+                if (c.a >= bodies_.size() || c.b >= bodies_.size()) {
+                    c.anchorsValid = false;
+                    continue;
+                }
+                const Body& a = bodies_[c.a];
+                const Body& b = bodies_[c.b];
+                c.localAnchorA = Rotate(Conjugate(a.orientation), c.point - a.position);
+                c.localAnchorB = Rotate(Conjugate(b.orientation), c.point - b.position);
+                c.referenceSeparation = std::max(c.penetration, 0.0f);
+                c.anchorsValid = std::isfinite(c.referenceSeparation);
+            }
+        }
     }
 
 void World::GenerateContacts() {
