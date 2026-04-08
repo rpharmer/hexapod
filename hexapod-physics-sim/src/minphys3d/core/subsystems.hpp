@@ -155,6 +155,38 @@ public:
             }
         }
 
+        if (context.config.enableDeterministicOrdering) {
+            for (Manifold& m : context.manifolds) {
+                std::stable_sort(m.contacts.begin(), m.contacts.end(), [](const Contact& lhs, const Contact& rhs) {
+                    if (lhs.key != rhs.key) {
+                        return lhs.key < rhs.key;
+                    }
+                    if (lhs.featureKey != rhs.featureKey) {
+                        return lhs.featureKey < rhs.featureKey;
+                    }
+                    if (lhs.penetration != rhs.penetration) {
+                        return lhs.penetration > rhs.penetration;
+                    }
+                    if (lhs.point.y != rhs.point.y) {
+                        return lhs.point.y < rhs.point.y;
+                    }
+                    if (lhs.point.x != rhs.point.x) {
+                        return lhs.point.x < rhs.point.x;
+                    }
+                    return lhs.point.z < rhs.point.z;
+                });
+            }
+            std::stable_sort(context.manifolds.begin(), context.manifolds.end(), [](const Manifold& lhs, const Manifold& rhs) {
+                if (lhs.pairKey() != rhs.pairKey()) {
+                    return lhs.pairKey() < rhs.pairKey();
+                }
+                if (lhs.manifoldType != rhs.manifoldType) {
+                    return lhs.manifoldType < rhs.manifoldType;
+                }
+                return lhs.contacts.size() < rhs.contacts.size();
+            });
+        }
+
         for (Manifold& m : context.manifolds) {
             if (!m.contacts.empty()) {
                 m.manifoldType = m.contacts.front().manifoldType;
@@ -185,12 +217,16 @@ public:
                 m.tangentBasisValid = false;
                 m.manifoldTangentImpulseSum = {0.0f, 0.0f};
                 m.manifoldTangentImpulseValid = false;
+                m.stickConstraintActive = false;
+                m.stickConstraintAge = 0;
             } else {
                 m.t0 = previous->t0;
                 m.t1 = previous->t1;
                 m.tangentBasisValid = previous->tangentBasisValid;
                 m.manifoldTangentImpulseSum = previous->manifoldTangentImpulseSum;
                 m.manifoldTangentImpulseValid = previous->manifoldTangentImpulseValid;
+                m.stickConstraintActive = previous->stickConstraintActive;
+                m.stickConstraintAge = previous->stickConstraintAge;
                 m.cachedImpulseByContactKey = previous->cachedImpulseByContactKey;
             }
 
@@ -359,11 +395,16 @@ public:
         const float mu = std::max(std::max(muS, muD), 0.0f);
         const float manifoldBudget = std::max(0.0f, context.config.manifoldFrictionBudgetScale) * mu * totalNormalSupport;
         const bool useManifoldBudget = context.config.enableManifoldFrictionBudget && manifoldBudget > 0.0f;
+        const bool canUseStick = context.config.enablePersistentStickConstraints
+            && manifold.manifoldTangentImpulseValid
+            && manifold.contacts.size() >= 2;
 
         std::array<float, 2> accumulatedTangent{0.0f, 0.0f};
         if (manifold.manifoldTangentImpulseValid) {
             accumulatedTangent = manifold.manifoldTangentImpulseSum;
         }
+        float meanSlipSpeed = 0.0f;
+        std::uint32_t slipSamples = 0;
 
         for (Contact& c : manifold.contacts) {
             Body& a = context.bodies[c.a];
@@ -377,6 +418,11 @@ public:
             const Vec3 va2 = a.velocity + Cross(a.angularVelocity, ra);
             const Vec3 vb2 = b.velocity + Cross(b.angularVelocity, rb);
             const Vec3 rv2 = vb2 - va2;
+            const float slipSpeed = std::sqrt(
+                Dot(rv2, manifold.t0) * Dot(rv2, manifold.t0)
+                + Dot(rv2, manifold.t1) * Dot(rv2, manifold.t1));
+            meanSlipSpeed += slipSpeed;
+            ++slipSamples;
             const Vec3 raCrossT0 = Cross(ra, manifold.t0);
             const Vec3 rbCrossT0 = Cross(rb, manifold.t0);
             const Vec3 raCrossT1 = Cross(ra, manifold.t1);
@@ -395,6 +441,11 @@ public:
                 c.tangentImpulseSum1 - Dot(rv2, manifold.t1) / tangentMass1};
             if (!context.config.enableTwoAxisFrictionSolve) {
                 newT[1] = 0.0f;
+            }
+            if (canUseStick && manifold.stickConstraintActive) {
+                const float retention = std::clamp(context.config.stickImpulseRetention, 0.0f, 1.0f);
+                newT[0] = retention * oldT[0] + (1.0f - retention) * newT[0];
+                newT[1] = retention * oldT[1] + (1.0f - retention) * newT[1];
             }
 
             const float perContactLimit = mu * std::max(c.normalImpulseSum, 0.0f);
@@ -443,6 +494,23 @@ public:
         }
         manifold.manifoldTangentImpulseSum = accumulatedTangent;
         manifold.manifoldTangentImpulseValid = true;
+        const float averageSlip = (slipSamples > 0) ? (meanSlipSpeed / static_cast<float>(slipSamples)) : std::numeric_limits<float>::infinity();
+        const bool stableAgedContacts = std::all_of(
+            manifold.contacts.begin(),
+            manifold.contacts.end(),
+            [&](const Contact& c) { return c.persistenceAge >= context.config.stickMinPersistenceAge; });
+        const bool shouldStick = canUseStick
+            && stableAgedContacts
+            && averageSlip <= context.config.stickVelocityThreshold;
+        if (shouldStick) {
+            manifold.stickConstraintActive = true;
+            manifold.stickConstraintAge = static_cast<std::uint16_t>(std::min<std::uint32_t>(
+                static_cast<std::uint32_t>(manifold.stickConstraintAge) + 1u,
+                std::numeric_limits<std::uint16_t>::max()));
+        } else {
+            manifold.stickConstraintActive = false;
+            manifold.stickConstraintAge = 0;
+        }
     }
 };
 
