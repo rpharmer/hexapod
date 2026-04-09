@@ -1,6 +1,6 @@
 # hexapod-opengl-visualiser
 
-Minimal OpenGL renderer scaffold for local rendering experiments.
+Minimal OpenGL renderer that listens for `hexapod-physics-sim` UDP scene packets and renders the live bodies.
 
 ## Dependencies
 
@@ -19,7 +19,19 @@ cmake --build build -j
 ## Run
 
 ```bash
-./build/hexapod-opengl-visualiser
+./build/hexapod-opengl-visualiser --udp-port 9870
 ```
 
-The renderer opens a window and draws a rotating color triangle over a pulsing background.
+The renderer listens on UDP port `9870` by default and consumes the simulator's
+`entity_static` and `entity_frame` packets.
+
+To wire it to the simulator from a second terminal:
+
+```bash
+cd ../hexapod-physics-sim
+cmake -S . -B build
+cmake --build build -j
+./build/hexapod-physics-sim --sink udp
+```
+
+You should then see the default demo scene animate in the OpenGL window.

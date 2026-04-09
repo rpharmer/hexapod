@@ -1,0 +1,3 @@
+/home/volly/pico/hexapod/hexapod-physics-sim/build/CMakeFiles/hexapod-physics-sim.dir
+/home/volly/pico/hexapod/hexapod-physics-sim/build/CMakeFiles/edit_cache.dir
+/home/volly/pico/hexapod/hexapod-physics-sim/build/CMakeFiles/rebuild_cache.dir
