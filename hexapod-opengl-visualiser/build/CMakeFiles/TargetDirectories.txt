@@ -1,3 +1,0 @@
-/home/volly/pico/hexapod/hexapod-opengl-visualiser/build/CMakeFiles/hexapod-opengl-visualiser.dir
-/home/volly/pico/hexapod/hexapod-opengl-visualiser/build/CMakeFiles/edit_cache.dir
-/home/volly/pico/hexapod/hexapod-opengl-visualiser/build/CMakeFiles/rebuild_cache.dir
