@@ -143,6 +143,8 @@ public:
     void SetContactPersistenceDebugLogging(bool enabled);
 
     void SetBlockSolveDebugLogging(bool enabled);
+
+    void SetDebugLogStream(std::FILE* stream);
 #endif
 
     std::uint32_t CreateBody(const Body& bodyDef);
@@ -2253,7 +2255,7 @@ private:
         if (history.hasPrevious && history.hasLast && currentPair == history.previousPair && currentPair != history.lastPair) {
             ++solverTelemetry_.selectedPairOscillationEvents;
             if (debugContactPersistence_) {
-                std::fprintf(stderr,
+                std::fprintf(DebugLogStream(),
                              "[minphys3d] frame=%llu selected_pair_oscillation pair=(%u,%u) type=%u prev=(%llu,%llu) last=(%llu,%llu) current=(%llu,%llu)\n",
                              static_cast<unsigned long long>(debugFrameIndex_),
                              manifold.a,
@@ -2277,25 +2279,25 @@ private:
         if (!debugContactPersistence_) {
             return;
         }
-        std::fprintf(stderr,
+        std::fprintf(DebugLogStream(),
                      "[minphys3d] frame=%llu manifold pair=(%u,%u) type=%u contact_keys=",
                      static_cast<unsigned long long>(debugFrameIndex_),
                      manifold.a,
                      manifold.b,
                      static_cast<unsigned>(manifold.manifoldType));
         if (manifold.contacts.empty()) {
-            std::fprintf(stderr, "none");
+            std::fprintf(DebugLogStream(), "none");
         } else {
             for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
                 const Contact& c = manifold.contacts[i];
-                std::fprintf(stderr,
+                std::fprintf(DebugLogStream(),
                              "%s%llu(age=%u)",
                              (i == 0 ? "" : ","),
                              static_cast<unsigned long long>(c.key),
                              static_cast<unsigned>(c.persistenceAge));
             }
         }
-        std::fprintf(stderr, "\n");
+        std::fprintf(DebugLogStream(), "\n");
     }
 
     void DebugLogContactTransitions(const Manifold& previous, const Manifold& current) const {
@@ -2313,7 +2315,7 @@ private:
         for (const auto& [key, oldCount] : previousCounts) {
             const int newCount = currentCounts.count(key) > 0 ? currentCounts.at(key) : 0;
             if (newCount < oldCount) {
-                std::fprintf(stderr,
+                std::fprintf(DebugLogStream(),
                              "[minphys3d] frame=%llu manifold pair=(%u,%u) type=%u contact_remove key=%llu count=%d\n",
                              static_cast<unsigned long long>(debugFrameIndex_),
                              current.a,
@@ -2326,7 +2328,7 @@ private:
         for (const auto& [key, newCount] : currentCounts) {
             const int oldCount = previousCounts.count(key) > 0 ? previousCounts.at(key) : 0;
             if (newCount > oldCount) {
-                std::fprintf(stderr,
+                std::fprintf(DebugLogStream(),
                              "[minphys3d] frame=%llu manifold pair=(%u,%u) type=%u contact_add key=%llu count=%d\n",
                              static_cast<unsigned long long>(debugFrameIndex_),
                              current.a,
@@ -2358,7 +2360,7 @@ private:
             if (!debugContactPersistence_) {
                 return;
             }
-            std::fprintf(stderr,
+            std::fprintf(DebugLogStream(),
                          "[minphys3d] frame=%llu selected_block pair=(%u,%u) type=%u idx=(%d,%d) keys=(%llu,%llu)\n",
                          static_cast<unsigned long long>(debugFrameIndex_),
                          manifold.a,
@@ -2784,7 +2786,7 @@ private:
             IncrementBlockSolveFallbackCounter(manifold, ineligibleReason);
             if (debugBlockSolveRouting_) {
                 std::fprintf(
-                    stderr,
+                    DebugLogStream(),
                     "[minphys3d] scalar route (ineligible) pair=(%u,%u) type=%u contacts=%zu lowQuality=%d reason=%d persistent=%d\n",
                     manifold.a,
                     manifold.b,
@@ -2843,7 +2845,7 @@ private:
             ++manifold.blockSolveDebug.blockSolveUsedCount;
             if (debugBlockSolveRouting_) {
                 std::fprintf(
-                    stderr,
+                    DebugLogStream(),
                     "[minphys3d] block route pair=(%u,%u) type=%u contacts=%zu\n",
                     manifold.a,
                     manifold.b,
@@ -2912,7 +2914,7 @@ private:
         IncrementBlockSolveFallbackCounter(manifold, fallbackReason);
         if (debugBlockSolveRouting_) {
             std::fprintf(
-                stderr,
+                DebugLogStream(),
                 "[minphys3d] scalar fallback pair=(%u,%u) type=%u reason=%d\n",
                 manifold.a,
                 manifold.b,
@@ -3129,9 +3131,14 @@ private:
     std::unordered_map<NarrowphaseCacheKey, NarrowphaseCache, NarrowphaseCacheKeyHash> narrowphaseCache_;
     std::unordered_map<ConvexSeedKey, EpaPenetrationResult, ConvexSeedKeyHash> convexManifoldSeeds_;
 #ifndef NDEBUG
+    std::FILE* DebugLogStream() const {
+        return debugLogStream_ != nullptr ? debugLogStream_ : stderr;
+    }
+
     SolverTelemetry solverTelemetry_{};
     bool debugContactPersistence_ = false;
     bool debugBlockSolveRouting_ = false;
+    std::FILE* debugLogStream_ = stderr;
     std::uint64_t debugFrameIndex_ = 0;
     std::unordered_map<ManifoldKey, SelectionHistory, ManifoldKeyHash> selectedPairHistory_;
 #endif

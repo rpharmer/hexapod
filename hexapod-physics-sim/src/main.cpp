@@ -29,5 +29,5 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    return minphys3d::demo::RunDefaultScene(sink_kind);
+    return minphys3d::demo::RunRealTimeDefaultScene(sink_kind);
 }

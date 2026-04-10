@@ -8,5 +8,5 @@ enum class SinkKind {
 };
 
 int RunDefaultScene(SinkKind sink_kind = SinkKind::Dummy);
-
+int RunRealTimeDefaultScene(SinkKind sink_kind = SinkKind::Dummy);
 } // namespace minphys3d::demo

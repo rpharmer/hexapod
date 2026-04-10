@@ -90,6 +90,10 @@ void World::SetContactPersistenceDebugLogging(bool enabled) {
 void World::SetBlockSolveDebugLogging(bool enabled) {
     debugBlockSolveRouting_ = enabled;
 }
+
+void World::SetDebugLogStream(std::FILE* stream) {
+    debugLogStream_ = stream;
+}
 #endif
 
 std::uint32_t World::CreateBody(const Body& bodyDef) {
