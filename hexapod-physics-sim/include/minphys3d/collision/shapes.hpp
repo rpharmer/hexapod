@@ -9,7 +9,26 @@ enum class ShapeType {
     Box,
     Plane,
     Capsule,
+    Cylinder,
+    HalfCylinder,
+    Compound,
 };
+
+inline bool IsConvexPrimitiveShape(ShapeType shape) {
+    return shape == ShapeType::Sphere
+        || shape == ShapeType::Box
+        || shape == ShapeType::Capsule
+        || shape == ShapeType::Cylinder
+        || shape == ShapeType::HalfCylinder;
+}
+
+inline bool IsPlaneShape(ShapeType shape) {
+    return shape == ShapeType::Plane;
+}
+
+inline bool IsCompoundShape(ShapeType shape) {
+    return shape == ShapeType::Compound;
+}
 
 struct AABB {
     Vec3 min{};

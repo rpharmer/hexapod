@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
@@ -8,6 +9,7 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -271,7 +273,7 @@ std::uint64_t MakePersistentPointKey(const Manifold& manifold, const Contact& co
          ^ static_cast<std::uint64_t>(ordinal);
 }
 
-RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant) {
+RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant, bool realtime_playback) {
     config.world.SetContactSolverConfig(MakeSolverConfig(variant));
 
     RunMetrics metrics;
@@ -304,6 +306,9 @@ RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant) {
 
     for (int step = 0; step < config.steps; ++step) {
         config.world.Step(config.dt, config.solverIterations);
+        if (realtime_playback) {
+            std::this_thread::sleep_for(std::chrono::duration<float>(config.dt));
+        }
 
         const std::vector<Manifold>& manifolds = config.world.DebugManifolds();
         float totalContacts = 0.0f;
@@ -618,7 +623,7 @@ RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant) {
     return metrics;
 }
 
-ComparisonResult CompareScene(const SceneConfig& source) {
+ComparisonResult CompareScene(const SceneConfig& source, bool realtime_playback) {
     ComparisonResult out;
     out.scene = source.name;
 
@@ -644,14 +649,16 @@ ComparisonResult CompareScene(const SceneConfig& source) {
     SolverVariantConfig softContactVariant = blockVariant;
     softContactVariant.enableSoftContacts = true;
 
-    out.scalar = RunScene(source, scalarVariant);
-    out.block = RunScene(source, blockVariant);
-    out.face4 = RunScene(source, face4Variant);
-    out.noBudget = RunScene(source, budgetOffVariant);
-    out.oneAxisFriction = RunScene(source, oneAxisVariant);
-    out.relaxed = RunScene(source, relaxationVariant);
-    out.softContacts = RunScene(source, softContactVariant);
-    RunMetrics supportOrdered = RunScene(source, supportOrderedVariant);
+    out.scalar = RunScene(source, scalarVariant, false);
+    // Wall-clock pacing only for the block-solver run so visualizers match the primary configuration
+    // without multiplying sleep across every solver ablation.
+    out.block = RunScene(source, blockVariant, realtime_playback);
+    out.face4 = RunScene(source, face4Variant, false);
+    out.noBudget = RunScene(source, budgetOffVariant, false);
+    out.oneAxisFriction = RunScene(source, oneAxisVariant, false);
+    out.relaxed = RunScene(source, relaxationVariant, false);
+    out.softContacts = RunScene(source, softContactVariant, false);
+    RunMetrics supportOrdered = RunScene(source, supportOrderedVariant, false);
 
     const auto fail = [&](bool condition, const std::string& reason) {
         if (condition) {
@@ -1702,6 +1709,7 @@ int main(int argc, char** argv) {
     bool logReorderContactCounts = false;
     bool logReorderManifoldIds = false;
     bool printHumanSummary = false;
+    bool realtime_playback = false;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--metrics-out" && i + 1 < argc) {
@@ -1712,7 +1720,23 @@ int main(int argc, char** argv) {
             logReorderManifoldIds = true;
         } else if (arg == "--print-human-summary") {
             printHumanSummary = true;
+        } else if (arg == "--realtime") {
+            realtime_playback = true;
+        } else if (arg == "-h" || arg == "--help") {
+            std::cout
+                << "regression_scene_suite [options]\n"
+                << "  --metrics-out PATH           Write JSON metrics (default: tests/block_solver_metrics.json)\n"
+                << "  --log-reorder-contact-count  Extra logging for manifold reorder stress scene\n"
+                << "  --log-reorder-manifold-ids   Extra logging for manifold reorder stress scene\n"
+                << "  --print-human-summary        Print per-scene metrics instead of failures-only\n"
+                << "  --realtime                   Pace the block-solver physics loop to wall clock (visual debug)\n"
+                << "  -h, --help                   Show this help\n";
+            return 0;
         }
+    }
+
+    if (realtime_playback) {
+        std::cout << "[regression_scene_suite] realtime playback enabled (block-solver runs only; other variants stay fast)\n";
     }
 
     std::vector<SceneConfig> scenes;
@@ -1743,7 +1767,7 @@ int main(int argc, char** argv) {
 
     bool allPass = true;
     for (const SceneConfig& scene : scenes) {
-        ComparisonResult result = CompareScene(scene);
+        ComparisonResult result = CompareScene(scene, realtime_playback);
         if (printHumanSummary) {
             PrintHumanSummary(result);
         } else if (!result.pass) {

@@ -32,6 +32,8 @@ cd ../hexapod-physics-sim
 cmake -S . -B build
 cmake --build build -j
 ./build/hexapod-physics-sim --sink udp
+# Hexapod model (body + 6 x coxa/femur/tibia + foot spheres):
+./build/hexapod-physics-sim --sink udp --model hexapod
 ```
 
-You should then see the default demo scene animate in the OpenGL window.
+You should then see the selected demo scene animate in the OpenGL window.

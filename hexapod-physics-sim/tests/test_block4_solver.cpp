@@ -1,6 +1,6 @@
 #include <cassert>
 
-#include "../src/minphys3d/solver/block4_solver.hpp"
+#include "minphys3d/solver/block4_solver.hpp"
 
 int main() {
     using namespace minphys3d;

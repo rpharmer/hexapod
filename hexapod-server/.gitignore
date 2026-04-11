@@ -1,3 +1,2 @@
-build/*
-build-tests/*
-app.log
+build/
+build-tests/

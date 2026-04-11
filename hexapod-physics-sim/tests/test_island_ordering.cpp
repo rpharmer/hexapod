@@ -1,7 +1,7 @@
 #include <cassert>
 #include <vector>
 
-#include "../src/minphys3d/solver/island_ordering.hpp"
+#include "minphys3d/solver/island_ordering.hpp"
 
 int main() {
     using namespace minphys3d;

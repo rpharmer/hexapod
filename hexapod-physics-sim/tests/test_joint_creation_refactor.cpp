@@ -20,6 +20,10 @@ bool AlmostEqualVec3(const Vec3& a, const Vec3& b, float tol = kTol) {
     return AlmostEqual(a.x, b.x, tol) && AlmostEqual(a.y, b.y, tol) && AlmostEqual(a.z, b.z, tol);
 }
 
+bool AlmostOrthogonal(const Vec3& a, const Vec3& b, float tol = 1e-5f) {
+    return std::abs(Dot(a, b)) <= tol;
+}
+
 Vec3 ComputeExpectedLocalAnchor(const Body& body, const Vec3& worldAnchor) {
     return Rotate(Conjugate(Normalize(body.orientation)), worldAnchor - body.position);
 }
@@ -88,6 +92,8 @@ int main() {
     assert(AlmostEqual(hinge.maxMotorTorque, 0.0f));
     assert(AlmostEqualVec3(hinge.localAnchorA, ComputeExpectedLocalAnchor(world.GetBody(a), sharedAnchor)));
     assert(AlmostEqualVec3(hinge.localAnchorB, ComputeExpectedLocalAnchor(world.GetBody(b), sharedAnchor)));
+    assert(AlmostOrthogonal(hinge.localAxisA, hinge.localReferenceA));
+    assert(AlmostOrthogonal(hinge.localAxisB, hinge.localReferenceB));
 
     const std::uint32_t prismaticId = world.CreatePrismaticJoint(a, b, sharedAnchor, validAxis);
     assert(prismaticId == initialPrismaticCount);
@@ -110,6 +116,25 @@ int main() {
     assert(AlmostEqual(servo.dampingGain, 0.8f));
     assert(AlmostEqualVec3(servo.localAnchorA, ComputeExpectedLocalAnchor(world.GetBody(a), sharedAnchor)));
     assert(AlmostEqualVec3(servo.localAnchorB, ComputeExpectedLocalAnchor(world.GetBody(b), sharedAnchor)));
+    assert(AlmostOrthogonal(servo.localAxisA, servo.localReferenceA));
+    assert(AlmostOrthogonal(servo.localAxisB, servo.localReferenceB));
+
+    World collisionWorld({0.0f, 0.0f, 0.0f});
+    Body connectedA;
+    connectedA.shape = ShapeType::Box;
+    connectedA.halfExtents = {0.5f, 0.5f, 0.5f};
+    connectedA.mass = 1.0f;
+    connectedA.position = {0.0f, 0.0f, 0.0f};
+    const std::uint32_t connectedAId = collisionWorld.CreateBody(connectedA);
+
+    Body connectedB = connectedA;
+    connectedB.position = {0.4f, 0.0f, 0.0f};
+    const std::uint32_t connectedBId = collisionWorld.CreateBody(connectedB);
+
+    collisionWorld.CreateHingeJoint(connectedAId, connectedBId, {0.2f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f});
+    collisionWorld.contacts_.clear();
+    collisionWorld.GenerateContacts();
+    assert(collisionWorld.contacts_.empty());
 
     return 0;
 }

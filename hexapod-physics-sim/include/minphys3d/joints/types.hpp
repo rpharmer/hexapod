@@ -25,6 +25,8 @@ struct HingeJoint {
     Vec3 localAnchorB{};
     Vec3 localAxisA{0.0f, 1.0f, 0.0f};
     Vec3 localAxisB{0.0f, 1.0f, 0.0f};
+    Vec3 localReferenceA{1.0f, 0.0f, 0.0f};
+    Vec3 localReferenceB{1.0f, 0.0f, 0.0f};
     float impulseX = 0.0f;
     float impulseY = 0.0f;
     float impulseZ = 0.0f;
@@ -89,6 +91,8 @@ struct ServoJoint {
     Vec3 localAnchorB{};
     Vec3 localAxisA{0.0f, 1.0f, 0.0f};
     Vec3 localAxisB{0.0f, 1.0f, 0.0f};
+    Vec3 localReferenceA{1.0f, 0.0f, 0.0f};
+    Vec3 localReferenceB{1.0f, 0.0f, 0.0f};
     float impulseX = 0.0f;
     float impulseY = 0.0f;
     float impulseZ = 0.0f;

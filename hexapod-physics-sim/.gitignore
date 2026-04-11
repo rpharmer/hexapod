@@ -1,1 +1,14 @@
-build/*
+# Build trees, CTest output, logs: see repository root .gitignore.
+
+# Optional hand-written Makefile emits these binaries in the crate root (CMake uses build/).
+/hexapod-physics-sim
+/regression_scene_suite
+/test_broadphase_dynamic_tree
+/test_block2_solver
+/test_block4_solver
+/test_convex_dispatch_equivalence
+/test_gjk_regression
+/test_island_ordering
+/test_joint_creation_refactor
+/test_regression_step
+/test_unit_math

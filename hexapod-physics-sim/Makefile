@@ -1,22 +1,26 @@
 CXX ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -pedantic
-INCLUDES := -Iinclude -I.
+INCLUDES := -Iinclude -I. -Isrc
 
 TARGET := hexapod-physics-sim
-CORE_SRC := src/minphys3d/core/world.cpp \
-	src/minphys3d/core/world_broadphase.cpp \
-	src/minphys3d/core/world_collision.cpp \
-	src/minphys3d/core/world_solver.cpp \
-	src/minphys3d/core/broadphase_system.cpp \
-	src/minphys3d/core/contact_pipeline.cpp \
-	src/minphys3d/core/constraint_solver.cpp \
-	src/minphys3d/core/sleep_system.cpp \
-	src/minphys3d/solver/block2_solver.cpp \
-	src/minphys3d/solver/block4_solver.cpp \
-	src/minphys3d/solver/island_ordering.cpp \
-	src/minphys3d/narrowphase/gjk.cpp \
-	src/minphys3d/narrowphase/epa.cpp
-DEMO_SRC := src/demo/scenes.cpp
+CORE_SRC := src/core/world.cpp \
+	src/core/world_private_methods.cpp \
+	src/core/world_broadphase.cpp \
+	src/core/world_collision.cpp \
+	src/core/world_solver.cpp \
+	src/core/broadphase_system.cpp \
+	src/core/contact_pipeline.cpp \
+	src/core/constraint_solver.cpp \
+	src/core/sleep_system.cpp \
+	src/solver/block2_solver.cpp \
+	src/solver/block4_solver.cpp \
+	src/solver/island_ordering.cpp \
+	src/narrowphase/gjk.cpp \
+	src/narrowphase/epa.cpp
+DEMO_SRC := src/demo/scenes.cpp \
+	src/demo/frame_sink.cpp \
+	src/demo/interactive_terminal.cpp \
+	src/demo/scene_json.cpp
 SRC := src/main.cpp $(CORE_SRC) $(DEMO_SRC)
 UNIT_TEST := tests/test_unit_math
 REGRESSION_TEST := tests/test_regression_step

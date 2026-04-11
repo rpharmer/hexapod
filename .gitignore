@@ -1,0 +1,58 @@
+# --- CMake / build trees (any subdirectory) ---
+build/
+build-tests/
+build-host-tests/
+cmake-build-*/
+out/
+dist/
+
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+DartConfiguration.tcl
+install_manifest.txt
+_deps/
+
+# --- Compiled objects / libs (anywhere) ---
+*.o
+*.obj
+*.a
+*.lib
+*.dll
+*.exp
+*.pdb
+*.ilk
+*.dylib
+*.so
+*.so.*
+
+# Ninja (when used instead of Make)
+build.ninja
+.ninja_deps
+.ninja_log
+
+# --- CTest / CPack ---
+Testing/
+
+# --- Demo / local logs ---
+logs/
+*.log
+
+# --- Tooling / IDE ---
+compile_commands.json
+.cache/
+.idea/
+.vscode/
+*.swp
+*~
+
+# --- Python ---
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# --- OS ---
+.DS_Store
+Thumbs.db

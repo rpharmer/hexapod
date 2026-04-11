@@ -71,7 +71,8 @@ struct ContactSolverConfig {
     float blockDiagonalMinimum = 1e-6f;
     float blockConditionEstimateMax = 0.0f;
     bool useBlockSolver = true;
-    std::uint32_t blockManifoldTypeMask = (1u << 7u) | (1u << 9u);
+    std::uint32_t blockManifoldTypeMask =
+        (1u << 7u) | (1u << 9u) | (1u << 15u) | (1u << 19u) | (1u << 20u) | (1u << 21u);
     std::array<std::uint8_t, 256> blockMinPersistenceByType{};
     bool useFace4PointNormalBlock = false;
     std::uint16_t face4MinPersistenceAge = 1;

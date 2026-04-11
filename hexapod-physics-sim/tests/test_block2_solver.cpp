@@ -1,7 +1,7 @@
 #include <cassert>
 #include <cmath>
 
-#include "../src/minphys3d/solver/block2_solver.hpp"
+#include "minphys3d/solver/block2_solver.hpp"
 
 int main() {
     using namespace minphys3d;

@@ -1,2 +1,2 @@
-build/*
-build-host-tests/*
+build/
+build-host-tests/
