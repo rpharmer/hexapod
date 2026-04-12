@@ -49,6 +49,7 @@ if(MINPHYS3D_BUILD_DEMO)
         src/main.cpp
         src/demo/scenes.cpp
         src/demo/frame_sink.cpp
+        src/demo/interactive_presets.cpp
         src/demo/interactive_terminal.cpp
         src/demo/scene_json.cpp
     )

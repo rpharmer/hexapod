@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "solver_iterations": 18,
+  "bodies": [
+    {
+      "shape": "plane",
+      "static": true,
+      "plane_normal": [0, 1, 0],
+      "plane_offset": 0,
+      "static_friction": 0.08,
+      "dynamic_friction": 0.05,
+      "restitution": 0.02
+    },
+    {
+      "shape": "box",
+      "position": [-0.6, 0.25, 0],
+      "half_extents": [0.12, 0.06, 0.08],
+      "mass": 0.4,
+      "velocity": [2.2, 0, 0.1],
+      "orientation": [1, 0, 0, 0],
+      "restitution": 0.04
+    }
+  ]
+}

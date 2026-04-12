@@ -1,13 +1,21 @@
 #include "demo/interactive_terminal.hpp"
 
+#include "demo/demo_run_control.hpp"
+#include "demo/interactive_presets.hpp"
 #include "demo/scene_json.hpp"
+#include "demo/scenes.hpp"
 
 #include <charconv>
 #include <cctype>
+#include <chrono>
+#include <future>
 #include <iostream>
+#include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace minphys3d::demo {
 namespace {
@@ -60,12 +68,39 @@ const char* ModelLabel(SceneModel m) {
     return "?";
 }
 
+void PrintBuiltinScenarioHint(SceneModel model) {
+    if (model == SceneModel::Hexapod) {
+        std::cout << "  Scene: Built-in articulated hexapod with servo legs.\n"
+                  << "  Watch for: Chassis lowers until feet find the plane; legs cycle contacts while servos track "
+                     "targets.\n";
+    } else {
+        std::cout << "  Scene: Built-in classic demo (boxes, sphere, hinge and distance joints).\n"
+                  << "  Watch for: Upper box + hinge swing; sphere on rope-like distance constraint; impacts stay "
+                     "crisp without obvious tunneling.\n";
+    }
+}
+
+void PrintJsonScenarioHint() {
+    std::cout << "  Scene: Loaded from minphys JSON (bodies, shapes, joints per file).\n"
+              << "  Watch for: Motion matches the file intent—contacts, joint limits, and stacking or sliding should "
+                 "look stable.\n";
+}
+
+void PrintJsonClearHint() {
+    std::cout << "  Next run uses the built-in scenario from  1  /  2  until you load JSON or apply a preset.\n";
+}
+
 void PrintHelp() {
     std::cout
         << "Commands:\n"
         << "  r, run     Run one pass with current settings (built-in or JSON file).\n"
+        << "              Runs in the background unless pause mode is on (then one synchronous frame).\n"
         << "  pause      Toggle pause mode: when on,  r  advances exactly 1 frame (UDP frame capture).\n"
         << "  step [N]   One-shot run of N frames (default 1); does not change the  f  frame budget.\n"
+        << "  stop       Cancel a background run started with  r / run .\n"
+        << "  wait       Block until the background run finishes (no cancel).\n"
+        << "  sim-pause  Freeze physics in a background run (cooperative; use sim-resume ).\n"
+        << "  sim-resume Resume after sim-pause .\n"
         << "  q, quit    Exit.\n"
         << "  1 / 2      Built-in scenario: classic or hexapod (clears JSON file mode).\n"
         << "  l PATH     Load a minphys JSON scene (see assets/scenes/examples/).\n"
@@ -76,7 +111,10 @@ void PrintHelp() {
         << "  g          Toggle Earth gravity vs zero-G.\n"
         << "  t          Toggle realtime pacing (~60 Hz).\n"
         << "  f N / f    Set frame count (or prompt).\n"
-        << "  preset NAME   hex-viz | hex-zero | json-stack | json-compound | json-pendulum\n"
+        << "  preset NAME   Load a curated UDP/visual preset (many aliases; see  presets ).\n"
+        << "  presets      Print the full catalog of preset names and descriptions.\n"
+        << "  autonext on|off     After each full background run, apply the next catalog preset (UDP visual tour).\n"
+        << "  autonext-run on|off Also start the next  r  after autonext (only when pause_mode is off).\n"
         << "  p          Print settings.\n"
         << "  h, help    This list.\n";
 }
@@ -90,7 +128,9 @@ void PrintSettings(
     const std::string& scene_json_path,
     const std::string& udp_host,
     int udp_port,
-    bool pause_mode) {
+    bool pause_mode,
+    bool autonext_preset,
+    bool autonext_auto_run) {
     std::cout << "[settings] ";
     if (!scene_json_path.empty()) {
         std::cout << "scenario=file:" << scene_json_path;
@@ -100,72 +140,8 @@ void PrintSettings(
     std::cout << "  sink=" << SinkLabel(sink) << "  udp=" << udp_host << ":" << udp_port
               << "  gravity=" << (GravityIsOff(gravity) ? "off" : "earth") << "  (" << gravity.x << "," << gravity.y
               << "," << gravity.z << ")" << "  realtime=" << (realtime ? "on" : "off") << "  frames=" << frames
-              << "  pause_mode=" << (pause_mode ? "on" : "off") << "\n";
-}
-
-bool ApplyPreset(
-    const std::string& name,
-    SceneModel& model,
-    SinkKind& sink,
-    minphys3d::Vec3& gravity,
-    bool& realtime,
-    int& frames,
-    std::string& scene_json_path,
-    std::string& udp_host,
-    int& udp_port) {
-    if (name == "hex-viz") {
-        model = SceneModel::Hexapod;
-        scene_json_path.clear();
-        sink = SinkKind::Udp;
-        gravity = kEarthGravity;
-        realtime = true;
-        frames = 900;
-        udp_host = "127.0.0.1";
-        udp_port = 9870;
-        return true;
-    }
-    if (name == "hex-zero") {
-        model = SceneModel::Hexapod;
-        scene_json_path.clear();
-        sink = SinkKind::Udp;
-        gravity = kZeroGravity;
-        realtime = true;
-        frames = 500;
-        udp_host = "127.0.0.1";
-        udp_port = 9870;
-        return true;
-    }
-    if (name == "json-stack") {
-        scene_json_path = "assets/scenes/examples/stack_minimal.json";
-        sink = SinkKind::Udp;
-        gravity = kEarthGravity;
-        realtime = true;
-        frames = 720;
-        udp_host = "127.0.0.1";
-        udp_port = 9870;
-        return true;
-    }
-    if (name == "json-compound") {
-        scene_json_path = "assets/scenes/examples/compound_preview.json";
-        sink = SinkKind::Udp;
-        gravity = kEarthGravity;
-        realtime = true;
-        frames = 600;
-        udp_host = "127.0.0.1";
-        udp_port = 9870;
-        return true;
-    }
-    if (name == "json-pendulum") {
-        scene_json_path = "assets/scenes/examples/joints_distance.json";
-        sink = SinkKind::Udp;
-        gravity = kEarthGravity;
-        realtime = true;
-        frames = 840;
-        udp_host = "127.0.0.1";
-        udp_port = 9870;
-        return true;
-    }
-    return false;
+              << "  pause_mode=" << (pause_mode ? "on" : "off") << "  autonext=" << (autonext_preset ? "on" : "off")
+              << "  autonext-run=" << (autonext_auto_run ? "on" : "off") << "\n";
 }
 
 } // namespace
@@ -180,33 +156,149 @@ int RunInteractiveTerminalSession(const InteractiveSessionSeed& seed) {
     std::string udp_host = seed.udp_host;
     int udp_port = seed.udp_port;
     bool pause_mode = false;
+    bool autonext_preset = seed.autonext_preset;
+    bool autonext_auto_run = seed.autonext_auto_run;
+    int autonext_catalog_index = -1;
 
-    const auto executeRun = [&](int frame_budget) -> int {
+    std::optional<std::future<int>> sim_job;
+    std::unique_ptr<DemoRunControl> sim_control;
+
+    const auto run_demo_blocking = [&](int frame_budget, DemoRunControl* ctrl) -> int {
         if (!scene_json_path.empty()) {
             return RunPhysicsDemoFromJsonFile(
-                scene_json_path,
-                sink,
-                frame_budget,
-                realtime,
-                gravity,
-                udp_host,
-                udp_port);
+                scene_json_path, sink, frame_budget, realtime, gravity, udp_host, udp_port, ctrl);
         }
-        return RunPhysicsDemo(sink, model, frame_budget, realtime, gravity, udp_host, udp_port);
+        return RunPhysicsDemo(sink, model, frame_budget, realtime, gravity, udp_host, udp_port, ctrl);
+    };
+
+    const auto launch_background_sim = [&]() {
+        if (sim_job.has_value()) {
+            return;
+        }
+        const int budget = frames;
+        sim_control = std::make_unique<DemoRunControl>();
+        sim_control->realtime_pacing.store(realtime, std::memory_order_relaxed);
+        DemoRunControl* ctrl = sim_control.get();
+        const std::string path_copy = scene_json_path;
+        const SinkKind sink_copy = sink;
+        const SceneModel model_copy = model;
+        const minphys3d::Vec3 gravity_copy = gravity;
+        const std::string host_copy = udp_host;
+        const int port_copy = udp_port;
+        const bool realtime_arg = realtime;
+        sim_job.emplace(std::async(std::launch::async, [=]() -> int {
+            if (!path_copy.empty()) {
+                return RunPhysicsDemoFromJsonFile(
+                    path_copy, sink_copy, budget, realtime_arg, gravity_copy, host_copy, port_copy, ctrl);
+            }
+            return RunPhysicsDemo(
+                sink_copy, model_copy, budget, realtime_arg, gravity_copy, host_copy, port_copy, ctrl);
+        }));
+        std::cout << "[interactive] background run started ( stop | wait | sim-pause | sim-resume | t )\n";
+    };
+
+    const auto try_finalize_background_job = [&](bool blocking) -> bool {
+        if (!sim_job.has_value()) {
+            return false;
+        }
+        using namespace std::chrono;
+        if (!blocking) {
+            if (sim_job->wait_for(0s) != std::future_status::ready) {
+                return false;
+            }
+        } else {
+            sim_job->wait();
+        }
+        const bool cancelled =
+            sim_control != nullptr && sim_control->cancel_requested.load(std::memory_order_acquire);
+        (void)sim_job->get();
+        sim_job.reset();
+        sim_control.reset();
+
+        std::cout << "[interactive] background simulation finished\n";
+        if (!cancelled && autonext_preset) {
+            const std::vector<std::string> keys = ListInteractivePresetCanonicalKeysLowercase();
+            if (!keys.empty()) {
+                std::size_t next_index = 0;
+                if (autonext_catalog_index >= 0) {
+                    next_index =
+                        (static_cast<std::size_t>(autonext_catalog_index) + 1u) % keys.size();
+                }
+                autonext_catalog_index = static_cast<int>(next_index);
+                std::string preset_note;
+                if (ApplyInteractivePreset(
+                        keys[next_index],
+                        model,
+                        sink,
+                        gravity,
+                        realtime,
+                        frames,
+                        scene_json_path,
+                        udp_host,
+                        udp_port,
+                        &preset_note)) {
+                    std::cout << "[interactive] autonext -> preset " << keys[next_index] << "\n"
+                              << preset_note << "\n";
+                }
+                if (autonext_auto_run && !pause_mode) {
+                    launch_background_sim();
+                }
+            }
+        }
+        PrintSettings(
+            model,
+            sink,
+            gravity,
+            realtime,
+            frames,
+            scene_json_path,
+            udp_host,
+            udp_port,
+            pause_mode,
+            autonext_preset,
+            autonext_auto_run);
+        return true;
+    };
+
+    const auto poll_sim_job = [&]() { (void)try_finalize_background_job(false); };
+
+    const auto stop_background_sim = [&]() {
+        if (sim_control != nullptr) {
+            sim_control->cancel_requested.store(true, std::memory_order_release);
+        }
+        if (sim_job.has_value()) {
+            sim_job->wait();
+            (void)sim_job->get();
+            sim_job.reset();
+        }
+        sim_control.reset();
     };
 
     std::cout << "================================================================================\n"
               << " hexapod-physics-sim — interactive terminal\n"
               << "================================================================================\n"
               << "Built-ins: 1 / 2   ·   JSON: l path   ·   then  r  to run.  h  for commands.\n\n";
-    PrintSettings(model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port, pause_mode);
+    PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
     std::cout << "\n";
 
     for (;;) {
+        poll_sim_job();
         std::cout << "demo> " << std::flush;
         std::string line;
         if (!std::getline(std::cin, line)) {
             std::cout << "\n[interactive] stdin closed; exiting.\n";
+            stop_background_sim();
             return 0;
         }
         TrimInPlace(line);
@@ -220,6 +312,7 @@ int RunInteractiveTerminalSession(const InteractiveSessionSeed& seed) {
         }
 
         if (lower == "q" || lower == "quit" || lower == "exit") {
+            stop_background_sim();
             std::cout << "[interactive] bye.\n";
             return 0;
         }
@@ -227,17 +320,47 @@ int RunInteractiveTerminalSession(const InteractiveSessionSeed& seed) {
             PrintHelp();
             continue;
         }
+        if (lower == "presets" || lower == "catalog" || lower == "scenarios") {
+            PrintInteractivePresetCatalog(std::cout);
+            continue;
+        }
         if (lower == "p") {
-            PrintSettings(model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port, pause_mode);
+            PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
             continue;
         }
         if (lower == "pause") {
             pause_mode = !pause_mode;
             std::cout << "[interactive] pause_mode -> " << (pause_mode ? "on (each r runs 1 frame)" : "off") << "\n";
-            PrintSettings(model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port, pause_mode);
+            PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
             continue;
         }
         if (lower == "step" || lower.rfind("step ", 0) == 0) {
+            if (sim_job.has_value()) {
+                std::cout << "[interactive] stop the background run first ( stop )\n";
+                continue;
+            }
             std::string rest = lower == "step" ? std::string{} : line.substr(5);
             TrimInPlace(rest);
             int burst = 1;
@@ -245,50 +368,182 @@ int RunInteractiveTerminalSession(const InteractiveSessionSeed& seed) {
                 std::cout << "[interactive] step [N] expects positive integer N (default 1)\n";
                 continue;
             }
-            const int rc = executeRun(burst);
+            const int rc = run_demo_blocking(burst, nullptr);
             if (rc != 0) {
                 std::cout << "[interactive] step returned " << rc << "\n";
             } else {
                 std::cout << "[interactive] stepped " << burst << " frame(s)\n";
             }
-            PrintSettings(model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port, pause_mode);
+            PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
+            continue;
+        }
+        if (lower == "stop" || lower == "abort") {
+            if (!sim_job.has_value()) {
+                std::cout << "[interactive] no background simulation is running\n";
+                continue;
+            }
+            stop_background_sim();
+            std::cout << "[interactive] stopped.\n";
+            PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
+            continue;
+        }
+        if (lower == "wait") {
+            if (!sim_job.has_value()) {
+                std::cout << "[interactive] no background simulation is running\n";
+                continue;
+            }
+            (void)try_finalize_background_job(true);
+            continue;
+        }
+        if (lower == "sim-pause" || lower == "hold") {
+            if (sim_control == nullptr) {
+                std::cout << "[interactive] no background simulation is running\n";
+                continue;
+            }
+            sim_control->pause_requested.store(true, std::memory_order_release);
+            std::cout << "[interactive] sim-pause requested (physics will hold after the current frame)\n";
+            continue;
+        }
+        if (lower == "sim-resume" || lower == "continue") {
+            if (sim_control == nullptr) {
+                std::cout << "[interactive] no background simulation is running\n";
+                continue;
+            }
+            sim_control->pause_requested.store(false, std::memory_order_release);
+            std::cout << "[interactive] sim-resume\n";
             continue;
         }
         if (lower == "r" || lower == "run") {
-            const int budget = pause_mode ? 1 : frames;
-            const int rc = executeRun(budget);
-            if (rc != 0) {
-                std::cout << "[interactive] run returned " << rc << "\n";
+            if (sim_job.has_value()) {
+                std::cout << "[interactive] a run is already in progress ( stop  or  wait )\n";
+                continue;
             }
-            PrintSettings(model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port, pause_mode);
+            const int budget = pause_mode ? 1 : frames;
+            if (pause_mode) {
+                const int rc = run_demo_blocking(budget, nullptr);
+                if (rc != 0) {
+                    std::cout << "[interactive] run returned " << rc << "\n";
+                }
+            } else {
+                launch_background_sim();
+            }
+            PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
             continue;
         }
         if (line == "1") {
+            autonext_catalog_index = -1;
             model = SceneModel::Default;
             scene_json_path.clear();
             std::cout << "[interactive] scenario -> classic (built-in)\n";
-            PrintSettings(model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port, pause_mode);
+            PrintBuiltinScenarioHint(SceneModel::Default);
+            PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
             continue;
         }
         if (line == "2") {
+            autonext_catalog_index = -1;
             model = SceneModel::Hexapod;
             scene_json_path.clear();
             std::cout << "[interactive] scenario -> hexapod (built-in)\n";
-            PrintSettings(model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port, pause_mode);
+            PrintBuiltinScenarioHint(SceneModel::Hexapod);
+            PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
             continue;
         }
         if (lower.rfind("preset ", 0) == 0) {
+            if (sim_job.has_value()) {
+                std::cout << "[interactive] stop or wait for the background run before applying a preset\n";
+                continue;
+            }
             std::string name = line.substr(7);
             TrimInPlace(name);
             for (char& c : name) {
                 c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             }
-            if (!ApplyPreset(name, model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port)) {
-                std::cout << "[interactive] unknown preset \"" << name << "\" (try  h )\n";
+            std::string preset_note;
+            if (!ApplyInteractivePreset(
+                    name,
+                    model,
+                    sink,
+                    gravity,
+                    realtime,
+                    frames,
+                    scene_json_path,
+                    udp_host,
+                    udp_port,
+                    &preset_note)) {
+                std::cout << "[interactive] unknown preset \"" << name << "\" ( presets  for the full list)\n";
                 continue;
             }
-            std::cout << "[interactive] preset -> " << name << "\n";
-            PrintSettings(model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port, pause_mode);
+            std::cout << "[interactive] preset -> " << name << "\n" << preset_note << "\n";
+            if (const std::optional<std::size_t> idx = InteractivePresetCatalogIndexForKeyLowercase(name)) {
+                autonext_catalog_index = static_cast<int>(*idx);
+            }
+            PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
             continue;
         }
         if (lower.rfind("l ", 0) == 0 || lower.rfind("load ", 0) == 0) {
@@ -300,14 +555,40 @@ int RunInteractiveTerminalSession(const InteractiveSessionSeed& seed) {
                 continue;
             }
             scene_json_path = path;
+            autonext_catalog_index = -1;
             std::cout << "[interactive] json scene -> " << scene_json_path << "\n";
-            PrintSettings(model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port, pause_mode);
+            PrintJsonScenarioHint();
+            PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
             continue;
         }
         if (lower == "l" || lower == "load") {
             scene_json_path.clear();
+            autonext_catalog_index = -1;
             std::cout << "[interactive] cleared JSON scene (built-in 1/2 in effect)\n";
-            PrintSettings(model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port, pause_mode);
+            PrintJsonClearHint();
+            PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
             continue;
         }
         if (lower.rfind("u ", 0) == 0 || lower.rfind("udp ", 0) == 0) {
@@ -326,25 +607,133 @@ int RunInteractiveTerminalSession(const InteractiveSessionSeed& seed) {
             udp_host = std::move(host);
             udp_port = port;
             std::cout << "[interactive] udp -> " << udp_host << ":" << udp_port << "\n";
-            PrintSettings(model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port, pause_mode);
+            PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
             continue;
         }
         if (lower == "s") {
             sink = (sink == SinkKind::Dummy) ? SinkKind::Udp : SinkKind::Dummy;
             std::cout << "[interactive] sink -> " << SinkLabel(sink) << "\n";
-            PrintSettings(model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port, pause_mode);
+            PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
             continue;
         }
         if (lower == "g") {
             gravity = GravityIsOff(gravity) ? kEarthGravity : kZeroGravity;
             std::cout << "[interactive] gravity -> " << (GravityIsOff(gravity) ? "off" : "earth") << "\n";
-            PrintSettings(model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port, pause_mode);
+            PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
             continue;
         }
         if (lower == "t") {
             realtime = !realtime;
+            if (sim_control != nullptr) {
+                sim_control->realtime_pacing.store(realtime, std::memory_order_relaxed);
+            }
             std::cout << "[interactive] realtime pacing -> " << (realtime ? "on" : "off") << "\n";
-            PrintSettings(model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port, pause_mode);
+            PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
+            continue;
+        }
+        if (lower.rfind("autonext-run ", 0) == 0) {
+            std::string v = lower.substr(13);
+            TrimInPlace(v);
+            if (v == "on") {
+                autonext_auto_run = true;
+                autonext_preset = true;
+                std::cout << "[interactive] autonext-run on (preset autonext enabled)\n";
+            } else if (v == "off") {
+                autonext_auto_run = false;
+                std::cout << "[interactive] autonext-run off\n";
+            } else {
+                std::cout << "[interactive] usage: autonext-run on|off\n";
+                continue;
+            }
+            PrintSettings(
+                model,
+                sink,
+                gravity,
+                realtime,
+                frames,
+                scene_json_path,
+                udp_host,
+                udp_port,
+                pause_mode,
+                autonext_preset,
+                autonext_auto_run);
+            continue;
+        }
+        if (lower == "autonext") {
+            std::cout << "[interactive] autonext=" << (autonext_preset ? "on" : "off") << "  autonext-run="
+                      << (autonext_auto_run ? "on" : "off") << "\n";
+            continue;
+        }
+        if (lower.rfind("autonext ", 0) == 0) {
+            std::string v = lower.substr(9);
+            TrimInPlace(v);
+            if (v == "on") {
+                autonext_preset = true;
+                std::cout << "[interactive] autonext on\n";
+            } else if (v == "off") {
+                autonext_preset = false;
+                autonext_auto_run = false;
+                std::cout << "[interactive] autonext off (autonext-run cleared)\n";
+            } else {
+                std::cout << "[interactive] usage: autonext on|off\n";
+                continue;
+            }
+            PrintSettings(
+                model,
+                sink,
+                gravity,
+                realtime,
+                frames,
+                scene_json_path,
+                udp_host,
+                udp_port,
+                pause_mode,
+                autonext_preset,
+                autonext_auto_run);
             continue;
         }
         if (!line.empty() && (line[0] == 'f' || line[0] == 'F')) {
@@ -365,7 +754,18 @@ int RunInteractiveTerminalSession(const InteractiveSessionSeed& seed) {
             }
             frames = n;
             std::cout << "[interactive] frames -> " << frames << "\n";
-            PrintSettings(model, sink, gravity, realtime, frames, scene_json_path, udp_host, udp_port, pause_mode);
+            PrintSettings(
+        model,
+        sink,
+        gravity,
+        realtime,
+        frames,
+        scene_json_path,
+        udp_host,
+        udp_port,
+        pause_mode,
+        autonext_preset,
+        autonext_auto_run);
             continue;
         }
 

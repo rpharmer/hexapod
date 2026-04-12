@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "solver_iterations": 18,
+  "bodies": [
+    {
+      "shape": "plane",
+      "static": true,
+      "plane_normal": [0, 1, 0],
+      "plane_offset": 0,
+      "static_friction": 0.75,
+      "dynamic_friction": 0.5,
+      "restitution": 0.02
+    },
+    {
+      "shape": "sphere",
+      "position": [0, 0.35, 0],
+      "radius": 0.1,
+      "mass": 0.3,
+      "restitution": 0.85
+    },
+    {
+      "shape": "sphere",
+      "position": [0.002, 0.58, 0.001],
+      "radius": 0.095,
+      "mass": 0.28,
+      "restitution": 0.88
+    },
+    {
+      "shape": "sphere",
+      "position": [-0.002, 0.8, -0.001],
+      "radius": 0.09,
+      "mass": 0.26,
+      "restitution": 0.9
+    }
+  ]
+}

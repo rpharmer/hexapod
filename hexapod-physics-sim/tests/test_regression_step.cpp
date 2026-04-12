@@ -100,6 +100,7 @@ int main() {
     assert(std::abs(roundtrip.blockConditionEstimateMax - 1e6f) < 1e-3f);
     assert(std::abs(roundtrip.hingeAnchorBiasFactor - 0.25f) < 1e-6f);
     assert(std::abs(roundtrip.hingeAnchorDampingFactor - 0.12f) < 1e-6f);
+    assert(roundtrip.servoPositionPasses == 4u);
 
     Body heavy;
     heavy.shape = ShapeType::Sphere;

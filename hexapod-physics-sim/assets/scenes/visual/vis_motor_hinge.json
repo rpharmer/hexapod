@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "solver_iterations": 22,
+  "bodies": [
+    {
+      "shape": "plane",
+      "static": true,
+      "plane_normal": [0, 1, 0],
+      "plane_offset": 0,
+      "static_friction": 0.88,
+      "dynamic_friction": 0.58,
+      "restitution": 0.04
+    },
+    {
+      "shape": "box",
+      "static": true,
+      "position": [0, 0.2, 0],
+      "half_extents": [0.2, 0.08, 0.2],
+      "mass": 1.0,
+      "orientation": [1, 0, 0, 0]
+    },
+    {
+      "shape": "box",
+      "position": [0.35, 0.45, 0],
+      "half_extents": [0.28, 0.04, 0.08],
+      "mass": 0.65,
+      "velocity": [0, 0, 0],
+      "orientation": [1, 0, 0, 0],
+      "restitution": 0.05
+    }
+  ],
+  "joints": [
+    {
+      "type": "hinge",
+      "body_a": 1,
+      "body_b": 2,
+      "anchor": [0.12, 0.32, 0],
+      "axis": [0, 0, 1],
+      "enable_limits": false,
+      "enable_motor": true,
+      "motor_speed": 1.2,
+      "max_motor_torque": 2.5
+    }
+  ]
+}

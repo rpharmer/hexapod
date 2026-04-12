@@ -1,9 +1,13 @@
 #include "demo/scene_json.hpp"
 
+#include "demo/demo_run_control.hpp"
+
 #include "minphys3d/core/body.hpp"
 #include "minphys3d/math/quat.hpp"
 
+#include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -19,8 +23,12 @@ namespace minphys3d::demo {
 using minphys3d::Body;
 using minphys3d::CompoundChild;
 using minphys3d::IsCompoundChildShapeSupported;
+using minphys3d::Contact;
+using minphys3d::Length;
+using minphys3d::Manifold;
 using minphys3d::Normalize;
 using minphys3d::Quat;
+using minphys3d::ServoJoint;
 using minphys3d::ShapeType;
 using minphys3d::Vec3;
 using minphys3d::World;
@@ -635,6 +643,14 @@ bool ParseJointObject(const JsonObject& o, World& world, std::string& err) {
         (void)GetNumber(o, "position_gain", posGain, err, false);
         double dampGain = 0.8;
         (void)GetNumber(o, "damping_gain", dampGain, err, false);
+        double intGain = 0.0;
+        (void)GetNumber(o, "integral_gain", intGain, err, false);
+        double intClamp = 0.5;
+        (void)GetNumber(o, "integral_clamp", intClamp, err, false);
+        double posSmooth = 0.0;
+        (void)GetNumber(o, "position_error_smoothing", posSmooth, err, false);
+        double angleStab = 1.0;
+        (void)GetNumber(o, "angle_stabilization", angleStab, err, false);
         world.CreateServoJoint(
             bodyA,
             bodyB,
@@ -643,7 +659,11 @@ bool ParseJointObject(const JsonObject& o, World& world, std::string& err) {
             static_cast<float>(targetAngle),
             static_cast<float>(maxTorque),
             static_cast<float>(posGain),
-            static_cast<float>(dampGain));
+            static_cast<float>(dampGain),
+            static_cast<float>(intGain),
+            static_cast<float>(intClamp),
+            static_cast<float>(posSmooth),
+            static_cast<float>(angleStab));
         return true;
     }
 
@@ -899,6 +919,55 @@ std::filesystem::path ResolveSceneFilePath(const std::string& pathIn) {
 
 } // namespace
 
+namespace {
+
+float WrapAngleRad(float a) {
+    return std::atan2(std::sin(a), std::cos(a));
+}
+
+void LogJsonSceneFrameDiagnostics(std::FILE* out, int frame, const World& world) {
+    if (out == nullptr) {
+        return;
+    }
+    const std::vector<Manifold>& manifolds = world.DebugManifolds();
+    std::size_t contact_count = 0;
+    float max_pen = 0.0f;
+    for (const Manifold& m : manifolds) {
+        for (const Contact& c : m.contacts) {
+            ++contact_count;
+            max_pen = std::max(max_pen, c.penetration);
+        }
+    }
+    float max_dyn_w = 0.0f;
+    float max_dyn_v = 0.0f;
+    for (std::uint32_t i = 0; i < world.GetBodyCount(); ++i) {
+        const Body& b = world.GetBody(i);
+        if (b.invMass <= 0.0f || b.isSleeping) {
+            continue;
+        }
+        max_dyn_w = std::max(max_dyn_w, Length(b.angularVelocity));
+        max_dyn_v = std::max(max_dyn_v, Length(b.velocity));
+    }
+    std::fprintf(out,
+                 "frame=%d manifolds=%zu contacts=%zu max_pen=%.6f max_dyn_|w|=%.6f max_dyn_|v|=%.6f",
+                 frame,
+                 manifolds.size(),
+                 contact_count,
+                 max_pen,
+                 max_dyn_w,
+                 max_dyn_v);
+    const std::uint32_t servo_count = world.GetServoJointCount();
+    for (std::uint32_t sj = 0; sj < servo_count; ++sj) {
+        const ServoJoint& joint = world.GetServoJoint(sj);
+        const float angle = world.GetServoJointAngle(sj);
+        const float err = WrapAngleRad(angle - joint.targetAngle);
+        std::fprintf(out, " servo%u_err=%.6f servo%u_imp=%.6f", sj, err, sj, joint.servoImpulseSum);
+    }
+    std::fprintf(out, "\n");
+}
+
+} // namespace
+
 bool LoadWorldFromMinphysSceneJson(
     const std::string& json_text,
     World& world_out,
@@ -990,7 +1059,8 @@ int RunPhysicsDemoFromJsonFile(
     bool realtime_playback,
     Vec3 gravity,
     const std::string& udp_host,
-    int udp_port) {
+    int udp_port,
+    DemoRunControl* run_control) {
     if (udp_port < 1 || udp_port > 65535) {
         std::cerr << "[scene_json] invalid udp port\n";
         return 1;
@@ -1041,6 +1111,7 @@ int RunPhysicsDemoFromJsonFile(
     std::unique_ptr<FrameSink> sink = MakeFrameSink(sink_kind, udp_host, udp_port);
 
     constexpr float dt = 1.0f / 60.0f;
+    const DemoSteadyClock::time_point t0 = DemoSteadyClock::now();
     for (int frame = 0; frame < frame_count; ++frame) {
         world.Step(dt, solver_iterations);
 
@@ -1050,9 +1121,17 @@ int RunPhysicsDemoFromJsonFile(
         }
         sink->end_frame();
 
-        if (realtime_playback) {
-            std::this_thread::sleep_for(std::chrono::duration<float>(dt));
+        CooperativeYield(run_control);
+        if (CooperativeCancelled(run_control)) {
+            std::cout << "[hexapod-physics-sim] JSON scene cancelled mid-run\n";
+            return 0;
         }
+
+        if (run_log.available()) {
+            LogJsonSceneFrameDiagnostics(run_log.stream(), frame, world);
+        }
+
+        PaceRealtimeOuterFrame(PaceRealtimeEnabled(realtime_playback, run_control), t0, frame, dt);
     }
 
     std::cout << "[hexapod-physics-sim] completed JSON scene frames=" << frame_count << " sink=" << SinkLabel(sink_kind);

@@ -1,4 +1,5 @@
 #include "minphys3d/collision/convex_support.hpp"
+#include "minphys3d/core/body.hpp"
 #include "minphys3d/core/world.hpp"
 #include "minphys3d/narrowphase/epa.hpp"
 #include "minphys3d/narrowphase/gjk.hpp"
@@ -131,7 +132,7 @@ Vec3 SupportPointHalfCylinder(const Body& body, const Vec3& direction) {
     considerSemicap(hy);
     considerSemicap(-hy);
 
-    return body.position + Rotate(body.orientation, best);
+    return BodyWorldShapeOrigin(body) + Rotate(body.orientation, best);
 }
 
 std::pair<float, float> HalfCylinderProjectionInterval(const Body& hc, const Vec3& axisUnit) {
@@ -161,7 +162,7 @@ bool PointInsideFullCylinderWorld(const Body& cyl, const Vec3& p, float eps) {
 
 bool PointInsideHalfCylinderWorld(const Body& hc, const Vec3& p, float eps) {
     const Quat inv = Conjugate(Normalize(hc.orientation));
-    const Vec3 l = Rotate(inv, p - hc.position);
+    const Vec3 l = Rotate(inv, p - BodyWorldShapeOrigin(hc));
     const float hy = hc.halfHeight;
     const float r = hc.radius;
     if (l.z < -eps) {
@@ -250,6 +251,7 @@ Vec3 ClosestHalfCylinderSurfaceToPointWorld(const Body& hc, const Vec3& pWorld, 
 }
 
 void AppendHalfCylinderSurfaceSamples(const Body& hc, std::vector<Vec3>& out) {
+    const Vec3 origin = BodyWorldShapeOrigin(hc);
     const Quat q = Normalize(hc.orientation);
     const Vec3 ex = Rotate(q, {1.0f, 0.0f, 0.0f});
     const Vec3 ey = Rotate(q, {0.0f, 1.0f, 0.0f});
@@ -258,11 +260,11 @@ void AppendHalfCylinderSurfaceSamples(const Body& hc, std::vector<Vec3>& out) {
     const float hy = hc.halfHeight;
     const std::array<std::pair<float, float>, 4> flatCorners{{{r, hy}, {r, -hy}, {-r, hy}, {-r, -hy}}};
     for (const auto& xy : flatCorners) {
-        out.push_back(hc.position + ex * xy.first + ey * xy.second);
+        out.push_back(origin + ex * xy.first + ey * xy.second);
     }
-    out.push_back(hc.position + ey * hy);
-    out.push_back(hc.position + ey * (-hy));
-    out.push_back(hc.position);
+    out.push_back(origin + ey * hy);
+    out.push_back(origin + ey * (-hy));
+    out.push_back(origin);
 
     constexpr int kArc = 7;
     for (int iy = -1; iy <= 1; ++iy) {
@@ -271,7 +273,7 @@ void AppendHalfCylinderSurfaceSamples(const Body& hc, std::vector<Vec3>& out) {
             const float theta = (kPi * static_cast<float>(k)) / static_cast<float>(kArc);
             const float lx = r * std::cos(theta);
             const float lz = r * std::sin(theta);
-            out.push_back(hc.position + ex * lx + ey * y + ez * lz);
+            out.push_back(origin + ex * lx + ey * y + ez * lz);
         }
     }
 }
@@ -291,10 +293,11 @@ ConvexSupport MakeSphereConvexSupport(const Body& s) {
 }
 
 ConvexSupport MakeHalfCylinderConvexSupport(const Body& body) {
+    const Vec3 shapeOrigin = BodyWorldShapeOrigin(body);
     return ConvexSupport{
-        body.position,
+        shapeOrigin,
         body.orientation,
-        [center = body.position, orientation = body.orientation, halfHeight = body.halfHeight, radius = body.radius](const Vec3& direction) {
+        [center = shapeOrigin, orientation = body.orientation, halfHeight = body.halfHeight, radius = body.radius](const Vec3& direction) {
             const Vec3 localDir = Rotate(Conjugate(orientation), direction);
             const float hx = radius;
             const float hy = halfHeight;
@@ -673,7 +676,7 @@ void World::SphereHalfCylinder(std::uint32_t sphereId, std::uint32_t halfCylinde
         penetration = ComputePenetrationEPA(supportS, supportH, gjk.simplex);
     }
     if (!penetration.valid || penetration.depth <= 0.0f) {
-        Vec3 sep = hc.position - sphere.position;
+        Vec3 sep = BodyWorldShapeOrigin(hc) - sphere.position;
         if (LengthSquared(sep) <= kEpsilon * kEpsilon) {
             sep = {1.0f, 0.0f, 0.0f};
         } else {
@@ -692,7 +695,7 @@ void World::SphereHalfCylinder(std::uint32_t sphereId, std::uint32_t halfCylinde
         penetration.witnessB = witnessB.point;
     }
     Vec3 normal = penetration.normal;
-    if (Dot(normal, hc.position - sphere.position) < 0.0f) {
+    if (Dot(normal, BodyWorldShapeOrigin(hc) - sphere.position) < 0.0f) {
         normal = -normal;
     }
     const std::uint16_t detail = static_cast<std::uint16_t>(
@@ -712,7 +715,7 @@ void World::HalfCylinderBox(std::uint32_t halfCylinderId, std::uint32_t boxId) {
 
     const Body& hc = bodies_[halfCylinderId];
     const Body& box = bodies_[boxId];
-    const Vec3 d = box.position - hc.position;
+    const Vec3 d = box.position - BodyWorldShapeOrigin(hc);
     const Vec3 hcAxis = Normalize(Rotate(hc.orientation, {0.0f, 1.0f, 0.0f}));
     const Vec3 flatOut = Normalize(Rotate(hc.orientation, {0.0f, 0.0f, -1.0f}));
     const Vec3 bAxes[3] = {
@@ -875,7 +878,7 @@ void World::HalfCylinderCylinder(std::uint32_t halfCylinderId, std::uint32_t cyl
 
     const Body& hc = bodies_[halfCylinderId];
     const Body& cyl = bodies_[cylinderId];
-    const Vec3 d = cyl.position - hc.position;
+    const Vec3 d = cyl.position - BodyWorldShapeOrigin(hc);
     const Vec3 axisH = Normalize(Rotate(hc.orientation, {0.0f, 1.0f, 0.0f}));
     const Vec3 flatOut = Normalize(Rotate(hc.orientation, {0.0f, 0.0f, -1.0f}));
     const Vec3 axisC = Normalize(Rotate(cyl.orientation, {0.0f, 1.0f, 0.0f}));
@@ -934,7 +937,7 @@ void World::HalfCylinderCylinder(std::uint32_t halfCylinderId, std::uint32_t cyl
     }
 
     const Vec3 n = bestAxis;
-    const Vec3 refOrigin = 0.5f * (hc.position + cyl.position);
+    const Vec3 refOrigin = 0.5f * (BodyWorldShapeOrigin(hc) + cyl.position);
 
     struct Hit {
         Vec3 point{};
@@ -1036,7 +1039,7 @@ void World::HalfCylinderHalfCylinder(std::uint32_t aId, std::uint32_t bId) {
 
     const Body& a = bodies_[aId];
     const Body& b = bodies_[bId];
-    const Vec3 d = b.position - a.position;
+    const Vec3 d = BodyWorldShapeOrigin(b) - BodyWorldShapeOrigin(a);
     const Vec3 axisA = Normalize(Rotate(a.orientation, {0.0f, 1.0f, 0.0f}));
     const Vec3 flatA = Normalize(Rotate(a.orientation, {0.0f, 0.0f, -1.0f}));
     const Vec3 axisB = Normalize(Rotate(b.orientation, {0.0f, 1.0f, 0.0f}));
@@ -1102,7 +1105,7 @@ void World::HalfCylinderHalfCylinder(std::uint32_t aId, std::uint32_t bId) {
     }
 
     const Vec3 n = bestAxis;
-    const Vec3 refOrigin = 0.5f * (a.position + b.position);
+    const Vec3 refOrigin = 0.5f * (BodyWorldShapeOrigin(a) + BodyWorldShapeOrigin(b));
 
     struct Hit {
         Vec3 point{};
@@ -1199,7 +1202,7 @@ void World::CapsuleHalfCylinder(std::uint32_t capsuleId, std::uint32_t halfCylin
 
     const Body& cap = bodies_[capsuleId];
     const Body& hc = bodies_[halfCylinderId];
-    const Vec3 d = hc.position - cap.position;
+    const Vec3 d = BodyWorldShapeOrigin(hc) - cap.position;
     const Vec3 axisC = Normalize(Rotate(cap.orientation, {0.0f, 1.0f, 0.0f}));
     const Vec3 axisH = Normalize(Rotate(hc.orientation, {0.0f, 1.0f, 0.0f}));
     const Vec3 flatH = Normalize(Rotate(hc.orientation, {0.0f, 0.0f, -1.0f}));
@@ -1265,13 +1268,14 @@ void World::CapsuleHalfCylinder(std::uint32_t capsuleId, std::uint32_t halfCylin
 
     const float parallelFactor = std::abs(Dot(axisC, axisH));
     if (parallelFactor > 0.98f) {
+        const Vec3 hcOrigin = BodyWorldShapeOrigin(hc);
         const Vec3 p1 = cap.position - axisC * cap.halfHeight;
         const Vec3 q1 = cap.position + axisC * cap.halfHeight;
-        const Vec3 p2 = hc.position - axisH * hc.halfHeight;
-        const Vec3 q2 = hc.position + axisH * hc.halfHeight;
+        const Vec3 p2 = hcOrigin - axisH * hc.halfHeight;
+        const Vec3 q2 = hcOrigin + axisH * hc.halfHeight;
         const Vec3 hcD = q2 - p2;
         const float radiusSum = cap.radius + hc.radius;
-        const Vec3 centerDelta = hc.position - cap.position;
+        const Vec3 centerDelta = hcOrigin - cap.position;
         auto addEndpoint = [&](const Vec3& endpointCap, std::uint8_t capFeat) {
             const auto [sProj, tProj] = ClosestSegmentParameters(endpointCap, endpointCap, p2, q2);
             (void)sProj;

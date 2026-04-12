@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "solver_iterations": 22,
+  "bodies": [
+    {
+      "shape": "plane",
+      "static": true,
+      "plane_normal": [0, 1, 0],
+      "plane_offset": 0,
+      "static_friction": 0.88,
+      "dynamic_friction": 0.58,
+      "restitution": 0.04
+    },
+    {
+      "shape": "half_cylinder",
+      "position": [0.1, 0.32, 0.12],
+      "radius": 0.2,
+      "half_height": 0.18,
+      "mass": 1.0,
+      "velocity": [-0.05, 0, -0.1],
+      "orientation": [1, 0, 0, 0],
+      "restitution": 0.06
+    }
+  ]
+}

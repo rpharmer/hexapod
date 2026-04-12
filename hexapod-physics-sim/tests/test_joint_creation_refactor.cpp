@@ -114,6 +114,10 @@ int main() {
     assert(AlmostEqual(servo.maxServoTorque, 1.0f));
     assert(AlmostEqual(servo.positionGain, 6.0f));
     assert(AlmostEqual(servo.dampingGain, 0.8f));
+    assert(AlmostEqual(servo.integralGain, 0.0f));
+    assert(AlmostEqual(servo.integralClamp, 0.5f));
+    assert(AlmostEqual(servo.positionErrorSmoothing, 0.0f));
+    assert(AlmostEqual(servo.angleStabilizationScale, 1.0f));
     assert(AlmostEqualVec3(servo.localAnchorA, ComputeExpectedLocalAnchor(world.GetBody(a), sharedAnchor)));
     assert(AlmostEqualVec3(servo.localAnchorB, ComputeExpectedLocalAnchor(world.GetBody(b), sharedAnchor)));
     assert(AlmostOrthogonal(servo.localAxisA, servo.localReferenceA));

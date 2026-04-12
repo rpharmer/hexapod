@@ -1,5 +1,6 @@
 #pragma once
 
+#include "demo/demo_run_control.hpp"
 #include "demo/frame_sink.hpp"
 #include "minphys3d/core/world.hpp"
 #include "minphys3d/math/vec3.hpp"
@@ -26,6 +27,7 @@ int RunPhysicsDemoFromJsonFile(
     bool realtime_playback,
     minphys3d::Vec3 gravity,
     const std::string& udp_host = "127.0.0.1",
-    int udp_port = 9870);
+    int udp_port = 9870,
+    DemoRunControl* run_control = nullptr);
 
 } // namespace minphys3d::demo

@@ -160,6 +160,8 @@ public:
 
     const ServoJoint& GetServoJoint(std::uint32_t id) const;
 
+    std::uint32_t GetServoJointCount() const;
+
     float GetServoJointAngle(std::uint32_t id) const;
 
     std::uint32_t CreateDistanceJoint(std::uint32_t a, std::uint32_t b, const Vec3& worldAnchorA, const Vec3& worldAnchorB, float stiffness = 1.0f, float damping = 0.1f);
@@ -202,7 +204,11 @@ public:
         float targetAngle = 0.0f,
         float maxServoTorque = 1.0f,
         float positionGain = 6.0f,
-        float dampingGain = 0.8f);
+        float dampingGain = 0.8f,
+        float integralGain = 0.0f,
+        float integralClamp = 0.5f,
+        float positionErrorSmoothing = 0.0f,
+        float angleStabilizationScale = 1.0f);
 
     void Step(float dt, int solverIterations = 8);
 
@@ -633,6 +639,9 @@ private:
     void ClearAccumulators();
 
 private:
+    void PrepareServoJointControlSamples();
+    void AccumulateServoAngleIntegrals(float dt);
+
     struct NarrowphaseCacheKey {
         std::uint32_t loBody = 0;
         std::uint32_t hiBody = 0;

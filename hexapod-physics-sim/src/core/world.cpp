@@ -151,6 +151,9 @@ void World::SetDebugLogStream(std::FILE* stream) {
 std::uint32_t World::CreateBody(const Body& bodyDef) {
     Body body = bodyDef;
     body.RecomputeMassProperties();
+    if (body.shape == ShapeType::HalfCylinder) {
+        body.position += Rotate(Normalize(body.orientation), body.centerOfMassLocal);
+    }
     bodies_.push_back(body);
     shapeRevisionCounters_.push_back(0);
     shapeGeometrySignatures_.push_back(ComputeShapeGeometrySignature(body));
@@ -179,6 +182,10 @@ std::uint32_t World::GetBodyCount() const {
 
 const ServoJoint& World::GetServoJoint(std::uint32_t id) const {
     return servoJoints_.at(id);
+}
+
+std::uint32_t World::GetServoJointCount() const {
+    return static_cast<std::uint32_t>(servoJoints_.size());
 }
 
 float World::GetServoJointAngle(std::uint32_t id) const {
@@ -330,7 +337,11 @@ std::uint32_t World::CreateServoJoint(
     float targetAngle,
     float maxServoTorque,
     float positionGain,
-    float dampingGain) {
+    float dampingGain,
+    float integralGain,
+    float integralClamp,
+    float positionErrorSmoothing,
+    float angleStabilizationScale) {
     ServoJoint j{};
     j.a = a;
     j.b = b;
@@ -348,8 +359,44 @@ std::uint32_t World::CreateServoJoint(
     j.maxServoTorque = std::max(0.0f, maxServoTorque);
     j.positionGain = std::max(0.0f, positionGain);
     j.dampingGain = std::max(0.0f, dampingGain);
+    j.integralGain = std::max(0.0f, integralGain);
+    j.integralClamp = std::max(1e-5f, integralClamp);
+    j.positionErrorSmoothing = std::max(0.0f, positionErrorSmoothing);
+    j.angleStabilizationScale = std::clamp(angleStabilizationScale, 0.0f, 1.0f);
     servoJoints_.push_back(j);
     return static_cast<std::uint32_t>(servoJoints_.size() - 1);
+}
+
+void World::PrepareServoJointControlSamples() {
+    for (std::size_t i = 0; i < servoJoints_.size(); ++i) {
+        ServoJoint& j = servoJoints_[i];
+        const float angle = GetServoJointAngle(static_cast<std::uint32_t>(i));
+        float raw = angle - j.targetAngle;
+        raw = std::atan2(std::sin(raw), std::cos(raw));
+        if (j.positionErrorSmoothing > 0.0f) {
+            const float alpha = std::min(j.positionErrorSmoothing, 1.0f);
+            j.smoothedAngleError = j.smoothedAngleError + alpha * (raw - j.smoothedAngleError);
+        } else {
+            j.smoothedAngleError = raw;
+        }
+    }
+}
+
+void World::AccumulateServoAngleIntegrals(float dt) {
+    if (dt <= 0.0f) {
+        return;
+    }
+    for (std::size_t i = 0; i < servoJoints_.size(); ++i) {
+        ServoJoint& j = servoJoints_[i];
+        if (j.integralGain <= 0.0f) {
+            continue;
+        }
+        const float angle = GetServoJointAngle(static_cast<std::uint32_t>(i));
+        float err = angle - j.targetAngle;
+        err = std::atan2(std::sin(err), std::cos(err));
+        j.integralAccum += err * dt;
+        j.integralAccum = std::clamp(j.integralAccum, -j.integralClamp, j.integralClamp);
+    }
 }
 
 void World::Step(float dt, int solverIterations) {
@@ -368,6 +415,13 @@ void World::Step(float dt, int solverIterations) {
 
     const int substeps = ComputeSubsteps(dt);
     const float subDt = dt / static_cast<float>(substeps);
+
+    // Re-applying warm-started `servoImpulseSum` each substep lets motor impulse drift across frames;
+    // with friction contacts that produces a tiny-angle but large-|ω| limit cycle. Clear once per Step.
+    for (ServoJoint& j : servoJoints_) {
+        j.servoImpulseSum = 0.0f;
+    }
+    PrepareServoJointControlSamples();
 
     for (int stepIndex = 0; stepIndex < substeps; ++stepIndex) {
 #ifndef NDEBUG
@@ -414,6 +468,8 @@ void World::Step(float dt, int solverIterations) {
         CapturePersistentPointImpulseState(previousManifolds_);
         AssertBodyInvariants();
     }
+
+    AccumulateServoAngleIntegrals(dt);
 }
 
 void World::AddForce(std::uint32_t id, const Vec3& force) {

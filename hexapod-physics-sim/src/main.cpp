@@ -41,7 +41,9 @@ void PrintUsage(std::ostream& out) {
            "  --frames N                Number of frames to simulate (default: 1200)\n"
            "  --realtime                Pace the main loop to wall clock (~60 Hz) for visual debugging\n"
            "  --zero-gravity            Zero gravity vector (inspection / UDP preview)\n"
-           "  --interactive, -i         Terminal REPL (l path, u host port, preset …, then r)\n"
+           "  --interactive, -i         Terminal REPL ( presets ,  preset NAME ,  l ,  r , …)\n"
+           "  --autonext                With -i: after each full background run, apply the next catalog preset\n"
+           "  --autonext-run            With -i: same as --autonext and start the next run automatically\n"
            "  -h, --help                Show this help\n";
 }
 
@@ -54,6 +56,8 @@ int main(int argc, char** argv) {
     bool realtime_playback = false;
     bool zero_gravity = false;
     bool interactive = false;
+    bool interactive_autonext = false;
+    bool interactive_autonext_run = false;
     std::string scene_file;
     std::string udp_host = "127.0.0.1";
     int udp_port = 9870;
@@ -142,6 +146,15 @@ int main(int argc, char** argv) {
             interactive = true;
             continue;
         }
+        if (arg == "--autonext-run") {
+            interactive_autonext_run = true;
+            interactive_autonext = true;
+            continue;
+        }
+        if (arg == "--autonext") {
+            interactive_autonext = true;
+            continue;
+        }
         if (arg == "-h" || arg == "--help") {
             PrintUsage(std::cout);
             return 0;
@@ -165,6 +178,8 @@ int main(int argc, char** argv) {
         seed.scene_json_path = scene_file;
         seed.udp_host = udp_host;
         seed.udp_port = udp_port;
+        seed.autonext_preset = interactive_autonext;
+        seed.autonext_auto_run = interactive_autonext_run;
         return minphys3d::demo::RunInteractiveTerminalSession(seed);
     }
 

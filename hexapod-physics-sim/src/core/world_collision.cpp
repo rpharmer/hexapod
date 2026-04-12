@@ -89,10 +89,11 @@ ConvexSupport BuildConvexSupport(const Body& body) {
     }
 
     if (body.shape == ShapeType::HalfCylinder) {
+        const Vec3 shapeOrigin = BodyWorldShapeOrigin(body);
         return ConvexSupport{
-            body.position,
+            shapeOrigin,
             body.orientation,
-            [center = body.position, orientation = body.orientation, halfHeight = body.halfHeight, radius = body.radius](const Vec3& direction) {
+            [center = shapeOrigin, orientation = body.orientation, halfHeight = body.halfHeight, radius = body.radius](const Vec3& direction) {
                 const Vec3 localDir = Rotate(Conjugate(orientation), direction);
                 const float hx = radius;
                 const float hy = halfHeight;

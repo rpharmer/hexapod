@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "solver_iterations": 18,
+  "bodies": [
+    {
+      "shape": "plane",
+      "static": true,
+      "plane_normal": [0, 1, 0],
+      "plane_offset": 0,
+      "static_friction": 0.88,
+      "dynamic_friction": 0.55,
+      "restitution": 0.04
+    },
+    {
+      "shape": "sphere",
+      "position": [0.05, 2.4, 0.08],
+      "velocity": [0.15, 0, -0.05],
+      "radius": 0.14,
+      "mass": 0.55,
+      "restitution": 0.22
+    }
+  ]
+}

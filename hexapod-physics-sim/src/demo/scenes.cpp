@@ -458,7 +458,8 @@ int RunClassicDemo(
     bool realtime,
     Vec3 gravity,
     const std::string& udp_host,
-    int udp_port) {
+    int udp_port,
+    DemoRunControl* control) {
     RunLog run_log(BuildDebugLogPath());
     World world(gravity);
 #ifndef NDEBUG
@@ -540,6 +541,7 @@ int RunClassicDemo(
     std::unique_ptr<FrameSink> sink = MakeFrameSink(sink_kind, udp_host, udp_port);
 
     constexpr float dt = 1.0f / 60.0f;
+    const DemoSteadyClock::time_point t0 = DemoSteadyClock::now();
     for (int frame = 0; frame < frame_count; ++frame) {
         world.Step(dt, 16);
 
@@ -549,6 +551,12 @@ int RunClassicDemo(
         sink->emit_body(box_b_id, world.GetBody(box_b_id));
         sink->emit_body(sphere_id, world.GetBody(sphere_id));
         sink->end_frame();
+
+        CooperativeYield(control);
+        if (CooperativeCancelled(control)) {
+            std::cout << "[hexapod-physics-sim] demo scene model=default cancelled mid-run\n";
+            return 0;
+        }
 
         if (run_log.available()) {
             const Body& a = world.GetBody(box_a_id);
@@ -568,9 +576,7 @@ int RunClassicDemo(
                          s.position.z);
         }
 
-        if (realtime) {
-            std::this_thread::sleep_for(std::chrono::duration<float>(dt));
-        }
+        PaceRealtimeOuterFrame(PaceRealtimeEnabled(realtime, control), t0, frame, dt);
     }
 
     std::cout << "[hexapod-physics-sim] completed demo scene model=default frames=" << frame_count
@@ -589,7 +595,8 @@ int RunHexapodDemo(
     bool realtime,
     Vec3 gravity,
     const std::string& udp_host,
-    int udp_port) {
+    int udp_port,
+    DemoRunControl* control) {
     RunLog run_log(BuildDebugLogPath());
     World world(gravity);
 #ifndef NDEBUG
@@ -611,9 +618,19 @@ int RunHexapodDemo(
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     std::unique_ptr<FrameSink> sink = MakeFrameSink(sink_kind, udp_host, udp_port);
 
+    // Zero-G float preset: post-step servo positional stabilization snaps hinges without matching
+    // angular momentum, and with no gravity/contacts to damp the injection the rig blows apart.
+    // Disable that block for this demo only (velocity PD still holds servos).
+    if (minphys3d::LengthSquared(gravity) < 1.0e-4f) {
+        minphys3d::JointSolverConfig joint_cfg = world.GetJointSolverConfig();
+        joint_cfg.servoPositionPasses = 0;
+        world.SetJointSolverConfig(joint_cfg);
+    }
+
     constexpr float dt = 1.0f / 60.0f;
     constexpr int kPhysicsSubstepsPerFrame = 4;
     constexpr int kSolverIterations = 24;
+    const DemoSteadyClock::time_point t0 = DemoSteadyClock::now();
     for (int frame = 0; frame < frame_count; ++frame) {
         for (int substep = 0; substep < kPhysicsSubstepsPerFrame; ++substep) {
             world.Step(dt / static_cast<float>(kPhysicsSubstepsPerFrame), kSolverIterations);
@@ -622,6 +639,12 @@ int RunHexapodDemo(
         sink->begin_frame(frame, static_cast<float>(frame + 1) * dt);
         EmitSceneBodies(*sink, world, scene);
         sink->end_frame();
+
+        CooperativeYield(control);
+        if (CooperativeCancelled(control)) {
+            std::cout << "[hexapod-physics-sim] demo scene model=hexapod cancelled mid-run\n";
+            return 0;
+        }
 
         if (run_log.available()) {
             const Body& chassis = world.GetBody(scene.body);
@@ -679,9 +702,7 @@ int RunHexapodDemo(
             }
         }
 
-        if (realtime) {
-            std::this_thread::sleep_for(std::chrono::duration<float>(dt));
-        }
+        PaceRealtimeOuterFrame(PaceRealtimeEnabled(realtime, control), t0, frame, dt);
     }
 
     std::cout << "[hexapod-physics-sim] completed demo scene model=hexapod frames=" << frame_count
@@ -703,21 +724,22 @@ int RunModelDemo(
     bool realtime,
     Vec3 gravity,
     const std::string& udp_host,
-    int udp_port) {
+    int udp_port,
+    DemoRunControl* control) {
     if (model == SceneModel::Hexapod) {
-        return RunHexapodDemo(sink_kind, frame_count, realtime, gravity, udp_host, udp_port);
+        return RunHexapodDemo(sink_kind, frame_count, realtime, gravity, udp_host, udp_port, control);
     }
-    return RunClassicDemo(sink_kind, frame_count, realtime, gravity, udp_host, udp_port);
+    return RunClassicDemo(sink_kind, frame_count, realtime, gravity, udp_host, udp_port, control);
 }
 
 } // namespace
 
 int RunDefaultScene(SinkKind sink_kind, SceneModel model) {
-    return RunModelDemo(sink_kind, model, 120, false, kDemoEarthGravity, "127.0.0.1", 9870);
+    return RunModelDemo(sink_kind, model, 120, false, kDemoEarthGravity, "127.0.0.1", 9870, nullptr);
 }
 
 int RunRealTimeDefaultScene(SinkKind sink_kind, SceneModel model) {
-    return RunModelDemo(sink_kind, model, 1200, true, kDemoEarthGravity, "127.0.0.1", 9870);
+    return RunModelDemo(sink_kind, model, 1200, true, kDemoEarthGravity, "127.0.0.1", 9870, nullptr);
 }
 
 int RunPhysicsDemo(
@@ -727,8 +749,9 @@ int RunPhysicsDemo(
     bool realtime_playback,
     Vec3 gravity,
     const std::string& udp_host,
-    int udp_port) {
-    return RunModelDemo(sink_kind, model, frame_count, realtime_playback, gravity, udp_host, udp_port);
+    int udp_port,
+    DemoRunControl* run_control) {
+    return RunModelDemo(sink_kind, model, frame_count, realtime_playback, gravity, udp_host, udp_port, run_control);
 }
 
 } // namespace minphys3d::demo

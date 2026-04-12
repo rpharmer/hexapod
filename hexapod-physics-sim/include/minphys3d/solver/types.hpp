@@ -115,6 +115,8 @@ struct JointSolverConfig {
     float blockConditionEstimateMax = 0.0f;
     float hingeAnchorBiasFactor = 0.2f;
     float hingeAnchorDampingFactor = 0.1f;
+    /// Post-integration servo anchor + hinge-angle stabilization passes (0 disables that block).
+    std::uint8_t servoPositionPasses = 4;
 };
 
 struct BroadphaseConfig {

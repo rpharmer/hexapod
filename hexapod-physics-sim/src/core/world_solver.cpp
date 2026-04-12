@@ -910,12 +910,14 @@ void World::SolveServoJoint(ServoJoint& j) {
         const Vec3 refA = ResolveJointReference(a.orientation, j.localReferenceA, axisA);
         const Vec3 refB = ResolveJointReference(b.orientation, j.localReferenceB, axisA);
         const float hingeAngle = SignedAngleAroundAxis(refA, refB, axisA);
-        const float positionError = hingeAngle - j.targetAngle;
-        const float desiredOmega = -j.positionGain * positionError;
-        const float omegaError = Dot(relAngVel, axisA) - desiredOmega;
+        const float rawPositionError = core_internal::WrapJointAngle(hingeAngle - j.targetAngle);
+        const float positionError = (j.positionErrorSmoothing > 0.0f) ? j.smoothedAngleError : rawPositionError;
+        const float omegaAxis = Dot(relAngVel, axisA);
         const float effMass = Dot(axisA, invIA * axisA) + Dot(axisA, invIB * axisA);
         if (effMass > kEpsilon) {
-            float servoLambda = -(omegaError + j.dampingGain * Dot(relAngVel, axisA)) / effMass;
+            // Axis torque: P on (optionally smoothed) angle error, D on axis ω, optional I on accumulated error.
+            float servoLambda = -(j.positionGain * positionError + j.dampingGain * omegaAxis + j.integralGain * j.integralAccum)
+                / effMass;
             const float oldImpulse = j.servoImpulseSum;
             j.servoImpulseSum = std::clamp(j.servoImpulseSum + servoLambda, -j.maxServoTorque, j.maxServoTorque);
             servoLambda = j.servoImpulseSum - oldImpulse;
@@ -998,7 +1000,16 @@ void World::SolveContactsInManifold(Manifold& manifold) {
 
 void World::SolveJointPositions() {
         core_internal::JointSolver jointSolver;
-        core_internal::JointSolverContext context{bodies_, joints_, hingeJoints_, ballSocketJoints_, fixedJoints_, prismaticJoints_, servoJoints_};
+        core_internal::JointSolverContext context{
+            bodies_,
+            joints_,
+            hingeJoints_,
+            ballSocketJoints_,
+            fixedJoints_,
+            prismaticJoints_,
+            servoJoints_,
+            jointSolverConfig_.servoPositionPasses,
+        };
         jointSolver.SolveJointPositions(context);
     }
 

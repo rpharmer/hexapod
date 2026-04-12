@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "solver_iterations": 22,
+  "bodies": [
+    {
+      "shape": "plane",
+      "static": true,
+      "plane_normal": [0, 1, 0],
+      "plane_offset": 0,
+      "static_friction": 0.82,
+      "dynamic_friction": 0.52,
+      "restitution": 0.04
+    },
+    {
+      "shape": "capsule",
+      "position": [-0.25, 0.45, 0],
+      "radius": 0.09,
+      "half_height": 0.16,
+      "mass": 0.5,
+      "velocity": [0.15, 0, 0.05],
+      "orientation": [1, 0, 0, 0],
+      "restitution": 0.08
+    },
+    {
+      "shape": "capsule",
+      "position": [0.05, 0.52, -0.05],
+      "radius": 0.085,
+      "half_height": 0.15,
+      "mass": 0.48,
+      "velocity": [0, 0, 0],
+      "orientation": [0.9914, 0, 0.1305, 0],
+      "restitution": 0.08
+    },
+    {
+      "shape": "capsule",
+      "position": [0.32, 0.48, 0.06],
+      "radius": 0.08,
+      "half_height": 0.14,
+      "mass": 0.45,
+      "velocity": [-0.1, 0, 0],
+      "orientation": [1, 0, 0, 0],
+      "restitution": 0.08
+    }
+  ]
+}

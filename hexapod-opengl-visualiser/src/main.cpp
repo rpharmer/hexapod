@@ -720,6 +720,11 @@ bool ParsePacket(const std::string& payload, std::map<std::uint32_t, EntityState
     return false;
   }
 
+  if (*message_type == "scene_clear") {
+    entities.clear();
+    return true;
+  }
+
   const auto entity_id = ExtractUintField(payload, "entity_id");
   if (!entity_id.has_value()) {
     return false;

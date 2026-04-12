@@ -583,6 +583,7 @@ struct JointSolverContext {
     std::vector<FixedJoint>& fixedJoints;
     std::vector<PrismaticJoint>& prismaticJoints;
     std::vector<ServoJoint>& servoJoints;
+    std::uint8_t servoPositionPasses = 4;
 };
 
 inline float WrapJointAngle(float angle) {
@@ -726,16 +727,18 @@ public:
             }
         }
 
-        constexpr int kServoPositionPasses = 8;
-        for (int pass = 0; pass < kServoPositionPasses; ++pass) {
+        // Fewer passes + smaller per-pass angle steps avoid fighting the velocity solver (reduces servo jitter).
+        const int servoPositionPasses = std::max(0, static_cast<int>(context.servoPositionPasses));
+        for (int pass = 0; pass < servoPositionPasses; ++pass) {
             for (ServoJoint& j : context.servoJoints) {
                 Body& a = context.bodies[j.a];
                 Body& b = context.bodies[j.b];
                 if (a.invMass + b.invMass <= kEpsilon) continue;
+                const float stab = std::clamp(j.angleStabilizationScale, 0.0f, 1.0f);
                 const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
                 const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
                 const Vec3 error = (b.position + rb) - (a.position + ra);
-                const Vec3 correction = (0.22f / std::max(a.invMass + b.invMass, kEpsilon)) * error;
+                const Vec3 correction = (0.22f * stab / std::max(a.invMass + b.invMass, kEpsilon)) * error;
                 if (!a.isSleeping) a.position += correction * a.invMass;
                 if (!b.isSleeping) b.position -= correction * b.invMass;
 
@@ -748,7 +751,7 @@ public:
                 Vec3 axisError = Cross(axisA, axisB);
                 const float axisErrorMagnitude = Length(axisError);
                 if (axisErrorMagnitude > 1e-5f) {
-                    const float clampedMagnitude = std::min(0.18f, 0.20f * axisErrorMagnitude);
+                    const float clampedMagnitude = std::min(0.18f * stab, 0.20f * stab * axisErrorMagnitude);
                     axisError *= clampedMagnitude / axisErrorMagnitude;
                     ApplyAngularPositionCorrection(a, b, axisError);
                     axisA = Rotate(a.orientation, j.localAxisA);
@@ -762,7 +765,8 @@ public:
                 const Vec3 refB = ResolveJointReference(b.orientation, j.localReferenceB, axisA);
                 const float hingeAngle = SignedAngleAroundAxis(refA, refB, axisA);
                 const float targetError = WrapJointAngle(hingeAngle - j.targetAngle);
-                const float clampedAngleCorrection = std::clamp(0.22f * targetError, -0.12f, 0.12f);
+                const float clampedAngleCorrection =
+                    std::clamp(0.15f * stab * targetError, -0.06f * stab, 0.06f * stab);
                 if (std::abs(clampedAngleCorrection) > 1e-5f) {
                     ApplyAngularPositionCorrection(a, b, clampedAngleCorrection * axisA);
                 }

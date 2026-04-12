@@ -54,10 +54,28 @@ struct Body {
     bool isSleeping = false;
     int sleepCounter = 0;
 
+    /// For asymmetric primitives (e.g. half-cylinder), offset from the **collision primitive origin** (JSON /
+    /// authoring frame) to the **center of mass**, expressed in body-local axes. `position` is integrated as the
+    /// world-space center of mass after `World::CreateBody` finalizes the primitive.
+    Vec3 centerOfMassLocal{};
+
     void RecomputeMassProperties();
     Mat3 InvInertiaWorld() const;
     AABB ComputeAABB() const;
 };
+
+/// Solid half-cylinder with local y along the cylinder axis and material in z>=0 (flat cut at z=0).
+/// Returns the vector from the primitive origin (mid-height, center of the flat diameter) to the uniform-density COM.
+inline Vec3 HalfCylinderComOffsetFromShapeOriginLocal(float radius) {
+    constexpr float kPi = 3.14159265f;
+    return {0.0f, 0.0f, 4.0f * radius / (3.0f * kPi)};
+}
+
+/// World-space primitive frame origin used for collision geometry (equals `body.position` when `centerOfMassLocal` is zero).
+inline Vec3 BodyWorldShapeOrigin(const Body& body) {
+    const Quat q = Normalize(body.orientation);
+    return body.position - Rotate(q, body.centerOfMassLocal);
+}
 
 inline Vec3 PrimitiveShapeBoundsHalfExtents(const Body& body) {
     switch (body.shape) {
@@ -308,6 +326,7 @@ inline bool TryCompoundInvInertiaFromChildren(const Body& body, Mat3& invInertia
 }
 
 inline void Body::RecomputeMassProperties() {
+    centerOfMassLocal = {};
     if (shape == ShapeType::Plane) isStatic = true;
 
     if (isStatic || mass <= kEpsilon) {
@@ -335,13 +354,28 @@ inline void Body::RecomputeMassProperties() {
         invInertiaLocal.m[0][0] = (ix > kEpsilon) ? (1.0f / ix) : 0.0f;
         invInertiaLocal.m[1][1] = (iy > kEpsilon) ? (1.0f / iy) : 0.0f;
         invInertiaLocal.m[2][2] = (ix > kEpsilon) ? (1.0f / ix) : 0.0f;
-    } else if (shape == ShapeType::Cylinder || shape == ShapeType::HalfCylinder) {
+    } else if (shape == ShapeType::Cylinder) {
         const float height = halfHeight * 2.0f;
         const float ix = (mass / 12.0f) * (3.0f * radius * radius + height * height);
         const float iy = 0.5f * mass * radius * radius;
         invInertiaLocal.m[0][0] = (ix > kEpsilon) ? (1.0f / ix) : 0.0f;
         invInertiaLocal.m[1][1] = (iy > kEpsilon) ? (1.0f / iy) : 0.0f;
         invInertiaLocal.m[2][2] = (ix > kEpsilon) ? (1.0f / ix) : 0.0f;
+    } else if (shape == ShapeType::HalfCylinder) {
+        centerOfMassLocal = HalfCylinderComOffsetFromShapeOriginLocal(radius);
+        const float H = halfHeight;
+        const float R = radius;
+        const float zc = centerOfMassLocal.z;
+        const float IxxO = mass * (H * H / 3.0f + R * R / 4.0f);
+        const float IyyO = 0.5f * mass * R * R;
+        const float IzzO = mass * (H * H / 3.0f + R * R / 4.0f);
+        const float mzc2 = mass * zc * zc;
+        const float Ixx = std::max(IxxO - mzc2, kEpsilon * mass);
+        const float Iyy = std::max(IyyO - mzc2, kEpsilon * mass);
+        const float Izz = std::max(IzzO - mzc2, kEpsilon * mass);
+        invInertiaLocal.m[0][0] = 1.0f / Ixx;
+        invInertiaLocal.m[1][1] = 1.0f / Iyy;
+        invInertiaLocal.m[2][2] = 1.0f / Izz;
     } else if (shape == ShapeType::Box) {
         const float wx = halfExtents.x * 2.0f;
         const float wy = halfExtents.y * 2.0f;
@@ -380,7 +414,9 @@ inline Mat3 Body::InvInertiaWorld() const {
 
 inline AABB Body::ComputeAABB() const {
     if (shape != ShapeType::Compound) {
-        return ComputePrimitiveAABB(shape, position, orientation, radius, halfHeight, halfExtents, planeNormal, planeOffset);
+        const Vec3 primitivePosition = (shape == ShapeType::HalfCylinder) ? BodyWorldShapeOrigin(*this) : position;
+        return ComputePrimitiveAABB(
+            shape, primitivePosition, orientation, radius, halfHeight, halfExtents, planeNormal, planeOffset);
     }
 
     bool hasSupportedChild = false;

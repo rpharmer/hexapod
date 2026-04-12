@@ -66,6 +66,10 @@ Executable: `build/hexapod-physics-sim` (run from the build tree or pass paths a
 | `--interactive`, `-i` | Terminal REPL (configure sink/host/scene, then run) |
 | `-h`, `--help` | Print usage |
 
+### Interactive mode (`-i`)
+
+Inside the REPL, `presets` (or `catalog` / `scenarios`) prints a **large catalog** of curated `preset <name>` entries for UDP visual debugging: built-in classic/hexapod, the original `assets/scenes/examples/*.json` demos, and **38** additional scenes under `assets/scenes/visual/` (`vis_*.json`: collisions, joints, cylinders, half-cylinders, sleep-friendly stacks, and more). Most rows expose several **pipe-separated aliases** (for example `vis-hc-cyl|col-hc-cyl`). Each preset turns on **UDP** to `127.0.0.1:9870`, **Earth gravity** (unless the preset is zero-G), and **realtime pacing** by default (except `classic-soak`, which is CPU-fast for long regression-style runs).
+
 Built-in demos:
 
 ```bash
@@ -103,7 +107,7 @@ Each demo run writes a text log when the `logs/` directory can be created next t
 ## Scene JSON (minphys)
 
 - **`schema_version`**: must be **1** or **2** (values above **2** are rejected by the loader).  
-- Example files live under **`assets/scenes/examples/`** (`stack_minimal.json`, `compound_preview.json`, `joints_distance.json`, …).  
+- Example files live under **`assets/scenes/examples/`** (`stack_minimal.json`, `compound_preview.json`, `joints_distance.json`, …). Extra **visual-debug** scenes for the interactive `preset` catalog live under **`assets/scenes/visual/`** (`vis_*.json`).  
 - The loader is implemented in `src/demo/scene_json.cpp`; it accepts the fields used there (bodies, shapes, materials, joints, solver iteration count, etc.).  
 - Example JSON may contain `//` comments for human readers; strict JSON-only tools should strip those before parsing outside this project.
 

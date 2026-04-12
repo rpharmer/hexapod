@@ -59,6 +59,10 @@ public:
         frame_index_ = frame_index;
         sim_time_s_ = sim_time_s;
         bodies_.clear();
+        // Tell the visualiser to drop stale bodies from the previous run/scene (entity ids may be reused).
+        if (frame_index == 0 && valid_) {
+            send_payload(R"({"schema_version":1,"message_type":"scene_clear"})");
+        }
     }
 
     void emit_body(std::uint32_t body_id, const Body& body) override {
@@ -253,13 +257,14 @@ private:
     }
 
     std::string BuildFrameMessage(std::uint32_t entity_id, const Body& body) const {
+        const minphys3d::Vec3 p = minphys3d::BodyWorldShapeOrigin(body);
         std::ostringstream out;
         out << std::fixed << std::setprecision(6);
         out << "{\"schema_version\":1,\"message_type\":\"entity_frame\""
             << ",\"frame\":" << frame_index_
             << ",\"sim_time_s\":" << sim_time_s_
             << ",\"entity_id\":" << entity_id
-            << ",\"position\":[" << body.position.x << "," << body.position.y << "," << body.position.z << "]"
+            << ",\"position\":[" << p.x << "," << p.y << "," << p.z << "]"
             << ",\"rotation\":[" << body.orientation.w << "," << body.orientation.x << "," << body.orientation.y << ","
             << body.orientation.z << "]"
             << "}";

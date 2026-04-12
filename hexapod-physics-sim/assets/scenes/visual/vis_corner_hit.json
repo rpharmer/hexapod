@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "solver_iterations": 20,
+  "bodies": [
+    {
+      "shape": "plane",
+      "static": true,
+      "plane_normal": [0, 1, 0],
+      "plane_offset": 0,
+      "static_friction": 0.88,
+      "dynamic_friction": 0.58,
+      "restitution": 0.04
+    },
+    {
+      "shape": "box",
+      "static": true,
+      "position": [0.55, 0.35, 0],
+      "half_extents": [0.06, 0.3, 0.25],
+      "mass": 1.0,
+      "orientation": [1, 0, 0, 0]
+    },
+    {
+      "shape": "box",
+      "static": true,
+      "position": [0.25, 0.35, 0.35],
+      "half_extents": [0.35, 0.3, 0.06],
+      "mass": 1.0,
+      "orientation": [1, 0, 0, 0]
+    },
+    {
+      "shape": "box",
+      "position": [-0.35, 0.22, -0.15],
+      "half_extents": [0.1, 0.08, 0.1],
+      "mass": 0.55,
+      "velocity": [2.8, 0.2, 0.6],
+      "orientation": [1, 0, 0, 0],
+      "restitution": 0.06
+    }
+  ]
+}

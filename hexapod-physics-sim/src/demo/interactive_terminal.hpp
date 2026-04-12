@@ -18,6 +18,10 @@ struct InteractiveSessionSeed {
     std::string scene_json_path;
     std::string udp_host = "127.0.0.1";
     int udp_port = 9870;
+    /// After each full (non-cancelled) background `r` completes, advance to the next row in the preset catalog.
+    bool autonext_preset = false;
+    /// After autonext applies the next preset, start another background `r` automatically (implies cycling when on).
+    bool autonext_auto_run = false;
 };
 
 /**
