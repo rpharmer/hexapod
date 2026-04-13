@@ -101,7 +101,7 @@ const std::array<HexapodLegSpec, 6> kHexapodLegSpecs{{
     {{-0.063f, -0.007f, 0.0835f}, 323.0f},
 }};
 
-constexpr float kBodyMass = 2.4f;
+constexpr float kBodyMass = 0.40f;
 constexpr float kCoxaMass = 0.055f;
 constexpr float kFemurMass = 0.070f;
 constexpr float kTibiaMass = 0.055f;
@@ -119,6 +119,12 @@ constexpr float kTibiaRenderLength = kTibiaLength;
 
 constexpr float kNeutralFemurAngle = -0.20f;
 constexpr float kNeutralTibiaAngle = -1.00f;
+
+// One motor tune for every leg servo (hip yaw + two pitch joints). Impulse cap must be high enough that
+// identical limits still support the chassis on six legs under gravity (no per-joint favoritism).
+constexpr float kHexLegServoMaxTorque = 0.58f;
+constexpr float kHexLegServoPositionGain = 8.0f;
+constexpr float kHexLegServoDampingGain = 6.0f;
 
 Quat QuaternionFromBasis(const Vec3& x_axis, const Vec3& y_axis, const Vec3& z_axis) {
     const float m00 = x_axis.x;
@@ -313,6 +319,24 @@ Body MakeCompoundChassisBody(const Vec3& position, float mass) {
     return body;
 }
 
+void SyncBuiltInHexapodServoTargets(World& world, const HexapodSceneObjects& scene) {
+    // Built geometry uses neutral femur/tibia angles, but `CreateServoJoint` defaults `targetAngle` to 0.
+    // Align targets with the measured hinge angles so PD + integral start from the assembled pose instead
+    // of fighting a static offset (which reads as "weak" motors and lets the chassis settle low).
+    for (const LegLinkIds& leg : scene.legs) {
+        const std::array<std::uint32_t, 3> joint_ids{
+            leg.bodyToCoxaJoint,
+            leg.coxaToFemurJoint,
+            leg.femurToTibiaJoint,
+        };
+        for (const std::uint32_t joint_id : joint_ids) {
+            ServoJoint& joint = world.GetServoJointMutable(joint_id);
+            joint.targetAngle = world.GetServoJointAngle(joint_id);
+            joint.integralAccum = 0.0f;
+        }
+    }
+}
+
 float ComputeStandingBodyHeight() {
     const Vec3 leg_axis = LegAxisFromMountAngleDegrees(kHexapodLegSpecs.front().mountAngleDegrees);
     const Vec3 femur_direction = LegPitchDirection(leg_axis, kNeutralFemurAngle);
@@ -323,7 +347,10 @@ float ComputeStandingBodyHeight() {
         + femur_direction * kFemurLength
         + tibia_direction * kTibiaLength
         + Vec3{0.0f, -kFootRadius, 0.0f};
-    return std::max(kBodyToBottom, kFootRadius - foot_center_relative.y + 0.001f);
+    // Extra clearance so the first contact frames do not start with feet intersecting the plane when
+    // identical servos ramp holding torque (slightly conservative over analytic foot height).
+    constexpr float kSpawnHeightMargin = 0.002f;
+    return std::max(kBodyToBottom, kFootRadius - foot_center_relative.y + 0.001f) + kSpawnHeightMargin;
 }
 
 HexapodSceneObjects BuildHexapodScene(World& world) {
@@ -336,11 +363,13 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
     plane.restitution = 0.05f;
     plane.staticFriction = 0.9f;
     plane.dynamicFriction = 0.65f;
+    plane.collisionMask = ~std::uint32_t(0x0002);
     scene.plane = world.CreateBody(plane);
     scene.body_ids.push_back(scene.plane);
 
     const float body_height = ComputeStandingBodyHeight();
     Body chassis = MakeCompoundChassisBody({0.0f, body_height, 0.0f}, kBodyMass);
+    chassis.collisionGroup = 0x0002;
     scene.body = world.CreateBody(chassis);
     scene.body_ids.push_back(scene.body);
 
@@ -397,18 +426,15 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
         };
         const std::uint32_t tibia_id = world.CreateBody(tibia);
 
-        // Servo limits: maxServoTorque clamps accumulated angular impulse in the joint solver.
-        // Previous values (0.001 / 0.003) were far below tests/test_servo_chain_stability.cpp
-        // (order 10–20) and could not hold the leg under chassis weight.
         const std::uint32_t body_to_coxa_joint = world.CreateServoJoint(
             scene.body,
             coxa_id,
             hip_anchor,
             {0.0f, 1.0f, 0.0f},
             0.0f,
-            0.06f,
-            8.0f,
-            3.0f);
+            kHexLegServoMaxTorque,
+            kHexLegServoPositionGain,
+            kHexLegServoDampingGain);
 
         const std::uint32_t coxa_to_femur_joint = world.CreateServoJoint(
             coxa_id,
@@ -416,9 +442,9 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
             femur_anchor,
             lateral_axis,
             0.0f,
-            0.15f,
-            12.0f,
-            4.0f);
+            kHexLegServoMaxTorque,
+            kHexLegServoPositionGain,
+            kHexLegServoDampingGain);
 
         const std::uint32_t femur_to_tibia_joint = world.CreateServoJoint(
             femur_id,
@@ -426,9 +452,9 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
             tibia_anchor,
             lateral_axis,
             0.0f,
-            0.15f,
-            12.0f,
-            3.5f);
+            kHexLegServoMaxTorque,
+            kHexLegServoPositionGain,
+            kHexLegServoDampingGain);
 
         scene.legs[leg_index] = LegLinkIds{
             coxa_id,
@@ -443,6 +469,7 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
         scene.body_ids.push_back(tibia_id);
     }
 
+    SyncBuiltInHexapodServoTargets(world, scene);
     return scene;
 }
 
@@ -453,13 +480,14 @@ void EmitSceneBodies(FrameSink& sink, const World& world, const HexapodSceneObje
 }
 
 void RelaxBuiltInHexapodServos(World& world, const HexapodSceneObjects& scene) {
-    // The articulated hexapod never had explicit gait target updates; the live/zero-G presets are
-    // static pose previews. Lower the shared P/D gains enough to stay stable without the old angle
-    // snap, then add a uniform integral term so the preview can build holding torque under gravity
-    // instead of slowly sagging onto the floor.
-    constexpr float kServoGainScale = 0.54f;
-    constexpr float kIntegralToPositionRatio = 0.25f;
-    constexpr float kAngleStabilizationScale = 0.0f;
+    // Static pose previews: modest P/D scale + integral so identical leg motors can build holding
+    // torque under gravity. `angleStabilizationScale > 0` is now safe for the hexapod's star
+    // topology because `SolveJointPositions` uses Jacobi-averaged velocity biases for high-fanout
+    // bodies (the chassis with 6+ servos), preventing the phantom-energy feedback loop that
+    // previously caused exponential angular divergence through the contact-closed kinematic loop.
+    constexpr float kServoGainScale = 0.60f;
+    constexpr float kIntegralToPositionRatio = 0.34f;
+    constexpr float kAngleStabilizationScale = 0.1f;
     const std::array<std::uint32_t, 18> servo_joint_ids{
         scene.legs[0].bodyToCoxaJoint,
         scene.legs[0].coxaToFemurJoint,
@@ -692,9 +720,6 @@ int RunHexapodDemo(
     RelaxBuiltInHexapodServos(world, scene);
     std::unique_ptr<FrameSink> sink = MakeFrameSink(sink_kind, udp_host, udp_port);
 
-    // The built-in hexapod presets are static pose previews. Keep a small number of servo position
-    // passes so the leg anchors do not drift under load while leaving per-joint angle snap disabled;
-    // the snap term was the part that injected energy and blew the rig apart.
     minphys3d::JointSolverConfig joint_cfg = world.GetJointSolverConfig();
     joint_cfg.servoPositionPasses = 8;
     joint_cfg.hingeAnchorBiasFactor = 0.8f;
@@ -707,8 +732,8 @@ int RunHexapodDemo(
     }
 
     constexpr float dt = 1.0f / 60.0f;
-    constexpr int kPhysicsSubstepsPerFrame = 4;
-    constexpr int kSolverIterations = 48;
+    constexpr int kPhysicsSubstepsPerFrame = 6;
+    constexpr int kSolverIterations = 80;
     const DemoSteadyClock::time_point t0 = DemoSteadyClock::now();
     for (int frame = 0; frame < frame_count; ++frame) {
         for (int substep = 0; substep < kPhysicsSubstepsPerFrame; ++substep) {

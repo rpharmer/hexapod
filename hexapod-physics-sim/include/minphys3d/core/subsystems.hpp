@@ -583,7 +583,13 @@ struct JointSolverContext {
     std::vector<FixedJoint>& fixedJoints;
     std::vector<PrismaticJoint>& prismaticJoints;
     std::vector<ServoJoint>& servoJoints;
+    /// Mirrors `JointSolverConfig::servoPositionPasses`.
     std::uint8_t servoPositionPasses = 4;
+    /// World gravity; used to strip vertical anchor snap for static-backed servos (see servo position pass).
+    Vec3 gravity{0.0f, -9.81f, 0.0f};
+    /// Substep duration — used to convert angular position corrections into velocity biases so
+    /// they interact correctly with servo PD damping instead of injecting phantom energy.
+    float substepDt = 1.0f / 360.0f;
 };
 
 inline float WrapJointAngle(float angle) {
@@ -617,15 +623,65 @@ inline float SignedAngleAroundAxis(const Vec3& from, const Vec3& to, const Vec3&
     return std::atan2(Dot(Cross(fromN, toN), axis), Dot(fromN, toN));
 }
 
+/// Small Baumgarte-style orientation correction for joint position passes.
+/// Uses the same **scalar** effective rotational compliance as axis torques in `SolveServoJoint`
+/// (`wa = u·invIA·u`, `wb = u·invIB·u`) to split the quaternion step between bodies, instead of
+/// `invMass` weights (which over-rotate light links on a heavy chassis and destabilize multi-pass
+/// servo chains). Keeps the legacy opposite-sign convention on body B.
 inline void ApplyAngularPositionCorrection(Body& a, Body& b, const Vec3& correction) {
-    const float invMassSum = std::max(a.invMass + b.invMass, kEpsilon);
-    const float weightA = a.invMass / invMassSum;
-    const float weightB = b.invMass / invMassSum;
+    if (LengthSquared(correction) <= 1e-18f) {
+        return;
+    }
+    const Vec3 u = correction * (1.0f / Length(correction));
+    const Mat3 invIA = a.InvInertiaWorld();
+    const Mat3 invIB = b.InvInertiaWorld();
+    const float wa = Dot(u, invIA * u);
+    const float wb = Dot(u, invIB * u);
+    const float denom = wa + wb;
+    float weightA;
+    float weightB;
+    if (denom > kEpsilon) {
+        weightA = wa / denom;
+        weightB = wb / denom;
+    } else {
+        const float invMassSum = std::max(a.invMass + b.invMass, kEpsilon);
+        weightA = a.invMass / invMassSum;
+        weightB = b.invMass / invMassSum;
+    }
     if (!a.isSleeping && a.invMass > 0.0f) {
-        a.orientation = Normalize(a.orientation * Quat{1.0f, correction.x * weightA, correction.y * weightA, correction.z * weightA});
+        a.orientation =
+            Normalize(a.orientation * Quat{1.0f, correction.x * weightA, correction.y * weightA, correction.z * weightA});
     }
     if (!b.isSleeping && b.invMass > 0.0f) {
-        b.orientation = Normalize(b.orientation * Quat{1.0f, -correction.x * weightB, -correction.y * weightB, -correction.z * weightB});
+        b.orientation = Normalize(
+            b.orientation * Quat{1.0f, -correction.x * weightB, -correction.y * weightB, -correction.z * weightB});
+    }
+}
+
+/// Compute the per-body angular correction weight for a correction vector, split by inverse inertia.
+/// Returns {weightA, weightB}. Does not modify the bodies.
+inline std::pair<float, float> ComputeAngularCorrectionWeights(const Body& a, const Body& b, const Vec3& correction) {
+    if (LengthSquared(correction) <= 1e-18f) {
+        return {0.0f, 0.0f};
+    }
+    const Vec3 u = correction * (1.0f / Length(correction));
+    const Mat3 invIA = a.InvInertiaWorld();
+    const Mat3 invIB = b.InvInertiaWorld();
+    const float wa = Dot(u, invIA * u);
+    const float wb = Dot(u, invIB * u);
+    const float denom = wa + wb;
+    if (denom > kEpsilon) {
+        return {wa / denom, wb / denom};
+    }
+    const float invMassSum = std::max(a.invMass + b.invMass, kEpsilon);
+    return {a.invMass / invMassSum, b.invMass / invMassSum};
+}
+
+/// Apply a pre-computed angular correction directly to a body's orientation.
+inline void ApplyAngularCorrectionToBody(Body& body, const Vec3& correction) {
+    if (!body.isSleeping && body.invMass > 0.0f && LengthSquared(correction) > 1e-18f) {
+        body.orientation = Normalize(
+            body.orientation * Quat{1.0f, correction.x, correction.y, correction.z});
     }
 }
 
@@ -727,52 +783,133 @@ public:
             }
         }
 
-        // Fewer passes + smaller per-pass angle steps avoid fighting the velocity solver (reduces servo jitter).
         const int servoPositionPasses = std::max(0, static_cast<int>(context.servoPositionPasses));
-        for (int pass = 0; pass < servoPositionPasses; ++pass) {
-            for (ServoJoint& j : context.servoJoints) {
-                Body& a = context.bodies[j.a];
-                Body& b = context.bodies[j.b];
-                if (a.invMass + b.invMass <= kEpsilon) continue;
-                const float stab = std::clamp(j.angleStabilizationScale, 0.0f, 1.0f);
-                const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
-                const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
-                const Vec3 error = (b.position + rb) - (a.position + ra);
-                // Keep anchor correction independent from hinge-angle snap so articulated chains can
-                // preserve their effective link lengths under load without needing aggressive angle
-                // stabilization. This is important for the built-in hexapod, where angle snap caused
-                // explosions but disabling all servo position passes let the chassis sink as anchors drifted.
-                const Vec3 correction = (0.22f / std::max(a.invMass + b.invMass, kEpsilon)) * error;
-                if (!a.isSleeping) a.position += correction * a.invMass;
-                if (!b.isSleeping) b.position -= correction * b.invMass;
+        if (servoPositionPasses > 0 && !context.servoJoints.empty()) {
+            // Hybrid angular correction: direct position snap for low-fanout bodies, Jacobi-
+            // averaged velocity biases for high-fanout bodies.
+            //
+            // Direct position corrections rotate bodies without changing angular velocity. For
+            // simple chains (1-2 joints per body) this gives stiff snap. But on star topologies
+            // (hexapod chassis with 6 servos) the corrections accumulate on the hub, injecting
+            // phantom energy that feeds back through contacts closing the kinematic loop,
+            // producing exponential angular velocity divergence.
+            //
+            // Velocity biases avoid this: the PD damping (dampingGain × omega) provides negative
+            // feedback. The Jacobi average ensures the hub receives one averaged correction
+            // regardless of joint count. The bias is computed ONCE (not per-pass) to avoid
+            // amplification by the pass count.
+            constexpr std::uint16_t kFanoutThreshold = 2;
+            const float invDt = (context.substepDt > 1e-8f) ? (1.0f / context.substepDt) : 0.0f;
 
-                Vec3 axisA = Rotate(a.orientation, j.localAxisA);
-                Vec3 axisB = Rotate(b.orientation, j.localAxisB);
-                if (!TryNormalize(axisA, axisA) || !TryNormalize(axisB, axisB)) {
-                    continue;
+            std::vector<std::uint16_t> servoFanout(context.bodies.size(), 0);
+            std::uint16_t maxFanout = 0;
+            for (const ServoJoint& sj : context.servoJoints) {
+                ++servoFanout[sj.a];
+                ++servoFanout[sj.b];
+            }
+            for (auto f : servoFanout) maxFanout = std::max(maxFanout, f);
+
+            const bool useVelocityBiases = maxFanout > kFanoutThreshold;
+
+            if (useVelocityBiases) {
+                std::vector<Vec3> angularAccum(context.bodies.size(), Vec3{0.0f, 0.0f, 0.0f});
+                std::vector<std::uint16_t> angularCount(context.bodies.size(), 0);
+
+                for (const ServoJoint& j : context.servoJoints) {
+                    const Body& a = context.bodies[j.a];
+                    const Body& b = context.bodies[j.b];
+                    if (a.invMass + b.invMass <= kEpsilon) continue;
+                    const float stab = std::clamp(j.angleStabilizationScale, 0.0f, 1.0f);
+                    if (stab <= 1e-7f) continue;
+
+                    Vec3 axisA = Rotate(a.orientation, j.localAxisA);
+                    Vec3 axisB = Rotate(b.orientation, j.localAxisB);
+                    if (!TryNormalize(axisA, axisA) || !TryNormalize(axisB, axisB)) continue;
+
+                    Vec3 axisError = Cross(axisA, axisB);
+                    const float axisErrMag = Length(axisError);
+                    if (axisErrMag > 1e-5f) {
+                        const float clamped = std::min(0.18f * stab, 0.20f * stab * axisErrMag);
+                        axisError *= clamped / axisErrMag;
+                        const auto [wA, wB] = ComputeAngularCorrectionWeights(a, b, axisError);
+                        angularAccum[j.a] = angularAccum[j.a] + axisError * wA;
+                        angularAccum[j.b] = angularAccum[j.b] + axisError * (-wB);
+                    }
+
+                    const Vec3 refA = ResolveJointReference(a.orientation, j.localReferenceA, axisA);
+                    const Vec3 refB = ResolveJointReference(b.orientation, j.localReferenceB, axisA);
+                    const float hingeAngle = SignedAngleAroundAxis(refA, refB, axisA);
+                    const float targetError = WrapJointAngle(hingeAngle - j.targetAngle);
+                    const float clampedAngle = std::clamp(
+                        0.15f * stab * targetError, -0.06f * stab, 0.06f * stab);
+                    if (std::abs(clampedAngle) > 1e-5f) {
+                        const Vec3 hc = clampedAngle * axisA;
+                        const auto [wA, wB] = ComputeAngularCorrectionWeights(a, b, hc);
+                        angularAccum[j.a] = angularAccum[j.a] + hc * wA;
+                        angularAccum[j.b] = angularAccum[j.b] + hc * (-wB);
+                    }
+                    ++angularCount[j.a];
+                    ++angularCount[j.b];
                 }
 
-                Vec3 axisError = Cross(axisA, axisB);
-                const float axisErrorMagnitude = Length(axisError);
-                if (axisErrorMagnitude > 1e-5f) {
-                    const float clampedMagnitude = std::min(0.18f * stab, 0.20f * stab * axisErrorMagnitude);
-                    axisError *= clampedMagnitude / axisErrorMagnitude;
-                    ApplyAngularPositionCorrection(a, b, axisError);
-                    axisA = Rotate(a.orientation, j.localAxisA);
-                    axisB = Rotate(b.orientation, j.localAxisB);
-                    if (!TryNormalize(axisA, axisA) || !TryNormalize(axisB, axisB)) {
-                        continue;
+                for (std::size_t i = 0; i < context.bodies.size(); ++i) {
+                    if (angularCount[i] > 0) {
+                        Body& body = context.bodies[i];
+                        if (body.isSleeping || body.invMass <= 0.0f) continue;
+                        constexpr float kVelocityBiasCompliance = 0.15f;
+                        const Vec3 avg = angularAccum[i] * (1.0f / static_cast<float>(angularCount[i]));
+                        body.angularVelocity = body.angularVelocity + kVelocityBiasCompliance * avg * invDt;
                     }
                 }
+            }
 
-                const Vec3 refA = ResolveJointReference(a.orientation, j.localReferenceA, axisA);
-                const Vec3 refB = ResolveJointReference(b.orientation, j.localReferenceB, axisA);
-                const float hingeAngle = SignedAngleAroundAxis(refA, refB, axisA);
-                const float targetError = WrapJointAngle(hingeAngle - j.targetAngle);
-                const float clampedAngleCorrection =
-                    std::clamp(0.15f * stab * targetError, -0.06f * stab, 0.06f * stab);
-                if (std::abs(clampedAngleCorrection) > 1e-5f) {
-                    ApplyAngularPositionCorrection(a, b, clampedAngleCorrection * axisA);
+            for (int pass = 0; pass < servoPositionPasses; ++pass) {
+                for (ServoJoint& j : context.servoJoints) {
+                    Body& a = context.bodies[j.a];
+                    Body& b = context.bodies[j.b];
+                    if (a.invMass + b.invMass <= kEpsilon) continue;
+                    const float stab = std::clamp(j.angleStabilizationScale, 0.0f, 1.0f);
+
+                    const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
+                    const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
+                    const Vec3 error = (b.position + rb) - (a.position + ra);
+                    Vec3 correction = (0.22f / std::max(a.invMass + b.invMass, kEpsilon)) * error;
+                    const float gLenSq = LengthSquared(context.gravity);
+                    const bool oneStatic = a.isStatic != b.isStatic;
+                    if (oneStatic && gLenSq > 1e-12f) {
+                        const Vec3 gHat = context.gravity * (1.0f / std::sqrt(gLenSq));
+                        correction -= Dot(correction, gHat) * gHat;
+                    }
+                    if (!a.isSleeping) a.position += correction * a.invMass;
+                    if (!b.isSleeping) b.position -= correction * b.invMass;
+
+                    if (useVelocityBiases || stab <= 1e-7f) continue;
+
+                    Vec3 axisA = Rotate(a.orientation, j.localAxisA);
+                    Vec3 axisB = Rotate(b.orientation, j.localAxisB);
+                    if (!TryNormalize(axisA, axisA) || !TryNormalize(axisB, axisB)) continue;
+
+                    Vec3 axisError = Cross(axisA, axisB);
+                    const float axisErrorMagnitude = Length(axisError);
+                    if (axisErrorMagnitude > 1e-5f) {
+                        const float clampedMagnitude =
+                            std::min(0.18f * stab, 0.20f * stab * axisErrorMagnitude);
+                        axisError *= clampedMagnitude / axisErrorMagnitude;
+                        ApplyAngularPositionCorrection(a, b, axisError);
+                        axisA = Rotate(a.orientation, j.localAxisA);
+                        axisB = Rotate(b.orientation, j.localAxisB);
+                        if (!TryNormalize(axisA, axisA) || !TryNormalize(axisB, axisB)) continue;
+                    }
+
+                    const Vec3 refA = ResolveJointReference(a.orientation, j.localReferenceA, axisA);
+                    const Vec3 refB = ResolveJointReference(b.orientation, j.localReferenceB, axisA);
+                    const float hingeAngle = SignedAngleAroundAxis(refA, refB, axisA);
+                    const float targetError = WrapJointAngle(hingeAngle - j.targetAngle);
+                    const float clampedAngleCorrection = std::clamp(
+                        0.15f * stab * targetError, -0.06f * stab, 0.06f * stab);
+                    if (std::abs(clampedAngleCorrection) > 1e-5f) {
+                        ApplyAngularPositionCorrection(a, b, clampedAngleCorrection * axisA);
+                    }
                 }
             }
         }

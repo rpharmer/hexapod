@@ -96,4 +96,18 @@ add_minphys3d_test(test_servo_regression_matrix tests/test_servo_regression_matr
 add_minphys3d_test(test_hexapod_live tests/test_hexapod_live.cpp)
 add_minphys3d_test(test_hexapod_live_pose_hold tests/test_hexapod_live_pose_hold.cpp)
 add_minphys3d_test(test_hexapod_zero_g tests/test_hexapod_zero_g.cpp)
+add_minphys3d_test(hex_diag tests/hex_diag.cpp)
+
+    add_executable(test_servo_visual_presets_json
+        tests/test_servo_visual_presets_json.cpp
+        src/demo/scene_json.cpp
+        src/demo/frame_sink.cpp)
+    target_link_libraries(test_servo_visual_presets_json PRIVATE minphys3d_core)
+    target_include_directories(test_servo_visual_presets_json PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    if(MSVC)
+        target_compile_options(test_servo_visual_presets_json PRIVATE /W4)
+    else()
+        target_compile_options(test_servo_visual_presets_json PRIVATE -Wall -Wextra -pedantic)
+    endif()
+    add_test(NAME test_servo_visual_presets_json COMMAND test_servo_visual_presets_json)
 endif()

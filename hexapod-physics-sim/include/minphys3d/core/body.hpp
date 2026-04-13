@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <vector>
 
@@ -53,6 +54,9 @@ struct Body {
     bool isStatic = false;
     bool isSleeping = false;
     int sleepCounter = 0;
+
+    std::uint32_t collisionGroup = 0x0001;
+    std::uint32_t collisionMask  = 0xFFFFFFFF;
 
     /// For asymmetric primitives (e.g. half-cylinder), offset from the **collision primitive origin** (JSON /
     /// authoring frame) to the **center of mass**, expressed in body-local axes. `position` is integrated as the

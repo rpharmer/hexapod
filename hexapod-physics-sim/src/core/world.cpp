@@ -60,6 +60,11 @@ Vec3 World::GetGravity() const {
     return gravity_;
 }
 
+void World::SetBodyVelocityLimits(float maxLinearSpeed, float maxAngularSpeed) {
+    maxBodyLinearSpeed_ = maxLinearSpeed;
+    maxBodyAngularSpeed_ = maxAngularSpeed;
+}
+
 void World::SetContactSolverConfig(const ContactSolverConfig& config) {
     contactSolverConfig_ = SanitizeContactSolverConfig(config);
 }
@@ -387,6 +392,8 @@ void World::PrepareServoJointControlSamples() {
 }
 
 void World::AccumulateServoAngleIntegrals(float dt) {
+    // Uses the outer `World::Step` dt (not per-substep dt): integral is a slow bias into the
+    // inner `SolveServoJoint` PD loop accumulated once per step.
     if (dt <= 0.0f) {
         return;
     }
@@ -456,6 +463,7 @@ void World::Step(float dt, int solverIterations) {
         BuildIslands();
         WarmStartContacts();
         WarmStartJoints();
+        ApplyServoGravityCompensation(subDt);
 
         solverRelaxationPassActive_ = false;
         for (int i = 0; i < solverIterations; ++i) {
@@ -476,6 +484,7 @@ void World::Step(float dt, int solverIterations) {
         PositionalCorrection();
         UpdateSleeping();
         ClearAccumulators();
+        ClampBodyVelocities();
         previousContacts_ = contacts_;
         previousManifolds_ = manifolds_;
         CapturePersistentPointImpulseState(previousManifolds_);

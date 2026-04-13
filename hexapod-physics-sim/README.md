@@ -115,16 +115,19 @@ Supported **primitive** shape types include sphere, box, plane, capsule, cylinde
 
 ## Tests
 
-With `MINPHYS3D_BUILD_TESTS=ON`, CMake registers one CTest entry per `add_minphys3d_test` target (collision, GJK, broadphase, block solvers, servo stability, regression scenes, etc.).
+With `MINPHYS3D_BUILD_TESTS=ON`, CMake registers one CTest entry per `add_minphys3d_test` target (collision, GJK, broadphase, block solvers, servo stability, regression scenes, etc.), plus **`test_servo_visual_presets_json`**, which loads the **servo** `assets/scenes/visual/vis_servo_*.json` presets (including a zero-gravity pass on `vis_servo_chain.json`) and checks bounded motion and servo angle error over multi-second runs. Set **`MINPHYS_SERVO_JSON_TEST_VERBOSE=1`** when running that test to print per-interval peaks to stderr.
 
 ```bash
 cd build
 ctest --output-on-failure
 # or a single test:
 ctest -R test_cylinder_collision --output-on-failure
+ctest -R test_servo_visual_presets_json --output-on-failure
 ```
 
 You can also run an executable directly, for example `./build/test_unit_math`.
+
+For **per-frame** contact and servo diagnostics while running a JSON scene from the demo binary, set environment variable **`MINPHYS_JSON_SCENE_DIAG=1`** (writes the same line format as `logs/latest.log` to **stderr** every frame; best with a short `--frames` count).
 
 ## Engine notes (short)
 

@@ -637,8 +637,14 @@ void World::SolveHingeJoint(HingeJoint& j) {
                 continue;
             }
             const float bias = 0.2f * Dot(angularError, n) + 0.1f * Dot(relAngVel, n);
-            const float lambda = -bias / effMass;
-            *angImpulseSums[i] += lambda;
+            float lambda = -bias / effMass;
+            if (j.maxMotorTorque > 0.0f) {
+                const float oldAxisImpulse = *angImpulseSums[i];
+                *angImpulseSums[i] = std::clamp(oldAxisImpulse + lambda, -j.maxMotorTorque, j.maxMotorTorque);
+                lambda = *angImpulseSums[i] - oldAxisImpulse;
+            } else {
+                *angImpulseSums[i] += lambda;
+            }
             ApplyAngularImpulse(a, b, invIA, invIB, lambda * n);
         }
 
@@ -853,6 +859,32 @@ void World::SolvePrismaticJoint(PrismaticJoint& j) {
         }
     }
 
+void World::ApplyServoGravityCompensation(float dt) {
+    for (ServoJoint& j : servoJoints_) {
+        Body& a = bodies_[j.a];
+        Body& b = bodies_[j.b];
+        if (a.invMass + b.invMass <= kEpsilon) continue;
+        if (LengthSquared(gravity_) < 1e-8f) continue;
+
+        const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
+        const Vec3 axisA = Normalize(Rotate(a.orientation, j.localAxisA));
+        const Vec3 jointPos = a.position + ra;
+        const Vec3 rJointToCom = b.position - jointPos;
+        const float childMass = (b.invMass > kEpsilon) ? (1.0f / b.invMass) : 0.0f;
+        const float gravTorque = Dot(Cross(rJointToCom, childMass * gravity_), axisA);
+
+        float gravImpulse = -gravTorque * dt;
+        const float oldImpulse = j.servoImpulseSum;
+        j.servoImpulseSum = std::clamp(oldImpulse + gravImpulse,
+                                        -j.maxServoTorque, j.maxServoTorque);
+        gravImpulse = j.servoImpulseSum - oldImpulse;
+
+        const Mat3 invIA = a.InvInertiaWorld();
+        const Mat3 invIB = b.InvInertiaWorld();
+        ApplyAngularImpulse(a, b, invIA, invIB, gravImpulse * axisA);
+    }
+}
+
 void World::SolveServoJoint(ServoJoint& j) {
         Body& a = bodies_[j.a];
         Body& b = bodies_[j.b];
@@ -902,8 +934,10 @@ void World::SolveServoJoint(ServoJoint& j) {
                 continue;
             }
             const float bias = 0.2f * Dot(angularError, n) + 0.1f * Dot(relAngVel, n);
-            const float angLambda = -bias / effMass;
-            *angImpulseSums[i] += angLambda;
+            float angLambda = -bias / effMass;
+            const float oldAxisImpulse = *angImpulseSums[i];
+            *angImpulseSums[i] = std::clamp(oldAxisImpulse + angLambda, -j.maxServoTorque, j.maxServoTorque);
+            angLambda = *angImpulseSums[i] - oldAxisImpulse;
             ApplyAngularImpulse(a, b, invIA, invIB, angLambda * n);
         }
 
@@ -916,6 +950,8 @@ void World::SolveServoJoint(ServoJoint& j) {
         const float effMass = Dot(axisA, invIA * axisA) + Dot(axisA, invIB * axisA);
         if (effMass > kEpsilon) {
             // Axis torque: P on (optionally smoothed) angle error, D on axis omega, optional I on accumulated error.
+            // `maxServoTorque` clamps the running hinge-axis angular impulse sum (`servoImpulseSum`);
+            // each iteration applies only the delta after clamping (not a per-iteration torque cap).
             float servoLambda = -(j.positionGain * positionError + j.dampingGain * omegaAxis + j.integralGain * j.integralAccum)
                 / effMass;
             const float oldImpulse = j.servoImpulseSum;
@@ -1009,6 +1045,8 @@ void World::SolveJointPositions() {
             prismaticJoints_,
             servoJoints_,
             jointSolverConfig_.servoPositionPasses,
+            gravity_,
+            currentSubstepDt_,
         };
         jointSolver.SolveJointPositions(context);
     }

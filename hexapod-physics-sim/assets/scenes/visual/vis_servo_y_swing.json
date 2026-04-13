@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "solver_iterations": 24,
+  "solver_iterations": 26,
   "bodies": [
     {
       "shape": "plane",
@@ -15,14 +15,14 @@
       "shape": "box",
       "static": true,
       "position": [0, 0.22, 0],
-      "half_extents": [0.18, 0.1, 0.18],
+      "half_extents": [0.2, 0.1, 0.2],
       "mass": 1.0,
       "orientation": [1, 0, 0, 0]
     },
     {
       "shape": "box",
-      "position": [0.16, 0.38, 0.18],
-      "half_extents": [0.11, 0.028, 0.07],
+      "position": [0, 0.348, 0],
+      "half_extents": [0.11, 0.028, 0.08],
       "mass": 0.62,
       "velocity": [0, 0, 0],
       "orientation": [1, 0, 0, 0],
@@ -34,16 +34,16 @@
       "type": "servo",
       "body_a": 1,
       "body_b": 2,
-      "anchor": [0, 0.34, 0],
+      "anchor": [0, 0.32, 0],
       "axis": [0, 1, 0],
-      "target_angle": 0.85,
-      "max_servo_torque": 2.4,
-      "position_gain": 1.2,
-      "damping_gain": 0.45,
-      "integral_gain": 0.15,
-      "integral_clamp": 0.55,
+      "target_angle": 0.75,
+      "max_servo_torque": 2.2,
+      "position_gain": 1.05,
+      "damping_gain": 0.42,
+      "integral_gain": 0.12,
+      "integral_clamp": 0.5,
       "position_error_smoothing": 0.22,
-      "angle_stabilization": 0.24
+      "angle_stabilization": 0.2
     }
   ]
 }

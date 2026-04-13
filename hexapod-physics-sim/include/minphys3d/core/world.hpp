@@ -35,6 +35,12 @@ public:
     void SetGravity(Vec3 gravity);
     Vec3 GetGravity() const;
 
+    /// Caps dynamic body linear / angular speed magnitudes at the end of each physics substep (after
+    /// contacts, joints, TOI, and orientation integration). Non-positive disables that component.
+    void SetBodyVelocityLimits(float maxLinearSpeed, float maxAngularSpeed);
+    float GetMaxBodyLinearSpeed() const { return maxBodyLinearSpeed_; }
+    float GetMaxBodyAngularSpeed() const { return maxBodyAngularSpeed_; }
+
     void SetContactSolverConfig(const ContactSolverConfig& config);
     void SetJointSolverConfig(const JointSolverConfig& config);
     void SetBroadphaseConfig(const BroadphaseConfig& config);
@@ -517,6 +523,8 @@ private:
 
     void WarmStartJoints();
 
+    void ApplyServoGravityCompensation(float dt);
+
     void SolveNormalScalar(Contact& c);
 
     enum class BlockSolveFallbackReason {
@@ -638,6 +646,7 @@ private:
     void UpdateSleeping();
 
     void ClearAccumulators();
+    void ClampBodyVelocities();
 
 private:
     void PrepareServoJointControlSamples();
@@ -685,6 +694,8 @@ private:
     };
 
     Vec3 gravity_{};
+    float maxBodyLinearSpeed_ = 120.0f;
+    float maxBodyAngularSpeed_ = 180.0f;
     ContactSolverConfig contactSolverConfig_{};
     JointSolverConfig jointSolverConfig_{};
     BroadphaseConfig broadphaseConfig_{};

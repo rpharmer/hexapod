@@ -9,6 +9,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -797,6 +798,12 @@ bool ParseBodyObject(const JsonObject& o, Body& body, std::string& err) {
     double ad = 0.0;
     (void)GetNumber(o, "angular_damping", ad, err, false);
     body.angularDamping = static_cast<float>(ad);
+    double cg = static_cast<double>(body.collisionGroup);
+    (void)GetNumber(o, "collision_group", cg, err, false);
+    body.collisionGroup = static_cast<std::uint32_t>(cg);
+    double cm = static_cast<double>(body.collisionMask);
+    (void)GetNumber(o, "collision_mask", cm, err, false);
+    body.collisionMask = static_cast<std::uint32_t>(cm);
 
     if (body.shape == ShapeType::Sphere) {
         double rad = 0.5;
@@ -1129,6 +1136,11 @@ int RunPhysicsDemoFromJsonFile(
 
         if (run_log.available()) {
             LogJsonSceneFrameDiagnostics(run_log.stream(), frame, world);
+        }
+        if (const char* diag = std::getenv("MINPHYS_JSON_SCENE_DIAG")) {
+            if (diag[0] != '\0' && diag[0] != '0') {
+                LogJsonSceneFrameDiagnostics(stderr, frame, world);
+            }
         }
 
         PaceRealtimeOuterFrame(PaceRealtimeEnabled(realtime_playback, run_control), t0, frame, dt);

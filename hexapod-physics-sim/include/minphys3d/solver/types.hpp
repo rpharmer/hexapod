@@ -115,7 +115,10 @@ struct JointSolverConfig {
     float blockConditionEstimateMax = 0.0f;
     float hingeAnchorBiasFactor = 0.2f;
     float hingeAnchorDampingFactor = 0.1f;
-    /// Post-integration servo anchor + hinge-angle stabilization passes (0 disables that block).
+    /// Post-integration servo position passes. Anchor corrections run every pass (Gauss-Seidel).
+    /// Angular corrections (axis alignment + hinge snap) use direct position snap for simple
+    /// chains, or Jacobi-averaged velocity biases for systems containing a star-topology hub
+    /// (any body with > 2 servo joints). Use 0 to disable the block entirely.
     std::uint8_t servoPositionPasses = 4;
 };
 

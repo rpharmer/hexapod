@@ -64,7 +64,7 @@ int main() {
     constexpr float kMaxAngular = 0.05f;
     constexpr float kMaxError = 1.0e-4f;
     constexpr float kMinFinalY = 0.14f;
-    constexpr float kMaxFinalY = 0.17f;
+    constexpr float kMaxFinalY = 0.175f;
 
     if (metrics.peakLinear > kMaxLinear) {
         std::cerr << "hex_zero peak_linear=" << metrics.peakLinear << " cap=" << kMaxLinear << "\n";

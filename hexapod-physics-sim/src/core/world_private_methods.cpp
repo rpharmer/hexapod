@@ -1163,6 +1163,7 @@ void World::BuildIslands() {
         }
     }
 
+#ifndef NDEBUG
 std::vector<Pair> World::ComputePotentialPairsBruteForce() const {
 
         std::vector<Pair> pairs;
@@ -1185,6 +1186,10 @@ std::vector<Pair> World::ComputePotentialPairsBruteForce() const {
                 if ((a.invMass == 0.0f && b.invMass == 0.0f) || (a.isSleeping && b.isSleeping)) {
                     continue;
                 }
+                if ((a.collisionGroup & b.collisionMask) == 0
+                    || (b.collisionGroup & a.collisionMask) == 0) {
+                    continue;
+                }
                 pairs.push_back({i, j});
             }
         }
@@ -1200,6 +1205,7 @@ std::unordered_set<std::uint64_t> World::PairSetFromPairs(const std::vector<Pair
         }
         return pairSet;
     }
+#endif
 
 bool World::IsConvexShape(ShapeType shape) {
 
@@ -1811,6 +1817,7 @@ void World::SolveNormalScalar(Contact& c) {
         ApplyImpulse(a, b, invIA, invIB, ra, rb, lambdaN * c.normal);
     }
 
+#ifndef NDEBUG
 void World::ResetBlockSolveDebugStep(Manifold& manifold) {
 
         manifold.blockSolveDebug.selectedPreNormalImpulses = {0.0f, 0.0f};
@@ -1924,6 +1931,7 @@ void World::RecordManifoldSolveTelemetry(const Manifold& manifold,
         accumulate(solverTelemetry_.manifoldSolveScope);
         accumulate(solverTelemetry_.manifoldTypeBuckets[manifold.manifoldType]);
     }
+#endif
 
 bool World::IsValidBlockContactPoint(const Contact& contact) {
 
@@ -1952,6 +1960,7 @@ std::array<std::uint64_t, 2> World::SortedContactKeyPair(std::uint64_t k0, std::
         return {k0, k1};
     }
 
+#ifndef NDEBUG
 void World::RecordSelectedPairHistory(const Manifold& manifold) {
 
         if (manifold.selectedBlockContactIndices[0] < 0 || manifold.selectedBlockContactIndices[1] < 0) {
@@ -2050,6 +2059,7 @@ void World::DebugLogContactTransitions(const Manifold& previous, const Manifold&
             }
         }
     }
+#endif
 
 void World::SelectBlockSolvePair(Manifold& manifold) const {
 
@@ -2725,6 +2735,27 @@ void World::ClearAccumulators() {
         for (Body& body : bodies_) {
             body.force = {0.0f, 0.0f, 0.0f};
             body.torque = {0.0f, 0.0f, 0.0f};
+        }
+    }
+
+void World::ClampBodyVelocities() {
+
+        for (Body& body : bodies_) {
+            if (body.invMass == 0.0f || body.isSleeping) {
+                continue;
+            }
+            if (maxBodyLinearSpeed_ > 0.0f) {
+                const float linearMag = Length(body.velocity);
+                if (linearMag > maxBodyLinearSpeed_) {
+                    body.velocity *= maxBodyLinearSpeed_ / linearMag;
+                }
+            }
+            if (maxBodyAngularSpeed_ > 0.0f) {
+                const float angularMag = Length(body.angularVelocity);
+                if (angularMag > maxBodyAngularSpeed_) {
+                    body.angularVelocity *= maxBodyAngularSpeed_ / angularMag;
+                }
+            }
         }
     }
 

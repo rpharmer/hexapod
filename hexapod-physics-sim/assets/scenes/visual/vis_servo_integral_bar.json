@@ -21,7 +21,7 @@
     },
     {
       "shape": "box",
-      "position": [0.32, 0.22, 0],
+      "position": [0.32, 0.268, 0],
       "half_extents": [0.28, 0.022, 0.05],
       "mass": 1.35,
       "velocity": [0, 0, 0],
@@ -40,9 +40,9 @@
       "axis": [0, 0, 1],
       "target_angle": 0.0,
       "max_servo_torque": 5.5,
-      "position_gain": 7.5,
-      "damping_gain": 1.35,
-      "integral_gain": 2.8,
+      "position_gain": 6.0,
+      "damping_gain": 1.2,
+      "integral_gain": 2.2,
       "integral_clamp": 1.25,
       "position_error_smoothing": 0.12,
       "angle_stabilization": 0.32

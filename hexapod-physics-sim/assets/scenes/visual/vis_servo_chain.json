@@ -45,14 +45,14 @@
       "body_b": 2,
       "anchor": [0.1, 0.62, 0],
       "axis": [0, 0, 1],
-      "target_angle": 0.52,
+      "target_angle": 0.42,
       "max_servo_torque": 2.2,
-      "position_gain": 1.15,
-      "damping_gain": 0.42,
+      "position_gain": 1.0,
+      "damping_gain": 0.52,
       "integral_gain": 0.12,
       "integral_clamp": 0.6,
       "position_error_smoothing": 0.18,
-      "angle_stabilization": 0.28
+      "angle_stabilization": 0.22
     },
     {
       "type": "servo",
@@ -60,14 +60,14 @@
       "body_b": 3,
       "anchor": [0.22, 0.96, 0],
       "axis": [0, 0, 1],
-      "target_angle": -0.48,
+      "target_angle": -0.38,
       "max_servo_torque": 1.9,
-      "position_gain": 1.05,
-      "damping_gain": 0.4,
+      "position_gain": 0.95,
+      "damping_gain": 0.5,
       "integral_gain": 0.1,
       "integral_clamp": 0.55,
       "position_error_smoothing": 0.16,
-      "angle_stabilization": 0.26
+      "angle_stabilization": 0.2
     }
   ]
 }

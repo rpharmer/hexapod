@@ -512,7 +512,11 @@ bool World::IsPairEligible(std::uint32_t a, std::uint32_t b) const {
     }
     const Body& bodyA = bodies_[a];
     const Body& bodyB = bodies_[b];
-    return !((bodyA.invMass == 0.0f && bodyB.invMass == 0.0f) || (bodyA.isSleeping && bodyB.isSleeping));
+    if ((bodyA.invMass == 0.0f && bodyB.invMass == 0.0f) || (bodyA.isSleeping && bodyB.isSleeping)) {
+        return false;
+    }
+    return (bodyA.collisionGroup & bodyB.collisionMask) != 0
+        && (bodyB.collisionGroup & bodyA.collisionMask) != 0;
 }
 
 std::uint64_t World::MakePairKey(std::uint32_t a, std::uint32_t b) const {
