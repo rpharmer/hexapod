@@ -856,9 +856,8 @@ public:
                     if (angularCount[i] > 0) {
                         Body& body = context.bodies[i];
                         if (body.isSleeping || body.invMass <= 0.0f) continue;
-                        constexpr float kVelocityBiasCompliance = 0.15f;
                         const Vec3 avg = angularAccum[i] * (1.0f / static_cast<float>(angularCount[i]));
-                        body.angularVelocity = body.angularVelocity + kVelocityBiasCompliance * avg * invDt;
+                        body.angularVelocity = body.angularVelocity + avg * invDt;
                     }
                 }
             }

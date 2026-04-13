@@ -13,8 +13,8 @@ void RunConfig(const char* label, float stabOverride) {
     World world({0.0f, -9.81f, 0.0f});
     JointSolverConfig joint_cfg = world.GetJointSolverConfig();
     joint_cfg.servoPositionPasses = 8;
-    joint_cfg.hingeAnchorBiasFactor = 0.8f;
-    joint_cfg.hingeAnchorDampingFactor = 0.2f;
+    joint_cfg.hingeAnchorBiasFactor = 0.25f;
+    joint_cfg.hingeAnchorDampingFactor = 0.3f;
     world.SetJointSolverConfig(joint_cfg);
 
     const HexapodSceneObjects scene = BuildHexapodScene(world);

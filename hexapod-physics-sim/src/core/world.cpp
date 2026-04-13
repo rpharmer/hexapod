@@ -350,7 +350,8 @@ std::uint32_t World::CreateServoJoint(
     float integralGain,
     float integralClamp,
     float positionErrorSmoothing,
-    float angleStabilizationScale) {
+    float angleStabilizationScale,
+    float maxCorrectionAngle) {
     ServoJoint j{};
     j.a = a;
     j.b = b;
@@ -371,6 +372,7 @@ std::uint32_t World::CreateServoJoint(
     j.integralGain = std::max(0.0f, integralGain);
     j.integralClamp = std::max(1e-5f, integralClamp);
     j.positionErrorSmoothing = std::max(0.0f, positionErrorSmoothing);
+    j.maxCorrectionAngle = std::max(0.01f, maxCorrectionAngle);
     j.angleStabilizationScale = std::clamp(angleStabilizationScale, 0.0f, 1.0f);
     servoJoints_.push_back(j);
     return static_cast<std::uint32_t>(servoJoints_.size() - 1);
@@ -400,6 +402,11 @@ void World::AccumulateServoAngleIntegrals(float dt) {
     for (std::size_t i = 0; i < servoJoints_.size(); ++i) {
         ServoJoint& j = servoJoints_[i];
         if (j.integralGain <= 0.0f) {
+            continue;
+        }
+        const float saturationRatio = std::abs(j.servoImpulseSum) / std::max(j.maxServoTorque, 1e-6f);
+        if (saturationRatio > 0.95f) {
+            j.integralAccum *= 0.9f;
             continue;
         }
         const float angle = GetServoJointAngle(static_cast<std::uint32_t>(i));
@@ -463,7 +470,6 @@ void World::Step(float dt, int solverIterations) {
         BuildIslands();
         WarmStartContacts();
         WarmStartJoints();
-        ApplyServoGravityCompensation(subDt);
 
         solverRelaxationPassActive_ = false;
         for (int i = 0; i < solverIterations; ++i) {

@@ -210,12 +210,13 @@ public:
         const Vec3& worldAxis = {0.0f, 1.0f, 0.0f},
         float targetAngle = 0.0f,
         float maxServoTorque = 1.0f,
-        float positionGain = 6.0f,
-        float dampingGain = 0.8f,
+        float positionGain = 40.0f,
+        float dampingGain = 1.0f,
         float integralGain = 0.0f,
         float integralClamp = 0.5f,
         float positionErrorSmoothing = 0.0f,
-        float angleStabilizationScale = 1.0f);
+        float angleStabilizationScale = 1.0f,
+        float maxCorrectionAngle = 0.5f);
 
     void Step(float dt, int solverIterations = 8);
 
@@ -522,8 +523,6 @@ private:
     void WarmStartContacts();
 
     void WarmStartJoints();
-
-    void ApplyServoGravityCompensation(float dt);
 
     void SolveNormalScalar(Contact& c);
 

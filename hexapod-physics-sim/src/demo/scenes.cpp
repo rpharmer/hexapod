@@ -123,8 +123,8 @@ constexpr float kNeutralTibiaAngle = -1.00f;
 // One motor tune for every leg servo (hip yaw + two pitch joints). Impulse cap must be high enough that
 // identical limits still support the chassis on six legs under gravity (no per-joint favoritism).
 constexpr float kHexLegServoMaxTorque = 0.58f;
-constexpr float kHexLegServoPositionGain = 8.0f;
-constexpr float kHexLegServoDampingGain = 6.0f;
+constexpr float kHexLegServoPositionGain = 100.0f;  // omega_n (rad/s)
+constexpr float kHexLegServoDampingGain = 1.2f;    // zeta (slightly overdamped)
 
 Quat QuaternionFromBasis(const Vec3& x_axis, const Vec3& y_axis, const Vec3& z_axis) {
     const float m00 = x_axis.x;
@@ -480,14 +480,11 @@ void EmitSceneBodies(FrameSink& sink, const World& world, const HexapodSceneObje
 }
 
 void RelaxBuiltInHexapodServos(World& world, const HexapodSceneObjects& scene) {
-    // Static pose previews: modest P/D scale + integral so identical leg motors can build holding
-    // torque under gravity. `angleStabilizationScale > 0` is now safe for the hexapod's star
-    // topology because `SolveJointPositions` uses Jacobi-averaged velocity biases for high-fanout
-    // bodies (the chassis with 6+ servos), preventing the phantom-energy feedback loop that
-    // previously caused exponential angular divergence through the contact-closed kinematic loop.
-    constexpr float kServoGainScale = 0.60f;
-    constexpr float kIntegralToPositionRatio = 0.34f;
-    constexpr float kAngleStabilizationScale = 0.1f;
+    // Servo gains are now omega_n / zeta (mass-normalized by the soft constraint formulation),
+    // so no linear gain scaling is needed. Position-pass stabilization is disabled to avoid
+    // double stabilization with the velocity-level soft constraint motor.
+    constexpr float kIntegralToPositionRatio = 0.02f;
+    constexpr float kAngleStabilizationScale = 0.0f;
     const std::array<std::uint32_t, 18> servo_joint_ids{
         scene.legs[0].bodyToCoxaJoint,
         scene.legs[0].coxaToFemurJoint,
@@ -510,8 +507,6 @@ void RelaxBuiltInHexapodServos(World& world, const HexapodSceneObjects& scene) {
     };
     for (const std::uint32_t joint_id : servo_joint_ids) {
         ServoJoint& joint = world.GetServoJointMutable(joint_id);
-        joint.positionGain *= kServoGainScale;
-        joint.dampingGain *= kServoGainScale;
         joint.integralGain = kIntegralToPositionRatio * joint.positionGain;
         joint.integralClamp = std::max(joint.integralClamp, 0.75f);
         joint.angleStabilizationScale = kAngleStabilizationScale;
@@ -722,8 +717,8 @@ int RunHexapodDemo(
 
     minphys3d::JointSolverConfig joint_cfg = world.GetJointSolverConfig();
     joint_cfg.servoPositionPasses = 8;
-    joint_cfg.hingeAnchorBiasFactor = 0.8f;
-    joint_cfg.hingeAnchorDampingFactor = 0.2f;
+    joint_cfg.hingeAnchorBiasFactor = 0.25f;
+    joint_cfg.hingeAnchorDampingFactor = 0.3f;
     world.SetJointSolverConfig(joint_cfg);
 
     // Zero-G still needs an extra downscale because there is no gravity/contact damping at all.

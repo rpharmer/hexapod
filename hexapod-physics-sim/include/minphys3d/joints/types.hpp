@@ -101,14 +101,16 @@ struct ServoJoint {
     float servoImpulseSum = 0.0f;
     float targetAngle = 0.0f;
     float maxServoTorque = 0.0f;
-    float positionGain = 6.0f;
-    float dampingGain = 0.8f;
+    float positionGain = 40.0f;   // omega_n: natural frequency (rad/s)
+    float dampingGain = 1.0f;     // zeta: damping ratio
     float integralGain = 0.0f;
     float integralClamp = 0.5f;
     float integralAccum = 0.0f;
     /// 0 = off; else each Step: smoothed P-error += min(value,1)*(raw-smoothed).
     float positionErrorSmoothing = 0.0f;
     float smoothedAngleError = 0.0f;
+    /// Max position error (rad) fed to bias velocity; limits correction rate for large errors.
+    float maxCorrectionAngle = 0.5f;
     /// Scales post-integration positional hinge correction for this joint (1 = default).
     float angleStabilizationScale = 1.0f;
 };

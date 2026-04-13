@@ -640,9 +640,9 @@ bool ParseJointObject(const JsonObject& o, World& world, std::string& err) {
         (void)GetNumber(o, "target_angle", targetAngle, err, false);
         double maxTorque = 1.0;
         (void)GetNumber(o, "max_servo_torque", maxTorque, err, false);
-        double posGain = 6.0;
+        double posGain = 40.0;
         (void)GetNumber(o, "position_gain", posGain, err, false);
-        double dampGain = 0.8;
+        double dampGain = 1.0;
         (void)GetNumber(o, "damping_gain", dampGain, err, false);
         double intGain = 0.0;
         (void)GetNumber(o, "integral_gain", intGain, err, false);
@@ -650,6 +650,8 @@ bool ParseJointObject(const JsonObject& o, World& world, std::string& err) {
         (void)GetNumber(o, "integral_clamp", intClamp, err, false);
         double posSmooth = 0.0;
         (void)GetNumber(o, "position_error_smoothing", posSmooth, err, false);
+        double maxCorrAngle = 0.5;
+        (void)GetNumber(o, "max_correction_angle", maxCorrAngle, err, false);
         double angleStab = 1.0;
         (void)GetNumber(o, "angle_stabilization", angleStab, err, false);
         world.CreateServoJoint(
@@ -664,7 +666,8 @@ bool ParseJointObject(const JsonObject& o, World& world, std::string& err) {
             static_cast<float>(intGain),
             static_cast<float>(intClamp),
             static_cast<float>(posSmooth),
-            static_cast<float>(angleStab));
+            static_cast<float>(angleStab),
+            static_cast<float>(maxCorrAngle));
         return true;
     }
 
