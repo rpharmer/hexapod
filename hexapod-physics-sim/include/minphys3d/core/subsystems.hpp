@@ -738,7 +738,11 @@ public:
                 const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
                 const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
                 const Vec3 error = (b.position + rb) - (a.position + ra);
-                const Vec3 correction = (0.22f * stab / std::max(a.invMass + b.invMass, kEpsilon)) * error;
+                // Keep anchor correction independent from hinge-angle snap so articulated chains can
+                // preserve their effective link lengths under load without needing aggressive angle
+                // stabilization. This is important for the built-in hexapod, where angle snap caused
+                // explosions but disabling all servo position passes let the chassis sink as anchors drifted.
+                const Vec3 correction = (0.22f / std::max(a.invMass + b.invMass, kEpsilon)) * error;
                 if (!a.isSleeping) a.position += correction * a.invMass;
                 if (!b.isSleeping) b.position -= correction * b.invMass;
 

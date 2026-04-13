@@ -278,6 +278,78 @@ bool CheckFiveLinkFreefallLong() {
     return true;
 }
 
+bool CheckVisualServoArmPresetRemainsBounded() {
+    World world({0.0f, -9.81f, 0.0f});
+
+    Body plane;
+    plane.shape = ShapeType::Plane;
+    plane.isStatic = true;
+    plane.planeNormal = {0.0f, 1.0f, 0.0f};
+    plane.planeOffset = 0.0f;
+    plane.staticFriction = 0.88f;
+    plane.dynamicFriction = 0.58f;
+    plane.restitution = 0.04f;
+    world.CreateBody(plane);
+
+    Body base = MakeBoxBody({0.0f, 0.18f, 0.0f}, {0.22f, 0.06f, 0.18f}, 1.0f, true);
+    const std::uint32_t base_id = world.CreateBody(base);
+
+    Body arm = MakeBoxBody({0.29f, 0.24f, 0.0f}, {0.14f, 0.05f, 0.06f}, 0.55f, false);
+    arm.restitution = 0.05f;
+    const std::uint32_t arm_id = world.CreateBody(arm);
+
+    const std::uint32_t joint_id = world.CreateServoJoint(
+        base_id,
+        arm_id,
+        {0.15f, 0.24f, 0.0f},
+        {0.0f, 0.0f, 1.0f},
+        0.45f,
+        2.0f,
+        1.0f,
+        0.4f,
+        0.0f,
+        0.5f,
+        0.2f,
+        0.2f);
+
+    float peak_linear = 0.0f;
+    float peak_angular = 0.0f;
+    float max_error = 0.0f;
+    float final_error = 0.0f;
+    constexpr float kDt = 1.0f / 120.0f;
+    for (int step = 0; step < 360; ++step) {
+        world.Step(kDt, 24);
+        const Body& current_arm = world.GetBody(arm_id);
+        peak_linear = std::max(peak_linear, Length(current_arm.velocity));
+        peak_angular = std::max(peak_angular, Length(current_arm.angularVelocity));
+        const ServoJoint& joint = world.GetServoJoint(joint_id);
+        final_error = std::abs(WrapAngle(world.GetServoJointAngle(joint_id) - joint.targetAngle));
+        max_error = std::max(max_error, final_error);
+    }
+
+    constexpr float kMaxLinear = 0.10f;
+    constexpr float kMaxAngular = 1.0f;
+    constexpr float kMaxError = 0.36f;
+    constexpr float kFinalError = 0.02f;
+    if (peak_linear > kMaxLinear) {
+        std::cerr << "vis_servo_arm peak_linear=" << peak_linear << " cap=" << kMaxLinear << "\n";
+        return false;
+    }
+    if (peak_angular > kMaxAngular) {
+        std::cerr << "vis_servo_arm peak_angular=" << peak_angular << " cap=" << kMaxAngular << "\n";
+        return false;
+    }
+    if (max_error > kMaxError) {
+        std::cerr << "vis_servo_arm max_error=" << max_error << " cap=" << kMaxError << "\n";
+        return false;
+    }
+    if (final_error > kFinalError) {
+        std::cerr << "vis_servo_arm final_error=" << final_error << " cap=" << kFinalError << "\n";
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -287,5 +359,6 @@ int main() {
     ok = CheckDeterministicServoChain() && ok;
     ok = CheckZeroGravityServoDrift() && ok;
     ok = CheckFiveLinkFreefallLong() && ok;
+    ok = CheckVisualServoArmPresetRemainsBounded() && ok;
     return ok ? 0 : 1;
 }

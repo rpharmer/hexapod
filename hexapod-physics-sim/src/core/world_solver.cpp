@@ -915,7 +915,7 @@ void World::SolveServoJoint(ServoJoint& j) {
         const float omegaAxis = Dot(relAngVel, axisA);
         const float effMass = Dot(axisA, invIA * axisA) + Dot(axisA, invIB * axisA);
         if (effMass > kEpsilon) {
-            // Axis torque: P on (optionally smoothed) angle error, D on axis ω, optional I on accumulated error.
+            // Axis torque: P on (optionally smoothed) angle error, D on axis omega, optional I on accumulated error.
             float servoLambda = -(j.positionGain * positionError + j.dampingGain * omegaAxis + j.integralGain * j.integralAccum)
                 / effMass;
             const float oldImpulse = j.servoImpulseSum;

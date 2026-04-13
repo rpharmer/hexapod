@@ -1,0 +1,51 @@
+{
+  "schema_version": 2,
+  "solver_iterations": 28,
+  "bodies": [
+    {
+      "shape": "plane",
+      "static": true,
+      "plane_normal": [0, 1, 0],
+      "plane_offset": 0,
+      "static_friction": 0.9,
+      "dynamic_friction": 0.6,
+      "restitution": 0.03
+    },
+    {
+      "shape": "box",
+      "static": true,
+      "position": [-0.02, 0.14, 0],
+      "half_extents": [0.1, 0.08, 0.1],
+      "mass": 1.0,
+      "orientation": [1, 0, 0, 0]
+    },
+    {
+      "shape": "box",
+      "position": [0.32, 0.22, 0],
+      "half_extents": [0.28, 0.022, 0.05],
+      "mass": 1.35,
+      "velocity": [0, 0, 0],
+      "orientation": [1, 0, 0, 0],
+      "restitution": 0.04,
+      "angular_damping": 0.15,
+      "linear_damping": 0.08
+    }
+  ],
+  "joints": [
+    {
+      "type": "servo",
+      "body_a": 1,
+      "body_b": 2,
+      "anchor": [0.06, 0.22, 0],
+      "axis": [0, 0, 1],
+      "target_angle": 0.0,
+      "max_servo_torque": 5.5,
+      "position_gain": 7.5,
+      "damping_gain": 1.35,
+      "integral_gain": 2.8,
+      "integral_clamp": 1.25,
+      "position_error_smoothing": 0.12,
+      "angle_stabilization": 0.32
+    }
+  ]
+}

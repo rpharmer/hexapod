@@ -452,6 +452,79 @@ void EmitSceneBodies(FrameSink& sink, const World& world, const HexapodSceneObje
     }
 }
 
+void RelaxBuiltInHexapodServos(World& world, const HexapodSceneObjects& scene) {
+    // The articulated hexapod never had explicit gait target updates; the live/zero-G presets are
+    // static pose previews. Lower the shared P/D gains enough to stay stable without the old angle
+    // snap, then add a uniform integral term so the preview can build holding torque under gravity
+    // instead of slowly sagging onto the floor.
+    constexpr float kServoGainScale = 0.54f;
+    constexpr float kIntegralToPositionRatio = 0.25f;
+    constexpr float kAngleStabilizationScale = 0.0f;
+    const std::array<std::uint32_t, 18> servo_joint_ids{
+        scene.legs[0].bodyToCoxaJoint,
+        scene.legs[0].coxaToFemurJoint,
+        scene.legs[0].femurToTibiaJoint,
+        scene.legs[1].bodyToCoxaJoint,
+        scene.legs[1].coxaToFemurJoint,
+        scene.legs[1].femurToTibiaJoint,
+        scene.legs[2].bodyToCoxaJoint,
+        scene.legs[2].coxaToFemurJoint,
+        scene.legs[2].femurToTibiaJoint,
+        scene.legs[3].bodyToCoxaJoint,
+        scene.legs[3].coxaToFemurJoint,
+        scene.legs[3].femurToTibiaJoint,
+        scene.legs[4].bodyToCoxaJoint,
+        scene.legs[4].coxaToFemurJoint,
+        scene.legs[4].femurToTibiaJoint,
+        scene.legs[5].bodyToCoxaJoint,
+        scene.legs[5].coxaToFemurJoint,
+        scene.legs[5].femurToTibiaJoint,
+    };
+    for (const std::uint32_t joint_id : servo_joint_ids) {
+        ServoJoint& joint = world.GetServoJointMutable(joint_id);
+        joint.positionGain *= kServoGainScale;
+        joint.dampingGain *= kServoGainScale;
+        joint.integralGain = kIntegralToPositionRatio * joint.positionGain;
+        joint.integralClamp = std::max(joint.integralClamp, 0.75f);
+        joint.angleStabilizationScale = kAngleStabilizationScale;
+    }
+}
+
+void RelaxZeroGravityHexapodServos(World& world, const HexapodSceneObjects& scene) {
+    // The built-in hexapod gains are tuned to hold the chassis up against gravity + foot contacts.
+    // In zero-G that same stiffness overdrives the free-floating articulated tree, so keep the pose
+    // targets but scale the motor terms down for the weightless preview preset.
+    constexpr float kZeroGServoScale = 0.25f;
+    const std::array<std::uint32_t, 18> servo_joint_ids{
+        scene.legs[0].bodyToCoxaJoint,
+        scene.legs[0].coxaToFemurJoint,
+        scene.legs[0].femurToTibiaJoint,
+        scene.legs[1].bodyToCoxaJoint,
+        scene.legs[1].coxaToFemurJoint,
+        scene.legs[1].femurToTibiaJoint,
+        scene.legs[2].bodyToCoxaJoint,
+        scene.legs[2].coxaToFemurJoint,
+        scene.legs[2].femurToTibiaJoint,
+        scene.legs[3].bodyToCoxaJoint,
+        scene.legs[3].coxaToFemurJoint,
+        scene.legs[3].femurToTibiaJoint,
+        scene.legs[4].bodyToCoxaJoint,
+        scene.legs[4].coxaToFemurJoint,
+        scene.legs[4].femurToTibiaJoint,
+        scene.legs[5].bodyToCoxaJoint,
+        scene.legs[5].coxaToFemurJoint,
+        scene.legs[5].femurToTibiaJoint,
+    };
+    for (const std::uint32_t joint_id : servo_joint_ids) {
+        ServoJoint& joint = world.GetServoJointMutable(joint_id);
+        joint.maxServoTorque *= kZeroGServoScale;
+        joint.positionGain *= kZeroGServoScale;
+        joint.dampingGain *= kZeroGServoScale;
+        joint.integralGain *= kZeroGServoScale;
+        joint.angleStabilizationScale = 0.0f;
+    }
+}
+
 int RunClassicDemo(
     SinkKind sink_kind,
     int frame_count,
@@ -616,20 +689,26 @@ int RunHexapodDemo(
     std::cout << "\n";
 
     const HexapodSceneObjects scene = BuildHexapodScene(world);
+    RelaxBuiltInHexapodServos(world, scene);
     std::unique_ptr<FrameSink> sink = MakeFrameSink(sink_kind, udp_host, udp_port);
 
-    // Zero-G float preset: post-step servo positional stabilization snaps hinges without matching
-    // angular momentum, and with no gravity/contacts to damp the injection the rig blows apart.
-    // Disable that block for this demo only (velocity PD still holds servos).
+    // The built-in hexapod presets are static pose previews. Keep a small number of servo position
+    // passes so the leg anchors do not drift under load while leaving per-joint angle snap disabled;
+    // the snap term was the part that injected energy and blew the rig apart.
+    minphys3d::JointSolverConfig joint_cfg = world.GetJointSolverConfig();
+    joint_cfg.servoPositionPasses = 8;
+    joint_cfg.hingeAnchorBiasFactor = 0.8f;
+    joint_cfg.hingeAnchorDampingFactor = 0.2f;
+    world.SetJointSolverConfig(joint_cfg);
+
+    // Zero-G still needs an extra downscale because there is no gravity/contact damping at all.
     if (minphys3d::LengthSquared(gravity) < 1.0e-4f) {
-        minphys3d::JointSolverConfig joint_cfg = world.GetJointSolverConfig();
-        joint_cfg.servoPositionPasses = 0;
-        world.SetJointSolverConfig(joint_cfg);
+        RelaxZeroGravityHexapodServos(world, scene);
     }
 
     constexpr float dt = 1.0f / 60.0f;
     constexpr int kPhysicsSubstepsPerFrame = 4;
-    constexpr int kSolverIterations = 24;
+    constexpr int kSolverIterations = 48;
     const DemoSteadyClock::time_point t0 = DemoSteadyClock::now();
     for (int frame = 0; frame < frame_count; ++frame) {
         for (int substep = 0; substep < kPhysicsSubstepsPerFrame; ++substep) {

@@ -36,12 +36,14 @@
       "body_b": 2,
       "anchor": [0.15, 0.24, 0],
       "axis": [0, 0, 1],
-      "target_angle": 0.45,
+      "target_angle": 0.55,
       "max_servo_torque": 2.0,
-      "position_gain": 1.0,
-      "damping_gain": 0.4,
-      "position_error_smoothing": 0.2,
-      "angle_stabilization": 0.2
+      "position_gain": 0.55,
+      "damping_gain": 0.32,
+      "integral_gain": 0.08,
+      "integral_clamp": 0.45,
+      "position_error_smoothing": 0.48,
+      "angle_stabilization": 0.06
     }
   ]
 }

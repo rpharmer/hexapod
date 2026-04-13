@@ -159,6 +159,7 @@ public:
     std::uint32_t GetBodyCount() const;
 
     const ServoJoint& GetServoJoint(std::uint32_t id) const;
+    ServoJoint& GetServoJointMutable(std::uint32_t id);
 
     std::uint32_t GetServoJointCount() const;
 

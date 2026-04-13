@@ -184,6 +184,10 @@ const ServoJoint& World::GetServoJoint(std::uint32_t id) const {
     return servoJoints_.at(id);
 }
 
+ServoJoint& World::GetServoJointMutable(std::uint32_t id) {
+    return servoJoints_.at(id);
+}
+
 std::uint32_t World::GetServoJointCount() const {
     return static_cast<std::uint32_t>(servoJoints_.size());
 }
@@ -416,10 +420,19 @@ void World::Step(float dt, int solverIterations) {
     const int substeps = ComputeSubsteps(dt);
     const float subDt = dt / static_cast<float>(substeps);
 
-    // Re-applying warm-started `servoImpulseSum` each substep lets motor impulse drift across frames;
-    // with friction contacts that produces a tiny-angle but large-|ω| limit cycle. Clear once per Step.
+    // Servo warm-start terms are accumulated inside a single Step to help the iterative solve converge.
+    // Re-using the full cached impulse state across outer Steps can inject energy into free-floating
+    // articulated rigs, but hard-resetting everything every frame also makes loaded pose-hold servos
+    // give up too much support torque. Keep a strongly damped fraction so each frame retains some
+    // convergence history without re-applying the full stale correction.
+    constexpr float kServoWarmStartDecay = 0.5f;
     for (ServoJoint& j : servoJoints_) {
-        j.servoImpulseSum = 0.0f;
+        j.impulseX *= kServoWarmStartDecay;
+        j.impulseY *= kServoWarmStartDecay;
+        j.impulseZ *= kServoWarmStartDecay;
+        j.angularImpulse1 *= kServoWarmStartDecay;
+        j.angularImpulse2 *= kServoWarmStartDecay;
+        j.servoImpulseSum *= kServoWarmStartDecay;
     }
     PrepareServoJointControlSamples();
 
