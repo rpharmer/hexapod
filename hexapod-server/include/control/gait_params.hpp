@@ -1,0 +1,42 @@
+#pragma once
+
+#include "control_config.hpp"
+#include "types.hpp"
+
+#include <array>
+
+// Unified gait parameters (active after preset selection, velocity scaling, and optional blending).
+struct UnifiedGaitDescription {
+    double duty_factor{0.5};
+    std::array<double, kNumLegs> phase_offset{};
+    double step_frequency_hz{1.0};
+    double step_length_m{0.06};
+    double swing_height_m{0.03};
+    double stance_duration_s{0.5};
+    double swing_duration_s{0.5};
+};
+
+// Static preset template (before velocity-dependent scaling).
+struct GaitPresetTemplate {
+    double duty_factor{0.5};
+    std::array<double, kNumLegs> phase_offset{};
+    double base_step_frequency_hz{1.0};
+    double base_step_length_m{0.06};
+    double base_swing_height_m{0.03};
+};
+
+GaitPresetTemplate gaitPresetTemplate(GaitType gait);
+
+UnifiedGaitDescription buildTargetUnifiedGait(GaitType gait,
+                                              double vx_mps,
+                                              double vy_mps,
+                                              double yaw_rate_radps,
+                                              const control_config::GaitConfig& gait_cfg);
+
+UnifiedGaitDescription blendUnifiedGait(const UnifiedGaitDescription& from,
+                                        const UnifiedGaitDescription& to,
+                                        double alpha_smooth01);
+
+double gaitSmoothstep01(double t01);
+double gaitWrap01(double x);
+double gaitLerpWrapped01(double a01, double b01, double t01);

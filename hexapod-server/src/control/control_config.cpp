@@ -24,6 +24,10 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.safety.max_foot_contacts = config.maxFootContacts;
 
     parsed.gait.fallback_speed_mag = LinearRateMps{config.fallbackSpeedMag};
+    parsed.gait.transition_blend_s = config.gaitTransitionBlendS;
+    parsed.gait.nominal_planar_speed_mps = config.gaitNominalPlanarSpeedMps;
+    parsed.gait.nominal_yaw_rate_radps = config.gaitNominalYawRateRadps;
+    parsed.gait.turn_nominal_radius_m = config.gaitTurnNominalRadiusM;
 
     parsed.freshness.estimator.max_allowed_age_us = DurationUs{config.estimatorMaxAgeUs};
     parsed.freshness.estimator.require_timestamp = config.estimatorRequireTimestamp;

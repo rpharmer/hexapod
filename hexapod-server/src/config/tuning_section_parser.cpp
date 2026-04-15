@@ -58,6 +58,18 @@ void parseTuningSection(const toml::value& root,
   out.fallbackSpeedMag = config_validation::parseDoubleWithFallback(
       root, "Tuning.FallbackSpeedMag", control_config::kDefaultFallbackSpeedMag.value, 0.0, 1.0,
       "tuning", logger);
+  out.gaitTransitionBlendS = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitTransitionBlendS", control_config::kDefaultGaitTransitionBlendS, 0.05, 3.0,
+      "tuning", logger);
+  out.gaitNominalPlanarSpeedMps = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitNominalPlanarSpeedMps", control_config::kDefaultGaitNominalPlanarSpeedMps, 0.05,
+      2.0, "tuning", logger);
+  out.gaitNominalYawRateRadps = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitNominalYawRateRadps", control_config::kDefaultGaitNominalYawRateRadps, 0.05,
+      4.0, "tuning", logger);
+  out.gaitTurnNominalRadiusM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GaitTurnNominalRadiusM", control_config::kDefaultGaitTurnNominalRadiusM, 0.03, 0.35,
+      "tuning", logger);
   out.minBusVoltageV = config_validation::parseDoubleWithFallback(
       root, "Tuning.MinBusVoltageV", control_config::kDefaultMinBusVoltageV, 5.0, 24.0, "tuning", logger);
   out.maxBusCurrentA = config_validation::parseDoubleWithFallback(

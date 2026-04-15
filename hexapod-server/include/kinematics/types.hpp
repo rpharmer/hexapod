@@ -67,13 +67,26 @@ enum class RobotMode {
 enum class GaitType {
     TRIPOD,
     RIPPLE,
-    WAVE
+    WAVE,
+    CRAWL,
+    TURN_IN_PLACE
 };
 
 struct GaitState {
     std::array<double, kNumLegs> phase{};
     std::array<bool, kNumLegs> in_stance{};
     FrequencyHz stride_phase_rate_hz{FrequencyHz{1.0}};
+    /** Fraction of each stride cycle spent in stance (0..1). */
+    double duty_factor{0.5};
+    /** Per-leg phase offsets (cycles) blended with the global stride integrator. */
+    std::array<double, kNumLegs> phase_offset{};
+    /** Velocity-scaled horizontal stride amplitude (m). */
+    double step_length_m{0.06};
+    /** Velocity-scaled swing apex (m). */
+    double swing_height_m{0.03};
+    /** stance_duration_s = duty_factor / stride_frequency_hz (when walking). */
+    double stance_duration_s{0.5};
+    double swing_duration_s{0.5};
     TimePointUs timestamp_us{};
 };
 
@@ -144,7 +157,12 @@ struct BodyTwistState {
 struct MotionIntent {
   RobotMode requested_mode{RobotMode::SAFE_IDLE};
   GaitType gait{GaitType::TRIPOD};
-  // Planar walk command magnitude in m/s and heading in body frame radians.
+  // Body-frame planar velocity command (m/s): +x forward, +y left.
+  LinearRateMps cmd_vx_mps{};
+  LinearRateMps cmd_vy_mps{};
+  // Body-frame yaw rate command (rad/s), positive counter-clockwise when viewed from above.
+  AngularRateRadPerSec cmd_yaw_radps{};
+  // Legacy polar walk command; `motion_intent_utils` keeps these aligned when building intents.
   LinearRateMps speed_mps{};
   AngleRad heading_rad{};
   BodyTwistState twist{};

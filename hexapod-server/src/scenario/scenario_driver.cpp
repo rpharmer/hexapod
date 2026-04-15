@@ -36,6 +36,12 @@ std::optional<GaitType> parseGait(const std::string& gait) {
     if (gait == "WAVE") {
         return {GaitType::WAVE};
     }
+    if (gait == "CRAWL") {
+        return {GaitType::CRAWL};
+    }
+    if (gait == "TURN_IN_PLACE") {
+        return {GaitType::TURN_IN_PLACE};
+    }
     return std::nullopt;
 }
 
@@ -63,6 +69,10 @@ const char* gaitName(GaitType gait) {
         return "RIPPLE";
     case GaitType::WAVE:
         return "WAVE";
+    case GaitType::CRAWL:
+        return "CRAWL";
+    case GaitType::TURN_IN_PLACE:
+        return "TURN_IN_PLACE";
     }
     return "UNKNOWN";
 }
@@ -122,7 +132,8 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
 
             if (mode == ValidationMode::Strict &&
                 !containsOnlyKeys(event_value,
-                                  {"at_ms", "mode", "gait", "body_height_m", "speed_mps", "heading_rad", "yaw_rad", "faults", "sensors"},
+                                  {"at_ms", "mode", "gait", "body_height_m", "speed_mps", "heading_rad", "yaw_rad",
+                                   "yaw_rate_radps", "vx_mps", "vy_mps", "faults", "sensors"},
                                   "events[" + std::to_string(event_index) + "]", error)) {
                 return false;
             }
@@ -151,10 +162,17 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
                 event.motion.speed_mps = toml::find_or<double>(event_value, "speed_mps", 0.0);
                 event.motion.heading_rad = toml::find_or<double>(event_value, "heading_rad", 0.0);
                 event.motion.yaw_rad = toml::find_or<double>(event_value, "yaw_rad", 0.0);
+                event.motion.yaw_rate_radps = toml::find_or<double>(event_value, "yaw_rate_radps", 0.0);
+                if (event_value.contains("vx_mps") || event_value.contains("vy_mps")) {
+                    event.motion.has_direct_velocity = true;
+                    event.motion.vx_mps = toml::find_or<double>(event_value, "vx_mps", 0.0);
+                    event.motion.vy_mps = toml::find_or<double>(event_value, "vy_mps", 0.0);
+                }
             } else if (mode == ValidationMode::Strict &&
                        (event_value.contains("gait") || event_value.contains("body_height_m") ||
                         event_value.contains("speed_mps") || event_value.contains("heading_rad") ||
-                        event_value.contains("yaw_rad"))) {
+                        event_value.contains("yaw_rad") || event_value.contains("yaw_rate_radps") ||
+                        event_value.contains("vx_mps") || event_value.contains("vy_mps"))) {
                 error = "scenario event specifies motion fields without mode";
                 return false;
             }

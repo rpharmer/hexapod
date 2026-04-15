@@ -78,16 +78,21 @@ int main() {
     walk_intent.requested_mode = RobotMode::WALK;
     walk_intent.speed_mps = LinearRateMps{0.2};
     walk_intent.heading_rad = AngleRad{0.0};
+    walk_intent.cmd_vx_mps = LinearRateMps{0.2};
+    walk_intent.cmd_vy_mps = LinearRateMps{0.0};
     walk_intent.twist.body_trans_m.z = 0.12;
 
     GaitState walk_gait{};
     walk_gait.phase[0] = 0.25;
     walk_gait.in_stance[0] = true;
+    walk_gait.duty_factor = 0.5;
     walk_gait.stride_phase_rate_hz = FrequencyHz{1.0};
+    walk_gait.step_length_m = 0.06;
+    walk_gait.swing_height_m = 0.03;
     const LegTargets walk_targets = controller.update(est, walk_intent, walk_gait, safety);
 
-    if (!expect(nearlyEqual(walk_targets.feet[0].vel_body_mps.x, -0.12, 1e-6),
-                "walking stance velocity should include analytic step derivative")) {
+    if (!expect(nearlyEqual(walk_targets.feet[0].vel_body_mps.x, -0.2, 2e-3),
+                "walking stance foot velocity should match commanded body planar motion")) {
         return EXIT_FAILURE;
     }
 

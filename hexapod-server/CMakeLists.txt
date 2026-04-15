@@ -92,6 +92,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/control_pipeline.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/estimator.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/freshness_policy.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/gait_params.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/gait_scheduler.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/geometry_profile_service.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/interactive_calibration_actions.cpp"

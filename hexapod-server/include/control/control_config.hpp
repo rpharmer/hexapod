@@ -25,6 +25,10 @@ inline constexpr DurationUs kDefaultCommandTimeoutUs{300000};
 inline constexpr DurationUs kDefaultEstimatorMaxAgeUs{300000};
 inline constexpr DurationUs kDefaultIntentMaxAgeUs{300000};
 inline constexpr LinearRateMps kDefaultFallbackSpeedMag{0.01};
+inline constexpr double kDefaultGaitTransitionBlendS{0.35};
+inline constexpr double kDefaultGaitNominalPlanarSpeedMps{0.25};
+inline constexpr double kDefaultGaitNominalYawRateRadps{0.5};
+inline constexpr double kDefaultGaitTurnNominalRadiusM{0.11};
 inline constexpr float kDefaultMinBusVoltageV{10.5f};
 inline constexpr float kDefaultMaxBusCurrentA{25.0f};
 inline constexpr int kDefaultMinFootContacts{0};
@@ -51,6 +55,14 @@ struct SafetyConfig {
 
 struct GaitConfig {
     LinearRateMps fallback_speed_mag{kDefaultFallbackSpeedMag};
+    /** Seconds to blend gait timing, duty, offsets, and stride shape when `GaitType` changes. */
+    double transition_blend_s{kDefaultGaitTransitionBlendS};
+    /** Planar speed used to normalize `vx` / `vy` for automatic stride and cadence scaling. */
+    double nominal_planar_speed_mps{kDefaultGaitNominalPlanarSpeedMps};
+    /** Yaw rate used to normalize commanded turn rate for scaling. */
+    double nominal_yaw_rate_radps{kDefaultGaitNominalYawRateRadps};
+    /** Effective radius (m) for converting yaw rate into a tangential speed scale. */
+    double turn_nominal_radius_m{kDefaultGaitTurnNominalRadiusM};
 };
 
 struct StreamFreshnessConfig {

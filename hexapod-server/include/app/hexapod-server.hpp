@@ -57,6 +57,10 @@ struct ParsedToml
   bool intentRequireSampleId{true};
   bool intentRequireMonotonicSampleId{true};
   double fallbackSpeedMag{0.01};
+  double gaitTransitionBlendS{0.35};
+  double gaitNominalPlanarSpeedMps{0.25};
+  double gaitNominalYawRateRadps{0.5};
+  double gaitTurnNominalRadiusM{0.11};
   double minBusVoltageV{10.5};
   double maxBusCurrentA{25.0};
   int minFootContacts{0};

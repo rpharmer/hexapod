@@ -1,6 +1,7 @@
 #include "interactive_input_mapper.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 const char* controllerInputModeName(ControllerInputMode mode)
 {
@@ -114,8 +115,15 @@ MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
   const double rt = static_cast<double>(controller.getRightTrigger()) / 1023.0;
 
   if (state.input_mode == ControllerInputMode::HeadingWalk) {
-    cmd.speed_mps = LinearRateMps{controller.getLeftMag() * kMaxCommandSpeedMps};
-    cmd.heading_rad = AngleRad{static_cast<double>(controller.getLeftAng())};
+    constexpr double kMaxYawRateRadps = 0.55;
+    const double heading = static_cast<double>(controller.getLeftAng());
+    const double mag = static_cast<double>(controller.getLeftMag()) * kMaxCommandSpeedMps;
+    cmd.speed_mps = LinearRateMps{mag};
+    cmd.heading_rad = AngleRad{heading};
+    cmd.cmd_vx_mps = LinearRateMps{mag * std::cos(heading)};
+    cmd.cmd_vy_mps = LinearRateMps{mag * std::sin(heading)};
+    cmd.cmd_yaw_radps = AngularRateRadPerSec{right_x * kMaxYawRateRadps};
+    cmd.twist.twist_vel_radps.z = cmd.cmd_yaw_radps.value;
 
     const double body_height_cmd = state.walk_body_height_m + (rt - lt) * kBodyHeightAdjustRangeM;
     cmd.twist.body_trans_m = Vec3{0.0, 0.0, std::clamp(body_height_cmd, kMinBodyHeightM, kMaxBodyHeightM)};
@@ -130,6 +138,9 @@ MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
   if (state.input_mode == ControllerInputMode::BodyPose) {
     cmd.speed_mps = LinearRateMps{0.0};
     cmd.heading_rad = AngleRad{0.0};
+    cmd.cmd_vx_mps = LinearRateMps{0.0};
+    cmd.cmd_vy_mps = LinearRateMps{0.0};
+    cmd.cmd_yaw_radps = AngularRateRadPerSec{0.0};
     cmd.twist.body_trans_m = Vec3{
         -left_y * kMaxBodyTranslateXYM,
         left_x * kMaxBodyTranslateXYM,
@@ -146,6 +157,9 @@ MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
   cmd.requested_mode = RobotMode::STAND;
   cmd.speed_mps = LinearRateMps{0.0};
   cmd.heading_rad = AngleRad{0.0};
+  cmd.cmd_vx_mps = LinearRateMps{0.0};
+  cmd.cmd_vy_mps = LinearRateMps{0.0};
+  cmd.cmd_yaw_radps = AngularRateRadPerSec{0.0};
   cmd.twist.body_trans_m = Vec3{0.0, 0.0, state.walk_body_height_m};
   cmd.twist.body_trans_mps = Vec3{};
   cmd.twist.twist_pos_rad = Vec3{};

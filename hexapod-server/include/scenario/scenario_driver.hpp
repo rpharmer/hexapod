@@ -14,6 +14,12 @@ struct ScenarioMotionIntent {
     double speed_mps{0.0};
     double heading_rad{0.0};
     double yaw_rad{0.0};
+    /** Body-frame yaw rate (rad/s); optional alternative to deriving motion from speed/heading only. */
+    double yaw_rate_radps{0.0};
+    /** When true, `vx_mps` / `vy_mps` override polar `speed_mps` / `heading_rad` for the motion intent. */
+    bool has_direct_velocity{false};
+    double vx_mps{0.0};
+    double vy_mps{0.0};
 };
 
 struct ScenarioSensorOverrides {

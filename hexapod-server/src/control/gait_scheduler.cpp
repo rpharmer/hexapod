@@ -1,40 +1,16 @@
 #include "gait_scheduler.hpp"
 
-#include "control_config.hpp"
+#include "gait_params.hpp"
+#include "motion_intent_utils.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
-
-namespace {
-
-constexpr std::array<double, kNumLegs> kTripodPhaseOffsets = {0.0, 0.5, 0.0, 0.5, 0.0, 0.5};
-constexpr std::array<double, kNumLegs> kRipplePhaseOffsets = {0.0, 1.0 / 6.0, 2.0 / 6.0, 3.0 / 6.0, 4.0 / 6.0, 5.0 / 6.0};
-constexpr std::array<double, kNumLegs> kWavePhaseOffsets = {0.0, 1.0 / 6.0, 2.0 / 6.0, 3.0 / 6.0, 4.0 / 6.0, 5.0 / 6.0};
-
-const std::array<double, kNumLegs>& gait_phase_offsets(const GaitType gait)
-{
-    switch (gait) {
-        case GaitType::TRIPOD:
-            return kTripodPhaseOffsets;
-        case GaitType::RIPPLE:
-            return kRipplePhaseOffsets;
-        case GaitType::WAVE:
-            return kWavePhaseOffsets;
-    }
-
-    return kTripodPhaseOffsets;
-}
-
-} // namespace
 
 GaitScheduler::GaitScheduler(control_config::GaitConfig config)
     : config_(config) {}
 
-double GaitScheduler::wrap01(double x) const {
-    while (x >= 1.0) x -= 1.0;
-    while (x < 0.0) x += 1.0;
-    return x;
+double GaitScheduler::wrap01(const double x) const {
+    return gaitWrap01(x);
 }
 
 GaitState GaitScheduler::update(const RobotState&,
@@ -52,7 +28,14 @@ GaitState GaitScheduler::update(const RobotState&,
         for (int i = 0; i < kNumLegs; ++i) {
             out.phase[i] = 0.0;
             out.in_stance[i] = true;
+            out.phase_offset[static_cast<std::size_t>(i)] = 0.0;
         }
+        out.duty_factor = 0.5;
+        out.step_length_m = 0.06;
+        out.swing_height_m = 0.03;
+        out.stance_duration_s = 0.5;
+        out.swing_duration_s = 0.5;
+        out.stride_phase_rate_hz = FrequencyHz{1.0};
         last_update_us_ = out.timestamp_us;
         return out;
     }
@@ -65,24 +48,51 @@ GaitState GaitScheduler::update(const RobotState&,
     const DurationSec dt{static_cast<double>((now - last_update_us_).value) * 1e-6};
     last_update_us_ = now;
 
-    constexpr double kNominalMaxSpeedMps = 0.25;
-    const double commanded_speed = std::abs(intent.speed_mps.value);
-    const double normalized_command = std::clamp(commanded_speed / kNominalMaxSpeedMps, 0.0, 1.0);
-    const double speed_mag = std::max(normalized_command, config_.fallback_speed_mag.value);
+    const PlanarMotionCommand cmd = planarMotionCommand(intent);
+    const UnifiedGaitDescription target =
+        buildTargetUnifiedGait(intent.gait, cmd.vx_mps, cmd.vy_mps, cmd.yaw_rate_radps, config_);
 
-    const double step_hz = std::clamp(0.5 + 2.0 * speed_mag, 0.5, 2.5);
-    const FrequencyHz step_rate_hz{step_hz};
-    out.stride_phase_rate_hz = step_rate_hz;
+    if (committed_initialized_ && intent.gait != committed_gait_) {
+        transition_from_snap_ = have_last_blended_ ? last_blended_ : target;
+        transition_start_us_ = now;
+    }
+    if (!committed_initialized_) {
+        transition_from_snap_ = target;
+    }
+    committed_gait_ = intent.gait;
+    committed_initialized_ = true;
 
-    phase_accum_ = wrap01(phase_accum_ + dt.value * step_rate_hz.value);
+    double alpha = 1.0;
+    if (!transition_start_us_.isZero()) {
+        const double elapsed_s = static_cast<double>((now - transition_start_us_).value) * 1e-6;
+        alpha = std::clamp(elapsed_s / std::max(config_.transition_blend_s, 1e-4), 0.0, 1.0);
+    }
 
-    const std::array<double, kNumLegs>& phase_offsets = gait_phase_offsets(intent.gait);
+    const UnifiedGaitDescription blended =
+        (alpha >= 1.0 - 1e-9) ? target : blendUnifiedGait(transition_from_snap_, target, alpha);
+    if (alpha >= 1.0 - 1e-9) {
+        transition_start_us_ = {};
+    }
+
+    last_blended_ = blended;
+    have_last_blended_ = true;
+
+    const double step_hz = std::max(blended.step_frequency_hz, 1e-6);
+    out.stride_phase_rate_hz = FrequencyHz{step_hz};
+    out.duty_factor = blended.duty_factor;
+    out.step_length_m = blended.step_length_m;
+    out.swing_height_m = blended.swing_height_m;
+    out.stance_duration_s = blended.stance_duration_s;
+    out.swing_duration_s = blended.swing_duration_s;
+    out.phase_offset = blended.phase_offset;
+
+    phase_accum_ = wrap01(phase_accum_ + dt.value * step_hz);
+
     for (int leg = 0; leg < kNumLegs; ++leg) {
-        const double p = wrap01(phase_accum_ + phase_offsets[leg]);
+        const double off = blended.phase_offset[static_cast<std::size_t>(leg)];
+        const double p = wrap01(phase_accum_ + off);
         out.phase[leg] = p;
-
-        // 0.0..0.5 stance, 0.5..1.0 swing
-        out.in_stance[leg] = (p < 0.5);
+        out.in_stance[leg] = (p < blended.duty_factor);
     }
 
     return out;
