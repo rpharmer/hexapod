@@ -1,6 +1,7 @@
 #include "demo/interactive_terminal.hpp"
 #include "demo/scene_json.hpp"
 #include "demo/scenes.hpp"
+#include "demo/serve_mode.hpp"
 
 #include "minphys3d/math/vec3.hpp"
 
@@ -44,6 +45,10 @@ void PrintUsage(std::ostream& out) {
            "  --interactive, -i         Terminal REPL ( presets ,  preset NAME ,  l ,  r , …)\n"
            "  --autonext                With -i: after each full background run, apply the next catalog preset\n"
            "  --autonext-run            With -i: same as --autonext and start the next run automatically\n"
+           "  --serve                   UDP physics server (hexapod scene, step-on-command)\n"
+           "  --serve-port PORT         UDP listen port for --serve (default: 9871)\n"
+           "  --sink udp + --serve      Also stream minphys scene UDP for hexapod-opengl-visualiser\n"
+           "                            (same as demo: --udp-host / --udp-port, default 127.0.0.1:9870)\n"
            "  -h, --help                Show this help\n";
 }
 
@@ -58,6 +63,8 @@ int main(int argc, char** argv) {
     bool interactive = false;
     bool interactive_autonext = false;
     bool interactive_autonext_run = false;
+    bool serve_mode = false;
+    int serve_port = 9871;
     std::string scene_file;
     std::string udp_host = "127.0.0.1";
     int udp_port = 9870;
@@ -159,6 +166,21 @@ int main(int argc, char** argv) {
             PrintUsage(std::cout);
             return 0;
         }
+        if (arg == "--serve") {
+            serve_mode = true;
+            continue;
+        }
+        if (arg == "--serve-port") {
+            if (i + 1 >= argc) {
+                std::cerr << "Missing value for --serve-port\n";
+                return 1;
+            }
+            if (!ParseUdpPort(argv[++i], serve_port)) {
+                std::cerr << "Invalid --serve-port (expected integer 1..65535)\n";
+                return 1;
+            }
+            continue;
+        }
 
         std::cerr << "Unknown argument: " << arg << "\n";
         PrintUsage(std::cerr);
@@ -167,6 +189,15 @@ int main(int argc, char** argv) {
 
     const minphys3d::Vec3 gravity = zero_gravity ? minphys3d::Vec3{0.0f, 0.0f, 0.0f}
                                                  : minphys3d::Vec3{0.0f, -9.81f, 0.0f};
+
+    if (serve_mode) {
+        if (serve_port < 1 || serve_port > 65535) {
+            std::cerr << "Invalid serve port\n";
+            return 1;
+        }
+        return minphys3d::demo::RunPhysicsServeMode(
+            static_cast<std::uint16_t>(serve_port), sink_kind, udp_host, udp_port);
+    }
 
     if (interactive) {
         minphys3d::demo::InteractiveSessionSeed seed;

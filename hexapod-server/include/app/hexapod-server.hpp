@@ -22,6 +22,10 @@ struct ParsedToml
   bool simLowVoltage{false};
   bool simHighCurrent{false};
 
+  std::string physicsSimHost{"127.0.0.1"};
+  int physicsSimPort{9871};
+  int physicsSimSolverIterations{24};
+
   std::string logFilePath{"app.log"};
   bool logToFile{true};
   std::string telemetryHost{"127.0.0.1"};

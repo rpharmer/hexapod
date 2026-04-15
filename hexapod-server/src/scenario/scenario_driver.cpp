@@ -39,6 +39,34 @@ std::optional<GaitType> parseGait(const std::string& gait) {
     return std::nullopt;
 }
 
+const char* modeName(RobotMode mode) {
+    switch (mode) {
+    case RobotMode::SAFE_IDLE:
+        return "SAFE_IDLE";
+    case RobotMode::HOMING:
+        return "HOMING";
+    case RobotMode::STAND:
+        return "STAND";
+    case RobotMode::WALK:
+        return "WALK";
+    case RobotMode::FAULT:
+        return "FAULT";
+    }
+    return "UNKNOWN";
+}
+
+const char* gaitName(GaitType gait) {
+    switch (gait) {
+    case GaitType::TRIPOD:
+        return "TRIPOD";
+    case GaitType::RIPPLE:
+        return "RIPPLE";
+    case GaitType::WAVE:
+        return "WAVE";
+    }
+    return "UNKNOWN";
+}
+
 std::optional<std::array<bool, kNumLegs>> buildContacts(const ScenarioSensorOverrides& sensors) {
     if (sensors.clear_contacts) {
         return std::nullopt;
@@ -119,7 +147,7 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
                 event.motion.enabled = true;
                 event.motion.mode = *parsed_mode;
                 event.motion.gait = *parsed_gait;
-                event.motion.body_height_m = toml::find_or<double>(event_value, "body_height_m", 0.20);
+                event.motion.body_height_m = toml::find_or<double>(event_value, "body_height_m", 0.05);
                 event.motion.speed_mps = toml::find_or<double>(event_value, "speed_mps", 0.0);
                 event.motion.heading_rad = toml::find_or<double>(event_value, "heading_rad", 0.0);
                 event.motion.yaw_rad = toml::find_or<double>(event_value, "yaw_rad", 0.0);
@@ -225,7 +253,11 @@ bool ScenarioDriver::run(RobotControl& robot, const ScenarioDefinition& scenario
                 current_intent = makeMotionIntent(event.motion);
                 robot.setMotionIntent(current_intent);
                 if (logger) {
-                    LOG_DEBUG(logger, "Scenario event @", event.at_ms, "ms mode update");
+                    LOG_DEBUG(logger,
+                              "Scenario event @", event.at_ms, "ms mode update",
+                              " mode=", modeName(event.motion.mode),
+                              " gait=", gaitName(event.motion.gait),
+                              " body_height_m=", event.motion.body_height_m);
                 }
             }
 

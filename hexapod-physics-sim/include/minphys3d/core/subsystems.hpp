@@ -623,6 +623,29 @@ inline float SignedAngleAroundAxis(const Vec3& from, const Vec3& to, const Vec3&
     return std::atan2(Dot(Cross(fromN, toN), axis), Dot(fromN, toN));
 }
 
+/// Strongly biased axis-alignment snap for servo joints.
+///
+/// This keeps the correction directly focused on the axis mismatch instead of averaging it down
+/// through the high-fanout hub path.
+inline Vec3 ComputeServoAxisAlignmentCorrection(const ServoJoint& j, const Vec3& axisA, const Vec3& axisB) {
+    const float stab = std::clamp(j.angleStabilizationScale, 0.0f, 1.0f);
+    if (stab <= 1e-7f) {
+        return {};
+    }
+
+    Vec3 axisError = Cross(axisA, axisB);
+    const float axisErrorMagnitude = Length(axisError);
+    if (axisErrorMagnitude <= 1e-6f) {
+        return {};
+    }
+
+    constexpr float kAxisAlignmentGain = 0.45f;
+    constexpr float kAxisAlignmentMaxCorrection = 0.30f;
+    const float correctionMagnitude = std::min(kAxisAlignmentMaxCorrection * stab,
+                                               kAxisAlignmentGain * stab * axisErrorMagnitude);
+    return axisError * (correctionMagnitude / axisErrorMagnitude);
+}
+
 /// Small Baumgarte-style orientation correction for joint position passes.
 /// Uses the same **scalar** effective rotational compliance as axis torques in `SolveServoJoint`
 /// (`wa = u·invIA·u`, `wb = u·invIB·u`) to split the quaternion step between bodies, instead of
@@ -816,8 +839,8 @@ public:
                 std::vector<std::uint16_t> angularCount(context.bodies.size(), 0);
 
                 for (const ServoJoint& j : context.servoJoints) {
-                    const Body& a = context.bodies[j.a];
-                    const Body& b = context.bodies[j.b];
+                    Body& a = context.bodies[j.a];
+                    Body& b = context.bodies[j.b];
                     if (a.invMass + b.invMass <= kEpsilon) continue;
                     const float stab = std::clamp(j.angleStabilizationScale, 0.0f, 1.0f);
                     if (stab <= 1e-7f) continue;
@@ -826,14 +849,12 @@ public:
                     Vec3 axisB = Rotate(b.orientation, j.localAxisB);
                     if (!TryNormalize(axisA, axisA) || !TryNormalize(axisB, axisB)) continue;
 
-                    Vec3 axisError = Cross(axisA, axisB);
-                    const float axisErrMag = Length(axisError);
-                    if (axisErrMag > 1e-5f) {
-                        const float clamped = std::min(0.18f * stab, 0.20f * stab * axisErrMag);
-                        axisError *= clamped / axisErrMag;
-                        const auto [wA, wB] = ComputeAngularCorrectionWeights(a, b, axisError);
-                        angularAccum[j.a] = angularAccum[j.a] + axisError * wA;
-                        angularAccum[j.b] = angularAccum[j.b] + axisError * (-wB);
+                    const Vec3 axisCorrection = ComputeServoAxisAlignmentCorrection(j, axisA, axisB);
+                    if (LengthSquared(axisCorrection) > 0.0f) {
+                        ApplyAngularPositionCorrection(a, b, axisCorrection);
+                        axisA = Rotate(a.orientation, j.localAxisA);
+                        axisB = Rotate(b.orientation, j.localAxisB);
+                        if (!TryNormalize(axisA, axisA) || !TryNormalize(axisB, axisB)) continue;
                     }
 
                     const Vec3 refA = ResolveJointReference(a.orientation, j.localReferenceA, axisA);
@@ -872,7 +893,7 @@ public:
                     const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
                     const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
                     const Vec3 error = (b.position + rb) - (a.position + ra);
-                    Vec3 correction = (0.22f / std::max(a.invMass + b.invMass, kEpsilon)) * error;
+                    Vec3 correction = (0.28f / std::max(a.invMass + b.invMass, kEpsilon)) * error;
                     const float gLenSq = LengthSquared(context.gravity);
                     const bool oneStatic = a.isStatic != b.isStatic;
                     if (oneStatic && gLenSq > 1e-12f) {
@@ -888,13 +909,9 @@ public:
                     Vec3 axisB = Rotate(b.orientation, j.localAxisB);
                     if (!TryNormalize(axisA, axisA) || !TryNormalize(axisB, axisB)) continue;
 
-                    Vec3 axisError = Cross(axisA, axisB);
-                    const float axisErrorMagnitude = Length(axisError);
-                    if (axisErrorMagnitude > 1e-5f) {
-                        const float clampedMagnitude =
-                            std::min(0.18f * stab, 0.20f * stab * axisErrorMagnitude);
-                        axisError *= clampedMagnitude / axisErrorMagnitude;
-                        ApplyAngularPositionCorrection(a, b, axisError);
+                    const Vec3 axisCorrection = ComputeServoAxisAlignmentCorrection(j, axisA, axisB);
+                    if (LengthSquared(axisCorrection) > 0.0f) {
+                        ApplyAngularPositionCorrection(a, b, axisCorrection);
                         axisA = Rotate(a.orientation, j.localAxisA);
                         axisB = Rotate(b.orientation, j.localAxisB);
                         if (!TryNormalize(axisA, axisA) || !TryNormalize(axisB, axisB)) continue;

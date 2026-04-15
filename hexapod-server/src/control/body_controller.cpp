@@ -7,17 +7,31 @@ namespace {
 
 constexpr double kStepLengthM = 0.06;
 constexpr double kSwingHeightM = 0.03;
-constexpr double kDefaultBodyHeightM = 0.20;
+constexpr double kDefaultBodyHeightM = 0.05;
+constexpr double kNominalReachFraction = 0.55;
+constexpr double kReachMarginM = 0.005;
 
 } // namespace
 
-std::array<Vec3, kNumLegs> BodyController::nominalStance() const {
+std::array<Vec3, kNumLegs> BodyController::nominalStance(double body_height_m) const {
     std::array<Vec3, kNumLegs> nominal{};
     for (int leg = 0; leg < kNumLegs; ++leg) {
         const LegGeometry& leg_geo = geometry_.legGeometry[leg];
-        const double neutral_leg_x =
-            leg_geo.coxaLength.value + 0.55 * (leg_geo.femurLength.value + leg_geo.tibiaLength.value);
-        const Vec3 neutral_leg_frame{neutral_leg_x, 0.0, -kDefaultBodyHeightM};
+        const double femur_tibia_reach =
+            std::max(0.0, leg_geo.femurLength.value + leg_geo.tibiaLength.value - kReachMarginM);
+        const double desired_rho = kNominalReachFraction * (leg_geo.femurLength.value + leg_geo.tibiaLength.value);
+
+        // body_height_m is the requested body-center height above the contact plane.
+        const double desired_foot_z_body = -body_height_m;
+        double foot_z_in_leg_frame = desired_foot_z_body - leg_geo.bodyCoxaOffset.z;
+        if (std::abs(foot_z_in_leg_frame) > femur_tibia_reach) {
+            foot_z_in_leg_frame = std::copysign(femur_tibia_reach, foot_z_in_leg_frame);
+        }
+
+        const double max_rho =
+            std::sqrt(std::max(0.0, femur_tibia_reach * femur_tibia_reach - foot_z_in_leg_frame * foot_z_in_leg_frame));
+        const double rho = std::min(desired_rho, max_rho);
+        const Vec3 neutral_leg_frame{leg_geo.coxaLength.value + rho, 0.0, foot_z_in_leg_frame};
         const Mat3 body_from_leg = Mat3::rotZ(leg_geo.mountAngle.value);
         nominal[leg] = leg_geo.bodyCoxaOffset + (body_from_leg * neutral_leg_frame);
     }
@@ -33,7 +47,12 @@ LegTargets BodyController::update(const RobotState& est,
 
     (void)est;
 
-    const std::array<Vec3, kNumLegs> nominal = nominalStance();
+    double commanded_body_height_m = intent.twist.body_trans_m.z;
+    if (commanded_body_height_m <= 1e-6) {
+        commanded_body_height_m = kDefaultBodyHeightM;
+    }
+
+    const std::array<Vec3, kNumLegs> nominal = nominalStance(commanded_body_height_m);
     const bool walking =
         (intent.requested_mode == RobotMode::WALK) &&
         !safety.inhibit_motion &&
@@ -50,17 +69,10 @@ LegTargets BodyController::update(const RobotState& est,
         intent.twist.body_trans_m.y,
         0.0};
 
-    double commanded_body_height_m = intent.twist.body_trans_m.z;
-    if (commanded_body_height_m <= 1e-6) {
-        commanded_body_height_m = kDefaultBodyHeightM;
-    }
-
     for (int leg = 0; leg < kNumLegs; ++leg) {
         Vec3 target = nominal[leg];
         Vec3 target_vel = Vec3{};
 
-        // Apply commanded body-height offset around the nominal stance height.
-        target.z += commanded_body_height_m - kDefaultBodyHeightM;
         target = target - planar_body_offset;
         target_vel = target_vel - intent.twist.body_trans_mps;
 

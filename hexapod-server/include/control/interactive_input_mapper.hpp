@@ -28,11 +28,11 @@ struct InteractiveControllerState
   ControllerInputMode input_mode{ControllerInputMode::HeadingWalk};
   RobotMode walk_mode{RobotMode::WALK};
   GaitType gait{GaitType::TRIPOD};
-  double walk_body_height_m{0.20};
+  double walk_body_height_m{0.05};
   double walk_facing_yaw_rad{0.0};
   bool walk_facing_valid{false};
 
-  double body_height_m{0.20};
+  double body_height_m{0.05};
 };
 
 struct InteractiveButtonMappingResult

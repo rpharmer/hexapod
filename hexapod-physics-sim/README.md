@@ -58,6 +58,7 @@ Executable: `build/hexapod-physics-sim` (run from the build tree or pass paths a
 | `--sink dummy\|udp` | Output: no network (`dummy`) or UDP packets to `--udp-host` / `--udp-port` (`udp`) |
 | `--model default\|hexapod` | Built-in scene when **not** using `--scene-file` |
 | `--scene-file PATH` | Load a **minphys** JSON scene (supported `schema_version`: **1** or **2**) |
+| `--serve` | **UDP physics server** (`hexapod-server` IPC): binary `ConfigCommand` / `StepCommand` → `ConfigAck` / `StateResponse` (listen **9871**, `--serve-port`). Add **`--sink udp`** to also emit minphys **scene JSON** each stepped frame to `--udp-host`:**`--udp-port`** for [`hexapod-opengl-visualiser`](../hexapod-opengl-visualiser) (same wire as the demo). |
 | `--udp-host HOST` | UDP destination (default `127.0.0.1`) |
 | `--udp-port PORT` | UDP destination port (default `9870`) |
 | `--frames N` | Number of simulation frames (default `1200`) |

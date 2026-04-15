@@ -2,11 +2,15 @@
 
 #include "demo/demo_run_control.hpp"
 #include "demo/frame_sink.hpp"
+#include "minphys3d/core/world.hpp"
+#include "minphys3d/demo/hexapod_scene.hpp"
 #include "minphys3d/math/vec3.hpp"
 
 #include <string>
 
 namespace minphys3d::demo {
+
+void EmitSceneBodies(FrameSink& sink, const World& world, const HexapodSceneObjects& scene);
 
 enum class SceneModel {
     Default,

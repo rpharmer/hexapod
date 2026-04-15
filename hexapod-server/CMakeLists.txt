@@ -100,6 +100,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/loop_timing.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/mode_runners.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/motion_intent_utils.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/physics_sim_estimator.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/plane_estimation.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/probe_contact_logic.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/robot_control.cpp"
@@ -123,6 +124,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/hardware_bridge.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/hardware_state_codec.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/joint_feedback_estimator.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/physics_sim_bridge.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/serialCommsServer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/sim_hardware_bridge.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardware/transport_session.cpp"
@@ -219,6 +221,25 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_motion_intent_through_ik_fk tests/test_motion_intent_through_ik_fk.cpp)
     target_link_libraries(test_motion_intent_through_ik_fk PRIVATE hexapod_server_core)
     add_test(NAME motion_intent_through_ik_fk_chain COMMAND test_motion_intent_through_ik_fk)
+
+    add_executable(test_physics_sim_mapping_roundtrip tests/test_physics_sim_mapping_roundtrip.cpp)
+    target_link_libraries(test_physics_sim_mapping_roundtrip PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_mapping_roundtrip COMMAND test_physics_sim_mapping_roundtrip)
+
+    add_executable(test_physics_sim_ik_wire_roundtrip tests/test_physics_sim_ik_wire_roundtrip.cpp)
+    target_link_libraries(test_physics_sim_ik_wire_roundtrip PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_ik_wire_roundtrip COMMAND test_physics_sim_ik_wire_roundtrip)
+
+    add_executable(test_physics_sim_bridge_frame_conversion tests/test_physics_sim_bridge_frame_conversion.cpp)
+    target_link_libraries(test_physics_sim_bridge_frame_conversion PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_bridge_frame_conversion COMMAND test_physics_sim_bridge_frame_conversion)
+
+    add_executable(test_physics_sim_serve_zero_g_udp tests/test_physics_sim_serve_zero_g_udp.cpp)
+    target_link_libraries(test_physics_sim_serve_zero_g_udp PRIVATE hexapod_server_core)
+
+    add_executable(test_physics_sim_walk_distance tests/test_physics_sim_walk_distance.cpp)
+    target_link_libraries(test_physics_sim_walk_distance PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_walk_distance COMMAND test_physics_sim_walk_distance)
 
     add_executable(test_virtual_gamepad_controller tests/test_virtual_gamepad_controller.cpp)
     target_link_libraries(test_virtual_gamepad_controller PRIVATE hexapod_server_core)

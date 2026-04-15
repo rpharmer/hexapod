@@ -71,7 +71,7 @@ int InteractiveRunner::run(RobotControl& robot,
       updateControllerDerivedState(*controller, state);
       robot.setMotionIntent(makeControllerMotionIntent(*controller, state));
     } else {
-      robot.setMotionIntent(makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.20));
+      robot.setMotionIntent(makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.05));
     }
 
     std::this_thread::sleep_for(control_cfg.loop_timing.command_refresh_period);

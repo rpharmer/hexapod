@@ -159,7 +159,7 @@ Set `Runtime.Mode = "sim"` in `config.txt`, or copy `config.sim.txt` over `confi
   - `ResponseRateHz`
   - `DropBus`, `LowVoltage`, `HighCurrent` (fault injection toggles)
 
-> Scenario runs call `setSimFaultToggles(...)` and require simulator mode.
+> Scenario runs call `setSimFaultToggles(...)`; supported bridges are `SimHardwareBridge` and `PhysicsSimBridge` (`Runtime.Mode = "physics-sim"`). Fault/contact overrides apply only to the lightweight sim bridge; the physics UDP path accepts the hook but ignores injected toggles for now.
 
 ### 2) Execute scenario runs
 
@@ -253,7 +253,7 @@ Healthy run indicators:
 Failure indicators:
 
 - `Failed to load scenario file '<path>'`
-- `Scenario driver requires sim runtime (SimHardwareBridge)`
+- `Scenario driver requires sim runtime (SimHardwareBridge)` (only if the hardware bridge is neither sim nor physics-sim)
 - `LOG_ERROR(...)` entries during execution
 - non-zero process exit status
 

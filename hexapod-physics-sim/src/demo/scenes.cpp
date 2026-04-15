@@ -17,6 +17,8 @@
 #include "demo/frame_sink.hpp"
 #include "minphys3d/core/body.hpp"
 #include "minphys3d/core/world.hpp"
+#include "minphys3d/demo/hexapod_scene.hpp"
+#include "physics_sim_protocol.hpp"
 
 namespace minphys3d::demo {
 namespace {
@@ -71,22 +73,6 @@ private:
     std::FILE* file_ = nullptr;
 };
 
-struct LegLinkIds {
-    std::uint32_t coxa = 0;
-    std::uint32_t femur = 0;
-    std::uint32_t tibia = 0;
-    std::uint32_t bodyToCoxaJoint = World::kInvalidJointId;
-    std::uint32_t coxaToFemurJoint = World::kInvalidJointId;
-    std::uint32_t femurToTibiaJoint = World::kInvalidJointId;
-};
-
-struct HexapodSceneObjects {
-    std::uint32_t plane = 0;
-    std::uint32_t body = 0;
-    std::array<LegLinkIds, 6> legs{};
-    std::vector<std::uint32_t> body_ids{};
-};
-
 struct HexapodLegSpec {
     Vec3 mountOffsetBody{};
     float mountAngleDegrees = 0.0f;
@@ -117,14 +103,11 @@ constexpr float kCoxaRenderLength = kCoxaLength;
 constexpr float kFemurRenderLength = kFemurLength;
 constexpr float kTibiaRenderLength = kTibiaLength;
 
-constexpr float kNeutralFemurAngle = -0.20f;
-constexpr float kNeutralTibiaAngle = -1.00f;
 
-// One motor tune for every leg servo (hip yaw + two pitch joints). Impulse cap must be high enough that
-// identical limits still support the chassis on six legs under gravity (no per-joint favoritism).
-constexpr float kHexLegServoMaxTorque = 0.58f;
-constexpr float kHexLegServoPositionGain = 100.0f;  // omega_n (rad/s)
-constexpr float kHexLegServoDampingGain = 1.2f;    // zeta (slightly overdamped)
+// Shared servo profile for every leg joint.
+constexpr float kHexapodServoMaxTorque = 0.58f;
+constexpr float kHexapodServoPositionGain = 102.0f;  // omega_n (rad/s)
+constexpr float kHexapodServoDampingGain = 1.24f;     // zeta (slightly overdamped)
 
 Quat QuaternionFromBasis(const Vec3& x_axis, const Vec3& y_axis, const Vec3& z_axis) {
     const float m00 = x_axis.x;
@@ -319,6 +302,8 @@ Body MakeCompoundChassisBody(const Vec3& position, float mass) {
     return body;
 }
 
+} // unnamed namespace (detail helpers)
+
 void SyncBuiltInHexapodServoTargets(World& world, const HexapodSceneObjects& scene) {
     // Built geometry uses neutral femur/tibia angles, but `CreateServoJoint` defaults `targetAngle` to 0.
     // Align targets with the measured hinge angles so PD + integral start from the assembled pose instead
@@ -339,8 +324,9 @@ void SyncBuiltInHexapodServoTargets(World& world, const HexapodSceneObjects& sce
 
 float ComputeStandingBodyHeight() {
     const Vec3 leg_axis = LegAxisFromMountAngleDegrees(kHexapodLegSpecs.front().mountAngleDegrees);
-    const Vec3 femur_direction = LegPitchDirection(leg_axis, kNeutralFemurAngle);
-    const Vec3 tibia_direction = LegPitchDirection(leg_axis, kNeutralFemurAngle + kNeutralTibiaAngle);
+    const Vec3 femur_direction = LegPitchDirection(leg_axis, physics_sim::kAssemblyFemurPitchRad);
+    const Vec3 tibia_direction =
+        LegPitchDirection(leg_axis, physics_sim::kAssemblyFemurPitchRad + physics_sim::kAssemblyTibiaPitchRad);
     const Vec3 foot_center_relative =
         kHexapodLegSpecs.front().mountOffsetBody
         + leg_axis * kCoxaLength
@@ -382,8 +368,9 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
         const Vec3 leg_axis = LegAxisFromMountAngleDegrees(leg_spec.mountAngleDegrees);
         const Vec3 lateral_axis = Normalize(Cross(leg_axis, Vec3{0.0f, 1.0f, 0.0f}));
         const Vec3 hip_anchor = chassis.position + leg_spec.mountOffsetBody + leg_axis * kHipMountOutboard;
-        const Vec3 femur_direction = LegPitchDirection(leg_axis, kNeutralFemurAngle);
-        const Vec3 tibia_direction = LegPitchDirection(leg_axis, kNeutralFemurAngle + kNeutralTibiaAngle);
+        const Vec3 femur_direction = LegPitchDirection(leg_axis, physics_sim::kAssemblyFemurPitchRad);
+        const Vec3 tibia_direction =
+            LegPitchDirection(leg_axis, physics_sim::kAssemblyFemurPitchRad + physics_sim::kAssemblyTibiaPitchRad);
 
         const Vec3 coxa_center = hip_anchor + leg_axis * kCoxaHalfLength;
         const Vec3 femur_anchor = hip_anchor + leg_axis * kCoxaLength;
@@ -432,9 +419,9 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
             hip_anchor,
             {0.0f, 1.0f, 0.0f},
             0.0f,
-            kHexLegServoMaxTorque,
-            kHexLegServoPositionGain,
-            kHexLegServoDampingGain);
+            kHexapodServoMaxTorque,
+            kHexapodServoPositionGain,
+            kHexapodServoDampingGain);
 
         const std::uint32_t coxa_to_femur_joint = world.CreateServoJoint(
             coxa_id,
@@ -442,9 +429,9 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
             femur_anchor,
             lateral_axis,
             0.0f,
-            kHexLegServoMaxTorque,
-            kHexLegServoPositionGain,
-            kHexLegServoDampingGain);
+            kHexapodServoMaxTorque,
+            kHexapodServoPositionGain,
+            kHexapodServoDampingGain);
 
         const std::uint32_t femur_to_tibia_joint = world.CreateServoJoint(
             femur_id,
@@ -452,9 +439,9 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
             tibia_anchor,
             lateral_axis,
             0.0f,
-            kHexLegServoMaxTorque,
-            kHexLegServoPositionGain,
-            kHexLegServoDampingGain);
+            kHexapodServoMaxTorque,
+            kHexapodServoPositionGain,
+            kHexapodServoDampingGain);
 
         scene.legs[leg_index] = LegLinkIds{
             coxa_id,
@@ -483,7 +470,7 @@ void RelaxBuiltInHexapodServos(World& world, const HexapodSceneObjects& scene) {
     // Servo gains are now omega_n / zeta (mass-normalized by the soft constraint formulation),
     // so no linear gain scaling is needed. Position-pass stabilization is disabled to avoid
     // double stabilization with the velocity-level soft constraint motor.
-    constexpr float kIntegralToPositionRatio = 0.02f;
+    constexpr float kIntegralToPositionRatio = 0.0f;
     constexpr float kAngleStabilizationScale = 0.0f;
     const std::array<std::uint32_t, 18> servo_joint_ids{
         scene.legs[0].bodyToCoxaJoint,
@@ -830,8 +817,6 @@ int RunModelDemo(
     }
     return RunClassicDemo(sink_kind, frame_count, realtime, gravity, udp_host, udp_port, control);
 }
-
-} // namespace
 
 int RunDefaultScene(SinkKind sink_kind, SceneModel model) {
     return RunModelDemo(sink_kind, model, 120, false, kDemoEarthGravity, "127.0.0.1", 9870, nullptr);

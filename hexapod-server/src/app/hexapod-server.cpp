@@ -15,6 +15,8 @@
 #include "mode_runners.hpp"
 #include "robot_control.hpp"
 #include "runtime_teardown.hpp"
+#include "physics_sim_bridge.hpp"
+#include "physics_sim_estimator.hpp"
 #include "sim_hardware_bridge.hpp"
 #include "toml_parser.hpp"
 
@@ -65,6 +67,12 @@ std::unique_ptr<IHardwareBridge> makeHardwareBridge(const ParsedToml& config,
     const double read_period_s = 1.0 / std::max(config.simResponseRateHz, 1.0);
     return std::make_unique<SimHardwareBridge>(sim_faults, DurationSec{read_period_s},
                                                DurationSec{0.08});
+  }
+
+  if (config.runtimeMode == "physics-sim") {
+    return std::make_unique<PhysicsSimBridge>(config.physicsSimHost, config.physicsSimPort,
+                                              config.busLoopPeriodUs, config.physicsSimSolverIterations,
+                                              logger);
   }
 
   return std::make_unique<SimpleHardwareBridge>(config.serialDevice, config.baudRate,
@@ -168,6 +176,15 @@ int main(int argc, char** argv)
 
   LOG_INFO(logger, "Runtime.Mode=", config.runtimeMode);
   LOG_INFO(logger, "Logging.FileEnabled=", enableFileLogging, ", Path=", effectiveLogPath);
+  if (config.runtimeMode == "physics-sim") {
+    LOG_INFO(logger,
+             "Runtime.PhysicsSim.Host=",
+             config.physicsSimHost,
+             ", Port=",
+             config.physicsSimPort,
+             ", SolverIterations=",
+             config.physicsSimSolverIterations);
+  }
   LOG_INFO(logger,
            "Runtime.Telemetry.Enabled=",
            control_cfg.telemetry.enabled,
@@ -181,7 +198,12 @@ int main(int argc, char** argv)
            control_cfg.telemetry.geometry_resend_interval_sec);
 
   auto hw = makeHardwareBridge(config, logger);
-  auto estimator = std::make_unique<SimpleEstimator>();
+  std::unique_ptr<IEstimator> estimator;
+  if (config.runtimeMode == "physics-sim") {
+    estimator = std::make_unique<PhysicsSimEstimator>();
+  } else {
+    estimator = std::make_unique<SimpleEstimator>();
+  }
   RobotControl robot(std::move(hw), std::move(estimator), logger, control_cfg);
 
   if (!robot.init()) {

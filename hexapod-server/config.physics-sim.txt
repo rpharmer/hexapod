@@ -1,0 +1,108 @@
+# Minimal config for Runtime.Mode = "physics-sim" (UDP backend: hexapod-physics-sim --serve).
+title = "Hexapod Config File"
+Schema = "hexapod.server.config"
+SchemaVersion = 1
+
+Runtime.Mode = "physics-sim"
+Runtime.PhysicsSim.Host = "127.0.0.1"
+Runtime.PhysicsSim.Port = 9871
+Runtime.PhysicsSim.SolverIterations = 24
+
+Runtime.Log.FilePath = "app-physics-sim.log"
+Runtime.Log.EnableFile = true
+Runtime.Telemetry.Enable = false
+Runtime.Telemetry.Host = "127.0.0.1"
+Runtime.Telemetry.Port = 9870
+Runtime.Telemetry.PublishRateHz = 30.0
+Runtime.Telemetry.GeometryResendIntervalSec = 1.0
+
+SerialDevice = '/dev/ttyACM0'
+BaudRate = 115200
+Timeout_ms = 100
+
+MotorCalibrations = [
+["R31", 1031, 2088],
+["R32", 1003, 2016],
+["R33", 958,  1990],
+["L31", 941,  2022],
+["L32", 986,  2039],
+["L33", 958,  1988],
+["R21", 1007, 2048],
+["R22", 976,  2019],
+["R23", 1057, 2090],
+["L21", 993,  2015],
+["L22", 1011, 2013],
+["L23", 956,  2000],
+["R11", 1040, 2055],
+["R12", 983,  2057],
+["R13", 959,  1995],
+["L11", 1031, 1998],
+["L12", 951,  1978],
+["L13", 1035, 2027]]
+
+[Tuning]
+BusLoopPeriodUs = 2000
+EstimatorLoopPeriodUs = 2000
+ControlLoopPeriodUs = 4000
+SafetyLoopPeriodUs = 2000
+DiagnosticsPeriodMs = 500
+CommandRefreshPeriodMs = 100
+StandSettlingDelayMs = 2000
+MaxTiltRad = 0.70
+CommandTimeoutUs = 300000
+FallbackSpeedMag = 0.01
+MinBusVoltageV = 10.5
+MaxBusCurrentA = 25.0
+MinFootContacts = 0
+MaxFootContacts = 6
+
+[Geometry]
+CoxaLengthM = 0.043
+FemurLengthM = 0.060
+TibiaLengthM = 0.104
+BodyToBottomM = 0.040
+CoxaAttachDeg = 0.0
+MountAnglesDeg = [143.0, 217.0, 90.0, 270.0, 37.0, 323.0]
+CoxaOffsetsM = [
+  [0.063, -0.0835, -0.007],
+  [-0.063, -0.0835, -0.007],
+  [0.0815, 0.0, -0.007],
+  [-0.0815, 0.0, -0.007],
+  [0.063, 0.0835, -0.007],
+  [-0.063, 0.0835, -0.007]
+]
+FemurAttachDeg = [35.0, -35.0, 35.0, -35.0, 35.0, -35.0]
+TibiaAttachDeg = [83.0, -83.0, 83.0, -83.0, 83.0, -83.0]
+SideSign = [1.0, -1.0, 1.0, -1.0, 1.0, -1.0]
+ServoDynamicsPositiveTauS = [
+  [0.08, 0.08, 0.08],
+  [0.08, 0.08, 0.08],
+  [0.08, 0.08, 0.08],
+  [0.08, 0.08, 0.08],
+  [0.08, 0.08, 0.08],
+  [0.08, 0.08, 0.08]
+]
+ServoDynamicsPositiveVmaxRadps = [
+  [8.0, 8.0, 8.0],
+  [8.0, 8.0, 8.0],
+  [8.0, 8.0, 8.0],
+  [8.0, 8.0, 8.0],
+  [8.0, 8.0, 8.0],
+  [8.0, 8.0, 8.0]
+]
+ServoDynamicsNegativeTauS = [
+  [0.08, 0.08, 0.08],
+  [0.08, 0.08, 0.08],
+  [0.08, 0.08, 0.08],
+  [0.08, 0.08, 0.08],
+  [0.08, 0.08, 0.08],
+  [0.08, 0.08, 0.08]
+]
+ServoDynamicsNegativeVmaxRadps = [
+  [8.0, 8.0, 8.0],
+  [8.0, 8.0, 8.0],
+  [8.0, 8.0, 8.0],
+  [8.0, 8.0, 8.0],
+  [8.0, 8.0, 8.0],
+  [8.0, 8.0, 8.0]
+]

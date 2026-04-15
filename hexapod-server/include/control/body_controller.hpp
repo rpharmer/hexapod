@@ -11,7 +11,7 @@ public:
                       const SafetyState& safety);
 
 private:
-    std::array<Vec3, kNumLegs> nominalStance() const;
+    std::array<Vec3, kNumLegs> nominalStance(double body_height_m) const;
 
     HexapodGeometry geometry_{defaultHexapodGeometry()};
 };

@@ -902,8 +902,10 @@ void World::SolveServoJoint(ServoJoint& j) {
         const Vec3 angAxes[2] = {t1, t2};
         float* angImpulseSums[2] = {&j.angularImpulse1, &j.angularImpulse2};
         const float dt = currentSubstepDt_;
-        constexpr float kAxisAlignOmega = 120.0f;
-        constexpr float kAxisAlignZeta  = 1.5f;
+        // Keep the shared axis-alignment solve stiffer than the hinge-angle target so identical
+        // leg servos hold their shape under load instead of behaving like loose ball joints.
+        constexpr float kAxisAlignOmega = 260.0f;
+        constexpr float kAxisAlignZeta  = 1.12f;
         const float axisDenom = 2.0f * kAxisAlignZeta + dt * kAxisAlignOmega;
         for (int i = 0; i < 2; ++i) {
             const Vec3 n = angAxes[i];

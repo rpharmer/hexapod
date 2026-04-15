@@ -30,6 +30,7 @@ set(MINPHYS3D_CORE_SOURCES
 set(MINPHYS3D_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/include
 )
 
 # Single compilation of shared engine sources; link this into the demo and each test.
@@ -47,6 +48,7 @@ endif()
 if(MINPHYS3D_BUILD_DEMO)
     add_executable(hexapod-physics-sim
         src/main.cpp
+        src/demo/serve_mode.cpp
         src/demo/scenes.cpp
         src/demo/frame_sink.cpp
         src/demo/interactive_presets.cpp
@@ -110,4 +112,13 @@ add_minphys3d_test(hex_diag tests/hex_diag.cpp)
         target_compile_options(test_servo_visual_presets_json PRIVATE -Wall -Wextra -pedantic)
     endif()
     add_test(NAME test_servo_visual_presets_json COMMAND test_servo_visual_presets_json)
+
+    add_executable(test_serve_ipc tests/test_serve_ipc.cpp)
+    target_include_directories(test_serve_ipc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/include)
+    if(MSVC)
+        target_compile_options(test_serve_ipc PRIVATE /W4)
+    else()
+        target_compile_options(test_serve_ipc PRIVATE -Wall -Wextra -pedantic)
+    endif()
+    add_test(NAME test_serve_ipc COMMAND test_serve_ipc $<TARGET_FILE:hexapod-physics-sim>)
 endif()

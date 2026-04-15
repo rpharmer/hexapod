@@ -1,6 +1,7 @@
 #include "robot_runtime.hpp"
 
 #include "geometry_config.hpp"
+#include "physics_sim_bridge.hpp"
 
 RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
                            std::unique_ptr<IEstimator> estimator,
@@ -200,13 +201,16 @@ void RobotRuntime::setMotionIntentForTest(const MotionIntent& intent) {
 }
 
 bool RobotRuntime::setSimFaultToggles(const SimHardwareFaultToggles& toggles) {
-    auto* sim_hw = dynamic_cast<SimHardwareBridge*>(hw_.get());
-    if (sim_hw == nullptr) {
-        return false;
+    if (auto* sim_hw = dynamic_cast<SimHardwareBridge*>(hw_.get())) {
+        sim_hw->setFaultToggles(toggles);
+        return true;
     }
-
-    sim_hw->setFaultToggles(toggles);
-    return true;
+    // Scenarios only need this hook to succeed; physics UDP uses real contacts (fault overrides N/A for now).
+    if (dynamic_cast<PhysicsSimBridge*>(hw_.get()) != nullptr) {
+        (void)toggles;
+        return true;
+    }
+    return false;
 }
 
 ControlStatus RobotRuntime::getStatus() const {

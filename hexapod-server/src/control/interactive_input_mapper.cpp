@@ -47,12 +47,12 @@ InteractiveButtonMappingResult mapInteractiveButtonEvent(const ControllerEvent& 
 
   if (state.input_mode == ControllerInputMode::BodyPose) {
     if (event.name == "B") {
-      state.body_height_m = 0.20;
+      state.body_height_m = 0.05;
       result.info_log = "Body pose offsets reset to neutral";
     } else if (event.name == "LB") {
-      state.body_height_m = std::clamp(state.body_height_m + 0.01, 0.10, 0.35);
+      state.body_height_m = std::clamp(state.body_height_m + 0.01, 0.05, 0.35);
     } else if (event.name == "RB") {
-      state.body_height_m = std::clamp(state.body_height_m - 0.01, 0.10, 0.35);
+      state.body_height_m = std::clamp(state.body_height_m - 0.01, 0.05, 0.35);
     }
     return result;
   }
@@ -103,7 +103,7 @@ MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
   constexpr double kMaxBodyRollPitchRad = 0.40;
   constexpr double kMaxBodyYawRad = 0.60;
   constexpr double kBodyHeightAdjustRangeM = 0.08;
-  constexpr double kMinBodyHeightM = 0.10;
+  constexpr double kMinBodyHeightM = 0.05;
   constexpr double kMaxBodyHeightM = 0.35;
 
   const double left_x = static_cast<double>(controller.getLeftX());
