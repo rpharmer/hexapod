@@ -191,6 +191,7 @@ void FollowWaypoints::reset(std::vector<NavPose2d> waypoints) {
     index_ = 0;
     stall_timer_s_ = 0.0;
     best_distance_m_ = 1e9;
+    current_distance_m_ = 1e9;
     need_inner_reset_ = true;
 }
 
@@ -215,13 +216,17 @@ NavTaskUpdate FollowWaypoints::update(const NavPose2d current, const double dt_s
         const double dx = wp.x_m - current.x_m;
         const double dy = wp.y_m - current.y_m;
         best_distance_m_ = std::hypot(dx, dy);
+        current_distance_m_ = best_distance_m_;
         stall_timer_s_ = 0.0;
     }
 
     const NavPose2d& wp = waypoints_[index_];
     const double dist = std::hypot(wp.x_m - current.x_m, wp.y_m - current.y_m);
-    // Real gaits often do not shrink Euclidean range-to-goal every tick (slip, heading wobble).
-    // Near the running best, accrue stall slowly; only accrue at full rate when clearly regressing.
+    current_distance_m_ = dist;
+    // Stall uses Euclidean range-to-goal (conservative). Real gaits can violate monotonic shrink
+    // (slip, heading wobble), so use hysteresis: accrue slowly near the running best, full rate on
+    // clear regression. Callers that need looser semantics should raise `stall_timeout_s` or gate
+    // integration tests on plant fidelity (see physics sim nav test notes).
     constexpr double kStallDistHysteresisM = 0.008;
     if (dist < best_distance_m_ - 1e-9) {
         best_distance_m_ = dist;
@@ -234,6 +239,7 @@ NavTaskUpdate FollowWaypoints::update(const NavPose2d current, const double dt_s
     if (stall_timer_s_ > params_.stall_timeout_s) {
         NavTaskUpdate u{};
         u.status = NavTaskStatus::Failed;
+        u.failure_reason = NavTaskFailureReason::StallTimeout;
         return u;
     }
 
@@ -249,4 +255,17 @@ NavTaskUpdate FollowWaypoints::update(const NavPose2d current, const double dt_s
         return update(current, dt_s);
     }
     return u;
+}
+
+FollowWaypointsProgress FollowWaypoints::progress() const {
+    FollowWaypointsProgress out{};
+    out.waypoint_index = index_;
+    out.waypoint_count = waypoints_.size();
+    out.stall_timer_s = stall_timer_s_;
+    out.best_distance_to_active_waypoint_m = best_distance_m_;
+    if (index_ < waypoints_.size()) {
+        out.has_active_waypoint = true;
+        out.distance_to_active_waypoint_m = current_distance_m_;
+    }
+    return out;
 }

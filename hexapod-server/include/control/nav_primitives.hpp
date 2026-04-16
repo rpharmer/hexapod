@@ -14,9 +14,24 @@ enum class NavTaskStatus {
     Failed,
 };
 
+enum class NavTaskFailureReason {
+    None,
+    StallTimeout,
+};
+
 struct NavTaskUpdate {
     NavCommand cmd{};
     NavTaskStatus status{NavTaskStatus::Running};
+    NavTaskFailureReason failure_reason{NavTaskFailureReason::None};
+};
+
+struct FollowWaypointsProgress {
+    std::size_t waypoint_index{0};
+    std::size_t waypoint_count{0};
+    bool has_active_waypoint{false};
+    double distance_to_active_waypoint_m{0.0};
+    double best_distance_to_active_waypoint_m{0.0};
+    double stall_timer_s{0.0};
 };
 
 /** In-place yaw regulation; success when |error| < threshold for N consecutive updates. */
@@ -124,6 +139,7 @@ public:
 
     void reset(std::vector<NavPose2d> waypoints);
     NavTaskUpdate update(NavPose2d current, double dt_s);
+    FollowWaypointsProgress progress() const;
 
 private:
     Params params_{};
@@ -132,5 +148,6 @@ private:
     GoToPose inner_{};
     double stall_timer_s_{0.0};
     double best_distance_m_{1e9};
+    double current_distance_m_{1e9};
     bool need_inner_reset_{true};
 };

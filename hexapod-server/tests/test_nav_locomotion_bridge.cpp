@@ -10,6 +10,14 @@
 
 namespace {
 
+bool expect(const bool condition, const char* message) {
+    if (!condition) {
+        std::cerr << "FAIL: " << message << '\n';
+        return false;
+    }
+    return true;
+}
+
 bool nearlyEq(double a, double b, double eps = 1e-5) {
     return std::abs(a - b) <= eps;
 }
@@ -69,19 +77,91 @@ int main() {
         step_pose_from_motion_intent(sim, last, dt);
     }
 
-    if (bridge.active()) {
-        std::cerr << "FAIL: navigation should complete\n";
+    if (!expect(!bridge.active(), "navigation should complete")) {
         return EXIT_FAILURE;
     }
-    if (!nearlyEq(sim.x_m, 0.22, 0.07) || !nearlyEq(sim.y_m, 0.04, 0.07)) {
-        std::cerr << "FAIL: sim pose did not reach final waypoint xy=" << sim.x_m << "," << sim.y_m << "\n";
+    if (!expect(nearlyEq(sim.x_m, 0.22, 0.07) && nearlyEq(sim.y_m, 0.04, 0.07),
+                "sim pose should approach final waypoint")) {
+        return EXIT_FAILURE;
+    }
+    const auto done_mon = bridge.monitor();
+    if (!expect(done_mon.lifecycle == NavLocomotionBridge::LifecycleState::Completed,
+                "monitor should report completed lifecycle")) {
         return EXIT_FAILURE;
     }
 
     fill_state_xy_yaw(est, sim);
     const MotionIntent idle = bridge.mergeIntent(fallback, est, dt);
-    if (idle.requested_mode != RobotMode::STAND) {
-        std::cerr << "FAIL: mergeIntent should return fallback when inactive\n";
+    if (!expect(idle.requested_mode == RobotMode::STAND,
+                "mergeIntent should return fallback when inactive")) {
+        return EXIT_FAILURE;
+    }
+
+    // Pause/resume/cancel behavior.
+    NavLocomotionBridge ctrl_bridge;
+    ctrl_bridge.startFollowWaypoints(walk, {NavPose2d{0.3, 0.0, 0.0}});
+    fill_state_xy_yaw(est, NavPose2d{});
+    ctrl_bridge.pause();
+    const MotionIntent paused = ctrl_bridge.mergeIntent(fallback, est, dt);
+    if (!expect(paused.requested_mode == RobotMode::STAND,
+                "paused bridge should hold fallback intent")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(ctrl_bridge.monitor().lifecycle == NavLocomotionBridge::LifecycleState::Paused,
+                "monitor should show paused state")) {
+        return EXIT_FAILURE;
+    }
+    ctrl_bridge.resume();
+    const MotionIntent resumed = ctrl_bridge.mergeIntent(fallback, est, dt);
+    if (!expect(resumed.requested_mode == RobotMode::WALK,
+                "resumed bridge should emit walk/nav intent")) {
+        return EXIT_FAILURE;
+    }
+    ctrl_bridge.cancel();
+    if (!expect(ctrl_bridge.monitor().lifecycle == NavLocomotionBridge::LifecycleState::Cancelled,
+                "cancel should set cancelled lifecycle")) {
+        return EXIT_FAILURE;
+    }
+
+    // Fail policy: stop-on-fail should emit zeroed walk command.
+    NavLocomotionBridge fail_bridge;
+    FollowWaypoints::Params fp{};
+    fp.stall_timeout_s = 0.01;
+    fp.go_to.rotate_first = false;
+    fail_bridge.setFailPolicy(NavLocomotionBridge::FailPolicy::FailStop);
+    fail_bridge.startFollowWaypoints(walk, {NavPose2d{10.0, 0.0, 0.0}}, fp);
+    fill_state_xy_yaw(est, NavPose2d{});
+    MotionIntent failed_out = fallback;
+    for (int i = 0; i < 8; ++i) {
+        failed_out = fail_bridge.mergeIntent(fallback, est, dt);
+    }
+    const PlanarMotionCommand failed_planar = planarMotionCommand(failed_out);
+    if (!expect(!fail_bridge.active(), "fail-stop should deactivate bridge")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(fail_bridge.monitor().lifecycle == NavLocomotionBridge::LifecycleState::Failed,
+                "fail-stop should report failed lifecycle")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(fail_bridge.monitor().failure_reason == NavTaskFailureReason::StallTimeout,
+                "fail-stop should report stall timeout reason")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(nearlyEq(failed_planar.vx_mps, 0.0) && nearlyEq(failed_planar.vy_mps, 0.0) &&
+                    nearlyEq(failed_planar.yaw_rate_radps, 0.0),
+                "fail-stop output should command zero planar velocity")) {
+        return EXIT_FAILURE;
+    }
+
+    // Retry policy should attempt restarts before declaring failure.
+    NavLocomotionBridge retry_bridge;
+    retry_bridge.setFailPolicy(NavLocomotionBridge::FailPolicy::FailRetryN, 2);
+    retry_bridge.startFollowWaypoints(walk, {NavPose2d{10.0, 0.0, 0.0}}, fp);
+    for (int i = 0; i < 40; ++i) {
+        (void)retry_bridge.mergeIntent(fallback, est, dt);
+    }
+    if (!expect(retry_bridge.monitor().retry_count == 2,
+                "retry policy should consume retry budget")) {
         return EXIT_FAILURE;
     }
 
