@@ -1,7 +1,12 @@
 #include "control_pipeline.hpp"
 
-ControlPipeline::ControlPipeline(control_config::GaitConfig config)
-    : gait_(config) {}
+#include "motion_intent_utils.hpp"
+
+ControlPipeline::ControlPipeline(control_config::GaitConfig gait_config,
+                                 control_config::LocomotionCommandConfig loco_config)
+    : gait_(gait_config),
+      loco_cmd_(loco_config),
+      body_(gait_config) {}
 
 PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
                                             const MotionIntent& intent,
@@ -13,8 +18,16 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
         active_mode = RobotMode::FAULT;
     }
 
-    const GaitState gait_state = gait_.update(estimated, intent, safety_state);
-    const LegTargets leg_targets = body_.update(estimated, intent, gait_state, safety_state);
+    const PlanarMotionCommand planar = planarMotionCommand(intent);
+    TimePointUs command_clock = intent.timestamp_us;
+    if (command_clock.isZero()) {
+        command_clock = estimated.timestamp_us;
+    }
+    const BodyTwist cmd_twist = loco_cmd_.update(intent, planar, command_clock);
+
+    GaitState gait_state = gait_.update(estimated, intent, safety_state, cmd_twist);
+    locomotion_stability_.apply(intent, gait_state);
+    const LegTargets leg_targets = body_.update(estimated, intent, gait_state, safety_state, cmd_twist);
     const JointTargets joint_targets = ik_.solve(estimated, leg_targets, safety_state);
 
     ControlStatus status{};

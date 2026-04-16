@@ -1,15 +1,22 @@
 #include "body_controller.hpp"
 
+#include "body_pose_controller.hpp"
+#include "contact_foot_response.hpp"
+#include "foot_planners.hpp"
+#include "foot_reachability.hpp"
 #include "motion_intent_utils.hpp"
 
 #include <algorithm>
 #include <cmath>
 
+BodyController::BodyController(control_config::GaitConfig gait_cfg)
+    : foot_estimator_blend_(std::clamp(gait_cfg.foot_estimator_blend, 0.0, 1.0)) {}
+
 namespace {
 
-constexpr double kDefaultBodyHeightM = 0.05;
 constexpr double kNominalReachFraction = 0.55;
 constexpr double kReachMarginM = 0.005;
+constexpr double kFootReachInsetM = 0.004;
 
 void strideDirectionXY(const double rx,
                        const double ry,
@@ -86,33 +93,31 @@ std::array<Vec3, kNumLegs> BodyController::nominalStance(double body_height_m) c
 LegTargets BodyController::update(const RobotState& est,
                                   const MotionIntent& intent,
                                   const GaitState& gait,
-                                  const SafetyState& safety) {
+                                  const SafetyState& safety,
+                                  const BodyTwist& cmd_twist) {
     LegTargets out{};
     out.timestamp_us = now_us();
 
-    (void)est;
+    const PlanarMotionCommand cmd = planarMotionFromCommandTwist(cmd_twist);
+    const BodyPoseSetpoint pose =
+        computeBodyPoseSetpoint(intent, cmd, gait.static_stability_margin_m, gait.stride_phase_rate_hz.value);
 
-    double commanded_body_height_m = intent.twist.body_trans_m.z;
-    if (commanded_body_height_m <= 1e-6) {
-        commanded_body_height_m = kDefaultBodyHeightM;
-    }
-
+    const double commanded_body_height_m = pose.body_height_m;
     const std::array<Vec3, kNumLegs> nominal = nominalStance(commanded_body_height_m);
     const bool walking =
         (intent.requested_mode == RobotMode::WALK) &&
         !safety.inhibit_motion &&
         !safety.torque_cut;
 
-    const double roll_cmd = intent.twist.twist_pos_rad.x;
-    const double pitch_cmd = intent.twist.twist_pos_rad.y;
-    const double yaw_cmd = intent.twist.twist_pos_rad.z;
-    const Mat3 body_rotation = Mat3::rotZ(yaw_cmd) * Mat3::rotY(pitch_cmd) * Mat3::rotX(roll_cmd);
+    const Mat3 body_rotation =
+        Mat3::rotZ(pose.yaw_rad) * Mat3::rotY(pose.pitch_rad) * Mat3::rotX(pose.roll_rad);
     const Vec3 planar_body_offset = Vec3{
         intent.twist.body_trans_m.x,
         intent.twist.body_trans_m.y,
         0.0};
 
-    const PlanarMotionCommand cmd = planarMotionCommand(intent);
+    const BodyVelocityCommand body_mot =
+        bodyVelocityForFootPlanning(est, cmd_twist, foot_estimator_blend_);
     const double duty = std::clamp(gait.duty_factor, 0.06, 0.94);
     const double f_hz = std::max(gait.stride_phase_rate_hz.value, 1e-6);
     const double swing_span = std::max(1.0 - duty, 1e-6);
@@ -120,62 +125,96 @@ LegTargets BodyController::update(const RobotState& est,
     const double swing_h = std::max(gait.swing_height_m, 0.0);
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
-        Vec3 target = nominal[leg];
-        Vec3 target_vel = Vec3{};
-
-        target = target - planar_body_offset;
-        target_vel = target_vel - intent.twist.body_trans_mps;
+        Vec3 target = nominal[leg] - planar_body_offset;
+        Vec3 target_vel{-intent.twist.body_trans_mps.x,
+                         -intent.twist.body_trans_mps.y,
+                         -intent.twist.body_trans_mps.z};
 
         if (walking) {
-            const double phase = clamp01(gait.phase[leg]);
-            const Vec3 anchor = nominal[leg] - planar_body_offset;
+            double ph = clamp01(gait.phase[leg]);
+            if (gait.stability_hold_stance[leg]) {
+                ph = std::min(ph, duty - 1e-7);
+            }
 
-            if (gait.in_stance[leg]) {
-                const Vec3 v_foot(-cmd.vx_mps + cmd.yaw_rate_radps * anchor.y,
-                                  -cmd.vy_mps - cmd.yaw_rate_radps * anchor.x,
-                                  0.0);
-                target = anchor + v_foot * (phase / f_hz);
-                target_vel = target_vel + v_foot;
+            const Vec3 anchor = nominal[leg] - planar_body_offset;
+            const Vec3 v_foot = supportFootVelocityAt(anchor, body_mot);
+
+            if (ph < duty) {
+                StanceFootInputs st{};
+                st.anchor = anchor;
+                st.v_foot_body = v_foot;
+                st.phase = ph;
+                st.f_hz = f_hz;
+                Vec3 p{};
+                Vec3 v{};
+                planStanceFoot(st, p, v);
+                target = p;
+                target_vel = target_vel + v;
+                if (est.foot_contacts[static_cast<std::size_t>(leg)]) {
+                    target.z += contact_foot_response::stanceTiltLevelingDeltaZ(est, intent, anchor.x, anchor.y);
+                }
             } else {
-                const Vec3 v_foot(-cmd.vx_mps + cmd.yaw_rate_radps * anchor.y,
-                                  -cmd.vy_mps - cmd.yaw_rate_radps * anchor.x,
-                                  0.0);
                 const Vec3 stance_end = anchor + v_foot * (duty / f_hz);
-                const double tau = clamp01((phase - duty) / swing_span);
+                const Vec3 v_liftoff = supportFootVelocityAt(stance_end, body_mot);
+                const double tau = clamp01((ph - duty) / swing_span);
+                double tau_use = tau;
+                double swing_extra_down_z = 0.0;
+                contact_foot_response::adjustSwingTauAndVerticalExtension(
+                    true,
+                    est.foot_contacts[static_cast<std::size_t>(leg)],
+                    est,
+                    tau,
+                    tau_use,
+                    swing_extra_down_z);
 
                 double ux = 0.0;
                 double uy = 0.0;
-                strideDirectionXY(anchor.x, anchor.y, intent.gait, cmd, &ux, &uy);
+                if (intent.gait == GaitType::TURN_IN_PLACE) {
+                    strideDirectionXY(anchor.x, anchor.y, intent.gait, cmd, &ux, &uy);
+                } else {
+                    const double vf = std::hypot(v_foot.x, v_foot.y);
+                    if (vf > 1e-6) {
+                        ux = -v_foot.x / vf;
+                        uy = -v_foot.y / vf;
+                    } else {
+                        strideDirectionXY(anchor.x, anchor.y, intent.gait, cmd, &ux, &uy);
+                    }
+                }
 
-                const double p0x = stance_end.x;
-                const double p0y = stance_end.y;
-                const double p3x = p0x + ux * step_len;
-                const double p3y = p0y + uy * step_len;
-
-                const double t = tau;
-                const double u = 1.0 - t;
-                const double w0 = u * u * (1.0 + 2.0 * t);
-                const double w3 = t * t * (3.0 - 2.0 * t);
-                const double sx = p0x * w0 + p3x * w3;
-                const double sy = p0y * w0 + p3y * w3;
-                const double s_z_lift = std::sin(kPi * t);
-                const double sz = anchor.z + swing_h * s_z_lift * s_z_lift;
-
-                const double dP_dtau = 6.0 * t * (1.0 - t);
-                const double chain = (1.0 / swing_span) * f_hz;
-                const double vx_s = (p3x - p0x) * dP_dtau * chain;
-                const double vy_s = (p3y - p0y) * dP_dtau * chain;
-                const double dz_dtau = swing_h * kPi * std::sin(2.0 * kPi * t);
-                const double vz_s = dz_dtau * chain;
-
-                target = Vec3{sx, sy, sz};
-                target_vel = target_vel + Vec3{vx_s, vy_s, vz_s};
+                SwingFootInputs sw{};
+                sw.anchor = anchor;
+                sw.stance_end = stance_end;
+                sw.v_liftoff_body = v_liftoff;
+                sw.tau01 = tau_use;
+                sw.swing_span = swing_span;
+                sw.f_hz = f_hz;
+                sw.step_length_m = step_len;
+                sw.swing_height_m = swing_h;
+                sw.stride_ux = ux;
+                sw.stride_uy = uy;
+                sw.cmd_accel_body_x_mps2 = gait.cmd_accel_body_x_mps2;
+                sw.cmd_accel_body_y_mps2 = gait.cmd_accel_body_y_mps2;
+                sw.stance_lookahead_s = (duty / f_hz) * 0.48;
+                sw.static_stability_margin_m = gait.static_stability_margin_m;
+                Vec3 p{};
+                Vec3 v{};
+                planSwingFoot(body_mot, sw, p, v);
+                target = p;
+                target.z -= swing_extra_down_z;
+                target_vel = target_vel + v;
             }
+        } else if (intent.requested_mode == RobotMode::STAND &&
+                   est.foot_contacts[static_cast<std::size_t>(leg)]) {
+            target.z += contact_foot_response::stanceTiltLevelingDeltaZ(est, intent, target.x, target.y);
         }
 
         target = body_rotation * target;
         target_vel = body_rotation * target_vel;
         target_vel = target_vel + cross(intent.twist.twist_vel_radps, target);
+
+        const Vec3 target_before_reach = target;
+        target = foot_reachability::clampFootPositionBody(geometry_.legGeometry[leg], target, kFootReachInsetM);
+        foot_reachability::clipVelocityForReachClamp(target_before_reach, target, &target_vel);
 
         out.feet[leg].pos_body_m = target;
         out.feet[leg].vel_body_mps = target_vel;

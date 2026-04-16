@@ -17,6 +17,10 @@ PlanarMotionCommand planarMotionCommand(const MotionIntent& intent) {
     return PlanarMotionCommand{vx, vy, yaw};
 }
 
+PlanarMotionCommand planarMotionFromCommandTwist(const BodyTwist& cmd) {
+    return PlanarMotionCommand{cmd.linear_mps.x, cmd.linear_mps.y, cmd.angular_radps.z};
+}
+
 MotionIntent makeMotionIntent(RobotMode mode, GaitType gait, double body_height_m) {
     MotionIntent cmd{};
     cmd.requested_mode = mode;

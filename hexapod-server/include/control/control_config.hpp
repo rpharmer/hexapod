@@ -29,6 +29,8 @@ inline constexpr double kDefaultGaitTransitionBlendS{0.35};
 inline constexpr double kDefaultGaitNominalPlanarSpeedMps{0.25};
 inline constexpr double kDefaultGaitNominalYawRateRadps{0.5};
 inline constexpr double kDefaultGaitTurnNominalRadiusM{0.11};
+/** Default fraction of estimator body twist blended into foot placement / support velocity (0 = intent only). */
+inline constexpr double kDefaultFootEstimatorBlend{0.35};
 inline constexpr float kDefaultMinBusVoltageV{10.5f};
 inline constexpr float kDefaultMaxBusCurrentA{25.0f};
 inline constexpr int kDefaultMinFootContacts{0};
@@ -63,6 +65,23 @@ struct GaitConfig {
     double nominal_yaw_rate_radps{kDefaultGaitNominalYawRateRadps};
     /** Effective radius (m) for converting yaw rate into a tangential speed scale. */
     double turn_nominal_radius_m{kDefaultGaitTurnNominalRadiusM};
+    /** Blend factor [0,1] for measured body twist vs motion intent in `bodyVelocityForFootPlanning`. */
+    double foot_estimator_blend{kDefaultFootEstimatorBlend};
+};
+
+/** Limits and optional low-pass on the unified body-frame locomotion twist (Stage 1 command layer). */
+struct LocomotionCommandConfig {
+    bool enable_first_order_filter{true};
+    /** Time constant (s) for exponential smoothing while walking; larger = slower/smoother. */
+    double filter_time_constant_s{0.10};
+    /** Fallback integration step (s) when intent timestamps do not advance. */
+    double nominal_dt_s{0.004};
+    double max_abs_linear_x_mps{0.50};
+    double max_abs_linear_y_mps{0.50};
+    double max_abs_linear_z_mps{0.35};
+    double max_abs_angular_x_radps{0.85};
+    double max_abs_angular_y_radps{0.85};
+    double max_abs_angular_z_radps{1.10};
 };
 
 struct StreamFreshnessConfig {
@@ -101,6 +120,7 @@ struct ControlConfig {
     LoopTimingConfig loop_timing{};
     SafetyConfig safety{};
     GaitConfig gait{};
+    LocomotionCommandConfig locomotion_cmd{};
     FreshnessConfig freshness{};
     TelemetryConfig telemetry{};
 };

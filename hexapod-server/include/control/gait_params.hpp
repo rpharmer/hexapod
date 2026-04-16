@@ -31,7 +31,17 @@ UnifiedGaitDescription buildTargetUnifiedGait(GaitType gait,
                                               double vx_mps,
                                               double vy_mps,
                                               double yaw_rate_radps,
-                                              const control_config::GaitConfig& gait_cfg);
+                                              const control_config::GaitConfig& gait_cfg,
+                                              double cmd_ax_mps2 = 0.0,
+                                              double cmd_ay_mps2 = 0.0);
+
+/** Blends CRAWL-like timing at low command magnitude with TRIPOD at high (for `GaitType::TRIPOD` intent). */
+UnifiedGaitDescription buildAdaptiveTripodCrawlGait(double vx_mps,
+                                                     double vy_mps,
+                                                     double yaw_rate_radps,
+                                                     double cmd_ax_mps2,
+                                                     double cmd_ay_mps2,
+                                                     const control_config::GaitConfig& gait_cfg);
 
 UnifiedGaitDescription blendUnifiedGait(const UnifiedGaitDescription& from,
                                         const UnifiedGaitDescription& to,

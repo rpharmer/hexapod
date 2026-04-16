@@ -15,7 +15,8 @@ double GaitScheduler::wrap01(const double x) const {
 
 GaitState GaitScheduler::update(const RobotState&,
                                 const MotionIntent& intent,
-                                const SafetyState& safety) {
+                                const SafetyState& safety,
+                                const BodyTwist& cmd_twist) {
     GaitState out{};
     out.timestamp_us = now_us();
 
@@ -25,10 +26,13 @@ GaitState GaitScheduler::update(const RobotState&,
         !safety.torque_cut;
 
     if (!walking) {
+        last_cmd_vx_mps_ = cmd_twist.linear_mps.x;
+        last_cmd_vy_mps_ = cmd_twist.linear_mps.y;
         for (int i = 0; i < kNumLegs; ++i) {
             out.phase[i] = 0.0;
             out.in_stance[i] = true;
             out.phase_offset[static_cast<std::size_t>(i)] = 0.0;
+            out.stability_hold_stance[static_cast<std::size_t>(i)] = false;
         }
         out.duty_factor = 0.5;
         out.step_length_m = 0.06;
@@ -36,6 +40,9 @@ GaitState GaitScheduler::update(const RobotState&,
         out.stance_duration_s = 0.5;
         out.swing_duration_s = 0.5;
         out.stride_phase_rate_hz = FrequencyHz{1.0};
+        out.static_stability_margin_m = 0.0;
+        out.cmd_accel_body_x_mps2 = 0.0;
+        out.cmd_accel_body_y_mps2 = 0.0;
         last_update_us_ = out.timestamp_us;
         return out;
     }
@@ -48,9 +55,24 @@ GaitState GaitScheduler::update(const RobotState&,
     const DurationSec dt{static_cast<double>((now - last_update_us_).value) * 1e-6};
     last_update_us_ = now;
 
-    const PlanarMotionCommand cmd = planarMotionCommand(intent);
-    const UnifiedGaitDescription target =
-        buildTargetUnifiedGait(intent.gait, cmd.vx_mps, cmd.vy_mps, cmd.yaw_rate_radps, config_);
+    const PlanarMotionCommand cmd = planarMotionFromCommandTwist(cmd_twist);
+    double cmd_ax = 0.0;
+    double cmd_ay = 0.0;
+    if (dt.value > 1e-9) {
+        const double inv_dt = 1.0 / dt.value;
+        cmd_ax = std::clamp((cmd.vx_mps - last_cmd_vx_mps_) * inv_dt, -8.0, 8.0);
+        cmd_ay = std::clamp((cmd.vy_mps - last_cmd_vy_mps_) * inv_dt, -8.0, 8.0);
+    }
+    last_cmd_vx_mps_ = cmd.vx_mps;
+    last_cmd_vy_mps_ = cmd.vy_mps;
+
+    UnifiedGaitDescription target{};
+    if (intent.gait == GaitType::TRIPOD) {
+        target = buildAdaptiveTripodCrawlGait(cmd.vx_mps, cmd.vy_mps, cmd.yaw_rate_radps, cmd_ax, cmd_ay, config_);
+    } else {
+        target = buildTargetUnifiedGait(
+            intent.gait, cmd.vx_mps, cmd.vy_mps, cmd.yaw_rate_radps, config_, cmd_ax, cmd_ay);
+    }
 
     if (committed_initialized_ && intent.gait != committed_gait_) {
         transition_from_snap_ = have_last_blended_ ? last_blended_ : target;
@@ -93,7 +115,11 @@ GaitState GaitScheduler::update(const RobotState&,
         const double p = wrap01(phase_accum_ + off);
         out.phase[leg] = p;
         out.in_stance[leg] = (p < blended.duty_factor);
+        out.stability_hold_stance[static_cast<std::size_t>(leg)] = false;
     }
+    out.static_stability_margin_m = 0.0;
+    out.cmd_accel_body_x_mps2 = cmd_ax;
+    out.cmd_accel_body_y_mps2 = cmd_ay;
 
     return out;
 }

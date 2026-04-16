@@ -86,12 +86,17 @@ set(HEXAPOD_SERVER_SOURCES
 
     # control
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/body_controller.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/body_pose_controller.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/calibration_probe.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/cli_options.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/contact_foot_response.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/control_config.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/control_pipeline.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/estimator.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/freshness_policy.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/foot_planners.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/foothold_planner.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/foot_reachability.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/gait_params.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/gait_scheduler.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/geometry_profile_service.cpp"
@@ -99,6 +104,8 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/interactive_input_mapper.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/loop_executor.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/loop_timing.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/locomotion_command.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/locomotion_stability.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/mode_runners.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/motion_intent_utils.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/physics_sim_estimator.cpp"
@@ -141,6 +148,8 @@ set(HEXAPOD_SERVER_SOURCES
 
     # scenario
     "${CMAKE_CURRENT_SOURCE_DIR}/src/scenario/scenario_driver.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/sensors/imu_physics.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/sensors/software_imu.cpp"
 
     # utils
     "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/logger.cpp"
@@ -161,6 +170,7 @@ target_include_directories(hexapod_server_core
         include/input
         include/kinematics
         include/scenario
+        include/sensors
         include/utils
         ../hexapod-common/include
 )
@@ -197,6 +207,14 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_safety_supervisor_faults PRIVATE hexapod_server_core)
     add_test(NAME safety_supervisor_transitions COMMAND test_safety_supervisor_faults)
 
+    add_executable(test_contact_foot_response tests/test_contact_foot_response.cpp)
+    target_link_libraries(test_contact_foot_response PRIVATE hexapod_server_core)
+    add_test(NAME contact_foot_response COMMAND test_contact_foot_response)
+
+    add_executable(test_imu_physics tests/test_imu_physics.cpp)
+    target_link_libraries(test_imu_physics PRIVATE hexapod_server_core)
+    add_test(NAME imu_physics COMMAND test_imu_physics)
+
     add_executable(test_control_pipeline_sanity tests/test_control_pipeline_sanity.cpp)
     target_link_libraries(test_control_pipeline_sanity PRIVATE hexapod_server_core)
     add_test(NAME control_pipeline_output_sanity COMMAND test_control_pipeline_sanity)
@@ -222,6 +240,22 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_motion_intent_through_ik_fk tests/test_motion_intent_through_ik_fk.cpp)
     target_link_libraries(test_motion_intent_through_ik_fk PRIVATE hexapod_server_core)
     add_test(NAME motion_intent_through_ik_fk_chain COMMAND test_motion_intent_through_ik_fk)
+
+    add_executable(test_twist_field tests/test_twist_field.cpp)
+    target_link_libraries(test_twist_field PRIVATE hexapod_server_core)
+    add_test(NAME twist_field COMMAND test_twist_field)
+
+    add_executable(test_locomotion_command tests/test_locomotion_command.cpp)
+    target_link_libraries(test_locomotion_command PRIVATE hexapod_server_core)
+    add_test(NAME locomotion_command COMMAND test_locomotion_command)
+
+    add_executable(test_foothold_planner tests/test_foothold_planner.cpp)
+    target_link_libraries(test_foothold_planner PRIVATE hexapod_server_core)
+    add_test(NAME foothold_planner COMMAND test_foothold_planner)
+
+    add_executable(test_foot_reachability tests/test_foot_reachability.cpp)
+    target_link_libraries(test_foot_reachability PRIVATE hexapod_server_core)
+    add_test(NAME foot_reachability COMMAND test_foot_reachability)
 
     add_executable(test_physics_sim_mapping_roundtrip tests/test_physics_sim_mapping_roundtrip.cpp)
     target_link_libraries(test_physics_sim_mapping_roundtrip PRIVATE hexapod_server_core)
@@ -258,6 +292,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_body_controller_velocity PRIVATE hexapod_server_core)
     add_test(NAME body_controller_velocity COMMAND test_body_controller_velocity)
 
+    add_executable(test_locomotion_pose_and_stability tests/test_locomotion_pose_and_stability.cpp)
+    target_link_libraries(test_locomotion_pose_and_stability PRIVATE hexapod_server_core)
+    add_test(NAME locomotion_pose_and_stability COMMAND test_locomotion_pose_and_stability)
 
     add_executable(test_toml_parser_sections tests/test_toml_parser_sections.cpp)
     target_link_libraries(test_toml_parser_sections PRIVATE hexapod_server_core)

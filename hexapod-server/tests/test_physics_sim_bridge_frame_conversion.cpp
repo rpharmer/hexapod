@@ -1,5 +1,7 @@
 #include "hardware/physics_sim_bridge.hpp"
+#include "math_types.hpp"
 #include "physics_sim_protocol.hpp"
+#include "types.hpp"
 
 #include <atomic>
 #include <array>
@@ -145,7 +147,13 @@ private:
                 rsp.body_angular_velocity = {0.0f, 0.0f, 0.0f};
                 rsp.joint_angles.fill(0.0f);
                 rsp.joint_velocities.fill(0.0f);
-                rsp.foot_contacts.fill(1);
+                // Non-uniform pattern so tests prove `StateResponse::foot_contacts` maps to `RobotState`.
+                rsp.foot_contacts[0] = 1;
+                rsp.foot_contacts[1] = 0;
+                rsp.foot_contacts[2] = 1;
+                rsp.foot_contacts[3] = 0;
+                rsp.foot_contacts[4] = 1;
+                rsp.foot_contacts[5] = 0;
                 for (auto& normal : rsp.foot_contact_normals) {
                     normal = {0.0f, 1.0f, 0.0f};
                 }
@@ -201,6 +209,16 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    constexpr std::array<bool, kNumLegs> kExpectedFootContacts{
+        true, false, true, false, true, false};
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        if (!expect(out.foot_contacts[static_cast<std::size_t>(leg)] ==
+                         kExpectedFootContacts[static_cast<std::size_t>(leg)],
+                    "foot_contacts bools should come from physics StateResponse")) {
+            return EXIT_FAILURE;
+        }
+    }
+
     if (!expect(nearlyEqual(out.body_twist_state.twist_pos_rad.x, 0.0),
                 "upright sim pose should map to near-zero roll") ||
         !expect(nearlyEqual(out.body_twist_state.twist_pos_rad.y, 0.0),
@@ -213,6 +231,12 @@ int main() {
                 "sim z translation should map through unchanged") ||
         !expect(nearlyEqual(out.body_twist_state.body_trans_m.z, 0.151162, 1e-6),
                 "sim y translation should map to server z")) {
+        return EXIT_FAILURE;
+    }
+
+    if (!expect(out.has_imu && out.imu.valid, "physics bridge should populate IMU from StateResponse") ||
+        !expect(nearlyEqual(vecNorm(out.imu.accel_mps2), 9.80665, 1e-3),
+                "IMU specific-force magnitude should be ~1g for upright stub pose")) {
         return EXIT_FAILURE;
     }
 

@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "geometry_config.hpp"
+#include "software_imu.hpp"
 
 namespace {
 
@@ -101,8 +102,11 @@ bool solveGroundPlane(const std::array<Vec3, kNumLegs>& points,
 
 RobotState SimpleEstimator::update(const RobotState& raw) {
     RobotState est{};
+    est.has_body_twist_state = false;
 
     est.foot_contacts = raw.foot_contacts;
+    est.imu = raw.imu;
+    est.has_imu = raw.has_imu;
     est.sample_id = raw.sample_id;
     est.timestamp_us = raw.timestamp_us;
     est.body_twist_state.body_trans_mps = Vec3{};
@@ -164,6 +168,8 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
         est.body_twist_state.body_trans_m.y = 0.0;
         est.body_twist_state.body_trans_m.z = -c;
 
+        est.has_body_twist_state = true;
+
         if (!last_twist_timestamp_.isZero()) {
             const DurationUs dt_us = raw.timestamp_us - last_twist_timestamp_;
             if (dt_us.value > 0) {
@@ -182,5 +188,6 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
         last_body_trans_m_ = est.body_twist_state.body_trans_m;
     }
 
+    fillSoftwareImuIfNoHardware(raw, est);
     return est;
 }

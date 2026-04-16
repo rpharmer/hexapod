@@ -1,5 +1,7 @@
 #include "body_controller.hpp"
 #include "geometry_config.hpp"
+#include "locomotion_command.hpp"
+#include "motion_intent_utils.hpp"
 
 #include <cmath>
 #include <cstdlib>
@@ -54,7 +56,9 @@ int main() {
     stand_intent.twist.body_trans_m.z = 0.12;
 
     GaitState gait{};
-    const LegTargets stand_targets = controller.update(est, stand_intent, gait, safety);
+    const BodyTwist stand_twist =
+        rawLocomotionTwistFromIntent(stand_intent, planarMotionCommand(stand_intent));
+    const LegTargets stand_targets = controller.update(est, stand_intent, gait, safety, stand_twist);
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
         const Vec3 expected = (Vec3{-stand_intent.twist.body_trans_mps.x,
@@ -89,7 +93,9 @@ int main() {
     walk_gait.stride_phase_rate_hz = FrequencyHz{1.0};
     walk_gait.step_length_m = 0.06;
     walk_gait.swing_height_m = 0.03;
-    const LegTargets walk_targets = controller.update(est, walk_intent, walk_gait, safety);
+    const BodyTwist walk_twist =
+        rawLocomotionTwistFromIntent(walk_intent, planarMotionCommand(walk_intent));
+    const LegTargets walk_targets = controller.update(est, walk_intent, walk_gait, safety, walk_twist);
 
     if (!expect(nearlyEqual(walk_targets.feet[0].vel_body_mps.x, -0.2, 2e-3),
                 "walking stance foot velocity should match commanded body planar motion")) {

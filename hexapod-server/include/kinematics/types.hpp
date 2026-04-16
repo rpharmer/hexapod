@@ -87,6 +87,13 @@ struct GaitState {
     /** stance_duration_s = duty_factor / stride_frequency_hz (when walking). */
     double stance_duration_s{0.5};
     double swing_duration_s{0.5};
+    /** When true, keep leg in stance kinematics even if phase is in swing (support polygon gate). */
+    std::array<bool, kNumLegs> stability_hold_stance{};
+    /** Minimum distance (m) from projected COM to stance support boundary; negative if outside. */
+    double static_stability_margin_m{0.0};
+    /** Body XY finite-diff of commanded planar velocity (m/s²), for swing placement / cadence. */
+    double cmd_accel_body_x_mps2{0.0};
+    double cmd_accel_body_y_mps2{0.0};
     TimePointUs timestamp_us{};
 };
 
@@ -154,6 +161,15 @@ struct BodyTwistState {
   VelocityMps3 body_trans_mps{};
 };
 
+/** Inertial sample in body axes (server world: +Z up). Gyro is angular rate; accel is specific force
+ *  (what a strapdown MEMS reports, ~+Z at rest when upright). */
+struct ImuSample {
+    TimePointUs timestamp_us{};
+    AngularVelocityRadPerSec3 gyro_radps{};
+    Vec3 accel_mps2{};
+    bool valid{false};
+};
+
 struct MotionIntent {
   RobotMode requested_mode{RobotMode::SAFE_IDLE};
   GaitType gait{GaitType::TRIPOD};
@@ -185,6 +201,9 @@ struct RobotState {
   bool has_body_twist_state{false};
   bool has_power_state{false};
   bool has_valid_flag{false};
+  /** Populated by physics sim bridge, hardware when available, or test doubles. */
+  ImuSample imu{};
+  bool has_imu{false};
 };
 
 struct ControlStatus {

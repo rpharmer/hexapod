@@ -4,6 +4,7 @@
 #include "physics_sim_joint_wire_mapping.hpp"
 #include "logger.hpp"
 #include "physics_sim_protocol.hpp"
+#include "imu_physics.hpp"
 #include "types.hpp"
 
 #include <cmath>
@@ -383,6 +384,9 @@ bool PhysicsSimBridge::read(RobotState& out) {
     for (std::size_t i = 0; i < kNumLegs; ++i) {
         out.foot_contacts[i] = rsp.foot_contacts[i] != 0;
     }
+
+    imuSampleFromPhysicsStateResponse(rsp, out.timestamp_us, out.imu);
+    out.has_imu = out.imu.valid;
 
     const Mat3d R_ws = frameSimToServer();
     const Mat3d R_sim = quatWxyzToMat3(

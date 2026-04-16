@@ -61,6 +61,7 @@ struct ParsedToml
   double gaitNominalPlanarSpeedMps{0.25};
   double gaitNominalYawRateRadps{0.5};
   double gaitTurnNominalRadiusM{0.11};
+  double footEstimatorBlend{0.35};
   double minBusVoltageV{10.5};
   double maxBusCurrentA{25.0};
   int minFootContacts{0};

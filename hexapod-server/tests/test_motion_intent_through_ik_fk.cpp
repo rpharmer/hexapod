@@ -1,6 +1,8 @@
 #include "body_controller.hpp"
 #include "control_pipeline.hpp"
 #include "gait_scheduler.hpp"
+#include "locomotion_command.hpp"
+#include "motion_intent_utils.hpp"
 #include "geometry_config.hpp"
 #include "leg_fk.hpp"
 #include "leg_ik.hpp"
@@ -38,15 +40,18 @@ bool gaitSchedulerRespondsToWalkIntent() {
     MotionIntent walk{};
     walk.requested_mode = RobotMode::WALK;
     walk.gait = GaitType::TRIPOD;
+    walk.cmd_vx_mps = LinearRateMps{0.35};
     walk.timestamp_us = now_us();
 
     SafetyState safety{};
     safety.inhibit_motion = false;
     safety.torque_cut = false;
 
-    gait.update(est, walk, safety);
+    const BodyTwist walk_twist =
+        rawLocomotionTwistFromIntent(walk, planarMotionCommand(walk));
+    gait.update(est, walk, safety, walk_twist);
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    const GaitState advanced = gait.update(est, walk, safety);
+    const GaitState advanced = gait.update(est, walk, safety, walk_twist);
 
     const bool leg0_leg1_offset = std::fabs(advanced.phase[0] - advanced.phase[1]) > 0.25;
     const bool stride_active = advanced.stride_phase_rate_hz.value >= 0.5;
@@ -72,7 +77,8 @@ bool bodyControllerUsesGaitState() {
     gait.in_stance[1] = false;
     gait.phase[1] = 0.75;
 
-    const LegTargets targets = body.update(est, walk, gait, safety);
+    const BodyTwist body_twist = rawLocomotionTwistFromIntent(walk, planarMotionCommand(walk));
+    const LegTargets targets = body.update(est, walk, gait, safety, body_twist);
 
     const double leg0_x = targets.feet[0].pos_body_m.x;
     const double leg1_x = targets.feet[1].pos_body_m.x;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scenario_driver.hpp"
+#include "twist_field.hpp"
 #include "types.hpp"
 
 struct PlanarMotionCommand {
@@ -10,6 +11,9 @@ struct PlanarMotionCommand {
 };
 
 PlanarMotionCommand planarMotionCommand(const MotionIntent& intent);
+
+/** Planar slice of a processed locomotion twist (for gait scaling / body lean helpers). */
+PlanarMotionCommand planarMotionFromCommandTwist(const BodyTwist& cmd);
 
 MotionIntent makeMotionIntent(RobotMode mode, GaitType gait, double body_height_m);
 MotionIntent makeMotionIntent(const ScenarioMotionIntent& motion);

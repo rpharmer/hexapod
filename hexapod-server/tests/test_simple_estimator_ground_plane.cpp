@@ -1,4 +1,5 @@
 #include "estimator.hpp"
+#include "math_types.hpp"
 
 #include <cmath>
 #include <cstdlib>
@@ -42,7 +43,11 @@ int main() {
         !expect(std::abs(first_est.body_twist_state.twist_pos_rad.y) < 1e-6,
                 "neutral stance should estimate near-zero pitch") ||
         !expect(first_est.body_twist_state.body_trans_m.z > 0.0,
-                "neutral stance should estimate body above the ground plane")) {
+                "neutral stance should estimate body above the ground plane") ||
+        !expect(first_est.has_imu && first_est.imu.valid,
+                "software IMU should be synthesized from the foot contact plane when raw has no IMU") ||
+        !expect(std::abs(vecNorm(first_est.imu.accel_mps2) - 9.80665) < 1e-3,
+                "software IMU should report ~1g specific-force when the plane is near level")) {
         return EXIT_FAILURE;
     }
 
@@ -66,7 +71,9 @@ int main() {
 
     const RobotState stale_est = estimator.update(no_contact_stale);
     if (!expect(std::abs(stale_est.body_twist_state.body_trans_m.z) < 1e-9,
-                "stale no-contact window should clear ground estimate")) {
+                "stale no-contact window should clear ground estimate") ||
+        !expect(!stale_est.has_body_twist_state && !stale_est.has_imu,
+                "without a plane estimate, software IMU should not be published")) {
         return EXIT_FAILURE;
     }
 

@@ -2,13 +2,21 @@
 
 #include "control_config.hpp"
 #include "gait_params.hpp"
+#include "twist_field.hpp"
 #include "types.hpp"
 
+/**
+ * Parametric gait timing only (duty, phase offsets, cadence): does not decide spatial foot targets;
+ * those come from the twist field + stance/swing planners (roadmap stage 3).
+ */
 class GaitScheduler {
 public:
     explicit GaitScheduler(control_config::GaitConfig config = {});
 
-    GaitState update(const RobotState& est, const MotionIntent& intent, const SafetyState& safety);
+    GaitState update(const RobotState& est,
+                      const MotionIntent& intent,
+                      const SafetyState& safety,
+                      const BodyTwist& cmd_twist);
 
 private:
     control_config::GaitConfig config_{};
@@ -22,4 +30,7 @@ private:
     UnifiedGaitDescription last_blended_{};
     TimePointUs transition_start_us_{};
     bool have_last_blended_{false};
+
+    double last_cmd_vx_mps_{0.0};
+    double last_cmd_vy_mps_{0.0};
 };

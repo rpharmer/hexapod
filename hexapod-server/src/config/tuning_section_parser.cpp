@@ -70,6 +70,9 @@ void parseTuningSection(const toml::value& root,
   out.gaitTurnNominalRadiusM = config_validation::parseDoubleWithFallback(
       root, "Tuning.GaitTurnNominalRadiusM", control_config::kDefaultGaitTurnNominalRadiusM, 0.03, 0.35,
       "tuning", logger);
+  out.footEstimatorBlend = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FootEstimatorBlend", control_config::kDefaultFootEstimatorBlend, 0.0, 1.0, "tuning",
+      logger);
   out.minBusVoltageV = config_validation::parseDoubleWithFallback(
       root, "Tuning.MinBusVoltageV", control_config::kDefaultMinBusVoltageV, 5.0, 24.0, "tuning", logger);
   out.maxBusCurrentA = config_validation::parseDoubleWithFallback(
