@@ -1,5 +1,7 @@
 #include "tuning_section_parser.hpp"
 
+#include <utility>
+
 #include "config_validation.hpp"
 #include "control_config.hpp"
 #include "logger.hpp"
@@ -73,6 +75,18 @@ void parseTuningSection(const toml::value& root,
   out.footEstimatorBlend = config_validation::parseDoubleWithFallback(
       root, "Tuning.FootEstimatorBlend", control_config::kDefaultFootEstimatorBlend, 0.0, 1.0, "tuning",
       logger);
+  out.swingHeightScale = config_validation::parseDoubleWithFallback(
+      root, "Tuning.SwingHeightScale", control_config::kDefaultSwingHeightScale, 0.25, 2.5, "tuning", logger);
+  out.swingEaseMin = config_validation::parseDoubleWithFallback(
+      root, "Tuning.SwingEaseMin", control_config::kDefaultSwingEaseMin, 0.0, 1.0, "tuning", logger);
+  out.swingEaseMax = config_validation::parseDoubleWithFallback(
+      root, "Tuning.SwingEaseMax", control_config::kDefaultSwingEaseMax, 0.0, 1.0, "tuning", logger);
+  if (out.swingEaseMin > out.swingEaseMax) {
+    if (logger) {
+      LOG_WARN(logger, "[tuning] Tuning.SwingEaseMin > Tuning.SwingEaseMax, swapping");
+    }
+    std::swap(out.swingEaseMin, out.swingEaseMax);
+  }
   out.minBusVoltageV = config_validation::parseDoubleWithFallback(
       root, "Tuning.MinBusVoltageV", control_config::kDefaultMinBusVoltageV, 5.0, 24.0, "tuning", logger);
   out.maxBusCurrentA = config_validation::parseDoubleWithFallback(

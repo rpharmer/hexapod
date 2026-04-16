@@ -119,6 +119,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/safety_supervisor.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/servo_dynamics_fit.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/status_reporter.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/swing_trajectory.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/telemetry_json.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/telemetry_publisher.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/touch_residuals.cpp"
@@ -256,6 +257,14 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_foot_reachability tests/test_foot_reachability.cpp)
     target_link_libraries(test_foot_reachability PRIVATE hexapod_server_core)
     add_test(NAME foot_reachability COMMAND test_foot_reachability)
+
+    add_executable(test_swing_trajectory tests/test_swing_trajectory.cpp)
+    target_link_libraries(test_swing_trajectory PRIVATE hexapod_server_core)
+    add_test(NAME swing_trajectory COMMAND test_swing_trajectory)
+
+    add_executable(test_gait_params tests/test_gait_params.cpp)
+    target_link_libraries(test_gait_params PRIVATE hexapod_server_core)
+    add_test(NAME gait_params COMMAND test_gait_params)
 
     add_executable(test_physics_sim_mapping_roundtrip tests/test_physics_sim_mapping_roundtrip.cpp)
     target_link_libraries(test_physics_sim_mapping_roundtrip PRIVATE hexapod_server_core)

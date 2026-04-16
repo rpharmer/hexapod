@@ -31,6 +31,9 @@ inline constexpr double kDefaultGaitNominalYawRateRadps{0.5};
 inline constexpr double kDefaultGaitTurnNominalRadiusM{0.11};
 /** Default fraction of estimator body twist blended into foot placement / support velocity (0 = intent only). */
 inline constexpr double kDefaultFootEstimatorBlend{0.35};
+inline constexpr double kDefaultSwingHeightScale{1.0};
+inline constexpr double kDefaultSwingEaseMin{0.40};
+inline constexpr double kDefaultSwingEaseMax{1.0};
 inline constexpr float kDefaultMinBusVoltageV{10.5f};
 inline constexpr float kDefaultMaxBusCurrentA{25.0f};
 inline constexpr int kDefaultMinFootContacts{0};
@@ -67,6 +70,12 @@ struct GaitConfig {
     double turn_nominal_radius_m{kDefaultGaitTurnNominalRadiusM};
     /** Blend factor [0,1] for measured body twist vs motion intent in `bodyVelocityForFootPlanning`. */
     double foot_estimator_blend{kDefaultFootEstimatorBlend};
+    /** Multiplier on preset swing height after velocity scaling (clamped to a safe range). */
+    double swing_height_scale{kDefaultSwingHeightScale};
+    /** Clamp lower bound for `swing_time_ease` from `buildTargetUnifiedGait` (S-curve on swing phase). */
+    double swing_ease_min{kDefaultSwingEaseMin};
+    /** Clamp upper bound for `swing_time_ease`. */
+    double swing_ease_max{kDefaultSwingEaseMax};
 };
 
 /** Limits and optional low-pass on the unified body-frame locomotion twist (Stage 1 command layer). */

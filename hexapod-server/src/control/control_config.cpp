@@ -29,6 +29,9 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.gait.nominal_yaw_rate_radps = config.gaitNominalYawRateRadps;
     parsed.gait.turn_nominal_radius_m = config.gaitTurnNominalRadiusM;
     parsed.gait.foot_estimator_blend = config.footEstimatorBlend;
+    parsed.gait.swing_height_scale = config.swingHeightScale;
+    parsed.gait.swing_ease_min = config.swingEaseMin;
+    parsed.gait.swing_ease_max = config.swingEaseMax;
 
     parsed.freshness.estimator.max_allowed_age_us = DurationUs{config.estimatorMaxAgeUs};
     parsed.freshness.estimator.require_timestamp = config.estimatorRequireTimestamp;

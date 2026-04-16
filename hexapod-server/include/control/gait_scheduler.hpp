@@ -6,8 +6,9 @@
 #include "types.hpp"
 
 /**
- * Parametric gait timing only (duty, phase offsets, cadence): does not decide spatial foot targets;
- * those come from the twist field + stance/swing planners (roadmap stage 3).
+ * Parametric gait timing only: which legs are in swing vs stance and when (duty, phase offsets,
+ * cadence, transition blending, speed-based preset blends). Does not own spatial foot paths —
+ * foothold + `swing_trajectory` + stance integration do.
  */
 class GaitScheduler {
 public:

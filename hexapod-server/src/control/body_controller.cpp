@@ -129,6 +129,7 @@ LegTargets BodyController::update(const RobotState& est,
         Vec3 target_vel{-intent.twist.body_trans_mps.x,
                          -intent.twist.body_trans_mps.y,
                          -intent.twist.body_trans_mps.z};
+        bool apply_workspace_clamp = true;
 
         if (walking) {
             double ph = clamp01(gait.phase[leg]);
@@ -140,6 +141,7 @@ LegTargets BodyController::update(const RobotState& est,
             const Vec3 v_foot = supportFootVelocityAt(anchor, body_mot);
 
             if (ph < duty) {
+                apply_workspace_clamp = false;
                 StanceFootInputs st{};
                 st.anchor = anchor;
                 st.v_foot_body = v_foot;
@@ -196,6 +198,7 @@ LegTargets BodyController::update(const RobotState& est,
                 sw.cmd_accel_body_y_mps2 = gait.cmd_accel_body_y_mps2;
                 sw.stance_lookahead_s = (duty / f_hz) * 0.48;
                 sw.static_stability_margin_m = gait.static_stability_margin_m;
+                sw.swing_time_ease_01 = gait.swing_time_ease_01;
                 Vec3 p{};
                 Vec3 v{};
                 planSwingFoot(body_mot, sw, p, v);
@@ -212,9 +215,11 @@ LegTargets BodyController::update(const RobotState& est,
         target_vel = body_rotation * target_vel;
         target_vel = target_vel + cross(intent.twist.twist_vel_radps, target);
 
-        const Vec3 target_before_reach = target;
-        target = foot_reachability::clampFootPositionBody(geometry_.legGeometry[leg], target, kFootReachInsetM);
-        foot_reachability::clipVelocityForReachClamp(target_before_reach, target, &target_vel);
+        if (apply_workspace_clamp) {
+            const Vec3 target_before_reach = target;
+            target = foot_reachability::clampFootPositionBody(geometry_.legGeometry[leg], target, kFootReachInsetM);
+            foot_reachability::clipVelocityForReachClamp(target_before_reach, target, &target_vel);
+        }
 
         out.feet[leg].pos_body_m = target;
         out.feet[leg].vel_body_mps = target_vel;

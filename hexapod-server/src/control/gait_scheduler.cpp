@@ -40,6 +40,7 @@ GaitState GaitScheduler::update(const RobotState&,
         out.stance_duration_s = 0.5;
         out.swing_duration_s = 0.5;
         out.stride_phase_rate_hz = FrequencyHz{1.0};
+        out.swing_time_ease_01 = 1.0;
         out.static_stability_margin_m = 0.0;
         out.cmd_accel_body_x_mps2 = 0.0;
         out.cmd_accel_body_y_mps2 = 0.0;
@@ -69,6 +70,10 @@ GaitState GaitScheduler::update(const RobotState&,
     UnifiedGaitDescription target{};
     if (intent.gait == GaitType::TRIPOD) {
         target = buildAdaptiveTripodCrawlGait(cmd.vx_mps, cmd.vy_mps, cmd.yaw_rate_radps, cmd_ax, cmd_ay, config_);
+    } else if (intent.gait == GaitType::RIPPLE) {
+        target = buildAdaptiveRippleCrawlGait(cmd.vx_mps, cmd.vy_mps, cmd.yaw_rate_radps, cmd_ax, cmd_ay, config_);
+    } else if (intent.gait == GaitType::WAVE) {
+        target = buildAdaptiveWaveCrawlGait(cmd.vx_mps, cmd.vy_mps, cmd.yaw_rate_radps, cmd_ax, cmd_ay, config_);
     } else {
         target = buildTargetUnifiedGait(
             intent.gait, cmd.vx_mps, cmd.vy_mps, cmd.yaw_rate_radps, config_, cmd_ax, cmd_ay);
@@ -104,6 +109,7 @@ GaitState GaitScheduler::update(const RobotState&,
     out.duty_factor = blended.duty_factor;
     out.step_length_m = blended.step_length_m;
     out.swing_height_m = blended.swing_height_m;
+    out.swing_time_ease_01 = blended.swing_time_ease;
     out.stance_duration_s = blended.stance_duration_s;
     out.swing_duration_s = blended.swing_duration_s;
     out.phase_offset = blended.phase_offset;

@@ -456,6 +456,65 @@ bool testGeometryCanBeWrittenBackToParsedConfig()
                 "writeToParsedToml should export geometry dimensions");
 }
 
+bool testSwingTuningKeysParseIntoControlConfig()
+{
+  std::string cfg = readText(configPath("config.txt"));
+  if (!expect(replaceOnce(cfg, "MaxFootContacts = 6",
+                           "MaxFootContacts = 6\n"
+                           "SwingHeightScale = 1.4\n"
+                           "SwingEaseMin = 0.55\n"
+                           "SwingEaseMax = 0.88"),
+              "baseline config missing MaxFootContacts = 6")) {
+    return false;
+  }
+
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(writeTemp("hexapod_swing_tuning.toml", cfg), parsed),
+              "swing tuning keys should parse")) {
+    return false;
+  }
+  if (!expect(near(parsed.swingHeightScale, 1.4), "SwingHeightScale should parse") ||
+      !expect(near(parsed.swingEaseMin, 0.55), "SwingEaseMin should parse") ||
+      !expect(near(parsed.swingEaseMax, 0.88), "SwingEaseMax should parse")) {
+    return false;
+  }
+
+  const control_config::ControlConfig control = control_config::fromParsedToml(parsed);
+  return expect(near(control.gait.swing_height_scale, 1.4), "gait.swing_height_scale should map from ParsedToml") &&
+         expect(near(control.gait.swing_ease_min, 0.55), "gait.swing_ease_min should map from ParsedToml") &&
+         expect(near(control.gait.swing_ease_max, 0.88), "gait.swing_ease_max should map from ParsedToml");
+}
+
+bool testSwingEaseMinMaxSwapAndWarning()
+{
+  std::string cfg = readText(configPath("config.txt"));
+  if (!expect(replaceOnce(cfg, "MaxFootContacts = 6",
+                           "MaxFootContacts = 6\n"
+                           "SwingEaseMin = 0.92\n"
+                           "SwingEaseMax = 0.15"),
+              "baseline config missing MaxFootContacts = 6")) {
+    return false;
+  }
+
+  const auto sink = std::make_shared<CollectingSink>();
+  auto logger = std::make_shared<logging::AsyncLogger>("test-toml", logging::LogLevel::Trace, 1024);
+  logger->AddSink(sink);
+
+  ParsedToml parsed{};
+  TomlParser parser(logger);
+  if (!expect(parser.parse(writeTemp("hexapod_swing_ease_swap.toml", cfg), parsed),
+              "inverted swing ease bounds should still parse")) {
+    return false;
+  }
+  logger->Flush();
+
+  return expect(near(parsed.swingEaseMin, 0.15), "SwingEaseMin should be the smaller bound after swap") &&
+         expect(near(parsed.swingEaseMax, 0.92), "SwingEaseMax should be the larger bound after swap") &&
+         expect(containsMessage(sink->messages, "SwingEaseMin > Tuning.SwingEaseMax"),
+                 "inverted ease bounds should log a tuning warning");
+}
+
 } // namespace
 
 int main()
@@ -472,6 +531,8 @@ int main()
   testRuntimeLoggingOverridesParse();
   testGeometryDynamicsLoadedFromParsedConfig();
   testGeometryCanBeWrittenBackToParsedConfig();
+  testSwingTuningKeysParseIntoControlConfig();
+  testSwingEaseMinMaxSwapAndWarning();
 
   if (g_failures != 0) {
     std::cerr << g_failures << " test(s) failed\n";

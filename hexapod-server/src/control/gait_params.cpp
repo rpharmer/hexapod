@@ -127,8 +127,18 @@ UnifiedGaitDescription buildTargetUnifiedGait(const GaitType gait,
         preset.base_step_frequency_hz * (0.40 + 1.28 * speed_mag) * accel_cadence_boost, 0.28, 3.8);
     desc.step_length_m =
         std::clamp(preset.base_step_length_m * (0.30 + 1.12 * speed_mag) * accel_stride_boost, 0.012, 0.12);
-    desc.swing_height_m =
-        std::clamp(preset.base_swing_height_m * (0.36 + 1.05 * speed_mag), 0.008, 0.06);
+    desc.swing_height_m = std::clamp(
+        std::clamp(preset.base_swing_height_m * (0.36 + 1.05 * speed_mag), 0.008, 0.06) *
+            std::max(gait_cfg.swing_height_scale, 1e-6),
+        0.008,
+        0.06);
+    desc.swing_time_ease =
+        std::clamp(0.52 + 0.46 * (1.0 - std::min(speed_mag, 1.25) / 1.25), 0.40, 1.0);
+    {
+        const double emin = std::min(gait_cfg.swing_ease_min, gait_cfg.swing_ease_max);
+        const double emax = std::max(gait_cfg.swing_ease_min, gait_cfg.swing_ease_max);
+        desc.swing_time_ease = std::clamp(desc.swing_time_ease, emin, emax);
+    }
 
     const double hz = std::max(desc.step_frequency_hz, 1e-6);
     desc.stance_duration_s = desc.duty_factor / hz;
@@ -151,6 +161,36 @@ UnifiedGaitDescription buildAdaptiveTripodCrawlGait(const double vx_mps,
     return blendUnifiedGait(crawl, tripod, t);
 }
 
+UnifiedGaitDescription buildAdaptiveRippleCrawlGait(const double vx_mps,
+                                                    const double vy_mps,
+                                                    const double yaw_rate_radps,
+                                                    const double cmd_ax_mps2,
+                                                    const double cmd_ay_mps2,
+                                                    const control_config::GaitConfig& gait_cfg) {
+    const double cmd_mag = normalizedWalkCommandMag(vx_mps, vy_mps, yaw_rate_radps, gait_cfg);
+    const double t = crawlTripodDynamicBlend01(cmd_mag);
+    const UnifiedGaitDescription crawl =
+        buildTargetUnifiedGait(GaitType::CRAWL, vx_mps, vy_mps, yaw_rate_radps, gait_cfg, cmd_ax_mps2, cmd_ay_mps2);
+    const UnifiedGaitDescription ripple =
+        buildTargetUnifiedGait(GaitType::RIPPLE, vx_mps, vy_mps, yaw_rate_radps, gait_cfg, cmd_ax_mps2, cmd_ay_mps2);
+    return blendUnifiedGait(crawl, ripple, t);
+}
+
+UnifiedGaitDescription buildAdaptiveWaveCrawlGait(const double vx_mps,
+                                                  const double vy_mps,
+                                                  const double yaw_rate_radps,
+                                                  const double cmd_ax_mps2,
+                                                  const double cmd_ay_mps2,
+                                                  const control_config::GaitConfig& gait_cfg) {
+    const double cmd_mag = normalizedWalkCommandMag(vx_mps, vy_mps, yaw_rate_radps, gait_cfg);
+    const double t = crawlTripodDynamicBlend01(cmd_mag);
+    const UnifiedGaitDescription crawl =
+        buildTargetUnifiedGait(GaitType::CRAWL, vx_mps, vy_mps, yaw_rate_radps, gait_cfg, cmd_ax_mps2, cmd_ay_mps2);
+    const UnifiedGaitDescription wave =
+        buildTargetUnifiedGait(GaitType::WAVE, vx_mps, vy_mps, yaw_rate_radps, gait_cfg, cmd_ax_mps2, cmd_ay_mps2);
+    return blendUnifiedGait(crawl, wave, t);
+}
+
 UnifiedGaitDescription blendUnifiedGait(const UnifiedGaitDescription& from,
                                       const UnifiedGaitDescription& to,
                                       const double alpha_smooth01) {
@@ -161,6 +201,7 @@ UnifiedGaitDescription blendUnifiedGait(const UnifiedGaitDescription& from,
         std::clamp(from.step_frequency_hz * (1.0 - a) + to.step_frequency_hz * a, 0.32, 3.6);
     out.step_length_m = std::max(0.0, from.step_length_m * (1.0 - a) + to.step_length_m * a);
     out.swing_height_m = std::max(0.0, from.swing_height_m * (1.0 - a) + to.swing_height_m * a);
+    out.swing_time_ease = std::clamp(from.swing_time_ease * (1.0 - a) + to.swing_time_ease * a, 0.0, 1.0);
     for (int i = 0; i < kNumLegs; ++i) {
         out.phase_offset[static_cast<std::size_t>(i)] =
             gaitLerpWrapped01(from.phase_offset[static_cast<std::size_t>(i)],

@@ -24,8 +24,9 @@ struct StanceFootInputs {
 // leveling is applied in `BodyController` after `planStanceFoot`.
 void planStanceFoot(const StanceFootInputs& in, Vec3& pos_body, Vec3& vel_body);
 
-// Swing: Hermite XY (C1 cubic, liftoff tangent match), vertical swing shape, Raibert + accel capture,
-// plus twist-integrated foothold lookahead (`foothold_planner`) for curved / combined motion.
+// Swing: planar cubic Bezier + optional time warp (`swing_trajectory`), vertical profile on same
+// warped phase; touchdown XY is assembled first (stride + capture + twist foothold), then this
+// path decides how to move between liftoff and that foothold.
 struct SwingFootInputs {
     Vec3 anchor{};
     Vec3 stance_end{};
@@ -45,6 +46,8 @@ struct SwingFootInputs {
     double stance_lookahead_s{0.0};
     /** Static margin (m) for light stability bias on touchdown XY. */
     double static_stability_margin_m{0.0};
+    /** From gait: S-curve amount on swing phase (see `swing_trajectory`). */
+    double swing_time_ease_01{1.0};
 };
 
 void planSwingFoot(const BodyVelocityCommand& body, const SwingFootInputs& in, Vec3& pos_body, Vec3& vel_body);

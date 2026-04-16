@@ -62,6 +62,9 @@ struct ParsedToml
   double gaitNominalYawRateRadps{0.5};
   double gaitTurnNominalRadiusM{0.11};
   double footEstimatorBlend{0.35};
+  double swingHeightScale{1.0};
+  double swingEaseMin{0.40};
+  double swingEaseMax{1.0};
   double minBusVoltageV{10.5};
   double maxBusCurrentA{25.0};
   int minFootContacts{0};

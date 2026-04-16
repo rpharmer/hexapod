@@ -1,6 +1,7 @@
 #include "foot_planners.hpp"
 
 #include "foothold_planner.hpp"
+#include "swing_trajectory.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -25,36 +26,6 @@ void swingVerticalShape(const double swing_h, const double tau01, double* z_rel,
     *z_rel = swing_h * k_norm * u3;
     const double du_dt = 1.0 - 2.0 * t;
     *dz_dtau = swing_h * k_norm * 3.0 * u * u * du_dt;
-}
-
-void hermiteXY(const double t01,
-               const double p0x,
-               const double p0y,
-               const double p3x,
-               const double p3y,
-               const double m0x,
-               const double m0y,
-               const double m1x,
-               const double m1y,
-               double* px,
-               double* py,
-               double* dpx_dtau,
-               double* dpy_dtau) {
-    const double t = std::clamp(t01, 0.0, 1.0);
-    const double t2 = t * t;
-    const double t3 = t2 * t;
-    const double h00 = 2.0 * t3 - 3.0 * t2 + 1.0;
-    const double h10 = t3 - 2.0 * t2 + t;
-    const double h01 = -2.0 * t3 + 3.0 * t2;
-    const double h11 = t3 - t2;
-    const double dh00 = 6.0 * t2 - 6.0 * t;
-    const double dh10 = 3.0 * t2 - 4.0 * t + 1.0;
-    const double dh01 = -6.0 * t2 + 6.0 * t;
-    const double dh11 = 3.0 * t2 - 2.0 * t;
-    *px = h00 * p0x + h10 * m0x + h01 * p3x + h11 * m1x;
-    *py = h00 * p0y + h10 * m0y + h01 * p3y + h11 * m1y;
-    *dpx_dtau = dh00 * p0x + dh10 * m0x + dh01 * p3x + dh11 * m1x;
-    *dpy_dtau = dh00 * p0y + dh10 * m0y + dh01 * p3y + dh11 * m1y;
 }
 
 } // namespace
@@ -134,23 +105,40 @@ void planSwingFoot(const BodyVelocityCommand& body, const SwingFootInputs& in, V
     const double p3x = p0x + stride_x + capture_x + accel_x + twist_extra.x;
     const double p3y = p0y + stride_y + capture_y + accel_y + twist_extra.y;
 
-    const double m0x = in.v_liftoff_body.x * (swing_span / f_hz);
-    const double m0y = in.v_liftoff_body.y * (swing_span / f_hz);
-    constexpr double m1x = 0.0;
-    constexpr double m1y = 0.0;
+    const double m0x = in.v_liftoff_body.x * T_swing;
+    const double m0y = in.v_liftoff_body.y * T_swing;
+
+    const Vec3 v_touch = supportFootVelocityAt(Vec3{p3x, p3y, in.anchor.z}, body);
+    double m1x = v_touch.x * T_swing;
+    double m1y = v_touch.y * T_swing;
+    const double stride_mag = std::hypot(p3x - p0x, p3y - p0y);
+    constexpr double kM1VsStride = 2.5;
+    const double m1_lim = std::max(0.02, kM1VsStride * stride_mag);
+    const double m1_mag = std::hypot(m1x, m1y);
+    if (m1_mag > m1_lim && m1_mag > 1e-12) {
+        const double s = m1_lim / m1_mag;
+        m1x *= s;
+        m1y *= s;
+    }
+
+    const double time_ease = std::clamp(in.swing_time_ease_01, 0.0, 1.0);
 
     double sx = 0.0;
     double sy = 0.0;
     double dpx_dtau = 0.0;
     double dpy_dtau = 0.0;
-    hermiteXY(tau, p0x, p0y, p3x, p3y, m0x, m0y, m1x, m1y, &sx, &sy, &dpx_dtau, &dpy_dtau);
+    swing_trajectory::evalSwingPlanarBezier(
+        tau, time_ease, p0x, p0y, p3x, p3y, m0x, m0y, m1x, m1y, &sx, &sy, &dpx_dtau, &dpy_dtau);
 
     const double vx_s = dpx_dtau * chain;
     const double vy_s = dpy_dtau * chain;
 
+    const double s_vert = swing_trajectory::timeWarp(tau, time_ease);
+    const double ds_vert_dtau = swing_trajectory::timeWarpDeriv(tau, time_ease);
     double z_rel = 0.0;
-    double dz_dtau = 0.0;
-    swingVerticalShape(swing_h, tau, &z_rel, &dz_dtau);
+    double dz_ds = 0.0;
+    swingVerticalShape(swing_h, s_vert, &z_rel, &dz_ds);
+    const double dz_dtau = dz_ds * ds_vert_dtau;
     const double vz_s = dz_dtau * chain;
 
     pos_body = Vec3{sx, sy, in.anchor.z + z_rel};

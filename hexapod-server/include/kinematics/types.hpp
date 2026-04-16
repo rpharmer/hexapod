@@ -84,6 +84,8 @@ struct GaitState {
     double step_length_m{0.06};
     /** Velocity-scaled swing apex (m). */
     double swing_height_m{0.03};
+    /** 0 = linear swing phase, 1 = full smoothstep time warp (softer accel / decel). */
+    double swing_time_ease_01{1.0};
     /** stance_duration_s = duty_factor / stride_frequency_hz (when walking). */
     double stance_duration_s{0.5};
     double swing_duration_s{0.5};

@@ -5,13 +5,16 @@
 
 #include <array>
 
-// Unified gait parameters (active after preset selection, velocity scaling, and optional blending).
+// Gait presets and blending: timing, duty, phases, cadence, and swing *timing* only — not spatial
+// foot paths (those live in foot / swing trajectory planners).
 struct UnifiedGaitDescription {
     double duty_factor{0.5};
     std::array<double, kNumLegs> phase_offset{};
     double step_frequency_hz{1.0};
     double step_length_m{0.06};
     double swing_height_m{0.03};
+    /** Passed to swing generator: S-curve amount on normalized swing phase. */
+    double swing_time_ease{1.0};
     double stance_duration_s{0.5};
     double swing_duration_s{0.5};
 };
@@ -42,6 +45,22 @@ UnifiedGaitDescription buildAdaptiveTripodCrawlGait(double vx_mps,
                                                      double cmd_ax_mps2,
                                                      double cmd_ay_mps2,
                                                      const control_config::GaitConfig& gait_cfg);
+
+/** Same pattern for `GaitType::RIPPLE`: crawl-like at low speed, ripple at high. */
+UnifiedGaitDescription buildAdaptiveRippleCrawlGait(double vx_mps,
+                                                     double vy_mps,
+                                                     double yaw_rate_radps,
+                                                     double cmd_ax_mps2,
+                                                     double cmd_ay_mps2,
+                                                     const control_config::GaitConfig& gait_cfg);
+
+/** Same pattern for `GaitType::WAVE`: crawl-like at low speed, wave at high. */
+UnifiedGaitDescription buildAdaptiveWaveCrawlGait(double vx_mps,
+                                                  double vy_mps,
+                                                  double yaw_rate_radps,
+                                                  double cmd_ax_mps2,
+                                                  double cmd_ay_mps2,
+                                                  const control_config::GaitConfig& gait_cfg);
 
 UnifiedGaitDescription blendUnifiedGait(const UnifiedGaitDescription& from,
                                         const UnifiedGaitDescription& to,
