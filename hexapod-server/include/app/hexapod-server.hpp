@@ -70,6 +70,12 @@ struct ParsedToml
   int minFootContacts{0};
   int maxFootContacts{kNumLegs};
 
+  /** Optional NavLocomotionBridge body-frame position I outer loop; 0 = off. Ki in 1/s. */
+  double navBodyFrameIntegralKiFwdPerS{0.0};
+  double navBodyFrameIntegralKiLatPerS{0.0};
+  /** Integral clamp per axis (m*s); 0 = no clamp in bridge. */
+  double navBodyFrameIntegralAbsCapMetersSeconds{0.0};
+
   double coxaLengthM{0.043};
   double femurLengthM{0.060};
   double tibiaLengthM{0.104};

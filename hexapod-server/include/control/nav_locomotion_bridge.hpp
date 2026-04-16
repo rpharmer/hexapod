@@ -5,6 +5,7 @@
 #include "types.hpp"
 
 #include <cstddef>
+#include <limits>
 #include <vector>
 
 /**
@@ -69,6 +70,13 @@ public:
     void setPlanarCommandSlew01(double alpha);
 
     /**
+     * Optional outer loop on planar tracking: integrates body-frame position error toward the
+     * active waypoint (m * s) and adds `ki * integral` to `NavCommand` vx/vy before slew.
+     * Units: `ki_fwd` / `ki_lat` are 1/s (gain on integral in m*s → m/s). Set both to 0 to disable.
+     */
+    void setBodyFramePositionIntegralGains(double ki_fwd_per_s, double ki_lat_per_s, double integral_abs_cap_m_s);
+
+    /**
      * When `active()`, merges planar commands from navigation into `walk_base_` and returns the
      * result. When inactive, returns `fallback` unchanged. Uses `est` for pose via
      * `navPose2dFromRobotState`.
@@ -79,6 +87,7 @@ private:
     MotionIntent makeStopIntentFromWalkBase() const;
     MotionIntent onFailedTask(const MotionIntent& fallback);
     void updateMonitorFromFollow();
+    void applyBodyFramePositionIntegralOuterLoop(const NavPose2d& pose, double dt_s, NavCommand& cmd);
 
     bool active_{false};
     bool paused_{false};
@@ -95,4 +104,11 @@ private:
     double prev_nav_vx_{0.0};
     double prev_nav_vy_{0.0};
     double prev_nav_w_{0.0};
+
+    double outer_ki_fwd_{0.0};
+    double outer_ki_lat_{0.0};
+    double outer_i_cap_{0.0};
+    double outer_i_fwd_{0.0};
+    double outer_i_lat_{0.0};
+    std::size_t outer_last_wp_index_{std::numeric_limits<std::size_t>::max()};
 };

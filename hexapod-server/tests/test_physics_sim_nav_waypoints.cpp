@@ -245,6 +245,9 @@ int main(int argc, char** argv) {
 
     NavLocomotionBridge nav;
     nav.setPlanarCommandSlew01(0.14);
+    nav.setBodyFramePositionIntegralGains(cfg.nav_bridge.body_frame_integral_ki_fwd_per_s,
+                                          cfg.nav_bridge.body_frame_integral_ki_lat_per_s,
+                                          cfg.nav_bridge.body_frame_integral_abs_cap_m_s);
     nav.startFollowWaypoints(walk_base, {NavPose2d{g1x, g1y, yaw_wp}, NavPose2d{g2x, g2y, yaw_wp}}, fp);
 
     double path_wp = 0.0;

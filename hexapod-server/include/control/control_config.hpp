@@ -38,6 +38,9 @@ inline constexpr float kDefaultMinBusVoltageV{10.5f};
 inline constexpr float kDefaultMaxBusCurrentA{25.0f};
 inline constexpr int kDefaultMinFootContacts{0};
 inline constexpr int kDefaultMaxFootContacts{kNumLegs};
+inline constexpr double kDefaultNavBodyFrameIntegralKiFwdPerS{0.0};
+inline constexpr double kDefaultNavBodyFrameIntegralKiLatPerS{0.0};
+inline constexpr double kDefaultNavBodyFrameIntegralAbsCapMetersSeconds{0.0};
 
 struct LoopTimingConfig {
     std::chrono::microseconds bus_loop_period{std::chrono::microseconds{kDefaultBusLoopPeriodUs}};
@@ -125,6 +128,13 @@ struct TelemetryConfig {
     std::chrono::milliseconds geometry_refresh_period{std::chrono::milliseconds{kDefaultTelemetryGeometryRefreshPeriodMs}};
 };
 
+/** Tuning for `NavLocomotionBridge` when used by scenarios / callers (not applied automatically in core loop yet). */
+struct NavBridgeConfig {
+    double body_frame_integral_ki_fwd_per_s{kDefaultNavBodyFrameIntegralKiFwdPerS};
+    double body_frame_integral_ki_lat_per_s{kDefaultNavBodyFrameIntegralKiLatPerS};
+    double body_frame_integral_abs_cap_m_s{kDefaultNavBodyFrameIntegralAbsCapMetersSeconds};
+};
+
 struct ControlConfig {
     LoopTimingConfig loop_timing{};
     SafetyConfig safety{};
@@ -132,6 +142,7 @@ struct ControlConfig {
     LocomotionCommandConfig locomotion_cmd{};
     FreshnessConfig freshness{};
     TelemetryConfig telemetry{};
+    NavBridgeConfig nav_bridge{};
 };
 
 ControlConfig fromParsedToml(const ParsedToml& config);

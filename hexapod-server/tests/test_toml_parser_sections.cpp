@@ -486,6 +486,40 @@ bool testSwingTuningKeysParseIntoControlConfig()
          expect(near(control.gait.swing_ease_max, 0.88), "gait.swing_ease_max should map from ParsedToml");
 }
 
+bool testNavBridgeTuningKeysParseIntoControlConfig()
+{
+  std::string cfg = readText(configPath("config.txt"));
+  if (!expect(replaceOnce(cfg, "MaxFootContacts = 6",
+                           "MaxFootContacts = 6\n"
+                           "NavBodyFrameIntegralKiFwdPerS = 0.08\n"
+                           "NavBodyFrameIntegralKiLatPerS = 0.09\n"
+                           "NavBodyFrameIntegralAbsCapMetersSeconds = 0.3"),
+              "baseline config missing MaxFootContacts = 6")) {
+    return false;
+  }
+
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(writeTemp("hexapod_nav_bridge_tuning.toml", cfg), parsed),
+              "nav bridge tuning keys should parse")) {
+    return false;
+  }
+  if (!expect(near(parsed.navBodyFrameIntegralKiFwdPerS, 0.08), "NavBodyFrameIntegralKiFwdPerS should parse") ||
+      !expect(near(parsed.navBodyFrameIntegralKiLatPerS, 0.09), "NavBodyFrameIntegralKiLatPerS should parse") ||
+      !expect(near(parsed.navBodyFrameIntegralAbsCapMetersSeconds, 0.3),
+              "NavBodyFrameIntegralAbsCapMetersSeconds should parse")) {
+    return false;
+  }
+
+  const control_config::ControlConfig control = control_config::fromParsedToml(parsed);
+  return expect(near(control.nav_bridge.body_frame_integral_ki_fwd_per_s, 0.08),
+                "nav_bridge.ki_fwd should map from ParsedToml") &&
+         expect(near(control.nav_bridge.body_frame_integral_ki_lat_per_s, 0.09),
+                "nav_bridge.ki_lat should map from ParsedToml") &&
+         expect(near(control.nav_bridge.body_frame_integral_abs_cap_m_s, 0.3),
+                "nav_bridge.abs_cap should map from ParsedToml");
+}
+
 bool testSwingEaseMinMaxSwapAndWarning()
 {
   std::string cfg = readText(configPath("config.txt"));
@@ -532,6 +566,7 @@ int main()
   testGeometryDynamicsLoadedFromParsedConfig();
   testGeometryCanBeWrittenBackToParsedConfig();
   testSwingTuningKeysParseIntoControlConfig();
+  testNavBridgeTuningKeysParseIntoControlConfig();
   testSwingEaseMinMaxSwapAndWarning();
 
   if (g_failures != 0) {

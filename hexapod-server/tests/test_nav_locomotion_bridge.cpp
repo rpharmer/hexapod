@@ -90,6 +90,32 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    // Optional body-frame I outer loop on planar command (Ki>0); default Ki=0 elsewhere.
+    NavLocomotionBridge outer_bridge;
+    outer_bridge.setBodyFramePositionIntegralGains(0.12, 0.12, 0.25);
+    outer_bridge.startFollowWaypoints(walk, {NavPose2d{0.12, 0.0, 0.0}, NavPose2d{0.22, 0.04, 0.0}});
+    NavPose2d sim_outer{};
+    for (int i = 0; i < 12000; ++i) {
+        fill_state_xy_yaw(est, sim_outer);
+        last = outer_bridge.mergeIntent(fallback, est, dt);
+        if (!outer_bridge.active()) {
+            break;
+        }
+        const PlanarMotionCommand pl = planarMotionCommand(last);
+        if (!expect(std::hypot(pl.vx_mps, pl.vy_mps) <= 0.56,
+                    "outer loop should clamp planar speed")) {
+            return EXIT_FAILURE;
+        }
+        step_pose_from_motion_intent(sim_outer, last, dt);
+    }
+    if (!expect(!outer_bridge.active(), "outer-loop nav should complete")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(nearlyEq(sim_outer.x_m, 0.22, 0.08) && nearlyEq(sim_outer.y_m, 0.04, 0.08),
+                "sim pose should approach final waypoint with outer loop enabled")) {
+        return EXIT_FAILURE;
+    }
+
     fill_state_xy_yaw(est, sim);
     const MotionIntent idle = bridge.mergeIntent(fallback, est, dt);
     if (!expect(idle.requested_mode == RobotMode::STAND,

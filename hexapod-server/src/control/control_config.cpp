@@ -53,6 +53,10 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.telemetry.publish_period = std::chrono::milliseconds{config.telemetryPublishPeriodMs};
     parsed.telemetry.geometry_refresh_period = std::chrono::milliseconds{config.telemetryGeometryRefreshPeriodMs};
 
+    parsed.nav_bridge.body_frame_integral_ki_fwd_per_s = config.navBodyFrameIntegralKiFwdPerS;
+    parsed.nav_bridge.body_frame_integral_ki_lat_per_s = config.navBodyFrameIntegralKiLatPerS;
+    parsed.nav_bridge.body_frame_integral_abs_cap_m_s = config.navBodyFrameIntegralAbsCapMetersSeconds;
+
     return parsed;
 }
 

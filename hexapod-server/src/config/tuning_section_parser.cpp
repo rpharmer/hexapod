@@ -102,6 +102,16 @@ void parseTuningSection(const toml::value& root,
     out.minFootContacts = control_config::kDefaultMinFootContacts;
     out.maxFootContacts = control_config::kDefaultMaxFootContacts;
   }
+
+  out.navBodyFrameIntegralKiFwdPerS = config_validation::parseDoubleWithFallback(
+      root, "Tuning.NavBodyFrameIntegralKiFwdPerS", control_config::kDefaultNavBodyFrameIntegralKiFwdPerS, 0.0, 5.0,
+      "tuning", logger);
+  out.navBodyFrameIntegralKiLatPerS = config_validation::parseDoubleWithFallback(
+      root, "Tuning.NavBodyFrameIntegralKiLatPerS", control_config::kDefaultNavBodyFrameIntegralKiLatPerS, 0.0, 5.0,
+      "tuning", logger);
+  out.navBodyFrameIntegralAbsCapMetersSeconds = config_validation::parseDoubleWithFallback(
+      root, "Tuning.NavBodyFrameIntegralAbsCapMetersSeconds",
+      control_config::kDefaultNavBodyFrameIntegralAbsCapMetersSeconds, 0.0, 50.0, "tuning", logger);
 }
 
 } // namespace tuning_section_parser
