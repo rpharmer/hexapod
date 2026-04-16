@@ -41,6 +41,9 @@ public:
     bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
     ControlStatus getStatus() const;
 
+    /** Latest estimated state (for navigation / tests; same buffer the control step reads). */
+    [[nodiscard]] RobotState estimatedSnapshot() const { return estimated_state_.read(); }
+
 private:
     void maybePublishTelemetry(const TimePointUs& now);
 

@@ -1,6 +1,18 @@
 #include "motion_intent_utils.hpp"
 
+#include <atomic>
 #include <cmath>
+
+namespace {
+
+std::atomic<std::uint64_t> g_intent_stream_sample_id{2};
+
+} // namespace
+
+void stampIntentStreamMotionFields(MotionIntent& intent) {
+    intent.timestamp_us = now_us();
+    intent.sample_id = g_intent_stream_sample_id.fetch_add(1, std::memory_order_relaxed);
+}
 
 PlanarMotionCommand planarMotionCommand(const MotionIntent& intent) {
     double vx = intent.cmd_vx_mps.value;

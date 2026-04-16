@@ -25,6 +25,8 @@ public:
     bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
     ControlStatus getStatus() const;
 
+    [[nodiscard]] RobotState estimatedSnapshot() const { return runtime_.estimatedSnapshot(); }
+
 private:
     control_config::ControlConfig config_;
     RobotRuntime runtime_;

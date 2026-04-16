@@ -17,3 +17,6 @@ PlanarMotionCommand planarMotionFromCommandTwist(const BodyTwist& cmd);
 
 MotionIntent makeMotionIntent(RobotMode mode, GaitType gait, double body_height_m);
 MotionIntent makeMotionIntent(const ScenarioMotionIntent& motion);
+
+/** Strict freshness requires nonzero monotonic `sample_id`; call before each `setMotionIntent`. */
+void stampIntentStreamMotionFields(MotionIntent& intent);

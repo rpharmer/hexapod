@@ -108,6 +108,9 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/locomotion_stability.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/mode_runners.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/motion_intent_utils.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/nav_primitives.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/nav_to_locomotion.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/nav_locomotion_bridge.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/physics_sim_estimator.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/plane_estimation.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/probe_contact_logic.cpp"
@@ -266,6 +269,14 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_gait_params PRIVATE hexapod_server_core)
     add_test(NAME gait_params COMMAND test_gait_params)
 
+    add_executable(test_nav_primitives tests/test_nav_primitives.cpp)
+    target_link_libraries(test_nav_primitives PRIVATE hexapod_server_core)
+    add_test(NAME nav_primitives COMMAND test_nav_primitives)
+
+    add_executable(test_nav_locomotion_bridge tests/test_nav_locomotion_bridge.cpp)
+    target_link_libraries(test_nav_locomotion_bridge PRIVATE hexapod_server_core)
+    add_test(NAME nav_locomotion_bridge COMMAND test_nav_locomotion_bridge)
+
     add_executable(test_physics_sim_mapping_roundtrip tests/test_physics_sim_mapping_roundtrip.cpp)
     target_link_libraries(test_physics_sim_mapping_roundtrip PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_mapping_roundtrip COMMAND test_physics_sim_mapping_roundtrip)
@@ -284,6 +295,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_physics_sim_walk_distance tests/test_physics_sim_walk_distance.cpp)
     target_link_libraries(test_physics_sim_walk_distance PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_walk_distance COMMAND test_physics_sim_walk_distance)
+
+    add_executable(test_physics_sim_nav_waypoints tests/test_physics_sim_nav_waypoints.cpp)
+    target_link_libraries(test_physics_sim_nav_waypoints PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_nav_waypoints COMMAND test_physics_sim_nav_waypoints)
 
     add_executable(test_virtual_gamepad_controller tests/test_virtual_gamepad_controller.cpp)
     target_link_libraries(test_virtual_gamepad_controller PRIVATE hexapod_server_core)
