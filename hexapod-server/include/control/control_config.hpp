@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <string>
 
+#include "local_map.hpp"
+#include "local_planner.hpp"
 #include "types.hpp"
 
 struct ParsedToml;
@@ -143,6 +145,8 @@ struct ControlConfig {
     FreshnessConfig freshness{};
     TelemetryConfig telemetry{};
     NavBridgeConfig nav_bridge{};
+    LocalMapConfig local_map{};
+    LocalPlannerConfig local_planner{};
 };
 
 ControlConfig fromParsedToml(const ParsedToml& config);

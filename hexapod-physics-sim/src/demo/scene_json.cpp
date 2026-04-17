@@ -488,7 +488,7 @@ void ToLowerAscii(std::string& s) {
     }
 }
 
-bool ParseJointObject(const JsonObject& o, World& world, std::string& err) {
+bool ParseJointObject(const JsonObject& o, World& world, std::string& err, std::uint32_t body_index_offset = 0) {
     std::string typeStr;
     if (!GetString(o, "type", typeStr, err, true)) {
         return false;
@@ -496,14 +496,18 @@ bool ParseJointObject(const JsonObject& o, World& world, std::string& err) {
     ToLowerAscii(typeStr);
 
     const std::uint32_t bodyCount = world.GetBodyCount();
+    const std::uint32_t appendedBodyCount =
+        bodyCount >= body_index_offset ? (bodyCount - body_index_offset) : 0;
     std::uint32_t bodyA = 0;
     std::uint32_t bodyB = 0;
-    if (!GetBodyIndex(o, "body_a", bodyCount, bodyA, err)) {
+    if (!GetBodyIndex(o, "body_a", appendedBodyCount, bodyA, err)) {
         return false;
     }
-    if (!GetBodyIndex(o, "body_b", bodyCount, bodyB, err)) {
+    if (!GetBodyIndex(o, "body_b", appendedBodyCount, bodyB, err)) {
         return false;
     }
+    bodyA += body_index_offset;
+    bodyB += body_index_offset;
 
     if (typeStr == "distance") {
         Vec3 anchorA{};
@@ -993,6 +997,22 @@ bool LoadWorldFromMinphysSceneJson(
     }
     solver_iterations_out = 16;
 
+    return AppendWorldFromMinphysSceneJson(
+        json_text, world_out, solver_iterations_out, error_out, joints_loaded_out);
+}
+
+bool AppendWorldFromMinphysSceneJson(
+    const std::string& json_text,
+    World& world_out,
+    int& solver_iterations_in_out,
+    std::string& error_out,
+    int* joints_loaded_out) {
+    if (joints_loaded_out != nullptr) {
+        *joints_loaded_out = 0;
+    }
+
+    const std::uint32_t body_index_offset = world_out.GetBodyCount();
+
     const std::string stripped = StripLineComments(json_text);
     JsonParser parser(stripped);
     JsonValue root;
@@ -1010,13 +1030,13 @@ bool LoadWorldFromMinphysSceneJson(
         return false;
     }
 
-    double si = 16.0;
+    double si = static_cast<double>(solver_iterations_in_out > 0 ? solver_iterations_in_out : 16);
     if (GetNumber(root.object, "solver_iterations", si, error_out, false)) {
         if (si < 1.0 || si > 128.0) {
             error_out = "solver_iterations out of range [1,128]";
             return false;
         }
-        solver_iterations_out = static_cast<int>(si);
+        solver_iterations_in_out = static_cast<int>(si);
     }
 
     const JsonValue* bodiesVal = FindMember(root.object, "bodies");
@@ -1049,7 +1069,7 @@ bool LoadWorldFromMinphysSceneJson(
                 error_out = "each joint must be a JSON object";
                 return false;
             }
-            if (!ParseJointObject(j.object, world_out, error_out)) {
+            if (!ParseJointObject(j.object, world_out, error_out, body_index_offset)) {
                 return false;
             }
             ++jointsLoaded;
@@ -1060,6 +1080,28 @@ bool LoadWorldFromMinphysSceneJson(
     }
 
     return true;
+}
+
+bool AppendWorldFromMinphysSceneJsonFile(
+    const std::string& scene_path,
+    World& world_out,
+    int& solver_iterations_in_out,
+    std::string& error_out,
+    int* joints_loaded_out) {
+    const std::filesystem::path resolved = ResolveSceneFilePath(scene_path);
+    std::ifstream in(resolved, std::ios::in | std::ios::binary);
+    if (!in) {
+        error_out = "cannot open file: " + scene_path;
+        if (resolved != std::filesystem::path(scene_path)) {
+            error_out += " (resolved: " + resolved.string() + ")";
+        }
+        return false;
+    }
+
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    return AppendWorldFromMinphysSceneJson(
+        buffer.str(), world_out, solver_iterations_in_out, error_out, joints_loaded_out);
 }
 
 int RunPhysicsDemoFromJsonFile(

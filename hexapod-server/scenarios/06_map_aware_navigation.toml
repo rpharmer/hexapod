@@ -1,0 +1,46 @@
+name = "map_aware_navigation"
+duration_ms = 12000
+tick_ms = 20
+refresh_motion_intent = true
+
+map_obstacles = []
+
+[[events]]
+at_ms = 0
+mode = "STAND"
+gait = "TRIPOD"
+body_height_m = 0.06
+speed_mps = 0.0
+heading_rad = 0.0
+yaw_rad = 0.0
+
+[[events]]
+at_ms = 1000
+[events.navigation]
+action = "navigate_to_pose"
+goal_x_m = 0.35
+goal_y_m = 0.00
+goal_yaw_rad = 0.0
+gait = "TRIPOD"
+body_height_m = 0.06
+
+[[events]]
+at_ms = 2500
+map_obstacles = [
+  { x_m = 0.18, y_m = 0.0, state = "occupied" },
+  { x_m = 0.23, y_m = 0.0, state = "occupied" }
+]
+
+[[events]]
+at_ms = 7000
+[events.navigation]
+action = "cancel"
+
+[[events]]
+at_ms = 9000
+mode = "STAND"
+gait = "TRIPOD"
+body_height_m = 0.06
+speed_mps = 0.0
+heading_rad = 0.0
+yaw_rad = 0.0

@@ -112,6 +112,40 @@ void parseTuningSection(const toml::value& root,
   out.navBodyFrameIntegralAbsCapMetersSeconds = config_validation::parseDoubleWithFallback(
       root, "Tuning.NavBodyFrameIntegralAbsCapMetersSeconds",
       control_config::kDefaultNavBodyFrameIntegralAbsCapMetersSeconds, 0.0, 50.0, "tuning", logger);
+  out.localMapWidthCells = config_validation::parseIntWithFallback(
+      root, "Tuning.LocalMapWidthCells", kDefaultLocalMapWidthCells, 9, 401, "tuning", logger);
+  out.localMapHeightCells = config_validation::parseIntWithFallback(
+      root, "Tuning.LocalMapHeightCells", kDefaultLocalMapHeightCells, 9, 401, "tuning", logger);
+  out.localMapResolutionM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.LocalMapResolutionM", kDefaultLocalMapResolutionM, 0.01, 0.5, "tuning", logger);
+  out.localMapObstacleInflationRadiusM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.LocalMapObstacleInflationRadiusM", kDefaultLocalMapObstacleInflationRadiusM, 0.0, 1.5,
+      "tuning", logger);
+  out.localMapSafetyMarginM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.LocalMapSafetyMarginM", kDefaultLocalMapSafetyMarginM, 0.0, 1.0, "tuning", logger);
+  out.localMapObservationTimeoutS = config_validation::parseDoubleWithFallback(
+      root, "Tuning.LocalMapObservationTimeoutS", kDefaultLocalMapObservationTimeoutS, 0.01, 10.0, "tuning",
+      logger);
+  out.localMapObservationDecayS = config_validation::parseDoubleWithFallback(
+      root, "Tuning.LocalMapObservationDecayS", kDefaultLocalMapObservationDecayS, 0.05, 30.0, "tuning", logger);
+  out.localPlannerReplanPeriodS = config_validation::parseDoubleWithFallback(
+      root, "Tuning.LocalPlannerReplanPeriodS", kDefaultLocalPlannerReplanPeriodS, 0.01, 10.0, "tuning",
+      logger);
+  out.localPlannerSearchHorizonM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.LocalPlannerSearchHorizonM", kDefaultLocalPlannerSearchHorizonM, 0.05, 20.0, "tuning",
+      logger);
+  out.localPlannerSearchNodeBudget = config_validation::parseIntWithFallback(
+      root, "Tuning.LocalPlannerSearchNodeBudget", kDefaultLocalPlannerSearchNodeBudget, 32, 200000, "tuning",
+      logger);
+  out.localPlannerMaxOutputWaypoints = config_validation::parseIntWithFallback(
+      root, "Tuning.LocalPlannerMaxOutputWaypoints", kDefaultLocalPlannerMaxOutputWaypoints, 1, 64, "tuning",
+      logger);
+  out.localPlannerSegmentCellHorizon = config_validation::parseIntWithFallback(
+      root, "Tuning.LocalPlannerSegmentCellHorizon", kDefaultLocalPlannerSegmentCellHorizon, 2, 256, "tuning",
+      logger);
+  out.localPlannerBlockedTimeoutS = config_validation::parseDoubleWithFallback(
+      root, "Tuning.LocalPlannerBlockedTimeoutS", kDefaultLocalPlannerBlockedTimeoutS, 0.01, 60.0, "tuning",
+      logger);
 }
 
 } // namespace tuning_section_parser

@@ -62,6 +62,19 @@ MaxFootContacts = 6
 NavBodyFrameIntegralKiFwdPerS = 0.0
 NavBodyFrameIntegralKiLatPerS = 0.0
 NavBodyFrameIntegralAbsCapMetersSeconds = 0.0
+LocalMapWidthCells = 41
+LocalMapHeightCells = 41
+LocalMapResolutionM = 0.05
+LocalMapObstacleInflationRadiusM = 0.12
+LocalMapSafetyMarginM = 0.02
+LocalMapObservationTimeoutS = 0.5
+LocalMapObservationDecayS = 1.5
+LocalPlannerReplanPeriodS = 0.25
+LocalPlannerSearchHorizonM = 1.2
+LocalPlannerSearchNodeBudget = 4000
+LocalPlannerMaxOutputWaypoints = 6
+LocalPlannerSegmentCellHorizon = 12
+LocalPlannerBlockedTimeoutS = 2.0
 
 [Geometry]
 CoxaLengthM = 0.043

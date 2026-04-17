@@ -1,11 +1,13 @@
 #pragma once
 
 #include "geometry_config.hpp"
+#include "navigation_manager.hpp"
 #include "types.hpp"
 #include "logger.hpp"
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace telemetry {
@@ -26,6 +28,7 @@ struct ControlStepTelemetry {
     RobotState estimated_state{};
     JointTargets joint_targets{};
     ControlStatus status{};
+    std::optional<NavigationMonitorSnapshot> navigation{};
     TimePointUs timestamp_us{};
 };
 

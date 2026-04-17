@@ -19,6 +19,23 @@ bool LoadWorldFromMinphysSceneJson(
     std::string& error_out,
     int* joints_loaded_out = nullptr);
 
+/// Appends `bodies` and optional `joints` from minphys scene JSON into an existing world.
+/// Joint body indices are interpreted relative to the appended scene body list.
+bool AppendWorldFromMinphysSceneJson(
+    const std::string& json_text,
+    minphys3d::World& world_out,
+    int& solver_iterations_in_out,
+    std::string& error_out,
+    int* joints_loaded_out = nullptr);
+
+/// Resolves a scene file path and appends the resulting scene into an existing world.
+bool AppendWorldFromMinphysSceneJsonFile(
+    const std::string& scene_path,
+    minphys3d::World& world_out,
+    int& solver_iterations_in_out,
+    std::string& error_out,
+    int* joints_loaded_out = nullptr);
+
 /// Runs a JSON-defined scene for `frame_count` steps at 60 Hz, emitting all bodies each frame.
 int RunPhysicsDemoFromJsonFile(
     const std::string& scene_path,

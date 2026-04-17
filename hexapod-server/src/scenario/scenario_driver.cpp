@@ -1,5 +1,7 @@
 #include "scenario_driver.hpp"
 
+#include "local_map.hpp"
+#include "navigation_manager.hpp"
 #include "logger.hpp"
 #include "motion_intent_utils.hpp"
 
@@ -77,6 +79,72 @@ const char* gaitName(GaitType gait) {
     return "UNKNOWN";
 }
 
+std::optional<ScenarioNavigationCommand::Action> parseNavigationAction(const std::string& action) {
+    if (action == "navigate_to_pose") {
+        return ScenarioNavigationCommand::Action::NavigateToPose;
+    }
+    if (action == "cancel") {
+        return ScenarioNavigationCommand::Action::Cancel;
+    }
+    return std::nullopt;
+}
+
+std::optional<LocalMapCellState> parseLocalMapCellState(const std::string& state) {
+    if (state == "occupied") {
+        return LocalMapCellState::Occupied;
+    }
+    if (state == "free") {
+        return LocalMapCellState::Free;
+    }
+    if (state == "unknown") {
+        return LocalMapCellState::Unknown;
+    }
+    return std::nullopt;
+}
+
+bool containsOnlyKeys(const toml::value& table, const std::set<std::string>& allowed,
+                      const std::string& section_name, std::string& error);
+
+bool parseMapObservationSamples(const toml::value& parent,
+                                const std::string& key,
+                                std::vector<LocalMapObservationSample>& out,
+                                std::string& error,
+                                ScenarioDriver::ValidationMode mode,
+                                const std::string& section_name) {
+    out.clear();
+    if (!parent.contains(key)) {
+        return true;
+    }
+
+    const auto entries = toml::find_or<std::vector<toml::value>>(parent, key, {});
+    out.reserve(entries.size());
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        const toml::value& entry = entries[i];
+        if (mode == ScenarioDriver::ValidationMode::Strict &&
+            !containsOnlyKeys(entry, {"x_m", "y_m", "state"},
+                              section_name + "." + key + "[" + std::to_string(i) + "]", error)) {
+            return false;
+        }
+        if (!entry.contains("x_m") || !entry.contains("y_m")) {
+            error = section_name + "." + key + "[" + std::to_string(i) + "] requires x_m and y_m";
+            return false;
+        }
+
+        const std::string state_name = toml::find_or<std::string>(entry, "state", "occupied");
+        const auto parsed_state = parseLocalMapCellState(state_name);
+        if (!parsed_state.has_value()) {
+            error = "invalid map obstacle state '" + state_name + "'";
+            return false;
+        }
+        out.push_back(LocalMapObservationSample{
+            toml::find<double>(entry, "x_m"),
+            toml::find<double>(entry, "y_m"),
+            *parsed_state,
+        });
+    }
+    return true;
+}
+
 std::optional<std::array<bool, kNumLegs>> buildContacts(const ScenarioSensorOverrides& sensors) {
     if (sensors.clear_contacts) {
         return std::nullopt;
@@ -112,7 +180,7 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
         const toml::value root = toml::parse(path, toml::spec::v(1, 1, 0));
 
         if (mode == ValidationMode::Strict &&
-            !containsOnlyKeys(root, {"name", "duration_ms", "tick_ms", "refresh_motion_intent", "events"},
+            !containsOnlyKeys(root, {"name", "duration_ms", "tick_ms", "refresh_motion_intent", "map_obstacles", "events"},
                               "scenario root", error)) {
             return false;
         }
@@ -121,6 +189,9 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
         out.duration_ms = toml::find_or<uint64_t>(root, "duration_ms", 5000);
         out.tick_ms = std::max<uint64_t>(1, toml::find_or<uint64_t>(root, "tick_ms", 20));
         out.refresh_motion_intent = toml::find_or<bool>(root, "refresh_motion_intent", true);
+        if (!parseMapObservationSamples(root, "map_obstacles", out.initial_map_obstacles, error, mode, "scenario root")) {
+            return false;
+        }
 
         out.events.clear();
         const auto events = toml::find_or<std::vector<toml::value>>(root, "events", {});
@@ -133,7 +204,8 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
             if (mode == ValidationMode::Strict &&
                 !containsOnlyKeys(event_value,
                                   {"at_ms", "mode", "gait", "body_height_m", "speed_mps", "heading_rad", "yaw_rad",
-                                   "yaw_rate_radps", "vx_mps", "vy_mps", "faults", "sensors"},
+                                   "yaw_rate_radps", "vx_mps", "vy_mps", "faults", "sensors", "navigation",
+                                   "map_obstacles"},
                                   "events[" + std::to_string(event_index) + "]", error)) {
                 return false;
             }
@@ -240,6 +312,56 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
                 }
             }
 
+            if (event_value.contains("navigation")) {
+                event.has_navigation_command = true;
+                const auto& navigation = event_value.at("navigation");
+                if (mode == ValidationMode::Strict &&
+                    !containsOnlyKeys(navigation,
+                                      {"action", "goal_x_m", "goal_y_m", "goal_yaw_rad", "gait", "body_height_m"},
+                                      "events[" + std::to_string(event_index) + "].navigation", error)) {
+                    return false;
+                }
+
+                const std::string action_name = toml::find_or<std::string>(navigation, "action", "");
+                const auto action = parseNavigationAction(action_name);
+                if (!action.has_value()) {
+                    error = "invalid navigation action '" + action_name + "'";
+                    return false;
+                }
+                const std::string navigation_gait_name = toml::find_or<std::string>(navigation, "gait", "TRIPOD");
+                const auto navigation_gait = parseGait(navigation_gait_name);
+                if (!navigation_gait.has_value()) {
+                    error = "invalid scenario gait '" + navigation_gait_name + "'";
+                    return false;
+                }
+                event.navigation.enabled = true;
+                event.navigation.action = *action;
+                event.navigation.gait = *navigation_gait;
+                event.navigation.body_height_m = toml::find_or<double>(navigation, "body_height_m", 0.06);
+                event.navigation.goal_x_m = toml::find_or<double>(navigation, "goal_x_m", 0.0);
+                event.navigation.goal_y_m = toml::find_or<double>(navigation, "goal_y_m", 0.0);
+                event.navigation.goal_yaw_rad = toml::find_or<double>(navigation, "goal_yaw_rad", 0.0);
+
+                if (mode == ValidationMode::Strict &&
+                    event.navigation.action == ScenarioNavigationCommand::Action::NavigateToPose &&
+                    (!navigation.contains("goal_x_m") || !navigation.contains("goal_y_m"))) {
+                    error = "navigate_to_pose requires goal_x_m and goal_y_m";
+                    return false;
+                }
+            }
+
+            if (event_value.contains("map_obstacles")) {
+                event.has_map_observation_override = true;
+                if (!parseMapObservationSamples(event_value,
+                                                "map_obstacles",
+                                                event.map_observation.samples,
+                                                error,
+                                                mode,
+                                                "events[" + std::to_string(event_index) + "]")) {
+                    return false;
+                }
+            }
+
             out.events.push_back(event);
         }
 
@@ -259,6 +381,25 @@ bool ScenarioDriver::run(RobotControl& robot, const ScenarioDefinition& scenario
     MotionIntent current_intent{};
     current_intent.requested_mode = RobotMode::SAFE_IDLE;
     current_intent.gait = GaitType::TRIPOD;
+
+    const bool scenario_uses_navigation =
+        !scenario.initial_map_obstacles.empty() ||
+        std::any_of(scenario.events.begin(), scenario.events.end(), [](const ScenarioEvent& event) {
+            return event.has_navigation_command || event.has_map_observation_override;
+        });
+
+    std::shared_ptr<SyntheticLocalMapObservationSource> map_source{};
+    if (scenario_uses_navigation) {
+        if (robot.navigationManager() == nullptr) {
+            if (logger) {
+                LOG_ERROR(logger, "Scenario navigation requested but NavigationManager is not installed");
+            }
+            return false;
+        }
+        map_source = std::make_shared<SyntheticLocalMapObservationSource>();
+        map_source->setStaticSamples(scenario.initial_map_obstacles);
+        robot.navigationManager()->addObservationSource(map_source);
+    }
 
     std::size_t event_idx = 0;
     const auto start = std::chrono::steady_clock::now();
@@ -289,6 +430,42 @@ bool ScenarioDriver::run(RobotControl& robot, const ScenarioDefinition& scenario
                 toggles.low_voltage_value = event.faults.low_voltage_value_v;
                 toggles.high_current = event.faults.high_current;
                 toggles.high_current_value = event.faults.high_current_value_a;
+            }
+
+            if (event.has_map_observation_override && map_source != nullptr) {
+                map_source->setStaticSamples(event.map_observation.samples);
+            }
+
+            if (event.has_navigation_command && robot.navigationManager() != nullptr) {
+                if (event.navigation.action == ScenarioNavigationCommand::Action::NavigateToPose) {
+                    MotionIntent walk_base = makeMotionIntent(RobotMode::WALK,
+                                                              event.navigation.gait,
+                                                              event.navigation.body_height_m);
+                    robot.navigationManager()->startNavigateToPose(
+                        walk_base,
+                        NavPose2d{
+                            event.navigation.goal_x_m,
+                            event.navigation.goal_y_m,
+                            event.navigation.goal_yaw_rad,
+                        });
+                    if (logger) {
+                        LOG_INFO(logger,
+                                 "Scenario navigation start @",
+                                 event.at_ms,
+                                 "ms goal=(",
+                                 event.navigation.goal_x_m,
+                                 ",",
+                                 event.navigation.goal_y_m,
+                                 ",",
+                                 event.navigation.goal_yaw_rad,
+                                 ")");
+                    }
+                } else if (event.navigation.action == ScenarioNavigationCommand::Action::Cancel) {
+                    robot.navigationManager()->cancel();
+                    if (logger) {
+                        LOG_INFO(logger, "Scenario navigation cancel @", event.at_ms, "ms");
+                    }
+                }
             }
 
             ++event_idx;

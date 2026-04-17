@@ -123,7 +123,21 @@ public:
                     << "]";
         }
 
-        payload << "}}";
+        payload << "}";
+        if (telemetry.navigation.has_value()) {
+            const NavigationMonitorSnapshot& nav = telemetry.navigation.value();
+            payload << ",\"nav\":{"
+                    << "\"lifecycle\":" << static_cast<int>(nav.lifecycle) << ","
+                    << "\"planner_status\":" << static_cast<int>(nav.planner_status) << ","
+                    << "\"block_reason\":" << static_cast<int>(nav.block_reason) << ","
+                    << "\"map_fresh\":" << (nav.map_fresh ? "true" : "false") << ","
+                    << "\"replan_count\":" << nav.replan_count << ","
+                    << "\"active_segment_waypoint_count\":" << nav.active_segment_waypoint_count << ","
+                    << "\"active_segment_length_m\":" << nav.active_segment_length_m << ","
+                    << "\"nearest_obstacle_distance_m\":" << nav.nearest_obstacle_distance_m
+                    << "}";
+        }
+        payload << "}";
         send(payload.str());
     }
 

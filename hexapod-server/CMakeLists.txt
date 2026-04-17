@@ -102,16 +102,20 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/geometry_profile_service.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/interactive_calibration_actions.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/interactive_input_mapper.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/local_map.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/local_planner.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/loop_executor.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/loop_timing.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/locomotion_command.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/locomotion_stability.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/mode_runners.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/motion_intent_utils.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/navigation_manager.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/nav_primitives.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/nav_to_locomotion.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/nav_locomotion_bridge.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/physics_sim_estimator.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/physics_sim_local_map_source.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/plane_estimation.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/probe_contact_logic.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/robot_control.cpp"
@@ -277,6 +281,26 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_nav_locomotion_bridge PRIVATE hexapod_server_core)
     add_test(NAME nav_locomotion_bridge COMMAND test_nav_locomotion_bridge)
 
+    add_executable(test_local_map tests/test_local_map.cpp)
+    target_link_libraries(test_local_map PRIVATE hexapod_server_core)
+    add_test(NAME local_map COMMAND test_local_map)
+
+    add_executable(test_local_planner tests/test_local_planner.cpp)
+    target_link_libraries(test_local_planner PRIVATE hexapod_server_core)
+    add_test(NAME local_planner COMMAND test_local_planner)
+
+    add_executable(test_navigation_manager tests/test_navigation_manager.cpp)
+    target_link_libraries(test_navigation_manager PRIVATE hexapod_server_core)
+    add_test(NAME navigation_manager COMMAND test_navigation_manager)
+
+    add_executable(test_navigation_runtime tests/test_navigation_runtime.cpp)
+    target_link_libraries(test_navigation_runtime PRIVATE hexapod_server_core)
+    add_test(NAME navigation_runtime COMMAND test_navigation_runtime)
+
+    add_executable(test_physics_sim_local_map_source tests/test_physics_sim_local_map_source.cpp)
+    target_link_libraries(test_physics_sim_local_map_source PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_local_map_source COMMAND test_physics_sim_local_map_source)
+
     add_executable(test_physics_sim_mapping_roundtrip tests/test_physics_sim_mapping_roundtrip.cpp)
     target_link_libraries(test_physics_sim_mapping_roundtrip PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_mapping_roundtrip COMMAND test_physics_sim_mapping_roundtrip)
@@ -299,6 +323,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_physics_sim_nav_waypoints tests/test_physics_sim_nav_waypoints.cpp)
     target_link_libraries(test_physics_sim_nav_waypoints PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_nav_waypoints COMMAND test_physics_sim_nav_waypoints)
+
+    add_executable(test_physics_sim_navigation_acceptance tests/test_physics_sim_navigation_acceptance.cpp)
+    target_link_libraries(test_physics_sim_navigation_acceptance PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_navigation_acceptance COMMAND test_physics_sim_navigation_acceptance)
 
     add_executable(test_virtual_gamepad_controller tests/test_virtual_gamepad_controller.cpp)
     target_link_libraries(test_virtual_gamepad_controller PRIVATE hexapod_server_core)

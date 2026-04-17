@@ -56,6 +56,19 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.nav_bridge.body_frame_integral_ki_fwd_per_s = config.navBodyFrameIntegralKiFwdPerS;
     parsed.nav_bridge.body_frame_integral_ki_lat_per_s = config.navBodyFrameIntegralKiLatPerS;
     parsed.nav_bridge.body_frame_integral_abs_cap_m_s = config.navBodyFrameIntegralAbsCapMetersSeconds;
+    parsed.local_map.width_cells = config.localMapWidthCells;
+    parsed.local_map.height_cells = config.localMapHeightCells;
+    parsed.local_map.resolution_m = config.localMapResolutionM;
+    parsed.local_map.obstacle_inflation_radius_m = config.localMapObstacleInflationRadiusM;
+    parsed.local_map.safety_margin_m = config.localMapSafetyMarginM;
+    parsed.local_map.observation_timeout_s = config.localMapObservationTimeoutS;
+    parsed.local_map.observation_decay_s = config.localMapObservationDecayS;
+    parsed.local_planner.replan_period_s = config.localPlannerReplanPeriodS;
+    parsed.local_planner.search_horizon_m = config.localPlannerSearchHorizonM;
+    parsed.local_planner.search_node_budget = config.localPlannerSearchNodeBudget;
+    parsed.local_planner.max_output_waypoints = config.localPlannerMaxOutputWaypoints;
+    parsed.local_planner.segment_cell_horizon = config.localPlannerSegmentCellHorizon;
+    parsed.local_planner.blocked_timeout_s = config.localPlannerBlockedTimeoutS;
 
     return parsed;
 }

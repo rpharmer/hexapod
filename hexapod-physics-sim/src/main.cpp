@@ -47,8 +47,9 @@ void PrintUsage(std::ostream& out) {
            "  --autonext-run            With -i: same as --autonext and start the next run automatically\n"
            "  --serve                   UDP physics server (hexapod scene, step-on-command)\n"
            "  --serve-port PORT         UDP listen port for --serve (default: 9871)\n"
+           "  --scene-file PATH + --serve  Append obstacle bodies/joints from minphys JSON into serve mode\n"
            "  --sink udp + --serve      Also stream minphys scene UDP for hexapod-opengl-visualiser\n"
-           "                            (same as demo: --udp-host / --udp-port, default 127.0.0.1:9870)\n"
+            "                            (same as demo: --udp-host / --udp-port, default 127.0.0.1:9870)\n"
            "  -h, --help                Show this help\n";
 }
 
@@ -196,7 +197,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         return minphys3d::demo::RunPhysicsServeMode(
-            static_cast<std::uint16_t>(serve_port), sink_kind, udp_host, udp_port);
+            static_cast<std::uint16_t>(serve_port), sink_kind, udp_host, udp_port, scene_file);
     }
 
     if (interactive) {

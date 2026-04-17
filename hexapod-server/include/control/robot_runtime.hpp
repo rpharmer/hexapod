@@ -7,6 +7,7 @@
 #include "freshness_policy.hpp"
 #include "hardware_bridge.hpp"
 #include "logger.hpp"
+#include "navigation_manager.hpp"
 #include "runtime_diagnostics_reporter.hpp"
 #include "runtime_freshness_gate.hpp"
 #include "runtime_timing_metrics.hpp"
@@ -39,12 +40,16 @@ public:
     void setMotionIntent(const MotionIntent& intent);
     void setMotionIntentForTest(const MotionIntent& intent);
     bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
+    void setNavigationManager(std::unique_ptr<NavigationManager> navigation_manager);
     ControlStatus getStatus() const;
 
     /** Latest estimated state (for navigation / tests; same buffer the control step reads). */
     [[nodiscard]] RobotState estimatedSnapshot() const { return estimated_state_.read(); }
+    [[nodiscard]] const NavigationManager* navigationManager() const { return navigation_manager_.get(); }
+    [[nodiscard]] NavigationManager* navigationManager() { return navigation_manager_.get(); }
 
 private:
+    MotionIntent resolveEffectiveIntent(const RobotState& est, TimePointUs now);
     void maybePublishTelemetry(const TimePointUs& now);
 
     std::unique_ptr<IHardwareBridge> hw_;
@@ -56,6 +61,7 @@ private:
     ControlPipeline pipeline_;
     SafetySupervisor safety_;
     FreshnessPolicy freshness_policy_;
+    std::unique_ptr<NavigationManager> navigation_manager_{};
 
     std::atomic<uint64_t> control_loop_counter_{0};
     std::atomic<uint64_t> control_dt_sum_us_{0};
@@ -71,10 +77,12 @@ private:
     DoubleBuffer<RobotState> raw_state_;
     DoubleBuffer<RobotState> estimated_state_;
     DoubleBuffer<MotionIntent> motion_intent_;
+    DoubleBuffer<MotionIntent> effective_motion_intent_;
     DoubleBuffer<SafetyState> safety_state_;
     DoubleBuffer<JointTargets> joint_targets_;
     DoubleBuffer<ControlStatus> status_;
 
     TimePointUs next_telemetry_publish_at_{};
     TimePointUs next_geometry_refresh_at_{};
+    uint64_t last_effective_intent_estimator_sample_id_{0};
 };

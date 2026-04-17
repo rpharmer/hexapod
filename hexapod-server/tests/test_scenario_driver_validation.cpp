@@ -250,6 +250,96 @@ events = [
                   "strict mode should reject contacts when clear_contacts=true");
 }
 
+bool test_navigation_and_map_obstacles_parse() {
+    const std::string path = "/tmp/scenario_navigation_map_parse.toml";
+    if (!writeScenarioFile(path, R"(
+name = "navigation-map-parse"
+duration_ms = 100
+tick_ms = 20
+map_obstacles = [
+  { x_m = 0.2, y_m = 0.0, state = "occupied" },
+  { x_m = 0.25, y_m = 0.05, state = "free" }
+]
+events = [
+  {
+    at_ms = 0,
+    navigation = {
+      action = "navigate_to_pose",
+      goal_x_m = 0.4,
+      goal_y_m = 0.1,
+      goal_yaw_rad = 0.2,
+      gait = "RIPPLE",
+      body_height_m = 0.07
+    },
+    map_obstacles = [
+      { x_m = 0.3, y_m = 0.0, state = "occupied" }
+    ]
+  }
+]
+)")) {
+        return false;
+    }
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    const bool ok =
+        ScenarioDriver::loadFromToml(path, scenario, error, ScenarioDriver::ValidationMode::Strict);
+    std::remove(path.c_str());
+    return expect(ok, "strict mode should parse valid navigation/map obstacle sections") &&
+           expect(scenario.initial_map_obstacles.size() == 2,
+                  "root map obstacles should parse into scenario definition") &&
+           expect(scenario.events.size() == 1 && scenario.events[0].has_navigation_command,
+                  "event navigation command should parse") &&
+           expect(scenario.events[0].navigation.action == ScenarioNavigationCommand::Action::NavigateToPose,
+                  "navigation action should parse to navigate_to_pose") &&
+           expect(scenario.events[0].map_observation.samples.size() == 1,
+                  "event map obstacle override should parse");
+}
+
+bool test_strict_invalid_navigation_action_rejected() {
+    const std::string path = "/tmp/scenario_invalid_navigation_action.toml";
+    if (!writeScenarioFile(path, R"(
+name = "invalid-navigation-action"
+duration_ms = 100
+tick_ms = 20
+events = [
+  { at_ms = 0, navigation = { action = "teleport", goal_x_m = 0.3, goal_y_m = 0.0 } }
+]
+)")) {
+        return false;
+    }
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    const bool ok =
+        ScenarioDriver::loadFromToml(path, scenario, error, ScenarioDriver::ValidationMode::Strict);
+    std::remove(path.c_str());
+    return expect(!ok && error.find("invalid navigation action") != std::string::npos,
+                  "strict mode should reject invalid navigation action");
+}
+
+bool test_strict_navigate_to_pose_requires_goal_xy() {
+    const std::string path = "/tmp/scenario_navigation_goal_required.toml";
+    if (!writeScenarioFile(path, R"(
+name = "navigation-goal-required"
+duration_ms = 100
+tick_ms = 20
+events = [
+  { at_ms = 0, navigation = { action = "navigate_to_pose" } }
+]
+)")) {
+        return false;
+    }
+
+    ScenarioDefinition scenario{};
+    std::string error;
+    const bool ok =
+        ScenarioDriver::loadFromToml(path, scenario, error, ScenarioDriver::ValidationMode::Strict);
+    std::remove(path.c_str());
+    return expect(!ok && error.find("requires goal_x_m and goal_y_m") != std::string::npos,
+                  "strict mode should require goal_x_m/goal_y_m for navigate_to_pose");
+}
+
 } // namespace
 
 int main() {
@@ -281,6 +371,15 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!test_strict_clear_contacts_with_contacts_rejected()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_navigation_and_map_obstacles_parse()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_strict_invalid_navigation_action_rejected()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_strict_navigate_to_pose_requires_goal_xy()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

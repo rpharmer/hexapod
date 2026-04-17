@@ -1,5 +1,6 @@
 #pragma once
 
+#include "local_map.hpp"
 #include "robot_control.hpp"
 
 #include <array>
@@ -35,6 +36,26 @@ struct ScenarioFaultOverrides {
     float high_current_value_a{25.0f};
 };
 
+struct ScenarioNavigationCommand {
+    enum class Action {
+        None,
+        NavigateToPose,
+        Cancel,
+    };
+
+    bool enabled{false};
+    Action action{Action::None};
+    GaitType gait{GaitType::TRIPOD};
+    double body_height_m{0.06};
+    double goal_x_m{0.0};
+    double goal_y_m{0.0};
+    double goal_yaw_rad{0.0};
+};
+
+struct ScenarioMapObservationOverride {
+    std::vector<LocalMapObservationSample> samples{};
+};
+
 struct ScenarioEvent {
     uint64_t at_ms{0};
     ScenarioMotionIntent motion{};
@@ -42,6 +63,10 @@ struct ScenarioEvent {
     ScenarioSensorOverrides sensors{};
     bool has_fault_overrides{false};
     ScenarioFaultOverrides faults{};
+    bool has_navigation_command{false};
+    ScenarioNavigationCommand navigation{};
+    bool has_map_observation_override{false};
+    ScenarioMapObservationOverride map_observation{};
 };
 
 struct ScenarioDefinition {
@@ -49,6 +74,7 @@ struct ScenarioDefinition {
     uint64_t duration_ms{5000};
     uint64_t tick_ms{20};
     bool refresh_motion_intent{true};
+    std::vector<LocalMapObservationSample> initial_map_obstacles{};
     std::vector<ScenarioEvent> events{};
 };
 

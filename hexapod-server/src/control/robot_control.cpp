@@ -79,6 +79,10 @@ bool RobotControl::setSimFaultToggles(const SimHardwareFaultToggles& toggles) {
     return runtime_.setSimFaultToggles(toggles);
 }
 
+void RobotControl::setNavigationManager(std::unique_ptr<NavigationManager> navigation_manager) {
+    runtime_.setNavigationManager(std::move(navigation_manager));
+}
+
 ControlStatus RobotControl::getStatus() const {
     return runtime_.getStatus();
 }

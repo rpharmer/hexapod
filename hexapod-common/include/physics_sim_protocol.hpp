@@ -14,6 +14,7 @@ namespace physics_sim {
 // Assembly pitch (LegPitchDirection in Y-up sim) when placing femur/tibia in scenes.cpp.
 inline constexpr float kAssemblyFemurPitchRad = -0.20f;
 inline constexpr float kAssemblyTibiaPitchRad = -1.00f;
+inline constexpr std::size_t kMaxObstacleFootprints = 16;
 
 // The built-in hexapod used by `hexapod-physics-sim --serve` defines wire angle zero at the
 // assembled relaxed pose created in scenes.cpp. In the hexapod-server mechanical joint
@@ -43,6 +44,14 @@ struct StepCommand {
     std::array<float, 18> joint_targets{}; // radians, sim servo order (6 legs × 3 joints)
 };
 
+struct ObstacleFootprint {
+    float center_x{0.0f};      // sim world X
+    float center_z{0.0f};      // sim world Z (server world Y)
+    float half_extent_x{0.0f}; // footprint half-width along local obstacle X
+    float half_extent_z{0.0f}; // footprint half-width along local obstacle Z
+    float yaw_rad{0.0f};       // yaw about sim +Y (same sign as server +Z yaw)
+};
+
 struct StateResponse {
     std::uint8_t message_type{static_cast<std::uint8_t>(MessageType::StateResponse)};
     std::uint32_t sequence_id{0};
@@ -54,6 +63,8 @@ struct StateResponse {
     std::array<float, 18> joint_velocities{};
     std::array<std::uint8_t, 6> foot_contacts{};
     std::array<std::array<float, 3>, 6> foot_contact_normals{}; // sim world
+    std::uint32_t obstacle_count{0};
+    std::array<ObstacleFootprint, kMaxObstacleFootprints> obstacles{};
 };
 
 struct ConfigCommand {
@@ -73,6 +84,7 @@ struct ConfigAck {
 #pragma pack(pop)
 
 static_assert(std::is_trivially_copyable_v<StepCommand>);
+static_assert(std::is_trivially_copyable_v<ObstacleFootprint>);
 static_assert(std::is_trivially_copyable_v<StateResponse>);
 static_assert(std::is_trivially_copyable_v<ConfigCommand>);
 static_assert(std::is_trivially_copyable_v<ConfigAck>);

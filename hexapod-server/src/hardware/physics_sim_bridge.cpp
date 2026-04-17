@@ -7,6 +7,7 @@
 #include "imu_physics.hpp"
 #include "types.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
@@ -101,6 +102,16 @@ EulerAnglesRad3 matToRollPitchYawZyx(const Mat3d& r) {
         yaw = 0.0;
     }
     return EulerAnglesRad3{roll, pitch, yaw};
+}
+
+PhysicsSimObstacleFootprint obstacleFootprintToServer(const physics_sim::ObstacleFootprint& in) {
+    PhysicsSimObstacleFootprint out{};
+    out.center_x_m = static_cast<double>(in.center_x);
+    out.center_y_m = static_cast<double>(in.center_z);
+    out.half_extent_x_m = static_cast<double>(in.half_extent_x);
+    out.half_extent_y_m = static_cast<double>(in.half_extent_z);
+    out.yaw_rad = static_cast<double>(in.yaw_rad);
+    return out;
 }
 
 } // namespace
@@ -348,6 +359,18 @@ bool PhysicsSimBridge::read(RobotState& out) {
         return false;
     }
 
+    {
+        std::vector<PhysicsSimObstacleFootprint> footprints{};
+        const std::size_t obstacle_count =
+            std::min<std::size_t>(rsp.obstacle_count, rsp.obstacles.size());
+        footprints.reserve(obstacle_count);
+        for (std::size_t i = 0; i < obstacle_count; ++i) {
+            footprints.push_back(obstacleFootprintToServer(rsp.obstacles[i]));
+        }
+        const std::lock_guard<std::mutex> lock(obstacle_mutex_);
+        latest_obstacle_footprints_ = std::move(footprints);
+    }
+
     out = RobotState{};
     out.timestamp_us = now_us();
     out.sample_id = static_cast<std::uint64_t>(step.sequence_id);
@@ -418,4 +441,9 @@ bool PhysicsSimBridge::read(RobotState& out) {
 
 std::optional<BridgeCommandResultMetadata> PhysicsSimBridge::last_bridge_result() const {
     return last_result_;
+}
+
+std::vector<PhysicsSimObstacleFootprint> PhysicsSimBridge::latestObstacleFootprints() const {
+    const std::lock_guard<std::mutex> lock(obstacle_mutex_);
+    return latest_obstacle_footprints_;
 }

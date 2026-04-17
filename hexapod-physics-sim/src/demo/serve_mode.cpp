@@ -1,6 +1,7 @@
 #include "demo/serve_mode.hpp"
 
 #include "demo/frame_sink.hpp"
+#include "demo/scene_json.hpp"
 #include "demo/scenes.hpp"
 #include "minphys3d/collision/shapes.hpp"
 #include "minphys3d/core/world.hpp"
@@ -9,11 +10,13 @@
 #include "minphys3d/solver/types.hpp"
 #include "physics_sim_protocol.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
 #include <iostream>
+#include <optional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -50,6 +53,103 @@ Vec3 AverageUnitNormal(const Vec3& acc, const Vec3& n) {
         return n;
     }
     return sum * (1.0f / len);
+}
+
+float WrapAngleRad(const float angle_rad) {
+    return std::atan2(std::sin(angle_rad), std::cos(angle_rad));
+}
+
+float YawAboutSimUp(const Quat& q) {
+    const float siny_cosp = 2.0f * (q.w * q.y + q.x * q.z);
+    const float cosy_cosp = 1.0f - 2.0f * (q.y * q.y + q.z * q.z);
+    return std::atan2(siny_cosp, cosy_cosp);
+}
+
+std::optional<physics_sim::ObstacleFootprint> BuildObstacleFootprint(const Body& body) {
+    if (body.shape == ShapeType::Plane) {
+        return std::nullopt;
+    }
+
+    physics_sim::ObstacleFootprint footprint{};
+    footprint.center_x = body.position.x;
+    footprint.center_z = body.position.z;
+    footprint.yaw_rad = WrapAngleRad(YawAboutSimUp(body.orientation));
+
+    switch (body.shape) {
+        case ShapeType::Box:
+        case ShapeType::Compound:
+            footprint.half_extent_x = body.halfExtents.x;
+            footprint.half_extent_z = body.halfExtents.z;
+            break;
+        case ShapeType::Sphere:
+            footprint.half_extent_x = body.radius;
+            footprint.half_extent_z = body.radius;
+            footprint.yaw_rad = 0.0f;
+            break;
+        case ShapeType::Capsule:
+        case ShapeType::Cylinder:
+        case ShapeType::HalfCylinder: {
+            const float extent = std::max(body.radius, body.halfHeight + body.radius);
+            footprint.half_extent_x = extent;
+            footprint.half_extent_z = extent;
+            footprint.yaw_rad = 0.0f;
+            break;
+        }
+        default:
+            return std::nullopt;
+    }
+
+    if (footprint.half_extent_x <= 0.0f || footprint.half_extent_z <= 0.0f) {
+        return std::nullopt;
+    }
+    return footprint;
+}
+
+std::vector<std::uint32_t> CollectObstacleBodyIds(const World& world, const HexapodSceneObjects& scene) {
+    std::vector<std::uint32_t> out{};
+    std::vector<bool> robot_body_flags(world.GetBodyCount(), false);
+    for (const std::uint32_t id : scene.body_ids) {
+        if (id < robot_body_flags.size()) {
+            robot_body_flags[id] = true;
+        }
+    }
+
+    for (std::uint32_t body_id = 0; body_id < world.GetBodyCount(); ++body_id) {
+        if (robot_body_flags[body_id]) {
+            continue;
+        }
+        const Body& body = world.GetBody(body_id);
+        if (body.shape == ShapeType::Plane) {
+            continue;
+        }
+        if (BuildObstacleFootprint(body).has_value()) {
+            out.push_back(body_id);
+        }
+    }
+    return out;
+}
+
+void FillObstacleFootprints(const World& world,
+                            const std::vector<std::uint32_t>& obstacle_body_ids,
+                            physics_sim::StateResponse& rsp) {
+    rsp.obstacle_count = 0;
+    for (const std::uint32_t body_id : obstacle_body_ids) {
+        if (rsp.obstacle_count >= physics_sim::kMaxObstacleFootprints) {
+            break;
+        }
+        const auto footprint = BuildObstacleFootprint(world.GetBody(body_id));
+        if (!footprint.has_value()) {
+            continue;
+        }
+        rsp.obstacles[static_cast<std::size_t>(rsp.obstacle_count)] = *footprint;
+        ++rsp.obstacle_count;
+    }
+}
+
+void EmitObstacleBodies(FrameSink& sink, const World& world, const std::vector<std::uint32_t>& obstacle_body_ids) {
+    for (const std::uint32_t body_id : obstacle_body_ids) {
+        sink.emit_body(body_id, world.GetBody(body_id));
+    }
 }
 
 void FillFootContactsFromManifolds(
@@ -107,7 +207,8 @@ void FillFootContactsFromManifolds(
 int RunPhysicsServeMode(std::uint16_t listen_port,
                         SinkKind preview_sink,
                         const std::string& preview_udp_host,
-                        int preview_udp_port) {
+                        int preview_udp_port,
+                        const std::string& scene_file) {
     const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) {
         std::cerr << "[serve] socket() failed\n";
@@ -128,6 +229,21 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     World world(Vec3{0.0f, -9.81f, 0.0f});
     HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
+    int solver_iterations = 8;
+
+    if (!scene_file.empty()) {
+        std::string error;
+        int appended_joints = 0;
+        if (!AppendWorldFromMinphysSceneJsonFile(
+                scene_file, world, solver_iterations, error, &appended_joints)) {
+            std::cerr << "[serve] failed to append scene file '" << scene_file << "': " << error << "\n";
+            ::close(fd);
+            return 1;
+        }
+        std::cout << "[serve] appended scene file '" << scene_file << "' joints=" << appended_joints << "\n";
+    }
+
+    const std::vector<std::uint32_t> obstacle_body_ids = CollectObstacleBodyIds(world, scene);
 
     JointSolverConfig joint_cfg = world.GetJointSolverConfig();
     joint_cfg.servoPositionPasses = 8;
@@ -142,7 +258,6 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     }
 
     bool configured = false;
-    int solver_iterations = 8;
     std::vector<std::byte> recv_buf(kRecvBufBytes);
 
     std::unique_ptr<FrameSink> visual = MakeFrameSink(preview_sink, preview_udp_host, preview_udp_port);
@@ -152,6 +267,9 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     std::cout << "[hexapod-physics-sim] serve mode UDP *:" << listen_port;
     if (preview_sink == SinkKind::Udp) {
         std::cout << "  preview UDP -> " << preview_udp_host << ":" << preview_udp_port;
+    }
+    if (!scene_file.empty()) {
+        std::cout << "  scene_file=" << scene_file;
     }
     std::cout << "\n";
 
@@ -236,6 +354,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                     rsp.joint_velocities[i] = 0.0f;
                 }
                 FillFootContactsFromManifolds(world, scene, rsp.foot_contacts, rsp.foot_contact_normals);
+                FillObstacleFootprints(world, obstacle_body_ids, rsp);
 
                 (void)::sendto(
                     fd,
@@ -290,6 +409,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             }
 
             FillFootContactsFromManifolds(world, scene, rsp.foot_contacts, rsp.foot_contact_normals);
+            FillObstacleFootprints(world, obstacle_body_ids, rsp);
 
             (void)::sendto(
                 fd,
@@ -302,6 +422,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             preview_sim_time_s += step.dt_seconds;
             visual->begin_frame(preview_frame, preview_sim_time_s);
             EmitSceneBodies(*visual, world, scene);
+            EmitObstacleBodies(*visual, world, obstacle_body_ids);
             visual->end_frame();
             ++preview_frame;
             continue;

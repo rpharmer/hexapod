@@ -1,5 +1,6 @@
 // Integration: fork hexapod-physics-sim --serve and exchange Config + Step over UDP.
 // argv[1] must be the path to the hexapod-physics-sim executable (CTest passes $<TARGET_FILE:...>).
+// argv[2], when provided, is a scene file to append in serve mode and should yield obstacle footprints.
 
 #include "physics_sim_protocol.hpp"
 
@@ -54,12 +55,14 @@ int main(int argc, char** argv) {
     return 0;
 #else
     if (argc < 2) {
-        std::cerr << "usage: test_serve_ipc PATH_TO_hexapod-physics-sim\n";
+        std::cerr << "usage: test_serve_ipc PATH_TO_hexapod-physics-sim [SCENE_FILE]\n";
         return 0;
     }
 
     constexpr int kPort = 20977;
     const char* sim_exe = argv[1];
+    const char* scene_file = argc >= 3 ? argv[2] : nullptr;
+    const bool expect_obstacles = scene_file != nullptr;
 
     pid_t pid = ::fork();
     if (pid < 0) {
@@ -68,7 +71,18 @@ int main(int argc, char** argv) {
     }
     if (pid == 0) {
         const std::string port_str = std::to_string(kPort);
-        ::execl(sim_exe, sim_exe, "--serve", "--serve-port", port_str.c_str(), nullptr);
+        if (scene_file != nullptr) {
+            ::execl(sim_exe,
+                    sim_exe,
+                    "--serve",
+                    "--serve-port",
+                    port_str.c_str(),
+                    "--scene-file",
+                    scene_file,
+                    nullptr);
+        } else {
+            ::execl(sim_exe, sim_exe, "--serve", "--serve-port", port_str.c_str(), nullptr);
+        }
         std::perror("execl");
         _exit(127);
     }
@@ -177,6 +191,13 @@ int main(int argc, char** argv) {
         ::waitpid(pid, nullptr, 0);
         return 12;
     }
+    if (expect_obstacles && peek_rsp.obstacle_count == 0) {
+        std::cerr << "peek expected obstacle footprints from appended scene\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 12;
+    }
 
     physics_sim::StepCommand step{};
     step.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StepCommand);
@@ -215,6 +236,13 @@ int main(int argc, char** argv) {
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return 15;
+    }
+    if (expect_obstacles && rsp.obstacle_count == 0) {
+        std::cerr << "step expected obstacle footprints from appended scene\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 16;
     }
 
     ::close(fd);

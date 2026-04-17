@@ -2,6 +2,8 @@
 #ifndef HEXAPOD_SERVER_HPP
 #define HEXAPOD_SERVER_HPP
 #include "serialCommsServer.hpp"
+#include "local_map.hpp"
+#include "local_planner.hpp"
 #include "types.hpp"
 #include "config_validation.hpp"
 
@@ -75,6 +77,19 @@ struct ParsedToml
   double navBodyFrameIntegralKiLatPerS{0.0};
   /** Integral clamp per axis (m*s); 0 = no clamp in bridge. */
   double navBodyFrameIntegralAbsCapMetersSeconds{0.0};
+  int localMapWidthCells{kDefaultLocalMapWidthCells};
+  int localMapHeightCells{kDefaultLocalMapHeightCells};
+  double localMapResolutionM{kDefaultLocalMapResolutionM};
+  double localMapObstacleInflationRadiusM{kDefaultLocalMapObstacleInflationRadiusM};
+  double localMapSafetyMarginM{kDefaultLocalMapSafetyMarginM};
+  double localMapObservationTimeoutS{kDefaultLocalMapObservationTimeoutS};
+  double localMapObservationDecayS{kDefaultLocalMapObservationDecayS};
+  double localPlannerReplanPeriodS{kDefaultLocalPlannerReplanPeriodS};
+  double localPlannerSearchHorizonM{kDefaultLocalPlannerSearchHorizonM};
+  int localPlannerSearchNodeBudget{kDefaultLocalPlannerSearchNodeBudget};
+  int localPlannerMaxOutputWaypoints{kDefaultLocalPlannerMaxOutputWaypoints};
+  int localPlannerSegmentCellHorizon{kDefaultLocalPlannerSegmentCellHorizon};
+  double localPlannerBlockedTimeoutS{kDefaultLocalPlannerBlockedTimeoutS};
 
   double coxaLengthM{0.043};
   double femurLengthM{0.060};

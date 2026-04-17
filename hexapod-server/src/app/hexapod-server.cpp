@@ -13,10 +13,12 @@
 #include "hexapod-server.hpp"
 #include "logger.hpp"
 #include "mode_runners.hpp"
+#include "navigation_manager.hpp"
 #include "robot_control.hpp"
 #include "runtime_teardown.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
+#include "physics_sim_local_map_source.hpp"
 #include "sim_hardware_bridge.hpp"
 #include "toml_parser.hpp"
 
@@ -198,6 +200,16 @@ int main(int argc, char** argv)
            control_cfg.telemetry.geometry_resend_interval_sec);
 
   auto hw = makeHardwareBridge(config, logger);
+  auto navigation_manager =
+      std::make_unique<NavigationManager>(control_cfg.local_map, control_cfg.local_planner, control_cfg.nav_bridge);
+  if (config.runtimeMode == "physics-sim") {
+    if (auto* physics_sim_bridge = dynamic_cast<PhysicsSimBridge*>(hw.get())) {
+      navigation_manager->addObservationSource(std::make_shared<PhysicsSimLocalMapObservationSource>(
+          *physics_sim_bridge, std::max(0.02, control_cfg.local_map.resolution_m * 0.5)));
+      LOG_INFO(logger, "Navigation.LocalMap.Source=physics-sim");
+    }
+  }
+
   std::unique_ptr<IEstimator> estimator;
   if (config.runtimeMode == "physics-sim") {
     estimator = std::make_unique<PhysicsSimEstimator>();
@@ -209,6 +221,8 @@ int main(int argc, char** argv)
   if (!robot.init()) {
     return 1;
   }
+
+  robot.setNavigationManager(std::move(navigation_manager));
 
   robot.start();
 

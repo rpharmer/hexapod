@@ -54,6 +54,7 @@ bool RobotRuntime::init() {
     timing_metrics_.reset();
     next_telemetry_publish_at_ = TimePointUs{};
     next_geometry_refresh_at_ = TimePointUs{};
+    last_effective_intent_estimator_sample_id_ = 0;
 
     return true;
 }
@@ -96,7 +97,7 @@ void RobotRuntime::controlStep() {
     timing_metrics_.update(now);
 
     const RobotState est = estimated_state_.read();
-    const MotionIntent intent = motion_intent_.read();
+    const MotionIntent intent = resolveEffectiveIntent(est, now);
     const SafetyState safety_state = safety_state_.read();
     const bool bus_ok = raw_state_.read().bus_ok;
 
@@ -152,6 +153,9 @@ void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
     telemetry_sample.estimated_state = estimated_state_.read();
     telemetry_sample.joint_targets = joint_targets_.read();
     telemetry_sample.status = status_.read();
+    if (navigation_manager_) {
+        telemetry_sample.navigation = navigation_manager_->monitor();
+    }
     telemetry_sample.timestamp_us = now;
     telemetry_publisher_->publishControlStep(telemetry_sample);
 }
@@ -159,8 +163,8 @@ void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
 void RobotRuntime::safetyStep() {
     const RobotState raw = raw_state_.read();
     const RobotState est = estimated_state_.read();
-    const MotionIntent intent = motion_intent_.read();
     const TimePointUs now = now_us();
+    const MotionIntent intent = resolveEffectiveIntent(est, now);
     const FreshnessPolicy::Evaluation freshness = freshness_gate_.evaluate(
         RuntimeFreshnessGate::EvaluationMode::SafetyLenient, now, est, intent);
 
@@ -213,6 +217,30 @@ bool RobotRuntime::setSimFaultToggles(const SimHardwareFaultToggles& toggles) {
     return false;
 }
 
+void RobotRuntime::setNavigationManager(std::unique_ptr<NavigationManager> navigation_manager) {
+    navigation_manager_ = std::move(navigation_manager);
+    last_effective_intent_estimator_sample_id_ = 0;
+}
+
 ControlStatus RobotRuntime::getStatus() const {
     return status_.read();
+}
+
+MotionIntent RobotRuntime::resolveEffectiveIntent(const RobotState& est, const TimePointUs now) {
+    if (!navigation_manager_) {
+        const MotionIntent intent = motion_intent_.read();
+        effective_motion_intent_.write(intent);
+        return intent;
+    }
+
+    if (est.sample_id != 0 &&
+        est.sample_id == last_effective_intent_estimator_sample_id_) {
+        return effective_motion_intent_.read();
+    }
+
+    const MotionIntent fallback = motion_intent_.read();
+    const MotionIntent effective = navigation_manager_->mergeIntent(fallback, est, now);
+    effective_motion_intent_.write(effective);
+    last_effective_intent_estimator_sample_id_ = est.sample_id;
+    return effective;
 }

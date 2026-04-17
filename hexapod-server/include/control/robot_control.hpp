@@ -23,9 +23,12 @@ public:
 
     void setMotionIntent(const MotionIntent& intent);
     bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
+    void setNavigationManager(std::unique_ptr<NavigationManager> navigation_manager);
     ControlStatus getStatus() const;
 
     [[nodiscard]] RobotState estimatedSnapshot() const { return runtime_.estimatedSnapshot(); }
+    [[nodiscard]] NavigationManager* navigationManager() { return runtime_.navigationManager(); }
+    [[nodiscard]] const NavigationManager* navigationManager() const { return runtime_.navigationManager(); }
 
 private:
     control_config::ControlConfig config_;
