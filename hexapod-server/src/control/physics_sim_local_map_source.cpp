@@ -1,5 +1,7 @@
 #include "physics_sim_local_map_source.hpp"
 
+#include "types.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -18,6 +20,7 @@ PhysicsSimLocalMapObservationSource::PhysicsSimLocalMapObservationSource(
       sample_spacing_m_(normalizeSampleSpacing(sample_spacing_m)) {}
 
 LocalMapObservation PhysicsSimLocalMapObservationSource::collect(const NavPose2d& /*pose*/,
+                                                                 const RobotState& /*est*/,
                                                                  const TimePointUs now) {
     LocalMapObservation out{};
     out.timestamp_us = now;

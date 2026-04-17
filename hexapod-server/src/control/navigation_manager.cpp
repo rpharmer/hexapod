@@ -163,7 +163,7 @@ MotionIntent NavigationManager::mergeIntent(const MotionIntent& fallback,
         return out;
     }
 
-    const std::vector<LocalMapObservation> observations = collectObservations(pose, now);
+    const std::vector<LocalMapObservation> observations = collectObservations(pose, est, now);
     local_map_builder_.update(pose, now, observations);
     const LocalMapSnapshot snapshot = local_map_builder_.snapshot(now);
     monitor_.map_fresh = snapshot.fresh;
@@ -234,6 +234,7 @@ MotionIntent NavigationManager::makeStopIntent() const {
 }
 
 std::vector<LocalMapObservation> NavigationManager::collectObservations(const NavPose2d& pose,
+                                                                        const RobotState& est,
                                                                         const TimePointUs now) const {
     std::vector<LocalMapObservation> out{};
     out.reserve(observation_sources_.size());
@@ -241,7 +242,7 @@ std::vector<LocalMapObservation> NavigationManager::collectObservations(const Na
         if (!source) {
             continue;
         }
-        out.push_back(source->collect(pose, now));
+        out.push_back(source->collect(pose, est, now));
     }
     return out;
 }

@@ -92,7 +92,7 @@ private:
     void run() {
         std::uint8_t handled = 0;
         while (handled < 3 && ok_.load()) {
-            std::array<std::byte, 512> buf{};
+            std::array<std::byte, 4096> buf{};
             sockaddr_in peer{};
             socklen_t peer_len = sizeof(peer);
             const ssize_t n = ::recvfrom(
@@ -237,6 +237,11 @@ int main() {
     if (!expect(out.has_imu && out.imu.valid, "physics bridge should populate IMU from StateResponse") ||
         !expect(nearlyEqual(vecNorm(out.imu.accel_mps2), 9.80665, 1e-3),
                 "IMU specific-force magnitude should be ~1g for upright stub pose")) {
+        return EXIT_FAILURE;
+    }
+
+    if (!expect(!out.has_matrix_lidar,
+                "stub StateResponse should leave matrix_lidar disabled (matrix_lidar_valid=0)")) {
         return EXIT_FAILURE;
     }
 

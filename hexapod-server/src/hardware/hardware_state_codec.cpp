@@ -23,6 +23,9 @@ bool HardwareStateCodec::decode_full_hardware_state(const std::vector<uint8_t>& 
         return false;
     }
 
+    out.has_matrix_lidar = false;
+    out.matrix_lidar = MatrixLidarFrame{};
+
     std::size_t idx = 0;
     for (auto& leg : out.leg_states) {
         for (int j = 0; j < kJointsPerLeg; ++j) {

@@ -67,7 +67,9 @@ public:
 
 private:
     [[nodiscard]] MotionIntent makeStopIntent() const;
-    [[nodiscard]] std::vector<LocalMapObservation> collectObservations(const NavPose2d& pose, TimePointUs now) const;
+    [[nodiscard]] std::vector<LocalMapObservation> collectObservations(const NavPose2d& pose,
+                                                                       const RobotState& est,
+                                                                       TimePointUs now) const;
     [[nodiscard]] bool activeSegmentBlocked(const LocalMapSnapshot& snapshot) const;
     [[nodiscard]] bool terminalGoalReached(const NavPose2d& pose) const;
     void planOrBlock(const NavPose2d& pose, const LocalMapSnapshot& snapshot, TimePointUs now);

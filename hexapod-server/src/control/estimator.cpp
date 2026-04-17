@@ -107,6 +107,8 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
     est.foot_contacts = raw.foot_contacts;
     est.imu = raw.imu;
     est.has_imu = raw.has_imu;
+    est.matrix_lidar = raw.matrix_lidar;
+    est.has_matrix_lidar = raw.has_matrix_lidar;
     est.sample_id = raw.sample_id;
     est.timestamp_us = raw.timestamp_us;
     est.body_twist_state.body_trans_mps = Vec3{};

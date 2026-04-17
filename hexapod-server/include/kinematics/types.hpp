@@ -172,6 +172,17 @@ struct ImuSample {
     bool valid{false};
 };
 
+/** Matrix ToF LiDAR ranges in millimetres (invalid cells use `0xFFFF`, same as physics wire format). */
+struct MatrixLidarFrame {
+    static constexpr std::size_t kMaxCells = 512;
+    TimePointUs timestamp_us{};
+    std::uint8_t model{0};
+    std::uint8_t cols{0};
+    std::uint8_t rows{0};
+    std::array<std::uint16_t, kMaxCells> ranges_mm{};
+    bool valid{false};
+};
+
 struct MotionIntent {
   RobotMode requested_mode{RobotMode::SAFE_IDLE};
   GaitType gait{GaitType::TRIPOD};
@@ -206,6 +217,8 @@ struct RobotState {
   /** Populated by physics sim bridge, hardware when available, or test doubles. */
   ImuSample imu{};
   bool has_imu{false};
+  MatrixLidarFrame matrix_lidar{};
+  bool has_matrix_lidar{false};
 };
 
 struct ControlStatus {

@@ -48,7 +48,7 @@ class ILocalMapObservationSource {
 public:
     virtual ~ILocalMapObservationSource() = default;
 
-    virtual LocalMapObservation collect(const NavPose2d& pose, TimePointUs now) = 0;
+    virtual LocalMapObservation collect(const NavPose2d& pose, const RobotState& est, TimePointUs now) = 0;
 };
 
 class SyntheticLocalMapObservationSource final : public ILocalMapObservationSource {
@@ -56,7 +56,7 @@ public:
     void setStaticSamples(std::vector<LocalMapObservationSample> samples);
     void queueObservation(LocalMapObservation observation);
 
-    [[nodiscard]] LocalMapObservation collect(const NavPose2d& pose, TimePointUs now) override;
+    [[nodiscard]] LocalMapObservation collect(const NavPose2d& pose, const RobotState& est, TimePointUs now) override;
 
 private:
     mutable std::mutex mutex_{};

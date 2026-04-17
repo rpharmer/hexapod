@@ -26,6 +26,19 @@ inline constexpr float kWireZeroCoxaMechanicalRad = 0.0f;
 inline constexpr float kWireZeroFemurMechanicalRad = kAssemblyFemurPitchRad;
 inline constexpr float kWireZeroTibiaMechanicalRad = kAssemblyTibiaPitchRad;
 
+/// Matrix ToF LiDAR models sharing the same wire layout (`StateResponse` matrix LiDAR tail).
+enum class MatrixLidarModel : std::uint8_t {
+    None = 0,
+    /// 64×8 grid, 120°×20° FOV, 100–5000 mm range, 14 mm resolution (primary sim sensor).
+    Matrix64x8 = 1,
+    /// VL53L7CX-style 8×8 grid, 60°×60° FOV, 20–3500 mm (same payload; unused cells set to `kMatrixLidarInvalidMm`).
+    Vl53l7Cx8x8 = 2,
+};
+
+/// Sentinel for “no return” / invalid cell in `matrix_lidar_ranges_mm`.
+inline constexpr std::uint16_t kMatrixLidarInvalidMm = 0xFFFF;
+inline constexpr std::size_t kMatrixLidarMaxCells = 512;
+
 enum class MessageType : std::uint8_t {
     StepCommand = 1,
     StateResponse = 2,
@@ -65,6 +78,12 @@ struct StateResponse {
     std::array<std::array<float, 3>, 6> foot_contact_normals{}; // sim world
     std::uint32_t obstacle_count{0};
     std::array<ObstacleFootprint, kMaxObstacleFootprints> obstacles{};
+    /// Populated by `hexapod-physics-sim --serve` when matrix LiDAR simulation is enabled.
+    std::uint8_t matrix_lidar_valid{0};
+    MatrixLidarModel matrix_lidar_model{MatrixLidarModel::None};
+    std::uint8_t matrix_lidar_cols{0};
+    std::uint8_t matrix_lidar_rows{0};
+    std::array<std::uint16_t, kMatrixLidarMaxCells> matrix_lidar_ranges_mm{};
 };
 
 struct ConfigCommand {

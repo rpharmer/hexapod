@@ -1,4 +1,5 @@
 #include "physics_sim_local_map_source.hpp"
+#include "types.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -42,7 +43,8 @@ int main() {
     provider.footprints.push_back(PhysicsSimObstacleFootprint{0.0, 0.0, 0.10, 0.10, kHalfPi});
 
     PhysicsSimLocalMapObservationSource source(provider, 0.10);
-    const LocalMapObservation observation = source.collect(NavPose2d{}, TimePointUs{123456});
+    RobotState est{};
+    const LocalMapObservation observation = source.collect(NavPose2d{}, est, TimePointUs{123456});
 
     if (!expect(observation.timestamp_us.value == 123456, "source should stamp observation with collection time")) {
         return EXIT_FAILURE;

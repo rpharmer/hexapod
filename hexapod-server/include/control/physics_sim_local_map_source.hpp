@@ -9,7 +9,7 @@ public:
         const IPhysicsSimObstacleFootprintProvider& provider,
         double sample_spacing_m = 0.05);
 
-    [[nodiscard]] LocalMapObservation collect(const NavPose2d& pose, TimePointUs now) override;
+    [[nodiscard]] LocalMapObservation collect(const NavPose2d& pose, const RobotState& est, TimePointUs now) override;
 
 private:
     const IPhysicsSimObstacleFootprintProvider& provider_;

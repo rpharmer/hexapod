@@ -18,6 +18,7 @@
 #include "runtime_teardown.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
+#include "matrix_lidar_local_map_source.hpp"
 #include "physics_sim_local_map_source.hpp"
 #include "sim_hardware_bridge.hpp"
 #include "toml_parser.hpp"
@@ -204,9 +205,10 @@ int main(int argc, char** argv)
       std::make_unique<NavigationManager>(control_cfg.local_map, control_cfg.local_planner, control_cfg.nav_bridge);
   if (config.runtimeMode == "physics-sim") {
     if (auto* physics_sim_bridge = dynamic_cast<PhysicsSimBridge*>(hw.get())) {
+      navigation_manager->addObservationSource(std::make_shared<MatrixLidarLocalMapObservationSource>());
       navigation_manager->addObservationSource(std::make_shared<PhysicsSimLocalMapObservationSource>(
           *physics_sim_bridge, std::max(0.02, control_cfg.local_map.resolution_m * 0.5)));
-      LOG_INFO(logger, "Navigation.LocalMap.Source=physics-sim");
+      LOG_INFO(logger, "Navigation.LocalMap.Sources=matrix-lidar,physics-sim-footprints");
     }
   }
 

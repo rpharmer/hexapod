@@ -48,6 +48,7 @@ endif()
 if(MINPHYS3D_BUILD_DEMO)
     add_executable(hexapod-physics-sim
         src/main.cpp
+        src/demo/matrix_lidar_sim.cpp
         src/demo/serve_mode.cpp
         src/demo/scenes.cpp
         src/demo/frame_sink.cpp

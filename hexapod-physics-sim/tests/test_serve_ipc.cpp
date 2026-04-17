@@ -191,6 +191,35 @@ int main(int argc, char** argv) {
         ::waitpid(pid, nullptr, 0);
         return 12;
     }
+    if (peek_rsp.matrix_lidar_valid != 1) {
+        std::cerr << "peek expected matrix_lidar_valid\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 12;
+    }
+    if (peek_rsp.matrix_lidar_cols != 64 || peek_rsp.matrix_lidar_rows != 8) {
+        std::cerr << "peek unexpected matrix lidar dimensions\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 12;
+    }
+    {
+        int finite_mm = 0;
+        for (std::uint16_t mm : peek_rsp.matrix_lidar_ranges_mm) {
+            if (mm != 0xFFFF && mm >= 100 && mm <= 5000) {
+                ++finite_mm;
+            }
+        }
+        if (finite_mm < 32) {
+            std::cerr << "peek expected many finite matrix lidar returns (floor/obstacles)\n";
+            ::close(fd);
+            ::kill(pid, SIGTERM);
+            ::waitpid(pid, nullptr, 0);
+            return 12;
+        }
+    }
     if (expect_obstacles && peek_rsp.obstacle_count == 0) {
         std::cerr << "peek expected obstacle footprints from appended scene\n";
         ::close(fd);

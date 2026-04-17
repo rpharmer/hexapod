@@ -115,6 +115,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/nav_to_locomotion.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/nav_locomotion_bridge.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/physics_sim_estimator.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/matrix_lidar_local_map_source.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/physics_sim_local_map_source.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/plane_estimation.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/probe_contact_logic.cpp"
@@ -157,6 +158,7 @@ set(HEXAPOD_SERVER_SOURCES
     # scenario
     "${CMAKE_CURRENT_SOURCE_DIR}/src/scenario/scenario_driver.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/sensors/imu_physics.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/sensors/matrix_lidar_physics.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/sensors/software_imu.cpp"
 
     # utils
@@ -222,6 +224,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_imu_physics tests/test_imu_physics.cpp)
     target_link_libraries(test_imu_physics PRIVATE hexapod_server_core)
     add_test(NAME imu_physics COMMAND test_imu_physics)
+
+    add_executable(test_matrix_lidar tests/test_matrix_lidar.cpp)
+    target_link_libraries(test_matrix_lidar PRIVATE hexapod_server_core)
+    add_test(NAME matrix_lidar COMMAND test_matrix_lidar)
 
     add_executable(test_control_pipeline_sanity tests/test_control_pipeline_sanity.cpp)
     target_link_libraries(test_control_pipeline_sanity PRIVATE hexapod_server_core)
@@ -293,6 +299,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_navigation_manager PRIVATE hexapod_server_core)
     add_test(NAME navigation_manager COMMAND test_navigation_manager)
 
+    add_executable(test_navigation_matrix_lidar tests/test_navigation_matrix_lidar.cpp)
+    target_link_libraries(test_navigation_matrix_lidar PRIVATE hexapod_server_core)
+    add_test(NAME navigation_matrix_lidar COMMAND test_navigation_matrix_lidar)
+
     add_executable(test_navigation_runtime tests/test_navigation_runtime.cpp)
     target_link_libraries(test_navigation_runtime PRIVATE hexapod_server_core)
     add_test(NAME navigation_runtime COMMAND test_navigation_runtime)
@@ -300,6 +310,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_physics_sim_local_map_source tests/test_physics_sim_local_map_source.cpp)
     target_link_libraries(test_physics_sim_local_map_source PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_local_map_source COMMAND test_physics_sim_local_map_source)
+
+    add_executable(test_matrix_lidar_local_map_source tests/test_matrix_lidar_local_map_source.cpp)
+    target_link_libraries(test_matrix_lidar_local_map_source PRIVATE hexapod_server_core)
+    add_test(NAME matrix_lidar_local_map_source COMMAND test_matrix_lidar_local_map_source)
 
     add_executable(test_physics_sim_mapping_roundtrip tests/test_physics_sim_mapping_roundtrip.cpp)
     target_link_libraries(test_physics_sim_mapping_roundtrip PRIVATE hexapod_server_core)

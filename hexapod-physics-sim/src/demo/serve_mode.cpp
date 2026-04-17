@@ -1,6 +1,7 @@
 #include "demo/serve_mode.hpp"
 
 #include "demo/frame_sink.hpp"
+#include "demo/matrix_lidar_sim.hpp"
 #include "demo/scene_json.hpp"
 #include "demo/scenes.hpp"
 #include "minphys3d/collision/shapes.hpp"
@@ -355,6 +356,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 }
                 FillFootContactsFromManifolds(world, scene, rsp.foot_contacts, rsp.foot_contact_normals);
                 FillObstacleFootprints(world, obstacle_body_ids, rsp);
+                FillSimMatrixLidar64x8(world, scene, world.GetBody(scene.body), rsp);
 
                 (void)::sendto(
                     fd,
@@ -410,6 +412,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
 
             FillFootContactsFromManifolds(world, scene, rsp.foot_contacts, rsp.foot_contact_normals);
             FillObstacleFootprints(world, obstacle_body_ids, rsp);
+            FillSimMatrixLidar64x8(world, scene, world.GetBody(scene.body), rsp);
 
             (void)::sendto(
                 fd,

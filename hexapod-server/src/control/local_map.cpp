@@ -1,5 +1,7 @@
 #include "local_map.hpp"
 
+#include "types.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -30,7 +32,9 @@ void SyntheticLocalMapObservationSource::queueObservation(LocalMapObservation ob
               });
 }
 
-LocalMapObservation SyntheticLocalMapObservationSource::collect(const NavPose2d& /*pose*/, const TimePointUs now) {
+LocalMapObservation SyntheticLocalMapObservationSource::collect(const NavPose2d& /*pose*/,
+                                                                  const RobotState& /*est*/,
+                                                                  const TimePointUs now) {
     const std::lock_guard<std::mutex> lock(mutex_);
     LocalMapObservation merged{};
     merged.timestamp_us = now;

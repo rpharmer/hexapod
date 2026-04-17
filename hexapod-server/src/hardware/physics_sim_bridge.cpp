@@ -5,6 +5,7 @@
 #include "logger.hpp"
 #include "physics_sim_protocol.hpp"
 #include "imu_physics.hpp"
+#include "matrix_lidar_physics.hpp"
 #include "types.hpp"
 
 #include <algorithm>
@@ -410,6 +411,8 @@ bool PhysicsSimBridge::read(RobotState& out) {
 
     imuSampleFromPhysicsStateResponse(rsp, out.timestamp_us, out.imu);
     out.has_imu = out.imu.valid;
+
+    matrixLidarFromPhysicsStateResponse(rsp, out.timestamp_us, out);
 
     const Mat3d R_ws = frameSimToServer();
     const Mat3d R_sim = quatWxyzToMat3(
