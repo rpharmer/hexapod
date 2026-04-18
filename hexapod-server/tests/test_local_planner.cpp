@@ -92,5 +92,18 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    std::vector<LocalMapObservationSample> narrow_free{};
+    for (double x = 0.0; x <= 0.2; x += 0.05) {
+        narrow_free.push_back(LocalMapObservationSample{x, 0.0, LocalMapCellState::Free});
+    }
+    narrow_free.push_back(LocalMapObservationSample{0.05, 0.20, LocalMapCellState::Occupied});
+    const LocalMapSnapshot narrow_free_snapshot = makeSnapshot(narrow_free);
+    const LocalPlanResult narrow_free_result =
+        planner.plan(LocalPlanRequest{NavPose2d{}, NavPose2d{0.4, 0.0, 0.0}, narrow_free_snapshot});
+    if (!expect(narrow_free_result.status == LocalPlanStatus::Blocked,
+                "planner should not treat unknown cells as free once obstacles have been observed")) {
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }

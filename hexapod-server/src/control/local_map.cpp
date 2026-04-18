@@ -103,7 +103,9 @@ void LocalMapBuilder::reset() {
     has_center_pose_ = false;
     center_pose_ = NavPose2d{};
     has_observations_ = false;
+    has_primary_observations_ = false;
     last_observation_timestamp_ = TimePointUs{};
+    last_primary_observation_timestamp_ = TimePointUs{};
     cells_.assign(static_cast<std::size_t>(config_.width_cells * config_.height_cells), CellRecord{});
 }
 
@@ -126,6 +128,12 @@ void LocalMapBuilder::update(const NavPose2d& pose,
         if (observation.timestamp_us.value > last_observation_timestamp_.value) {
             last_observation_timestamp_ = observation.timestamp_us;
         }
+        if (observation.freshness_class == LocalMapObservationFreshnessClass::Primary) {
+            has_primary_observations_ = true;
+            if (observation.timestamp_us.value > last_primary_observation_timestamp_.value) {
+                last_primary_observation_timestamp_ = observation.timestamp_us;
+            }
+        }
 
         for (const LocalMapObservationSample& sample : observation.samples) {
             int cell_x = 0;
@@ -134,6 +142,11 @@ void LocalMapBuilder::update(const NavPose2d& pose,
                 continue;
             }
             CellRecord& cell = cells_[indexOf(cell_x, cell_y)];
+            if (cell.last_update_us.value == observation.timestamp_us.value &&
+                cell.state == LocalMapCellState::Occupied &&
+                sample.state == LocalMapCellState::Free) {
+                continue;
+            }
             cell.state = sample.state;
             cell.last_update_us = observation.timestamp_us;
         }
@@ -150,9 +163,11 @@ LocalMapSnapshot LocalMapBuilder::snapshot(const TimePointUs now) const {
     out.raw = raw;
     out.inflated = inflated;
     out.last_observation_timestamp = last_observation_timestamp_;
+    out.last_primary_observation_timestamp = last_primary_observation_timestamp_;
     out.has_observations = has_observations_;
-    out.fresh = has_observations_ &&
-                ageSeconds(now, last_observation_timestamp_) <= config_.observation_timeout_s;
+    out.has_primary_observations = has_primary_observations_;
+    out.fresh = has_primary_observations_ &&
+                ageSeconds(now, last_primary_observation_timestamp_) <= config_.observation_timeout_s;
     out.nearest_obstacle_distance_m = nearestObstacleDistance(inflated);
     return out;
 }

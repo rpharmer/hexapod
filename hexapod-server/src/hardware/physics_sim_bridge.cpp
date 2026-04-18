@@ -27,10 +27,13 @@
 
 namespace {
 
-/// Maps sim world (Y-up) vectors into hexapod-server world (Z-up): (x,y,z)_svr = (x_s, z_s, y_s).
-/// Sim +Y is up; server +Z is up (so +Y_sim must map to +Z_svr, not -Z).
+constexpr double kHalfPi = 1.57079632679489661923;
+
+/// Maps sim world/body vectors into hexapod-server coordinates so the spawned chassis forward
+/// direction (sim local/world -Z) becomes server +X, left becomes +Y, and up stays +Z:
+/// (x,y,z)_svr = (-z_s, x_s, y_s).
 Vec3 simVecToServer(float x, float y, float z) {
-    return Vec3{static_cast<double>(x), static_cast<double>(z), static_cast<double>(y)};
+    return Vec3{-static_cast<double>(z), static_cast<double>(x), static_cast<double>(y)};
 }
 
 struct Mat3d {
@@ -72,19 +75,29 @@ Mat3d matMul(const Mat3d& a, const Mat3d& b) {
     return c;
 }
 
-// Fixed world-frame rotation R_ws * v_sim = v_server (Y-up sim -> Z-up server, same as simVecToServer).
+// Fixed sim->server change-of-basis matrix matching `simVecToServer`.
 Mat3d frameSimToServer() {
     Mat3d r{};
-    r.m[0][0] = 1.0;
+    r.m[0][0] = 0.0;
     r.m[0][1] = 0.0;
-    r.m[0][2] = 0.0;
-    r.m[1][0] = 0.0;
+    r.m[0][2] = -1.0;
+    r.m[1][0] = 1.0;
     r.m[1][1] = 0.0;
-    r.m[1][2] = 1.0;
+    r.m[1][2] = 0.0;
     r.m[2][0] = 0.0;
     r.m[2][1] = 1.0;
     r.m[2][2] = 0.0;
     return r;
+}
+
+Mat3d matTranspose(const Mat3d& a) {
+    Mat3d t{};
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            t.m[i][j] = a.m[j][i];
+        }
+    }
+    return t;
 }
 
 EulerAnglesRad3 matToRollPitchYawZyx(const Mat3d& r) {
@@ -107,11 +120,11 @@ EulerAnglesRad3 matToRollPitchYawZyx(const Mat3d& r) {
 
 PhysicsSimObstacleFootprint obstacleFootprintToServer(const physics_sim::ObstacleFootprint& in) {
     PhysicsSimObstacleFootprint out{};
-    out.center_x_m = static_cast<double>(in.center_x);
-    out.center_y_m = static_cast<double>(in.center_z);
+    out.center_x_m = -static_cast<double>(in.center_z);
+    out.center_y_m = static_cast<double>(in.center_x);
     out.half_extent_x_m = static_cast<double>(in.half_extent_x);
     out.half_extent_y_m = static_cast<double>(in.half_extent_z);
-    out.yaw_rad = static_cast<double>(in.yaw_rad);
+    out.yaw_rad = static_cast<double>(in.yaw_rad) + kHalfPi;
     return out;
 }
 
@@ -420,10 +433,10 @@ bool PhysicsSimBridge::read(RobotState& out) {
         rsp.body_orientation[1],
         rsp.body_orientation[2],
         rsp.body_orientation[3]);
-    // Convert the sim-world rotation into server-world coordinates by changing basis on
-    // both the source and destination side. A one-sided multiply leaves the upright sim
-    // pose looking like a tipped server pose.
-    const Mat3d R_srv = matMul(R_ws, matMul(R_sim, R_ws));
+    // Convert the sim-world rotation into server-world coordinates with a proper
+    // change-of-basis: R_srv = C * R_sim * C^-1, where C maps sim vectors into
+    // the server frame used by locomotion/navigation (+X forward, +Y left, +Z up).
+    const Mat3d R_srv = matMul(R_ws, matMul(R_sim, matTranspose(R_ws)));
     out.body_twist_state.twist_pos_rad = matToRollPitchYawZyx(R_srv);
 
     const Vec3 w_srv = simVecToServer(

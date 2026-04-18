@@ -5,7 +5,7 @@
     {
       "shape": "box",
       "mass": 2.0,
-      "position": [0.10, 0.12, 0.10],
+      "position": [0.12, 0.12, -0.10],
       "velocity": [-0.08, 0.0, 0.0],
       "half_extents": [0.03, 0.12, 0.03],
       "static_friction": 0.25,

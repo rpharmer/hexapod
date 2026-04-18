@@ -24,6 +24,7 @@ LocalMapObservation PhysicsSimLocalMapObservationSource::collect(const NavPose2d
                                                                  const TimePointUs now) {
     LocalMapObservation out{};
     out.timestamp_us = now;
+    out.freshness_class = LocalMapObservationFreshnessClass::Auxiliary;
 
     const std::vector<PhysicsSimObstacleFootprint> footprints = provider_.latestObstacleFootprints();
     for (const PhysicsSimObstacleFootprint& footprint : footprints) {

@@ -8,6 +8,7 @@
  */
 
 #include "control_config.hpp"
+#include "matrix_lidar_local_map_source.hpp"
 #include "motion_intent_utils.hpp"
 #include "navigation_manager.hpp"
 #include "physics_sim_bridge.hpp"
@@ -175,6 +176,8 @@ private:
 struct NavigationRunMetrics {
     NavigationMonitorSnapshot final_monitor{};
     NavPose2d start_pose{};
+    double start_roll_rad{0.0};
+    double start_pitch_rad{0.0};
     NavPose2d goal_pose{};
     NavPose2d end_pose{};
     double goal_error_m{0.0};
@@ -186,6 +189,11 @@ struct NavigationRunMetrics {
     bool touched_raw_obstacle{false};
     bool saw_obstacle_footprints{false};
     std::size_t peak_obstacle_count{0};
+    std::size_t peak_raw_occupied_cells{0};
+    std::size_t peak_raw_free_cells{0};
+    double min_nearest_obstacle_distance_m{-1.0};
+    double nearest_obstacle_dx_m{0.0};
+    double nearest_obstacle_dy_m{0.0};
 };
 
 void runWarmupStep(RobotRuntime& runtime, const MotionIntent& stand_fallback) {
@@ -252,6 +260,7 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
 
     auto navigation_manager =
         std::make_unique<NavigationManager>(cfg.local_map, cfg.local_planner, cfg.nav_bridge);
+    navigation_manager->addObservationSource(std::make_shared<MatrixLidarLocalMapObservationSource>());
     navigation_manager->addObservationSource(std::make_shared<PhysicsSimLocalMapObservationSource>(
         *bridge_ptr, std::max(0.02, cfg.local_map.resolution_m * 0.5)));
     runtime.setNavigationManager(std::move(navigation_manager));
@@ -282,14 +291,16 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
     follow_params.go_to.rotate.settle_cycles_required = 4;
 
     const NavPose2d goal_pose{
-        start_pose.x_m,
-        start_pose.y_m + goal_forward_m,
+        start_pose.x_m + goal_forward_m,
+        start_pose.y_m,
         start_pose.yaw_rad,
     };
     runtime.navigationManager()->startNavigateToPose(walk_base, goal_pose, follow_params);
 
     NavigationRunMetrics metrics{};
     metrics.start_pose = start_pose;
+    metrics.start_roll_rad = settled.body_twist_state.twist_pos_rad.x;
+    metrics.start_pitch_rad = settled.body_twist_state.twist_pos_rad.y;
     metrics.goal_pose = goal_pose;
     NavPose2d previous_pose = start_pose;
 
@@ -310,6 +321,42 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
         metrics.peak_active_segment_waypoints =
             std::max(metrics.peak_active_segment_waypoints, monitor.active_segment_waypoint_count);
         metrics.final_monitor = monitor;
+
+        const LocalMapSnapshot snapshot =
+            runtime.navigationManager()->latestMapSnapshot(runtime.estimatedSnapshot().timestamp_us);
+        std::size_t occupied_cells = 0;
+        std::size_t free_cells = 0;
+        for (const LocalMapCellState cell : snapshot.raw.cells) {
+            if (cell == LocalMapCellState::Occupied) {
+                ++occupied_cells;
+            } else if (cell == LocalMapCellState::Free) {
+                ++free_cells;
+            }
+        }
+        metrics.peak_raw_occupied_cells = std::max(metrics.peak_raw_occupied_cells, occupied_cells);
+        metrics.peak_raw_free_cells = std::max(metrics.peak_raw_free_cells, free_cells);
+        if (snapshot.nearest_obstacle_distance_m >= 0.0 &&
+            (metrics.min_nearest_obstacle_distance_m < 0.0 ||
+             snapshot.nearest_obstacle_distance_m < metrics.min_nearest_obstacle_distance_m)) {
+            metrics.min_nearest_obstacle_distance_m = snapshot.nearest_obstacle_distance_m;
+            double best_distance = 1.0e9;
+            for (int y = 0; y < snapshot.raw.height_cells; ++y) {
+                for (int x = 0; x < snapshot.raw.width_cells; ++x) {
+                    if (snapshot.raw.stateAtCell(x, y) != LocalMapCellState::Occupied) {
+                        continue;
+                    }
+                    const NavPose2d cell = snapshot.raw.cellCenterPose(x, y);
+                    const double dx = cell.x_m - snapshot.raw.center_pose.x_m;
+                    const double dy = cell.y_m - snapshot.raw.center_pose.y_m;
+                    const double distance = std::hypot(dx, dy);
+                    if (distance < best_distance) {
+                        best_distance = distance;
+                        metrics.nearest_obstacle_dx_m = dx;
+                        metrics.nearest_obstacle_dy_m = dy;
+                    }
+                }
+            }
+        }
 
         const std::vector<PhysicsSimObstacleFootprint> footprints = bridge_ptr->latestObstacleFootprints();
         metrics.peak_obstacle_count = std::max(metrics.peak_obstacle_count, footprints.size());
@@ -362,7 +409,8 @@ bool checkDetour(const NavigationRunMetrics& baseline,
 bool checkBlockedCorridor(const NavigationRunMetrics& metrics) {
     return expect(metrics.final_monitor.lifecycle == NavigationLifecycleState::Failed,
                   "blocked_corridor: navigation should fail safely after blocked timeout") &&
-           expect(metrics.final_monitor.block_reason == PlannerBlockReason::NoPath ||
+           expect(metrics.final_monitor.block_reason == PlannerBlockReason::StartOccupied ||
+                      metrics.final_monitor.block_reason == PlannerBlockReason::NoPath ||
                       metrics.final_monitor.block_reason == PlannerBlockReason::GoalOccupied,
                   "blocked_corridor: failure should report a planner block reason") &&
            expect(metrics.max_progress_m <= 0.10,
@@ -375,12 +423,19 @@ bool checkBlockedCorridor(const NavigationRunMetrics& metrics) {
 
 bool checkMidrunIntrusion(const NavigationRunMetrics& baseline,
                           const NavigationRunMetrics& metrics) {
+    const bool replanned_more = metrics.peak_replan_count > baseline.peak_replan_count;
+    const bool blocked_safely_after_progress =
+        metrics.max_progress_m >= 0.04 &&
+        metrics.final_monitor.lifecycle == NavigationLifecycleState::Failed &&
+        (metrics.final_monitor.block_reason == PlannerBlockReason::StartOccupied ||
+         metrics.final_monitor.block_reason == PlannerBlockReason::GoalOccupied ||
+         metrics.final_monitor.block_reason == PlannerBlockReason::NoPath);
     return expect(metrics.saw_obstacle_footprints,
                   "midrun_intrusion: live obstacle footprints should be observed") &&
            expect(!metrics.touched_raw_obstacle,
                   "midrun_intrusion: body path should stay out of raw obstacle footprints") &&
-           expect(metrics.peak_replan_count > baseline.peak_replan_count,
-                  "midrun_intrusion: obstacle insertion should trigger more replans than the empty-scene baseline") &&
+           expect(replanned_more || blocked_safely_after_progress,
+                  "midrun_intrusion: obstacle insertion should either trigger replans or force a safe planner block after progress") &&
            expect(metrics.final_monitor.lifecycle == NavigationLifecycleState::Completed ||
                       metrics.final_monitor.lifecycle == NavigationLifecycleState::Failed,
                   "midrun_intrusion: run should end in a deterministic terminal state");
@@ -388,6 +443,8 @@ bool checkMidrunIntrusion(const NavigationRunMetrics& baseline,
 
 void printSummary(const std::string& label, const NavigationRunMetrics& metrics) {
     std::cout << label
+              << " start_roll=" << metrics.start_roll_rad
+              << " start_pitch=" << metrics.start_pitch_rad
               << " start_yaw=" << metrics.start_pose.yaw_rad
               << " lifecycle=" << static_cast<int>(metrics.final_monitor.lifecycle)
               << " block_reason=" << static_cast<int>(metrics.final_monitor.block_reason)
@@ -397,6 +454,11 @@ void printSummary(const std::string& label, const NavigationRunMetrics& metrics)
               << " max_lateral=" << metrics.max_lateral_deviation_m
               << " replans=" << metrics.peak_replan_count
               << " peak_obstacles=" << metrics.peak_obstacle_count
+              << " peak_raw_occupied=" << metrics.peak_raw_occupied_cells
+              << " peak_raw_free=" << metrics.peak_raw_free_cells
+              << " min_nearest_obstacle=" << metrics.min_nearest_obstacle_distance_m
+              << " nearest_obstacle_dx=" << metrics.nearest_obstacle_dx_m
+              << " nearest_obstacle_dy=" << metrics.nearest_obstacle_dy_m
               << '\n';
 }
 

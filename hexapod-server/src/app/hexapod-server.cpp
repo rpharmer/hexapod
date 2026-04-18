@@ -203,13 +203,15 @@ int main(int argc, char** argv)
   auto hw = makeHardwareBridge(config, logger);
   auto navigation_manager =
       std::make_unique<NavigationManager>(control_cfg.local_map, control_cfg.local_planner, control_cfg.nav_bridge);
+  navigation_manager->addObservationSource(std::make_shared<MatrixLidarLocalMapObservationSource>());
   if (config.runtimeMode == "physics-sim") {
     if (auto* physics_sim_bridge = dynamic_cast<PhysicsSimBridge*>(hw.get())) {
-      navigation_manager->addObservationSource(std::make_shared<MatrixLidarLocalMapObservationSource>());
       navigation_manager->addObservationSource(std::make_shared<PhysicsSimLocalMapObservationSource>(
           *physics_sim_bridge, std::max(0.02, control_cfg.local_map.resolution_m * 0.5)));
       LOG_INFO(logger, "Navigation.LocalMap.Sources=matrix-lidar,physics-sim-footprints");
     }
+  } else {
+    LOG_INFO(logger, "Navigation.LocalMap.Sources=matrix-lidar");
   }
 
   std::unique_ptr<IEstimator> estimator;

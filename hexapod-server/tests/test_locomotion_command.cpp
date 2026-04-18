@@ -47,5 +47,18 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    ScenarioMotionIntent scenario{};
+    scenario.enabled = true;
+    scenario.mode = RobotMode::WALK;
+    scenario.gait = GaitType::TRIPOD;
+    scenario.speed_mps = 0.25;
+    scenario.heading_rad = 0.0;
+    const MotionIntent scenario_intent = makeMotionIntent(scenario);
+    if (!nearlyEq(scenario_intent.cmd_vx_mps.value, -0.25) ||
+        !nearlyEq(scenario_intent.cmd_vy_mps.value, 0.0)) {
+        std::cerr << "FAIL: scenario motion should normalize to the locomotion X sign\n";
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }

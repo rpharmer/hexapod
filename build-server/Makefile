@@ -179,6 +179,45 @@ test_safety_supervisor_faults/fast:
 .PHONY : test_safety_supervisor_faults/fast
 
 #=============================================================================
+# Target rules for targets named test_contact_foot_response
+
+# Build rule for target.
+test_contact_foot_response: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_contact_foot_response
+.PHONY : test_contact_foot_response
+
+# fast build rule for target.
+test_contact_foot_response/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_contact_foot_response.dir/build.make CMakeFiles/test_contact_foot_response.dir/build
+.PHONY : test_contact_foot_response/fast
+
+#=============================================================================
+# Target rules for targets named test_imu_physics
+
+# Build rule for target.
+test_imu_physics: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_imu_physics
+.PHONY : test_imu_physics
+
+# fast build rule for target.
+test_imu_physics/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_imu_physics.dir/build.make CMakeFiles/test_imu_physics.dir/build
+.PHONY : test_imu_physics/fast
+
+#=============================================================================
+# Target rules for targets named test_matrix_lidar
+
+# Build rule for target.
+test_matrix_lidar: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_matrix_lidar
+.PHONY : test_matrix_lidar
+
+# fast build rule for target.
+test_matrix_lidar/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_matrix_lidar.dir/build.make CMakeFiles/test_matrix_lidar.dir/build
+.PHONY : test_matrix_lidar/fast
+
+#=============================================================================
 # Target rules for targets named test_control_pipeline_sanity
 
 # Build rule for target.
@@ -231,6 +270,201 @@ test_motion_intent_through_ik_fk/fast:
 .PHONY : test_motion_intent_through_ik_fk/fast
 
 #=============================================================================
+# Target rules for targets named test_twist_field
+
+# Build rule for target.
+test_twist_field: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_twist_field
+.PHONY : test_twist_field
+
+# fast build rule for target.
+test_twist_field/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_twist_field.dir/build.make CMakeFiles/test_twist_field.dir/build
+.PHONY : test_twist_field/fast
+
+#=============================================================================
+# Target rules for targets named test_locomotion_command
+
+# Build rule for target.
+test_locomotion_command: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_locomotion_command
+.PHONY : test_locomotion_command
+
+# fast build rule for target.
+test_locomotion_command/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_locomotion_command.dir/build.make CMakeFiles/test_locomotion_command.dir/build
+.PHONY : test_locomotion_command/fast
+
+#=============================================================================
+# Target rules for targets named test_foothold_planner
+
+# Build rule for target.
+test_foothold_planner: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_foothold_planner
+.PHONY : test_foothold_planner
+
+# fast build rule for target.
+test_foothold_planner/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foothold_planner.dir/build.make CMakeFiles/test_foothold_planner.dir/build
+.PHONY : test_foothold_planner/fast
+
+#=============================================================================
+# Target rules for targets named test_foot_reachability
+
+# Build rule for target.
+test_foot_reachability: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_foot_reachability
+.PHONY : test_foot_reachability
+
+# fast build rule for target.
+test_foot_reachability/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foot_reachability.dir/build.make CMakeFiles/test_foot_reachability.dir/build
+.PHONY : test_foot_reachability/fast
+
+#=============================================================================
+# Target rules for targets named test_swing_trajectory
+
+# Build rule for target.
+test_swing_trajectory: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_swing_trajectory
+.PHONY : test_swing_trajectory
+
+# fast build rule for target.
+test_swing_trajectory/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_swing_trajectory.dir/build.make CMakeFiles/test_swing_trajectory.dir/build
+.PHONY : test_swing_trajectory/fast
+
+#=============================================================================
+# Target rules for targets named test_gait_params
+
+# Build rule for target.
+test_gait_params: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_gait_params
+.PHONY : test_gait_params
+
+# fast build rule for target.
+test_gait_params/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gait_params.dir/build.make CMakeFiles/test_gait_params.dir/build
+.PHONY : test_gait_params/fast
+
+#=============================================================================
+# Target rules for targets named test_nav_primitives
+
+# Build rule for target.
+test_nav_primitives: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_nav_primitives
+.PHONY : test_nav_primitives
+
+# fast build rule for target.
+test_nav_primitives/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_nav_primitives.dir/build.make CMakeFiles/test_nav_primitives.dir/build
+.PHONY : test_nav_primitives/fast
+
+#=============================================================================
+# Target rules for targets named test_nav_locomotion_bridge
+
+# Build rule for target.
+test_nav_locomotion_bridge: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_nav_locomotion_bridge
+.PHONY : test_nav_locomotion_bridge
+
+# fast build rule for target.
+test_nav_locomotion_bridge/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_nav_locomotion_bridge.dir/build.make CMakeFiles/test_nav_locomotion_bridge.dir/build
+.PHONY : test_nav_locomotion_bridge/fast
+
+#=============================================================================
+# Target rules for targets named test_local_map
+
+# Build rule for target.
+test_local_map: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_local_map
+.PHONY : test_local_map
+
+# fast build rule for target.
+test_local_map/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_local_map.dir/build.make CMakeFiles/test_local_map.dir/build
+.PHONY : test_local_map/fast
+
+#=============================================================================
+# Target rules for targets named test_local_planner
+
+# Build rule for target.
+test_local_planner: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_local_planner
+.PHONY : test_local_planner
+
+# fast build rule for target.
+test_local_planner/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_local_planner.dir/build.make CMakeFiles/test_local_planner.dir/build
+.PHONY : test_local_planner/fast
+
+#=============================================================================
+# Target rules for targets named test_navigation_manager
+
+# Build rule for target.
+test_navigation_manager: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_navigation_manager
+.PHONY : test_navigation_manager
+
+# fast build rule for target.
+test_navigation_manager/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_navigation_manager.dir/build.make CMakeFiles/test_navigation_manager.dir/build
+.PHONY : test_navigation_manager/fast
+
+#=============================================================================
+# Target rules for targets named test_navigation_matrix_lidar
+
+# Build rule for target.
+test_navigation_matrix_lidar: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_navigation_matrix_lidar
+.PHONY : test_navigation_matrix_lidar
+
+# fast build rule for target.
+test_navigation_matrix_lidar/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_navigation_matrix_lidar.dir/build.make CMakeFiles/test_navigation_matrix_lidar.dir/build
+.PHONY : test_navigation_matrix_lidar/fast
+
+#=============================================================================
+# Target rules for targets named test_navigation_runtime
+
+# Build rule for target.
+test_navigation_runtime: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_navigation_runtime
+.PHONY : test_navigation_runtime
+
+# fast build rule for target.
+test_navigation_runtime/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_navigation_runtime.dir/build.make CMakeFiles/test_navigation_runtime.dir/build
+.PHONY : test_navigation_runtime/fast
+
+#=============================================================================
+# Target rules for targets named test_physics_sim_local_map_source
+
+# Build rule for target.
+test_physics_sim_local_map_source: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_physics_sim_local_map_source
+.PHONY : test_physics_sim_local_map_source
+
+# fast build rule for target.
+test_physics_sim_local_map_source/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_local_map_source.dir/build.make CMakeFiles/test_physics_sim_local_map_source.dir/build
+.PHONY : test_physics_sim_local_map_source/fast
+
+#=============================================================================
+# Target rules for targets named test_matrix_lidar_local_map_source
+
+# Build rule for target.
+test_matrix_lidar_local_map_source: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_matrix_lidar_local_map_source
+.PHONY : test_matrix_lidar_local_map_source
+
+# fast build rule for target.
+test_matrix_lidar_local_map_source/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_matrix_lidar_local_map_source.dir/build.make CMakeFiles/test_matrix_lidar_local_map_source.dir/build
+.PHONY : test_matrix_lidar_local_map_source/fast
+
+#=============================================================================
 # Target rules for targets named test_physics_sim_mapping_roundtrip
 
 # Build rule for target.
@@ -257,6 +491,19 @@ test_physics_sim_ik_wire_roundtrip/fast:
 .PHONY : test_physics_sim_ik_wire_roundtrip/fast
 
 #=============================================================================
+# Target rules for targets named test_physics_sim_bridge_frame_conversion
+
+# Build rule for target.
+test_physics_sim_bridge_frame_conversion: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_physics_sim_bridge_frame_conversion
+.PHONY : test_physics_sim_bridge_frame_conversion
+
+# fast build rule for target.
+test_physics_sim_bridge_frame_conversion/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_bridge_frame_conversion.dir/build.make CMakeFiles/test_physics_sim_bridge_frame_conversion.dir/build
+.PHONY : test_physics_sim_bridge_frame_conversion/fast
+
+#=============================================================================
 # Target rules for targets named test_physics_sim_serve_zero_g_udp
 
 # Build rule for target.
@@ -268,6 +515,45 @@ test_physics_sim_serve_zero_g_udp: cmake_check_build_system
 test_physics_sim_serve_zero_g_udp/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_serve_zero_g_udp.dir/build.make CMakeFiles/test_physics_sim_serve_zero_g_udp.dir/build
 .PHONY : test_physics_sim_serve_zero_g_udp/fast
+
+#=============================================================================
+# Target rules for targets named test_physics_sim_walk_distance
+
+# Build rule for target.
+test_physics_sim_walk_distance: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_physics_sim_walk_distance
+.PHONY : test_physics_sim_walk_distance
+
+# fast build rule for target.
+test_physics_sim_walk_distance/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_distance.dir/build.make CMakeFiles/test_physics_sim_walk_distance.dir/build
+.PHONY : test_physics_sim_walk_distance/fast
+
+#=============================================================================
+# Target rules for targets named test_physics_sim_nav_waypoints
+
+# Build rule for target.
+test_physics_sim_nav_waypoints: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_physics_sim_nav_waypoints
+.PHONY : test_physics_sim_nav_waypoints
+
+# fast build rule for target.
+test_physics_sim_nav_waypoints/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_nav_waypoints.dir/build.make CMakeFiles/test_physics_sim_nav_waypoints.dir/build
+.PHONY : test_physics_sim_nav_waypoints/fast
+
+#=============================================================================
+# Target rules for targets named test_physics_sim_navigation_acceptance
+
+# Build rule for target.
+test_physics_sim_navigation_acceptance: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_physics_sim_navigation_acceptance
+.PHONY : test_physics_sim_navigation_acceptance
+
+# fast build rule for target.
+test_physics_sim_navigation_acceptance/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_navigation_acceptance.dir/build.make CMakeFiles/test_physics_sim_navigation_acceptance.dir/build
+.PHONY : test_physics_sim_navigation_acceptance/fast
 
 #=============================================================================
 # Target rules for targets named test_virtual_gamepad_controller
@@ -320,6 +606,19 @@ test_body_controller_velocity: cmake_check_build_system
 test_body_controller_velocity/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_body_controller_velocity.dir/build.make CMakeFiles/test_body_controller_velocity.dir/build
 .PHONY : test_body_controller_velocity/fast
+
+#=============================================================================
+# Target rules for targets named test_locomotion_pose_and_stability
+
+# Build rule for target.
+test_locomotion_pose_and_stability: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_locomotion_pose_and_stability
+.PHONY : test_locomotion_pose_and_stability
+
+# fast build rule for target.
+test_locomotion_pose_and_stability/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_locomotion_pose_and_stability.dir/build.make CMakeFiles/test_locomotion_pose_and_stability.dir/build
+.PHONY : test_locomotion_pose_and_stability/fast
 
 #=============================================================================
 # Target rules for targets named test_toml_parser_sections
@@ -904,6 +1203,30 @@ src/control/body_controller.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/body_controller.cpp.s
 .PHONY : src/control/body_controller.cpp.s
 
+src/control/body_pose_controller.o: src/control/body_pose_controller.cpp.o
+.PHONY : src/control/body_pose_controller.o
+
+# target to build an object file
+src/control/body_pose_controller.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/body_pose_controller.cpp.o
+.PHONY : src/control/body_pose_controller.cpp.o
+
+src/control/body_pose_controller.i: src/control/body_pose_controller.cpp.i
+.PHONY : src/control/body_pose_controller.i
+
+# target to preprocess a source file
+src/control/body_pose_controller.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/body_pose_controller.cpp.i
+.PHONY : src/control/body_pose_controller.cpp.i
+
+src/control/body_pose_controller.s: src/control/body_pose_controller.cpp.s
+.PHONY : src/control/body_pose_controller.s
+
+# target to generate assembly for a file
+src/control/body_pose_controller.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/body_pose_controller.cpp.s
+.PHONY : src/control/body_pose_controller.cpp.s
+
 src/control/calibration_probe.o: src/control/calibration_probe.cpp.o
 .PHONY : src/control/calibration_probe.o
 
@@ -951,6 +1274,30 @@ src/control/cli_options.s: src/control/cli_options.cpp.s
 src/control/cli_options.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/cli_options.cpp.s
 .PHONY : src/control/cli_options.cpp.s
+
+src/control/contact_foot_response.o: src/control/contact_foot_response.cpp.o
+.PHONY : src/control/contact_foot_response.o
+
+# target to build an object file
+src/control/contact_foot_response.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/contact_foot_response.cpp.o
+.PHONY : src/control/contact_foot_response.cpp.o
+
+src/control/contact_foot_response.i: src/control/contact_foot_response.cpp.i
+.PHONY : src/control/contact_foot_response.i
+
+# target to preprocess a source file
+src/control/contact_foot_response.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/contact_foot_response.cpp.i
+.PHONY : src/control/contact_foot_response.cpp.i
+
+src/control/contact_foot_response.s: src/control/contact_foot_response.cpp.s
+.PHONY : src/control/contact_foot_response.s
+
+# target to generate assembly for a file
+src/control/contact_foot_response.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/contact_foot_response.cpp.s
+.PHONY : src/control/contact_foot_response.cpp.s
 
 src/control/control_config.o: src/control/control_config.cpp.o
 .PHONY : src/control/control_config.o
@@ -1024,6 +1371,78 @@ src/control/estimator.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/estimator.cpp.s
 .PHONY : src/control/estimator.cpp.s
 
+src/control/foot_planners.o: src/control/foot_planners.cpp.o
+.PHONY : src/control/foot_planners.o
+
+# target to build an object file
+src/control/foot_planners.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/foot_planners.cpp.o
+.PHONY : src/control/foot_planners.cpp.o
+
+src/control/foot_planners.i: src/control/foot_planners.cpp.i
+.PHONY : src/control/foot_planners.i
+
+# target to preprocess a source file
+src/control/foot_planners.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/foot_planners.cpp.i
+.PHONY : src/control/foot_planners.cpp.i
+
+src/control/foot_planners.s: src/control/foot_planners.cpp.s
+.PHONY : src/control/foot_planners.s
+
+# target to generate assembly for a file
+src/control/foot_planners.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/foot_planners.cpp.s
+.PHONY : src/control/foot_planners.cpp.s
+
+src/control/foot_reachability.o: src/control/foot_reachability.cpp.o
+.PHONY : src/control/foot_reachability.o
+
+# target to build an object file
+src/control/foot_reachability.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/foot_reachability.cpp.o
+.PHONY : src/control/foot_reachability.cpp.o
+
+src/control/foot_reachability.i: src/control/foot_reachability.cpp.i
+.PHONY : src/control/foot_reachability.i
+
+# target to preprocess a source file
+src/control/foot_reachability.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/foot_reachability.cpp.i
+.PHONY : src/control/foot_reachability.cpp.i
+
+src/control/foot_reachability.s: src/control/foot_reachability.cpp.s
+.PHONY : src/control/foot_reachability.s
+
+# target to generate assembly for a file
+src/control/foot_reachability.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/foot_reachability.cpp.s
+.PHONY : src/control/foot_reachability.cpp.s
+
+src/control/foothold_planner.o: src/control/foothold_planner.cpp.o
+.PHONY : src/control/foothold_planner.o
+
+# target to build an object file
+src/control/foothold_planner.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/foothold_planner.cpp.o
+.PHONY : src/control/foothold_planner.cpp.o
+
+src/control/foothold_planner.i: src/control/foothold_planner.cpp.i
+.PHONY : src/control/foothold_planner.i
+
+# target to preprocess a source file
+src/control/foothold_planner.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/foothold_planner.cpp.i
+.PHONY : src/control/foothold_planner.cpp.i
+
+src/control/foothold_planner.s: src/control/foothold_planner.cpp.s
+.PHONY : src/control/foothold_planner.s
+
+# target to generate assembly for a file
+src/control/foothold_planner.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/foothold_planner.cpp.s
+.PHONY : src/control/foothold_planner.cpp.s
+
 src/control/freshness_policy.o: src/control/freshness_policy.cpp.o
 .PHONY : src/control/freshness_policy.o
 
@@ -1047,6 +1466,30 @@ src/control/freshness_policy.s: src/control/freshness_policy.cpp.s
 src/control/freshness_policy.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/freshness_policy.cpp.s
 .PHONY : src/control/freshness_policy.cpp.s
+
+src/control/gait_params.o: src/control/gait_params.cpp.o
+.PHONY : src/control/gait_params.o
+
+# target to build an object file
+src/control/gait_params.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/gait_params.cpp.o
+.PHONY : src/control/gait_params.cpp.o
+
+src/control/gait_params.i: src/control/gait_params.cpp.i
+.PHONY : src/control/gait_params.i
+
+# target to preprocess a source file
+src/control/gait_params.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/gait_params.cpp.i
+.PHONY : src/control/gait_params.cpp.i
+
+src/control/gait_params.s: src/control/gait_params.cpp.s
+.PHONY : src/control/gait_params.s
+
+# target to generate assembly for a file
+src/control/gait_params.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/gait_params.cpp.s
+.PHONY : src/control/gait_params.cpp.s
 
 src/control/gait_scheduler.o: src/control/gait_scheduler.cpp.o
 .PHONY : src/control/gait_scheduler.o
@@ -1144,6 +1587,102 @@ src/control/interactive_input_mapper.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/interactive_input_mapper.cpp.s
 .PHONY : src/control/interactive_input_mapper.cpp.s
 
+src/control/local_map.o: src/control/local_map.cpp.o
+.PHONY : src/control/local_map.o
+
+# target to build an object file
+src/control/local_map.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/local_map.cpp.o
+.PHONY : src/control/local_map.cpp.o
+
+src/control/local_map.i: src/control/local_map.cpp.i
+.PHONY : src/control/local_map.i
+
+# target to preprocess a source file
+src/control/local_map.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/local_map.cpp.i
+.PHONY : src/control/local_map.cpp.i
+
+src/control/local_map.s: src/control/local_map.cpp.s
+.PHONY : src/control/local_map.s
+
+# target to generate assembly for a file
+src/control/local_map.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/local_map.cpp.s
+.PHONY : src/control/local_map.cpp.s
+
+src/control/local_planner.o: src/control/local_planner.cpp.o
+.PHONY : src/control/local_planner.o
+
+# target to build an object file
+src/control/local_planner.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/local_planner.cpp.o
+.PHONY : src/control/local_planner.cpp.o
+
+src/control/local_planner.i: src/control/local_planner.cpp.i
+.PHONY : src/control/local_planner.i
+
+# target to preprocess a source file
+src/control/local_planner.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/local_planner.cpp.i
+.PHONY : src/control/local_planner.cpp.i
+
+src/control/local_planner.s: src/control/local_planner.cpp.s
+.PHONY : src/control/local_planner.s
+
+# target to generate assembly for a file
+src/control/local_planner.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/local_planner.cpp.s
+.PHONY : src/control/local_planner.cpp.s
+
+src/control/locomotion_command.o: src/control/locomotion_command.cpp.o
+.PHONY : src/control/locomotion_command.o
+
+# target to build an object file
+src/control/locomotion_command.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/locomotion_command.cpp.o
+.PHONY : src/control/locomotion_command.cpp.o
+
+src/control/locomotion_command.i: src/control/locomotion_command.cpp.i
+.PHONY : src/control/locomotion_command.i
+
+# target to preprocess a source file
+src/control/locomotion_command.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/locomotion_command.cpp.i
+.PHONY : src/control/locomotion_command.cpp.i
+
+src/control/locomotion_command.s: src/control/locomotion_command.cpp.s
+.PHONY : src/control/locomotion_command.s
+
+# target to generate assembly for a file
+src/control/locomotion_command.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/locomotion_command.cpp.s
+.PHONY : src/control/locomotion_command.cpp.s
+
+src/control/locomotion_stability.o: src/control/locomotion_stability.cpp.o
+.PHONY : src/control/locomotion_stability.o
+
+# target to build an object file
+src/control/locomotion_stability.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/locomotion_stability.cpp.o
+.PHONY : src/control/locomotion_stability.cpp.o
+
+src/control/locomotion_stability.i: src/control/locomotion_stability.cpp.i
+.PHONY : src/control/locomotion_stability.i
+
+# target to preprocess a source file
+src/control/locomotion_stability.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/locomotion_stability.cpp.i
+.PHONY : src/control/locomotion_stability.cpp.i
+
+src/control/locomotion_stability.s: src/control/locomotion_stability.cpp.s
+.PHONY : src/control/locomotion_stability.s
+
+# target to generate assembly for a file
+src/control/locomotion_stability.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/locomotion_stability.cpp.s
+.PHONY : src/control/locomotion_stability.cpp.s
+
 src/control/loop_executor.o: src/control/loop_executor.cpp.o
 .PHONY : src/control/loop_executor.o
 
@@ -1191,6 +1730,30 @@ src/control/loop_timing.s: src/control/loop_timing.cpp.s
 src/control/loop_timing.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/loop_timing.cpp.s
 .PHONY : src/control/loop_timing.cpp.s
+
+src/control/matrix_lidar_local_map_source.o: src/control/matrix_lidar_local_map_source.cpp.o
+.PHONY : src/control/matrix_lidar_local_map_source.o
+
+# target to build an object file
+src/control/matrix_lidar_local_map_source.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/matrix_lidar_local_map_source.cpp.o
+.PHONY : src/control/matrix_lidar_local_map_source.cpp.o
+
+src/control/matrix_lidar_local_map_source.i: src/control/matrix_lidar_local_map_source.cpp.i
+.PHONY : src/control/matrix_lidar_local_map_source.i
+
+# target to preprocess a source file
+src/control/matrix_lidar_local_map_source.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/matrix_lidar_local_map_source.cpp.i
+.PHONY : src/control/matrix_lidar_local_map_source.cpp.i
+
+src/control/matrix_lidar_local_map_source.s: src/control/matrix_lidar_local_map_source.cpp.s
+.PHONY : src/control/matrix_lidar_local_map_source.s
+
+# target to generate assembly for a file
+src/control/matrix_lidar_local_map_source.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/matrix_lidar_local_map_source.cpp.s
+.PHONY : src/control/matrix_lidar_local_map_source.cpp.s
 
 src/control/mode_runners.o: src/control/mode_runners.cpp.o
 .PHONY : src/control/mode_runners.o
@@ -1240,6 +1803,102 @@ src/control/motion_intent_utils.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/motion_intent_utils.cpp.s
 .PHONY : src/control/motion_intent_utils.cpp.s
 
+src/control/nav_locomotion_bridge.o: src/control/nav_locomotion_bridge.cpp.o
+.PHONY : src/control/nav_locomotion_bridge.o
+
+# target to build an object file
+src/control/nav_locomotion_bridge.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/nav_locomotion_bridge.cpp.o
+.PHONY : src/control/nav_locomotion_bridge.cpp.o
+
+src/control/nav_locomotion_bridge.i: src/control/nav_locomotion_bridge.cpp.i
+.PHONY : src/control/nav_locomotion_bridge.i
+
+# target to preprocess a source file
+src/control/nav_locomotion_bridge.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/nav_locomotion_bridge.cpp.i
+.PHONY : src/control/nav_locomotion_bridge.cpp.i
+
+src/control/nav_locomotion_bridge.s: src/control/nav_locomotion_bridge.cpp.s
+.PHONY : src/control/nav_locomotion_bridge.s
+
+# target to generate assembly for a file
+src/control/nav_locomotion_bridge.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/nav_locomotion_bridge.cpp.s
+.PHONY : src/control/nav_locomotion_bridge.cpp.s
+
+src/control/nav_primitives.o: src/control/nav_primitives.cpp.o
+.PHONY : src/control/nav_primitives.o
+
+# target to build an object file
+src/control/nav_primitives.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/nav_primitives.cpp.o
+.PHONY : src/control/nav_primitives.cpp.o
+
+src/control/nav_primitives.i: src/control/nav_primitives.cpp.i
+.PHONY : src/control/nav_primitives.i
+
+# target to preprocess a source file
+src/control/nav_primitives.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/nav_primitives.cpp.i
+.PHONY : src/control/nav_primitives.cpp.i
+
+src/control/nav_primitives.s: src/control/nav_primitives.cpp.s
+.PHONY : src/control/nav_primitives.s
+
+# target to generate assembly for a file
+src/control/nav_primitives.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/nav_primitives.cpp.s
+.PHONY : src/control/nav_primitives.cpp.s
+
+src/control/nav_to_locomotion.o: src/control/nav_to_locomotion.cpp.o
+.PHONY : src/control/nav_to_locomotion.o
+
+# target to build an object file
+src/control/nav_to_locomotion.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/nav_to_locomotion.cpp.o
+.PHONY : src/control/nav_to_locomotion.cpp.o
+
+src/control/nav_to_locomotion.i: src/control/nav_to_locomotion.cpp.i
+.PHONY : src/control/nav_to_locomotion.i
+
+# target to preprocess a source file
+src/control/nav_to_locomotion.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/nav_to_locomotion.cpp.i
+.PHONY : src/control/nav_to_locomotion.cpp.i
+
+src/control/nav_to_locomotion.s: src/control/nav_to_locomotion.cpp.s
+.PHONY : src/control/nav_to_locomotion.s
+
+# target to generate assembly for a file
+src/control/nav_to_locomotion.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/nav_to_locomotion.cpp.s
+.PHONY : src/control/nav_to_locomotion.cpp.s
+
+src/control/navigation_manager.o: src/control/navigation_manager.cpp.o
+.PHONY : src/control/navigation_manager.o
+
+# target to build an object file
+src/control/navigation_manager.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/navigation_manager.cpp.o
+.PHONY : src/control/navigation_manager.cpp.o
+
+src/control/navigation_manager.i: src/control/navigation_manager.cpp.i
+.PHONY : src/control/navigation_manager.i
+
+# target to preprocess a source file
+src/control/navigation_manager.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/navigation_manager.cpp.i
+.PHONY : src/control/navigation_manager.cpp.i
+
+src/control/navigation_manager.s: src/control/navigation_manager.cpp.s
+.PHONY : src/control/navigation_manager.s
+
+# target to generate assembly for a file
+src/control/navigation_manager.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/navigation_manager.cpp.s
+.PHONY : src/control/navigation_manager.cpp.s
+
 src/control/physics_sim_estimator.o: src/control/physics_sim_estimator.cpp.o
 .PHONY : src/control/physics_sim_estimator.o
 
@@ -1263,6 +1922,30 @@ src/control/physics_sim_estimator.s: src/control/physics_sim_estimator.cpp.s
 src/control/physics_sim_estimator.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/physics_sim_estimator.cpp.s
 .PHONY : src/control/physics_sim_estimator.cpp.s
+
+src/control/physics_sim_local_map_source.o: src/control/physics_sim_local_map_source.cpp.o
+.PHONY : src/control/physics_sim_local_map_source.o
+
+# target to build an object file
+src/control/physics_sim_local_map_source.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/physics_sim_local_map_source.cpp.o
+.PHONY : src/control/physics_sim_local_map_source.cpp.o
+
+src/control/physics_sim_local_map_source.i: src/control/physics_sim_local_map_source.cpp.i
+.PHONY : src/control/physics_sim_local_map_source.i
+
+# target to preprocess a source file
+src/control/physics_sim_local_map_source.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/physics_sim_local_map_source.cpp.i
+.PHONY : src/control/physics_sim_local_map_source.cpp.i
+
+src/control/physics_sim_local_map_source.s: src/control/physics_sim_local_map_source.cpp.s
+.PHONY : src/control/physics_sim_local_map_source.s
+
+# target to generate assembly for a file
+src/control/physics_sim_local_map_source.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/physics_sim_local_map_source.cpp.s
+.PHONY : src/control/physics_sim_local_map_source.cpp.s
 
 src/control/plane_estimation.o: src/control/plane_estimation.cpp.o
 .PHONY : src/control/plane_estimation.o
@@ -1503,6 +2186,30 @@ src/control/status_reporter.s: src/control/status_reporter.cpp.s
 src/control/status_reporter.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/status_reporter.cpp.s
 .PHONY : src/control/status_reporter.cpp.s
+
+src/control/swing_trajectory.o: src/control/swing_trajectory.cpp.o
+.PHONY : src/control/swing_trajectory.o
+
+# target to build an object file
+src/control/swing_trajectory.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/swing_trajectory.cpp.o
+.PHONY : src/control/swing_trajectory.cpp.o
+
+src/control/swing_trajectory.i: src/control/swing_trajectory.cpp.i
+.PHONY : src/control/swing_trajectory.i
+
+# target to preprocess a source file
+src/control/swing_trajectory.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/swing_trajectory.cpp.i
+.PHONY : src/control/swing_trajectory.cpp.i
+
+src/control/swing_trajectory.s: src/control/swing_trajectory.cpp.s
+.PHONY : src/control/swing_trajectory.s
+
+# target to generate assembly for a file
+src/control/swing_trajectory.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/swing_trajectory.cpp.s
+.PHONY : src/control/swing_trajectory.cpp.s
 
 src/control/telemetry_json.o: src/control/telemetry_json.cpp.o
 .PHONY : src/control/telemetry_json.o
@@ -2008,6 +2715,78 @@ src/scenario/scenario_driver.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/scenario/scenario_driver.cpp.s
 .PHONY : src/scenario/scenario_driver.cpp.s
 
+src/sensors/imu_physics.o: src/sensors/imu_physics.cpp.o
+.PHONY : src/sensors/imu_physics.o
+
+# target to build an object file
+src/sensors/imu_physics.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/sensors/imu_physics.cpp.o
+.PHONY : src/sensors/imu_physics.cpp.o
+
+src/sensors/imu_physics.i: src/sensors/imu_physics.cpp.i
+.PHONY : src/sensors/imu_physics.i
+
+# target to preprocess a source file
+src/sensors/imu_physics.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/sensors/imu_physics.cpp.i
+.PHONY : src/sensors/imu_physics.cpp.i
+
+src/sensors/imu_physics.s: src/sensors/imu_physics.cpp.s
+.PHONY : src/sensors/imu_physics.s
+
+# target to generate assembly for a file
+src/sensors/imu_physics.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/sensors/imu_physics.cpp.s
+.PHONY : src/sensors/imu_physics.cpp.s
+
+src/sensors/matrix_lidar_physics.o: src/sensors/matrix_lidar_physics.cpp.o
+.PHONY : src/sensors/matrix_lidar_physics.o
+
+# target to build an object file
+src/sensors/matrix_lidar_physics.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/sensors/matrix_lidar_physics.cpp.o
+.PHONY : src/sensors/matrix_lidar_physics.cpp.o
+
+src/sensors/matrix_lidar_physics.i: src/sensors/matrix_lidar_physics.cpp.i
+.PHONY : src/sensors/matrix_lidar_physics.i
+
+# target to preprocess a source file
+src/sensors/matrix_lidar_physics.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/sensors/matrix_lidar_physics.cpp.i
+.PHONY : src/sensors/matrix_lidar_physics.cpp.i
+
+src/sensors/matrix_lidar_physics.s: src/sensors/matrix_lidar_physics.cpp.s
+.PHONY : src/sensors/matrix_lidar_physics.s
+
+# target to generate assembly for a file
+src/sensors/matrix_lidar_physics.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/sensors/matrix_lidar_physics.cpp.s
+.PHONY : src/sensors/matrix_lidar_physics.cpp.s
+
+src/sensors/software_imu.o: src/sensors/software_imu.cpp.o
+.PHONY : src/sensors/software_imu.o
+
+# target to build an object file
+src/sensors/software_imu.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/sensors/software_imu.cpp.o
+.PHONY : src/sensors/software_imu.cpp.o
+
+src/sensors/software_imu.i: src/sensors/software_imu.cpp.i
+.PHONY : src/sensors/software_imu.i
+
+# target to preprocess a source file
+src/sensors/software_imu.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/sensors/software_imu.cpp.i
+.PHONY : src/sensors/software_imu.cpp.i
+
+src/sensors/software_imu.s: src/sensors/software_imu.cpp.s
+.PHONY : src/sensors/software_imu.s
+
+# target to generate assembly for a file
+src/sensors/software_imu.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/sensors/software_imu.cpp.s
+.PHONY : src/sensors/software_imu.cpp.s
+
 src/utils/logger.o: src/utils/logger.cpp.o
 .PHONY : src/utils/logger.o
 
@@ -2176,6 +2955,30 @@ tests/test_command_flow_integration.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_command_flow_integration.dir/build.make CMakeFiles/test_command_flow_integration.dir/tests/test_command_flow_integration.cpp.s
 .PHONY : tests/test_command_flow_integration.cpp.s
 
+tests/test_contact_foot_response.o: tests/test_contact_foot_response.cpp.o
+.PHONY : tests/test_contact_foot_response.o
+
+# target to build an object file
+tests/test_contact_foot_response.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_contact_foot_response.dir/build.make CMakeFiles/test_contact_foot_response.dir/tests/test_contact_foot_response.cpp.o
+.PHONY : tests/test_contact_foot_response.cpp.o
+
+tests/test_contact_foot_response.i: tests/test_contact_foot_response.cpp.i
+.PHONY : tests/test_contact_foot_response.i
+
+# target to preprocess a source file
+tests/test_contact_foot_response.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_contact_foot_response.dir/build.make CMakeFiles/test_contact_foot_response.dir/tests/test_contact_foot_response.cpp.i
+.PHONY : tests/test_contact_foot_response.cpp.i
+
+tests/test_contact_foot_response.s: tests/test_contact_foot_response.cpp.s
+.PHONY : tests/test_contact_foot_response.s
+
+# target to generate assembly for a file
+tests/test_contact_foot_response.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_contact_foot_response.dir/build.make CMakeFiles/test_contact_foot_response.dir/tests/test_contact_foot_response.cpp.s
+.PHONY : tests/test_contact_foot_response.cpp.s
+
 tests/test_control_pipeline_sanity.o: tests/test_control_pipeline_sanity.cpp.o
 .PHONY : tests/test_control_pipeline_sanity.o
 
@@ -2200,6 +3003,54 @@ tests/test_control_pipeline_sanity.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_control_pipeline_sanity.dir/build.make CMakeFiles/test_control_pipeline_sanity.dir/tests/test_control_pipeline_sanity.cpp.s
 .PHONY : tests/test_control_pipeline_sanity.cpp.s
 
+tests/test_foot_reachability.o: tests/test_foot_reachability.cpp.o
+.PHONY : tests/test_foot_reachability.o
+
+# target to build an object file
+tests/test_foot_reachability.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foot_reachability.dir/build.make CMakeFiles/test_foot_reachability.dir/tests/test_foot_reachability.cpp.o
+.PHONY : tests/test_foot_reachability.cpp.o
+
+tests/test_foot_reachability.i: tests/test_foot_reachability.cpp.i
+.PHONY : tests/test_foot_reachability.i
+
+# target to preprocess a source file
+tests/test_foot_reachability.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foot_reachability.dir/build.make CMakeFiles/test_foot_reachability.dir/tests/test_foot_reachability.cpp.i
+.PHONY : tests/test_foot_reachability.cpp.i
+
+tests/test_foot_reachability.s: tests/test_foot_reachability.cpp.s
+.PHONY : tests/test_foot_reachability.s
+
+# target to generate assembly for a file
+tests/test_foot_reachability.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foot_reachability.dir/build.make CMakeFiles/test_foot_reachability.dir/tests/test_foot_reachability.cpp.s
+.PHONY : tests/test_foot_reachability.cpp.s
+
+tests/test_foothold_planner.o: tests/test_foothold_planner.cpp.o
+.PHONY : tests/test_foothold_planner.o
+
+# target to build an object file
+tests/test_foothold_planner.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foothold_planner.dir/build.make CMakeFiles/test_foothold_planner.dir/tests/test_foothold_planner.cpp.o
+.PHONY : tests/test_foothold_planner.cpp.o
+
+tests/test_foothold_planner.i: tests/test_foothold_planner.cpp.i
+.PHONY : tests/test_foothold_planner.i
+
+# target to preprocess a source file
+tests/test_foothold_planner.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foothold_planner.dir/build.make CMakeFiles/test_foothold_planner.dir/tests/test_foothold_planner.cpp.i
+.PHONY : tests/test_foothold_planner.cpp.i
+
+tests/test_foothold_planner.s: tests/test_foothold_planner.cpp.s
+.PHONY : tests/test_foothold_planner.s
+
+# target to generate assembly for a file
+tests/test_foothold_planner.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foothold_planner.dir/build.make CMakeFiles/test_foothold_planner.dir/tests/test_foothold_planner.cpp.s
+.PHONY : tests/test_foothold_planner.cpp.s
+
 tests/test_freshness_policy.o: tests/test_freshness_policy.cpp.o
 .PHONY : tests/test_freshness_policy.o
 
@@ -2223,6 +3074,30 @@ tests/test_freshness_policy.s: tests/test_freshness_policy.cpp.s
 tests/test_freshness_policy.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_freshness_policy.dir/build.make CMakeFiles/test_freshness_policy.dir/tests/test_freshness_policy.cpp.s
 .PHONY : tests/test_freshness_policy.cpp.s
+
+tests/test_gait_params.o: tests/test_gait_params.cpp.o
+.PHONY : tests/test_gait_params.o
+
+# target to build an object file
+tests/test_gait_params.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gait_params.dir/build.make CMakeFiles/test_gait_params.dir/tests/test_gait_params.cpp.o
+.PHONY : tests/test_gait_params.cpp.o
+
+tests/test_gait_params.i: tests/test_gait_params.cpp.i
+.PHONY : tests/test_gait_params.i
+
+# target to preprocess a source file
+tests/test_gait_params.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gait_params.dir/build.make CMakeFiles/test_gait_params.dir/tests/test_gait_params.cpp.i
+.PHONY : tests/test_gait_params.cpp.i
+
+tests/test_gait_params.s: tests/test_gait_params.cpp.s
+.PHONY : tests/test_gait_params.s
+
+# target to generate assembly for a file
+tests/test_gait_params.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gait_params.dir/build.make CMakeFiles/test_gait_params.dir/tests/test_gait_params.cpp.s
+.PHONY : tests/test_gait_params.cpp.s
 
 tests/test_geometry_profile_service.o: tests/test_geometry_profile_service.cpp.o
 .PHONY : tests/test_geometry_profile_service.o
@@ -2464,6 +3339,30 @@ tests/test_hardware_bridge_transport_main.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hardware_bridge_transport.dir/build.make CMakeFiles/test_hardware_bridge_transport.dir/tests/test_hardware_bridge_transport_main.cpp.s
 .PHONY : tests/test_hardware_bridge_transport_main.cpp.s
 
+tests/test_imu_physics.o: tests/test_imu_physics.cpp.o
+.PHONY : tests/test_imu_physics.o
+
+# target to build an object file
+tests/test_imu_physics.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_imu_physics.dir/build.make CMakeFiles/test_imu_physics.dir/tests/test_imu_physics.cpp.o
+.PHONY : tests/test_imu_physics.cpp.o
+
+tests/test_imu_physics.i: tests/test_imu_physics.cpp.i
+.PHONY : tests/test_imu_physics.i
+
+# target to preprocess a source file
+tests/test_imu_physics.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_imu_physics.dir/build.make CMakeFiles/test_imu_physics.dir/tests/test_imu_physics.cpp.i
+.PHONY : tests/test_imu_physics.cpp.i
+
+tests/test_imu_physics.s: tests/test_imu_physics.cpp.s
+.PHONY : tests/test_imu_physics.s
+
+# target to generate assembly for a file
+tests/test_imu_physics.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_imu_physics.dir/build.make CMakeFiles/test_imu_physics.dir/tests/test_imu_physics.cpp.s
+.PHONY : tests/test_imu_physics.cpp.s
+
 tests/test_interactive_input_mapper.o: tests/test_interactive_input_mapper.cpp.o
 .PHONY : tests/test_interactive_input_mapper.o
 
@@ -2512,6 +3411,102 @@ tests/test_joint_feedback_estimator.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_joint_feedback_estimator.dir/build.make CMakeFiles/test_joint_feedback_estimator.dir/tests/test_joint_feedback_estimator.cpp.s
 .PHONY : tests/test_joint_feedback_estimator.cpp.s
 
+tests/test_local_map.o: tests/test_local_map.cpp.o
+.PHONY : tests/test_local_map.o
+
+# target to build an object file
+tests/test_local_map.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_local_map.dir/build.make CMakeFiles/test_local_map.dir/tests/test_local_map.cpp.o
+.PHONY : tests/test_local_map.cpp.o
+
+tests/test_local_map.i: tests/test_local_map.cpp.i
+.PHONY : tests/test_local_map.i
+
+# target to preprocess a source file
+tests/test_local_map.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_local_map.dir/build.make CMakeFiles/test_local_map.dir/tests/test_local_map.cpp.i
+.PHONY : tests/test_local_map.cpp.i
+
+tests/test_local_map.s: tests/test_local_map.cpp.s
+.PHONY : tests/test_local_map.s
+
+# target to generate assembly for a file
+tests/test_local_map.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_local_map.dir/build.make CMakeFiles/test_local_map.dir/tests/test_local_map.cpp.s
+.PHONY : tests/test_local_map.cpp.s
+
+tests/test_local_planner.o: tests/test_local_planner.cpp.o
+.PHONY : tests/test_local_planner.o
+
+# target to build an object file
+tests/test_local_planner.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_local_planner.dir/build.make CMakeFiles/test_local_planner.dir/tests/test_local_planner.cpp.o
+.PHONY : tests/test_local_planner.cpp.o
+
+tests/test_local_planner.i: tests/test_local_planner.cpp.i
+.PHONY : tests/test_local_planner.i
+
+# target to preprocess a source file
+tests/test_local_planner.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_local_planner.dir/build.make CMakeFiles/test_local_planner.dir/tests/test_local_planner.cpp.i
+.PHONY : tests/test_local_planner.cpp.i
+
+tests/test_local_planner.s: tests/test_local_planner.cpp.s
+.PHONY : tests/test_local_planner.s
+
+# target to generate assembly for a file
+tests/test_local_planner.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_local_planner.dir/build.make CMakeFiles/test_local_planner.dir/tests/test_local_planner.cpp.s
+.PHONY : tests/test_local_planner.cpp.s
+
+tests/test_locomotion_command.o: tests/test_locomotion_command.cpp.o
+.PHONY : tests/test_locomotion_command.o
+
+# target to build an object file
+tests/test_locomotion_command.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_locomotion_command.dir/build.make CMakeFiles/test_locomotion_command.dir/tests/test_locomotion_command.cpp.o
+.PHONY : tests/test_locomotion_command.cpp.o
+
+tests/test_locomotion_command.i: tests/test_locomotion_command.cpp.i
+.PHONY : tests/test_locomotion_command.i
+
+# target to preprocess a source file
+tests/test_locomotion_command.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_locomotion_command.dir/build.make CMakeFiles/test_locomotion_command.dir/tests/test_locomotion_command.cpp.i
+.PHONY : tests/test_locomotion_command.cpp.i
+
+tests/test_locomotion_command.s: tests/test_locomotion_command.cpp.s
+.PHONY : tests/test_locomotion_command.s
+
+# target to generate assembly for a file
+tests/test_locomotion_command.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_locomotion_command.dir/build.make CMakeFiles/test_locomotion_command.dir/tests/test_locomotion_command.cpp.s
+.PHONY : tests/test_locomotion_command.cpp.s
+
+tests/test_locomotion_pose_and_stability.o: tests/test_locomotion_pose_and_stability.cpp.o
+.PHONY : tests/test_locomotion_pose_and_stability.o
+
+# target to build an object file
+tests/test_locomotion_pose_and_stability.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_locomotion_pose_and_stability.dir/build.make CMakeFiles/test_locomotion_pose_and_stability.dir/tests/test_locomotion_pose_and_stability.cpp.o
+.PHONY : tests/test_locomotion_pose_and_stability.cpp.o
+
+tests/test_locomotion_pose_and_stability.i: tests/test_locomotion_pose_and_stability.cpp.i
+.PHONY : tests/test_locomotion_pose_and_stability.i
+
+# target to preprocess a source file
+tests/test_locomotion_pose_and_stability.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_locomotion_pose_and_stability.dir/build.make CMakeFiles/test_locomotion_pose_and_stability.dir/tests/test_locomotion_pose_and_stability.cpp.i
+.PHONY : tests/test_locomotion_pose_and_stability.cpp.i
+
+tests/test_locomotion_pose_and_stability.s: tests/test_locomotion_pose_and_stability.cpp.s
+.PHONY : tests/test_locomotion_pose_and_stability.s
+
+# target to generate assembly for a file
+tests/test_locomotion_pose_and_stability.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_locomotion_pose_and_stability.dir/build.make CMakeFiles/test_locomotion_pose_and_stability.dir/tests/test_locomotion_pose_and_stability.cpp.s
+.PHONY : tests/test_locomotion_pose_and_stability.cpp.s
+
 tests/test_loop_executor_timing.o: tests/test_loop_executor_timing.cpp.o
 .PHONY : tests/test_loop_executor_timing.o
 
@@ -2535,6 +3530,54 @@ tests/test_loop_executor_timing.s: tests/test_loop_executor_timing.cpp.s
 tests/test_loop_executor_timing.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_loop_executor_timing.dir/build.make CMakeFiles/test_loop_executor_timing.dir/tests/test_loop_executor_timing.cpp.s
 .PHONY : tests/test_loop_executor_timing.cpp.s
+
+tests/test_matrix_lidar.o: tests/test_matrix_lidar.cpp.o
+.PHONY : tests/test_matrix_lidar.o
+
+# target to build an object file
+tests/test_matrix_lidar.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_matrix_lidar.dir/build.make CMakeFiles/test_matrix_lidar.dir/tests/test_matrix_lidar.cpp.o
+.PHONY : tests/test_matrix_lidar.cpp.o
+
+tests/test_matrix_lidar.i: tests/test_matrix_lidar.cpp.i
+.PHONY : tests/test_matrix_lidar.i
+
+# target to preprocess a source file
+tests/test_matrix_lidar.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_matrix_lidar.dir/build.make CMakeFiles/test_matrix_lidar.dir/tests/test_matrix_lidar.cpp.i
+.PHONY : tests/test_matrix_lidar.cpp.i
+
+tests/test_matrix_lidar.s: tests/test_matrix_lidar.cpp.s
+.PHONY : tests/test_matrix_lidar.s
+
+# target to generate assembly for a file
+tests/test_matrix_lidar.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_matrix_lidar.dir/build.make CMakeFiles/test_matrix_lidar.dir/tests/test_matrix_lidar.cpp.s
+.PHONY : tests/test_matrix_lidar.cpp.s
+
+tests/test_matrix_lidar_local_map_source.o: tests/test_matrix_lidar_local_map_source.cpp.o
+.PHONY : tests/test_matrix_lidar_local_map_source.o
+
+# target to build an object file
+tests/test_matrix_lidar_local_map_source.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_matrix_lidar_local_map_source.dir/build.make CMakeFiles/test_matrix_lidar_local_map_source.dir/tests/test_matrix_lidar_local_map_source.cpp.o
+.PHONY : tests/test_matrix_lidar_local_map_source.cpp.o
+
+tests/test_matrix_lidar_local_map_source.i: tests/test_matrix_lidar_local_map_source.cpp.i
+.PHONY : tests/test_matrix_lidar_local_map_source.i
+
+# target to preprocess a source file
+tests/test_matrix_lidar_local_map_source.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_matrix_lidar_local_map_source.dir/build.make CMakeFiles/test_matrix_lidar_local_map_source.dir/tests/test_matrix_lidar_local_map_source.cpp.i
+.PHONY : tests/test_matrix_lidar_local_map_source.cpp.i
+
+tests/test_matrix_lidar_local_map_source.s: tests/test_matrix_lidar_local_map_source.cpp.s
+.PHONY : tests/test_matrix_lidar_local_map_source.s
+
+# target to generate assembly for a file
+tests/test_matrix_lidar_local_map_source.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_matrix_lidar_local_map_source.dir/build.make CMakeFiles/test_matrix_lidar_local_map_source.dir/tests/test_matrix_lidar_local_map_source.cpp.s
+.PHONY : tests/test_matrix_lidar_local_map_source.cpp.s
 
 tests/test_motion_intent_through_ik_fk.o: tests/test_motion_intent_through_ik_fk.cpp.o
 .PHONY : tests/test_motion_intent_through_ik_fk.o
@@ -2560,6 +3603,150 @@ tests/test_motion_intent_through_ik_fk.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_motion_intent_through_ik_fk.dir/build.make CMakeFiles/test_motion_intent_through_ik_fk.dir/tests/test_motion_intent_through_ik_fk.cpp.s
 .PHONY : tests/test_motion_intent_through_ik_fk.cpp.s
 
+tests/test_nav_locomotion_bridge.o: tests/test_nav_locomotion_bridge.cpp.o
+.PHONY : tests/test_nav_locomotion_bridge.o
+
+# target to build an object file
+tests/test_nav_locomotion_bridge.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_nav_locomotion_bridge.dir/build.make CMakeFiles/test_nav_locomotion_bridge.dir/tests/test_nav_locomotion_bridge.cpp.o
+.PHONY : tests/test_nav_locomotion_bridge.cpp.o
+
+tests/test_nav_locomotion_bridge.i: tests/test_nav_locomotion_bridge.cpp.i
+.PHONY : tests/test_nav_locomotion_bridge.i
+
+# target to preprocess a source file
+tests/test_nav_locomotion_bridge.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_nav_locomotion_bridge.dir/build.make CMakeFiles/test_nav_locomotion_bridge.dir/tests/test_nav_locomotion_bridge.cpp.i
+.PHONY : tests/test_nav_locomotion_bridge.cpp.i
+
+tests/test_nav_locomotion_bridge.s: tests/test_nav_locomotion_bridge.cpp.s
+.PHONY : tests/test_nav_locomotion_bridge.s
+
+# target to generate assembly for a file
+tests/test_nav_locomotion_bridge.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_nav_locomotion_bridge.dir/build.make CMakeFiles/test_nav_locomotion_bridge.dir/tests/test_nav_locomotion_bridge.cpp.s
+.PHONY : tests/test_nav_locomotion_bridge.cpp.s
+
+tests/test_nav_primitives.o: tests/test_nav_primitives.cpp.o
+.PHONY : tests/test_nav_primitives.o
+
+# target to build an object file
+tests/test_nav_primitives.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_nav_primitives.dir/build.make CMakeFiles/test_nav_primitives.dir/tests/test_nav_primitives.cpp.o
+.PHONY : tests/test_nav_primitives.cpp.o
+
+tests/test_nav_primitives.i: tests/test_nav_primitives.cpp.i
+.PHONY : tests/test_nav_primitives.i
+
+# target to preprocess a source file
+tests/test_nav_primitives.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_nav_primitives.dir/build.make CMakeFiles/test_nav_primitives.dir/tests/test_nav_primitives.cpp.i
+.PHONY : tests/test_nav_primitives.cpp.i
+
+tests/test_nav_primitives.s: tests/test_nav_primitives.cpp.s
+.PHONY : tests/test_nav_primitives.s
+
+# target to generate assembly for a file
+tests/test_nav_primitives.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_nav_primitives.dir/build.make CMakeFiles/test_nav_primitives.dir/tests/test_nav_primitives.cpp.s
+.PHONY : tests/test_nav_primitives.cpp.s
+
+tests/test_navigation_manager.o: tests/test_navigation_manager.cpp.o
+.PHONY : tests/test_navigation_manager.o
+
+# target to build an object file
+tests/test_navigation_manager.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_navigation_manager.dir/build.make CMakeFiles/test_navigation_manager.dir/tests/test_navigation_manager.cpp.o
+.PHONY : tests/test_navigation_manager.cpp.o
+
+tests/test_navigation_manager.i: tests/test_navigation_manager.cpp.i
+.PHONY : tests/test_navigation_manager.i
+
+# target to preprocess a source file
+tests/test_navigation_manager.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_navigation_manager.dir/build.make CMakeFiles/test_navigation_manager.dir/tests/test_navigation_manager.cpp.i
+.PHONY : tests/test_navigation_manager.cpp.i
+
+tests/test_navigation_manager.s: tests/test_navigation_manager.cpp.s
+.PHONY : tests/test_navigation_manager.s
+
+# target to generate assembly for a file
+tests/test_navigation_manager.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_navigation_manager.dir/build.make CMakeFiles/test_navigation_manager.dir/tests/test_navigation_manager.cpp.s
+.PHONY : tests/test_navigation_manager.cpp.s
+
+tests/test_navigation_matrix_lidar.o: tests/test_navigation_matrix_lidar.cpp.o
+.PHONY : tests/test_navigation_matrix_lidar.o
+
+# target to build an object file
+tests/test_navigation_matrix_lidar.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_navigation_matrix_lidar.dir/build.make CMakeFiles/test_navigation_matrix_lidar.dir/tests/test_navigation_matrix_lidar.cpp.o
+.PHONY : tests/test_navigation_matrix_lidar.cpp.o
+
+tests/test_navigation_matrix_lidar.i: tests/test_navigation_matrix_lidar.cpp.i
+.PHONY : tests/test_navigation_matrix_lidar.i
+
+# target to preprocess a source file
+tests/test_navigation_matrix_lidar.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_navigation_matrix_lidar.dir/build.make CMakeFiles/test_navigation_matrix_lidar.dir/tests/test_navigation_matrix_lidar.cpp.i
+.PHONY : tests/test_navigation_matrix_lidar.cpp.i
+
+tests/test_navigation_matrix_lidar.s: tests/test_navigation_matrix_lidar.cpp.s
+.PHONY : tests/test_navigation_matrix_lidar.s
+
+# target to generate assembly for a file
+tests/test_navigation_matrix_lidar.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_navigation_matrix_lidar.dir/build.make CMakeFiles/test_navigation_matrix_lidar.dir/tests/test_navigation_matrix_lidar.cpp.s
+.PHONY : tests/test_navigation_matrix_lidar.cpp.s
+
+tests/test_navigation_runtime.o: tests/test_navigation_runtime.cpp.o
+.PHONY : tests/test_navigation_runtime.o
+
+# target to build an object file
+tests/test_navigation_runtime.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_navigation_runtime.dir/build.make CMakeFiles/test_navigation_runtime.dir/tests/test_navigation_runtime.cpp.o
+.PHONY : tests/test_navigation_runtime.cpp.o
+
+tests/test_navigation_runtime.i: tests/test_navigation_runtime.cpp.i
+.PHONY : tests/test_navigation_runtime.i
+
+# target to preprocess a source file
+tests/test_navigation_runtime.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_navigation_runtime.dir/build.make CMakeFiles/test_navigation_runtime.dir/tests/test_navigation_runtime.cpp.i
+.PHONY : tests/test_navigation_runtime.cpp.i
+
+tests/test_navigation_runtime.s: tests/test_navigation_runtime.cpp.s
+.PHONY : tests/test_navigation_runtime.s
+
+# target to generate assembly for a file
+tests/test_navigation_runtime.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_navigation_runtime.dir/build.make CMakeFiles/test_navigation_runtime.dir/tests/test_navigation_runtime.cpp.s
+.PHONY : tests/test_navigation_runtime.cpp.s
+
+tests/test_physics_sim_bridge_frame_conversion.o: tests/test_physics_sim_bridge_frame_conversion.cpp.o
+.PHONY : tests/test_physics_sim_bridge_frame_conversion.o
+
+# target to build an object file
+tests/test_physics_sim_bridge_frame_conversion.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_bridge_frame_conversion.dir/build.make CMakeFiles/test_physics_sim_bridge_frame_conversion.dir/tests/test_physics_sim_bridge_frame_conversion.cpp.o
+.PHONY : tests/test_physics_sim_bridge_frame_conversion.cpp.o
+
+tests/test_physics_sim_bridge_frame_conversion.i: tests/test_physics_sim_bridge_frame_conversion.cpp.i
+.PHONY : tests/test_physics_sim_bridge_frame_conversion.i
+
+# target to preprocess a source file
+tests/test_physics_sim_bridge_frame_conversion.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_bridge_frame_conversion.dir/build.make CMakeFiles/test_physics_sim_bridge_frame_conversion.dir/tests/test_physics_sim_bridge_frame_conversion.cpp.i
+.PHONY : tests/test_physics_sim_bridge_frame_conversion.cpp.i
+
+tests/test_physics_sim_bridge_frame_conversion.s: tests/test_physics_sim_bridge_frame_conversion.cpp.s
+.PHONY : tests/test_physics_sim_bridge_frame_conversion.s
+
+# target to generate assembly for a file
+tests/test_physics_sim_bridge_frame_conversion.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_bridge_frame_conversion.dir/build.make CMakeFiles/test_physics_sim_bridge_frame_conversion.dir/tests/test_physics_sim_bridge_frame_conversion.cpp.s
+.PHONY : tests/test_physics_sim_bridge_frame_conversion.cpp.s
+
 tests/test_physics_sim_ik_wire_roundtrip.o: tests/test_physics_sim_ik_wire_roundtrip.cpp.o
 .PHONY : tests/test_physics_sim_ik_wire_roundtrip.o
 
@@ -2583,6 +3770,30 @@ tests/test_physics_sim_ik_wire_roundtrip.s: tests/test_physics_sim_ik_wire_round
 tests/test_physics_sim_ik_wire_roundtrip.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_ik_wire_roundtrip.dir/build.make CMakeFiles/test_physics_sim_ik_wire_roundtrip.dir/tests/test_physics_sim_ik_wire_roundtrip.cpp.s
 .PHONY : tests/test_physics_sim_ik_wire_roundtrip.cpp.s
+
+tests/test_physics_sim_local_map_source.o: tests/test_physics_sim_local_map_source.cpp.o
+.PHONY : tests/test_physics_sim_local_map_source.o
+
+# target to build an object file
+tests/test_physics_sim_local_map_source.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_local_map_source.dir/build.make CMakeFiles/test_physics_sim_local_map_source.dir/tests/test_physics_sim_local_map_source.cpp.o
+.PHONY : tests/test_physics_sim_local_map_source.cpp.o
+
+tests/test_physics_sim_local_map_source.i: tests/test_physics_sim_local_map_source.cpp.i
+.PHONY : tests/test_physics_sim_local_map_source.i
+
+# target to preprocess a source file
+tests/test_physics_sim_local_map_source.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_local_map_source.dir/build.make CMakeFiles/test_physics_sim_local_map_source.dir/tests/test_physics_sim_local_map_source.cpp.i
+.PHONY : tests/test_physics_sim_local_map_source.cpp.i
+
+tests/test_physics_sim_local_map_source.s: tests/test_physics_sim_local_map_source.cpp.s
+.PHONY : tests/test_physics_sim_local_map_source.s
+
+# target to generate assembly for a file
+tests/test_physics_sim_local_map_source.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_local_map_source.dir/build.make CMakeFiles/test_physics_sim_local_map_source.dir/tests/test_physics_sim_local_map_source.cpp.s
+.PHONY : tests/test_physics_sim_local_map_source.cpp.s
 
 tests/test_physics_sim_mapping_roundtrip.o: tests/test_physics_sim_mapping_roundtrip.cpp.o
 .PHONY : tests/test_physics_sim_mapping_roundtrip.o
@@ -2608,6 +3819,54 @@ tests/test_physics_sim_mapping_roundtrip.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_mapping_roundtrip.dir/build.make CMakeFiles/test_physics_sim_mapping_roundtrip.dir/tests/test_physics_sim_mapping_roundtrip.cpp.s
 .PHONY : tests/test_physics_sim_mapping_roundtrip.cpp.s
 
+tests/test_physics_sim_nav_waypoints.o: tests/test_physics_sim_nav_waypoints.cpp.o
+.PHONY : tests/test_physics_sim_nav_waypoints.o
+
+# target to build an object file
+tests/test_physics_sim_nav_waypoints.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_nav_waypoints.dir/build.make CMakeFiles/test_physics_sim_nav_waypoints.dir/tests/test_physics_sim_nav_waypoints.cpp.o
+.PHONY : tests/test_physics_sim_nav_waypoints.cpp.o
+
+tests/test_physics_sim_nav_waypoints.i: tests/test_physics_sim_nav_waypoints.cpp.i
+.PHONY : tests/test_physics_sim_nav_waypoints.i
+
+# target to preprocess a source file
+tests/test_physics_sim_nav_waypoints.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_nav_waypoints.dir/build.make CMakeFiles/test_physics_sim_nav_waypoints.dir/tests/test_physics_sim_nav_waypoints.cpp.i
+.PHONY : tests/test_physics_sim_nav_waypoints.cpp.i
+
+tests/test_physics_sim_nav_waypoints.s: tests/test_physics_sim_nav_waypoints.cpp.s
+.PHONY : tests/test_physics_sim_nav_waypoints.s
+
+# target to generate assembly for a file
+tests/test_physics_sim_nav_waypoints.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_nav_waypoints.dir/build.make CMakeFiles/test_physics_sim_nav_waypoints.dir/tests/test_physics_sim_nav_waypoints.cpp.s
+.PHONY : tests/test_physics_sim_nav_waypoints.cpp.s
+
+tests/test_physics_sim_navigation_acceptance.o: tests/test_physics_sim_navigation_acceptance.cpp.o
+.PHONY : tests/test_physics_sim_navigation_acceptance.o
+
+# target to build an object file
+tests/test_physics_sim_navigation_acceptance.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_navigation_acceptance.dir/build.make CMakeFiles/test_physics_sim_navigation_acceptance.dir/tests/test_physics_sim_navigation_acceptance.cpp.o
+.PHONY : tests/test_physics_sim_navigation_acceptance.cpp.o
+
+tests/test_physics_sim_navigation_acceptance.i: tests/test_physics_sim_navigation_acceptance.cpp.i
+.PHONY : tests/test_physics_sim_navigation_acceptance.i
+
+# target to preprocess a source file
+tests/test_physics_sim_navigation_acceptance.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_navigation_acceptance.dir/build.make CMakeFiles/test_physics_sim_navigation_acceptance.dir/tests/test_physics_sim_navigation_acceptance.cpp.i
+.PHONY : tests/test_physics_sim_navigation_acceptance.cpp.i
+
+tests/test_physics_sim_navigation_acceptance.s: tests/test_physics_sim_navigation_acceptance.cpp.s
+.PHONY : tests/test_physics_sim_navigation_acceptance.s
+
+# target to generate assembly for a file
+tests/test_physics_sim_navigation_acceptance.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_navigation_acceptance.dir/build.make CMakeFiles/test_physics_sim_navigation_acceptance.dir/tests/test_physics_sim_navigation_acceptance.cpp.s
+.PHONY : tests/test_physics_sim_navigation_acceptance.cpp.s
+
 tests/test_physics_sim_serve_zero_g_udp.o: tests/test_physics_sim_serve_zero_g_udp.cpp.o
 .PHONY : tests/test_physics_sim_serve_zero_g_udp.o
 
@@ -2631,6 +3890,30 @@ tests/test_physics_sim_serve_zero_g_udp.s: tests/test_physics_sim_serve_zero_g_u
 tests/test_physics_sim_serve_zero_g_udp.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_serve_zero_g_udp.dir/build.make CMakeFiles/test_physics_sim_serve_zero_g_udp.dir/tests/test_physics_sim_serve_zero_g_udp.cpp.s
 .PHONY : tests/test_physics_sim_serve_zero_g_udp.cpp.s
+
+tests/test_physics_sim_walk_distance.o: tests/test_physics_sim_walk_distance.cpp.o
+.PHONY : tests/test_physics_sim_walk_distance.o
+
+# target to build an object file
+tests/test_physics_sim_walk_distance.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_distance.dir/build.make CMakeFiles/test_physics_sim_walk_distance.dir/tests/test_physics_sim_walk_distance.cpp.o
+.PHONY : tests/test_physics_sim_walk_distance.cpp.o
+
+tests/test_physics_sim_walk_distance.i: tests/test_physics_sim_walk_distance.cpp.i
+.PHONY : tests/test_physics_sim_walk_distance.i
+
+# target to preprocess a source file
+tests/test_physics_sim_walk_distance.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_distance.dir/build.make CMakeFiles/test_physics_sim_walk_distance.dir/tests/test_physics_sim_walk_distance.cpp.i
+.PHONY : tests/test_physics_sim_walk_distance.cpp.i
+
+tests/test_physics_sim_walk_distance.s: tests/test_physics_sim_walk_distance.cpp.s
+.PHONY : tests/test_physics_sim_walk_distance.s
+
+# target to generate assembly for a file
+tests/test_physics_sim_walk_distance.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_distance.dir/build.make CMakeFiles/test_physics_sim_walk_distance.dir/tests/test_physics_sim_walk_distance.cpp.s
+.PHONY : tests/test_physics_sim_walk_distance.cpp.s
 
 tests/test_protocol_command_metadata.o: tests/test_protocol_command_metadata.cpp.o
 .PHONY : tests/test_protocol_command_metadata.o
@@ -2872,6 +4155,30 @@ tests/test_simple_estimator_ground_plane.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_simple_estimator_ground_plane.dir/build.make CMakeFiles/test_simple_estimator_ground_plane.dir/tests/test_simple_estimator_ground_plane.cpp.s
 .PHONY : tests/test_simple_estimator_ground_plane.cpp.s
 
+tests/test_swing_trajectory.o: tests/test_swing_trajectory.cpp.o
+.PHONY : tests/test_swing_trajectory.o
+
+# target to build an object file
+tests/test_swing_trajectory.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_swing_trajectory.dir/build.make CMakeFiles/test_swing_trajectory.dir/tests/test_swing_trajectory.cpp.o
+.PHONY : tests/test_swing_trajectory.cpp.o
+
+tests/test_swing_trajectory.i: tests/test_swing_trajectory.cpp.i
+.PHONY : tests/test_swing_trajectory.i
+
+# target to preprocess a source file
+tests/test_swing_trajectory.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_swing_trajectory.dir/build.make CMakeFiles/test_swing_trajectory.dir/tests/test_swing_trajectory.cpp.i
+.PHONY : tests/test_swing_trajectory.cpp.i
+
+tests/test_swing_trajectory.s: tests/test_swing_trajectory.cpp.s
+.PHONY : tests/test_swing_trajectory.s
+
+# target to generate assembly for a file
+tests/test_swing_trajectory.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_swing_trajectory.dir/build.make CMakeFiles/test_swing_trajectory.dir/tests/test_swing_trajectory.cpp.s
+.PHONY : tests/test_swing_trajectory.cpp.s
+
 tests/test_telemetry_json_serialization.o: tests/test_telemetry_json_serialization.cpp.o
 .PHONY : tests/test_telemetry_json_serialization.o
 
@@ -2944,6 +4251,30 @@ tests/test_transport_components.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_transport_components.dir/build.make CMakeFiles/test_transport_components.dir/tests/test_transport_components.cpp.s
 .PHONY : tests/test_transport_components.cpp.s
 
+tests/test_twist_field.o: tests/test_twist_field.cpp.o
+.PHONY : tests/test_twist_field.o
+
+# target to build an object file
+tests/test_twist_field.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_twist_field.dir/build.make CMakeFiles/test_twist_field.dir/tests/test_twist_field.cpp.o
+.PHONY : tests/test_twist_field.cpp.o
+
+tests/test_twist_field.i: tests/test_twist_field.cpp.i
+.PHONY : tests/test_twist_field.i
+
+# target to preprocess a source file
+tests/test_twist_field.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_twist_field.dir/build.make CMakeFiles/test_twist_field.dir/tests/test_twist_field.cpp.i
+.PHONY : tests/test_twist_field.cpp.i
+
+tests/test_twist_field.s: tests/test_twist_field.cpp.s
+.PHONY : tests/test_twist_field.s
+
+# target to generate assembly for a file
+tests/test_twist_field.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_twist_field.dir/build.make CMakeFiles/test_twist_field.dir/tests/test_twist_field.cpp.s
+.PHONY : tests/test_twist_field.cpp.s
+
 tests/test_virtual_gamepad_controller.o: tests/test_virtual_gamepad_controller.cpp.o
 .PHONY : tests/test_virtual_gamepad_controller.o
 
@@ -3009,17 +4340,38 @@ help:
 	@echo "... test_calibration_probe_fit"
 	@echo "... test_cli_mode_selection"
 	@echo "... test_command_flow_integration"
+	@echo "... test_contact_foot_response"
 	@echo "... test_control_pipeline_sanity"
+	@echo "... test_foot_reachability"
+	@echo "... test_foothold_planner"
 	@echo "... test_freshness_policy"
+	@echo "... test_gait_params"
 	@echo "... test_geometry_profile_service"
 	@echo "... test_hardware_bridge_transport"
+	@echo "... test_imu_physics"
 	@echo "... test_interactive_input_mapper"
 	@echo "... test_joint_feedback_estimator"
+	@echo "... test_local_map"
+	@echo "... test_local_planner"
+	@echo "... test_locomotion_command"
+	@echo "... test_locomotion_pose_and_stability"
 	@echo "... test_loop_executor_timing"
+	@echo "... test_matrix_lidar"
+	@echo "... test_matrix_lidar_local_map_source"
 	@echo "... test_motion_intent_through_ik_fk"
+	@echo "... test_nav_locomotion_bridge"
+	@echo "... test_nav_primitives"
+	@echo "... test_navigation_manager"
+	@echo "... test_navigation_matrix_lidar"
+	@echo "... test_navigation_runtime"
+	@echo "... test_physics_sim_bridge_frame_conversion"
 	@echo "... test_physics_sim_ik_wire_roundtrip"
+	@echo "... test_physics_sim_local_map_source"
 	@echo "... test_physics_sim_mapping_roundtrip"
+	@echo "... test_physics_sim_nav_waypoints"
+	@echo "... test_physics_sim_navigation_acceptance"
 	@echo "... test_physics_sim_serve_zero_g_udp"
+	@echo "... test_physics_sim_walk_distance"
 	@echo "... test_protocol_command_metadata"
 	@echo "... test_robot_runtime_freshness_gate_matrix"
 	@echo "... test_robot_runtime_loop"
@@ -3030,9 +4382,11 @@ help:
 	@echo "... test_servo_calibration_unified_conversion"
 	@echo "... test_shutdown_summary_logging"
 	@echo "... test_simple_estimator_ground_plane"
+	@echo "... test_swing_trajectory"
 	@echo "... test_telemetry_json_serialization"
 	@echo "... test_toml_parser_sections"
 	@echo "... test_transport_components"
+	@echo "... test_twist_field"
 	@echo "... test_virtual_gamepad_controller"
 	@echo "... test_visualiser_telemetry"
 	@echo "... home/volly/pico/hexapod/hexapod-common/framing.o"
@@ -3077,12 +4431,18 @@ help:
 	@echo "... src/control/body_controller.o"
 	@echo "... src/control/body_controller.i"
 	@echo "... src/control/body_controller.s"
+	@echo "... src/control/body_pose_controller.o"
+	@echo "... src/control/body_pose_controller.i"
+	@echo "... src/control/body_pose_controller.s"
 	@echo "... src/control/calibration_probe.o"
 	@echo "... src/control/calibration_probe.i"
 	@echo "... src/control/calibration_probe.s"
 	@echo "... src/control/cli_options.o"
 	@echo "... src/control/cli_options.i"
 	@echo "... src/control/cli_options.s"
+	@echo "... src/control/contact_foot_response.o"
+	@echo "... src/control/contact_foot_response.i"
+	@echo "... src/control/contact_foot_response.s"
 	@echo "... src/control/control_config.o"
 	@echo "... src/control/control_config.i"
 	@echo "... src/control/control_config.s"
@@ -3092,9 +4452,21 @@ help:
 	@echo "... src/control/estimator.o"
 	@echo "... src/control/estimator.i"
 	@echo "... src/control/estimator.s"
+	@echo "... src/control/foot_planners.o"
+	@echo "... src/control/foot_planners.i"
+	@echo "... src/control/foot_planners.s"
+	@echo "... src/control/foot_reachability.o"
+	@echo "... src/control/foot_reachability.i"
+	@echo "... src/control/foot_reachability.s"
+	@echo "... src/control/foothold_planner.o"
+	@echo "... src/control/foothold_planner.i"
+	@echo "... src/control/foothold_planner.s"
 	@echo "... src/control/freshness_policy.o"
 	@echo "... src/control/freshness_policy.i"
 	@echo "... src/control/freshness_policy.s"
+	@echo "... src/control/gait_params.o"
+	@echo "... src/control/gait_params.i"
+	@echo "... src/control/gait_params.s"
 	@echo "... src/control/gait_scheduler.o"
 	@echo "... src/control/gait_scheduler.i"
 	@echo "... src/control/gait_scheduler.s"
@@ -3107,21 +4479,51 @@ help:
 	@echo "... src/control/interactive_input_mapper.o"
 	@echo "... src/control/interactive_input_mapper.i"
 	@echo "... src/control/interactive_input_mapper.s"
+	@echo "... src/control/local_map.o"
+	@echo "... src/control/local_map.i"
+	@echo "... src/control/local_map.s"
+	@echo "... src/control/local_planner.o"
+	@echo "... src/control/local_planner.i"
+	@echo "... src/control/local_planner.s"
+	@echo "... src/control/locomotion_command.o"
+	@echo "... src/control/locomotion_command.i"
+	@echo "... src/control/locomotion_command.s"
+	@echo "... src/control/locomotion_stability.o"
+	@echo "... src/control/locomotion_stability.i"
+	@echo "... src/control/locomotion_stability.s"
 	@echo "... src/control/loop_executor.o"
 	@echo "... src/control/loop_executor.i"
 	@echo "... src/control/loop_executor.s"
 	@echo "... src/control/loop_timing.o"
 	@echo "... src/control/loop_timing.i"
 	@echo "... src/control/loop_timing.s"
+	@echo "... src/control/matrix_lidar_local_map_source.o"
+	@echo "... src/control/matrix_lidar_local_map_source.i"
+	@echo "... src/control/matrix_lidar_local_map_source.s"
 	@echo "... src/control/mode_runners.o"
 	@echo "... src/control/mode_runners.i"
 	@echo "... src/control/mode_runners.s"
 	@echo "... src/control/motion_intent_utils.o"
 	@echo "... src/control/motion_intent_utils.i"
 	@echo "... src/control/motion_intent_utils.s"
+	@echo "... src/control/nav_locomotion_bridge.o"
+	@echo "... src/control/nav_locomotion_bridge.i"
+	@echo "... src/control/nav_locomotion_bridge.s"
+	@echo "... src/control/nav_primitives.o"
+	@echo "... src/control/nav_primitives.i"
+	@echo "... src/control/nav_primitives.s"
+	@echo "... src/control/nav_to_locomotion.o"
+	@echo "... src/control/nav_to_locomotion.i"
+	@echo "... src/control/nav_to_locomotion.s"
+	@echo "... src/control/navigation_manager.o"
+	@echo "... src/control/navigation_manager.i"
+	@echo "... src/control/navigation_manager.s"
 	@echo "... src/control/physics_sim_estimator.o"
 	@echo "... src/control/physics_sim_estimator.i"
 	@echo "... src/control/physics_sim_estimator.s"
+	@echo "... src/control/physics_sim_local_map_source.o"
+	@echo "... src/control/physics_sim_local_map_source.i"
+	@echo "... src/control/physics_sim_local_map_source.s"
 	@echo "... src/control/plane_estimation.o"
 	@echo "... src/control/plane_estimation.i"
 	@echo "... src/control/plane_estimation.s"
@@ -3152,6 +4554,9 @@ help:
 	@echo "... src/control/status_reporter.o"
 	@echo "... src/control/status_reporter.i"
 	@echo "... src/control/status_reporter.s"
+	@echo "... src/control/swing_trajectory.o"
+	@echo "... src/control/swing_trajectory.i"
+	@echo "... src/control/swing_trajectory.s"
 	@echo "... src/control/telemetry_json.o"
 	@echo "... src/control/telemetry_json.i"
 	@echo "... src/control/telemetry_json.s"
@@ -3215,6 +4620,15 @@ help:
 	@echo "... src/scenario/scenario_driver.o"
 	@echo "... src/scenario/scenario_driver.i"
 	@echo "... src/scenario/scenario_driver.s"
+	@echo "... src/sensors/imu_physics.o"
+	@echo "... src/sensors/imu_physics.i"
+	@echo "... src/sensors/imu_physics.s"
+	@echo "... src/sensors/matrix_lidar_physics.o"
+	@echo "... src/sensors/matrix_lidar_physics.i"
+	@echo "... src/sensors/matrix_lidar_physics.s"
+	@echo "... src/sensors/software_imu.o"
+	@echo "... src/sensors/software_imu.i"
+	@echo "... src/sensors/software_imu.s"
 	@echo "... src/utils/logger.o"
 	@echo "... src/utils/logger.i"
 	@echo "... src/utils/logger.s"
@@ -3236,12 +4650,24 @@ help:
 	@echo "... tests/test_command_flow_integration.o"
 	@echo "... tests/test_command_flow_integration.i"
 	@echo "... tests/test_command_flow_integration.s"
+	@echo "... tests/test_contact_foot_response.o"
+	@echo "... tests/test_contact_foot_response.i"
+	@echo "... tests/test_contact_foot_response.s"
 	@echo "... tests/test_control_pipeline_sanity.o"
 	@echo "... tests/test_control_pipeline_sanity.i"
 	@echo "... tests/test_control_pipeline_sanity.s"
+	@echo "... tests/test_foot_reachability.o"
+	@echo "... tests/test_foot_reachability.i"
+	@echo "... tests/test_foot_reachability.s"
+	@echo "... tests/test_foothold_planner.o"
+	@echo "... tests/test_foothold_planner.i"
+	@echo "... tests/test_foothold_planner.s"
 	@echo "... tests/test_freshness_policy.o"
 	@echo "... tests/test_freshness_policy.i"
 	@echo "... tests/test_freshness_policy.s"
+	@echo "... tests/test_gait_params.o"
+	@echo "... tests/test_gait_params.i"
+	@echo "... tests/test_gait_params.s"
 	@echo "... tests/test_geometry_profile_service.o"
 	@echo "... tests/test_geometry_profile_service.i"
 	@echo "... tests/test_geometry_profile_service.s"
@@ -3272,27 +4698,78 @@ help:
 	@echo "... tests/test_hardware_bridge_transport_main.o"
 	@echo "... tests/test_hardware_bridge_transport_main.i"
 	@echo "... tests/test_hardware_bridge_transport_main.s"
+	@echo "... tests/test_imu_physics.o"
+	@echo "... tests/test_imu_physics.i"
+	@echo "... tests/test_imu_physics.s"
 	@echo "... tests/test_interactive_input_mapper.o"
 	@echo "... tests/test_interactive_input_mapper.i"
 	@echo "... tests/test_interactive_input_mapper.s"
 	@echo "... tests/test_joint_feedback_estimator.o"
 	@echo "... tests/test_joint_feedback_estimator.i"
 	@echo "... tests/test_joint_feedback_estimator.s"
+	@echo "... tests/test_local_map.o"
+	@echo "... tests/test_local_map.i"
+	@echo "... tests/test_local_map.s"
+	@echo "... tests/test_local_planner.o"
+	@echo "... tests/test_local_planner.i"
+	@echo "... tests/test_local_planner.s"
+	@echo "... tests/test_locomotion_command.o"
+	@echo "... tests/test_locomotion_command.i"
+	@echo "... tests/test_locomotion_command.s"
+	@echo "... tests/test_locomotion_pose_and_stability.o"
+	@echo "... tests/test_locomotion_pose_and_stability.i"
+	@echo "... tests/test_locomotion_pose_and_stability.s"
 	@echo "... tests/test_loop_executor_timing.o"
 	@echo "... tests/test_loop_executor_timing.i"
 	@echo "... tests/test_loop_executor_timing.s"
+	@echo "... tests/test_matrix_lidar.o"
+	@echo "... tests/test_matrix_lidar.i"
+	@echo "... tests/test_matrix_lidar.s"
+	@echo "... tests/test_matrix_lidar_local_map_source.o"
+	@echo "... tests/test_matrix_lidar_local_map_source.i"
+	@echo "... tests/test_matrix_lidar_local_map_source.s"
 	@echo "... tests/test_motion_intent_through_ik_fk.o"
 	@echo "... tests/test_motion_intent_through_ik_fk.i"
 	@echo "... tests/test_motion_intent_through_ik_fk.s"
+	@echo "... tests/test_nav_locomotion_bridge.o"
+	@echo "... tests/test_nav_locomotion_bridge.i"
+	@echo "... tests/test_nav_locomotion_bridge.s"
+	@echo "... tests/test_nav_primitives.o"
+	@echo "... tests/test_nav_primitives.i"
+	@echo "... tests/test_nav_primitives.s"
+	@echo "... tests/test_navigation_manager.o"
+	@echo "... tests/test_navigation_manager.i"
+	@echo "... tests/test_navigation_manager.s"
+	@echo "... tests/test_navigation_matrix_lidar.o"
+	@echo "... tests/test_navigation_matrix_lidar.i"
+	@echo "... tests/test_navigation_matrix_lidar.s"
+	@echo "... tests/test_navigation_runtime.o"
+	@echo "... tests/test_navigation_runtime.i"
+	@echo "... tests/test_navigation_runtime.s"
+	@echo "... tests/test_physics_sim_bridge_frame_conversion.o"
+	@echo "... tests/test_physics_sim_bridge_frame_conversion.i"
+	@echo "... tests/test_physics_sim_bridge_frame_conversion.s"
 	@echo "... tests/test_physics_sim_ik_wire_roundtrip.o"
 	@echo "... tests/test_physics_sim_ik_wire_roundtrip.i"
 	@echo "... tests/test_physics_sim_ik_wire_roundtrip.s"
+	@echo "... tests/test_physics_sim_local_map_source.o"
+	@echo "... tests/test_physics_sim_local_map_source.i"
+	@echo "... tests/test_physics_sim_local_map_source.s"
 	@echo "... tests/test_physics_sim_mapping_roundtrip.o"
 	@echo "... tests/test_physics_sim_mapping_roundtrip.i"
 	@echo "... tests/test_physics_sim_mapping_roundtrip.s"
+	@echo "... tests/test_physics_sim_nav_waypoints.o"
+	@echo "... tests/test_physics_sim_nav_waypoints.i"
+	@echo "... tests/test_physics_sim_nav_waypoints.s"
+	@echo "... tests/test_physics_sim_navigation_acceptance.o"
+	@echo "... tests/test_physics_sim_navigation_acceptance.i"
+	@echo "... tests/test_physics_sim_navigation_acceptance.s"
 	@echo "... tests/test_physics_sim_serve_zero_g_udp.o"
 	@echo "... tests/test_physics_sim_serve_zero_g_udp.i"
 	@echo "... tests/test_physics_sim_serve_zero_g_udp.s"
+	@echo "... tests/test_physics_sim_walk_distance.o"
+	@echo "... tests/test_physics_sim_walk_distance.i"
+	@echo "... tests/test_physics_sim_walk_distance.s"
 	@echo "... tests/test_protocol_command_metadata.o"
 	@echo "... tests/test_protocol_command_metadata.i"
 	@echo "... tests/test_protocol_command_metadata.s"
@@ -3323,6 +4800,9 @@ help:
 	@echo "... tests/test_simple_estimator_ground_plane.o"
 	@echo "... tests/test_simple_estimator_ground_plane.i"
 	@echo "... tests/test_simple_estimator_ground_plane.s"
+	@echo "... tests/test_swing_trajectory.o"
+	@echo "... tests/test_swing_trajectory.i"
+	@echo "... tests/test_swing_trajectory.s"
 	@echo "... tests/test_telemetry_json_serialization.o"
 	@echo "... tests/test_telemetry_json_serialization.i"
 	@echo "... tests/test_telemetry_json_serialization.s"
@@ -3332,6 +4812,9 @@ help:
 	@echo "... tests/test_transport_components.o"
 	@echo "... tests/test_transport_components.i"
 	@echo "... tests/test_transport_components.s"
+	@echo "... tests/test_twist_field.o"
+	@echo "... tests/test_twist_field.i"
+	@echo "... tests/test_twist_field.s"
 	@echo "... tests/test_virtual_gamepad_controller.o"
 	@echo "... tests/test_virtual_gamepad_controller.i"
 	@echo "... tests/test_virtual_gamepad_controller.s"

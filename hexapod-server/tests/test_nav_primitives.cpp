@@ -38,13 +38,13 @@ int main() {
     nav.vy_mps = -0.05;
     nav.yaw_rate_radps = 0.2;
     applyNavCommandToMotionIntent(nav, intent);
-    if (!nearlyEq(intent.cmd_vx_mps.value, 0.12) || !nearlyEq(intent.cmd_vy_mps.value, -0.05) ||
+    if (!nearlyEq(intent.cmd_vx_mps.value, -0.12) || !nearlyEq(intent.cmd_vy_mps.value, -0.05) ||
         !nearlyEq(intent.cmd_yaw_radps.value, 0.2)) {
         std::cerr << "FAIL: applyNavCommandToMotionIntent cmd fields\n";
         return EXIT_FAILURE;
     }
     const PlanarMotionCommand planar = planarMotionCommand(intent);
-    if (!nearlyEq(planar.vx_mps, 0.12) || !nearlyEq(planar.vy_mps, -0.05) ||
+    if (!nearlyEq(planar.vx_mps, -0.12) || !nearlyEq(planar.vy_mps, -0.05) ||
         !nearlyEq(planar.yaw_rate_radps, 0.2)) {
         std::cerr << "FAIL: planarMotionCommand after nav apply\n";
         return EXIT_FAILURE;

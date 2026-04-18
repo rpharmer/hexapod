@@ -141,7 +141,7 @@ private:
                 physics_sim::StateResponse rsp{};
                 rsp.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateResponse);
                 rsp.sequence_id = step.sequence_id;
-                rsp.body_position = {0.0f, 0.151162f, 0.0f};
+                rsp.body_position = {0.03125f, 0.151162f, -0.0625f};
                 rsp.body_orientation = {1.0f, 0.0f, 0.0f, 0.0f};
                 rsp.body_linear_velocity = {0.0f, 0.0f, 0.0f};
                 rsp.body_angular_velocity = {0.0f, 0.0f, 0.0f};
@@ -225,10 +225,10 @@ int main() {
                 "upright sim pose should map to near-zero pitch") ||
         !expect(nearlyEqual(out.body_twist_state.twist_pos_rad.z, 0.0),
                 "upright sim pose should map to near-zero yaw") ||
-        !expect(nearlyEqual(out.body_twist_state.body_trans_m.x, 0.0),
-                "sim x translation should map through unchanged") ||
-        !expect(nearlyEqual(out.body_twist_state.body_trans_m.y, 0.0),
-                "sim z translation should map through unchanged") ||
+        !expect(nearlyEqual(out.body_twist_state.body_trans_m.x, 0.0625, 1e-6),
+                "sim -z translation should map to server +x") ||
+        !expect(nearlyEqual(out.body_twist_state.body_trans_m.y, 0.03125, 1e-6),
+                "sim x translation should map to server +y") ||
         !expect(nearlyEqual(out.body_twist_state.body_trans_m.z, 0.151162, 1e-6),
                 "sim y translation should map to server z")) {
         return EXIT_FAILURE;

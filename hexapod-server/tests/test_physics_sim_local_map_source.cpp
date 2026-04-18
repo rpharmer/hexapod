@@ -49,6 +49,10 @@ int main() {
     if (!expect(observation.timestamp_us.value == 123456, "source should stamp observation with collection time")) {
         return EXIT_FAILURE;
     }
+    if (!expect(observation.freshness_class == LocalMapObservationFreshnessClass::Auxiliary,
+                "physics-sim footprint source should be auxiliary for freshness accounting")) {
+        return EXIT_FAILURE;
+    }
     if (!expect(observation.samples.size() >= 18, "source should rasterize obstacle footprints into occupied samples")) {
         return EXIT_FAILURE;
     }

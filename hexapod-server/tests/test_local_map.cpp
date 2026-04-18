@@ -92,5 +92,22 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    builder.reset();
+    LocalMapObservation primary{};
+    primary.timestamp_us = TimePointUs{2'000'000};
+    primary.samples.push_back(LocalMapObservationSample{0.0, 0.0, LocalMapCellState::Free});
+    LocalMapObservation auxiliary{};
+    auxiliary.timestamp_us = TimePointUs{2'800'000};
+    auxiliary.samples.push_back(LocalMapObservationSample{0.1, 0.0, LocalMapCellState::Occupied});
+    auxiliary.freshness_class = LocalMapObservationFreshnessClass::Auxiliary;
+    builder.update(pose, auxiliary.timestamp_us, {primary, auxiliary});
+    const LocalMapSnapshot masked = builder.snapshot(TimePointUs{3'100'000});
+    if (!expect(!masked.fresh, "auxiliary observations should not mask stale primary map sources")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(masked.has_primary_observations, "primary-source bookkeeping should survive auxiliary updates")) {
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }

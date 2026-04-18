@@ -24,10 +24,12 @@ bool nearlyEq(double a, double b, double eps = 1e-5) {
 
 void step_pose_from_motion_intent(NavPose2d& sim, const MotionIntent& m, const double dt_s) {
     const PlanarMotionCommand p = planarMotionCommand(m);
+    const double world_vx = -p.vx_mps;
+    const double world_vy = p.vy_mps;
     const double c0 = std::cos(sim.yaw_rad);
     const double s0 = std::sin(sim.yaw_rad);
-    sim.x_m += (c0 * p.vx_mps - s0 * p.vy_mps) * dt_s;
-    sim.y_m += (s0 * p.vx_mps + c0 * p.vy_mps) * dt_s;
+    sim.x_m += (c0 * world_vx - s0 * world_vy) * dt_s;
+    sim.y_m += (s0 * world_vx + c0 * world_vy) * dt_s;
     sim.yaw_rad = navWrapAngleRad(sim.yaw_rad + p.yaw_rate_radps * dt_s);
 }
 

@@ -27,6 +27,18 @@ bool hasOccupiedNear(const LocalMapObservation& obs, double x_m, double y_m, dou
     return false;
 }
 
+bool hasFreeNear(const LocalMapObservation& obs, double x_m, double y_m, double tol_m) {
+    for (const LocalMapObservationSample& s : obs.samples) {
+        if (s.state != LocalMapCellState::Free) {
+            continue;
+        }
+        if (std::hypot(s.x_m - x_m, s.y_m - y_m) <= tol_m) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 int main() {
@@ -52,14 +64,44 @@ int main() {
     if (!expect(!obs.samples.empty(), "center return should produce at least one occupied sample")) {
         return EXIT_FAILURE;
     }
+    if (!expect(hasFreeNear(obs, 1.0, 0.0, 0.25),
+                "center return should also clear free space along the ray")) {
+        return EXIT_FAILURE;
+    }
     // Forward hit should lie near +X from the sensor mount (~0.055 m) at roughly 2 m.
     if (!expect(hasOccupiedNear(obs, 2.0, 0.0, 0.25), "hit should be near +X world from robot origin")) {
+        return EXIT_FAILURE;
+    }
+
+    est.matrix_lidar.ranges_mm.fill(physics_sim::kMatrixLidarInvalidMm);
+    est.matrix_lidar.ranges_mm[4 * 64 + 32] = 250;
+    const LocalMapObservation ground_like = source.collect(pose, est, TimePointUs{10'000});
+    if (!expect(hasFreeNear(ground_like, 0.2, 0.0, 0.15),
+                "ground-like returns should still contribute free-space clearing")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(!hasOccupiedNear(ground_like, 0.2, 0.0, 0.15),
+                "ground-like returns should not stamp occupied cells")) {
+        return EXIT_FAILURE;
+    }
+
+    est.matrix_lidar.ranges_mm.fill(physics_sim::kMatrixLidarInvalidMm);
+    const LocalMapObservation no_return = source.collect(pose, est, TimePointUs{11'000});
+    if (!expect(hasFreeNear(no_return, 1.5, 0.0, 0.4),
+                "no-return cells should still clear free space out to sensor max range")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(!hasOccupiedNear(no_return, 2.0, 0.0, 0.4),
+                "no-return cells should not fabricate occupied endpoints")) {
         return EXIT_FAILURE;
     }
 
     RobotState no_lidar{};
     const LocalMapObservation empty = source.collect(pose, no_lidar, TimePointUs{10'000});
     if (!expect(empty.samples.empty(), "without lidar data the observation should be empty")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(empty.timestamp_us.isZero(), "without lidar data the observation should not refresh map freshness")) {
         return EXIT_FAILURE;
     }
 

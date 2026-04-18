@@ -7,7 +7,7 @@ namespace {
 constexpr double kStandardGravity = 9.80665;
 
 Vec3 simVecToServer(const float x, const float y, const float z) {
-    return Vec3{static_cast<double>(x), static_cast<double>(z), static_cast<double>(y)};
+    return Vec3{-static_cast<double>(z), static_cast<double>(x), static_cast<double>(y)};
 }
 
 Mat3 quatWxyzToMat3(const double w, const double x, const double y, const double z) {
@@ -37,12 +37,12 @@ Mat3 quatWxyzToMat3(const double w, const double x, const double y, const double
 
 Mat3 frameSimToServer() {
     Mat3 r{};
-    r.m[0][0] = 1.0;
+    r.m[0][0] = 0.0;
     r.m[0][1] = 0.0;
-    r.m[0][2] = 0.0;
-    r.m[1][0] = 0.0;
+    r.m[0][2] = -1.0;
+    r.m[1][0] = 1.0;
     r.m[1][1] = 0.0;
-    r.m[1][2] = 1.0;
+    r.m[1][2] = 0.0;
     r.m[2][0] = 0.0;
     r.m[2][1] = 1.0;
     r.m[2][2] = 0.0;
@@ -65,7 +65,7 @@ void imuSampleFromPhysicsStateResponse(const physics_sim::StateResponse& rsp,
                                       static_cast<double>(rsp.body_orientation[2]),
                                       static_cast<double>(rsp.body_orientation[3]));
     const Mat3 R_ws = frameSimToServer();
-    const Mat3 R_srv = R_ws * R_sim * R_ws;
+    const Mat3 R_srv = R_ws * R_sim * R_ws.transpose();
 
     const Vec3 specific_force_world{0.0, 0.0, kStandardGravity};
     out.accel_mps2 = R_srv.transpose() * specific_force_world;

@@ -59,7 +59,9 @@ MotionIntent makeMotionIntent(const ScenarioMotionIntent& motion) {
         vx = motion.vx_mps;
         vy = motion.vy_mps;
     }
-    cmd.cmd_vx_mps = LinearRateMps{vx};
+    // Scenario/manual motion follows the same user-facing forward convention as navigation.
+    // The locomotion pipeline consumes the opposite sign on X, so normalize here.
+    cmd.cmd_vx_mps = LinearRateMps{-vx};
     cmd.cmd_vy_mps = LinearRateMps{vy};
     cmd.cmd_yaw_radps = AngularRateRadPerSec{motion.yaw_rate_radps};
     cmd.twist.twist_pos_rad.z = motion.yaw_rad;

@@ -10,6 +10,11 @@
 
 namespace {
 
+constexpr double kRaySampleSpacingM = 0.05;
+constexpr double kGroundHitHeightToleranceM = 0.05;
+constexpr double kGroundExpectedRangeAbsToleranceM = 0.06;
+constexpr double kGroundExpectedRangeRelTolerance = 0.12;
+
 Vec3 normalizeVec3(const Vec3& v) {
     const double n = vecNorm(v);
     if (n <= 1.0e-12) {
@@ -52,13 +57,68 @@ bool finitePose(const NavPose2d& pose) {
     return std::isfinite(pose.x_m) && std::isfinite(pose.y_m) && std::isfinite(pose.yaw_rad);
 }
 
+void appendRaySamples(LocalMapObservation& out,
+                      const double sensor_x,
+                      const double sensor_y,
+                      const Vec3& dir_w,
+                      const double clear_range_m,
+                      const bool has_hit,
+                      const double hit_range_m) {
+    if (!std::isfinite(clear_range_m) || clear_range_m <= 0.0) {
+        return;
+    }
+
+    const double free_end_m =
+        has_hit ? std::max(0.0, hit_range_m - (0.5 * kRaySampleSpacingM)) : clear_range_m;
+    for (double distance_m = kRaySampleSpacingM; distance_m <= free_end_m; distance_m += kRaySampleSpacingM) {
+        const double sample_x = sensor_x + distance_m * dir_w.x;
+        const double sample_y = sensor_y + distance_m * dir_w.y;
+        if (!std::isfinite(sample_x) || !std::isfinite(sample_y)) {
+            continue;
+        }
+        out.samples.push_back(LocalMapObservationSample{sample_x, sample_y, LocalMapCellState::Free});
+    }
+
+    if (!has_hit) {
+        return;
+    }
+
+    const double hit_x = sensor_x + hit_range_m * dir_w.x;
+    const double hit_y = sensor_y + hit_range_m * dir_w.y;
+    if (!std::isfinite(hit_x) || !std::isfinite(hit_y)) {
+        return;
+    }
+    out.samples.push_back(LocalMapObservationSample{hit_x, hit_y, LocalMapCellState::Occupied});
+}
+
+bool isGroundReturn(const double sensor_z,
+                    const Vec3& dir_w,
+                    const double range_m) {
+    if (!std::isfinite(sensor_z) || !std::isfinite(dir_w.z) || !std::isfinite(range_m)) {
+        return false;
+    }
+    if (sensor_z <= 0.0 || dir_w.z >= -1.0e-6) {
+        return false;
+    }
+
+    const double hit_z = sensor_z + range_m * dir_w.z;
+    if (std::abs(hit_z) <= kGroundHitHeightToleranceM) {
+        return true;
+    }
+
+    const double expected_ground_range_m = sensor_z / -dir_w.z;
+    const double expected_range_tol_m =
+        std::max(kGroundExpectedRangeAbsToleranceM,
+                 std::abs(expected_ground_range_m) * kGroundExpectedRangeRelTolerance);
+    return std::abs(range_m - expected_ground_range_m) <= expected_range_tol_m;
+}
+
 } // namespace
 
 LocalMapObservation MatrixLidarLocalMapObservationSource::collect(const NavPose2d& pose,
                                                                 const RobotState& est,
                                                                 const TimePointUs now) {
     LocalMapObservation out{};
-    out.timestamp_us = now;
 
     if (!est.has_matrix_lidar || !est.matrix_lidar.valid) {
         return out;
@@ -113,21 +173,19 @@ LocalMapObservation MatrixLidarLocalMapObservationSource::collect(const NavPose2
     const Vec3 offset_w = R_bw * offset_b;
     const double sensor_x = pose.x_m + offset_w.x;
     const double sensor_y = pose.y_m + offset_w.y;
+    double sensor_z = offset_w.z;
+    if (est.has_body_twist_state) {
+        sensor_z += est.body_twist_state.body_trans_m.z;
+    }
 
     out.samples.reserve(std::min<std::size_t>(cols * rows, MatrixLidarFrame::kMaxCells));
+    out.samples.push_back(LocalMapObservationSample{pose.x_m, pose.y_m, LocalMapCellState::Free});
+    out.samples.push_back(LocalMapObservationSample{sensor_x, sensor_y, LocalMapCellState::Free});
 
     for (std::size_t row = 0; row < rows; ++row) {
         for (std::size_t col = 0; col < cols; ++col) {
             const std::size_t idx = row * cols + col;
             const std::uint16_t mm = est.matrix_lidar.ranges_mm[idx];
-            if (mm == physics_sim::kMatrixLidarInvalidMm) {
-                continue;
-            }
-            const std::uint16_t mm_clamped = matrix_lidar_geom::clampRangeMm(model, mm);
-            const double range_m = static_cast<double>(mm_clamped) * 1.0e-3;
-            if (!std::isfinite(range_m) || range_m <= 0.0) {
-                continue;
-            }
 
             const Vec3 dir_b = cellDirectionBody(optical_axis,
                                                    optical_right,
@@ -143,12 +201,23 @@ LocalMapObservation MatrixLidarLocalMapObservationSource::collect(const NavPose2
                 continue;
             }
 
-            const double hit_x = sensor_x + range_m * dir_w.x;
-            const double hit_y = sensor_y + range_m * dir_w.y;
-            if (!std::isfinite(hit_x) || !std::isfinite(hit_y)) {
+            if (mm == physics_sim::kMatrixLidarInvalidMm) {
+                const double clear_range_m =
+                    static_cast<double>(matrix_lidar_geom::maxRangeMmForModel(model)) * 1.0e-3;
+                appendRaySamples(out, sensor_x, sensor_y, dir_w, clear_range_m, false, 0.0);
                 continue;
             }
-            out.samples.push_back(LocalMapObservationSample{hit_x, hit_y, LocalMapCellState::Occupied});
+
+            const std::uint16_t mm_clamped = matrix_lidar_geom::clampRangeMm(model, mm);
+            const double range_m = static_cast<double>(mm_clamped) * 1.0e-3;
+            if (!std::isfinite(range_m) || range_m <= 0.0) {
+                continue;
+            }
+            if (isGroundReturn(sensor_z, dir_w, range_m)) {
+                appendRaySamples(out, sensor_x, sensor_y, dir_w, range_m, false, 0.0);
+                continue;
+            }
+            appendRaySamples(out, sensor_x, sensor_y, dir_w, range_m, true, range_m);
         }
     }
 

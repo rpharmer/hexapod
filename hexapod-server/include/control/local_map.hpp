@@ -23,6 +23,11 @@ enum class LocalMapCellState : std::uint8_t {
     Occupied = 2,
 };
 
+enum class LocalMapObservationFreshnessClass : std::uint8_t {
+    Primary = 0,
+    Auxiliary = 1,
+};
+
 struct LocalMapConfig {
     int width_cells{kDefaultLocalMapWidthCells};
     int height_cells{kDefaultLocalMapHeightCells};
@@ -42,6 +47,7 @@ struct LocalMapObservationSample {
 struct LocalMapObservation {
     TimePointUs timestamp_us{};
     std::vector<LocalMapObservationSample> samples{};
+    LocalMapObservationFreshnessClass freshness_class{LocalMapObservationFreshnessClass::Primary};
 };
 
 class ILocalMapObservationSource {
@@ -83,7 +89,9 @@ struct LocalMapSnapshot {
     LocalOccupancyGrid raw{};
     LocalOccupancyGrid inflated{};
     TimePointUs last_observation_timestamp{};
+    TimePointUs last_primary_observation_timestamp{};
     bool has_observations{false};
+    bool has_primary_observations{false};
     bool fresh{false};
     double nearest_obstacle_distance_m{-1.0};
 };
@@ -117,5 +125,7 @@ private:
     bool has_center_pose_{false};
     mutable std::vector<CellRecord> cells_{};
     TimePointUs last_observation_timestamp_{};
+    TimePointUs last_primary_observation_timestamp_{};
     bool has_observations_{false};
+    bool has_primary_observations_{false};
 };

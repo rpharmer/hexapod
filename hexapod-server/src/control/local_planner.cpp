@@ -25,8 +25,20 @@ double heuristicCost(const int from_x, const int from_y, const int to_x, const i
     return std::hypot(static_cast<double>(to_x - from_x), static_cast<double>(to_y - from_y));
 }
 
-bool traversable(const LocalMapCellState state) {
-    return state != LocalMapCellState::Occupied;
+bool hasObservedOccupiedSpace(const LocalOccupancyGrid& grid) {
+    return std::any_of(grid.cells.begin(), grid.cells.end(), [](const LocalMapCellState state) {
+        return state == LocalMapCellState::Occupied;
+    });
+}
+
+bool traversable(const LocalMapCellState state, const bool allow_unknown_traversal) {
+    if (state == LocalMapCellState::Occupied) {
+        return false;
+    }
+    if (state == LocalMapCellState::Free) {
+        return true;
+    }
+    return allow_unknown_traversal;
 }
 
 double pathLength(const std::vector<NavPose2d>& waypoints) {
@@ -60,6 +72,7 @@ LocalPlanResult AStarLocalPlanner::plan(const LocalPlanRequest& request) const {
         out.block_reason = PlannerBlockReason::NoPath;
         return out;
     }
+    const bool allow_unknown_traversal = !hasObservedOccupiedSpace(grid);
 
     const NavPose2d planning_goal = projectGoalIntoHorizon(request);
     if (std::hypot(planning_goal.x_m - request.current_pose.x_m,
@@ -82,12 +95,12 @@ LocalPlanResult AStarLocalPlanner::plan(const LocalPlanRequest& request) const {
         goal_y = clampToCellRange(goal_y, grid.height_cells);
     }
 
-    if (!traversable(grid.stateAtCell(start_x, start_y))) {
+    if (!traversable(grid.stateAtCell(start_x, start_y), allow_unknown_traversal)) {
         out.status = LocalPlanStatus::Blocked;
         out.block_reason = PlannerBlockReason::StartOccupied;
         return out;
     }
-    if (!traversable(grid.stateAtCell(goal_x, goal_y))) {
+    if (!traversable(grid.stateAtCell(goal_x, goal_y), allow_unknown_traversal)) {
         out.status = LocalPlanStatus::Blocked;
         out.block_reason = PlannerBlockReason::GoalOccupied;
         return out;
@@ -139,7 +152,8 @@ LocalPlanResult AStarLocalPlanner::plan(const LocalPlanRequest& request) const {
         for (const auto& [dx, dy] : neighbors) {
             const int nx = current.cell_x + dx;
             const int ny = current.cell_y + dy;
-            if (!grid.containsCell(nx, ny) || !traversable(grid.stateAtCell(nx, ny))) {
+            if (!grid.containsCell(nx, ny) ||
+                !traversable(grid.stateAtCell(nx, ny), allow_unknown_traversal)) {
                 continue;
             }
 
@@ -203,6 +217,7 @@ bool AStarLocalPlanner::lineOfSight(const LocalOccupancyGrid& grid,
                                     const int from_y,
                                     const int to_x,
                                     const int to_y) const {
+    const bool allow_unknown_traversal = !hasObservedOccupiedSpace(grid);
     int x0 = from_x;
     int y0 = from_y;
     const int x1 = to_x;
@@ -214,7 +229,8 @@ bool AStarLocalPlanner::lineOfSight(const LocalOccupancyGrid& grid,
     int err = dx + dy;
 
     while (true) {
-        if (!grid.containsCell(x0, y0) || !traversable(grid.stateAtCell(x0, y0))) {
+        if (!grid.containsCell(x0, y0) ||
+            !traversable(grid.stateAtCell(x0, y0), allow_unknown_traversal)) {
             return false;
         }
         if (x0 == x1 && y0 == y1) {

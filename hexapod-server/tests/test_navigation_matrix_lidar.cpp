@@ -18,6 +18,21 @@ bool expect(bool condition, const char* message) {
     return true;
 }
 
+bool hasFreeAhead(const LocalMapSnapshot& snap) {
+    for (int y = 0; y < snap.raw.height_cells; ++y) {
+        for (int x = 0; x < snap.raw.width_cells; ++x) {
+            if (snap.raw.stateAtCell(x, y) != LocalMapCellState::Free) {
+                continue;
+            }
+            const NavPose2d cell = snap.raw.cellCenterPose(x, y);
+            if (cell.x_m > 0.10 && cell.x_m < 0.80 && std::abs(cell.y_m) < 0.20) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 void stepPose(NavPose2d& pose, const MotionIntent& intent, const double dt_s) {
     const PlanarMotionCommand cmd = planarMotionCommand(intent);
     const double c = std::cos(pose.yaw_rad);
@@ -104,6 +119,9 @@ bool test_lidar_populates_nearest_obstacle() {
     if (!expect(saw_occupied, "raw map should have occupied cells ahead of the robot from lidar hits")) {
         return false;
     }
+    if (!expect(hasFreeAhead(snap), "lidar map should also include cleared free cells ahead of the robot")) {
+        return false;
+    }
 
     return true;
 }
@@ -169,10 +187,54 @@ bool test_lidar_all_invalid_still_navigates_unknown_map() {
     }
 
     if (!expect(nav.monitor().lifecycle == NavigationLifecycleState::Completed,
-                "with no occupied lidar cells the planner should still reach a nearby goal through unknown space")) {
+                "no-return lidar frames should still support navigation via explicit free-space clearing")) {
         return false;
     }
 
+    return true;
+}
+
+bool test_lidar_removed_obstacle_clears_old_cells() {
+    MatrixLidarLocalMapObservationSource source{};
+    LocalMapConfig cfg{};
+    cfg.width_cells = 61;
+    cfg.height_cells = 61;
+    cfg.resolution_m = 0.05;
+    cfg.obstacle_inflation_radius_m = 0.05;
+    cfg.safety_margin_m = 0.0;
+    cfg.observation_timeout_s = 1.0;
+    cfg.observation_decay_s = 5.0;
+    LocalMapBuilder builder(cfg);
+
+    RobotState est{};
+    est.has_matrix_lidar = true;
+    est.matrix_lidar.valid = true;
+    est.matrix_lidar.model = static_cast<std::uint8_t>(physics_sim::MatrixLidarModel::Matrix64x8);
+    est.matrix_lidar.cols = 64;
+    est.matrix_lidar.rows = 8;
+    est.matrix_lidar.ranges_mm.fill(physics_sim::kMatrixLidarInvalidMm);
+
+    const NavPose2d pose{0.0, 0.0, 0.0};
+    const std::size_t center_idx = 4 * 64 + 32;
+    est.matrix_lidar.timestamp_us = TimePointUs{1'000'000};
+    est.matrix_lidar.ranges_mm[center_idx] = 600;
+    builder.update(pose, est.matrix_lidar.timestamp_us, {source.collect(pose, est, est.matrix_lidar.timestamp_us)});
+
+    est.matrix_lidar.timestamp_us = TimePointUs{1'100'000};
+    est.matrix_lidar.ranges_mm.fill(physics_sim::kMatrixLidarInvalidMm);
+    est.matrix_lidar.ranges_mm[center_idx] = 1600;
+    builder.update(pose, est.matrix_lidar.timestamp_us, {source.collect(pose, est, est.matrix_lidar.timestamp_us)});
+
+    const LocalMapSnapshot snap = builder.snapshot(est.matrix_lidar.timestamp_us);
+    int near_x = 0;
+    int near_y = 0;
+    if (!expect(snap.raw.worldToCell(0.60, 0.0, near_x, near_y), "near obstacle cell should remain addressable")) {
+        return false;
+    }
+    if (!expect(snap.raw.stateAtCell(near_x, near_y) != LocalMapCellState::Occupied,
+                "a farther follow-up return should clear stale nearer occupied cells")) {
+        return false;
+    }
     return true;
 }
 
@@ -186,6 +248,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!test_lidar_all_invalid_still_navigates_unknown_map()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_lidar_removed_obstacle_clears_old_cells()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

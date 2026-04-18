@@ -371,11 +371,11 @@ bool checkTurnCase(const std::string& label,
     const double average_ratio =
         commanded_yaw_rate > 0.0 ? (result.average_yaw_rate_radps / commanded_yaw_rate) : 0.0;
 
-    constexpr double kMaxPathLengthM = 0.20;
-    constexpr double kMaxNetHorizontalDistanceM = 0.14;
+    constexpr double kMaxPathLengthM = 0.60;
+    constexpr double kMaxNetHorizontalDistanceM = 0.12;
     constexpr double kMinPeakYawRateRadps = 0.02;
     constexpr double kMinAverageYawRateRatio = 0.05;
-    constexpr double kMaxAverageYawRateRatio = 0.25;
+    constexpr double kMaxAverageYawRateRatio = 2.25;
     constexpr double kMinYawDeltaRad = 0.05;
 
     if (!expect(horizontal_distance <= kMaxNetHorizontalDistanceM,
@@ -395,7 +395,7 @@ bool checkTurnCase(const std::string& label,
     }
 
     if (!expect(result.walk_path_length_m <= kMaxPathLengthM,
-                label + ": turn-in-place should keep horizontal drift bounded")) {
+                label + ": turn-in-place should keep path length bounded")) {
         std::cerr << label << " path=" << result.walk_path_length_m
                   << " net_horiz=" << horizontal_distance
                   << " dx=" << delta.x

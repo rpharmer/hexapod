@@ -73,6 +73,13 @@ inline bool expectedGridShape(const physics_sim::MatrixLidarModel model,
     return false;
 }
 
+inline std::uint16_t maxRangeMmForModel(const physics_sim::MatrixLidarModel model) {
+    if (model == physics_sim::MatrixLidarModel::Vl53l7Cx8x8) {
+        return kMaxRangeVl53Mm;
+    }
+    return kMaxRangeMatrix64x8Mm;
+}
+
 /// Clamp a wired range into the model datasheet span; invalid marker is preserved.
 inline std::uint16_t clampRangeMm(const physics_sim::MatrixLidarModel model, const std::uint16_t mm) {
     if (mm == physics_sim::kMatrixLidarInvalidMm) {
