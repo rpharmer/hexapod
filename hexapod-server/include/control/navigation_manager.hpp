@@ -62,6 +62,8 @@ public:
     [[nodiscard]] bool paused() const;
     [[nodiscard]] NavigationMonitorSnapshot monitor() const;
     [[nodiscard]] LocalMapSnapshot latestMapSnapshot(TimePointUs now) const;
+    /** Last map snapshot from `mergeIntent` (map-aware mode); null if inactive or stale / no terrain layers. */
+    [[nodiscard]] const LocalMapSnapshot* footTerrainSnapshot(TimePointUs now) const;
 
     MotionIntent mergeIntent(const MotionIntent& fallback, const RobotState& est, TimePointUs now);
 
@@ -94,4 +96,5 @@ private:
     bool map_aware_mode_{false};
     TimePointUs last_merge_timestamp_{};
     TimePointUs blocked_since_{};
+    LocalMapSnapshot cached_map_snapshot_{};
 };

@@ -72,6 +72,16 @@ int main() {
     if (!expect(hasOccupiedNear(obs, 2.0, 0.0, 0.25), "hit should be near +X world from robot origin")) {
         return EXIT_FAILURE;
     }
+    bool hit_has_z = false;
+    for (const LocalMapObservationSample& s : obs.samples) {
+        if (s.state == LocalMapCellState::Occupied && std::isfinite(s.z_m)) {
+            hit_has_z = true;
+            break;
+        }
+    }
+    if (!expect(hit_has_z, "forward obstacle hit should carry world z_m for elevation mapping")) {
+        return EXIT_FAILURE;
+    }
 
     est.matrix_lidar.ranges_mm.fill(physics_sim::kMatrixLidarInvalidMm);
     est.matrix_lidar.ranges_mm[4 * 64 + 32] = 250;

@@ -44,6 +44,17 @@ inline constexpr double kDefaultNavBodyFrameIntegralKiFwdPerS{0.0};
 inline constexpr double kDefaultNavBodyFrameIntegralKiLatPerS{0.0};
 inline constexpr double kDefaultNavBodyFrameIntegralAbsCapMetersSeconds{0.0};
 
+inline constexpr double kDefaultFootTerrainSwingMarginM{0.018};
+inline constexpr double kDefaultFootTerrainSwingMaxLiftM{0.040};
+inline constexpr double kDefaultFootTerrainSwingBlend{0.55};
+inline constexpr double kDefaultFootTerrainStancePlaneBlend{0.35};
+inline constexpr double kDefaultFootTerrainStancePlaneDzMaxM{0.012};
+inline constexpr int kDefaultFootTerrainStanceGroundMinSamples{2};
+inline constexpr double kDefaultFootTerrainSwingXYNudgeMaxM{0.018};
+inline constexpr int kDefaultFootTerrainSwingXYNudgeWindowCells{2};
+inline constexpr double kDefaultFootTerrainSwingXYNudgeTauMin{0.55};
+inline constexpr double kDefaultFootTerrainSwingXYNudgeBlend{0.60};
+
 struct LoopTimingConfig {
     std::chrono::microseconds bus_loop_period{std::chrono::microseconds{kDefaultBusLoopPeriodUs}};
     std::chrono::microseconds estimator_loop_period{std::chrono::microseconds{kDefaultEstimatorLoopPeriodUs}};
@@ -137,6 +148,20 @@ struct NavBridgeConfig {
     double body_frame_integral_abs_cap_m_s{kDefaultNavBodyFrameIntegralAbsCapMetersSeconds};
 };
 
+/** Tuning for LiDAR map–driven swing clearance, stance height bias, and late-swing XY nudges. */
+struct FootTerrainConfig {
+    double swing_margin_m{kDefaultFootTerrainSwingMarginM};
+    double swing_max_lift_m{kDefaultFootTerrainSwingMaxLiftM};
+    double swing_blend{kDefaultFootTerrainSwingBlend};
+    double stance_plane_blend{kDefaultFootTerrainStancePlaneBlend};
+    double stance_plane_dz_max_m{kDefaultFootTerrainStancePlaneDzMaxM};
+    int stance_ground_min_samples{kDefaultFootTerrainStanceGroundMinSamples};
+    double swing_xy_nudge_max_m{kDefaultFootTerrainSwingXYNudgeMaxM};
+    int swing_xy_nudge_window_cells{kDefaultFootTerrainSwingXYNudgeWindowCells};
+    double swing_xy_nudge_tau_min{kDefaultFootTerrainSwingXYNudgeTauMin};
+    double swing_xy_nudge_blend{kDefaultFootTerrainSwingXYNudgeBlend};
+};
+
 struct ControlConfig {
     LoopTimingConfig loop_timing{};
     SafetyConfig safety{};
@@ -145,6 +170,7 @@ struct ControlConfig {
     FreshnessConfig freshness{};
     TelemetryConfig telemetry{};
     NavBridgeConfig nav_bridge{};
+    FootTerrainConfig foot_terrain{};
     LocalMapConfig local_map{};
     LocalPlannerConfig local_planner{};
 };

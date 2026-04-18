@@ -121,7 +121,7 @@ bool parseMapObservationSamples(const toml::value& parent,
     for (std::size_t i = 0; i < entries.size(); ++i) {
         const toml::value& entry = entries[i];
         if (mode == ScenarioDriver::ValidationMode::Strict &&
-            !containsOnlyKeys(entry, {"x_m", "y_m", "state"},
+            !containsOnlyKeys(entry, {"x_m", "y_m", "state", "z_m"},
                               section_name + "." + key + "[" + std::to_string(i) + "]", error)) {
             return false;
         }
@@ -136,11 +136,15 @@ bool parseMapObservationSamples(const toml::value& parent,
             error = "invalid map obstacle state '" + state_name + "'";
             return false;
         }
-        out.push_back(LocalMapObservationSample{
+        LocalMapObservationSample sample{
             toml::find<double>(entry, "x_m"),
             toml::find<double>(entry, "y_m"),
             *parsed_state,
-        });
+        };
+        if (entry.contains("z_m")) {
+            sample.z_m = toml::find<double>(entry, "z_m");
+        }
+        out.push_back(std::move(sample));
     }
     return true;
 }

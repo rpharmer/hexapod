@@ -166,6 +166,7 @@ MotionIntent NavigationManager::mergeIntent(const MotionIntent& fallback,
     const std::vector<LocalMapObservation> observations = collectObservations(pose, est, now);
     local_map_builder_.update(pose, now, observations);
     const LocalMapSnapshot snapshot = local_map_builder_.snapshot(now);
+    cached_map_snapshot_ = snapshot;
     monitor_.map_fresh = snapshot.fresh;
     monitor_.nearest_obstacle_distance_m = snapshot.nearest_obstacle_distance_m;
 
@@ -356,4 +357,35 @@ bool NavigationManager::paused() const {
 LocalMapSnapshot NavigationManager::latestMapSnapshot(const TimePointUs now) const {
     const std::lock_guard<std::mutex> lock(mutex_);
     return local_map_builder_.snapshot(now);
+}
+
+namespace {
+
+bool primaryObservationFresh(const LocalMapSnapshot& snap, const TimePointUs now, const double timeout_s) {
+    if (!snap.has_primary_observations || snap.last_primary_observation_timestamp.isZero()) {
+        return false;
+    }
+    if (now.value <= snap.last_primary_observation_timestamp.value) {
+        return true;
+    }
+    const double age_s =
+        static_cast<double>(now.value - snap.last_primary_observation_timestamp.value) * 1e-6;
+    return age_s <= timeout_s;
+}
+
+} // namespace
+
+const LocalMapSnapshot* NavigationManager::footTerrainSnapshot(const TimePointUs now) const {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    if (!monitor_.active || !map_aware_mode_) {
+        return nullptr;
+    }
+    const double timeout_s = local_map_builder_.config().observation_timeout_s;
+    if (!primaryObservationFresh(cached_map_snapshot_, now, timeout_s)) {
+        return nullptr;
+    }
+    if (!cached_map_snapshot_.elevation_has_data && !cached_map_snapshot_.ground_elevation_has_data) {
+        return nullptr;
+    }
+    return &cached_map_snapshot_;
 }

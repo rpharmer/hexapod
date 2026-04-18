@@ -1,12 +1,16 @@
 #include "estimator.hpp"
+#include "matrix_lidar_local_map_source.hpp"
 #include "motion_intent_utils.hpp"
 #include "navigation_manager.hpp"
+#include "physics_sim_protocol.hpp"
 #include "robot_runtime.hpp"
 #include "sim_hardware_bridge.hpp"
+#include "types.hpp"
 
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -100,6 +104,68 @@ int main() {
     if (!expect(runtime.getStatus().loop_counter > 0,
                 "runtime control step should still produce status updates while navigation is active")) {
         return EXIT_FAILURE;
+    }
+
+    {
+        auto bridge2 = std::make_unique<SimHardwareBridge>();
+        auto estimator2 = std::make_unique<ScriptedEstimator>();
+        auto* est2_raw = estimator2.get();
+
+        control_config::ControlConfig cfg2{};
+        cfg2.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+        cfg2.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+        cfg2.local_map.observation_timeout_s = 0.06;
+
+        RobotRuntime rt2(std::move(bridge2), std::move(estimator2), nullptr, cfg2);
+        if (!expect(rt2.init(), "second runtime should initialize")) {
+            return EXIT_FAILURE;
+        }
+
+        auto nav2 = std::make_unique<NavigationManager>(cfg2.local_map, cfg2.local_planner);
+        nav2->addObservationSource(std::make_shared<MatrixLidarLocalMapObservationSource>());
+        nav2->startNavigateToPose(makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.07),
+                                  NavPose2d{0.8, 0.0, 0.0});
+        rt2.setNavigationManager(std::move(nav2));
+        rt2.setMotionIntent(makeMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.07));
+
+        const TimePointUs lidar_ts = now_us();
+        RobotState frozen = makeEstimatorSample(NavPose2d{}, lidar_ts, 42);
+        frozen.has_matrix_lidar = true;
+        frozen.matrix_lidar.valid = true;
+        frozen.matrix_lidar.model = static_cast<std::uint8_t>(physics_sim::MatrixLidarModel::Matrix64x8);
+        frozen.matrix_lidar.cols = 64;
+        frozen.matrix_lidar.rows = 8;
+        frozen.matrix_lidar.ranges_mm.fill(physics_sim::kMatrixLidarInvalidMm);
+        frozen.matrix_lidar.timestamp_us = lidar_ts;
+
+        for (int i = 0; i < 8; ++i) {
+            est2_raw->enqueue(frozen);
+            rt2.busStep();
+            rt2.estimatorStep();
+            rt2.safetyStep();
+            rt2.controlStep();
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+
+        bool saw_map_unavailable = false;
+        for (int i = 0; i < 40; ++i) {
+            est2_raw->enqueue(frozen);
+            rt2.busStep();
+            rt2.estimatorStep();
+            rt2.safetyStep();
+            rt2.controlStep();
+            if (rt2.navigationManager()->monitor().lifecycle == NavigationLifecycleState::MapUnavailable) {
+                saw_map_unavailable = true;
+                break;
+            }
+        }
+
+        if (!expect(saw_map_unavailable,
+                    "duplicate sample_id must not block navigation ticks; stale LiDAR should surface as "
+                    "MapUnavailable")) {
+            return EXIT_FAILURE;
+        }
     }
 
     return EXIT_SUCCESS;

@@ -520,6 +520,46 @@ bool testNavBridgeTuningKeysParseIntoControlConfig()
                 "nav_bridge.abs_cap should map from ParsedToml");
 }
 
+bool testFootTerrainTuningKeysParseIntoControlConfig()
+{
+  std::string cfg = readText(configPath("config.txt"));
+  if (!expect(replaceOnce(cfg, "MaxFootContacts = 6",
+                           "MaxFootContacts = 6\n"
+                           "FootTerrainSwingMarginM = 0.021\n"
+                           "FootTerrainSwingMaxLiftM = 0.031\n"
+                           "FootTerrainSwingBlend = 0.44\n"
+                           "FootTerrainStancePlaneBlend = 0.22\n"
+                           "FootTerrainStancePlaneDzMaxM = 0.011\n"
+                           "FootTerrainStanceGroundMinSamples = 3\n"
+                           "FootTerrainSwingXYNudgeMaxM = 0.014\n"
+                           "FootTerrainSwingXYNudgeWindowCells = 3\n"
+                           "FootTerrainSwingXYNudgeTauMin = 0.66\n"
+                           "FootTerrainSwingXYNudgeBlend = 0.55"),
+              "baseline config missing MaxFootContacts = 6")) {
+    return false;
+  }
+
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(writeTemp("hexapod_foot_terrain_tuning.toml", cfg), parsed),
+              "foot terrain tuning keys should parse")) {
+    return false;
+  }
+
+  if (!expect(near(parsed.footTerrainSwingMarginM, 0.021), "FootTerrainSwingMarginM should parse") ||
+      !expect(near(parsed.footTerrainStancePlaneBlend, 0.22), "FootTerrainStancePlaneBlend should parse") ||
+      !expect(parsed.footTerrainStanceGroundMinSamples == 3, "FootTerrainStanceGroundMinSamples should parse") ||
+      !expect(parsed.footTerrainSwingXYNudgeWindowCells == 3, "FootTerrainSwingXYNudgeWindowCells should parse")) {
+    return false;
+  }
+
+  const control_config::ControlConfig control = control_config::fromParsedToml(parsed);
+  return expect(near(control.foot_terrain.swing_margin_m, 0.021), "foot_terrain.swing_margin should map") &&
+         expect(near(control.foot_terrain.swing_max_lift_m, 0.031), "foot_terrain.swing_max_lift should map") &&
+         expect(near(control.foot_terrain.stance_plane_blend, 0.22), "foot_terrain.stance_plane_blend should map") &&
+         expect(control.foot_terrain.stance_ground_min_samples == 3, "foot_terrain.stance_ground_min_samples should map");
+}
+
 bool testSwingEaseMinMaxSwapAndWarning()
 {
   std::string cfg = readText(configPath("config.txt"));
@@ -566,6 +606,7 @@ int main()
   testGeometryDynamicsLoadedFromParsedConfig();
   testGeometryCanBeWrittenBackToParsedConfig();
   testSwingTuningKeysParseIntoControlConfig();
+  testFootTerrainTuningKeysParseIntoControlConfig();
   testNavBridgeTuningKeysParseIntoControlConfig();
   testSwingEaseMinMaxSwapAndWarning();
 

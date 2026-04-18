@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 
 namespace {
 
@@ -60,10 +61,13 @@ bool finitePose(const NavPose2d& pose) {
 void appendRaySamples(LocalMapObservation& out,
                       const double sensor_x,
                       const double sensor_y,
+                      const double sensor_z_world,
                       const Vec3& dir_w,
                       const double clear_range_m,
                       const bool has_hit,
-                      const double hit_range_m) {
+                      const double hit_range_m,
+                      const double hit_z_world_m,
+                      const bool stamp_ground_z_on_free_samples) {
     if (!std::isfinite(clear_range_m) || clear_range_m <= 0.0) {
         return;
     }
@@ -76,7 +80,11 @@ void appendRaySamples(LocalMapObservation& out,
         if (!std::isfinite(sample_x) || !std::isfinite(sample_y)) {
             continue;
         }
-        out.samples.push_back(LocalMapObservationSample{sample_x, sample_y, LocalMapCellState::Free});
+        LocalMapObservationSample sample{sample_x, sample_y, LocalMapCellState::Free};
+        if (stamp_ground_z_on_free_samples && std::isfinite(sensor_z_world) && std::isfinite(dir_w.z)) {
+            sample.ground_z_m = sensor_z_world + distance_m * dir_w.z;
+        }
+        out.samples.push_back(sample);
     }
 
     if (!has_hit) {
@@ -88,7 +96,11 @@ void appendRaySamples(LocalMapObservation& out,
     if (!std::isfinite(hit_x) || !std::isfinite(hit_y)) {
         return;
     }
-    out.samples.push_back(LocalMapObservationSample{hit_x, hit_y, LocalMapCellState::Occupied});
+    LocalMapObservationSample hit{hit_x, hit_y, LocalMapCellState::Occupied};
+    if (std::isfinite(hit_z_world_m)) {
+        hit.z_m = hit_z_world_m;
+    }
+    out.samples.push_back(hit);
 }
 
 bool isGroundReturn(const double sensor_z,
@@ -156,11 +168,10 @@ LocalMapObservation MatrixLidarLocalMapObservationSource::collect(const NavPose2
 
     double roll = 0.0;
     double pitch = 0.0;
-    double yaw = pose.yaw_rad;
+    const double yaw = pose.yaw_rad;
     if (est.has_body_twist_state) {
         roll = est.body_twist_state.twist_pos_rad.x;
         pitch = est.body_twist_state.twist_pos_rad.y;
-        yaw = est.body_twist_state.twist_pos_rad.z;
     }
     if (!std::isfinite(roll) || !std::isfinite(pitch) || !std::isfinite(yaw)) {
         return out;
@@ -204,7 +215,8 @@ LocalMapObservation MatrixLidarLocalMapObservationSource::collect(const NavPose2
             if (mm == physics_sim::kMatrixLidarInvalidMm) {
                 const double clear_range_m =
                     static_cast<double>(matrix_lidar_geom::maxRangeMmForModel(model)) * 1.0e-3;
-                appendRaySamples(out, sensor_x, sensor_y, dir_w, clear_range_m, false, 0.0);
+                appendRaySamples(out, sensor_x, sensor_y, sensor_z, dir_w, clear_range_m, false, 0.0,
+                                 std::numeric_limits<double>::quiet_NaN(), false);
                 continue;
             }
 
@@ -214,10 +226,12 @@ LocalMapObservation MatrixLidarLocalMapObservationSource::collect(const NavPose2
                 continue;
             }
             if (isGroundReturn(sensor_z, dir_w, range_m)) {
-                appendRaySamples(out, sensor_x, sensor_y, dir_w, range_m, false, 0.0);
+                appendRaySamples(out, sensor_x, sensor_y, sensor_z, dir_w, range_m, false, 0.0,
+                                 std::numeric_limits<double>::quiet_NaN(), true);
                 continue;
             }
-            appendRaySamples(out, sensor_x, sensor_y, dir_w, range_m, true, range_m);
+            appendRaySamples(out, sensor_x, sensor_y, sensor_z, dir_w, range_m, true, range_m,
+                             sensor_z + range_m * dir_w.z, false);
         }
     }
 

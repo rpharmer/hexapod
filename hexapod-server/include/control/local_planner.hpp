@@ -15,6 +15,7 @@ inline constexpr int kDefaultLocalPlannerSegmentCellHorizon = 12;
 inline constexpr double kDefaultLocalPlannerBlockedTimeoutS = 2.0;
 
 struct LocalPlannerConfig {
+    /** Parsed for tuning compatibility; not yet applied by `NavigationManager` / `AStarLocalPlanner`. */
     double replan_period_s{kDefaultLocalPlannerReplanPeriodS};
     double search_horizon_m{kDefaultLocalPlannerSearchHorizonM};
     int search_node_budget{kDefaultLocalPlannerSearchNodeBudget};

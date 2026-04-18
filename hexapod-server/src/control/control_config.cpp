@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "hexapod-server.hpp"
+#include "types.hpp"
 
 namespace control_config {
 
@@ -69,6 +70,19 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.local_planner.max_output_waypoints = config.localPlannerMaxOutputWaypoints;
     parsed.local_planner.segment_cell_horizon = config.localPlannerSegmentCellHorizon;
     parsed.local_planner.blocked_timeout_s = config.localPlannerBlockedTimeoutS;
+
+    parsed.foot_terrain.swing_margin_m = config.footTerrainSwingMarginM;
+    parsed.foot_terrain.swing_max_lift_m = config.footTerrainSwingMaxLiftM;
+    parsed.foot_terrain.swing_blend = config.footTerrainSwingBlend;
+    parsed.foot_terrain.stance_plane_blend = config.footTerrainStancePlaneBlend;
+    parsed.foot_terrain.stance_plane_dz_max_m = config.footTerrainStancePlaneDzMaxM;
+    parsed.foot_terrain.swing_xy_nudge_max_m = config.footTerrainSwingXYNudgeMaxM;
+    parsed.foot_terrain.swing_xy_nudge_tau_min = config.footTerrainSwingXYNudgeTauMin;
+    parsed.foot_terrain.swing_xy_nudge_blend = config.footTerrainSwingXYNudgeBlend;
+    parsed.foot_terrain.stance_ground_min_samples =
+        std::clamp(config.footTerrainStanceGroundMinSamples, 1, kNumLegs);
+    parsed.foot_terrain.swing_xy_nudge_window_cells =
+        std::clamp(config.footTerrainSwingXYNudgeWindowCells, 0, 8);
 
     return parsed;
 }

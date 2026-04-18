@@ -1,6 +1,7 @@
 #include "body_controller.hpp"
 
 #include "body_pose_controller.hpp"
+#include "foot_terrain.hpp"
 #include "contact_foot_response.hpp"
 #include "foot_planners.hpp"
 #include "foot_reachability.hpp"
@@ -9,8 +10,10 @@
 #include <algorithm>
 #include <cmath>
 
-BodyController::BodyController(control_config::GaitConfig gait_cfg)
-    : foot_estimator_blend_(std::clamp(gait_cfg.foot_estimator_blend, 0.0, 1.0)) {}
+BodyController::BodyController(control_config::GaitConfig gait_cfg,
+                               control_config::FootTerrainConfig foot_terrain_cfg)
+    : foot_estimator_blend_(std::clamp(gait_cfg.foot_estimator_blend, 0.0, 1.0)),
+      foot_terrain_cfg_(foot_terrain_cfg) {}
 
 namespace {
 
@@ -94,7 +97,8 @@ LegTargets BodyController::update(const RobotState& est,
                                   const MotionIntent& intent,
                                   const GaitState& gait,
                                   const SafetyState& safety,
-                                  const BodyTwist& cmd_twist) {
+                                  const BodyTwist& cmd_twist,
+                                  const LocalMapSnapshot* terrain_snapshot) {
     LegTargets out{};
     out.timestamp_us = now_us();
 
@@ -103,11 +107,15 @@ LegTargets BodyController::update(const RobotState& est,
         computeBodyPoseSetpoint(intent, cmd, gait.static_stability_margin_m, gait.stride_phase_rate_hz.value);
 
     const double commanded_body_height_m = pose.body_height_m;
-    const std::array<Vec3, kNumLegs> nominal = nominalStance(commanded_body_height_m);
+    std::array<Vec3, kNumLegs> nominal = nominalStance(commanded_body_height_m);
     const bool walking =
         (intent.requested_mode == RobotMode::WALK) &&
         !safety.inhibit_motion &&
         !safety.torque_cut;
+
+    if (walking && terrain_snapshot != nullptr) {
+        applyTerrainStanceZBias(*terrain_snapshot, est, intent, foot_terrain_cfg_, &nominal);
+    }
 
     const Mat3 body_rotation =
         Mat3::rotZ(pose.yaw_rad) * Mat3::rotY(pose.pitch_rad) * Mat3::rotX(pose.roll_rad);
@@ -159,6 +167,7 @@ LegTargets BodyController::update(const RobotState& est,
                 const Vec3 stance_end = anchor + v_foot * (duty / f_hz);
                 const Vec3 v_liftoff = supportFootVelocityAt(stance_end, body_mot);
                 const double tau = clamp01((ph - duty) / swing_span);
+                const double tau_for_terrain_xy = tau;
                 double tau_use = tau;
                 double swing_extra_down_z = 0.0;
                 contact_foot_response::adjustSwingTauAndVerticalExtension(
@@ -203,6 +212,10 @@ LegTargets BodyController::update(const RobotState& est,
                 Vec3 v{};
                 planSwingFoot(body_mot, sw, p, v);
                 target = p;
+                if (terrain_snapshot != nullptr) {
+                    applyTerrainSwingXYNudge(*terrain_snapshot, est, foot_terrain_cfg_, tau_for_terrain_xy, &target);
+                    applyTerrainSwingClearance(*terrain_snapshot, est, foot_terrain_cfg_, &target);
+                }
                 target.z -= swing_extra_down_z;
                 target_vel = target_vel + v;
             }

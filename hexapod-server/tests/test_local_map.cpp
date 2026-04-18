@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 
 namespace {
 
@@ -106,6 +107,53 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!expect(masked.has_primary_observations, "primary-source bookkeeping should survive auxiliary updates")) {
+        return EXIT_FAILURE;
+    }
+
+    builder.reset();
+    builder.update(
+        pose,
+        t0,
+        {LocalMapObservation{
+            t0,
+            {LocalMapObservationSample{0.0, 0.0, LocalMapCellState::Occupied, 0.35},
+             LocalMapObservationSample{0.2, 0.0, LocalMapCellState::Free}}}});
+    const LocalMapSnapshot elev_snap = builder.snapshot(t0);
+    int ox = 0;
+    int oy = 0;
+    if (!expect(elev_snap.raw.worldToCell(0.0, 0.0, ox, oy), "elevation test cell should map")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(elev_snap.elevation_has_data, "occupied hit with z_m should populate elevation layer")) {
+        return EXIT_FAILURE;
+    }
+    const double z0 = elev_snap.elevation_max_hit_z.maxHitZAtCell(ox, oy);
+    if (!expect(std::abs(z0 - 0.35) < 1e-6, "max hit Z should match observation")) {
+        return EXIT_FAILURE;
+    }
+
+    builder.reset();
+    builder.update(
+        pose,
+        t0,
+        {LocalMapObservation{
+            t0,
+            {LocalMapObservationSample{0.1,
+                                        0.1,
+                                        LocalMapCellState::Free,
+                                        std::numeric_limits<double>::quiet_NaN(),
+                                        -0.03}}}});
+    const LocalMapSnapshot ground_snap = builder.snapshot(t0);
+    int gx = 0;
+    int gy = 0;
+    if (!expect(ground_snap.raw.worldToCell(0.1, 0.1, gx, gy), "ground test cell should map")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(ground_snap.ground_elevation_has_data, "free stamps with ground_z_m should fill ground layer")) {
+        return EXIT_FAILURE;
+    }
+    const double zg = ground_snap.elevation_ground_mean_z.maxHitZAtCell(gx, gy);
+    if (!expect(std::abs(zg + 0.03) < 1e-6, "ground mean Z should match observation")) {
         return EXIT_FAILURE;
     }
 

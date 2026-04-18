@@ -146,6 +146,37 @@ void parseTuningSection(const toml::value& root,
   out.localPlannerBlockedTimeoutS = config_validation::parseDoubleWithFallback(
       root, "Tuning.LocalPlannerBlockedTimeoutS", kDefaultLocalPlannerBlockedTimeoutS, 0.01, 60.0, "tuning",
       logger);
+
+  out.footTerrainSwingMarginM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FootTerrainSwingMarginM", control_config::kDefaultFootTerrainSwingMarginM, 0.0, 0.15, "tuning",
+      logger);
+  out.footTerrainSwingMaxLiftM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FootTerrainSwingMaxLiftM", control_config::kDefaultFootTerrainSwingMaxLiftM, 0.0, 0.12, "tuning",
+      logger);
+  out.footTerrainSwingBlend = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FootTerrainSwingBlend", control_config::kDefaultFootTerrainSwingBlend, 0.0, 1.0, "tuning",
+      logger);
+  out.footTerrainStancePlaneBlend = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FootTerrainStancePlaneBlend", control_config::kDefaultFootTerrainStancePlaneBlend, 0.0, 1.0,
+      "tuning", logger);
+  out.footTerrainStancePlaneDzMaxM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FootTerrainStancePlaneDzMaxM", control_config::kDefaultFootTerrainStancePlaneDzMaxM, 0.0, 0.05,
+      "tuning", logger);
+  out.footTerrainStanceGroundMinSamples = config_validation::parseIntWithFallback(
+      root, "Tuning.FootTerrainStanceGroundMinSamples", control_config::kDefaultFootTerrainStanceGroundMinSamples, 1,
+      kNumLegs, "tuning", logger);
+  out.footTerrainSwingXYNudgeMaxM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FootTerrainSwingXYNudgeMaxM", control_config::kDefaultFootTerrainSwingXYNudgeMaxM, 0.0, 0.08,
+      "tuning", logger);
+  out.footTerrainSwingXYNudgeWindowCells = config_validation::parseIntWithFallback(
+      root, "Tuning.FootTerrainSwingXYNudgeWindowCells", control_config::kDefaultFootTerrainSwingXYNudgeWindowCells,
+      0, 8, "tuning", logger);
+  out.footTerrainSwingXYNudgeTauMin = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FootTerrainSwingXYNudgeTauMin", control_config::kDefaultFootTerrainSwingXYNudgeTauMin, 0.0, 1.0,
+      "tuning", logger);
+  out.footTerrainSwingXYNudgeBlend = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FootTerrainSwingXYNudgeBlend", control_config::kDefaultFootTerrainSwingXYNudgeBlend, 0.0, 1.0,
+      "tuning", logger);
 }
 
 } // namespace tuning_section_parser

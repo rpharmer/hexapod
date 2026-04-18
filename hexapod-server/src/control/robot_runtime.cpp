@@ -1,6 +1,7 @@
 #include "robot_runtime.hpp"
 
 #include "geometry_config.hpp"
+#include "local_map.hpp"
 #include "physics_sim_bridge.hpp"
 
 RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
@@ -13,7 +14,7 @@ RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
       logger_(std::move(logger)),
       config_(config),
       telemetry_publisher_(std::move(telemetry_publisher)),
-      pipeline_(config_.gait, config_.locomotion_cmd),
+      pipeline_(config_.gait, config_.locomotion_cmd, config_.foot_terrain),
       safety_(config_.safety),
       freshness_policy_(config_.freshness),
       freshness_gate_(freshness_policy_),
@@ -116,12 +117,18 @@ void RobotRuntime::controlStep() {
         return;
     }
 
+    const LocalMapSnapshot* terrain_ptr = nullptr;
+    if (navigation_manager_ != nullptr) {
+        terrain_ptr = navigation_manager_->footTerrainSnapshot(now);
+    }
+
     const PipelineStepResult result = pipeline_.runStep(
         est,
         intent,
         safety_state,
         bus_ok,
-        loop_counter);
+        loop_counter,
+        terrain_ptr);
 
     joint_targets_.write(result.joint_targets);
     status_.write(result.status);
@@ -233,7 +240,8 @@ MotionIntent RobotRuntime::resolveEffectiveIntent(const RobotState& est, const T
         return intent;
     }
 
-    if (est.sample_id != 0 &&
+    const bool nav_needs_tick = navigation_manager_->active();
+    if (!nav_needs_tick && est.sample_id != 0 &&
         est.sample_id == last_effective_intent_estimator_sample_id_) {
         return effective_motion_intent_.read();
     }

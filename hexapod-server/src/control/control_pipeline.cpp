@@ -3,16 +3,18 @@
 #include "motion_intent_utils.hpp"
 
 ControlPipeline::ControlPipeline(control_config::GaitConfig gait_config,
-                                 control_config::LocomotionCommandConfig loco_config)
+                                 control_config::LocomotionCommandConfig loco_config,
+                                 control_config::FootTerrainConfig foot_terrain_config)
     : gait_(gait_config),
       loco_cmd_(loco_config),
-      body_(gait_config) {}
+      body_(gait_config, foot_terrain_config) {}
 
 PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
                                             const MotionIntent& intent,
                                             const SafetyState& safety_state,
                                             bool bus_ok,
-                                            uint64_t loop_counter) {
+                                            uint64_t loop_counter,
+                                            const LocalMapSnapshot* terrain_snapshot) {
     RobotMode active_mode = intent.requested_mode;
     if (safety_state.active_fault != FaultCode::NONE) {
         active_mode = RobotMode::FAULT;
@@ -27,7 +29,8 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
 
     GaitState gait_state = gait_.update(estimated, intent, safety_state, cmd_twist);
     locomotion_stability_.apply(intent, gait_state);
-    const LegTargets leg_targets = body_.update(estimated, intent, gait_state, safety_state, cmd_twist);
+    const LegTargets leg_targets =
+        body_.update(estimated, intent, gait_state, safety_state, cmd_twist, terrain_snapshot);
     const JointTargets joint_targets = ik_.solve(estimated, leg_targets, safety_state);
 
     ControlStatus status{};

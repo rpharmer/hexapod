@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 namespace {
@@ -95,6 +96,21 @@ NavPose2d LocalOccupancyGrid::cellCenterPose(const int cell_x, const int cell_y)
     return NavPose2d{center_pose.x_m + local_x, center_pose.y_m + local_y, center_pose.yaw_rad};
 }
 
+bool LocalElevationGrid::containsCell(const int cell_x, const int cell_y) const {
+    return cell_x >= 0 && cell_y >= 0 && cell_x < width_cells && cell_y < height_cells;
+}
+
+std::size_t LocalElevationGrid::indexOf(const int cell_x, const int cell_y) const {
+    return static_cast<std::size_t>(cell_y * width_cells + cell_x);
+}
+
+double LocalElevationGrid::maxHitZAtCell(const int cell_x, const int cell_y) const {
+    if (!containsCell(cell_x, cell_y)) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    return max_hit_z_m[indexOf(cell_x, cell_y)];
+}
+
 LocalMapBuilder::LocalMapBuilder(LocalMapConfig config)
     : config_(std::move(config)),
       cells_(static_cast<std::size_t>(config_.width_cells * config_.height_cells)) {}
@@ -149,6 +165,21 @@ void LocalMapBuilder::update(const NavPose2d& pose,
             }
             cell.state = sample.state;
             cell.last_update_us = observation.timestamp_us;
+            if (sample.state == LocalMapCellState::Free) {
+                cell.max_hit_z_m = std::numeric_limits<double>::quiet_NaN();
+                if (std::isfinite(sample.ground_z_m)) {
+                    cell.ground_z_sum_m += sample.ground_z_m;
+                    cell.ground_z_count += 1U;
+                }
+            } else if (sample.state == LocalMapCellState::Occupied) {
+                cell.ground_z_sum_m = 0.0;
+                cell.ground_z_count = 0U;
+                if (std::isfinite(sample.z_m)) {
+                    if (!std::isfinite(cell.max_hit_z_m) || sample.z_m > cell.max_hit_z_m) {
+                        cell.max_hit_z_m = sample.z_m;
+                    }
+                }
+            }
         }
     }
 
@@ -158,10 +189,32 @@ void LocalMapBuilder::update(const NavPose2d& pose,
 LocalMapSnapshot LocalMapBuilder::snapshot(const TimePointUs now) const {
     const LocalOccupancyGrid raw = buildRawGrid(now);
     const LocalOccupancyGrid inflated = buildInflatedGrid(raw);
+    const LocalElevationGrid elev = buildElevationGrid();
+    const LocalElevationGrid ground_elev = buildGroundElevationGrid();
 
     LocalMapSnapshot out{};
     out.raw = raw;
     out.inflated = inflated;
+    out.elevation_max_hit_z = elev;
+    out.elevation_ground_mean_z = ground_elev;
+    out.elevation_has_data = false;
+    if (!elev.max_hit_z_m.empty()) {
+        for (const double z : elev.max_hit_z_m) {
+            if (std::isfinite(z)) {
+                out.elevation_has_data = true;
+                break;
+            }
+        }
+    }
+    out.ground_elevation_has_data = false;
+    if (!ground_elev.max_hit_z_m.empty()) {
+        for (const double z : ground_elev.max_hit_z_m) {
+            if (std::isfinite(z)) {
+                out.ground_elevation_has_data = true;
+                break;
+            }
+        }
+    }
     out.last_observation_timestamp = last_observation_timestamp_;
     out.last_primary_observation_timestamp = last_primary_observation_timestamp_;
     out.has_observations = has_observations_;
@@ -170,6 +223,35 @@ LocalMapSnapshot LocalMapBuilder::snapshot(const TimePointUs now) const {
                 ageSeconds(now, last_primary_observation_timestamp_) <= config_.observation_timeout_s;
     out.nearest_obstacle_distance_m = nearestObstacleDistance(inflated);
     return out;
+}
+
+LocalElevationGrid LocalMapBuilder::buildElevationGrid() const {
+    LocalElevationGrid grid{};
+    grid.width_cells = config_.width_cells;
+    grid.height_cells = config_.height_cells;
+    grid.resolution_m = config_.resolution_m;
+    grid.center_pose = center_pose_;
+    grid.max_hit_z_m.resize(cells_.size());
+    for (std::size_t i = 0; i < cells_.size(); ++i) {
+        grid.max_hit_z_m[i] = cells_[i].max_hit_z_m;
+    }
+    return grid;
+}
+
+LocalElevationGrid LocalMapBuilder::buildGroundElevationGrid() const {
+    LocalElevationGrid grid{};
+    grid.width_cells = config_.width_cells;
+    grid.height_cells = config_.height_cells;
+    grid.resolution_m = config_.resolution_m;
+    grid.center_pose = center_pose_;
+    grid.max_hit_z_m.resize(cells_.size(), std::numeric_limits<double>::quiet_NaN());
+    for (std::size_t i = 0; i < cells_.size(); ++i) {
+        const CellRecord& cell = cells_[i];
+        if (cell.ground_z_count > 0U) {
+            grid.max_hit_z_m[i] = cell.ground_z_sum_m / static_cast<double>(cell.ground_z_count);
+        }
+    }
+    return grid;
 }
 
 bool LocalMapBuilder::containsCell(const int cell_x, const int cell_y) const {
@@ -222,6 +304,9 @@ void LocalMapBuilder::decayStaleCells(const TimePointUs now) const {
         if (ageSeconds(now, cell.last_update_us) > config_.observation_decay_s) {
             cell.state = LocalMapCellState::Unknown;
             cell.last_update_us = TimePointUs{};
+            cell.max_hit_z_m = std::numeric_limits<double>::quiet_NaN();
+            cell.ground_z_sum_m = 0.0;
+            cell.ground_z_count = 0U;
         }
     }
 }

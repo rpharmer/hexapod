@@ -95,6 +95,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/estimator.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/freshness_policy.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/foot_planners.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/foot_terrain.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/foothold_planner.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/foot_reachability.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/gait_params.cpp"
@@ -270,6 +271,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_foot_reachability tests/test_foot_reachability.cpp)
     target_link_libraries(test_foot_reachability PRIVATE hexapod_server_core)
     add_test(NAME foot_reachability COMMAND test_foot_reachability)
+
+    add_executable(test_foot_terrain tests/test_foot_terrain.cpp)
+    target_link_libraries(test_foot_terrain PRIVATE hexapod_server_core)
+    add_test(NAME foot_terrain COMMAND test_foot_terrain)
 
     add_executable(test_swing_trajectory tests/test_swing_trajectory.cpp)
     target_link_libraries(test_swing_trajectory PRIVATE hexapod_server_core)

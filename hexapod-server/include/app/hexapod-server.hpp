@@ -91,6 +91,17 @@ struct ParsedToml
   int localPlannerSegmentCellHorizon{kDefaultLocalPlannerSegmentCellHorizon};
   double localPlannerBlockedTimeoutS{kDefaultLocalPlannerBlockedTimeoutS};
 
+  double footTerrainSwingMarginM{0.018};
+  double footTerrainSwingMaxLiftM{0.040};
+  double footTerrainSwingBlend{0.55};
+  double footTerrainStancePlaneBlend{0.35};
+  double footTerrainStancePlaneDzMaxM{0.012};
+  int footTerrainStanceGroundMinSamples{2};
+  double footTerrainSwingXYNudgeMaxM{0.018};
+  int footTerrainSwingXYNudgeWindowCells{2};
+  double footTerrainSwingXYNudgeTauMin{0.55};
+  double footTerrainSwingXYNudgeBlend{0.60};
+
   double coxaLengthM{0.043};
   double femurLengthM{0.060};
   double tibiaLengthM{0.104};

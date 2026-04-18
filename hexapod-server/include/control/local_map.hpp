@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -42,6 +43,18 @@ struct LocalMapObservationSample {
     double x_m{};
     double y_m{};
     LocalMapCellState state{LocalMapCellState::Occupied};
+    /** World +Z (m) at obstacle hits; NaN when height is unknown (2D footprints, free stamps). */
+    double z_m{std::numeric_limits<double>::quiet_NaN()};
+    /** World +Z (m) on ground-classified free ray samples; NaN when not a ground stamp. */
+    double ground_z_m{std::numeric_limits<double>::quiet_NaN()};
+
+    LocalMapObservationSample() = default;
+    LocalMapObservationSample(double x,
+                               double y,
+                               LocalMapCellState s,
+                               double z = std::numeric_limits<double>::quiet_NaN(),
+                               double ground_z = std::numeric_limits<double>::quiet_NaN())
+        : x_m(x), y_m(y), state(s), z_m(z), ground_z_m(ground_z) {}
 };
 
 struct LocalMapObservation {
@@ -85,9 +98,28 @@ struct LocalOccupancyGrid {
     [[nodiscard]] NavPose2d cellCenterPose(int cell_x, int cell_y) const;
 };
 
+/** Per-cell maximum world Z (m) from 3D hits; NaN where unknown. Same cell layout as `LocalOccupancyGrid`. */
+struct LocalElevationGrid {
+    int width_cells{0};
+    int height_cells{0};
+    double resolution_m{0.0};
+    NavPose2d center_pose{};
+    std::vector<double> max_hit_z_m{};
+
+    [[nodiscard]] bool empty() const { return width_cells <= 0 || height_cells <= 0 || max_hit_z_m.empty(); }
+    [[nodiscard]] bool containsCell(int cell_x, int cell_y) const;
+    [[nodiscard]] std::size_t indexOf(int cell_x, int cell_y) const;
+    [[nodiscard]] double maxHitZAtCell(int cell_x, int cell_y) const;
+};
+
 struct LocalMapSnapshot {
     LocalOccupancyGrid raw{};
     LocalOccupancyGrid inflated{};
+    LocalElevationGrid elevation_max_hit_z{};
+    bool elevation_has_data{false};
+    /** Per-cell mean world Z (m) from ground-classified free stamps; NaN where unknown. */
+    LocalElevationGrid elevation_ground_mean_z{};
+    bool ground_elevation_has_data{false};
     TimePointUs last_observation_timestamp{};
     TimePointUs last_primary_observation_timestamp{};
     bool has_observations{false};
@@ -110,6 +142,9 @@ private:
     struct CellRecord {
         LocalMapCellState state{LocalMapCellState::Unknown};
         TimePointUs last_update_us{};
+        double max_hit_z_m{std::numeric_limits<double>::quiet_NaN()};
+        double ground_z_sum_m{0.0};
+        std::uint32_t ground_z_count{0};
     };
 
     [[nodiscard]] bool containsCell(int cell_x, int cell_y) const;
@@ -117,6 +152,8 @@ private:
     void recenterToPose(const NavPose2d& pose);
     void decayStaleCells(TimePointUs now) const;
     [[nodiscard]] LocalOccupancyGrid buildRawGrid(TimePointUs now) const;
+    [[nodiscard]] LocalElevationGrid buildElevationGrid() const;
+    [[nodiscard]] LocalElevationGrid buildGroundElevationGrid() const;
     [[nodiscard]] LocalOccupancyGrid buildInflatedGrid(const LocalOccupancyGrid& raw) const;
     [[nodiscard]] double nearestObstacleDistance(const LocalOccupancyGrid& inflated) const;
 
