@@ -136,6 +136,8 @@ void NavigationManager::reset() {
     cached_map_snapshot_ = LocalMapSnapshot{};
     blocked_since_ = TimePointUs{};
     last_merge_timestamp_ = TimePointUs{};
+    last_terrain_refresh_timestamp_ = TimePointUs{};
+    last_terrain_refresh_sample_id_ = 0;
     active_segment_.clear();
     monitor_.block_reason = PlannerBlockReason::None;
     monitor_.blocked_elapsed_s = 0.0;
@@ -166,6 +168,12 @@ void NavigationManager::reset() {
                                                  : NavigationLifecycleState::Running;
         }
     }
+}
+
+void NavigationManager::refreshTerrainSnapshot(const RobotState& est, const TimePointUs now) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    const NavPose2d pose = navPose2dFromRobotState(est);
+    (void)refreshTerrainSnapshotLocked(pose, est, now);
 }
 
 MotionIntent NavigationManager::mergeIntent(const MotionIntent& fallback,
@@ -201,12 +209,7 @@ MotionIntent NavigationManager::mergeIntent(const MotionIntent& fallback,
         return out;
     }
 
-    const std::vector<LocalMapObservation> observations = collectObservations(pose, est, now);
-    local_map_builder_.update(pose, now, observations);
-    const LocalMapSnapshot snapshot = local_map_builder_.snapshot(now);
-    cached_map_snapshot_ = snapshot;
-    monitor_.map_fresh = snapshot.has_observations ? snapshot.fresh : true;
-    monitor_.nearest_obstacle_distance_m = snapshot.nearest_obstacle_distance_m;
+    const LocalMapSnapshot snapshot = refreshTerrainSnapshotLocked(pose, est, now);
 
     if (snapshot.has_observations && !snapshot.fresh) {
         monitor_.lifecycle = NavigationLifecycleState::MapUnavailable;
@@ -382,6 +385,30 @@ void NavigationManager::refreshMonitorFromBridge() {
     monitor_.active_segment_length_m = pathLength(active_segment_);
 }
 
+bool NavigationManager::shouldRefreshTerrainSnapshot(const RobotState& est, const TimePointUs now) const {
+    if (est.sample_id != 0) {
+        return est.sample_id != last_terrain_refresh_sample_id_;
+    }
+    return now.value != last_terrain_refresh_timestamp_.value;
+}
+
+LocalMapSnapshot NavigationManager::refreshTerrainSnapshotLocked(const NavPose2d& pose,
+                                                                const RobotState& est,
+                                                                const TimePointUs now) {
+    if (shouldRefreshTerrainSnapshot(est, now)) {
+        const std::vector<LocalMapObservation> observations = collectObservations(pose, est, now);
+        local_map_builder_.update(pose, now, observations);
+        last_terrain_refresh_sample_id_ = est.sample_id;
+        last_terrain_refresh_timestamp_ = now;
+    }
+
+    const LocalMapSnapshot snapshot = local_map_builder_.snapshot(now);
+    cached_map_snapshot_ = snapshot;
+    monitor_.map_fresh = snapshot.has_observations ? snapshot.fresh : true;
+    monitor_.nearest_obstacle_distance_m = snapshot.nearest_obstacle_distance_m;
+    return snapshot;
+}
+
 NavigationMonitorSnapshot NavigationManager::monitor() const {
     const std::lock_guard<std::mutex> lock(mutex_);
     return monitor_;
@@ -420,9 +447,6 @@ bool primaryObservationFresh(const LocalMapSnapshot& snap, const TimePointUs now
 
 const LocalMapSnapshot* NavigationManager::footTerrainSnapshot(const TimePointUs now) const {
     const std::lock_guard<std::mutex> lock(mutex_);
-    if (!monitor_.active || !map_aware_mode_) {
-        return nullptr;
-    }
     const double timeout_s = local_map_builder_.config().observation_timeout_s;
     if (!primaryObservationFresh(cached_map_snapshot_, now, timeout_s)) {
         return nullptr;

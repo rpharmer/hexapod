@@ -155,6 +155,11 @@ struct TelemetryConfig {
     std::chrono::milliseconds geometry_refresh_period{std::chrono::milliseconds{kDefaultTelemetryGeometryRefreshPeriodMs}};
 };
 
+struct ReplayLogConfig {
+    bool enabled{false};
+    std::string file_path{};
+};
+
 /** Tuning for `NavLocomotionBridge` when used by scenarios / callers (not applied automatically in core loop yet). */
 struct NavBridgeConfig {
     double body_frame_integral_ki_fwd_per_s{kDefaultNavBodyFrameIntegralKiFwdPerS};
@@ -200,6 +205,7 @@ struct ControlConfig {
     LocomotionCommandConfig locomotion_cmd{};
     FreshnessConfig freshness{};
     TelemetryConfig telemetry{};
+    ReplayLogConfig replay_log{};
     NavBridgeConfig nav_bridge{};
     FootTerrainConfig foot_terrain{};
     FusionConfig fusion{};

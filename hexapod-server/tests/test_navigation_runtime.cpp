@@ -107,6 +107,51 @@ int main() {
     }
 
     {
+        auto bridge3 = std::make_unique<SimHardwareBridge>();
+        auto estimator3 = std::make_unique<ScriptedEstimator>();
+        auto* est3_raw = estimator3.get();
+
+        control_config::ControlConfig cfg3{};
+        cfg3.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+        cfg3.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+
+        RobotRuntime rt3(std::move(bridge3), std::move(estimator3), nullptr, cfg3);
+        if (!expect(rt3.init(), "third runtime should initialize")) {
+            return EXIT_FAILURE;
+        }
+
+        auto mirror_source = std::make_shared<SyntheticLocalMapObservationSource>();
+        mirror_source->setStaticSamples({
+            LocalMapObservationSample{0.04, 0.02, LocalMapCellState::Occupied, 0.18},
+        });
+        auto nav3 = std::make_unique<NavigationManager>(cfg3.local_map, cfg3.local_planner);
+        nav3->addObservationSource(mirror_source);
+        rt3.setNavigationManager(std::move(nav3));
+        rt3.setMotionIntent(makeMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.07));
+
+        const TimePointUs mirror_ts = now_us();
+        est3_raw->enqueue(makeEstimatorSample(NavPose2d{}, mirror_ts, 99));
+        rt3.busStep();
+        rt3.estimatorStep();
+        rt3.safetyStep();
+        rt3.controlStep();
+
+        const LocalMapSnapshot mirror_snap = rt3.navigationManager()->latestMapSnapshot(mirror_ts);
+        if (!expect(mirror_snap.has_observations,
+                    "runtime control step should refresh the terrain mirror without active navigation")) {
+            return EXIT_FAILURE;
+        }
+        if (!expect(mirror_snap.elevation_has_data,
+                    "runtime control step should surface terrain elevation without active navigation")) {
+            return EXIT_FAILURE;
+        }
+        if (!expect(rt3.navigationManager()->footTerrainSnapshot(mirror_ts) != nullptr,
+                    "terrain mirror should feed physics corrections without active navigation")) {
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
         auto bridge2 = std::make_unique<SimHardwareBridge>();
         auto estimator2 = std::make_unique<ScriptedEstimator>();
         auto* est2_raw = estimator2.get();

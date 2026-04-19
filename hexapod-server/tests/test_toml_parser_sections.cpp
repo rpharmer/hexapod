@@ -3,6 +3,7 @@
 #include "hexapod-server.hpp"
 #include "toml_parser.hpp"
 
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -106,7 +107,6 @@ bool testMalformedRuntimeModeFails()
               "baseline config missing Runtime.Mode entry")) {
     return false;
   }
-
   ParsedToml parsed{};
   TomlParser parser(logger);
   const bool parse_failed = expect(!parser.parse(writeTemp("hexapod_bad_runtime.toml", cfg), parsed),
@@ -133,7 +133,6 @@ bool testMalformedCalibrationKeyFails()
               "baseline config missing R31 calibration entry")) {
     return false;
   }
-
   ParsedToml parsed{};
   TomlParser parser(makeTestLogger());
   return expect(!parser.parse(writeTemp("hexapod_bad_cal_key.toml", cfg), parsed),
@@ -148,7 +147,6 @@ bool testDuplicateCalibrationKeyFails()
               "baseline config missing L13 calibration entry")) {
     return false;
   }
-
   ParsedToml parsed{};
   TomlParser parser(makeTestLogger());
   return expect(!parser.parse(writeTemp("hexapod_dup_cal_key.toml", cfg), parsed),
@@ -225,6 +223,7 @@ bool testTelemetryRuntimeFieldsParseAndFallback()
   }
 
   ParsedToml parsed{};
+  cfg += "\n[Runtime.ReplayLog]\nEnableFile = true\nFilePath = \"/tmp/hexapod_replay_dataset.ndjson\"\n";
   TomlParser parser(makeTestLogger());
   if (!expect(parser.parse(writeTemp("hexapod_runtime_telemetry_fallback.toml", cfg), parsed),
               "telemetry runtime values should parse with fallback on invalid scalars")) {
@@ -237,7 +236,29 @@ bool testTelemetryRuntimeFieldsParseAndFallback()
       !expect(near(parsed.telemetryPublishRateHz, 30.0),
               "out-of-range telemetry publish rate should fallback to default") ||
       !expect(near(parsed.telemetryGeometryResendIntervalSec, 1.0),
-              "out-of-range telemetry resend interval should fallback to default")) {
+              "out-of-range telemetry resend interval should fallback to default") ||
+      !expect(parsed.replayLogToFile, "replay log enable should parse explicit true") ||
+      !expect(parsed.replayLogFilePath == "/tmp/hexapod_replay_dataset.ndjson",
+              "replay log file path should parse explicitly")) {
+    return false;
+  }
+
+  if (!expect(parsed.telemetryUdpHost == parsed.telemetryHost,
+              "telemetry UDP host should mirror the effective telemetry host") ||
+      !expect(parsed.telemetryUdpPort == parsed.telemetryPort,
+              "telemetry UDP port should mirror the effective telemetry port")) {
+    return false;
+  }
+
+  const control_config::ControlConfig control = control_config::fromParsedToml(parsed);
+  if (!expect(control.telemetry.host == "127.0.0.1", "control config telemetry host should map") ||
+      !expect(control.telemetry.udp_host == "127.0.0.1", "control config UDP host should map") ||
+      !expect(control.telemetry.port == 9870, "control config telemetry port should map") ||
+      !expect(control.telemetry.udp_port == 9870, "control config UDP port should map") ||
+      !expect(control.telemetry.publish_period == std::chrono::milliseconds{33},
+              "telemetry publish period should derive from 30 Hz") ||
+      !expect(control.telemetry.geometry_refresh_period == std::chrono::milliseconds{1000},
+              "telemetry geometry refresh period should derive from 1.0 seconds")) {
     return false;
   }
 
@@ -490,11 +511,19 @@ bool testNavBridgeTuningKeysParseIntoControlConfig()
 {
   std::string cfg = readText(configPath("config.txt"));
   if (!expect(replaceOnce(cfg, "MaxFootContacts = 6",
-                           "MaxFootContacts = 6\n"
-                           "NavBodyFrameIntegralKiFwdPerS = 0.08\n"
-                           "NavBodyFrameIntegralKiLatPerS = 0.09\n"
-                           "NavBodyFrameIntegralAbsCapMetersSeconds = 0.3"),
+                           "MaxFootContacts = 6"),
               "baseline config missing MaxFootContacts = 6")) {
+    return false;
+  }
+  if (!expect(replaceOnce(cfg, "NavBodyFrameIntegralKiFwdPerS = 0.0",
+                           "NavBodyFrameIntegralKiFwdPerS = 0.08"),
+              "baseline config missing NavBodyFrameIntegralKiFwdPerS = 0.0") ||
+      !expect(replaceOnce(cfg, "NavBodyFrameIntegralKiLatPerS = 0.0",
+                          "NavBodyFrameIntegralKiLatPerS = 0.09"),
+              "baseline config missing NavBodyFrameIntegralKiLatPerS = 0.0") ||
+      !expect(replaceOnce(cfg, "NavBodyFrameIntegralAbsCapMetersSeconds = 0.0",
+                          "NavBodyFrameIntegralAbsCapMetersSeconds = 0.3"),
+              "baseline config missing NavBodyFrameIntegralAbsCapMetersSeconds = 0.0")) {
     return false;
   }
 

@@ -148,5 +148,32 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    auto mirror_source = std::make_shared<SyntheticLocalMapObservationSource>();
+    mirror_source->setStaticSamples({
+        LocalMapObservationSample{0.04, 0.02, LocalMapCellState::Occupied, 0.18},
+    });
+    NavigationManager mirror_nav(LocalMapConfig{}, LocalPlannerConfig{});
+    mirror_nav.addObservationSource(mirror_source);
+    RobotState mirror_est{};
+    mirror_est.valid = true;
+    mirror_est.has_body_twist_state = true;
+    mirror_est.body_twist_state.body_trans_m.x = 0.0;
+    mirror_est.body_twist_state.body_trans_m.y = 0.0;
+    mirror_est.sample_id = 1;
+    mirror_est.timestamp_us = TimePointUs{4'000'000};
+    const TimePointUs mirror_now{4'000'000};
+    mirror_nav.refreshTerrainSnapshot(mirror_est, mirror_now);
+    const LocalMapSnapshot mirror_snap = mirror_nav.latestMapSnapshot(mirror_now);
+    if (!expect(mirror_snap.has_observations, "idle terrain refresh should collect observations")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(mirror_snap.elevation_has_data, "idle terrain refresh should build elevation data")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(mirror_nav.footTerrainSnapshot(mirror_now) != nullptr,
+                "idle terrain refresh should feed the terrain mirror")) {
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }

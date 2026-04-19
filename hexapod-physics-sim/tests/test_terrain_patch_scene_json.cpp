@@ -32,6 +32,9 @@ int main() {
     "confidence_half_life_s": 2.5,
     "base_update_blend": 0.4,
     "decay_update_boost": 0.6,
+    "lidar_min_surface_confidence": 0.31,
+    "lidar_contact_arbitration_radius_m": 0.14,
+    "lidar_contact_disagreement_m": 0.025,
     "center": [1.25, 0.0, -0.5],
     "plane_height_m": 0.32,
     "plane_normal": [0.0, 0.97, 0.24]
@@ -85,8 +88,13 @@ int main() {
         std::cerr << "unexpected terrain patch plane normal\n";
         return 8;
     }
+    if (!Near(config.lidar_min_surface_confidence, 0.31f, 1.0e-6f) ||
+        !Near(config.lidar_contact_arbitration_radius_m, 0.14f, 1.0e-6f) ||
+        !Near(config.lidar_contact_disagreement_m, 0.025f, 1.0e-6f)) {
+        std::cerr << "unexpected terrain patch lidar arbitration tuning\n";
+        return 9;
+    }
 
     std::cout << "test_terrain_patch_scene_json ok rows=" << config.rows << " cols=" << config.cols << "\n";
     return 0;
 }
-

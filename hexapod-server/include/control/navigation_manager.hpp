@@ -58,12 +58,13 @@ public:
     void cancel();
     void deactivate();
     void reset();
+    void refreshTerrainSnapshot(const RobotState& est, TimePointUs now);
 
     [[nodiscard]] bool active() const;
     [[nodiscard]] bool paused() const;
     [[nodiscard]] NavigationMonitorSnapshot monitor() const;
     [[nodiscard]] LocalMapSnapshot latestMapSnapshot(TimePointUs now) const;
-    /** Last map snapshot from `mergeIntent` (map-aware mode); null if inactive or stale / no terrain layers. */
+    /** Latest terrain snapshot suitable for physics correction; null if stale or no terrain layers. */
     [[nodiscard]] const LocalMapSnapshot* footTerrainSnapshot(TimePointUs now) const;
 
     MotionIntent mergeIntent(const MotionIntent& fallback, const RobotState& est, TimePointUs now);
@@ -78,6 +79,8 @@ private:
     void planOrBlock(const NavPose2d& pose, const LocalMapSnapshot& snapshot, TimePointUs now);
     void startBridgeFromPlan(const LocalPlanResult& plan);
     void refreshMonitorFromBridge();
+    [[nodiscard]] bool shouldRefreshTerrainSnapshot(const RobotState& est, TimePointUs now) const;
+    LocalMapSnapshot refreshTerrainSnapshotLocked(const NavPose2d& pose, const RobotState& est, TimePointUs now);
 
     LocalMapBuilder local_map_builder_{};
     LocalPlannerConfig planner_config_{};
@@ -97,5 +100,7 @@ private:
     bool map_aware_mode_{false};
     TimePointUs last_merge_timestamp_{};
     TimePointUs blocked_since_{};
+    TimePointUs last_terrain_refresh_timestamp_{};
+    uint64_t last_terrain_refresh_sample_id_{0};
     LocalMapSnapshot cached_map_snapshot_{};
 };

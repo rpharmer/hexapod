@@ -54,7 +54,7 @@ run_step "Build and install CppLinuxSerial" bash -c '
   cmake --install build
 ' || failures=$((failures + 1))
 
-# Install build toolchain + Python runtime used by visualiser.
+# Install build toolchain + dependencies used by the OpenGL visualiser and host builds.
 run_step "Install required apt packages" bash -c '
   sudo apt update &&
   sudo apt install -y cmake gcc-arm-none-eabi build-essential python3-venv python3-pip
@@ -118,13 +118,11 @@ run_step "Build hexapod-client host-tests preset" bash -c '
   cmake --build --preset host-tests -j"$(nproc)"
 ' || failures=$((failures + 1))
 
-# Install visualiser Python dependencies in a local virtual environment.
-run_step "Set up hexapod-visualiser virtual environment" bash -c '
-  cd /workspace/hexapod/hexapod-visualiser
-  python3 -m venv .venv &&
-  source .venv/bin/activate &&
-  python -m pip install --upgrade pip &&
-  python -m pip install -r requirements.txt
+# Build the OpenGL visualiser binary used by the replacement flow.
+run_step "Build hexapod-opengl-visualiser" bash -c '
+  cd /workspace/hexapod/hexapod-opengl-visualiser
+  cmake -S . -B build &&
+  cmake --build build -j"$(nproc)"
 ' || failures=$((failures + 1))
 
 if [ "$failures" -gt 0 ]; then

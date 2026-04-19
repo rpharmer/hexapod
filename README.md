@@ -109,18 +109,12 @@ This single command runs, in order (fail-fast):
 
 Each section prints clear markers so CI and local runs can quickly identify where failures occur.
 
-## Visualiser telemetry smoke flow
+## OpenGL visualiser flow
 
-You can also run an end-to-end visualiser smoke test from repository root:
-
-```bash
-python scripts/visualiser_smoke.py
-```
-
-To start the visualiser without manually creating/activating a venv each time:
+To start the OpenGL visualiser without manually rebuilding each time:
 
 ```bash
-scripts/run_visualiser.sh --install-deps -- --http-port 8080 --udp-port 9870
+scripts/run_visualiser.sh -- --udp-port 9870
 ```
 
 For simulator-mode scenario sweeps without copying configs by hand:
@@ -129,10 +123,10 @@ For simulator-mode scenario sweeps without copying configs by hand:
 scripts/run_server_scenarios.sh
 ```
 
-To launch the server and visualiser together (wired over UDP telemetry) in simulator mode:
+To launch the server and visualiser together in simulator mode:
 
 ```bash
-scripts/run_sim_stack.sh --install-deps
+scripts/run_sim_stack.sh
 ```
 
 Optional scenario-run example:
@@ -141,7 +135,7 @@ Optional scenario-run example:
 scripts/run_sim_stack.sh --scenario scenarios/01_nominal_stand_walk.toml
 ```
 
-For a **serial-connected robot** (or when `hexapod-server` runs on a different machine), run server telemetry with an explicit visualiser IP:
+For a **serial-connected robot** (or when `hexapod-server` runs on a different machine), run server telemetry with an explicit OpenGL visualiser IP:
 
 ```bash
 # on the server machine
@@ -149,11 +143,13 @@ scripts/run_server_with_telemetry.sh --mode serial --telemetry-host <VISUALISER_
 ```
 
 ```bash
-# on the visualiser machine
-scripts/run_visualiser.sh --install-deps -- --http-port 8080 --udp-port 9870
+# on the OpenGL visualiser machine
+scripts/run_visualiser.sh -- --udp-port 9870
 ```
 
-This script launches the visualiser backend, injects a canonical UDP telemetry packet, and asserts the WebSocket state frame includes expected geometry, angles, and timestamp fields.
+The OpenGL visualiser is the primary native GUI for the project. It can render both
+`hexapod-physics-sim` scene packets and live `hexapod-server` telemetry, including
+joint angles, navigation state, fusion diagnostics, and terrain overlays.
 
 ## Development workflow
 

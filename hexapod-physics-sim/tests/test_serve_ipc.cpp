@@ -541,7 +541,7 @@ int main(int argc, char** argv) {
     physics_sim::StateCorrection terrain{};
     terrain.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection);
     terrain.sequence_id = 0;
-    terrain.timestamp_us = 900;
+    terrain.timestamp_us = 5000;
     terrain.flags = physics_sim::kStateCorrectionTerrainValid;
     terrain.correction_strength = 0.85f;
     terrain.terrain_height_m = base_pos[1] + 0.14f;

@@ -8,6 +8,7 @@
 #include "hardware_bridge.hpp"
 #include "logger.hpp"
 #include "navigation_manager.hpp"
+#include "replay_logger.hpp"
 #include "runtime_diagnostics_reporter.hpp"
 #include "runtime_freshness_gate.hpp"
 #include "runtime_timing_metrics.hpp"
@@ -26,7 +27,8 @@ public:
                  std::unique_ptr<IEstimator> estimator,
                  std::shared_ptr<logging::AsyncLogger> logger,
                  control_config::ControlConfig config = {},
-                 std::unique_ptr<telemetry::ITelemetryPublisher> telemetry_publisher = telemetry::makeNoopTelemetryPublisher());
+                 std::unique_ptr<telemetry::ITelemetryPublisher> telemetry_publisher = telemetry::makeNoopTelemetryPublisher(),
+                 std::unique_ptr<replay::IReplayLogger> replay_logger = replay::makeNoopReplayLogger());
 
     bool init();
     void startTelemetry();
@@ -59,12 +61,14 @@ private:
                                               const LocalMapSnapshot* terrain_snapshot);
     static void scaleMotionIntent(MotionIntent& intent, double scale);
     void maybePublishTelemetry(const TimePointUs& now);
+    void maybeWriteReplayRecord(const TimePointUs& now);
 
     std::unique_ptr<IHardwareBridge> hw_;
     std::unique_ptr<IEstimator> estimator_;
     std::shared_ptr<logging::AsyncLogger> logger_;
     control_config::ControlConfig config_;
     std::unique_ptr<telemetry::ITelemetryPublisher> telemetry_publisher_;
+    std::unique_ptr<replay::IReplayLogger> replay_logger_;
 
     ControlPipeline pipeline_;
     SafetySupervisor safety_;

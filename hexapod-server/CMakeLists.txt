@@ -120,6 +120,8 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/physics_sim_local_map_source.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/plane_estimation.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/probe_contact_logic.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/replay_json.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/replay_logger.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/robot_control.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/robot_runtime.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime_diagnostics_reporter.cpp"
@@ -433,6 +435,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_telemetry_json_serialization tests/test_telemetry_json_serialization.cpp)
     target_link_libraries(test_telemetry_json_serialization PRIVATE hexapod_server_core)
     add_test(NAME telemetry_json_serialization COMMAND test_telemetry_json_serialization)
+
+    add_executable(test_replay_logging tests/test_replay_logging.cpp)
+    target_link_libraries(test_replay_logging PRIVATE hexapod_server_core)
+    add_test(NAME replay_logging COMMAND test_replay_logging)
 
 
     add_executable(test_bridge_link_manager tests/test_bridge_link_manager.cpp)

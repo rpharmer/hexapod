@@ -64,25 +64,7 @@ public:
         if (socket_fd_ < 0) {
             return;
         }
-
-        double body_radius_m = 0.0;
-        for (int leg = 0; leg < kNumLegs; ++leg) {
-            const auto& offset = geometry.legGeometry[leg].bodyCoxaOffset;
-            const double radius = std::sqrt((offset.x * offset.x) + (offset.y * offset.y));
-            if (radius > body_radius_m) {
-                body_radius_m = radius;
-            }
-        }
-
-        std::ostringstream payload;
-        payload << "{\"schema_version\":1,\"geometry\":{"
-                << "\"coxa\":" << geometry.legGeometry[0].coxaLength.value * 1000.0 << ","
-                << "\"femur\":" << geometry.legGeometry[0].femurLength.value * 1000.0 << ","
-                << "\"tibia\":" << geometry.legGeometry[0].tibiaLength.value * 1000.0 << ","
-                << "\"body_radius\":" << body_radius_m * 1000.0
-                << "}}";
-
-        send(payload.str());
+        send(telemetry_json::serializeGeometryPacket(geometry));
     }
 
     void publishControlStep(const ControlStepTelemetry& telemetry) override {

@@ -10,6 +10,7 @@
 #include "foot_terrain.hpp"
 #include "local_map.hpp"
 #include "plane_estimation.hpp"
+#include "replay_json.hpp"
 #include "physics_sim_bridge.hpp"
 
 namespace {
@@ -443,12 +444,14 @@ RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
                            std::unique_ptr<IEstimator> estimator,
                            std::shared_ptr<logging::AsyncLogger> logger,
                            control_config::ControlConfig config,
-                           std::unique_ptr<telemetry::ITelemetryPublisher> telemetry_publisher)
+                           std::unique_ptr<telemetry::ITelemetryPublisher> telemetry_publisher,
+                           std::unique_ptr<replay::IReplayLogger> replay_logger)
     : hw_(std::move(hw)),
       estimator_(std::move(estimator)),
       logger_(std::move(logger)),
       config_(config),
       telemetry_publisher_(std::move(telemetry_publisher)),
+      replay_logger_(std::move(replay_logger)),
       pipeline_(config_.gait, config_.locomotion_cmd, config_.foot_terrain),
       safety_(config_.safety),
       freshness_policy_(config_.freshness),
@@ -542,6 +545,9 @@ void RobotRuntime::controlStep() {
     timing_metrics_.update(now);
 
     const RobotState est = estimated_state_.read();
+    if (navigation_manager_ != nullptr) {
+        navigation_manager_->refreshTerrainSnapshot(est, now);
+    }
     const LocalMapSnapshot* terrain_ptr = nullptr;
     if (navigation_manager_ != nullptr) {
         terrain_ptr = navigation_manager_->footTerrainSnapshot(now);
@@ -578,6 +584,7 @@ void RobotRuntime::controlStep() {
         status_.write(decision.status);
         joint_targets_.write(decision.joint_targets);
         maybePublishTelemetry(now);
+        maybeWriteReplayRecord(now);
         return;
     }
 
@@ -593,6 +600,7 @@ void RobotRuntime::controlStep() {
     status_.write(result.status);
 
     maybePublishTelemetry(now);
+    maybeWriteReplayRecord(now);
 }
 
 void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
@@ -628,6 +636,22 @@ void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
     }
     telemetry_sample.timestamp_us = now;
     telemetry_publisher_->publishControlStep(telemetry_sample);
+}
+
+void RobotRuntime::maybeWriteReplayRecord(const TimePointUs& now) {
+    if (!replay_logger_) {
+        return;
+    }
+
+    replay_json::ReplayTelemetryRecord record{};
+    record.timestamp_us = now;
+    record.sample_id = estimated_state_.read().sample_id;
+    record.status = status_.read();
+    record.estimated_state = estimated_state_.read();
+    if (navigation_manager_) {
+        record.terrain_snapshot = navigation_manager_->latestMapSnapshot(now);
+    }
+    replay_logger_->write(record);
 }
 
 void RobotRuntime::safetyStep() {

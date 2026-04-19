@@ -1,6 +1,7 @@
 #include "control_config.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "hexapod-server.hpp"
 #include "types.hpp"
@@ -49,10 +50,14 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.telemetry.port = config.telemetryPort;
     parsed.telemetry.publish_rate_hz = config.telemetryPublishRateHz;
     parsed.telemetry.geometry_resend_interval_sec = config.telemetryGeometryResendIntervalSec;
-    parsed.telemetry.udp_host = config.telemetryUdpHost;
-    parsed.telemetry.udp_port = config.telemetryUdpPort;
-    parsed.telemetry.publish_period = std::chrono::milliseconds{config.telemetryPublishPeriodMs};
-    parsed.telemetry.geometry_refresh_period = std::chrono::milliseconds{config.telemetryGeometryRefreshPeriodMs};
+    parsed.telemetry.udp_host = config.telemetryHost;
+    parsed.telemetry.udp_port = config.telemetryPort;
+    parsed.telemetry.publish_period = std::chrono::milliseconds{
+        std::max(1, static_cast<int>(std::lround(1000.0 / std::max(config.telemetryPublishRateHz, 0.1))))};
+    parsed.telemetry.geometry_refresh_period = std::chrono::milliseconds{
+        std::max(1, static_cast<int>(std::lround(config.telemetryGeometryResendIntervalSec * 1000.0)))};
+    parsed.replay_log.enabled = config.replayLogToFile;
+    parsed.replay_log.file_path = config.replayLogFilePath;
 
     parsed.nav_bridge.body_frame_integral_ki_fwd_per_s = config.navBodyFrameIntegralKiFwdPerS;
     parsed.nav_bridge.body_frame_integral_ki_lat_per_s = config.navBodyFrameIntegralKiLatPerS;

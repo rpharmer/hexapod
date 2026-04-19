@@ -73,6 +73,21 @@ public:
     size_t control_step_count{0};
 };
 
+class CountingReplayLogger final : public replay::IReplayLogger {
+public:
+    void write(const replay_json::ReplayTelemetryRecord& record) override {
+        ++write_count;
+        last_sample_id = record.sample_id;
+        saw_matrix_lidar = record.estimated_state.has_matrix_lidar;
+        saw_terrain = record.terrain_snapshot.has_observations;
+    }
+
+    size_t write_count{0};
+    uint64_t last_sample_id{0};
+    bool saw_matrix_lidar{false};
+    bool saw_terrain{false};
+};
+
 struct FlagScenario {
     const char* name;
     bool require_timestamp;
@@ -272,6 +287,41 @@ bool runTelemetryCadenceRejectCase() {
                   "rejected control steps should keep geometry refresh cadence");
 }
 
+bool runReplayLoggingCase() {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<ScriptedEstimator>();
+    auto* scripted = estimator.get();
+    auto replay_logger = std::make_unique<CountingReplayLogger>();
+    auto* replay_raw = replay_logger.get();
+
+    control_config::ControlConfig cfg{};
+    cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+    cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+    RobotRuntime runtime(std::move(bridge),
+                         std::move(estimator),
+                         nullptr,
+                         cfg,
+                         telemetry::makeNoopTelemetryPublisher(),
+                         std::move(replay_logger));
+
+    if (!expect(runtime.init(), "init should succeed (replay logging case)")) {
+        return false;
+    }
+
+    scripted->enqueue(makeEstimatorSample(700, now_us()));
+    runtime.setMotionIntent(makeIntentSample(700, now_us()));
+    runControlStep(runtime);
+
+    return expect(replay_raw->write_count == 1,
+                  "control step should emit one replay record") &&
+           expect(replay_raw->last_sample_id == 700,
+                  "replay record should preserve the current sample id") &&
+           expect(replay_raw->saw_matrix_lidar == false,
+                  "replay record should reflect the estimator's lidar availability") &&
+           expect(replay_raw->saw_terrain == false,
+                  "replay record should still serialize an empty terrain snapshot");
+}
+
 } // namespace
 
 int main() {
@@ -339,6 +389,10 @@ int main() {
     }
 
     if (!runTelemetryCadenceRejectCase()) {
+        return EXIT_FAILURE;
+    }
+
+    if (!runReplayLoggingCase()) {
         return EXIT_FAILURE;
     }
 

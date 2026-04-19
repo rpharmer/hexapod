@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <csignal>
 #include <iostream>
 #include <memory>
@@ -14,6 +15,7 @@
 #include "logger.hpp"
 #include "mode_runners.hpp"
 #include "navigation_manager.hpp"
+#include "replay_logger.hpp"
 #include "robot_control.hpp"
 #include "runtime_teardown.hpp"
 #include "physics_sim_bridge.hpp"
@@ -28,6 +30,28 @@ using namespace logging;
 static std::atomic<bool> g_exit{false};
 
 namespace {
+
+int telemetryPublishPeriodMsFromRateHz(double publish_rate_hz)
+{
+  return std::max(1, static_cast<int>(std::lround(1000.0 / std::max(publish_rate_hz, 0.1))));
+}
+
+int telemetryGeometryRefreshPeriodMsFromSeconds(double geometry_resend_interval_sec)
+{
+  return std::max(1, static_cast<int>(std::lround(geometry_resend_interval_sec * 1000.0)));
+}
+
+void syncTelemetryCompatibilityFields(ParsedToml& config)
+{
+  if (config.telemetryHost.empty()) {
+    config.telemetryHost = "127.0.0.1";
+  }
+  config.telemetryUdpHost = config.telemetryHost;
+  config.telemetryUdpPort = config.telemetryPort;
+  config.telemetryPublishPeriodMs = telemetryPublishPeriodMsFromRateHz(config.telemetryPublishRateHz);
+  config.telemetryGeometryRefreshPeriodMs =
+      telemetryGeometryRefreshPeriodMsFromSeconds(config.telemetryGeometryResendIntervalSec);
+}
 
 std::shared_ptr<AsyncLogger> makeLogger(bool enableFileLogging,
                                         const std::string& logFilePath,
@@ -129,6 +153,8 @@ void applyTelemetryCliOverrides(ParsedToml& config,
              ", using 1.0");
     config.telemetryGeometryResendIntervalSec = 1.0;
   }
+
+  syncTelemetryCompatibilityFields(config);
 }
 
 } // namespace
@@ -199,6 +225,11 @@ int main(int argc, char** argv)
            control_cfg.telemetry.publish_rate_hz,
            ", GeometryResendIntervalSec=",
            control_cfg.telemetry.geometry_resend_interval_sec);
+  LOG_INFO(logger,
+           "Runtime.ReplayLog.Enabled=",
+           control_cfg.replay_log.enabled,
+           ", Path=",
+           control_cfg.replay_log.file_path);
 
   auto hw = makeHardwareBridge(config, logger);
   auto navigation_manager =
@@ -220,7 +251,10 @@ int main(int argc, char** argv)
   } else {
     estimator = std::make_unique<SimpleEstimator>();
   }
-  RobotControl robot(std::move(hw), std::move(estimator), logger, control_cfg);
+  auto replay_logger = control_cfg.replay_log.enabled
+                           ? replay::makeFileReplayLogger(control_cfg.replay_log.file_path, logger)
+                           : replay::makeNoopReplayLogger();
+  RobotControl robot(std::move(hw), std::move(estimator), logger, control_cfg, std::move(replay_logger));
 
   if (!robot.init()) {
     return 1;

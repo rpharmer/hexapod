@@ -1,6 +1,7 @@
 #include "runtime_section_parser.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cctype>
 #include <vector>
 
@@ -113,6 +114,8 @@ bool parseRuntimeSection(const toml::value& root,
       {"Runtime.PhysicsSim.SolverIterations", ValueType::Double, false, true, 1.0, 512.0, "", false, 24.0},
       {"Runtime.Log.FilePath", ValueType::String, false, false, kNoBoundsMin, kNoBoundsMax, "app.log", false, 0.0},
       {"Runtime.Log.EnableFile", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", true, 0.0},
+      {"Runtime.ReplayLog.EnableFile", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.ReplayLog.FilePath", ValueType::String, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
       {"Runtime.Telemetry.Enable", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
       {"Runtime.Telemetry.Host", ValueType::String, false, false, kNoBoundsMin, kNoBoundsMax, "127.0.0.1", false, 0.0},
       {"Runtime.Telemetry.Port", ValueType::Double, false, true, 1.0, 65535.0, "", false, 9870.0},
@@ -178,49 +181,35 @@ bool parseRuntimeSection(const toml::value& root,
 
   out.logFilePath = findOrByPath<std::string>(root, schema[10].key, schema[10].default_string);
   out.logToFile = findOrByPath<bool>(root, schema[11].key, schema[11].default_bool);
-  out.telemetryEnabled = findOrByPath<bool>(root, schema[12].key, schema[12].default_bool);
-  out.telemetryUdpHost = findOrByPath<std::string>(root, schema[13].key, schema[13].default_string);
-  out.telemetryUdpPort = static_cast<int>(config_validation::parseDoubleWithFallback(
-      root, schema[14].key, schema[14].default_double, schema[14].min_value, schema[14].max_value,
-      "runtime", logger, diagnostics));
-  out.telemetryPublishPeriodMs = static_cast<int>(config_validation::parseDoubleWithFallback(
-      root, schema[15].key, schema[15].default_double, schema[15].min_value, schema[15].max_value,
-      "runtime", logger, diagnostics));
-  out.telemetryGeometryRefreshPeriodMs = static_cast<int>(config_validation::parseDoubleWithFallback(
-      root, schema[16].key, schema[16].default_double, schema[16].min_value, schema[16].max_value,
-      "runtime", logger, diagnostics));
-
-  if (out.logToFile && out.logFilePath.empty()) {
-    out.logFilePath = "app.log";
-    config_validation::emitDiagnostic(diagnostics, "runtime", "Runtime.Log.FilePath",
-                                      "empty_value",
-                                      "Runtime.Log.FilePath was empty, using default app.log");
-    if (logger) {
-      LOG_WARN(logger, "[runtime] Runtime.Log.FilePath was empty, using default app.log");
-    }
-  }
-
-  // Legacy duplicate read: same keys as the first telemetry batch (mirrors pre-refactor behavior).
-  out.telemetryEnabled = findOrByPath<bool>(root, schema[12].key, schema[12].default_bool);
-  out.telemetryHost = findOrByPath<std::string>(root, schema[13].key, schema[13].default_string);
+  out.replayLogToFile = findOrByPath<bool>(root, schema[12].key, schema[12].default_bool);
+  out.replayLogFilePath = findOrByPath<std::string>(root, schema[13].key, schema[13].default_string);
+  out.telemetryEnabled = findOrByPath<bool>(root, schema[14].key, schema[14].default_bool);
+  out.telemetryHost = findOrByPath<std::string>(root, schema[15].key, schema[15].default_string);
   if (out.telemetryHost.empty()) {
-    out.telemetryHost = schema[13].default_string;
-    config_validation::emitDiagnostic(diagnostics, "runtime", schema[13].key, "empty_value",
+    out.telemetryHost = schema[15].default_string;
+    config_validation::emitDiagnostic(diagnostics, "runtime", schema[15].key, "empty_value",
                                       "Runtime.Telemetry.Host was empty, using default 127.0.0.1");
     if (logger) {
       LOG_WARN(logger, "[runtime] Runtime.Telemetry.Host was empty, using default 127.0.0.1");
     }
   }
   out.telemetryPort = config_validation::parseIntWithFallback(
-      root, schema[14].key, static_cast<int>(schema[14].default_double),
-      static_cast<int>(schema[14].min_value), static_cast<int>(schema[14].max_value), "runtime",
+      root, schema[16].key, static_cast<int>(schema[16].default_double),
+      static_cast<int>(schema[16].min_value), static_cast<int>(schema[16].max_value), "runtime",
       logger, diagnostics);
   out.telemetryPublishRateHz = config_validation::parseDoubleWithFallback(
-      root, schema[15].key, schema[15].default_double, schema[15].min_value, schema[15].max_value,
+      root, schema[17].key, schema[17].default_double, schema[17].min_value, schema[17].max_value,
       "runtime", logger, diagnostics);
   out.telemetryGeometryResendIntervalSec = config_validation::parseDoubleWithFallback(
-      root, schema[16].key, schema[16].default_double, schema[16].min_value,
-      schema[16].max_value, "runtime", logger, diagnostics);
+      root, schema[18].key, schema[18].default_double, schema[18].min_value, schema[18].max_value,
+      "runtime", logger, diagnostics);
+
+  out.telemetryUdpHost = out.telemetryHost;
+  out.telemetryUdpPort = out.telemetryPort;
+  out.telemetryPublishPeriodMs =
+      static_cast<int>(std::lround(1000.0 / std::max(out.telemetryPublishRateHz, 0.1)));
+  out.telemetryGeometryRefreshPeriodMs =
+      static_cast<int>(std::lround(out.telemetryGeometryResendIntervalSec * 1000.0));
   return true;
 }
 

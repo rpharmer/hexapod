@@ -1,6 +1,11 @@
 # hexapod-opengl-visualiser
 
-Minimal OpenGL renderer that listens for `hexapod-physics-sim` UDP scene packets and renders the live bodies.
+OpenGL + ImGui visualiser for live hexapod diagnostics.
+
+It can render either:
+
+- `hexapod-physics-sim` scene packets (`entity_static`, `entity_frame`, `terrain_patch`)
+- `hexapod-server` telemetry packets (`geometry`, `joints`, nav/fusion summaries)
 
 ## Dependencies
 
@@ -22,18 +27,25 @@ cmake --build build -j
 ./build/hexapod-opengl-visualiser --udp-port 9870
 ```
 
-The renderer listens on UDP port `9870` by default and consumes the simulator's
-`entity_static`, `entity_frame`, and `terrain_patch` packets.
+The renderer listens on UDP port `9870` by default.
 
-To wire it to the simulator from a second terminal:
+For simulator scene packets:
 
 ```bash
 cd ../hexapod-physics-sim
 cmake -S . -B build
 cmake --build build -j
 ./build/hexapod-physics-sim --sink udp
-# Hexapod model (body + 6 x coxa/femur/tibia + foot spheres):
-./build/hexapod-physics-sim --sink udp --model hexapod
 ```
 
-You should then see the selected demo scene animate in the OpenGL window.
+For live robot telemetry:
+
+```bash
+cd ../hexapod-server
+./build-tests/hexapod-server --telemetry-enable --telemetry-port 9870
+```
+
+In the visualiser:
+
+- `F1` toggles the overlay panel
+- the overlay exposes camera sliders, scene toggles, and telemetry summaries

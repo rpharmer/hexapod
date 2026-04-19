@@ -54,6 +54,19 @@ bool test_exact_keys_and_schema_version()
                   "payload should include angles_deg key");
 }
 
+bool test_geometry_packet_includes_leg_metadata()
+{
+    HexapodGeometry geometry = geometry_config::buildDefaultHexapodGeometry();
+    const std::string payload = telemetry_json::serializeGeometryPacket(geometry);
+
+    return expect(payload.find("\"type\":\"geometry\"") != std::string::npos,
+                  "geometry packet should include geometry type") &&
+           expect(payload.find("\"legs\":[") != std::string::npos,
+                  "geometry packet should include per-leg metadata") &&
+           expect(payload.find("\"key\":\"LF\"") != std::string::npos,
+                  "geometry packet should include canonical leg keys");
+}
+
 bool test_leg_order_is_stable_and_canonical()
 {
     HexapodGeometry geometry = geometry_config::buildDefaultHexapodGeometry();
@@ -114,8 +127,11 @@ bool test_control_step_packet_includes_fusion_diagnostics()
     telemetry_sample.timestamp_us = TimePointUs{123'000};
     telemetry_sample.status.loop_counter = 7;
     telemetry_sample.status.active_mode = RobotMode::WALK;
+    telemetry_sample.status.active_fault = FaultCode::ESTOP;
     telemetry_sample.status.bus_ok = true;
     telemetry_sample.status.estimator_valid = true;
+    telemetry_sample.estimated_state.voltage = 11.7f;
+    telemetry_sample.estimated_state.current = 1.9f;
     telemetry_sample.joint_targets.leg_states[0].joint_state[COXA].pos_rad = AngleRad{deg2rad(5.0)};
     telemetry_sample.joint_targets.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{deg2rad(-10.0)};
     telemetry_sample.joint_targets.leg_states[0].joint_state[TIBIA].pos_rad = AngleRad{deg2rad(15.0)};
@@ -154,6 +170,14 @@ bool test_control_step_packet_includes_fusion_diagnostics()
                   "control step payload should include timestamp_ms") &&
            expect(payload.find("\"loop_counter\":7") != std::string::npos,
                   "control step payload should include loop counter") &&
+           expect(payload.find("\"active_mode\":\"WALK\"") != std::string::npos,
+                  "control step payload should include human readable mode") &&
+           expect(payload.find("\"active_fault\":\"ESTOP\"") != std::string::npos,
+                  "control step payload should include human readable fault") &&
+           expect(payload.find("\"voltage\":11.7") != std::string::npos,
+                  "control step payload should include voltage") &&
+           expect(payload.find("\"current\":1.9") != std::string::npos,
+                  "control step payload should include current") &&
            expect(payload.find("\"fusion\":{") != std::string::npos,
                   "control step payload should include fusion object") &&
            expect(payload.find("\"model_trust\":0.72") != std::string::npos,
@@ -185,6 +209,9 @@ bool test_control_step_packet_includes_fusion_diagnostics()
 int main()
 {
     if (!test_exact_keys_and_schema_version()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_geometry_packet_includes_leg_metadata()) {
         return EXIT_FAILURE;
     }
     if (!test_leg_order_is_stable_and_canonical()) {

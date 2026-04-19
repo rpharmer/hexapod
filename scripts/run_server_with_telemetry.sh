@@ -20,7 +20,7 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/run_server_with_telemetry.sh [options] [-- <extra server args>]
 
-Runs hexapod-server with visualiser telemetry explicitly enabled.
+Runs hexapod-server with OpenGL visualiser telemetry explicitly enabled.
 Supports both serial-connected hardware mode and simulator mode.
 
 Options:

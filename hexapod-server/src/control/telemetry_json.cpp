@@ -1,4 +1,5 @@
 #include "telemetry_json.hpp"
+#include "visualiser_telemetry.hpp"
 
 #include <algorithm>
 #include <array>
@@ -10,6 +11,8 @@ namespace telemetry_json {
 namespace {
 
 constexpr std::array<const char*, kNumLegs> kLegOrder = {"LF", "LM", "LR", "RF", "RM", "RR"};
+constexpr std::array<LegID, kNumLegs> kVisualiserLegOrder = {
+    LegID::L1, LegID::L2, LegID::L3, LegID::R1, LegID::R2, LegID::R3};
 constexpr double kMetersToMillimeters = 1000.0;
 
 std::string formatNumber(const double value)
@@ -38,9 +41,90 @@ double averageBodyRadiusM(const HexapodGeometry& geometry)
     return sum / static_cast<double>(kNumLegs);
 }
 
+const char* robotModeToString(const RobotMode mode)
+{
+    switch (mode) {
+        case RobotMode::SAFE_IDLE:
+            return "SAFE_IDLE";
+        case RobotMode::HOMING:
+            return "HOMING";
+        case RobotMode::STAND:
+            return "STAND";
+        case RobotMode::WALK:
+            return "WALK";
+        case RobotMode::FAULT:
+            return "FAULT";
+    }
+    return "UNKNOWN";
+}
+
+const char* faultCodeToString(const FaultCode fault)
+{
+    switch (fault) {
+        case FaultCode::NONE:
+            return "NONE";
+        case FaultCode::BUS_TIMEOUT:
+            return "BUS_TIMEOUT";
+        case FaultCode::ESTOP:
+            return "ESTOP";
+        case FaultCode::TIP_OVER:
+            return "TIP_OVER";
+        case FaultCode::ESTIMATOR_INVALID:
+            return "ESTIMATOR_INVALID";
+        case FaultCode::MOTOR_FAULT:
+            return "MOTOR_FAULT";
+        case FaultCode::JOINT_LIMIT:
+            return "JOINT_LIMIT";
+        case FaultCode::COMMAND_TIMEOUT:
+            return "COMMAND_TIMEOUT";
+    }
+    return "UNKNOWN";
+}
+
+const char* visualiserKeyForLeg(const LegID leg_id)
+{
+    switch (leg_id) {
+        case LegID::L1:
+            return "LF";
+        case LegID::L2:
+            return "LM";
+        case LegID::L3:
+            return "LR";
+        case LegID::R1:
+            return "RF";
+        case LegID::R2:
+            return "RM";
+        case LegID::R3:
+            return "RR";
+    }
+    return "??";
+}
+
 template <typename VecLike>
 void appendVec3Json(std::ostringstream& payload, const VecLike& vec) {
     payload << '[' << vec.x << ',' << vec.y << ',' << vec.z << ']';
+}
+
+void appendLegGeometryJson(std::ostringstream& payload, const HexapodGeometry& geometry) {
+    payload << ",\"legs\":[";
+    for (std::size_t index = 0; index < kVisualiserLegOrder.size(); ++index) {
+        if (index > 0) {
+            payload << ',';
+        }
+        const LegGeometry& leg = geometry.legGeometry[static_cast<std::size_t>(kVisualiserLegOrder[index])];
+        payload << "{\"key\":\"" << visualiserKeyForLeg(leg.legID) << "\""
+                << ",\"body_coxa_offset\":";
+        appendVec3Json(payload, leg.bodyCoxaOffset);
+        payload << ",\"mount_angle_deg\":" << rad2deg(leg.mountAngle)
+                << ",\"coxa_mm\":" << leg.coxaLength.value * kMetersToMillimeters
+                << ",\"femur_mm\":" << leg.femurLength.value * kMetersToMillimeters
+                << ",\"tibia_mm\":" << leg.tibiaLength.value * kMetersToMillimeters
+                << ",\"coxa_sign\":" << leg.servo.coxaSign
+                << ",\"femur_sign\":" << leg.servo.femurSign
+                << ",\"tibia_sign\":" << leg.servo.tibiaSign
+                << "}";
+    }
+    payload << "]";
 }
 
 void appendFusionJson(std::ostringstream& payload, const telemetry::FusionTelemetrySnapshot& fusion) {
@@ -116,6 +200,25 @@ void appendFusionJson(std::ostringstream& payload, const telemetry::FusionTeleme
 
 } // namespace
 
+std::string serializeGeometryPacket(const HexapodGeometry& geometry)
+{
+    const visualiser_telemetry::VisualiserGeometry visualiser_geometry =
+        visualiser_telemetry::geometryToVisualiserUnits(geometry);
+
+    std::ostringstream stream;
+    stream << '{'
+           << "\"schema_version\":" << kSchemaVersion << ','
+           << "\"type\":\"geometry\","
+           << "\"geometry\":{"
+           << "\"coxa\":" << visualiser_geometry.coxa_mm << ','
+           << "\"femur\":" << visualiser_geometry.femur_mm << ','
+           << "\"tibia\":" << visualiser_geometry.tibia_mm << ','
+           << "\"body_radius\":" << visualiser_geometry.body_radius_mm;
+    appendLegGeometryJson(stream, geometry);
+    stream << "}}";
+    return stream.str();
+}
+
 std::string serializeVisualiserJointsPacket(const HexapodGeometry& geometry,
                                             const JointTargets& joints,
                                             const uint64_t timestamp_ms)
@@ -133,6 +236,7 @@ std::string serializeVisualiserJointsPacket(const HexapodGeometry& geometry,
     out << "\"tibia\":" << formatNumber(geometry.legGeometry[0].tibiaLength.value * kMetersToMillimeters)
         << ',';
     out << "\"body_radius\":" << formatNumber(averageBodyRadiusM(geometry) * kMetersToMillimeters);
+    appendLegGeometryJson(out, geometry);
     out << "},";
 
     out << "\"angles_deg\":{";
@@ -159,8 +263,12 @@ std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& te
             << "\"timestamp_ms\":" << (telemetry.timestamp_us.value / 1000ULL) << ','
             << "\"loop_counter\":" << telemetry.status.loop_counter << ','
             << "\"mode\":" << static_cast<int>(telemetry.status.active_mode) << ','
+            << "\"active_mode\":\"" << robotModeToString(telemetry.status.active_mode) << "\","
+            << "\"active_fault\":\"" << faultCodeToString(telemetry.status.active_fault) << "\","
             << "\"bus_ok\":" << (telemetry.status.bus_ok ? "true" : "false") << ','
             << "\"estimator_valid\":" << (telemetry.status.estimator_valid ? "true" : "false") << ','
+            << "\"voltage\":" << telemetry.estimated_state.voltage << ','
+            << "\"current\":" << telemetry.estimated_state.current << ','
             << "\"angles_deg\":{";
 
     for (int leg = 0; leg < kNumLegs; ++leg) {

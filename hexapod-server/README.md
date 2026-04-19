@@ -92,6 +92,7 @@ Log file behavior:
 - Configure defaults in config via `Runtime.Log.FilePath` and `Runtime.Log.EnableFile`.
 - Override path at runtime with `--log-file <path>`.
 - Disable file logging entirely with `--console-only` (useful for CI/sim/test workflows).
+- Optional replay logging is separate from the app log and is configured with `Runtime.ReplayLog.EnableFile` and `Runtime.ReplayLog.FilePath`.
 
 Examples:
 

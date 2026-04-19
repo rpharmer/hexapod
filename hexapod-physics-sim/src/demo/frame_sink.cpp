@@ -79,6 +79,7 @@ public:
 
         terrain_patch_snapshot_.config = terrain_patch.config();
         terrain_patch_snapshot_.center_world = terrain_patch.center_world();
+        terrain_patch_snapshot_.grid_origin_world = terrain_patch.grid_origin_world();
         terrain_patch_snapshot_.base_height_m = terrain_patch.base_height_m();
         terrain_patch_snapshot_.last_normal = terrain_patch.last_normal();
         terrain_patch_snapshot_.last_plane_height_m = terrain_patch.last_plane_height_m();
@@ -309,6 +310,7 @@ private:
         int schema_version = 1;
         TerrainPatchConfig config{};
         Vec3 center_world{};
+        Vec3 grid_origin_world{};
         float base_height_m = 0.0f;
         Vec3 last_normal{0.0f, 1.0f, 0.0f};
         float last_plane_height_m = 0.0f;
@@ -351,7 +353,11 @@ private:
             << ",\"use_conservative_collision\":" << (terrain.config.use_conservative_collision ? "true" : "false")
             << ",\"scroll_world_fixed\":" << (terrain.config.scroll_world_fixed ? "true" : "false")
             << ",\"lidar_fusion_enable\":" << (terrain.config.lidar_fusion_enable ? "true" : "false")
+            << ",\"lidar_min_surface_confidence\":" << terrain.config.lidar_min_surface_confidence
+            << ",\"lidar_contact_arbitration_radius_m\":" << terrain.config.lidar_contact_arbitration_radius_m
+            << ",\"lidar_contact_disagreement_m\":" << terrain.config.lidar_contact_disagreement_m
             << ",\"center\":[" << terrain.center_world.x << "," << terrain.center_world.y << "," << terrain.center_world.z << "]"
+            << ",\"grid_origin_xz\":[" << terrain.grid_origin_world.x << "," << terrain.grid_origin_world.z << "]"
             << ",\"base_height_m\":" << terrain.base_height_m
             << ",\"plane_height_m\":" << terrain.last_plane_height_m
             << ",\"plane_normal\":[" << terrain.last_normal.x << "," << terrain.last_normal.y << "," << terrain.last_normal.z << "]"
