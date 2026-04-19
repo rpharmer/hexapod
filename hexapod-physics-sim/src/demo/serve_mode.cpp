@@ -845,6 +845,20 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 FillFootContactsFromManifolds(world, scene, terrain_body_ids, rsp.foot_contacts, rsp.foot_contact_normals);
                 FillObstacleFootprints(world, obstacle_body_ids, rsp);
                 FillSimMatrixLidar64x8(world, scene, terrain_patch, world.GetBody(scene.body), rsp);
+                if (terrain_patch.config().lidar_fusion_enable) {
+                    std::vector<TerrainSample> lidar_samples;
+                    AppendMatrixLidarTerrainSamples(
+                        world, scene, terrain_patch, world.GetBody(scene.body), rsp, terrain_patch.config(), lidar_samples);
+                    if (!lidar_samples.empty()) {
+                        Body& plane_body = world.GetBody(scene.plane);
+                        terrain_patch.update(world,
+                                               world.GetBody(scene.body).position,
+                                               plane_body.planeOffset,
+                                               plane_body.planeNormal,
+                                               lidar_samples,
+                                               0.0f);
+                    }
+                }
 
                 (void)::sendto(
                     fd,
@@ -901,6 +915,20 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             FillFootContactsFromManifolds(world, scene, terrain_body_ids, rsp.foot_contacts, rsp.foot_contact_normals);
             FillObstacleFootprints(world, obstacle_body_ids, rsp);
             FillSimMatrixLidar64x8(world, scene, terrain_patch, world.GetBody(scene.body), rsp);
+            if (terrain_patch.config().lidar_fusion_enable) {
+                std::vector<TerrainSample> lidar_samples;
+                AppendMatrixLidarTerrainSamples(
+                    world, scene, terrain_patch, world.GetBody(scene.body), rsp, terrain_patch.config(), lidar_samples);
+                if (!lidar_samples.empty()) {
+                    Body& plane_body = world.GetBody(scene.plane);
+                    terrain_patch.update(world,
+                                           world.GetBody(scene.body).position,
+                                           plane_body.planeOffset,
+                                           plane_body.planeNormal,
+                                           lidar_samples,
+                                           step.dt_seconds);
+                }
+            }
 
             (void)::sendto(
                 fd,

@@ -770,6 +770,13 @@ bool ParseTerrainPatchObject(const JsonObject& o, TerrainPatchConfig& config, Te
     double half_life = static_cast<double>(config.confidence_half_life_s);
     double base_blend = static_cast<double>(config.base_update_blend);
     double decay_boost = static_cast<double>(config.decay_update_boost);
+    double use_sample_binning = config.use_sample_binning ? 1.0 : 0.0;
+    double sample_bin_size = static_cast<double>(config.sample_bin_size_m);
+    double use_conservative_collision = config.use_conservative_collision ? 1.0 : 0.0;
+    double scroll_world_fixed = config.scroll_world_fixed ? 1.0 : 0.0;
+    double lidar_fusion_enable = config.lidar_fusion_enable ? 1.0 : 0.0;
+    double lidar_stride = static_cast<double>(config.lidar_sample_stride);
+    double lidar_weight = static_cast<double>(config.lidar_sample_weight);
 
     (void)GetNumber(o, "rows", rows, err, false);
     (void)GetNumber(o, "cols", cols, err, false);
@@ -781,6 +788,13 @@ bool ParseTerrainPatchObject(const JsonObject& o, TerrainPatchConfig& config, Te
     (void)GetNumber(o, "confidence_half_life_s", half_life, err, false);
     (void)GetNumber(o, "base_update_blend", base_blend, err, false);
     (void)GetNumber(o, "decay_update_boost", decay_boost, err, false);
+    (void)GetNumber(o, "use_sample_binning", use_sample_binning, err, false);
+    (void)GetNumber(o, "sample_bin_size_m", sample_bin_size, err, false);
+    (void)GetNumber(o, "use_conservative_collision", use_conservative_collision, err, false);
+    (void)GetNumber(o, "scroll_world_fixed", scroll_world_fixed, err, false);
+    (void)GetNumber(o, "lidar_fusion_enable", lidar_fusion_enable, err, false);
+    (void)GetNumber(o, "lidar_sample_stride", lidar_stride, err, false);
+    (void)GetNumber(o, "lidar_sample_weight", lidar_weight, err, false);
 
     if (!GetVec3(o, "center", seed.center, err, seed.center)) {
         return false;
@@ -837,7 +851,14 @@ bool ParseTerrainPatchObject(const JsonObject& o, TerrainPatchConfig& config, Te
         !validate_range(plane_conf, 0.0, 1.0, "terrain_patch.plane_confidence") ||
         !validate_positive(half_life, "terrain_patch.confidence_half_life_s") ||
         !validate_range(base_blend, 0.0, 1.0, "terrain_patch.base_update_blend") ||
-        !validate_range(decay_boost, 0.0, 1.0, "terrain_patch.decay_update_boost")) {
+        !validate_range(decay_boost, 0.0, 1.0, "terrain_patch.decay_update_boost") ||
+        !validate_range(sample_bin_size, 0.01, 10.0, "terrain_patch.sample_bin_size_m") ||
+        !validate_range(lidar_stride, 1.0, 32.0, "terrain_patch.lidar_sample_stride") ||
+        !validate_range(lidar_weight, 0.0, 1.0, "terrain_patch.lidar_sample_weight") ||
+        !validate_range(use_sample_binning, 0.0, 1.0, "terrain_patch.use_sample_binning") ||
+        !validate_range(use_conservative_collision, 0.0, 1.0, "terrain_patch.use_conservative_collision") ||
+        !validate_range(scroll_world_fixed, 0.0, 1.0, "terrain_patch.scroll_world_fixed") ||
+        !validate_range(lidar_fusion_enable, 0.0, 1.0, "terrain_patch.lidar_fusion_enable")) {
         return false;
     }
 
@@ -851,6 +872,14 @@ bool ParseTerrainPatchObject(const JsonObject& o, TerrainPatchConfig& config, Te
     config.confidence_half_life_s = static_cast<float>(half_life);
     config.base_update_blend = static_cast<float>(base_blend);
     config.decay_update_boost = static_cast<float>(decay_boost);
+    config.use_sample_binning = use_sample_binning != 0.0;
+    config.sample_bin_size_m = static_cast<float>(sample_bin_size);
+    config.use_conservative_collision = use_conservative_collision != 0.0;
+    config.scroll_world_fixed = scroll_world_fixed != 0.0;
+    config.lidar_fusion_enable = lidar_fusion_enable != 0.0;
+    config.lidar_sample_stride =
+        std::clamp(static_cast<int>(std::lround(lidar_stride)), 1, 32);
+    config.lidar_sample_weight = static_cast<float>(lidar_weight);
     if (seed.has_plane_normal) {
         seed.plane_normal = Normalize(seed.plane_normal);
     }

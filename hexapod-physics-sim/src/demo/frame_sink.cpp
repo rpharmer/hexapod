@@ -84,6 +84,13 @@ public:
         terrain_patch_snapshot_.last_plane_height_m = terrain_patch.last_plane_height_m();
         terrain_patch_snapshot_.heights = terrain_patch.surface_heights_m();
         terrain_patch_snapshot_.confidences = terrain_patch.confidences();
+        if (terrain_patch.has_collision_layer()) {
+            terrain_patch_snapshot_.collision_heights = terrain_patch.collision_heights_m();
+            terrain_patch_snapshot_.schema_version = 2;
+        } else {
+            terrain_patch_snapshot_.collision_heights.clear();
+            terrain_patch_snapshot_.schema_version = 1;
+        }
     }
 
     void end_frame() override {
@@ -299,6 +306,7 @@ private:
 
     struct TerrainPatchSnapshot {
         bool valid = false;
+        int schema_version = 1;
         TerrainPatchConfig config{};
         Vec3 center_world{};
         float base_height_m = 0.0f;
@@ -306,6 +314,7 @@ private:
         float last_plane_height_m = 0.0f;
         std::vector<float> heights{};
         std::vector<float> confidences{};
+        std::vector<float> collision_heights{};
     };
 
     std::string BuildFloatArrayJson(const std::vector<float>& values) const {
@@ -324,7 +333,8 @@ private:
     std::string BuildTerrainPatchMessage(const TerrainPatchSnapshot& terrain) const {
         std::ostringstream out;
         out << std::fixed << std::setprecision(6);
-        out << "{\"schema_version\":1,\"message_type\":\"terrain_patch\""
+        const int schema = terrain.schema_version >= 2 ? 2 : 1;
+        out << "{\"schema_version\":" << schema << ",\"message_type\":\"terrain_patch\""
             << ",\"frame\":" << frame_index_
             << ",\"sim_time_s\":" << sim_time_s_
             << ",\"rows\":" << terrain.config.rows
@@ -337,13 +347,21 @@ private:
             << ",\"confidence_half_life_s\":" << terrain.config.confidence_half_life_s
             << ",\"base_update_blend\":" << terrain.config.base_update_blend
             << ",\"decay_update_boost\":" << terrain.config.decay_update_boost
+            << ",\"use_sample_binning\":" << (terrain.config.use_sample_binning ? "true" : "false")
+            << ",\"use_conservative_collision\":" << (terrain.config.use_conservative_collision ? "true" : "false")
+            << ",\"scroll_world_fixed\":" << (terrain.config.scroll_world_fixed ? "true" : "false")
+            << ",\"lidar_fusion_enable\":" << (terrain.config.lidar_fusion_enable ? "true" : "false")
             << ",\"center\":[" << terrain.center_world.x << "," << terrain.center_world.y << "," << terrain.center_world.z << "]"
             << ",\"base_height_m\":" << terrain.base_height_m
             << ",\"plane_height_m\":" << terrain.last_plane_height_m
             << ",\"plane_normal\":[" << terrain.last_normal.x << "," << terrain.last_normal.y << "," << terrain.last_normal.z << "]"
             << ",\"heights\":" << BuildFloatArrayJson(terrain.heights)
-            << ",\"confidences\":" << BuildFloatArrayJson(terrain.confidences)
-            << "}";
+            << ",\"confidences\":" << BuildFloatArrayJson(terrain.confidences);
+        if (schema >= 2 && !terrain.collision_heights.empty() &&
+            terrain.collision_heights.size() == terrain.heights.size()) {
+            out << ",\"collision_heights\":" << BuildFloatArrayJson(terrain.collision_heights);
+        }
+        out << "}";
         return out.str();
     }
 

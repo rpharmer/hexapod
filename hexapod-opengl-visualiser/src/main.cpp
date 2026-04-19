@@ -82,6 +82,7 @@ struct EntityState {
 
 struct TerrainPatchState {
   bool valid = false;
+  int schema_version = 1;
   int frame = 0;
   float sim_time_s = 0.0f;
   int rows = 0;
@@ -100,6 +101,7 @@ struct TerrainPatchState {
   Vec3 plane_normal{0.0f, 1.0f, 0.0f};
   std::vector<float> heights{};
   std::vector<float> confidences{};
+  std::vector<float> collision_heights{};
 };
 
 struct Options {
@@ -817,6 +819,30 @@ void DrawTerrainPatch(const TerrainPatchState& terrain) {
     glEnd();
   }
 
+  if (terrain.schema_version >= 2 && terrain.collision_heights.size() >= expected) {
+    glColor3f(0.95f, 0.45f, 0.18f);
+    for (int row = 0; row < terrain.rows; ++row) {
+      glBegin(GL_LINE_STRIP);
+      for (int col = 0; col < terrain.cols; ++col) {
+        const std::size_t index = static_cast<std::size_t>(row * terrain.cols + col);
+        const float x = terrain.center.x + (static_cast<float>(col) * terrain.cell_size_m) - half_span_x;
+        const float z = terrain.center.z + (static_cast<float>(row) * terrain.cell_size_m) - half_span_z;
+        glVertex3f(x, terrain.collision_heights[index], z);
+      }
+      glEnd();
+    }
+    for (int col = 0; col < terrain.cols; ++col) {
+      glBegin(GL_LINE_STRIP);
+      for (int row = 0; row < terrain.rows; ++row) {
+        const std::size_t index = static_cast<std::size_t>(row * terrain.cols + col);
+        const float x = terrain.center.x + (static_cast<float>(col) * terrain.cell_size_m) - half_span_x;
+        const float z = terrain.center.z + (static_cast<float>(row) * terrain.cell_size_m) - half_span_z;
+        glVertex3f(x, terrain.collision_heights[index], z);
+      }
+      glEnd();
+    }
+  }
+
   const Vec3 up = Normalize(terrain.plane_normal);
   const float arrow_scale = std::max(terrain.cell_size_m, 0.08f);
   const Vec3 normal_base{terrain.center.x, terrain.base_height_m, terrain.center.z};
@@ -843,6 +869,9 @@ bool ParseTerrainPatchPacket(const std::string& payload, TerrainPatchState& terr
   }
 
   TerrainPatchState next = terrain_patch;
+  if (const auto schema = ExtractUintField(payload, "schema_version")) {
+    next.schema_version = static_cast<int>(*schema);
+  }
   if (const auto frame = ExtractUintField(payload, "frame")) {
     next.frame = static_cast<int>(*frame);
   }
@@ -896,6 +925,11 @@ bool ParseTerrainPatchPacket(const std::string& payload, TerrainPatchState& terr
   }
   if (const auto confidences = ExtractFloatArrayField(payload, "confidences")) {
     next.confidences = *confidences;
+  }
+  if (const auto collision = ExtractFloatArrayField(payload, "collision_heights")) {
+    next.collision_heights = *collision;
+  } else {
+    next.collision_heights.clear();
   }
 
   next.valid = next.rows > 0 && next.cols > 0 && next.cell_size_m > 0.0f;

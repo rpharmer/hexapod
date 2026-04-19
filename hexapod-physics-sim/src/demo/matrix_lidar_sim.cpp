@@ -329,4 +329,80 @@ void FillSimMatrixLidar64x8(const World& world,
     rsp.matrix_lidar_rows = static_cast<std::uint8_t>(kRows);
 }
 
+void AppendMatrixLidarTerrainSamples(const World& world,
+                                     const HexapodSceneObjects& scene,
+                                     const TerrainPatch& terrain_patch,
+                                     const Body& chassis,
+                                     const physics_sim::StateResponse& rsp,
+                                     const TerrainPatchConfig& terrain_config,
+                                     std::vector<TerrainSample>& out_samples) {
+    if (rsp.matrix_lidar_valid == 0 || terrain_config.lidar_sample_weight <= 1.0e-6f) {
+        return;
+    }
+    if (rsp.matrix_lidar_model != physics_sim::MatrixLidarModel::Matrix64x8) {
+        return;
+    }
+    const int stride = std::max(1, terrain_config.lidar_sample_stride);
+
+    const Quat q = Normalize(chassis.orientation);
+    const Vec3 forward = ChassisForward(q);
+    const Vec3 up = ChassisUp(q);
+    const float kOpticalAxisPitchDownRad = static_cast<float>(matrix_lidar_geom::kOpticalAxisPitchDownRad);
+    const Vec3 optical_axis =
+        Normalize(forward * std::cos(kOpticalAxisPitchDownRad) - up * std::sin(kOpticalAxisPitchDownRad));
+    const Vec3 optical_right = Normalize(Cross(up, optical_axis));
+    const Vec3 optical_up = Normalize(Cross(optical_axis, optical_right));
+
+    const Vec3 sensor_origin = chassis.position +
+                               Rotate(q,
+                                      Vec3{static_cast<float>(matrix_lidar_geom::kSensorOffsetMinphysBodyXM),
+                                           static_cast<float>(matrix_lidar_geom::kSensorOffsetMinphysBodyYM),
+                                           static_cast<float>(matrix_lidar_geom::kSensorOffsetMinphysBodyZM)});
+
+    constexpr int kCols = 64;
+    constexpr int kRows = 8;
+
+    for (int row = 0; row < kRows; row += stride) {
+        for (int col = 0; col < kCols; col += stride) {
+            double az_d = 0.0;
+            double el_d = 0.0;
+            matrix_lidar_geom::cellAzElRad(
+                row,
+                kRows,
+                col,
+                kCols,
+                matrix_lidar_geom::kMatrix64x8FovHRad,
+                matrix_lidar_geom::kMatrix64x8FovVRad,
+                az_d,
+                el_d);
+            const float az = static_cast<float>(az_d);
+            const float el = static_cast<float>(el_d);
+
+            const float c_el = std::cos(el);
+            const Vec3 dir = Normalize(
+                optical_axis * (c_el * std::cos(az)) + optical_right * (c_el * std::sin(az))
+                + optical_up * std::sin(el));
+
+            float t_terrain = -1.0f;
+            const bool terrain_hit = terrain_patch.RaycastWorld(sensor_origin, dir, t_terrain);
+            if (!terrain_hit || t_terrain <= 1.0e-4f) {
+                continue;
+            }
+            const float t_full = CastRay(world, scene, terrain_patch, sensor_origin, dir);
+            if (t_full < 0.0f || !std::isfinite(t_full)) {
+                continue;
+            }
+            if (std::abs(t_full - t_terrain) > 0.04f) {
+                continue;
+            }
+
+            const Vec3 hit = sensor_origin + dir * t_full;
+            const float incidence = std::max(0.15f, std::abs(dir.y));
+            const float conf =
+                terrain_config.lidar_sample_weight * incidence * std::max(0.2f, std::abs(c_el));
+            out_samples.push_back(TerrainSample{hit, hit.y, std::clamp(conf, 0.0f, 1.0f)});
+        }
+    }
+}
+
 } // namespace minphys3d::demo

@@ -71,6 +71,94 @@ int main() {
         return 8;
     }
 
+    float conf_at = 0.0f;
+    (void)patch.SampleHeightAndConfidenceWorld(0.0f, 0.0f, &conf_at);
+    if (!std::isfinite(conf_at) || conf_at < 0.0f || conf_at > 1.0f) {
+        std::cerr << "SampleHeightAndConfidenceWorld confidence out of range\n";
+        return 9;
+    }
+
+    {
+        TerrainPatchConfig narrow_cfg{};
+        narrow_cfg.rows = 5;
+        narrow_cfg.cols = 5;
+        narrow_cfg.cell_size_m = 0.02f;
+        narrow_cfg.base_update_blend = 1.0f;
+        narrow_cfg.decay_update_boost = 0.0f;
+        World world_n;
+        TerrainPatch narrow{narrow_cfg};
+        narrow.initialize(world_n, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+        narrow.update(world_n,
+                        Vec3{0.0f, 0.0f, 0.0f},
+                        0.0f,
+                        Vec3{0.0f, 1.0f, 0.0f},
+                        std::vector<TerrainSample>{
+                            TerrainSample{Vec3{0.0f, 0.0f, 0.0f}, 0.09f, 1.0f},
+                        },
+                        0.0f);
+        float narrow_hit = 0.0f;
+        if (!narrow.RaycastWorld(Vec3{0.0f, 0.25f, 0.0f}, Vec3{0.0f, -1.0f, 0.0f}, narrow_hit)) {
+            std::cerr << "expected narrow-grid raycast hit\n";
+            return 10;
+        }
+        if (narrow_hit > 0.22f) {
+            std::cerr << "expected narrow bump hit well below 0.25, got " << narrow_hit << "\n";
+            return 11;
+        }
+    }
+
+    {
+        TerrainPatchConfig bin_cfg{};
+        bin_cfg.rows = 9;
+        bin_cfg.cols = 9;
+        bin_cfg.use_sample_binning = true;
+        bin_cfg.sample_bin_size_m = 0.2f;
+        bin_cfg.base_update_blend = 1.0f;
+        World world_b;
+        TerrainPatch pb{bin_cfg};
+        pb.initialize(world_b, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+        std::vector<TerrainSample> many{};
+        for (int i = 0; i < 24; ++i) {
+            const float x = 0.01f * static_cast<float>(i - 12);
+            many.push_back(TerrainSample{Vec3{x, 0.0f, 0.02f * static_cast<float>(i % 5)}, 0.04f, 0.5f});
+        }
+        pb.update(world_b, Vec3{0.0f, 0.0f, 0.0f}, 0.0f, Vec3{0.0f, 1.0f, 0.0f}, many, 0.0f);
+        if (!std::isfinite(pb.SampleHeightWorld(0.0f, 0.0f))) {
+            std::cerr << "binning path produced non-finite height\n";
+            return 12;
+        }
+    }
+
+    {
+        TerrainPatchConfig cons_cfg{};
+        cons_cfg.rows = 7;
+        cons_cfg.cols = 7;
+        cons_cfg.use_conservative_collision = true;
+        cons_cfg.base_update_blend = 1.0f;
+        cons_cfg.decay_update_boost = 0.0f;
+        World world_c;
+        TerrainPatch pc{cons_cfg};
+        pc.initialize(world_c, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+        pc.update(world_c,
+                    Vec3{0.0f, 0.0f, 0.0f},
+                    0.0f,
+                    Vec3{0.0f, 1.0f, 0.0f},
+                    std::vector<TerrainSample>{
+                        TerrainSample{Vec3{0.0f, 0.0f, 0.0f}, 0.14f, 1.0f},
+                    },
+                    0.0f);
+        if (!pc.has_collision_layer()) {
+            std::cerr << "expected collision layer when conservative collision enabled\n";
+            return 13;
+        }
+        for (std::size_t i = 0; i < pc.surface_heights_m().size(); ++i) {
+            if (pc.collision_heights_m()[i] + 1.0e-4f < pc.surface_heights_m()[i]) {
+                std::cerr << "collision height below surface at " << i << "\n";
+                return 14;
+            }
+        }
+    }
+
     std::cout << "test_terrain_patch ok height=" << decayed_height << "\n";
     return 0;
 }

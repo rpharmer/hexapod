@@ -88,6 +88,8 @@ JSON-driven run (paths relative to your cwd):
 
 On Linux/WSL/macOS, UDP mode emits JSON lines with `message_type` `entity_static` (when shape/material changes), `entity_frame` (pose per frame), and `terrain_patch` (the current height-map / local terrain debug overlay). See [`hexapod-opengl-visualiser`](../hexapod-opengl-visualiser/README.md) for a matching receiver.
 
+The terrain patch keeps a **bilinear belief surface** (`heights`) for LiDAR raycasts while optional **conservative collision** tops raise static colliders toward a 3×3 neighbourhood maximum; when enabled, UDP uses `schema_version` **2** and adds a `collision_heights` array for the viewer. Scene JSON `terrain_patch` accepts optional flags: `use_sample_binning`, `sample_bin_size_m`, `use_conservative_collision`, `scroll_world_fixed`, `lidar_fusion_enable`, `lidar_sample_stride`, `lidar_sample_weight` (see `TerrainPatchConfig` in `src/demo/terrain_patch.hpp`). Implementation notes (DDA raycast vs stepped boxes) are in the header comment above `TerrainPatch`.
+
 Typical two-terminal workflow:
 
 ```bash
