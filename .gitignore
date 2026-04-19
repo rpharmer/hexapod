@@ -2,6 +2,8 @@
 build/
 build-tests/
 build-host-tests/
+build-physics/
+build-server/
 cmake-build-*/
 out/
 dist/

@@ -397,9 +397,15 @@ void AppendMatrixLidarTerrainSamples(const World& world,
             }
 
             const Vec3 hit = sensor_origin + dir * t_full;
+            float surface_confidence = 0.0f;
+            (void)terrain_patch.SampleHeightAndConfidenceWorld(hit.x, hit.z, &surface_confidence);
+            if (!std::isfinite(surface_confidence) ||
+                surface_confidence < terrain_config.lidar_min_surface_confidence) {
+                continue;
+            }
             const float incidence = std::max(0.15f, std::abs(dir.y));
             const float conf =
-                terrain_config.lidar_sample_weight * incidence * std::max(0.2f, std::abs(c_el));
+                terrain_config.lidar_sample_weight * surface_confidence * incidence * std::max(0.2f, std::abs(c_el));
             out_samples.push_back(TerrainSample{hit, hit.y, std::clamp(conf, 0.0f, 1.0f)});
         }
     }

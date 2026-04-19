@@ -273,12 +273,66 @@ struct AssimilationState {
     AssimilationReport last_report{};
     std::array<std::uint8_t, 6> last_contact_phase{};
     std::array<float, 6> last_contact_confidence{};
+    std::array<float, 6> last_foot_ground_height{};
+    std::array<float, 6> last_foot_ground_confidence{};
     float last_contact_support_weight{0.0f};
     bool has_contact_hints{false};
     Vec3 last_terrain_normal{0.0f, 1.0f, 0.0f};
     float last_terrain_height{0.0f};
     bool has_terrain_hints{false};
 };
+
+void ApplyContactArbitrationToLidarSamples(const World& world,
+                                           const HexapodSceneObjects& scene,
+                                           const AssimilationState& assimilation_state,
+                                           const TerrainPatchConfig& terrain_config,
+                                           std::vector<TerrainSample>& lidar_samples) {
+    if (!assimilation_state.has_contact_hints || lidar_samples.empty()) {
+        return;
+    }
+
+    const float radius = std::max(0.0f, terrain_config.lidar_contact_arbitration_radius_m);
+    const float disagreement = std::max(0.0f, terrain_config.lidar_contact_disagreement_m);
+    if (radius <= 1.0e-5f) {
+        return;
+    }
+
+    std::vector<TerrainSample> filtered;
+    filtered.reserve(lidar_samples.size());
+    for (const TerrainSample& sample : lidar_samples) {
+        bool gated_by_contact = false;
+        for (std::size_t leg = 0; leg < scene.legs.size(); ++leg) {
+            const float phase_weight = ContactPhaseWeight(assimilation_state.last_contact_phase[leg]);
+            const float contact_conf = Clamp01(assimilation_state.last_contact_confidence[leg]);
+            const float ground_conf = Clamp01(assimilation_state.last_foot_ground_confidence[leg]);
+            const float contact_weight = phase_weight * contact_conf * ground_conf;
+            if (contact_weight < 0.50f) {
+                continue;
+            }
+            const float contact_height = assimilation_state.last_foot_ground_height[leg];
+            if (!std::isfinite(contact_height)) {
+                continue;
+            }
+            const std::optional<Vec3> foot_world = FootCenterWorld(world, scene, leg);
+            if (!foot_world.has_value()) {
+                continue;
+            }
+            const float dx = sample.world_position.x - foot_world->x;
+            const float dz = sample.world_position.z - foot_world->z;
+            if (dx * dx + dz * dz > radius * radius) {
+                continue;
+            }
+            if (std::abs(sample.height_m - contact_height) > disagreement) {
+                gated_by_contact = true;
+                break;
+            }
+        }
+        if (!gated_by_contact) {
+            filtered.push_back(sample);
+        }
+    }
+    lidar_samples.swap(filtered);
+}
 
 AssimilationReport ApplyStateCorrection(World& world,
                                         const HexapodSceneObjects& scene,
@@ -363,6 +417,8 @@ AssimilationReport ApplyStateCorrection(World& world,
         assimilation_state.last_contact_support_weight = ContactSupportWeight(correction);
         assimilation_state.last_contact_phase = correction.foot_contact_phase;
         assimilation_state.last_contact_confidence = correction.foot_contact_confidence;
+        assimilation_state.last_foot_ground_height = correction.foot_ground_height_m;
+        assimilation_state.last_foot_ground_confidence = correction.foot_ground_confidence;
         report.contact_support_weight = assimilation_state.last_contact_support_weight;
     }
 
@@ -849,8 +905,12 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                     std::vector<TerrainSample> lidar_samples;
                     AppendMatrixLidarTerrainSamples(
                         world, scene, terrain_patch, world.GetBody(scene.body), rsp, terrain_patch.config(), lidar_samples);
+                    ApplyContactArbitrationToLidarSamples(
+                        world, scene, assimilation_state, terrain_patch.config(), lidar_samples);
                     if (!lidar_samples.empty()) {
                         Body& plane_body = world.GetBody(scene.plane);
+                        // LiDAR fusion intentionally follows response generation: the response reports what this
+                        // step saw, and the fused terrain influences subsequent contacts/rays.
                         terrain_patch.update(world,
                                                world.GetBody(scene.body).position,
                                                plane_body.planeOffset,
@@ -919,8 +979,12 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 std::vector<TerrainSample> lidar_samples;
                 AppendMatrixLidarTerrainSamples(
                     world, scene, terrain_patch, world.GetBody(scene.body), rsp, terrain_patch.config(), lidar_samples);
+                ApplyContactArbitrationToLidarSamples(
+                    world, scene, assimilation_state, terrain_patch.config(), lidar_samples);
                 if (!lidar_samples.empty()) {
                     Body& plane_body = world.GetBody(scene.plane);
+                    // LiDAR fusion intentionally follows response generation: the response reports what this
+                    // step saw, and the fused terrain influences subsequent contacts/rays.
                     terrain_patch.update(world,
                                            world.GetBody(scene.body).position,
                                            plane_body.planeOffset,

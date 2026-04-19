@@ -47,6 +47,12 @@ struct TerrainPatchConfig {
     int lidar_sample_stride{4};
     /// Scales per-beam confidence before exp-based weighting (0 disables lidar fusion in practice).
     float lidar_sample_weight{0.18f};
+    /// Minimum existing belief confidence required before a LiDAR terrain hit can reinforce the map.
+    float lidar_min_surface_confidence{0.10f};
+    /// Near confirmed stance feet, contact samples arbitrate against LiDAR terrain samples.
+    float lidar_contact_arbitration_radius_m{0.10f};
+    /// LiDAR samples that disagree vertically with nearby stance contact by more than this are gated.
+    float lidar_contact_disagreement_m{0.05f};
 };
 
 class TerrainPatch {
@@ -62,6 +68,9 @@ public:
     float cell_size_m() const { return config_.cell_size_m; }
     const Vec3& center_world() const { return center_world_; }
     float base_height_m() const { return base_height_m_; }
+    float grid_origin_x() const { return grid_world_origin_x_; }
+    float grid_origin_z() const { return grid_world_origin_z_; }
+    Vec3 grid_origin_world() const { return {grid_world_origin_x_, 0.0f, grid_world_origin_z_}; }
     const Vec3& last_normal() const { return last_normal_; }
     float last_plane_height_m() const { return last_plane_height_m_; }
     const std::vector<float>& surface_heights_m() const { return surface_heights_; }
@@ -392,24 +401,9 @@ public:
             }
             float t_end = std::min(t_exit, t + dt);
             t_end = std::max(t_end, t + 1.0e-5f);
-            const float fa = height_residual(t);
-            const float fb = height_residual(t_end);
-            if (fa <= 0.0f) {
-                t_out = t;
-                return true;
-            }
-            if (fb <= 0.0f) {
-                float lo = t;
-                float hi = t_end;
-                for (int iter = 0; iter < 22; ++iter) {
-                    const float mid = 0.5f * (lo + hi);
-                    if (height_residual(mid) > 0.0f) {
-                        lo = mid;
-                    } else {
-                        hi = mid;
-                    }
-                }
-                t_out = hi;
+            float analytic_hit = 0.0f;
+            if (FindBilinearCellHit(row, col, origin, d, cell_x0, cell_z0, t, t_end, analytic_hit)) {
+                t_out = analytic_hit;
                 return true;
             }
             t = t_end + 1.0e-4f;
@@ -464,6 +458,93 @@ private:
         const float tx = std::clamp(grid_x - static_cast<float>(x0), 0.0f, 1.0f);
         const float tz = std::clamp(grid_z - static_cast<float>(z0), 0.0f, 1.0f);
         return GridCoord{x0, x1, z0, z1, tx, tz};
+    }
+
+    static float EvalQuadratic(float a, float b, float c, float t) {
+        return (a * t + b) * t + c;
+    }
+
+    bool FindBilinearCellHit(int row,
+                             int col,
+                             const Vec3& origin,
+                             const Vec3& d,
+                             float cell_x0,
+                             float cell_z0,
+                             float t0,
+                             float t1,
+                             float& t_hit) const {
+        constexpr float kCoeffEps = 1.0e-8f;
+        constexpr float kTimeEps = 1.0e-5f;
+        constexpr float kResidualEps = 1.0e-5f;
+        if (t1 < t0) {
+            return false;
+        }
+
+        const float inv_cell = 1.0f / std::max(config_.cell_size_m, 1.0e-6f);
+        const float h00 = surface_heights_[Index(row, col)];
+        const float h10 = surface_heights_[Index(row, col + 1)];
+        const float h01 = surface_heights_[Index(row + 1, col)];
+        const float h11 = surface_heights_[Index(row + 1, col + 1)];
+        const float base = h00;
+        const float hx = h10 - h00;
+        const float hz = h01 - h00;
+        const float hxz = h00 - h10 - h01 + h11;
+
+        const float tx0 = (origin.x - cell_x0) * inv_cell;
+        const float tz0 = (origin.z - cell_z0) * inv_cell;
+        const float txv = d.x * inv_cell;
+        const float tzv = d.z * inv_cell;
+
+        const float qa = -hxz * txv * tzv;
+        const float qb = d.y - hx * txv - hz * tzv - hxz * (tx0 * tzv + tz0 * txv);
+        const float qc = origin.y - base - hx * tx0 - hz * tz0 - hxz * tx0 * tz0;
+
+        const float fa = EvalQuadratic(qa, qb, qc, t0);
+        if (fa <= kResidualEps && t0 > kTimeEps) {
+            t_hit = t0;
+            return true;
+        }
+
+        float best = std::numeric_limits<float>::infinity();
+        auto consider_root = [&](float root) {
+            if (!std::isfinite(root) || root < t0 - kTimeEps || root > t1 + kTimeEps || root <= kTimeEps) {
+                return;
+            }
+            const float clamped = std::clamp(root, t0, t1);
+            if (std::abs(EvalQuadratic(qa, qb, qc, clamped)) <= 2.0e-4f) {
+                best = std::min(best, clamped);
+            }
+        };
+
+        if (std::abs(qa) <= kCoeffEps) {
+            if (std::abs(qb) > kCoeffEps) {
+                consider_root(-qc / qb);
+            } else if (std::abs(qc) <= kResidualEps && t0 > kTimeEps) {
+                best = t0;
+            }
+        } else {
+            float disc = qb * qb - 4.0f * qa * qc;
+            const float disc_scale = std::max(1.0f, qb * qb + std::abs(qa * qc));
+            if (disc < 0.0f && disc > -1.0e-6f * disc_scale) {
+                disc = 0.0f;
+            }
+            if (disc >= 0.0f) {
+                const float sqrt_disc = std::sqrt(disc);
+                consider_root((-qb - sqrt_disc) / (2.0f * qa));
+                consider_root((-qb + sqrt_disc) / (2.0f * qa));
+            }
+        }
+
+        const float fb = EvalQuadratic(qa, qb, qc, t1);
+        if (fb <= kResidualEps && t1 > kTimeEps) {
+            best = std::min(best, t1);
+        }
+
+        if (std::isfinite(best)) {
+            t_hit = best;
+            return true;
+        }
+        return false;
     }
 
     static bool RaySlabEnterExitXz(const Vec3& o,

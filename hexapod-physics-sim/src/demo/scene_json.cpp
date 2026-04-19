@@ -777,6 +777,11 @@ bool ParseTerrainPatchObject(const JsonObject& o, TerrainPatchConfig& config, Te
     double lidar_fusion_enable = config.lidar_fusion_enable ? 1.0 : 0.0;
     double lidar_stride = static_cast<double>(config.lidar_sample_stride);
     double lidar_weight = static_cast<double>(config.lidar_sample_weight);
+    double lidar_min_surface_confidence = static_cast<double>(config.lidar_min_surface_confidence);
+    double lidar_contact_arbitration_radius =
+        static_cast<double>(config.lidar_contact_arbitration_radius_m);
+    double lidar_contact_disagreement =
+        static_cast<double>(config.lidar_contact_disagreement_m);
 
     (void)GetNumber(o, "rows", rows, err, false);
     (void)GetNumber(o, "cols", cols, err, false);
@@ -795,6 +800,9 @@ bool ParseTerrainPatchObject(const JsonObject& o, TerrainPatchConfig& config, Te
     (void)GetNumber(o, "lidar_fusion_enable", lidar_fusion_enable, err, false);
     (void)GetNumber(o, "lidar_sample_stride", lidar_stride, err, false);
     (void)GetNumber(o, "lidar_sample_weight", lidar_weight, err, false);
+    (void)GetNumber(o, "lidar_min_surface_confidence", lidar_min_surface_confidence, err, false);
+    (void)GetNumber(o, "lidar_contact_arbitration_radius_m", lidar_contact_arbitration_radius, err, false);
+    (void)GetNumber(o, "lidar_contact_disagreement_m", lidar_contact_disagreement, err, false);
 
     if (!GetVec3(o, "center", seed.center, err, seed.center)) {
         return false;
@@ -855,6 +863,9 @@ bool ParseTerrainPatchObject(const JsonObject& o, TerrainPatchConfig& config, Te
         !validate_range(sample_bin_size, 0.01, 10.0, "terrain_patch.sample_bin_size_m") ||
         !validate_range(lidar_stride, 1.0, 32.0, "terrain_patch.lidar_sample_stride") ||
         !validate_range(lidar_weight, 0.0, 1.0, "terrain_patch.lidar_sample_weight") ||
+        !validate_range(lidar_min_surface_confidence, 0.0, 1.0, "terrain_patch.lidar_min_surface_confidence") ||
+        !validate_range(lidar_contact_arbitration_radius, 0.0, 2.0, "terrain_patch.lidar_contact_arbitration_radius_m") ||
+        !validate_range(lidar_contact_disagreement, 0.0, 2.0, "terrain_patch.lidar_contact_disagreement_m") ||
         !validate_range(use_sample_binning, 0.0, 1.0, "terrain_patch.use_sample_binning") ||
         !validate_range(use_conservative_collision, 0.0, 1.0, "terrain_patch.use_conservative_collision") ||
         !validate_range(scroll_world_fixed, 0.0, 1.0, "terrain_patch.scroll_world_fixed") ||
@@ -880,6 +891,9 @@ bool ParseTerrainPatchObject(const JsonObject& o, TerrainPatchConfig& config, Te
     config.lidar_sample_stride =
         std::clamp(static_cast<int>(std::lround(lidar_stride)), 1, 32);
     config.lidar_sample_weight = static_cast<float>(lidar_weight);
+    config.lidar_min_surface_confidence = static_cast<float>(lidar_min_surface_confidence);
+    config.lidar_contact_arbitration_radius_m = static_cast<float>(lidar_contact_arbitration_radius);
+    config.lidar_contact_disagreement_m = static_cast<float>(lidar_contact_disagreement);
     if (seed.has_plane_normal) {
         seed.plane_normal = Normalize(seed.plane_normal);
     }
