@@ -16,7 +16,8 @@ void adjustSwingTauAndVerticalExtension(bool in_swing,
                                         const RobotState& est,
                                         double tau01,
                                         double& tau_out,
-                                        double& extra_down_z_m);
+                                        double& extra_down_z_m,
+                                        const FootContactFusion* contact_fusion = nullptr);
 
 /**
  * Stance / stand: small vertical shift per foot from roll/pitch estimate vs intent (body planning frame).

@@ -86,7 +86,7 @@ JSON-driven run (paths relative to your cwd):
 
 ### UDP and OpenGL viewer
 
-On Linux/WSL/macOS, UDP mode emits JSON lines with `message_type` `entity_static` (when shape/material changes) and `entity_frame` (pose per frame). See [`hexapod-opengl-visualiser`](../hexapod-opengl-visualiser/README.md) for a matching receiver.
+On Linux/WSL/macOS, UDP mode emits JSON lines with `message_type` `entity_static` (when shape/material changes), `entity_frame` (pose per frame), and `terrain_patch` (the current height-map / local terrain debug overlay). See [`hexapod-opengl-visualiser`](../hexapod-opengl-visualiser/README.md) for a matching receiver.
 
 Typical two-terminal workflow:
 

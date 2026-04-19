@@ -1,4 +1,5 @@
 #include "telemetry_publisher.hpp"
+#include "telemetry_json.hpp"
 
 #include <arpa/inet.h>
 #include <cerrno>
@@ -13,8 +14,6 @@ namespace telemetry {
 
 namespace {
 
-constexpr double kRadToDeg = 180.0 / 3.14159265358979323846;
-
 class NoopTelemetryPublisher final : public ITelemetryPublisher {
 public:
     void publishGeometry(const HexapodGeometry&) override {}
@@ -23,18 +22,6 @@ public:
         return {};
     }
 };
-
-std::string legNameFromIndex(int leg_index) {
-    switch (leg_index) {
-        case 0: return "RR";
-        case 1: return "LR";
-        case 2: return "RM";
-        case 3: return "LM";
-        case 4: return "RF";
-        case 5: return "LF";
-        default: return "UNK";
-    }
-}
 
 class UdpTelemetryPublisher final : public ITelemetryPublisher {
 public:
@@ -102,43 +89,7 @@ public:
         if (socket_fd_ < 0) {
             return;
         }
-
-        std::ostringstream payload;
-        payload << "{\"type\":\"joints\",\"schema_version\":1,"
-                << "\"timestamp_ms\":" << (telemetry.timestamp_us.value / 1000ULL) << ","
-                << "\"loop_counter\":" << telemetry.status.loop_counter << ","
-                << "\"mode\":" << static_cast<int>(telemetry.status.active_mode) << ","
-                << "\"bus_ok\":" << (telemetry.status.bus_ok ? "true" : "false") << ","
-                << "\"estimator_valid\":" << (telemetry.status.estimator_valid ? "true" : "false") << ","
-                << "\"angles_deg\":{";
-
-        for (int leg = 0; leg < kNumLegs; ++leg) {
-            if (leg != 0) {
-                payload << ",";
-            }
-            payload << "\"" << legNameFromIndex(leg) << "\":["
-                    << telemetry.joint_targets.leg_states[leg].joint_state[COXA].pos_rad.value * kRadToDeg << ","
-                    << telemetry.joint_targets.leg_states[leg].joint_state[FEMUR].pos_rad.value * kRadToDeg << ","
-                    << telemetry.joint_targets.leg_states[leg].joint_state[TIBIA].pos_rad.value * kRadToDeg
-                    << "]";
-        }
-
-        payload << "}";
-        if (telemetry.navigation.has_value()) {
-            const NavigationMonitorSnapshot& nav = telemetry.navigation.value();
-            payload << ",\"nav\":{"
-                    << "\"lifecycle\":" << static_cast<int>(nav.lifecycle) << ","
-                    << "\"planner_status\":" << static_cast<int>(nav.planner_status) << ","
-                    << "\"block_reason\":" << static_cast<int>(nav.block_reason) << ","
-                    << "\"map_fresh\":" << (nav.map_fresh ? "true" : "false") << ","
-                    << "\"replan_count\":" << nav.replan_count << ","
-                    << "\"active_segment_waypoint_count\":" << nav.active_segment_waypoint_count << ","
-                    << "\"active_segment_length_m\":" << nav.active_segment_length_m << ","
-                    << "\"nearest_obstacle_distance_m\":" << nav.nearest_obstacle_distance_m
-                    << "}";
-        }
-        payload << "}";
-        send(payload.str());
+        send(telemetry_json::serializeControlStepPacket(telemetry));
     }
 
 private:

@@ -20,6 +20,7 @@ public:
                              control_config::LocomotionCommandConfig loco_config = {},
                              control_config::FootTerrainConfig foot_terrain_config = {});
 
+    void reset();
     PipelineStepResult runStep(const RobotState& estimated,
                                const MotionIntent& intent,
                                const SafetyState& safety_state,

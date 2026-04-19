@@ -32,6 +32,11 @@ bool IsRobotBody(std::uint32_t body_id, const HexapodSceneObjects& scene) {
     return false;
 }
 
+bool IsTerrainBody(std::uint32_t body_id, const TerrainPatch& terrain_patch) {
+    const auto& ids = terrain_patch.body_ids();
+    return std::find(ids.begin(), ids.end(), body_id) != ids.end();
+}
+
 bool RayPlaneHit(const Vec3& o,
                  const Vec3& d,
                  const Vec3& plane_point,
@@ -176,11 +181,23 @@ bool RayAabbHit(const Vec3& o, const Vec3& d, const AABB& box, float& t_out) {
     return true;
 }
 
-float CastRay(const World& world, const HexapodSceneObjects& scene, const Vec3& origin, const Vec3& dir_unit) {
+float CastRay(const World& world,
+              const HexapodSceneObjects& scene,
+              const TerrainPatch& terrain_patch,
+              const Vec3& origin,
+              const Vec3& dir_unit) {
     float best = kMaxRangeM + 1.0f;
+
+    float terrain_hit = -1.0f;
+    if (terrain_patch.RaycastWorld(origin, dir_unit, terrain_hit)) {
+        best = terrain_hit;
+    }
 
     for (std::uint32_t id = 0; id < world.GetBodyCount(); ++id) {
         if (IsRobotBody(id, scene)) {
+            continue;
+        }
+        if (IsTerrainBody(id, terrain_patch)) {
             continue;
         }
         const Body& b = world.GetBody(id);
@@ -246,6 +263,7 @@ std::uint16_t RangeToWireMm(float range_m) {
 
 void FillSimMatrixLidar64x8(const World& world,
                             const HexapodSceneObjects& scene,
+                            const TerrainPatch& terrain_patch,
                             const Body& chassis,
                             physics_sim::StateResponse& rsp) {
     rsp.matrix_lidar_valid = 0;
@@ -295,7 +313,7 @@ void FillSimMatrixLidar64x8(const World& world,
                 optical_axis * (c_el * std::cos(az)) + optical_right * (c_el * std::sin(az))
                 + optical_up * std::sin(el));
 
-            const float hit_m = CastRay(world, scene, sensor_origin, dir);
+            const float hit_m = CastRay(world, scene, terrain_patch, sensor_origin, dir);
             const std::size_t idx = static_cast<std::size_t>(row * kCols + col);
             if (hit_m < 0.0f) {
                 rsp.matrix_lidar_ranges_mm[idx] = physics_sim::kMatrixLidarInvalidMm;

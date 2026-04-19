@@ -50,6 +50,14 @@ public:
 
 private:
     MotionIntent resolveEffectiveIntent(const RobotState& est, TimePointUs now);
+    struct FusionControlPolicy {
+        double aggressiveness_scale{1.0};
+        bool force_stand{false};
+    };
+    FusionControlPolicy applyFusionConsistency(const RobotState& est,
+                                              TimePointUs now,
+                                              const LocalMapSnapshot* terrain_snapshot);
+    static void scaleMotionIntent(MotionIntent& intent, double scale);
     void maybePublishTelemetry(const TimePointUs& now);
 
     std::unique_ptr<IHardwareBridge> hw_;
@@ -85,4 +93,8 @@ private:
     TimePointUs next_telemetry_publish_at_{};
     TimePointUs next_geometry_refresh_at_{};
     uint64_t last_effective_intent_estimator_sample_id_{0};
+    uint64_t last_fusion_reset_sample_id_{0};
+    uint64_t last_fusion_correction_sample_id_{0};
+    std::uint8_t last_fusion_correction_mode_{0};
+    telemetry::FusionCorrectionTelemetry last_fusion_correction_{};
 };

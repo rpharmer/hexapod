@@ -57,6 +57,7 @@ public:
     void resume();
     void cancel();
     void deactivate();
+    void reset();
 
     [[nodiscard]] bool active() const;
     [[nodiscard]] bool paused() const;

@@ -14,6 +14,7 @@
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
 #include "physics_sim_local_map_source.hpp"
+#include "physics_sim_protocol.hpp"
 #include "robot_runtime.hpp"
 
 #include <chrono>
@@ -258,6 +259,22 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
         return std::nullopt;
     }
 
+    physics_sim::StateCorrection correction{};
+    correction.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection);
+    correction.sequence_id = 9001;
+    correction.timestamp_us = 1;
+    correction.flags = physics_sim::kStateCorrectionContactValid;
+    correction.correction_strength = 0.45f;
+    for (std::size_t i = 0; i < correction.foot_contact_phase.size(); ++i) {
+        correction.foot_contact_phase[i] =
+            static_cast<std::uint8_t>(physics_sim::ContactPhase::ConfirmedStance);
+        correction.foot_contact_confidence[i] = 0.75f;
+    }
+    if (!expect(bridge_ptr->sendStateCorrection(correction),
+                label + ": live physics sim should accept a correction packet")) {
+        return std::nullopt;
+    }
+
     auto navigation_manager =
         std::make_unique<NavigationManager>(cfg.local_map, cfg.local_planner, cfg.nav_bridge);
     navigation_manager->addObservationSource(std::make_shared<MatrixLidarLocalMapObservationSource>());
@@ -276,6 +293,10 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
     const RobotState settled = runtime.estimatedSnapshot();
     const NavPose2d start_pose = navPose2dFromRobotState(settled);
     if (!expect(std::abs(start_pose.yaw_rad) <= 0.20, label + ": settled yaw should stay near zero")) {
+        return std::nullopt;
+    }
+    if (!expect(settled.has_fusion_diagnostics && settled.fusion.model_trust >= 0.0,
+                label + ": settled estimator should expose fusion diagnostics")) {
         return std::nullopt;
     }
 

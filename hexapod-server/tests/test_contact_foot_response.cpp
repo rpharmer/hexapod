@@ -38,12 +38,33 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    RobotState low_trust = trusted;
+    low_trust.has_fusion_diagnostics = true;
+    low_trust.fusion.model_trust = 0.10;
+    low_trust.fusion.hard_reset_requested = false;
+    if (!expect(!contact_foot_response::sensorsTrustedForContactResponse(low_trust),
+                 "low fusion trust should disable contact-driven swing edits")) {
+        return EXIT_FAILURE;
+    }
+
     double tau = 0.0;
     double extra = 0.0;
     contact_foot_response::adjustSwingTauAndVerticalExtension(
         true, true, trusted, 0.2, tau, extra);
     if (!expect(std::abs(tau - 1.0) < 1e-12 && extra == 0.0,
                  "early ground contact during swing should snap tau to touchdown")) {
+        return EXIT_FAILURE;
+    }
+
+    FootContactFusion predicted{};
+    predicted.phase = ContactPhase::ExpectedTouchdown;
+    predicted.confidence = 0.6f;
+    tau = 0.0;
+    extra = 0.0;
+    contact_foot_response::adjustSwingTauAndVerticalExtension(
+        true, false, trusted, 0.95, tau, extra, &predicted);
+    if (!expect(extra > 0.0 && tau < 1.0,
+                 "predicted touchdown should extend downward without forcing touchdown")) {
         return EXIT_FAILURE;
     }
 

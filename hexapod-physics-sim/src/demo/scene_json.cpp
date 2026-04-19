@@ -1,6 +1,7 @@
 #include "demo/scene_json.hpp"
 
 #include "demo/demo_run_control.hpp"
+#include "demo/terrain_patch.hpp"
 
 #include "minphys3d/core/body.hpp"
 #include "minphys3d/math/quat.hpp"
@@ -757,6 +758,105 @@ bool ParseCompoundChildren(const JsonValue& arrVal, std::vector<CompoundChild>& 
     return true;
 }
 
+bool ParseTerrainPatchObject(const JsonObject& o, TerrainPatchConfig& config, TerrainPatchSeed& seed, std::string& err) {
+    seed.has_config = true;
+    double rows = static_cast<double>(config.rows);
+    double cols = static_cast<double>(config.cols);
+    double cell_size = static_cast<double>(config.cell_size_m);
+    double base_margin = static_cast<double>(config.base_margin_m);
+    double min_thickness = static_cast<double>(config.min_cell_thickness_m);
+    double influence_sigma = static_cast<double>(config.influence_sigma_m);
+    double plane_conf = static_cast<double>(config.plane_confidence);
+    double half_life = static_cast<double>(config.confidence_half_life_s);
+    double base_blend = static_cast<double>(config.base_update_blend);
+    double decay_boost = static_cast<double>(config.decay_update_boost);
+
+    (void)GetNumber(o, "rows", rows, err, false);
+    (void)GetNumber(o, "cols", cols, err, false);
+    (void)GetNumber(o, "cell_size_m", cell_size, err, false);
+    (void)GetNumber(o, "base_margin_m", base_margin, err, false);
+    (void)GetNumber(o, "min_cell_thickness_m", min_thickness, err, false);
+    (void)GetNumber(o, "influence_sigma_m", influence_sigma, err, false);
+    (void)GetNumber(o, "plane_confidence", plane_conf, err, false);
+    (void)GetNumber(o, "confidence_half_life_s", half_life, err, false);
+    (void)GetNumber(o, "base_update_blend", base_blend, err, false);
+    (void)GetNumber(o, "decay_update_boost", decay_boost, err, false);
+
+    if (!GetVec3(o, "center", seed.center, err, seed.center)) {
+        return false;
+    }
+    seed.has_center = FindMember(o, "center") != nullptr;
+    if (!GetVec3(o, "plane_normal", seed.plane_normal, err, seed.plane_normal)) {
+        return false;
+    }
+    seed.has_plane_normal = FindMember(o, "plane_normal") != nullptr;
+
+    double plane_height = static_cast<double>(seed.plane_height_m);
+    const JsonValue* plane_height_val = FindMember(o, "plane_height_m");
+    if (plane_height_val != nullptr) {
+        if (plane_height_val->type != JsonValue::Number) {
+            err = "field not a number: plane_height_m";
+            return false;
+        }
+        plane_height = plane_height_val->number;
+        seed.has_plane_height = true;
+    } else {
+        const JsonValue* plane_offset_val = FindMember(o, "plane_offset");
+        if (plane_offset_val != nullptr) {
+            if (plane_offset_val->type != JsonValue::Number) {
+                err = "field not a number: plane_offset";
+                return false;
+            }
+            plane_height = plane_offset_val->number;
+            seed.has_plane_height = true;
+        }
+    }
+    seed.plane_height_m = static_cast<float>(plane_height);
+
+    auto validate_positive = [&](double value, const char* name) -> bool {
+        if (!(value > 0.0) || !std::isfinite(value)) {
+            err = std::string(name) + " must be positive";
+            return false;
+        }
+        return true;
+    };
+    auto validate_range = [&](double value, double lo, double hi, const char* name) -> bool {
+        if (!std::isfinite(value) || value < lo || value > hi) {
+            err = std::string(name) + " out of range";
+            return false;
+        }
+        return true;
+    };
+
+    if (!validate_range(rows, 3.0, 128.0, "terrain_patch.rows") ||
+        !validate_range(cols, 3.0, 128.0, "terrain_patch.cols") ||
+        !validate_positive(cell_size, "terrain_patch.cell_size_m") ||
+        !validate_positive(base_margin, "terrain_patch.base_margin_m") ||
+        !validate_positive(min_thickness, "terrain_patch.min_cell_thickness_m") ||
+        !validate_positive(influence_sigma, "terrain_patch.influence_sigma_m") ||
+        !validate_range(plane_conf, 0.0, 1.0, "terrain_patch.plane_confidence") ||
+        !validate_positive(half_life, "terrain_patch.confidence_half_life_s") ||
+        !validate_range(base_blend, 0.0, 1.0, "terrain_patch.base_update_blend") ||
+        !validate_range(decay_boost, 0.0, 1.0, "terrain_patch.decay_update_boost")) {
+        return false;
+    }
+
+    config.rows = static_cast<int>(rows);
+    config.cols = static_cast<int>(cols);
+    config.cell_size_m = static_cast<float>(cell_size);
+    config.base_margin_m = static_cast<float>(base_margin);
+    config.min_cell_thickness_m = static_cast<float>(min_thickness);
+    config.influence_sigma_m = static_cast<float>(influence_sigma);
+    config.plane_confidence = static_cast<float>(plane_conf);
+    config.confidence_half_life_s = static_cast<float>(half_life);
+    config.base_update_blend = static_cast<float>(base_blend);
+    config.decay_update_boost = static_cast<float>(decay_boost);
+    if (seed.has_plane_normal) {
+        seed.plane_normal = Normalize(seed.plane_normal);
+    }
+    return true;
+}
+
 bool ParseBodyObject(const JsonObject& o, Body& body, std::string& err) {
     std::string shapeName;
     if (!GetString(o, "shape", shapeName, err, true)) {
@@ -987,7 +1087,9 @@ bool LoadWorldFromMinphysSceneJson(
     World& world_out,
     int& solver_iterations_out,
     std::string& error_out,
-    int* joints_loaded_out) {
+    int* joints_loaded_out,
+    TerrainPatchConfig* terrain_patch_config_out,
+    TerrainPatchSeed* terrain_patch_seed_out) {
     if (joints_loaded_out != nullptr) {
         *joints_loaded_out = 0;
     }
@@ -998,7 +1100,13 @@ bool LoadWorldFromMinphysSceneJson(
     solver_iterations_out = 16;
 
     return AppendWorldFromMinphysSceneJson(
-        json_text, world_out, solver_iterations_out, error_out, joints_loaded_out);
+        json_text,
+        world_out,
+        solver_iterations_out,
+        error_out,
+        joints_loaded_out,
+        terrain_patch_config_out,
+        terrain_patch_seed_out);
 }
 
 bool AppendWorldFromMinphysSceneJson(
@@ -1006,7 +1114,9 @@ bool AppendWorldFromMinphysSceneJson(
     World& world_out,
     int& solver_iterations_in_out,
     std::string& error_out,
-    int* joints_loaded_out) {
+    int* joints_loaded_out,
+    TerrainPatchConfig* terrain_patch_config_out,
+    TerrainPatchSeed* terrain_patch_seed_out) {
     if (joints_loaded_out != nullptr) {
         *joints_loaded_out = 0;
     }
@@ -1037,6 +1147,27 @@ bool AppendWorldFromMinphysSceneJson(
             return false;
         }
         solver_iterations_in_out = static_cast<int>(si);
+    }
+
+    if (terrain_patch_config_out != nullptr || terrain_patch_seed_out != nullptr) {
+        const JsonValue* terrain_patch_val = FindMember(root.object, "terrain_patch");
+        if (terrain_patch_val != nullptr) {
+            if (terrain_patch_val->type != JsonValue::Object) {
+                error_out = "\"terrain_patch\" must be a JSON object";
+                return false;
+            }
+            TerrainPatchConfig config = terrain_patch_config_out != nullptr ? *terrain_patch_config_out : TerrainPatchConfig{};
+            TerrainPatchSeed seed{};
+            if (!ParseTerrainPatchObject(terrain_patch_val->object, config, seed, error_out)) {
+                return false;
+            }
+            if (terrain_patch_config_out != nullptr) {
+                *terrain_patch_config_out = config;
+            }
+            if (terrain_patch_seed_out != nullptr) {
+                *terrain_patch_seed_out = seed;
+            }
+        }
     }
 
     const JsonValue* bodiesVal = FindMember(root.object, "bodies");
@@ -1087,7 +1218,9 @@ bool AppendWorldFromMinphysSceneJsonFile(
     World& world_out,
     int& solver_iterations_in_out,
     std::string& error_out,
-    int* joints_loaded_out) {
+    int* joints_loaded_out,
+    TerrainPatchConfig* terrain_patch_config_out,
+    TerrainPatchSeed* terrain_patch_seed_out) {
     const std::filesystem::path resolved = ResolveSceneFilePath(scene_path);
     std::ifstream in(resolved, std::ios::in | std::ios::binary);
     if (!in) {
@@ -1101,7 +1234,13 @@ bool AppendWorldFromMinphysSceneJsonFile(
     std::ostringstream buffer;
     buffer << in.rdbuf();
     return AppendWorldFromMinphysSceneJson(
-        buffer.str(), world_out, solver_iterations_in_out, error_out, joints_loaded_out);
+        buffer.str(),
+        world_out,
+        solver_iterations_in_out,
+        error_out,
+        joints_loaded_out,
+        terrain_patch_config_out,
+        terrain_patch_seed_out);
 }
 
 int RunPhysicsDemoFromJsonFile(

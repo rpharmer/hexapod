@@ -2,12 +2,24 @@
 
 #include "demo/demo_run_control.hpp"
 #include "demo/frame_sink.hpp"
+#include "demo/terrain_patch.hpp"
 #include "minphys3d/core/world.hpp"
 #include "minphys3d/math/vec3.hpp"
 
 #include <string>
 
 namespace minphys3d::demo {
+
+struct TerrainPatchSeed {
+    bool has_config{false};
+    TerrainPatchConfig config{};
+    bool has_center{false};
+    minphys3d::Vec3 center{};
+    bool has_plane_height{false};
+    float plane_height_m{0.0f};
+    bool has_plane_normal{false};
+    minphys3d::Vec3 plane_normal{0.0f, 1.0f, 0.0f};
+};
 
 /// Loads `bodies` and optional `joints` from minphys scene JSON (see `assets/scenes/examples/`).
 /// `world_out` must be empty. `joints_loaded_out`, when non-null, receives the number of joints created.
@@ -17,7 +29,9 @@ bool LoadWorldFromMinphysSceneJson(
     minphys3d::World& world_out,
     int& solver_iterations_out,
     std::string& error_out,
-    int* joints_loaded_out = nullptr);
+    int* joints_loaded_out = nullptr,
+    TerrainPatchConfig* terrain_patch_config_out = nullptr,
+    TerrainPatchSeed* terrain_patch_seed_out = nullptr);
 
 /// Appends `bodies` and optional `joints` from minphys scene JSON into an existing world.
 /// Joint body indices are interpreted relative to the appended scene body list.
@@ -26,7 +40,9 @@ bool AppendWorldFromMinphysSceneJson(
     minphys3d::World& world_out,
     int& solver_iterations_in_out,
     std::string& error_out,
-    int* joints_loaded_out = nullptr);
+    int* joints_loaded_out = nullptr,
+    TerrainPatchConfig* terrain_patch_config_out = nullptr,
+    TerrainPatchSeed* terrain_patch_seed_out = nullptr);
 
 /// Resolves a scene file path and appends the resulting scene into an existing world.
 bool AppendWorldFromMinphysSceneJsonFile(
@@ -34,7 +50,9 @@ bool AppendWorldFromMinphysSceneJsonFile(
     minphys3d::World& world_out,
     int& solver_iterations_in_out,
     std::string& error_out,
-    int* joints_loaded_out = nullptr);
+    int* joints_loaded_out = nullptr,
+    TerrainPatchConfig* terrain_patch_config_out = nullptr,
+    TerrainPatchSeed* terrain_patch_seed_out = nullptr);
 
 /// Runs a JSON-defined scene for `frame_count` steps at 60 Hz, emitting all bodies each frame.
 int RunPhysicsDemoFromJsonFile(

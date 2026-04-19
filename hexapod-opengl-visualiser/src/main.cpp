@@ -80,6 +80,28 @@ struct EntityState {
   bool has_frame = false;
 };
 
+struct TerrainPatchState {
+  bool valid = false;
+  int frame = 0;
+  float sim_time_s = 0.0f;
+  int rows = 0;
+  int cols = 0;
+  float cell_size_m = 0.0f;
+  float base_margin_m = 0.0f;
+  float min_cell_thickness_m = 0.0f;
+  float influence_sigma_m = 0.0f;
+  float plane_confidence = 0.0f;
+  float confidence_half_life_s = 0.0f;
+  float base_update_blend = 0.0f;
+  float decay_update_boost = 0.0f;
+  Vec3 center{};
+  float base_height_m = 0.0f;
+  float plane_height_m = 0.0f;
+  Vec3 plane_normal{0.0f, 1.0f, 0.0f};
+  std::vector<float> heights{};
+  std::vector<float> confidences{};
+};
+
 struct Options {
   int udp_port = kDefaultUdpPort;
 };
@@ -262,6 +284,27 @@ SceneBounds ComputeSceneBounds(const std::map<std::uint32_t, EntityState>& entit
   return bounds;
 }
 
+void ExpandTerrainPatchBounds(SceneBounds& bounds, const TerrainPatchState& terrain) {
+  if (!terrain.valid || terrain.rows <= 0 || terrain.cols <= 0 || terrain.cell_size_m <= 0.0f) {
+    return;
+  }
+
+  const float half_span_x = 0.5f * static_cast<float>(std::max(0, terrain.cols - 1)) * terrain.cell_size_m;
+  const float half_span_z = 0.5f * static_cast<float>(std::max(0, terrain.rows - 1)) * terrain.cell_size_m;
+  const std::size_t expected = static_cast<std::size_t>(terrain.rows * terrain.cols);
+  const bool has_heights = terrain.heights.size() >= expected;
+
+  for (int row = 0; row < terrain.rows; ++row) {
+    for (int col = 0; col < terrain.cols; ++col) {
+      const std::size_t index = static_cast<std::size_t>(row * terrain.cols + col);
+      const float x = terrain.center.x + (static_cast<float>(col) * terrain.cell_size_m) - half_span_x;
+      const float z = terrain.center.z + (static_cast<float>(row) * terrain.cell_size_m) - half_span_z;
+      const float y = has_heights ? terrain.heights[index] : terrain.base_height_m;
+      ExpandBounds(bounds, {x, y, z});
+    }
+  }
+}
+
 std::optional<std::string> ExtractStringField(std::string_view payload, std::string_view key) {
   const std::string needle = "\"" + std::string(key) + "\":\"";
   const std::size_t start = payload.find(needle);
@@ -398,6 +441,30 @@ std::optional<std::array<float, 4>> ExtractFloat4Field(std::string_view payload,
   std::array<float, 4> out{};
   if (!(in >> out[0] >> out[1] >> out[2] >> out[3])) {
     return std::nullopt;
+  }
+  return out;
+}
+
+std::optional<std::vector<float>> ExtractFloatArrayField(std::string_view payload, std::string_view key) {
+  const std::string needle = "\"" + std::string(key) + "\":[";
+  const std::size_t start = payload.find(needle);
+  if (start == std::string_view::npos) {
+    return std::nullopt;
+  }
+
+  const std::size_t value_start = start + needle.size();
+  const std::size_t value_end = payload.find(']', value_start);
+  if (value_end == std::string_view::npos) {
+    return std::nullopt;
+  }
+
+  std::string values(payload.substr(value_start, value_end - value_start));
+  std::replace(values.begin(), values.end(), ',', ' ');
+  std::istringstream in(values);
+  std::vector<float> out;
+  float value = 0.0f;
+  while (in >> value) {
+    out.push_back(value);
   }
   return out;
 }
@@ -714,7 +781,131 @@ void DrawPrimitiveShape(
   }
 }
 
-bool ParsePacket(const std::string& payload, std::map<std::uint32_t, EntityState>& entities) {
+void DrawTerrainPatch(const TerrainPatchState& terrain) {
+  if (!terrain.valid || terrain.rows <= 0 || terrain.cols <= 0 || terrain.cell_size_m <= 0.0f) {
+    return;
+  }
+
+  const std::size_t expected = static_cast<std::size_t>(terrain.rows * terrain.cols);
+  if (terrain.heights.size() < expected) {
+    return;
+  }
+
+  const float half_span_x = 0.5f * static_cast<float>(std::max(0, terrain.cols - 1)) * terrain.cell_size_m;
+  const float half_span_z = 0.5f * static_cast<float>(std::max(0, terrain.rows - 1)) * terrain.cell_size_m;
+
+  glColor3f(0.30f, 0.78f, 0.48f);
+  for (int row = 0; row < terrain.rows; ++row) {
+    glBegin(GL_LINE_STRIP);
+    for (int col = 0; col < terrain.cols; ++col) {
+      const std::size_t index = static_cast<std::size_t>(row * terrain.cols + col);
+      const float x = terrain.center.x + (static_cast<float>(col) * terrain.cell_size_m) - half_span_x;
+      const float z = terrain.center.z + (static_cast<float>(row) * terrain.cell_size_m) - half_span_z;
+      glVertex3f(x, terrain.heights[index], z);
+    }
+    glEnd();
+  }
+
+  for (int col = 0; col < terrain.cols; ++col) {
+    glBegin(GL_LINE_STRIP);
+    for (int row = 0; row < terrain.rows; ++row) {
+      const std::size_t index = static_cast<std::size_t>(row * terrain.cols + col);
+      const float x = terrain.center.x + (static_cast<float>(col) * terrain.cell_size_m) - half_span_x;
+      const float z = terrain.center.z + (static_cast<float>(row) * terrain.cell_size_m) - half_span_z;
+      glVertex3f(x, terrain.heights[index], z);
+    }
+    glEnd();
+  }
+
+  const Vec3 up = Normalize(terrain.plane_normal);
+  const float arrow_scale = std::max(terrain.cell_size_m, 0.08f);
+  const Vec3 normal_base{terrain.center.x, terrain.base_height_m, terrain.center.z};
+  const Vec3 normal_tip{
+      normal_base.x + up.x * arrow_scale,
+      normal_base.y + up.y * arrow_scale,
+      normal_base.z + up.z * arrow_scale};
+  glColor3f(0.95f, 0.88f, 0.24f);
+  glBegin(GL_LINES);
+  glVertex3f(normal_base.x, normal_base.y, normal_base.z);
+  glVertex3f(normal_tip.x, normal_tip.y, normal_tip.z);
+  glEnd();
+
+  glPointSize(5.0f);
+  glBegin(GL_POINTS);
+  glVertex3f(terrain.center.x, terrain.base_height_m, terrain.center.z);
+  glEnd();
+}
+
+bool ParseTerrainPatchPacket(const std::string& payload, TerrainPatchState& terrain_patch) {
+  const auto message_type = ExtractStringField(payload, "message_type");
+  if (!message_type.has_value() || *message_type != "terrain_patch") {
+    return false;
+  }
+
+  TerrainPatchState next = terrain_patch;
+  if (const auto frame = ExtractUintField(payload, "frame")) {
+    next.frame = static_cast<int>(*frame);
+  }
+  if (const auto sim_time_s = ExtractFloatField(payload, "sim_time_s")) {
+    next.sim_time_s = *sim_time_s;
+  }
+  if (const auto rows = ExtractUintField(payload, "rows")) {
+    next.rows = static_cast<int>(*rows);
+  }
+  if (const auto cols = ExtractUintField(payload, "cols")) {
+    next.cols = static_cast<int>(*cols);
+  }
+  if (const auto cell_size = ExtractFloatField(payload, "cell_size_m")) {
+    next.cell_size_m = *cell_size;
+  }
+  if (const auto base_margin = ExtractFloatField(payload, "base_margin_m")) {
+    next.base_margin_m = *base_margin;
+  }
+  if (const auto min_cell = ExtractFloatField(payload, "min_cell_thickness_m")) {
+    next.min_cell_thickness_m = *min_cell;
+  }
+  if (const auto sigma = ExtractFloatField(payload, "influence_sigma_m")) {
+    next.influence_sigma_m = *sigma;
+  }
+  if (const auto plane_conf = ExtractFloatField(payload, "plane_confidence")) {
+    next.plane_confidence = *plane_conf;
+  }
+  if (const auto half_life = ExtractFloatField(payload, "confidence_half_life_s")) {
+    next.confidence_half_life_s = *half_life;
+  }
+  if (const auto base_blend = ExtractFloatField(payload, "base_update_blend")) {
+    next.base_update_blend = *base_blend;
+  }
+  if (const auto decay_boost = ExtractFloatField(payload, "decay_update_boost")) {
+    next.decay_update_boost = *decay_boost;
+  }
+  if (const auto center = ExtractFloat3Field(payload, "center")) {
+    next.center = {(*center)[0], (*center)[1], (*center)[2]};
+  }
+  if (const auto base_height = ExtractFloatField(payload, "base_height_m")) {
+    next.base_height_m = *base_height;
+  }
+  if (const auto plane_height = ExtractFloatField(payload, "plane_height_m")) {
+    next.plane_height_m = *plane_height;
+  }
+  if (const auto normal = ExtractFloat3Field(payload, "plane_normal")) {
+    next.plane_normal = {(*normal)[0], (*normal)[1], (*normal)[2]};
+  }
+  if (const auto heights = ExtractFloatArrayField(payload, "heights")) {
+    next.heights = *heights;
+  }
+  if (const auto confidences = ExtractFloatArrayField(payload, "confidences")) {
+    next.confidences = *confidences;
+  }
+
+  next.valid = next.rows > 0 && next.cols > 0 && next.cell_size_m > 0.0f;
+  terrain_patch = std::move(next);
+  return terrain_patch.valid;
+}
+
+bool ParsePacket(const std::string& payload,
+                 std::map<std::uint32_t, EntityState>& entities,
+                 TerrainPatchState& terrain_patch) {
   const auto message_type = ExtractStringField(payload, "message_type");
   if (!message_type.has_value()) {
     return false;
@@ -722,7 +913,12 @@ bool ParsePacket(const std::string& payload, std::map<std::uint32_t, EntityState
 
   if (*message_type == "scene_clear") {
     entities.clear();
+    terrain_patch = {};
     return true;
+  }
+
+  if (*message_type == "terrain_patch") {
+    return ParseTerrainPatchPacket(payload, terrain_patch);
   }
 
   const auto entity_id = ExtractUintField(payload, "entity_id");
@@ -816,7 +1012,7 @@ class UdpReceiver {
 
   bool valid() const { return valid_; }
 
-  int Pump(std::map<std::uint32_t, EntityState>& entities) {
+  int Pump(std::map<std::uint32_t, EntityState>& entities, TerrainPatchState& terrain_patch) {
     if (!valid_) {
       return 0;
     }
@@ -837,7 +1033,7 @@ class UdpReceiver {
       }
 
       buffer[static_cast<std::size_t>(bytes)] = '\0';
-      if (ParsePacket(buffer.data(), entities)) {
+      if (ParsePacket(buffer.data(), entities, terrain_patch)) {
         ++packets;
       }
     }
@@ -894,13 +1090,16 @@ void ConfigureProjection(int width, int height) {
   glFrustum(-right, right, -top, top, near_plane, far_plane);
 }
 
-void DrawScene(const std::map<std::uint32_t, EntityState>& entities, float time_s) {
+void DrawScene(const std::map<std::uint32_t, EntityState>& entities,
+               const TerrainPatchState& terrain_patch,
+               float time_s) {
   glClearColor(0.04f, 0.06f, 0.08f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
-  const SceneBounds bounds = ComputeSceneBounds(entities);
+  SceneBounds bounds = ComputeSceneBounds(entities);
+  ExpandTerrainPatchBounds(bounds, terrain_patch);
   const Vec3 center = bounds.valid
       ? Vec3{
             0.5f * (bounds.min.x + bounds.max.x),
@@ -922,6 +1121,8 @@ void DrawScene(const std::map<std::uint32_t, EntityState>& entities, float time_
   glRotatef(18.0f, 1.0f, 0.0f, 0.0f);
   glRotatef(28.0f + time_s * 8.0f, 0.0f, 1.0f, 0.0f);
   glTranslatef(-center.x, -center.y, -center.z);
+
+  DrawTerrainPatch(terrain_patch);
 
   for (const auto& [id, entity] : entities) {
     (void)id;
@@ -1029,10 +1230,11 @@ int main(int argc, char** argv) {
 #endif
 
   std::map<std::uint32_t, EntityState> entities;
+  TerrainPatchState terrain_patch;
   double last_title_update_s = -1.0;
 
   while (!glfwWindowShouldClose(window)) {
-    receiver.Pump(entities);
+    receiver.Pump(entities, terrain_patch);
 
     int framebuffer_width = 0;
     int framebuffer_height = 0;
@@ -1040,7 +1242,7 @@ int main(int argc, char** argv) {
     ConfigureProjection(framebuffer_width, framebuffer_height);
 
     const float time_s = static_cast<float>(glfwGetTime());
-    DrawScene(entities, time_s);
+    DrawScene(entities, terrain_patch, time_s);
 
     if (last_title_update_s < 0.0 || glfwGetTime() - last_title_update_s > 0.25) {
       std::ostringstream title;

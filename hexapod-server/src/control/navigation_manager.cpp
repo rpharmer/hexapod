@@ -130,6 +130,44 @@ void NavigationManager::deactivate() {
     blocked_since_ = TimePointUs{};
 }
 
+void NavigationManager::reset() {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    local_map_builder_.reset();
+    cached_map_snapshot_ = LocalMapSnapshot{};
+    blocked_since_ = TimePointUs{};
+    last_merge_timestamp_ = TimePointUs{};
+    active_segment_.clear();
+    monitor_.block_reason = PlannerBlockReason::None;
+    monitor_.blocked_elapsed_s = 0.0;
+    monitor_.map_fresh = false;
+    monitor_.nearest_obstacle_distance_m = -1.0;
+
+    const bool should_resume_raw_bridge = !map_aware_mode_ && !raw_waypoints_.empty() && monitor_.active;
+    if (should_resume_raw_bridge) {
+        bridge_.deactivate();
+        active_segment_ = raw_waypoints_;
+        bridge_.startFollowWaypoints(walk_base_, raw_waypoints_, follow_params_);
+        if (monitor_.paused) {
+            bridge_.pause();
+        }
+        refreshMonitorFromBridge();
+        monitor_.planner_status = LocalPlanStatus::Ready;
+        monitor_.block_reason = PlannerBlockReason::None;
+        monitor_.lifecycle = monitor_.paused ? NavigationLifecycleState::Paused : NavigationLifecycleState::Running;
+        monitor_.active = true;
+    } else {
+        bridge_.deactivate();
+        monitor_.active_segment_waypoint_count = 0;
+        monitor_.active_segment_length_m = 0.0;
+        monitor_.planner_status = LocalPlanStatus::Ready;
+        monitor_.bridge = bridge_.monitor();
+        if (monitor_.active) {
+            monitor_.lifecycle = monitor_.paused ? NavigationLifecycleState::Paused
+                                                 : NavigationLifecycleState::Running;
+        }
+    }
+}
+
 MotionIntent NavigationManager::mergeIntent(const MotionIntent& fallback,
                                             const RobotState& est,
                                             const TimePointUs now) {
@@ -167,10 +205,10 @@ MotionIntent NavigationManager::mergeIntent(const MotionIntent& fallback,
     local_map_builder_.update(pose, now, observations);
     const LocalMapSnapshot snapshot = local_map_builder_.snapshot(now);
     cached_map_snapshot_ = snapshot;
-    monitor_.map_fresh = snapshot.fresh;
+    monitor_.map_fresh = snapshot.has_observations ? snapshot.fresh : true;
     monitor_.nearest_obstacle_distance_m = snapshot.nearest_obstacle_distance_m;
 
-    if (!snapshot.fresh) {
+    if (snapshot.has_observations && !snapshot.fresh) {
         monitor_.lifecycle = NavigationLifecycleState::MapUnavailable;
         monitor_.planner_status = LocalPlanStatus::MapUnavailable;
         bridge_.deactivate();
@@ -210,9 +248,14 @@ MotionIntent NavigationManager::mergeIntent(const MotionIntent& fallback,
 
     MotionIntent out = bridge_.mergeIntent(fallback, est, dt_s);
     refreshMonitorFromBridge();
-    if (!bridge_.active() &&
-        monitor_.bridge.lifecycle == NavLocomotionBridge::LifecycleState::Completed &&
-        terminalGoalReached(pose)) {
+    if (!snapshot.has_observations && terminalGoalReached(pose)) {
+        bridge_.deactivate();
+        monitor_.active = false;
+        monitor_.lifecycle = NavigationLifecycleState::Completed;
+        out = makeStopIntent();
+    } else if (!bridge_.active() &&
+               monitor_.bridge.lifecycle == NavLocomotionBridge::LifecycleState::Completed &&
+               (terminalGoalReached(pose) || !snapshot.has_observations)) {
         monitor_.active = false;
         monitor_.lifecycle = NavigationLifecycleState::Completed;
         out = makeStopIntent();

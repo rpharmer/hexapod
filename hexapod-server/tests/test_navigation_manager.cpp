@@ -31,8 +31,10 @@ void stepPose(NavPose2d& pose, const MotionIntent& intent, const double dt_s) {
     const PlanarMotionCommand cmd = planarMotionCommand(intent);
     const double c = std::cos(pose.yaw_rad);
     const double s = std::sin(pose.yaw_rad);
-    pose.x_m += (c * cmd.vx_mps - s * cmd.vy_mps) * dt_s;
-    pose.y_m += (s * cmd.vx_mps + c * cmd.vy_mps) * dt_s;
+    const double world_vx = -cmd.vx_mps;
+    const double world_vy = cmd.vy_mps;
+    pose.x_m += (c * world_vx - s * world_vy) * dt_s;
+    pose.y_m += (s * world_vx + c * world_vy) * dt_s;
     pose.yaw_rad = navWrapAngleRad(pose.yaw_rad + cmd.yaw_rate_radps * dt_s);
 }
 

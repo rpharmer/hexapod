@@ -101,6 +101,20 @@ struct ParsedToml
   int footTerrainSwingXYNudgeWindowCells{2};
   double footTerrainSwingXYNudgeTauMin{0.55};
   double footTerrainSwingXYNudgeBlend{0.60};
+  int fusionContactDebounceSamples{2};
+  int fusionTouchdownWindowMs{120};
+  int fusionContactHoldWindowMs{250};
+  double fusionTrustDecayPerMismatch{0.18};
+  double fusionPredictiveTrustBias{0.80};
+  double fusionSoftPoseResyncM{0.04};
+  double fusionHardPoseResyncM{0.14};
+  double fusionSoftOrientationResyncRad{0.18};
+  double fusionHardOrientationResyncRad{0.45};
+  double fusionSoftContactMismatchRatio{0.17};
+  double fusionHardContactMismatchRatio{0.42};
+  int fusionCorrectionHoldSamples{3};
+  double fusionCorrectionStrongReleaseFactor{0.72};
+  double fusionCorrectionSoftReleaseFactor{0.84};
 
   double coxaLengthM{0.043};
   double femurLengthM{0.060};

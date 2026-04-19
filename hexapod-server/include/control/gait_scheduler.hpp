@@ -14,6 +14,7 @@ class GaitScheduler {
 public:
     explicit GaitScheduler(control_config::GaitConfig config = {});
 
+    void reset();
     GaitState update(const RobotState& est,
                       const MotionIntent& intent,
                       const SafetyState& safety,

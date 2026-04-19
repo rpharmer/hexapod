@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "hardware_bridge.hpp"
+#include "physics_sim_protocol.hpp"
 
 namespace logging {
 class AsyncLogger;
@@ -42,6 +43,7 @@ public:
     bool init() override;
     bool read(RobotState& out) override;
     bool write(const JointTargets& in) override;
+    bool sendStateCorrection(const physics_sim::StateCorrection& correction);
     std::optional<BridgeCommandResultMetadata> last_bridge_result() const override;
     [[nodiscard]] std::vector<PhysicsSimObstacleFootprint> latestObstacleFootprints() const override;
 

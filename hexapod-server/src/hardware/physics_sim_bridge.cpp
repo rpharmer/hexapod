@@ -326,6 +326,32 @@ bool PhysicsSimBridge::write(const JointTargets& in) {
     return true;
 }
 
+bool PhysicsSimBridge::sendStateCorrection(const physics_sim::StateCorrection& correction) {
+    if (!initialized_) {
+        return false;
+    }
+
+    const ssize_t sent = ::send(sock_, &correction, physics_sim::kStateCorrectionBytes, 0);
+    if (sent != static_cast<ssize_t>(physics_sim::kStateCorrectionBytes)) {
+        setLastError(BridgeError::TransportFailure, BridgeFailurePhase::CommandTransport);
+        if (logger_) {
+            LOG_WARN(logger_, "PhysicsSimBridge failed to send StateCorrection (sent=", sent, ")");
+        }
+        return false;
+    }
+
+    if (logger_) {
+        LOG_DEBUG(logger_,
+                  "PhysicsSimBridge sent StateCorrection seq=",
+                  correction.sequence_id,
+                  " flags=",
+                  static_cast<unsigned>(correction.flags),
+                  " strength=",
+                  correction.correction_strength);
+    }
+    return true;
+}
+
 bool PhysicsSimBridge::read(RobotState& out) {
     if (!initialized_) {
         return false;

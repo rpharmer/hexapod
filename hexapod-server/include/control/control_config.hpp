@@ -54,6 +54,20 @@ inline constexpr double kDefaultFootTerrainSwingXYNudgeMaxM{0.018};
 inline constexpr int kDefaultFootTerrainSwingXYNudgeWindowCells{2};
 inline constexpr double kDefaultFootTerrainSwingXYNudgeTauMin{0.55};
 inline constexpr double kDefaultFootTerrainSwingXYNudgeBlend{0.60};
+inline constexpr int kDefaultFusionContactDebounceSamples{2};
+inline constexpr int kDefaultFusionTouchdownWindowMs{120};
+inline constexpr int kDefaultFusionContactHoldWindowMs{250};
+inline constexpr double kDefaultFusionTrustDecayPerMismatch{0.18};
+inline constexpr double kDefaultFusionPredictiveTrustBias{0.80};
+inline constexpr double kDefaultFusionSoftPoseResyncM{0.04};
+inline constexpr double kDefaultFusionHardPoseResyncM{0.14};
+inline constexpr double kDefaultFusionSoftOrientationResyncRad{0.18};
+inline constexpr double kDefaultFusionHardOrientationResyncRad{0.45};
+inline constexpr double kDefaultFusionSoftContactMismatchRatio{0.17};
+inline constexpr double kDefaultFusionHardContactMismatchRatio{0.42};
+inline constexpr int kDefaultFusionCorrectionHoldSamples{3};
+inline constexpr double kDefaultFusionCorrectionStrongReleaseFactor{0.72};
+inline constexpr double kDefaultFusionCorrectionSoftReleaseFactor{0.84};
 
 struct LoopTimingConfig {
     std::chrono::microseconds bus_loop_period{std::chrono::microseconds{kDefaultBusLoopPeriodUs}};
@@ -162,6 +176,23 @@ struct FootTerrainConfig {
     double swing_xy_nudge_blend{kDefaultFootTerrainSwingXYNudgeBlend};
 };
 
+struct FusionConfig {
+    int contact_debounce_samples{kDefaultFusionContactDebounceSamples};
+    std::chrono::milliseconds touchdown_window{std::chrono::milliseconds{kDefaultFusionTouchdownWindowMs}};
+    std::chrono::milliseconds contact_hold_window{std::chrono::milliseconds{kDefaultFusionContactHoldWindowMs}};
+    double trust_decay_per_mismatch{kDefaultFusionTrustDecayPerMismatch};
+    double predictive_trust_bias{kDefaultFusionPredictiveTrustBias};
+    double soft_pose_resync_m{kDefaultFusionSoftPoseResyncM};
+    double hard_pose_resync_m{kDefaultFusionHardPoseResyncM};
+    double soft_orientation_resync_rad{kDefaultFusionSoftOrientationResyncRad};
+    double hard_orientation_resync_rad{kDefaultFusionHardOrientationResyncRad};
+    double soft_contact_mismatch_ratio{kDefaultFusionSoftContactMismatchRatio};
+    double hard_contact_mismatch_ratio{kDefaultFusionHardContactMismatchRatio};
+    int correction_mode_hold_samples{kDefaultFusionCorrectionHoldSamples};
+    double correction_mode_strong_release_factor{kDefaultFusionCorrectionStrongReleaseFactor};
+    double correction_mode_soft_release_factor{kDefaultFusionCorrectionSoftReleaseFactor};
+};
+
 struct ControlConfig {
     LoopTimingConfig loop_timing{};
     SafetyConfig safety{};
@@ -171,6 +202,7 @@ struct ControlConfig {
     TelemetryConfig telemetry{};
     NavBridgeConfig nav_bridge{};
     FootTerrainConfig foot_terrain{};
+    FusionConfig fusion{};
     LocalMapConfig local_map{};
     LocalPlannerConfig local_planner{};
 };

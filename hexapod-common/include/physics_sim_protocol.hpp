@@ -44,7 +44,24 @@ enum class MessageType : std::uint8_t {
     StateResponse = 2,
     ConfigCommand = 3,
     ConfigAck = 4,
+    StateCorrection = 5,
 };
+
+enum class ContactPhase : std::uint8_t {
+    Swing = 0,
+    ExpectedTouchdown = 1,
+    ContactCandidate = 2,
+    ConfirmedStance = 3,
+    LostCandidate = 4,
+    Search = 5,
+};
+
+inline constexpr std::uint8_t kStateCorrectionPoseValid = 1u << 0;
+inline constexpr std::uint8_t kStateCorrectionTwistValid = 1u << 1;
+inline constexpr std::uint8_t kStateCorrectionContactValid = 1u << 2;
+inline constexpr std::uint8_t kStateCorrectionTerrainValid = 1u << 3;
+inline constexpr std::uint8_t kStateCorrectionHardReset = 1u << 4;
+inline constexpr std::uint8_t kStateCorrectionRelocalize = 1u << 5;
 
 #pragma pack(push, 1)
 
@@ -86,6 +103,25 @@ struct StateResponse {
     std::array<std::uint16_t, kMatrixLidarMaxCells> matrix_lidar_ranges_mm{};
 };
 
+struct StateCorrection {
+    std::uint8_t message_type{static_cast<std::uint8_t>(MessageType::StateCorrection)};
+    std::uint32_t sequence_id{0};
+    std::uint64_t timestamp_us{0};
+    std::uint8_t flags{0};
+    float correction_strength{1.0f};
+    std::array<float, 3> body_position{};
+    std::array<float, 4> body_orientation{};
+    std::array<float, 3> body_linear_velocity{};
+    std::array<float, 3> body_angular_velocity{};
+    std::array<std::uint8_t, 6> foot_contact_phase{};
+    std::array<float, 6> foot_contact_confidence{};
+    std::array<float, 6> foot_ground_height_m{};
+    std::array<float, 6> foot_ground_confidence{};
+    std::array<float, 3> terrain_normal{0.0f, 1.0f, 0.0f};
+    float terrain_height_m{0.0f};
+    std::array<std::uint8_t, 7> reserved{};
+};
+
 struct ConfigCommand {
     std::uint8_t message_type{static_cast<std::uint8_t>(MessageType::ConfigCommand)};
     std::array<float, 3> gravity{};
@@ -105,11 +141,13 @@ struct ConfigAck {
 static_assert(std::is_trivially_copyable_v<StepCommand>);
 static_assert(std::is_trivially_copyable_v<ObstacleFootprint>);
 static_assert(std::is_trivially_copyable_v<StateResponse>);
+static_assert(std::is_trivially_copyable_v<StateCorrection>);
 static_assert(std::is_trivially_copyable_v<ConfigCommand>);
 static_assert(std::is_trivially_copyable_v<ConfigAck>);
 
 inline constexpr std::size_t kStepCommandBytes = sizeof(StepCommand);
 inline constexpr std::size_t kStateResponseBytes = sizeof(StateResponse);
+inline constexpr std::size_t kStateCorrectionBytes = sizeof(StateCorrection);
 inline constexpr std::size_t kConfigCommandBytes = sizeof(ConfigCommand);
 inline constexpr std::size_t kConfigAckBytes = sizeof(ConfigAck);
 
@@ -127,6 +165,14 @@ inline bool tryDecodeStateResponse(const void* data, std::size_t len, StateRespo
     }
     std::memcpy(&out, data, kStateResponseBytes);
     return out.message_type == static_cast<std::uint8_t>(MessageType::StateResponse);
+}
+
+inline bool tryDecodeStateCorrection(const void* data, std::size_t len, StateCorrection& out) {
+    if (len < kStateCorrectionBytes) {
+        return false;
+    }
+    std::memcpy(&out, data, kStateCorrectionBytes);
+    return out.message_type == static_cast<std::uint8_t>(MessageType::StateCorrection);
 }
 
 inline bool tryDecodeConfigCommand(const void* data, std::size_t len, ConfigCommand& out) {

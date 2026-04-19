@@ -108,6 +108,78 @@ bool test_joint_unit_conversion_radians_to_degrees()
                   "angles should be serialized in degrees");
 }
 
+bool test_control_step_packet_includes_fusion_diagnostics()
+{
+    telemetry::ControlStepTelemetry telemetry_sample{};
+    telemetry_sample.timestamp_us = TimePointUs{123'000};
+    telemetry_sample.status.loop_counter = 7;
+    telemetry_sample.status.active_mode = RobotMode::WALK;
+    telemetry_sample.status.bus_ok = true;
+    telemetry_sample.status.estimator_valid = true;
+    telemetry_sample.joint_targets.leg_states[0].joint_state[COXA].pos_rad = AngleRad{deg2rad(5.0)};
+    telemetry_sample.joint_targets.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{deg2rad(-10.0)};
+    telemetry_sample.joint_targets.leg_states[0].joint_state[TIBIA].pos_rad = AngleRad{deg2rad(15.0)};
+    telemetry_sample.fusion.has_data = true;
+    telemetry_sample.fusion.diagnostics.model_trust = 0.72;
+    telemetry_sample.fusion.diagnostics.resync_requested = true;
+    telemetry_sample.fusion.diagnostics.hard_reset_requested = false;
+    telemetry_sample.fusion.diagnostics.predictive_mode = true;
+    telemetry_sample.fusion.diagnostics.residuals.max_body_position_error_m = 0.04;
+    telemetry_sample.fusion.diagnostics.residuals.max_body_orientation_error_rad = 0.08;
+    telemetry_sample.fusion.diagnostics.residuals.contact_mismatch_ratio = 0.17;
+    telemetry_sample.fusion.diagnostics.residuals.terrain_residual_m = 0.02;
+    telemetry_sample.fusion.diagnostics.residuals.body_position_error_m = Vec3{0.01, -0.02, 0.03};
+    telemetry_sample.fusion.diagnostics.residuals.body_velocity_error_mps = Vec3{0.1, -0.2, 0.3};
+    telemetry_sample.fusion.diagnostics.residuals.body_orientation_error_rad = EulerAnglesRad3{0.01, 0.02, 0.03};
+    telemetry_sample.fusion.foot_contact_fusion[0].phase = ContactPhase::ConfirmedStance;
+    telemetry_sample.fusion.foot_contact_fusion[0].confidence = 0.91f;
+    telemetry_sample.fusion.foot_contact_fusion[0].touchdown_window_start_us = TimePointUs{100'000};
+    telemetry_sample.fusion.foot_contact_fusion[0].touchdown_window_end_us = TimePointUs{130'000};
+    telemetry_sample.fusion.foot_contact_fusion[0].last_transition_us = TimePointUs{110'000};
+    telemetry_sample.fusion.correction.has_data = true;
+    telemetry_sample.fusion.correction.mode = telemetry::FusionCorrectionMode::Strong;
+    telemetry_sample.fusion.correction.sample_id = 42;
+    telemetry_sample.fusion.correction.timestamp_us = TimePointUs{121'000};
+    telemetry_sample.fusion.correction.correction_strength = 0.77;
+    telemetry_sample.fusion.correction.residuals.max_body_position_error_m = 0.12;
+    telemetry_sample.fusion.correction.residuals.max_body_orientation_error_rad = 0.33;
+    telemetry_sample.fusion.correction.residuals.contact_mismatch_ratio = 0.26;
+    telemetry_sample.fusion.correction.residuals.terrain_residual_m = 0.04;
+
+    const std::string payload = telemetry_json::serializeControlStepPacket(telemetry_sample);
+
+    return expect(payload.find("\"type\":\"joints\"") != std::string::npos,
+                  "control step payload should use the joints schema type") &&
+           expect(payload.find("\"timestamp_ms\":123") != std::string::npos,
+                  "control step payload should include timestamp_ms") &&
+           expect(payload.find("\"loop_counter\":7") != std::string::npos,
+                  "control step payload should include loop counter") &&
+           expect(payload.find("\"fusion\":{") != std::string::npos,
+                  "control step payload should include fusion object") &&
+           expect(payload.find("\"model_trust\":0.72") != std::string::npos,
+                  "fusion payload should include model trust") &&
+           expect(payload.find("\"resync_requested\":true") != std::string::npos,
+                  "fusion payload should include resync flag") &&
+           expect(payload.find("\"predictive_mode\":true") != std::string::npos,
+                  "fusion payload should include predictive mode") &&
+           expect(payload.find("\"contact_mismatch_ratio\":0.17") != std::string::npos,
+                  "fusion payload should include contact mismatch ratio") &&
+           expect(payload.find("\"phase\":3") != std::string::npos,
+                  "fusion payload should include confirmed stance phase") &&
+           expect(payload.find("\"confidence\":0.91") != std::string::npos,
+                  "fusion payload should include per-foot confidence") &&
+           expect(payload.find("\"correction\":{\"has_data\":true,\"mode\":2") != std::string::npos,
+                  "correction payload should include strong mode") &&
+           expect(payload.find("\"sample_id\":42") != std::string::npos,
+                  "correction payload should include sample id") &&
+           expect(payload.find("\"timestamp_us\":121000") != std::string::npos,
+                  "correction payload should include timestamp") &&
+           expect(payload.find("\"correction_strength\":0.77") != std::string::npos,
+                  "correction payload should include correction strength") &&
+           expect(payload.find("\"terrain_residual_m\":0.04") != std::string::npos,
+                  "correction payload should include terrain residual");
+}
+
 } // namespace
 
 int main()
@@ -122,6 +194,9 @@ int main()
         return EXIT_FAILURE;
     }
     if (!test_joint_unit_conversion_radians_to_degrees()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_control_step_packet_includes_fusion_diagnostics()) {
         return EXIT_FAILURE;
     }
 

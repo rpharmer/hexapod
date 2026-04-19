@@ -46,6 +46,9 @@ int main() {
                 "neutral stance should estimate body above the ground plane") ||
         !expect(first_est.has_imu && first_est.imu.valid,
                 "software IMU should be synthesized from the foot contact plane when raw has no IMU") ||
+        !expect(first_est.has_fusion_diagnostics && first_est.foot_contacts[0] &&
+                    first_est.foot_contact_fusion[0].phase == ContactPhase::ConfirmedStance,
+                "fusion should confirm the initial stance contact state") ||
         !expect(std::abs(vecNorm(first_est.imu.accel_mps2) - 9.80665) < 1e-3,
                 "software IMU should report ~1g specific-force when the plane is near level")) {
         return EXIT_FAILURE;
@@ -60,6 +63,9 @@ int main() {
     const RobotState recent_est = estimator.update(no_contact_recent);
     if (!expect(recent_est.body_twist_state.body_trans_m.z > 0.0,
                 "recently touching feet should still support a ground estimate") ||
+        !expect(recent_est.has_fusion_diagnostics && recent_est.foot_contacts[0] &&
+                    recent_est.foot_contact_fusion[0].phase == ContactPhase::ConfirmedStance,
+                "brief contact loss should stay in confirmed stance while the hold window is open") ||
         !expect(std::abs(recent_est.leg_states[0].joint_state[COXA].vel_radps.value - 1.0) < 1e-6,
                 "joint velocity should be estimated from position delta over dt")) {
         return EXIT_FAILURE;
@@ -73,7 +79,9 @@ int main() {
     if (!expect(std::abs(stale_est.body_twist_state.body_trans_m.z) < 1e-9,
                 "stale no-contact window should clear ground estimate") ||
         !expect(!stale_est.has_body_twist_state && !stale_est.has_imu,
-                "without a plane estimate, software IMU should not be published")) {
+                "without a plane estimate, software IMU should not be published") ||
+        !expect(stale_est.has_fusion_diagnostics && !stale_est.foot_contacts[0],
+                "stale no-contact windows should drop confirmed stance")) {
         return EXIT_FAILURE;
     }
 

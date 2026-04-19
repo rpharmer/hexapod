@@ -20,6 +20,7 @@ public:
     explicit LocomotionCommandProcessor(control_config::LocomotionCommandConfig config = {});
 
     void setConfig(control_config::LocomotionCommandConfig config) { config_ = config; }
+    void reset();
 
     /**
      * Returns clamped-and-smoothed locomotion twist for this tick. When not walking, filtering

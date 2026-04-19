@@ -13,6 +13,19 @@ double GaitScheduler::wrap01(const double x) const {
     return gaitWrap01(x);
 }
 
+void GaitScheduler::reset() {
+    phase_accum_ = 0.0;
+    last_update_us_ = TimePointUs{};
+    committed_gait_ = GaitType::TRIPOD;
+    committed_initialized_ = false;
+    transition_from_snap_ = UnifiedGaitDescription{};
+    last_blended_ = UnifiedGaitDescription{};
+    transition_start_us_ = TimePointUs{};
+    have_last_blended_ = false;
+    last_cmd_vx_mps_ = 0.0;
+    last_cmd_vy_mps_ = 0.0;
+}
+
 GaitState GaitScheduler::update(const RobotState&,
                                 const MotionIntent& intent,
                                 const SafetyState& safety,

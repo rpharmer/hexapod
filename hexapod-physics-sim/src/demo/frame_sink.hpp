@@ -5,6 +5,7 @@
 #include <string>
 
 #include "minphys3d/core/body.hpp"
+#include "demo/terrain_patch.hpp"
 
 namespace minphys3d::demo {
 
@@ -19,6 +20,7 @@ public:
 
     virtual void begin_frame(int frame_index, float sim_time_s) = 0;
     virtual void emit_body(std::uint32_t body_id, const Body& body) = 0;
+    virtual void emit_terrain_patch(const TerrainPatch& terrain_patch) = 0;
     virtual void end_frame() = 0;
 };
 

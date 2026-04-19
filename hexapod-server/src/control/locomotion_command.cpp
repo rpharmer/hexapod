@@ -47,6 +47,13 @@ Vec3 lerpVec3(const Vec3& from, const Vec3& to, const double t) {
 LocomotionCommandProcessor::LocomotionCommandProcessor(control_config::LocomotionCommandConfig config)
     : config_(config) {}
 
+void LocomotionCommandProcessor::reset() {
+    filtered_ = BodyTwist{};
+    last_clock_ = TimePointUs{};
+    have_clock_ = false;
+    prev_walking_ = false;
+}
+
 BodyTwist LocomotionCommandProcessor::update(const MotionIntent& intent,
                                              const PlanarMotionCommand& planar,
                                              const TimePointUs clock_tick_us) {

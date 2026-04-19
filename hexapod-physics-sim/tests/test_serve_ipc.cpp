@@ -8,6 +8,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 #include <iostream>
 #include <thread>
 
@@ -45,6 +46,45 @@ bool recvAll(int fd, void* data, std::size_t len) {
         off += static_cast<std::size_t>(n);
     }
     return true;
+}
+
+int openUdpSocketWithRetry() {
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+        if (fd >= 0) {
+            return fd;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    return -1;
+}
+
+bool sendCorrection(int fd, const physics_sim::StateCorrection& correction) {
+    return sendAll(fd, &correction, physics_sim::kStateCorrectionBytes);
+}
+
+float YawAboutSimUp(const std::array<float, 4>& q) {
+    const float siny_cosp = 2.0f * (q[0] * q[2] + q[1] * q[3]);
+    const float cosy_cosp = 1.0f - 2.0f * (q[2] * q[2] + q[3] * q[3]);
+    return std::atan2(siny_cosp, cosy_cosp);
+}
+
+std::array<float, 4> QuaternionFromYaw(float yaw_rad) {
+    const float half = 0.5f * yaw_rad;
+    return {std::cos(half), 0.0f, std::sin(half), 0.0f};
+}
+
+std::uint16_t MinFiniteLidarMm(const physics_sim::StateResponse& rsp) {
+    std::uint16_t best = physics_sim::kMatrixLidarInvalidMm;
+    for (std::uint16_t mm : rsp.matrix_lidar_ranges_mm) {
+        if (mm == physics_sim::kMatrixLidarInvalidMm) {
+            continue;
+        }
+        if (best == physics_sim::kMatrixLidarInvalidMm || mm < best) {
+            best = mm;
+        }
+    }
+    return best;
 }
 
 } // namespace
@@ -89,9 +129,10 @@ int main(int argc, char** argv) {
 
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-    int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+    int fd = openUdpSocketWithRetry();
     if (fd < 0) {
         std::cerr << "socket failed\n";
+        std::perror("socket");
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return 3;
@@ -228,6 +269,31 @@ int main(int argc, char** argv) {
         return 12;
     }
 
+    const std::array<float, 3> base_pos = peek_rsp.body_position;
+    const std::array<float, 4> base_ori = peek_rsp.body_orientation;
+    const std::uint16_t base_min_lidar = MinFiniteLidarMm(peek_rsp);
+
+    physics_sim::StateCorrection lift{};
+    lift.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection);
+    lift.sequence_id = 1;
+    lift.timestamp_us = 1000;
+    lift.flags = physics_sim::kStateCorrectionPoseValid |
+                 physics_sim::kStateCorrectionTwistValid |
+                 physics_sim::kStateCorrectionHardReset;
+    lift.correction_strength = 1.0f;
+    lift.body_position = base_pos;
+    lift.body_position[1] += 0.25f;
+    lift.body_orientation = base_ori;
+    lift.body_linear_velocity = {0.0f, 0.0f, 0.0f};
+    lift.body_angular_velocity = {0.0f, 0.0f, 0.0f};
+    if (!sendCorrection(fd, lift)) {
+        std::cerr << "send lift correction failed\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 13;
+    }
+
     physics_sim::StepCommand step{};
     step.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StepCommand);
     step.sequence_id = 42;
@@ -240,7 +306,7 @@ int main(int argc, char** argv) {
         ::close(fd);
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
-        return 13;
+        return 14;
     }
 
     alignas(physics_sim::StateResponse) char rsp_buf[sizeof(physics_sim::StateResponse)]{};
@@ -249,7 +315,7 @@ int main(int argc, char** argv) {
         ::close(fd);
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
-        return 14;
+        return 15;
     }
     physics_sim::StateResponse rsp{};
     if (!physics_sim::tryDecodeStateResponse(rsp_buf, physics_sim::kStateResponseBytes, rsp)) {
@@ -257,21 +323,267 @@ int main(int argc, char** argv) {
         ::close(fd);
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
-        return 14;
-    }
-    if (rsp.sequence_id != 42) {
-        std::cerr << "sequence mismatch\n";
-        ::close(fd);
-        ::kill(pid, SIGTERM);
-        ::waitpid(pid, nullptr, 0);
         return 15;
     }
-    if (expect_obstacles && rsp.obstacle_count == 0) {
-        std::cerr << "step expected obstacle footprints from appended scene\n";
+    if (rsp.sequence_id != 42) {
+        std::cerr << "sequence mismatch after lift\n";
         ::close(fd);
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return 16;
+    }
+    if (rsp.body_position[1] < base_pos[1] + 0.20f) {
+        std::cerr << "lift expected chassis to move upward\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 17;
+    }
+    for (std::uint8_t contact : rsp.foot_contacts) {
+        if (contact != 0) {
+            std::cerr << "lift expected airborne robot to have no raw foot contacts\n";
+            ::close(fd);
+            ::kill(pid, SIGTERM);
+            ::waitpid(pid, nullptr, 0);
+            return 17;
+        }
+    }
+
+    physics_sim::StateCorrection contact{};
+    contact.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection);
+    contact.sequence_id = 2;
+    contact.timestamp_us = 2000;
+    contact.flags = physics_sim::kStateCorrectionContactValid;
+    contact.correction_strength = 1.0f;
+    for (std::size_t i = 0; i < contact.foot_contact_phase.size(); ++i) {
+        contact.foot_contact_phase[i] = static_cast<std::uint8_t>(physics_sim::ContactPhase::ConfirmedStance);
+        contact.foot_contact_confidence[i] = 1.0f;
+    }
+    if (!sendCorrection(fd, contact)) {
+        std::cerr << "send contact correction failed\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 18;
+    }
+
+    step.sequence_id = 43;
+    if (!sendAll(fd, &step, physics_sim::kStepCommandBytes)) {
+        std::cerr << "send contact StepCommand failed\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 19;
+    }
+    if (!recvAll(fd, rsp_buf, physics_sim::kStateResponseBytes)) {
+        std::cerr << "contact StateResponse recv failed\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 20;
+    }
+    if (!physics_sim::tryDecodeStateResponse(rsp_buf, physics_sim::kStateResponseBytes, rsp)) {
+        std::cerr << "contact StateResponse invalid\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 20;
+    }
+    if (rsp.sequence_id != 43) {
+        std::cerr << "sequence mismatch after contact correction\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 21;
+    }
+    for (std::uint8_t contact_bit : rsp.foot_contacts) {
+        if (contact_bit != 0) {
+            std::cerr << "contact correction must not force raw manifold contacts\n";
+            ::close(fd);
+            ::kill(pid, SIGTERM);
+            ::waitpid(pid, nullptr, 0);
+            return 21;
+        }
+    }
+    if (rsp.body_position[1] < base_pos[1] + 0.20f) {
+        std::cerr << "contact correction should not collapse the airborne chassis\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 21;
+    }
+
+    physics_sim::StateCorrection yaw{};
+    yaw.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection);
+    yaw.sequence_id = 3;
+    yaw.timestamp_us = 3000;
+    yaw.flags = physics_sim::kStateCorrectionPoseValid;
+    yaw.correction_strength = 0.75f;
+    yaw.body_position = rsp.body_position;
+    const float current_yaw = YawAboutSimUp(rsp.body_orientation);
+    const float target_yaw = current_yaw + 0.60f;
+    yaw.body_orientation = QuaternionFromYaw(target_yaw);
+    if (!sendCorrection(fd, yaw)) {
+        std::cerr << "send yaw correction failed\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 22;
+    }
+
+    step.sequence_id = 44;
+    if (!sendAll(fd, &step, physics_sim::kStepCommandBytes)) {
+        std::cerr << "send yaw StepCommand failed\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 23;
+    }
+    if (!recvAll(fd, rsp_buf, physics_sim::kStateResponseBytes)) {
+        std::cerr << "yaw StateResponse recv failed\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 24;
+    }
+    if (!physics_sim::tryDecodeStateResponse(rsp_buf, physics_sim::kStateResponseBytes, rsp)) {
+        std::cerr << "yaw StateResponse invalid\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 24;
+    }
+    const float blended_yaw = YawAboutSimUp(rsp.body_orientation);
+    const float yaw_delta = std::atan2(std::sin(blended_yaw - current_yaw), std::cos(blended_yaw - current_yaw));
+    if (!(std::abs(yaw_delta) > 0.03f && std::abs(yaw_delta) < 0.60f)) {
+        std::cerr << "yaw correction should blend, delta=" << yaw_delta << "\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 25;
+    }
+
+    physics_sim::StateCorrection reset{};
+    reset.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection);
+    reset.sequence_id = 4;
+    reset.timestamp_us = 4000;
+    reset.flags = physics_sim::kStateCorrectionPoseValid |
+                  physics_sim::kStateCorrectionTwistValid |
+                  physics_sim::kStateCorrectionTerrainValid |
+                  physics_sim::kStateCorrectionHardReset;
+    reset.correction_strength = 1.0f;
+    reset.body_position = base_pos;
+    reset.body_orientation = base_ori;
+    reset.body_linear_velocity = {0.0f, 0.0f, 0.0f};
+    reset.body_angular_velocity = {0.0f, 0.0f, 0.0f};
+    reset.terrain_height_m = base_pos[1];
+    reset.terrain_normal = {0.0f, 1.0f, 0.0f};
+    if (!sendCorrection(fd, reset)) {
+        std::cerr << "send reset correction failed\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 26;
+    }
+
+    step.sequence_id = 45;
+    if (!sendAll(fd, &step, physics_sim::kStepCommandBytes)) {
+        std::cerr << "send reset StepCommand failed\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 27;
+    }
+    if (!recvAll(fd, rsp_buf, physics_sim::kStateResponseBytes)) {
+        std::cerr << "reset StateResponse recv failed\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 28;
+    }
+    if (!physics_sim::tryDecodeStateResponse(rsp_buf, physics_sim::kStateResponseBytes, rsp)) {
+        std::cerr << "reset StateResponse invalid\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 28;
+    }
+    if (rsp.sequence_id != 45) {
+        std::cerr << "sequence mismatch after reset\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 29;
+    }
+    if (std::abs(rsp.body_position[1] - base_pos[1]) > 0.05f) {
+        std::cerr << "reset should restore the chassis height\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 30;
+    }
+    if (std::abs(std::atan2(std::sin(YawAboutSimUp(rsp.body_orientation) - YawAboutSimUp(base_ori)),
+                            std::cos(YawAboutSimUp(rsp.body_orientation) - YawAboutSimUp(base_ori)))) > 0.10f) {
+        std::cerr << "reset should restore the heading\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 30;
+    }
+    if (expect_obstacles && rsp.obstacle_count == 0) {
+        std::cerr << "reset expected obstacle footprints from appended scene\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 31;
+    }
+
+    physics_sim::StateCorrection terrain{};
+    terrain.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection);
+    terrain.sequence_id = 0;
+    terrain.timestamp_us = 900;
+    terrain.flags = physics_sim::kStateCorrectionTerrainValid;
+    terrain.correction_strength = 0.85f;
+    terrain.terrain_height_m = base_pos[1] + 0.14f;
+    terrain.terrain_normal = {0.0f, 1.0f, 0.0f};
+    if (!sendCorrection(fd, terrain)) {
+        std::cerr << "send terrain correction failed\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 32;
+    }
+
+    if (!sendAll(fd, &peek, physics_sim::kStepCommandBytes)) {
+        std::cerr << "send terrain peek StepCommand failed\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 33;
+    }
+    if (!recvAll(fd, peek_buf, physics_sim::kStateResponseBytes)) {
+        std::cerr << "terrain peek StateResponse recv failed\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 34;
+    }
+    if (!physics_sim::tryDecodeStateResponse(peek_buf, physics_sim::kStateResponseBytes, peek_rsp)) {
+        std::cerr << "terrain peek StateResponse invalid\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 34;
+    }
+    const std::uint16_t terrain_min_lidar = MinFiniteLidarMm(peek_rsp);
+    if (terrain_min_lidar == physics_sim::kMatrixLidarInvalidMm ||
+        terrain_min_lidar >= base_min_lidar) {
+        std::cerr << "terrain correction should bring some lidar returns closer (base="
+                  << base_min_lidar << " terrain=" << terrain_min_lidar << ")\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 35;
     }
 
     ::close(fd);

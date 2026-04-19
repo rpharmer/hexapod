@@ -177,6 +177,49 @@ void parseTuningSection(const toml::value& root,
   out.footTerrainSwingXYNudgeBlend = config_validation::parseDoubleWithFallback(
       root, "Tuning.FootTerrainSwingXYNudgeBlend", control_config::kDefaultFootTerrainSwingXYNudgeBlend, 0.0, 1.0,
       "tuning", logger);
+
+  out.fusionContactDebounceSamples = config_validation::parseIntWithFallback(
+      root, "Tuning.FusionContactDebounceSamples", control_config::kDefaultFusionContactDebounceSamples, 1, 16,
+      "tuning", logger);
+  out.fusionTouchdownWindowMs = config_validation::parseIntWithFallback(
+      root, "Tuning.FusionTouchdownWindowMs", control_config::kDefaultFusionTouchdownWindowMs, 1, 2000,
+      "tuning", logger);
+  out.fusionContactHoldWindowMs = config_validation::parseIntWithFallback(
+      root, "Tuning.FusionContactHoldWindowMs", control_config::kDefaultFusionContactHoldWindowMs, 1, 4000,
+      "tuning", logger);
+  out.fusionTrustDecayPerMismatch = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FusionTrustDecayPerMismatch", control_config::kDefaultFusionTrustDecayPerMismatch, 0.0, 1.0,
+      "tuning", logger);
+  out.fusionPredictiveTrustBias = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FusionPredictiveTrustBias", control_config::kDefaultFusionPredictiveTrustBias, 0.0, 1.0,
+      "tuning", logger);
+  out.fusionSoftPoseResyncM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FusionSoftPoseResyncM", control_config::kDefaultFusionSoftPoseResyncM, 0.0, 0.5,
+      "tuning", logger);
+  out.fusionHardPoseResyncM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FusionHardPoseResyncM", control_config::kDefaultFusionHardPoseResyncM, 0.01, 2.0,
+      "tuning", logger);
+  out.fusionSoftOrientationResyncRad = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FusionSoftOrientationResyncRad", control_config::kDefaultFusionSoftOrientationResyncRad,
+      0.0, 1.5, "tuning", logger);
+  out.fusionHardOrientationResyncRad = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FusionHardOrientationResyncRad", control_config::kDefaultFusionHardOrientationResyncRad,
+      0.05, 3.14, "tuning", logger);
+  out.fusionSoftContactMismatchRatio = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FusionSoftContactMismatchRatio", control_config::kDefaultFusionSoftContactMismatchRatio,
+      0.0, 1.0, "tuning", logger);
+  out.fusionHardContactMismatchRatio = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FusionHardContactMismatchRatio", control_config::kDefaultFusionHardContactMismatchRatio,
+      0.0, 1.0, "tuning", logger);
+  out.fusionCorrectionHoldSamples = config_validation::parseIntWithFallback(
+      root, "Tuning.FusionCorrectionHoldSamples", control_config::kDefaultFusionCorrectionHoldSamples,
+      1, 32, "tuning", logger);
+  out.fusionCorrectionStrongReleaseFactor = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FusionCorrectionStrongReleaseFactor",
+      control_config::kDefaultFusionCorrectionStrongReleaseFactor, 0.1, 1.0, "tuning", logger);
+  out.fusionCorrectionSoftReleaseFactor = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FusionCorrectionSoftReleaseFactor",
+      control_config::kDefaultFusionCorrectionSoftReleaseFactor, 0.1, 1.0, "tuning", logger);
 }
 
 } // namespace tuning_section_parser

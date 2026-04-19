@@ -84,6 +84,22 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.foot_terrain.swing_xy_nudge_window_cells =
         std::clamp(config.footTerrainSwingXYNudgeWindowCells, 0, 8);
 
+    parsed.fusion.contact_debounce_samples =
+        std::clamp(config.fusionContactDebounceSamples, 1, 16);
+    parsed.fusion.touchdown_window = std::chrono::milliseconds{config.fusionTouchdownWindowMs};
+    parsed.fusion.contact_hold_window = std::chrono::milliseconds{config.fusionContactHoldWindowMs};
+    parsed.fusion.trust_decay_per_mismatch = config.fusionTrustDecayPerMismatch;
+    parsed.fusion.predictive_trust_bias = config.fusionPredictiveTrustBias;
+    parsed.fusion.soft_pose_resync_m = config.fusionSoftPoseResyncM;
+    parsed.fusion.hard_pose_resync_m = config.fusionHardPoseResyncM;
+    parsed.fusion.soft_orientation_resync_rad = config.fusionSoftOrientationResyncRad;
+    parsed.fusion.hard_orientation_resync_rad = config.fusionHardOrientationResyncRad;
+    parsed.fusion.soft_contact_mismatch_ratio = config.fusionSoftContactMismatchRatio;
+    parsed.fusion.hard_contact_mismatch_ratio = config.fusionHardContactMismatchRatio;
+    parsed.fusion.correction_mode_hold_samples = config.fusionCorrectionHoldSamples;
+    parsed.fusion.correction_mode_strong_release_factor = config.fusionCorrectionStrongReleaseFactor;
+    parsed.fusion.correction_mode_soft_release_factor = config.fusionCorrectionSoftReleaseFactor;
+
     return parsed;
 }
 

@@ -30,6 +30,13 @@ namespace {
     return t + (R * p_body);
 }
 
+double fusionTrustScale(const RobotState& est) {
+    if (!est.has_fusion_diagnostics) {
+        return 1.0;
+    }
+    return std::clamp(est.fusion.model_trust, 0.20, 1.0);
+}
+
 } // namespace
 
 double sampleMaxHitZWorldM(const LocalMapSnapshot& snap, const double world_x_m, const double world_y_m) {
@@ -91,7 +98,7 @@ void applyTerrainStanceZBias(const LocalMapSnapshot& snap,
 
     const double mean = sum / static_cast<double>(finite_count);
     const double dz_cap = std::max(0.0, cfg.stance_plane_dz_max_m);
-    const double blend = std::clamp(cfg.stance_plane_blend, 0.0, 1.0);
+    const double blend = std::clamp(cfg.stance_plane_blend * fusionTrustScale(est), 0.0, 1.0);
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
         const double zg = gz[static_cast<std::size_t>(leg)];
@@ -169,7 +176,8 @@ void applyTerrainSwingXYNudge(const LocalMapSnapshot& snap,
     if (n <= 1.0e-9) {
         return;
     }
-    const double step = std::min(cfg.swing_xy_nudge_max_m, n) * std::clamp(cfg.swing_xy_nudge_blend, 0.0, 1.0);
+    const double step = std::min(cfg.swing_xy_nudge_max_m, n) *
+                        std::clamp(cfg.swing_xy_nudge_blend * fusionTrustScale(est), 0.0, 1.0);
     foot_pos_body_m->x += (delta_b.x / n) * step;
     foot_pos_body_m->y += (delta_b.y / n) * step;
 }
@@ -198,7 +206,7 @@ void applyTerrainSwingClearance(const LocalMapSnapshot& snap,
     const double foot_z_world_est = p_w.z;
     const double margin = std::max(0.0, cfg.swing_margin_m);
     const double max_lift = std::max(0.0, cfg.swing_max_lift_m);
-    const double blend = std::clamp(cfg.swing_blend, 0.0, 1.0);
+    const double blend = std::clamp(cfg.swing_blend * fusionTrustScale(est), 0.0, 1.0);
     if (z_top <= foot_z_world_est + margin) {
         return;
     }

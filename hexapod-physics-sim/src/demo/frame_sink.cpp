@@ -26,6 +26,7 @@ class DummySink final : public FrameSink {
 public:
     void begin_frame(int, float) override {}
     void emit_body(std::uint32_t, const Body&) override {}
+    void emit_terrain_patch(const TerrainPatch&) override {}
     void end_frame() override {}
 };
 
@@ -69,6 +70,22 @@ public:
         bodies_.push_back({body_id, body});
     }
 
+    void emit_terrain_patch(const TerrainPatch& terrain_patch) override {
+        terrain_patch_snapshot_.valid = terrain_patch.initialized();
+        if (!terrain_patch_snapshot_.valid) {
+            terrain_patch_snapshot_ = {};
+            return;
+        }
+
+        terrain_patch_snapshot_.config = terrain_patch.config();
+        terrain_patch_snapshot_.center_world = terrain_patch.center_world();
+        terrain_patch_snapshot_.base_height_m = terrain_patch.base_height_m();
+        terrain_patch_snapshot_.last_normal = terrain_patch.last_normal();
+        terrain_patch_snapshot_.last_plane_height_m = terrain_patch.last_plane_height_m();
+        terrain_patch_snapshot_.heights = terrain_patch.surface_heights_m();
+        terrain_patch_snapshot_.confidences = terrain_patch.confidences();
+    }
+
     void end_frame() override {
         if (!valid_) {
             return;
@@ -83,6 +100,10 @@ public:
             }
 
             send_payload(BuildFrameMessage(snapshot.id, snapshot.body));
+        }
+
+        if (terrain_patch_snapshot_.valid) {
+            send_payload(BuildTerrainPatchMessage(terrain_patch_snapshot_));
         }
     }
 
@@ -276,6 +297,56 @@ private:
         Body body{};
     };
 
+    struct TerrainPatchSnapshot {
+        bool valid = false;
+        TerrainPatchConfig config{};
+        Vec3 center_world{};
+        float base_height_m = 0.0f;
+        Vec3 last_normal{0.0f, 1.0f, 0.0f};
+        float last_plane_height_m = 0.0f;
+        std::vector<float> heights{};
+        std::vector<float> confidences{};
+    };
+
+    std::string BuildFloatArrayJson(const std::vector<float>& values) const {
+        std::ostringstream out;
+        out << "[";
+        for (std::size_t index = 0; index < values.size(); ++index) {
+            if (index > 0) {
+                out << ",";
+            }
+            out << values[index];
+        }
+        out << "]";
+        return out.str();
+    }
+
+    std::string BuildTerrainPatchMessage(const TerrainPatchSnapshot& terrain) const {
+        std::ostringstream out;
+        out << std::fixed << std::setprecision(6);
+        out << "{\"schema_version\":1,\"message_type\":\"terrain_patch\""
+            << ",\"frame\":" << frame_index_
+            << ",\"sim_time_s\":" << sim_time_s_
+            << ",\"rows\":" << terrain.config.rows
+            << ",\"cols\":" << terrain.config.cols
+            << ",\"cell_size_m\":" << terrain.config.cell_size_m
+            << ",\"base_margin_m\":" << terrain.config.base_margin_m
+            << ",\"min_cell_thickness_m\":" << terrain.config.min_cell_thickness_m
+            << ",\"influence_sigma_m\":" << terrain.config.influence_sigma_m
+            << ",\"plane_confidence\":" << terrain.config.plane_confidence
+            << ",\"confidence_half_life_s\":" << terrain.config.confidence_half_life_s
+            << ",\"base_update_blend\":" << terrain.config.base_update_blend
+            << ",\"decay_update_boost\":" << terrain.config.decay_update_boost
+            << ",\"center\":[" << terrain.center_world.x << "," << terrain.center_world.y << "," << terrain.center_world.z << "]"
+            << ",\"base_height_m\":" << terrain.base_height_m
+            << ",\"plane_height_m\":" << terrain.last_plane_height_m
+            << ",\"plane_normal\":[" << terrain.last_normal.x << "," << terrain.last_normal.y << "," << terrain.last_normal.z << "]"
+            << ",\"heights\":" << BuildFloatArrayJson(terrain.heights)
+            << ",\"confidences\":" << BuildFloatArrayJson(terrain.confidences)
+            << "}";
+        return out.str();
+    }
+
     std::string host_;
     int port_ = 0;
     int socket_fd_ = -1;
@@ -285,6 +356,7 @@ private:
     int frame_index_ = 0;
     float sim_time_s_ = 0.0f;
     std::vector<BodySnapshot> bodies_{};
+    TerrainPatchSnapshot terrain_patch_snapshot_{};
     std::map<std::uint32_t, BodyStaticDescriptor> last_static_descriptors_{};
 };
 #endif

@@ -190,6 +190,12 @@ bool checkWalkCase(const std::string& label,
         return expect(false, label + ": " + ex.what());
     }
 
+    const RobotState fused_snapshot = runtime.estimatedSnapshot();
+    if (!expect(fused_snapshot.has_fusion_diagnostics,
+                label + ": estimator should publish fusion diagnostics during live sim walking")) {
+        return false;
+    }
+
     const Vec3 delta = result.end_position - result.start_position;
     const double horizontal_distance = std::hypot(delta.x, delta.y);
     const double commanded_speed = walk_motion.speed_mps;

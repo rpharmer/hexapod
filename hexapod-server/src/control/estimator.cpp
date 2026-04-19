@@ -100,6 +100,21 @@ bool solveGroundPlane(const std::array<Vec3, kNumLegs>& points,
 
 } // namespace
 
+void SimpleEstimator::configure(const control_config::FusionConfig& config) {
+    fusion_.configure(config);
+}
+
+void SimpleEstimator::reset() {
+    fusion_.reset();
+    last_contact_points_body_m_.fill(Vec3{});
+    last_contact_timestamps_.fill(TimePointUs{});
+    last_leg_states_.fill(LegState{});
+    last_leg_timestamp_ = TimePointUs{};
+    last_twist_timestamp_ = TimePointUs{};
+    last_twist_pos_rad_ = Vec3{};
+    last_body_trans_m_ = Vec3{};
+}
+
 RobotState SimpleEstimator::update(const RobotState& raw) {
     RobotState est{};
     est.has_body_twist_state = false;
@@ -190,6 +205,7 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
         last_body_trans_m_ = est.body_twist_state.body_trans_m;
     }
 
-    fillSoftwareImuIfNoHardware(raw, est);
-    return est;
+    RobotState fused = fusion_.update(est, state_fusion::FusionSourceMode::Measured);
+    fillSoftwareImuIfNoHardware(raw, fused);
+    return fused;
 }

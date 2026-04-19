@@ -192,6 +192,19 @@ test_contact_foot_response/fast:
 .PHONY : test_contact_foot_response/fast
 
 #=============================================================================
+# Target rules for targets named test_state_fusion
+
+# Build rule for target.
+test_state_fusion: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_state_fusion
+.PHONY : test_state_fusion
+
+# fast build rule for target.
+test_state_fusion/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_state_fusion.dir/build.make CMakeFiles/test_state_fusion.dir/build
+.PHONY : test_state_fusion/fast
+
+#=============================================================================
 # Target rules for targets named test_imu_physics
 
 # Build rule for target.
@@ -320,6 +333,19 @@ test_foot_reachability: cmake_check_build_system
 test_foot_reachability/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foot_reachability.dir/build.make CMakeFiles/test_foot_reachability.dir/build
 .PHONY : test_foot_reachability/fast
+
+#=============================================================================
+# Target rules for targets named test_foot_terrain
+
+# Build rule for target.
+test_foot_terrain: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_foot_terrain
+.PHONY : test_foot_terrain
+
+# fast build rule for target.
+test_foot_terrain/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foot_terrain.dir/build.make CMakeFiles/test_foot_terrain.dir/build
+.PHONY : test_foot_terrain/fast
 
 #=============================================================================
 # Target rules for targets named test_swing_trajectory
@@ -1419,6 +1445,30 @@ src/control/foot_reachability.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/foot_reachability.cpp.s
 .PHONY : src/control/foot_reachability.cpp.s
 
+src/control/foot_terrain.o: src/control/foot_terrain.cpp.o
+.PHONY : src/control/foot_terrain.o
+
+# target to build an object file
+src/control/foot_terrain.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/foot_terrain.cpp.o
+.PHONY : src/control/foot_terrain.cpp.o
+
+src/control/foot_terrain.i: src/control/foot_terrain.cpp.i
+.PHONY : src/control/foot_terrain.i
+
+# target to preprocess a source file
+src/control/foot_terrain.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/foot_terrain.cpp.i
+.PHONY : src/control/foot_terrain.cpp.i
+
+src/control/foot_terrain.s: src/control/foot_terrain.cpp.s
+.PHONY : src/control/foot_terrain.s
+
+# target to generate assembly for a file
+src/control/foot_terrain.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/foot_terrain.cpp.s
+.PHONY : src/control/foot_terrain.cpp.s
+
 src/control/foothold_planner.o: src/control/foothold_planner.cpp.o
 .PHONY : src/control/foothold_planner.o
 
@@ -2162,6 +2212,30 @@ src/control/servo_dynamics_fit.s: src/control/servo_dynamics_fit.cpp.s
 src/control/servo_dynamics_fit.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/servo_dynamics_fit.cpp.s
 .PHONY : src/control/servo_dynamics_fit.cpp.s
+
+src/control/state_fusion.o: src/control/state_fusion.cpp.o
+.PHONY : src/control/state_fusion.o
+
+# target to build an object file
+src/control/state_fusion.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/state_fusion.cpp.o
+.PHONY : src/control/state_fusion.cpp.o
+
+src/control/state_fusion.i: src/control/state_fusion.cpp.i
+.PHONY : src/control/state_fusion.i
+
+# target to preprocess a source file
+src/control/state_fusion.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/state_fusion.cpp.i
+.PHONY : src/control/state_fusion.cpp.i
+
+src/control/state_fusion.s: src/control/state_fusion.cpp.s
+.PHONY : src/control/state_fusion.s
+
+# target to generate assembly for a file
+src/control/state_fusion.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/state_fusion.cpp.s
+.PHONY : src/control/state_fusion.cpp.s
 
 src/control/status_reporter.o: src/control/status_reporter.cpp.o
 .PHONY : src/control/status_reporter.o
@@ -3026,6 +3100,30 @@ tests/test_foot_reachability.s: tests/test_foot_reachability.cpp.s
 tests/test_foot_reachability.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foot_reachability.dir/build.make CMakeFiles/test_foot_reachability.dir/tests/test_foot_reachability.cpp.s
 .PHONY : tests/test_foot_reachability.cpp.s
+
+tests/test_foot_terrain.o: tests/test_foot_terrain.cpp.o
+.PHONY : tests/test_foot_terrain.o
+
+# target to build an object file
+tests/test_foot_terrain.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foot_terrain.dir/build.make CMakeFiles/test_foot_terrain.dir/tests/test_foot_terrain.cpp.o
+.PHONY : tests/test_foot_terrain.cpp.o
+
+tests/test_foot_terrain.i: tests/test_foot_terrain.cpp.i
+.PHONY : tests/test_foot_terrain.i
+
+# target to preprocess a source file
+tests/test_foot_terrain.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foot_terrain.dir/build.make CMakeFiles/test_foot_terrain.dir/tests/test_foot_terrain.cpp.i
+.PHONY : tests/test_foot_terrain.cpp.i
+
+tests/test_foot_terrain.s: tests/test_foot_terrain.cpp.s
+.PHONY : tests/test_foot_terrain.s
+
+# target to generate assembly for a file
+tests/test_foot_terrain.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foot_terrain.dir/build.make CMakeFiles/test_foot_terrain.dir/tests/test_foot_terrain.cpp.s
+.PHONY : tests/test_foot_terrain.cpp.s
 
 tests/test_foothold_planner.o: tests/test_foothold_planner.cpp.o
 .PHONY : tests/test_foothold_planner.o
@@ -4155,6 +4253,30 @@ tests/test_simple_estimator_ground_plane.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_simple_estimator_ground_plane.dir/build.make CMakeFiles/test_simple_estimator_ground_plane.dir/tests/test_simple_estimator_ground_plane.cpp.s
 .PHONY : tests/test_simple_estimator_ground_plane.cpp.s
 
+tests/test_state_fusion.o: tests/test_state_fusion.cpp.o
+.PHONY : tests/test_state_fusion.o
+
+# target to build an object file
+tests/test_state_fusion.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_state_fusion.dir/build.make CMakeFiles/test_state_fusion.dir/tests/test_state_fusion.cpp.o
+.PHONY : tests/test_state_fusion.cpp.o
+
+tests/test_state_fusion.i: tests/test_state_fusion.cpp.i
+.PHONY : tests/test_state_fusion.i
+
+# target to preprocess a source file
+tests/test_state_fusion.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_state_fusion.dir/build.make CMakeFiles/test_state_fusion.dir/tests/test_state_fusion.cpp.i
+.PHONY : tests/test_state_fusion.cpp.i
+
+tests/test_state_fusion.s: tests/test_state_fusion.cpp.s
+.PHONY : tests/test_state_fusion.s
+
+# target to generate assembly for a file
+tests/test_state_fusion.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_state_fusion.dir/build.make CMakeFiles/test_state_fusion.dir/tests/test_state_fusion.cpp.s
+.PHONY : tests/test_state_fusion.cpp.s
+
 tests/test_swing_trajectory.o: tests/test_swing_trajectory.cpp.o
 .PHONY : tests/test_swing_trajectory.o
 
@@ -4343,6 +4465,7 @@ help:
 	@echo "... test_contact_foot_response"
 	@echo "... test_control_pipeline_sanity"
 	@echo "... test_foot_reachability"
+	@echo "... test_foot_terrain"
 	@echo "... test_foothold_planner"
 	@echo "... test_freshness_policy"
 	@echo "... test_gait_params"
@@ -4382,6 +4505,7 @@ help:
 	@echo "... test_servo_calibration_unified_conversion"
 	@echo "... test_shutdown_summary_logging"
 	@echo "... test_simple_estimator_ground_plane"
+	@echo "... test_state_fusion"
 	@echo "... test_swing_trajectory"
 	@echo "... test_telemetry_json_serialization"
 	@echo "... test_toml_parser_sections"
@@ -4458,6 +4582,9 @@ help:
 	@echo "... src/control/foot_reachability.o"
 	@echo "... src/control/foot_reachability.i"
 	@echo "... src/control/foot_reachability.s"
+	@echo "... src/control/foot_terrain.o"
+	@echo "... src/control/foot_terrain.i"
+	@echo "... src/control/foot_terrain.s"
 	@echo "... src/control/foothold_planner.o"
 	@echo "... src/control/foothold_planner.i"
 	@echo "... src/control/foothold_planner.s"
@@ -4551,6 +4678,9 @@ help:
 	@echo "... src/control/servo_dynamics_fit.o"
 	@echo "... src/control/servo_dynamics_fit.i"
 	@echo "... src/control/servo_dynamics_fit.s"
+	@echo "... src/control/state_fusion.o"
+	@echo "... src/control/state_fusion.i"
+	@echo "... src/control/state_fusion.s"
 	@echo "... src/control/status_reporter.o"
 	@echo "... src/control/status_reporter.i"
 	@echo "... src/control/status_reporter.s"
@@ -4659,6 +4789,9 @@ help:
 	@echo "... tests/test_foot_reachability.o"
 	@echo "... tests/test_foot_reachability.i"
 	@echo "... tests/test_foot_reachability.s"
+	@echo "... tests/test_foot_terrain.o"
+	@echo "... tests/test_foot_terrain.i"
+	@echo "... tests/test_foot_terrain.s"
 	@echo "... tests/test_foothold_planner.o"
 	@echo "... tests/test_foothold_planner.i"
 	@echo "... tests/test_foothold_planner.s"
@@ -4800,6 +4933,9 @@ help:
 	@echo "... tests/test_simple_estimator_ground_plane.o"
 	@echo "... tests/test_simple_estimator_ground_plane.i"
 	@echo "... tests/test_simple_estimator_ground_plane.s"
+	@echo "... tests/test_state_fusion.o"
+	@echo "... tests/test_state_fusion.i"
+	@echo "... tests/test_state_fusion.s"
 	@echo "... tests/test_swing_trajectory.o"
 	@echo "... tests/test_swing_trajectory.i"
 	@echo "... tests/test_swing_trajectory.s"

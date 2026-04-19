@@ -12,6 +12,22 @@
 
 namespace telemetry {
 
+enum class FusionCorrectionMode : std::uint8_t {
+    None = 0,
+    Soft = 1,
+    Strong = 2,
+    HardReset = 3,
+};
+
+struct FusionCorrectionTelemetry {
+    bool has_data{false};
+    FusionCorrectionMode mode{FusionCorrectionMode::None};
+    uint64_t sample_id{0};
+    TimePointUs timestamp_us{};
+    double correction_strength{0.0};
+    FusionResidualSummary residuals{};
+};
+
 inline constexpr int kDefaultPublishPeriodMs = 50;
 inline constexpr int kDefaultGeometryRefreshPeriodMs = 2000;
 inline constexpr int kDefaultUdpPort = 9870;
@@ -24,10 +40,18 @@ struct TelemetryPublisherConfig {
     int geometry_refresh_period_ms{kDefaultGeometryRefreshPeriodMs};
 };
 
+struct FusionTelemetrySnapshot {
+    bool has_data{false};
+    FusionDiagnostics diagnostics{};
+    std::array<FootContactFusion, kNumLegs> foot_contact_fusion{};
+    FusionCorrectionTelemetry correction{};
+};
+
 struct ControlStepTelemetry {
     RobotState estimated_state{};
     JointTargets joint_targets{};
     ControlStatus status{};
+    FusionTelemetrySnapshot fusion{};
     std::optional<NavigationMonitorSnapshot> navigation{};
     TimePointUs timestamp_us{};
 };

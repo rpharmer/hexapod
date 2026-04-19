@@ -21,6 +21,13 @@ constexpr double kNominalReachFraction = 0.55;
 constexpr double kReachMarginM = 0.005;
 constexpr double kFootReachInsetM = 0.004;
 
+double fusionTrustScale(const RobotState& est) {
+    if (!est.has_fusion_diagnostics) {
+        return 1.0;
+    }
+    return std::clamp(est.fusion.model_trust, 0.20, 1.0);
+}
+
 void strideDirectionXY(const double rx,
                        const double ry,
                        const GaitType gait,
@@ -124,8 +131,9 @@ LegTargets BodyController::update(const RobotState& est,
         intent.twist.body_trans_m.y,
         0.0};
 
+    const double trust_scale = fusionTrustScale(est);
     const BodyVelocityCommand body_mot =
-        bodyVelocityForFootPlanning(est, cmd_twist, foot_estimator_blend_);
+        bodyVelocityForFootPlanning(est, cmd_twist, foot_estimator_blend_ * trust_scale);
     const double duty = std::clamp(gait.duty_factor, 0.06, 0.94);
     const double f_hz = std::max(gait.stride_phase_rate_hz.value, 1e-6);
     const double swing_span = std::max(1.0 - duty, 1e-6);
@@ -161,7 +169,8 @@ LegTargets BodyController::update(const RobotState& est,
                 target = p;
                 target_vel = target_vel + v;
                 if (est.foot_contacts[static_cast<std::size_t>(leg)]) {
-                    target.z += contact_foot_response::stanceTiltLevelingDeltaZ(est, intent, anchor.x, anchor.y);
+                    target.z += trust_scale *
+                                contact_foot_response::stanceTiltLevelingDeltaZ(est, intent, anchor.x, anchor.y);
                 }
             } else {
                 const Vec3 stance_end = anchor + v_foot * (duty / f_hz);
@@ -176,7 +185,8 @@ LegTargets BodyController::update(const RobotState& est,
                     est,
                     tau,
                     tau_use,
-                    swing_extra_down_z);
+                    swing_extra_down_z,
+                    &est.foot_contact_fusion[static_cast<std::size_t>(leg)]);
 
                 double ux = 0.0;
                 double uy = 0.0;
@@ -221,7 +231,8 @@ LegTargets BodyController::update(const RobotState& est,
             }
         } else if (intent.requested_mode == RobotMode::STAND &&
                    est.foot_contacts[static_cast<std::size_t>(leg)]) {
-            target.z += contact_foot_response::stanceTiltLevelingDeltaZ(est, intent, target.x, target.y);
+            target.z += trust_scale *
+                        contact_foot_response::stanceTiltLevelingDeltaZ(est, intent, target.x, target.y);
         }
 
         target = body_rotation * target;

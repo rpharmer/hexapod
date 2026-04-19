@@ -9,6 +9,12 @@ ControlPipeline::ControlPipeline(control_config::GaitConfig gait_config,
       loco_cmd_(loco_config),
       body_(gait_config, foot_terrain_config) {}
 
+void ControlPipeline::reset() {
+    gait_.reset();
+    loco_cmd_.reset();
+    locomotion_stability_.reset();
+}
+
 PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
                                             const MotionIntent& intent,
                                             const SafetyState& safety_state,

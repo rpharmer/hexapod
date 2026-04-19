@@ -31,6 +31,12 @@ bool hasObservedOccupiedSpace(const LocalOccupancyGrid& grid) {
     });
 }
 
+bool hasObservedFreeSpace(const LocalOccupancyGrid& grid) {
+    return std::any_of(grid.cells.begin(), grid.cells.end(), [](const LocalMapCellState state) {
+        return state == LocalMapCellState::Free;
+    });
+}
+
 bool traversable(const LocalMapCellState state, const bool allow_unknown_traversal) {
     if (state == LocalMapCellState::Occupied) {
         return false;
@@ -61,7 +67,7 @@ AStarLocalPlanner::AStarLocalPlanner(LocalPlannerConfig config)
 
 LocalPlanResult AStarLocalPlanner::plan(const LocalPlanRequest& request) const {
     LocalPlanResult out{};
-    if (!request.map.has_observations || !request.map.fresh) {
+    if (request.map.has_observations && !request.map.fresh) {
         out.status = LocalPlanStatus::MapUnavailable;
         return out;
     }
@@ -72,7 +78,8 @@ LocalPlanResult AStarLocalPlanner::plan(const LocalPlanRequest& request) const {
         out.block_reason = PlannerBlockReason::NoPath;
         return out;
     }
-    const bool allow_unknown_traversal = !hasObservedOccupiedSpace(grid);
+    const bool allow_unknown_traversal =
+        !(hasObservedOccupiedSpace(grid) && hasObservedFreeSpace(grid));
 
     const NavPose2d planning_goal = projectGoalIntoHorizon(request);
     if (std::hypot(planning_goal.x_m - request.current_pose.x_m,

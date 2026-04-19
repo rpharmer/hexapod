@@ -183,6 +183,42 @@ struct MatrixLidarFrame {
     bool valid{false};
 };
 
+enum class ContactPhase : std::uint8_t {
+    Swing = 0,
+    ExpectedTouchdown,
+    ContactCandidate,
+    ConfirmedStance,
+    LostCandidate,
+    Search,
+};
+
+struct FootContactFusion {
+    ContactPhase phase{ContactPhase::Search};
+    float confidence{0.0f};
+    TimePointUs touchdown_window_start_us{};
+    TimePointUs touchdown_window_end_us{};
+    TimePointUs last_transition_us{};
+};
+
+struct FusionResidualSummary {
+    Vec3 body_position_error_m{};
+    Vec3 body_velocity_error_mps{};
+    EulerAnglesRad3 body_orientation_error_rad{};
+    std::array<double, kNumLegs> foot_contact_error{};
+    double max_body_position_error_m{0.0};
+    double max_body_orientation_error_rad{0.0};
+    double contact_mismatch_ratio{0.0};
+    double terrain_residual_m{0.0};
+};
+
+struct FusionDiagnostics {
+    double model_trust{0.0};
+    bool resync_requested{false};
+    bool hard_reset_requested{false};
+    bool predictive_mode{false};
+    FusionResidualSummary residuals{};
+};
+
 struct MotionIntent {
   RobotMode requested_mode{RobotMode::SAFE_IDLE};
   GaitType gait{GaitType::TRIPOD};
@@ -201,8 +237,11 @@ struct MotionIntent {
 
 struct RobotState {
   std::array<LegState, kNumLegs> leg_states{};
+  /** Fused controller-facing contact estimate; raw bridge snapshots are reconciled before use. */
   std::array<bool, kNumLegs> foot_contacts{};
+  std::array<FootContactFusion, kNumLegs> foot_contact_fusion{};
   BodyTwistState body_twist_state{};
+  FusionDiagnostics fusion{};
   float voltage{0.0f};
   float current{0.0f};
   bool bus_ok{true};
@@ -214,6 +253,7 @@ struct RobotState {
   bool has_body_twist_state{false};
   bool has_power_state{false};
   bool has_valid_flag{false};
+  bool has_fusion_diagnostics{false};
   /** Populated by physics sim bridge, hardware when available, or test doubles. */
   ImuSample imu{};
   bool has_imu{false};

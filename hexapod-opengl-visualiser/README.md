@@ -23,7 +23,7 @@ cmake --build build -j
 ```
 
 The renderer listens on UDP port `9870` by default and consumes the simulator's
-`entity_static` and `entity_frame` packets.
+`entity_static`, `entity_frame`, and `terrain_patch` packets.
 
 To wire it to the simulator from a second terminal:
 

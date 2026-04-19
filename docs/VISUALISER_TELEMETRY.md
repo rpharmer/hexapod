@@ -94,11 +94,13 @@ WebSocket payloads emitted by `TelemetryState.to_payload` include:
 | `loop_counter` | integer or `null` | yes | control loop counter when present |
 | `voltage` | number or `null` | yes | power bus voltage when present |
 | `current` | number or `null` | yes | power bus current when present |
+| `fusion` | object or `null` | no | optional fusion diagnostics from the estimator/runtime, including trust, per-foot confidence, residuals, and resync flags |
 
 Optionality semantics:
 - These fields are **always present in WebSocket payloads** but may be `null` until UDP telemetry includes a valid value.
 - The UI must treat every status/health field as optional data.
 - UDP parsing accepts these fields on any schema-v1 payload type (`geometry`, `joints`, or additive telemetry payloads) and merges them into the current state.
+- The optional `fusion` object is additive. Consumers should treat it as best-effort diagnostics and continue to render the last known state if it is absent.
 
 ## Backward compatibility expectations
 

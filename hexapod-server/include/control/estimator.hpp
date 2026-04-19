@@ -2,21 +2,28 @@
 
 #include <array>
 
+#include "control_config.hpp"
+#include "state_fusion.hpp"
 #include "types.hpp"
 
 class IEstimator {
 public:
     virtual ~IEstimator() = default;
     virtual RobotState update(const RobotState& raw) = 0;
+    virtual void configure(const control_config::FusionConfig&) {}
+    virtual void reset() {}
 };
 
 class SimpleEstimator final : public IEstimator {
 public:
+    void configure(const control_config::FusionConfig& config) override;
+    void reset() override;
     RobotState update(const RobotState& raw) override;
 
 private:
     static constexpr uint64_t kContactMemoryWindowUs = 250000;
 
+    state_fusion::StateFusion fusion_{};
     std::array<Vec3, kNumLegs> last_contact_points_body_m_{};
     std::array<TimePointUs, kNumLegs> last_contact_timestamps_{};
     std::array<LegState, kNumLegs> last_leg_states_{};

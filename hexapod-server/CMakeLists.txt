@@ -126,6 +126,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime_freshness_gate.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime_timing_metrics.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/safety_supervisor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/state_fusion.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/servo_dynamics_fit.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/status_reporter.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/swing_trajectory.cpp"
@@ -221,6 +222,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_contact_foot_response tests/test_contact_foot_response.cpp)
     target_link_libraries(test_contact_foot_response PRIVATE hexapod_server_core)
     add_test(NAME contact_foot_response COMMAND test_contact_foot_response)
+
+    add_executable(test_state_fusion tests/test_state_fusion.cpp)
+    target_link_libraries(test_state_fusion PRIVATE hexapod_server_core)
+    add_test(NAME state_fusion COMMAND test_state_fusion)
 
     add_executable(test_imu_physics tests/test_imu_physics.cpp)
     target_link_libraries(test_imu_physics PRIVATE hexapod_server_core)
@@ -331,6 +336,14 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_physics_sim_bridge_frame_conversion tests/test_physics_sim_bridge_frame_conversion.cpp)
     target_link_libraries(test_physics_sim_bridge_frame_conversion PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_bridge_frame_conversion COMMAND test_physics_sim_bridge_frame_conversion)
+
+    add_executable(test_physics_sim_bridge_state_correction tests/test_physics_sim_bridge_state_correction.cpp)
+    target_link_libraries(test_physics_sim_bridge_state_correction PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_bridge_state_correction COMMAND test_physics_sim_bridge_state_correction)
+
+    add_executable(test_robot_runtime_physics_sim_corrections tests/test_robot_runtime_physics_sim_corrections.cpp)
+    target_link_libraries(test_robot_runtime_physics_sim_corrections PRIVATE hexapod_server_core)
+    add_test(NAME robot_runtime_physics_sim_corrections COMMAND test_robot_runtime_physics_sim_corrections)
 
     add_executable(test_physics_sim_serve_zero_g_udp tests/test_physics_sim_serve_zero_g_udp.cpp)
     target_link_libraries(test_physics_sim_serve_zero_g_udp PRIVATE hexapod_server_core)
