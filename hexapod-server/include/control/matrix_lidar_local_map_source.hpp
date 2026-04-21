@@ -9,4 +9,7 @@ public:
     MatrixLidarLocalMapObservationSource() = default;
 
     [[nodiscard]] LocalMapObservation collect(const NavPose2d& pose, const RobotState& est, TimePointUs now) override;
+
+private:
+    mutable TimePointUs last_emitted_timestamp_{};
 };

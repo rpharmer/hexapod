@@ -1,6 +1,7 @@
 #include "demo/scene_json.hpp"
 
 #include "demo/demo_run_control.hpp"
+#include "demo/process_resource_diagnostics.hpp"
 #include "demo/terrain_patch.hpp"
 
 #include "minphys3d/core/body.hpp"
@@ -1342,6 +1343,10 @@ int RunPhysicsDemoFromJsonFile(
     }
     std::cout << "\n";
 
+    ProcessResourceDiagnosticsState resource_diag{};
+    std::FILE* resource_out = run_log.available() ? run_log.stream() : stderr;
+    MaybeLogProcessResourceSnapshot(resource_out, resource_diag);
+
     std::unique_ptr<FrameSink> sink = MakeFrameSink(sink_kind, udp_host, udp_port);
 
     constexpr float dt = 1.0f / 60.0f;
@@ -1369,6 +1374,7 @@ int RunPhysicsDemoFromJsonFile(
                 LogJsonSceneFrameDiagnostics(stderr, frame, world);
             }
         }
+        MaybeLogProcessResourceSnapshot(resource_out, resource_diag);
 
         PaceRealtimeOuterFrame(PaceRealtimeEnabled(realtime_playback, run_control), t0, frame, dt);
     }

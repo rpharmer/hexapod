@@ -449,7 +449,7 @@ RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant, bool
         if (step >= std::max(0, config.steps - 120)) {
             restWindowDriftSamples.push_back(stepDrift);
         }
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
         const World::SolverTelemetry& stepTelemetry = config.world.GetSolverTelemetry();
         const std::uint64_t basisTotal = stepTelemetry.tangentBasisResets + stepTelemetry.tangentBasisReused;
         metrics.stepBasisChurnRatio.push_back(basisTotal > 0
@@ -475,7 +475,7 @@ RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant, bool
         }
     }
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     const World::SolverTelemetry& telemetry = config.world.GetSolverTelemetry();
     const auto assignBucket = [](const World::SolverTelemetry::ManifoldSolveBucket& src,
                                  RunMetrics::SolverTelemetrySnapshot::ManifoldSolveScopeSnapshot& dst) {
@@ -584,7 +584,7 @@ RunMetrics RunScene(SceneConfig config, const SolverVariantConfig& variant, bool
     if (stableType9ContactSamples > 0) {
         metrics.meanStableType9Contacts = static_cast<float>(stableType9ContactsSum / static_cast<double>(stableType9ContactSamples));
     }
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     const std::uint64_t basisTotal = metrics.telemetry.tangentBasisResets + metrics.telemetry.tangentBasisReused;
     metrics.tangentBasisChurnRatio = basisTotal > 0
         ? static_cast<float>(metrics.telemetry.tangentBasisResets) / static_cast<float>(basisTotal)

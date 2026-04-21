@@ -40,7 +40,8 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
                                         uint64_t avg_control_dt_us,
                                         uint64_t max_control_jitter_us,
                                         uint64_t stale_intent_events,
-                                        uint64_t stale_estimator_events) {
+                                        uint64_t stale_estimator_events,
+                                        const resource_monitoring::ProcessResourceSnapshot& process_resources) {
     status_reporter::logStatus(logger_, status, bridge_result);
     if (!logger_) {
         return;
@@ -85,7 +86,8 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
              telemetry_diag_.dropped_rate_limited_frames,
              ",last_successful_send_ts_us:",
              telemetry_diag_.last_successful_send_timestamp.value,
-             "}");
+             "} process_resource=",
+             resource_monitoring::formatProcessResourceSnapshot(process_resources));
 }
 
 void RuntimeDiagnosticsReporter::maybeLogVisualizerFailureWarning(TimePointUs now) {

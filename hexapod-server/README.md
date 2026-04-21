@@ -93,6 +93,7 @@ Log file behavior:
 - Override path at runtime with `--log-file <path>`.
 - Disable file logging entirely with `--console-only` (useful for CI/sim/test workflows).
 - Optional replay logging is separate from the app log and is configured with `Runtime.ReplayLog.EnableFile` and `Runtime.ReplayLog.FilePath`.
+- Diagnostics output now includes periodic `process_resource=...` snapshots with CPU and RSS/VMS data, alongside the existing control-loop and transport health metrics.
 
 Examples:
 

@@ -24,6 +24,7 @@ int main() {
     rsp.matrix_lidar_model = physics_sim::MatrixLidarModel::Matrix64x8;
     rsp.matrix_lidar_cols = 64;
     rsp.matrix_lidar_rows = 8;
+    rsp.matrix_lidar_timestamp_us = 123;
     for (std::size_t i = 0; i < 512; ++i) {
         rsp.matrix_lidar_ranges_mm[i] = static_cast<std::uint16_t>(1000 + i);
     }
@@ -43,7 +44,13 @@ int main() {
                 "in-range cells should pass through decode")) {
         return 1;
     }
-    if (!expect(st.matrix_lidar.timestamp_us.value == 99, "timestamp should propagate")) {
+    if (!expect(st.matrix_lidar.timestamp_us.value == 123, "wire timestamp should propagate")) {
+        return 1;
+    }
+
+    rsp.matrix_lidar_timestamp_us = 0;
+    matrixLidarFromPhysicsStateResponse(rsp, TimePointUs{99}, st);
+    if (!expect(st.matrix_lidar.timestamp_us.value == 99, "fallback timestamp should propagate")) {
         return 1;
     }
 

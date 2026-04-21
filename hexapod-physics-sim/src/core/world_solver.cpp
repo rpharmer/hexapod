@@ -277,7 +277,7 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
             return false;
         }
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
         manifold.blockSolveDebug.selectedPreNormalImpulses = {solveInput.contacts[0].oldImpulse, solveInput.contacts[1].oldImpulse};
         manifold.blockSolveDebug.selectedPairPenetrationStep = c0.penetration + c1.penetration;
 #endif
@@ -288,7 +288,7 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
         c1.normalImpulseSum = result.solvedImpulses[1];
         EnsurePerContactImpulseCache(manifold, c0.key)[0] = c0.normalImpulseSum;
         EnsurePerContactImpulseCache(manifold, c1.key)[0] = c1.normalImpulseSum;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
         manifold.blockSolveDebug.selectedPostNormalImpulses = {c0.normalImpulseSum, c1.normalImpulseSum};
 #endif
         ApplyImpulse(a, b, invIA, invIB, ra0, rb0, result.impulseDeltas[0] * normal0);
@@ -574,11 +574,11 @@ void World::SolveHingeJoint(HingeJoint& j) {
                 j.impulseZ += lambda.z;
                 ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda);
                 usedBlockSolve = true;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                 ++solverTelemetry_.jointBlockSolveUsed;
 #endif
             } else {
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                 switch (fallbackReason) {
                     case JointBlockFallbackReason::DegenerateMassMatrix:
                         ++solverTelemetry_.jointBlockFallbackDegenerate;
@@ -970,7 +970,7 @@ void World::SolveContactsInManifold(Manifold& manifold) {
             [this](Manifold& manifold, const Manifold* previous) { ManageManifoldContacts(manifold, previous); },
             [](Manifold& manifold) { RefreshManifoldBlockCache(manifold); },
             [this](Manifold& manifold) { SelectBlockSolvePair(manifold); },
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             [this](const Manifold& manifold) { RecordSelectedPairHistory(manifold); },
 #else
             [](const Manifold&) {},
@@ -981,7 +981,7 @@ void World::SolveContactsInManifold(Manifold& manifold) {
                 ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
             },
             [this](bool reusedBasis) {
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                 if (reusedBasis) {
                     ++solverTelemetry_.tangentBasisReused;
                 } else {
@@ -991,7 +991,7 @@ void World::SolveContactsInManifold(Manifold& manifold) {
                 (void)reusedBasis;
 #endif
             },
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             [this](FrictionBudgetNormalSupportSource source) {
                 ++solverTelemetry_.manifoldFrictionBudgetSaturated;
                 switch (source) {
@@ -1104,7 +1104,7 @@ void World::SolveIslands() {
             [this](Manifold& manifold, const Manifold* previous) { ManageManifoldContacts(manifold, previous); },
             [](Manifold& manifold) { RefreshManifoldBlockCache(manifold); },
             [this](Manifold& manifold) { SelectBlockSolvePair(manifold); },
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             [this](const Manifold& manifold) { RecordSelectedPairHistory(manifold); },
 #else
             [](const Manifold&) {},
@@ -1115,7 +1115,7 @@ void World::SolveIslands() {
                 ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
             },
             [this](bool reusedBasis) {
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                 if (reusedBasis) {
                     ++solverTelemetry_.tangentBasisReused;
                 } else {
@@ -1125,7 +1125,7 @@ void World::SolveIslands() {
                 (void)reusedBasis;
 #endif
             },
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             [this](FrictionBudgetNormalSupportSource source) {
                 ++solverTelemetry_.manifoldFrictionBudgetSaturated;
                 switch (source) {
@@ -1164,7 +1164,7 @@ void World::SolveIslands() {
             servoJoints_,
             contactContext,
             contactSolverConfig_,
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             &solverTelemetry_,
 #endif
             [](core_internal::ContactSolver& solver, const core_internal::ContactSolverContext& context, Manifold& manifold) {

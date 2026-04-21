@@ -43,6 +43,11 @@ if(MINPHYS3D_BUILD_DEMO OR MINPHYS3D_BUILD_TESTS)
     else()
         target_compile_options(minphys3d_core PRIVATE -Wall -Wextra -pedantic)
     endif()
+    if(MINPHYS3D_BUILD_TESTS)
+        # Regression tests assert on solver telemetry; keep the definition public so
+        # minphys3d_core and linked test executables agree on World's layout.
+        target_compile_definitions(minphys3d_core PUBLIC MINPHYS3D_ENABLE_SOLVER_TELEMETRY=1)
+    endif()
 endif()
 
 if(MINPHYS3D_BUILD_DEMO)
@@ -128,6 +133,8 @@ add_minphys3d_test(hex_diag tests/hex_diag.cpp)
         target_compile_options(test_terrain_patch_scene_json PRIVATE -Wall -Wextra -pedantic)
     endif()
     add_test(NAME test_terrain_patch_scene_json COMMAND test_terrain_patch_scene_json)
+
+    add_minphys3d_test(test_process_resource_monitoring tests/test_process_resource_monitoring.cpp)
 
     add_executable(test_serve_ipc tests/test_serve_ipc.cpp)
     target_include_directories(test_serve_ipc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/include)

@@ -135,7 +135,7 @@ bool World::ComputeStableTangentFrame(
     return true;
 }
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
 const World::SolverTelemetry& World::GetSolverTelemetry() const {
     return solverTelemetry_;
 }
@@ -422,7 +422,7 @@ void World::Step(float dt, int solverIterations) {
         return;
     }
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     solverTelemetry_ = {};
 #endif
 
@@ -451,7 +451,7 @@ void World::Step(float dt, int solverIterations) {
     PrepareServoJointControlSamples();
 
     for (int stepIndex = 0; stepIndex < substeps; ++stepIndex) {
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
         ++debugFrameIndex_;
 #endif
         currentSubstepDt_ = subDt;

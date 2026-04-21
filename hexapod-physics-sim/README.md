@@ -106,6 +106,7 @@ Each demo run writes a text log when the `logs/` directory can be created next t
 
 - Preferred: `logs/latest.log` (or `hexapod-physics-sim/logs/latest.log` when cwd is the repo root)
 - Fallback: `hexapod-physics-sim.log` in the current directory if directory creation fails
+- The demo, JSON-scene, and serve-mode loops also emit periodic `[resource] process_resource=...` snapshots with CPU and RSS/VMS data so you can compare deployment headroom across runs.
 
 ## Scene JSON (minphys)
 

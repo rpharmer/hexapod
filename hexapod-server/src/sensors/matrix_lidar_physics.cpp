@@ -34,7 +34,8 @@ void matrixLidarFromPhysicsStateResponse(const physics_sim::StateResponse& rsp,
         return;
     }
 
-    out.matrix_lidar.timestamp_us = timestamp_us;
+    out.matrix_lidar.timestamp_us =
+        rsp.matrix_lidar_timestamp_us != 0 ? TimePointUs{rsp.matrix_lidar_timestamp_us} : timestamp_us;
     out.matrix_lidar.model = static_cast<std::uint8_t>(model);
     out.matrix_lidar.cols = rsp.matrix_lidar_cols;
     out.matrix_lidar.rows = rsp.matrix_lidar_rows;

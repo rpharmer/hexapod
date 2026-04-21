@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "demo/frame_sink.hpp"
+#include "demo/process_resource_diagnostics.hpp"
 #include "minphys3d/core/body.hpp"
 #include "minphys3d/core/world.hpp"
 #include "minphys3d/demo/hexapod_scene.hpp"
@@ -561,6 +562,10 @@ int RunClassicDemo(
     }
     std::cout << "\n";
 
+    ProcessResourceDiagnosticsState resource_diag{};
+    std::FILE* resource_out = run_log.available() ? run_log.stream() : stderr;
+    MaybeLogProcessResourceSnapshot(resource_out, resource_diag);
+
     Body plane;
     plane.shape = ShapeType::Plane;
     plane.planeNormal = {0.0f, 1.0f, 0.0f};
@@ -658,6 +663,7 @@ int RunClassicDemo(
                          s.position.y,
                          s.position.z);
         }
+        MaybeLogProcessResourceSnapshot(resource_out, resource_diag);
 
         PaceRealtimeOuterFrame(PaceRealtimeEnabled(realtime, control), t0, frame, dt);
     }
@@ -697,6 +703,10 @@ int RunHexapodDemo(
         std::cout << " log=stderr (failed to open log file)";
     }
     std::cout << "\n";
+
+    ProcessResourceDiagnosticsState resource_diag{};
+    std::FILE* resource_out = run_log.available() ? run_log.stream() : stderr;
+    MaybeLogProcessResourceSnapshot(resource_out, resource_diag);
 
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
@@ -787,6 +797,7 @@ int RunHexapodDemo(
                              foot.y);
             }
         }
+        MaybeLogProcessResourceSnapshot(resource_out, resource_diag);
 
         PaceRealtimeOuterFrame(PaceRealtimeEnabled(realtime, control), t0, frame, dt);
     }

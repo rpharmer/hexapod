@@ -184,7 +184,7 @@ struct ContactSolverContext {
     std::function<int(const Manifold&, std::uint64_t)> findBlockSlot;
     std::function<void(Body&, Body&, const Mat3&, const Mat3&, const Vec3&, const Vec3&, const Vec3&)> applyImpulse;
     std::function<void(bool)> recordTangentBasisState;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     std::function<void(FrictionBudgetNormalSupportSource)> recordFrictionBudgetSaturation;
     std::function<void(bool)> recordManifoldTangentReprojection;
 #endif
@@ -316,7 +316,7 @@ public:
                 const float old1 = previous->manifoldTangentImpulseSum[1];
                 m.manifoldTangentImpulseSum = {old0, old1};
                 m.manifoldTangentImpulseValid = true;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                 if (context.recordManifoldTangentReprojection) {
                     context.recordManifoldTangentReprojection(true);
                 }
@@ -324,7 +324,7 @@ public:
             } else {
                 m.manifoldTangentImpulseSum = {0.0f, 0.0f};
                 m.manifoldTangentImpulseValid = false;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                 if (context.recordManifoldTangentReprojection) {
                     context.recordManifoldTangentReprojection(false);
                 }
@@ -531,7 +531,7 @@ public:
                         const float scale = manifoldBudget / std::sqrt(lenSq);
                         newT[0] = oldT[0] + (newT[0] - oldT[0]) * scale;
                         newT[1] = oldT[1] + (newT[1] - oldT[1]) * scale;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                         if (context.recordFrictionBudgetSaturation) {
                             context.recordFrictionBudgetSaturation(context.config.frictionBudgetNormalSupportSource);
                         }

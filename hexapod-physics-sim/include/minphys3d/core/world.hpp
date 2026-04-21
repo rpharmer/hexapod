@@ -11,7 +11,15 @@
 #include <utility>
 #include <vector>
 
-#ifndef NDEBUG
+#ifndef MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+#if !defined(NDEBUG) || defined(MINPHYS3D_ENABLE_SOLVER_TELEMETRY)
+#define MINPHYS3D_SOLVER_TELEMETRY_ENABLED 1
+#else
+#define MINPHYS3D_SOLVER_TELEMETRY_ENABLED 0
+#endif
+#endif
+
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
 #include <cstdio>
 #endif
 
@@ -65,7 +73,7 @@ public:
         Vec3& outT1,
         const Vec3* preferredTangent = nullptr);
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     struct SolverTelemetry {
         struct FallbackReasonCounters {
             std::uint64_t none = 0;
@@ -455,7 +463,7 @@ private:
 
     std::vector<Pair> ComputePotentialPairs() const;
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     std::vector<Pair> ComputePotentialPairsBruteForce() const;
 
     static std::unordered_set<std::uint64_t> PairSetFromPairs(const std::vector<Pair>& pairs);
@@ -541,12 +549,12 @@ private:
         NonFiniteResult,
     };
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     static void ResetBlockSolveDebugStep(Manifold& manifold);
 
     static void IncrementBlockSolveFallbackCounter(Manifold& manifold, BlockSolveFallbackReason reason);
 #endif
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     void IncrementFallbackReasonTelemetry(SolverTelemetry::FallbackReasonCounters& counters, BlockSolveFallbackReason reason);
 
     void RecordManifoldSolveTelemetry(const Manifold& manifold,
@@ -561,7 +569,7 @@ private:
 
     static std::array<std::uint64_t, 2> SortedContactKeyPair(std::uint64_t k0, std::uint64_t k1);
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     struct SelectionHistory {
         std::array<std::uint64_t, 2> lastPair{0u, 0u};
         std::array<std::uint64_t, 2> previousPair{0u, 0u};
@@ -733,7 +741,7 @@ private:
     PersistenceMatchDiagnostics persistenceMatchDiagnostics_{};
     std::unordered_map<NarrowphaseCacheKey, NarrowphaseCache, NarrowphaseCacheKeyHash> narrowphaseCache_;
     std::unordered_map<ConvexSeedKey, EpaPenetrationResult, ConvexSeedKeyHash> convexManifoldSeeds_;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     std::FILE* DebugLogStream() const {
         return debugLogStream_ != nullptr ? debugLogStream_ : stderr;
     }

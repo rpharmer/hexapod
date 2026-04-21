@@ -2,6 +2,7 @@
 
 #include "demo/frame_sink.hpp"
 #include "demo/matrix_lidar_sim.hpp"
+#include "demo/process_resource_diagnostics.hpp"
 #include "demo/scene_json.hpp"
 #include "demo/scenes.hpp"
 #include "demo/terrain_patch.hpp"
@@ -14,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -25,6 +27,7 @@
 #include <string>
 #include <vector>
 #include <thread>
+#include <sys/time.h>
 
 #if defined(__linux__) || defined(__APPLE__)
 #include <arpa/inet.h>
@@ -43,6 +46,35 @@ constexpr std::uint32_t kRobotCollisionGroup = 0x0002;
 constexpr std::uint32_t kTerrainCollisionGroup = 0x0004;
 constexpr int kSocketRetryCount = 5;
 constexpr int kSocketRetryDelayMs = 25;
+constexpr std::uint64_t kMatrixLidarFramePeriodUs = 15'625; // 64 Hz full-frame cadence
+
+struct CachedMatrixLidarFrame {
+    bool valid{false};
+    std::uint64_t timestamp_us{0};
+    std::uint8_t model{static_cast<std::uint8_t>(physics_sim::MatrixLidarModel::None)};
+    std::uint8_t cols{0};
+    std::uint8_t rows{0};
+    std::array<std::uint16_t, physics_sim::kMatrixLidarMaxCells> ranges_mm{};
+};
+
+void writeCachedMatrixLidarFrame(const CachedMatrixLidarFrame& cache, physics_sim::StateResponse& rsp) {
+    if (!cache.valid) {
+        rsp.matrix_lidar_valid = 0;
+        rsp.matrix_lidar_model = physics_sim::MatrixLidarModel::None;
+        rsp.matrix_lidar_cols = 0;
+        rsp.matrix_lidar_rows = 0;
+        rsp.matrix_lidar_timestamp_us = 0;
+        rsp.matrix_lidar_ranges_mm.fill(physics_sim::kMatrixLidarInvalidMm);
+        return;
+    }
+
+    rsp.matrix_lidar_valid = 1;
+    rsp.matrix_lidar_model = static_cast<physics_sim::MatrixLidarModel>(cache.model);
+    rsp.matrix_lidar_cols = cache.cols;
+    rsp.matrix_lidar_rows = cache.rows;
+    rsp.matrix_lidar_timestamp_us = cache.timestamp_us;
+    rsp.matrix_lidar_ranges_mm = cache.ranges_mm;
+}
 
 int OpenUdpSocketWithRetry() {
     for (int attempt = 0; attempt < kSocketRetryCount; ++attempt) {
@@ -751,6 +783,11 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         return 1;
     }
 
+    const timeval recv_timeout{1, 0};
+    if (::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &recv_timeout, sizeof(recv_timeout)) != 0) {
+        std::perror("[serve] setsockopt(SO_RCVTIMEO)");
+    }
+
     World world(Vec3{0.0f, -9.81f, 0.0f});
     HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
@@ -809,6 +846,65 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     }
     std::cout << "\n";
 
+    ProcessResourceDiagnosticsState resource_diag{};
+    MaybeLogProcessResourceSnapshot(stdout, resource_diag);
+
+    CachedMatrixLidarFrame cached_lidar_frame{};
+    std::uint64_t lidar_sim_time_us = 0;
+    std::uint64_t next_lidar_capture_us = 0;
+
+    auto refreshMatrixLidarFrame = [&](physics_sim::StateResponse& rsp,
+                                       const Body& chassis,
+                                       const float fusion_age_seconds,
+                                       const bool advance_sensor_time) {
+        if (advance_sensor_time && std::isfinite(fusion_age_seconds) && fusion_age_seconds > 0.0f) {
+            lidar_sim_time_us += static_cast<std::uint64_t>(
+                std::llround(static_cast<double>(fusion_age_seconds) * 1.0e6));
+        }
+
+        const bool need_capture = !cached_lidar_frame.valid || lidar_sim_time_us >= next_lidar_capture_us;
+        if (!need_capture) {
+            writeCachedMatrixLidarFrame(cached_lidar_frame, rsp);
+            return;
+        }
+
+        FillSimMatrixLidar64x8(world, scene, terrain_patch, chassis, rsp);
+        rsp.matrix_lidar_timestamp_us = lidar_sim_time_us == 0 ? 1ULL : lidar_sim_time_us;
+
+        if (terrain_patch.config().lidar_fusion_enable) {
+            std::vector<TerrainSample> lidar_samples;
+            AppendMatrixLidarTerrainSamples(
+                world, scene, terrain_patch, chassis, rsp, terrain_patch.config(), lidar_samples);
+            ApplyContactArbitrationToLidarSamples(
+                world, scene, assimilation_state, terrain_patch.config(), lidar_samples);
+            if (!lidar_samples.empty()) {
+                Body& plane_body = world.GetBody(scene.plane);
+                // LiDAR fusion intentionally follows response generation: the response reports what this
+                // step saw, and the fused terrain influences subsequent contacts/rays.
+                terrain_patch.update(world,
+                                       world.GetBody(scene.body).position,
+                                       plane_body.planeOffset,
+                                       plane_body.planeNormal,
+                                       lidar_samples,
+                                       fusion_age_seconds);
+            }
+        }
+
+        cached_lidar_frame.valid = true;
+        cached_lidar_frame.timestamp_us = rsp.matrix_lidar_timestamp_us;
+        cached_lidar_frame.model = static_cast<std::uint8_t>(rsp.matrix_lidar_model);
+        cached_lidar_frame.cols = rsp.matrix_lidar_cols;
+        cached_lidar_frame.rows = rsp.matrix_lidar_rows;
+        cached_lidar_frame.ranges_mm = rsp.matrix_lidar_ranges_mm;
+
+        if (next_lidar_capture_us == 0) {
+            next_lidar_capture_us = kMatrixLidarFramePeriodUs;
+        }
+        while (next_lidar_capture_us <= lidar_sim_time_us) {
+            next_lidar_capture_us += kMatrixLidarFramePeriodUs;
+        }
+    };
+
     for (;;) {
         sockaddr_in peer{};
         socklen_t peer_len = sizeof(peer);
@@ -820,12 +916,17 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             reinterpret_cast<sockaddr*>(&peer),
             &peer_len);
         if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+                MaybeLogProcessResourceSnapshot(stdout, resource_diag);
+                continue;
+            }
             std::cerr << "[serve] recvfrom failed\n";
             ::close(fd);
             return 1;
         }
 
         if (n < 1) {
+            MaybeLogProcessResourceSnapshot(stdout, resource_diag);
             continue;
         }
 
@@ -835,6 +936,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::ConfigCommand)) {
             physics_sim::ConfigCommand cmd{};
             if (!physics_sim::tryDecodeConfigCommand(bytes, static_cast<std::size_t>(n), cmd)) {
+                MaybeLogProcessResourceSnapshot(stdout, resource_diag);
                 continue;
             }
             world.SetGravity(Vec3{cmd.gravity[0], cmd.gravity[1], cmd.gravity[2]});
@@ -852,24 +954,31 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 0,
                 reinterpret_cast<sockaddr*>(&peer),
                 peer_len);
+            MaybeLogProcessResourceSnapshot(stdout, resource_diag);
             continue;
         }
 
         if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection)) {
             physics_sim::StateCorrection correction{};
             if (!physics_sim::tryDecodeStateCorrection(bytes, static_cast<std::size_t>(n), correction)) {
+                MaybeLogProcessResourceSnapshot(stdout, resource_diag);
                 continue;
             }
             (void)ApplyStateCorrection(world, scene, correction, assimilation_state, terrain_patch);
+            cached_lidar_frame.valid = false;
+            lidar_sim_time_us = std::max(lidar_sim_time_us + 1, next_lidar_capture_us);
+            MaybeLogProcessResourceSnapshot(stdout, resource_diag);
             continue;
         }
 
         if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::StepCommand)) {
             if (!configured) {
+                MaybeLogProcessResourceSnapshot(stdout, resource_diag);
                 continue;
             }
             physics_sim::StepCommand step{};
             if (!physics_sim::tryDecodeStepCommand(bytes, static_cast<std::size_t>(n), step)) {
+                MaybeLogProcessResourceSnapshot(stdout, resource_diag);
                 continue;
             }
 
@@ -900,25 +1009,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 }
                 FillFootContactsFromManifolds(world, scene, terrain_body_ids, rsp.foot_contacts, rsp.foot_contact_normals);
                 FillObstacleFootprints(world, obstacle_body_ids, rsp);
-                FillSimMatrixLidar64x8(world, scene, terrain_patch, world.GetBody(scene.body), rsp);
-                if (terrain_patch.config().lidar_fusion_enable) {
-                    std::vector<TerrainSample> lidar_samples;
-                    AppendMatrixLidarTerrainSamples(
-                        world, scene, terrain_patch, world.GetBody(scene.body), rsp, terrain_patch.config(), lidar_samples);
-                    ApplyContactArbitrationToLidarSamples(
-                        world, scene, assimilation_state, terrain_patch.config(), lidar_samples);
-                    if (!lidar_samples.empty()) {
-                        Body& plane_body = world.GetBody(scene.plane);
-                        // LiDAR fusion intentionally follows response generation: the response reports what this
-                        // step saw, and the fused terrain influences subsequent contacts/rays.
-                        terrain_patch.update(world,
-                                               world.GetBody(scene.body).position,
-                                               plane_body.planeOffset,
-                                               plane_body.planeNormal,
-                                               lidar_samples,
-                                               0.0f);
-                    }
-                }
+                refreshMatrixLidarFrame(rsp, world.GetBody(scene.body), 0.0f, false);
 
                 (void)::sendto(
                     fd,
@@ -927,10 +1018,12 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                     0,
                     reinterpret_cast<sockaddr*>(&peer),
                     peer_len);
+                MaybeLogProcessResourceSnapshot(stdout, resource_diag);
                 continue;
             }
 
             if (step.dt_seconds <= 0.0f || !std::isfinite(step.dt_seconds)) {
+                MaybeLogProcessResourceSnapshot(stdout, resource_diag);
                 continue;
             }
 
@@ -974,25 +1067,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
 
             FillFootContactsFromManifolds(world, scene, terrain_body_ids, rsp.foot_contacts, rsp.foot_contact_normals);
             FillObstacleFootprints(world, obstacle_body_ids, rsp);
-            FillSimMatrixLidar64x8(world, scene, terrain_patch, world.GetBody(scene.body), rsp);
-            if (terrain_patch.config().lidar_fusion_enable) {
-                std::vector<TerrainSample> lidar_samples;
-                AppendMatrixLidarTerrainSamples(
-                    world, scene, terrain_patch, world.GetBody(scene.body), rsp, terrain_patch.config(), lidar_samples);
-                ApplyContactArbitrationToLidarSamples(
-                    world, scene, assimilation_state, terrain_patch.config(), lidar_samples);
-                if (!lidar_samples.empty()) {
-                    Body& plane_body = world.GetBody(scene.plane);
-                    // LiDAR fusion intentionally follows response generation: the response reports what this
-                    // step saw, and the fused terrain influences subsequent contacts/rays.
-                    terrain_patch.update(world,
-                                           world.GetBody(scene.body).position,
-                                           plane_body.planeOffset,
-                                           plane_body.planeNormal,
-                                           lidar_samples,
-                                           step.dt_seconds);
-                }
-            }
+            refreshMatrixLidarFrame(rsp, world.GetBody(scene.body), step.dt_seconds, true);
 
             (void)::sendto(
                 fd,
@@ -1010,8 +1085,11 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             EmitObstacleBodies(*visual, world, obstacle_body_ids);
             visual->end_frame();
             ++preview_frame;
+            MaybeLogProcessResourceSnapshot(stdout, resource_diag);
             continue;
         }
+
+        MaybeLogProcessResourceSnapshot(stdout, resource_diag);
     }
 }
 

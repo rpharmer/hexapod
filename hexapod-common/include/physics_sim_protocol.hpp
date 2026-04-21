@@ -100,6 +100,8 @@ struct StateResponse {
     MatrixLidarModel matrix_lidar_model{MatrixLidarModel::None};
     std::uint8_t matrix_lidar_cols{0};
     std::uint8_t matrix_lidar_rows{0};
+    /// Capture timestamp for the LiDAR frame. Repeated responses reuse the last frame timestamp.
+    std::uint64_t matrix_lidar_timestamp_us{0};
     std::array<std::uint16_t, kMatrixLidarMaxCells> matrix_lidar_ranges_mm{};
 };
 

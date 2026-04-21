@@ -272,6 +272,57 @@ int main(int argc, char** argv) {
     const std::array<float, 3> base_pos = peek_rsp.body_position;
     const std::array<float, 4> base_ori = peek_rsp.body_orientation;
     const std::uint16_t base_min_lidar = MinFiniteLidarMm(peek_rsp);
+    if (peek_rsp.matrix_lidar_timestamp_us == 0) {
+        std::cerr << "peek expected a matrix lidar frame timestamp\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 12;
+    }
+
+    auto sendStepAndCaptureTimestamp = [&](std::uint32_t sequence_id, std::uint64_t& out_timestamp_us) {
+        physics_sim::StepCommand cadence_step{};
+        cadence_step.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StepCommand);
+        cadence_step.sequence_id = sequence_id;
+        cadence_step.dt_seconds = 1.0f / 240.0f;
+        if (!sendAll(fd, &cadence_step, physics_sim::kStepCommandBytes)) {
+            return false;
+        }
+
+        alignas(physics_sim::StateResponse) char cadence_buf[sizeof(physics_sim::StateResponse)]{};
+        if (!recvAll(fd, cadence_buf, physics_sim::kStateResponseBytes)) {
+            return false;
+        }
+        physics_sim::StateResponse cadence_rsp{};
+        if (!physics_sim::tryDecodeStateResponse(cadence_buf, physics_sim::kStateResponseBytes, cadence_rsp)) {
+            return false;
+        }
+        if (cadence_rsp.sequence_id != sequence_id) {
+            return false;
+        }
+        out_timestamp_us = cadence_rsp.matrix_lidar_timestamp_us;
+        return true;
+    };
+
+    std::uint64_t ts1 = 0;
+    std::uint64_t ts2 = 0;
+    std::uint64_t ts3 = 0;
+    std::uint64_t ts4 = 0;
+    if (!sendStepAndCaptureTimestamp(1, ts1) || !sendStepAndCaptureTimestamp(2, ts2) ||
+        !sendStepAndCaptureTimestamp(3, ts3) || !sendStepAndCaptureTimestamp(4, ts4)) {
+        std::cerr << "matrix lidar cadence probe failed\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 13;
+    }
+    if (ts1 == 0 || ts1 != ts2 || ts2 != ts3 || ts4 == ts3) {
+        std::cerr << "matrix lidar timestamp should hold for multiple physics steps and then advance\n";
+        ::close(fd);
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return 13;
+    }
 
     physics_sim::StateCorrection lift{};
     lift.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection);

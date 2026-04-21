@@ -480,7 +480,7 @@ std::vector<Pair> World::ComputePotentialPairs() const {
             static_cast<float>(broadphaseMetrics_.pairCacheHits) / static_cast<float>(broadphaseMetrics_.pairCacheQueries);
     }
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     const std::vector<Pair> bruteForcePairs = ComputePotentialPairsBruteForce();
     assert(PairSetFromPairs(pairs) == PairSetFromPairs(bruteForcePairs));
 #endif

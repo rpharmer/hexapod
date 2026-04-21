@@ -837,7 +837,7 @@ void World::ManifoldManager::Process(Manifold& manifold, const Manifold* previou
             SortManifoldContacts(manifold.contacts);
             const ManifoldQualityScore qualityScore = ComputeManifoldQualityScore(manifold);
             manifold.lowQuality = qualityScore.total < 0.05f || qualityScore.normalCoherence < 0.5f;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             if (qualityScore.total < 0.05f) {
                 ++world_.solverTelemetry_.manifoldQualityLow;
             } else if (qualityScore.total < 0.2f) {
@@ -1163,7 +1163,7 @@ void World::BuildIslands() {
         }
     }
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
 std::vector<Pair> World::ComputePotentialPairsBruteForce() const {
 
         std::vector<Pair> pairs;
@@ -1760,11 +1760,11 @@ void World::SolveNormalScalar(Contact& c) {
             float anchorPenetration = 0.0f;
             if (TryComputeAnchorSeparation(c, anchorPenetration)) {
                 penetration = anchorPenetration;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                 ++solverTelemetry_.anchorReuseHitCount;
 #endif
             } else {
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                 ++solverTelemetry_.anchorReuseFallbackCount;
 #endif
             }
@@ -1817,7 +1817,7 @@ void World::SolveNormalScalar(Contact& c) {
         ApplyImpulse(a, b, invIA, invIB, ra, rb, lambdaN * c.normal);
     }
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
 void World::ResetBlockSolveDebugStep(Manifold& manifold) {
 
         manifold.blockSolveDebug.selectedPreNormalImpulses = {0.0f, 0.0f};
@@ -1960,7 +1960,7 @@ std::array<std::uint64_t, 2> World::SortedContactKeyPair(std::uint64_t k0, std::
         return {k0, k1};
     }
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
 void World::RecordSelectedPairHistory(const Manifold& manifold) {
 
         if (manifold.selectedBlockContactIndices[0] < 0 || manifold.selectedBlockContactIndices[1] < 0) {
@@ -2076,7 +2076,7 @@ void World::SelectBlockSolvePair(Manifold& manifold) const {
         manifold.selectedBlockContactKeys = {0u, 0u};
         manifold.selectedBlockPairPersistent = false;
         manifold.selectedBlockPairQualityPass = false;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
         const auto logSelection = [&]() {
             if (!debugContactPersistence_) {
                 return;
@@ -2095,7 +2095,7 @@ void World::SelectBlockSolvePair(Manifold& manifold) const {
 #endif
 
         if (manifold.contacts.size() < 2) {
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             logSelection();
 #endif
             return;
@@ -2106,7 +2106,7 @@ void World::SelectBlockSolvePair(Manifold& manifold) const {
             manifold.selectedBlockContactKeys = {manifold.contacts[0].key, manifold.contacts[1].key};
             manifold.selectedBlockPairPersistent = true;
             manifold.selectedBlockPairQualityPass = true;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             logSelection();
 #endif
             return;
@@ -2168,7 +2168,7 @@ void World::SelectBlockSolvePair(Manifold& manifold) const {
                         manifold.contacts[static_cast<std::size_t>(idx0)].persistenceAge > 0
                         && manifold.contacts[static_cast<std::size_t>(idx1)].persistenceAge > 0;
                     manifold.selectedBlockPairQualityPass = true;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                     logSelection();
 #endif
                     return;
@@ -2241,7 +2241,7 @@ void World::SelectBlockSolvePair(Manifold& manifold) const {
         }
 
         if (best.i < 0 || best.j < 0) {
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             logSelection();
 #endif
             return;
@@ -2268,7 +2268,7 @@ void World::SelectBlockSolvePair(Manifold& manifold) const {
             && best.lever >= kQualityMinLeverSq
             && best.penetration >= kQualityMinPenetrationSum;
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
         logSelection();
 #endif
     }
@@ -2378,7 +2378,7 @@ bool World::EnsureStableTwoPointOrder(Manifold& manifold) {
             return false;
         }
         std::swap(manifold.contacts[0], manifold.contacts[1]);
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
         ++solverTelemetry_.reorderDetected;
 #endif
         return true;
@@ -2438,7 +2438,7 @@ bool World::IsFace4PointBlockEligible(const Manifold& manifold, BlockSolveFallba
                 if (outReason != nullptr) {
                     *outReason = BlockSolveFallbackReason::PersistenceGate;
                 }
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                 ++solverTelemetry_.face4BlockedByFrictionCoherenceGate;
 #endif
                 return false;
@@ -2453,7 +2453,7 @@ bool World::IsFace4PointBlockEligible(const Manifold& manifold, BlockSolveFallba
                 if (outReason != nullptr) {
                     *outReason = BlockSolveFallbackReason::PersistenceGate;
                 }
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                 ++solverTelemetry_.face4BlockedByFrictionCoherenceGate;
 #endif
                 return false;
@@ -2468,7 +2468,7 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
             return;
         }
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
         ResetBlockSolveDebugStep(manifold);
         const int selectedIdx0 = manifold.selectedBlockContactIndices[0];
         const int selectedIdx1 = manifold.selectedBlockContactIndices[1];
@@ -2487,14 +2487,14 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
             && IsBlockSolveEligible(manifold, &ineligibleReason);
         manifold.usedBlockSolve = false;
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
         if (manifold.blockSolveEligible) {
             ++solverTelemetry_.blockSolveEligible;
         }
 #endif
 
         if (!manifold.blockSolveEligible) {
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             ++solverTelemetry_.scalarPathIneligible;
             if (ineligibleReason == BlockSolveFallbackReason::TypePolicy) {
                 ++solverTelemetry_.blockRejectedByTypePolicy;
@@ -2522,7 +2522,7 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
             for (Contact& c : manifold.contacts) {
                 SolveNormalScalar(c);
             }
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             if (selectedIdx0 >= 0 && selectedIdx1 >= 0
                 && static_cast<std::size_t>(std::max(selectedIdx0, selectedIdx1)) < manifold.contacts.size()) {
                 manifold.blockSolveDebug.selectedPostNormalImpulses = {
@@ -2542,17 +2542,17 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
         bool usedFace4 = false;
         if (contactSolverConfig_.useFace4PointNormalBlock
             && IsFace4PointBlockEligible(manifold, &fallbackReason)) {
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             ++solverTelemetry_.face4Attempted;
 #endif
             blockSolved = SolveNormalProjected4(manifold, fallbackReason, determinantOrConditionEstimate);
             if (blockSolved) {
                 usedFace4 = true;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                 ++solverTelemetry_.face4Used;
 #endif
             } else {
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                 ++solverTelemetry_.face4FallbackToBlock2;
 #endif
             }
@@ -2562,7 +2562,7 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
         }
         if (blockSolved) {
             manifold.usedBlockSolve = true;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             ++solverTelemetry_.blockSolveUsed;
             ++manifold.blockSolveDebug.blockSolveUsedCount;
             if (debugBlockSolveRouting_) {
@@ -2587,7 +2587,7 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
                     SolveNormalScalar(manifold.contacts[i]);
                 }
             }
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             const float impulseContinuityMetric = std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[0] - manifold.blockSolveDebug.selectedPreNormalImpulses[0])
                 + std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[1] - manifold.blockSolveDebug.selectedPreNormalImpulses[1]);
             RecordManifoldSolveTelemetry(manifold, fallbackReason, determinantOrConditionEstimate, impulseContinuityMetric);
@@ -2595,7 +2595,7 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
             return;
         }
 
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
         switch (fallbackReason) {
             case BlockSolveFallbackReason::InvalidManifoldNormal:
                 ++solverTelemetry_.scalarFallbackInvalidNormal;
@@ -2648,7 +2648,7 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
         for (Contact& c : manifold.contacts) {
             SolveNormalScalar(c);
         }
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
         if (contactSolverConfig_.useFace4PointNormalBlock
             && manifold.manifoldType == 9
             && manifold.contacts.size() == 4) {

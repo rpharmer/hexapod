@@ -8,6 +8,14 @@
 
 #include "minphys3d/math/vec3.hpp"
 
+#ifndef MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+#if !defined(NDEBUG) || defined(MINPHYS3D_ENABLE_SOLVER_TELEMETRY)
+#define MINPHYS3D_SOLVER_TELEMETRY_ENABLED 1
+#else
+#define MINPHYS3D_SOLVER_TELEMETRY_ENABLED 0
+#endif
+#endif
+
 namespace minphys3d {
 
 enum class FrictionBudgetNormalSupportSource : std::uint8_t {
@@ -206,7 +214,7 @@ struct Manifold {
     bool lowQuality = false;
     bool blockSolveEligible = false;
     bool usedBlockSolve = false;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     struct BlockSolveDebugCounters {
         std::array<float, 2> selectedPreNormalImpulses{0.0f, 0.0f};
         std::array<float, 2> selectedPostNormalImpulses{0.0f, 0.0f};

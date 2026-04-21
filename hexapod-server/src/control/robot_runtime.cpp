@@ -673,6 +673,7 @@ void RobotRuntime::diagnosticsStep() {
     const auto st = status_.read();
     const auto bridge_result = hw_ ? hw_->last_bridge_result() : std::nullopt;
     const uint64_t loops = control_loop_counter_.load();
+    const resource_monitoring::ProcessResourceSnapshot process_resources = process_resource_sampler_.sample();
     diagnostics_reporter_.recordVisualizerTelemetry(telemetry_publisher_->counters(), now_us());
     diagnostics_reporter_.report(st,
                                  bridge_result,
@@ -680,7 +681,8 @@ void RobotRuntime::diagnosticsStep() {
                                  timing_metrics_.averageControlDtUs(loops),
                                  control_jitter_max_us_.load(),
                                  stale_intent_count_.load(),
-                                 stale_estimator_count_.load());
+                                 stale_estimator_count_.load(),
+                                 process_resources);
 }
 
 void RobotRuntime::setMotionIntent(const MotionIntent& intent) {

@@ -3,6 +3,7 @@
 #include "freshness_policy.hpp"
 #include "hardware_bridge.hpp"
 #include "logger.hpp"
+#include "process_resource_monitoring.hpp"
 #include "telemetry_publisher.hpp"
 #include "types.hpp"
 
@@ -32,7 +33,8 @@ public:
                 uint64_t avg_control_dt_us,
                 uint64_t max_control_jitter_us,
                 uint64_t stale_intent_events,
-                uint64_t stale_estimator_events);
+                uint64_t stale_estimator_events,
+                const resource_monitoring::ProcessResourceSnapshot& process_resources);
 
 private:
     void maybeLogVisualizerFailureWarning(TimePointUs now);

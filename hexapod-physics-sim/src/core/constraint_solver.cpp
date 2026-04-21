@@ -14,7 +14,7 @@ void ConstraintSolver::SolveIslands(const ConstraintSolverContext& context) cons
             context.contactSolverConfig);
         const std::vector<std::size_t>& manifoldOrder = islandOrder.manifoldOrder;
         const IslandSolveOrdering ordering = islandOrder.orderingUsed;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
         if (context.solverTelemetry) {
             if (islandOrder.supportDepthApplied) {
                 ++context.solverTelemetry->supportDepthOrderApplied;

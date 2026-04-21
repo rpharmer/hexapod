@@ -240,6 +240,38 @@ bool test_lidar_removed_obstacle_clears_old_cells() {
     return true;
 }
 
+bool test_duplicate_timestamp_does_not_refresh_map() {
+    auto lidar = std::make_shared<MatrixLidarLocalMapObservationSource>();
+    NavigationManager nav(LocalMapConfig{}, LocalPlannerConfig{});
+    nav.addObservationSource(lidar);
+    nav.startNavigateToPose(makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.07),
+                            NavPose2d{0.5, 0.0, 0.0});
+
+    RobotState est{};
+    const NavPose2d pose{0.0, 0.0, 0.0};
+    const TimePointUs lidar_ts{1'000'000};
+    fillNavRobotState(est, pose, lidar_ts, 1);
+    fillMatrixLidarBand(est, lidar_ts, 600, 18, 46, 1, 6);
+    nav.refreshTerrainSnapshot(est, lidar_ts);
+    const LocalMapSnapshot first = nav.latestMapSnapshot(lidar_ts);
+    if (!expect(first.last_observation_timestamp.value == lidar_ts.value,
+                "initial lidar timestamp should populate the map")) {
+        return false;
+    }
+
+    const TimePointUs later{1'020'000};
+    fillNavRobotState(est, pose, later, 2);
+    fillMatrixLidarBand(est, lidar_ts, 1'500, 0, 63, 0, 7);
+    nav.refreshTerrainSnapshot(est, later);
+    const LocalMapSnapshot second = nav.latestMapSnapshot(later);
+    if (!expect(second.last_observation_timestamp.value == lidar_ts.value,
+                "repeated lidar timestamp should not refresh the map")) {
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -253,6 +285,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!test_lidar_removed_obstacle_clears_old_cells()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_duplicate_timestamp_does_not_refresh_map()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

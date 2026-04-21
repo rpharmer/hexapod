@@ -9,6 +9,7 @@
 #include "logger.hpp"
 #include "navigation_manager.hpp"
 #include "replay_logger.hpp"
+#include "process_resource_monitoring.hpp"
 #include "runtime_diagnostics_reporter.hpp"
 #include "runtime_freshness_gate.hpp"
 #include "runtime_timing_metrics.hpp"
@@ -84,6 +85,7 @@ private:
     std::atomic<uint64_t> intent_sample_seq_{0};
     RuntimeFreshnessGate freshness_gate_;
     RuntimeTimingMetrics timing_metrics_;
+    resource_monitoring::ProcessResourceSampler process_resource_sampler_;
     RuntimeDiagnosticsReporter diagnostics_reporter_;
 
     DoubleBuffer<RobotState> raw_state_;

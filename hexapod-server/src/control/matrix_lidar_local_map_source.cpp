@@ -155,6 +155,11 @@ LocalMapObservation MatrixLidarLocalMapObservationSource::collect(const NavPose2
         return out;
     }
 
+    if (!est.matrix_lidar.timestamp_us.isZero() &&
+        last_emitted_timestamp_.value == est.matrix_lidar.timestamp_us.value) {
+        return out;
+    }
+
     out.timestamp_us = est.matrix_lidar.timestamp_us.value != 0 ? est.matrix_lidar.timestamp_us : now;
 
     double fov_h = matrix_lidar_geom::kMatrix64x8FovHRad;
@@ -233,6 +238,10 @@ LocalMapObservation MatrixLidarLocalMapObservationSource::collect(const NavPose2
             appendRaySamples(out, sensor_x, sensor_y, sensor_z, dir_w, range_m, true, range_m,
                              sensor_z + range_m * dir_w.z, false);
         }
+    }
+
+    if (!out.timestamp_us.isZero()) {
+        last_emitted_timestamp_ = out.timestamp_us;
     }
 
     return out;

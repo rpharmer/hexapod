@@ -391,7 +391,7 @@ bool World::ConvexOverlapWithCache(std::uint32_t a, std::uint32_t b) {
                 epa.normal = -epa.normal;
             }
             convexManifoldSeeds_[ConvexSeedKey{lo, hi}] = epa;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             if (epa.usedFallback) {
                 ++solverTelemetry_.epaFallbackUsed;
             }
@@ -403,7 +403,7 @@ bool World::ConvexOverlapWithCache(std::uint32_t a, std::uint32_t b) {
             }
 #endif
         } else {
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             ++solverTelemetry_.epaDuplicateSupports;
 #endif
         }
@@ -450,7 +450,7 @@ void World::BuildManifolds() {
             [this](Manifold& manifold, const Manifold* previous) { ManageManifoldContacts(manifold, previous); },
             [](Manifold& manifold) { RefreshManifoldBlockCache(manifold); },
             [this](Manifold& manifold) { SelectBlockSolvePair(manifold); },
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             [this](const Manifold& manifold) { RecordSelectedPairHistory(manifold); },
 #else
             [](const Manifold&) {},
@@ -461,7 +461,7 @@ void World::BuildManifolds() {
                 ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
             },
             [this](bool reusedBasis) {
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                 if (reusedBasis) {
                     ++solverTelemetry_.tangentBasisReused;
                 } else {
@@ -471,7 +471,7 @@ void World::BuildManifolds() {
                 (void)reusedBasis;
 #endif
             },
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             [this](FrictionBudgetNormalSupportSource source) {
                 ++solverTelemetry_.manifoldFrictionBudgetSaturated;
                 switch (source) {

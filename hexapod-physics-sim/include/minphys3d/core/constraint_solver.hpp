@@ -20,7 +20,7 @@ struct ConstraintSolverContext {
     std::vector<ServoJoint>& servoJoints;
     const ContactSolverContext& contactContext;
     const ContactSolverConfig& contactSolverConfig;
-#ifndef NDEBUG
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     World::SolverTelemetry* solverTelemetry = nullptr;
 #endif
 
