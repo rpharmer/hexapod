@@ -11,6 +11,6 @@ void PhysicsSimEstimator::reset() {
 RobotState PhysicsSimEstimator::update(const RobotState& raw) {
     RobotState out = raw;
     out.has_body_twist_state = true;
-    RobotState fused = fusion_.update(out, state_fusion::FusionSourceMode::Predictive);
-    return fused;
+    out.has_fusion_diagnostics = false;
+    return out;
 }

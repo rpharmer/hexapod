@@ -42,11 +42,11 @@ namespace minphys3d::demo {
 namespace {
 
 constexpr std::size_t kRecvBufBytes = 512;
-constexpr std::uint32_t kRobotCollisionGroup = 0x0002;
-constexpr std::uint32_t kTerrainCollisionGroup = 0x0004;
 constexpr int kSocketRetryCount = 5;
 constexpr int kSocketRetryDelayMs = 25;
 constexpr std::uint64_t kMatrixLidarFramePeriodUs = 15'625; // 64 Hz full-frame cadence
+constexpr float kServeMaxPhysicsSubstepSeconds = 1.0f / 240.0f;
+constexpr int kServeMaxPhysicsSubsteps = 16;
 
 struct CachedMatrixLidarFrame {
     bool valid{false};
@@ -192,24 +192,6 @@ float ContactSupportWeight(const physics_sim::StateCorrection& correction) {
         return 0.0f;
     }
     return Clamp01(total / static_cast<float>(count));
-}
-
-void RetargetRobotToTerrain(World& world, const HexapodSceneObjects& scene) {
-    auto retarget = [&](std::uint32_t body_id) {
-        Body& body = world.GetBody(body_id);
-        body.collisionGroup = kRobotCollisionGroup;
-        body.collisionMask |= kTerrainCollisionGroup;
-    };
-
-    retarget(scene.body);
-    for (const LegLinkIds& leg : scene.legs) {
-        retarget(leg.coxa);
-        retarget(leg.femur);
-        retarget(leg.tibia);
-    }
-
-    Body& plane = world.GetBody(scene.plane);
-    plane.collisionMask &= ~(kRobotCollisionGroup | kTerrainCollisionGroup);
 }
 
 std::optional<Vec3> FootCenterWorld(const World& world, const HexapodSceneObjects& scene, const std::size_t leg_index) {
@@ -791,7 +773,6 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     World world(Vec3{0.0f, -9.81f, 0.0f});
     HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
-    RetargetRobotToTerrain(world, scene);
     int solver_iterations = 8;
     AssimilationState assimilation_state{};
     TerrainPatchConfig terrain_config{};
@@ -816,6 +797,11 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     const Vec3 plane_normal = terrain_seed.has_plane_normal ? terrain_seed.plane_normal : world.GetBody(scene.plane).planeNormal;
     terrain_patch.initialize(world, patch_center, plane_height, plane_normal);
     const std::vector<std::uint32_t> terrain_body_ids(terrain_patch.body_ids().begin(), terrain_patch.body_ids().end());
+    // Keep the terrain grid available for sensing/visualization without making flat-ground
+    // contact resolution depend on hundreds of small adjacent boxes.
+    for (const std::uint32_t body_id : terrain_body_ids) {
+        world.GetBody(body_id).collisionMask = 0;
+    }
     const std::vector<std::uint32_t> obstacle_body_ids = CollectObstacleBodyIds(world, scene, terrain_body_ids);
 
     JointSolverConfig joint_cfg = world.GetJointSolverConfig();
@@ -1036,7 +1022,14 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 prev_angles[i] = world.GetServoJointAngle(wire_joints[i]);
             }
 
-            world.Step(step.dt_seconds, solver_iterations);
+            const int physics_substeps = std::clamp(
+                static_cast<int>(std::ceil(step.dt_seconds / kServeMaxPhysicsSubstepSeconds)),
+                1,
+                kServeMaxPhysicsSubsteps);
+            const float substep_dt = step.dt_seconds / static_cast<float>(physics_substeps);
+            for (int substep = 0; substep < physics_substeps; ++substep) {
+                world.Step(substep_dt, solver_iterations);
+            }
 
             physics_sim::StateResponse rsp{};
             rsp.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateResponse);

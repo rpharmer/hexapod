@@ -74,8 +74,9 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
         },
         FaultRule{
             .is_triggered = [&](void) {
-                return raw.voltage < config_.min_bus_voltage_v ||
-                       raw.current > config_.max_bus_current_a;
+                return raw.has_power_state &&
+                       (raw.voltage < config_.min_bus_voltage_v ||
+                        raw.current > config_.max_bus_current_a);
             },
             .fault = FaultCode::MOTOR_FAULT,
             .torque_cut = true,

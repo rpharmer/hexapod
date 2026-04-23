@@ -19,6 +19,7 @@ RobotState nominalRaw() {
     RobotState raw{};
     raw.timestamp_us = now_us();
     raw.bus_ok = true;
+    raw.has_power_state = true;
     raw.voltage = 12.0f;
     raw.current = 1.0f;
     raw.foot_contacts = {true, true, true, true, true, true};
