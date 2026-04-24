@@ -250,6 +250,12 @@ struct Island {
     std::vector<std::size_t> servos;
 };
 
+struct IslandOrderResult {
+    std::vector<std::size_t> manifoldOrder;
+    IslandSolveOrdering orderingUsed = IslandSolveOrdering::Insertion;
+    bool supportDepthApplied = false;
+};
+
 
 inline bool ValidateContactSolverConfig(const ContactSolverConfig& config) {
     constexpr float kMinSaneToiStep = 1e-9f;

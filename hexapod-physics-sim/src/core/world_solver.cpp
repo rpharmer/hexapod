@@ -4,6 +4,7 @@
 #include "minphys3d/core/world.hpp"
 #include "minphys3d/solver/block2_solver.hpp"
 #include "minphys3d/solver/block4_solver.hpp"
+#include "minphys3d/solver/island_ordering.hpp"
 
 #include <cmath>
 
@@ -1098,6 +1099,15 @@ bool World::TryComputeAnchorSeparation(const Contact& c, float& outPenetration) 
         return true;
     }
 
+void World::PrepareIslandOrders() {
+    islandOrders_.clear();
+    islandOrders_.reserve(islands_.size());
+    for (const Island& island : islands_) {
+        islandOrders_.push_back(
+            solver_internal::ComputeIslandOrder(island, bodies_, manifolds_, contactSolverConfig_));
+    }
+}
+
 void World::SolveIslands() {
         std::unordered_map<ManifoldKey, std::unordered_set<PersistentPointKey, PersistentPointKeyHash>, ManifoldKeyHash> warmStartUsedKeys;
         core_internal::ContactSolverContext contactContext{
@@ -1180,6 +1190,7 @@ void World::SolveIslands() {
             servoJoints_,
             contactContext,
             contactSolverConfig_,
+            islandOrders_.empty() ? nullptr : &islandOrders_,
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             &solverTelemetry_,
 #endif

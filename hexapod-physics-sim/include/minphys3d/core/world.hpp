@@ -669,6 +669,8 @@ private:
     void SolvePrismaticJoint(PrismaticJoint& j);
     void SolveServoJoint(ServoJoint& j);
 
+    void PrepareIslandOrders();
+
     void SolveIslands();
 
     void SolveJointPositions();
@@ -777,6 +779,7 @@ private:
     std::vector<Manifold> previousManifolds_;
     world_resource_monitoring::Profiler resource_profiler_{world_resource_monitoring::kSectionLabels};
     std::vector<Island> islands_;
+    std::vector<IslandOrderResult> islandOrders_;
     std::vector<DistanceJoint> joints_;
     std::vector<HingeJoint> hingeJoints_;
     std::vector<BallSocketJoint> ballSocketJoints_;
