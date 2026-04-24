@@ -607,6 +607,7 @@ void World::Step(float dt, int solverIterations) {
             BuildIslands();
             (void)scope;
         }
+        PrepareIslandOrders();
         {
             const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::WarmStartContacts));
             WarmStartContacts();
