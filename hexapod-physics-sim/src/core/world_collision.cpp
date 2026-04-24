@@ -255,6 +255,92 @@ bool ComputeConvexPenetration(const Body& a, const Body& b, EpaPenetrationResult
     return true;
 }
 
+const std::vector<float>& TerrainCollisionHeights(const World::TerrainHeightfieldAttachment& terrain) {
+    return terrain.collisionHeightsM.empty() ? terrain.surfaceHeightsM : terrain.collisionHeightsM;
+}
+
+bool SampleTerrainCell(const World::TerrainHeightfieldAttachment& terrain,
+                       int row,
+                       int col,
+                       float x,
+                       float z,
+                       float& outHeight,
+                       Vec3& outNormal) {
+    if (!terrain.enabled || terrain.rows < 2 || terrain.cols < 2) {
+        return false;
+    }
+    if (row < 0 || col < 0 || row >= terrain.rows - 1 || col >= terrain.cols - 1) {
+        return false;
+    }
+    const std::vector<float>& heights = TerrainCollisionHeights(terrain);
+    const std::size_t idx00 = static_cast<std::size_t>(row * terrain.cols + col);
+    const std::size_t idx10 = idx00 + 1u;
+    const std::size_t idx01 = static_cast<std::size_t>((row + 1) * terrain.cols + col);
+    const std::size_t idx11 = idx01 + 1u;
+    if (idx11 >= heights.size()) {
+        return false;
+    }
+
+    const float cellX0 = terrain.gridOriginWorld.x + static_cast<float>(col) * terrain.cellSizeM;
+    const float cellZ0 = terrain.gridOriginWorld.z + static_cast<float>(row) * terrain.cellSizeM;
+    const float invCell = 1.0f / std::max(terrain.cellSizeM, 1.0e-6f);
+    const float tx = std::clamp((x - cellX0) * invCell, 0.0f, 1.0f);
+    const float tz = std::clamp((z - cellZ0) * invCell, 0.0f, 1.0f);
+
+    const float h00 = heights[idx00];
+    const float h10 = heights[idx10];
+    const float h01 = heights[idx01];
+    const float h11 = heights[idx11];
+    const float hx = h10 - h00;
+    const float hz = h01 - h00;
+    const float hxz = h00 - h10 - h01 + h11;
+
+    outHeight = h00 + hx * tx + hz * tz + hxz * tx * tz;
+    const float dhdx = (hx + hxz * tz) * invCell;
+    const float dhdz = (hz + hxz * tx) * invCell;
+    outNormal = { -dhdx, 1.0f, -dhdz };
+    if (!TryNormalize(outNormal, outNormal)) {
+        outNormal = {0.0f, 1.0f, 0.0f};
+    }
+    return true;
+}
+
+bool TerrainCellRangeForAabb(const World::TerrainHeightfieldAttachment& terrain,
+                             const AABB& bounds,
+                             int& row0,
+                             int& row1,
+                             int& col0,
+                             int& col1) {
+    if (!terrain.enabled || terrain.rows < 2 || terrain.cols < 2) {
+        return false;
+    }
+
+    const float cellSize = std::max(terrain.cellSizeM, 1.0e-6f);
+    const float minX = terrain.gridOriginWorld.x;
+    const float minZ = terrain.gridOriginWorld.z;
+    const float maxX = minX + static_cast<float>(terrain.cols - 1) * cellSize;
+    const float maxZ = minZ + static_cast<float>(terrain.rows - 1) * cellSize;
+    if (bounds.max.x < minX || bounds.min.x > maxX || bounds.max.z < minZ || bounds.min.z > maxZ) {
+        return false;
+    }
+
+    col0 = std::clamp(static_cast<int>(std::floor((bounds.min.x - minX) / cellSize)), 0, terrain.cols - 2);
+    col1 = std::clamp(static_cast<int>(std::floor((bounds.max.x - minX) / cellSize)), 0, terrain.cols - 2);
+    row0 = std::clamp(static_cast<int>(std::floor((bounds.min.z - minZ) / cellSize)), 0, terrain.rows - 2);
+    row1 = std::clamp(static_cast<int>(std::floor((bounds.max.z - minZ) / cellSize)), 0, terrain.rows - 2);
+    return row0 <= row1 && col0 <= col1;
+}
+
+struct TerrainContactCandidate {
+    std::uint32_t row = 0;
+    std::uint32_t col = 0;
+    std::uint32_t shapeFeature = 0;
+    Vec3 normal{};
+    Vec3 supportPoint{};
+    float penetration = 0.0f;
+    float height = 0.0f;
+};
+
 } // namespace
 
 void World::ConvexPlane(std::uint32_t convexBodyId, std::uint32_t planeId) {
@@ -691,7 +777,149 @@ void World::GenerateContacts() {
             [this](std::uint32_t a, std::uint32_t b) { CapsuleHalfCylinder(a, b); },
         };
         narrowphaseSystem.GenerateContacts(context);
+        GenerateTerrainContacts();
         EmitConvexManifoldSeeds();
+    }
+
+void World::GenerateTerrainContacts() {
+        if (!terrainAttachment_.enabled || terrainAttachmentBodyId_ == kInvalidBodyId) {
+            return;
+        }
+        if (terrainAttachment_.rows < 2 || terrainAttachment_.cols < 2) {
+            return;
+        }
+
+        const std::uint32_t terrainBodyId = terrainAttachmentBodyId_;
+        for (std::uint32_t bodyId = 0; bodyId < bodies_.size(); ++bodyId) {
+            if (bodyId == terrainBodyId) {
+                continue;
+            }
+            const Body& body = bodies_[bodyId];
+            if (body.isTerrainAttachment || body.invMass == 0.0f || body.isSleeping) {
+                continue;
+            }
+
+            std::vector<TerrainContactCandidate> candidates;
+            std::unordered_set<std::uint64_t> usedCellKeys;
+            candidates.reserve(16);
+
+            const std::vector<ResolvedCollisionShape> shapes = ResolveCollisionShapes(body);
+            for (const ResolvedCollisionShape& shape : shapes) {
+                if (shape.body.invMass == 0.0f) {
+                    continue;
+                }
+                int row0 = 0;
+                int row1 = 0;
+                int col0 = 0;
+                int col1 = 0;
+                if (!TerrainCellRangeForAabb(terrainAttachment_, shape.bounds, row0, row1, col0, col1)) {
+                    continue;
+                }
+
+                const ConvexSupport support = BuildConvexSupport(shape.body);
+                if (!support.IsValid()) {
+                    continue;
+                }
+
+                for (int row = row0; row <= row1; ++row) {
+                    for (int col = col0; col <= col1; ++col) {
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                        ++solverTelemetry_.terrainCellsTested;
+#endif
+                        const float cellX0 = terrainAttachment_.gridOriginWorld.x
+                            + static_cast<float>(col) * terrainAttachment_.cellSizeM;
+                        const float cellZ0 = terrainAttachment_.gridOriginWorld.z
+                            + static_cast<float>(row) * terrainAttachment_.cellSizeM;
+                        const float cellX1 = cellX0 + terrainAttachment_.cellSizeM;
+                        const float cellZ1 = cellZ0 + terrainAttachment_.cellSizeM;
+                        const float sampleX = std::clamp(shape.body.position.x, cellX0, cellX1);
+                        const float sampleZ = std::clamp(shape.body.position.z, cellZ0, cellZ1);
+                        float terrainHeight = 0.0f;
+                        Vec3 terrainNormal{};
+                        if (!SampleTerrainCell(terrainAttachment_, row, col, sampleX, sampleZ, terrainHeight, terrainNormal)) {
+                            continue;
+                        }
+
+                        const ConvexSupportPoint sp = support.Support(-terrainNormal);
+                        const float signedDistance = Dot(terrainNormal, sp.point) - terrainHeight;
+                        if (signedDistance >= 0.0f) {
+                            continue;
+                        }
+
+                        TerrainContactCandidate candidate{};
+                        candidate.row = static_cast<std::uint32_t>(row);
+                        candidate.col = static_cast<std::uint32_t>(col);
+                        candidate.shapeFeature = shape.encodedFeature;
+                        candidate.normal = terrainNormal;
+                        candidate.supportPoint = sp.point;
+                        candidate.penetration = -signedDistance;
+                        candidate.height = terrainHeight;
+                        candidates.push_back(candidate);
+                    }
+                }
+            }
+            if (candidates.empty()) {
+                continue;
+            }
+
+            std::sort(candidates.begin(), candidates.end(), [](const TerrainContactCandidate& lhs, const TerrainContactCandidate& rhs) {
+                if (std::abs(lhs.penetration - rhs.penetration) > 1.0e-6f) {
+                    return lhs.penetration > rhs.penetration;
+                }
+                if (lhs.row != rhs.row) {
+                    return lhs.row < rhs.row;
+                }
+                if (lhs.col != rhs.col) {
+                    return lhs.col < rhs.col;
+                }
+                return lhs.shapeFeature < rhs.shapeFeature;
+            });
+
+            std::vector<TerrainContactCandidate> chosen;
+            chosen.reserve(4);
+            for (const TerrainContactCandidate& candidate : candidates) {
+                const std::uint64_t cellKey =
+                    (static_cast<std::uint64_t>(candidate.row) << 32u) | static_cast<std::uint64_t>(candidate.col);
+                if (!usedCellKeys.insert(cellKey).second) {
+                    continue;
+                }
+                chosen.push_back(candidate);
+                if (chosen.size() >= 4) {
+                    break;
+                }
+            }
+
+            if (candidates.size() > chosen.size()) {
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                solverTelemetry_.terrainManifoldMerges += static_cast<std::uint64_t>(candidates.size() - chosen.size());
+#endif
+            }
+
+            for (const TerrainContactCandidate& candidate : chosen) {
+                const std::uint32_t cellFeature =
+                    candidate.row * static_cast<std::uint32_t>(terrainAttachment_.cols) + candidate.col;
+                const std::uint16_t detail = static_cast<std::uint16_t>(
+                    static_cast<std::uint16_t>(terrainAttachment_.revision & 0xffffu)
+                    ^ static_cast<std::uint16_t>(cellFeature & 0xffffu));
+                const std::uint64_t featureId = CanonicalFeaturePairId(
+                    bodyId,
+                    terrainBodyId,
+                    candidate.shapeFeature,
+                    cellFeature,
+                    detail);
+                AddContact(
+                    bodyId,
+                    terrainBodyId,
+                    -candidate.normal,
+                    candidate.supportPoint,
+                    candidate.penetration,
+                    14u,
+                    featureId);
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                ++solverTelemetry_.terrainContactsEmitted;
+#endif
+            }
+        }
     }
 
 void World::EmitConvexManifoldSeeds() {

@@ -28,11 +28,9 @@ struct InteractiveControllerState
   ControllerInputMode input_mode{ControllerInputMode::HeadingWalk};
   RobotMode walk_mode{RobotMode::WALK};
   GaitType gait{GaitType::TRIPOD};
-  double walk_body_height_m{0.05};
-  double walk_facing_yaw_rad{0.0};
-  bool walk_facing_valid{false};
+  double walk_body_height_m{0.14};
 
-  double body_height_m{0.05};
+  double body_height_m{0.14};
 };
 
 struct InteractiveButtonMappingResult
@@ -50,6 +48,6 @@ InteractiveButtonMappingResult mapInteractiveButtonEvent(const ControllerEvent& 
 void updateControllerDerivedState(const IControlDevice& controller, InteractiveControllerState& state);
 
 MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
-                                        const InteractiveControllerState& state);
+                                        InteractiveControllerState& state);
 
 #endif // INTERACTIVE_INPUT_MAPPER_HPP

@@ -119,6 +119,9 @@ void appendLegGeometryJson(std::ostringstream& payload, const HexapodGeometry& g
                 << ",\"coxa_mm\":" << leg.coxaLength.value * kMetersToMillimeters
                 << ",\"femur_mm\":" << leg.femurLength.value * kMetersToMillimeters
                 << ",\"tibia_mm\":" << leg.tibiaLength.value * kMetersToMillimeters
+                << ",\"coxa_attach_deg\":" << rad2deg(leg.servo.coxaOffset)
+                << ",\"femur_attach_deg\":" << rad2deg(leg.servo.femurOffset)
+                << ",\"tibia_attach_deg\":" << rad2deg(leg.servo.tibiaOffset)
                 << ",\"coxa_sign\":" << leg.servo.coxaSign
                 << ",\"femur_sign\":" << leg.servo.femurSign
                 << ",\"tibia_sign\":" << leg.servo.tibiaSign
@@ -196,6 +199,35 @@ void appendFusionJson(std::ostringstream& payload, const telemetry::FusionTeleme
             << "\"terrain_residual_m\":" << fusion.correction.residuals.terrain_residual_m
             << "}}";
     payload << '}';
+}
+
+void appendProcessResourceJson(std::ostringstream& payload,
+                              const resource_monitoring::ProcessResourceSnapshot& snapshot) {
+    payload << "{\"cpu_percent\":" << snapshot.cpu_percent
+            << ",\"cpu_window_us\":" << snapshot.cpu_window_us
+            << ",\"rss_bytes\":" << snapshot.rss_bytes
+            << ",\"vms_bytes\":" << snapshot.vms_bytes
+            << '}';
+}
+
+template <std::size_t MaxSections>
+void appendResourceSectionSummaryJson(std::ostringstream& payload,
+                                      const resource_monitoring::ResourceSectionSummary<MaxSections>& summary) {
+    payload << '[';
+    const std::size_t count = std::min(summary.count, summary.sections.size());
+    for (std::size_t index = 0; index < count; ++index) {
+        if (index > 0) {
+            payload << ',';
+        }
+        const resource_monitoring::ResourceSectionSnapshot& section = summary.sections[index];
+        payload << "{\"label\":\"" << (section.label != nullptr ? section.label : "<unnamed>") << "\""
+                << ",\"total_self_ns\":" << section.total_self_ns
+                << ",\"window_self_ns\":" << section.window_self_ns
+                << ",\"max_self_ns\":" << section.max_self_ns
+                << ",\"call_count\":" << section.call_count
+                << '}';
+    }
+    payload << ']';
 }
 
 } // namespace
@@ -283,6 +315,19 @@ std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& te
     }
 
     payload << "}";
+    payload << ",\"raw_contacts\":[";
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        if (leg != 0) {
+            payload << ",";
+        }
+        payload << (telemetry.estimated_state.foot_contacts[static_cast<std::size_t>(leg)] ? "true" : "false");
+    }
+    payload << "]";
+    if (telemetry.estimated_state.has_body_twist_state) {
+        payload << ",\"body_position\":";
+        appendVec3Json(payload, telemetry.estimated_state.body_twist_state.body_trans_m);
+        payload << ",\"body_yaw_rad\":" << telemetry.estimated_state.body_twist_state.twist_pos_rad.z;
+    }
     if (telemetry.navigation.has_value()) {
         const NavigationMonitorSnapshot& nav = telemetry.navigation.value();
         payload << ",\"nav\":{"
@@ -296,6 +341,10 @@ std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& te
                 << "\"nearest_obstacle_distance_m\":" << nav.nearest_obstacle_distance_m
                 << "}";
     }
+    if (telemetry.process_resources.has_value()) {
+        payload << ",\"process_resource\":";
+        appendProcessResourceJson(payload, telemetry.process_resources.value());
+    }
     telemetry::FusionTelemetrySnapshot fusion = telemetry.fusion;
     if (!fusion.has_data && telemetry.estimated_state.has_fusion_diagnostics) {
         fusion.has_data = true;
@@ -304,6 +353,10 @@ std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& te
     }
     payload << ',';
     appendFusionJson(payload, fusion);
+    if (telemetry.resource_sections.has_value()) {
+        payload << ",\"resource_sections\":";
+        appendResourceSectionSummaryJson(payload, telemetry.resource_sections.value());
+    }
     payload << '}';
     return payload.str();
 }

@@ -157,6 +157,34 @@ void applyTelemetryCliOverrides(ParsedToml& config,
   syncTelemetryCompatibilityFields(config);
 }
 
+void applyInvestigationCliOverrides(ParsedToml& config, const CliOptions& options)
+{
+  if (options.investigationDisableTerrainStanceBiasOverride.has_value()) {
+    config.investigationDisableTerrainStanceBias =
+        options.investigationDisableTerrainStanceBiasOverride.value();
+  }
+  if (options.investigationDisableTerrainSwingClearanceOverride.has_value()) {
+    config.investigationDisableTerrainSwingClearance =
+        options.investigationDisableTerrainSwingClearanceOverride.value();
+  }
+  if (options.investigationDisableTerrainSwingXYNudgeOverride.has_value()) {
+    config.investigationDisableTerrainSwingXYNudge =
+        options.investigationDisableTerrainSwingXYNudgeOverride.value();
+  }
+  if (options.investigationDisableStanceTiltLevelingOverride.has_value()) {
+    config.investigationDisableStanceTiltLeveling =
+        options.investigationDisableStanceTiltLevelingOverride.value();
+  }
+  if (options.investigationSuppressFusionCorrectionsOverride.has_value()) {
+    config.investigationSuppressFusionCorrections =
+        options.investigationSuppressFusionCorrectionsOverride.value();
+  }
+  if (options.investigationSuppressFusionResetsOverride.has_value()) {
+    config.investigationSuppressFusionResets =
+        options.investigationSuppressFusionResetsOverride.value();
+  }
+}
+
 } // namespace
 
 void signalHandler(int)
@@ -199,6 +227,7 @@ int main(int argc, char** argv)
   bootstrapLogger->Stop();
 
   applyTelemetryCliOverrides(config, options, logger);
+  applyInvestigationCliOverrides(config, options);
 
   const control_config::ControlConfig control_cfg = control_config::fromParsedToml(config);
   geometry_config::loadFromParsedToml(config);
@@ -230,6 +259,28 @@ int main(int argc, char** argv)
            control_cfg.replay_log.enabled,
            ", Path=",
            control_cfg.replay_log.file_path);
+  LOG_INFO(logger,
+           "Runtime.Investigation.TerrainStanceBiasEnabled=",
+           control_cfg.foot_terrain.enable_stance_plane_bias,
+           ", TerrainSwingClearanceEnabled=",
+           control_cfg.foot_terrain.enable_swing_clearance,
+           ", TerrainSwingXYNudgeEnabled=",
+           control_cfg.foot_terrain.enable_swing_xy_nudge,
+           ", StanceTiltLevelingEnabled=",
+           control_cfg.foot_terrain.enable_stance_tilt_leveling,
+           ", SuppressFusionCorrections=",
+           !control_cfg.fusion.emit_physics_sim_corrections,
+           ", SuppressFusionResets=",
+           control_cfg.fusion.suppress_fusion_resets);
+  LOG_INFO(logger,
+           "Runtime.Freshness.CommandRefreshMs=",
+           control_cfg.loop_timing.command_refresh_period.count(),
+           ", IntentMaxAgeUs=",
+           control_cfg.freshness.intent.max_allowed_age_us.value,
+           ", EstimatorMaxAgeUs=",
+           control_cfg.freshness.estimator.max_allowed_age_us.value,
+           ", CommandTimeoutUs=",
+           control_cfg.safety.command_timeout_us.value);
 
   auto hw = makeHardwareBridge(config, logger);
   auto navigation_manager =

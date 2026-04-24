@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <sstream>
 
 #define private public
 #include "minphys3d/core/world.hpp"
@@ -112,8 +113,8 @@ int main() {
     const ServoJoint& servo = world.servoJoints_[servoId];
     assert(AlmostEqual(servo.targetAngle, 0.0f));
     assert(AlmostEqual(servo.maxServoTorque, 1.0f));
-    assert(AlmostEqual(servo.positionGain, 6.0f));
-    assert(AlmostEqual(servo.dampingGain, 0.8f));
+    assert(AlmostEqual(servo.positionGain, 40.0f));
+    assert(AlmostEqual(servo.dampingGain, 1.0f));
     assert(AlmostEqual(servo.integralGain, 0.0f));
     assert(AlmostEqual(servo.integralClamp, 0.5f));
     assert(AlmostEqual(servo.positionErrorSmoothing, 0.0f));

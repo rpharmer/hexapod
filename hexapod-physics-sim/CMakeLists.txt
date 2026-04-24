@@ -135,6 +135,8 @@ add_minphys3d_test(hex_diag tests/hex_diag.cpp)
     add_test(NAME test_terrain_patch_scene_json COMMAND test_terrain_patch_scene_json)
 
     add_minphys3d_test(test_process_resource_monitoring tests/test_process_resource_monitoring.cpp)
+    add_minphys3d_test(test_world_resource_monitoring tests/test_world_resource_monitoring.cpp)
+    add_minphys3d_test(test_world_topology_snapshot tests/test_world_topology_snapshot.cpp)
 
     add_executable(test_serve_ipc tests/test_serve_ipc.cpp)
     target_include_directories(test_serve_ipc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/include)

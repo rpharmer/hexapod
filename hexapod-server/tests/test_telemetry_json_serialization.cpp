@@ -132,6 +132,8 @@ bool test_control_step_packet_includes_fusion_diagnostics()
     telemetry_sample.status.estimator_valid = true;
     telemetry_sample.estimated_state.voltage = 11.7f;
     telemetry_sample.estimated_state.current = 1.9f;
+    telemetry_sample.estimated_state.foot_contacts[0] = true;
+    telemetry_sample.estimated_state.foot_contacts[3] = true;
     telemetry_sample.joint_targets.leg_states[0].joint_state[COXA].pos_rad = AngleRad{deg2rad(5.0)};
     telemetry_sample.joint_targets.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{deg2rad(-10.0)};
     telemetry_sample.joint_targets.leg_states[0].joint_state[TIBIA].pos_rad = AngleRad{deg2rad(15.0)};
@@ -161,6 +163,22 @@ bool test_control_step_packet_includes_fusion_diagnostics()
     telemetry_sample.fusion.correction.residuals.max_body_orientation_error_rad = 0.33;
     telemetry_sample.fusion.correction.residuals.contact_mismatch_ratio = 0.26;
     telemetry_sample.fusion.correction.residuals.terrain_residual_m = 0.04;
+    telemetry_sample.process_resources = resource_monitoring::ProcessResourceSnapshot{
+        .cpu_percent = 37.5,
+        .cpu_window_us = 1'250'000,
+        .rss_bytes = 9'876'543,
+        .vms_bytes = 12'345'678,
+    };
+    telemetry::ResourceSectionSummary sections{};
+    sections.count = 1;
+    sections.sections[0] = resource_monitoring::ResourceSectionSnapshot{
+        .label = "control.pipeline",
+        .total_self_ns = 123'000,
+        .window_self_ns = 45'000,
+        .max_self_ns = 12'000,
+        .call_count = 3,
+    };
+    telemetry_sample.resource_sections = sections;
 
     const std::string payload = telemetry_json::serializeControlStepPacket(telemetry_sample);
 
@@ -174,10 +192,20 @@ bool test_control_step_packet_includes_fusion_diagnostics()
                   "control step payload should include human readable mode") &&
            expect(payload.find("\"active_fault\":\"ESTOP\"") != std::string::npos,
                   "control step payload should include human readable fault") &&
+           expect(payload.find("\"raw_contacts\":[true,false,false,true,false,false]") != std::string::npos,
+                  "control step payload should include raw contacts") &&
            expect(payload.find("\"voltage\":11.7") != std::string::npos,
                   "control step payload should include voltage") &&
            expect(payload.find("\"current\":1.9") != std::string::npos,
                   "control step payload should include current") &&
+           expect(payload.find("\"process_resource\":{") != std::string::npos,
+                  "control step payload should include process resource snapshot") &&
+           expect(payload.find("\"cpu_percent\":37.5") != std::string::npos,
+                  "process resource payload should include cpu percent") &&
+           expect(payload.find("\"resource_sections\":[") != std::string::npos,
+                  "control step payload should include resource sections") &&
+           expect(payload.find("\"label\":\"control.pipeline\"") != std::string::npos,
+                  "resource sections should include profiler labels") &&
            expect(payload.find("\"fusion\":{") != std::string::npos,
                   "control step payload should include fusion object") &&
            expect(payload.find("\"model_trust\":0.72") != std::string::npos,

@@ -101,6 +101,8 @@ struct ServoJoint {
     float servoImpulseSum = 0.0f;
     float targetAngle = 0.0f;
     float maxServoTorque = 0.0f;
+    /// Max axis speed (rad/s) the servo bias is allowed to request; 0 disables the clamp.
+    float maxServoSpeed = 0.0f;
     float positionGain = 40.0f;   // omega_n: natural frequency (rad/s)
     float dampingGain = 1.0f;     // zeta: damping ratio
     float integralGain = 0.0f;

@@ -126,6 +126,12 @@ bool parseRuntimeSection(const toml::value& root,
       {"Runtime.Telemetry.UdpPort", ValueType::Double, false, true, 1.0, 65535.0, "", false, 9870.0},
       {"Runtime.Telemetry.PublishPeriodMs", ValueType::Double, false, true, 1.0, 10000.0, "", false, 50.0},
       {"Runtime.Telemetry.GeometryRefreshPeriodMs", ValueType::Double, false, true, 100.0, 60000.0, "", false, 2000.0},
+      {"Runtime.Investigation.DisableTerrainStanceBias", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.Investigation.DisableTerrainSwingClearance", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.Investigation.DisableTerrainSwingXYNudge", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.Investigation.DisableStanceTiltLeveling", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.Investigation.SuppressFusionCorrections", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.Investigation.SuppressFusionResets", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
   };
 
   const auto* mode_desc = &schema[0];
@@ -210,6 +216,12 @@ bool parseRuntimeSection(const toml::value& root,
       static_cast<int>(std::lround(1000.0 / std::max(out.telemetryPublishRateHz, 0.1)));
   out.telemetryGeometryRefreshPeriodMs =
       static_cast<int>(std::lround(out.telemetryGeometryResendIntervalSec * 1000.0));
+  out.investigationDisableTerrainStanceBias = findOrByPath<bool>(root, schema[19].key, schema[19].default_bool);
+  out.investigationDisableTerrainSwingClearance = findOrByPath<bool>(root, schema[20].key, schema[20].default_bool);
+  out.investigationDisableTerrainSwingXYNudge = findOrByPath<bool>(root, schema[21].key, schema[21].default_bool);
+  out.investigationDisableStanceTiltLeveling = findOrByPath<bool>(root, schema[22].key, schema[22].default_bool);
+  out.investigationSuppressFusionCorrections = findOrByPath<bool>(root, schema[23].key, schema[23].default_bool);
+  out.investigationSuppressFusionResets = findOrByPath<bool>(root, schema[24].key, schema[24].default_bool);
   return true;
 }
 

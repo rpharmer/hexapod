@@ -28,8 +28,8 @@ inline constexpr DurationUs kDefaultEstimatorMaxAgeUs{300000};
 inline constexpr DurationUs kDefaultIntentMaxAgeUs{300000};
 inline constexpr LinearRateMps kDefaultFallbackSpeedMag{0.01};
 inline constexpr double kDefaultGaitTransitionBlendS{0.35};
-inline constexpr double kDefaultGaitNominalPlanarSpeedMps{0.25};
-inline constexpr double kDefaultGaitNominalYawRateRadps{0.5};
+inline constexpr double kDefaultGaitNominalPlanarSpeedMps{0.32};
+inline constexpr double kDefaultGaitNominalYawRateRadps{0.70};
 inline constexpr double kDefaultGaitTurnNominalRadiusM{0.11};
 /** Default fraction of estimator body twist blended into foot placement / support velocity (0 = intent only). */
 inline constexpr double kDefaultFootEstimatorBlend{0.35};
@@ -169,6 +169,10 @@ struct NavBridgeConfig {
 
 /** Tuning for LiDAR map–driven swing clearance, stance height bias, and late-swing XY nudges. */
 struct FootTerrainConfig {
+    bool enable_stance_plane_bias{true};
+    bool enable_swing_clearance{true};
+    bool enable_swing_xy_nudge{true};
+    bool enable_stance_tilt_leveling{true};
     double swing_margin_m{kDefaultFootTerrainSwingMarginM};
     double swing_max_lift_m{kDefaultFootTerrainSwingMaxLiftM};
     double swing_blend{kDefaultFootTerrainSwingBlend};
@@ -182,6 +186,8 @@ struct FootTerrainConfig {
 };
 
 struct FusionConfig {
+    bool emit_physics_sim_corrections{true};
+    bool suppress_fusion_resets{false};
     int contact_debounce_samples{kDefaultFusionContactDebounceSamples};
     std::chrono::milliseconds touchdown_window{std::chrono::milliseconds{kDefaultFusionTouchdownWindowMs}};
     std::chrono::milliseconds contact_hold_window{std::chrono::milliseconds{kDefaultFusionContactHoldWindowMs}};

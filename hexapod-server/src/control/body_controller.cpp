@@ -20,12 +20,42 @@ namespace {
 constexpr double kNominalReachFraction = 0.55;
 constexpr double kReachMarginM = 0.005;
 constexpr double kFootReachInsetM = 0.004;
+constexpr double kBodyHeightHoldGain = 1.35;
+constexpr double kBodyHeightHoldMaxAdjustM = 0.260;
+constexpr double kTerrainBlendMinScale = 0.35;
+constexpr double kTerrainBlendSagScale = 0.65;
 
 double fusionTrustScale(const RobotState& est) {
     if (!est.has_fusion_diagnostics) {
         return 1.0;
     }
     return std::clamp(est.fusion.model_trust, 0.20, 1.0);
+}
+
+double bodyHeightHoldOffsetM(const RobotState& est, const double commanded_body_height_m) {
+    if (!est.has_body_twist_state) {
+        return 0.0;
+    }
+    const double measured_body_height_m = est.body_twist_state.body_trans_m.z;
+    if (!std::isfinite(measured_body_height_m)) {
+        return 0.0;
+    }
+
+    // Only correct sag, not overshoot. The goal is to keep the body from settling lower than the
+    // requested stance without adding a new downward oscillation.
+    const double sag_m = std::max(0.0, commanded_body_height_m - measured_body_height_m);
+    if (sag_m <= 0.0) {
+        return 0.0;
+    }
+
+    // Height hold should follow the measured body height directly. Fusion trust is useful for
+    // resync decisions, but it should not dilute the stance correction that keeps the chassis up.
+    return std::clamp(kBodyHeightHoldGain * sag_m, 0.0, kBodyHeightHoldMaxAdjustM);
+}
+
+double terrainBlendScaleForHeightHold(const double height_hold_m) {
+    const double hold_ratio = std::clamp(height_hold_m / std::max(kBodyHeightHoldMaxAdjustM, 1e-6), 0.0, 1.0);
+    return std::clamp(1.0 - kTerrainBlendSagScale * hold_ratio, kTerrainBlendMinScale, 1.0);
 }
 
 void strideDirectionXY(const double rx,
@@ -114,14 +144,19 @@ LegTargets BodyController::update(const RobotState& est,
         computeBodyPoseSetpoint(intent, cmd, gait.static_stability_margin_m, gait.stride_phase_rate_hz.value);
 
     const double commanded_body_height_m = pose.body_height_m;
-    std::array<Vec3, kNumLegs> nominal = nominalStance(commanded_body_height_m);
     const bool walking =
         (intent.requested_mode == RobotMode::WALK) &&
         !safety.inhibit_motion &&
         !safety.torque_cut;
+    const double body_height_hold_m = bodyHeightHoldOffsetM(est, commanded_body_height_m);
+    const bool height_hold_active = body_height_hold_m > 1e-6;
+    const double terrain_blend_scale =
+        height_hold_active ? 0.0 : terrainBlendScaleForHeightHold(body_height_hold_m);
+    const double effective_body_height_m = commanded_body_height_m + body_height_hold_m;
+    std::array<Vec3, kNumLegs> nominal = nominalStance(effective_body_height_m);
 
-    if (walking && terrain_snapshot != nullptr) {
-        applyTerrainStanceZBias(*terrain_snapshot, est, intent, foot_terrain_cfg_, &nominal);
+    if (walking && terrain_snapshot != nullptr && terrain_blend_scale > 0.0) {
+        applyTerrainStanceZBias(*terrain_snapshot, est, intent, foot_terrain_cfg_, terrain_blend_scale, &nominal);
     }
 
     const Mat3 body_rotation =
@@ -149,10 +184,6 @@ LegTargets BodyController::update(const RobotState& est,
 
         if (walking) {
             double ph = clamp01(gait.phase[leg]);
-            if (gait.stability_hold_stance[leg]) {
-                ph = std::min(ph, duty - 1e-7);
-            }
-
             const Vec3 anchor = nominal[leg] - planar_body_offset;
             const Vec3 v_foot = supportFootVelocityAt(anchor, body_mot);
 
@@ -168,8 +199,9 @@ LegTargets BodyController::update(const RobotState& est,
                 planStanceFoot(st, p, v);
                 target = p;
                 target_vel = target_vel + v;
-                if (est.foot_contacts[static_cast<std::size_t>(leg)]) {
-                    target.z += trust_scale *
+                if (terrain_blend_scale > 0.0 && foot_terrain_cfg_.enable_stance_tilt_leveling &&
+                    est.foot_contacts[static_cast<std::size_t>(leg)]) {
+                    target.z += terrain_blend_scale * trust_scale *
                                 contact_foot_response::stanceTiltLevelingDeltaZ(est, intent, anchor.x, anchor.y);
                 }
             } else {
@@ -231,8 +263,10 @@ LegTargets BodyController::update(const RobotState& est,
             }
         } else if (intent.requested_mode == RobotMode::STAND &&
                    est.foot_contacts[static_cast<std::size_t>(leg)]) {
-            target.z += trust_scale *
-                        contact_foot_response::stanceTiltLevelingDeltaZ(est, intent, target.x, target.y);
+            if (terrain_blend_scale > 0.0 && foot_terrain_cfg_.enable_stance_tilt_leveling) {
+                target.z += terrain_blend_scale * trust_scale *
+                            contact_foot_response::stanceTiltLevelingDeltaZ(est, intent, target.x, target.y);
+            }
         }
 
         target = body_rotation * target;

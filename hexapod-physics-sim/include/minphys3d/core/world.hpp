@@ -25,6 +25,7 @@
 
 #include "minphys3d/broadphase/types.hpp"
 #include "minphys3d/core/body.hpp"
+#include "minphys3d/core/world_resource_monitoring.hpp"
 #include "minphys3d/core/world_types.hpp"
 #include "minphys3d/joints/types.hpp"
 #include "minphys3d/narrowphase/epa.hpp"
@@ -37,6 +38,23 @@ namespace minphys3d {
 class World {
 public:
     static constexpr std::uint32_t kInvalidJointId = std::numeric_limits<std::uint32_t>::max();
+    static constexpr std::uint32_t kInvalidBodyId = std::numeric_limits<std::uint32_t>::max();
+
+    struct TerrainHeightfieldAttachment {
+        bool enabled = false;
+        std::uint64_t revision = 0;
+        int rows = 0;
+        int cols = 0;
+        float cellSizeM = 0.0f;
+        Vec3 gridOriginWorld{};
+        Vec3 centerWorld{};
+        Vec3 planeNormal{0.0f, 1.0f, 0.0f};
+        float planeHeightM = 0.0f;
+        float baseHeightM = 0.0f;
+        bool useConservativeCollision = false;
+        std::vector<float> surfaceHeightsM{};
+        std::vector<float> collisionHeightsM{};
+    };
 
     explicit World(Vec3 gravity = {0.0f, -9.81f, 0.0f});
 
@@ -57,6 +75,10 @@ public:
     const JointSolverConfig& GetJointSolverConfig() const;
     const BroadphaseConfig& GetBroadphaseConfig() const;
     const BroadphaseMetrics& GetBroadphaseMetrics() const;
+    void SetTerrainHeightfield(TerrainHeightfieldAttachment terrain);
+    void ClearTerrainHeightfield();
+    bool HasTerrainHeightfield() const;
+    bool IsTerrainAttachmentBody(std::uint32_t bodyId) const;
     struct PersistenceMatchDiagnostics {
         std::uint64_t matchedPoints = 0;
         std::uint64_t droppedPoints = 0;
@@ -64,6 +86,20 @@ public:
         float churnRatio = 0.0f;
     };
     const PersistenceMatchDiagnostics& GetPersistenceMatchDiagnostics() const;
+
+    struct TopologySnapshot {
+        std::uint32_t bodyCount = 0;
+        std::uint32_t dynamicBodyCount = 0;
+        std::uint32_t awakeBodyCount = 0;
+        std::uint32_t contactCount = 0;
+        std::uint32_t manifoldCount = 0;
+        std::uint32_t islandCount = 0;
+        std::uint32_t maxIslandBodyCount = 0;
+        std::uint32_t maxIslandManifoldCount = 0;
+        std::uint32_t maxIslandJointCount = 0;
+        std::uint32_t maxIslandServoCount = 0;
+    };
+    [[nodiscard]] TopologySnapshot SnapshotTopology() const;
     void SetNarrowphaseDispatchPolicy(NarrowphaseDispatchPolicy policy);
     NarrowphaseDispatchPolicy GetNarrowphaseDispatchPolicy() const;
     static bool ComputeStableTangentFrame(
@@ -150,6 +186,12 @@ public:
         std::uint64_t epaIterationBailout = 0;
         std::uint64_t epaDegenerateFaces = 0;
         std::uint64_t epaDuplicateSupports = 0;
+        std::uint64_t terrainContactAdds = 0;
+        std::uint64_t terrainCellsTested = 0;
+        std::uint64_t terrainContactsEmitted = 0;
+        std::uint64_t terrainManifoldMerges = 0;
+        std::uint64_t terrainCacheHits = 0;
+        std::uint64_t terrainDirtyCellRefreshes = 0;
 
         ManifoldSolveBucket manifoldSolveScope{};
         std::unordered_map<std::uint8_t, ManifoldSolveBucket> manifoldTypeBuckets{};
@@ -224,9 +266,11 @@ public:
         float integralClamp = 0.5f,
         float positionErrorSmoothing = 0.0f,
         float angleStabilizationScale = 1.0f,
+        float maxServoSpeed = 0.0f,
         float maxCorrectionAngle = 0.5f);
 
     void Step(float dt, int solverIterations = 8);
+    [[nodiscard]] world_resource_monitoring::SectionSummary SnapshotResourceSections(bool reset_window = true) const;
 
     void AddForce(std::uint32_t id, const Vec3& force);
 
@@ -470,6 +514,7 @@ private:
 #endif
 
     void GenerateContacts();
+    void GenerateTerrainContacts();
     static bool IsConvexShape(ShapeType shape);
     ConvexDispatchRoute SelectConvexDispatchRoute(ShapeType a, ShapeType b) const;
 
@@ -730,6 +775,7 @@ private:
     std::vector<Contact> previousContacts_;
     std::vector<Manifold> manifolds_;
     std::vector<Manifold> previousManifolds_;
+    world_resource_monitoring::Profiler resource_profiler_{world_resource_monitoring::kSectionLabels};
     std::vector<Island> islands_;
     std::vector<DistanceJoint> joints_;
     std::vector<HingeJoint> hingeJoints_;
@@ -741,6 +787,8 @@ private:
     PersistenceMatchDiagnostics persistenceMatchDiagnostics_{};
     std::unordered_map<NarrowphaseCacheKey, NarrowphaseCache, NarrowphaseCacheKeyHash> narrowphaseCache_;
     std::unordered_map<ConvexSeedKey, EpaPenetrationResult, ConvexSeedKeyHash> convexManifoldSeeds_;
+    TerrainHeightfieldAttachment terrainAttachment_{};
+    std::uint32_t terrainAttachmentBodyId_ = kInvalidBodyId;
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     std::FILE* DebugLogStream() const {
         return debugLogStream_ != nullptr ? debugLogStream_ : stderr;

@@ -34,7 +34,8 @@ public:
                 uint64_t max_control_jitter_us,
                 uint64_t stale_intent_events,
                 uint64_t stale_estimator_events,
-                const resource_monitoring::ProcessResourceSnapshot& process_resources);
+                const resource_monitoring::ProcessResourceSnapshot& process_resources,
+                const std::optional<telemetry::ResourceSectionSummary>& resource_sections = std::nullopt);
 
 private:
     void maybeLogVisualizerFailureWarning(TimePointUs now);

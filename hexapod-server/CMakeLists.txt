@@ -374,6 +374,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_simple_estimator_ground_plane PRIVATE hexapod_server_core)
     add_test(NAME simple_estimator_ground_plane COMMAND test_simple_estimator_ground_plane)
 
+    add_executable(test_physics_sim_estimator tests/test_physics_sim_estimator.cpp)
+    target_link_libraries(test_physics_sim_estimator PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_estimator COMMAND test_physics_sim_estimator)
+
     add_executable(test_body_controller_velocity tests/test_body_controller_velocity.cpp)
     target_link_libraries(test_body_controller_velocity PRIVATE hexapod_server_core)
     add_test(NAME body_controller_velocity COMMAND test_body_controller_velocity)

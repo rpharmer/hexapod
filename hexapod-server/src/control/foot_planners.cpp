@@ -50,6 +50,7 @@ BodyVelocityCommand bodyVelocityForFootPlanning(const RobotState& est,
     BodyVelocityCommand out{};
     out.linear_mps = intent_only.linear_mps * (1.0 - k) + lin_est * k;
     out.angular_radps = intent_only.angular_radps * (1.0 - k) + ang_est * k;
+    out.linear_mps.z = intent_only.linear_mps.z;
     return out;
 }
 

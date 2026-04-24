@@ -53,6 +53,7 @@ struct Body {
     float angularDamping = 0.0f;
     bool isStatic = false;
     bool isSleeping = false;
+    bool isTerrainAttachment = false;
     int sleepCounter = 0;
 
     std::uint32_t collisionGroup = 0x0001;

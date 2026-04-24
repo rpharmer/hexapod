@@ -27,6 +27,12 @@ struct CliOptions
   std::optional<int> telemetryPortOverride;
   std::optional<double> telemetryPublishRateHzOverride;
   std::optional<double> telemetryGeometryResendIntervalSecOverride;
+  std::optional<bool> investigationDisableTerrainStanceBiasOverride;
+  std::optional<bool> investigationDisableTerrainSwingClearanceOverride;
+  std::optional<bool> investigationDisableTerrainSwingXYNudgeOverride;
+  std::optional<bool> investigationDisableStanceTiltLevelingOverride;
+  std::optional<bool> investigationSuppressFusionCorrectionsOverride;
+  std::optional<bool> investigationSuppressFusionResetsOverride;
 };
 
 bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error);

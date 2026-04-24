@@ -91,6 +91,10 @@ struct GaitState {
     double swing_duration_s{0.5};
     /** When true, keep leg in stance kinematics even if phase is in swing (support polygon gate). */
     std::array<bool, kNumLegs> stability_hold_stance{};
+    /** Remaining stance-polygon margin before each leg can safely lift (m). */
+    std::array<double, kNumLegs> support_liftoff_clearance_m{};
+    /** True when the remaining stance polygon can safely release the leg at the current phase. */
+    std::array<bool, kNumLegs> support_liftoff_safe_to_lift{};
     /** Minimum distance (m) from projected COM to stance support boundary; negative if outside. */
     double static_stability_margin_m{0.0};
     /** Body XY finite-diff of commanded planar velocity (m/s²), for swing placement / cadence. */

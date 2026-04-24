@@ -32,11 +32,6 @@ bool IsRobotBody(std::uint32_t body_id, const HexapodSceneObjects& scene) {
     return false;
 }
 
-bool IsTerrainBody(std::uint32_t body_id, const TerrainPatch& terrain_patch) {
-    const auto& ids = terrain_patch.body_ids();
-    return std::find(ids.begin(), ids.end(), body_id) != ids.end();
-}
-
 bool RayPlaneHit(const Vec3& o,
                  const Vec3& d,
                  const Vec3& plane_point,
@@ -197,7 +192,7 @@ float CastRay(const World& world,
         if (IsRobotBody(id, scene)) {
             continue;
         }
-        if (IsTerrainBody(id, terrain_patch)) {
+        if (world.IsTerrainAttachmentBody(id)) {
             continue;
         }
         const Body& b = world.GetBody(id);

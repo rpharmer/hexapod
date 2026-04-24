@@ -67,11 +67,13 @@ void applyTerrainStanceZBias(const LocalMapSnapshot& snap,
                              const RobotState& est,
                              const MotionIntent& intent,
                              const control_config::FootTerrainConfig& cfg,
+                             const double blend_scale,
                              std::array<Vec3, kNumLegs>* nominal_body_m) {
     if (!nominal_body_m || !est.has_body_twist_state) {
         return;
     }
-    if (!snap.fresh || !snap.ground_elevation_has_data || cfg.stance_plane_blend <= 0.0) {
+    if (!cfg.enable_stance_plane_bias || !snap.fresh || !snap.ground_elevation_has_data ||
+        cfg.stance_plane_blend <= 0.0) {
         return;
     }
 
@@ -98,7 +100,10 @@ void applyTerrainStanceZBias(const LocalMapSnapshot& snap,
 
     const double mean = sum / static_cast<double>(finite_count);
     const double dz_cap = std::max(0.0, cfg.stance_plane_dz_max_m);
-    const double blend = std::clamp(cfg.stance_plane_blend * fusionTrustScale(est), 0.0, 1.0);
+    const double blend = std::clamp(cfg.stance_plane_blend * std::clamp(blend_scale, 0.0, 1.0) *
+                                        fusionTrustScale(est),
+                                    0.0,
+                                    1.0);
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
         const double zg = gz[static_cast<std::size_t>(leg)];
@@ -119,7 +124,8 @@ void applyTerrainSwingXYNudge(const LocalMapSnapshot& snap,
     if (!foot_pos_body_m || !est.has_body_twist_state) {
         return;
     }
-    if (!snap.fresh || !snap.elevation_has_data || cfg.swing_xy_nudge_max_m <= 0.0 ||
+    if (!cfg.enable_swing_xy_nudge || !snap.fresh || !snap.elevation_has_data ||
+        cfg.swing_xy_nudge_max_m <= 0.0 ||
         cfg.swing_xy_nudge_blend <= 0.0) {
         return;
     }
@@ -152,7 +158,9 @@ void applyTerrainSwingXYNudge(const LocalMapSnapshot& snap,
             if (!snap.raw.containsCell(nx, ny)) {
                 continue;
             }
-            const double z = snap.elevation_max_hit_z.maxHitZAtCell(nx, ny);
+            const NavPose2d cell_pose = snap.raw.cellCenterPose(nx, ny);
+            const double z_ground = sampleGroundMeanZWorldM(snap, cell_pose.x_m, cell_pose.y_m);
+            const double z = std::isfinite(z_ground) ? z_ground : snap.elevation_max_hit_z.maxHitZAtCell(nx, ny);
             if (std::isfinite(z) && z < best_z) {
                 best_z = z;
                 best_x = nx;
@@ -189,7 +197,7 @@ void applyTerrainSwingClearance(const LocalMapSnapshot& snap,
     if (!foot_pos_body_m || !est.has_body_twist_state) {
         return;
     }
-    if (!snap.fresh || !snap.elevation_has_data) {
+    if (!cfg.enable_swing_clearance || !snap.fresh || !snap.elevation_has_data) {
         return;
     }
 
@@ -199,7 +207,9 @@ void applyTerrainSwingClearance(const LocalMapSnapshot& snap,
     }
 
     const double z_top = sampleMaxHitZWorldM(snap, p_w.x, p_w.y);
-    if (!std::isfinite(z_top)) {
+    const double z_ground = sampleGroundMeanZWorldM(snap, p_w.x, p_w.y);
+    const double z_ref = std::isfinite(z_ground) ? z_ground : z_top;
+    if (!std::isfinite(z_ref)) {
         return;
     }
 
@@ -207,11 +217,11 @@ void applyTerrainSwingClearance(const LocalMapSnapshot& snap,
     const double margin = std::max(0.0, cfg.swing_margin_m);
     const double max_lift = std::max(0.0, cfg.swing_max_lift_m);
     const double blend = std::clamp(cfg.swing_blend * fusionTrustScale(est), 0.0, 1.0);
-    if (z_top <= foot_z_world_est + margin) {
+    if (z_ref <= foot_z_world_est + margin) {
         return;
     }
 
-    const double need_m = (z_top - foot_z_world_est - margin) * blend;
+    const double need_m = (z_ref - foot_z_world_est - margin) * blend;
     const double dz = std::min(max_lift, std::max(0.0, need_m));
     if (dz > 0.0) {
         foot_pos_body_m->z += dz;

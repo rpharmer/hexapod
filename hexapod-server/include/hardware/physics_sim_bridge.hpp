@@ -60,6 +60,10 @@ private:
     int sock_{-1};
     bool initialized_{false};
     JointTargets pending_targets_{};
+    TimePointUs last_motion_trace_log_us_{};
+    TimePointUs last_motion_trace_sample_us_{};
+    std::array<Vec3, kNumLegs> last_motion_trace_foot_positions_body_{};
+    bool have_motion_trace_foot_positions_{false};
     BridgeCommandResultMetadata last_result_{};
     mutable std::mutex obstacle_mutex_{};
     std::vector<PhysicsSimObstacleFootprint> latest_obstacle_footprints_{};

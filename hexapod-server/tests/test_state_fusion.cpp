@@ -95,5 +95,13 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    RobotState contact_churn = makeSample(7, 1'300'000, false, 0.28, 0.0, 0.0);
+    RobotState out6 = fusion.update(contact_churn, state_fusion::FusionSourceMode::Measured);
+    if (!expect(out6.has_fusion_diagnostics, "contact churn should still report diagnostics") ||
+        !expect(!out6.fusion.resync_requested, "contact churn alone should not request a resync") ||
+        !expect(!out6.fusion.hard_reset_requested, "contact churn alone should not request a hard reset")) {
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }

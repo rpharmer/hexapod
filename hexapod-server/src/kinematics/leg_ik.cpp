@@ -5,6 +5,18 @@
 
 namespace {
 
+double wrapAngleNear(const double reference, double candidate) {
+  constexpr double kPi = 3.14159265358979323846;
+  double adjusted = candidate;
+  while (adjusted - reference > kPi) {
+    adjusted -= 2.0 * kPi;
+  }
+  while (adjusted - reference < -kPi) {
+    adjusted += 2.0 * kPi;
+  }
+  return adjusted;
+}
+
 void apply_estimated_leg_fallback(const RobotState& est,
                                   JointTargets& joints,
                                   int legID)
@@ -43,8 +55,6 @@ bool LegIK::solveOneLeg(const LegState& est,
                         LegState& out,
                         const FootTarget& foot,
                         const LegGeometry& leg) {
-  (void)est;
-
   // Transform foot target coordinates so they are relative to Coxa mount
   const Vec3 relativeToCoxa = foot.pos_body_m - leg.bodyCoxaOffset;
   const Mat3 R_leg = Mat3::rotZ(-leg.mountAngle.value);
@@ -101,9 +111,14 @@ bool LegIK::solveOneLeg(const LegState& est,
       std::atan2(leg.tibiaLength.value * std::sin(q3),
                  leg.femurLength.value + leg.tibiaLength.value * std::cos(q3));
 
-  out.joint_state[0].pos_rad = AngleRad{q1};
-  out.joint_state[1].pos_rad = AngleRad{q2};
-  out.joint_state[2].pos_rad = AngleRad{q3};
+  const LegState est_joint = leg.servo.toJointAngles(est);
+  const double q1_wrapped = wrapAngleNear(est_joint.joint_state[0].pos_rad.value, q1);
+  const double q2_wrapped = wrapAngleNear(est_joint.joint_state[1].pos_rad.value, q2);
+  const double q3_wrapped = wrapAngleNear(est_joint.joint_state[2].pos_rad.value, q3);
+
+  out.joint_state[0].pos_rad = AngleRad{q1_wrapped};
+  out.joint_state[1].pos_rad = AngleRad{q2_wrapped};
+  out.joint_state[2].pos_rad = AngleRad{q3_wrapped};
   out = leg.servo.toServoAngles(out);
 
   return true;

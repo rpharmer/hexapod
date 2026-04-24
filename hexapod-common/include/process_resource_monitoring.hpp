@@ -1,5 +1,8 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
+#include <atomic>
 #include <chrono>
 #include <charconv>
 #include <cstdint>
@@ -7,9 +10,11 @@
 #include <fstream>
 #include <iomanip>
 #include <optional>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #if defined(__linux__)
 #include <unistd.h>
@@ -127,11 +132,292 @@ inline bool readProcessMemoryBytes(std::uint64_t& rss_bytes, std::uint64_t& vms_
 
 } // namespace detail
 
+template <typename T>
+class CopyableAtomic {
+public:
+    CopyableAtomic() = default;
+    explicit CopyableAtomic(T initial) : value_(initial) {}
+
+    CopyableAtomic(const CopyableAtomic& other) noexcept : value_(other.value_.load(std::memory_order_relaxed)) {}
+    CopyableAtomic& operator=(const CopyableAtomic& other) noexcept {
+        if (this != &other) {
+            value_.store(other.value_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        }
+        return *this;
+    }
+
+    CopyableAtomic(CopyableAtomic&& other) noexcept : value_(other.value_.load(std::memory_order_relaxed)) {}
+    CopyableAtomic& operator=(CopyableAtomic&& other) noexcept {
+        if (this != &other) {
+            value_.store(other.value_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        }
+        return *this;
+    }
+
+    T load(std::memory_order order = std::memory_order_seq_cst) const noexcept { return value_.load(order); }
+    void store(T desired, std::memory_order order = std::memory_order_seq_cst) noexcept { value_.store(desired, order); }
+    T exchange(T desired, std::memory_order order = std::memory_order_seq_cst) noexcept { return value_.exchange(desired, order); }
+    T fetch_add(T arg, std::memory_order order = std::memory_order_seq_cst) noexcept { return value_.fetch_add(arg, order); }
+    bool compare_exchange_weak(T& expected,
+                               T desired,
+                               std::memory_order success,
+                               std::memory_order failure) noexcept {
+        return value_.compare_exchange_weak(expected, desired, success, failure);
+    }
+
+private:
+    std::atomic<T> value_{};
+};
+
 struct ProcessResourceSnapshot {
     double cpu_percent{0.0};
     std::uint64_t cpu_window_us{0};
     std::uint64_t rss_bytes{0};
     std::uint64_t vms_bytes{0};
+};
+
+struct ResourceSectionSnapshot {
+    const char* label{nullptr};
+    std::uint64_t total_self_ns{0};
+    std::uint64_t window_self_ns{0};
+    std::uint64_t max_self_ns{0};
+    std::uint64_t call_count{0};
+};
+
+template <std::size_t MaxSections>
+struct ResourceSectionSummary {
+    std::array<ResourceSectionSnapshot, MaxSections> sections{};
+    std::size_t count{0};
+};
+
+template <std::size_t MaxSections, std::size_t MaxDepth = 64>
+class SectionProfiler {
+public:
+    static_assert(MaxSections > 0, "SectionProfiler requires at least one section");
+    static_assert(MaxDepth > 0, "SectionProfiler requires at least one stack slot");
+
+    struct ScopeState {
+        SectionProfiler* profiler{nullptr};
+        std::size_t section_index{0};
+        std::chrono::steady_clock::time_point start{};
+        std::uint64_t child_elapsed_ns{0};
+        bool active{false};
+    };
+
+    class Scope {
+    public:
+        Scope() = default;
+        Scope(const Scope&) = delete;
+        Scope& operator=(const Scope&) = delete;
+
+        Scope(Scope&& other) noexcept {
+            state_ = other.state_;
+            other.state_.active = false;
+            other.state_.profiler = nullptr;
+        }
+
+        Scope& operator=(Scope&& other) noexcept {
+            if (this != &other) {
+                end();
+                state_ = other.state_;
+                other.state_.active = false;
+                other.state_.profiler = nullptr;
+            }
+            return *this;
+        }
+
+        ~Scope() {
+            end();
+        }
+
+    private:
+        friend class SectionProfiler;
+        explicit Scope(SectionProfiler& profiler, std::size_t section_index)
+            : state_{} {
+            state_.profiler = &profiler;
+            state_.section_index = section_index;
+            state_.start = std::chrono::steady_clock::now();
+            state_.child_elapsed_ns = 0;
+            state_.active = true;
+            profiler.pushScope(state_);
+        }
+
+        void end() {
+            if (!state_.active || state_.profiler == nullptr) {
+                return;
+            }
+            state_.profiler->popScope(state_);
+            state_.active = false;
+            state_.profiler = nullptr;
+        }
+
+        ScopeState state_{};
+    };
+
+    explicit SectionProfiler(std::array<const char*, MaxSections> labels)
+        : labels_(std::move(labels)) {}
+
+    [[nodiscard]] Scope scope(std::size_t section_index) {
+        return Scope(*this, section_index);
+    }
+
+    [[nodiscard]] ResourceSectionSnapshot snapshot(std::size_t section_index,
+                                                   bool reset_window = true) const {
+        ResourceSectionSnapshot snapshot{};
+        if (section_index >= MaxSections) {
+            return snapshot;
+        }
+        snapshot.label = labels_[section_index];
+        snapshot.total_self_ns = totals_[section_index].total_self_ns.load(std::memory_order_relaxed);
+        snapshot.max_self_ns = max_self_ns_[section_index].load(std::memory_order_relaxed);
+        snapshot.call_count = call_counts_[section_index].load(std::memory_order_relaxed);
+        if (reset_window) {
+            snapshot.window_self_ns = window_self_ns_[section_index].exchange(0, std::memory_order_relaxed);
+        } else {
+            snapshot.window_self_ns = window_self_ns_[section_index].load(std::memory_order_relaxed);
+        }
+        return snapshot;
+    }
+
+    [[nodiscard]] ResourceSectionSummary<MaxSections> snapshotAll(bool reset_window = true) const {
+        ResourceSectionSummary<MaxSections> summary{};
+        summary.count = MaxSections;
+        for (std::size_t index = 0; index < MaxSections; ++index) {
+            summary.sections[index] = snapshot(index, reset_window);
+        }
+        return summary;
+    }
+
+    [[nodiscard]] ResourceSectionSummary<MaxSections> topSections(std::size_t limit,
+                                                                  bool reset_window = true) const {
+        ResourceSectionSummary<MaxSections> summary = snapshotAll(reset_window);
+        if (limit >= summary.count) {
+            sortSections(summary.sections.begin(), summary.sections.begin() + summary.count);
+            return summary;
+        }
+
+        sortSections(summary.sections.begin(), summary.sections.begin() + summary.count);
+        summary.count = limit;
+        return summary;
+    }
+
+    [[nodiscard]] const char* label(std::size_t section_index) const {
+        if (section_index >= MaxSections) {
+            return nullptr;
+        }
+        return labels_[section_index];
+    }
+
+    void reset() {
+        for (std::size_t index = 0; index < MaxSections; ++index) {
+            totals_[index].total_self_ns.store(0, std::memory_order_relaxed);
+            window_self_ns_[index].store(0, std::memory_order_relaxed);
+            max_self_ns_[index].store(0, std::memory_order_relaxed);
+            call_counts_[index].store(0, std::memory_order_relaxed);
+        }
+    }
+
+private:
+    struct SectionCounters {
+        CopyableAtomic<std::uint64_t> total_self_ns{0};
+    };
+
+    static std::array<ScopeState, MaxDepth>& activeStack() {
+        static thread_local std::array<ScopeState, MaxDepth> stack{};
+        return stack;
+    }
+
+    static std::size_t& activeDepth() {
+        static thread_local std::size_t depth = 0;
+        return depth;
+    }
+
+    static std::uint64_t elapsedNs(const std::chrono::steady_clock::duration& duration) {
+        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+        return ns > 0 ? static_cast<std::uint64_t>(ns) : 0ULL;
+    }
+
+    void pushScope(const ScopeState& state) {
+        auto& depth = activeDepth();
+        auto& stack = activeStack();
+        if (depth < MaxDepth) {
+            stack[depth] = state;
+            ++depth;
+            return;
+        }
+        // Stack overflow is intentionally lossy but non-fatal: keep the scope active so we still
+        // record self-time, but skip nesting propagation for this frame.
+    }
+
+    void popScope(ScopeState& state) {
+        const auto now = std::chrono::steady_clock::now();
+        const std::uint64_t elapsed_ns = elapsedNs(now - state.start);
+        const std::uint64_t self_ns = elapsed_ns > state.child_elapsed_ns
+                                          ? (elapsed_ns - state.child_elapsed_ns)
+                                          : 0ULL;
+        recordSection(state.section_index, self_ns);
+
+        auto& depth = activeDepth();
+        auto& stack = activeStack();
+        if (depth > 0) {
+            const std::size_t top_index = depth - 1;
+            if (top_index < MaxDepth &&
+                stack[top_index].profiler == state.profiler &&
+                stack[top_index].section_index == state.section_index &&
+                stack[top_index].start == state.start) {
+                --depth;
+            }
+        }
+        if (depth > 0) {
+            stack[depth - 1].child_elapsed_ns += elapsed_ns;
+        }
+    }
+
+    void recordSection(std::size_t section_index, std::uint64_t self_ns) {
+        if (section_index >= MaxSections) {
+            return;
+        }
+
+        totals_[section_index].total_self_ns.fetch_add(self_ns, std::memory_order_relaxed);
+        window_self_ns_[section_index].fetch_add(self_ns, std::memory_order_relaxed);
+        call_counts_[section_index].fetch_add(1, std::memory_order_relaxed);
+
+        std::uint64_t current_max = max_self_ns_[section_index].load(std::memory_order_relaxed);
+        while (self_ns > current_max &&
+               !max_self_ns_[section_index].compare_exchange_weak(
+                   current_max,
+                   self_ns,
+                   std::memory_order_relaxed,
+                   std::memory_order_relaxed)) {
+        }
+    }
+
+    static void sortSections(typename std::array<ResourceSectionSnapshot, MaxSections>::iterator begin,
+                             typename std::array<ResourceSectionSnapshot, MaxSections>::iterator end) {
+        std::sort(begin, end, [](const ResourceSectionSnapshot& lhs, const ResourceSectionSnapshot& rhs) {
+            if (lhs.window_self_ns != rhs.window_self_ns) {
+                return lhs.window_self_ns > rhs.window_self_ns;
+            }
+            if (lhs.total_self_ns != rhs.total_self_ns) {
+                return lhs.total_self_ns > rhs.total_self_ns;
+            }
+            const bool lhs_has_label = lhs.label != nullptr;
+            const bool rhs_has_label = rhs.label != nullptr;
+            if (lhs_has_label != rhs_has_label) {
+                return lhs_has_label;
+            }
+            if (!lhs_has_label) {
+                return false;
+            }
+            return std::string_view{lhs.label} < std::string_view{rhs.label};
+        });
+    }
+
+    std::array<const char*, MaxSections> labels_{};
+    std::array<SectionCounters, MaxSections> totals_{};
+    mutable std::array<CopyableAtomic<std::uint64_t>, MaxSections> window_self_ns_{};
+    std::array<CopyableAtomic<std::uint64_t>, MaxSections> max_self_ns_{};
+    std::array<CopyableAtomic<std::uint64_t>, MaxSections> call_counts_{};
 };
 
 class ProcessResourceSampler {
@@ -185,6 +471,27 @@ inline std::string formatProcessResourceSnapshot(const ProcessResourceSnapshot& 
         << " cpu_window_ms=" << (snapshot.cpu_window_us / 1000ULL)
         << " rss_bytes=" << snapshot.rss_bytes
         << " vms_bytes=" << snapshot.vms_bytes;
+    return out.str();
+}
+
+template <std::size_t MaxSections>
+inline std::string formatResourceSectionSummary(const ResourceSectionSummary<MaxSections>& summary,
+                                                std::size_t max_sections_to_emit = MaxSections) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(3);
+    const std::size_t count = std::min(summary.count, max_sections_to_emit);
+    for (std::size_t index = 0; index < count; ++index) {
+        if (index > 0) {
+            out << " | ";
+        }
+        const ResourceSectionSnapshot& section = summary.sections[index];
+        out << (section.label != nullptr ? section.label : "<unnamed>")
+            << "{window_ms=" << (section.window_self_ns / 1'000'000ULL)
+            << ",total_ms=" << (section.total_self_ns / 1'000'000ULL)
+            << ",max_ms=" << (section.max_self_ns / 1'000'000ULL)
+            << ",calls=" << section.call_count
+            << '}';
+    }
     return out.str();
 }
 

@@ -47,6 +47,7 @@ public:
     };
 
     struct IterationTelemetry {
+        const char* label{nullptr};
         Clock::time_point cycle_start{};
         Clock::time_point cycle_finish{};
         Clock::time_point deadline{};
@@ -54,6 +55,7 @@ public:
     };
 
     struct Task {
+        const char* label{nullptr};
         std::chrono::microseconds period;
         std::function<void()> step;
         std::function<void(const IterationTelemetry&)> on_iteration{};

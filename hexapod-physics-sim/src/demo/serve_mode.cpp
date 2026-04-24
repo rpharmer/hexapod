@@ -57,6 +57,14 @@ struct CachedMatrixLidarFrame {
     std::array<std::uint16_t, physics_sim::kMatrixLidarMaxCells> ranges_mm{};
 };
 
+void SyncTerrainHeightfield(World& world, const TerrainPatch& terrain_patch) {
+    if (!terrain_patch.initialized()) {
+        world.ClearTerrainHeightfield();
+        return;
+    }
+    world.SetTerrainHeightfield(terrain_patch.BuildTerrainHeightfieldAttachment());
+}
+
 void writeCachedMatrixLidarFrame(const CachedMatrixLidarFrame& cache, physics_sim::StateResponse& rsp) {
     if (!cache.valid) {
         rsp.matrix_lidar_valid = 0;
@@ -228,10 +236,6 @@ std::vector<TerrainSample> BuildTerrainSamples(const World& world,
     return samples;
 }
 
-bool IsTerrainBody(std::uint32_t body_id, const std::vector<std::uint32_t>& terrain_body_ids) {
-    return std::find(terrain_body_ids.begin(), terrain_body_ids.end(), body_id) != terrain_body_ids.end();
-}
-
 bool NormalizeTerrainNormal(const std::array<float, 3>& in, Vec3& out) {
     const Vec3 candidate{in[0], in[1], in[2]};
     return TryNormalize(candidate, out);
@@ -348,11 +352,13 @@ void ApplyContactArbitrationToLidarSamples(const World& world,
     lidar_samples.swap(filtered);
 }
 
+template <std::size_t MaxSections>
 AssimilationReport ApplyStateCorrection(World& world,
                                         const HexapodSceneObjects& scene,
                                         const physics_sim::StateCorrection& correction,
                                         AssimilationState& assimilation_state,
-                                        TerrainPatch& terrain_patch) {
+                                        TerrainPatch& terrain_patch,
+                                        resource_monitoring::SectionProfiler<MaxSections>* profiler = nullptr) {
     AssimilationReport report{};
     report.timestamp_us = correction.timestamp_us;
     report.correction_strength = Clamp01(correction.correction_strength);
@@ -574,7 +580,16 @@ AssimilationReport ApplyStateCorrection(World& world,
     }
 
     const Vec3 patch_center = pose_valid ? target_position : chassis.position;
-    terrain_patch.update(world, patch_center, target_terrain_height, target_terrain_normal, terrain_samples, terrain_age_seconds);
+    if (profiler != nullptr) {
+        const auto scope = profiler->scope(11); // serve.terrain_patch_update
+        terrain_patch.update(
+            world, patch_center, target_terrain_height, target_terrain_normal, terrain_samples, terrain_age_seconds);
+        SyncTerrainHeightfield(world, terrain_patch);
+        (void)scope;
+    } else {
+        terrain_patch.update(world, patch_center, target_terrain_height, target_terrain_normal, terrain_samples, terrain_age_seconds);
+        SyncTerrainHeightfield(world, terrain_patch);
+    }
 
     assimilation_state.last_report = report;
     std::cout << "[serve] correction mode="
@@ -631,9 +646,7 @@ std::optional<physics_sim::ObstacleFootprint> BuildObstacleFootprint(const Body&
     return footprint;
 }
 
-std::vector<std::uint32_t> CollectObstacleBodyIds(const World& world,
-                                                  const HexapodSceneObjects& scene,
-                                                  const std::vector<std::uint32_t>& terrain_body_ids) {
+std::vector<std::uint32_t> CollectObstacleBodyIds(const World& world, const HexapodSceneObjects& scene) {
     std::vector<std::uint32_t> out{};
     std::vector<bool> robot_body_flags(world.GetBodyCount(), false);
     for (const std::uint32_t id : scene.body_ids) {
@@ -646,7 +659,7 @@ std::vector<std::uint32_t> CollectObstacleBodyIds(const World& world,
         if (robot_body_flags[body_id]) {
             continue;
         }
-        if (IsTerrainBody(body_id, terrain_body_ids)) {
+        if (world.IsTerrainAttachmentBody(body_id)) {
             continue;
         }
         const Body& body = world.GetBody(body_id);
@@ -683,16 +696,9 @@ void EmitObstacleBodies(FrameSink& sink, const World& world, const std::vector<s
     }
 }
 
-void EmitTerrainBodies(FrameSink& sink, const World& world, const std::vector<std::uint32_t>& terrain_body_ids) {
-    for (const std::uint32_t body_id : terrain_body_ids) {
-        sink.emit_body(body_id, world.GetBody(body_id));
-    }
-}
-
 void FillFootContactsFromManifolds(
     const World& world,
     const HexapodSceneObjects& scene,
-    const std::vector<std::uint32_t>& terrain_body_ids,
     std::array<std::uint8_t, 6>& out_contact,
     std::array<std::array<float, 3>, 6>& out_normals) {
     out_contact.fill(0);
@@ -709,8 +715,8 @@ void FillFootContactsFromManifolds(
     }
 
     for (const Manifold& manifold : world.DebugManifolds()) {
-        const bool a_is_ground = manifold.a == scene.plane || IsTerrainBody(manifold.a, terrain_body_ids);
-        const bool b_is_ground = manifold.b == scene.plane || IsTerrainBody(manifold.b, terrain_body_ids);
+        const bool a_is_ground = manifold.a == scene.plane || world.IsTerrainAttachmentBody(manifold.a);
+        const bool b_is_ground = manifold.b == scene.plane || world.IsTerrainAttachmentBody(manifold.b);
         if (a_is_ground == b_is_ground) {
             continue;
         }
@@ -796,13 +802,8 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     const float plane_height = terrain_seed.has_plane_height ? terrain_seed.plane_height_m : world.GetBody(scene.plane).planeOffset;
     const Vec3 plane_normal = terrain_seed.has_plane_normal ? terrain_seed.plane_normal : world.GetBody(scene.plane).planeNormal;
     terrain_patch.initialize(world, patch_center, plane_height, plane_normal);
-    const std::vector<std::uint32_t> terrain_body_ids(terrain_patch.body_ids().begin(), terrain_patch.body_ids().end());
-    // Keep the terrain grid available for sensing/visualization without making flat-ground
-    // contact resolution depend on hundreds of small adjacent boxes.
-    for (const std::uint32_t body_id : terrain_body_ids) {
-        world.GetBody(body_id).collisionMask = 0;
-    }
-    const std::vector<std::uint32_t> obstacle_body_ids = CollectObstacleBodyIds(world, scene, terrain_body_ids);
+    SyncTerrainHeightfield(world, terrain_patch);
+    const std::vector<std::uint32_t> obstacle_body_ids = CollectObstacleBodyIds(world, scene);
 
     JointSolverConfig joint_cfg = world.GetJointSolverConfig();
     joint_cfg.servoPositionPasses = 8;
@@ -833,7 +834,101 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     std::cout << "\n";
 
     ProcessResourceDiagnosticsState resource_diag{};
-    MaybeLogProcessResourceSnapshot(stdout, resource_diag);
+    enum class ServeSection : std::size_t {
+        Recv = 0,
+        DecodeConfig,
+        ApplyConfig,
+        DecodeCorrection,
+        ApplyCorrection,
+        DecodeStep,
+        ApplyJointTargets,
+        PhysicsStep,
+        PackResponse,
+        SendResponse,
+        PreviewEmit,
+        MatrixLidarScan,
+        MatrixLidarFusion,
+        TerrainPatchUpdate,
+        Count,
+    };
+
+    static constexpr std::array<const char*, static_cast<std::size_t>(ServeSection::Count)> kServeSectionLabels = {
+        "serve.recv",
+        "serve.decode_config",
+        "serve.apply_config",
+        "serve.decode_correction",
+        "serve.apply_correction",
+        "serve.decode_step",
+        "serve.apply_joint_targets",
+        "serve.physics_step",
+        "serve.pack_response",
+        "serve.send_response",
+        "serve.preview_emit",
+        "serve.matrix_lidar_scan",
+        "serve.matrix_lidar_fusion",
+        "serve.terrain_patch_update",
+    };
+    resource_monitoring::SectionProfiler<kServeSectionLabels.size()> serve_profiler{kServeSectionLabels};
+
+    auto logResourceSnapshot = [&](const char* prefix = "[resource]") {
+        if (stdout == nullptr) {
+            return;
+        }
+        const DemoSteadyClock::time_point now = DemoSteadyClock::now();
+        if (resource_diag.next_emit_at.time_since_epoch().count() != 0 && now < resource_diag.next_emit_at) {
+            return;
+        }
+
+        const resource_monitoring::ProcessResourceSnapshot process_snapshot = resource_diag.sampler.sample();
+        const auto serve_sections = serve_profiler.topSections(10);
+        const auto world_sections = world.SnapshotResourceSections();
+        const auto topology = world.SnapshotTopology();
+        std::fprintf(stdout,
+                     "%s process_resource=%s serve_sections=%s world_sections=%s topology={bodies=%u dynamic=%u awake=%u contacts=%u manifolds=%u islands=%u max_island_bodies=%u max_island_manifolds=%u max_island_joints=%u max_island_servos=%u} terrain={adds=%llu cells=%llu emitted=%llu merges=%llu cache_hits=%llu dirty=%llu} face4={attempted=%llu used=%llu fallback_block2=%llu fallback_scalar=%llu blocked_coherence=%llu}\n",
+                     prefix,
+                     resource_monitoring::formatProcessResourceSnapshot(process_snapshot).c_str(),
+                     resource_monitoring::formatResourceSectionSummary(serve_sections).c_str(),
+                     resource_monitoring::formatResourceSectionSummary(world_sections).c_str(),
+                     topology.bodyCount,
+                     topology.dynamicBodyCount,
+                     topology.awakeBodyCount,
+                     topology.contactCount,
+                     topology.manifoldCount,
+                     topology.islandCount,
+                     topology.maxIslandBodyCount,
+                     topology.maxIslandManifoldCount,
+                     topology.maxIslandJointCount,
+                     topology.maxIslandServoCount,
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainContactAdds),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainCellsTested),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainContactsEmitted),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainManifoldMerges),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainCacheHits),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainDirtyCellRefreshes),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().face4Attempted),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().face4Used),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().face4FallbackToBlock2),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().face4FallbackToScalar),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().face4BlockedByFrictionCoherenceGate)
+#else
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL
+#endif
+        );
+        std::fflush(stdout);
+        resource_diag.next_emit_at = now + resource_diag.emit_interval;
+    };
+    logResourceSnapshot();
 
     CachedMatrixLidarFrame cached_lidar_frame{};
     std::uint64_t lidar_sim_time_us = 0;
@@ -854,25 +949,37 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             return;
         }
 
-        FillSimMatrixLidar64x8(world, scene, terrain_patch, chassis, rsp);
+        {
+            const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::MatrixLidarScan));
+            FillSimMatrixLidar64x8(world, scene, terrain_patch, chassis, rsp);
+            (void)scope;
+        }
         rsp.matrix_lidar_timestamp_us = lidar_sim_time_us == 0 ? 1ULL : lidar_sim_time_us;
 
         if (terrain_patch.config().lidar_fusion_enable) {
             std::vector<TerrainSample> lidar_samples;
-            AppendMatrixLidarTerrainSamples(
-                world, scene, terrain_patch, chassis, rsp, terrain_patch.config(), lidar_samples);
-            ApplyContactArbitrationToLidarSamples(
-                world, scene, assimilation_state, terrain_patch.config(), lidar_samples);
+            {
+                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::MatrixLidarFusion));
+                AppendMatrixLidarTerrainSamples(
+                    world, scene, terrain_patch, chassis, rsp, terrain_patch.config(), lidar_samples);
+                ApplyContactArbitrationToLidarSamples(
+                    world, scene, assimilation_state, terrain_patch.config(), lidar_samples);
+                (void)scope;
+            }
             if (!lidar_samples.empty()) {
                 Body& plane_body = world.GetBody(scene.plane);
                 // LiDAR fusion intentionally follows response generation: the response reports what this
                 // step saw, and the fused terrain influences subsequent contacts/rays.
+                const auto scope =
+                    serve_profiler.scope(static_cast<std::size_t>(ServeSection::TerrainPatchUpdate));
                 terrain_patch.update(world,
-                                       world.GetBody(scene.body).position,
-                                       plane_body.planeOffset,
-                                       plane_body.planeNormal,
-                                       lidar_samples,
-                                       fusion_age_seconds);
+                                     world.GetBody(scene.body).position,
+                                     plane_body.planeOffset,
+                                     plane_body.planeNormal,
+                                     lidar_samples,
+                                     fusion_age_seconds);
+                SyncTerrainHeightfield(world, terrain_patch);
+                (void)scope;
             }
         }
 
@@ -894,16 +1001,21 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     for (;;) {
         sockaddr_in peer{};
         socklen_t peer_len = sizeof(peer);
-        const ssize_t n = ::recvfrom(
-            fd,
-            reinterpret_cast<char*>(recv_buf.data()),
-            recv_buf.size(),
-            0,
-            reinterpret_cast<sockaddr*>(&peer),
-            &peer_len);
+        ssize_t n = 0;
+        {
+            const auto scope = serve_profiler.scope(0); // serve.recv
+            n = ::recvfrom(
+                fd,
+                reinterpret_cast<char*>(recv_buf.data()),
+                recv_buf.size(),
+                0,
+                reinterpret_cast<sockaddr*>(&peer),
+                &peer_len);
+            (void)scope;
+        }
         if (n < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-                MaybeLogProcessResourceSnapshot(stdout, resource_diag);
+                logResourceSnapshot();
                 continue;
             }
             std::cerr << "[serve] recvfrom failed\n";
@@ -912,7 +1024,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         }
 
         if (n < 1) {
-            MaybeLogProcessResourceSnapshot(stdout, resource_diag);
+            logResourceSnapshot();
             continue;
         }
 
@@ -921,17 +1033,26 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
 
         if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::ConfigCommand)) {
             physics_sim::ConfigCommand cmd{};
-            if (!physics_sim::tryDecodeConfigCommand(bytes, static_cast<std::size_t>(n), cmd)) {
-                MaybeLogProcessResourceSnapshot(stdout, resource_diag);
-                continue;
+            {
+                const auto scope = serve_profiler.scope(1); // serve.decode_config
+                if (!physics_sim::tryDecodeConfigCommand(bytes, static_cast<std::size_t>(n), cmd)) {
+                    (void)scope;
+                    logResourceSnapshot();
+                    continue;
+                }
+                (void)scope;
             }
-            world.SetGravity(Vec3{cmd.gravity[0], cmd.gravity[1], cmd.gravity[2]});
-            solver_iterations = cmd.solver_iterations > 0 ? cmd.solver_iterations : 8;
-            configured = true;
+            {
+                const auto scope = serve_profiler.scope(2); // serve.apply_config
+                world.SetGravity(Vec3{cmd.gravity[0], cmd.gravity[1], cmd.gravity[2]});
+                solver_iterations = cmd.solver_iterations > 0 ? cmd.solver_iterations : 8;
+                configured = true;
+                (void)scope;
+            }
 
             physics_sim::ConfigAck ack{};
             ack.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::ConfigAck);
-            ack.body_count = world.GetBodyCount();
+            ack.body_count = world.GetBodyCount() - (world.HasTerrainHeightfield() ? 1u : 0u);
             ack.joint_count = world.GetServoJointCount();
             (void)::sendto(
                 fd,
@@ -940,32 +1061,46 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 0,
                 reinterpret_cast<sockaddr*>(&peer),
                 peer_len);
-            MaybeLogProcessResourceSnapshot(stdout, resource_diag);
+            logResourceSnapshot();
             continue;
         }
 
         if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection)) {
             physics_sim::StateCorrection correction{};
-            if (!physics_sim::tryDecodeStateCorrection(bytes, static_cast<std::size_t>(n), correction)) {
-                MaybeLogProcessResourceSnapshot(stdout, resource_diag);
-                continue;
+            {
+                const auto scope = serve_profiler.scope(3); // serve.decode_correction
+                if (!physics_sim::tryDecodeStateCorrection(bytes, static_cast<std::size_t>(n), correction)) {
+                    (void)scope;
+                    logResourceSnapshot();
+                    continue;
+                }
+                (void)scope;
             }
-            (void)ApplyStateCorrection(world, scene, correction, assimilation_state, terrain_patch);
+            {
+                const auto scope = serve_profiler.scope(4); // serve.apply_correction
+                (void)ApplyStateCorrection(world, scene, correction, assimilation_state, terrain_patch, &serve_profiler);
+                (void)scope;
+            }
             cached_lidar_frame.valid = false;
             lidar_sim_time_us = std::max(lidar_sim_time_us + 1, next_lidar_capture_us);
-            MaybeLogProcessResourceSnapshot(stdout, resource_diag);
+            logResourceSnapshot();
             continue;
         }
 
         if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::StepCommand)) {
             if (!configured) {
-                MaybeLogProcessResourceSnapshot(stdout, resource_diag);
+                logResourceSnapshot();
                 continue;
             }
             physics_sim::StepCommand step{};
-            if (!physics_sim::tryDecodeStepCommand(bytes, static_cast<std::size_t>(n), step)) {
-                MaybeLogProcessResourceSnapshot(stdout, resource_diag);
-                continue;
+            {
+                const auto scope = serve_profiler.scope(5); // serve.decode_step
+                if (!physics_sim::tryDecodeStepCommand(bytes, static_cast<std::size_t>(n), step)) {
+                    (void)scope;
+                    logResourceSnapshot();
+                    continue;
+                }
+                (void)scope;
             }
 
             // sequence_id == 0: return current state without stepping or applying joint_targets.
@@ -993,29 +1128,40 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                     rsp.joint_angles[i] = world.GetServoJointAngle(wire_joints[i]);
                     rsp.joint_velocities[i] = 0.0f;
                 }
-                FillFootContactsFromManifolds(world, scene, terrain_body_ids, rsp.foot_contacts, rsp.foot_contact_normals);
-                FillObstacleFootprints(world, obstacle_body_ids, rsp);
-                refreshMatrixLidarFrame(rsp, world.GetBody(scene.body), 0.0f, false);
-
-                (void)::sendto(
-                    fd,
-                    &rsp,
-                    physics_sim::kStateResponseBytes,
-                    0,
-                    reinterpret_cast<sockaddr*>(&peer),
-                    peer_len);
-                MaybeLogProcessResourceSnapshot(stdout, resource_diag);
+                {
+                    const auto scope = serve_profiler.scope(8); // serve.pack_response
+                    FillFootContactsFromManifolds(world, scene, rsp.foot_contacts, rsp.foot_contact_normals);
+                    FillObstacleFootprints(world, obstacle_body_ids, rsp);
+                    refreshMatrixLidarFrame(rsp, world.GetBody(scene.body), 0.0f, false);
+                    (void)scope;
+                }
+                {
+                    const auto scope = serve_profiler.scope(9); // serve.send_response
+                    (void)::sendto(
+                        fd,
+                        &rsp,
+                        physics_sim::kStateResponseBytes,
+                        0,
+                        reinterpret_cast<sockaddr*>(&peer),
+                        peer_len);
+                    (void)scope;
+                }
+                logResourceSnapshot();
                 continue;
             }
 
             if (step.dt_seconds <= 0.0f || !std::isfinite(step.dt_seconds)) {
-                MaybeLogProcessResourceSnapshot(stdout, resource_diag);
+                logResourceSnapshot();
                 continue;
             }
 
-            for (std::size_t i = 0; i < wire_joints.size(); ++i) {
-                ServoJoint& sj = world.GetServoJointMutable(wire_joints[i]);
-                sj.targetAngle = step.joint_targets[i];
+            {
+                const auto scope = serve_profiler.scope(6); // serve.apply_joint_targets
+                for (std::size_t i = 0; i < wire_joints.size(); ++i) {
+                    ServoJoint& sj = world.GetServoJointMutable(wire_joints[i]);
+                    sj.targetAngle = step.joint_targets[i];
+                }
+                (void)scope;
             }
 
             for (std::size_t i = 0; i < wire_joints.size(); ++i) {
@@ -1027,8 +1173,12 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 1,
                 kServeMaxPhysicsSubsteps);
             const float substep_dt = step.dt_seconds / static_cast<float>(physics_substeps);
-            for (int substep = 0; substep < physics_substeps; ++substep) {
-                world.Step(substep_dt, solver_iterations);
+            {
+                const auto scope = serve_profiler.scope(7); // serve.physics_step
+                for (int substep = 0; substep < physics_substeps; ++substep) {
+                    world.Step(substep_dt, solver_iterations);
+                }
+                (void)scope;
             }
 
             physics_sim::StateResponse rsp{};
@@ -1058,31 +1208,42 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 prev_angles[i] = ang_after;
             }
 
-            FillFootContactsFromManifolds(world, scene, terrain_body_ids, rsp.foot_contacts, rsp.foot_contact_normals);
-            FillObstacleFootprints(world, obstacle_body_ids, rsp);
-            refreshMatrixLidarFrame(rsp, world.GetBody(scene.body), step.dt_seconds, true);
+            {
+                const auto scope = serve_profiler.scope(8); // serve.pack_response
+                FillFootContactsFromManifolds(world, scene, rsp.foot_contacts, rsp.foot_contact_normals);
+                FillObstacleFootprints(world, obstacle_body_ids, rsp);
+                refreshMatrixLidarFrame(rsp, world.GetBody(scene.body), step.dt_seconds, true);
+                (void)scope;
+            }
 
-            (void)::sendto(
-                fd,
-                &rsp,
-                physics_sim::kStateResponseBytes,
-                0,
-                reinterpret_cast<sockaddr*>(&peer),
-                peer_len);
+            {
+                const auto scope = serve_profiler.scope(9); // serve.send_response
+                (void)::sendto(
+                    fd,
+                    &rsp,
+                    physics_sim::kStateResponseBytes,
+                    0,
+                    reinterpret_cast<sockaddr*>(&peer),
+                    peer_len);
+                (void)scope;
+            }
 
-            preview_sim_time_s += step.dt_seconds;
-            visual->begin_frame(preview_frame, preview_sim_time_s);
-            visual->emit_terrain_patch(terrain_patch);
-            EmitSceneBodies(*visual, world, scene);
-            EmitTerrainBodies(*visual, world, terrain_body_ids);
-            EmitObstacleBodies(*visual, world, obstacle_body_ids);
-            visual->end_frame();
-            ++preview_frame;
-            MaybeLogProcessResourceSnapshot(stdout, resource_diag);
+            {
+                const auto scope = serve_profiler.scope(10); // serve.preview_emit
+                preview_sim_time_s += step.dt_seconds;
+                visual->begin_frame(preview_frame, preview_sim_time_s);
+                visual->emit_terrain_patch(terrain_patch);
+                EmitSceneBodies(*visual, world, scene);
+                EmitObstacleBodies(*visual, world, obstacle_body_ids);
+                visual->end_frame();
+                ++preview_frame;
+                (void)scope;
+            }
+            logResourceSnapshot();
             continue;
         }
 
-        MaybeLogProcessResourceSnapshot(stdout, resource_diag);
+        logResourceSnapshot();
     }
 }
 

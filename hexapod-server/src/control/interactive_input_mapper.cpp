@@ -3,6 +3,24 @@
 #include <algorithm>
 #include <cmath>
 
+namespace {
+
+double smoothstep01(const double x)
+{
+  const double t = std::clamp(x, 0.0, 1.0);
+  return t * t * (3.0 - 2.0 * t);
+}
+
+double remapRadialMagnitude(const double magnitude, const double deadzone)
+{
+  if (magnitude <= deadzone) {
+    return 0.0;
+  }
+  return std::clamp((magnitude - deadzone) / std::max(1.0 - deadzone, 1e-6), 0.0, 1.0);
+}
+
+} // namespace
+
 const char* controllerInputModeName(ControllerInputMode mode)
 {
   switch (mode) {
@@ -48,7 +66,7 @@ InteractiveButtonMappingResult mapInteractiveButtonEvent(const ControllerEvent& 
 
   if (state.input_mode == ControllerInputMode::BodyPose) {
     if (event.name == "B") {
-      state.body_height_m = 0.05;
+      state.body_height_m = 0.14;
       result.info_log = "Body pose offsets reset to neutral";
     } else if (event.name == "LB") {
       state.body_height_m = std::clamp(state.body_height_m + 0.01, 0.05, 0.35);
@@ -80,13 +98,9 @@ InteractiveButtonMappingResult mapInteractiveButtonEvent(const ControllerEvent& 
   return result;
 }
 
-void updateControllerDerivedState(const IControlDevice& controller, InteractiveControllerState& state)
+void updateControllerDerivedState(const IControlDevice&, InteractiveControllerState& state)
 {
   if (state.input_mode == ControllerInputMode::HeadingWalk) {
-    if (controller.getRightMag() > 0.20f) {
-      state.walk_facing_yaw_rad = static_cast<double>(controller.getRightAng());
-      state.walk_facing_valid = true;
-    }
     state.walk_mode = RobotMode::WALK;
   } else {
     state.walk_mode = RobotMode::STAND;
@@ -94,12 +108,11 @@ void updateControllerDerivedState(const IControlDevice& controller, InteractiveC
 }
 
 MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
-                                        const InteractiveControllerState& state)
+                                        InteractiveControllerState& state)
 {
   MotionIntent cmd = makeMotionIntent(state.walk_mode, state.gait, state.walk_body_height_m);
 
-  constexpr double kMaxCommandSpeedMps = 0.25;
-  constexpr double kMaxWalkYawRad = 0.90;
+  constexpr double kMaxCommandSpeedMps = 0.04;
   constexpr double kMaxBodyTranslateXYM = 0.08;
   constexpr double kMaxBodyRollPitchRad = 0.40;
   constexpr double kMaxBodyYawRad = 0.60;
@@ -115,22 +128,44 @@ MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
   const double rt = static_cast<double>(controller.getRightTrigger()) / 1023.0;
 
   if (state.input_mode == ControllerInputMode::HeadingWalk) {
-    constexpr double kMaxYawRateRadps = 0.55;
-    const double heading = static_cast<double>(controller.getLeftAng());
-    const double mag = static_cast<double>(controller.getLeftMag()) * kMaxCommandSpeedMps;
-    cmd.speed_mps = LinearRateMps{mag};
-    cmd.heading_rad = AngleRad{heading};
-    cmd.cmd_vx_mps = LinearRateMps{mag * std::cos(heading)};
-    cmd.cmd_vy_mps = LinearRateMps{mag * std::sin(heading)};
-    cmd.cmd_yaw_radps = AngularRateRadPerSec{right_x * kMaxYawRateRadps};
-    cmd.twist.twist_vel_radps.z = cmd.cmd_yaw_radps.value;
+    constexpr double kWalkDeadzone = 0.12;
+    constexpr double kMaxYawRateRadps = 0.07;
+    const double left_x = static_cast<double>(controller.getLeftX());
+    const double left_y = static_cast<double>(controller.getLeftY());
+    const double right_x = static_cast<double>(controller.getRightX());
+    const double left_mag = std::hypot(left_x, left_y);
+    if (left_mag <= kWalkDeadzone) {
+      state.walk_mode = RobotMode::SAFE_IDLE;
+      cmd.requested_mode = RobotMode::SAFE_IDLE;
+      cmd.speed_mps = LinearRateMps{0.0};
+      cmd.heading_rad = AngleRad{0.0};
+      cmd.cmd_vx_mps = LinearRateMps{0.0};
+      cmd.cmd_vy_mps = LinearRateMps{0.0};
+      cmd.cmd_yaw_radps = AngularRateRadPerSec{0.0};
+      cmd.twist.twist_pos_rad = Vec3{};
+      cmd.twist.twist_vel_radps = Vec3{};
+      cmd.twist.body_trans_m = Vec3{0.0, 0.0, std::clamp(state.walk_body_height_m, kMinBodyHeightM, kMaxBodyHeightM)};
+      cmd.twist.body_trans_mps = Vec3{};
+      return cmd;
+    }
+
+    state.walk_mode = RobotMode::WALK;
+    const double walk_mag = smoothstep01(remapRadialMagnitude(left_mag, kWalkDeadzone));
+    const double walk_dir_x = left_x / std::max(left_mag, 1e-6);
+    const double walk_dir_y = left_y / std::max(left_mag, 1e-6);
+    const double vx = -walk_dir_y * kMaxCommandSpeedMps * walk_mag;
+    const double vy = walk_dir_x * kMaxCommandSpeedMps * walk_mag;
+    const double yaw_mag = smoothstep01(std::clamp(std::abs(right_x), 0.0, 1.0));
+    cmd.speed_mps = LinearRateMps{std::hypot(vx, vy)};
+    cmd.heading_rad = AngleRad{std::atan2(vy, vx)};
+    cmd.cmd_vx_mps = LinearRateMps{vx};
+    cmd.cmd_vy_mps = LinearRateMps{vy};
+    cmd.cmd_yaw_radps = AngularRateRadPerSec{std::copysign(yaw_mag * kMaxYawRateRadps, right_x)};
 
     const double body_height_cmd = state.walk_body_height_m + (rt - lt) * kBodyHeightAdjustRangeM;
     cmd.twist.body_trans_m = Vec3{0.0, 0.0, std::clamp(body_height_cmd, kMinBodyHeightM, kMaxBodyHeightM)};
     cmd.twist.body_trans_mps = Vec3{};
-    const double facing_yaw_rad =
-        state.walk_facing_valid ? state.walk_facing_yaw_rad : (right_x * kMaxWalkYawRad);
-    cmd.twist.twist_pos_rad = Vec3{0.0, 0.0, facing_yaw_rad};
+    cmd.twist.twist_pos_rad = Vec3{};
     cmd.twist.twist_vel_radps = Vec3{};
     return cmd;
   }

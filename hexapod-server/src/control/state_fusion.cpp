@@ -316,14 +316,14 @@ RobotState StateFusion::update(const RobotState& source, const FusionSourceMode 
              std::clamp(residuals.max_body_orientation_error_rad / orientation_error_scale, 0.0, 1.5);
     trust = std::clamp(trust, 0.0, 1.0);
 
+    // Contact disagreement is expected during gait transitions. Keep it in diagnostics and trust,
+    // but only escalate resync / reset on actual pose-orientation divergence.
     const bool resync_requested =
         residuals.max_body_position_error_m > config_.soft_pose_resync_m ||
-        residuals.max_body_orientation_error_rad > config_.soft_orientation_resync_rad ||
-        residuals.contact_mismatch_ratio > config_.soft_contact_mismatch_ratio;
+        residuals.max_body_orientation_error_rad > config_.soft_orientation_resync_rad;
     const bool hard_reset_requested =
         residuals.max_body_position_error_m > config_.hard_pose_resync_m ||
-        residuals.max_body_orientation_error_rad > config_.hard_orientation_resync_rad ||
-        residuals.contact_mismatch_ratio > config_.hard_contact_mismatch_ratio;
+        residuals.max_body_orientation_error_rad > config_.hard_orientation_resync_rad;
 
     out.has_valid_flag = (source.valid || source.has_valid_flag || !now.isZero() || source.sample_id != 0);
     out.valid = out.has_valid_flag;

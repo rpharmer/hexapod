@@ -108,6 +108,18 @@ bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error)
         return false;
       }
       out.telemetryGeometryResendIntervalSecOverride = value;
+    } else if (arg == "--investigation-disable-terrain-stance-bias") {
+      out.investigationDisableTerrainStanceBiasOverride = true;
+    } else if (arg == "--investigation-disable-terrain-swing-clearance") {
+      out.investigationDisableTerrainSwingClearanceOverride = true;
+    } else if (arg == "--investigation-disable-terrain-swing-xy-nudge") {
+      out.investigationDisableTerrainSwingXYNudgeOverride = true;
+    } else if (arg == "--investigation-disable-stance-tilt-leveling") {
+      out.investigationDisableStanceTiltLevelingOverride = true;
+    } else if (arg == "--investigation-suppress-fusion-corrections") {
+      out.investigationSuppressFusionCorrectionsOverride = true;
+    } else if (arg == "--investigation-suppress-fusion-resets") {
+      out.investigationSuppressFusionResetsOverride = true;
     } else {
       if (arg.rfind("--", 0) == 0) {
         error = "Unknown option: " + arg;

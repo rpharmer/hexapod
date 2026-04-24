@@ -257,7 +257,7 @@ World::TOIEvent World::FindEarliestTOI(float maxDt) const {
 
         for (std::uint32_t i = 0; i < bodies_.size(); ++i) {
             const Body& a = bodies_[i];
-            if (a.shape != ShapeType::Sphere || a.invMass == 0.0f || a.isSleeping) {
+            if (a.shape != ShapeType::Sphere || a.invMass == 0.0f || a.isSleeping || a.isTerrainAttachment) {
                 continue;
             }
             for (std::uint32_t j = 0; j < bodies_.size(); ++j) {
@@ -265,6 +265,9 @@ World::TOIEvent World::FindEarliestTOI(float maxDt) const {
                     continue;
                 }
                 const Body& b = bodies_[j];
+                if (b.isTerrainAttachment) {
+                    continue;
+                }
                 TOIEvent hit;
                 if (b.shape == ShapeType::Plane) {
                     hit = SweepSpherePlane(i, j, maxDt);
@@ -533,6 +536,11 @@ void World::AddContact(
         contacts_.push_back(c);
         const Body& bodyA = bodies_[a];
         const Body& bodyB = bodies_[b];
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+        if ((bodyA.collisionGroup == 0x0004u) || (bodyB.collisionGroup == 0x0004u)) {
+            ++solverTelemetry_.terrainContactAdds;
+        }
+#endif
         const float relSpeed = Length(bodyB.velocity - bodyA.velocity);
         const bool contactTouchesSleepingBody = (bodyA.isSleeping && !bodyB.isSleeping)
                                              || (!bodyA.isSleeping && bodyB.isSleeping);
@@ -1176,6 +1184,9 @@ std::vector<Pair> World::ComputePotentialPairsBruteForce() const {
             if (!proxyA.valid || proxyA.leaf < 0) {
                 continue;
             }
+            if (bodies_[i].isTerrainAttachment) {
+                continue;
+            }
             for (std::uint32_t j = i + 1; j < proxies_.size(); ++j) {
                 const BroadphaseProxy& proxyB = proxies_[j];
                 if (!proxyB.valid || proxyB.leaf < 0 || !Overlaps(proxyA.fatBox, proxyB.fatBox)) {
@@ -1183,6 +1194,9 @@ std::vector<Pair> World::ComputePotentialPairsBruteForce() const {
                 }
                 const Body& a = bodies_[i];
                 const Body& b = bodies_[j];
+                if (a.isTerrainAttachment || b.isTerrainAttachment) {
+                    continue;
+                }
                 if ((a.invMass == 0.0f && b.invMass == 0.0f) || (a.isSleeping && b.isSleeping)) {
                     continue;
                 }

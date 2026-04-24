@@ -7,7 +7,7 @@ struct BodyPoseSetpoint {
     double roll_rad{0.0};
     double pitch_rad{0.0};
     double yaw_rad{0.0};
-    double body_height_m{0.05};
+    double body_height_m{0.14};
 };
 
 /** Base orientation and height from `MotionIntent`, plus motion-dependent lean scaled by stability margin. */

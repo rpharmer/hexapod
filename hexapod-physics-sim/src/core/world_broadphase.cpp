@@ -77,6 +77,9 @@ void World::FullRebuildBroadphase() {
         proxy.leaf = -1;
     }
     for (std::uint32_t bodyId = 0; bodyId < proxies_.size(); ++bodyId) {
+        if (bodies_[bodyId].isTerrainAttachment) {
+            continue;
+        }
         EnsureProxyInTree(bodyId);
     }
 }
@@ -423,6 +426,9 @@ std::vector<Pair> World::ComputePotentialPairs() const {
         if (bodyId >= proxies_.size()) {
             return;
         }
+        if (bodies_[bodyId].isTerrainAttachment) {
+            return;
+        }
         const BroadphaseProxy& proxy = proxies_[bodyId];
         if (!proxy.valid || proxy.leaf < 0) {
             return;
@@ -512,6 +518,9 @@ bool World::IsPairEligible(std::uint32_t a, std::uint32_t b) const {
     }
     const Body& bodyA = bodies_[a];
     const Body& bodyB = bodies_[b];
+    if (bodyA.isTerrainAttachment || bodyB.isTerrainAttachment) {
+        return false;
+    }
     if ((bodyA.invMass == 0.0f && bodyB.invMass == 0.0f) || (bodyA.isSleeping && bodyB.isSleeping)) {
         return false;
     }

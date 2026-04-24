@@ -154,28 +154,28 @@ double staticStabilityMargin(const Pt2& com, const std::vector<Pt2>& stance_feet
     return inside ? d_edge : -d_edge;
 }
 
-bool supportPolygonContainsCom(const Pt2& com,
+double supportPolygonClearance(const Pt2& com,
                                const std::vector<Pt2>& stance_feet,
                                const double margin_required,
                                const double inset) {
     const double need = std::max(0.0, margin_required + inset);
     if (stance_feet.empty()) {
-        return false;
+        return -need;
     }
     if (stance_feet.size() == 1U) {
-        return len2(com - stance_feet[0]) >= need;
+        return len2(com - stance_feet[0]) - need;
     }
     if (stance_feet.size() == 2U) {
         if (!pointInConvexPolygon(com, stance_feet)) {
-            return false;
+            return -distPointSegment(com, stance_feet[0], stance_feet[1]) - need;
         }
-        return distPointSegment(com, stance_feet[0], stance_feet[1]) >= need;
+        return distPointSegment(com, stance_feet[0], stance_feet[1]) - need;
     }
     const std::vector<Pt2> hull = convexHull(stance_feet);
     if (!pointInConvexPolygon(com, hull)) {
-        return false;
+        return -minDistanceToHullBoundary(com, hull) - need;
     }
-    return minDistanceToHullBoundary(com, hull) >= need;
+    return minDistanceToHullBoundary(com, hull) - need;
 }
 
 std::array<Vec3, kNumLegs> nominalStancePositions(const HexapodGeometry& geometry, const double body_height_m) {
@@ -206,22 +206,22 @@ LocomotionStability::LocomotionStability(LocomotionStabilityConfig config)
     : config_(config) {}
 
 void LocomotionStability::reset() {
-    hold_latch_.fill(false);
 }
 
 void LocomotionStability::apply(const MotionIntent& intent, GaitState& gait) {
     gait.stability_hold_stance.fill(false);
+    gait.support_liftoff_clearance_m.fill(0.0);
+    gait.support_liftoff_safe_to_lift.fill(false);
     gait.static_stability_margin_m = 0.0;
 
     const bool walking = (intent.requested_mode == RobotMode::WALK);
     if (!walking) {
-        hold_latch_.fill(false);
         return;
     }
 
     double body_h = intent.twist.body_trans_m.z;
     if (body_h <= 1e-6) {
-        body_h = 0.05;
+        body_h = 0.14;
     }
     const Vec3 planar_off{intent.twist.body_trans_m.x, intent.twist.body_trans_m.y, 0.0};
     const HexapodGeometry geo = geometry_config::activeHexapodGeometry();
@@ -263,19 +263,11 @@ void LocomotionStability::apply(const MotionIntent& intent, GaitState& gait) {
             }
         }
 
-        const bool can_lift =
-            supportPolygonContainsCom(com, others, margin_need, config_.support_inset_m);
-
-        if (!can_lift) {
-            if (gait.in_stance[leg] &&
-                gait.phase[leg] >= gait.duty_factor - config_.liftoff_gate_phase_span) {
-                hold_latch_[static_cast<std::size_t>(leg)] = true;
-            }
-        } else if (gait.phase[leg] < gait.duty_factor - 0.10) {
-            hold_latch_[static_cast<std::size_t>(leg)] = false;
-        }
-
-        gait.stability_hold_stance[static_cast<std::size_t>(leg)] =
-            hold_latch_[static_cast<std::size_t>(leg)];
+        const double lift_clearance_m =
+            supportPolygonClearance(com, others, margin_need, config_.support_inset_m);
+        const bool can_lift = lift_clearance_m >= 0.0;
+        gait.support_liftoff_clearance_m[static_cast<std::size_t>(leg)] = lift_clearance_m;
+        gait.support_liftoff_safe_to_lift[static_cast<std::size_t>(leg)] = can_lift;
+        gait.stability_hold_stance[static_cast<std::size_t>(leg)] = !can_lift;
     }
 }

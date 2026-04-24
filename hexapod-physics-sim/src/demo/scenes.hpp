@@ -36,5 +36,6 @@ int RunPhysicsDemo(
     minphys3d::Vec3 gravity = minphys3d::Vec3{0.0f, -9.81f, 0.0f},
     const std::string& udp_host = "127.0.0.1",
     int udp_port = 9870,
-    DemoRunControl* run_control = nullptr);
+    DemoRunControl* run_control = nullptr,
+    int solver_iterations = 80);
 } // namespace minphys3d::demo

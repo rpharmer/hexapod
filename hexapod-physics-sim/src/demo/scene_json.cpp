@@ -646,6 +646,8 @@ bool ParseJointObject(const JsonObject& o, World& world, std::string& err, std::
         (void)GetNumber(o, "target_angle", targetAngle, err, false);
         double maxTorque = 1.0;
         (void)GetNumber(o, "max_servo_torque", maxTorque, err, false);
+        double maxSpeed = 0.0;
+        (void)GetNumber(o, "max_servo_speed", maxSpeed, err, false);
         double posGain = 40.0;
         (void)GetNumber(o, "position_gain", posGain, err, false);
         double dampGain = 1.0;
@@ -673,6 +675,7 @@ bool ParseJointObject(const JsonObject& o, World& world, std::string& err, std::
             static_cast<float>(intClamp),
             static_cast<float>(posSmooth),
             static_cast<float>(angleStab),
+            static_cast<float>(maxSpeed),
             static_cast<float>(maxCorrAngle));
         return true;
     }

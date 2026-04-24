@@ -92,6 +92,7 @@ void LoopExecutor::runTask(Task task, std::atomic<bool>& running_flag, Cancellat
 
         if (task.on_iteration) {
             task.on_iteration(IterationTelemetry{
+                .label = task.label,
                 .cycle_start = cycle_start,
                 .cycle_finish = cycle_finish,
                 .deadline = deadline,

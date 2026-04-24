@@ -6,7 +6,7 @@ SchemaVersion = 1
 Runtime.Mode = "physics-sim"
 Runtime.PhysicsSim.Host = "127.0.0.1"
 Runtime.PhysicsSim.Port = 9871
-Runtime.PhysicsSim.SolverIterations = 24
+Runtime.PhysicsSim.SolverIterations = 16
 
 Runtime.Log.FilePath = "app-physics-sim.log"
 Runtime.Log.EnableFile = true

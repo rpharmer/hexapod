@@ -1,5 +1,6 @@
 #include "estimator.hpp"
 #include "robot_runtime.hpp"
+#include "runtime_freshness_gate.hpp"
 #include "sim_hardware_bridge.hpp"
 
 #include <cstdlib>
@@ -167,13 +168,43 @@ bool testStaleEstimatorAndIntentPreferEstimatorFault() {
                   "ESTIMATOR_INVALID should take precedence when both streams are stale");
 }
 
+bool testSafetyLenientIgnoresPureNonMonotonicSamples() {
+    control_config::FreshnessConfig cfg{};
+    cfg.estimator.max_allowed_age_us = DurationUs{1'000'000};
+    cfg.intent.max_allowed_age_us = DurationUs{1'000'000};
+
+    FreshnessPolicy policy(cfg);
+    RuntimeFreshnessGate gate(policy);
+
+    const TimePointUs now = now_us();
+    RobotState est_new = makeEstimatorSample(100, now);
+    MotionIntent intent_new = makeIntentSample(100, now);
+    const auto strict_eval =
+        gate.evaluate(RuntimeFreshnessGate::EvaluationMode::StrictControl, now, est_new, intent_new);
+    if (!expect(strict_eval.estimator.valid && strict_eval.intent.valid,
+                "strict evaluation should accept fresh baseline samples")) {
+        return false;
+    }
+
+    RobotState est_old = makeEstimatorSample(99, now);
+    MotionIntent intent_old = makeIntentSample(99, now);
+    const auto lenient_eval =
+        gate.evaluate(RuntimeFreshnessGate::EvaluationMode::SafetyLenient, now, est_old, intent_old);
+
+    return expect(lenient_eval.estimator.valid,
+                  "safety-lenient evaluation should ignore pure estimator non-monotonicity") &&
+           expect(lenient_eval.intent.valid,
+                  "safety-lenient evaluation should ignore pure intent non-monotonicity");
+}
+
 } // namespace
 
 int main() {
     if (!testEstimatorAndIntentFreshAllowsNominalControl() ||
         !testStaleEstimatorTriggersEstimatorInvalidFault() ||
         !testStaleIntentTriggersCommandTimeoutFault() ||
-        !testStaleEstimatorAndIntentPreferEstimatorFault()) {
+        !testStaleEstimatorAndIntentPreferEstimatorFault() ||
+        !testSafetyLenientIgnoresPureNonMonotonicSamples()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

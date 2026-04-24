@@ -1,16 +1,22 @@
 #pragma once
 
 #include "geometry_config.hpp"
-#include "navigation_manager.hpp"
-#include "types.hpp"
 #include "logger.hpp"
+#include "navigation_manager.hpp"
+#include "process_resource_monitoring.hpp"
+#include "types.hpp"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 
 namespace telemetry {
+
+inline constexpr std::size_t kTelemetryResourceSectionLimit = 18;
+using ResourceSectionSummary =
+    resource_monitoring::ResourceSectionSummary<kTelemetryResourceSectionLimit>;
 
 enum class FusionCorrectionMode : std::uint8_t {
     None = 0,
@@ -53,6 +59,8 @@ struct ControlStepTelemetry {
     ControlStatus status{};
     FusionTelemetrySnapshot fusion{};
     std::optional<NavigationMonitorSnapshot> navigation{};
+    std::optional<resource_monitoring::ProcessResourceSnapshot> process_resources{};
+    std::optional<ResourceSectionSummary> resource_sections{};
     TimePointUs timestamp_us{};
 };
 

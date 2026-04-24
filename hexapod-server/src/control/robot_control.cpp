@@ -54,11 +54,21 @@ void RobotControl::start() {
 
     loops_.start(
         {
-            {config_.loop_timing.bus_loop_period, [this]() { runtime_.busStep(); }},
-            {config_.loop_timing.estimator_loop_period, [this]() { runtime_.estimatorStep(); }},
-            {config_.loop_timing.control_loop_period, [this]() { runtime_.controlStep(); }},
-            {config_.loop_timing.safety_loop_period, [this]() { runtime_.safetyStep(); }},
-            {config_.loop_timing.diagnostics_period, [this]() { runtime_.diagnosticsStep(); }},
+            {.label = "bus",
+             .period = config_.loop_timing.bus_loop_period,
+             .step = [this]() { runtime_.busStep(); }},
+            {.label = "estimator",
+             .period = config_.loop_timing.estimator_loop_period,
+             .step = [this]() { runtime_.estimatorStep(); }},
+            {.label = "control",
+             .period = config_.loop_timing.control_loop_period,
+             .step = [this]() { runtime_.controlStep(); }},
+            {.label = "safety",
+             .period = config_.loop_timing.safety_loop_period,
+             .step = [this]() { runtime_.safetyStep(); }},
+            {.label = "diagnostics",
+             .period = config_.loop_timing.diagnostics_period,
+             .step = [this]() { runtime_.diagnosticsStep(); }},
         },
         running_);
 }
@@ -87,4 +97,8 @@ void RobotControl::setNavigationManager(std::unique_ptr<NavigationManager> navig
 
 ControlStatus RobotControl::getStatus() const {
     return runtime_.getStatus();
+}
+
+SafetyState RobotControl::getSafetyState() const {
+    return runtime_.getSafetyState();
 }

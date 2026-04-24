@@ -278,6 +278,38 @@ bool testTelemetryRuntimeFieldsParseAndFallback()
          expect(saw_port, "telemetry port fallback should emit out_of_range diagnostic");
 }
 
+bool testInvestigationStanceTiltLevelingToggleParses()
+{
+  const std::string cfg =
+      "title = \"Hexapod Config File\"\n"
+      "Schema = \"hexapod.server.config\"\n"
+      "SchemaVersion = 1\n"
+      "Runtime.Mode = \"sim\"\n"
+      "[Runtime.Investigation]\n"
+      "DisableStanceTiltLeveling = true\n"
+      "MotorCalibrations = [\n"
+      "[\"R31\", 1031, 2088], [\"R32\", 1003, 2016], [\"R33\", 958, 1990],\n"
+      "[\"L31\", 941, 2022], [\"L32\", 986, 2039], [\"L33\", 958, 1988],\n"
+      "[\"R21\", 1007, 2048], [\"R22\", 976, 2019], [\"R23\", 1057, 2090],\n"
+      "[\"L21\", 993, 2015], [\"L22\", 1011, 2013], [\"L23\", 956, 2000],\n"
+      "[\"R11\", 1040, 2055], [\"R12\", 983, 2057], [\"R13\", 959, 1995],\n"
+      "[\"L11\", 1031, 1998], [\"L12\", 951, 1978], [\"L13\", 1035, 2027]\n"
+      "]\n";
+
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(writeTemp("hexapod_investigation_toggle.toml", cfg), parsed),
+              "stance tilt leveling investigation toggle should parse")) {
+    return false;
+  }
+
+  const control_config::ControlConfig control = control_config::fromParsedToml(parsed);
+  return expect(parsed.investigationDisableStanceTiltLeveling,
+                "parsed stance tilt leveling toggle should be true") &&
+         expect(!control.foot_terrain.enable_stance_tilt_leveling,
+                "control config should disable stance tilt leveling");
+}
+
 bool testCalibrationNormalizationStableForShuffledTable()
 {
   const std::string ordered =
@@ -428,6 +460,19 @@ bool testRuntimeLoggingOverridesParse()
 
   return expect(parsed.logFilePath == "ci.log", "Runtime.Log.FilePath should be parsed") &&
          expect(!parsed.logToFile, "Runtime.Log.EnableFile should be parsed");
+}
+
+bool testPhysicsSimSolverIterationsParseInteger()
+{
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(configPath("config.physics-sim.txt"), parsed),
+              "config.physics-sim.txt should parse")) {
+    return false;
+  }
+
+  return expect(parsed.physicsSimSolverIterations == 16,
+                "Runtime.PhysicsSim.SolverIterations should accept integer TOML scalars");
 }
 
 bool testGeometryDynamicsLoadedFromParsedConfig()
@@ -628,10 +673,12 @@ int main()
   testOutOfRangeTuningFallsBackToDefaults();
   testOutOfRangeRuntimeFallsBackWithDiagnostic();
   testTelemetryRuntimeFieldsParseAndFallback();
+  testInvestigationStanceTiltLevelingToggleParses();
   testCalibrationNormalizationStableForShuffledTable();
   testSimModeTransportOptional();
   testBaselineConfigParity();
   testRuntimeLoggingOverridesParse();
+  testPhysicsSimSolverIterationsParseInteger();
   testGeometryDynamicsLoadedFromParsedConfig();
   testGeometryCanBeWrittenBackToParsedConfig();
   testSwingTuningKeysParseIntoControlConfig();

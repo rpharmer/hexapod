@@ -5,7 +5,7 @@
 
 namespace {
 
-constexpr double kDefaultBodyHeightM = 0.05;
+constexpr double kDefaultBodyHeightM = 0.14;
 constexpr double kLeanVxRefMps = 0.20;
 constexpr double kLeanYawRefRadps = 0.45;
 constexpr double kLeanPitchPerVx = 0.22;

@@ -1,7 +1,10 @@
 #include "physics_sim_bridge.hpp"
 
 #include "geometry_config.hpp"
+#include "body_controller.hpp"
 #include "physics_sim_joint_wire_mapping.hpp"
+#include "leg_ik.hpp"
+#include "motion_intent_utils.hpp"
 #include "logger.hpp"
 #include "physics_sim_protocol.hpp"
 #include "imu_physics.hpp"
@@ -28,12 +31,79 @@
 namespace {
 
 constexpr double kHalfPi = 1.57079632679489661923;
+struct HexapodLegSpec {
+    Vec3 mountOffsetBody{};
+    float mountAngleDegrees = 0.0f;
+};
+
+constexpr std::array<HexapodLegSpec, 6> kHexapodLegSpecs{{
+    {{0.063f, -0.007f, -0.0835f}, 143.0f},
+    {{-0.063f, -0.007f, -0.0835f}, 217.0f},
+    {{0.0815f, -0.007f, 0.0f}, 90.0f},
+    {{-0.0815f, -0.007f, 0.0f}, 270.0f},
+    {{0.063f, -0.007f, 0.0835f}, 37.0f},
+    {{-0.063f, -0.007f, 0.0835f}, 323.0f},
+}};
 
 /// Maps sim world/body vectors into hexapod-server coordinates so the spawned chassis forward
 /// direction (sim local/world -Z) becomes server +X, left becomes +Y, and up stays +Z:
 /// (x,y,z)_svr = (-z_s, x_s, y_s).
 Vec3 simVecToServer(float x, float y, float z) {
     return Vec3{-static_cast<double>(z), static_cast<double>(x), static_cast<double>(y)};
+}
+
+Vec3 normalizeVec3(const Vec3& value) {
+    const double norm = vecNorm(value);
+    if (norm <= 1e-9) {
+        return Vec3{};
+    }
+    return Vec3{value.x / norm, value.y / norm, value.z / norm};
+}
+
+Vec3 LegAxisFromMountAngleDegrees(float angle_degrees) {
+    const float radians = angle_degrees * static_cast<float>(3.14159265358979323846) / 180.0f;
+    return normalizeVec3(Vec3{std::sin(radians), 0.0f, std::cos(radians)});
+}
+
+Vec3 LegPitchDirection(const Vec3& leg_axis, float angle_radians) {
+    return normalizeVec3(leg_axis * std::cos(angle_radians) + Vec3{0.0f, 1.0f, 0.0f} * std::sin(angle_radians));
+}
+
+double computeStandingBodyHeightM() {
+    const Vec3 leg_axis = LegAxisFromMountAngleDegrees(kHexapodLegSpecs.front().mountAngleDegrees);
+    const Vec3 femur_direction = LegPitchDirection(leg_axis, physics_sim::kAssemblyFemurPitchRad);
+    const Vec3 tibia_direction =
+        LegPitchDirection(leg_axis, physics_sim::kAssemblyFemurPitchRad + physics_sim::kAssemblyTibiaPitchRad);
+    const Vec3 foot_center_relative =
+        kHexapodLegSpecs.front().mountOffsetBody
+        + leg_axis * 0.043f
+        + femur_direction * 0.060f
+        + tibia_direction * 0.104f
+        + Vec3{0.0f, -0.018f, 0.0f};
+    constexpr double kSpawnHeightMargin = 0.002;
+    return std::max(0.04, 0.018 - static_cast<double>(foot_center_relative.y) + 0.001) + kSpawnHeightMargin;
+}
+
+Vec3 computeFootInBodyFrame(const LegState& leg_state, const LegGeometry& leg_geometry) {
+    const double q1 = leg_state.joint_state[COXA].pos_rad.value;
+    const double q2 = leg_state.joint_state[FEMUR].pos_rad.value;
+    const double q3 = leg_state.joint_state[TIBIA].pos_rad.value;
+
+    const double rho = leg_geometry.femurLength.value * std::cos(q2) +
+                       leg_geometry.tibiaLength.value * std::cos(q2 + q3);
+    const double z_leg = leg_geometry.femurLength.value * std::sin(q2) +
+                         leg_geometry.tibiaLength.value * std::sin(q2 + q3);
+    const double r = leg_geometry.coxaLength.value + rho;
+
+    const Vec3 foot_leg_local{r * std::cos(q1), r * std::sin(q1), z_leg};
+    const double c = std::cos(leg_geometry.mountAngle.value);
+    const double s = std::sin(leg_geometry.mountAngle.value);
+    const Vec3 foot_body_relative{
+        c * foot_leg_local.x - s * foot_leg_local.y,
+        s * foot_leg_local.x + c * foot_leg_local.y,
+        foot_leg_local.z
+    };
+    return leg_geometry.bodyCoxaOffset + foot_body_relative;
 }
 
 struct Mat3d {
@@ -126,6 +196,44 @@ PhysicsSimObstacleFootprint obstacleFootprintToServer(const physics_sim::Obstacl
     out.half_extent_y_m = static_cast<double>(in.half_extent_z);
     out.yaw_rad = static_cast<double>(in.yaw_rad) + kHalfPi;
     return out;
+}
+
+JointTargets buildStandingServoTargets() {
+    BodyController body_controller{};
+    LegIK leg_ik{};
+    RobotState est{};
+    SafetyState safety{};
+    GaitState gait{};
+    MotionIntent intent = makeMotionIntent(RobotMode::STAND, GaitType::TRIPOD, computeStandingBodyHeightM());
+    const BodyTwist cmd_twist{};
+    const LegTargets stance_targets =
+        body_controller.update(est, intent, gait, safety, cmd_twist, nullptr);
+    return leg_ik.solve(est, stance_targets, safety);
+}
+
+physics_sim::StateCorrection buildStandingResetCorrection() {
+    physics_sim::StateCorrection correction{};
+    correction.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection);
+    correction.sequence_id = 0;
+    correction.timestamp_us = now_us().value;
+    correction.flags = physics_sim::kStateCorrectionPoseValid |
+                       physics_sim::kStateCorrectionTwistValid |
+                       physics_sim::kStateCorrectionHardReset;
+    correction.correction_strength = 1.0f;
+
+    correction.body_position = {0.0f, static_cast<float>(computeStandingBodyHeightM()), 0.0f};
+    correction.body_orientation = {1.0f, 0.0f, 0.0f, 0.0f};
+    correction.body_linear_velocity = {0.0f, 0.0f, 0.0f};
+    correction.body_angular_velocity = {0.0f, 0.0f, 0.0f};
+    return correction;
+}
+
+double maxAbsJointVelocityRadps(const physics_sim::StateResponse& rsp) {
+    double max_vel = 0.0;
+    for (const float joint_vel : rsp.joint_velocities) {
+        max_vel = std::max(max_vel, std::abs(static_cast<double>(joint_vel)));
+    }
+    return max_vel;
 }
 
 } // namespace
@@ -296,7 +404,25 @@ bool PhysicsSimBridge::init() {
             physics_sim_joint_wire_mapping::servoLegFromSimWireAngles(cal, static_cast<int>(leg), sim_c, sim_f, sim_t);
     }
 
+    pending_targets_ = buildStandingServoTargets();
+    last_motion_trace_log_us_ = TimePointUs{};
+    last_motion_trace_sample_us_ = TimePointUs{};
+    last_motion_trace_foot_positions_body_.fill(Vec3{});
+    have_motion_trace_foot_positions_ = false;
     initialized_ = true;
+    if (!sendStateCorrection(buildStandingResetCorrection())) {
+        if (logger_) {
+            LOG_WARN(logger_, "PhysicsSimBridge failed to send standing reset correction");
+        }
+        ::close(sock_);
+        sock_ = -1;
+        initialized_ = false;
+        return false;
+    }
+    if (logger_) {
+        LOG_INFO(logger_, "PhysicsSimBridge seeded standing joint targets and reset sim pose after connect");
+    }
+
     last_result_.error = BridgeError::None;
     return true;
 }
@@ -320,6 +446,7 @@ bool PhysicsSimBridge::write(const JointTargets& in) {
         }
     }
     if (all_zero) {
+        pending_targets_ = buildStandingServoTargets();
         return true;
     }
     pending_targets_ = in;
@@ -476,6 +603,46 @@ bool PhysicsSimBridge::read(RobotState& out) {
 
     const Vec3 p_srv = simVecToServer(rsp.body_position[0], rsp.body_position[1], rsp.body_position[2]);
     out.body_twist_state.body_trans_m = PositionM3{p_srv.x, p_srv.y, p_srv.z};
+
+    const TimePointUs trace_now = out.timestamp_us;
+    const bool have_trace_dt = !last_motion_trace_sample_us_.isZero() &&
+                               trace_now.value > last_motion_trace_sample_us_.value;
+    const double trace_dt_s = have_trace_dt
+                                  ? static_cast<double>(trace_now.value - last_motion_trace_sample_us_.value) * 1.0e-6
+                                  : 0.0;
+    const double max_joint_vel_radps = maxAbsJointVelocityRadps(rsp);
+
+    double max_foot_speed_mps = 0.0;
+    std::array<Vec3, kNumLegs> current_foot_positions_body{};
+    for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+        current_foot_positions_body[leg] =
+            computeFootInBodyFrame(out.leg_states[leg], geometry.legGeometry[leg]);
+        if (have_motion_trace_foot_positions_ && trace_dt_s > 0.0) {
+            const Vec3 delta = current_foot_positions_body[leg] - last_motion_trace_foot_positions_body_[leg];
+            max_foot_speed_mps = std::max(max_foot_speed_mps, vecNorm(delta) / trace_dt_s);
+        }
+    }
+
+    const bool motion_trace_ready = max_joint_vel_radps > 0.02 || max_foot_speed_mps > 0.002;
+    const bool should_log_motion_trace =
+        motion_trace_ready &&
+        (last_motion_trace_log_us_.isZero() ||
+         trace_now.value - last_motion_trace_log_us_.value >= 1000000ULL);
+    if (should_log_motion_trace && logger_) {
+        LOG_INFO(logger_,
+                 "PhysicsSimBridge motion trace max_joint_vel_radps=",
+                 max_joint_vel_radps,
+                 " max_foot_speed_mps=",
+                 max_foot_speed_mps,
+                 " sample_dt_us=",
+                 have_trace_dt ? (trace_now.value - last_motion_trace_sample_us_.value) : 0ULL,
+                 " log_age_us=",
+                 last_motion_trace_log_us_.isZero() ? 0ULL : (trace_now.value - last_motion_trace_log_us_.value));
+        last_motion_trace_log_us_ = trace_now;
+    }
+    last_motion_trace_foot_positions_body_ = current_foot_positions_body;
+    last_motion_trace_sample_us_ = trace_now;
+    have_motion_trace_foot_positions_ = true;
 
     last_result_.error = BridgeError::None;
     return true;

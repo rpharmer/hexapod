@@ -120,8 +120,7 @@ Button mappings in controller mode:
 
 - Left stick => walk heading + speed (`heading_rad`, `speed_mps`)
   - stick axes (`LX`,`LY`) are radial-deadzone filtered and normalized to `[-1, 1]` for downstream consumers.
-- Right stick => facing yaw setpoint (`twist_pos_rad.z`) from stick angle.
-  - when right-stick magnitude is above threshold, the current stick direction becomes the robot facing direction.
+- Right stick => yaw rate (`cmd_yaw_radps`) from horizontal stick deflection.
 - Triggers (`LT`/`RT`) => body height down/up (`body_trans_m.z`).
 - `X` => RIPPLE gait.
 - `Y` => TRIPOD gait.

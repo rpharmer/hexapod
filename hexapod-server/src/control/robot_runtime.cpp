@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <sstream>
 
 #include "geometry_config.hpp"
 #include "foot_terrain.hpp"
@@ -65,6 +66,24 @@ physics_sim::ContactPhase toPhysicsSimPhase(const ContactPhase phase) {
         case ContactPhase::Search:
         default:
             return physics_sim::ContactPhase::Search;
+    }
+}
+
+const char* contactPhaseName(const ContactPhase phase) {
+    switch (phase) {
+        case ContactPhase::Swing:
+            return "swing";
+        case ContactPhase::ExpectedTouchdown:
+            return "expected_touchdown";
+        case ContactPhase::ContactCandidate:
+            return "contact_candidate";
+        case ContactPhase::ConfirmedStance:
+            return "confirmed_stance";
+        case ContactPhase::LostCandidate:
+            return "lost_candidate";
+        case ContactPhase::Search:
+        default:
+            return "search";
     }
 }
 
@@ -347,8 +366,7 @@ PhysicsSimCorrectionPacket buildPhysicsSimCorrection(const RobotState& est,
         est.has_fusion_diagnostics &&
         (est.fusion.residuals.max_body_position_error_m > 0.5 * fusion_cfg.soft_pose_resync_m ||
          est.fusion.residuals.max_body_orientation_error_rad >
-             0.5 * fusion_cfg.soft_orientation_resync_rad ||
-         est.fusion.residuals.contact_mismatch_ratio > 0.5 * fusion_cfg.soft_contact_mismatch_ratio);
+             0.5 * fusion_cfg.soft_orientation_resync_rad);
 
     PhysicsSimCorrectionMode selected_mode = PhysicsSimCorrectionMode::None;
     if (hard_reset) {
@@ -363,7 +381,7 @@ PhysicsSimCorrectionPacket buildPhysicsSimCorrection(const RobotState& est,
         out.packet.flags |= physics_sim::kStateCorrectionRelocalize;
         out.packet.correction_strength =
             static_cast<float>(std::clamp(0.68 + 0.25 * (1.0 - model_trust), 0.68, 0.95));
-    } else if (soft_residual || model_trust < fusion_cfg.predictive_trust_bias) {
+    } else if (soft_residual) {
         selected_mode = PhysicsSimCorrectionMode::Soft;
         out.packet.correction_strength =
             static_cast<float>(std::clamp(0.32 + 0.28 * (1.0 - model_trust), 0.32, 0.60));
@@ -384,23 +402,13 @@ PhysicsSimCorrectionPacket buildPhysicsSimCorrection(const RobotState& est,
         (est.fusion.residuals.max_body_position_error_m >
              fusion_cfg.soft_pose_resync_m * fusion_cfg.correction_mode_strong_release_factor ||
          est.fusion.residuals.max_body_orientation_error_rad >
-             fusion_cfg.soft_orientation_resync_rad * fusion_cfg.correction_mode_strong_release_factor ||
-         est.fusion.residuals.contact_mismatch_ratio >
-             fusion_cfg.soft_contact_mismatch_ratio * fusion_cfg.correction_mode_strong_release_factor ||
-         est.fusion.model_trust < fusion_cfg.predictive_trust_bias +
-                                      (1.0 - fusion_cfg.predictive_trust_bias) *
-                                          (1.0 - fusion_cfg.correction_mode_strong_release_factor));
+             fusion_cfg.soft_orientation_resync_rad * fusion_cfg.correction_mode_strong_release_factor);
     const bool soft_release_guard =
         est.has_fusion_diagnostics &&
         (est.fusion.residuals.max_body_position_error_m >
              fusion_cfg.soft_pose_resync_m * fusion_cfg.correction_mode_soft_release_factor ||
          est.fusion.residuals.max_body_orientation_error_rad >
-             fusion_cfg.soft_orientation_resync_rad * fusion_cfg.correction_mode_soft_release_factor ||
-         est.fusion.residuals.contact_mismatch_ratio >
-             fusion_cfg.soft_contact_mismatch_ratio * fusion_cfg.correction_mode_soft_release_factor ||
-         est.fusion.model_trust < fusion_cfg.predictive_trust_bias +
-                                      (1.0 - fusion_cfg.predictive_trust_bias) *
-                                          (1.0 - fusion_cfg.correction_mode_soft_release_factor));
+             fusion_cfg.soft_orientation_resync_rad * fusion_cfg.correction_mode_soft_release_factor);
 
     if (selected_mode == PhysicsSimCorrectionMode::None) {
         if (last_mode == PhysicsSimCorrectionMode::Strong && (within_hold || strong_release_guard)) {
@@ -438,6 +446,38 @@ bool maybeSendPhysicsSimCorrection(IHardwareBridge* bridge,
     return physics_sim_bridge->sendStateCorrection(packet);
 }
 
+JointTargets clampJointTargetsToServoDynamics(const JointTargets& previous,
+                                              const JointTargets& requested,
+                                              const HexapodGeometry& geometry,
+                                              const double dt_s) {
+    if (dt_s <= 0.0) {
+        return requested;
+    }
+
+    JointTargets limited = requested;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        const LegGeometry& leg_geometry = geometry.legGeometry[leg];
+        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+            const AngleRad prev = previous.leg_states[leg].joint_state[joint].pos_rad;
+            const AngleRad req = requested.leg_states[leg].joint_state[joint].pos_rad;
+            const double error = req.value - prev.value;
+            const ServoJointDynamics& dynamics = leg_geometry.servoDynamics[joint];
+            const ServoDirectionDynamics& direction =
+                (error >= 0.0) ? dynamics.positive_direction : dynamics.negative_direction;
+            const double max_delta = std::max(direction.vmax_radps, 0.0) * dt_s;
+            double limited_error = error;
+            if (max_delta > 0.0) {
+                limited_error = std::clamp(error, -max_delta, max_delta);
+            }
+
+            limited.leg_states[leg].joint_state[joint].pos_rad = AngleRad{prev.value + limited_error};
+            limited.leg_states[leg].joint_state[joint].vel_radps =
+                AngularRateRadPerSec{limited_error / dt_s};
+        }
+    }
+    return limited;
+}
+
 } // namespace
 
 RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
@@ -452,7 +492,7 @@ RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
       config_(config),
       telemetry_publisher_(std::move(telemetry_publisher)),
       replay_logger_(std::move(replay_logger)),
-      pipeline_(config_.gait, config_.locomotion_cmd, config_.foot_terrain),
+      pipeline_(config_.gait, config_.locomotion_cmd, config_.foot_terrain, &resource_profiler_),
       safety_(config_.safety),
       freshness_policy_(config_.freshness),
       freshness_gate_(freshness_policy_),
@@ -496,8 +536,12 @@ bool RobotRuntime::init() {
     last_effective_intent_estimator_sample_id_ = 0;
     last_fusion_reset_sample_id_ = 0;
     last_fusion_correction_sample_id_ = 0;
+    last_logged_safety_fault_ = FaultCode::NONE;
     last_fusion_correction_mode_ = static_cast<std::uint8_t>(PhysicsSimCorrectionMode::None);
     last_fusion_correction_ = {};
+    last_process_resources_.reset();
+    last_resource_sections_.reset();
+    resource_profiler_.reset();
     if (estimator_) {
         estimator_->configure(config_.fusion);
         estimator_->reset();
@@ -522,8 +566,12 @@ void RobotRuntime::startTelemetry() {
 
 void RobotRuntime::busStep() {
     RobotState raw{};
-    if (!hw_->read(raw)) {
-        raw.bus_ok = false;
+    {
+        const auto read_scope = resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::BusRead));
+        if (!hw_->read(raw)) {
+            raw.bus_ok = false;
+        }
+        (void)read_scope;
     }
     if (raw.sample_id == 0) {
         raw.sample_id = raw_sample_seq_.fetch_add(1) + 1;
@@ -531,18 +579,81 @@ void RobotRuntime::busStep() {
     raw_state_.write(raw);
 
     const JointTargets cmd = joint_targets_.read();
-    (void)hw_->write(cmd);
+    {
+        const auto write_scope = resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::BusWrite));
+        (void)hw_->write(cmd);
+        (void)write_scope;
+    }
 }
 
 void RobotRuntime::estimatorStep() {
+    const auto scope = resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::EstimatorUpdate));
     const RobotState raw = raw_state_.read();
     const RobotState est = estimator_->update(raw);
+    const TimePointUs now = now_us();
+    if (logger_ && (last_estimator_snapshot_log_us_.isZero() ||
+                    (now.value > last_estimator_snapshot_log_us_.value &&
+                     now.value - last_estimator_snapshot_log_us_.value >= 1'000'000ULL))) {
+        std::ostringstream snapshot;
+        snapshot << "estimator_snapshot raw=[";
+        for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+            if (leg > 0) {
+                snapshot << ',';
+            }
+            snapshot << (raw.foot_contacts[leg] ? '1' : '0');
+        }
+        snapshot << "] fused=[";
+        for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+            if (leg > 0) {
+                snapshot << ',';
+            }
+            snapshot << (est.foot_contacts[leg] ? '1' : '0');
+        }
+        snapshot << "] phase=[";
+        for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+            if (leg > 0) {
+                snapshot << ',';
+            }
+            snapshot << contactPhaseName(est.foot_contact_fusion[leg].phase);
+        }
+        snapshot << "] confidence=[";
+        for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+            if (leg > 0) {
+                snapshot << ',';
+            }
+            snapshot << est.foot_contact_fusion[leg].confidence;
+        }
+        int raw_contact_count = 0;
+        int fused_contact_count = 0;
+        for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+            raw_contact_count += raw.foot_contacts[leg] ? 1 : 0;
+            fused_contact_count += est.foot_contacts[leg] ? 1 : 0;
+        }
+        snapshot << "] raw_contact_count=" << raw_contact_count
+                 << " fused_contact_count=" << fused_contact_count
+                 << " model_trust=" << est.fusion.model_trust
+                 << " has_fusion_diagnostics=" << (est.has_fusion_diagnostics ? 1 : 0)
+                 << " has_body_twist_state=" << (est.has_body_twist_state ? 1 : 0)
+                 << " residual_contact_mismatch=" << est.fusion.residuals.contact_mismatch_ratio
+                 << " residual_terrain_m=" << est.fusion.residuals.terrain_residual_m
+                 << " residual_pos_m=" << est.fusion.residuals.max_body_position_error_m
+                 << " residual_ori_rad=" << est.fusion.residuals.max_body_orientation_error_rad
+                 << " raw_sid=" << raw.sample_id
+                 << " est_sid=" << est.sample_id
+                 << " raw_ts_us=" << raw.timestamp_us.value
+                 << " est_ts_us=" << est.timestamp_us.value;
+        LOG_INFO(logger_, snapshot.str());
+        last_estimator_snapshot_log_us_ = now;
+    }
     estimated_state_.write(est);
+    (void)scope;
 }
 
 void RobotRuntime::controlStep() {
+    const auto step_scope = resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::ControlStep));
     const TimePointUs now = now_us();
     timing_metrics_.update(now);
+    const JointTargets previous_joint_targets = joint_targets_.read();
 
     const RobotState est = estimated_state_.read();
     if (navigation_manager_ != nullptr) {
@@ -572,20 +683,28 @@ void RobotRuntime::controlStep() {
     const SafetyState safety_state = safety_state_.read();
     const bool bus_ok = raw_state_.read().bus_ok;
 
-    const FreshnessPolicy::Evaluation freshness = freshness_gate_.evaluate(
-        RuntimeFreshnessGate::EvaluationMode::StrictControl, now, est, intent);
-    freshness_gate_.recordStrictMetrics(freshness, stale_intent_count_, stale_estimator_count_);
+    uint64_t loop_counter = 0;
+    RuntimeFreshnessGate::Decision decision{};
+    {
+        const auto freshness_scope =
+            resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::ControlFreshnessGate));
+        const FreshnessPolicy::Evaluation freshness = freshness_gate_.evaluate(
+            RuntimeFreshnessGate::EvaluationMode::StrictControl, now, est, intent);
+        freshness_gate_.recordStrictMetrics(freshness, stale_intent_count_, stale_estimator_count_);
 
-    const uint64_t loop_counter = control_loop_counter_.fetch_add(1) + 1;
-    const RuntimeFreshnessGate::Decision decision =
-        freshness_gate_.computeControlDecision(freshness, bus_ok, loop_counter);
-    if (!decision.allow_pipeline) {
-        RuntimeFreshnessGate::maybeLogReject(logger_, freshness, est, intent);
-        status_.write(decision.status);
-        joint_targets_.write(decision.joint_targets);
-        maybePublishTelemetry(now);
-        maybeWriteReplayRecord(now);
-        return;
+        loop_counter = control_loop_counter_.fetch_add(1) + 1;
+        decision = freshness_gate_.computeControlDecision(freshness, bus_ok, loop_counter);
+        if (!decision.allow_pipeline) {
+            RuntimeFreshnessGate::maybeLogReject(logger_, freshness, est, intent);
+            status_.write(decision.status);
+            joint_targets_.write(decision.joint_targets);
+            maybePublishTelemetry(now);
+            maybeWriteReplayRecord(now);
+            (void)freshness_scope;
+            (void)step_scope;
+            return;
+        }
+        (void)freshness_scope;
     }
 
     const PipelineStepResult result = pipeline_.runStep(
@@ -596,11 +715,51 @@ void RobotRuntime::controlStep() {
         loop_counter,
         terrain_ptr);
 
-    joint_targets_.write(result.joint_targets);
+    JointTargets joint_targets = result.joint_targets;
+    if (intent.requested_mode == RobotMode::WALK) {
+        const double control_dt_s =
+            std::max(static_cast<double>(config_.loop_timing.control_loop_period.count()) * 1.0e-6, 1.0e-6);
+        joint_targets = clampJointTargetsToServoDynamics(
+            previous_joint_targets,
+            joint_targets,
+            geometry_config::activeHexapodGeometry(),
+            control_dt_s);
+    }
+
+    joint_targets_.write(joint_targets);
     status_.write(result.status);
+
+    if (logger_) {
+        std::ostringstream support_snapshot;
+        support_snapshot << "stance_support_snapshot clearance_m=[";
+        for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+            if (leg > 0) {
+                support_snapshot << ',';
+            }
+            support_snapshot << result.gait_state.support_liftoff_clearance_m[leg];
+        }
+        support_snapshot << "] safe_to_lift=[";
+        for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+            if (leg > 0) {
+                support_snapshot << ',';
+            }
+            support_snapshot << (result.gait_state.support_liftoff_safe_to_lift[leg] ? '1' : '0');
+        }
+        support_snapshot << "] static_margin_m=" << result.gait_state.static_stability_margin_m
+                         << " hold_stance=[";
+        for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+            if (leg > 0) {
+                support_snapshot << ',';
+            }
+            support_snapshot << (result.gait_state.stability_hold_stance[leg] ? '1' : '0');
+        }
+        support_snapshot << ']';
+        LOG_INFO(logger_, support_snapshot.str());
+    }
 
     maybePublishTelemetry(now);
     maybeWriteReplayRecord(now);
+    (void)step_scope;
 }
 
 void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
@@ -623,6 +782,7 @@ void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
         next_geometry_refresh_at_ = TimePointUs{now.value + geometry_refresh_period_us};
     }
 
+    const auto scope = resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::TelemetryPublish));
     telemetry::ControlStepTelemetry telemetry_sample{};
     telemetry_sample.estimated_state = estimated_state_.read();
     telemetry_sample.joint_targets = joint_targets_.read();
@@ -634,8 +794,11 @@ void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
     if (navigation_manager_) {
         telemetry_sample.navigation = navigation_manager_->monitor();
     }
+    telemetry_sample.process_resources = last_process_resources_;
+    telemetry_sample.resource_sections = last_resource_sections_;
     telemetry_sample.timestamp_us = now;
     telemetry_publisher_->publishControlStep(telemetry_sample);
+    (void)scope;
 }
 
 void RobotRuntime::maybeWriteReplayRecord(const TimePointUs& now) {
@@ -643,6 +806,7 @@ void RobotRuntime::maybeWriteReplayRecord(const TimePointUs& now) {
         return;
     }
 
+    const auto scope = resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::ReplayWrite));
     replay_json::ReplayTelemetryRecord record{};
     record.timestamp_us = now;
     record.sample_id = estimated_state_.read().sample_id;
@@ -652,9 +816,11 @@ void RobotRuntime::maybeWriteReplayRecord(const TimePointUs& now) {
         record.terrain_snapshot = navigation_manager_->latestMapSnapshot(now);
     }
     replay_logger_->write(record);
+    (void)scope;
 }
 
 void RobotRuntime::safetyStep() {
+    const auto scope = resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::SafetyEvaluate));
     const RobotState raw = raw_state_.read();
     const RobotState est = estimated_state_.read();
     const TimePointUs now = now_us();
@@ -666,14 +832,89 @@ void RobotRuntime::safetyStep() {
         freshness.estimator.valid,
         freshness.intent.valid};
     const SafetyState s = safety_.evaluate(raw, est, intent, freshness_inputs);
+    if (logger_ && s.active_fault != last_logged_safety_fault_) {
+        int contact_count = 0;
+        for (const bool foot_contact : raw.foot_contacts) {
+            if (foot_contact) {
+                ++contact_count;
+            }
+        }
+        LOG_WARN(logger_,
+                 "safety_fault_transition fault=",
+                 static_cast<int>(s.active_fault),
+                 " lifecycle=",
+                 static_cast<int>(s.fault_lifecycle),
+                 " inhibit_motion=",
+                 s.inhibit_motion ? 1 : 0,
+                 " torque_cut=",
+                 s.torque_cut ? 1 : 0,
+                 " est_fresh=",
+                 freshness.estimator.valid ? 1 : 0,
+                 " est_stale_age=",
+                 freshness.estimator.stale_age ? 1 : 0,
+                 " est_missing_ts=",
+                 freshness.estimator.missing_timestamp ? 1 : 0,
+                 " est_invalid_sid=",
+                 freshness.estimator.invalid_sample_id ? 1 : 0,
+                 " est_nonmono_sid=",
+                 freshness.estimator.non_monotonic_sample_id ? 1 : 0,
+                 " intent_fresh=",
+                 freshness.intent.valid ? 1 : 0,
+                 " intent_stale_age=",
+                 freshness.intent.stale_age ? 1 : 0,
+                 " intent_missing_ts=",
+                 freshness.intent.missing_timestamp ? 1 : 0,
+                 " intent_invalid_sid=",
+                 freshness.intent.invalid_sample_id ? 1 : 0,
+                 " intent_nonmono_sid=",
+                 freshness.intent.non_monotonic_sample_id ? 1 : 0,
+                 " est_age_us=",
+                 freshness.estimator.age_us,
+                 " intent_age_us=",
+                 freshness.intent.age_us,
+                 " est_sid=",
+                 est.sample_id,
+                 " intent_sid=",
+                 intent.sample_id,
+                 " contacts=",
+                 contact_count,
+                 " bus_ok=",
+                 raw.bus_ok ? 1 : 0,
+                 " has_power=",
+                 raw.has_power_state ? 1 : 0,
+                 " voltage=",
+                 raw.voltage,
+                 " current=",
+                 raw.current,
+                 " roll=",
+                 est.body_twist_state.twist_pos_rad.x,
+                 " pitch=",
+                 est.body_twist_state.twist_pos_rad.y,
+                 " mode=",
+                 static_cast<int>(intent.requested_mode));
+        last_logged_safety_fault_ = s.active_fault;
+    }
     safety_state_.write(s);
+    (void)scope;
 }
 
 void RobotRuntime::diagnosticsStep() {
+    resource_monitoring::ProcessResourceSnapshot process_resources{};
+    {
+        const auto sample_scope =
+            resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::DiagnosticsSampleResources));
+        process_resources = process_resource_sampler_.sample();
+        (void)sample_scope;
+    }
+    last_process_resources_ = process_resources;
+    last_resource_sections_ = resource_profiler_.topSections(runtime_resource_monitoring::kTopSectionsToReport);
+    const auto report_scope = resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::DiagnosticsReport));
     const auto st = status_.read();
+    const RobotState raw = raw_state_.read();
+    const RobotState est = estimated_state_.read();
+    const SafetyState safety = safety_state_.read();
     const auto bridge_result = hw_ ? hw_->last_bridge_result() : std::nullopt;
     const uint64_t loops = control_loop_counter_.load();
-    const resource_monitoring::ProcessResourceSnapshot process_resources = process_resource_sampler_.sample();
     diagnostics_reporter_.recordVisualizerTelemetry(telemetry_publisher_->counters(), now_us());
     diagnostics_reporter_.report(st,
                                  bridge_result,
@@ -682,7 +923,95 @@ void RobotRuntime::diagnosticsStep() {
                                  control_jitter_max_us_.load(),
                                  stale_intent_count_.load(),
                                  stale_estimator_count_.load(),
-                                 process_resources);
+                                 process_resources,
+                                 last_resource_sections_);
+    const MotionIntent intent = resolveEffectiveIntent(est, now_us());
+    if (logger_) {
+        const double commanded_body_height_m = intent.twist.body_trans_m.z;
+        const double measured_body_height_m =
+            est.has_body_twist_state ? est.body_twist_state.body_trans_m.z : 0.0;
+        const double fusion_body_position_error_m = est.fusion.residuals.body_position_error_m.z;
+        const double body_height_setpoint_error_m = commanded_body_height_m - measured_body_height_m;
+        LOG_INFO(logger_,
+                 "body_height_snapshot cmd_body_height_m=",
+                 commanded_body_height_m,
+                 " measured_body_height_m=",
+                 measured_body_height_m,
+                 " body_height_setpoint_error_m=",
+                 body_height_setpoint_error_m,
+                 " fusion_body_position_error_m=",
+                 fusion_body_position_error_m,
+                 " fusion_max_body_position_error_m=",
+                 est.fusion.residuals.max_body_position_error_m,
+                 " active_mode=",
+                 static_cast<int>(st.active_mode),
+                 " safety_fault=",
+                 static_cast<int>(safety.active_fault),
+                 " inhibit_motion=",
+                 (safety.inhibit_motion ? 1 : 0),
+                 " est_valid=",
+                 (st.estimator_valid ? 1 : 0));
+    }
+    if (logger_) {
+        std::ostringstream contact_snapshot;
+        contact_snapshot << "contact_truth_snapshot raw=[";
+        for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+            if (leg > 0) {
+                contact_snapshot << ',';
+            }
+            contact_snapshot << (raw.foot_contacts[leg] ? '1' : '0');
+        }
+        contact_snapshot << "] fused=[";
+        for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+            if (leg > 0) {
+                contact_snapshot << ',';
+            }
+            contact_snapshot << (est.foot_contacts[leg] ? '1' : '0');
+        }
+        contact_snapshot << "] phase=[";
+        for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+            if (leg > 0) {
+                contact_snapshot << ',';
+            }
+            contact_snapshot << contactPhaseName(est.foot_contact_fusion[leg].phase);
+        }
+        contact_snapshot << "] confidence=[";
+        for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+            if (leg > 0) {
+                contact_snapshot << ',';
+            }
+            contact_snapshot << est.foot_contact_fusion[leg].confidence;
+        }
+        contact_snapshot << "] mismatch_ratio=" << est.fusion.residuals.contact_mismatch_ratio
+                         << " terrain_residual_m=" << est.fusion.residuals.terrain_residual_m
+                         << " model_trust=" << est.fusion.model_trust
+                         << " safety_fault=" << static_cast<int>(safety.active_fault)
+                         << " inhibit_motion=" << (safety.inhibit_motion ? 1 : 0)
+                         << " active_mode=" << static_cast<int>(st.active_mode)
+                         << " bus_ok=" << (st.bus_ok ? 1 : 0)
+                         << " est_valid=" << (st.estimator_valid ? 1 : 0);
+        LOG_INFO(logger_, contact_snapshot.str());
+    }
+    if (logger_) {
+        LOG_DEBUG(logger_,
+                  "fusion_correction_stats hard_reset_requests=",
+                  fusion_hard_reset_request_count_.load(),
+                  " resync_requests=",
+                  fusion_resync_request_count_.load(),
+                  " emitted_soft=",
+                  fusion_emit_soft_count_.load(),
+                  " emitted_strong=",
+                  fusion_emit_strong_count_.load(),
+                  " emitted_hard_reset=",
+                  fusion_emit_hard_reset_count_.load(),
+                  " suppressed=",
+                  fusion_suppressed_count_.load(),
+                  " suppress_physics_sim_corrections=",
+                  config_.fusion.emit_physics_sim_corrections ? 0 : 1,
+                  " suppress_fusion_resets=",
+                  config_.fusion.suppress_fusion_resets ? 1 : 0);
+    }
+    (void)report_scope;
 }
 
 void RobotRuntime::setMotionIntent(const MotionIntent& intent) {
@@ -721,9 +1050,12 @@ void RobotRuntime::setNavigationManager(std::unique_ptr<NavigationManager> navig
 RobotRuntime::FusionControlPolicy RobotRuntime::applyFusionConsistency(const RobotState& est,
                                                                       const TimePointUs now,
                                                                       const LocalMapSnapshot* terrain_snapshot) {
+    const auto scope =
+        resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::ControlFusionConsistency));
     FusionControlPolicy policy{};
     if (!est.has_fusion_diagnostics) {
         last_fusion_correction_ = {};
+        (void)scope;
         return policy;
     }
 
@@ -734,6 +1066,12 @@ RobotRuntime::FusionControlPolicy RobotRuntime::applyFusionConsistency(const Rob
 
     const auto sample_id = est.sample_id != 0 ? est.sample_id : control_loop_counter_.load();
     const bool hard_reset_requested = est.fusion.hard_reset_requested;
+    if (hard_reset_requested) {
+        fusion_hard_reset_request_count_.fetch_add(1);
+    }
+    if (est.fusion.resync_requested && !hard_reset_requested) {
+        fusion_resync_request_count_.fetch_add(1);
+    }
 
     last_fusion_correction_ = {};
     PhysicsSimCorrectionPacket correction = buildPhysicsSimCorrection(
@@ -745,15 +1083,26 @@ RobotRuntime::FusionControlPolicy RobotRuntime::applyFusionConsistency(const Rob
         last_fusion_correction_sample_id_);
     const bool should_emit_correction =
         correction.mode != PhysicsSimCorrectionMode::None &&
-        (sample_id != last_fusion_correction_sample_id_ ||
-         static_cast<std::uint8_t>(correction.mode) != last_fusion_correction_mode_);
+        sample_id != last_fusion_correction_sample_id_ &&
+        static_cast<std::uint8_t>(correction.mode) != last_fusion_correction_mode_;
+    const bool suppress_corrections = !config_.fusion.emit_physics_sim_corrections;
+    const bool suppress_hard_reset = config_.fusion.suppress_fusion_resets && hard_reset_requested;
+    const bool allow_emit =
+        !suppress_corrections && !(suppress_hard_reset && correction.mode == PhysicsSimCorrectionMode::HardReset);
 
-    if (should_emit_correction) {
+    if (should_emit_correction && allow_emit) {
         correction.packet.sequence_id = static_cast<std::uint32_t>(sample_id);
         const bool sent = maybeSendPhysicsSimCorrection(hw_.get(), correction.packet);
         if (sent) {
             last_fusion_correction_sample_id_ = sample_id;
             last_fusion_correction_mode_ = static_cast<std::uint8_t>(correction.mode);
+            if (correction.mode == PhysicsSimCorrectionMode::Soft) {
+                fusion_emit_soft_count_.fetch_add(1);
+            } else if (correction.mode == PhysicsSimCorrectionMode::Strong) {
+                fusion_emit_strong_count_.fetch_add(1);
+            } else if (correction.mode == PhysicsSimCorrectionMode::HardReset) {
+                fusion_emit_hard_reset_count_.fetch_add(1);
+            }
             last_fusion_correction_.has_data = true;
             last_fusion_correction_.mode = toTelemetryCorrectionMode(correction.mode);
             last_fusion_correction_.sample_id = sample_id;
@@ -782,11 +1131,29 @@ RobotRuntime::FusionControlPolicy RobotRuntime::applyFusionConsistency(const Rob
                      "failed to emit physics-sim correction mode=",
                      correctionModeName(correction.mode),
                      " sample_id=",
-                     sample_id);
+                     sample_id,
+                     " suppress_corrections=",
+                     suppress_corrections ? 1 : 0,
+                     " suppress_hard_reset=",
+                     suppress_hard_reset ? 1 : 0);
+        }
+    } else if (should_emit_correction && !allow_emit) {
+        fusion_suppressed_count_.fetch_add(1);
+        if (logger_) {
+            LOG_INFO(logger_,
+                     "suppressed physics-sim correction mode=",
+                     correctionModeName(correction.mode),
+                     " sample_id=",
+                     sample_id,
+                     " suppress_corrections=",
+                     suppress_corrections ? 1 : 0,
+                     " suppress_hard_reset=",
+                     suppress_hard_reset ? 1 : 0);
         }
     }
 
-    if (!hard_reset_requested) {
+    if (!hard_reset_requested || config_.fusion.suppress_fusion_resets) {
+        (void)scope;
         return policy;
     }
 
@@ -818,6 +1185,7 @@ RobotRuntime::FusionControlPolicy RobotRuntime::applyFusionConsistency(const Rob
     pipeline_.reset();
     freshness_gate_.reset();
     last_effective_intent_estimator_sample_id_ = 0;
+    (void)scope;
     return policy;
 }
 
@@ -838,22 +1206,31 @@ ControlStatus RobotRuntime::getStatus() const {
     return status_.read();
 }
 
+SafetyState RobotRuntime::getSafetyState() const {
+    return safety_state_.read();
+}
+
 MotionIntent RobotRuntime::resolveEffectiveIntent(const RobotState& est, const TimePointUs now) {
+    const auto scope =
+        resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::ControlResolveIntent));
     if (!navigation_manager_) {
         const MotionIntent intent = motion_intent_.read();
         effective_motion_intent_.write(intent);
+        (void)scope;
         return intent;
     }
 
-    const bool nav_needs_tick = navigation_manager_->active();
-    if (!nav_needs_tick && est.sample_id != 0 &&
-        est.sample_id == last_effective_intent_estimator_sample_id_) {
-        return effective_motion_intent_.read();
+    const MotionIntent fallback = motion_intent_.read();
+    if (!navigation_manager_->active()) {
+        effective_motion_intent_.write(fallback);
+        last_effective_intent_estimator_sample_id_ = est.sample_id;
+        (void)scope;
+        return fallback;
     }
 
-    const MotionIntent fallback = motion_intent_.read();
     const MotionIntent effective = navigation_manager_->mergeIntent(fallback, est, now);
     effective_motion_intent_.write(effective);
     last_effective_intent_estimator_sample_id_ = est.sample_id;
+    (void)scope;
     return effective;
 }

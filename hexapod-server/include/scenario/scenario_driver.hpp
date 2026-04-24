@@ -11,7 +11,7 @@ struct ScenarioMotionIntent {
     bool enabled{false};
     RobotMode mode{RobotMode::SAFE_IDLE};
     GaitType gait{GaitType::TRIPOD};
-    double body_height_m{0.05};
+    double body_height_m{0.14};
     double speed_mps{0.0};
     double heading_rad{0.0};
     double yaw_rad{0.0};
@@ -46,7 +46,7 @@ struct ScenarioNavigationCommand {
     bool enabled{false};
     Action action{Action::None};
     GaitType gait{GaitType::TRIPOD};
-    double body_height_m{0.06};
+    double body_height_m{0.14};
     double goal_x_m{0.0};
     double goal_y_m{0.0};
     double goal_yaw_rad{0.0};

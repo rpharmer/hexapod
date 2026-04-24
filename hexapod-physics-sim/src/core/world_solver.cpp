@@ -5,6 +5,8 @@
 #include "minphys3d/solver/block2_solver.hpp"
 #include "minphys3d/solver/block4_solver.hpp"
 
+#include <cmath>
+
 namespace minphys3d {
 
 namespace {
@@ -936,13 +938,27 @@ void World::SolveServoJoint(ServoJoint& j) {
             const float denom = 2.0f * zeta + dt * omega;
             const float gamma = w / (dt * omega * std::max(denom, kEpsilon));
             const float clampedError = std::clamp(positionError, -j.maxCorrectionAngle, j.maxCorrectionAngle);
-            const float biasVel = omega * clampedError / std::max(denom, kEpsilon)
-                                + j.integralGain * j.integralAccum;
+            float biasVel = omega * clampedError / std::max(denom, kEpsilon)
+                          + j.integralGain * j.integralAccum;
+            if (j.maxServoSpeed > 0.0f && std::isfinite(j.maxServoSpeed)) {
+                biasVel = std::clamp(biasVel, -j.maxServoSpeed, j.maxServoSpeed);
+            }
             float servoLambda = -(omegaAxis + biasVel) / (w + gamma);
             const float oldImpulse = j.servoImpulseSum;
             j.servoImpulseSum = std::clamp(j.servoImpulseSum + servoLambda, -j.maxServoTorque, j.maxServoTorque);
             servoLambda = j.servoImpulseSum - oldImpulse;
             ApplyAngularImpulse(a, b, invIA, invIB, servoLambda * axisA);
+            if (j.maxServoSpeed > 0.0f && std::isfinite(j.maxServoSpeed)) {
+                const float postOmegaAxis = Dot(b.angularVelocity - a.angularVelocity, axisA);
+                const float clampedOmegaAxis = std::clamp(postOmegaAxis, -j.maxServoSpeed, j.maxServoSpeed);
+                if (std::abs(clampedOmegaAxis - postOmegaAxis) > 1e-6f) {
+                    float speedLambda = (clampedOmegaAxis - postOmegaAxis) / std::max(w, kEpsilon);
+                    const float speedImpulse = std::clamp(j.servoImpulseSum + speedLambda, -j.maxServoTorque, j.maxServoTorque);
+                    speedLambda = speedImpulse - j.servoImpulseSum;
+                    j.servoImpulseSum = speedImpulse;
+                    ApplyAngularImpulse(a, b, invIA, invIB, speedLambda * axisA);
+                }
+            }
         }
     }
 

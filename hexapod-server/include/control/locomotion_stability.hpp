@@ -19,12 +19,11 @@ class LocomotionStability {
 public:
     explicit LocomotionStability(LocomotionStabilityConfig config = {});
 
-    /** Updates `gait.stability_hold_stance` and `gait.static_stability_margin_m` for walking. */
+    /** Updates stance hold flags, per-leg liftoff clearance diagnostics, and the static support margin. */
     void apply(const MotionIntent& intent, GaitState& gait);
 
     void reset();
 
 private:
     LocomotionStabilityConfig config_{};
-    std::array<bool, kNumLegs> hold_latch_{};
 };

@@ -19,6 +19,14 @@ void BroadphaseSystem::UpdateProxies(const BroadphaseUpdateContext& context) con
 
     for (std::size_t i = 0; i < context.bodies.size(); ++i) {
         const Body& body = context.bodies[i];
+        if (body.isTerrainAttachment) {
+            if (context.proxies[i].valid && context.proxies[i].leaf >= 0) {
+                context.removeLeaf(context.proxies[i].leaf);
+            }
+            context.proxies[i].valid = false;
+            context.proxies[i].leaf = -1;
+            continue;
+        }
         const AABB current = body.ComputeAABB();
         const float margin = context.computeProxyMargin(body);
         if (!context.proxies[i].valid) {

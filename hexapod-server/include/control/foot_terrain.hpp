@@ -24,12 +24,14 @@ void applyTerrainSwingXYNudge(const LocalMapSnapshot& snap,
 
 /**
  * When walking, bias nominal stance foot Z (body frame, before swing/stance split) from mean ground
- * height under the nominal foot XY positions in world.
+ * height under the nominal foot XY positions in world. `blend_scale` lets the body-height hold
+ * reduce this bias when it is already compensating for sag.
  */
 void applyTerrainStanceZBias(const LocalMapSnapshot& snap,
                              const RobotState& est,
                              const MotionIntent& intent,
                              const control_config::FootTerrainConfig& cfg,
+                             double blend_scale,
                              std::array<Vec3, kNumLegs>* nominal_body_m);
 
 /**

@@ -58,6 +58,10 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
         std::max(1, static_cast<int>(std::lround(config.telemetryGeometryResendIntervalSec * 1000.0)))};
     parsed.replay_log.enabled = config.replayLogToFile;
     parsed.replay_log.file_path = config.replayLogFilePath;
+    parsed.foot_terrain.enable_stance_plane_bias = !config.investigationDisableTerrainStanceBias;
+    parsed.foot_terrain.enable_swing_clearance = !config.investigationDisableTerrainSwingClearance;
+    parsed.foot_terrain.enable_swing_xy_nudge = !config.investigationDisableTerrainSwingXYNudge;
+    parsed.foot_terrain.enable_stance_tilt_leveling = !config.investigationDisableStanceTiltLeveling;
 
     parsed.nav_bridge.body_frame_integral_ki_fwd_per_s = config.navBodyFrameIntegralKiFwdPerS;
     parsed.nav_bridge.body_frame_integral_ki_lat_per_s = config.navBodyFrameIntegralKiLatPerS;
@@ -104,6 +108,8 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.fusion.correction_mode_hold_samples = config.fusionCorrectionHoldSamples;
     parsed.fusion.correction_mode_strong_release_factor = config.fusionCorrectionStrongReleaseFactor;
     parsed.fusion.correction_mode_soft_release_factor = config.fusionCorrectionSoftReleaseFactor;
+    parsed.fusion.emit_physics_sim_corrections = !config.investigationSuppressFusionCorrections;
+    parsed.fusion.suppress_fusion_resets = config.investigationSuppressFusionResets;
 
     return parsed;
 }

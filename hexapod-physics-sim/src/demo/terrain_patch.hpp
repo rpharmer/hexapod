@@ -1,9 +1,8 @@
 #pragma once
 
 // TerrainPatch: local height field (belief surface) over XZ with optional physics
-// collision prisms. LiDAR / RaycastWorld use bilinear SampleHeightWorld; per-cell
-// static boxes approximate contact. Optional conservative_collision raises box tops
-// toward neighbour maxima so colliders are not below the smooth field near steps.
+// collision cache. LiDAR / RaycastWorld use bilinear SampleHeightWorld; collision uses
+// the same field directly with an optional conservative top layer near steps.
 
 #include "minphys3d/core/world.hpp"
 #include "minphys3d/math/vec3.hpp"
@@ -78,8 +77,28 @@ public:
     /// Populated when use_conservative_collision; same layout as surface_heights_m.
     const std::vector<float>& collision_heights_m() const { return collision_heights_; }
     bool has_collision_layer() const { return config_.use_conservative_collision && !collision_heights_.empty(); }
+    World::TerrainHeightfieldAttachment BuildTerrainHeightfieldAttachment() const {
+        World::TerrainHeightfieldAttachment attachment{};
+        attachment.enabled = initialized_ && config_.rows > 1 && config_.cols > 1
+            && surface_heights_.size() == static_cast<std::size_t>(config_.rows * config_.cols);
+        attachment.rows = config_.rows;
+        attachment.cols = config_.cols;
+        attachment.cellSizeM = config_.cell_size_m;
+        attachment.gridOriginWorld = grid_origin_world();
+        attachment.centerWorld = center_world_;
+        attachment.planeNormal = last_normal_;
+        attachment.planeHeightM = last_plane_height_m_;
+        attachment.baseHeightM = base_height_m_;
+        attachment.useConservativeCollision = config_.use_conservative_collision;
+        attachment.surfaceHeightsM = surface_heights_;
+        if (has_collision_layer()) {
+            attachment.collisionHeightsM = collision_heights_;
+        }
+        return attachment;
+    }
 
     void initialize(World& world, const Vec3& center, float plane_height_m, const Vec3& normal = {0.0f, 1.0f, 0.0f}) {
+        (void)world;
         if (config_.rows <= 0 || config_.cols <= 0) {
             return;
         }
@@ -100,35 +119,10 @@ public:
         }
 
         const std::size_t cell_count = static_cast<std::size_t>(config_.rows * config_.cols);
-        body_ids_.assign(cell_count, 0);
+        body_ids_.clear();
         surface_heights_.assign(cell_count, plane_height_m);
         confidences_.assign(cell_count, config_.plane_confidence);
         collision_heights_.assign(cell_count, plane_height_m);
-
-        for (int row = 0; row < config_.rows; ++row) {
-            for (int col = 0; col < config_.cols; ++col) {
-                const std::size_t idx = Index(row, col);
-                Body cell{};
-                cell.shape = ShapeType::Box;
-                cell.position = {
-                    grid_world_origin_x_ + static_cast<float>(col) * config_.cell_size_m,
-                    plane_height_m + 0.5f * config_.min_cell_thickness_m,
-                    grid_world_origin_z_ + static_cast<float>(row) * config_.cell_size_m,
-                };
-                cell.halfExtents = {
-                    0.5f * config_.cell_size_m,
-                    0.5f * config_.min_cell_thickness_m,
-                    0.5f * config_.cell_size_m,
-                };
-                cell.mass = 0.0f;
-                cell.restitution = 0.0f;
-                cell.staticFriction = 0.95f;
-                cell.dynamicFriction = 0.75f;
-                cell.collisionGroup = 0x0004;
-                cell.collisionMask = ~0x0004u;
-                body_ids_[idx] = world.CreateBody(cell);
-            }
-        }
         initialized_ = true;
     }
 
@@ -228,31 +222,6 @@ public:
             }
         } else {
             collision_heights_.clear();
-        }
-
-        for (int row = 0; row < config_.rows; ++row) {
-            for (int col = 0; col < config_.cols; ++col) {
-                const float x = grid_world_origin_x_ + static_cast<float>(col) * config_.cell_size_m;
-                const float z = grid_world_origin_z_ + static_cast<float>(row) * config_.cell_size_m;
-                const std::size_t idx = Index(row, col);
-                Body& cell = world.GetBody(body_ids_[idx]);
-                const float top_height = config_.use_conservative_collision ? collision_heights_[idx] : surface_heights_[idx];
-                const float thickness = std::max(top_height - base_height_m_, config_.min_cell_thickness_m);
-                const float half_thickness = 0.5f * thickness;
-                cell.position = {x, base_height_m_ + half_thickness, z};
-                cell.halfExtents = {
-                    0.5f * config_.cell_size_m,
-                    half_thickness,
-                    0.5f * config_.cell_size_m,
-                };
-                cell.orientation = {};
-                cell.velocity = {};
-                cell.angularVelocity = {};
-                cell.force = {};
-                cell.torque = {};
-                cell.isSleeping = false;
-                cell.sleepCounter = 0;
-            }
         }
     }
 

@@ -41,7 +41,8 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
                                         uint64_t max_control_jitter_us,
                                         uint64_t stale_intent_events,
                                         uint64_t stale_estimator_events,
-                                        const resource_monitoring::ProcessResourceSnapshot& process_resources) {
+                                        const resource_monitoring::ProcessResourceSnapshot& process_resources,
+                                        const std::optional<telemetry::ResourceSectionSummary>& resource_sections) {
     status_reporter::logStatus(logger_, status, bridge_result);
     if (!logger_) {
         return;
@@ -87,7 +88,11 @@ void RuntimeDiagnosticsReporter::report(const ControlStatus& status,
              ",last_successful_send_ts_us:",
              telemetry_diag_.last_successful_send_timestamp.value,
              "} process_resource=",
-             resource_monitoring::formatProcessResourceSnapshot(process_resources));
+             resource_monitoring::formatProcessResourceSnapshot(process_resources),
+             resource_sections.has_value() ? " resource_sections=" : "",
+             resource_sections.has_value()
+                 ? resource_monitoring::formatResourceSectionSummary(resource_sections.value())
+                 : "");
 }
 
 void RuntimeDiagnosticsReporter::maybeLogVisualizerFailureWarning(TimePointUs now) {

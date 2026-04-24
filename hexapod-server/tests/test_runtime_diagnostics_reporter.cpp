@@ -72,6 +72,15 @@ bool testDiagnosticsReporterIncludesProcessResources() {
         .rss_bytes = 1'234'567,
         .vms_bytes = 8'765'432,
     };
+    telemetry::ResourceSectionSummary sections{};
+    sections.count = 1;
+    sections.sections[0] = resource_monitoring::ResourceSectionSnapshot{
+        .label = "control.pipeline",
+        .total_self_ns = 250'000,
+        .window_self_ns = 125'000,
+        .max_self_ns = 100'000,
+        .call_count = 4,
+    };
     const ControlStatus status{
         .active_mode = RobotMode::STAND,
         .estimator_valid = true,
@@ -80,14 +89,14 @@ bool testDiagnosticsReporterIncludesProcessResources() {
         .loop_counter = 42,
     };
 
-    reporter.report(status, std::nullopt, 42, 4000, 125, 3, 7, resources);
+    reporter.report(status, std::nullopt, 42, 4000, 125, 3, 7, resources, sections);
     logger->Flush();
 
     const bool found = containsEntry(
         sink->entries,
         logging::LogLevel::Debug,
         {"runtime.metrics", "process_resource=", "cpu_percent=12.5", "cpu_window_ms=500",
-         "rss_bytes=1234567", "vms_bytes=8765432"});
+         "rss_bytes=1234567", "vms_bytes=8765432", "resource_sections=", "control.pipeline"});
 
     logger->Stop();
     return expect(found, "runtime diagnostics should include process resource metrics");

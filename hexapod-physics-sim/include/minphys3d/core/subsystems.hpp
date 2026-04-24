@@ -861,8 +861,12 @@ public:
                     const Vec3 refB = ResolveJointReference(b.orientation, j.localReferenceB, axisA);
                     const float hingeAngle = SignedAngleAroundAxis(refA, refB, axisA);
                     const float targetError = WrapJointAngle(hingeAngle - j.targetAngle);
+                    const float maxServoSpeed = std::max(0.0f, j.maxServoSpeed);
+                    const float maxAngleCorrection = maxServoSpeed > 0.0f
+                        ? std::min(0.06f * stab, maxServoSpeed * context.substepDt)
+                        : 0.06f * stab;
                     const float clampedAngle = std::clamp(
-                        0.15f * stab * targetError, -0.06f * stab, 0.06f * stab);
+                        0.15f * stab * targetError, -maxAngleCorrection, maxAngleCorrection);
                     if (std::abs(clampedAngle) > 1e-5f) {
                         const Vec3 hc = clampedAngle * axisA;
                         const auto [wA, wB] = ComputeAngularCorrectionWeights(a, b, hc);
@@ -921,8 +925,12 @@ public:
                     const Vec3 refB = ResolveJointReference(b.orientation, j.localReferenceB, axisA);
                     const float hingeAngle = SignedAngleAroundAxis(refA, refB, axisA);
                     const float targetError = WrapJointAngle(hingeAngle - j.targetAngle);
+                    const float maxServoSpeed = std::max(0.0f, j.maxServoSpeed);
+                    const float maxAngleCorrection = maxServoSpeed > 0.0f
+                        ? std::min(0.06f * stab, maxServoSpeed * context.substepDt / std::max(servoPositionPasses, 1))
+                        : 0.06f * stab;
                     const float clampedAngleCorrection = std::clamp(
-                        0.15f * stab * targetError, -0.06f * stab, 0.06f * stab);
+                        0.15f * stab * targetError, -maxAngleCorrection, maxAngleCorrection);
                     if (std::abs(clampedAngleCorrection) > 1e-5f) {
                         ApplyAngularPositionCorrection(a, b, clampedAngleCorrection * axisA);
                     }

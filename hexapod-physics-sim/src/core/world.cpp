@@ -166,11 +166,124 @@ std::uint32_t World::CreateBody(const Body& bodyDef) {
     BroadphaseProxy proxy;
     proxy.fatBox = ExpandAABB(body.ComputeAABB(), ComputeProxyMargin(body));
     proxy.leaf = -1;
-    proxy.valid = true;
+    proxy.valid = !body.isTerrainAttachment;
     proxies_.push_back(proxy);
-    EnsureProxyInTree(static_cast<std::uint32_t>(bodies_.size() - 1));
+    if (!body.isTerrainAttachment) {
+        EnsureProxyInTree(static_cast<std::uint32_t>(bodies_.size() - 1));
+    }
 
     return static_cast<std::uint32_t>(bodies_.size() - 1);
+}
+
+void World::SetTerrainHeightfield(TerrainHeightfieldAttachment terrain) {
+    if (!terrain.enabled || terrain.rows <= 1 || terrain.cols <= 1) {
+        ClearTerrainHeightfield();
+        return;
+    }
+    const std::size_t expectedCellCount = static_cast<std::size_t>(terrain.rows * terrain.cols);
+    if (terrain.surfaceHeightsM.size() != expectedCellCount) {
+        ClearTerrainHeightfield();
+        return;
+    }
+    if (terrain.collisionHeightsM.empty()) {
+        terrain.collisionHeightsM = terrain.surfaceHeightsM;
+    }
+    if (terrain.collisionHeightsM.size() != expectedCellCount) {
+        ClearTerrainHeightfield();
+        return;
+    }
+    if (!std::isfinite(terrain.cellSizeM) || terrain.cellSizeM <= 0.0f) {
+        ClearTerrainHeightfield();
+        return;
+    }
+
+    const bool hadAttachment = terrainAttachment_.enabled;
+    const std::size_t prevCellCount = terrainAttachment_.surfaceHeightsM.size();
+    std::uint64_t dirtyCells = 0;
+    if (hadAttachment
+        && terrainAttachment_.rows == terrain.rows
+        && terrainAttachment_.cols == terrain.cols
+        && std::abs(terrainAttachment_.cellSizeM - terrain.cellSizeM) <= 1.0e-6f
+        && std::abs(terrainAttachment_.baseHeightM - terrain.baseHeightM) <= 1.0e-6f
+        && prevCellCount == expectedCellCount) {
+        const auto countDirty = [&](const std::vector<float>& previous, const std::vector<float>& current) {
+            std::uint64_t count = 0;
+            for (std::size_t i = 0; i < current.size(); ++i) {
+                if (i >= previous.size() || std::abs(previous[i] - current[i]) > 1.0e-6f) {
+                    ++count;
+                }
+            }
+            return count;
+        };
+        dirtyCells = countDirty(terrainAttachment_.surfaceHeightsM, terrain.surfaceHeightsM);
+        const std::vector<float>& previousCollision = terrainAttachment_.collisionHeightsM.empty()
+            ? terrainAttachment_.surfaceHeightsM
+            : terrainAttachment_.collisionHeightsM;
+        dirtyCells = std::max(dirtyCells, countDirty(previousCollision, terrain.collisionHeightsM));
+    } else {
+        dirtyCells = expectedCellCount;
+    }
+
+    terrain.revision = hadAttachment ? terrainAttachment_.revision + 1u : 1u;
+    terrainAttachment_ = std::move(terrain);
+    terrainAttachment_.enabled = true;
+
+    if (terrainAttachmentBodyId_ == kInvalidBodyId) {
+        Body terrainBody{};
+        terrainBody.shape = ShapeType::Plane;
+        terrainBody.position = terrainAttachment_.centerWorld;
+        terrainBody.planeNormal = terrainAttachment_.planeNormal;
+        terrainBody.planeOffset = terrainAttachment_.planeHeightM;
+        terrainBody.mass = 0.0f;
+        terrainBody.invMass = 0.0f;
+        terrainBody.restitution = 0.0f;
+        terrainBody.staticFriction = 0.95f;
+        terrainBody.dynamicFriction = 0.75f;
+        terrainBody.isStatic = true;
+        terrainBody.isSleeping = true;
+        terrainBody.collisionGroup = 0x0004;
+        terrainBody.collisionMask = 0;
+        terrainBody.isTerrainAttachment = true;
+        terrainAttachmentBodyId_ = CreateBody(terrainBody);
+        bodies_[terrainAttachmentBodyId_].isTerrainAttachment = true;
+        bodies_[terrainAttachmentBodyId_].collisionMask = 0;
+    } else {
+        Body& terrainBody = bodies_.at(terrainAttachmentBodyId_);
+        terrainBody.position = terrainAttachment_.centerWorld;
+        terrainBody.planeNormal = terrainAttachment_.planeNormal;
+        terrainBody.planeOffset = terrainAttachment_.planeHeightM;
+        terrainBody.mass = 0.0f;
+        terrainBody.invMass = 0.0f;
+        terrainBody.restitution = 0.0f;
+        terrainBody.staticFriction = 0.95f;
+        terrainBody.dynamicFriction = 0.75f;
+        terrainBody.isStatic = true;
+        terrainBody.isSleeping = true;
+        terrainBody.collisionGroup = 0x0004;
+        terrainBody.collisionMask = 0;
+        terrainBody.isTerrainAttachment = true;
+    }
+
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+    if (dirtyCells > 0) {
+        solverTelemetry_.terrainDirtyCellRefreshes += dirtyCells;
+    }
+    solverTelemetry_.terrainCacheHits += static_cast<std::uint64_t>(expectedCellCount > dirtyCells ? expectedCellCount - dirtyCells : 0u);
+#else
+    (void)dirtyCells;
+#endif
+}
+
+void World::ClearTerrainHeightfield() {
+    terrainAttachment_ = {};
+}
+
+bool World::HasTerrainHeightfield() const {
+    return terrainAttachment_.enabled;
+}
+
+bool World::IsTerrainAttachmentBody(std::uint32_t bodyId) const {
+    return terrainAttachmentBodyId_ != kInvalidBodyId && bodyId == terrainAttachmentBodyId_;
 }
 
 Body& World::GetBody(std::uint32_t id) {
@@ -351,6 +464,7 @@ std::uint32_t World::CreateServoJoint(
     float integralClamp,
     float positionErrorSmoothing,
     float angleStabilizationScale,
+    float maxServoSpeed,
     float maxCorrectionAngle) {
     ServoJoint j{};
     j.a = a;
@@ -374,6 +488,7 @@ std::uint32_t World::CreateServoJoint(
     j.positionErrorSmoothing = std::max(0.0f, positionErrorSmoothing);
     j.maxCorrectionAngle = std::max(0.01f, maxCorrectionAngle);
     j.angleStabilizationScale = std::clamp(angleStabilizationScale, 0.0f, 1.0f);
+    j.maxServoSpeed = std::max(0.0f, maxServoSpeed);
     servoJoints_.push_back(j);
     return static_cast<std::uint32_t>(servoJoints_.size() - 1);
 }
@@ -426,6 +541,10 @@ void World::Step(float dt, int solverIterations) {
     solverTelemetry_ = {};
 #endif
 
+    const auto step_scope =
+        resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::Step));
+    (void)step_scope;
+
     AssertBodyInvariants();
     previousContacts_ = contacts_;
     previousManifolds_ = manifolds_;
@@ -460,37 +579,105 @@ void World::Step(float dt, int solverIterations) {
             previousManifolds_ = manifolds_;
             CapturePersistentPointImpulseState(previousManifolds_);
         }
-        IntegrateForces(subDt);
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::IntegrateForces));
+            IntegrateForces(subDt);
+            (void)scope;
+        }
         BeginSplitImpulseSubstep();
         contacts_.clear();
         manifolds_.clear();
-        UpdateBroadphaseProxies();
-        GenerateContacts();
-        BuildManifolds();
-        BuildIslands();
-        WarmStartContacts();
-        WarmStartJoints();
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::UpdateBroadphaseProxies));
+            UpdateBroadphaseProxies();
+            (void)scope;
+        }
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::GenerateContacts));
+            GenerateContacts();
+            (void)scope;
+        }
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::BuildManifolds));
+            BuildManifolds();
+            (void)scope;
+        }
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::BuildIslands));
+            BuildIslands();
+            (void)scope;
+        }
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::WarmStartContacts));
+            WarmStartContacts();
+            (void)scope;
+        }
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::WarmStartJoints));
+            WarmStartJoints();
+            (void)scope;
+        }
 
         solverRelaxationPassActive_ = false;
-        for (int i = 0; i < solverIterations; ++i) {
-            SolveIslands();
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::SolveIslands));
+            for (int i = 0; i < solverIterations; ++i) {
+                SolveIslands();
+            }
+            (void)scope;
         }
         if (contactSolverConfig_.enableRelaxationPass && contactSolverConfig_.relaxationIterations > 0) {
             solverRelaxationPassActive_ = true;
-            for (std::uint8_t i = 0; i < contactSolverConfig_.relaxationIterations; ++i) {
-                SolveIslands();
+            {
+                const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::RelaxationPass));
+                for (std::uint8_t i = 0; i < contactSolverConfig_.relaxationIterations; ++i) {
+                    SolveIslands();
+                }
+                (void)scope;
             }
             solverRelaxationPassActive_ = false;
         }
-        ApplySplitStabilization();
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::ApplySplitStabilization));
+            ApplySplitStabilization();
+            (void)scope;
+        }
 
-        ResolveTOIPipeline(subDt);
-        IntegrateOrientation(subDt);
-        SolveJointPositions();
-        PositionalCorrection();
-        UpdateSleeping();
-        ClearAccumulators();
-        ClampBodyVelocities();
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::ResolveTOI));
+            ResolveTOIPipeline(subDt);
+            (void)scope;
+        }
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::IntegrateOrientation));
+            IntegrateOrientation(subDt);
+            (void)scope;
+        }
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::SolveJointPositions));
+            SolveJointPositions();
+            (void)scope;
+        }
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::PositionalCorrection));
+            PositionalCorrection();
+            (void)scope;
+        }
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::UpdateSleeping));
+            UpdateSleeping();
+            (void)scope;
+        }
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::ClearAccumulators));
+            ClearAccumulators();
+            (void)scope;
+        }
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::ClampBodyVelocities));
+            ClampBodyVelocities();
+            (void)scope;
+        }
         previousContacts_ = contacts_;
         previousManifolds_ = manifolds_;
         CapturePersistentPointImpulseState(previousManifolds_);
@@ -498,6 +685,42 @@ void World::Step(float dt, int solverIterations) {
     }
 
     AccumulateServoAngleIntegrals(dt);
+}
+
+world_resource_monitoring::SectionSummary World::SnapshotResourceSections(bool reset_window) const {
+    return resource_profiler_.topSections(world_resource_monitoring::kTopSectionsToReport, reset_window);
+}
+
+World::TopologySnapshot World::SnapshotTopology() const {
+    TopologySnapshot snapshot{};
+    snapshot.bodyCount = static_cast<std::uint32_t>(bodies_.size());
+    snapshot.contactCount = static_cast<std::uint32_t>(contacts_.size());
+    snapshot.manifoldCount = static_cast<std::uint32_t>(manifolds_.size());
+    snapshot.islandCount = static_cast<std::uint32_t>(islands_.size());
+
+    for (const Body& body : bodies_) {
+        if (body.invMass > 0.0f) {
+            ++snapshot.dynamicBodyCount;
+            if (!body.isSleeping) {
+                ++snapshot.awakeBodyCount;
+            }
+        }
+    }
+
+    for (const Island& island : islands_) {
+        snapshot.maxIslandBodyCount = std::max(snapshot.maxIslandBodyCount, static_cast<std::uint32_t>(island.bodies.size()));
+        snapshot.maxIslandManifoldCount = std::max(snapshot.maxIslandManifoldCount, static_cast<std::uint32_t>(island.manifolds.size()));
+        const std::uint32_t jointCount = static_cast<std::uint32_t>(island.joints.size()
+            + island.hinges.size()
+            + island.ballSockets.size()
+            + island.fixeds.size()
+            + island.prismatics.size()
+            + island.servos.size());
+        snapshot.maxIslandJointCount = std::max(snapshot.maxIslandJointCount, jointCount);
+        snapshot.maxIslandServoCount = std::max(snapshot.maxIslandServoCount, static_cast<std::uint32_t>(island.servos.size()));
+    }
+
+    return snapshot;
 }
 
 void World::AddForce(std::uint32_t id, const Vec3& force) {

@@ -107,6 +107,48 @@ int main() {
     }
 
     {
+        auto bridge4 = std::make_unique<SimHardwareBridge>();
+        auto estimator4 = std::make_unique<ScriptedEstimator>();
+        auto* est4_raw = estimator4.get();
+
+        control_config::ControlConfig cfg4{};
+        cfg4.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
+        cfg4.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+
+        RobotRuntime rt4(std::move(bridge4), std::move(estimator4), nullptr, cfg4);
+        if (!expect(rt4.init(), "fourth runtime should initialize")) {
+            return EXIT_FAILURE;
+        }
+
+        rt4.setNavigationManager(std::make_unique<NavigationManager>(cfg4.local_map, cfg4.local_planner));
+
+        const TimePointUs fixed_ts = now_us();
+        est4_raw->enqueue(makeEstimatorSample(NavPose2d{}, fixed_ts, 7));
+        rt4.setMotionIntent(makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.07));
+        rt4.busStep();
+        rt4.estimatorStep();
+        rt4.safetyStep();
+        rt4.controlStep();
+
+        if (!expect(rt4.getStatus().active_mode == RobotMode::WALK,
+                    "inactive navigation should allow the fresh WALK intent to propagate")) {
+            return EXIT_FAILURE;
+        }
+
+        est4_raw->enqueue(makeEstimatorSample(NavPose2d{}, fixed_ts, 7));
+        rt4.setMotionIntent(makeMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.07));
+        rt4.busStep();
+        rt4.estimatorStep();
+        rt4.safetyStep();
+        rt4.controlStep();
+
+        if (!expect(rt4.getStatus().active_mode == RobotMode::STAND,
+                    "inactive navigation should not reuse a cached WALK intent after the command changes")) {
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
         auto bridge3 = std::make_unique<SimHardwareBridge>();
         auto estimator3 = std::make_unique<ScriptedEstimator>();
         auto* est3_raw = estimator3.get();

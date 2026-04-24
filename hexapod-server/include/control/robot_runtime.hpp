@@ -10,6 +10,7 @@
 #include "navigation_manager.hpp"
 #include "replay_logger.hpp"
 #include "process_resource_monitoring.hpp"
+#include "runtime_resource_monitoring.hpp"
 #include "runtime_diagnostics_reporter.hpp"
 #include "runtime_freshness_gate.hpp"
 #include "runtime_timing_metrics.hpp"
@@ -45,6 +46,7 @@ public:
     bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
     void setNavigationManager(std::unique_ptr<NavigationManager> navigation_manager);
     ControlStatus getStatus() const;
+    SafetyState getSafetyState() const;
 
     /** Latest estimated state (for navigation / tests; same buffer the control step reads). */
     [[nodiscard]] RobotState estimatedSnapshot() const { return estimated_state_.read(); }
@@ -86,7 +88,11 @@ private:
     RuntimeFreshnessGate freshness_gate_;
     RuntimeTimingMetrics timing_metrics_;
     resource_monitoring::ProcessResourceSampler process_resource_sampler_;
+    runtime_resource_monitoring::Profiler resource_profiler_{runtime_resource_monitoring::kSectionLabels};
+    std::optional<resource_monitoring::ProcessResourceSnapshot> last_process_resources_{};
+    std::optional<telemetry::ResourceSectionSummary> last_resource_sections_{};
     RuntimeDiagnosticsReporter diagnostics_reporter_;
+    TimePointUs last_estimator_snapshot_log_us_{};
 
     DoubleBuffer<RobotState> raw_state_;
     DoubleBuffer<RobotState> estimated_state_;
@@ -101,6 +107,13 @@ private:
     uint64_t last_effective_intent_estimator_sample_id_{0};
     uint64_t last_fusion_reset_sample_id_{0};
     uint64_t last_fusion_correction_sample_id_{0};
+    FaultCode last_logged_safety_fault_{FaultCode::NONE};
     std::uint8_t last_fusion_correction_mode_{0};
     telemetry::FusionCorrectionTelemetry last_fusion_correction_{};
+    std::atomic<uint64_t> fusion_hard_reset_request_count_{0};
+    std::atomic<uint64_t> fusion_resync_request_count_{0};
+    std::atomic<uint64_t> fusion_emit_soft_count_{0};
+    std::atomic<uint64_t> fusion_emit_strong_count_{0};
+    std::atomic<uint64_t> fusion_emit_hard_reset_count_{0};
+    std::atomic<uint64_t> fusion_suppressed_count_{0};
 };

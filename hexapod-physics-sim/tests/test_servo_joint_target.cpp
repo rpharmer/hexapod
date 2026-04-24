@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <sstream>
 #include <iostream>
 
 #define private public
@@ -22,9 +23,67 @@ float SignedAngleAroundAxis(const Vec3& from, const Vec3& to, const Vec3& axis) 
     return std::atan2(Dot(Cross(from_n, to_n), axis_n), Dot(from_n, to_n));
 }
 
+bool CheckServoSpeedLimit() {
+    World world({0.0f, 0.0f, 0.0f});
+
+    Body base;
+    base.shape = ShapeType::Box;
+    base.halfExtents = {0.2f, 0.2f, 0.2f};
+    base.isStatic = true;
+    const std::uint32_t base_id = world.CreateBody(base);
+
+    Body link;
+    link.shape = ShapeType::Box;
+    link.position = {0.6f, 0.0f, 0.0f};
+    link.halfExtents = {0.4f, 0.05f, 0.05f};
+    link.mass = 1.0f;
+    const std::uint32_t link_id = world.CreateBody(link);
+
+    constexpr float kTargetAngle = 1.10f;
+    constexpr float kMaxServoSpeed = 0.15f;
+    const std::uint32_t servo_id = world.CreateServoJoint(
+        base_id,
+        link_id,
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f},
+        kTargetAngle,
+        6.0f,
+        25.0f,
+        2.0f,
+        0.0f,
+        0.5f,
+        0.0f,
+        1.0f,
+        kMaxServoSpeed,
+        0.5f);
+    assert(servo_id == 0);
+
+    constexpr float kDt = 1.0f / 120.0f;
+    float peak_rate = 0.0f;
+    float prev_angle = world.GetServoJointAngle(servo_id);
+    for (int step = 0; step < 240; ++step) {
+        world.Step(kDt, 24);
+        const float angle = world.GetServoJointAngle(servo_id);
+        const float rate = std::abs(std::atan2(std::sin(angle - prev_angle), std::cos(angle - prev_angle))) / kDt;
+        peak_rate = std::max(peak_rate, rate);
+        prev_angle = angle;
+    }
+
+    constexpr float kAllowedPeakRate = 0.50f;
+    if (peak_rate > kAllowedPeakRate) {
+        std::cerr << "peak_rate=" << peak_rate << " cap=" << kAllowedPeakRate << "\n";
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main() {
+    if (!CheckServoSpeedLimit()) {
+        return 1;
+    }
+
     World world({0.0f, 0.0f, 0.0f});
 
     Body base;

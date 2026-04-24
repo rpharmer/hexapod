@@ -842,6 +842,32 @@ test_process_resource_monitoring/fast:
 .PHONY : test_process_resource_monitoring/fast
 
 #=============================================================================
+# Target rules for targets named test_world_resource_monitoring
+
+# Build rule for target.
+test_world_resource_monitoring: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_world_resource_monitoring
+.PHONY : test_world_resource_monitoring
+
+# fast build rule for target.
+test_world_resource_monitoring/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_world_resource_monitoring.dir/build.make CMakeFiles/test_world_resource_monitoring.dir/build
+.PHONY : test_world_resource_monitoring/fast
+
+#=============================================================================
+# Target rules for targets named test_world_topology_snapshot
+
+# Build rule for target.
+test_world_topology_snapshot: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_world_topology_snapshot
+.PHONY : test_world_topology_snapshot
+
+# fast build rule for target.
+test_world_topology_snapshot/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_world_topology_snapshot.dir/build.make CMakeFiles/test_world_topology_snapshot.dir/build
+.PHONY : test_world_topology_snapshot/fast
+
+#=============================================================================
 # Target rules for targets named test_serve_ipc
 
 # Build rule for target.
@@ -2079,6 +2105,54 @@ tests/test_unit_math.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_unit_math.dir/build.make CMakeFiles/test_unit_math.dir/tests/test_unit_math.cpp.s
 .PHONY : tests/test_unit_math.cpp.s
 
+tests/test_world_resource_monitoring.o: tests/test_world_resource_monitoring.cpp.o
+.PHONY : tests/test_world_resource_monitoring.o
+
+# target to build an object file
+tests/test_world_resource_monitoring.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_world_resource_monitoring.dir/build.make CMakeFiles/test_world_resource_monitoring.dir/tests/test_world_resource_monitoring.cpp.o
+.PHONY : tests/test_world_resource_monitoring.cpp.o
+
+tests/test_world_resource_monitoring.i: tests/test_world_resource_monitoring.cpp.i
+.PHONY : tests/test_world_resource_monitoring.i
+
+# target to preprocess a source file
+tests/test_world_resource_monitoring.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_world_resource_monitoring.dir/build.make CMakeFiles/test_world_resource_monitoring.dir/tests/test_world_resource_monitoring.cpp.i
+.PHONY : tests/test_world_resource_monitoring.cpp.i
+
+tests/test_world_resource_monitoring.s: tests/test_world_resource_monitoring.cpp.s
+.PHONY : tests/test_world_resource_monitoring.s
+
+# target to generate assembly for a file
+tests/test_world_resource_monitoring.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_world_resource_monitoring.dir/build.make CMakeFiles/test_world_resource_monitoring.dir/tests/test_world_resource_monitoring.cpp.s
+.PHONY : tests/test_world_resource_monitoring.cpp.s
+
+tests/test_world_topology_snapshot.o: tests/test_world_topology_snapshot.cpp.o
+.PHONY : tests/test_world_topology_snapshot.o
+
+# target to build an object file
+tests/test_world_topology_snapshot.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_world_topology_snapshot.dir/build.make CMakeFiles/test_world_topology_snapshot.dir/tests/test_world_topology_snapshot.cpp.o
+.PHONY : tests/test_world_topology_snapshot.cpp.o
+
+tests/test_world_topology_snapshot.i: tests/test_world_topology_snapshot.cpp.i
+.PHONY : tests/test_world_topology_snapshot.i
+
+# target to preprocess a source file
+tests/test_world_topology_snapshot.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_world_topology_snapshot.dir/build.make CMakeFiles/test_world_topology_snapshot.dir/tests/test_world_topology_snapshot.cpp.i
+.PHONY : tests/test_world_topology_snapshot.cpp.i
+
+tests/test_world_topology_snapshot.s: tests/test_world_topology_snapshot.cpp.s
+.PHONY : tests/test_world_topology_snapshot.s
+
+# target to generate assembly for a file
+tests/test_world_topology_snapshot.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_world_topology_snapshot.dir/build.make CMakeFiles/test_world_topology_snapshot.dir/tests/test_world_topology_snapshot.cpp.s
+.PHONY : tests/test_world_topology_snapshot.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -2145,6 +2219,8 @@ help:
 	@echo "... test_terrain_patch_scene_json"
 	@echo "... test_terrain_scroll"
 	@echo "... test_unit_math"
+	@echo "... test_world_resource_monitoring"
+	@echo "... test_world_topology_snapshot"
 	@echo "... src/core/broadphase_system.o"
 	@echo "... src/core/broadphase_system.i"
 	@echo "... src/core/broadphase_system.s"
@@ -2295,6 +2371,12 @@ help:
 	@echo "... tests/test_unit_math.o"
 	@echo "... tests/test_unit_math.i"
 	@echo "... tests/test_unit_math.s"
+	@echo "... tests/test_world_resource_monitoring.o"
+	@echo "... tests/test_world_resource_monitoring.i"
+	@echo "... tests/test_world_resource_monitoring.s"
+	@echo "... tests/test_world_topology_snapshot.o"
+	@echo "... tests/test_world_topology_snapshot.i"
+	@echo "... tests/test_world_topology_snapshot.s"
 .PHONY : help
 
 

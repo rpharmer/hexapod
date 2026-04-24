@@ -102,5 +102,25 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    RobotState low_body_est = est;
+    low_body_est.has_body_twist_state = true;
+    low_body_est.has_fusion_diagnostics = true;
+    low_body_est.fusion.model_trust = 1.0;
+    low_body_est.body_twist_state.body_trans_m.z = 0.03;
+    const LegTargets held_height_targets =
+        controller.update(low_body_est, walk_intent, walk_gait, safety, walk_twist);
+    if (!expect(held_height_targets.feet[0].pos_body_m.z < walk_targets.feet[0].pos_body_m.z - 0.02,
+                "walking height hold should materially lower stance feet when the body sags")) {
+        return EXIT_FAILURE;
+    }
+
+    MotionIntent idle_intent = stand_intent;
+    idle_intent.requested_mode = RobotMode::SAFE_IDLE;
+    const LegTargets idle_targets = controller.update(low_body_est, idle_intent, gait, safety, stand_twist);
+    if (!expect(idle_targets.feet[0].pos_body_m.z < stand_targets.feet[0].pos_body_m.z - 0.02,
+                "idle height hold should also materially lower stance feet when the body sags")) {
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }

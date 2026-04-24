@@ -38,6 +38,9 @@ constexpr float kPi = 3.14159265358979323846f;
 
 constexpr std::array<const char*, 6> kLegKeys = {"LF", "LM", "LR", "RF", "RM", "RR"};
 constexpr std::array<float, 6> kDefaultMountAnglesDeg = {40.0f, 90.0f, 140.0f, -40.0f, -90.0f, -140.0f};
+constexpr std::array<float, 6> kDefaultCoxaAttachDeg = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+constexpr std::array<float, 6> kDefaultFemurAttachDeg = {35.0f, -35.0f, 35.0f, -35.0f, 35.0f, -35.0f};
+constexpr std::array<float, 6> kDefaultTibiaAttachDeg = {83.0f, -83.0f, 83.0f, -83.0f, 83.0f, -83.0f};
 constexpr std::array<std::array<float, 3>, 6> kDefaultBodyCoxaOffsets = {{
     {{0.063f, 0.0835f, -0.007f}},
     {{0.0f, 0.104f, -0.007f}},
@@ -129,6 +132,9 @@ struct HexapodLegLayout {
   float coxa_mm = 35.0f;
   float femur_mm = 70.0f;
   float tibia_mm = 110.0f;
+  float coxa_attach_deg = 0.0f;
+  float femur_attach_deg = 0.0f;
+  float tibia_attach_deg = 0.0f;
   float coxa_sign = 1.0f;
   float femur_sign = 1.0f;
   float tibia_sign = 1.0f;
@@ -171,11 +177,18 @@ struct HexapodStatusState {
   std::optional<double> fusion_terrain_residual_m{};
 };
 
+struct HexapodBodyPoseState {
+  bool valid = false;
+  Vec3 position{};
+  float yaw_rad = 0.0f;
+};
+
 struct HexapodTelemetryState {
   bool has_geometry = false;
   bool has_joints = false;
   HexapodGeometryState geometry{};
   HexapodStatusState status{};
+  HexapodBodyPoseState body_pose{};
   std::array<std::array<float, 3>, 6> angles_deg{};
 };
 
@@ -285,6 +298,28 @@ Vec3 RotateVector(const Quat& quat, const Vec3& vector) {
   const Quat qc{q.w, -q.x, -q.y, -q.z};
   const Quat rotated = MultiplyQuat(MultiplyQuat(q, p), qc);
   return {rotated.x, rotated.y, rotated.z};
+}
+
+Vec3 ServerToSceneVec(const Vec3& value);
+
+Vec3 RotateAroundSceneY(const Vec3& value, float yaw_rad) {
+  const float c = std::cos(yaw_rad);
+  const float s = std::sin(yaw_rad);
+  return Vec3{
+      value.x * c + value.z * s,
+      value.y,
+      -value.x * s + value.z * c,
+  };
+}
+
+Vec3 TransformBodyPoint(const Vec3& point, const HexapodBodyPoseState& pose) {
+  if (!pose.valid) {
+    return point;
+  }
+  const Vec3 scene_point = ServerToSceneVec(point);
+  const Vec3 rotated = RotateAroundSceneY(scene_point, -pose.yaw_rad);
+  const Vec3 origin = ServerToSceneVec(pose.position);
+  return Vec3{origin.x + rotated.x, origin.y + rotated.y, origin.z + rotated.z};
 }
 
 void ApplyQuaternion(const Quat& quat) {
@@ -747,6 +782,9 @@ HexapodGeometryState MakeDefaultGeometryState() {
     state.legs[i].coxa_mm = 35.0f;
     state.legs[i].femur_mm = 70.0f;
     state.legs[i].tibia_mm = 110.0f;
+    state.legs[i].coxa_attach_deg = kDefaultCoxaAttachDeg[i];
+    state.legs[i].femur_attach_deg = kDefaultFemurAttachDeg[i];
+    state.legs[i].tibia_attach_deg = kDefaultTibiaAttachDeg[i];
     state.legs[i].coxa_sign = (i < 3) ? 1.0f : -1.0f;
     state.legs[i].femur_sign = (i < 3) ? 1.0f : -1.0f;
     state.legs[i].tibia_sign = (i < 3) ? 1.0f : -1.0f;
@@ -829,6 +867,15 @@ bool ParseHexapodGeometryPacket(std::string_view payload, HexapodGeometryState& 
       }
       if (const auto tibia_mm = ExtractDoubleField(object_payload, "tibia_mm")) {
         leg.tibia_mm = static_cast<float>(*tibia_mm);
+      }
+      if (const auto coxa_attach_deg = ExtractDoubleField(object_payload, "coxa_attach_deg")) {
+        leg.coxa_attach_deg = static_cast<float>(*coxa_attach_deg);
+      }
+      if (const auto femur_attach_deg = ExtractDoubleField(object_payload, "femur_attach_deg")) {
+        leg.femur_attach_deg = static_cast<float>(*femur_attach_deg);
+      }
+      if (const auto tibia_attach_deg = ExtractDoubleField(object_payload, "tibia_attach_deg")) {
+        leg.tibia_attach_deg = static_cast<float>(*tibia_attach_deg);
       }
       if (const auto coxa_sign = ExtractDoubleField(object_payload, "coxa_sign")) {
         leg.coxa_sign = static_cast<float>(*coxa_sign);
@@ -958,6 +1005,14 @@ bool ParseHexapodTelemetryPacket(std::string_view payload, HexapodTelemetryState
     telemetry.has_geometry = true;
   }
   telemetry.has_joints = ParseAnglesPacket(payload, telemetry.angles_deg) || telemetry.has_joints;
+  if (const auto body_position = ExtractFloat3Field(payload, "body_position")) {
+    telemetry.body_pose.position = {(*body_position)[0], (*body_position)[1], (*body_position)[2]};
+    telemetry.body_pose.valid = true;
+  }
+  if (const auto body_yaw = ExtractFloatField(payload, "body_yaw_rad")) {
+    telemetry.body_pose.yaw_rad = *body_yaw;
+    telemetry.body_pose.valid = true;
+  }
 
   if (const auto timestamp_ms = ExtractUintField(payload, "timestamp_ms")) {
     telemetry.status.timestamp_ms = *timestamp_ms;
@@ -1113,10 +1168,14 @@ struct RobotKinematics {
   Vec3 foot{};
 };
 
+Vec3 ServerToSceneVec(const Vec3& value) {
+  return Vec3{value.y, value.z, -value.x};
+}
+
 RobotKinematics ComputeRobotLeg(const HexapodLegLayout& layout, const std::array<float, 3>& angles_deg) {
-  const float coxa_rad = angles_deg[0] * kPi / 180.0f;
-  const float femur_rad = angles_deg[1] * kPi / 180.0f * layout.femur_sign;
-  const float tibia_rad = angles_deg[2] * kPi / 180.0f * layout.tibia_sign;
+  const float coxa_rad = (angles_deg[0] - layout.coxa_attach_deg) * kPi / 180.0f;
+  const float femur_rad = (angles_deg[1] - layout.femur_attach_deg) * kPi / 180.0f * layout.femur_sign;
+  const float tibia_rad = (angles_deg[2] - layout.tibia_attach_deg) * kPi / 180.0f * layout.tibia_sign;
   const float yaw = layout.mount_angle_rad + coxa_rad * layout.coxa_sign;
 
   const float body_radius = std::sqrt(layout.body_coxa_offset.x * layout.body_coxa_offset.x
@@ -1153,18 +1212,59 @@ RobotKinematics ComputeRobotLeg(const HexapodLegLayout& layout, const std::array
   return {anchor, shoulder, knee, foot};
 }
 
-SceneBounds ComputeRobotBounds(const HexapodGeometryState& geometry, const std::array<std::array<float, 3>, 6>& angles_deg) {
+RobotKinematics ComputeRobotLegScene(const HexapodLegLayout& layout,
+                                     const std::array<float, 3>& angles_deg) {
+  const RobotKinematics server = ComputeRobotLeg(layout, angles_deg);
+  return RobotKinematics{
+      ServerToSceneVec(server.anchor),
+      ServerToSceneVec(server.shoulder),
+      ServerToSceneVec(server.knee),
+      ServerToSceneVec(server.foot),
+  };
+}
+
+void ExpandServerBoundsInScene(SceneBounds& bounds, const Vec3& min_corner, const Vec3& max_corner) {
+  const std::array<Vec3, 8> corners = {{
+      {min_corner.x, min_corner.y, min_corner.z},
+      {max_corner.x, min_corner.y, min_corner.z},
+      {max_corner.x, max_corner.y, min_corner.z},
+      {min_corner.x, max_corner.y, min_corner.z},
+      {min_corner.x, min_corner.y, max_corner.z},
+      {max_corner.x, min_corner.y, max_corner.z},
+      {max_corner.x, max_corner.y, max_corner.z},
+      {min_corner.x, max_corner.y, max_corner.z},
+  }};
+
+  for (const Vec3& corner : corners) {
+    ExpandBounds(bounds, ServerToSceneVec(corner));
+  }
+}
+
+SceneBounds ComputeRobotBounds(const HexapodGeometryState& geometry,
+                               const std::array<std::array<float, 3>, 6>& angles_deg,
+                               const HexapodBodyPoseState& pose) {
   SceneBounds bounds;
   for (std::size_t i = 0; i < geometry.legs.size(); ++i) {
     const RobotKinematics leg = ComputeRobotLeg(geometry.legs[i], angles_deg[i]);
-    ExpandBounds(bounds, leg.anchor);
-    ExpandBounds(bounds, leg.shoulder);
-    ExpandBounds(bounds, leg.knee);
-    ExpandBounds(bounds, leg.foot);
+    ExpandBounds(bounds, TransformBodyPoint(leg.anchor, pose));
+    ExpandBounds(bounds, TransformBodyPoint(leg.shoulder, pose));
+    ExpandBounds(bounds, TransformBodyPoint(leg.knee, pose));
+    ExpandBounds(bounds, TransformBodyPoint(leg.foot, pose));
   }
   const float body_radius = geometry.valid ? geometry.body_radius_mm * 0.001f : 0.06f;
-  ExpandBounds(bounds, {-body_radius, -body_radius, -0.04f});
-  ExpandBounds(bounds, {body_radius, body_radius, 0.04f});
+  const std::array<Vec3, 8> body_corners = {{
+      {-body_radius, -body_radius, -0.04f},
+      {body_radius, -body_radius, -0.04f},
+      {body_radius, body_radius, -0.04f},
+      {-body_radius, body_radius, -0.04f},
+      {-body_radius, -body_radius, 0.04f},
+      {body_radius, -body_radius, 0.04f},
+      {body_radius, body_radius, 0.04f},
+      {-body_radius, body_radius, 0.04f},
+  }};
+  for (const Vec3& corner : body_corners) {
+    ExpandBounds(bounds, TransformBodyPoint(corner, pose));
+  }
   return bounds;
 }
 
@@ -1473,12 +1573,13 @@ void DrawTerrainPatch(const TerrainPatchState& terrain) {
 
 void DrawHexapodModel(const HexapodGeometryState& geometry,
                       const std::array<std::array<float, 3>, 6>& angles_deg,
-                      const HexapodStatusState& status) {
+                      const HexapodStatusState& status,
+                      const HexapodBodyPoseState& pose) {
   if (!geometry.valid) {
     return;
   }
 
-  const SceneBounds bounds = ComputeRobotBounds(geometry, angles_deg);
+  const SceneBounds bounds = ComputeRobotBounds(geometry, angles_deg, pose);
   if (!bounds.valid) {
     return;
   }
@@ -1487,30 +1588,37 @@ void DrawHexapodModel(const HexapodGeometryState& geometry,
   const float body_height = 0.015f;
   const bool healthy = status.bus_ok && status.estimator_valid && status.active_fault == 0;
 
+  glPushMatrix();
+  if (pose.valid) {
+    const Vec3 origin = ServerToSceneVec(pose.position);
+    glTranslatef(origin.x, origin.y, origin.z);
+    glRotatef(-pose.yaw_rad * 180.0f / kPi, 0.0f, 1.0f, 0.0f);
+  }
+
   glColor4f(healthy ? 0.18f : 0.35f, healthy ? 0.32f : 0.18f, healthy ? 0.48f : 0.12f, 0.60f);
   glBegin(GL_POLYGON);
   for (const std::size_t index : body_loop) {
-    const RobotKinematics leg = ComputeRobotLeg(geometry.legs[index], angles_deg[index]);
-    glVertex3f(leg.anchor.x, leg.anchor.y, body_height);
+    const RobotKinematics leg = ComputeRobotLegScene(geometry.legs[index], angles_deg[index]);
+    glVertex3f(leg.anchor.x, body_height, leg.anchor.z);
   }
   glEnd();
 
   glColor3f(healthy ? 0.44f : 0.90f, healthy ? 0.74f : 0.32f, healthy ? 1.00f : 0.18f);
   glBegin(GL_LINE_LOOP);
   for (const std::size_t index : body_loop) {
-    const RobotKinematics leg = ComputeRobotLeg(geometry.legs[index], angles_deg[index]);
-    glVertex3f(leg.anchor.x, leg.anchor.y, body_height);
+    const RobotKinematics leg = ComputeRobotLegScene(geometry.legs[index], angles_deg[index]);
+    glVertex3f(leg.anchor.x, body_height, leg.anchor.z);
   }
   glEnd();
 
   glPointSize(6.0f);
   glColor3f(0.95f, 0.93f, 0.85f);
   glBegin(GL_POINTS);
-  glVertex3f(0.0f, 0.0f, body_height);
+  glVertex3f(0.0f, body_height, 0.0f);
   glEnd();
 
   for (std::size_t i = 0; i < geometry.legs.size(); ++i) {
-    const RobotKinematics leg = ComputeRobotLeg(geometry.legs[i], angles_deg[i]);
+    const RobotKinematics leg = ComputeRobotLegScene(geometry.legs[i], angles_deg[i]);
 
     glColor3f(0.95f, 0.58f, 0.18f);
     glBegin(GL_LINES);
@@ -1539,6 +1647,8 @@ void DrawHexapodModel(const HexapodGeometryState& geometry,
     glVertex3f(leg.foot.x, leg.foot.y, leg.foot.z);
     glEnd();
   }
+
+  glPopMatrix();
 }
 
 bool ParseTerrainPatchPacket(const std::string& payload, TerrainPatchState& terrain_patch) {
@@ -1853,7 +1963,7 @@ void DrawScene(const std::map<std::uint32_t, EntityState>& entities,
   }
   if (ui.show_robot && telemetry.has_geometry && telemetry.has_joints) {
     const HexapodGeometryState robot_geometry = telemetry.geometry.valid ? telemetry.geometry : MakeDefaultGeometryState();
-    const SceneBounds robot_bounds = ComputeRobotBounds(robot_geometry, telemetry.angles_deg);
+    const SceneBounds robot_bounds = ComputeRobotBounds(robot_geometry, telemetry.angles_deg, telemetry.body_pose);
     if (robot_bounds.valid) {
       if (!bounds.valid) {
         bounds = robot_bounds;
@@ -1957,7 +2067,7 @@ void DrawScene(const std::map<std::uint32_t, EntityState>& entities,
 
   if (ui.show_robot && telemetry.has_joints) {
     const HexapodGeometryState robot_geometry = telemetry.geometry.valid ? telemetry.geometry : MakeDefaultGeometryState();
-    DrawHexapodModel(robot_geometry, telemetry.angles_deg, telemetry.status);
+    DrawHexapodModel(robot_geometry, telemetry.angles_deg, telemetry.status, telemetry.body_pose);
   }
 }
 
@@ -2075,7 +2185,7 @@ void DrawUi(AppUiState& ui,
       ImGui::Text("Predictive mode: %s", *telemetry.status.fusion_predictive_mode ? "yes" : "no");
     }
     if (telemetry.status.fusion_max_body_position_error_m.has_value()) {
-      ImGui::Text("Max position error: %.3fm", *telemetry.status.fusion_max_body_position_error_m);
+      ImGui::Text("Fusion residual: %.3fm", *telemetry.status.fusion_max_body_position_error_m);
     }
     if (telemetry.status.fusion_max_body_orientation_error_rad.has_value()) {
       ImGui::Text("Max orientation error: %.3frad", *telemetry.status.fusion_max_body_orientation_error_rad);

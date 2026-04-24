@@ -13,6 +13,7 @@
 #include <iostream>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #if defined(__linux__) || defined(__APPLE__)
 #include <arpa/inet.h>
@@ -89,15 +90,28 @@ public:
     }
 
     bool receivedCorrection() const { return correction_received_.load(); }
+    bool receivedStep() const { return step_received_.load(); }
+    std::size_t stepCount() const {
+        const std::lock_guard<std::mutex> lock(step_mutex_);
+        return step_history_.size();
+    }
     physics_sim::StateCorrection lastCorrection() const {
         const std::lock_guard<std::mutex> lock(correction_mutex_);
         return last_correction_;
+    }
+    physics_sim::StepCommand lastStep() const {
+        const std::lock_guard<std::mutex> lock(step_mutex_);
+        return last_step_;
+    }
+    physics_sim::StepCommand stepAt(const std::size_t index) const {
+        const std::lock_guard<std::mutex> lock(step_mutex_);
+        return step_history_.at(index);
     }
 
 private:
     void run() {
         std::uint8_t handled = 0;
-        while (handled < 3 && ok_.load()) {
+        while (handled < 8 && ok_.load()) {
             std::array<std::byte, 4096> buf{};
             sockaddr_in peer{};
             socklen_t peer_len = sizeof(peer);
@@ -137,6 +151,12 @@ private:
                     ok_.store(false);
                     return;
                 }
+                {
+                    const std::lock_guard<std::mutex> lock(step_mutex_);
+                    last_step_ = step;
+                    step_history_.push_back(step);
+                }
+                step_received_.store(true);
 
                 physics_sim::StateResponse rsp{};
                 rsp.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateResponse);
@@ -145,7 +165,7 @@ private:
                 rsp.body_orientation = {1.0f, 0.0f, 0.0f, 0.0f};
                 rsp.body_linear_velocity = {0.0f, 0.0f, 0.0f};
                 rsp.body_angular_velocity = {0.0f, 0.0f, 0.0f};
-                rsp.joint_angles.fill(0.0f);
+                rsp.joint_angles = step.joint_targets;
                 rsp.joint_velocities.fill(0.0f);
                 if (::sendto(sock_, &rsp, physics_sim::kStateResponseBytes, 0,
                              reinterpret_cast<sockaddr*>(&peer), peer_len) !=
@@ -181,8 +201,12 @@ private:
     std::uint16_t port_{0};
     std::atomic<bool> ok_{true};
     std::atomic<bool> correction_received_{false};
+    std::atomic<bool> step_received_{false};
     mutable std::mutex correction_mutex_{};
+    mutable std::mutex step_mutex_{};
     physics_sim::StateCorrection last_correction_{};
+    physics_sim::StepCommand last_step_{};
+    std::vector<physics_sim::StepCommand> step_history_{};
     std::thread thread_{};
 };
 
@@ -229,18 +253,22 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    physics_sim::StateCorrection got{};
+    bool saw_expected_correction = false;
     for (int i = 0; i < 200; ++i) {
         if (stub.receivedCorrection()) {
-            break;
+            got = stub.lastCorrection();
+            if (got.sequence_id == correction.sequence_id) {
+                saw_expected_correction = true;
+                break;
+            }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds{5});
     }
 
-    if (!expect(stub.receivedCorrection(), "stub should receive state correction")) {
+    if (!expect(saw_expected_correction, "stub should receive the explicit state correction")) {
         return EXIT_FAILURE;
     }
-
-    const physics_sim::StateCorrection got = stub.lastCorrection();
     if (!expect(got.message_type == static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection),
                 "state correction message type should be preserved") ||
         !expect(got.sequence_id == correction.sequence_id, "sequence id should round-trip") ||
@@ -271,6 +299,73 @@ int main() {
                     nearlyEqual(got.body_angular_velocity[1], correction.body_angular_velocity[1]) &&
                     nearlyEqual(got.body_angular_velocity[2], correction.body_angular_velocity[2]),
                 "body angular velocity should round-trip")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState out{};
+    if (!expect(bridge.read(out), "bridge should establish a feedback sample before forwarding testing")) {
+        return EXIT_FAILURE;
+    }
+    const std::size_t baseline_step_count = stub.stepCount();
+
+    JointTargets aggressive{};
+    aggressive.leg_states[0].joint_state[COXA].pos_rad = AngleRad{1.0};
+    if (!expect(bridge.write(aggressive), "bridge should accept aggressive joint targets")) {
+        return EXIT_FAILURE;
+    }
+
+    if (!expect(bridge.read(out), "bridge read should succeed after joint target write")) {
+        return EXIT_FAILURE;
+    }
+
+    for (int i = 0; i < 200; ++i) {
+        if (stub.stepCount() >= baseline_step_count + 1) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+    }
+
+    if (!expect(stub.stepCount() >= baseline_step_count + 1, "stub should receive a post-write step command")) {
+        return EXIT_FAILURE;
+    }
+
+    const physics_sim::StepCommand step = stub.stepAt(stub.stepCount() - 1);
+    const physics_sim::StepCommand prior_step = stub.stepAt(baseline_step_count - 1);
+    const double first_joint_delta =
+        std::abs(static_cast<double>(step.joint_targets[0]) - static_cast<double>(prior_step.joint_targets[0]));
+    if (!expect(first_joint_delta > 0.0, "forwarded step command should still move the joint")) {
+        return EXIT_FAILURE;
+    }
+    if (first_joint_delta <= 0.1) {
+        std::cerr << "Observed first joint delta: " << first_joint_delta << '\n';
+    }
+    if (!expect(first_joint_delta > 0.1,
+                "physics sim bridge should forward the commanded joint target without extra rate limiting")) {
+        return EXIT_FAILURE;
+    }
+
+    JointTargets zero_targets{};
+    if (!expect(bridge.write(zero_targets), "bridge should accept an all-zero target as a standing hold")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(bridge.read(out), "bridge read should succeed after zero target write")) {
+        return EXIT_FAILURE;
+    }
+    for (int i = 0; i < 200; ++i) {
+        if (stub.stepCount() >= baseline_step_count + 2) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+    }
+    if (!expect(stub.stepCount() >= baseline_step_count + 2,
+                "stub should receive a step command after zero target write")) {
+        return EXIT_FAILURE;
+    }
+    const physics_sim::StepCommand hold_step = stub.stepAt(stub.stepCount() - 1);
+    const double hold_joint_delta =
+        std::abs(static_cast<double>(hold_step.joint_targets[0]) - static_cast<double>(prior_step.joint_targets[0]));
+    if (!expect(hold_joint_delta < 0.05,
+                "all-zero bridge writes should resolve to a standing hold target")) {
         return EXIT_FAILURE;
     }
 

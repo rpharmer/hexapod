@@ -234,7 +234,7 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
                 event.motion.enabled = true;
                 event.motion.mode = *parsed_mode;
                 event.motion.gait = *parsed_gait;
-                event.motion.body_height_m = toml::find_or<double>(event_value, "body_height_m", 0.05);
+                event.motion.body_height_m = toml::find_or<double>(event_value, "body_height_m", 0.14);
                 event.motion.speed_mps = toml::find_or<double>(event_value, "speed_mps", 0.0);
                 event.motion.heading_rad = toml::find_or<double>(event_value, "heading_rad", 0.0);
                 event.motion.yaw_rad = toml::find_or<double>(event_value, "yaw_rad", 0.0);
@@ -341,7 +341,7 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
                 event.navigation.enabled = true;
                 event.navigation.action = *action;
                 event.navigation.gait = *navigation_gait;
-                event.navigation.body_height_m = toml::find_or<double>(navigation, "body_height_m", 0.06);
+                event.navigation.body_height_m = toml::find_or<double>(navigation, "body_height_m", 0.14);
                 event.navigation.goal_x_m = toml::find_or<double>(navigation, "goal_x_m", 0.0);
                 event.navigation.goal_y_m = toml::find_or<double>(navigation, "goal_y_m", 0.0);
                 event.navigation.goal_yaw_rad = toml::find_or<double>(navigation, "goal_yaw_rad", 0.0);

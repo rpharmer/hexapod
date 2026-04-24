@@ -60,6 +60,12 @@ struct ParsedToml
   bool intentRequireTimestamp{true};
   bool intentRequireSampleId{true};
   bool intentRequireMonotonicSampleId{true};
+  bool investigationDisableTerrainStanceBias{false};
+  bool investigationDisableTerrainSwingClearance{false};
+  bool investigationDisableTerrainSwingXYNudge{false};
+  bool investigationDisableStanceTiltLeveling{false};
+  bool investigationSuppressFusionCorrections{false};
+  bool investigationSuppressFusionResets{false};
   double fallbackSpeedMag{0.01};
   double gaitTransitionBlendS{0.35};
   double gaitNominalPlanarSpeedMps{0.25};

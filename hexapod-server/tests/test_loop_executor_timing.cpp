@@ -7,6 +7,7 @@
 #include <iostream>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -214,6 +215,7 @@ bool testOverrunAccountingAndDeterministicScheduling() {
     });
 
     executor.start({LoopExecutor::Task{
+                       .label = "test-overrun",
                        .period = std::chrono::duration_cast<std::chrono::microseconds>(kPeriod),
                        .step = [&ticker, &iteration_index]() {
                            const int iteration = iteration_index.fetch_add(1);
@@ -255,6 +257,8 @@ bool testOverrunAccountingAndDeterministicScheduling() {
     const auto delta = second_start - first_start;
 
     return expect(telemetry[0].overruns == 1, "27ms work on 10ms period should count one missed period") &&
+           expect(telemetry[0].label != nullptr && std::string_view{telemetry[0].label} == "test-overrun",
+                  "iteration telemetry should include the task label") &&
            expect(delta == std::chrono::microseconds{30'000},
                   "overrun scheduling should resume at the next 30ms-aligned boundary") &&
            expect(telemetry[2].cycle_start == telemetry[1].cycle_finish,

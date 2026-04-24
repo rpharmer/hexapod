@@ -27,6 +27,7 @@ public:
     bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
     void setNavigationManager(std::unique_ptr<NavigationManager> navigation_manager);
     ControlStatus getStatus() const;
+    SafetyState getSafetyState() const;
 
     [[nodiscard]] RobotState estimatedSnapshot() const { return runtime_.estimatedSnapshot(); }
     [[nodiscard]] NavigationManager* navigationManager() { return runtime_.navigationManager(); }

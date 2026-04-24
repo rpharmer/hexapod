@@ -4,7 +4,7 @@
 
 namespace {
 
-constexpr double kTwistHorizonGain = 0.42;
+constexpr double kTwistHorizonGain = 0.20;
 constexpr double kMarginSoftM = 0.022;
 constexpr double kMarginHardM = 0.004;
 constexpr double kStabilityInwardM = 0.010;

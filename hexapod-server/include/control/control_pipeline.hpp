@@ -7,18 +7,21 @@
 #include "local_map.hpp"
 #include "locomotion_command.hpp"
 #include "locomotion_stability.hpp"
+#include "runtime_resource_monitoring.hpp"
 #include "types.hpp"
 
 struct PipelineStepResult {
     JointTargets joint_targets{};
     ControlStatus status{};
+    GaitState gait_state{};
 };
 
 class ControlPipeline {
 public:
     explicit ControlPipeline(control_config::GaitConfig gait_config = {},
                              control_config::LocomotionCommandConfig loco_config = {},
-                             control_config::FootTerrainConfig foot_terrain_config = {});
+                             control_config::FootTerrainConfig foot_terrain_config = {},
+                             runtime_resource_monitoring::Profiler* profiler = nullptr);
 
     void reset();
     PipelineStepResult runStep(const RobotState& estimated,
@@ -29,6 +32,7 @@ public:
                                const LocalMapSnapshot* terrain_snapshot = nullptr);
 
 private:
+    runtime_resource_monitoring::Profiler* profiler_{nullptr};
     GaitScheduler gait_;
     LocomotionCommandProcessor loco_cmd_{};
     LocomotionStability locomotion_stability_{};

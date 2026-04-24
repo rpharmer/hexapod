@@ -14,6 +14,17 @@ ControlStatus makeFreshnessGateRejectedStatus(bool estimator_fresh,
     return status;
 }
 
+void relaxLenientNonMonotonicOnly(FreshnessPolicy::StreamResult& stream) {
+    if (!stream.valid &&
+        stream.non_monotonic_sample_id &&
+        !stream.stale_age &&
+        !stream.missing_timestamp &&
+        !stream.invalid_sample_id) {
+        stream.valid = true;
+        stream.non_monotonic_sample_id = false;
+    }
+}
+
 } // namespace
 
 RuntimeFreshnessGate::RuntimeFreshnessGate(FreshnessPolicy& freshness_policy)
@@ -28,7 +39,14 @@ FreshnessPolicy::Evaluation RuntimeFreshnessGate::evaluate(EvaluationMode mode,
                                                            const RobotState& est,
                                                            const MotionIntent& intent) {
     const bool update_tracking = (mode == EvaluationMode::StrictControl);
-    return freshness_policy_.evaluate(now, est, intent, update_tracking);
+    FreshnessPolicy::Evaluation evaluation = freshness_policy_.evaluate(now, est, intent, update_tracking);
+    if (mode == EvaluationMode::SafetyLenient) {
+        // Safety only needs to know whether streams are live enough to avoid latching;
+        // the strict control path still enforces monotonic sequencing for pipeline execution.
+        relaxLenientNonMonotonicOnly(evaluation.estimator);
+        relaxLenientNonMonotonicOnly(evaluation.intent);
+    }
+    return evaluation;
 }
 
 void RuntimeFreshnessGate::recordStrictMetrics(const FreshnessPolicy::Evaluation& freshness,
@@ -74,8 +92,24 @@ void RuntimeFreshnessGate::maybeLogReject(const std::shared_ptr<logging::AsyncLo
     LOG_WARN(logger,
              "runtime.freshness_gate_reject estimator_valid=",
              freshness.estimator.valid ? 1 : 0,
+             " est_stale_age=",
+             freshness.estimator.stale_age ? 1 : 0,
+             " est_missing_ts=",
+             freshness.estimator.missing_timestamp ? 1 : 0,
+             " est_invalid_sid=",
+             freshness.estimator.invalid_sample_id ? 1 : 0,
+             " est_nonmono_sid=",
+             freshness.estimator.non_monotonic_sample_id ? 1 : 0,
              " intent_valid=",
              freshness.intent.valid ? 1 : 0,
+             " intent_stale_age=",
+             freshness.intent.stale_age ? 1 : 0,
+             " intent_missing_ts=",
+             freshness.intent.missing_timestamp ? 1 : 0,
+             " intent_invalid_sid=",
+             freshness.intent.invalid_sample_id ? 1 : 0,
+             " intent_nonmono_sid=",
+             freshness.intent.non_monotonic_sample_id ? 1 : 0,
              " est_age_us=",
              freshness.estimator.age_us,
              " intent_age_us=",

@@ -46,6 +46,8 @@ GaitState GaitScheduler::update(const RobotState&,
             out.in_stance[i] = true;
             out.phase_offset[static_cast<std::size_t>(i)] = 0.0;
             out.stability_hold_stance[static_cast<std::size_t>(i)] = false;
+            out.support_liftoff_clearance_m[static_cast<std::size_t>(i)] = 0.0;
+            out.support_liftoff_safe_to_lift[static_cast<std::size_t>(i)] = false;
         }
         out.duty_factor = 0.5;
         out.step_length_m = 0.06;
@@ -135,6 +137,8 @@ GaitState GaitScheduler::update(const RobotState&,
         out.phase[leg] = p;
         out.in_stance[leg] = (p < blended.duty_factor);
         out.stability_hold_stance[static_cast<std::size_t>(leg)] = false;
+        out.support_liftoff_clearance_m[static_cast<std::size_t>(leg)] = 0.0;
+        out.support_liftoff_safe_to_lift[static_cast<std::size_t>(leg)] = false;
     }
     out.static_stability_margin_m = 0.0;
     out.cmd_accel_body_x_mps2 = cmd_ax;

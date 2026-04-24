@@ -52,7 +52,7 @@ Use these existing classes as references:
 - Button events must use names expected by the mapper (`A`, `B`, `X`, `Y`, `LB`, `RB`, etc.).
 - Axis semantics should remain aligned with current mapper assumptions:
   - Left stick: heading/speed in walk mode
-  - Right stick: facing or attitude control depending on mode
+  - Right stick: yaw rate in walk mode, roll/pitch in body-pose mode
   - Triggers: height or yaw, depending on mode
 
 If your physical device uses different button/axis codes, add a mapping layer (similar to `makeXboxGamepadMapping()` / `makeGenericGamepadMapping()`).

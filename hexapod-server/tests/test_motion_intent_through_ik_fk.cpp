@@ -125,6 +125,47 @@ bool ikFkChainTracksBodyTargets() {
     return expect(finiteJointTargets(joints), "ik output should stay finite for reachable body targets");
 }
 
+bool ikStaysContinuousAcrossSmallFootMoves() {
+    const HexapodGeometry geometry = defaultHexapodGeometry();
+    LegIK ik(geometry);
+
+    RobotState est{};
+    est.timestamp_us = now_us();
+
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    safety.leg_enabled.fill(true);
+
+    LegTargets body_targets{};
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        LegState known_joint{};
+        known_joint.joint_state[0].pos_rad = AngleRad{0.10};
+        known_joint.joint_state[1].pos_rad = AngleRad{-0.20};
+        known_joint.joint_state[2].pos_rad = AngleRad{-0.75};
+        body_targets.feet[leg] = LegFK().footInBodyFrame(known_joint, geometry.legGeometry[leg]);
+    }
+
+    const JointTargets first = ik.solve(est, body_targets, safety);
+    est.leg_states = first.leg_states;
+
+    LegTargets body_targets2 = body_targets;
+    body_targets2.feet[0].pos_body_m.x += 0.002;
+    body_targets2.feet[0].pos_body_m.y -= 0.001;
+
+    const JointTargets second = ik.solve(est, body_targets2, safety);
+
+    const LegState first_joint = geometry.legGeometry[0].servo.toJointAngles(first.leg_states[0]);
+    const LegState second_joint = geometry.legGeometry[0].servo.toJointAngles(second.leg_states[0]);
+    for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+        const double delta =
+            std::abs(second_joint.joint_state[joint].pos_rad.value - first_joint.joint_state[joint].pos_rad.value);
+        if (!expect(delta < 0.35, "IK should stay continuous across a small foot move")) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool controlPipelineProducesStableOutputs() {
     ControlPipeline pipeline;
 
@@ -156,6 +197,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!ikFkChainTracksBodyTargets()) {
+        return EXIT_FAILURE;
+    }
+    if (!ikStaysContinuousAcrossSmallFootMoves()) {
         return EXIT_FAILURE;
     }
     if (!controlPipelineProducesStableOutputs()) {

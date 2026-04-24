@@ -1,6 +1,7 @@
 #include "body_pose_controller.hpp"
 #include "locomotion_stability.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -54,8 +55,9 @@ bool testBodyPoseFullMarginLeanForward() {
     constexpr double kSoftMargin = 0.022;
     const BodyPoseSetpoint pose =
         computeBodyPoseSetpoint(intent, cmd, kSoftMargin, 1.0);
-    constexpr double kLeanPitchPerVx = 0.22;
-    const double expected_pitch = 0.2 - kLeanPitchPerVx * 1.0;
+    constexpr double kLeanPitchPerVx = 0.14;
+    constexpr double kLeanVxRefMps = 0.28;
+    const double expected_pitch = 0.2 - kLeanPitchPerVx * std::clamp(cmd.vx_mps / kLeanVxRefMps, -1.2, 1.2);
     return expect(nearlyEqual(pose.pitch_rad, expected_pitch, 1e-9),
                   "full margin should apply full forward lean into +vx");
 }
@@ -64,17 +66,18 @@ bool testBodyPoseDefaultHeight() {
     MotionIntent intent = walkIntent(0.0);
     PlanarMotionCommand cmd{};
     const BodyPoseSetpoint pose = computeBodyPoseSetpoint(intent, cmd, 0.022, 1.0);
-    return expect(nearlyEqual(pose.body_height_m, 0.05), "zero height setpoint should fall back to default");
+    return expect(nearlyEqual(pose.body_height_m, 0.14), "zero height setpoint should fall back to default");
 }
 
 bool testBodyPoseYawLeanRoll() {
     MotionIntent intent = walkIntent(0.12);
     PlanarMotionCommand cmd{0.0, 0.0, 0.45};
     constexpr double kSoftMargin = 0.022;
-    constexpr double kLeanRollPerYaw = 0.18;
+    constexpr double kLeanRollPerYaw = 0.10;
+    constexpr double kLeanYawRefRadps = 0.60;
     const BodyPoseSetpoint pose =
         computeBodyPoseSetpoint(intent, cmd, kSoftMargin, 1.0);
-    const double expected_roll = 0.1 + kLeanRollPerYaw * 1.0;
+    const double expected_roll = 0.1 + kLeanRollPerYaw * std::clamp(cmd.yaw_rate_radps / kLeanYawRefRadps, -1.2, 1.2);
     return expect(nearlyEqual(pose.roll_rad, expected_roll, 1e-9),
                   "full margin should apply roll lean into yaw rate command");
 }
@@ -131,6 +134,22 @@ bool testStabilityComOutsideHullNegativeMargin() {
                   "large body XY offset should push projected COM outside nominal support");
 }
 
+bool testStabilitySupportDiagnosticsExposeAsymmetry() {
+    LocomotionStability stability{};
+    MotionIntent intent = walkIntent(0.12, 0.05, 0.02);
+    GaitState gait = allStanceWalkGait(0.25, FrequencyHz{1.0});
+    stability.apply(intent, gait);
+
+    const auto [min_it, max_it] = std::minmax_element(gait.support_liftoff_clearance_m.begin(),
+                                                      gait.support_liftoff_clearance_m.end());
+    if (!expect(std::isfinite(*min_it) && std::isfinite(*max_it),
+                "support diagnostics should remain finite")) {
+        return false;
+    }
+    return expect((*max_it - *min_it) > 0.005,
+                  "per-leg support diagnostics should show asymmetry when the body shifts");
+}
+
 bool testStabilityStrictConfigLatchesNearLiftoff() {
     LocomotionStabilityConfig cfg{};
     cfg.min_margin_required_m = 50.0;
@@ -145,6 +164,10 @@ bool testStabilityStrictConfigLatchesNearLiftoff() {
     for (int leg = 0; leg < kNumLegs; ++leg) {
         if (!expect(gait.stability_hold_stance[static_cast<std::size_t>(leg)],
                      "impossible support margin should latch hold in liftoff window")) {
+            return false;
+        }
+        if (!expect(gait.support_liftoff_clearance_m[static_cast<std::size_t>(leg)] < 0.0,
+                     "support clearance should report the blocked liftoff margin")) {
             return false;
         }
     }
@@ -182,7 +205,8 @@ int main() {
         !testBodyPoseDefaultHeight() || !testBodyPoseYawLeanRoll() ||
         !testBodyPoseSlowStrideBoostsLean() ||
         !testStabilityStandClears() || !testStabilityWalkCenteredPositiveMargin() ||
-        !testStabilityComOutsideHullNegativeMargin() || !testStabilityStrictConfigLatchesNearLiftoff() ||
+        !testStabilityComOutsideHullNegativeMargin() || !testStabilitySupportDiagnosticsExposeAsymmetry() ||
+        !testStabilityStrictConfigLatchesNearLiftoff() ||
         !testStabilityResetClearsLatch()) {
         return EXIT_FAILURE;
     }

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <sstream>
+#include <type_traits>
 #include <string_view>
 
 #include "logger.hpp"
@@ -46,6 +47,17 @@ T findOrByPath(const toml::value& root, const std::string& dotted_key, const T& 
   try {
     return toml::get<T>(*current);
   } catch (const std::exception&) {
+    if constexpr (std::is_same_v<T, double>) {
+      try {
+        return static_cast<double>(toml::get<int64_t>(*current));
+      } catch (const std::exception&) {
+        try {
+          return static_cast<double>(toml::get<uint64_t>(*current));
+        } catch (const std::exception&) {
+          return default_value;
+        }
+      }
+    }
     return default_value;
   }
 }

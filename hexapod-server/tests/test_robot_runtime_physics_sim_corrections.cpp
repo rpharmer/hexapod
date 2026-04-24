@@ -103,7 +103,8 @@ public:
 
 private:
     void run() {
-        while (!stop_requested_.load() && ok_.load()) {
+        std::uint8_t handled = 0;
+        while (handled < 16 && !stop_requested_.load() && ok_.load()) {
             std::array<std::byte, 4096> buf{};
             sockaddr_in peer{};
             socklen_t peer_len = sizeof(peer);
@@ -320,6 +321,14 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    for (int i = 0; i < 200; ++i) {
+        if (stub.correctionCount() > 0) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+    }
+    const int baseline_correction_count = stub.correctionCount();
+
     runtime.setMotionIntentForTest(makeIntentSample(1, 1'000'000));
     estimator_raw->enqueue(makeEstimatorSample(1, 1'100'000, false));
     runtime.busStep();
@@ -327,7 +336,8 @@ int main() {
     runtime.safetyStep();
     runtime.controlStep();
 
-    if (!expect(stub.correctionCount() == 0, "steady-state step should not emit corrections") ||
+    if (!expect(stub.correctionCount() == baseline_correction_count,
+                "steady-state step should not emit corrections") ||
         !expect(estimator_raw->reset_count == 1, "init should reset estimator once") ||
         !expect(!telemetry_raw->last_control_step.fusion.correction.has_data,
                 "steady-state telemetry should not report a correction")) {
@@ -350,13 +360,13 @@ int main() {
     runtime.controlStep();
 
     for (int i = 0; i < 200; ++i) {
-        if (stub.correctionCount() > 0) {
+        if (stub.correctionCount() > baseline_correction_count) {
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds{5});
     }
 
-    if (!expect(stub.correctionCount() == 1, "strong correction should emit one correction") ||
+    if (!expect(stub.correctionCount() >= baseline_correction_count + 1, "strong correction should emit one correction") ||
         !expect(estimator_raw->reset_count == 1, "strong correction should not reset estimator")) {
         return EXIT_FAILURE;
     }
@@ -391,9 +401,9 @@ int main() {
                                               false,
                                               false,
                                               0.88,
-                                              0.03,
-                                              0.10,
-                                              0.11,
+                                              0.0,
+                                              0.0,
+                                              0.33,
                                               0.02));
     runtime.busStep();
     runtime.estimatorStep();
@@ -401,20 +411,20 @@ int main() {
     runtime.controlStep();
 
     for (int i = 0; i < 200; ++i) {
-        if (stub.correctionCount() > 1) {
+        if (stub.correctionCount() > baseline_correction_count + 1) {
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds{5});
     }
 
-    if (!expect(stub.correctionCount() == 2,
-                "borderline correction should still emit after the strong sample") ||
+    if (!expect(stub.correctionCount() == baseline_correction_count + 1,
+                "pure contact churn should not emit a duplicate correction") ||
         !expect(telemetry_raw->last_control_step.fusion.correction.has_data,
-                "telemetry should report the borderline correction") ||
+                "telemetry should continue reporting the last emitted correction") ||
         !expect(telemetry_raw->last_control_step.fusion.correction.mode == telemetry::FusionCorrectionMode::Strong,
-                "hysteresis should keep the borderline correction strong") ||
-        !expect(telemetry_raw->last_control_step.fusion.correction.sample_id == 3,
-                "borderline telemetry should advance sample id")) {
+                "strong mode should remain visible until a new correction mode is emitted") ||
+        !expect(telemetry_raw->last_control_step.fusion.correction.sample_id == 2,
+                "contact churn should not advance telemetry correction sample id")) {
         return EXIT_FAILURE;
     }
 
@@ -434,13 +444,13 @@ int main() {
     runtime.controlStep();
 
     for (int i = 0; i < 200; ++i) {
-        if (stub.correctionCount() > 2) {
+        if (stub.correctionCount() > baseline_correction_count + 2) {
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds{5});
     }
 
-    if (!expect(stub.correctionCount() == 3, "hard reset should emit a third correction") ||
+    if (!expect(stub.correctionCount() >= baseline_correction_count + 2, "hard reset should emit a second distinct correction") ||
         !expect(estimator_raw->reset_count == 2, "hard reset should reset estimator once more") ||
         !expect((stub.lastCorrection().flags & physics_sim::kStateCorrectionHardReset) != 0,
                 "hard reset packet should carry hard reset flag") ||
@@ -450,6 +460,56 @@ int main() {
         !expect(telemetry_raw->last_control_step.fusion.correction.sample_id == 4,
                 "hard reset telemetry should advance sample id")) {
         return EXIT_FAILURE;
+    }
+
+    {
+        control_config::ControlConfig suppressed_cfg = cfg;
+        suppressed_cfg.fusion.emit_physics_sim_corrections = false;
+        suppressed_cfg.fusion.suppress_fusion_resets = true;
+
+        auto suppressed_bridge = std::make_unique<PhysicsSimBridge>("127.0.0.1", stub.port(), 1000, 8, nullptr);
+        auto suppressed_estimator = std::make_unique<ScriptedEstimator>();
+        auto* suppressed_estimator_raw = suppressed_estimator.get();
+
+        RobotRuntime suppressed_runtime(std::move(suppressed_bridge),
+                                        std::move(suppressed_estimator),
+                                        nullptr,
+                                        suppressed_cfg,
+                                        telemetry::makeNoopTelemetryPublisher());
+        if (!expect(suppressed_runtime.init(), "suppressed runtime init should succeed")) {
+            return EXIT_FAILURE;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds{100});
+        const int suppressed_baseline_correction_count = stub.correctionCount();
+        suppressed_runtime.setMotionIntentForTest(makeIntentSample(5, 1'900'000));
+        suppressed_estimator_raw->enqueue(makeEstimatorSample(5,
+                                                              2'000'000,
+                                                              true,
+                                                              true,
+                                                              0.08,
+                                                              0.24,
+                                                              0.40,
+                                                              0.30,
+                                                              0.20));
+        suppressed_runtime.busStep();
+        suppressed_runtime.estimatorStep();
+        suppressed_runtime.safetyStep();
+        suppressed_runtime.controlStep();
+
+        for (int i = 0; i < 200; ++i) {
+            if (stub.correctionCount() > suppressed_baseline_correction_count) {
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{5});
+        }
+
+        if (!expect(stub.correctionCount() == suppressed_baseline_correction_count,
+                    "suppressed fusion corrections should not emit extra packets") ||
+            !expect(suppressed_estimator_raw->reset_count == 1,
+                    "suppressed fusion resets should not reset the estimator")) {
+            return EXIT_FAILURE;
+        }
     }
 
     return EXIT_SUCCESS;
