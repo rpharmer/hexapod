@@ -20,6 +20,8 @@ struct ConstraintSolverContext {
     std::vector<ServoJoint>& servoJoints;
     const ContactSolverContext& contactContext;
     const ContactSolverConfig& contactSolverConfig;
+    // When non-null, island ordering is read from this cache instead of being recomputed each call.
+    const std::vector<IslandOrderResult>* precomputedIslandOrders = nullptr;
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     World::SolverTelemetry* solverTelemetry = nullptr;
 #endif

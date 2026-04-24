@@ -9,12 +9,6 @@
 
 namespace minphys3d::solver_internal {
 
-struct IslandOrderResult {
-    std::vector<std::size_t> manifoldOrder;
-    IslandSolveOrdering orderingUsed = IslandSolveOrdering::Insertion;
-    bool supportDepthApplied = false;
-};
-
 IslandOrderResult ComputeIslandOrder(const Island& island,
                                      const std::vector<Body>& bodies,
                                      const std::vector<Manifold>& manifolds,

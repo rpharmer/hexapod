@@ -6,12 +6,22 @@ namespace minphys3d::core_internal {
 void ConstraintSolver::SolveIslands(const ConstraintSolverContext& context) const {
     ContactSolver solver;
 
-    for (const Island& island : context.islands) {
-        const solver_internal::IslandOrderResult islandOrder = solver_internal::ComputeIslandOrder(
-            island,
-            context.bodies,
-            context.manifolds,
-            context.contactSolverConfig);
+    for (std::size_t islandIdx = 0; islandIdx < context.islands.size(); ++islandIdx) {
+        const Island& island = context.islands[islandIdx];
+
+        // Use pre-computed ordering when the caller has already done the work for this substep.
+        // Fall back to computing on-demand (e.g. tests that call SolveIslands directly).
+        IslandOrderResult onDemandOrder;
+        const IslandOrderResult* orderPtr = nullptr;
+        if (context.precomputedIslandOrders && islandIdx < context.precomputedIslandOrders->size()) {
+            orderPtr = &(*context.precomputedIslandOrders)[islandIdx];
+        } else {
+            onDemandOrder = solver_internal::ComputeIslandOrder(
+                island, context.bodies, context.manifolds, context.contactSolverConfig);
+            orderPtr = &onDemandOrder;
+        }
+        const IslandOrderResult& islandOrder = *orderPtr;
+
         const std::vector<std::size_t>& manifoldOrder = islandOrder.manifoldOrder;
         const IslandSolveOrdering ordering = islandOrder.orderingUsed;
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
@@ -31,9 +41,9 @@ void ConstraintSolver::SolveIslands(const ConstraintSolverContext& context) cons
         };
         solveOrder(manifoldOrder);
         if (ordering == IslandSolveOrdering::ShockPropagation && manifoldOrder.size() > 1) {
-            std::vector<std::size_t> reverseOrder = manifoldOrder;
-            std::reverse(reverseOrder.begin(), reverseOrder.end());
-            solveOrder(reverseOrder);
+            for (auto it = manifoldOrder.rbegin(); it != manifoldOrder.rend(); ++it) {
+                context.solveContactsInManifold(solver, context.contactContext, context.manifolds[*it]);
+            }
         }
 
         for (std::size_t ji : island.joints) {

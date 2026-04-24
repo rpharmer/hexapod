@@ -21,6 +21,12 @@ struct SleepSystemContext {
 class SleepSystem {
 public:
     void UpdateSleeping(const SleepSystemContext& context) const;
+
+private:
+    mutable std::vector<bool> visited_;
+    mutable std::vector<std::uint32_t> stack_;
+    mutable std::vector<std::uint32_t> islandBodies_;
+    mutable std::vector<std::vector<std::uint32_t>> adj_;
 };
 
 } // namespace minphys3d::core_internal

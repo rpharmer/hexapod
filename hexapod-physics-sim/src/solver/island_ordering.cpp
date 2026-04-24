@@ -1,7 +1,6 @@
 #include "minphys3d/solver/island_ordering.hpp"
 
 #include <algorithm>
-#include <unordered_map>
 
 namespace minphys3d::solver_internal {
 
@@ -32,7 +31,10 @@ IslandOrderResult ComputeIslandOrder(const Island& island,
     }
 
     if (result.orderingUsed == IslandSolveOrdering::SupportDepth || result.orderingUsed == IslandSolveOrdering::ShockPropagation) {
-        std::unordered_map<std::uint32_t, std::uint32_t> supportDepth;
+        // Use a flat vector indexed by body ID — O(1) lookup, no heap allocation from hash map.
+        // Body IDs are contiguous indices; non-island bodies remain at 0 (static depth), which is
+        // harmless because the sort only touches manifolds belonging to this island.
+        std::vector<std::uint32_t> supportDepth(bodies.size(), 0u);
         for (std::uint32_t id : island.bodies) {
             supportDepth[id] = (bodies[id].invMass == 0.0f) ? 0u : 1u;
         }
