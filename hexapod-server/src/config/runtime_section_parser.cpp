@@ -93,6 +93,20 @@ T findOrByPath(const toml::value& root, const std::string& dotted_key, const T& 
   }
 }
 
+template <typename T>
+T findOrByPathOrDirect(const toml::value& root, const std::string& dotted_key, const T& default_value)
+{
+  const T by_path = findOrByPath<T>(root, dotted_key, default_value);
+  if (!(by_path == default_value)) {
+    return by_path;
+  }
+  try {
+    return toml::find<T>(root, dotted_key);
+  } catch (const std::exception&) {
+    return by_path;
+  }
+}
+
 } // namespace
 
 bool parseRuntimeSection(const toml::value& root,
@@ -216,12 +230,18 @@ bool parseRuntimeSection(const toml::value& root,
       static_cast<int>(std::lround(1000.0 / std::max(out.telemetryPublishRateHz, 0.1)));
   out.telemetryGeometryRefreshPeriodMs =
       static_cast<int>(std::lround(out.telemetryGeometryResendIntervalSec * 1000.0));
-  out.investigationDisableTerrainStanceBias = findOrByPath<bool>(root, schema[19].key, schema[19].default_bool);
-  out.investigationDisableTerrainSwingClearance = findOrByPath<bool>(root, schema[20].key, schema[20].default_bool);
-  out.investigationDisableTerrainSwingXYNudge = findOrByPath<bool>(root, schema[21].key, schema[21].default_bool);
-  out.investigationDisableStanceTiltLeveling = findOrByPath<bool>(root, schema[22].key, schema[22].default_bool);
-  out.investigationSuppressFusionCorrections = findOrByPath<bool>(root, schema[23].key, schema[23].default_bool);
-  out.investigationSuppressFusionResets = findOrByPath<bool>(root, schema[24].key, schema[24].default_bool);
+  out.investigationDisableTerrainStanceBias =
+      findOrByPathOrDirect<bool>(root, schema[19].key, schema[19].default_bool);
+  out.investigationDisableTerrainSwingClearance =
+      findOrByPathOrDirect<bool>(root, schema[20].key, schema[20].default_bool);
+  out.investigationDisableTerrainSwingXYNudge =
+      findOrByPathOrDirect<bool>(root, schema[21].key, schema[21].default_bool);
+  out.investigationDisableStanceTiltLeveling =
+      findOrByPathOrDirect<bool>(root, schema[22].key, schema[22].default_bool);
+  out.investigationSuppressFusionCorrections =
+      findOrByPathOrDirect<bool>(root, schema[23].key, schema[23].default_bool);
+  out.investigationSuppressFusionResets =
+      findOrByPathOrDirect<bool>(root, schema[24].key, schema[24].default_bool);
   return true;
 }
 

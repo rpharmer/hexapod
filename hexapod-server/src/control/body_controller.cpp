@@ -177,9 +177,11 @@ LegTargets BodyController::update(const RobotState& est,
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
         Vec3 target = nominal[leg] - planar_body_offset;
-        Vec3 target_vel{-intent.twist.body_trans_mps.x,
-                         -intent.twist.body_trans_mps.y,
-                         -intent.twist.body_trans_mps.z};
+        Vec3 target_vel = walking
+                              ? Vec3{}
+                              : Vec3{-intent.twist.body_trans_mps.x,
+                                     -intent.twist.body_trans_mps.y,
+                                     -intent.twist.body_trans_mps.z};
         bool apply_workspace_clamp = true;
 
         if (walking) {

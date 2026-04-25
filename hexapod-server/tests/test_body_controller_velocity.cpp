@@ -84,6 +84,7 @@ int main() {
     walk_intent.heading_rad = AngleRad{0.0};
     walk_intent.cmd_vx_mps = LinearRateMps{0.2};
     walk_intent.cmd_vy_mps = LinearRateMps{0.0};
+    walk_intent.twist.body_trans_mps = Vec3{0.05, -0.03, 0.0};
     walk_intent.twist.body_trans_m.z = 0.12;
 
     GaitState walk_gait{};
@@ -97,8 +98,14 @@ int main() {
         rawLocomotionTwistFromIntent(walk_intent, planarMotionCommand(walk_intent));
     const LegTargets walk_targets = controller.update(est, walk_intent, walk_gait, safety, walk_twist);
 
-    if (!expect(nearlyEqual(walk_targets.feet[0].vel_body_mps.x, -0.2, 2e-3),
-                "walking stance foot velocity should match commanded body planar motion")) {
+    if (!expect(nearlyEqual(walk_targets.feet[0].vel_body_mps.x, -0.25, 2e-3) &&
+                    nearlyEqual(walk_targets.feet[0].vel_body_mps.y, 0.03, 2e-3) &&
+                    nearlyEqual(walk_targets.feet[0].vel_body_mps.z, 0.0, 2e-3),
+                "walking stance foot velocity should follow the composed body motion without extra sway")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(nearlyEqual(walk_targets.feet[0].vel_body_mps.x, -0.25, 2e-3),
+                "walking stance foot velocity should include sway exactly once")) {
         return EXIT_FAILURE;
     }
 

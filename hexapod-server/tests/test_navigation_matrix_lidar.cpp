@@ -37,7 +37,7 @@ void stepPose(NavPose2d& pose, const MotionIntent& intent, const double dt_s) {
     const PlanarMotionCommand cmd = planarMotionCommand(intent);
     const double c = std::cos(pose.yaw_rad);
     const double s = std::sin(pose.yaw_rad);
-    const double world_vx = -cmd.vx_mps;
+    const double world_vx = cmd.vx_mps;
     const double world_vy = cmd.vy_mps;
     pose.x_m += (c * world_vx - s * world_vy) * dt_s;
     pose.y_m += (s * world_vx + c * world_vy) * dt_s;
@@ -190,6 +190,15 @@ bool test_lidar_all_invalid_still_navigates_unknown_map() {
 
     if (!expect(nav.monitor().lifecycle == NavigationLifecycleState::Completed,
                 "no-return lidar frames should still support navigation via explicit free-space clearing")) {
+        const auto mon = nav.monitor();
+        std::cerr << "navigation_matrix_lidar empty-return lifecycle=" << static_cast<int>(mon.lifecycle)
+                  << " active=" << mon.active
+                  << " paused=" << mon.paused
+                  << " planner_status=" << static_cast<int>(mon.planner_status)
+                  << " block_reason=" << static_cast<int>(mon.block_reason)
+                  << " replan_count=" << mon.replan_count
+                  << " sim_x=" << sim.x_m
+                  << " sim_y=" << sim.y_m << '\n';
         return false;
     }
 

@@ -189,8 +189,7 @@ int main(int argc, char** argv) {
     control_config::ControlConfig cfg{};
     cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
     cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
-    /** Default foot blend injects measured slip; for waypoint closure on the UDP sim, command dominates. */
-    cfg.gait.foot_estimator_blend = 0.0;
+    /** Exercise the default foot-estimator blend here so live waypoint coverage matches the walking stack. */
     cfg.locomotion_cmd.enable_first_order_filter = false;
 
     RobotRuntime runtime(std::move(bridge), std::make_unique<PhysicsSimEstimator>(), nullptr, cfg);

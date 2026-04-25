@@ -90,8 +90,7 @@ public:
 
 private:
     void run() {
-        std::uint8_t handled = 0;
-        while (handled < 3 && ok_.load()) {
+        while (ok_.load()) {
             std::array<std::byte, 4096> buf{};
             sockaddr_in peer{};
             socklen_t peer_len = sizeof(peer);
@@ -127,7 +126,6 @@ private:
                     ok_.store(false);
                     return;
                 }
-                ++handled;
                 continue;
             }
 
@@ -164,7 +162,15 @@ private:
                     ok_.store(false);
                     return;
                 }
-                ++handled;
+                continue;
+            }
+
+            if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection)) {
+                physics_sim::StateCorrection correction{};
+                if (!physics_sim::tryDecodeStateCorrection(bytes, static_cast<std::size_t>(n), correction)) {
+                    ok_.store(false);
+                    return;
+                }
                 continue;
             }
 

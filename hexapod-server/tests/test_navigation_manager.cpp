@@ -31,7 +31,7 @@ void stepPose(NavPose2d& pose, const MotionIntent& intent, const double dt_s) {
     const PlanarMotionCommand cmd = planarMotionCommand(intent);
     const double c = std::cos(pose.yaw_rad);
     const double s = std::sin(pose.yaw_rad);
-    const double world_vx = -cmd.vx_mps;
+    const double world_vx = cmd.vx_mps;
     const double world_vy = cmd.vy_mps;
     pose.x_m += (c * world_vx - s * world_vy) * dt_s;
     pose.y_m += (s * world_vx + c * world_vy) * dt_s;
@@ -64,6 +64,15 @@ int main() {
     }
     if (!expect(nav.monitor().lifecycle == NavigationLifecycleState::Completed,
                 "map-aware navigation should complete on empty observed map")) {
+        const auto mon = nav.monitor();
+        std::cerr << "navigation_manager empty-map lifecycle=" << static_cast<int>(mon.lifecycle)
+                  << " active=" << mon.active
+                  << " paused=" << mon.paused
+                  << " planner_status=" << static_cast<int>(mon.planner_status)
+                  << " block_reason=" << static_cast<int>(mon.block_reason)
+                  << " replan_count=" << mon.replan_count
+                  << " sim_x=" << sim.x_m
+                  << " sim_y=" << sim.y_m << '\n';
         return EXIT_FAILURE;
     }
     if (!expect(std::abs(sim.x_m - 0.35) < 0.08, "sim pose should approach navigation goal")) {

@@ -40,6 +40,10 @@ BodyVelocityCommand bodyVelocityForFootPlanning(const RobotState& est,
         return intent_only;
     }
 
+    // The estimator body twist and the command twist are both expressed in the same body frame:
+    // +X forward, +Y left, +Z up. Blend them directly in that shared convention.
+    // Angular velocity: simVecToServer preserves CCW-positive yaw (Y_sim→Z_svr) and maps
+    // roll/pitch consistently, so no extra sign adjustment is needed here either.
     const Vec3 lin_est{est.body_twist_state.body_trans_mps.x,
                        est.body_twist_state.body_trans_mps.y,
                        est.body_twist_state.body_trans_mps.z};

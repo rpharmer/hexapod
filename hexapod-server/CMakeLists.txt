@@ -382,6 +382,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_body_controller_velocity PRIVATE hexapod_server_core)
     add_test(NAME body_controller_velocity COMMAND test_body_controller_velocity)
 
+    add_executable(test_foot_planners_velocity_blend tests/test_foot_planners_velocity_blend.cpp)
+    target_link_libraries(test_foot_planners_velocity_blend PRIVATE hexapod_server_core)
+    add_test(NAME foot_planners_velocity_blend COMMAND test_foot_planners_velocity_blend)
+
     add_executable(test_locomotion_pose_and_stability tests/test_locomotion_pose_and_stability.cpp)
     target_link_libraries(test_locomotion_pose_and_stability PRIVATE hexapod_server_core)
     add_test(NAME locomotion_pose_and_stability COMMAND test_locomotion_pose_and_stability)

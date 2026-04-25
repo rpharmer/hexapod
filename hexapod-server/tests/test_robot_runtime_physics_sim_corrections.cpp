@@ -419,12 +419,12 @@ int main() {
 
     if (!expect(stub.correctionCount() == baseline_correction_count + 1,
                 "pure contact churn should not emit a duplicate correction") ||
-        !expect(telemetry_raw->last_control_step.fusion.correction.has_data,
-                "telemetry should continue reporting the last emitted correction") ||
-        !expect(telemetry_raw->last_control_step.fusion.correction.mode == telemetry::FusionCorrectionMode::Strong,
-                "strong mode should remain visible until a new correction mode is emitted") ||
-        !expect(telemetry_raw->last_control_step.fusion.correction.sample_id == 2,
-                "contact churn should not advance telemetry correction sample id")) {
+        !expect(!telemetry_raw->last_control_step.fusion.correction.has_data,
+                "telemetry should clear correction data when no correction is emitted on this step") ||
+        !expect(telemetry_raw->last_control_step.fusion.correction.mode == telemetry::FusionCorrectionMode::None,
+                "telemetry correction mode should reset to None when no correction is emitted") ||
+        !expect(telemetry_raw->last_control_step.fusion.correction.sample_id == 0,
+                "telemetry should not carry a stale correction sample id across non-correction steps")) {
         return EXIT_FAILURE;
     }
 

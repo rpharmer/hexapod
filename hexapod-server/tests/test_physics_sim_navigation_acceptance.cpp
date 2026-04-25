@@ -239,6 +239,8 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
     control_config::ControlConfig cfg{};
     cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
     cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
+    // Keep the broader live-navigation acceptance suite pinned to command-only blending for now;
+    // deterministic coverage protects the sign-conversion seam directly while this suite remains stable.
     cfg.gait.foot_estimator_blend = 0.0;
     cfg.locomotion_cmd.enable_first_order_filter = false;
     cfg.local_map.width_cells = 61;

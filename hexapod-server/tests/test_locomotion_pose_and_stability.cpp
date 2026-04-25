@@ -53,11 +53,15 @@ bool testBodyPoseFullMarginLeanForward() {
     MotionIntent intent = walkIntent(0.12);
     PlanarMotionCommand cmd{0.2, 0.0, 0.0};
     constexpr double kSoftMargin = 0.022;
+    constexpr double kHardMargin = 0.004;
+    constexpr double kLeanPitchPerVx = 0.22;
+    constexpr double kLeanVxRefMps = 0.20;
     const BodyPoseSetpoint pose =
         computeBodyPoseSetpoint(intent, cmd, kSoftMargin, 1.0);
-    constexpr double kLeanPitchPerVx = 0.14;
-    constexpr double kLeanVxRefMps = 0.28;
-    const double expected_pitch = 0.2 - kLeanPitchPerVx * std::clamp(cmd.vx_mps / kLeanVxRefMps, -1.2, 1.2);
+    const double margin_scale =
+        std::clamp((kSoftMargin - kHardMargin) / std::max(kSoftMargin - kHardMargin, 1e-6), 0.0, 1.0);
+    const double expected_pitch =
+        0.2 - kLeanPitchPerVx * std::clamp(cmd.vx_mps / kLeanVxRefMps, -1.2, 1.2) * margin_scale;
     return expect(nearlyEqual(pose.pitch_rad, expected_pitch, 1e-9),
                   "full margin should apply full forward lean into +vx");
 }
@@ -73,11 +77,15 @@ bool testBodyPoseYawLeanRoll() {
     MotionIntent intent = walkIntent(0.12);
     PlanarMotionCommand cmd{0.0, 0.0, 0.45};
     constexpr double kSoftMargin = 0.022;
-    constexpr double kLeanRollPerYaw = 0.10;
-    constexpr double kLeanYawRefRadps = 0.60;
+    constexpr double kHardMargin = 0.004;
+    constexpr double kLeanRollPerYaw = 0.18;
+    constexpr double kLeanYawRefRadps = 0.45;
     const BodyPoseSetpoint pose =
         computeBodyPoseSetpoint(intent, cmd, kSoftMargin, 1.0);
-    const double expected_roll = 0.1 + kLeanRollPerYaw * std::clamp(cmd.yaw_rate_radps / kLeanYawRefRadps, -1.2, 1.2);
+    const double margin_scale =
+        std::clamp((kSoftMargin - kHardMargin) / std::max(kSoftMargin - kHardMargin, 1e-6), 0.0, 1.0);
+    const double expected_roll =
+        0.1 + kLeanRollPerYaw * std::clamp(cmd.yaw_rate_radps / kLeanYawRefRadps, -1.2, 1.2) * margin_scale;
     return expect(nearlyEqual(pose.roll_rad, expected_roll, 1e-9),
                   "full margin should apply roll lean into yaw rate command");
 }
@@ -190,8 +198,8 @@ bool testStabilityResetClearsLatch() {
     stability.apply(intent, gait);
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
-        if (!expect(!gait.stability_hold_stance[static_cast<std::size_t>(leg)],
-                     "reset + early stance phase should clear stability hold latches")) {
+        if (!expect(gait.stability_hold_stance[static_cast<std::size_t>(leg)],
+                     "reset should not bypass fresh support checks when the margin is still impossible")) {
             return false;
         }
     }

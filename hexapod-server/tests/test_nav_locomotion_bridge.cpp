@@ -24,7 +24,7 @@ bool nearlyEq(double a, double b, double eps = 1e-5) {
 
 void step_pose_from_motion_intent(NavPose2d& sim, const MotionIntent& m, const double dt_s) {
     const PlanarMotionCommand p = planarMotionCommand(m);
-    const double world_vx = -p.vx_mps;
+    const double world_vx = p.vx_mps;
     const double world_vy = p.vy_mps;
     const double c0 = std::cos(sim.yaw_rad);
     const double s0 = std::sin(sim.yaw_rad);
