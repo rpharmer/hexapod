@@ -210,6 +210,15 @@ target_link_libraries(hexapod-server
         hexapod_server_core
 )
 
+add_executable(hexapod-tripod-support-baseline
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/app/hexapod-tripod-support-baseline.cpp"
+)
+
+target_link_libraries(hexapod-tripod-support-baseline
+    PRIVATE
+        hexapod_server_core
+)
+
 if(HEXAPOD_SERVER_BUILD_TESTS)
     enable_testing()
 
@@ -353,6 +362,14 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_physics_sim_walk_distance tests/test_physics_sim_walk_distance.cpp)
     target_link_libraries(test_physics_sim_walk_distance PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_walk_distance COMMAND test_physics_sim_walk_distance)
+
+    add_executable(test_physics_sim_walk_entry_tracking tests/test_physics_sim_walk_entry_tracking.cpp)
+    target_link_libraries(test_physics_sim_walk_entry_tracking PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_walk_entry_tracking COMMAND test_physics_sim_walk_entry_tracking)
+
+    add_executable(test_physics_sim_tripod_support_baseline tests/test_physics_sim_tripod_support_baseline.cpp)
+    target_link_libraries(test_physics_sim_tripod_support_baseline PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_tripod_support_baseline COMMAND test_physics_sim_tripod_support_baseline)
 
     add_executable(test_physics_sim_nav_waypoints tests/test_physics_sim_nav_waypoints.cpp)
     target_link_libraries(test_physics_sim_nav_waypoints PRIVATE hexapod_server_core)

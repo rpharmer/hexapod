@@ -54,10 +54,10 @@ int main() {
                 "full blend should map estimator linear velocity into the body frame directly")) {
         return EXIT_FAILURE;
     }
-    if (!expect(nearlyEqual(estimator_only.angular_radps.x, 0.04) &&
-                    nearlyEqual(estimator_only.angular_radps.y, -0.01) &&
+    if (!expect(nearlyEqual(estimator_only.angular_radps.x, cmd_twist.angular_radps.x) &&
+                    nearlyEqual(estimator_only.angular_radps.y, cmd_twist.angular_radps.y) &&
                     nearlyEqual(estimator_only.angular_radps.z, 0.3),
-                "full blend should preserve estimator angular velocity without extra sign flips")) {
+                "full blend should preserve commanded roll/pitch while blending estimator yaw")) {
         return EXIT_FAILURE;
     }
 

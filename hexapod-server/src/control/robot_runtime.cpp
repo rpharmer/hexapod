@@ -478,6 +478,38 @@ JointTargets clampJointTargetsToServoDynamics(const JointTargets& previous,
     return limited;
 }
 
+replay_json::ReplayTransitionDiagnostics buildReplayTransitionDiagnostics(const RobotState& estimated,
+                                                                         const GaitState& gait_state,
+                                                                         const JointTargets& joint_targets) {
+    replay_json::ReplayTransitionDiagnostics diagnostics{};
+    if (estimated.has_body_twist_state) {
+        diagnostics.body_height_m = estimated.body_twist_state.body_trans_m.z;
+    }
+
+    for (std::size_t leg = 0; leg < gait_state.in_stance.size(); ++leg) {
+        diagnostics.stance_leg_count += gait_state.in_stance[leg] ? 1 : 0;
+        diagnostics.contact_leg_count += estimated.foot_contacts[leg] ? 1 : 0;
+        if (gait_state.in_stance[leg] != estimated.foot_contacts[leg]) {
+            ++diagnostics.stance_contact_mismatch_count;
+        }
+
+        double sum_sq = 0.0;
+        double max_abs = 0.0;
+        for (std::size_t joint = 0; joint < joint_targets.leg_states[leg].joint_state.size(); ++joint) {
+            const double commanded = joint_targets.leg_states[leg].joint_state[joint].pos_rad.value;
+            const double measured = estimated.leg_states[leg].joint_state[joint].pos_rad.value;
+            const double error = commanded - measured;
+            sum_sq += error * error;
+            max_abs = std::max(max_abs, std::abs(error));
+        }
+        const double denom = static_cast<double>(joint_targets.leg_states[leg].joint_state.size());
+        diagnostics.joint_tracking_rms_error_rad[leg] = denom > 0.0 ? std::sqrt(sum_sq / denom) : 0.0;
+        diagnostics.joint_tracking_max_abs_error_rad[leg] = max_abs;
+    }
+
+    return diagnostics;
+}
+
 } // namespace
 
 RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
@@ -521,6 +553,8 @@ bool RobotRuntime::init() {
     motion_intent_.write(initial);
     status_.write(ControlStatus{});
     safety_state_.write(SafetyState{});
+    leg_targets_.write(LegTargets{});
+    gait_state_.write(GaitState{});
     joint_targets_.write(JointTargets{});
     control_loop_counter_.store(0);
     control_dt_sum_us_.store(0);
@@ -697,6 +731,8 @@ void RobotRuntime::controlStep() {
         if (!decision.allow_pipeline) {
             RuntimeFreshnessGate::maybeLogReject(logger_, freshness, est, intent);
             status_.write(decision.status);
+            leg_targets_.write(LegTargets{});
+            gait_state_.write(GaitState{});
             joint_targets_.write(decision.joint_targets);
             maybePublishTelemetry(now);
             maybeWriteReplayRecord(now);
@@ -726,6 +762,8 @@ void RobotRuntime::controlStep() {
             control_dt_s);
     }
 
+    leg_targets_.write(result.leg_targets);
+    gait_state_.write(result.gait_state);
     joint_targets_.write(joint_targets);
     status_.write(result.status);
 
@@ -812,6 +850,11 @@ void RobotRuntime::maybeWriteReplayRecord(const TimePointUs& now) {
     record.sample_id = estimated_state_.read().sample_id;
     record.status = status_.read();
     record.estimated_state = estimated_state_.read();
+    record.leg_targets = leg_targets_.read();
+    record.gait_state = gait_state_.read();
+    record.joint_targets = joint_targets_.read();
+    record.transition_diagnostics =
+        buildReplayTransitionDiagnostics(record.estimated_state, record.gait_state, record.joint_targets);
     if (navigation_manager_) {
         record.terrain_snapshot = navigation_manager_->latestMapSnapshot(now);
     }

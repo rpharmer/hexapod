@@ -99,6 +99,8 @@ private:
     DoubleBuffer<MotionIntent> motion_intent_;
     DoubleBuffer<MotionIntent> effective_motion_intent_;
     DoubleBuffer<SafetyState> safety_state_;
+    DoubleBuffer<LegTargets> leg_targets_;
+    DoubleBuffer<GaitState> gait_state_;
     DoubleBuffer<JointTargets> joint_targets_;
     DoubleBuffer<ControlStatus> status_;
 

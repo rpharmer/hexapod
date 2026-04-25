@@ -170,6 +170,14 @@ Mat3d matTranspose(const Mat3d& a) {
     return t;
 }
 
+Vec3 matMulVec(const Mat3d& a, const Vec3& v) {
+    return Vec3{
+        a.m[0][0] * v.x + a.m[0][1] * v.y + a.m[0][2] * v.z,
+        a.m[1][0] * v.x + a.m[1][1] * v.y + a.m[1][2] * v.z,
+        a.m[2][0] * v.x + a.m[2][1] * v.y + a.m[2][2] * v.z,
+    };
+}
+
 EulerAnglesRad3 matToRollPitchYawZyx(const Mat3d& r) {
     const double sy = std::sqrt(r.m[0][0] * r.m[0][0] + r.m[1][0] * r.m[1][0]);
     const bool singular = sy < 1e-8;
@@ -592,14 +600,18 @@ bool PhysicsSimBridge::read(RobotState& out) {
     const Mat3d R_srv = matMul(R_ws, matMul(R_sim, matTranspose(R_ws)));
     out.body_twist_state.twist_pos_rad = matToRollPitchYawZyx(R_srv);
 
-    const Vec3 w_srv = simVecToServer(
+    const Vec3 w_srv_world = simVecToServer(
         rsp.body_angular_velocity[0], rsp.body_angular_velocity[1], rsp.body_angular_velocity[2]);
+    const Vec3 w_srv_body = matMulVec(matTranspose(R_srv), w_srv_world);
     out.body_twist_state.twist_vel_radps =
-        AngularVelocityRadPerSec3{w_srv.x, w_srv.y, w_srv.z};
+        AngularVelocityRadPerSec3{w_srv_body.x, w_srv_body.y, w_srv_body.z};
 
-    const Vec3 v_srv = simVecToServer(
+    const Vec3 v_srv_world = simVecToServer(
         rsp.body_linear_velocity[0], rsp.body_linear_velocity[1], rsp.body_linear_velocity[2]);
-    out.body_twist_state.body_trans_mps = VelocityMps3{v_srv.x, v_srv.y, v_srv.z};
+    // Physics sim exposes world-frame chassis velocities. Convert them into the server body frame
+    // so downstream foot planning can safely blend them with body-frame command twists.
+    const Vec3 v_srv_body = matMulVec(matTranspose(R_srv), v_srv_world);
+    out.body_twist_state.body_trans_mps = VelocityMps3{v_srv_body.x, v_srv_body.y, v_srv_body.z};
 
     const Vec3 p_srv = simVecToServer(rsp.body_position[0], rsp.body_position[1], rsp.body_position[2]);
     out.body_twist_state.body_trans_m = PositionM3{p_srv.x, p_srv.y, p_srv.z};

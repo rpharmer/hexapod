@@ -38,6 +38,8 @@ bool nearlyEqual(double lhs, double rhs, double eps = 1e-6) {
     return std::abs(lhs - rhs) <= eps;
 }
 
+constexpr float kHalfSqrt2 = 0.70710678118f;
+
 class UdpPhysicsSimStub {
 public:
     UdpPhysicsSimStub() {
@@ -140,9 +142,13 @@ private:
                 rsp.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateResponse);
                 rsp.sequence_id = step.sequence_id;
                 rsp.body_position = {0.03125f, 0.151162f, -0.0625f};
-                rsp.body_orientation = {1.0f, 0.0f, 0.0f, 0.0f};
-                rsp.body_linear_velocity = {0.0f, 0.0f, 0.0f};
-                rsp.body_angular_velocity = {0.0f, 0.0f, 0.0f};
+                // Yaw the body -90 deg in server space (sim +Y axis) so the bridge must rotate
+                // world-frame chassis velocities back into body-frame coordinates.
+                rsp.body_orientation = {kHalfSqrt2, 0.0f, kHalfSqrt2, 0.0f};
+                // Sim +X maps to server world +Y. With the -90 deg yaw above, that should become
+                // body-frame -X after the bridge applies R^T to the world velocity.
+                rsp.body_linear_velocity = {0.4f, 0.0f, 0.0f};
+                rsp.body_angular_velocity = {0.0f, 0.2f, 0.0f};
                 rsp.joint_angles.fill(0.0f);
                 rsp.joint_velocities.fill(0.0f);
                 // Non-uniform pattern so tests prove `StateResponse::foot_contacts` maps to `RobotState`.
@@ -226,17 +232,25 @@ int main() {
     }
 
     if (!expect(nearlyEqual(out.body_twist_state.twist_pos_rad.x, 0.0),
-                "upright sim pose should map to near-zero roll") ||
+                "sim yaw pose should map to near-zero roll") ||
         !expect(nearlyEqual(out.body_twist_state.twist_pos_rad.y, 0.0),
-                "upright sim pose should map to near-zero pitch") ||
-        !expect(nearlyEqual(out.body_twist_state.twist_pos_rad.z, 0.0),
-                "upright sim pose should map to near-zero yaw") ||
+                "sim yaw pose should map to near-zero pitch") ||
+        !expect(nearlyEqual(out.body_twist_state.twist_pos_rad.z, -1.57079632679, 1e-5),
+                "sim +Y rotation should map to -90deg server yaw") ||
         !expect(nearlyEqual(out.body_twist_state.body_trans_m.x, 0.0625, 1e-6),
                 "sim -z translation should map to server +x") ||
         !expect(nearlyEqual(out.body_twist_state.body_trans_m.y, 0.03125, 1e-6),
                 "sim x translation should map to server +y") ||
         !expect(nearlyEqual(out.body_twist_state.body_trans_m.z, 0.151162, 1e-6),
-                "sim y translation should map to server z")) {
+                "sim y translation should map to server z") ||
+        !expect(nearlyEqual(out.body_twist_state.body_trans_mps.x, -0.4, 1e-5),
+                "world velocity aligned with body forward should become body-frame -x") ||
+        !expect(nearlyEqual(out.body_twist_state.body_trans_mps.y, 0.0, 1e-5),
+                "body-frame velocity should cancel world-frame yaw offset on y") ||
+        !expect(nearlyEqual(out.body_twist_state.body_trans_mps.z, 0.0, 1e-5),
+                "body-frame velocity should preserve zero vertical component") ||
+        !expect(nearlyEqual(out.body_twist_state.twist_vel_radps.z, 0.2, 1e-5),
+                "world yaw rate should become body-frame yaw rate")) {
         return EXIT_FAILURE;
     }
 

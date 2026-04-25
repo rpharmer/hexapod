@@ -91,6 +91,7 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     status.loop_counter = loop_counter;
 
     PipelineStepResult result{};
+    result.leg_targets = leg_targets;
     result.joint_targets = joint_targets;
     result.status = status;
     result.gait_state = gait_state;

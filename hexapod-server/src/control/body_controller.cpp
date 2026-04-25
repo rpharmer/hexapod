@@ -160,7 +160,7 @@ LegTargets BodyController::update(const RobotState& est,
     }
 
     const Mat3 body_rotation =
-        Mat3::rotZ(pose.yaw_rad) * Mat3::rotY(pose.pitch_rad) * Mat3::rotX(pose.roll_rad);
+        (Mat3::rotZ(pose.yaw_rad) * Mat3::rotY(pose.pitch_rad) * Mat3::rotX(pose.roll_rad)).transpose();
     const Vec3 planar_body_offset = Vec3{
         intent.twist.body_trans_m.x,
         intent.twist.body_trans_m.y,
