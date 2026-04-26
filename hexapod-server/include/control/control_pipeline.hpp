@@ -22,6 +22,7 @@ public:
     explicit ControlPipeline(control_config::GaitConfig gait_config = {},
                              control_config::LocomotionCommandConfig loco_config = {},
                              control_config::FootTerrainConfig foot_terrain_config = {},
+                             control_config::InvestigationConfig investigation_config = {},
                              runtime_resource_monitoring::Profiler* profiler = nullptr);
 
     void reset();

@@ -87,7 +87,10 @@ void planSwingFoot(const BodyVelocityCommand& body, const SwingFootInputs& in, V
     const double vel_scale =
         std::clamp(0.40 + 0.92 * (v_planar / kVRefMps) + 0.38 * (w_norm / kWRefRadps), 0.48, 1.55);
     const double step_len = std::max(in.step_length_m * vel_scale, 0.0);
-    const double swing_h = std::max(in.swing_height_m * vel_scale, 0.0);
+    // Swing height must not drop below the configured value: vel_scale can only amplify clearance
+    // at high speed, never reduce it. At 0.08 m/s vel_scale ≈ 0.81 would cut 17mm → 13.5mm,
+    // which causes feet to drag when the body sags by even a small amount.
+    const double swing_h = std::max(in.swing_height_m * std::max(vel_scale, 1.0), 0.0);
 
     const double p0x = in.stance_end.x;
     const double p0y = in.stance_end.y;

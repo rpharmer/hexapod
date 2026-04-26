@@ -19,6 +19,7 @@ PHYSICS_HOST="127.0.0.1"
 PHYSICS_PORT=9871
 SERVER_CONFIG=""
 SCENE_FILE=""
+SCENARIO_FILE=""
 CONTROLLER_DEVICE=""
 CONTROLLER_OPTIONAL=0
 SKIP_BUILD=0
@@ -52,6 +53,9 @@ Options:
   --physics-port <port>       UDP port for hexapod-physics-sim --serve (default: 9871).
   --server-config <path>      Base server config to use before physics host/port overrides.
   --scene-file <path>         Optional minphys JSON scene appended into serve mode.
+  --scenario <path>           Run a TOML scenario file instead of interactive mode. Path is
+                              resolved relative to the repo root, so you can pass e.g.
+                              hexapod-server/scenarios/01_nominal_stand_walk.toml directly.
   --controller-device <path>  Explicit evdev device path for the Xbox controller.
   --controller-optional       Continue without a controller if auto-detect fails.
   --skip-build                Skip all configure/build steps and launch existing binaries.
@@ -62,6 +66,7 @@ Examples:
   scripts/run_physics_stack.sh
   scripts/run_physics_stack.sh --controller-device /dev/input/event12
   scripts/run_physics_stack.sh --scene-file hexapod-physics-sim/assets/scenes/examples/stack_minimal.json
+  scripts/run_physics_stack.sh --scenario hexapod-server/scenarios/01_nominal_stand_walk.toml --controller-optional
   scripts/run_physics_stack.sh -- --console-only
 USAGE
 }
@@ -213,6 +218,10 @@ while [[ $# -gt 0 ]]; do
       SCENE_FILE="$2"
       shift 2
       ;;
+    --scenario)
+      SCENARIO_FILE="$2"
+      shift 2
+      ;;
     --controller-device|--xbox-device)
       CONTROLLER_DEVICE="$2"
       shift 2
@@ -276,6 +285,16 @@ if [[ -n "$SCENE_FILE" ]]; then
   fi
 else
   SCENE_FILE_PATH=""
+fi
+
+if [[ -n "$SCENARIO_FILE" ]]; then
+  SCENARIO_FILE_PATH="$(resolve_from_root "$SCENARIO_FILE")"
+  if [[ ! -f "$SCENARIO_FILE_PATH" ]]; then
+    msg_error "Scenario file not found: $SCENARIO_FILE_PATH"
+    exit 1
+  fi
+else
+  SCENARIO_FILE_PATH=""
 fi
 
 if [[ -z "$CONTROLLER_DEVICE" ]]; then
@@ -364,7 +383,13 @@ SERVER_CMD=(
 if [[ -n "$CONTROLLER_DEVICE" ]]; then
   SERVER_CMD+=(--controller-device "$CONTROLLER_DEVICE")
 fi
+if [[ -n "$SCENARIO_FILE_PATH" ]]; then
+  SERVER_CMD+=(--scenario "$SCENARIO_FILE_PATH")
+fi
 SERVER_CMD+=("${SERVER_ARGS[@]}")
 
+if [[ -n "$SCENARIO_FILE_PATH" ]]; then
+  echo "Running scenario: $SCENARIO_FILE_PATH"
+fi
 echo "Starting hexapod-server in physics-sim mode"
 run_in_dir "$SERVER_DIR" "${SERVER_CMD[@]}"

@@ -91,11 +91,13 @@ Vec3 computeFootInBodyFrame(const LegState& leg_state, const LegGeometry& leg_ge
 
     const double rho = leg_geometry.femurLength.value * std::cos(q2) +
                        leg_geometry.tibiaLength.value * std::cos(q2 + q3);
-    const double z_leg = leg_geometry.femurLength.value * std::sin(q2) +
-                         leg_geometry.tibiaLength.value * std::sin(q2 + q3);
-    const double r = leg_geometry.coxaLength.value + rho;
+    const double z_plane = leg_geometry.femurLength.value * std::sin(q2) +
+                           leg_geometry.tibiaLength.value * std::sin(q2 + q3);
+    const double x_leg = leg_geometry.coxaLength.value + rho;
+    const double y_leg = -std::sin(q1) * z_plane;
+    const double z_leg = std::cos(q1) * z_plane;
 
-    const Vec3 foot_leg_local{r * std::cos(q1), r * std::sin(q1), z_leg};
+    const Vec3 foot_leg_local{x_leg, y_leg, z_leg};
     const double c = std::cos(leg_geometry.mountAngle.value);
     const double s = std::sin(leg_geometry.mountAngle.value);
     const Vec3 foot_body_relative{

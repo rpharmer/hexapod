@@ -66,6 +66,11 @@ struct ParsedToml
   bool investigationDisableStanceTiltLeveling{false};
   bool investigationSuppressFusionCorrections{false};
   bool investigationSuppressFusionResets{false};
+  bool investigationBypassTerrainSnapshotInRuntime{false};
+  bool investigationBypassNavStopOnStaleMap{false};
+  bool investigationBypassLocomotionFirstOrderFilter{false};
+  bool investigationBypassFreshnessGateReject{false};
+  bool investigationBypassReachabilityClamp{false};
   double fallbackSpeedMag{0.01};
   double gaitTransitionBlendS{0.35};
   double gaitNominalPlanarSpeedMps{0.25};

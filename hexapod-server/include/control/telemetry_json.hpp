@@ -17,6 +17,7 @@ std::string serializeVisualiserJointsPacket(const HexapodGeometry& geometry,
 
 std::string serializeGeometryPacket(const HexapodGeometry& geometry);
 
-std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& telemetry);
+std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& telemetry,
+                                        const HexapodGeometry& geometry);
 
 } // namespace telemetry_json

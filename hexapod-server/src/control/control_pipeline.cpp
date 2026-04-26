@@ -5,11 +5,12 @@
 ControlPipeline::ControlPipeline(control_config::GaitConfig gait_config,
                                  control_config::LocomotionCommandConfig loco_config,
                                  control_config::FootTerrainConfig foot_terrain_config,
+                                 control_config::InvestigationConfig investigation_config,
                                  runtime_resource_monitoring::Profiler* profiler)
     : profiler_(profiler),
       gait_(gait_config),
       loco_cmd_(loco_config),
-      body_(gait_config, foot_terrain_config) {}
+      body_(gait_config, foot_terrain_config, investigation_config) {}
 
 void ControlPipeline::reset() {
     gait_.reset();

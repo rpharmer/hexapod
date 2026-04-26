@@ -524,7 +524,11 @@ RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
       config_(config),
       telemetry_publisher_(std::move(telemetry_publisher)),
       replay_logger_(std::move(replay_logger)),
-      pipeline_(config_.gait, config_.locomotion_cmd, config_.foot_terrain, &resource_profiler_),
+      pipeline_(config_.gait,
+                config_.locomotion_cmd,
+                config_.foot_terrain,
+                config_.investigation,
+                &resource_profiler_),
       safety_(config_.safety),
       freshness_policy_(config_.freshness),
       freshness_gate_(freshness_policy_),
@@ -697,6 +701,9 @@ void RobotRuntime::controlStep() {
     if (navigation_manager_ != nullptr) {
         terrain_ptr = navigation_manager_->footTerrainSnapshot(now);
     }
+    if (config_.investigation.bypass_terrain_snapshot_in_runtime) {
+        terrain_ptr = nullptr;
+    }
     const FusionControlPolicy fusion_policy = applyFusionConsistency(est, now, terrain_ptr);
     MotionIntent intent = resolveEffectiveIntent(est, now);
     if (fusion_policy.force_stand) {
@@ -728,7 +735,7 @@ void RobotRuntime::controlStep() {
 
         loop_counter = control_loop_counter_.fetch_add(1) + 1;
         decision = freshness_gate_.computeControlDecision(freshness, bus_ok, loop_counter);
-        if (!decision.allow_pipeline) {
+        if (!decision.allow_pipeline && !config_.investigation.bypass_freshness_gate_reject) {
             RuntimeFreshnessGate::maybeLogReject(logger_, freshness, est, intent);
             status_.write(decision.status);
             leg_targets_.write(LegTargets{});
@@ -739,6 +746,10 @@ void RobotRuntime::controlStep() {
             (void)freshness_scope;
             (void)step_scope;
             return;
+        }
+        if (!decision.allow_pipeline && config_.investigation.bypass_freshness_gate_reject && logger_) {
+            LOG_WARN(logger_,
+                     "investigation bypass active: ignoring freshness gate reject and running control pipeline");
         }
         (void)freshness_scope;
     }

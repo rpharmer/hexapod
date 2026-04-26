@@ -10,7 +10,10 @@
 namespace telemetry_json {
 namespace {
 
-constexpr std::array<const char*, kNumLegs> kLegOrder = {"LF", "LM", "LR", "RF", "RM", "RR"};
+// Joint arrays are indexed by internal leg order [R3, L3, R2, L2, R1, L1].
+// Emit keys that match that index order so renderer-side parsing maps each key to the
+// correct kinematic chain.
+constexpr std::array<const char*, kNumLegs> kLegOrder = {"RR", "LR", "RM", "LM", "RF", "LF"};
 constexpr std::array<LegID, kNumLegs> kVisualiserLegOrder = {
     LegID::L1, LegID::L2, LegID::L3, LegID::R1, LegID::R2, LegID::R3};
 constexpr double kMetersToMillimeters = 1000.0;
@@ -288,7 +291,8 @@ std::string serializeVisualiserJointsPacket(const HexapodGeometry& geometry,
     return out.str();
 }
 
-std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& telemetry)
+std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& telemetry,
+                                        const HexapodGeometry& geometry)
 {
     std::ostringstream payload;
     payload << "{\"type\":\"joints\",\"schema_version\":" << kSchemaVersion << ','
@@ -301,6 +305,13 @@ std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& te
             << "\"estimator_valid\":" << (telemetry.status.estimator_valid ? "true" : "false") << ','
             << "\"voltage\":" << telemetry.estimated_state.voltage << ','
             << "\"current\":" << telemetry.estimated_state.current << ','
+            << "\"geometry\":{"
+            << "\"coxa\":" << formatNumber(geometry.legGeometry[0].coxaLength.value * kMetersToMillimeters) << ','
+            << "\"femur\":" << formatNumber(geometry.legGeometry[0].femurLength.value * kMetersToMillimeters) << ','
+            << "\"tibia\":" << formatNumber(geometry.legGeometry[0].tibiaLength.value * kMetersToMillimeters) << ','
+            << "\"body_radius\":" << formatNumber(averageBodyRadiusM(geometry) * kMetersToMillimeters);
+    appendLegGeometryJson(payload, geometry);
+    payload << "},"
             << "\"angles_deg\":{";
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
@@ -323,9 +334,13 @@ std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& te
         payload << (telemetry.estimated_state.foot_contacts[static_cast<std::size_t>(leg)] ? "true" : "false");
     }
     payload << "]";
+    payload << ",\"has_body_pose\":"
+            << (telemetry.estimated_state.has_body_twist_state ? "true" : "false");
     if (telemetry.estimated_state.has_body_twist_state) {
         payload << ",\"body_position\":";
         appendVec3Json(payload, telemetry.estimated_state.body_twist_state.body_trans_m);
+        payload << ",\"body_roll_rad\":" << telemetry.estimated_state.body_twist_state.twist_pos_rad.x;
+        payload << ",\"body_pitch_rad\":" << telemetry.estimated_state.body_twist_state.twist_pos_rad.y;
         payload << ",\"body_yaw_rad\":" << telemetry.estimated_state.body_twist_state.twist_pos_rad.z;
     }
     if (telemetry.navigation.has_value()) {

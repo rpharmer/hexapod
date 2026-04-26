@@ -271,7 +271,22 @@ int main(int argc, char** argv)
            ", SuppressFusionCorrections=",
            !control_cfg.fusion.emit_physics_sim_corrections,
            ", SuppressFusionResets=",
-           control_cfg.fusion.suppress_fusion_resets);
+           control_cfg.fusion.suppress_fusion_resets,
+           ", BypassTerrainSnapshotInRuntime=",
+           control_cfg.investigation.bypass_terrain_snapshot_in_runtime,
+           ", BypassNavStopOnStaleMap=",
+           control_cfg.nav_bridge.bypass_stop_on_stale_map,
+           ", BypassLocomotionFirstOrderFilter=",
+           control_cfg.investigation.bypass_locomotion_first_order_filter,
+           ", BypassFreshnessGateReject=",
+           control_cfg.investigation.bypass_freshness_gate_reject,
+           ", BypassReachabilityClamp=",
+           control_cfg.investigation.bypass_reachability_clamp);
+  if (control_cfg.investigation.bypass_freshness_gate_reject ||
+      control_cfg.investigation.bypass_reachability_clamp) {
+    LOG_WARN(logger,
+             "High-risk investigation bypass active; use test bench only (freshness/reachability bypass)");
+  }
   LOG_INFO(logger,
            "Runtime.Freshness.CommandRefreshMs=",
            control_cfg.loop_timing.command_refresh_period.count(),

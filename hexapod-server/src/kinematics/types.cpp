@@ -47,7 +47,9 @@ LegStateT convert_leg_angles(const ServoCalibration& calibration,
         const double input_value = leg_joint_angle_at(input, joint).value;
         const double transformed = to_servo_angles
                                        ? (signs[joint] * input_value + offsets[joint].value)
-                                       : (signs[joint] * input_value - offsets[joint].value);
+                                       // Inverse of servo = sign * joint + offset is:
+                                       // joint = sign * (servo - offset), with sign constrained to +/-1.
+                                       : (signs[joint] * (input_value - offsets[joint].value));
         set_leg_joint_angle_at(output, joint, AngleRad{transformed});
     }
     return output;

@@ -96,14 +96,13 @@ T findOrByPath(const toml::value& root, const std::string& dotted_key, const T& 
 template <typename T>
 T findOrByPathOrDirect(const toml::value& root, const std::string& dotted_key, const T& default_value)
 {
-  const T by_path = findOrByPath<T>(root, dotted_key, default_value);
-  if (!(by_path == default_value)) {
-    return by_path;
+  if (hasValue(root, dotted_key)) {
+    return findOrByPath<T>(root, dotted_key, default_value);
   }
   try {
     return toml::find<T>(root, dotted_key);
   } catch (const std::exception&) {
-    return by_path;
+    return default_value;
   }
 }
 
@@ -146,6 +145,11 @@ bool parseRuntimeSection(const toml::value& root,
       {"Runtime.Investigation.DisableStanceTiltLeveling", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
       {"Runtime.Investigation.SuppressFusionCorrections", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
       {"Runtime.Investigation.SuppressFusionResets", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.Investigation.BypassTerrainSnapshotInRuntime", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.Investigation.BypassNavStopOnStaleMap", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.Investigation.BypassLocomotionFirstOrderFilter", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.Investigation.BypassFreshnessGateReject", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
+      {"Runtime.Investigation.BypassReachabilityClamp", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
   };
 
   const auto* mode_desc = &schema[0];
@@ -231,17 +235,27 @@ bool parseRuntimeSection(const toml::value& root,
   out.telemetryGeometryRefreshPeriodMs =
       static_cast<int>(std::lround(out.telemetryGeometryResendIntervalSec * 1000.0));
   out.investigationDisableTerrainStanceBias =
-      findOrByPathOrDirect<bool>(root, schema[19].key, schema[19].default_bool);
-  out.investigationDisableTerrainSwingClearance =
-      findOrByPathOrDirect<bool>(root, schema[20].key, schema[20].default_bool);
-  out.investigationDisableTerrainSwingXYNudge =
-      findOrByPathOrDirect<bool>(root, schema[21].key, schema[21].default_bool);
-  out.investigationDisableStanceTiltLeveling =
-      findOrByPathOrDirect<bool>(root, schema[22].key, schema[22].default_bool);
-  out.investigationSuppressFusionCorrections =
-      findOrByPathOrDirect<bool>(root, schema[23].key, schema[23].default_bool);
-  out.investigationSuppressFusionResets =
       findOrByPathOrDirect<bool>(root, schema[24].key, schema[24].default_bool);
+  out.investigationDisableTerrainSwingClearance =
+      findOrByPathOrDirect<bool>(root, schema[25].key, schema[25].default_bool);
+  out.investigationDisableTerrainSwingXYNudge =
+      findOrByPathOrDirect<bool>(root, schema[26].key, schema[26].default_bool);
+  out.investigationDisableStanceTiltLeveling =
+      findOrByPathOrDirect<bool>(root, schema[27].key, schema[27].default_bool);
+  out.investigationSuppressFusionCorrections =
+      findOrByPathOrDirect<bool>(root, schema[28].key, schema[28].default_bool);
+  out.investigationSuppressFusionResets =
+      findOrByPathOrDirect<bool>(root, schema[29].key, schema[29].default_bool);
+  out.investigationBypassTerrainSnapshotInRuntime =
+      findOrByPathOrDirect<bool>(root, schema[30].key, schema[30].default_bool);
+  out.investigationBypassNavStopOnStaleMap =
+      findOrByPathOrDirect<bool>(root, schema[31].key, schema[31].default_bool);
+  out.investigationBypassLocomotionFirstOrderFilter =
+      findOrByPathOrDirect<bool>(root, schema[32].key, schema[32].default_bool);
+  out.investigationBypassFreshnessGateReject =
+      findOrByPathOrDirect<bool>(root, schema[33].key, schema[33].default_bool);
+  out.investigationBypassReachabilityClamp =
+      findOrByPathOrDirect<bool>(root, schema[34].key, schema[34].default_bool);
   return true;
 }
 

@@ -66,6 +66,7 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.nav_bridge.body_frame_integral_ki_fwd_per_s = config.navBodyFrameIntegralKiFwdPerS;
     parsed.nav_bridge.body_frame_integral_ki_lat_per_s = config.navBodyFrameIntegralKiLatPerS;
     parsed.nav_bridge.body_frame_integral_abs_cap_m_s = config.navBodyFrameIntegralAbsCapMetersSeconds;
+    parsed.nav_bridge.bypass_stop_on_stale_map = config.investigationBypassNavStopOnStaleMap;
     parsed.local_map.width_cells = config.localMapWidthCells;
     parsed.local_map.height_cells = config.localMapHeightCells;
     parsed.local_map.resolution_m = config.localMapResolutionM;
@@ -110,6 +111,17 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.fusion.correction_mode_soft_release_factor = config.fusionCorrectionSoftReleaseFactor;
     parsed.fusion.emit_physics_sim_corrections = !config.investigationSuppressFusionCorrections;
     parsed.fusion.suppress_fusion_resets = config.investigationSuppressFusionResets;
+    parsed.investigation.bypass_terrain_snapshot_in_runtime =
+        config.investigationBypassTerrainSnapshotInRuntime;
+    parsed.investigation.bypass_locomotion_first_order_filter =
+        config.investigationBypassLocomotionFirstOrderFilter;
+    parsed.investigation.bypass_freshness_gate_reject =
+        config.investigationBypassFreshnessGateReject;
+    parsed.investigation.bypass_reachability_clamp =
+        config.investigationBypassReachabilityClamp;
+    if (parsed.investigation.bypass_locomotion_first_order_filter) {
+        parsed.locomotion_cmd.enable_first_order_filter = false;
+    }
 
     return parsed;
 }

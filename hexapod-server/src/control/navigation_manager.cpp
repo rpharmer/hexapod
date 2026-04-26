@@ -212,6 +212,11 @@ MotionIntent NavigationManager::mergeIntent(const MotionIntent& fallback,
     const LocalMapSnapshot snapshot = refreshTerrainSnapshotLocked(pose, est, now);
 
     if (snapshot.has_observations && !snapshot.fresh) {
+        if (nav_bridge_config_.bypass_stop_on_stale_map) {
+            MotionIntent out = fallback;
+            stampIntentStreamMotionFields(out);
+            return out;
+        }
         monitor_.lifecycle = NavigationLifecycleState::MapUnavailable;
         monitor_.planner_status = LocalPlanStatus::MapUnavailable;
         bridge_.deactivate();

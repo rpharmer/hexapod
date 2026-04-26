@@ -350,6 +350,13 @@ struct HexapodGeometry {
 };
 
 // Hexapod frame of reference
+//
+// The ASCII diagram and table below are the canonical leg-mount convention.
+// `LegGeometry::mountAngle` is the same quantity as the table column "localYaxisAngle"
+// (angle from diagram hexapod +Y forward to the leg local axis), stored in radians.
+// Mount coordinates are body origin (0,0,0) at centre of body as drawn.
+// Note: `MotionIntent` elsewhere documents planar velocity with +X forward; that is a
+// different body-axis naming than this diagram's "hexapodY forward" for mounts only.
 /*
 
              5    front  4       * legId - legName  - localYaxisAngle |

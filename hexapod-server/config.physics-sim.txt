@@ -15,6 +15,17 @@ Runtime.Telemetry.Host = "127.0.0.1"
 Runtime.Telemetry.Port = 9870
 Runtime.Telemetry.PublishRateHz = 30.0
 Runtime.Telemetry.GeometryResendIntervalSec = 1.0
+Runtime.Investigation.DisableTerrainStanceBias = true
+Runtime.Investigation.DisableTerrainSwingClearance = true
+Runtime.Investigation.DisableTerrainSwingXYNudge = true
+Runtime.Investigation.DisableStanceTiltLeveling = true
+Runtime.Investigation.SuppressFusionCorrections = true
+Runtime.Investigation.SuppressFusionResets = true
+Runtime.Investigation.BypassTerrainSnapshotInRuntime = false
+Runtime.Investigation.BypassNavStopOnStaleMap = false
+Runtime.Investigation.BypassLocomotionFirstOrderFilter = false
+Runtime.Investigation.BypassFreshnessGateReject = false
+Runtime.Investigation.BypassReachabilityClamp = false
 
 SerialDevice = '/dev/ttyACM0'
 BaudRate = 115200
