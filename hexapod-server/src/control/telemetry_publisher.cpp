@@ -1,4 +1,3 @@
-#include "geometry_config.hpp"
 #include "telemetry_publisher.hpp"
 #include "telemetry_json.hpp"
 
@@ -72,7 +71,7 @@ public:
         if (socket_fd_ < 0) {
             return;
         }
-        send(telemetry_json::serializeControlStepPacket(telemetry, geometry_config::activeHexapodGeometry()));
+        send(telemetry_json::serializeControlStepPacket(telemetry));
     }
 
 private:

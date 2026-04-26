@@ -9,22 +9,27 @@ LegFK::LegFK() : hexGeo(defaultHexapodGeometry()) {}
 // ------------------------------------------------------------
 // Forward kinematics in LEG frame
 //
-// Joint angles (joint space, after servo calibration in IK):
-//   q1 = coxa (rotation about leg-local +X)
+// Given joint angles:
+//
+//   q1 = coxa yaw
 //   q2 = femur pitch
 //   q3 = tibia pitch
 //
-// Leg-local frame: +X along the coxa link from anchor toward the femur joint; +Z up.
-// Mount offsets and per-leg yaw of this frame into the body are defined in
-// `types.hpp` (ASCII diagram + table: localYaxisAngle / bodyCoxaOffset).
+// return the foot position in the leg's local frame.
 //
-// Femur+tibia chain in the x/z plane:
-//   rho   = L2*cos(q2) + L3*cos(q2 + q3)
-//   z_pl  = L2*sin(q2) + L3*sin(q2 + q3)
-//   x     = L1 + rho
-//   y,z   = rotate z_pl by q1 about +X: y = -sin(q1)*z_pl, z = cos(q1)*z_pl
+// Geometry:
 //
-// `footInBodyFrame` then applies R_body_from_leg = rotZ(mountAngle) and adds bodyCoxaOffset.
+//   rho = L2*cos(q2) + L3*cos(q2 + q3)
+//   z   = L2*sin(q2) + L3*sin(q2 + q3)
+//   r   = L1 + rho
+//
+// Then rotate into XY by q1:
+//
+//   x = r*cos(q1)
+//   y = r*sin(q1)
+//
+// This is the exact inverse of the IK convention already used
+// in solveOneLeg(), assuming the same axis conventions.
 // ------------------------------------------------------------
 
 LegTargets LegFK::solve(const RobotState& raw, const SafetyState& safety)
@@ -54,21 +59,22 @@ bool LegFK::solveOneLeg(const LegState& est, FootTarget& out,
   const double q2 = joints[1].pos_rad.value;
   const double q3 = joints[2].pos_rad.value;
 
-  // Effective reach of the femur+tibia chain in the leg x/z plane
+  // Effective reach of the femur+tibia chain in the leg plane
   const double rho =
       leg.femurLength.value * std::cos(q2) +
       leg.tibiaLength.value * std::cos(q2 + q3);
 
-  // Vertical displacement before coxa-axis rotation
-  const double z_plane =
+  // Vertical position in the leg plane
+  const double z =
       leg.femurLength.value * std::sin(q2) +
       leg.tibiaLength.value * std::sin(q2 + q3);
 
-  // Coxa rotation axis is leg-local +X (in body plane). Rotating around +X keeps x fixed
-  // and spins the distal chain within y/z.
-  const double x = leg.coxaLength.value + rho;
-  const double y = -std::sin(q1) * z_plane;
-  const double z = std::cos(q1) * z_plane;
+  // Total radial distance from coxa axis to foot
+  const double r = leg.coxaLength.value + rho;
+
+  // Rotate radial distance by coxa yaw into x/y
+  const double x = r * std::cos(q1);
+  const double y = r * std::sin(q1);
 
   FootTarget foot{};
   foot.pos_body_m = {x, y, z};

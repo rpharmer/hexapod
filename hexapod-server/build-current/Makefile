@@ -142,19 +142,6 @@ hexapod-server/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod-server.dir/build.make CMakeFiles/hexapod-server.dir/build
 .PHONY : hexapod-server/fast
 
-#=============================================================================
-# Target rules for targets named hexapod-tripod-support-baseline
-
-# Build rule for target.
-hexapod-tripod-support-baseline: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 hexapod-tripod-support-baseline
-.PHONY : hexapod-tripod-support-baseline
-
-# fast build rule for target.
-hexapod-tripod-support-baseline/fast:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod-tripod-support-baseline.dir/build.make CMakeFiles/hexapod-tripod-support-baseline.dir/build
-.PHONY : hexapod-tripod-support-baseline/fast
-
 home/volly/pico/hexapod/hexapod-common/framing.o: home/volly/pico/hexapod/hexapod-common/framing.cpp.o
 .PHONY : home/volly/pico/hexapod/hexapod-common/framing.o
 
@@ -202,30 +189,6 @@ src/app/hexapod-server.s: src/app/hexapod-server.cpp.s
 src/app/hexapod-server.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod-server.dir/build.make CMakeFiles/hexapod-server.dir/src/app/hexapod-server.cpp.s
 .PHONY : src/app/hexapod-server.cpp.s
-
-src/app/hexapod-tripod-support-baseline.o: src/app/hexapod-tripod-support-baseline.cpp.o
-.PHONY : src/app/hexapod-tripod-support-baseline.o
-
-# target to build an object file
-src/app/hexapod-tripod-support-baseline.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod-tripod-support-baseline.dir/build.make CMakeFiles/hexapod-tripod-support-baseline.dir/src/app/hexapod-tripod-support-baseline.cpp.o
-.PHONY : src/app/hexapod-tripod-support-baseline.cpp.o
-
-src/app/hexapod-tripod-support-baseline.i: src/app/hexapod-tripod-support-baseline.cpp.i
-.PHONY : src/app/hexapod-tripod-support-baseline.i
-
-# target to preprocess a source file
-src/app/hexapod-tripod-support-baseline.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod-tripod-support-baseline.dir/build.make CMakeFiles/hexapod-tripod-support-baseline.dir/src/app/hexapod-tripod-support-baseline.cpp.i
-.PHONY : src/app/hexapod-tripod-support-baseline.cpp.i
-
-src/app/hexapod-tripod-support-baseline.s: src/app/hexapod-tripod-support-baseline.cpp.s
-.PHONY : src/app/hexapod-tripod-support-baseline.s
-
-# target to generate assembly for a file
-src/app/hexapod-tripod-support-baseline.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod-tripod-support-baseline.dir/build.make CMakeFiles/hexapod-tripod-support-baseline.dir/src/app/hexapod-tripod-support-baseline.cpp.s
-.PHONY : src/app/hexapod-tripod-support-baseline.cpp.s
 
 src/app/runtime_teardown.o: src/app/runtime_teardown.cpp.o
 .PHONY : src/app/runtime_teardown.o
@@ -2228,7 +2191,6 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... hexapod-server"
-	@echo "... hexapod-tripod-support-baseline"
 	@echo "... hexapod_server_core"
 	@echo "... home/volly/pico/hexapod/hexapod-common/framing.o"
 	@echo "... home/volly/pico/hexapod/hexapod-common/framing.i"
@@ -2236,9 +2198,6 @@ help:
 	@echo "... src/app/hexapod-server.o"
 	@echo "... src/app/hexapod-server.i"
 	@echo "... src/app/hexapod-server.s"
-	@echo "... src/app/hexapod-tripod-support-baseline.o"
-	@echo "... src/app/hexapod-tripod-support-baseline.i"
-	@echo "... src/app/hexapod-tripod-support-baseline.s"
 	@echo "... src/app/runtime_teardown.o"
 	@echo "... src/app/runtime_teardown.i"
 	@echo "... src/app/runtime_teardown.s"

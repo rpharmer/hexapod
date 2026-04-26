@@ -12,17 +12,6 @@ Runtime.Sim.LowVoltage = false
 Runtime.Sim.HighCurrent = false
 Runtime.Log.FilePath = "app.log"
 Runtime.Log.EnableFile = true
-Runtime.Investigation.DisableTerrainStanceBias = true
-Runtime.Investigation.DisableTerrainSwingClearance = true
-Runtime.Investigation.DisableTerrainSwingXYNudge = true
-Runtime.Investigation.DisableStanceTiltLeveling = true
-Runtime.Investigation.SuppressFusionCorrections = true
-Runtime.Investigation.SuppressFusionResets = true
-Runtime.Investigation.BypassTerrainSnapshotInRuntime = false
-Runtime.Investigation.BypassNavStopOnStaleMap = false
-Runtime.Investigation.BypassLocomotionFirstOrderFilter = false
-Runtime.Investigation.BypassFreshnessGateReject = false
-Runtime.Investigation.BypassReachabilityClamp = false
 
 # Kept for compatibility; ignored by runtime when Mode = "sim"
 SerialDevice = '/dev/ttyACM0'

@@ -3,10 +3,6 @@
 
 #include <cmath>
 
-// Joint-space coxa angle q1 is rotation about leg-local +X (coxa link direction).
-// Mount yaw and body offsets follow `LegGeometry` in `types.hpp`; forward kinematics
-// for the same convention is documented in `leg_fk.cpp`.
-
 namespace {
 
 double wrapAngleNear(const double reference, double candidate) {
@@ -69,20 +65,18 @@ bool LegIK::solveOneLeg(const LegState& est,
   const double z = footLeg.z;
 
   // --------------------------------------------------------
-  // 1) Coxa angle (rotation axis in leg-local +X plane)
+  // 1) Coxa angle
   // --------------------------------------------------------
-  const double q1 = std::atan2(-y, z);
-
-  // Signed vertical displacement in the femur/tibia plane before coxa rotation.
-  // q1 is constructed from (y,z), so the magnitude is preserved by the x-axis rotation.
-  const double zPlaneMag = std::hypot(y, z);
-  const double zPlane = (z >= 0.0) ? zPlaneMag : -zPlaneMag;
-
-  // Effective horizontal distance for the femur+tibia chain in leg-local x.
-  const double rho = x - leg.coxaLength.value;
+  const double q1 = std::atan2(y, x);
   
-  // 2D distance from femur joint to foot in the solved plane.
-  const double d = std::hypot(rho, zPlane);
+  // Horizontal distance from coxa axis to foot
+  const double r = std::hypot(x, y);
+  
+  // Effective horizontal distance for femur+tibia plane
+  const double rho = r - leg.coxaLength.value;
+  
+  // 2D distance from femur joint to foot
+  const double d = std::hypot(rho, z);
 
   const double minReach = std::fabs(leg.femurLength.value - leg.tibiaLength.value);
   const double maxReach = leg.femurLength.value + leg.tibiaLength.value;
@@ -92,7 +86,7 @@ bool LegIK::solveOneLeg(const LegState& est,
   const double clampedD = clamp(d, minReach, maxReach);
   const double reachScale = (d > 1e-9) ? (clampedD / d) : 1.0;
   const double rhoSolved = rho * reachScale;
-  const double zSolved = zPlane * reachScale;
+  const double zSolved = z * reachScale;
 
   // --------------------------------------------------------
   // 2) Tibia angle by law of cosines

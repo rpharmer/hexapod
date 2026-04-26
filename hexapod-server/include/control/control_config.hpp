@@ -165,7 +165,6 @@ struct NavBridgeConfig {
     double body_frame_integral_ki_fwd_per_s{kDefaultNavBodyFrameIntegralKiFwdPerS};
     double body_frame_integral_ki_lat_per_s{kDefaultNavBodyFrameIntegralKiLatPerS};
     double body_frame_integral_abs_cap_m_s{kDefaultNavBodyFrameIntegralAbsCapMetersSeconds};
-    bool bypass_stop_on_stale_map{false};
 };
 
 /** Tuning for LiDAR map–driven swing clearance, stance height bias, and late-swing XY nudges. */
@@ -205,13 +204,6 @@ struct FusionConfig {
     double correction_mode_soft_release_factor{kDefaultFusionCorrectionSoftReleaseFactor};
 };
 
-struct InvestigationConfig {
-    bool bypass_terrain_snapshot_in_runtime{false};
-    bool bypass_locomotion_first_order_filter{false};
-    bool bypass_freshness_gate_reject{false};
-    bool bypass_reachability_clamp{false};
-};
-
 struct ControlConfig {
     LoopTimingConfig loop_timing{};
     SafetyConfig safety{};
@@ -223,7 +215,6 @@ struct ControlConfig {
     NavBridgeConfig nav_bridge{};
     FootTerrainConfig foot_terrain{};
     FusionConfig fusion{};
-    InvestigationConfig investigation{};
     LocalMapConfig local_map{};
     LocalPlannerConfig local_planner{};
 };

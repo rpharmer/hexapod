@@ -1,4 +1,3 @@
-#include "geometry_config.hpp"
 #include "telemetry_json.hpp"
 
 #include <cmath>
@@ -76,13 +75,13 @@ bool test_leg_order_is_stable_and_canonical()
     const std::string payload = telemetry_json::serializeVisualiserJointsPacket(geometry, joints, 100);
 
     return expect(containsInOrder(payload,
-                                  "\"RR\":[",
-                                  "\"LR\":[",
-                                  "\"RM\":[",
+                                  "\"LF\":[",
                                   "\"LM\":[",
+                                  "\"LR\":[",
                                   "\"RF\":[",
-                                  "\"LF\":["),
-                  "angles leg key order should be RR, LR, RM, LM, RF, LF");
+                                  "\"RM\":[",
+                                  "\"RR\":["),
+                  "angles leg key order should be LF, LM, LR, RF, RM, RR");
 }
 
 bool test_geometry_unit_conversion_meters_to_mm()
@@ -118,7 +117,7 @@ bool test_joint_unit_conversion_radians_to_degrees()
 
     const std::string payload = telemetry_json::serializeVisualiserJointsPacket(geometry, joints, 100);
 
-    return expect(payload.find("\"RR\":[15,-20,35]") != std::string::npos,
+    return expect(payload.find("\"LF\":[15,-20,35]") != std::string::npos,
                   "angles should be serialized in degrees");
 }
 
@@ -181,13 +180,10 @@ bool test_control_step_packet_includes_fusion_diagnostics()
     };
     telemetry_sample.resource_sections = sections;
 
-    const HexapodGeometry geometry = geometry_config::buildDefaultHexapodGeometry();
-    const std::string payload = telemetry_json::serializeControlStepPacket(telemetry_sample, geometry);
+    const std::string payload = telemetry_json::serializeControlStepPacket(telemetry_sample);
 
     return expect(payload.find("\"type\":\"joints\"") != std::string::npos,
                   "control step payload should use the joints schema type") &&
-           expect(payload.find("\"geometry\":{") != std::string::npos,
-                  "control step payload should include robot geometry (calibration + leg link lengths)") &&
            expect(payload.find("\"timestamp_ms\":123") != std::string::npos,
                   "control step payload should include timestamp_ms") &&
            expect(payload.find("\"loop_counter\":7") != std::string::npos,

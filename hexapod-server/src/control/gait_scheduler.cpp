@@ -24,7 +24,6 @@ void GaitScheduler::reset() {
     have_last_blended_ = false;
     last_cmd_vx_mps_ = 0.0;
     last_cmd_vy_mps_ = 0.0;
-    was_walking_ = false;
 }
 
 GaitState GaitScheduler::update(const RobotState&,
@@ -60,7 +59,6 @@ GaitState GaitScheduler::update(const RobotState&,
         out.static_stability_margin_m = 0.0;
         out.cmd_accel_body_x_mps2 = 0.0;
         out.cmd_accel_body_y_mps2 = 0.0;
-        was_walking_ = false;
         last_update_us_ = out.timestamp_us;
         return out;
     }
@@ -131,10 +129,6 @@ GaitState GaitScheduler::update(const RobotState&,
     out.swing_duration_s = blended.swing_duration_s;
     out.phase_offset = blended.phase_offset;
 
-    if (!was_walking_) {
-        phase_accum_ = 0.0;
-    }
-    was_walking_ = true;
     phase_accum_ = wrap01(phase_accum_ + dt.value * step_hz);
 
     for (int leg = 0; leg < kNumLegs; ++leg) {

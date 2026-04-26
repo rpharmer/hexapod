@@ -11,11 +11,9 @@
 #include <cmath>
 
 BodyController::BodyController(control_config::GaitConfig gait_cfg,
-                               control_config::FootTerrainConfig foot_terrain_cfg,
-                               control_config::InvestigationConfig investigation_cfg)
+                               control_config::FootTerrainConfig foot_terrain_cfg)
     : foot_estimator_blend_(std::clamp(gait_cfg.foot_estimator_blend, 0.0, 1.0)),
-      foot_terrain_cfg_(foot_terrain_cfg),
-      investigation_cfg_(investigation_cfg) {}
+      foot_terrain_cfg_(foot_terrain_cfg) {}
 
 namespace {
 
@@ -23,11 +21,7 @@ constexpr double kNominalReachFraction = 0.55;
 constexpr double kReachMarginM = 0.005;
 constexpr double kFootReachInsetM = 0.004;
 constexpr double kBodyHeightHoldGain = 1.35;
-// Geometry limit: singularity when effective body height > femur+tibia-margin + |bodyCoxaOffset.z|
-// = 0.159 + 0.007 = 0.166m. Commanded height is 0.14m, so safe headroom is ~26mm.
-// Cap at 22mm to stay 4mm clear of the singularity; beyond this nominalStance collapses
-// rho → 0 and the legs fold rather than push the body up.
-constexpr double kBodyHeightHoldMaxAdjustM = 0.022;
+constexpr double kBodyHeightHoldMaxAdjustM = 0.260;
 constexpr double kTerrainBlendMinScale = 0.35;
 constexpr double kTerrainBlendSagScale = 0.65;
 
@@ -188,7 +182,7 @@ LegTargets BodyController::update(const RobotState& est,
                               : Vec3{-intent.twist.body_trans_mps.x,
                                      -intent.twist.body_trans_mps.y,
                                      -intent.twist.body_trans_mps.z};
-        bool apply_workspace_clamp = !investigation_cfg_.bypass_reachability_clamp;
+        bool apply_workspace_clamp = true;
 
         if (walking) {
             double ph = clamp01(gait.phase[leg]);

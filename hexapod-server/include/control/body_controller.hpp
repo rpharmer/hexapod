@@ -9,8 +9,7 @@
 class BodyController {
 public:
     explicit BodyController(control_config::GaitConfig gait_cfg = {},
-                            control_config::FootTerrainConfig foot_terrain_cfg = {},
-                            control_config::InvestigationConfig investigation_cfg = {});
+                            control_config::FootTerrainConfig foot_terrain_cfg = {});
 
     LegTargets update(const RobotState& est,
                       const MotionIntent& intent,
@@ -25,5 +24,4 @@ private:
     HexapodGeometry geometry_{defaultHexapodGeometry()};
     double foot_estimator_blend_{control_config::kDefaultFootEstimatorBlend};
     control_config::FootTerrainConfig foot_terrain_cfg_{};
-    control_config::InvestigationConfig investigation_cfg_{};
 };

@@ -35,5 +35,4 @@ private:
 
     double last_cmd_vx_mps_{0.0};
     double last_cmd_vy_mps_{0.0};
-    bool was_walking_{false};
 };

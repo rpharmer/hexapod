@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -38,18 +37,17 @@ constexpr int kDefaultUdpPort = 9870;
 constexpr float kPi = 3.14159265358979323846f;
 
 constexpr std::array<const char*, 6> kLegKeys = {"LF", "LM", "LR", "RF", "RM", "RR"};
-// Defaults match `geometry_config::buildDefaultHexapodGeometry` in telemetry order (LF..RR).
-constexpr std::array<float, 6> kDefaultMountAnglesDeg = {323.0f, 270.0f, 217.0f, 37.0f, 90.0f, 143.0f};
+constexpr std::array<float, 6> kDefaultMountAnglesDeg = {40.0f, 90.0f, 140.0f, -40.0f, -90.0f, -140.0f};
 constexpr std::array<float, 6> kDefaultCoxaAttachDeg = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-constexpr std::array<float, 6> kDefaultFemurAttachDeg = {35.0f, -35.0f, -35.0f, -35.0f, 35.0f, -35.0f};
-constexpr std::array<float, 6> kDefaultTibiaAttachDeg = {83.0f, -83.0f, -83.0f, -83.0f, 83.0f, -83.0f};
+constexpr std::array<float, 6> kDefaultFemurAttachDeg = {35.0f, -35.0f, 35.0f, -35.0f, 35.0f, -35.0f};
+constexpr std::array<float, 6> kDefaultTibiaAttachDeg = {83.0f, -83.0f, 83.0f, -83.0f, 83.0f, -83.0f};
 constexpr std::array<std::array<float, 3>, 6> kDefaultBodyCoxaOffsets = {{
-    {{-0.063f, 0.0835f, -0.007f}},
-    {{-0.0815f, 0.0f, -0.007f}},
-    {{-0.063f, -0.0835f, -0.007f}},
     {{0.063f, 0.0835f, -0.007f}},
-    {{0.0815f, 0.0f, -0.007f}},
+    {{0.0f, 0.104f, -0.007f}},
+    {{-0.063f, 0.0835f, -0.007f}},
     {{0.063f, -0.0835f, -0.007f}},
+    {{0.0f, -0.104f, -0.007f}},
+    {{-0.063f, -0.0835f, -0.007f}},
 }};
 
 struct Vec3 {
@@ -182,8 +180,6 @@ struct HexapodStatusState {
 struct HexapodBodyPoseState {
   bool valid = false;
   Vec3 position{};
-  float roll_rad = 0.0f;
-  float pitch_rad = 0.0f;
   float yaw_rad = 0.0f;
 };
 
@@ -204,23 +200,7 @@ struct AppUiState {
   bool rotate_scene = false;
   bool show_overlay = true;
   bool show_debug = false;
-  bool log_kinematics = false;
   int source_mode = 0;
-};
-
-struct KinematicsLogState {
-  bool enabled = false;
-  bool header_written = false;
-  std::string path = "/tmp/hexapod_visualiser_kinematics.csv";
-  std::string last_error{};
-  std::ofstream stream{};
-  std::uint64_t rows_written = 0;
-};
-
-struct JointAnglesRad {
-  float q1 = 0.0f;
-  float q2 = 0.0f;
-  float q3 = 0.0f;
 };
 
 struct CameraState {
@@ -234,8 +214,6 @@ struct CameraState {
 
 struct Options {
   int udp_port = kDefaultUdpPort;
-  bool start_kinematics_log = false;
-  std::string kinematics_log_path = "/tmp/hexapod_visualiser_kinematics.csv";
 };
 
 struct SceneBounds {
@@ -322,50 +300,25 @@ Vec3 RotateVector(const Quat& quat, const Vec3& vector) {
   return {rotated.x, rotated.y, rotated.z};
 }
 
-Vec3 GeoToSceneVec(const Vec3& value);
-Vec3 LocoToSceneVec(const Vec3& value);
-Vec3 SimVecToServerVec(const Vec3& sim);
-Vec3 SimToSceneVec(const Vec3& sim);
+Vec3 ServerToSceneVec(const Vec3& value);
 
-Vec3 RotateServerPointByPose(const Vec3& point, const HexapodBodyPoseState& pose) {
-  // Body Euler angles (roll/pitch/yaw) are in the locomotion frame (+X=fwd, +Y=left, +Z=up).
-  // `point` is in the geometry frame (+X=right, +Y=fwd, +Z=up).
-  // Convert geo->loco, apply rotation, convert loco->geo so the axes align correctly.
-  // geo->loco: loco = { geo.y, -geo.x, geo.z }
-  const float px = point.y;
-  const float py = -point.x;
-  const float pz = point.z;
-
-  const float cx = std::cos(pose.roll_rad),  sx = std::sin(pose.roll_rad);
-  const float cy = std::cos(pose.pitch_rad), sy = std::sin(pose.pitch_rad);
-  const float cz = std::cos(pose.yaw_rad),   sz = std::sin(pose.yaw_rad);
-
-  // Rx: roll around loco-X (forward)
-  const float x1 = px;
-  const float y1 = cx * py - sx * pz;
-  const float z1 = sx * py + cx * pz;
-
-  // Ry: pitch around loco-Y (left)
-  const float x2 = cy * x1 + sy * z1;
-  const float y2 = y1;
-  const float z2 = -sy * x1 + cy * z1;
-
-  // Rz: yaw around Z (shared axis)
-  const float x3 = cz * x2 - sz * y2;
-  const float y3 = sz * x2 + cz * y2;
-  const float z3 = z2;
-
-  // loco->geo: geo = { -loco.y, loco.x, loco.z }
-  return Vec3{-y3, x3, z3};
+Vec3 RotateAroundSceneY(const Vec3& value, float yaw_rad) {
+  const float c = std::cos(yaw_rad);
+  const float s = std::sin(yaw_rad);
+  return Vec3{
+      value.x * c + value.z * s,
+      value.y,
+      -value.x * s + value.z * c,
+  };
 }
 
 Vec3 TransformBodyPoint(const Vec3& point, const HexapodBodyPoseState& pose) {
   if (!pose.valid) {
-    return GeoToSceneVec(point);
+    return point;
   }
-  const Vec3 rotated_server = RotateServerPointByPose(point, pose);
-  const Vec3 rotated = GeoToSceneVec(rotated_server);
-  const Vec3 origin = LocoToSceneVec(pose.position);
+  const Vec3 scene_point = ServerToSceneVec(point);
+  const Vec3 rotated = RotateAroundSceneY(scene_point, -pose.yaw_rad);
+  const Vec3 origin = ServerToSceneVec(pose.position);
   return Vec3{origin.x + rotated.x, origin.y + rotated.y, origin.z + rotated.z};
 }
 
@@ -455,12 +408,11 @@ SceneBounds ComputeSceneBounds(const std::map<std::uint32_t, EntityState>& entit
     if (entity.shape == ShapeType::kCompound && !entity.compound_children.empty()) {
       for (const CompoundChildState& child : entity.compound_children) {
         const Vec3 child_offset = RotateVector(entity.rotation, child.local_position);
-        const Vec3 child_position_sim{
+        const Vec3 child_position{
             entity.position.x + child_offset.x,
             entity.position.y + child_offset.y,
             entity.position.z + child_offset.z,
         };
-        const Vec3 child_position = SimToSceneVec(child_position_sim);
         const Quat child_rotation = MultiplyQuat(entity.rotation, child.local_rotation);
         ExpandPrimitiveBounds(
             bounds,
@@ -476,7 +428,7 @@ SceneBounds ComputeSceneBounds(const std::map<std::uint32_t, EntityState>& entit
     ExpandPrimitiveBounds(
         bounds,
         entity.shape,
-        SimToSceneVec(entity.position),
+        entity.position,
         entity.rotation,
         entity.radius,
         entity.half_height,
@@ -503,7 +455,7 @@ void ExpandTerrainPatchBounds(SceneBounds& bounds, const TerrainPatchState& terr
       const float x = origin_x + (static_cast<float>(col) * terrain.cell_size_m);
       const float z = origin_z + (static_cast<float>(row) * terrain.cell_size_m);
       const float y = has_heights ? terrain.heights[index] : terrain.base_height_m;
-      ExpandBounds(bounds, SimToSceneVec(Vec3{x, y, z}));
+      ExpandBounds(bounds, {x, y, z});
     }
   }
 }
@@ -827,21 +779,16 @@ HexapodGeometryState MakeDefaultGeometryState() {
         kDefaultBodyCoxaOffsets[i][2],
     };
     state.legs[i].mount_angle_rad = kDefaultMountAnglesDeg[i] * kPi / 180.0f;
-    state.legs[i].coxa_mm = 43.0f;
-    state.legs[i].femur_mm = 60.0f;
-    state.legs[i].tibia_mm = 104.0f;
+    state.legs[i].coxa_mm = 35.0f;
+    state.legs[i].femur_mm = 70.0f;
+    state.legs[i].tibia_mm = 110.0f;
     state.legs[i].coxa_attach_deg = kDefaultCoxaAttachDeg[i];
     state.legs[i].femur_attach_deg = kDefaultFemurAttachDeg[i];
     state.legs[i].tibia_attach_deg = kDefaultTibiaAttachDeg[i];
-    // Left legs (LF, LM, LR) use -1; right legs +1 — same as server `side_sign` for L1/L2/L3 vs R1/R2/R3.
-    const float side = (i < 3) ? -1.0f : 1.0f;
-    state.legs[i].coxa_sign = side;
-    state.legs[i].femur_sign = side;
-    state.legs[i].tibia_sign = side;
+    state.legs[i].coxa_sign = (i < 3) ? 1.0f : -1.0f;
+    state.legs[i].femur_sign = (i < 3) ? 1.0f : -1.0f;
+    state.legs[i].tibia_sign = (i < 3) ? 1.0f : -1.0f;
   }
-  state.coxa_mm = 43.0f;
-  state.femur_mm = 60.0f;
-  state.tibia_mm = 104.0f;
   state.valid = true;
   return state;
 }
@@ -1054,51 +1001,24 @@ bool ParseHexapodTelemetryPacket(std::string_view payload, HexapodTelemetryState
     return false;
   }
 
-  // Handle server restarts before merging this message: if we cleared after parsing, we would drop
-  // the first useful joints+geometry packet from the new run.
-  std::optional<int> new_loop_counter;
-  if (const auto loop_counter = ExtractIntField(payload, "loop_counter")) {
-    new_loop_counter = *loop_counter;
-    if (telemetry.status.valid && *loop_counter < telemetry.status.loop_counter) {
-      telemetry = HexapodTelemetryState{};
-    }
-  }
-
   if (ParseHexapodGeometryPacket(payload, telemetry.geometry)) {
     telemetry.has_geometry = true;
   }
-  const bool parsed_angles = ParseAnglesPacket(payload, telemetry.angles_deg);
-  telemetry.has_joints = parsed_angles;
-  bool has_body_pose = telemetry.body_pose.valid;
-  if (const auto has_pose = ExtractBoolField(payload, "has_body_pose")) {
-    has_body_pose = *has_pose;
-    if (!has_body_pose) {
-      telemetry.body_pose = {};
-    }
-  }
+  telemetry.has_joints = ParseAnglesPacket(payload, telemetry.angles_deg) || telemetry.has_joints;
   if (const auto body_position = ExtractFloat3Field(payload, "body_position")) {
     telemetry.body_pose.position = {(*body_position)[0], (*body_position)[1], (*body_position)[2]};
-    has_body_pose = true;
-  }
-  if (const auto body_roll = ExtractFloatField(payload, "body_roll_rad")) {
-    telemetry.body_pose.roll_rad = *body_roll;
-    has_body_pose = true;
-  }
-  if (const auto body_pitch = ExtractFloatField(payload, "body_pitch_rad")) {
-    telemetry.body_pose.pitch_rad = *body_pitch;
-    has_body_pose = true;
+    telemetry.body_pose.valid = true;
   }
   if (const auto body_yaw = ExtractFloatField(payload, "body_yaw_rad")) {
     telemetry.body_pose.yaw_rad = *body_yaw;
-    has_body_pose = true;
+    telemetry.body_pose.valid = true;
   }
-  telemetry.body_pose.valid = has_body_pose;
 
   if (const auto timestamp_ms = ExtractUintField(payload, "timestamp_ms")) {
     telemetry.status.timestamp_ms = *timestamp_ms;
   }
-  if (new_loop_counter.has_value()) {
-    telemetry.status.loop_counter = *new_loop_counter;
+  if (const auto loop_counter = ExtractIntField(payload, "loop_counter")) {
+    telemetry.status.loop_counter = *loop_counter;
   }
   if (const auto active_mode = ExtractIntField(payload, "mode")) {
     telemetry.status.active_mode = *active_mode;
@@ -1248,214 +1168,59 @@ struct RobotKinematics {
   Vec3 foot{};
 };
 
-// Geometry frame (+X=right, +Y=fwd, +Z=up) → scene frame (+X=right, +Y=up, -Z=fwd).
-// Used for joint positions produced by ComputeRobotLeg.
-Vec3 GeoToSceneVec(const Vec3& value) {
-  return Vec3{value.x, value.z, -value.y};
-}
-
-// Locomotion frame (+X=fwd, +Y=left, +Z=up) → scene frame (+X=right, +Y=up, -Z=fwd).
-// Used for body position and any vectors already in locomotion frame.
-Vec3 LocoToSceneVec(const Vec3& value) {
-  return Vec3{-value.y, value.z, -value.x};
-}
-
-// Physics sim / UDP terrain use Bullet-style axes (+Y up). Same mapping as `physics_sim_bridge::simVecToServer`.
-Vec3 SimVecToServerVec(const Vec3& sim) {
-  return Vec3{-sim.z, sim.x, sim.y};
-}
-
-Vec3 SimToSceneVec(const Vec3& sim) {
-  return LocoToSceneVec(SimVecToServerVec(sim));
-}
-
-JointAnglesRad ComputeJointAnglesRad(const HexapodLegLayout& layout, const std::array<float, 3>& angles_deg) {
-  // Incoming angles are servo-space (same values written to hardware by server).
-  // Convert back to joint-space with the true inverse of
-  // servo = sign * joint + offset  =>  joint = sign * (servo - offset)
-  const float coxa_servo_rad = angles_deg[0] * kPi / 180.0f;
-  const float femur_servo_rad = angles_deg[1] * kPi / 180.0f;
-  const float tibia_servo_rad = angles_deg[2] * kPi / 180.0f;
-
-  const float coxa_offset_rad = layout.coxa_attach_deg * kPi / 180.0f;
-  const float femur_offset_rad = layout.femur_attach_deg * kPi / 180.0f;
-  const float tibia_offset_rad = layout.tibia_attach_deg * kPi / 180.0f;
-
-  return JointAnglesRad{
-      layout.coxa_sign * (coxa_servo_rad - coxa_offset_rad),
-      layout.femur_sign * (femur_servo_rad - femur_offset_rad),
-      layout.tibia_sign * (tibia_servo_rad - tibia_offset_rad),
-  };
+Vec3 ServerToSceneVec(const Vec3& value) {
+  return Vec3{value.y, value.z, -value.x};
 }
 
 RobotKinematics ComputeRobotLeg(const HexapodLegLayout& layout, const std::array<float, 3>& angles_deg) {
-  const JointAnglesRad joint = ComputeJointAnglesRad(layout, angles_deg);
-  const float q1 = joint.q1;
-  const float q2 = joint.q2;
-  const float q3 = joint.q3;
+  const float coxa_rad = (angles_deg[0] - layout.coxa_attach_deg) * kPi / 180.0f;
+  const float femur_rad = (angles_deg[1] - layout.femur_attach_deg) * kPi / 180.0f * layout.femur_sign;
+  const float tibia_rad = (angles_deg[2] - layout.tibia_attach_deg) * kPi / 180.0f * layout.tibia_sign;
+  const float yaw = layout.mount_angle_rad + coxa_rad * layout.coxa_sign;
+
   const float body_radius = std::sqrt(layout.body_coxa_offset.x * layout.body_coxa_offset.x
                                       + layout.body_coxa_offset.y * layout.body_coxa_offset.y);
   const Vec3 anchor{
       layout.body_coxa_offset.x != 0.0f || layout.body_coxa_offset.y != 0.0f ? layout.body_coxa_offset.x
-                                                                              : body_radius * std::sin(layout.mount_angle_rad),
-      layout.body_coxa_offset.x != 0.0f || layout.body_coxa_offset.y != 0.0f ? layout.body_coxa_offset.y
                                                                               : body_radius * std::cos(layout.mount_angle_rad),
+      layout.body_coxa_offset.x != 0.0f || layout.body_coxa_offset.y != 0.0f ? layout.body_coxa_offset.y
+                                                                              : body_radius * std::sin(layout.mount_angle_rad),
       layout.body_coxa_offset.z,
   };
 
-  const float coxa = layout.coxa_mm * 0.001f;
-  const float femur = layout.femur_mm * 0.001f;
-  const float tibia = layout.tibia_mm * 0.001f;
-
-  // Leg-local +X should point radially outward (center -> coxa mount) in body XY.
-  // Derive basis from anchor when available; fall back to mount-angle interpretation only if needed.
-  const float radial_norm = std::hypot(anchor.x, anchor.y);
-  const float x_axis_x = (radial_norm > 1e-6f) ? (anchor.x / radial_norm) : std::sin(layout.mount_angle_rad);
-  const float x_axis_y = (radial_norm > 1e-6f) ? (anchor.y / radial_norm) : std::cos(layout.mount_angle_rad);
-  const float y_axis_x = -x_axis_y;
-  const float y_axis_y = x_axis_x;
-  const auto legToBody = [&](float x_leg, float y_leg, float z_leg) -> Vec3 {
-    return Vec3{
-        anchor.x + (x_axis_x * x_leg + y_axis_x * y_leg),
-        anchor.y + (x_axis_y * x_leg + y_axis_y * y_leg),
-        anchor.z + z_leg,
-    };
+  const Vec3 shoulder{
+      anchor.x + layout.coxa_mm * 0.001f * std::cos(yaw),
+      anchor.y + layout.coxa_mm * 0.001f * std::sin(yaw),
+      anchor.z,
   };
 
-  // Coxa axis is leg-local +X (in body plane), so q1 rotates distal chain in y/z.
-  const Vec3 shoulder = legToBody(coxa, 0.0f, 0.0f);
+  const float femur_proj = layout.femur_mm * 0.001f * std::cos(femur_rad);
+  const Vec3 knee{
+      shoulder.x + femur_proj * std::cos(yaw),
+      shoulder.y + femur_proj * std::sin(yaw),
+      shoulder.z + layout.femur_mm * 0.001f * std::sin(femur_rad),
+  };
 
-  const float femur_proj = femur * std::cos(q2);
-  const float femur_vert = femur * std::sin(q2);
-  // Keep lateral sweep sign consistent with the original gait appearance, while flipping
-  // vertical sign so distal joints stay below the body for the current q1 branch.
-  const Vec3 knee = legToBody(
-      coxa + femur_proj,
-      -std::sin(q1) * femur_vert,
-      -std::cos(q1) * femur_vert);
-
-  const float tibia_total = q2 + q3;
-  const float tibia_proj = tibia * std::cos(tibia_total);
-  const float tibia_vert = tibia * std::sin(tibia_total);
-  const float z_plane = femur_vert + tibia_vert;
-  const Vec3 foot = legToBody(
-      coxa + femur_proj + tibia_proj,
-      -std::sin(q1) * z_plane,
-      -std::cos(q1) * z_plane);
+  const float tibia_total = femur_rad + tibia_rad;
+  const float tibia_proj = layout.tibia_mm * 0.001f * std::cos(tibia_total);
+  const Vec3 foot{
+      knee.x + tibia_proj * std::cos(yaw),
+      knee.y + tibia_proj * std::sin(yaw),
+      knee.z + layout.tibia_mm * 0.001f * std::sin(tibia_total),
+  };
 
   return {anchor, shoulder, knee, foot};
-}
-
-// Unit vector in body frame (+Z up) along the coxa rotation axis (leg-local +X mapped to body XY).
-Vec3 CoxaRotationAxisBodyUnit(const HexapodLegLayout& layout) {
-  const float ox = layout.body_coxa_offset.x;
-  const float oy = layout.body_coxa_offset.y;
-  const float h = std::hypot(ox, oy);
-  if (h > 1e-5f) {
-    // Radial direction from body center to mount point = leg-local +X axis in body frame.
-    return Vec3{ox / h, oy / h, 0.0f};
-  }
-  return Vec3{std::sin(layout.mount_angle_rad), std::cos(layout.mount_angle_rad), 0.0f};
 }
 
 RobotKinematics ComputeRobotLegScene(const HexapodLegLayout& layout,
                                      const std::array<float, 3>& angles_deg) {
   const RobotKinematics server = ComputeRobotLeg(layout, angles_deg);
   return RobotKinematics{
-      GeoToSceneVec(server.anchor),
-      GeoToSceneVec(server.shoulder),
-      GeoToSceneVec(server.knee),
-      GeoToSceneVec(server.foot),
+      ServerToSceneVec(server.anchor),
+      ServerToSceneVec(server.shoulder),
+      ServerToSceneVec(server.knee),
+      ServerToSceneVec(server.foot),
   };
-}
-
-bool StartKinematicsLog(KinematicsLogState& log) {
-  log.stream.close();
-  log.stream.clear();
-  log.stream.open(log.path, std::ios::out | std::ios::trunc);
-  if (!log.stream.is_open()) {
-    log.enabled = false;
-    log.last_error = "failed to open CSV path";
-    return false;
-  }
-  log.stream << "time_s,loop_counter,leg,servo_coxa_deg,servo_femur_deg,servo_tibia_deg,"
-                "joint_q1_rad,joint_q2_rad,joint_q3_rad,"
-                "anchor_body_x,anchor_body_y,anchor_body_z,"
-                "shoulder_body_x,shoulder_body_y,shoulder_body_z,"
-                "knee_body_x,knee_body_y,knee_body_z,"
-                "foot_body_x,foot_body_y,foot_body_z,"
-                "anchor_scene_x,anchor_scene_y,anchor_scene_z,"
-                "shoulder_scene_x,shoulder_scene_y,shoulder_scene_z,"
-                "knee_scene_x,knee_scene_y,knee_scene_z,"
-                "foot_scene_x,foot_scene_y,foot_scene_z\n";
-  log.stream.flush();
-  if (!log.stream.good()) {
-    log.enabled = false;
-    log.last_error = "failed to write CSV header";
-    return false;
-  }
-  log.enabled = true;
-  log.header_written = true;
-  log.rows_written = 0;
-  log.last_error.clear();
-  return true;
-}
-
-void StopKinematicsLog(KinematicsLogState& log) {
-  if (log.stream.is_open()) {
-    log.stream.flush();
-    log.stream.close();
-  }
-  log.enabled = false;
-}
-
-void LogKinematicsFrame(KinematicsLogState& log,
-                        const HexapodGeometryState& geometry,
-                        const HexapodTelemetryState& telemetry,
-                        double time_s) {
-  if (!log.enabled || !log.stream.is_open() || !telemetry.has_joints) {
-    return;
-  }
-  if (!log.header_written) {
-    log.last_error = "CSV header missing";
-    log.enabled = false;
-    return;
-  }
-
-  log.stream << std::fixed << std::setprecision(6);
-  for (std::size_t i = 0; i < geometry.legs.size(); ++i) {
-    const RobotKinematics leg_body = ComputeRobotLeg(geometry.legs[i], telemetry.angles_deg[i]);
-    const JointAnglesRad joint = ComputeJointAnglesRad(geometry.legs[i], telemetry.angles_deg[i]);
-    const Vec3 anchor_scene = TransformBodyPoint(leg_body.anchor, telemetry.body_pose);
-    const Vec3 shoulder_scene = TransformBodyPoint(leg_body.shoulder, telemetry.body_pose);
-    const Vec3 knee_scene = TransformBodyPoint(leg_body.knee, telemetry.body_pose);
-    const Vec3 foot_scene = TransformBodyPoint(leg_body.foot, telemetry.body_pose);
-
-    log.stream << time_s << ','
-               << telemetry.status.loop_counter << ','
-               << kLegKeys[i] << ','
-               << telemetry.angles_deg[i][0] << ','
-               << telemetry.angles_deg[i][1] << ','
-               << telemetry.angles_deg[i][2] << ','
-               << joint.q1 << ','
-               << joint.q2 << ','
-               << joint.q3 << ','
-               << leg_body.anchor.x << ',' << leg_body.anchor.y << ',' << leg_body.anchor.z << ','
-               << leg_body.shoulder.x << ',' << leg_body.shoulder.y << ',' << leg_body.shoulder.z << ','
-               << leg_body.knee.x << ',' << leg_body.knee.y << ',' << leg_body.knee.z << ','
-               << leg_body.foot.x << ',' << leg_body.foot.y << ',' << leg_body.foot.z << ','
-               << anchor_scene.x << ',' << anchor_scene.y << ',' << anchor_scene.z << ','
-               << shoulder_scene.x << ',' << shoulder_scene.y << ',' << shoulder_scene.z << ','
-               << knee_scene.x << ',' << knee_scene.y << ',' << knee_scene.z << ','
-               << foot_scene.x << ',' << foot_scene.y << ',' << foot_scene.z << '\n';
-    ++log.rows_written;
-  }
-
-  log.stream.flush();
-  if (!log.stream.good()) {
-    log.last_error = "write failed (disk/path permissions?)";
-    log.enabled = false;
-  }
 }
 
 void ExpandServerBoundsInScene(SceneBounds& bounds, const Vec3& min_corner, const Vec3& max_corner) {
@@ -1471,7 +1236,7 @@ void ExpandServerBoundsInScene(SceneBounds& bounds, const Vec3& min_corner, cons
   }};
 
   for (const Vec3& corner : corners) {
-    ExpandBounds(bounds, LocoToSceneVec(corner));
+    ExpandBounds(bounds, ServerToSceneVec(corner));
   }
 }
 
@@ -1747,8 +1512,7 @@ void DrawTerrainPatch(const TerrainPatchState& terrain) {
       const std::size_t index = static_cast<std::size_t>(row * terrain.cols + col);
       const float x = origin_x + (static_cast<float>(col) * terrain.cell_size_m);
       const float z = origin_z + (static_cast<float>(row) * terrain.cell_size_m);
-      const Vec3 p = SimToSceneVec(Vec3{x, terrain.heights[index], z});
-      glVertex3f(p.x, p.y, p.z);
+      glVertex3f(x, terrain.heights[index], z);
     }
     glEnd();
   }
@@ -1757,10 +1521,9 @@ void DrawTerrainPatch(const TerrainPatchState& terrain) {
     glBegin(GL_LINE_STRIP);
     for (int row = 0; row < terrain.rows; ++row) {
       const std::size_t index = static_cast<std::size_t>(row * terrain.cols + col);
-      const float x = origin_x + (static_cast<float>(col) * terrain.cell_size_m);
-      const float z = origin_z + (static_cast<float>(row) * terrain.cell_size_m);
-      const Vec3 p = SimToSceneVec(Vec3{x, terrain.heights[index], z});
-      glVertex3f(p.x, p.y, p.z);
+      const float x = terrain.center.x + (static_cast<float>(col) * terrain.cell_size_m) - half_span_x;
+      const float z = terrain.center.z + (static_cast<float>(row) * terrain.cell_size_m) - half_span_z;
+      glVertex3f(x, terrain.heights[index], z);
     }
     glEnd();
   }
@@ -1773,8 +1536,7 @@ void DrawTerrainPatch(const TerrainPatchState& terrain) {
         const std::size_t index = static_cast<std::size_t>(row * terrain.cols + col);
         const float x = origin_x + (static_cast<float>(col) * terrain.cell_size_m);
         const float z = origin_z + (static_cast<float>(row) * terrain.cell_size_m);
-        const Vec3 p = SimToSceneVec(Vec3{x, terrain.collision_heights[index], z});
-        glVertex3f(p.x, p.y, p.z);
+        glVertex3f(x, terrain.collision_heights[index], z);
       }
       glEnd();
     }
@@ -1784,21 +1546,19 @@ void DrawTerrainPatch(const TerrainPatchState& terrain) {
         const std::size_t index = static_cast<std::size_t>(row * terrain.cols + col);
         const float x = origin_x + (static_cast<float>(col) * terrain.cell_size_m);
         const float z = origin_z + (static_cast<float>(row) * terrain.cell_size_m);
-        const Vec3 p = SimToSceneVec(Vec3{x, terrain.collision_heights[index], z});
-        glVertex3f(p.x, p.y, p.z);
+        glVertex3f(x, terrain.collision_heights[index], z);
       }
       glEnd();
     }
   }
 
-  const Vec3 up_sim = Normalize(terrain.plane_normal);
+  const Vec3 up = Normalize(terrain.plane_normal);
   const float arrow_scale = std::max(terrain.cell_size_m, 0.08f);
-  const Vec3 normal_base = SimToSceneVec(Vec3{terrain.center.x, terrain.base_height_m, terrain.center.z});
-  const Vec3 up_scene = Normalize(SimToSceneVec(up_sim));
+  const Vec3 normal_base{terrain.center.x, terrain.base_height_m, terrain.center.z};
   const Vec3 normal_tip{
-      normal_base.x + up_scene.x * arrow_scale,
-      normal_base.y + up_scene.y * arrow_scale,
-      normal_base.z + up_scene.z * arrow_scale};
+      normal_base.x + up.x * arrow_scale,
+      normal_base.y + up.y * arrow_scale,
+      normal_base.z + up.z * arrow_scale};
   glColor3f(0.95f, 0.88f, 0.24f);
   glBegin(GL_LINES);
   glVertex3f(normal_base.x, normal_base.y, normal_base.z);
@@ -1807,15 +1567,14 @@ void DrawTerrainPatch(const TerrainPatchState& terrain) {
 
   glPointSize(5.0f);
   glBegin(GL_POINTS);
-  glVertex3f(normal_base.x, normal_base.y, normal_base.z);
+  glVertex3f(terrain.center.x, terrain.base_height_m, terrain.center.z);
   glEnd();
 }
 
 void DrawHexapodModel(const HexapodGeometryState& geometry,
                       const std::array<std::array<float, 3>, 6>& angles_deg,
                       const HexapodStatusState& status,
-                      const HexapodBodyPoseState& pose,
-                      bool draw_debug_coxa_axes) {
+                      const HexapodBodyPoseState& pose) {
   if (!geometry.valid) {
     return;
   }
@@ -1829,84 +1588,67 @@ void DrawHexapodModel(const HexapodGeometryState& geometry,
   const float body_height = 0.015f;
   const bool healthy = status.bus_ok && status.estimator_valid && status.active_fault == 0;
 
+  glPushMatrix();
+  if (pose.valid) {
+    const Vec3 origin = ServerToSceneVec(pose.position);
+    glTranslatef(origin.x, origin.y, origin.z);
+    glRotatef(-pose.yaw_rad * 180.0f / kPi, 0.0f, 1.0f, 0.0f);
+  }
+
   glColor4f(healthy ? 0.18f : 0.35f, healthy ? 0.32f : 0.18f, healthy ? 0.48f : 0.12f, 0.60f);
   glBegin(GL_POLYGON);
   for (const std::size_t index : body_loop) {
-    const RobotKinematics leg = ComputeRobotLeg(geometry.legs[index], angles_deg[index]);
-    const Vec3 body_vertex = TransformBodyPoint(Vec3{leg.anchor.x, leg.anchor.y, leg.anchor.z + body_height}, pose);
-    glVertex3f(body_vertex.x, body_vertex.y, body_vertex.z);
+    const RobotKinematics leg = ComputeRobotLegScene(geometry.legs[index], angles_deg[index]);
+    glVertex3f(leg.anchor.x, body_height, leg.anchor.z);
   }
   glEnd();
 
   glColor3f(healthy ? 0.44f : 0.90f, healthy ? 0.74f : 0.32f, healthy ? 1.00f : 0.18f);
   glBegin(GL_LINE_LOOP);
   for (const std::size_t index : body_loop) {
-    const RobotKinematics leg = ComputeRobotLeg(geometry.legs[index], angles_deg[index]);
-    const Vec3 body_vertex = TransformBodyPoint(Vec3{leg.anchor.x, leg.anchor.y, leg.anchor.z + body_height}, pose);
-    glVertex3f(body_vertex.x, body_vertex.y, body_vertex.z);
+    const RobotKinematics leg = ComputeRobotLegScene(geometry.legs[index], angles_deg[index]);
+    glVertex3f(leg.anchor.x, body_height, leg.anchor.z);
   }
   glEnd();
 
   glPointSize(6.0f);
   glColor3f(0.95f, 0.93f, 0.85f);
   glBegin(GL_POINTS);
-  const Vec3 body_center = TransformBodyPoint(Vec3{0.0f, 0.0f, body_height}, pose);
-  glVertex3f(body_center.x, body_center.y, body_center.z);
+  glVertex3f(0.0f, body_height, 0.0f);
   glEnd();
 
   for (std::size_t i = 0; i < geometry.legs.size(); ++i) {
-    const RobotKinematics leg = ComputeRobotLeg(geometry.legs[i], angles_deg[i]);
-    const Vec3 anchor = TransformBodyPoint(leg.anchor, pose);
-    const Vec3 shoulder = TransformBodyPoint(leg.shoulder, pose);
-    const Vec3 knee = TransformBodyPoint(leg.knee, pose);
-    const Vec3 foot = TransformBodyPoint(leg.foot, pose);
+    const RobotKinematics leg = ComputeRobotLegScene(geometry.legs[i], angles_deg[i]);
 
     glColor3f(0.95f, 0.58f, 0.18f);
     glBegin(GL_LINES);
-    glVertex3f(anchor.x, anchor.y, anchor.z);
-    glVertex3f(shoulder.x, shoulder.y, shoulder.z);
+    glVertex3f(leg.anchor.x, leg.anchor.y, leg.anchor.z);
+    glVertex3f(leg.shoulder.x, leg.shoulder.y, leg.shoulder.z);
     glEnd();
 
     glColor3f(0.30f, 0.80f, 0.42f);
     glBegin(GL_LINES);
-    glVertex3f(shoulder.x, shoulder.y, shoulder.z);
-    glVertex3f(knee.x, knee.y, knee.z);
+    glVertex3f(leg.shoulder.x, leg.shoulder.y, leg.shoulder.z);
+    glVertex3f(leg.knee.x, leg.knee.y, leg.knee.z);
     glEnd();
 
     glColor3f(0.25f, 0.72f, 0.95f);
     glBegin(GL_LINES);
-    glVertex3f(knee.x, knee.y, knee.z);
-    glVertex3f(foot.x, foot.y, foot.z);
+    glVertex3f(leg.knee.x, leg.knee.y, leg.knee.z);
+    glVertex3f(leg.foot.x, leg.foot.y, leg.foot.z);
     glEnd();
 
     glPointSize(5.0f);
     glColor3f(0.96f, 0.94f, 0.90f);
     glBegin(GL_POINTS);
-    glVertex3f(anchor.x, anchor.y, anchor.z);
-    glVertex3f(shoulder.x, shoulder.y, shoulder.z);
-    glVertex3f(knee.x, knee.y, knee.z);
-    glVertex3f(foot.x, foot.y, foot.z);
+    glVertex3f(leg.anchor.x, leg.anchor.y, leg.anchor.z);
+    glVertex3f(leg.shoulder.x, leg.shoulder.y, leg.shoulder.z);
+    glVertex3f(leg.knee.x, leg.knee.y, leg.knee.z);
+    glVertex3f(leg.foot.x, leg.foot.y, leg.foot.z);
     glEnd();
-
-    if (draw_debug_coxa_axes) {
-      const Vec3 k_body = CoxaRotationAxisBodyUnit(geometry.legs[i]);
-      constexpr float axis_len_m = 0.045f;
-      const Vec3 shoulder_body = leg.shoulder;
-      const Vec3 tip_body = Vec3{
-          shoulder_body.x + k_body.x * axis_len_m,
-          shoulder_body.y + k_body.y * axis_len_m,
-          shoulder_body.z + k_body.z * axis_len_m,
-      };
-      const Vec3 tip = TransformBodyPoint(tip_body, pose);
-      glLineWidth(2.0f);
-      glColor3f(0.92f, 0.35f, 0.95f);
-      glBegin(GL_LINES);
-      glVertex3f(shoulder.x, shoulder.y, shoulder.z);
-      glVertex3f(tip.x, tip.y, tip.z);
-      glEnd();
-      glLineWidth(1.0f);
-    }
   }
+
+  glPopMatrix();
 }
 
 bool ParseTerrainPatchPacket(const std::string& payload, TerrainPatchState& terrain_patch) {
@@ -2014,7 +1756,6 @@ bool ParsePacket(const std::string& payload,
   if (*message_type == "scene_clear") {
     entities.clear();
     terrain_patch = {};
-    telemetry = {};
     return true;
   }
 
@@ -2175,24 +1916,8 @@ Options ParseArgs(int argc, char** argv) {
       continue;
     }
 
-    if (arg == "--log-kinematics") {
-      options.start_kinematics_log = true;
-      continue;
-    }
-
-    if (arg == "--log-kinematics-path") {
-      if (i + 1 >= argc) {
-        std::cerr << "Missing value for --log-kinematics-path\n";
-        std::exit(1);
-      }
-      options.kinematics_log_path = argv[++i];
-      options.start_kinematics_log = true;
-      continue;
-    }
-
     if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: hexapod-opengl-visualiser [--udp-port <port>] [--log-kinematics] "
-                   "[--log-kinematics-path <csv-path>]\n"
+      std::cout << "Usage: hexapod-opengl-visualiser [--udp-port <port>]\n"
                 << "Press F1 while running to toggle the overlay panel.\n";
       std::exit(0);
     }
@@ -2298,9 +2023,8 @@ void DrawScene(const std::map<std::uint32_t, EntityState>& entities,
         continue;
       }
 
-      const Vec3 entity_pos_scene = SimToSceneVec(entity.position);
       glPushMatrix();
-      glTranslatef(entity_pos_scene.x, entity_pos_scene.y, entity_pos_scene.z);
+      glTranslatef(entity.position.x, entity.position.y, entity.position.z);
       ApplyQuaternion(entity.rotation);
 
       if (entity.shape == ShapeType::kCompound) {
@@ -2343,15 +2067,13 @@ void DrawScene(const std::map<std::uint32_t, EntityState>& entities,
 
   if (ui.show_robot && telemetry.has_joints) {
     const HexapodGeometryState robot_geometry = telemetry.geometry.valid ? telemetry.geometry : MakeDefaultGeometryState();
-    DrawHexapodModel(
-        robot_geometry, telemetry.angles_deg, telemetry.status, telemetry.body_pose, ui.show_debug);
+    DrawHexapodModel(robot_geometry, telemetry.angles_deg, telemetry.status, telemetry.body_pose);
   }
 }
 
 void DrawUi(AppUiState& ui,
             CameraState& camera,
             const HexapodTelemetryState& telemetry,
-            KinematicsLogState& kinematics_log,
             const std::string& source_label,
             uint64_t packets_received,
             uint64_t packets_rejected,
@@ -2385,24 +2107,6 @@ void DrawUi(AppUiState& ui,
   ImGui::Checkbox("Rotate scene", &ui.rotate_scene);
   ImGui::Checkbox("Follow active", &ui.follow_active);
   ImGui::Checkbox("Show debug", &ui.show_debug);
-  bool want_log = ui.log_kinematics;
-  if (ImGui::Checkbox("Log kinematics CSV", &want_log)) {
-    if (want_log) {
-      if (StartKinematicsLog(kinematics_log)) {
-        ui.log_kinematics = true;
-      } else {
-        ui.log_kinematics = false;
-      }
-    } else {
-      StopKinematicsLog(kinematics_log);
-      ui.log_kinematics = false;
-    }
-  }
-  ImGui::Text("Log path: %s", kinematics_log.path.c_str());
-  ImGui::Text("Rows written: %llu", static_cast<unsigned long long>(kinematics_log.rows_written));
-  if (!kinematics_log.last_error.empty()) {
-    ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.45f, 1.0f), "Log error: %s", kinematics_log.last_error.c_str());
-  }
   ImGui::SliderFloat("Yaw", &camera.yaw_deg, -180.0f, 180.0f);
   ImGui::SliderFloat("Pitch", &camera.pitch_deg, -89.0f, 89.0f);
   ImGui::SliderFloat("Distance", &camera.distance_scale, 1.5f, 12.0f);
@@ -2590,14 +2294,6 @@ int main(int argc, char** argv) {
   TerrainPatchState terrain_patch;
   HexapodTelemetryState telemetry;
   AppUiState ui;
-  KinematicsLogState kinematics_log;
-  kinematics_log.path = options.kinematics_log_path;
-  if (options.start_kinematics_log) {
-    ui.log_kinematics = StartKinematicsLog(kinematics_log);
-    if (!ui.log_kinematics && !kinematics_log.last_error.empty()) {
-      std::cerr << "Failed to start kinematics log: " << kinematics_log.last_error << "\n";
-    }
-  }
   CameraState camera;
   uint64_t accepted_packets = 0;
   uint64_t rejected_packets = 0;
@@ -2627,14 +2323,6 @@ int main(int argc, char** argv) {
     ConfigureProjection(framebuffer_width, framebuffer_height);
 
     const float time_s = static_cast<float>(glfwGetTime());
-    if (ui.log_kinematics) {
-      const HexapodGeometryState robot_geometry =
-          telemetry.geometry.valid ? telemetry.geometry : MakeDefaultGeometryState();
-      LogKinematicsFrame(kinematics_log, robot_geometry, telemetry, glfwGetTime());
-      if (!kinematics_log.enabled) {
-        ui.log_kinematics = false;
-      }
-    }
     DrawScene(entities, terrain_patch, telemetry, ui, camera, time_s);
 
     ImGui_ImplOpenGL2_NewFrame();
@@ -2645,7 +2333,6 @@ int main(int argc, char** argv) {
     DrawUi(ui,
            camera,
            telemetry,
-           kinematics_log,
            last_packet_kind,
            accepted_packets,
            rejected_packets,
