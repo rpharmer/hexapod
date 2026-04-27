@@ -72,9 +72,14 @@ bool BuildFace(const std::vector<EpaVertex>& vertices, int i0, int i1, int i2, f
 }
 
 void AddEdge(std::vector<Edge>& edges, int a, int b) {
-    for (auto it = edges.begin(); it != edges.end(); ++it) {
-        if (it->a == b && it->b == a) {
-            edges.erase(it);
+    // Edge cavity: if the mirror (b,a) already exists, cancel both (silhouette extraction).
+    // Linear scan is fine for typical N=16-40 cavity sizes; the original code used
+    // vector::erase which was O(n) per removal due to element shifting — replace with
+    // O(1) swap-and-pop.
+    for (std::size_t i = 0; i < edges.size(); ++i) {
+        if (edges[i].a == b && edges[i].b == a) {
+            edges[i] = edges.back();
+            edges.pop_back();
             return;
         }
     }

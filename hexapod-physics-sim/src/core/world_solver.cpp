@@ -228,10 +228,18 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
 
         const Mat3& invIA = bodyInvInertiaWorld_[bodyAIndex];
         const Mat3& invIB = bodyInvInertiaWorld_[bodyBIndex];
-        const Vec3 ra0 = c0.point - a.position;
-        const Vec3 rb0 = c0.point - b.position;
-        const Vec3 ra1 = c1.point - a.position;
-        const Vec3 rb1 = c1.point - b.position;
+        // Look up cached per-contact kinematics (ra, rb, normalMass) computed once per
+        // substep by PrepareContactSolves. The block solver internals still rebuild K
+        // from invIA/invIB/ra/rb (separate optimisation target); here we only avoid
+        // recomputing the rhs effective masses on every PGS iteration.
+        const std::size_t mIdx = static_cast<std::size_t>(&manifold - manifolds_.data());
+        const ManifoldPrep& mPrep = manifoldPreps_[mIdx];
+        const ContactPrep& prep0 = mPrep.contacts[static_cast<std::size_t>(idx0)];
+        const ContactPrep& prep1 = mPrep.contacts[static_cast<std::size_t>(idx1)];
+        const Vec3& ra0 = prep0.ra;
+        const Vec3& rb0 = prep0.rb;
+        const Vec3& ra1 = prep1.ra;
+        const Vec3& rb1 = prep1.rb;
 
         const int slot0 = FindBlockSlot(manifold, c0.key);
         const int slot1 = FindBlockSlot(manifold, c1.key);
@@ -247,12 +255,8 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
         const float vn0 = Dot(vb0 - va0, normal0);
         const float vn1 = Dot(vb1 - va1, normal1);
 
-        const Vec3 ra0CrossN0 = Cross(ra0, normal0);
-        const Vec3 rb0CrossN0 = Cross(rb0, normal0);
-        const Vec3 ra1CrossN1 = Cross(ra1, normal1);
-        const Vec3 rb1CrossN1 = Cross(rb1, normal1);
-        const float k11 = a.invMass + b.invMass + Dot(ra0CrossN0, invIA * ra0CrossN0) + Dot(rb0CrossN0, invIB * rb0CrossN0);
-        const float k22 = a.invMass + b.invMass + Dot(ra1CrossN1, invIA * ra1CrossN1) + Dot(rb1CrossN1, invIB * rb1CrossN1);
+        const float k11 = prep0.normalMass;
+        const float k22 = prep1.normalMass;
 
         const auto computeRhs = [&](Contact& c, const Vec3& contactNormal, float separatingVelocity, float contactNormalMass) {
             const float speedIntoContact = -separatingVelocity;
@@ -351,6 +355,8 @@ bool World::SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& 
         solveInput.face4MinArea = contactSolverConfig_.face4MinArea;
         solveInput.symmetryTolerance = contactSolverConfig_.block4.symmetry_tolerance;
 
+        const std::size_t mIdx = static_cast<std::size_t>(&manifold - manifolds_.data());
+        const ManifoldPrep& mPrep = manifoldPreps_[mIdx];
         for (int i = 0; i < 4; ++i) {
             Contact& c = manifold.contacts[static_cast<std::size_t>(i)];
             const Vec3 normal = Normalize(c.normal);
@@ -358,8 +364,9 @@ bool World::SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& 
                 fallbackReason = BlockSolveFallbackReason::ContactNormalMismatch;
                 return false;
             }
-            const Vec3 ra = c.point - a.position;
-            const Vec3 rb = c.point - b.position;
+            const ContactPrep& cPrep = mPrep.contacts[static_cast<std::size_t>(i)];
+            const Vec3& ra = cPrep.ra;
+            const Vec3& rb = cPrep.rb;
             const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
             const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
             const float vn = Dot(vb - va, normal);
@@ -887,6 +894,37 @@ void World::SolvePrismaticJoint(PrismaticJoint& j) {
         }
     }
 
+void World::PrepareContactSolves() {
+        const std::size_t numManifolds = manifolds_.size();
+        if (manifoldPreps_.size() < numManifolds) {
+            manifoldPreps_.resize(numManifolds);
+        }
+        for (std::size_t mi = 0; mi < numManifolds; ++mi) {
+            const Manifold& m = manifolds_[mi];
+            ManifoldPrep& prep = manifoldPreps_[mi];
+            const std::size_t numContacts = m.contacts.size();
+            if (prep.contacts.size() != numContacts) {
+                prep.contacts.resize(numContacts);
+            }
+            for (std::size_t ci = 0; ci < numContacts; ++ci) {
+                const Contact& c = m.contacts[ci];
+                ContactPrep& cp = prep.contacts[ci];
+                const Body& a = bodies_[c.a];
+                const Body& b = bodies_[c.b];
+                const Mat3& invIA = bodyInvInertiaWorld_[c.a];
+                const Mat3& invIB = bodyInvInertiaWorld_[c.b];
+                cp.ra = c.point - a.position;
+                cp.rb = c.point - b.position;
+                cp.raCrossN = Cross(cp.ra, c.normal);
+                cp.rbCrossN = Cross(cp.rb, c.normal);
+                const float angularTermA = Dot(cp.raCrossN, invIA * cp.raCrossN);
+                const float angularTermB = Dot(cp.rbCrossN, invIB * cp.rbCrossN);
+                cp.normalMass = a.invMass + b.invMass + angularTermA + angularTermB;
+                cp.invNormalMass = (cp.normalMass > kEpsilon) ? (1.0f / cp.normalMass) : 0.0f;
+            }
+        }
+    }
+
 void World::PrepareServoJointSolves() {
         const std::size_t n = servoJoints_.size();
         if (servoJointPreps_.size() != n) {
@@ -1161,8 +1199,10 @@ void World::PrepareServoJointSolves() {
     }
 
 void World::SolveServoJoint(ServoJoint& j) {
+#if MINPHYS3D_PROFILE_INNER_LOOPS
         const auto _scope = resource_profiler_.scope(
             world_resource_monitoring::toIndex(world_resource_monitoring::Section::SolveServoJoint));
+#endif
         const std::size_t idx = static_cast<std::size_t>(&j - servoJoints_.data());
         const ServoJointPrep& prep = servoJointPreps_[idx];
 
@@ -1262,6 +1302,7 @@ void World::SolveContactsInManifold(Manifold& manifold) {
             contacts_,
             manifolds_,
             previousManifolds_,
+            &bodyInvInertiaWorld_,
             [this, &warmStartUsedKeys](const ManifoldKey& manifoldId, const Contact& contact, float& normal, std::array<float, 2>& tangent, std::uint16_t& age) {
                 PersistentPointMatchCandidate match{};
                 std::unordered_set<PersistentPointKey, PersistentPointKeyHash>& usedKeys = warmStartUsedKeys[manifoldId];
@@ -1421,6 +1462,7 @@ void World::SolveIslands() {
             contacts_,
             manifolds_,
             previousManifolds_,
+            &bodyInvInertiaWorld_,
             [this, &warmStartUsedKeys](const ManifoldKey& manifoldId, const Contact& contact, float& normal, std::array<float, 2>& tangent, std::uint16_t& age) {
                 PersistentPointMatchCandidate match{};
                 std::unordered_set<PersistentPointKey, PersistentPointKeyHash>& usedKeys = warmStartUsedKeys[manifoldId];

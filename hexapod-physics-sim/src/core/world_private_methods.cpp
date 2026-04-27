@@ -1760,7 +1760,7 @@ void World::WarmStartJoints() {
         }
     }
 
-void World::SolveNormalScalar(Contact& c) {
+void World::SolveNormalScalar(Contact& c, const ContactPrep& prep) {
 
         Body& a = bodies_[c.a];
         Body& b = bodies_[c.b];
@@ -1768,8 +1768,8 @@ void World::SolveNormalScalar(Contact& c) {
         const Mat3& invIA = bodyInvInertiaWorld_[c.a];
         const Mat3& invIB = bodyInvInertiaWorld_[c.b];
 
-        const Vec3 ra = c.point - a.position;
-        const Vec3 rb = c.point - b.position;
+        const Vec3& ra = prep.ra;
+        const Vec3& rb = prep.rb;
 
         const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
         const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
@@ -1778,11 +1778,7 @@ void World::SolveNormalScalar(Contact& c) {
 
         const float speedIntoContact = -separatingVelocity;
         const float restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
-        const Vec3 raCrossN = Cross(ra, c.normal);
-        const Vec3 rbCrossN = Cross(rb, c.normal);
-        const float angularTermA = Dot(raCrossN, invIA * raCrossN);
-        const float angularTermB = Dot(rbCrossN, invIB * rbCrossN);
-        const float normalMass = a.invMass + b.invMass + angularTermA + angularTermB;
+        const float normalMass = prep.normalMass;
         if (normalMass <= kEpsilon) {
             return;
         }
@@ -2500,6 +2496,10 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
         if (manifold.contacts.empty()) {
             return;
         }
+        // Look up this manifold's solver-prep cache by pointer offset; manifolds_ is not
+        // resized between PrepareContactSolves() and the PGS loop so the offset is stable.
+        const std::size_t manifoldIdx = static_cast<std::size_t>(&manifold - manifolds_.data());
+        const ManifoldPrep& mPrep = manifoldPreps_[manifoldIdx];
 
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
         ResetBlockSolveDebugStep(manifold);
@@ -2552,8 +2552,8 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
                     manifold.selectedBlockPairPersistent ? 1 : 0);
             }
 #endif
-            for (Contact& c : manifold.contacts) {
-                SolveNormalScalar(c);
+            for (std::size_t ci = 0; ci < manifold.contacts.size(); ++ci) {
+                SolveNormalScalar(manifold.contacts[ci], mPrep.contacts[ci]);
             }
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
             if (selectedIdx0 >= 0 && selectedIdx1 >= 0
@@ -2617,7 +2617,7 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
                     if (static_cast<int>(i) == blockIdx0 || static_cast<int>(i) == blockIdx1) {
                         continue;
                     }
-                    SolveNormalScalar(manifold.contacts[i]);
+                    SolveNormalScalar(manifold.contacts[i], mPrep.contacts[i]);
                 }
             }
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
@@ -2678,8 +2678,8 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
         }
 #endif
 
-        for (Contact& c : manifold.contacts) {
-            SolveNormalScalar(c);
+        for (std::size_t ci = 0; ci < manifold.contacts.size(); ++ci) {
+            SolveNormalScalar(manifold.contacts[ci], mPrep.contacts[ci]);
         }
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
         if (contactSolverConfig_.useFace4PointNormalBlock

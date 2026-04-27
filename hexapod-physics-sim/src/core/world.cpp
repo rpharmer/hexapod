@@ -623,6 +623,10 @@ void World::Step(float dt, int solverIterations) {
         // PGS iterations because positions/orientations are integrated only after the loop
         // completes. SolveServoJoint then becomes a tight per-iteration impulse update.
         PrepareServoJointSolves();
+        // Same idea for contacts: cache ra, rb, raCrossN, rbCrossN, normalMass once per
+        // substep so the per-iteration normal-solve path (scalar / Block2 / Block4) doesn't
+        // recompute the constraint Jacobian every PGS iteration.
+        PrepareContactSolves();
 
         solverRelaxationPassActive_ = false;
         {

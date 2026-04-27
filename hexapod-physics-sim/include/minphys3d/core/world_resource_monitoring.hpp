@@ -5,6 +5,16 @@
 #include <array>
 #include <cstddef>
 
+// Per-call profiler scopes inside the PGS inner loop (SolveServoJoint, SolveContactsInManifold, ...)
+// fire 100k+ times per benchmark and each pays ~70 ns for two std::chrono::steady_clock::now()
+// reads + atomic fetch_adds. The outer per-section scopes (SolveIslands.JointsServo, etc.) already
+// give per-island timing, so the inner-call scopes are turned off by default and can be re-enabled
+// by defining MINPHYS3D_PROFILE_INNER_LOOPS=1 at compile time when fine-grained per-call telemetry
+// is genuinely needed (e.g. when tuning a hot path).
+#ifndef MINPHYS3D_PROFILE_INNER_LOOPS
+#define MINPHYS3D_PROFILE_INNER_LOOPS 0
+#endif
+
 namespace minphys3d::world_resource_monitoring {
 
 inline constexpr std::size_t kMaxSections = 30;

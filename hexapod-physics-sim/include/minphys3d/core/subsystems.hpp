@@ -175,6 +175,10 @@ struct ContactSolverContext {
     std::vector<Contact>& contacts;
     std::vector<Manifold>& manifolds;
     const std::vector<Manifold>& previousManifolds;
+    // World's per-body world-space inverse inertia cache (refreshed once per substep).
+    // Constant across PGS iterations; nullptr is permitted for callers that haven't
+    // populated it yet (will fall back to Body::InvInertiaWorld()).
+    const std::vector<Mat3>* bodyInvInertiaWorld = nullptr;
     std::function<bool(const ManifoldKey&, const Contact&, float&, std::array<float, 2>&, std::uint16_t&)> tryGetPersistentImpulseState;
     std::function<void(Manifold&, const Manifold*)> manageManifoldContacts;
     std::function<void(Manifold&)> refreshManifoldBlockCache;
@@ -195,23 +199,27 @@ class ContactSolver {
 public:
     void BuildManifolds(const ContactSolverContext& context) const {
         context.manifolds.clear();
+        // Group contacts into manifolds by (a,b) pair via O(1) hash lookup.
+        // Was an O(M) linear scan per contact, scaling O(C*M) overall.
+        std::unordered_map<std::uint64_t, std::size_t> pairKeyToIdx;
+        pairKeyToIdx.reserve(context.contacts.size());
         for (const Contact& c : context.contacts) {
-            bool found = false;
-            for (Manifold& m : context.manifolds) {
-                if ((m.a == c.a && m.b == c.b) || (m.a == c.b && m.b == c.a)) {
-                    m.contacts.push_back(c);
-                    m.normal = c.normal;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
+            const std::uint32_t lo = std::min(c.a, c.b);
+            const std::uint32_t hi = std::max(c.a, c.b);
+            const std::uint64_t key = (static_cast<std::uint64_t>(lo) << 32) | hi;
+            auto it = pairKeyToIdx.find(key);
+            if (it != pairKeyToIdx.end()) {
+                Manifold& m = context.manifolds[it->second];
+                m.contacts.push_back(c);
+                m.normal = c.normal;
+            } else {
                 Manifold m;
                 m.a = c.a;
                 m.b = c.b;
                 m.normal = c.normal;
                 m.manifoldType = c.manifoldType;
                 m.contacts.push_back(c);
+                pairKeyToIdx.emplace(key, context.manifolds.size());
                 context.manifolds.push_back(m);
             }
         }
@@ -248,20 +256,24 @@ public:
             });
         }
 
+        // Build a one-shot pairKey -> previous-manifold pointer table so the per-new-manifold
+        // warm-start lookup below is O(1) instead of O(prev_M).
+        std::unordered_map<std::uint64_t, const Manifold*> previousByPairKey;
+        previousByPairKey.reserve(context.previousManifolds.size());
+        for (const Manifold& old : context.previousManifolds) {
+            previousByPairKey.emplace(old.pairKey(), &old);
+        }
         for (Manifold& m : context.manifolds) {
             if (!m.contacts.empty()) {
                 m.manifoldType = m.contacts.front().manifoldType;
             }
             const Manifold* previous = nullptr;
-            for (const Manifold& old : context.previousManifolds) {
-                if (old.pairKey() == m.pairKey()) {
-                    previous = &old;
-                    m.blockNormalImpulseSum = old.blockNormalImpulseSum;
-                    m.blockContactKeys = old.blockContactKeys;
-                    m.blockSlotValid = old.blockSlotValid;
-                    m.selectedBlockContactKeys = old.selectedBlockContactKeys;
-                    break;
-                }
+            if (auto it = previousByPairKey.find(m.pairKey()); it != previousByPairKey.end()) {
+                previous = it->second;
+                m.blockNormalImpulseSum = previous->blockNormalImpulseSum;
+                m.blockContactKeys = previous->blockContactKeys;
+                m.blockSlotValid = previous->blockSlotValid;
+                m.selectedBlockContactKeys = previous->selectedBlockContactKeys;
             }
             m.lowQuality = false;
             m.blockSolveEligible = false;
@@ -471,8 +483,14 @@ public:
             Body& a = context.bodies[c.a];
             Body& b = context.bodies[c.b];
 
-            const Mat3 invIA = a.InvInertiaWorld();
-            const Mat3 invIB = b.InvInertiaWorld();
+            // Read from the world's per-body cache (refreshed once per substep) when available;
+            // fall back to recomputing only if the caller hasn't populated the cache.
+            const Mat3 invIA = (context.bodyInvInertiaWorld != nullptr)
+                ? (*context.bodyInvInertiaWorld)[c.a]
+                : a.InvInertiaWorld();
+            const Mat3 invIB = (context.bodyInvInertiaWorld != nullptr)
+                ? (*context.bodyInvInertiaWorld)[c.b]
+                : b.InvInertiaWorld();
             const Vec3 ra = c.point - a.position;
             const Vec3 rb = c.point - b.position;
 

@@ -586,7 +586,28 @@ private:
     // before any code reads bodyInvInertiaWorld_.
     void RefreshBodyWorldInertias();
 
-    void SolveNormalScalar(Contact& c);
+    // Per-substep solver cache for one contact. Holds quantities that depend only on
+    // body position/orientation, contact geometry, and inertia — all constant across
+    // PGS iterations. Velocity-dependent terms (separatingVelocity, restitution,
+    // bias gating) are still computed per iteration in the solver functions.
+    struct ContactPrep {
+        Vec3 ra{};                  // c.point - a.position
+        Vec3 rb{};                  // c.point - b.position
+        Vec3 raCrossN{};            // Cross(ra, c.normal)
+        Vec3 rbCrossN{};            // Cross(rb, c.normal)
+        float normalMass = 0.0f;    // invMassSum + raCrossN·invIA·raCrossN + rbCrossN·invIB·rbCrossN
+        float invNormalMass = 0.0f; // 1 / normalMass (zero when normalMass <= kEpsilon)
+    };
+
+    struct ManifoldPrep {
+        std::vector<ContactPrep> contacts;
+    };
+
+    // Refresh the per-manifold contact solver cache. Call once per substep, after
+    // BuildManifolds() / WarmStartContacts() and before the PGS iteration loop.
+    void PrepareContactSolves();
+
+    void SolveNormalScalar(Contact& c, const ContactPrep& prep);
 
     enum class BlockSolveFallbackReason {
         None,
@@ -849,6 +870,7 @@ private:
     std::vector<PrismaticJoint> prismaticJoints_;
     std::vector<ServoJoint> servoJoints_;
     std::vector<ServoJointPrep> servoJointPreps_;
+    std::vector<ManifoldPrep> manifoldPreps_;
     std::vector<float> servoAngleSampleCache_;
     bool servoAngleSampleCacheValid_ = false;
     mutable std::vector<std::uint16_t> servoPositionFanoutScratch_;

@@ -521,6 +521,7 @@ void World::BuildManifolds() {
             contacts_,
             manifolds_,
             previousManifolds_,
+            &bodyInvInertiaWorld_,
             [this, &warmStartUsedKeys](const ManifoldKey& manifoldId, const Contact& contact, float& normal, std::array<float, 2>& tangent, std::uint16_t& age) {
                 PersistentPointMatchCandidate match{};
                 std::unordered_set<PersistentPointKey, PersistentPointKeyHash>& usedKeys = warmStartUsedKeys[manifoldId];
