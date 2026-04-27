@@ -1,0 +1,24 @@
+9eec079ab0e1e426f571a50fe1f47d806d61df99
+Linux DESKTOP-Q0OPBNB 6.6.87.2-microsoft-standard-WSL2+ #2 SMP PREEMPT_DYNAMIC Wed Apr 22 03:05:14 BST 2026 x86_64 x86_64 x86_64 GNU/Linux
+g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+workload: hexapod 120 frames @ 60Hz outer, 6 substeps, 80 solver iters/substep; wall_ms=15745.6
+sections: 18 (full snapshot, sorted by total self time)
+world.step{window_ms=15743,total_ms=15743,max_ms=55,calls=720} | world.solve_islands{window_ms=15183,total_ms=15183,max_ms=55,calls=720} | world.generate_contacts{window_ms=278,total_ms=278,max_ms=0,calls=720} | world.build_manifolds{window_ms=67,total_ms=67,max_ms=0,calls=720} | world.update_broadphase{window_ms=32,total_ms=32,max_ms=0,calls=720} | world.solve_joint_positions{window_ms=31,total_ms=31,max_ms=0,calls=720} | world.warm_start_joints{window_ms=18,total_ms=18,max_ms=0,calls=720} | world.build_islands{window_ms=18,total_ms=18,max_ms=0,calls=720} | world.update_sleeping{window_ms=18,total_ms=18,max_ms=0,calls=720} | world.warm_start_contacts{window_ms=7,total_ms=7,max_ms=0,calls=720} | world.integrate_forces{window_ms=5,total_ms=5,max_ms=0,calls=720} | world.integrate_orientation{window_ms=2,total_ms=2,max_ms=0,calls=720} | world.resolve_toi{window_ms=1,total_ms=1,max_ms=0,calls=720} | world.positional_correction{window_ms=0,total_ms=0,max_ms=0,calls=720} | world.clamp_body_velocities{window_ms=0,total_ms=0,max_ms=0,calls=720} | world.clear_accumulators{window_ms=0,total_ms=0,max_ms=0,calls=720} | world.apply_split_stabilization{window_ms=0,total_ms=0,max_ms=0,calls=720} | world.relaxation_pass{window_ms=0,total_ms=0,max_ms=0,calls=0}
+world.step                                total_ms=15743.366  calls=     720  max_ms=  55.692  window_ms=15743.366
+world.solve_islands                       total_ms=15183.550  calls=     720  max_ms=  55.039  window_ms=15183.550
+world.generate_contacts                   total_ms= 278.750  calls=     720  max_ms=   0.964  window_ms= 278.750
+world.build_manifolds                     total_ms=  67.229  calls=     720  max_ms=   0.539  window_ms=  67.229
+world.update_broadphase                   total_ms=  32.668  calls=     720  max_ms=   0.217  window_ms=  32.668
+world.solve_joint_positions               total_ms=  31.895  calls=     720  max_ms=   0.272  window_ms=  31.895
+world.warm_start_joints                   total_ms=  18.748  calls=     720  max_ms=   0.133  window_ms=  18.748
+world.build_islands                       total_ms=  18.730  calls=     720  max_ms=   0.102  window_ms=  18.730
+world.update_sleeping                     total_ms=  18.615  calls=     720  max_ms=   0.198  window_ms=  18.615
+world.warm_start_contacts                 total_ms=   7.061  calls=     720  max_ms=   0.080  window_ms=   7.061
+world.integrate_forces                    total_ms=   5.935  calls=     720  max_ms=   0.052  window_ms=   5.935
+world.integrate_orientation               total_ms=   2.412  calls=     720  max_ms=   0.045  window_ms=   2.412
+world.resolve_toi                         total_ms=   1.488  calls=     720  max_ms=   0.008  window_ms=   1.488
+world.positional_correction               total_ms=   0.901  calls=     720  max_ms=   0.025  window_ms=   0.901
+world.clamp_body_velocities               total_ms=   0.755  calls=     720  max_ms=   0.017  window_ms=   0.755
+world.clear_accumulators                  total_ms=   0.510  calls=     720  max_ms=   0.002  window_ms=   0.510
+world.apply_split_stabilization           total_ms=   0.238  calls=     720  max_ms=   0.002  window_ms=   0.238
+world.relaxation_pass                     total_ms=   0.000  calls=       0  max_ms=   0.000  window_ms=   0.000

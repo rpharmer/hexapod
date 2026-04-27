@@ -5,6 +5,7 @@
 
 #include "minphys3d/core/subsystems.hpp"
 #include "minphys3d/core/world.hpp"
+#include "minphys3d/core/world_resource_monitoring.hpp"
 
 namespace minphys3d::core_internal {
 
@@ -33,6 +34,9 @@ struct ConstraintSolverContext {
     std::function<void(FixedJoint&)> solveFixedJoint;
     std::function<void(PrismaticJoint&)> solvePrismaticJoint;
     std::function<void(ServoJoint&)> solveServoJoint;
+    /// When non-null, `SolveIslands` records nested self-time (contacts / joint type loops). Not used in tests
+    /// that build `ConstraintSolverContext` without the extra field; defaults to `nullptr` via brace init in `World` only.
+    world_resource_monitoring::Profiler* worldResourceProfiler = nullptr;
 };
 
 class ConstraintSolver {

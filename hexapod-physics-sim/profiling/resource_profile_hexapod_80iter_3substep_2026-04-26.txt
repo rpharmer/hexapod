@@ -1,0 +1,30 @@
+workload: hexapod 120 frames @ 60Hz outer, 3 substeps, 80 solver iters/substep; wall_ms=7615.23
+sections: 27 (full snapshot, sorted by total self time)
+world.step{window_ms=7614,total_ms=7614,max_ms=50,calls=360} | world.solve_islands{window_ms=7362,total_ms=7362,max_ms=49,calls=360} | world.solve_islands.joints_servo{window_ms=6672,total_ms=6672,max_ms=2,calls=28800} | world.solve_islands.contacts_forward{window_ms=558,total_ms=558,max_ms=0,calls=28800} | world.generate_contacts{window_ms=124,total_ms=124,max_ms=0,calls=360} | world.build_manifolds{window_ms=29,total_ms=29,max_ms=0,calls=360} | world.update_broadphase{window_ms=14,total_ms=14,max_ms=0,calls=360} | world.solve_joint_positions{window_ms=14,total_ms=14,max_ms=0,calls=360} | world.update_sleeping{window_ms=10,total_ms=10,max_ms=0,calls=360} | world.build_islands{window_ms=9,total_ms=9,max_ms=0,calls=360} | world.warm_start_joints{window_ms=8,total_ms=8,max_ms=0,calls=360} | world.warm_start_contacts{window_ms=3,total_ms=3,max_ms=0,calls=360} | world.integrate_forces{window_ms=2,total_ms=2,max_ms=0,calls=360} | world.solve_islands.joints_distance{window_ms=2,total_ms=2,max_ms=0,calls=28800} | world.solve_islands.joints_fixed{window_ms=2,total_ms=2,max_ms=0,calls=28800} | world.solve_islands.joints_ball_socket{window_ms=2,total_ms=2,max_ms=0,calls=28800} | world.solve_islands.joints_hinge{window_ms=2,total_ms=2,max_ms=0,calls=28800} | world.solve_islands.joints_prismatic{window_ms=2,total_ms=2,max_ms=0,calls=28800} | world.integrate_orientation{window_ms=0,total_ms=0,max_ms=0,calls=360} | world.resolve_toi{window_ms=0,total_ms=0,max_ms=0,calls=360} | world.positional_correction{window_ms=0,total_ms=0,max_ms=0,calls=360} | world.clamp_body_velocities{window_ms=0,total_ms=0,max_ms=0,calls=360} | world.clear_accumulators{window_ms=0,total_ms=0,max_ms=0,calls=360} | world.apply_split_stabilization{window_ms=0,total_ms=0,max_ms=0,calls=360} | world.relaxation_pass{window_ms=0,total_ms=0,calls=0} | world.solve_islands.contacts_shock{window_ms=0,total_ms=0,calls=0} | world.solve_islands.island_order{window_ms=0,total_ms=0,calls=0}
+world.step                                total_ms=7614.255  calls=     360  max_ms=  50.110  window_ms=7614.255
+world.solve_islands                       total_ms=7362.828  calls=     360  max_ms=  49.545  window_ms=7362.828
+world.solve_islands.joints_servo          total_ms=6672.466  calls=   28800  max_ms=   2.957  window_ms=6672.466
+world.solve_islands.contacts_forward      total_ms= 558.855  calls=   28800  max_ms=   0.460  window_ms= 558.855
+world.generate_contacts                   total_ms= 124.795  calls=     360  max_ms=   0.633  window_ms= 124.795
+world.build_manifolds                     total_ms=  29.412  calls=     360  max_ms=   0.235  window_ms=  29.412
+world.update_broadphase                   total_ms=  14.519  calls=     360  max_ms=   0.182  window_ms=  14.519
+world.solve_joint_positions               total_ms=  14.248  calls=     360  max_ms=   0.130  window_ms=  14.248
+world.update_sleeping                     total_ms=  10.829  calls=     360  max_ms=   0.070  window_ms=  10.829
+world.build_islands                       total_ms=   9.054  calls=     360  max_ms=   0.084  window_ms=   9.054
+world.warm_start_joints                   total_ms=   8.131  calls=     360  max_ms=   0.095  window_ms=   8.131
+world.warm_start_contacts                 total_ms=   3.037  calls=     360  max_ms=   0.057  window_ms=   3.037
+world.integrate_forces                    total_ms=   2.625  calls=     360  max_ms=   0.023  window_ms=   2.625
+world.solve_islands.joints_distance       total_ms=   2.396  calls=   28800  max_ms=   0.038  window_ms=   2.396
+world.solve_islands.joints_fixed          total_ms=   2.240  calls=   28800  max_ms=   0.012  window_ms=   2.240
+world.solve_islands.joints_ball_socket    total_ms=   2.184  calls=   28800  max_ms=   0.053  window_ms=   2.184
+world.solve_islands.joints_hinge          total_ms=   2.075  calls=   28800  max_ms=   0.023  window_ms=   2.075
+world.solve_islands.joints_prismatic      total_ms=   2.066  calls=   28800  max_ms=   0.022  window_ms=   2.066
+world.integrate_orientation               total_ms=   0.964  calls=     360  max_ms=   0.007  window_ms=   0.964
+world.resolve_toi                         total_ms=   0.622  calls=     360  max_ms=   0.043  window_ms=   0.622
+world.positional_correction               total_ms=   0.345  calls=     360  max_ms=   0.004  window_ms=   0.345
+world.clamp_body_velocities               total_ms=   0.341  calls=     360  max_ms=   0.023  window_ms=   0.341
+world.clear_accumulators                  total_ms=   0.226  calls=     360  max_ms=   0.001  window_ms=   0.226
+world.apply_split_stabilization           total_ms=   0.066  calls=     360  max_ms=   0.001  window_ms=   0.066
+world.relaxation_pass                     total_ms=   0.000  calls=       0  max_ms=   0.000  window_ms=   0.000
+world.solve_islands.contacts_shock        total_ms=   0.000  calls=       0  max_ms=   0.000  window_ms=   0.000
+world.solve_islands.island_order          total_ms=   0.000  calls=       0  max_ms=   0.000  window_ms=   0.000

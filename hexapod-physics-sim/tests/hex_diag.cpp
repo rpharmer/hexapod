@@ -29,8 +29,8 @@ void RunConfig(const char* label, float stabOverride) {
     }
 
     constexpr float kFrameDt = 1.0f / 60.0f;
-    constexpr int kSubsteps = 6;
-    constexpr int kIter = 80;
+    const int kSubsteps = kHexapodPoseHoldBenchmarkSubstepsPerFrame;
+    constexpr int kIter = 40; // match kHexapodPoseHoldBenchmarkSolverIterations
     const float subDt = kFrameDt / float(kSubsteps);
 
     for (int frame = 0; frame < 480; ++frame) {

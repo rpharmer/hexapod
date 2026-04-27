@@ -1,0 +1,5 @@
+workload: hexapod 120 frames @ 60Hz outer, 1 substeps, 80 solver iters/substep; wall_ms=5117.22
+world.step{window_ms=5116,total_ms=5116,max_ms=56,calls=120} | world.solve_islands{window_ms=5013,total_ms=5013,max_ms=54,calls=120} | world.solve_islands.joints_servo{window_ms=4709,total_ms=4709,max_ms=6,calls=9600} | world.solve_islands.contacts_forward{window_ms=230,total_ms=230,max_ms=1,calls=9600}
+world.step                                total_ms=5116.818  calls=     120  max_ms=  56.618  window_ms=5116.818
+world.solve_islands.joints_servo          total_ms=4709.350  calls=    9600  max_ms=   6.151  window_ms=4709.350
+(full 27-line dump from one-off in repo history; wall_ms=5117.22)

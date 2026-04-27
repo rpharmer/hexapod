@@ -1,0 +1,8 @@
+Scalar anchor fallback prototype (40x2x8, anchor early-out 1e-4/0.02)
+
+Block anchor ON : wall_ms=10183.201 step_ms=10170.988 solve_servo_ms=9210.246
+                 peak_linear_settled=0.058260 peak_angular=0.226532 peak_joint_error=0.073901 final_y=0.135063 final_speed=0.040803
+Block anchor OFF: wall_ms=11079.626 step_ms=11067.024 solve_servo_ms=10094.986
+                 peak_linear_settled=0.051302 peak_angular=0.244924 peak_joint_error=0.142695 final_y=0.131165 final_speed=0.040773
+
+Conclusion: scalar servo-anchor fallback is slower (~8.8% wall, ~9.6% solve_servo) and increases joint error materially; keep useBlockSolverForServoAnchors=true.

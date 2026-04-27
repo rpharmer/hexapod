@@ -271,6 +271,8 @@ public:
 
     void Step(float dt, int solverIterations = 8);
     [[nodiscard]] world_resource_monitoring::SectionSummary SnapshotResourceSections(bool reset_window = true) const;
+    /// All instrumented world sections, sorted by total self time (see `kMaxSections` in `world_resource_monitoring`).
+    [[nodiscard]] world_resource_monitoring::SectionSummary SnapshotFullResourceSections(bool reset_window = true) const;
 
     void AddForce(std::uint32_t id, const Vec3& force);
 
@@ -703,8 +705,12 @@ private:
     void ClampBodyVelocities();
 
 private:
+    float ComputeServoJointAngleNoProfile(const ServoJoint& joint) const;
     void PrepareServoJointControlSamples();
     void AccumulateServoAngleIntegrals(float dt);
+    void InvalidateServoAngleSampleCache();
+    void InvalidateServoPositionTopologyCache();
+    bool ComputeServoPositionUseVelocityBiases() const;
 
     struct NarrowphaseCacheKey {
         std::uint32_t loBody = 0;
@@ -777,7 +783,7 @@ private:
     std::vector<Contact> previousContacts_;
     std::vector<Manifold> manifolds_;
     std::vector<Manifold> previousManifolds_;
-    world_resource_monitoring::Profiler resource_profiler_{world_resource_monitoring::kSectionLabels};
+    mutable world_resource_monitoring::Profiler resource_profiler_{world_resource_monitoring::kSectionLabels};
     std::vector<Island> islands_;
     std::vector<IslandOrderResult> islandOrders_;
     std::vector<DistanceJoint> joints_;
@@ -786,6 +792,14 @@ private:
     std::vector<FixedJoint> fixedJoints_;
     std::vector<PrismaticJoint> prismaticJoints_;
     std::vector<ServoJoint> servoJoints_;
+    std::vector<float> servoAngleSampleCache_;
+    bool servoAngleSampleCacheValid_ = false;
+    mutable std::vector<std::uint16_t> servoPositionFanoutScratch_;
+    std::vector<Vec3> servoPositionAngularAccumScratch_;
+    std::vector<std::uint16_t> servoPositionAngularCountScratch_;
+    mutable bool servoPositionUseVelocityBiasesCached_ = false;
+    mutable bool servoPositionUseVelocityBiasesCacheValid_ = false;
+    std::uint64_t servoPositionSolveSubstepCounter_ = 0;
     std::unordered_map<PersistentPointKey, PersistentPointImpulseState, PersistentPointKeyHash> persistentPointImpulses_;
     PersistenceMatchDiagnostics persistenceMatchDiagnostics_{};
     std::unordered_map<NarrowphaseCacheKey, NarrowphaseCache, NarrowphaseCacheKeyHash> narrowphaseCache_;

@@ -1,0 +1,57 @@
+9eec079ab0e1e426f571a50fe1f47d806d61df99
+Linux DESKTOP-Q0OPBNB 6.6.87.2-microsoft-standard-WSL2+ #2 SMP PREEMPT_DYNAMIC Wed Apr 22 03:05:14 BST 2026 x86_64 x86_64 x86_64 GNU/Linux
+g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+=== workload output then GNU time (single process run) ===
+workload: hexapod 120 frames @ 60Hz outer, 6 substeps, 80 solver iters/substep; wall_ms=19769.3
+sections: 27 (full snapshot, sorted by total self time)
+world.step{window_ms=19765,total_ms=19765,max_ms=67,calls=720} | world.solve_islands{window_ms=19062,total_ms=19062,max_ms=66,calls=720} | world.solve_islands.joints_servo{window_ms=16855,total_ms=16855,max_ms=7,calls=57600} | world.solve_islands.contacts_forward{window_ms=1673,total_ms=1673,max_ms=5,calls=57600} | world.generate_contacts{window_ms=344,total_ms=344,max_ms=2,calls=720} | world.build_manifolds{window_ms=89,total_ms=89,max_ms=1,calls=720} | world.update_broadphase{window_ms=42,total_ms=42,max_ms=3,calls=720} | world.solve_joint_positions{window_ms=39,total_ms=39,max_ms=0,calls=720} | world.update_sleeping{window_ms=24,total_ms=24,max_ms=0,calls=720} | world.warm_start_joints{window_ms=24,total_ms=24,max_ms=2,calls=720} | world.build_islands{window_ms=23,total_ms=23,max_ms=0,calls=720} | world.solve_islands.joints_distance{window_ms=14,total_ms=14,max_ms=3,calls=57600} | world.warm_start_contacts{window_ms=9,total_ms=9,max_ms=0,calls=720} | world.integrate_forces{window_ms=7,total_ms=7,max_ms=0,calls=720} | world.solve_islands.joints_ball_socket{window_ms=7,total_ms=7,max_ms=1,calls=57600} | world.solve_islands.joints_fixed{window_ms=6,total_ms=6,max_ms=0,calls=57600} | world.solve_islands.joints_prismatic{window_ms=5,total_ms=5,max_ms=0,calls=57600} | world.solve_islands.joints_hinge{window_ms=5,total_ms=5,max_ms=0,calls=57600} | world.integrate_orientation{window_ms=3,total_ms=3,max_ms=0,calls=720} | world.resolve_toi{window_ms=1,total_ms=1,max_ms=0,calls=720} | world.positional_correction{window_ms=1,total_ms=1,max_ms=0,calls=720} | world.clamp_body_velocities{window_ms=0,total_ms=0,max_ms=0,calls=720} | world.clear_accumulators{window_ms=0,total_ms=0,max_ms=0,calls=720} | world.apply_split_stabilization{window_ms=0,total_ms=0,max_ms=0,calls=720} | world.relaxation_pass{window_ms=0,total_ms=0,max_ms=0,calls=0} | world.solve_islands.contacts_shock{window_ms=0,total_ms=0,max_ms=0,calls=0} | world.solve_islands.island_order{window_ms=0,total_ms=0,max_ms=0,calls=0}
+world.step                                total_ms=19765.932  calls=     720  max_ms=  67.430  window_ms=19765.932
+world.solve_islands                       total_ms=19062.470  calls=     720  max_ms=  66.706  window_ms=19062.470
+world.solve_islands.joints_servo          total_ms=16855.240  calls=   57600  max_ms=   7.301  window_ms=16855.240
+world.solve_islands.contacts_forward      total_ms=1673.131  calls=   57600  max_ms=   5.794  window_ms=1673.131
+world.generate_contacts                   total_ms= 344.348  calls=     720  max_ms=   2.166  window_ms= 344.348
+world.build_manifolds                     total_ms=  89.025  calls=     720  max_ms=   1.039  window_ms=  89.025
+world.update_broadphase                   total_ms=  42.585  calls=     720  max_ms=   3.500  window_ms=  42.585
+world.solve_joint_positions               total_ms=  39.465  calls=     720  max_ms=   0.672  window_ms=  39.465
+world.update_sleeping                     total_ms=  24.763  calls=     720  max_ms=   0.519  window_ms=  24.763
+world.warm_start_joints                   total_ms=  24.529  calls=     720  max_ms=   2.739  window_ms=  24.529
+world.build_islands                       total_ms=  23.509  calls=     720  max_ms=   0.299  window_ms=  23.509
+world.solve_islands.joints_distance       total_ms=  14.048  calls=   57600  max_ms=   3.637  window_ms=  14.048
+world.warm_start_contacts                 total_ms=   9.539  calls=     720  max_ms=   0.905  window_ms=   9.539
+world.integrate_forces                    total_ms=   7.203  calls=     720  max_ms=   0.097  window_ms=   7.203
+world.solve_islands.joints_ball_socket    total_ms=   7.199  calls=   57600  max_ms=   1.270  window_ms=   7.199
+world.solve_islands.joints_fixed          total_ms=   6.570  calls=   57600  max_ms=   0.766  window_ms=   6.570
+world.solve_islands.joints_prismatic      total_ms=   5.789  calls=   57600  max_ms=   0.088  window_ms=   5.789
+world.solve_islands.joints_hinge          total_ms=   5.459  calls=   57600  max_ms=   0.086  window_ms=   5.459
+world.integrate_orientation               total_ms=   3.234  calls=     720  max_ms=   0.090  window_ms=   3.234
+world.resolve_toi                         total_ms=   1.951  calls=     720  max_ms=   0.054  window_ms=   1.951
+world.positional_correction               total_ms=   1.318  calls=     720  max_ms=   0.069  window_ms=   1.318
+world.clamp_body_velocities               total_ms=   0.982  calls=     720  max_ms=   0.114  window_ms=   0.982
+world.clear_accumulators                  total_ms=   0.592  calls=     720  max_ms=   0.004  window_ms=   0.592
+world.apply_split_stabilization           total_ms=   0.254  calls=     720  max_ms=   0.060  window_ms=   0.254
+world.relaxation_pass                     total_ms=   0.000  calls=       0  max_ms=   0.000  window_ms=   0.000
+world.solve_islands.contacts_shock        total_ms=   0.000  calls=       0  max_ms=   0.000  window_ms=   0.000
+world.solve_islands.island_order          total_ms=   0.000  calls=       0  max_ms=   0.000  window_ms=   0.000
+	Command being timed: "./world_resource_profile_oneoff"
+	User time (seconds): 19.79
+	System time (seconds): 0.00
+	Percent of CPU this job got: 100%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:19.77
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 4864
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 181
+	Voluntary context switches: 1
+	Involuntary context switches: 14
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

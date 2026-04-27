@@ -37,7 +37,7 @@ void PrintUsage(std::ostream& out) {
            "  --sink dummy|udp          Frame sink (default: dummy)\n"
            "  --model default|hexapod   Built-in scene when not using --scene-file\n"
            "  --scene-file PATH         Load minphys JSON (see assets/scenes/examples/; schema 1–2)\n"
-           "  --solver-iterations N     Solver iterations per physics step (hexapod demo; default: 80)\n"
+           "  --solver-iterations N     Solver iterations per physics step (hexapod demo; default: 40)\n"
            "  --udp-host HOST           UDP destination host (default: 127.0.0.1)\n"
            "  --udp-port PORT           UDP destination port (default: 9870)\n"
            "  --frames N                Number of frames to simulate (default: 1200)\n"
@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
     bool interactive_autonext_run = false;
     bool serve_mode = false;
     int serve_port = 9871;
-    int solver_iterations = 80;
+    int solver_iterations = minphys3d::demo::kHexapodPoseHoldBenchmarkSolverIterations;
     std::string scene_file;
     std::string udp_host = "127.0.0.1";
     int udp_port = 9870;

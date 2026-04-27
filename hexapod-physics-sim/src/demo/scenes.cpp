@@ -20,6 +20,7 @@
 #include "minphys3d/core/body.hpp"
 #include "minphys3d/core/world.hpp"
 #include "minphys3d/demo/hexapod_scene.hpp"
+#include "minphys3d/demo/hexapod_stability.hpp"
 #include "physics_sim_protocol.hpp"
 
 namespace minphys3d::demo {
@@ -227,86 +228,6 @@ Vec3 CompoundChildWorldPosition(const Body& body, std::size_t child_index) {
     return body.position + Rotate(body.orientation, body.compoundChildren[child_index].localPosition);
 }
 
-struct ContactSummary {
-    int manifolds = 0;
-    int points = 0;
-    float totalNormalImpulse = 0.0f;
-    float maxPenetration = 0.0f;
-};
-
-struct LegContactSummary {
-    ContactSummary coxa{};
-    ContactSummary femur{};
-    ContactSummary tibia{};
-};
-
-ContactSummary* FindLegContactSummary(
-    std::array<LegContactSummary, 6>& summaries,
-    const HexapodSceneObjects& scene,
-    std::uint32_t body_id) {
-    for (std::size_t leg_index = 0; leg_index < scene.legs.size(); ++leg_index) {
-        const LegLinkIds& leg = scene.legs[leg_index];
-        if (leg.coxa == body_id) {
-            return &summaries[leg_index].coxa;
-        }
-        if (leg.femur == body_id) {
-            return &summaries[leg_index].femur;
-        }
-        if (leg.tibia == body_id) {
-            return &summaries[leg_index].tibia;
-        }
-    }
-    return nullptr;
-}
-
-std::array<LegContactSummary, 6> SummarizeGroundContacts(const World& world, const HexapodSceneObjects& scene) {
-    std::array<LegContactSummary, 6> summaries{};
-    for (const Manifold& manifold : world.DebugManifolds()) {
-        const bool a_is_plane = manifold.a == scene.plane;
-        const bool b_is_plane = manifold.b == scene.plane;
-        if (a_is_plane == b_is_plane) {
-            continue;
-        }
-
-        const std::uint32_t body_id = a_is_plane ? manifold.b : manifold.a;
-        ContactSummary* summary = FindLegContactSummary(summaries, scene, body_id);
-        if (summary == nullptr) {
-            continue;
-        }
-
-        ++summary->manifolds;
-        summary->points += static_cast<int>(manifold.contacts.size());
-        for (const Contact& contact : manifold.contacts) {
-            summary->totalNormalImpulse += std::max(contact.normalImpulseSum, 0.0f);
-            summary->maxPenetration = std::max(summary->maxPenetration, contact.penetration);
-        }
-    }
-    return summaries;
-}
-
-std::array<std::uint32_t, 18> HexapodServoJointIds(const HexapodSceneObjects& scene) {
-    return {
-        scene.legs[0].bodyToCoxaJoint,
-        scene.legs[0].coxaToFemurJoint,
-        scene.legs[0].femurToTibiaJoint,
-        scene.legs[1].bodyToCoxaJoint,
-        scene.legs[1].coxaToFemurJoint,
-        scene.legs[1].femurToTibiaJoint,
-        scene.legs[2].bodyToCoxaJoint,
-        scene.legs[2].coxaToFemurJoint,
-        scene.legs[2].femurToTibiaJoint,
-        scene.legs[3].bodyToCoxaJoint,
-        scene.legs[3].coxaToFemurJoint,
-        scene.legs[3].femurToTibiaJoint,
-        scene.legs[4].bodyToCoxaJoint,
-        scene.legs[4].coxaToFemurJoint,
-        scene.legs[4].femurToTibiaJoint,
-        scene.legs[5].bodyToCoxaJoint,
-        scene.legs[5].coxaToFemurJoint,
-        scene.legs[5].femurToTibiaJoint,
-    };
-}
-
 Body MakeCompoundChassisBody(const Vec3& position, float mass) {
     Body body;
     body.shape = ShapeType::Compound;
@@ -347,46 +268,6 @@ void SyncBuiltInHexapodServoTargets(World& world, const HexapodSceneObjects& sce
             joint.integralAccum = 0.0f;
         }
     }
-}
-
-struct HexapodStandingStats {
-    float minBodyHeight = std::numeric_limits<float>::infinity();
-    float maxBodyHeight = -std::numeric_limits<float>::infinity();
-    float maxAbsRollDeg = 0.0f;
-    float maxAbsPitchDeg = 0.0f;
-    float maxJointSpeedRadS = 0.0f;
-    int minContactManifolds = std::numeric_limits<int>::max();
-    int minContactPoints = std::numeric_limits<int>::max();
-};
-
-void UpdateStandingStats(HexapodStandingStats& stats,
-                         const Body& chassis,
-                         float roll_rad,
-                         float pitch_rad,
-                         int contact_manifolds,
-                         int contact_points,
-                         float max_joint_speed_rad_s) {
-    stats.minBodyHeight = std::min(stats.minBodyHeight, chassis.position.y);
-    stats.maxBodyHeight = std::max(stats.maxBodyHeight, chassis.position.y);
-    stats.maxAbsRollDeg = std::max(stats.maxAbsRollDeg, std::abs(roll_rad) * 180.0f / kPi);
-    stats.maxAbsPitchDeg = std::max(stats.maxAbsPitchDeg, std::abs(pitch_rad) * 180.0f / kPi);
-    stats.maxJointSpeedRadS = std::max(stats.maxJointSpeedRadS, max_joint_speed_rad_s);
-    stats.minContactManifolds = std::min(stats.minContactManifolds, contact_manifolds);
-    stats.minContactPoints = std::min(stats.minContactPoints, contact_points);
-}
-
-Vec3 BodyUpVector(const Quat& orientation) {
-    return Rotate(orientation, Vec3{0.0f, 1.0f, 0.0f});
-}
-
-float BodyRollRad(const Quat& orientation) {
-    const Vec3 up = BodyUpVector(orientation);
-    return std::atan2(up.x, std::max(up.y, 1.0e-6f));
-}
-
-float BodyPitchRad(const Quat& orientation) {
-    const Vec3 up = BodyUpVector(orientation);
-    return std::atan2(-up.z, std::max(up.y, 1.0e-6f));
 }
 
 float ComputeStandingBodyHeight() {
@@ -756,13 +637,8 @@ int RunHexapodDemo(
 
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
+    ApplyHexapodPoseHoldStabilityTuning(world, scene);
     std::unique_ptr<FrameSink> sink = MakeFrameSink(sink_kind, udp_host, udp_port);
-
-    minphys3d::JointSolverConfig joint_cfg = world.GetJointSolverConfig();
-    joint_cfg.servoPositionPasses = 8;
-    joint_cfg.hingeAnchorBiasFactor = 0.25f;
-    joint_cfg.hingeAnchorDampingFactor = 0.3f;
-    world.SetJointSolverConfig(joint_cfg);
 
     // Zero-G still needs an extra downscale because there is no gravity/contact damping at all.
     if (minphys3d::LengthSquared(gravity) < 1.0e-4f) {
@@ -770,7 +646,7 @@ int RunHexapodDemo(
     }
 
     constexpr float dt = 1.0f / 60.0f;
-    constexpr int kPhysicsSubstepsPerFrame = 6;
+    const int kPhysicsSubstepsPerFrame = kHexapodPoseHoldBenchmarkSubstepsPerFrame;
     const int effective_solver_iterations = std::max(1, solver_iterations);
     std::array<float, 18> previous_angles{};
     {
@@ -798,12 +674,12 @@ int RunHexapodDemo(
 
         if (run_log.available()) {
             const Body& chassis = world.GetBody(scene.body);
-            const std::array<LegContactSummary, 6> contact_summary = SummarizeGroundContacts(world, scene);
-            const float body_roll_rad = BodyRollRad(chassis.orientation);
-            const float body_pitch_rad = BodyPitchRad(chassis.orientation);
+            const std::array<HexapodLegContactRollup, 6> contact_summary = SummarizeHexapodGroundContacts(world, scene);
+            const float body_roll_rad = BodyRollRadStability(chassis.orientation);
+            const float body_pitch_rad = BodyPitchRadStability(chassis.orientation);
             int total_contact_manifolds = 0;
             int total_contact_points = 0;
-            for (const LegContactSummary& leg_contacts : contact_summary) {
+            for (const HexapodLegContactRollup& leg_contacts : contact_summary) {
                 total_contact_manifolds += leg_contacts.coxa.manifolds + leg_contacts.femur.manifolds + leg_contacts.tibia.manifolds;
                 total_contact_points += leg_contacts.coxa.points + leg_contacts.femur.points + leg_contacts.tibia.points;
             }
@@ -844,7 +720,7 @@ int RunHexapodDemo(
                 const ServoJoint& tibia_joint = world.GetServoJoint(leg.femurToTibiaJoint);
                 const Body& tibia = world.GetBody(leg.tibia);
                 const Vec3 foot = CompoundChildWorldPosition(tibia, 1);
-                const LegContactSummary& contacts = contact_summary[leg_index];
+                const HexapodLegContactRollup& contacts = contact_summary[leg_index];
                 std::fprintf(run_log.stream(),
                              "frame=%d leg=%zu coxa_angle=%.6f coxa_speed=%.6f coxa_error=%.6f femur_angle=%.6f femur_speed=%.6f femur_error=%.6f tibia_angle=%.6f tibia_speed=%.6f tibia_error=%.6f coxa_manifolds=%d coxa_points=%d coxa_impulse=%.6f coxa_pen=%.6f femur_manifolds=%d femur_points=%d femur_impulse=%.6f femur_pen=%.6f tibia_manifolds=%d tibia_points=%d tibia_impulse=%.6f tibia_pen=%.6f foot_y=%.6f\n",
                              frame,
@@ -875,7 +751,7 @@ int RunHexapodDemo(
                 previous_angles[leg_index * 3 + 1] = femur_angle;
                 previous_angles[leg_index * 3 + 2] = tibia_angle;
             }
-            UpdateStandingStats(standing_stats,
+            UpdateHexapodStandingStats(standing_stats,
                                 chassis,
                                 body_roll_rad,
                                 body_pitch_rad,
@@ -884,12 +760,12 @@ int RunHexapodDemo(
                                 max_joint_speed_rad_s);
         } else {
             const Body& chassis = world.GetBody(scene.body);
-            const float body_roll_rad = BodyRollRad(chassis.orientation);
-            const float body_pitch_rad = BodyPitchRad(chassis.orientation);
-            std::array<LegContactSummary, 6> contact_summary = SummarizeGroundContacts(world, scene);
+            const float body_roll_rad = BodyRollRadStability(chassis.orientation);
+            const float body_pitch_rad = BodyPitchRadStability(chassis.orientation);
+            std::array<HexapodLegContactRollup, 6> contact_summary = SummarizeHexapodGroundContacts(world, scene);
             int total_contact_manifolds = 0;
             int total_contact_points = 0;
-            for (const LegContactSummary& leg_contacts : contact_summary) {
+            for (const HexapodLegContactRollup& leg_contacts : contact_summary) {
                 total_contact_manifolds += leg_contacts.coxa.manifolds + leg_contacts.femur.manifolds + leg_contacts.tibia.manifolds;
                 total_contact_points += leg_contacts.coxa.points + leg_contacts.femur.points + leg_contacts.tibia.points;
             }
@@ -908,7 +784,7 @@ int RunHexapodDemo(
                 previous_angles[leg_index * 3 + 1] = femur_angle;
                 previous_angles[leg_index * 3 + 2] = tibia_angle;
             }
-            UpdateStandingStats(standing_stats,
+            UpdateHexapodStandingStats(standing_stats,
                                 chassis,
                                 body_roll_rad,
                                 body_pitch_rad,
@@ -960,11 +836,13 @@ int RunModelDemo(
 }
 
 int RunDefaultScene(SinkKind sink_kind, SceneModel model) {
-    return RunModelDemo(sink_kind, model, 120, false, kDemoEarthGravity, "127.0.0.1", 9870, nullptr, 80);
+    return RunModelDemo(
+        sink_kind, model, 120, false, kDemoEarthGravity, "127.0.0.1", 9870, nullptr, kHexapodPoseHoldBenchmarkSolverIterations);
 }
 
 int RunRealTimeDefaultScene(SinkKind sink_kind, SceneModel model) {
-    return RunModelDemo(sink_kind, model, 1200, true, kDemoEarthGravity, "127.0.0.1", 9870, nullptr, 80);
+    return RunModelDemo(
+        sink_kind, model, 1200, true, kDemoEarthGravity, "127.0.0.1", 9870, nullptr, kHexapodPoseHoldBenchmarkSolverIterations);
 }
 
 int RunPhysicsDemo(

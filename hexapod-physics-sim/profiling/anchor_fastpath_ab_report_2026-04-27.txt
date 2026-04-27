@@ -1,0 +1,18 @@
+Anchor fast-path A/B sweep at 40x2x8 (solver/substeps/servo passes).
+CSV: profiling/hexapod_anchor_fastpath_sweep_2026-04-27.csv (repeat: ..._repeat_2026-04-27.csv)
+
+Best CPU/stability balance: enable=1, err=1.0e-4, speed=0.02
+Default before: err=2.5e-4 speed=0.03
+Default now:    err=1.0e-4 speed=0.02
+
+Resource (single run):
+  baseline OFF (0,0):   step_ms=10739.685, solve_servo_ms=9680.484
+  tuned ON (1e-4,0.02): step_ms=10088.754, solve_servo_ms=9113.697
+  gain: step ~6.1%, solve_servo ~5.9%
+
+Stability impact (same sweep row):
+  peak_linear_settled: 0.056442 -> 0.058260
+  peak_angular:        0.237822 -> 0.226532
+  peak_joint_error:    0.077137 -> 0.073901
+  final_speed:         0.033872 -> 0.040803
+  final_y:             0.135382 -> 0.135063

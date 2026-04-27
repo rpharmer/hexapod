@@ -1,0 +1,4 @@
+frames=720,solver_iters=40,substeps=2
+stride,wall_ms,peak_linear_settled,peak_angular,peak_joint_error,final_y,final_speed,max_roll_deg,max_pitch_deg,max_joint_speed
+2,37537.373,0.056127,0.224219,0.062561,0.134212,0.037294,3.182040,0.849195,0.383145
+3,33488.288,0.052807,0.220220,0.058707,0.133049,0.026212,3.262971,1.232010,0.397988

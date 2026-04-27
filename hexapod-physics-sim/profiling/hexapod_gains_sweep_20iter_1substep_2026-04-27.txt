@@ -1,0 +1,19 @@
+20-iter / 1-substep gains sweep (total PGS iters per frame fixed at 20)
+
+Pre-tune reference (before gain sweep):
+  peak_linear_settled=0.246030  peak_angular=0.713221  peak_joint_error=0.635807  final_speed=0.114045  final_y=0.039210
+
+A (chosen): posGain*0.70 damp*1.50 maxSpeed*0.45 angleStab=0.10 hingeBias=0.35 hingeDamp=0.45
+  peak_linear_settled=0.113085  peak_angular=1.271877  peak_joint_error=0.811051  final_speed=0.073796  final_y=0.029959
+
+B: pos*0.60 damp*1.70 maxSpeed*0.30
+  peak_linear_settled=0.122221  peak_angular=1.717127  peak_joint_error=0.874988  final_speed=0.101378  final_y=0.028502
+C: pos*0.75 damp*1.35 maxSpeed*0.60
+  peak_linear_settled=0.156410  peak_angular=0.972375  peak_joint_error=0.764866  final_speed=0.118670  final_y=0.028157
+D: A + stronger hinge anchor + angleStab 0.18
+  peak_linear_settled=0.311857  peak_angular=1.143853  peak_joint_error=1.001103  final_speed=0.102711  final_y=0.034398
+E: A + maxSpeed*0.65
+  peak_linear_settled=0.127425  peak_angular=1.253707  peak_joint_error=0.748141  final_speed=0.118325  final_y=0.026920
+
+Resource after chosen A tune (same 20x1 budget):
+  world.step total_ms=1459.061, joints_servo total_ms=1248.609, calls=2400, wall_ms=1459.39

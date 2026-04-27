@@ -1,0 +1,7 @@
+Long-horizon stride A/B (frames=720, solver=40, substeps=2, tuned gains+anchor early-out).
+
+stride=2: wall_ms=31966.260, peak_linear_settled=0.053941, peak_angular=0.213624, peak_joint_error=0.068934, final_y=0.134003, final_speed=0.034756, max_pitch_deg=0.776368
+stride=3: wall_ms=30276.967, peak_linear_settled=0.043756, peak_angular=0.191772, peak_joint_error=0.066150, final_y=0.132765, final_speed=0.023650, max_pitch_deg=1.004415
+
+Delta (3 vs 2): wall -5.3%; final_speed -32%; peak_linear_settled -18.9%; but max_pitch +0.228 deg and final_y -0.00124 m.
+Recommendation: keep stride=2 default for safer pitch margin, or switch to stride=3 if perf/settling wins outweigh small pitch rise.

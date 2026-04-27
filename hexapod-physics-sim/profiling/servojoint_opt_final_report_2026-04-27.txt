@@ -1,0 +1,63 @@
+SolveServoJoint optimization final report (2026-04-27)
+
+Baseline lock
+- Stability: profiling/servojoint_opt_baseline_stability_2026-04-27.txt
+- Resource: profiling/servojoint_opt_baseline_resource_2026-04-27.txt
+- Baseline key values:
+  - wall_ms=5029.39
+  - world.solve_servo_joint total_ms=4422.817
+  - peak_linear_settled_speed=0.041252
+  - peak_joint_error_rad=0.062377
+  - final_speed=0.022987
+
+Workstream A (math collapse in SolveServoJoint + 3x3 anchor matrix simplification)
+- Artifacts:
+  - profiling/servojoint_opt_A_math_stability_2026-04-27.txt
+  - profiling/servojoint_opt_A_math_resource_2026-04-27.txt
+- Result vs baseline:
+  - wall_ms: 5029.39 -> 4354.57  (13.4% faster)
+  - solve_servo_joint_ms: 4422.817 -> 3860.403  (12.7% faster)
+  - peak_linear_settled_speed: 0.041252 -> 0.043346  (worse)
+  - final_speed: 0.022987 -> 0.034556  (worse)
+- Status: ACCEPTED for CPU gains, with documented stability trade-off.
+
+Workstream B (staged angular/hinge early-out with hysteresis/guardrails)
+- Implementation is present in solver/config and can be toggled via JointSolverConfig.
+- Tuned pose-hold defaults leave it disabled.
+- Artifacts:
+  - profiling/servojoint_opt_B_earlyout_stability_2026-04-27.txt
+  - profiling/servojoint_opt_B_earlyout_resource_2026-04-27.txt
+  - profiling/servojoint_opt_B_earlyout_sharedangle_stability_2026-04-27.txt
+  - profiling/servojoint_opt_B_earlyout_sharedangle_resource_2026-04-27.txt
+- Best observed B run vs baseline:
+  - wall_ms: 5029.39 -> 4916.26  (2.2% faster)
+  - solve_servo_joint_ms: 4422.817 -> 4320.293  (2.3% faster)
+  - final_speed: 0.022987 -> 0.027507  (worse)
+- Status: REJECTED as default path (insufficient CPU gain vs A, with stability cost).
+
+Workstream C (shared geometry/angle math reuse path)
+- Added shared helper path used by control sampling and solver angle reconstruction.
+- Artifacts:
+  - profiling/servojoint_opt_C_shared_geometry_stability_2026-04-27.txt
+  - profiling/servojoint_opt_C_shared_geometry_resource_2026-04-27.txt
+- Result vs baseline:
+  - wall_ms: 5029.39 -> 4811.29  (4.3% faster)
+  - solve_servo_joint_ms: 4422.817 -> 4227.533  (4.4% faster)
+  - final_speed: 0.022987 -> 0.034556  (worse)
+- Status: PARTIALLY ACCEPTED (code retained; no additional tuning promotion beyond A path).
+
+Validation sweep and long-horizon checks
+- Sweep artifact: profiling/servojoint_opt_sweep_validate_2026-04-27.csv
+- Long-run artifact: profiling/servojoint_opt_stride_long_validate_2026-04-27.txt
+- Observations:
+  - Anchor early-out and stride remain the primary high-impact knobs under current defaults.
+  - Over 720 frames, stride=3 remains faster than stride=2 (33488.288 ms vs 37537.373 ms).
+
+Final net outcome (active tuned path in code)
+- Adopted: Workstream A math-collapse changes.
+- Implemented but default-disabled: Workstream B angular/hinge early-out gates.
+- Retained: shared geometry helper from Workstream C.
+- Net measured CPU gain relative to baseline (best accepted profile):
+  - world.step wall_ms: -13.4%
+  - world.solve_servo_joint total_ms: -12.7%
+

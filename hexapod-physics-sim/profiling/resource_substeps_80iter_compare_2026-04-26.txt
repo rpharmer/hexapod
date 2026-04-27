@@ -1,0 +1,18 @@
+Same workload: 120 outer frames @ 60 Hz, 2.0 s simulated time; world_resource_profile_oneoff on one machine.
+
+  config                          world.step   joints_servo (self_ms / calls)   wall_ms   vs 6 sub
+  6 substeps, 80 iters (legacy)   ~19766 ms   ~16855 / 57600                    ~19769 ms  1.00x
+  3 substeps, 80 iters            ~7614 ms    ~6672 / 28800                      ~7615 ms  ~2.6x faster
+  1 substep,  80 iters            ~5117 ms    ~4709 /  9600                      ~5117 ms  ~3.9x faster
+  1 substep,  20 iters (current)  ~1609 ms    ~1376 /  2400                      ~1610 ms  ~12x faster
+
+Per frame, inner work scales with substeps * solverIterations. 1*20 = 20 vs 1*80 = 80 → 4x fewer
+inner passes than 1 sub @ 80 iters; joints_servo time ~1376 vs ~4709 (about 3.4x here; not perfect 4x due to fixed costs).
+
+60 Hz: ~1609/120 ≈ 13.4 ms/frame — within a single-thread ~16.7 ms slot for this run (still tight; varies by CPU load).
+
+20-iter stability: see hexapod_stability_baseline_20iter_1substep_2026-04-26.txt (COM low, large tilt).
+test_hexapod_live_pose_hold uses relaxed caps when kHexapodPoseHoldBenchmarkSolverIterations <= 20.
+
+Constants: kHexapodPoseHoldBenchmarkSolverIterations, kHexapodPoseHoldBenchmarkSubstepsPerFrame
+in minphys3d/demo/hexapod_stability.hpp

@@ -1,0 +1,9 @@
+Plan follow-through status (post stride=3 default):
+- profiler split implemented + validated (solve_servo_joint / solve_joint_positions.servo / get_servo_joint_angle)
+- knob sweeps implemented (sweep_hexapod_knobs)
+- allocation reuse implemented for servo fanout/angular scratch
+- anchor early-out implemented and tuned (1e-4, 0.02)
+- scalar fallback prototype evaluated and removed
+- static topology shortcut implemented (cached useVelocityBiases decision)
+- angle sampling cache path implemented across step boundaries
+- servo position solve stride implemented; default now stride=3 in hexapod tuning

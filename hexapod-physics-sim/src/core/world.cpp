@@ -1,4 +1,5 @@
 #include "minphys3d/core/world.hpp"
+#include "minphys3d/core/subsystems.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -19,33 +20,6 @@ Vec3 ChooseJointReferenceVector(const Vec3& axis) {
 
 Vec3 ComputeLocalDirection(const Body& body, const Vec3& worldDirection) {
     return Rotate(Conjugate(Normalize(body.orientation)), worldDirection);
-}
-
-Vec3 JointReferenceFallback(const Vec3& axis) {
-    const Vec3 fallback = (std::abs(axis.y) < 0.9f) ? Vec3{0.0f, 1.0f, 0.0f} : Vec3{1.0f, 0.0f, 0.0f};
-    Vec3 reference = fallback - Dot(fallback, axis) * axis;
-    if (!TryNormalize(reference, reference)) {
-        reference = {1.0f, 0.0f, 0.0f};
-    }
-    return reference;
-}
-
-Vec3 ResolveJointReference(const Quat& orientation, const Vec3& localReference, const Vec3& axis) {
-    Vec3 reference = Rotate(orientation, localReference);
-    reference = reference - Dot(reference, axis) * axis;
-    if (!TryNormalize(reference, reference)) {
-        return JointReferenceFallback(axis);
-    }
-    return reference;
-}
-
-float SignedAngleAroundAxis(const Vec3& from, const Vec3& to, const Vec3& axis) {
-    Vec3 fromN = from;
-    Vec3 toN = to;
-    if (!TryNormalize(fromN, fromN) || !TryNormalize(toN, toN)) {
-        return 0.0f;
-    }
-    return std::atan2(Dot(Cross(fromN, toN), axis), Dot(fromN, toN));
 }
 
 } // namespace
@@ -311,18 +285,15 @@ std::uint32_t World::GetServoJointCount() const {
 }
 
 float World::GetServoJointAngle(std::uint32_t id) const {
-    const ServoJoint& joint = servoJoints_.at(id);
+    const auto _scope = resource_profiler_.scope(
+        world_resource_monitoring::toIndex(world_resource_monitoring::Section::GetServoJointAngle));
+    return ComputeServoJointAngleNoProfile(servoJoints_.at(id));
+}
+
+float World::ComputeServoJointAngleNoProfile(const ServoJoint& joint) const {
     const Body& a = bodies_.at(joint.a);
     const Body& b = bodies_.at(joint.b);
-
-    Vec3 axisA = Rotate(a.orientation, joint.localAxisA);
-    if (!TryNormalize(axisA, axisA)) {
-        return 0.0f;
-    }
-
-    const Vec3 refA = ResolveJointReference(a.orientation, joint.localReferenceA, axisA);
-    const Vec3 refB = ResolveJointReference(b.orientation, joint.localReferenceB, axisA);
-    return SignedAngleAroundAxis(refA, refB, axisA);
+    return core_internal::ComputeServoJointAngle(a, b, joint);
 }
 
 Vec3 World::ComputeLocalAnchor(std::uint32_t bodyId, const Vec3& worldAnchor) const {
@@ -490,13 +461,31 @@ std::uint32_t World::CreateServoJoint(
     j.angleStabilizationScale = std::clamp(angleStabilizationScale, 0.0f, 1.0f);
     j.maxServoSpeed = std::max(0.0f, maxServoSpeed);
     servoJoints_.push_back(j);
+    InvalidateServoAngleSampleCache();
+    InvalidateServoPositionTopologyCache();
     return static_cast<std::uint32_t>(servoJoints_.size() - 1);
 }
 
+void World::InvalidateServoAngleSampleCache() {
+    servoAngleSampleCacheValid_ = false;
+    servoAngleSampleCache_.clear();
+}
+
+void World::InvalidateServoPositionTopologyCache() {
+    servoPositionUseVelocityBiasesCacheValid_ = false;
+}
+
 void World::PrepareServoJointControlSamples() {
+    if (!servoAngleSampleCacheValid_ || servoAngleSampleCache_.size() != servoJoints_.size()) {
+        servoAngleSampleCache_.assign(servoJoints_.size(), 0.0f);
+        for (std::size_t i = 0; i < servoJoints_.size(); ++i) {
+            servoAngleSampleCache_[i] = ComputeServoJointAngleNoProfile(servoJoints_[i]);
+        }
+        servoAngleSampleCacheValid_ = true;
+    }
     for (std::size_t i = 0; i < servoJoints_.size(); ++i) {
         ServoJoint& j = servoJoints_[i];
-        const float angle = GetServoJointAngle(static_cast<std::uint32_t>(i));
+        const float angle = servoAngleSampleCache_[i];
         float raw = angle - j.targetAngle;
         raw = std::atan2(std::sin(raw), std::cos(raw));
         if (j.positionErrorSmoothing > 0.0f) {
@@ -514,8 +503,13 @@ void World::AccumulateServoAngleIntegrals(float dt) {
     if (dt <= 0.0f) {
         return;
     }
+    if (servoAngleSampleCache_.size() != servoJoints_.size()) {
+        servoAngleSampleCache_.assign(servoJoints_.size(), 0.0f);
+    }
     for (std::size_t i = 0; i < servoJoints_.size(); ++i) {
         ServoJoint& j = servoJoints_[i];
+        const float angle = ComputeServoJointAngleNoProfile(j);
+        servoAngleSampleCache_[i] = angle;
         if (j.integralGain <= 0.0f) {
             continue;
         }
@@ -524,12 +518,12 @@ void World::AccumulateServoAngleIntegrals(float dt) {
             j.integralAccum *= 0.9f;
             continue;
         }
-        const float angle = GetServoJointAngle(static_cast<std::uint32_t>(i));
         float err = angle - j.targetAngle;
         err = std::atan2(std::sin(err), std::cos(err));
         j.integralAccum += err * dt;
         j.integralAccum = std::clamp(j.integralAccum, -j.integralClamp, j.integralClamp);
     }
+    servoAngleSampleCacheValid_ = true;
 }
 
 void World::Step(float dt, int solverIterations) {
@@ -656,7 +650,13 @@ void World::Step(float dt, int solverIterations) {
         }
         {
             const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::SolveJointPositions));
-            SolveJointPositions();
+            const int solveStride = std::max(1, static_cast<int>(jointSolverConfig_.servoPositionSolveStride));
+            const bool runPositionSolve =
+                (servoPositionSolveSubstepCounter_ % static_cast<std::uint64_t>(solveStride)) == 0u;
+            if (runPositionSolve) {
+                SolveJointPositions();
+            }
+            ++servoPositionSolveSubstepCounter_;
             (void)scope;
         }
         {
@@ -690,6 +690,10 @@ void World::Step(float dt, int solverIterations) {
 
 world_resource_monitoring::SectionSummary World::SnapshotResourceSections(bool reset_window) const {
     return resource_profiler_.topSections(world_resource_monitoring::kTopSectionsToReport, reset_window);
+}
+
+world_resource_monitoring::SectionSummary World::SnapshotFullResourceSections(bool reset_window) const {
+    return resource_profiler_.topSections(world_resource_monitoring::kMaxSections, reset_window);
 }
 
 World::TopologySnapshot World::SnapshotTopology() const {

@@ -108,6 +108,57 @@ add_minphys3d_test(test_hexapod_live_pose_hold tests/test_hexapod_live_pose_hold
 add_minphys3d_test(test_hexapod_zero_g tests/test_hexapod_zero_g.cpp)
 add_minphys3d_test(hex_diag tests/hex_diag.cpp)
 
+    execute_process(
+        COMMAND git rev-parse --short HEAD
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE MPH3D_STABILITY_GIT_SHORT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(MPH3D_STABILITY_GIT_SHORT STREQUAL "")
+        set(MPH3D_STABILITY_GIT_SHORT "unknown")
+    endif()
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/stability_git.inc
+        "\"${MPH3D_STABILITY_GIT_SHORT}\"\n")
+
+    add_executable(record_hexapod_stability tests/record_hexapod_stability.cpp)
+    target_link_libraries(record_hexapod_stability PRIVATE minphys3d_core)
+    target_include_directories(record_hexapod_stability PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_BINARY_DIR})
+    if(MSVC)
+        target_compile_options(record_hexapod_stability PRIVATE /W4)
+    else()
+        target_compile_options(record_hexapod_stability PRIVATE -Wall -Wextra -pedantic)
+    endif()
+
+    add_executable(sweep_hexapod_knobs tests/sweep_hexapod_knobs.cpp)
+    target_link_libraries(sweep_hexapod_knobs PRIVATE minphys3d_core)
+    target_include_directories(sweep_hexapod_knobs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    if(MSVC)
+        target_compile_options(sweep_hexapod_knobs PRIVATE /W4)
+    else()
+        target_compile_options(sweep_hexapod_knobs PRIVATE -Wall -Wextra -pedantic)
+    endif()
+
+    add_executable(compare_servo_stride_long tests/compare_servo_stride_long.cpp)
+    target_link_libraries(compare_servo_stride_long PRIVATE minphys3d_core)
+    target_include_directories(compare_servo_stride_long PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    if(MSVC)
+        target_compile_options(compare_servo_stride_long PRIVATE /W4)
+    else()
+        target_compile_options(compare_servo_stride_long PRIVATE -Wall -Wextra -pedantic)
+    endif()
+
+    add_executable(world_resource_profile_oneoff profiling/world_resource_profile_oneoff.cpp)
+    target_link_libraries(world_resource_profile_oneoff PRIVATE minphys3d_core)
+    target_include_directories(world_resource_profile_oneoff PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    if(MSVC)
+        target_compile_options(world_resource_profile_oneoff PRIVATE /W4)
+    else()
+        target_compile_options(world_resource_profile_oneoff PRIVATE -Wall -Wextra -pedantic)
+    endif()
+
     add_executable(test_servo_visual_presets_json
         tests/test_servo_visual_presets_json.cpp
         src/demo/scene_json.cpp

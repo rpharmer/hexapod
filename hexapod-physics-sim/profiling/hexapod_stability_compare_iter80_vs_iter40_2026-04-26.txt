@@ -1,0 +1,31 @@
+Stability benchmark: same workload (240 outer frames, 6 substeps/frame, standard joint config; see
+test_hexapod_live_pose_hold / record_hexapod_stability). Solver iterations per substep: 80 vs 40.
+
+constant: kHexapodPoseHoldBenchmarkSolverIterations = 40 (minphys3d/demo/hexapod_stability.hpp)
+
+--- iter 80 (frozen)  profiling/hexapod_stability_baseline_iter80_2026-04-26.txt
+peak_linear_speed          0.245250
+peak_linear_settled_speed  0.009207
+peak_angular_speed         0.012530
+peak_joint_error_rad       0.008313
+final_chassis_y            0.140760
+final_speed                0.008107
+max_abs_roll_deg           0.053551
+max_abs_pitch_deg          0.298654
+max_joint_speed_rad_s      0.120482
+
+--- iter 40 (current)   profiling/hexapod_stability_baseline_iter40_2026-04-26.txt
+peak_linear_speed          0.248218  ( +0.002968 vs 80 )
+peak_linear_settled_speed  0.020770  ( +0.011563 vs 80; looser steady-state motion )
+peak_angular_speed         0.014727  ( +0.002197 )
+peak_joint_error_rad       0.021070  ( +0.012757 )
+final_chassis_y            0.139442  ( -0.001318 m COM height )
+final_speed                0.018056  ( +0.009949; test cap kMaxFinalSpeed raised to 0.025 )
+max_abs_roll_deg           0.140910  ( +0.087359 )
+max_abs_pitch_deg          0.859470  ( +0.560816 )
+max_joint_speed_rad_s      0.232477  ( +0.111995 )
+
+Notes
+- joints_servo profile call count scales ~linearly with solver iterations (per substep): half the iters
+  halves those calls; use world_resource_profile_oneoff.cpp with kIter aligned to the constant.
+- Next step (per plan): halve substeps (6 -> 3) and re-compare against this 40-iter row.

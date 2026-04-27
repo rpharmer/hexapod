@@ -7,7 +7,7 @@
 
 namespace minphys3d::world_resource_monitoring {
 
-inline constexpr std::size_t kMaxSections = 18;
+inline constexpr std::size_t kMaxSections = 30;
 inline constexpr std::size_t kTopSectionsToReport = 8;
 
 enum class Section : std::size_t {
@@ -25,15 +25,28 @@ enum class Section : std::size_t {
     ResolveTOI,
     IntegrateOrientation,
     SolveJointPositions,
+    SolveJointPositionsServo,
     PositionalCorrection,
     UpdateSleeping,
     ClearAccumulators,
     ClampBodyVelocities,
+    /// `SolveIslands` inner breakdown (nesting; self-time of `world.solve_islands` is only uncaptured overhead).
+    SolveIslandsIslandOrder,
+    SolveIslandsContactsForward,
+    SolveIslandsContactsShock,
+    SolveIslandsDistanceJoints,
+    SolveIslandsHingeJoints,
+    SolveIslandsBallSocketJoints,
+    SolveIslandsFixedJoints,
+    SolveIslandsPrismaticJoints,
+    SolveIslandsServoJoints,
+    GetServoJointAngle,
+    SolveServoJoint,
     Count,
 };
 
-static_assert(static_cast<std::size_t>(Section::Count) <= kMaxSections,
-              "world resource labels must fit in the fixed-size profiler");
+static_assert(static_cast<std::size_t>(Section::Count) == kMaxSections,
+              "world resource labels and Section::Count must match kMaxSections");
 
 using Profiler = resource_monitoring::SectionProfiler<kMaxSections>;
 using SectionSummary = resource_monitoring::ResourceSectionSummary<kMaxSections>;
@@ -53,10 +66,22 @@ inline constexpr std::array<const char*, kMaxSections> kSectionLabels = {
     "world.resolve_toi",
     "world.integrate_orientation",
     "world.solve_joint_positions",
+    "world.solve_joint_positions.servo",
     "world.positional_correction",
     "world.update_sleeping",
     "world.clear_accumulators",
     "world.clamp_body_velocities",
+    "world.solve_islands.island_order",
+    "world.solve_islands.contacts_forward",
+    "world.solve_islands.contacts_shock",
+    "world.solve_islands.joints_distance",
+    "world.solve_islands.joints_hinge",
+    "world.solve_islands.joints_ball_socket",
+    "world.solve_islands.joints_fixed",
+    "world.solve_islands.joints_prismatic",
+    "world.solve_islands.joints_servo",
+    "world.get_servo_joint_angle",
+    "world.solve_servo_joint",
 };
 
 inline constexpr std::size_t toIndex(Section section) {

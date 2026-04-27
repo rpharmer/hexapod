@@ -1,0 +1,17 @@
+git=9eec079
+[pose_hold]
+pose_hold_settled_start_frame=60
+peak_linear_speed=0.434317
+peak_linear_settled_speed=0.311857
+peak_angular_speed=1.143853
+peak_joint_error_rad=1.001103
+final_chassis_y=0.034398
+final_speed=0.102711
+[standing_window]
+min_body_height=0.034024
+max_body_height=0.152127
+max_abs_roll_deg=24.667654
+max_abs_pitch_deg=4.143862
+max_joint_speed_rad_s=2.438675
+min_contact_manifolds=0
+min_contact_points=0

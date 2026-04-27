@@ -1,0 +1,22 @@
+Resource profiler comparison (self-time from World section snapshots; workload identical except solver iters)
+  Workload: 120 outer frames @ 60 Hz, 6 substeps/frame, 120*6=720 subphysics steps; hexapod + Relax servos; same nested labels as world_resource_monitoring.
+
+Source profiles
+  iter 80: profiling/resource_profile_hexapod_27sec_nested_2026-04-26.txt  (WSL2 run, 2026-04-26)
+  iter 40: profiling/resource_profile_hexapod_oneoff_iter40_2026-04-26.txt (same scheme; build target world_resource_profile_oneoff)
+
+Chromium-style one-liner (first line of snapshot)
+  iter 80: world.step total_ms=19765 window_ms=19765 calls=720  |  solve_islands 19062/720  |  joints_servo 16855 ms / 57600 calls  |  contacts_forward 1673/57600
+  iter 40: world.step total_ms=8701  window_ms=8701  calls=720  |  solve_islands 8111/720   |  joints_servo 7262  ms / 28800 calls  |  contacts_forward 649/28800
+
+Key ratios (40 vs 80, same 720 world.step)
+  wall clock (chronometer in oneoff): 8704 ms / 19769 ms  ~= 0.44  (not identical machine load; for trend only)
+  joints_servo call count: 28800 / 57600 = 0.50  (exact: half the PGS iters)
+  joints_servo total_ms:   7262 / 16855  ~= 0.43
+  solve_islands total_ms:  8111 / 19062  ~= 0.43
+  world.step total_ms:     8701 / 19765  ~= 0.44
+  contacts_forward total_ms: 649 / 1673  ~= 0.39  (call count also halves with island inner iterations)
+
+Steps not inner-solver: generate_contacts, build_manifolds, broadphase, etc. stay at calls=720; their total_ms may drop a bit (less churn) but not halved.
+
+Re-run: build/ world_resource_profile_oneoff (kIter = kHexapodPoseHoldBenchmarkSolverIterations in hexapod_stability.hpp)

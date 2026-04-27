@@ -39,6 +39,23 @@ float SignedAngleAroundAxis(const Vec3& from, const Vec3& to, const Vec3& axis) 
     return std::atan2(Dot(Cross(fromN, toN), axis), Dot(fromN, toN));
 }
 
+bool ComputeUseVelocityBiasesForServoPosition(
+    const std::vector<ServoJoint>& servoJoints,
+    std::size_t bodyCount,
+    std::vector<std::uint16_t>& fanoutScratch) {
+    constexpr std::uint16_t kFanoutThreshold = 2;
+    fanoutScratch.assign(bodyCount, 0);
+    std::uint16_t maxFanout = 0;
+    for (const ServoJoint& sj : servoJoints) {
+        ++fanoutScratch[sj.a];
+        ++fanoutScratch[sj.b];
+    }
+    for (const std::uint16_t f : fanoutScratch) {
+        maxFanout = std::max(maxFanout, f);
+    }
+    return maxFanout > kFanoutThreshold;
+}
+
 } // namespace
 
 void World::ResolveTOIPipeline(float dt) {
@@ -446,22 +463,26 @@ bool World::SolveHingeAnchorBlock3x3(
         Vec3& outLambda,
         JointBlockFallbackReason& outReason) const {
         outReason = JointBlockFallbackReason::None;
-        const Vec3 basis[3] = {
+        float K[3][3]{};
+        const float invMassSum = a.invMass + b.invMass;
+        const Vec3 axes[3] = {
             {1.0f, 0.0f, 0.0f},
             {0.0f, 1.0f, 0.0f},
             {0.0f, 0.0f, 1.0f},
         };
-        float K[3][3]{};
-        const float invMassSum = a.invMass + b.invMass;
+        Vec3 raCrossAxis[3]{};
+        Vec3 rbCrossAxis[3]{};
         for (int i = 0; i < 3; ++i) {
-            const Vec3 raCrossNi = Cross(ra, basis[i]);
-            const Vec3 rbCrossNi = Cross(rb, basis[i]);
+            raCrossAxis[i] = Cross(ra, axes[i]);
+            rbCrossAxis[i] = Cross(rb, axes[i]);
+        }
+        for (int i = 0; i < 3; ++i) {
+            const Vec3 invIaCrossI = invIA * raCrossAxis[i];
+            const Vec3 invIbCrossI = invIB * rbCrossAxis[i];
             for (int j = 0; j < 3; ++j) {
-                const Vec3 raCrossNj = Cross(ra, basis[j]);
-                const Vec3 rbCrossNj = Cross(rb, basis[j]);
-                K[i][j] = invMassSum * Dot(basis[i], basis[j])
-                    + Dot(raCrossNi, invIA * raCrossNj)
-                    + Dot(rbCrossNi, invIB * rbCrossNj);
+                K[i][j] = (i == j ? invMassSum : 0.0f)
+                    + Dot(invIaCrossI, raCrossAxis[j])
+                    + Dot(invIbCrossI, rbCrossAxis[j]);
             }
         }
 
@@ -863,6 +884,8 @@ void World::SolvePrismaticJoint(PrismaticJoint& j) {
     }
 
 void World::SolveServoJoint(ServoJoint& j) {
+        const auto _scope = resource_profiler_.scope(
+            world_resource_monitoring::toIndex(world_resource_monitoring::Section::SolveServoJoint));
         Body& a = bodies_[j.a];
         Body& b = bodies_[j.b];
         const Mat3 invIA = a.InvInertiaWorld();
@@ -876,21 +899,54 @@ void World::SolveServoJoint(ServoJoint& j) {
         const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
         const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
         const Vec3 relVel = vb - va;
-        const float relAngSpeed = Length(b.angularVelocity - a.angularVelocity);
-        if (Length(error) > kWakeContactPenetrationThreshold
-            || Length(relVel) > kWakeJointRelativeSpeedThreshold
-            || relAngSpeed > kWakeJointRelativeSpeedThreshold) {
+        const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
+        const float wakeErrorSq = kWakeContactPenetrationThreshold * kWakeContactPenetrationThreshold;
+        const float wakeSpeedSq = kWakeJointRelativeSpeedThreshold * kWakeJointRelativeSpeedThreshold;
+        if (LengthSquared(error) > wakeErrorSq
+            || LengthSquared(relVel) > wakeSpeedSq
+            || LengthSquared(relAngVel) > wakeSpeedSq) {
             WakeConnectedBodies(j.a);
             WakeConnectedBodies(j.b);
         }
 
-        Vec3 lambda{};
-        JointBlockFallbackReason fallbackReason = JointBlockFallbackReason::None;
-        if (SolveHingeAnchorBlock3x3(a, b, invIA, invIB, ra, rb, error, relVel, lambda, fallbackReason)) {
-            j.impulseX += lambda.x;
-            j.impulseY += lambda.y;
-            j.impulseZ += lambda.z;
-            ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda);
+        const float anchorErrorSq = LengthSquared(error);
+        const float anchorSpeedSq = LengthSquared(relVel);
+        const float anchorErrorEnterSq =
+            jointSolverConfig_.servoAnchorEarlyOutError * jointSolverConfig_.servoAnchorEarlyOutError;
+        const float anchorSpeedEnterSq =
+            jointSolverConfig_.servoAnchorEarlyOutSpeed * jointSolverConfig_.servoAnchorEarlyOutSpeed;
+        const float resumeScale = std::max(1.0f, jointSolverConfig_.servoEarlyOutResumeScale);
+        const float anchorErrorExitSq =
+            (jointSolverConfig_.servoAnchorEarlyOutError * resumeScale)
+            * (jointSolverConfig_.servoAnchorEarlyOutError * resumeScale);
+        const float anchorSpeedExitSq =
+            (jointSolverConfig_.servoAnchorEarlyOutSpeed * resumeScale)
+            * (jointSolverConfig_.servoAnchorEarlyOutSpeed * resumeScale);
+        const float impulseGuard = std::max(0.0f, jointSolverConfig_.servoEarlyOutImpulseGuardFraction);
+        const float anchorImpulseSum = std::abs(j.impulseX) + std::abs(j.impulseY) + std::abs(j.impulseZ);
+        const bool anchorImpulseSmall = anchorImpulseSum <= (j.maxServoTorque * impulseGuard);
+        bool skipAnchorSolve = false;
+        if (jointSolverConfig_.enableServoAnchorEarlyOut) {
+            if (j.anchorEarlyOutActive) {
+                j.anchorEarlyOutActive =
+                    anchorErrorSq < anchorErrorExitSq && anchorSpeedSq < anchorSpeedExitSq && anchorImpulseSmall;
+            } else {
+                j.anchorEarlyOutActive =
+                    anchorErrorSq < anchorErrorEnterSq && anchorSpeedSq < anchorSpeedEnterSq && anchorImpulseSmall;
+            }
+            skipAnchorSolve = j.anchorEarlyOutActive;
+        } else {
+            j.anchorEarlyOutActive = false;
+        }
+        if (!skipAnchorSolve) {
+            Vec3 lambda{};
+            JointBlockFallbackReason fallbackReason = JointBlockFallbackReason::None;
+            if (SolveHingeAnchorBlock3x3(a, b, invIA, invIB, ra, rb, error, relVel, lambda, fallbackReason)) {
+                j.impulseX += lambda.x;
+                j.impulseY += lambda.y;
+                j.impulseZ += lambda.z;
+                ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda);
+            }
         }
 
         const Vec3 axisA = Normalize(Rotate(a.orientation, j.localAxisA));
@@ -901,7 +957,6 @@ void World::SolveServoJoint(ServoJoint& j) {
         const Vec3 t2 = Normalize(Cross(axisA, t1));
 
         const Vec3 angularError = Cross(axisA, axisB);
-        const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
         const Vec3 angAxes[2] = {t1, t2};
         float* angImpulseSums[2] = {&j.angularImpulse1, &j.angularImpulse2};
         const float dt = currentSubstepDt_;
@@ -909,37 +964,83 @@ void World::SolveServoJoint(ServoJoint& j) {
         // leg servos hold their shape under load instead of behaving like loose ball joints.
         constexpr float kAxisAlignOmega = 260.0f;
         constexpr float kAxisAlignZeta  = 1.12f;
-        const float axisDenom = 2.0f * kAxisAlignZeta + dt * kAxisAlignOmega;
-        for (int i = 0; i < 2; ++i) {
-            const Vec3 n = angAxes[i];
-            const float w = Dot(n, invIA * n) + Dot(n, invIB * n);
-            if (w <= kEpsilon) {
-                continue;
+        const float axisDenom = std::max(2.0f * kAxisAlignZeta + dt * kAxisAlignOmega, kEpsilon);
+        const float invAxisDenom = 1.0f / axisDenom;
+        const float angularErrorMag = Length(angularError);
+        const float relAngSpeed = Length(relAngVel);
+        const bool angularImpulseSmall =
+            std::max(std::abs(j.angularImpulse1), std::abs(j.angularImpulse2))
+            <= (j.maxServoTorque * impulseGuard);
+        bool skipAngularRows = false;
+        if (jointSolverConfig_.enableServoAngularEarlyOut) {
+            const float enterError = jointSolverConfig_.servoAngularEarlyOutError;
+            const float enterSpeed = jointSolverConfig_.servoAngularEarlyOutSpeed;
+            const float exitError = enterError * resumeScale;
+            const float exitSpeed = enterSpeed * resumeScale;
+            if (j.angularEarlyOutActive) {
+                j.angularEarlyOutActive =
+                    angularErrorMag < exitError && relAngSpeed < exitSpeed && angularImpulseSmall;
+            } else {
+                j.angularEarlyOutActive =
+                    angularErrorMag < enterError && relAngSpeed < enterSpeed && angularImpulseSmall;
             }
-            const float axisGamma = w / (dt * kAxisAlignOmega * std::max(axisDenom, kEpsilon));
-            const float axisBiasVel = kAxisAlignOmega * Dot(angularError, n)
-                                    / std::max(axisDenom, kEpsilon);
-            float angLambda = -(Dot(relAngVel, n) + axisBiasVel) / (w + axisGamma);
-            const float oldAxisImpulse = *angImpulseSums[i];
-            *angImpulseSums[i] = std::clamp(oldAxisImpulse + angLambda, -j.maxServoTorque, j.maxServoTorque);
-            angLambda = *angImpulseSums[i] - oldAxisImpulse;
-            ApplyAngularImpulse(a, b, invIA, invIB, angLambda * n);
+            skipAngularRows = j.angularEarlyOutActive;
+        } else {
+            j.angularEarlyOutActive = false;
+        }
+        if (!skipAngularRows) {
+            for (int i = 0; i < 2; ++i) {
+                const Vec3 n = angAxes[i];
+                const float w = Dot(n, invIA * n) + Dot(n, invIB * n);
+                if (w <= kEpsilon) {
+                    continue;
+                }
+                const float errN = Dot(angularError, n);
+                const float velN = Dot(relAngVel, n);
+                const float axisGamma = w * invAxisDenom / (dt * kAxisAlignOmega);
+                const float axisBiasVel = kAxisAlignOmega * errN * invAxisDenom;
+                float angLambda = -(velN + axisBiasVel) / (w + axisGamma);
+                const float oldAxisImpulse = *angImpulseSums[i];
+                *angImpulseSums[i] = std::clamp(oldAxisImpulse + angLambda, -j.maxServoTorque, j.maxServoTorque);
+                angLambda = *angImpulseSums[i] - oldAxisImpulse;
+                ApplyAngularImpulse(a, b, invIA, invIB, angLambda * n);
+            }
         }
 
-        const Vec3 refA = ResolveJointReference(a.orientation, j.localReferenceA, axisA);
-        const Vec3 refB = ResolveJointReference(b.orientation, j.localReferenceB, axisA);
-        const float hingeAngle = SignedAngleAroundAxis(refA, refB, axisA);
+        const float hingeAngle = core_internal::ComputeServoJointAngle(a, b, j);
         const float rawPositionError = core_internal::WrapJointAngle(hingeAngle - j.targetAngle);
         const float positionError = (j.positionErrorSmoothing > 0.0f) ? j.smoothedAngleError : rawPositionError;
         const float omegaAxis = Dot(relAngVel, axisA);
         const float w = Dot(axisA, invIA * axisA) + Dot(axisA, invIB * axisA);
         if (w > kEpsilon) {
+            const bool hingeImpulseSmall = std::abs(j.servoImpulseSum) <= (j.maxServoTorque * impulseGuard);
+            bool skipHingeRow = false;
+            if (jointSolverConfig_.enableServoHingeEarlyOut) {
+                const float enterError = jointSolverConfig_.servoHingeEarlyOutError;
+                const float enterSpeed = jointSolverConfig_.servoHingeEarlyOutSpeed;
+                const float exitError = enterError * resumeScale;
+                const float exitSpeed = enterSpeed * resumeScale;
+                if (j.hingeEarlyOutActive) {
+                    j.hingeEarlyOutActive =
+                        std::abs(positionError) < exitError && std::abs(omegaAxis) < exitSpeed && hingeImpulseSmall;
+                } else {
+                    j.hingeEarlyOutActive =
+                        std::abs(positionError) < enterError && std::abs(omegaAxis) < enterSpeed && hingeImpulseSmall;
+                }
+                skipHingeRow = j.hingeEarlyOutActive;
+            } else {
+                j.hingeEarlyOutActive = false;
+            }
+            if (skipHingeRow) {
+                return;
+            }
             const float omega = j.positionGain;
             const float zeta = j.dampingGain;
-            const float denom = 2.0f * zeta + dt * omega;
-            const float gamma = w / (dt * omega * std::max(denom, kEpsilon));
+            const float denom = std::max(2.0f * zeta + dt * omega, kEpsilon);
+            const float invDenom = 1.0f / denom;
+            const float gamma = w * invDenom / (dt * omega);
             const float clampedError = std::clamp(positionError, -j.maxCorrectionAngle, j.maxCorrectionAngle);
-            float biasVel = omega * clampedError / std::max(denom, kEpsilon)
+            float biasVel = omega * clampedError * invDenom
                           + j.integralGain * j.integralAccum;
             if (j.maxServoSpeed > 0.0f && std::isfinite(j.maxServoSpeed)) {
                 biasVel = std::clamp(biasVel, -j.maxServoSpeed, j.maxServoSpeed);
@@ -1036,7 +1137,18 @@ void World::SolveContactsInManifold(Manifold& manifold) {
         solver.SolveContactsInManifold(context, manifold);
     }
 
+bool World::ComputeServoPositionUseVelocityBiases() const {
+        if (!servoPositionUseVelocityBiasesCacheValid_) {
+            servoPositionUseVelocityBiasesCached_ = ComputeUseVelocityBiasesForServoPosition(
+                servoJoints_, bodies_.size(), servoPositionFanoutScratch_);
+            servoPositionUseVelocityBiasesCacheValid_ = true;
+        }
+        return servoPositionUseVelocityBiasesCached_;
+    }
+
 void World::SolveJointPositions() {
+        const auto _scope = resource_profiler_.scope(
+            world_resource_monitoring::toIndex(world_resource_monitoring::Section::SolveJointPositionsServo));
         core_internal::JointSolver jointSolver;
         core_internal::JointSolverContext context{
             bodies_,
@@ -1049,6 +1161,11 @@ void World::SolveJointPositions() {
             jointSolverConfig_.servoPositionPasses,
             gravity_,
             currentSubstepDt_,
+            true,
+            ComputeServoPositionUseVelocityBiases(),
+            &servoPositionFanoutScratch_,
+            &servoPositionAngularAccumScratch_,
+            &servoPositionAngularCountScratch_,
         };
         jointSolver.SolveJointPositions(context);
     }
@@ -1203,6 +1320,7 @@ void World::SolveIslands() {
             [this](FixedJoint& joint) { SolveFixedJoint(joint); },
             [this](PrismaticJoint& joint) { SolvePrismaticJoint(joint); },
             [this](ServoJoint& joint) { SolveServoJoint(joint); },
+            &resource_profiler_,
         };
 
         constraintSolver.SolveIslands(context);

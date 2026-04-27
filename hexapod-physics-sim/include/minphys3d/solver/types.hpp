@@ -128,6 +128,32 @@ struct JointSolverConfig {
     /// chains, or Jacobi-averaged velocity biases for systems containing a star-topology hub
     /// (any body with > 2 servo joints). Use 0 to disable the block entirely.
     std::uint8_t servoPositionPasses = 4;
+    /// Run `SolveJointPositions` every Nth substep (1 = every substep). Useful for CPU/stability tradeoffs
+    /// without changing velocity-solve PGS iteration count.
+    std::uint8_t servoPositionSolveStride = 1;
+    /// Skip expensive servo anchor 3x3 block solve when both anchor error and relative anchor
+    /// speed are already tiny; keeps axis/angle servo rows active.
+    bool enableServoAnchorEarlyOut = true;
+    /// Anchor error threshold (meters) for `enableServoAnchorEarlyOut`.
+    float servoAnchorEarlyOutError = 1.0e-4f;
+    /// Relative anchor speed threshold (m/s) for `enableServoAnchorEarlyOut`.
+    float servoAnchorEarlyOutSpeed = 0.02f;
+    /// Enable angular-axis alignment row early-out when axis error/omega are tiny.
+    bool enableServoAngularEarlyOut = false;
+    /// Axis misalignment threshold (radians, approximated by |axisA x axisB|) for angular early-out.
+    float servoAngularEarlyOutError = 1.0e-3f;
+    /// Relative angular speed threshold (rad/s) for angular early-out.
+    float servoAngularEarlyOutSpeed = 0.05f;
+    /// Enable hinge-axis row early-out when angle error/axis speed are tiny.
+    bool enableServoHingeEarlyOut = false;
+    /// Hinge angle error threshold (rad) for hinge-row early-out.
+    float servoHingeEarlyOutError = 1.0e-3f;
+    /// Hinge axis angular speed threshold (rad/s) for hinge-row early-out.
+    float servoHingeEarlyOutSpeed = 0.05f;
+    /// Exit threshold multiplier (>1) used for early-out hysteresis.
+    float servoEarlyOutResumeScale = 1.5f;
+    /// Prevent early-out while row impulse magnitude is above this fraction of max torque.
+    float servoEarlyOutImpulseGuardFraction = 0.2f;
 };
 
 struct BroadphaseConfig {

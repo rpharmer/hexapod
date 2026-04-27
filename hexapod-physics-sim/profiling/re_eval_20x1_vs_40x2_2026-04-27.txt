@@ -1,0 +1,11 @@
+Re-evaluation: 20x1 -> 40x2
+
+Stability (record_hexapod_stability):
+  20x1: peak_linear_settled=0.113085, peak_angular=1.271877, peak_joint_error=0.811051, final_y=0.029959, final_speed=0.073796
+  40x2: peak_linear_settled=0.056442, peak_angular=0.237822, peak_joint_error=0.077137, final_y=0.135382, final_speed=0.033872
+  Delta: all key stability metrics improved materially.
+
+Resource (world_resource_profile_oneoff, 120 frames @60Hz):
+  20x1: wall_ms=1459.39, world.step=1459.06, joints_servo=1248.61, calls=2400
+  40x2: wall_ms=4114.64, world.step=4114.22, joints_servo=3727.92, calls=9600
+  Factor: ~2.82x slower wall than 20x1 (~4x solver passes expected; overheads amortize).

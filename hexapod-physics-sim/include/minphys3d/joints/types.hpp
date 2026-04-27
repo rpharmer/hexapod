@@ -115,6 +115,10 @@ struct ServoJoint {
     float maxCorrectionAngle = 0.5f;
     /// Scales post-integration positional hinge correction for this joint (1 = default).
     float angleStabilizationScale = 1.0f;
+    // Solver-side hysteresis flags for staged early-out gates.
+    bool anchorEarlyOutActive = false;
+    bool angularEarlyOutActive = false;
+    bool hingeEarlyOutActive = false;
 };
 
 } // namespace minphys3d

@@ -590,6 +590,13 @@ struct JointSolverContext {
     /// Substep duration — used to convert angular position corrections into velocity biases so
     /// they interact correctly with servo PD damping instead of injecting phantom energy.
     float substepDt = 1.0f / 360.0f;
+    /// Optional override for the high-fanout servo-position mode decision.
+    bool hasUseVelocityBiasesOverride = false;
+    bool useVelocityBiasesOverride = false;
+    /// Optional reusable scratch buffers (owned by `World`) for servo position passes.
+    std::vector<std::uint16_t>* servoFanoutScratch = nullptr;
+    std::vector<Vec3>* servoAngularAccumScratch = nullptr;
+    std::vector<std::uint16_t>* servoAngularCountScratch = nullptr;
 };
 
 inline float WrapJointAngle(float angle) {
@@ -621,6 +628,16 @@ inline float SignedAngleAroundAxis(const Vec3& from, const Vec3& to, const Vec3&
         return 0.0f;
     }
     return std::atan2(Dot(Cross(fromN, toN), axis), Dot(fromN, toN));
+}
+
+inline float ComputeServoJointAngle(const Body& a, const Body& b, const ServoJoint& joint) {
+    Vec3 axisA = Rotate(a.orientation, joint.localAxisA);
+    if (!TryNormalize(axisA, axisA)) {
+        return 0.0f;
+    }
+    const Vec3 refA = ResolveJointReference(a.orientation, joint.localReferenceA, axisA);
+    const Vec3 refB = ResolveJointReference(b.orientation, joint.localReferenceB, axisA);
+    return SignedAngleAroundAxis(refA, refB, axisA);
 }
 
 /// Strongly biased axis-alignment snap for servo joints.
@@ -824,19 +841,37 @@ public:
             constexpr std::uint16_t kFanoutThreshold = 2;
             const float invDt = (context.substepDt > 1e-8f) ? (1.0f / context.substepDt) : 0.0f;
 
-            std::vector<std::uint16_t> servoFanout(context.bodies.size(), 0);
-            std::uint16_t maxFanout = 0;
-            for (const ServoJoint& sj : context.servoJoints) {
-                ++servoFanout[sj.a];
-                ++servoFanout[sj.b];
+            bool useVelocityBiases = false;
+            if (context.hasUseVelocityBiasesOverride) {
+                useVelocityBiases = context.useVelocityBiasesOverride;
+            } else {
+                std::vector<std::uint16_t> localServoFanout;
+                std::vector<std::uint16_t>& servoFanout = context.servoFanoutScratch != nullptr
+                    ? *context.servoFanoutScratch
+                    : localServoFanout;
+                servoFanout.assign(context.bodies.size(), 0);
+                std::uint16_t maxFanout = 0;
+                for (const ServoJoint& sj : context.servoJoints) {
+                    ++servoFanout[sj.a];
+                    ++servoFanout[sj.b];
+                }
+                for (auto f : servoFanout) {
+                    maxFanout = std::max(maxFanout, f);
+                }
+                useVelocityBiases = maxFanout > kFanoutThreshold;
             }
-            for (auto f : servoFanout) maxFanout = std::max(maxFanout, f);
-
-            const bool useVelocityBiases = maxFanout > kFanoutThreshold;
 
             if (useVelocityBiases) {
-                std::vector<Vec3> angularAccum(context.bodies.size(), Vec3{0.0f, 0.0f, 0.0f});
-                std::vector<std::uint16_t> angularCount(context.bodies.size(), 0);
+                std::vector<Vec3> localAngularAccum;
+                std::vector<std::uint16_t> localAngularCount;
+                std::vector<Vec3>& angularAccum = context.servoAngularAccumScratch != nullptr
+                    ? *context.servoAngularAccumScratch
+                    : localAngularAccum;
+                std::vector<std::uint16_t>& angularCount = context.servoAngularCountScratch != nullptr
+                    ? *context.servoAngularCountScratch
+                    : localAngularCount;
+                angularAccum.assign(context.bodies.size(), Vec3{0.0f, 0.0f, 0.0f});
+                angularCount.assign(context.bodies.size(), 0);
 
                 for (const ServoJoint& j : context.servoJoints) {
                     Body& a = context.bodies[j.a];
