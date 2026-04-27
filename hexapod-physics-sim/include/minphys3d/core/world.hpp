@@ -579,6 +579,13 @@ private:
 
     void WarmStartJoints();
 
+    // Refresh per-body world-space inverse inertia cache. Body orientation is
+    // constant from the start of a substep until IntegrateOrientation() runs
+    // after the PGS loop, so the cache is valid across all warm-start, contact,
+    // joint, and relaxation passes within one substep. Call once per substep
+    // before any code reads bodyInvInertiaWorld_.
+    void RefreshBodyWorldInertias();
+
     void SolveNormalScalar(Contact& c);
 
     enum class BlockSolveFallbackReason {
@@ -670,6 +677,52 @@ private:
     void SolveFixedJoint(FixedJoint& j);
     void SolvePrismaticJoint(PrismaticJoint& j);
     void SolveServoJoint(ServoJoint& j);
+
+    // Per-substep solver cache for servo joints. All fields are derived from body
+    // position/orientation/inertia, joint definition, dt, and once-per-step state
+    // (smoothedAngleError, integralAccum). They are CONSTANT across all PGS iterations
+    // within one substep. Anything depending on body velocity or impulse accumulators
+    // is NOT cached and is recomputed in SolveServoJoint per iteration.
+    struct ServoJointPrep {
+        // Anchor block (3D point-coincidence constraint).
+        Vec3 ra{}, rb{};            // world-frame anchor offsets
+        Vec3 anchorBias{};          // hingeAnchorBiasFactor * error
+        Mat3 invK{};                // 3x3 anchor mass matrix inverse
+
+        // Axis-alignment block (two coupled angular rows along t1, t2 ⟂ axisA).
+        // When useBlockAxisSolve is true the iterate path solves the coupled 2x2 system in
+        // one shot (closed-form inverse cached as invK2_*). Otherwise it falls back to two
+        // independent scalar rows using invDenomT1/invDenomT2.
+        Vec3 axisA{};
+        Vec3 t1{}, t2{};
+        float invDenomT1 = 0.0f;    // 1 / (wT1 + axisGamma1), per-row fallback
+        float invDenomT2 = 0.0f;    // 1 / (wT2 + axisGamma2), per-row fallback
+        float axisBiasT1 = 0.0f;    // kAxisAlignOmega * Dot(angularError, t1) * invAxisDenom
+        float axisBiasT2 = 0.0f;
+        // Symmetric 2x2 inverse stored as three floats: invK2 = [[aa, ab], [ab, bb]].
+        float invK2aa = 0.0f, invK2ab = 0.0f, invK2bb = 0.0f;
+
+        // Hinge servo (1D angular constraint around axisA).
+        float invDenomHinge = 0.0f; // 1 / (wHinge + hingeGamma)
+        float invWHingeForSpeed = 0.0f; // 1 / max(wHinge, kEpsilon) — used by post-solve speed clamp
+        float servoBias = 0.0f;     // PD bias velocity, pre-clamped to ±maxServoSpeed if applicable
+        float maxServoSpeed = 0.0f;
+
+        // Flags
+        bool anchorValid = false;   // false if K was degenerate
+        bool skipAnchor = false;
+        bool t1Active = false;      // wT1 > kEpsilon
+        bool t2Active = false;
+        bool skipAngular = false;
+        bool useBlockAxisSolve = false;  // true when the 2x2 K matrix is well-conditioned
+        bool hingeActive = false;   // wHinge > kEpsilon
+        bool skipHinge = false;
+        bool hasSpeedClamp = false;
+    };
+
+    // Refresh the per-servo-joint solver cache. Call once per substep, after
+    // RefreshBodyWorldInertias() and before the PGS iteration loop.
+    void PrepareServoJointSolves();
 
     void PrepareIslandOrders();
 
@@ -766,6 +819,9 @@ private:
     float currentSubstepDt_ = 1.0f / 60.0f;
     bool solverRelaxationPassActive_ = false;
     std::vector<Body> bodies_;
+    // World-space inverse inertia per body, refreshed once per substep by
+    // RefreshBodyWorldInertias(). Static bodies (invMass == 0) hold a zero Mat3.
+    std::vector<Mat3> bodyInvInertiaWorld_;
     std::vector<std::uint32_t> shapeRevisionCounters_;
     std::vector<std::uint64_t> shapeGeometrySignatures_;
     std::vector<Vec3> splitLinearPositionDelta_;
@@ -792,6 +848,7 @@ private:
     std::vector<FixedJoint> fixedJoints_;
     std::vector<PrismaticJoint> prismaticJoints_;
     std::vector<ServoJoint> servoJoints_;
+    std::vector<ServoJointPrep> servoJointPreps_;
     std::vector<float> servoAngleSampleCache_;
     bool servoAngleSampleCacheValid_ = false;
     mutable std::vector<std::uint16_t> servoPositionFanoutScratch_;

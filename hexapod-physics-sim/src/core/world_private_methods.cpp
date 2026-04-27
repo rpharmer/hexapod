@@ -471,15 +471,32 @@ Vec3 World::ClosestPointOnBox(const Body& box, const Vec3& worldPoint) {
         return box.position + Rotate(box.orientation, clamped);
     }
 
+void World::RefreshBodyWorldInertias() {
+        const std::size_t n = bodies_.size();
+        if (bodyInvInertiaWorld_.size() != n) {
+            bodyInvInertiaWorld_.assign(n, Mat3{});
+        }
+        for (std::size_t i = 0; i < n; ++i) {
+            const Body& body = bodies_[i];
+            if (body.invMass == 0.0f) {
+                bodyInvInertiaWorld_[i] = Mat3{};
+                continue;
+            }
+            const Mat3 R = RotationMatrix(body.orientation);
+            bodyInvInertiaWorld_[i] = R * body.invInertiaLocal * Transpose(R);
+        }
+    }
+
 void World::IntegrateForces(float dt) {
 
-        for (Body& body : bodies_) {
+        for (std::size_t i = 0; i < bodies_.size(); ++i) {
+            Body& body = bodies_[i];
             if (body.invMass == 0.0f || body.isSleeping) {
                 continue;
             }
 
             const Vec3 linearAcceleration = gravity_ + body.force * body.invMass;
-            const Vec3 angularAcceleration = body.InvInertiaWorld() * body.torque;
+            const Vec3 angularAcceleration = bodyInvInertiaWorld_[i] * body.torque;
 
             body.velocity += linearAcceleration * dt;
             body.angularVelocity += angularAcceleration * dt;
@@ -1643,7 +1660,7 @@ void World::WarmStartJoints() {
                 continue;
             }
             const Vec3 n = delta / len;
-            ApplyImpulse(a, b, a.InvInertiaWorld(), b.InvInertiaWorld(), ra, rb, j.impulseSum * n);
+            ApplyImpulse(a, b, bodyInvInertiaWorld_[j.a], bodyInvInertiaWorld_[j.b], ra, rb, j.impulseSum * n);
         }
 
         for (HingeJoint& j : hingeJoints_) {
@@ -1654,19 +1671,21 @@ void World::WarmStartJoints() {
             }
             Body& a = bodies_[j.a];
             Body& b = bodies_[j.b];
+            const Mat3& invIA = bodyInvInertiaWorld_[j.a];
+            const Mat3& invIB = bodyInvInertiaWorld_[j.b];
             const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
             const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
             const Vec3 impulse{j.impulseX, j.impulseY, j.impulseZ};
-            ApplyImpulse(a, b, a.InvInertiaWorld(), b.InvInertiaWorld(), ra, rb, impulse);
+            ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
 
             const Vec3 axisA = Normalize(Rotate(a.orientation, j.localAxisA));
             Vec3 t1 = Cross(axisA, {1.0f, 0.0f, 0.0f});
             if (LengthSquared(t1) <= 1e-5f) t1 = Cross(axisA, {0.0f, 0.0f, 1.0f});
             t1 = Normalize(t1);
             const Vec3 t2 = Normalize(Cross(axisA, t1));
-            ApplyAngularImpulse(a, b, a.InvInertiaWorld(), b.InvInertiaWorld(), j.angularImpulse1 * t1);
-            ApplyAngularImpulse(a, b, a.InvInertiaWorld(), b.InvInertiaWorld(), j.angularImpulse2 * t2);
-            ApplyAngularImpulse(a, b, a.InvInertiaWorld(), b.InvInertiaWorld(), j.motorImpulseSum * axisA);
+            ApplyAngularImpulse(a, b, invIA, invIB, j.angularImpulse1 * t1);
+            ApplyAngularImpulse(a, b, invIA, invIB, j.angularImpulse2 * t2);
+            ApplyAngularImpulse(a, b, invIA, invIB, j.motorImpulseSum * axisA);
         }
 
         for (BallSocketJoint& j : ballSocketJoints_) {
@@ -1677,7 +1696,7 @@ void World::WarmStartJoints() {
             Body& b = bodies_[j.b];
             const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
             const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
-            ApplyImpulse(a, b, a.InvInertiaWorld(), b.InvInertiaWorld(), ra, rb, {j.impulseX, j.impulseY, j.impulseZ});
+            ApplyImpulse(a, b, bodyInvInertiaWorld_[j.a], bodyInvInertiaWorld_[j.b], ra, rb, {j.impulseX, j.impulseY, j.impulseZ});
         }
 
         for (FixedJoint& j : fixedJoints_) {
@@ -1688,8 +1707,8 @@ void World::WarmStartJoints() {
             }
             Body& a = bodies_[j.a];
             Body& b = bodies_[j.b];
-            const Mat3 invIA = a.InvInertiaWorld();
-            const Mat3 invIB = b.InvInertiaWorld();
+            const Mat3& invIA = bodyInvInertiaWorld_[j.a];
+            const Mat3& invIB = bodyInvInertiaWorld_[j.b];
             const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
             const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
             ApplyImpulse(a, b, invIA, invIB, ra, rb, {j.impulseX, j.impulseY, j.impulseZ});
@@ -1703,8 +1722,8 @@ void World::WarmStartJoints() {
             }
             Body& a = bodies_[j.a];
             Body& b = bodies_[j.b];
-            const Mat3 invIA = a.InvInertiaWorld();
-            const Mat3 invIB = b.InvInertiaWorld();
+            const Mat3& invIA = bodyInvInertiaWorld_[j.a];
+            const Mat3& invIB = bodyInvInertiaWorld_[j.b];
             const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
             const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
             Vec3 axis = Normalize(Rotate(a.orientation, j.localAxisA));
@@ -1724,8 +1743,8 @@ void World::WarmStartJoints() {
             }
             Body& a = bodies_[j.a];
             Body& b = bodies_[j.b];
-            const Mat3 invIA = a.InvInertiaWorld();
-            const Mat3 invIB = b.InvInertiaWorld();
+            const Mat3& invIA = bodyInvInertiaWorld_[j.a];
+            const Mat3& invIB = bodyInvInertiaWorld_[j.b];
             const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
             const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
             ApplyImpulse(a, b, invIA, invIB, ra, rb, {j.impulseX, j.impulseY, j.impulseZ});
@@ -1746,8 +1765,8 @@ void World::SolveNormalScalar(Contact& c) {
         Body& a = bodies_[c.a];
         Body& b = bodies_[c.b];
 
-        const Mat3 invIA = a.InvInertiaWorld();
-        const Mat3 invIB = b.InvInertiaWorld();
+        const Mat3& invIA = bodyInvInertiaWorld_[c.a];
+        const Mat3& invIB = bodyInvInertiaWorld_[c.b];
 
         const Vec3 ra = c.point - a.position;
         const Vec3 rb = c.point - b.position;

@@ -487,7 +487,7 @@ void World::PrepareServoJointControlSamples() {
         ServoJoint& j = servoJoints_[i];
         const float angle = servoAngleSampleCache_[i];
         float raw = angle - j.targetAngle;
-        raw = std::atan2(std::sin(raw), std::cos(raw));
+        raw = std::remainder(raw, 6.28318530717958647692f);
         if (j.positionErrorSmoothing > 0.0f) {
             const float alpha = std::min(j.positionErrorSmoothing, 1.0f);
             j.smoothedAngleError = j.smoothedAngleError + alpha * (raw - j.smoothedAngleError);
@@ -519,7 +519,7 @@ void World::AccumulateServoAngleIntegrals(float dt) {
             continue;
         }
         float err = angle - j.targetAngle;
-        err = std::atan2(std::sin(err), std::cos(err));
+        err = std::remainder(err, 6.28318530717958647692f);
         j.integralAccum += err * dt;
         j.integralAccum = std::clamp(j.integralAccum, -j.integralClamp, j.integralClamp);
     }
@@ -573,6 +573,11 @@ void World::Step(float dt, int solverIterations) {
             previousManifolds_ = manifolds_;
             CapturePersistentPointImpulseState(previousManifolds_);
         }
+        // Body orientation is constant from here until IntegrateOrientation() runs at the end of
+        // the substep, so refresh the per-body world inverse inertia cache once and let every
+        // downstream pass (IntegrateForces, warm-start, contacts, joints, PGS, relaxation) read
+        // from it instead of recomputing R * I_local^-1 * R^T per call.
+        RefreshBodyWorldInertias();
         {
             const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::IntegrateForces));
             IntegrateForces(subDt);
@@ -612,6 +617,12 @@ void World::Step(float dt, int solverIterations) {
             WarmStartJoints();
             (void)scope;
         }
+
+        // Build per-servo-joint solver cache once per substep. All kinematic quantities
+        // (anchor offsets, K^-1, axis basis, effective masses, biases) are constant across
+        // PGS iterations because positions/orientations are integrated only after the loop
+        // completes. SolveServoJoint then becomes a tight per-iteration impulse update.
+        PrepareServoJointSolves();
 
         solverRelaxationPassActive_ = false;
         {

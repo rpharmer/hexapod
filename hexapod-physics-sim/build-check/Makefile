@@ -803,6 +803,58 @@ hex_diag/fast:
 .PHONY : hex_diag/fast
 
 #=============================================================================
+# Target rules for targets named record_hexapod_stability
+
+# Build rule for target.
+record_hexapod_stability: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 record_hexapod_stability
+.PHONY : record_hexapod_stability
+
+# fast build rule for target.
+record_hexapod_stability/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/record_hexapod_stability.dir/build.make CMakeFiles/record_hexapod_stability.dir/build
+.PHONY : record_hexapod_stability/fast
+
+#=============================================================================
+# Target rules for targets named sweep_hexapod_knobs
+
+# Build rule for target.
+sweep_hexapod_knobs: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 sweep_hexapod_knobs
+.PHONY : sweep_hexapod_knobs
+
+# fast build rule for target.
+sweep_hexapod_knobs/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sweep_hexapod_knobs.dir/build.make CMakeFiles/sweep_hexapod_knobs.dir/build
+.PHONY : sweep_hexapod_knobs/fast
+
+#=============================================================================
+# Target rules for targets named compare_servo_stride_long
+
+# Build rule for target.
+compare_servo_stride_long: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 compare_servo_stride_long
+.PHONY : compare_servo_stride_long
+
+# fast build rule for target.
+compare_servo_stride_long/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/compare_servo_stride_long.dir/build.make CMakeFiles/compare_servo_stride_long.dir/build
+.PHONY : compare_servo_stride_long/fast
+
+#=============================================================================
+# Target rules for targets named world_resource_profile_oneoff
+
+# Build rule for target.
+world_resource_profile_oneoff: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 world_resource_profile_oneoff
+.PHONY : world_resource_profile_oneoff
+
+# fast build rule for target.
+world_resource_profile_oneoff/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/world_resource_profile_oneoff.dir/build.make CMakeFiles/world_resource_profile_oneoff.dir/build
+.PHONY : world_resource_profile_oneoff/fast
+
+#=============================================================================
 # Target rules for targets named test_servo_visual_presets_json
 
 # Build rule for target.
@@ -892,6 +944,30 @@ test_state_correction_protocol: cmake_check_build_system
 test_state_correction_protocol/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_state_correction_protocol.dir/build.make CMakeFiles/test_state_correction_protocol.dir/build
 .PHONY : test_state_correction_protocol/fast
+
+profiling/world_resource_profile_oneoff.o: profiling/world_resource_profile_oneoff.cpp.o
+.PHONY : profiling/world_resource_profile_oneoff.o
+
+# target to build an object file
+profiling/world_resource_profile_oneoff.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/world_resource_profile_oneoff.dir/build.make CMakeFiles/world_resource_profile_oneoff.dir/profiling/world_resource_profile_oneoff.cpp.o
+.PHONY : profiling/world_resource_profile_oneoff.cpp.o
+
+profiling/world_resource_profile_oneoff.i: profiling/world_resource_profile_oneoff.cpp.i
+.PHONY : profiling/world_resource_profile_oneoff.i
+
+# target to preprocess a source file
+profiling/world_resource_profile_oneoff.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/world_resource_profile_oneoff.dir/build.make CMakeFiles/world_resource_profile_oneoff.dir/profiling/world_resource_profile_oneoff.cpp.i
+.PHONY : profiling/world_resource_profile_oneoff.cpp.i
+
+profiling/world_resource_profile_oneoff.s: profiling/world_resource_profile_oneoff.cpp.s
+.PHONY : profiling/world_resource_profile_oneoff.s
+
+# target to generate assembly for a file
+profiling/world_resource_profile_oneoff.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/world_resource_profile_oneoff.dir/build.make CMakeFiles/world_resource_profile_oneoff.dir/profiling/world_resource_profile_oneoff.cpp.s
+.PHONY : profiling/world_resource_profile_oneoff.cpp.s
 
 src/core/broadphase_system.o: src/core/broadphase_system.cpp.o
 .PHONY : src/core/broadphase_system.o
@@ -1457,6 +1533,30 @@ src/solver/island_ordering.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/minphys3d_core.dir/build.make CMakeFiles/minphys3d_core.dir/src/solver/island_ordering.cpp.s
 .PHONY : src/solver/island_ordering.cpp.s
 
+tests/compare_servo_stride_long.o: tests/compare_servo_stride_long.cpp.o
+.PHONY : tests/compare_servo_stride_long.o
+
+# target to build an object file
+tests/compare_servo_stride_long.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/compare_servo_stride_long.dir/build.make CMakeFiles/compare_servo_stride_long.dir/tests/compare_servo_stride_long.cpp.o
+.PHONY : tests/compare_servo_stride_long.cpp.o
+
+tests/compare_servo_stride_long.i: tests/compare_servo_stride_long.cpp.i
+.PHONY : tests/compare_servo_stride_long.i
+
+# target to preprocess a source file
+tests/compare_servo_stride_long.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/compare_servo_stride_long.dir/build.make CMakeFiles/compare_servo_stride_long.dir/tests/compare_servo_stride_long.cpp.i
+.PHONY : tests/compare_servo_stride_long.cpp.i
+
+tests/compare_servo_stride_long.s: tests/compare_servo_stride_long.cpp.s
+.PHONY : tests/compare_servo_stride_long.s
+
+# target to generate assembly for a file
+tests/compare_servo_stride_long.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/compare_servo_stride_long.dir/build.make CMakeFiles/compare_servo_stride_long.dir/tests/compare_servo_stride_long.cpp.s
+.PHONY : tests/compare_servo_stride_long.cpp.s
+
 tests/hex_diag.o: tests/hex_diag.cpp.o
 .PHONY : tests/hex_diag.o
 
@@ -1481,6 +1581,30 @@ tests/hex_diag.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hex_diag.dir/build.make CMakeFiles/hex_diag.dir/tests/hex_diag.cpp.s
 .PHONY : tests/hex_diag.cpp.s
 
+tests/record_hexapod_stability.o: tests/record_hexapod_stability.cpp.o
+.PHONY : tests/record_hexapod_stability.o
+
+# target to build an object file
+tests/record_hexapod_stability.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/record_hexapod_stability.dir/build.make CMakeFiles/record_hexapod_stability.dir/tests/record_hexapod_stability.cpp.o
+.PHONY : tests/record_hexapod_stability.cpp.o
+
+tests/record_hexapod_stability.i: tests/record_hexapod_stability.cpp.i
+.PHONY : tests/record_hexapod_stability.i
+
+# target to preprocess a source file
+tests/record_hexapod_stability.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/record_hexapod_stability.dir/build.make CMakeFiles/record_hexapod_stability.dir/tests/record_hexapod_stability.cpp.i
+.PHONY : tests/record_hexapod_stability.cpp.i
+
+tests/record_hexapod_stability.s: tests/record_hexapod_stability.cpp.s
+.PHONY : tests/record_hexapod_stability.s
+
+# target to generate assembly for a file
+tests/record_hexapod_stability.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/record_hexapod_stability.dir/build.make CMakeFiles/record_hexapod_stability.dir/tests/record_hexapod_stability.cpp.s
+.PHONY : tests/record_hexapod_stability.cpp.s
+
 tests/regression_scene_suite.o: tests/regression_scene_suite.cpp.o
 .PHONY : tests/regression_scene_suite.o
 
@@ -1504,6 +1628,30 @@ tests/regression_scene_suite.s: tests/regression_scene_suite.cpp.s
 tests/regression_scene_suite.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/regression_scene_suite.dir/build.make CMakeFiles/regression_scene_suite.dir/tests/regression_scene_suite.cpp.s
 .PHONY : tests/regression_scene_suite.cpp.s
+
+tests/sweep_hexapod_knobs.o: tests/sweep_hexapod_knobs.cpp.o
+.PHONY : tests/sweep_hexapod_knobs.o
+
+# target to build an object file
+tests/sweep_hexapod_knobs.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sweep_hexapod_knobs.dir/build.make CMakeFiles/sweep_hexapod_knobs.dir/tests/sweep_hexapod_knobs.cpp.o
+.PHONY : tests/sweep_hexapod_knobs.cpp.o
+
+tests/sweep_hexapod_knobs.i: tests/sweep_hexapod_knobs.cpp.i
+.PHONY : tests/sweep_hexapod_knobs.i
+
+# target to preprocess a source file
+tests/sweep_hexapod_knobs.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sweep_hexapod_knobs.dir/build.make CMakeFiles/sweep_hexapod_knobs.dir/tests/sweep_hexapod_knobs.cpp.i
+.PHONY : tests/sweep_hexapod_knobs.cpp.i
+
+tests/sweep_hexapod_knobs.s: tests/sweep_hexapod_knobs.cpp.s
+.PHONY : tests/sweep_hexapod_knobs.s
+
+# target to generate assembly for a file
+tests/sweep_hexapod_knobs.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sweep_hexapod_knobs.dir/build.make CMakeFiles/sweep_hexapod_knobs.dir/tests/sweep_hexapod_knobs.cpp.s
+.PHONY : tests/sweep_hexapod_knobs.cpp.s
 
 tests/test_block2_solver.o: tests/test_block2_solver.cpp.o
 .PHONY : tests/test_block2_solver.o
@@ -2190,10 +2338,13 @@ help:
 	@echo "... NightlySubmit"
 	@echo "... NightlyTest"
 	@echo "... NightlyUpdate"
+	@echo "... compare_servo_stride_long"
 	@echo "... hex_diag"
 	@echo "... hexapod-physics-sim"
 	@echo "... minphys3d_core"
+	@echo "... record_hexapod_stability"
 	@echo "... regression_scene_suite"
+	@echo "... sweep_hexapod_knobs"
 	@echo "... test_block2_solver"
 	@echo "... test_block4_solver"
 	@echo "... test_broadphase_dynamic_tree"
@@ -2221,6 +2372,10 @@ help:
 	@echo "... test_unit_math"
 	@echo "... test_world_resource_monitoring"
 	@echo "... test_world_topology_snapshot"
+	@echo "... world_resource_profile_oneoff"
+	@echo "... profiling/world_resource_profile_oneoff.o"
+	@echo "... profiling/world_resource_profile_oneoff.i"
+	@echo "... profiling/world_resource_profile_oneoff.s"
 	@echo "... src/core/broadphase_system.o"
 	@echo "... src/core/broadphase_system.i"
 	@echo "... src/core/broadphase_system.s"
@@ -2290,12 +2445,21 @@ help:
 	@echo "... src/solver/island_ordering.o"
 	@echo "... src/solver/island_ordering.i"
 	@echo "... src/solver/island_ordering.s"
+	@echo "... tests/compare_servo_stride_long.o"
+	@echo "... tests/compare_servo_stride_long.i"
+	@echo "... tests/compare_servo_stride_long.s"
 	@echo "... tests/hex_diag.o"
 	@echo "... tests/hex_diag.i"
 	@echo "... tests/hex_diag.s"
+	@echo "... tests/record_hexapod_stability.o"
+	@echo "... tests/record_hexapod_stability.i"
+	@echo "... tests/record_hexapod_stability.s"
 	@echo "... tests/regression_scene_suite.o"
 	@echo "... tests/regression_scene_suite.i"
 	@echo "... tests/regression_scene_suite.s"
+	@echo "... tests/sweep_hexapod_knobs.o"
+	@echo "... tests/sweep_hexapod_knobs.i"
+	@echo "... tests/sweep_hexapod_knobs.s"
 	@echo "... tests/test_block2_solver.o"
 	@echo "... tests/test_block2_solver.i"
 	@echo "... tests/test_block2_solver.s"

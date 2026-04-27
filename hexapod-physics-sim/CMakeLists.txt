@@ -40,8 +40,23 @@ if(MINPHYS3D_BUILD_DEMO OR MINPHYS3D_BUILD_TESTS)
     target_include_directories(minphys3d_core PUBLIC ${MINPHYS3D_INCLUDE_DIRS})
     if(MSVC)
         target_compile_options(minphys3d_core PRIVATE /W4)
+        # Enable architecture-tuned optimisation for Release / RelWithDebInfo. /arch:AVX2 is
+        # safe on any x86-64 CPU made in the last decade; drop to /arch:AVX or remove if a
+        # Skylake-or-older deployment is required.
+        target_compile_options(minphys3d_core PRIVATE
+            $<$<CONFIG:Release>:/O2 /arch:AVX2>
+            $<$<CONFIG:RelWithDebInfo>:/O2 /arch:AVX2>)
     else()
         target_compile_options(minphys3d_core PRIVATE -Wall -Wextra -pedantic)
+        # Enable architecture-tuned optimisation for Release / RelWithDebInfo. We deliberately
+        # avoid -ffast-math so the std::isfinite guards in the solver still trip on NaN/Inf.
+        # -ffp-contract=off disables FMA contraction; the regression scene suite (notably the
+        # `tall stack tower` test) is sensitive to single-bit FMA rounding differences that
+        # cascade through PGS iterations into qualitatively different stack stability, so we
+        # trade a small amount of arithmetic speed for a stable numerical baseline.
+        target_compile_options(minphys3d_core PRIVATE
+            $<$<CONFIG:Release>:-O3 -march=native -ffp-contract=off>
+            $<$<CONFIG:RelWithDebInfo>:-O3 -march=native -ffp-contract=off>)
     endif()
     if(MINPHYS3D_BUILD_TESTS)
         # Regression tests assert on solver telemetry; keep the definition public so

@@ -600,7 +600,9 @@ struct JointSolverContext {
 };
 
 inline float WrapJointAngle(float angle) {
-    return std::atan2(std::sin(angle), std::cos(angle));
+    // IEEE-754 remainder gives the canonical signed wrap to [-pi, pi]; on x86-64 this lowers
+    // to a single hardware sequence rather than the original sin/cos/atan2 trio.
+    return std::remainder(angle, 6.28318530717958647692f);
 }
 
 inline Vec3 JointReferenceFallback(const Vec3& axis) {
