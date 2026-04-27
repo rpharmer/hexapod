@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wsl -- bash -c \"cd /home/volly/pico/hexapod/hexapod-physics-sim/build-check && cmake --build . --target hexapod-physics-sim 2>&1 | tail -10\")"
+    ]
+  }
+}

@@ -16,8 +16,11 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <unistd.h>
 #endif
+
+#include <cstring>
 
 namespace minphys3d::demo {
 namespace {
@@ -99,20 +102,27 @@ public:
             return;
         }
 
+        // Build all payloads into the reusable vector first, then push them out as one
+        // batched syscall (sendmmsg on Linux). Previously each body and the terrain
+        // patch caused a separate sendto() — 13-17 syscalls per frame. Batching cuts
+        // that to one regardless of body count.
+        frame_payloads_.clear();
         for (const auto& snapshot : bodies_) {
             const BodyStaticDescriptor descriptor = MakeStaticDescriptor(snapshot.body);
             const auto found = last_static_descriptors_.find(snapshot.id);
             if (found == last_static_descriptors_.end() || !AreDescriptorsEqual(found->second, descriptor)) {
-                send_payload(BuildStaticMessage(snapshot.id, descriptor));
+                frame_payloads_.push_back(BuildStaticMessage(snapshot.id, descriptor));
                 last_static_descriptors_[snapshot.id] = descriptor;
             }
 
-            send_payload(BuildFrameMessage(snapshot.id, snapshot.body));
+            frame_payloads_.push_back(BuildFrameMessage(snapshot.id, snapshot.body));
         }
 
         if (terrain_patch_snapshot_.valid) {
-            send_payload(BuildTerrainPatchMessage(terrain_patch_snapshot_));
+            frame_payloads_.push_back(BuildTerrainPatchMessage(terrain_patch_snapshot_));
         }
+
+        flush_frame_payloads();
     }
 
 private:
@@ -124,6 +134,51 @@ private:
             0,
             reinterpret_cast<const sockaddr*>(&dest_addr_),
             sizeof(dest_addr_));
+    }
+
+    void flush_frame_payloads() const {
+        if (frame_payloads_.empty()) {
+            return;
+        }
+#if defined(__linux__)
+        // sendmmsg() pushes all queued datagrams in a single syscall. The kernel
+        // dispatches each one to the same UDP socket sequentially, exactly as if we
+        // had called sendto() in a loop, but the syscall entry/exit overhead is paid
+        // only once per frame instead of per datagram.
+        const std::size_t count = frame_payloads_.size();
+        iovec_scratch_.resize(count);
+        msg_scratch_.resize(count);
+        for (std::size_t i = 0; i < count; ++i) {
+            iovec_scratch_[i].iov_base = frame_payloads_[i].data();
+            iovec_scratch_[i].iov_len = frame_payloads_[i].size();
+            std::memset(&msg_scratch_[i], 0, sizeof(mmsghdr));
+            msg_scratch_[i].msg_hdr.msg_name =
+                const_cast<void*>(static_cast<const void*>(&dest_addr_));
+            msg_scratch_[i].msg_hdr.msg_namelen = sizeof(dest_addr_);
+            msg_scratch_[i].msg_hdr.msg_iov = &iovec_scratch_[i];
+            msg_scratch_[i].msg_hdr.msg_iovlen = 1;
+        }
+        std::size_t sent = 0;
+        while (sent < count) {
+            const int rc = ::sendmmsg(
+                socket_fd_,
+                msg_scratch_.data() + sent,
+                static_cast<unsigned int>(count - sent),
+                0);
+            if (rc < 0) {
+                // Silent failure mirrors original send_payload behaviour (visualiser
+                // is best-effort; transient EAGAIN/EINTR shouldn't break the serve loop).
+                break;
+            }
+            sent += static_cast<std::size_t>(rc);
+        }
+#else
+        // macOS/BSD: sendmmsg is Linux-specific. Fall back to per-payload sendto;
+        // the per-frame syscall overhead is the same as before this change.
+        for (const auto& payload : frame_payloads_) {
+            send_payload(payload);
+        }
+#endif
     }
 
     static const char* ShapeName(ShapeType shape) {
@@ -382,6 +437,13 @@ private:
     std::vector<BodySnapshot> bodies_{};
     TerrainPatchSnapshot terrain_patch_snapshot_{};
     std::map<std::uint32_t, BodyStaticDescriptor> last_static_descriptors_{};
+    // Scratch buffers for batched sendmmsg in flush_frame_payloads().
+    // Reused across frames so vector capacity grows once and persists.
+    mutable std::vector<std::string> frame_payloads_{};
+#if defined(__linux__)
+    mutable std::vector<iovec> iovec_scratch_{};
+    mutable std::vector<mmsghdr> msg_scratch_{};
+#endif
 };
 #endif
 

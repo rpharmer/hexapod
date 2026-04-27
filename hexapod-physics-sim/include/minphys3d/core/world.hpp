@@ -214,6 +214,64 @@ public:
 
     std::uint32_t GetBodyCount() const;
 
+    /// Walk the broadphase BVH (refreshed by UpdateBroadphaseProxies() each substep)
+    /// and invoke `cb(bodyId)` for every leaf whose fat-AABB is intersected by the
+    /// ray (origin, dir, t in [0, maxT]). Lets external systems (e.g. LiDAR sim)
+    /// avoid the O(N) per-ray linear iteration over all bodies.
+    /// `dir` need not be normalised; `maxT` is in the same units as `dir` (i.e.
+    /// hits with t > maxT are pruned). Pass `dir` unit and `maxT` in metres for
+    /// the typical case.
+    template <typename Callback>
+    void QueryRayCandidates(const Vec3& origin, const Vec3& dir, float maxT, Callback&& cb) const {
+        if (rootNode_ < 0 || treeNodes_.empty()) {
+            return;
+        }
+        constexpr float kTinyDir = 1.0e-30f;
+        const Vec3 invDir{
+            (std::abs(dir.x) > kTinyDir) ? 1.0f / dir.x : std::copysign(1.0e30f, dir.x),
+            (std::abs(dir.y) > kTinyDir) ? 1.0f / dir.y : std::copysign(1.0e30f, dir.y),
+            (std::abs(dir.z) > kTinyDir) ? 1.0f / dir.z : std::copysign(1.0e30f, dir.z),
+        };
+
+        auto rayHitsBox = [&](const AABB& box) -> bool {
+            const float tx1 = (box.min.x - origin.x) * invDir.x;
+            const float tx2 = (box.max.x - origin.x) * invDir.x;
+            float tmin = std::min(tx1, tx2);
+            float tmax = std::max(tx1, tx2);
+            const float ty1 = (box.min.y - origin.y) * invDir.y;
+            const float ty2 = (box.max.y - origin.y) * invDir.y;
+            tmin = std::max(tmin, std::min(ty1, ty2));
+            tmax = std::min(tmax, std::max(ty1, ty2));
+            const float tz1 = (box.min.z - origin.z) * invDir.z;
+            const float tz2 = (box.max.z - origin.z) * invDir.z;
+            tmin = std::max(tmin, std::min(tz1, tz2));
+            tmax = std::min(tmax, std::max(tz1, tz2));
+            return tmax >= std::max(tmin, 0.0f) && tmin <= maxT;
+        };
+
+        // Scenes have <128 bodies; stack of 128 is more than enough for any tree depth.
+        constexpr int kStackCapacity = 128;
+        std::int32_t stack[kStackCapacity];
+        int sp = 0;
+        stack[sp++] = rootNode_;
+        while (sp > 0) {
+            const std::int32_t nodeId = stack[--sp];
+            if (nodeId < 0) {
+                continue;
+            }
+            const TreeNode& node = treeNodes_[static_cast<std::size_t>(nodeId)];
+            if (!rayHitsBox(node.box)) {
+                continue;
+            }
+            if (node.IsLeaf()) {
+                cb(static_cast<std::uint32_t>(node.bodyId));
+            } else if (sp + 2 <= kStackCapacity) {
+                stack[sp++] = node.left;
+                stack[sp++] = node.right;
+            }
+        }
+    }
+
     const ServoJoint& GetServoJoint(std::uint32_t id) const;
     ServoJoint& GetServoJointMutable(std::uint32_t id);
 

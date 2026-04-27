@@ -16,20 +16,30 @@ constexpr float kMinRangeM = static_cast<float>(matrix_lidar_geom::kMinRangeMatr
 constexpr float kMaxRangeM = static_cast<float>(matrix_lidar_geom::kMaxRangeMatrix64x8Mm) / 1000.0f;
 constexpr int kMmResolution = 14;
 
-bool IsRobotBody(std::uint32_t body_id, const HexapodSceneObjects& scene) {
-    // `scene.body_ids` includes the static ground plane; that must remain a ray target.
-    if (body_id == scene.plane) {
-        return false;
-    }
-    for (const std::uint32_t id : scene.body_ids) {
-        if (id == scene.plane) {
+// Build a bitset (1 byte per body) marking the bodies that LiDAR rays must skip.
+// Includes robot links (everything in scene.body_ids except the ground plane,
+// which is a valid LiDAR target) and the terrain heightfield attachment (the
+// patch raycast handles terrain separately). The bitset is built once per scan
+// and shared across all 512 rays — replaces the previous O(robot_link_count)
+// IsRobotBody linear scan that fired per ray per body.
+std::vector<std::uint8_t> BuildLidarSkipBodies(const World& world,
+                                               const HexapodSceneObjects& scene) {
+    const std::uint32_t body_count = world.GetBodyCount();
+    std::vector<std::uint8_t> skip(body_count, 0);
+    for (const std::uint32_t bid : scene.body_ids) {
+        if (bid == scene.plane) {
             continue;
         }
-        if (id == body_id) {
-            return true;
+        if (bid < body_count) {
+            skip[bid] = 1;
         }
     }
-    return false;
+    for (std::uint32_t i = 0; i < body_count; ++i) {
+        if (world.IsTerrainAttachmentBody(i)) {
+            skip[i] = 1;
+        }
+    }
+    return skip;
 }
 
 bool RayPlaneHit(const Vec3& o,
@@ -176,11 +186,22 @@ bool RayAabbHit(const Vec3& o, const Vec3& d, const AABB& box, float& t_out) {
     return true;
 }
 
+// `skip_bodies` marks the body IDs that should not contribute to the ray (robot
+// links, terrain heightfield attachment). It must cover at least world.GetBodyCount()
+// entries; bodies whose ID is out of range are not skipped. Passed in by the
+// caller so the bitset is built once per scan and reused across all 512 rays
+// instead of doing an O(robot_link_count) linear scan per ray per body.
+//
+// Unlike the previous implementation we walk the broadphase BVH via
+// `World::QueryRayCandidates` and only test bodies whose fat-AABB is intersected
+// by the ray — turning what was O(N bodies) per ray into O(log N + hits).
 float CastRay(const World& world,
               const HexapodSceneObjects& scene,
               const TerrainPatch& terrain_patch,
+              const std::vector<std::uint8_t>& skip_bodies,
               const Vec3& origin,
               const Vec3& dir_unit) {
+    (void)scene;
     float best = kMaxRangeM + 1.0f;
 
     float terrain_hit = -1.0f;
@@ -188,12 +209,9 @@ float CastRay(const World& world,
         best = terrain_hit;
     }
 
-    for (std::uint32_t id = 0; id < world.GetBodyCount(); ++id) {
-        if (IsRobotBody(id, scene)) {
-            continue;
-        }
-        if (world.IsTerrainAttachmentBody(id)) {
-            continue;
+    world.QueryRayCandidates(origin, dir_unit, kMaxRangeM, [&](std::uint32_t id) {
+        if (id < skip_bodies.size() && skip_bodies[id] != 0) {
+            return;
         }
         const Body& b = world.GetBody(id);
         float t_hit = std::numeric_limits<float>::infinity();
@@ -201,31 +219,31 @@ float CastRay(const World& world,
         if (b.shape == ShapeType::Plane) {
             Vec3 n{};
             if (!TryNormalize(b.planeNormal, n)) {
-                continue;
+                return;
             }
             if (!RayPlaneHit(origin, dir_unit, b.position, n, t_hit)) {
-                continue;
+                return;
             }
         } else if (b.shape == ShapeType::Sphere) {
             if (!RaySphereHit(origin, dir_unit, b.position, b.radius, t_hit)) {
-                continue;
+                return;
             }
         } else if (b.shape == ShapeType::Box) {
             const Vec3 c = BodyWorldShapeOrigin(b);
             if (!RayObbHit(origin, dir_unit, c, b.orientation, b.halfExtents, t_hit)) {
-                continue;
+                return;
             }
         } else {
             const AABB aabb = b.ComputeAABB();
             if (!RayAabbHit(origin, dir_unit, aabb, t_hit)) {
-                continue;
+                return;
             }
         }
 
         if (t_hit < best) {
             best = t_hit;
         }
-    }
+    });
 
     if (best > kMaxRangeM || !std::isfinite(best)) {
         return -1.0f;
@@ -287,6 +305,9 @@ void FillSimMatrixLidar64x8(const World& world,
     constexpr int kCols = 64;
     constexpr int kRows = 8;
 
+    // Single skip-body bitset for the whole scan; see BuildLidarSkipBodies.
+    const std::vector<std::uint8_t> skip_bodies = BuildLidarSkipBodies(world, scene);
+
     for (int row = 0; row < kRows; ++row) {
         for (int col = 0; col < kCols; ++col) {
             double az_d = 0.0;
@@ -308,7 +329,7 @@ void FillSimMatrixLidar64x8(const World& world,
                 optical_axis * (c_el * std::cos(az)) + optical_right * (c_el * std::sin(az))
                 + optical_up * std::sin(el));
 
-            const float hit_m = CastRay(world, scene, terrain_patch, sensor_origin, dir);
+            const float hit_m = CastRay(world, scene, terrain_patch, skip_bodies, sensor_origin, dir);
             const std::size_t idx = static_cast<std::size_t>(row * kCols + col);
             if (hit_m < 0.0f) {
                 rsp.matrix_lidar_ranges_mm[idx] = physics_sim::kMatrixLidarInvalidMm;
@@ -357,6 +378,8 @@ void AppendMatrixLidarTerrainSamples(const World& world,
     constexpr int kCols = 64;
     constexpr int kRows = 8;
 
+    const std::vector<std::uint8_t> skip_bodies = BuildLidarSkipBodies(world, scene);
+
     for (int row = 0; row < kRows; row += stride) {
         for (int col = 0; col < kCols; col += stride) {
             double az_d = 0.0;
@@ -383,7 +406,7 @@ void AppendMatrixLidarTerrainSamples(const World& world,
             if (!terrain_hit || t_terrain <= 1.0e-4f) {
                 continue;
             }
-            const float t_full = CastRay(world, scene, terrain_patch, sensor_origin, dir);
+            const float t_full = CastRay(world, scene, terrain_patch, skip_bodies, sensor_origin, dir);
             if (t_full < 0.0f || !std::isfinite(t_full)) {
                 continue;
             }
