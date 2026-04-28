@@ -162,12 +162,6 @@ ConvexSupport BuildConvexSupport(const Body& body) {
     return {};
 }
 
-struct ResolvedCollisionShape {
-    Body body{};
-    AABB bounds{};
-    std::uint32_t encodedFeature = 0;
-};
-
 std::uint32_t EncodeShapeFeature(bool fromCompound, std::uint32_t childIndex, ShapeType shape) {
     const std::uint32_t compactShape = static_cast<std::uint32_t>(shape) & 0xffu;
     const std::uint32_t childBits = fromCompound ? std::min(childIndex + 1u, 0x00ffffffu) : 0u;
@@ -259,13 +253,14 @@ const std::vector<float>& TerrainCollisionHeights(const World::TerrainHeightfiel
     return terrain.collisionHeightsM.empty() ? terrain.surfaceHeightsM : terrain.collisionHeightsM;
 }
 
-bool SampleTerrainCell(const World::TerrainHeightfieldAttachment& terrain,
-                       int row,
-                       int col,
-                       float x,
-                       float z,
-                       float& outHeight,
-                       Vec3& outNormal) {
+bool SampleTerrainCellBilinear(const World::TerrainHeightfieldAttachment& terrain,
+                                int row,
+                                int col,
+                                float sampleX,
+                                float sampleZ,
+                                float invCell,
+                                float& outHeight,
+                                Vec3& outNormal) {
     if (!terrain.enabled || terrain.rows < 2 || terrain.cols < 2) {
         return false;
     }
@@ -283,9 +278,8 @@ bool SampleTerrainCell(const World::TerrainHeightfieldAttachment& terrain,
 
     const float cellX0 = terrain.gridOriginWorld.x + static_cast<float>(col) * terrain.cellSizeM;
     const float cellZ0 = terrain.gridOriginWorld.z + static_cast<float>(row) * terrain.cellSizeM;
-    const float invCell = 1.0f / std::max(terrain.cellSizeM, 1.0e-6f);
-    const float tx = std::clamp((x - cellX0) * invCell, 0.0f, 1.0f);
-    const float tz = std::clamp((z - cellZ0) * invCell, 0.0f, 1.0f);
+    const float tx = std::clamp((sampleX - cellX0) * invCell, 0.0f, 1.0f);
+    const float tz = std::clamp((sampleZ - cellZ0) * invCell, 0.0f, 1.0f);
 
     const float h00 = heights[idx00];
     const float h10 = heights[idx10];
@@ -298,11 +292,21 @@ bool SampleTerrainCell(const World::TerrainHeightfieldAttachment& terrain,
     outHeight = h00 + hx * tx + hz * tz + hxz * tx * tz;
     const float dhdx = (hx + hxz * tz) * invCell;
     const float dhdz = (hz + hxz * tx) * invCell;
-    outNormal = { -dhdx, 1.0f, -dhdz };
+    outNormal = {-dhdx, 1.0f, -dhdz};
     if (!TryNormalize(outNormal, outNormal)) {
         outNormal = {0.0f, 1.0f, 0.0f};
     }
     return true;
+}
+
+Vec3 SphereTerrainSupportPoint(const Body& sphereBody, const Vec3& direction) {
+    Vec3 dir = direction;
+    if (LengthSquared(dir) <= kEpsilon * kEpsilon) {
+        dir = {1.0f, 0.0f, 0.0f};
+    } else {
+        dir = Normalize(dir);
+    }
+    return sphereBody.position + dir * sphereBody.radius;
 }
 
 bool TerrainCellRangeForAabb(const World::TerrainHeightfieldAttachment& terrain,
@@ -330,16 +334,6 @@ bool TerrainCellRangeForAabb(const World::TerrainHeightfieldAttachment& terrain,
     row1 = std::clamp(static_cast<int>(std::floor((bounds.max.z - minZ) / cellSize)), 0, terrain.rows - 2);
     return row0 <= row1 && col0 <= col1;
 }
-
-struct TerrainContactCandidate {
-    std::uint32_t row = 0;
-    std::uint32_t col = 0;
-    std::uint32_t shapeFeature = 0;
-    Vec3 normal{};
-    Vec3 supportPoint{};
-    float penetration = 0.0f;
-    float height = 0.0f;
-};
 
 } // namespace
 
@@ -602,14 +596,11 @@ void World::BuildManifolds() {
     }
 
 void World::GenerateContacts() {
-        RefreshShapeRevisionCounters();
-        convexManifoldSeeds_.clear();
-        const core_internal::BroadphaseSystem broadphaseSystem;
-        const std::vector<Pair> pairs = broadphaseSystem.ComputePotentialPairs({[this]() { return ComputePotentialPairs(); }});
-        std::vector<std::uint32_t> collisionComponent(bodies_.size());
-        for (std::uint32_t i = 0; i < collisionComponent.size(); ++i) {
-            collisionComponent[i] = i;
-        }
+        std::vector<Pair> pairs;
+        std::vector<std::uint32_t> collisionComponent;
+        std::vector<Pair> primitivePairs;
+        std::vector<Pair> compoundPairs;
+
         const auto findComponent = [&collisionComponent](std::uint32_t body_id) {
             std::uint32_t root = body_id;
             while (collisionComponent[root] != root) {
@@ -630,39 +621,84 @@ void World::GenerateContacts() {
                 collisionComponent[root_b] = root_a;
             }
         };
-        for (const DistanceJoint& joint : joints_) {
-            unionComponent(joint.a, joint.b);
+
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(
+                world_resource_monitoring::Section::GenerateContactsSubRefreshShapes));
+            RefreshShapeRevisionCounters();
+            convexManifoldSeeds_.clear();
+            ++resolvedCollisionShapesCacheFrame_;
+            (void)scope;
         }
-        for (const HingeJoint& joint : hingeJoints_) {
-            unionComponent(joint.a, joint.b);
+
+        {
+            const auto scopePotential = resource_profiler_.scope(world_resource_monitoring::toIndex(
+                world_resource_monitoring::Section::GenerateContactsSubPotentialPairs));
+            const core_internal::BroadphaseSystem broadphaseSystem;
+            pairs = broadphaseSystem.ComputePotentialPairs({[this]() { return ComputePotentialPairs(); }});
+            (void)scopePotential;
         }
-        for (const BallSocketJoint& joint : ballSocketJoints_) {
-            unionComponent(joint.a, joint.b);
-        }
-        for (const FixedJoint& joint : fixedJoints_) {
-            unionComponent(joint.a, joint.b);
-        }
-        for (const PrismaticJoint& joint : prismaticJoints_) {
-            unionComponent(joint.a, joint.b);
-        }
-        for (const ServoJoint& joint : servoJoints_) {
-            unionComponent(joint.a, joint.b);
-        }
-        const auto bodiesShareArticulatedComponent = [this, &collisionComponent, &findComponent](
-                                                         std::uint32_t a,
-                                                         std::uint32_t b) {
-            if (a >= collisionComponent.size() || b >= collisionComponent.size()) {
-                return false;
+        {
+            const auto scopeArticulation = resource_profiler_.scope(world_resource_monitoring::toIndex(
+                world_resource_monitoring::Section::GenerateContactsSubArticulationSplit));
+            collisionComponent.resize(bodies_.size());
+            for (std::uint32_t i = 0; i < collisionComponent.size(); ++i) {
+                collisionComponent[i] = i;
             }
-            if (bodies_[a].isStatic || bodies_[b].isStatic) {
-                return false;
+            for (const DistanceJoint& joint : joints_) {
+                unionComponent(joint.a, joint.b);
             }
-            return findComponent(a) == findComponent(b);
-        };
+            for (const HingeJoint& joint : hingeJoints_) {
+                unionComponent(joint.a, joint.b);
+            }
+            for (const BallSocketJoint& joint : ballSocketJoints_) {
+                unionComponent(joint.a, joint.b);
+            }
+            for (const FixedJoint& joint : fixedJoints_) {
+                unionComponent(joint.a, joint.b);
+            }
+            for (const PrismaticJoint& joint : prismaticJoints_) {
+                unionComponent(joint.a, joint.b);
+            }
+            for (const ServoJoint& joint : servoJoints_) {
+                unionComponent(joint.a, joint.b);
+            }
+            for (std::uint32_t i = 0; i < collisionComponent.size(); ++i) {
+                collisionComponent[i] = findComponent(i);
+            }
+
+            const auto bodiesShareArticulatedComponent = [this, &collisionComponent](std::uint32_t a, std::uint32_t b) {
+                if (a >= collisionComponent.size() || b >= collisionComponent.size()) {
+                    return false;
+                }
+                if (bodies_[a].isStatic || bodies_[b].isStatic) {
+                    return false;
+                }
+                return collisionComponent[a] == collisionComponent[b];
+            };
+
+            primitivePairs.clear();
+            primitivePairs.reserve(pairs.size());
+            compoundPairs.clear();
+            compoundPairs.reserve(pairs.size() / 8u + 1u);
+            for (const Pair& pair : pairs) {
+                if (bodiesShareArticulatedComponent(pair.a, pair.b)) {
+                    continue;
+                }
+                const Body& a = bodies_[pair.a];
+                const Body& b = bodies_[pair.b];
+                if (a.shape == ShapeType::Compound || b.shape == ShapeType::Compound) {
+                    compoundPairs.push_back(pair);
+                } else {
+                    primitivePairs.push_back(pair);
+                }
+            }
+            (void)scopeArticulation;
+        }
 
         auto generateCompoundPairContacts = [this](std::uint32_t bodyAId, std::uint32_t bodyBId) {
-            const std::vector<ResolvedCollisionShape> shapesA = ResolveCollisionShapes(bodies_[bodyAId]);
-            const std::vector<ResolvedCollisionShape> shapesB = ResolveCollisionShapes(bodies_[bodyBId]);
+            const std::vector<ResolvedCollisionShape>& shapesA = ResolvedCollisionShapesForBody(bodyAId);
+            const std::vector<ResolvedCollisionShape>& shapesB = ResolvedCollisionShapesForBody(bodyBId);
 
             for (const ResolvedCollisionShape& shapeA : shapesA) {
                 for (const ResolvedCollisionShape& shapeB : shapesB) {
@@ -733,53 +769,64 @@ void World::GenerateContacts() {
             }
         };
 
-        std::vector<Pair> primitivePairs{};
-        primitivePairs.reserve(pairs.size());
-        for (const Pair& pair : pairs) {
-            if (bodiesShareArticulatedComponent(pair.a, pair.b)) {
-                continue;
-            }
-            const Body& a = bodies_[pair.a];
-            const Body& b = bodies_[pair.b];
-            if (a.shape == ShapeType::Compound || b.shape == ShapeType::Compound) {
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(
+                world_resource_monitoring::Section::GenerateContactsSubCompound));
+            for (const Pair& pair : compoundPairs) {
                 generateCompoundPairContacts(pair.a, pair.b);
-            } else {
-                primitivePairs.push_back(pair);
             }
+            (void)scope;
         }
 
-        const core_internal::NarrowphaseSystem narrowphaseSystem;
-        const core_internal::NarrowphaseContext context{
-            bodies_,
-            primitivePairs,
-            [this](ShapeType a, ShapeType b) { return SelectConvexDispatchRoute(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) {
-                return ConvexOverlapWithCache(a, b);
-            },
-            [this](std::uint32_t a, std::uint32_t b) { SphereSphere(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { SphereCapsule(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { CapsuleCapsule(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { CapsulePlane(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { CapsuleBox(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { SpherePlane(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { BoxPlane(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { SphereBox(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { BoxBox(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { ConvexPlane(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { ConvexConvexEPA(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { SphereCylinder(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { CylinderBox(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { CylinderCylinder(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { CapsuleCylinder(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { SphereHalfCylinder(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { HalfCylinderBox(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { HalfCylinderCylinder(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { HalfCylinderHalfCylinder(a, b); },
-            [this](std::uint32_t a, std::uint32_t b) { CapsuleHalfCylinder(a, b); },
-        };
-        narrowphaseSystem.GenerateContacts(context);
-        GenerateTerrainContacts();
-        EmitConvexManifoldSeeds();
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(
+                world_resource_monitoring::Section::GenerateContactsSubNarrowphase));
+            const core_internal::NarrowphaseSystem narrowphaseSystem;
+            const core_internal::NarrowphaseContext context{
+                bodies_,
+                primitivePairs,
+                [this](ShapeType a, ShapeType b) { return SelectConvexDispatchRoute(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) {
+                    return ConvexOverlapWithCache(a, b);
+                },
+                [this](std::uint32_t a, std::uint32_t b) { SphereSphere(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { SphereCapsule(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { CapsuleCapsule(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { CapsulePlane(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { CapsuleBox(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { SpherePlane(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { BoxPlane(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { SphereBox(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { BoxBox(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { ConvexPlane(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { ConvexConvexEPA(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { SphereCylinder(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { CylinderBox(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { CylinderCylinder(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { CapsuleCylinder(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { SphereHalfCylinder(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { HalfCylinderBox(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { HalfCylinderCylinder(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { HalfCylinderHalfCylinder(a, b); },
+                [this](std::uint32_t a, std::uint32_t b) { CapsuleHalfCylinder(a, b); },
+            };
+            narrowphaseSystem.GenerateContacts(context);
+            (void)scope;
+        }
+
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(
+                world_resource_monitoring::Section::GenerateContactsSubTerrain));
+            GenerateTerrainContacts();
+            (void)scope;
+        }
+
+        {
+            const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(
+                world_resource_monitoring::Section::GenerateContactsSubEmitSeeds));
+            EmitConvexManifoldSeeds();
+            (void)scope;
+        }
     }
 
 void World::GenerateTerrainContacts() {
@@ -790,6 +837,8 @@ void World::GenerateTerrainContacts() {
             return;
         }
 
+        const float terrainInvCell = 1.0f / std::max(terrainAttachment_.cellSizeM, 1.0e-6f);
+        const float cellSizeM = terrainAttachment_.cellSizeM;
         const std::uint32_t terrainBodyId = terrainAttachmentBodyId_;
         for (std::uint32_t bodyId = 0; bodyId < bodies_.size(); ++bodyId) {
             if (bodyId == terrainBodyId) {
@@ -800,11 +849,12 @@ void World::GenerateTerrainContacts() {
                 continue;
             }
 
-            std::vector<TerrainContactCandidate> candidates;
-            std::unordered_set<std::uint64_t> usedCellKeys;
-            candidates.reserve(16);
+            terrainContactCandidatesScratch_.clear();
+            terrainContactUsedCellKeysScratch_.clear();
+            terrainContactCandidatesScratch_.reserve(16);
+            terrainContactUsedCellKeysScratch_.reserve(32);
 
-            const std::vector<ResolvedCollisionShape> shapes = ResolveCollisionShapes(body);
+            const std::vector<ResolvedCollisionShape>& shapes = ResolvedCollisionShapesForBody(bodyId);
             for (const ResolvedCollisionShape& shape : shapes) {
                 if (shape.body.invMass == 0.0f) {
                     continue;
@@ -817,9 +867,13 @@ void World::GenerateTerrainContacts() {
                     continue;
                 }
 
-                const ConvexSupport support = BuildConvexSupport(shape.body);
-                if (!support.IsValid()) {
-                    continue;
+                const bool sphereTerrainFastPath = (shape.body.shape == ShapeType::Sphere);
+                ConvexSupport convexSupport{};
+                if (!sphereTerrainFastPath) {
+                    convexSupport = BuildConvexSupport(shape.body);
+                    if (!convexSupport.IsValid()) {
+                        continue;
+                    }
                 }
 
                 for (int row = row0; row <= row1; ++row) {
@@ -827,22 +881,25 @@ void World::GenerateTerrainContacts() {
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                         ++solverTelemetry_.terrainCellsTested;
 #endif
-                        const float cellX0 = terrainAttachment_.gridOriginWorld.x
-                            + static_cast<float>(col) * terrainAttachment_.cellSizeM;
-                        const float cellZ0 = terrainAttachment_.gridOriginWorld.z
-                            + static_cast<float>(row) * terrainAttachment_.cellSizeM;
-                        const float cellX1 = cellX0 + terrainAttachment_.cellSizeM;
-                        const float cellZ1 = cellZ0 + terrainAttachment_.cellSizeM;
+                        const float cellX0 =
+                            terrainAttachment_.gridOriginWorld.x + static_cast<float>(col) * cellSizeM;
+                        const float cellZ0 =
+                            terrainAttachment_.gridOriginWorld.z + static_cast<float>(row) * cellSizeM;
+                        const float cellX1 = cellX0 + cellSizeM;
+                        const float cellZ1 = cellZ0 + cellSizeM;
                         const float sampleX = std::clamp(shape.body.position.x, cellX0, cellX1);
                         const float sampleZ = std::clamp(shape.body.position.z, cellZ0, cellZ1);
                         float terrainHeight = 0.0f;
                         Vec3 terrainNormal{};
-                        if (!SampleTerrainCell(terrainAttachment_, row, col, sampleX, sampleZ, terrainHeight, terrainNormal)) {
+                        if (!SampleTerrainCellBilinear(
+                                terrainAttachment_, row, col, sampleX, sampleZ, terrainInvCell, terrainHeight, terrainNormal)) {
                             continue;
                         }
 
-                        const ConvexSupportPoint sp = support.Support(-terrainNormal);
-                        const float signedDistance = Dot(terrainNormal, sp.point) - terrainHeight;
+                        const Vec3 supportPoint = sphereTerrainFastPath
+                            ? SphereTerrainSupportPoint(shape.body, -terrainNormal)
+                            : convexSupport.Support(-terrainNormal).point;
+                        const float signedDistance = Dot(terrainNormal, supportPoint) - terrainHeight;
                         if (signedDistance >= 0.0f) {
                             continue;
                         }
@@ -852,51 +909,55 @@ void World::GenerateTerrainContacts() {
                         candidate.col = static_cast<std::uint32_t>(col);
                         candidate.shapeFeature = shape.encodedFeature;
                         candidate.normal = terrainNormal;
-                        candidate.supportPoint = sp.point;
+                        candidate.supportPoint = supportPoint;
                         candidate.penetration = -signedDistance;
                         candidate.height = terrainHeight;
-                        candidates.push_back(candidate);
+                        terrainContactCandidatesScratch_.push_back(candidate);
                     }
                 }
             }
-            if (candidates.empty()) {
+            if (terrainContactCandidatesScratch_.empty()) {
                 continue;
             }
 
-            std::sort(candidates.begin(), candidates.end(), [](const TerrainContactCandidate& lhs, const TerrainContactCandidate& rhs) {
-                if (std::abs(lhs.penetration - rhs.penetration) > 1.0e-6f) {
-                    return lhs.penetration > rhs.penetration;
-                }
-                if (lhs.row != rhs.row) {
-                    return lhs.row < rhs.row;
-                }
-                if (lhs.col != rhs.col) {
-                    return lhs.col < rhs.col;
-                }
-                return lhs.shapeFeature < rhs.shapeFeature;
-            });
+            std::sort(
+                terrainContactCandidatesScratch_.begin(),
+                terrainContactCandidatesScratch_.end(),
+                [](const TerrainContactCandidate& lhs, const TerrainContactCandidate& rhs) {
+                    if (std::abs(lhs.penetration - rhs.penetration) > 1.0e-6f) {
+                        return lhs.penetration > rhs.penetration;
+                    }
+                    if (lhs.row != rhs.row) {
+                        return lhs.row < rhs.row;
+                    }
+                    if (lhs.col != rhs.col) {
+                        return lhs.col < rhs.col;
+                    }
+                    return lhs.shapeFeature < rhs.shapeFeature;
+                });
 
-            std::vector<TerrainContactCandidate> chosen;
-            chosen.reserve(4);
-            for (const TerrainContactCandidate& candidate : candidates) {
+            terrainContactChosenScratch_.clear();
+            terrainContactChosenScratch_.reserve(4);
+            for (const TerrainContactCandidate& candidate : terrainContactCandidatesScratch_) {
                 const std::uint64_t cellKey =
                     (static_cast<std::uint64_t>(candidate.row) << 32u) | static_cast<std::uint64_t>(candidate.col);
-                if (!usedCellKeys.insert(cellKey).second) {
+                if (!terrainContactUsedCellKeysScratch_.insert(cellKey).second) {
                     continue;
                 }
-                chosen.push_back(candidate);
-                if (chosen.size() >= 4) {
+                terrainContactChosenScratch_.push_back(candidate);
+                if (terrainContactChosenScratch_.size() >= 4) {
                     break;
                 }
             }
 
-            if (candidates.size() > chosen.size()) {
+            if (terrainContactCandidatesScratch_.size() > terrainContactChosenScratch_.size()) {
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
-                solverTelemetry_.terrainManifoldMerges += static_cast<std::uint64_t>(candidates.size() - chosen.size());
+                solverTelemetry_.terrainManifoldMerges += static_cast<std::uint64_t>(
+                    terrainContactCandidatesScratch_.size() - terrainContactChosenScratch_.size());
 #endif
             }
 
-            for (const TerrainContactCandidate& candidate : chosen) {
+            for (const TerrainContactCandidate& candidate : terrainContactChosenScratch_) {
                 const std::uint32_t cellFeature =
                     candidate.row * static_cast<std::uint32_t>(terrainAttachment_.cols) + candidate.col;
                 const std::uint16_t detail = static_cast<std::uint16_t>(
@@ -924,19 +985,20 @@ void World::GenerateTerrainContacts() {
     }
 
 void World::EmitConvexManifoldSeeds() {
+        std::unordered_set<std::uint64_t> contactPairKeys;
+        contactPairKeys.reserve(contacts_.size() * 2u + 1u);
+        for (const Contact& c : contacts_) {
+            const std::uint32_t lo = std::min(c.a, c.b);
+            const std::uint32_t hi = std::max(c.a, c.b);
+            contactPairKeys.insert((static_cast<std::uint64_t>(lo) << 32u) | static_cast<std::uint64_t>(hi));
+        }
         for (const auto& [key, seed] : convexManifoldSeeds_) {
             if (!seed.valid || seed.depth <= 0.0f) {
                 continue;
             }
-            bool hasPairContact = false;
-            for (const Contact& c : contacts_) {
-                const auto [lo, hi] = CanonicalBodyOrder(c.a, c.b);
-                if (lo == key.loBody && hi == key.hiBody) {
-                    hasPairContact = true;
-                    break;
-                }
-            }
-            if (hasPairContact) {
+            const std::uint64_t pairKey =
+                (static_cast<std::uint64_t>(key.loBody) << 32u) | static_cast<std::uint64_t>(key.hiBody);
+            if (contactPairKeys.find(pairKey) != contactPairKeys.end()) {
                 continue;
             }
             const Vec3 point = 0.5f * (seed.witnessA + seed.witnessB);
@@ -944,6 +1006,22 @@ void World::EmitConvexManifoldSeeds() {
             AddContact(key.loBody, key.hiBody, seed.normal, point, seed.depth, 10u, featureId);
         }
     }
+
+const std::vector<ResolvedCollisionShape>& World::ResolvedCollisionShapesForBody(std::uint32_t bodyId) {
+    static const std::vector<ResolvedCollisionShape> kEmpty{};
+    if (bodyId >= bodies_.size()) {
+        return kEmpty;
+    }
+    if (resolvedCollisionShapesCache_.size() != bodies_.size()) {
+        resolvedCollisionShapesCache_.resize(bodies_.size());
+        resolvedCollisionShapesCacheBuiltFrame_.assign(bodies_.size(), 0u);
+    }
+    if (resolvedCollisionShapesCacheBuiltFrame_[bodyId] != resolvedCollisionShapesCacheFrame_) {
+        resolvedCollisionShapesCache_[bodyId] = ResolveCollisionShapes(bodies_[bodyId]);
+        resolvedCollisionShapesCacheBuiltFrame_[bodyId] = resolvedCollisionShapesCacheFrame_;
+    }
+    return resolvedCollisionShapesCache_[bodyId];
+}
 
 void World::SphereSphere(std::uint32_t ia, std::uint32_t ib) {
         const Body& a = bodies_[ia];

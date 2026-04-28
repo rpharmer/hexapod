@@ -35,6 +35,23 @@
 
 namespace minphys3d {
 
+/// Expanded collision shapes for a body (primitive or compound children), used by contact generation.
+struct ResolvedCollisionShape {
+    Body body{};
+    AABB bounds{};
+    std::uint32_t encodedFeature = 0;
+};
+
+struct TerrainContactCandidate {
+    std::uint32_t row = 0;
+    std::uint32_t col = 0;
+    std::uint32_t shapeFeature = 0;
+    Vec3 normal{};
+    Vec3 supportPoint{};
+    float penetration = 0.0f;
+    float height = 0.0f;
+};
+
 class World {
 public:
     static constexpr std::uint32_t kInvalidJointId = std::numeric_limits<std::uint32_t>::max();
@@ -885,6 +902,8 @@ private:
         }
     };
 
+    [[nodiscard]] const std::vector<ResolvedCollisionShape>& ResolvedCollisionShapesForBody(std::uint32_t bodyId);
+
     Vec3 gravity_{};
     float maxBodyLinearSpeed_ = 120.0f;
     float maxBodyAngularSpeed_ = 180.0f;
@@ -903,6 +922,11 @@ private:
     std::vector<Mat3> bodyInvInertiaWorld_;
     std::vector<std::uint32_t> shapeRevisionCounters_;
     std::vector<std::uint64_t> shapeGeometrySignatures_;
+    std::vector<std::vector<ResolvedCollisionShape>> resolvedCollisionShapesCache_;
+    /// Incremented at each `GenerateContacts()` so cached expansions are not reused across substeps
+    /// (child world transforms depend on pose, not only shape revision).
+    std::uint32_t resolvedCollisionShapesCacheFrame_ = 0;
+    std::vector<std::uint32_t> resolvedCollisionShapesCacheBuiltFrame_;
     std::vector<Vec3> splitLinearPositionDelta_;
     std::vector<Vec3> splitAngularPositionDelta_;
     std::vector<BroadphaseProxy> proxies_;
@@ -943,6 +967,9 @@ private:
     std::unordered_map<ConvexSeedKey, EpaPenetrationResult, ConvexSeedKeyHash> convexManifoldSeeds_;
     TerrainHeightfieldAttachment terrainAttachment_{};
     std::uint32_t terrainAttachmentBodyId_ = kInvalidBodyId;
+    std::vector<TerrainContactCandidate> terrainContactCandidatesScratch_{};
+    std::vector<TerrainContactCandidate> terrainContactChosenScratch_{};
+    std::unordered_set<std::uint64_t> terrainContactUsedCellKeysScratch_{};
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     std::FILE* DebugLogStream() const {
         return debugLogStream_ != nullptr ? debugLogStream_ : stderr;

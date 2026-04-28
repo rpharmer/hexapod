@@ -17,7 +17,7 @@
 
 namespace minphys3d::world_resource_monitoring {
 
-inline constexpr std::size_t kMaxSections = 30;
+inline constexpr std::size_t kMaxSections = 37;
 inline constexpr std::size_t kTopSectionsToReport = 8;
 
 enum class Section : std::size_t {
@@ -52,6 +52,14 @@ enum class Section : std::size_t {
     SolveIslandsServoJoints,
     GetServoJointAngle,
     SolveServoJoint,
+    /// Nested under `GenerateContacts` (self-time excludes child scopes below).
+    GenerateContactsSubRefreshShapes,
+    GenerateContactsSubPotentialPairs,
+    GenerateContactsSubArticulationSplit,
+    GenerateContactsSubCompound,
+    GenerateContactsSubNarrowphase,
+    GenerateContactsSubTerrain,
+    GenerateContactsSubEmitSeeds,
     Count,
 };
 
@@ -92,6 +100,13 @@ inline constexpr std::array<const char*, kMaxSections> kSectionLabels = {
     "world.solve_islands.joints_servo",
     "world.get_servo_joint_angle",
     "world.solve_servo_joint",
+    "world.generate_contacts.refresh_shapes",
+    "world.generate_contacts.potential_pairs",
+    "world.generate_contacts.articulation_split",
+    "world.generate_contacts.compound",
+    "world.generate_contacts.narrowphase",
+    "world.generate_contacts.terrain",
+    "world.generate_contacts.emit_seeds",
 };
 
 inline constexpr std::size_t toIndex(Section section) {

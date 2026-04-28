@@ -4,6 +4,7 @@
 #include "demo/scenes.hpp"
 #include "minphys3d/core/world.hpp"
 #include "minphys3d/demo/hexapod_stability.hpp"
+#include "minphys3d/solver/types.hpp"
 #include "process_resource_monitoring.hpp"
 
 #include <chrono>
@@ -37,6 +38,18 @@ int main() {
     const auto t1 = std::chrono::steady_clock::now();
     const double wall_ms =
         std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+    const BroadphaseMetrics bp = world.GetBroadphaseMetrics();
+    std::cout << "broadphase_metrics (last substep): areaRatio=" << bp.areaRatio << " maxDepth=" << bp.maxDepth
+              << " avgDepth=" << bp.avgDepth << " movedProxyRatio=" << bp.movedProxyRatio << "\n";
+    std::cout << "  queryNodeVisits=" << bp.queryNodeVisits
+              << " queryNodeVisitsPerProxy=" << bp.queryNodeVisitsPerProxy << "\n";
+    std::cout << "  pairCacheQueries=" << bp.pairCacheQueries << " pairCacheHits=" << bp.pairCacheHits
+              << " pairCacheHitRate=" << bp.pairCacheHitRate << "\n";
+    std::cout << "  pairGenerationMs=" << bp.pairGenerationMs << " validProxyCount=" << bp.validProxyCount
+              << " usedMovedSetOnlyUpdate=" << (bp.usedMovedSetOnlyUpdate ? 1 : 0)
+              << " partialRebuildTriggered=" << (bp.partialRebuildTriggered ? 1 : 0)
+              << " fullRebuildTriggered=" << (bp.fullRebuildTriggered ? 1 : 0) << "\n";
 
     const auto summary = world.SnapshotFullResourceSections(false);
     std::cout << "workload: hexapod " << kFrames << " frames @ 60Hz outer, " << kSubsteps

@@ -4,8 +4,8 @@ OpenGL + ImGui visualiser for live hexapod diagnostics.
 
 It can render either:
 
-- `hexapod-physics-sim` scene packets (`entity_static`, `entity_frame`, `terrain_patch`)
-- `hexapod-server` telemetry packets (`geometry`, `joints`, nav/fusion summaries)
+- `hexapod-physics-sim` scene preview (**binary** `MPV1` wire format: `viz.scene_clear`, `viz.entity_static`, `viz.entity_frame`, `viz.terrain_patch_meta` + `viz.terrain_floats` chunks; see `hexapod-common/include/minphys_viz_protocol.hpp`)
+- `hexapod-server` telemetry packets (**JSON**: `geometry`, `joints`, nav/fusion summaries)
 
 ## Dependencies
 

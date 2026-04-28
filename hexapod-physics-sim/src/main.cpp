@@ -51,6 +51,7 @@ void PrintUsage(std::ostream& out) {
            "  --scene-file PATH + --serve  Append obstacle bodies/joints from minphys JSON into serve mode\n"
            "  --sink udp + --serve      Also stream minphys scene UDP for hexapod-opengl-visualiser\n"
             "                            (same as demo: --udp-host / --udp-port, default 127.0.0.1:9870)\n"
+           "  --serve-preview-stride N  With UDP preview: emit preview every N physics steps (default: 1)\n"
            "  -h, --help                Show this help\n";
 }
 
@@ -67,6 +68,7 @@ int main(int argc, char** argv) {
     bool interactive_autonext_run = false;
     bool serve_mode = false;
     int serve_port = 9871;
+    int serve_preview_stride = 1;
     int solver_iterations = minphys3d::demo::kHexapodPoseHoldBenchmarkSolverIterations;
     std::string scene_file;
     std::string udp_host = "127.0.0.1";
@@ -195,6 +197,17 @@ int main(int argc, char** argv) {
             }
             continue;
         }
+        if (arg == "--serve-preview-stride") {
+            if (i + 1 >= argc) {
+                std::cerr << "Missing value for --serve-preview-stride\n";
+                return 1;
+            }
+            if (!ParsePositiveInt(argv[++i], serve_preview_stride)) {
+                std::cerr << "Invalid --serve-preview-stride (expected positive integer)\n";
+                return 1;
+            }
+            continue;
+        }
 
         std::cerr << "Unknown argument: " << arg << "\n";
         PrintUsage(std::cerr);
@@ -210,7 +223,12 @@ int main(int argc, char** argv) {
             return 1;
         }
         return minphys3d::demo::RunPhysicsServeMode(
-            static_cast<std::uint16_t>(serve_port), sink_kind, udp_host, udp_port, scene_file);
+            static_cast<std::uint16_t>(serve_port),
+            sink_kind,
+            udp_host,
+            udp_port,
+            scene_file,
+            serve_preview_stride);
     }
 
     if (interactive) {

@@ -1,6 +1,7 @@
 #include "minphys3d/core/broadphase_system.hpp"
 #include "minphys3d/core/world.hpp"
 
+#include <algorithm>
 #include <chrono>
 
 namespace minphys3d {
@@ -422,6 +423,8 @@ std::vector<Pair> World::ComputePotentialPairs() const {
 
     std::vector<std::int32_t> stack;
     stack.reserve(treeNodes_.size());
+    // Dynamic-tree traversal uses fat-AABB overlap only. Collision masks/groups apply in
+    // IsPairEligible at leaf pairs (and when revalidating the pair cache), not via internal-node pruning.
     auto traverseProxy = [&](std::uint32_t bodyId) {
         if (bodyId >= proxies_.size()) {
             return;
@@ -491,17 +494,26 @@ std::vector<Pair> World::ComputePotentialPairs() const {
     assert(PairSetFromPairs(pairs) == PairSetFromPairs(bruteForcePairs));
 #endif
 
-    cachedPotentialPairs_ = pairs;
-    cachedPotentialPairKeySet_.clear();
-    cachedPotentialPairKeySet_.reserve(cachedPotentialPairs_.size() * 2);
-    for (const Pair& pair : cachedPotentialPairs_) {
-        cachedPotentialPairKeySet_.insert(MakePairKey(pair.a, pair.b));
+    const bool pairsUnchanged =
+        pairs.size() == cachedPotentialPairs_.size()
+        && std::equal(pairs.begin(), pairs.end(), cachedPotentialPairs_.begin(),
+                      [](const Pair& lhs, const Pair& rhs) { return lhs.a == rhs.a && lhs.b == rhs.b; });
+    if (!pairsUnchanged) {
+        cachedPotentialPairs_ = std::move(pairs);
+        cachedPotentialPairKeySet_.clear();
+        cachedPotentialPairKeySet_.reserve(cachedPotentialPairs_.size() * 2);
+        for (const Pair& pair : cachedPotentialPairs_) {
+            cachedPotentialPairKeySet_.insert(MakePairKey(pair.a, pair.b));
+        }
     }
 
     const auto endTime = std::chrono::steady_clock::now();
     broadphaseMetrics_.pairGenerationMs =
         std::chrono::duration<float, std::milli>(endTime - startTime).count();
-    return pairs;
+    if (pairsUnchanged) {
+        return pairs;
+    }
+    return cachedPotentialPairs_;
 }
 
 bool World::IsPairEligible(std::uint32_t a, std::uint32_t b) const {

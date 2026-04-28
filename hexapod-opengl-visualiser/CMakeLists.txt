@@ -46,9 +46,14 @@ add_executable(hexapod-opengl-visualiser
   src/main.cpp
 )
 
+target_include_directories(hexapod-opengl-visualiser
+  PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/include"
+)
+
 target_link_libraries(hexapod-opengl-visualiser
   PRIVATE
-    OpenGL::GL
-    glfw
-    imgui
+  OpenGL::GL
+  glfw
+  imgui
 )

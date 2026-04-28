@@ -1,13 +1,13 @@
 #include "demo/frame_sink.hpp"
 
+#include "minphys_viz_protocol.hpp"
+
 #include <array>
 #include <cmath>
-#include <iomanip>
+#include <cstdint>
 #include <iostream>
-#include <limits>
 #include <map>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,6 +24,21 @@
 
 namespace minphys3d::demo {
 namespace {
+
+minphys_viz::VizShapeType ToVizShapeType(ShapeType shape) {
+    return static_cast<minphys_viz::VizShapeType>(static_cast<std::uint8_t>(shape));
+}
+
+minphys_viz::VizCompoundChildWire PackCompoundChild(const CompoundChild& c) {
+    minphys_viz::VizCompoundChildWire w{};
+    w.shape = ToVizShapeType(c.shape);
+    w.local_position = {c.localPosition.x, c.localPosition.y, c.localPosition.z};
+    w.local_orientation = {c.localOrientation.w, c.localOrientation.x, c.localOrientation.y, c.localOrientation.z};
+    w.radius = c.radius;
+    w.half_height = c.halfHeight;
+    w.half_extents = {c.halfExtents.x, c.halfExtents.y, c.halfExtents.z};
+    return w;
+}
 
 class DummySink final : public FrameSink {
 public:
@@ -63,9 +78,10 @@ public:
         frame_index_ = frame_index;
         sim_time_s_ = sim_time_s;
         bodies_.clear();
-        // Tell the visualiser to drop stale bodies from the previous run/scene (entity ids may be reused).
         if (frame_index == 0 && valid_) {
-            send_payload(R"({"schema_version":1,"message_type":"scene_clear"})");
+            scene_clear_packet_.clear();
+            minphys_viz::EncodeSceneClear(scene_clear_packet_, static_cast<std::uint32_t>(frame_index));
+            send_bytes(scene_clear_packet_);
         }
     }
 
@@ -74,26 +90,26 @@ public:
     }
 
     void emit_terrain_patch(const TerrainPatch& terrain_patch) override {
-        terrain_patch_snapshot_.valid = terrain_patch.initialized();
-        if (!terrain_patch_snapshot_.valid) {
-            terrain_patch_snapshot_ = {};
+        viz_terrain_snapshot_.valid = terrain_patch.initialized();
+        if (!viz_terrain_snapshot_.valid) {
+            viz_terrain_snapshot_ = {};
             return;
         }
 
-        terrain_patch_snapshot_.config = terrain_patch.config();
-        terrain_patch_snapshot_.center_world = terrain_patch.center_world();
-        terrain_patch_snapshot_.grid_origin_world = terrain_patch.grid_origin_world();
-        terrain_patch_snapshot_.base_height_m = terrain_patch.base_height_m();
-        terrain_patch_snapshot_.last_normal = terrain_patch.last_normal();
-        terrain_patch_snapshot_.last_plane_height_m = terrain_patch.last_plane_height_m();
-        terrain_patch_snapshot_.heights = terrain_patch.surface_heights_m();
-        terrain_patch_snapshot_.confidences = terrain_patch.confidences();
+        viz_terrain_snapshot_.config = terrain_patch.config();
+        viz_terrain_snapshot_.center_world = terrain_patch.center_world();
+        viz_terrain_snapshot_.grid_origin_world = terrain_patch.grid_origin_world();
+        viz_terrain_snapshot_.base_height_m = terrain_patch.base_height_m();
+        viz_terrain_snapshot_.last_normal = terrain_patch.last_normal();
+        viz_terrain_snapshot_.last_plane_height_m = terrain_patch.last_plane_height_m();
+        viz_terrain_snapshot_.heights = terrain_patch.surface_heights_m();
+        viz_terrain_snapshot_.confidences = terrain_patch.confidences();
         if (terrain_patch.has_collision_layer()) {
-            terrain_patch_snapshot_.collision_heights = terrain_patch.collision_heights_m();
-            terrain_patch_snapshot_.schema_version = 2;
+            viz_terrain_snapshot_.collision_heights = terrain_patch.collision_heights_m();
+            viz_terrain_snapshot_.schema_version = 2;
         } else {
-            terrain_patch_snapshot_.collision_heights.clear();
-            terrain_patch_snapshot_.schema_version = 1;
+            viz_terrain_snapshot_.collision_heights.clear();
+            viz_terrain_snapshot_.schema_version = 1;
         }
     }
 
@@ -102,31 +118,83 @@ public:
             return;
         }
 
-        // Build all payloads into the reusable vector first, then push them out as one
-        // batched syscall (sendmmsg on Linux). Previously each body and the terrain
-        // patch caused a separate sendto() — 13-17 syscalls per frame. Batching cuts
-        // that to one regardless of body count.
-        frame_payloads_.clear();
+        reset_packet_pool();
+
+        std::size_t terrain_chunk_ub = 0;
+        if (viz_terrain_snapshot_.valid) {
+            const auto& snap = viz_terrain_snapshot_;
+            const int rows = snap.config.rows;
+            const int cols = snap.config.cols;
+            const std::size_t ncell = static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols);
+            if (rows > 0 && cols > 0 && snap.heights.size() == ncell && snap.confidences.size() == ncell) {
+                const bool has_collision =
+                    snap.schema_version >= 2 && !snap.collision_heights.empty() && snap.collision_heights.size() == ncell;
+                const std::uint32_t layers = has_collision ? 3u : 2u;
+                const std::uint32_t expected_bytes =
+                    static_cast<std::uint32_t>(ncell * sizeof(float) * layers);
+                if (expected_bytes != 0u) {
+                    terrain_chunk_ub = minphys_viz::TerrainFloatChunkCountUpperBound(expected_bytes);
+                }
+            }
+        }
+
+        packet_send_ptrs_.reserve(bodies_.size() * 2 + 1 + terrain_chunk_ub);
+
         for (const auto& snapshot : bodies_) {
             const BodyStaticDescriptor descriptor = MakeStaticDescriptor(snapshot.body);
             const auto found = last_static_descriptors_.find(snapshot.id);
             if (found == last_static_descriptors_.end() || !AreDescriptorsEqual(found->second, descriptor)) {
-                frame_payloads_.push_back(BuildStaticMessage(snapshot.id, descriptor));
+                append_entity_static(snapshot.id, descriptor);
                 last_static_descriptors_[snapshot.id] = descriptor;
             }
 
-            frame_payloads_.push_back(BuildFrameMessage(snapshot.id, snapshot.body));
+            append_entity_frame(snapshot.id, snapshot.body);
         }
 
-        if (terrain_patch_snapshot_.valid) {
-            frame_payloads_.push_back(BuildTerrainPatchMessage(terrain_patch_snapshot_));
+        if (viz_terrain_snapshot_.valid) {
+            AppendTerrainPackets(viz_terrain_snapshot_);
         }
 
         flush_frame_payloads();
     }
 
 private:
-    void send_payload(const std::string& payload) const {
+    struct BodyStaticDescriptor {
+        ShapeType shape = ShapeType::Sphere;
+        float radius = 0.0f;
+        float half_height = 0.0f;
+        minphys3d::Vec3 half_extents{};
+        std::vector<CompoundChild> compound_children{};
+        minphys3d::Vec3 plane_normal{};
+        float plane_offset = 0.0f;
+        float static_friction = 0.0f;
+        float dynamic_friction = 0.0f;
+        float restitution = 0.0f;
+    };
+
+    struct BodySnapshot {
+        std::uint32_t id = 0;
+        Body body{};
+    };
+
+    struct VizTerrainSnapshot {
+        bool valid = false;
+        int schema_version = 1;
+        TerrainPatchConfig config{};
+        Vec3 center_world{};
+        Vec3 grid_origin_world{};
+        float base_height_m = 0.0f;
+        Vec3 last_normal{0.0f, 1.0f, 0.0f};
+        float last_plane_height_m = 0.0f;
+        std::vector<float> heights{};
+        std::vector<float> confidences{};
+        std::vector<float> collision_heights{};
+    };
+
+    void send_bytes(const std::vector<std::uint8_t>& payload) const {
+        if (payload.empty()) {
+            return;
+        }
         (void)::sendto(
             socket_fd_,
             payload.data(),
@@ -137,20 +205,17 @@ private:
     }
 
     void flush_frame_payloads() const {
-        if (frame_payloads_.empty()) {
+        if (packet_send_ptrs_.empty()) {
             return;
         }
 #if defined(__linux__)
-        // sendmmsg() pushes all queued datagrams in a single syscall. The kernel
-        // dispatches each one to the same UDP socket sequentially, exactly as if we
-        // had called sendto() in a loop, but the syscall entry/exit overhead is paid
-        // only once per frame instead of per datagram.
-        const std::size_t count = frame_payloads_.size();
+        const std::size_t count = packet_send_ptrs_.size();
         iovec_scratch_.resize(count);
         msg_scratch_.resize(count);
         for (std::size_t i = 0; i < count; ++i) {
-            iovec_scratch_[i].iov_base = frame_payloads_[i].data();
-            iovec_scratch_[i].iov_len = frame_payloads_[i].size();
+            const std::vector<std::uint8_t>& payload = *packet_send_ptrs_[i];
+            iovec_scratch_[i].iov_base = const_cast<std::uint8_t*>(payload.data());
+            iovec_scratch_[i].iov_len = payload.size();
             std::memset(&msg_scratch_[i], 0, sizeof(mmsghdr));
             msg_scratch_[i].msg_hdr.msg_name =
                 const_cast<void*>(static_cast<const void*>(&dest_addr_));
@@ -166,54 +231,151 @@ private:
                 static_cast<unsigned int>(count - sent),
                 0);
             if (rc < 0) {
-                // Silent failure mirrors original send_payload behaviour (visualiser
-                // is best-effort; transient EAGAIN/EINTR shouldn't break the serve loop).
                 break;
             }
             sent += static_cast<std::size_t>(rc);
         }
 #else
-        // macOS/BSD: sendmmsg is Linux-specific. Fall back to per-payload sendto;
-        // the per-frame syscall overhead is the same as before this change.
-        for (const auto& payload : frame_payloads_) {
-            send_payload(payload);
+        for (const std::vector<std::uint8_t>* payload_ptr : packet_send_ptrs_) {
+            send_bytes(*payload_ptr);
         }
 #endif
     }
 
-    static const char* ShapeName(ShapeType shape) {
-        switch (shape) {
-            case ShapeType::Sphere:
-                return "sphere";
-            case ShapeType::Box:
-                return "box";
-            case ShapeType::Plane:
-                return "plane";
-            case ShapeType::Capsule:
-                return "capsule";
-            case ShapeType::Cylinder:
-                return "cylinder";
-            case ShapeType::HalfCylinder:
-                return "half_cylinder";
-            case ShapeType::Compound:
-                return "compound";
-            default:
-                return "unknown";
-        }
+    void reset_packet_pool() {
+        pool_next_ = 0;
+        packet_send_ptrs_.clear();
     }
 
-    struct BodyStaticDescriptor {
-        ShapeType shape = ShapeType::Sphere;
-        float radius = 0.0f;
-        float half_height = 0.0f;
-        minphys3d::Vec3 half_extents{};
-        std::vector<CompoundChild> compound_children{};
-        minphys3d::Vec3 plane_normal{};
-        float plane_offset = 0.0f;
-        float static_friction = 0.0f;
-        float dynamic_friction = 0.0f;
-        float restitution = 0.0f;
-    };
+    std::vector<std::uint8_t>& acquire_packet() {
+        if (pool_next_ >= packet_pool_.size()) {
+            packet_pool_.emplace_back();
+        }
+        std::vector<std::uint8_t>& packet = packet_pool_[pool_next_];
+        packet.clear();
+        ++pool_next_;
+        return packet;
+    }
+
+    void append_entity_frame(std::uint32_t entity_id, const Body& body) {
+        const minphys3d::Vec3 p = minphys3d::BodyWorldShapeOrigin(body);
+        std::vector<std::uint8_t>& out = acquire_packet();
+        minphys_viz::EncodeEntityFrame(
+            out,
+            entity_id,
+            frame_index_,
+            sim_time_s_,
+            p.x,
+            p.y,
+            p.z,
+            body.orientation.w,
+            body.orientation.x,
+            body.orientation.y,
+            body.orientation.z);
+        packet_send_ptrs_.push_back(&out);
+    }
+
+    void append_entity_static(std::uint32_t entity_id, const BodyStaticDescriptor& d) {
+        minphys_viz::VizEntityStaticBody fixed{};
+        fixed.entity_id = entity_id;
+        fixed.shape = ToVizShapeType(d.shape);
+        fixed.static_friction = d.static_friction;
+        fixed.dynamic_friction = d.dynamic_friction;
+        fixed.restitution = d.restitution;
+        fixed.radius = d.radius;
+        fixed.half_height = d.half_height;
+        fixed.half_extents = {d.half_extents.x, d.half_extents.y, d.half_extents.z};
+        fixed.plane_normal = {d.plane_normal.x, d.plane_normal.y, d.plane_normal.z};
+        fixed.plane_offset = d.plane_offset;
+        fixed.compound_child_count = static_cast<std::uint32_t>(d.compound_children.size());
+
+        compound_wire_scratch_.clear();
+        compound_wire_scratch_.reserve(d.compound_children.size());
+        for (const CompoundChild& c : d.compound_children) {
+            compound_wire_scratch_.push_back(PackCompoundChild(c));
+        }
+
+        std::vector<std::uint8_t>& out = acquire_packet();
+        minphys_viz::EncodeEntityStatic(out, fixed, compound_wire_scratch_.data(), compound_wire_scratch_.size());
+        packet_send_ptrs_.push_back(&out);
+    }
+
+    void AppendTerrainPackets(const VizTerrainSnapshot& snap) {
+        const int rows = snap.config.rows;
+        const int cols = snap.config.cols;
+        const std::size_t ncell = static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols);
+        if (rows <= 0 || cols <= 0 || snap.heights.size() != ncell || snap.confidences.size() != ncell) {
+            return;
+        }
+        const bool has_collision = snap.schema_version >= 2 && !snap.collision_heights.empty()
+            && snap.collision_heights.size() == ncell;
+        const std::uint32_t layers = has_collision ? 3u : 2u;
+        const std::uint32_t expected_bytes =
+            static_cast<std::uint32_t>(ncell * sizeof(float) * layers);
+        if (expected_bytes == 0u) {
+            return;
+        }
+
+        ++terrain_seq_;
+        if (terrain_float_blob_.size() < expected_bytes) {
+            terrain_float_blob_.resize(expected_bytes);
+        }
+        std::memcpy(terrain_float_blob_.data(), snap.heights.data(), ncell * sizeof(float));
+        std::memcpy(terrain_float_blob_.data() + ncell * sizeof(float), snap.confidences.data(), ncell * sizeof(float));
+        if (has_collision) {
+            std::memcpy(
+                terrain_float_blob_.data() + 2u * ncell * sizeof(float),
+                snap.collision_heights.data(),
+                ncell * sizeof(float));
+        }
+
+        minphys_viz::VizTerrainPatchMetaBody meta{};
+        meta.terrain_seq = terrain_seq_;
+        meta.frame = frame_index_;
+        meta.sim_time_s = sim_time_s_;
+        meta.rows = rows;
+        meta.cols = cols;
+        meta.flags = has_collision ? minphys_viz::kTerrainFlagHasCollisionHeights : 0u;
+        meta.cell_size_m = snap.config.cell_size_m;
+        meta.base_margin_m = snap.config.base_margin_m;
+        meta.min_cell_thickness_m = snap.config.min_cell_thickness_m;
+        meta.influence_sigma_m = snap.config.influence_sigma_m;
+        meta.plane_confidence = snap.config.plane_confidence;
+        meta.confidence_half_life_s = snap.config.confidence_half_life_s;
+        meta.base_update_blend = snap.config.base_update_blend;
+        meta.decay_update_boost = snap.config.decay_update_boost;
+        meta.use_sample_binning = snap.config.use_sample_binning ? 1u : 0u;
+        meta.use_conservative_collision = snap.config.use_conservative_collision ? 1u : 0u;
+        meta.scroll_world_fixed = snap.config.scroll_world_fixed ? 1u : 0u;
+        meta.lidar_fusion_enable = snap.config.lidar_fusion_enable ? 1u : 0u;
+        meta.sample_bin_size_m = snap.config.sample_bin_size_m;
+        meta.lidar_sample_stride = snap.config.lidar_sample_stride;
+        meta.lidar_sample_weight = snap.config.lidar_sample_weight;
+        meta.lidar_min_surface_confidence = snap.config.lidar_min_surface_confidence;
+        meta.lidar_contact_arbitration_radius_m = snap.config.lidar_contact_arbitration_radius_m;
+        meta.lidar_contact_disagreement_m = snap.config.lidar_contact_disagreement_m;
+        meta.center_world = {snap.center_world.x, snap.center_world.y, snap.center_world.z};
+        meta.grid_origin_x = snap.grid_origin_world.x;
+        meta.grid_origin_z = snap.grid_origin_world.z;
+        meta.base_height_m = snap.base_height_m;
+        meta.plane_height_m = snap.last_plane_height_m;
+        meta.plane_normal = {snap.last_normal.x, snap.last_normal.y, snap.last_normal.z};
+        meta.expected_float_blob_bytes = expected_bytes;
+
+        std::vector<std::uint8_t>& meta_packet = acquire_packet();
+        minphys_viz::EncodeTerrainMeta(meta_packet, meta);
+        packet_send_ptrs_.push_back(&meta_packet);
+
+        const std::size_t chunk_count = minphys_viz::EncodeTerrainFloatChunks(
+            terrain_chunk_storage_,
+            terrain_seq_,
+            terrain_float_blob_.data(),
+            expected_bytes,
+            false);
+        for (std::size_t ci = 0; ci < chunk_count; ++ci) {
+            packet_send_ptrs_.push_back(&terrain_chunk_storage_[ci]);
+        }
+    }
 
     static bool AlmostEqual(float lhs, float rhs) {
         constexpr float kTolerance = 1e-6f;
@@ -283,149 +445,6 @@ private:
         };
     }
 
-    void AppendCompoundChildrenJson(std::ostringstream& out, const std::vector<CompoundChild>& children) const {
-        out << ",\"compound_children\":[";
-        for (std::size_t index = 0; index < children.size(); ++index) {
-            const CompoundChild& child = children[index];
-            if (index > 0) {
-                out << ",";
-            }
-            out << "{\"shape_type\":\"" << ShapeName(child.shape) << "\""
-                << ",\"local_position\":[" << child.localPosition.x << "," << child.localPosition.y << "," << child.localPosition.z << "]"
-                << ",\"local_rotation\":[" << child.localOrientation.w << "," << child.localOrientation.x << ","
-                << child.localOrientation.y << "," << child.localOrientation.z << "]"
-                << ",\"radius\":" << child.radius
-                << ",\"half_height\":" << child.halfHeight
-                << ",\"half_extents\":[" << child.halfExtents.x << "," << child.halfExtents.y << "," << child.halfExtents.z << "]"
-                << "}";
-        }
-        out << "]";
-    }
-
-    std::string BuildStaticMessage(std::uint32_t entity_id, const BodyStaticDescriptor& descriptor) const {
-        std::ostringstream out;
-        out << std::fixed << std::setprecision(6);
-        out << "{\"schema_version\":1,\"message_type\":\"entity_static\""
-            << ",\"entity_id\":" << entity_id
-            << ",\"shape_type\":\"" << ShapeName(descriptor.shape) << "\"";
-
-        out << ",\"material\":{\"static_friction\":" << descriptor.static_friction
-            << ",\"dynamic_friction\":" << descriptor.dynamic_friction
-            << ",\"restitution\":" << descriptor.restitution << "}";
-
-        out << ",\"mesh_key\":\"" << ShapeName(descriptor.shape) << "\"";
-
-        if (descriptor.shape == ShapeType::Sphere) {
-            out << ",\"dimensions\":{\"radius\":" << descriptor.radius << "}";
-        } else if (descriptor.shape == ShapeType::Box) {
-            out << ",\"dimensions\":{\"half_extents\":[" << descriptor.half_extents.x << "," << descriptor.half_extents.y
-                << "," << descriptor.half_extents.z << "]}";
-        } else if (descriptor.shape == ShapeType::Capsule || descriptor.shape == ShapeType::Cylinder
-                   || descriptor.shape == ShapeType::HalfCylinder) {
-            out << ",\"dimensions\":{\"radius\":" << descriptor.radius
-                << ",\"half_height\":" << descriptor.half_height << "}";
-        } else if (descriptor.shape == ShapeType::Compound) {
-            out << ",\"dimensions\":{\"half_extents\":[" << descriptor.half_extents.x << "," << descriptor.half_extents.y
-                << "," << descriptor.half_extents.z << "]}";
-        } else if (descriptor.shape == ShapeType::Plane) {
-            out << ",\"dimensions\":{\"plane_normal\":[" << descriptor.plane_normal.x << "," << descriptor.plane_normal.y
-                << "," << descriptor.plane_normal.z << "],\"plane_offset\":" << descriptor.plane_offset << "}";
-        }
-
-        if (descriptor.shape == ShapeType::Compound && !descriptor.compound_children.empty()) {
-            AppendCompoundChildrenJson(out, descriptor.compound_children);
-        }
-
-        out << "}";
-        return out.str();
-    }
-
-    std::string BuildFrameMessage(std::uint32_t entity_id, const Body& body) const {
-        const minphys3d::Vec3 p = minphys3d::BodyWorldShapeOrigin(body);
-        std::ostringstream out;
-        out << std::fixed << std::setprecision(6);
-        out << "{\"schema_version\":1,\"message_type\":\"entity_frame\""
-            << ",\"frame\":" << frame_index_
-            << ",\"sim_time_s\":" << sim_time_s_
-            << ",\"entity_id\":" << entity_id
-            << ",\"position\":[" << p.x << "," << p.y << "," << p.z << "]"
-            << ",\"rotation\":[" << body.orientation.w << "," << body.orientation.x << "," << body.orientation.y << ","
-            << body.orientation.z << "]"
-            << "}";
-        return out.str();
-    }
-
-    struct BodySnapshot {
-        std::uint32_t id = 0;
-        Body body{};
-    };
-
-    struct TerrainPatchSnapshot {
-        bool valid = false;
-        int schema_version = 1;
-        TerrainPatchConfig config{};
-        Vec3 center_world{};
-        Vec3 grid_origin_world{};
-        float base_height_m = 0.0f;
-        Vec3 last_normal{0.0f, 1.0f, 0.0f};
-        float last_plane_height_m = 0.0f;
-        std::vector<float> heights{};
-        std::vector<float> confidences{};
-        std::vector<float> collision_heights{};
-    };
-
-    std::string BuildFloatArrayJson(const std::vector<float>& values) const {
-        std::ostringstream out;
-        out << "[";
-        for (std::size_t index = 0; index < values.size(); ++index) {
-            if (index > 0) {
-                out << ",";
-            }
-            out << values[index];
-        }
-        out << "]";
-        return out.str();
-    }
-
-    std::string BuildTerrainPatchMessage(const TerrainPatchSnapshot& terrain) const {
-        std::ostringstream out;
-        out << std::fixed << std::setprecision(6);
-        const int schema = terrain.schema_version >= 2 ? 2 : 1;
-        out << "{\"schema_version\":" << schema << ",\"message_type\":\"terrain_patch\""
-            << ",\"frame\":" << frame_index_
-            << ",\"sim_time_s\":" << sim_time_s_
-            << ",\"rows\":" << terrain.config.rows
-            << ",\"cols\":" << terrain.config.cols
-            << ",\"cell_size_m\":" << terrain.config.cell_size_m
-            << ",\"base_margin_m\":" << terrain.config.base_margin_m
-            << ",\"min_cell_thickness_m\":" << terrain.config.min_cell_thickness_m
-            << ",\"influence_sigma_m\":" << terrain.config.influence_sigma_m
-            << ",\"plane_confidence\":" << terrain.config.plane_confidence
-            << ",\"confidence_half_life_s\":" << terrain.config.confidence_half_life_s
-            << ",\"base_update_blend\":" << terrain.config.base_update_blend
-            << ",\"decay_update_boost\":" << terrain.config.decay_update_boost
-            << ",\"use_sample_binning\":" << (terrain.config.use_sample_binning ? "true" : "false")
-            << ",\"use_conservative_collision\":" << (terrain.config.use_conservative_collision ? "true" : "false")
-            << ",\"scroll_world_fixed\":" << (terrain.config.scroll_world_fixed ? "true" : "false")
-            << ",\"lidar_fusion_enable\":" << (terrain.config.lidar_fusion_enable ? "true" : "false")
-            << ",\"lidar_min_surface_confidence\":" << terrain.config.lidar_min_surface_confidence
-            << ",\"lidar_contact_arbitration_radius_m\":" << terrain.config.lidar_contact_arbitration_radius_m
-            << ",\"lidar_contact_disagreement_m\":" << terrain.config.lidar_contact_disagreement_m
-            << ",\"center\":[" << terrain.center_world.x << "," << terrain.center_world.y << "," << terrain.center_world.z << "]"
-            << ",\"grid_origin_xz\":[" << terrain.grid_origin_world.x << "," << terrain.grid_origin_world.z << "]"
-            << ",\"base_height_m\":" << terrain.base_height_m
-            << ",\"plane_height_m\":" << terrain.last_plane_height_m
-            << ",\"plane_normal\":[" << terrain.last_normal.x << "," << terrain.last_normal.y << "," << terrain.last_normal.z << "]"
-            << ",\"heights\":" << BuildFloatArrayJson(terrain.heights)
-            << ",\"confidences\":" << BuildFloatArrayJson(terrain.confidences);
-        if (schema >= 2 && !terrain.collision_heights.empty() &&
-            terrain.collision_heights.size() == terrain.heights.size()) {
-            out << ",\"collision_heights\":" << BuildFloatArrayJson(terrain.collision_heights);
-        }
-        out << "}";
-        return out.str();
-    }
-
     std::string host_;
     int port_ = 0;
     int socket_fd_ = -1;
@@ -434,12 +453,18 @@ private:
 
     int frame_index_ = 0;
     float sim_time_s_ = 0.0f;
+    std::uint32_t terrain_seq_{0};
     std::vector<BodySnapshot> bodies_{};
-    TerrainPatchSnapshot terrain_patch_snapshot_{};
+    VizTerrainSnapshot viz_terrain_snapshot_{};
     std::map<std::uint32_t, BodyStaticDescriptor> last_static_descriptors_{};
-    // Scratch buffers for batched sendmmsg in flush_frame_payloads().
-    // Reused across frames so vector capacity grows once and persists.
-    mutable std::vector<std::string> frame_payloads_{};
+    /// Pool of UDP payloads; acquire_packet() advances pool_next_; reset_packet_pool() starts each frame.
+    mutable std::vector<std::vector<std::uint8_t>> packet_pool_{};
+    mutable std::size_t pool_next_{0};
+    mutable std::vector<const std::vector<std::uint8_t>*> packet_send_ptrs_{};
+    mutable std::vector<std::uint8_t> scene_clear_packet_{};
+    mutable std::vector<std::uint8_t> terrain_float_blob_{};
+    mutable std::vector<std::vector<std::uint8_t>> terrain_chunk_storage_{};
+    mutable std::vector<minphys_viz::VizCompoundChildWire> compound_wire_scratch_{};
 #if defined(__linux__)
     mutable std::vector<iovec> iovec_scratch_{};
     mutable std::vector<mmsghdr> msg_scratch_{};

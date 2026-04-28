@@ -21,6 +21,8 @@
 #include <string_view>
 #include <vector>
 
+#include "minphys_viz_protocol.hpp"
+
 #ifndef _WIN32
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -1735,11 +1737,260 @@ bool ParseTerrainPatchPacket(const std::string& payload, TerrainPatchState& terr
   return terrain_patch.valid;
 }
 
+ShapeType ShapeFromViz(minphys_viz::VizShapeType v) {
+  switch (v) {
+    case minphys_viz::VizShapeType::Sphere:
+      return ShapeType::kSphere;
+    case minphys_viz::VizShapeType::Box:
+      return ShapeType::kBox;
+    case minphys_viz::VizShapeType::Plane:
+      return ShapeType::kPlane;
+    case minphys_viz::VizShapeType::Capsule:
+      return ShapeType::kCapsule;
+    case minphys_viz::VizShapeType::Cylinder:
+      return ShapeType::kCylinder;
+    case minphys_viz::VizShapeType::HalfCylinder:
+      return ShapeType::kHalfCylinder;
+    case minphys_viz::VizShapeType::Compound:
+      return ShapeType::kCompound;
+    default:
+      break;
+  }
+  return ShapeType::kUnknown;
+}
+
+struct VizTerrainReassembly {
+  minphys_viz::VizTerrainPatchMetaBody meta{};
+  bool active = false;
+  std::uint32_t watermark = 0;
+  std::vector<std::uint8_t> blob;
+
+  void on_meta(const minphys_viz::VizTerrainPatchMetaBody& m) {
+    if (m.expected_float_blob_bytes == 0u || (m.expected_float_blob_bytes % 4u) != 0u) {
+      reset();
+      return;
+    }
+    meta = m;
+    blob.assign(static_cast<std::size_t>(m.expected_float_blob_bytes), std::uint8_t{0});
+    watermark = 0;
+    active = true;
+  }
+
+  void reset() {
+    active = false;
+    watermark = 0;
+    blob.clear();
+    meta = {};
+  }
+
+  bool has_collision_layer() const {
+    return (meta.flags & minphys_viz::kTerrainFlagHasCollisionHeights) != 0u;
+  }
+
+  bool on_floats(const minphys_viz::VizTerrainPatchFloatsHeader& fh,
+                 const std::uint8_t* chunk,
+                 std::size_t chunk_len) {
+    if (!active || fh.terrain_seq != meta.terrain_seq) {
+      return false;
+    }
+    if (chunk_len != fh.chunk_bytes || (fh.chunk_bytes % 4u) != 0u) {
+      return false;
+    }
+    if (fh.byte_offset != watermark) {
+      reset();
+      return false;
+    }
+    if (static_cast<std::uint64_t>(fh.byte_offset) + static_cast<std::uint64_t>(fh.chunk_bytes)
+        > static_cast<std::uint64_t>(meta.expected_float_blob_bytes)) {
+      reset();
+      return false;
+    }
+    std::memcpy(blob.data() + fh.byte_offset, chunk, chunk_len);
+    watermark = fh.byte_offset + fh.chunk_bytes;
+    return true;
+  }
+
+  bool is_done() const {
+    return active && watermark == meta.expected_float_blob_bytes && meta.expected_float_blob_bytes > 0u;
+  }
+
+  bool finalize_into(TerrainPatchState& out) {
+    if (!is_done()) {
+      return false;
+    }
+    const int rows = meta.rows;
+    const int cols = meta.cols;
+    const std::size_t ncell = static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols);
+    const std::size_t layer_bytes = ncell * sizeof(float);
+    const std::size_t layers = has_collision_layer() ? 3u : 2u;
+    if (blob.size() != layer_bytes * layers) {
+      reset();
+      return false;
+    }
+    out.frame = meta.frame;
+    out.sim_time_s = meta.sim_time_s;
+    out.rows = rows;
+    out.cols = cols;
+    out.cell_size_m = meta.cell_size_m;
+    out.base_margin_m = meta.base_margin_m;
+    out.min_cell_thickness_m = meta.min_cell_thickness_m;
+    out.influence_sigma_m = meta.influence_sigma_m;
+    out.plane_confidence = meta.plane_confidence;
+    out.confidence_half_life_s = meta.confidence_half_life_s;
+    out.base_update_blend = meta.base_update_blend;
+    out.decay_update_boost = meta.decay_update_boost;
+    out.center = {meta.center_world.x, meta.center_world.y, meta.center_world.z};
+    out.has_grid_origin_xz = true;
+    out.grid_origin_x = meta.grid_origin_x;
+    out.grid_origin_z = meta.grid_origin_z;
+    out.base_height_m = meta.base_height_m;
+    out.plane_height_m = meta.plane_height_m;
+    out.plane_normal = {meta.plane_normal.x, meta.plane_normal.y, meta.plane_normal.z};
+    out.heights.resize(ncell);
+    out.confidences.resize(ncell);
+    std::memcpy(out.heights.data(), blob.data(), layer_bytes);
+    std::memcpy(out.confidences.data(), blob.data() + layer_bytes, layer_bytes);
+    if (has_collision_layer()) {
+      out.collision_heights.resize(ncell);
+      std::memcpy(out.collision_heights.data(), blob.data() + 2u * layer_bytes, layer_bytes);
+      out.schema_version = 2;
+    } else {
+      out.collision_heights.clear();
+      out.schema_version = 1;
+    }
+    out.valid = rows > 0 && cols > 0 && out.cell_size_m > 0.0f;
+    reset();
+    return out.valid;
+  }
+};
+
+bool ParseVizBinaryPacket(const std::uint8_t* data,
+                          std::size_t len,
+                          std::map<std::uint32_t, EntityState>& entities,
+                          TerrainPatchState& terrain_patch,
+                          std::string& packet_kind,
+                          VizTerrainReassembly& terrain_asm) {
+  if (!minphys_viz::IsVizBinaryPayload(data, len)) {
+    return false;
+  }
+  if (len < sizeof(minphys_viz::VizWireHeader)) {
+    return false;
+  }
+  const auto* hdr = reinterpret_cast<const minphys_viz::VizWireHeader*>(data);
+  const auto kind = static_cast<minphys_viz::VizMessageKind>(hdr->message_kind);
+  switch (kind) {
+    case minphys_viz::VizMessageKind::SceneClear: {
+      if (len < sizeof(minphys_viz::VizWireHeader) + sizeof(minphys_viz::VizSceneClearBody)) {
+        return false;
+      }
+      entities.clear();
+      terrain_patch = {};
+      terrain_asm.reset();
+      packet_kind = "viz.scene_clear";
+      return true;
+    }
+    case minphys_viz::VizMessageKind::EntityFrame: {
+      if (len < sizeof(minphys_viz::VizWireHeader) + sizeof(minphys_viz::VizEntityFrameBody)) {
+        return false;
+      }
+      minphys_viz::VizEntityFrameBody body{};
+      std::memcpy(&body, data + sizeof(minphys_viz::VizWireHeader), sizeof(body));
+      EntityState& entity = entities[body.entity_id];
+      entity.id = body.entity_id;
+      entity.position = {body.position.x, body.position.y, body.position.z};
+      entity.rotation = {body.rotation.w, body.rotation.x, body.rotation.y, body.rotation.z};
+      entity.has_frame = true;
+      packet_kind = "viz.entity_frame";
+      return true;
+    }
+    case minphys_viz::VizMessageKind::EntityStatic: {
+      if (len < sizeof(minphys_viz::VizWireHeader) + sizeof(minphys_viz::VizEntityStaticBody)) {
+        return false;
+      }
+      minphys_viz::VizEntityStaticBody fixed{};
+      std::memcpy(&fixed, data + sizeof(minphys_viz::VizWireHeader), sizeof(fixed));
+      if (fixed.compound_child_count > 4096u) {
+        return false;
+      }
+      const std::size_t tail_bytes =
+          static_cast<std::size_t>(fixed.compound_child_count) * sizeof(minphys_viz::VizCompoundChildWire);
+      if (len < sizeof(minphys_viz::VizWireHeader) + sizeof(minphys_viz::VizEntityStaticBody) + tail_bytes) {
+        return false;
+      }
+      EntityState& entity = entities[fixed.entity_id];
+      entity.id = fixed.entity_id;
+      entity.shape = ShapeFromViz(fixed.shape);
+      entity.radius = fixed.radius;
+      entity.half_height = fixed.half_height;
+      entity.half_extents = {fixed.half_extents.x, fixed.half_extents.y, fixed.half_extents.z};
+      entity.plane_normal = {fixed.plane_normal.x, fixed.plane_normal.y, fixed.plane_normal.z};
+      entity.plane_offset = fixed.plane_offset;
+      entity.compound_children.clear();
+      entity.compound_children.reserve(static_cast<std::size_t>(fixed.compound_child_count));
+      const std::uint8_t* child_ptr =
+          data + sizeof(minphys_viz::VizWireHeader) + sizeof(minphys_viz::VizEntityStaticBody);
+      for (std::uint32_t i = 0; i < fixed.compound_child_count; ++i) {
+        minphys_viz::VizCompoundChildWire cw{};
+        std::memcpy(&cw, child_ptr + static_cast<std::size_t>(i) * sizeof(minphys_viz::VizCompoundChildWire),
+                    sizeof(cw));
+        CompoundChildState cs{};
+        cs.shape = ShapeFromViz(cw.shape);
+        cs.radius = cw.radius;
+        cs.half_height = cw.half_height;
+        cs.half_extents = {cw.half_extents.x, cw.half_extents.y, cw.half_extents.z};
+        cs.local_position = {cw.local_position.x, cw.local_position.y, cw.local_position.z};
+        cs.local_rotation = {cw.local_orientation.w,
+                             cw.local_orientation.x,
+                             cw.local_orientation.y,
+                             cw.local_orientation.z};
+        entity.compound_children.push_back(cs);
+      }
+      entity.has_static = true;
+      packet_kind = "viz.entity_static";
+      return true;
+    }
+    case minphys_viz::VizMessageKind::TerrainPatchMeta: {
+      if (len < sizeof(minphys_viz::VizWireHeader) + sizeof(minphys_viz::VizTerrainPatchMetaBody)) {
+        return false;
+      }
+      minphys_viz::VizTerrainPatchMetaBody meta{};
+      std::memcpy(&meta, data + sizeof(minphys_viz::VizWireHeader), sizeof(meta));
+      terrain_asm.on_meta(meta);
+      terrain_patch.valid = false;
+      packet_kind = "viz.terrain_patch_meta";
+      return true;
+    }
+    case minphys_viz::VizMessageKind::TerrainPatchFloats: {
+      if (len < sizeof(minphys_viz::VizWireHeader) + sizeof(minphys_viz::VizTerrainPatchFloatsHeader)) {
+        return false;
+      }
+      minphys_viz::VizTerrainPatchFloatsHeader fh{};
+      std::memcpy(&fh, data + sizeof(minphys_viz::VizWireHeader), sizeof(fh));
+      const std::size_t header_total = sizeof(minphys_viz::VizWireHeader) + sizeof(minphys_viz::VizTerrainPatchFloatsHeader);
+      if (len < header_total + static_cast<std::size_t>(fh.chunk_bytes)) {
+        return false;
+      }
+      const std::uint8_t* chunk = data + header_total;
+      if (!terrain_asm.on_floats(fh, chunk, static_cast<std::size_t>(fh.chunk_bytes))) {
+        return false;
+      }
+      if (terrain_asm.is_done()) {
+        (void)terrain_asm.finalize_into(terrain_patch);
+      }
+      packet_kind = "viz.terrain_floats";
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
 bool ParsePacket(const std::string& payload,
                  std::map<std::uint32_t, EntityState>& entities,
                  TerrainPatchState& terrain_patch,
                  HexapodTelemetryState& telemetry,
-                 std::string& packet_kind) {
+                 std::string& packet_kind,
+                 VizTerrainReassembly* terrain_asm_reset = nullptr) {
   if (ParseHexapodTelemetryPacket(payload, telemetry)) {
     const auto type = ExtractStringField(payload, "type");
     packet_kind = type.has_value() ? *type : "telemetry";
@@ -1756,6 +2007,9 @@ bool ParsePacket(const std::string& payload,
   if (*message_type == "scene_clear") {
     entities.clear();
     terrain_patch = {};
+    if (terrain_asm_reset != nullptr) {
+      terrain_asm_reset->reset();
+    }
     return true;
   }
 
@@ -1867,7 +2121,7 @@ class UdpReceiver {
     int packets = 0;
     for (;;) {
       std::array<char, 65536> buffer{};
-      const ssize_t bytes = ::recvfrom(socket_fd_, buffer.data(), buffer.size() - 1, 0, nullptr, nullptr);
+      const ssize_t bytes = ::recvfrom(socket_fd_, buffer.data(), buffer.size(), 0, nullptr, nullptr);
       if (bytes < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
           break;
@@ -1879,14 +2133,31 @@ class UdpReceiver {
         break;
       }
 
-      buffer[static_cast<std::size_t>(bytes)] = '\0';
+      const std::size_t n = static_cast<std::size_t>(bytes);
       std::string packet_kind;
-      if (ParsePacket(buffer.data(), entities, terrain_patch, telemetry, packet_kind)) {
-        last_packet_kind = packet_kind;
-        ++accepted_packets;
-        ++packets;
+      if (n >= sizeof(minphys_viz::VizWireHeader)
+          && minphys_viz::IsVizBinaryPayload(reinterpret_cast<const std::uint8_t*>(buffer.data()), n)) {
+        if (ParseVizBinaryPacket(reinterpret_cast<const std::uint8_t*>(buffer.data()),
+                                   n,
+                                   entities,
+                                   terrain_patch,
+                                   packet_kind,
+                                   terrain_reassembly_)) {
+          last_packet_kind = packet_kind;
+          ++accepted_packets;
+          ++packets;
+        } else {
+          ++rejected_packets;
+        }
       } else {
-        ++rejected_packets;
+        const std::string text_payload(buffer.data(), n);
+        if (ParsePacket(text_payload, entities, terrain_patch, telemetry, packet_kind, &terrain_reassembly_)) {
+          last_packet_kind = packet_kind;
+          ++accepted_packets;
+          ++packets;
+        } else {
+          ++rejected_packets;
+        }
       }
     }
 
@@ -1896,6 +2167,7 @@ class UdpReceiver {
  private:
   int socket_fd_ = -1;
   bool valid_ = false;
+  VizTerrainReassembly terrain_reassembly_{};
 };
 #endif
 

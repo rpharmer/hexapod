@@ -50,6 +50,45 @@ constexpr std::uint64_t kMatrixLidarFramePeriodUs = 15'625; // 64 Hz full-frame 
 constexpr float kServeMaxPhysicsSubstepSeconds = 1.0f / 240.0f;
 constexpr int kServeMaxPhysicsSubsteps = 16;
 
+enum class ServeSection : std::size_t {
+    PollWait = 0,
+    RecvDatagram,
+    DecodeConfig,
+    ApplyConfig,
+    DecodeCorrection,
+    ApplyCorrection,
+    DecodeStep,
+    ApplyJointTargets,
+    PhysicsStep,
+    PackResponse,
+    SendResponse,
+    PreviewBuild,
+    PreviewFlush,
+    MatrixLidarScan,
+    MatrixLidarFusion,
+    TerrainPatchUpdate,
+    Count,
+};
+
+inline constexpr std::array<const char*, static_cast<std::size_t>(ServeSection::Count)> kServeSectionLabels = {
+    "serve.poll",
+    "serve.recv_datagram",
+    "serve.decode_config",
+    "serve.apply_config",
+    "serve.decode_correction",
+    "serve.apply_correction",
+    "serve.decode_step",
+    "serve.apply_joint_targets",
+    "serve.physics_step",
+    "serve.pack_response",
+    "serve.send_response",
+    "serve.preview_build",
+    "serve.preview_flush",
+    "serve.matrix_lidar_scan",
+    "serve.matrix_lidar_fusion",
+    "serve.terrain_patch_update",
+};
+
 struct CachedMatrixLidarFrame {
     bool valid{false};
     std::uint64_t timestamp_us{0};
@@ -583,7 +622,7 @@ AssimilationReport ApplyStateCorrection(World& world,
 
     const Vec3 patch_center = pose_valid ? target_position : chassis.position;
     if (profiler != nullptr) {
-        const auto scope = profiler->scope(11); // serve.terrain_patch_update
+        const auto scope = profiler->scope(static_cast<std::size_t>(ServeSection::TerrainPatchUpdate));
         terrain_patch.update(
             world, patch_center, target_terrain_height, target_terrain_normal, terrain_samples, terrain_age_seconds);
         SyncTerrainHeightfield(world, terrain_patch);
@@ -698,6 +737,16 @@ void EmitObstacleBodies(FrameSink& sink, const World& world, const std::vector<s
     }
 }
 
+/// Maps a leg tibia body id to [0, 6); returns -1 if not a hexapod foot body.
+int LegIndexForTibia(std::uint32_t body_id, const std::array<std::uint32_t, 6>& tibia_ids) {
+    for (int i = 0; i < 6; ++i) {
+        if (tibia_ids[static_cast<std::size_t>(i)] == body_id) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 void FillFootContactsFromManifolds(
     const World& world,
     const HexapodSceneObjects& scene,
@@ -709,6 +758,12 @@ void FillFootContactsFromManifolds(
     }
     std::array<Vec3, 6> accum{};
     std::array<int, 6> counts{};
+
+    std::array<std::uint32_t, 6> tibia_ids{};
+    tibia_ids.fill(std::numeric_limits<std::uint32_t>::max());
+    for (std::size_t leg = 0; leg < scene.legs.size() && leg < 6; ++leg) {
+        tibia_ids[leg] = scene.legs[leg].tibia;
+    }
 
     Vec3 plane_up{0.0f, 1.0f, 0.0f};
     const Body& plane_body = world.GetBody(scene.plane);
@@ -727,18 +782,17 @@ void FillFootContactsFromManifolds(
         if (Dot(n, plane_up) < 0.0f) {
             n = n * -1.0f;
         }
-        for (std::size_t leg = 0; leg < scene.legs.size(); ++leg) {
-            if (scene.legs[leg].tibia != dyn_id) {
-                continue;
-            }
-            if (manifold.contacts.empty()) {
-                continue;
-            }
-            out_contact[leg] = 1;
-            accum[leg] = AverageUnitNormal(accum[leg], n);
-            ++counts[leg];
-            break;
+        const int leg = LegIndexForTibia(dyn_id, tibia_ids);
+        if (leg < 0) {
+            continue;
         }
+        const auto lu = static_cast<std::size_t>(leg);
+        if (manifold.contacts.empty()) {
+            continue;
+        }
+        out_contact[lu] = 1;
+        accum[lu] = AverageUnitNormal(accum[lu], n);
+        ++counts[lu];
     }
     for (std::size_t leg = 0; leg < 6; ++leg) {
         if (counts[leg] > 0) {
@@ -754,7 +808,8 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                         SinkKind preview_sink,
                         const std::string& preview_udp_host,
                         int preview_udp_port,
-                        const std::string& scene_file) {
+                        const std::string& scene_file,
+                        int preview_emit_stride) {
     const int fd = OpenUdpSocketWithRetry();
     if (fd < 0) {
         std::cerr << "[serve] socket() failed\n";
@@ -776,7 +831,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     // Non-blocking socket; we gate recvfrom() with poll() so the serve loop spends
     // its idle time in poll() (a single syscall with kernel-side timeout) instead
     // of inside a 1-second blocking recvfrom(). This dramatically reduces the wall
-    // time charged to the `serve.recv` profile section without changing CPU work.
+    // time charged to `serve.poll` (kernel wait) instead of `serve.recv_datagram` without changing CPU work.
     {
         const int flags = ::fcntl(fd, F_GETFL, 0);
         if (flags < 0 || ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
@@ -831,10 +886,15 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     std::unique_ptr<FrameSink> visual = MakeFrameSink(preview_sink, preview_udp_host, preview_udp_port);
     int preview_frame = 0;
     float preview_sim_time_s = 0.0f;
+    const int preview_stride = preview_emit_stride < 1 ? 1 : preview_emit_stride;
+    std::uint64_t preview_step_counter = 0;
 
     std::cout << "[hexapod-physics-sim] serve mode UDP *:" << listen_port;
     if (preview_sink == SinkKind::Udp) {
         std::cout << "  preview UDP -> " << preview_udp_host << ":" << preview_udp_port;
+        if (preview_stride > 1) {
+            std::cout << "  preview_stride=" << preview_stride;
+        }
     }
     if (!scene_file.empty()) {
         std::cout << "  scene_file=" << scene_file;
@@ -842,40 +902,6 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     std::cout << "\n";
 
     ProcessResourceDiagnosticsState resource_diag{};
-    enum class ServeSection : std::size_t {
-        Recv = 0,
-        DecodeConfig,
-        ApplyConfig,
-        DecodeCorrection,
-        ApplyCorrection,
-        DecodeStep,
-        ApplyJointTargets,
-        PhysicsStep,
-        PackResponse,
-        SendResponse,
-        PreviewEmit,
-        MatrixLidarScan,
-        MatrixLidarFusion,
-        TerrainPatchUpdate,
-        Count,
-    };
-
-    static constexpr std::array<const char*, static_cast<std::size_t>(ServeSection::Count)> kServeSectionLabels = {
-        "serve.recv",
-        "serve.decode_config",
-        "serve.apply_config",
-        "serve.decode_correction",
-        "serve.apply_correction",
-        "serve.decode_step",
-        "serve.apply_joint_targets",
-        "serve.physics_step",
-        "serve.pack_response",
-        "serve.send_response",
-        "serve.preview_emit",
-        "serve.matrix_lidar_scan",
-        "serve.matrix_lidar_fusion",
-        "serve.terrain_patch_update",
-    };
     resource_monitoring::SectionProfiler<kServeSectionLabels.size()> serve_profiler{kServeSectionLabels};
 
     auto logResourceSnapshot = [&](const char* prefix = "[resource]") {
@@ -1024,7 +1050,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     for (;;) {
         ssize_t n = 0;
         {
-            const auto scope = serve_profiler.scope(0); // serve.recv
+            const auto scopePoll = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PollWait));
             // 5 ms poll wait: short enough that a freshly-arrived datagram is processed
             // promptly, long enough that the serve thread doesn't burn CPU spinning when
             // the controller is idle. POSIX poll(timeout) is one syscall whose kernel
@@ -1033,8 +1059,8 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             pfd.fd = fd;
             pfd.events = POLLIN;
             const int poll_rc = ::poll(&pfd, 1, 5);
+            (void)scopePoll;
             if (poll_rc <= 0 || (pfd.revents & POLLIN) == 0) {
-                (void)scope;
                 const auto now = std::chrono::steady_clock::now();
                 if (now - last_idle_log >= kIdleLogInterval) {
                     logResourceSnapshot();
@@ -1042,6 +1068,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 }
                 continue;
             }
+            const auto scopeRecv = serve_profiler.scope(static_cast<std::size_t>(ServeSection::RecvDatagram));
             peer_len = sizeof(peer);
             n = ::recvfrom(
                 fd,
@@ -1050,7 +1077,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 0,
                 reinterpret_cast<sockaddr*>(&peer),
                 &peer_len);
-            (void)scope;
+            (void)scopeRecv;
         }
         if (n < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
@@ -1073,7 +1100,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::ConfigCommand)) {
             physics_sim::ConfigCommand cmd{};
             {
-                const auto scope = serve_profiler.scope(1); // serve.decode_config
+                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::DecodeConfig));
                 if (!physics_sim::tryDecodeConfigCommand(bytes, static_cast<std::size_t>(n), cmd)) {
                     (void)scope;
                     logResourceSnapshot();
@@ -1082,7 +1109,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 (void)scope;
             }
             {
-                const auto scope = serve_profiler.scope(2); // serve.apply_config
+                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::ApplyConfig));
                 world.SetGravity(Vec3{cmd.gravity[0], cmd.gravity[1], cmd.gravity[2]});
                 solver_iterations = cmd.solver_iterations > 0 ? cmd.solver_iterations : 8;
                 configured = true;
@@ -1107,7 +1134,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection)) {
             physics_sim::StateCorrection correction{};
             {
-                const auto scope = serve_profiler.scope(3); // serve.decode_correction
+                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::DecodeCorrection));
                 if (!physics_sim::tryDecodeStateCorrection(bytes, static_cast<std::size_t>(n), correction)) {
                     (void)scope;
                     logResourceSnapshot();
@@ -1116,7 +1143,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 (void)scope;
             }
             {
-                const auto scope = serve_profiler.scope(4); // serve.apply_correction
+                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::ApplyCorrection));
                 (void)ApplyStateCorrection(world, scene, correction, assimilation_state, terrain_patch, &serve_profiler);
                 (void)scope;
             }
@@ -1133,7 +1160,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             }
             physics_sim::StepCommand step{};
             {
-                const auto scope = serve_profiler.scope(5); // serve.decode_step
+                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::DecodeStep));
                 if (!physics_sim::tryDecodeStepCommand(bytes, static_cast<std::size_t>(n), step)) {
                     (void)scope;
                     logResourceSnapshot();
@@ -1170,14 +1197,14 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                     rsp.joint_velocities[i] = 0.0f;
                 }
                 {
-                    const auto scope = serve_profiler.scope(8); // serve.pack_response
+                    const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PackResponse));
                     FillFootContactsFromManifolds(world, scene, rsp.foot_contacts, rsp.foot_contact_normals);
                     FillObstacleFootprints(world, obstacle_body_ids, rsp);
                     refreshMatrixLidarFrame(rsp, world.GetBody(scene.body), 0.0f, false);
                     (void)scope;
                 }
                 {
-                    const auto scope = serve_profiler.scope(9); // serve.send_response
+                    const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::SendResponse));
                     (void)::sendto(
                         fd,
                         &rsp,
@@ -1197,7 +1224,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             }
 
             {
-                const auto scope = serve_profiler.scope(6); // serve.apply_joint_targets
+                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::ApplyJointTargets));
                 for (std::size_t i = 0; i < wire_joints.size(); ++i) {
                     ServoJoint& sj = world.GetServoJointMutable(wire_joints[i]);
                     sj.targetAngle = step.joint_targets[i];
@@ -1215,7 +1242,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 kServeMaxPhysicsSubsteps);
             const float substep_dt = step.dt_seconds / static_cast<float>(physics_substeps);
             {
-                const auto scope = serve_profiler.scope(7); // serve.physics_step
+                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PhysicsStep));
                 for (int substep = 0; substep < physics_substeps; ++substep) {
                     world.Step(substep_dt, solver_iterations);
                 }
@@ -1250,7 +1277,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             }
 
             {
-                const auto scope = serve_profiler.scope(8); // serve.pack_response
+                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PackResponse));
                 FillFootContactsFromManifolds(world, scene, rsp.foot_contacts, rsp.foot_contact_normals);
                 FillObstacleFootprints(world, obstacle_body_ids, rsp);
                 refreshMatrixLidarFrame(rsp, world.GetBody(scene.body), step.dt_seconds, true);
@@ -1258,7 +1285,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             }
 
             {
-                const auto scope = serve_profiler.scope(9); // serve.send_response
+                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::SendResponse));
                 (void)::sendto(
                     fd,
                     &rsp,
@@ -1269,16 +1296,27 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 (void)scope;
             }
 
-            {
-                const auto scope = serve_profiler.scope(10); // serve.preview_emit
-                preview_sim_time_s += step.dt_seconds;
-                visual->begin_frame(preview_frame, preview_sim_time_s);
-                visual->emit_terrain_patch(terrain_patch);
-                EmitSceneBodies(*visual, world, scene);
-                EmitObstacleBodies(*visual, world, obstacle_body_ids);
-                visual->end_frame();
-                ++preview_frame;
-                (void)scope;
+            preview_sim_time_s += step.dt_seconds;
+            const bool emit_preview =
+                preview_stride <= 1
+                || (preview_step_counter % static_cast<std::uint64_t>(preview_stride) == 0ULL);
+            ++preview_step_counter;
+
+            if (emit_preview) {
+                {
+                    const auto scopeBuild = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PreviewBuild));
+                    visual->begin_frame(preview_frame, preview_sim_time_s);
+                    visual->emit_terrain_patch(terrain_patch);
+                    EmitSceneBodies(*visual, world, scene);
+                    EmitObstacleBodies(*visual, world, obstacle_body_ids);
+                    (void)scopeBuild;
+                }
+                {
+                    const auto scopeFlush = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PreviewFlush));
+                    visual->end_frame();
+                    ++preview_frame;
+                    (void)scopeFlush;
+                }
             }
             logResourceSnapshot();
             continue;

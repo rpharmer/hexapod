@@ -14,6 +14,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                         SinkKind preview_sink = SinkKind::Dummy,
                         const std::string& preview_udp_host = "127.0.0.1",
                         int preview_udp_port = 9870,
-                        const std::string& scene_file = "");
+                        const std::string& scene_file = "",
+                        int preview_emit_stride = 1);
 
 } // namespace minphys3d::demo
