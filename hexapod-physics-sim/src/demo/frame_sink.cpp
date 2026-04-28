@@ -138,7 +138,13 @@ public:
             }
         }
 
-        packet_send_ptrs_.reserve(bodies_.size() * 2 + 1 + terrain_chunk_ub);
+        const std::size_t packet_upper_bound = bodies_.size() * 2 + 1 + terrain_chunk_ub;
+        packet_send_ptrs_.reserve(packet_upper_bound);
+        // packet_send_ptrs_ stores pointers into packet_pool_. Ensure pool growth does not
+        // reallocate mid-frame and invalidate earlier pointers.
+        if (packet_pool_.capacity() < packet_upper_bound) {
+            packet_pool_.reserve(packet_upper_bound);
+        }
 
         for (const auto& snapshot : bodies_) {
             const BodyStaticDescriptor descriptor = MakeStaticDescriptor(snapshot.body);

@@ -39,17 +39,18 @@ constexpr int kDefaultUdpPort = 9870;
 constexpr float kPi = 3.14159265358979323846f;
 
 constexpr std::array<const char*, 6> kLegKeys = {"LF", "LM", "LR", "RF", "RM", "RR"};
-constexpr std::array<float, 6> kDefaultMountAnglesDeg = {40.0f, 90.0f, 140.0f, -40.0f, -90.0f, -140.0f};
+// Server telemetry leg order is LF, LM, LR, RF, RM, RR -> LegID L1, L2, L3, R1, R2, R3.
+constexpr std::array<float, 6> kDefaultMountAnglesDeg = {323.0f, 270.0f, 217.0f, 37.0f, 90.0f, 143.0f};
 constexpr std::array<float, 6> kDefaultCoxaAttachDeg = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-constexpr std::array<float, 6> kDefaultFemurAttachDeg = {35.0f, -35.0f, 35.0f, -35.0f, 35.0f, -35.0f};
-constexpr std::array<float, 6> kDefaultTibiaAttachDeg = {83.0f, -83.0f, 83.0f, -83.0f, 83.0f, -83.0f};
+constexpr std::array<float, 6> kDefaultFemurAttachDeg = {-35.0f, -35.0f, -35.0f, 35.0f, 35.0f, 35.0f};
+constexpr std::array<float, 6> kDefaultTibiaAttachDeg = {-83.0f, -83.0f, -83.0f, 83.0f, 83.0f, 83.0f};
 constexpr std::array<std::array<float, 3>, 6> kDefaultBodyCoxaOffsets = {{
-    {{0.063f, 0.0835f, -0.007f}},
-    {{0.0f, 0.104f, -0.007f}},
-    {{-0.063f, 0.0835f, -0.007f}},
-    {{0.063f, -0.0835f, -0.007f}},
-    {{0.0f, -0.104f, -0.007f}},
-    {{-0.063f, -0.0835f, -0.007f}},
+    {{-0.063f, 0.0835f, -0.007f}},  // LF = L1
+    {{-0.0815f, 0.0f, -0.007f}},    // LM = L2
+    {{-0.063f, -0.0835f, -0.007f}}, // LR = L3
+    {{0.063f, 0.0835f, -0.007f}},   // RF = R1
+    {{0.0815f, 0.0f, -0.007f}},     // RM = R2
+    {{0.063f, -0.0835f, -0.007f}},  // RR = R3
 }};
 
 struct Vec3 {
@@ -275,6 +276,10 @@ Vec3 Cross(const Vec3& a, const Vec3& b) {
 
 float Dot(const Vec3& a, const Vec3& b) {
   return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+float WrapDegrees(float deg) {
+  return std::atan2(std::sin(deg * kPi / 180.0f), std::cos(deg * kPi / 180.0f)) * 180.0f / kPi;
 }
 
 Quat NormalizeQuat(const Quat& quat) {
@@ -787,9 +792,9 @@ HexapodGeometryState MakeDefaultGeometryState() {
     state.legs[i].coxa_attach_deg = kDefaultCoxaAttachDeg[i];
     state.legs[i].femur_attach_deg = kDefaultFemurAttachDeg[i];
     state.legs[i].tibia_attach_deg = kDefaultTibiaAttachDeg[i];
-    state.legs[i].coxa_sign = (i < 3) ? 1.0f : -1.0f;
-    state.legs[i].femur_sign = (i < 3) ? 1.0f : -1.0f;
-    state.legs[i].tibia_sign = (i < 3) ? 1.0f : -1.0f;
+    state.legs[i].coxa_sign = (i < 3) ? -1.0f : 1.0f;
+    state.legs[i].femur_sign = (i < 3) ? -1.0f : 1.0f;
+    state.legs[i].tibia_sign = (i < 3) ? -1.0f : 1.0f;
   }
   state.valid = true;
   return state;
@@ -1175,9 +1180,14 @@ Vec3 ServerToSceneVec(const Vec3& value) {
 }
 
 RobotKinematics ComputeRobotLeg(const HexapodLegLayout& layout, const std::array<float, 3>& angles_deg) {
-  const float coxa_rad = (angles_deg[0] - layout.coxa_attach_deg) * kPi / 180.0f;
-  const float femur_rad = (angles_deg[1] - layout.femur_attach_deg) * kPi / 180.0f * layout.femur_sign;
-  const float tibia_rad = (angles_deg[2] - layout.tibia_attach_deg) * kPi / 180.0f * layout.tibia_sign;
+  // Server telemetry may include multi-turn servo targets; wrap to principal angles so model
+  // rotation axes remain stable in the visualiser.
+  const float coxa_deg = WrapDegrees(angles_deg[0]);
+  const float femur_deg = WrapDegrees(angles_deg[1]);
+  const float tibia_deg = WrapDegrees(angles_deg[2]);
+  const float coxa_rad = (coxa_deg - layout.coxa_attach_deg) * kPi / 180.0f;
+  const float femur_rad = (femur_deg - layout.femur_attach_deg) * kPi / 180.0f * layout.femur_sign;
+  const float tibia_rad = (tibia_deg - layout.tibia_attach_deg) * kPi / 180.0f * layout.tibia_sign;
   const float yaw = layout.mount_angle_rad + coxa_rad * layout.coxa_sign;
 
   const float body_radius = std::sqrt(layout.body_coxa_offset.x * layout.body_coxa_offset.x
