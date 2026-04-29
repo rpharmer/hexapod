@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "minphys_viz_protocol.hpp"
+#include "visualiser_frame_math.hpp"
 
 #ifndef _WIN32
 #include <arpa/inet.h>
@@ -325,7 +326,7 @@ Vec3 TransformBodyPoint(const Vec3& point, const HexapodBodyPoseState& pose) {
     return point;
   }
   const Vec3 scene_point = ServerToSceneVec(point);
-  const Vec3 rotated = RotateAroundSceneY(scene_point, -pose.yaw_rad);
+  const Vec3 rotated = RotateAroundSceneY(scene_point, -visualiser_frame_math::ServerYawToSceneYaw(pose.yaw_rad));
   const Vec3 origin = ServerToSceneVec(pose.position);
   return Vec3{origin.x + rotated.x, origin.y + rotated.y, origin.z + rotated.z};
 }
@@ -1608,7 +1609,7 @@ void DrawHexapodModel(const HexapodGeometryState& geometry,
   if (pose.valid) {
     const Vec3 origin = ServerToSceneVec(pose.position);
     glTranslatef(origin.x, origin.y, origin.z);
-    glRotatef(-pose.yaw_rad * 180.0f / kPi, 0.0f, 1.0f, 0.0f);
+    glRotatef(-visualiser_frame_math::ServerYawToSceneYaw(pose.yaw_rad) * 180.0f / kPi, 0.0f, 1.0f, 0.0f);
   }
 
   glColor4f(healthy ? 0.18f : 0.35f, healthy ? 0.32f : 0.18f, healthy ? 0.48f : 0.12f, 0.60f);

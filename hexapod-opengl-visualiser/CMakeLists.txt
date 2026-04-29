@@ -57,3 +57,16 @@ target_link_libraries(hexapod-opengl-visualiser
   glfw
   imgui
 )
+
+enable_testing()
+
+add_executable(test_visualiser_frame_math
+  tests/test_visualiser_frame_math.cpp
+)
+
+target_include_directories(test_visualiser_frame_math
+  PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
+add_test(NAME test_visualiser_frame_math COMMAND test_visualiser_frame_math)
