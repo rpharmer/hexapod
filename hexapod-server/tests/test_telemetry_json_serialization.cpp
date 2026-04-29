@@ -1,3 +1,4 @@
+#include "command_governor.hpp"
 #include "telemetry_json.hpp"
 
 #include <cmath>
@@ -182,6 +183,13 @@ bool test_control_step_packet_includes_fusion_diagnostics()
     };
     telemetry_sample.resource_sections = sections;
 
+    telemetry_sample.governor.severity = 0.42;
+    telemetry_sample.governor.body_height_delta_m = -0.008;
+    telemetry_sample.governor.command_scale = 0.88;
+    telemetry_sample.governor.cadence_scale = 0.91;
+    telemetry_sample.governor.reasons =
+        CommandGovernorReason::LowSpeedRegime | CommandGovernorReason::HighTilt;
+
     const std::string payload = telemetry_json::serializeControlStepPacket(telemetry_sample);
 
     return expect(payload.find("\"type\":\"joints\"") != std::string::npos,
@@ -231,7 +239,13 @@ bool test_control_step_packet_includes_fusion_diagnostics()
            expect(payload.find("\"correction_strength\":0.77") != std::string::npos,
                   "correction payload should include correction strength") &&
            expect(payload.find("\"terrain_residual_m\":0.04") != std::string::npos,
-                  "correction payload should include terrain residual");
+                  "correction payload should include terrain residual") &&
+           expect(payload.find("\"governor\":{") != std::string::npos,
+                  "control step payload should include governor object") &&
+           expect(payload.find("\"severity\":0.42") != std::string::npos,
+                  "governor payload should include severity") &&
+           expect(payload.find("\"reasons\":\"0x5\"") != std::string::npos,
+                  "governor payload should include reasons bitmask");
 }
 
 } // namespace

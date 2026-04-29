@@ -27,6 +27,7 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.safety.min_foot_contacts = config.minFootContacts;
     parsed.safety.max_foot_contacts = config.maxFootContacts;
     parsed.safety.body_height_collapse_margin_m = config.bodyHeightCollapseMarginM;
+    parsed.safety.body_height_collapse_min_safe_m = config.bodyHeightCollapseMinSafeM;
     parsed.safety.body_height_collapse_max_contacts = config.bodyHeightCollapseMaxContacts;
 
     parsed.gait.fallback_speed_mag = LinearRateMps{config.fallbackSpeedMag};

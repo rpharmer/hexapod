@@ -51,7 +51,8 @@ MotionIntent staleIntent(RobotMode mode) {
 control_config::SafetyConfig collapseSafetyConfig() {
     control_config::SafetyConfig cfg{};
     cfg.max_tilt_rad = AngleRad{0.55};
-    cfg.body_height_collapse_margin_m = 0.05;
+    cfg.body_height_collapse_margin_m = 0.0;
+    cfg.body_height_collapse_min_safe_m = 0.10;
     cfg.body_height_collapse_max_contacts = 3;
     return cfg;
 }
@@ -159,9 +160,9 @@ bool testBodyHeightCollapseTriggersTipOverEarly() {
     const SafetyState state =
         supervisor.evaluate(raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
 
-    return expect(state.active_fault == FaultCode::TIP_OVER,
-                  "body-height collapse with sparse support should trip TIP_OVER early") &&
-           expect(state.torque_cut, "collapse-triggered TIP_OVER should request torque cut");
+    return expect(state.active_fault == FaultCode::BODY_COLLAPSE,
+                  "body-height collapse with sparse support should trip BODY_COLLAPSE early") &&
+           expect(state.torque_cut, "collapse-triggered BODY_COLLAPSE should request torque cut");
 }
 
 bool testBodyHeightCollapseStaysQuietWithHealthySupport() {
@@ -192,6 +193,8 @@ bool testRapidBodyRateTriggersTipOverEarly() {
 
     raw.foot_contacts = {true, true, false, false, false, false};
     est.has_body_twist_state = true;
+    est.body_twist_state.body_trans_mps.x = 0.30;
+    est.body_twist_state.body_trans_mps.y = 0.0;
     est.has_imu = true;
     est.imu.valid = true;
     est.imu.gyro_radps.x = 0.95;
@@ -218,6 +221,8 @@ bool testRapidBodyRateStaysQuietWithHealthySupport() {
 
     raw.foot_contacts = {true, true, true, true, true, true};
     est.has_body_twist_state = true;
+    est.body_twist_state.body_trans_mps.x = 0.06;
+    est.body_twist_state.body_trans_mps.y = 0.0;
     est.has_imu = true;
     est.imu.valid = true;
     est.imu.gyro_radps.x = 0.95;

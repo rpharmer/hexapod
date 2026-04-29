@@ -9,7 +9,7 @@ constexpr std::array<double, kNumLegs> kTripodOffsets = {0.0, 0.5, 0.0, 0.5, 0.0
 constexpr std::array<double, kNumLegs> kSequentialOffsets = {
     0.0, 1.0 / 6.0, 2.0 / 6.0, 3.0 / 6.0, 4.0 / 6.0, 5.0 / 6.0};
 constexpr double kMinSwingHeightM = 0.014;
-constexpr double kLowSpeedYawSwingBoostM = 0.004;
+constexpr double kLowSpeedYawSwingBoostM = 0.008;
 constexpr double kSwingHeightFloorFractionOfBase = 0.70;
 
 double swingHeightFloorForPreset(const GaitPresetTemplate& preset) {
@@ -142,8 +142,8 @@ UnifiedGaitDescription buildTargetUnifiedGait(const GaitType gait,
     const double low_speed_scale = std::clamp((0.12 - planar_speed_mps) / 0.12, 0.0, 1.0);
     const double yaw_scale = std::clamp(std::abs(yaw_rate_radps) / 0.45, 0.0, 1.0);
     const double swing_height_floor_m =
-        std::max(swingHeightFloorForPreset(preset),
-                 kMinSwingHeightM + kLowSpeedYawSwingBoostM * low_speed_scale * (0.5 + 0.5 * yaw_scale));
+        swingHeightFloorForPreset(preset) +
+        kLowSpeedYawSwingBoostM * low_speed_scale * (0.5 + 0.5 * yaw_scale);
     desc.swing_height_m = std::max(desc.swing_height_m, swing_height_floor_m);
     desc.swing_time_ease =
         std::clamp(0.52 + 0.46 * (1.0 - std::min(speed_mag, 1.25) / 1.25), 0.40, 1.0);

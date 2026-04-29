@@ -83,6 +83,7 @@ struct ParsedToml
   int minFootContacts{0};
   int maxFootContacts{kNumLegs};
   double bodyHeightCollapseMarginM{0.0};
+  double bodyHeightCollapseMinSafeM{0.0};
   int bodyHeightCollapseMaxContacts{3};
 
   /** Optional NavLocomotionBridge body-frame position I outer loop; 0 = off. Ki in 1/s. */

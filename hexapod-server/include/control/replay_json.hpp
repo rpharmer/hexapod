@@ -9,7 +9,7 @@
 
 namespace replay_json {
 
-inline constexpr int kSchemaVersion = 3;
+inline constexpr int kSchemaVersion = 4;
 
 struct ReplayTransitionDiagnostics {
     double body_height_m{0.0};
@@ -24,6 +24,7 @@ struct ReplayTelemetryRecord {
     TimePointUs timestamp_us{};
     uint64_t sample_id{0};
     ControlStatus status{};
+    CommandGovernorState governor{};
     RobotState estimated_state{};
     LegTargets leg_targets{};
     GaitState gait_state{};

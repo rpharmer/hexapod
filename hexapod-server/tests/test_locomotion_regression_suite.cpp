@@ -141,6 +141,8 @@ std::string faultName(const FaultCode fault) {
         return "JOINT_LIMIT";
     case FaultCode::COMMAND_TIMEOUT:
         return "COMMAND_TIMEOUT";
+    case FaultCode::BODY_COLLAPSE:
+        return "BODY_COLLAPSE";
     }
     return "UNKNOWN";
 }
@@ -951,8 +953,9 @@ bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
         reason = "long walk observability should eventually reach the safety envelope";
         return false;
     }
-    if (m.first_fault != FaultCode::TIP_OVER) {
-        reason = "long walk observability should trip TIP_OVER at the end of the stress window";
+    if (m.first_fault != FaultCode::TIP_OVER && m.first_fault != FaultCode::BODY_COLLAPSE) {
+        reason =
+            "long walk observability should trip TIP_OVER or BODY_COLLAPSE at the end of the stress window";
         return false;
     }
     if (!(m.walk_sample_count >= 500)) {

@@ -28,7 +28,7 @@ public:
 private:
     static constexpr DurationUs kRecoveryHoldTimeUs{500000};
     static constexpr std::size_t kFaultCodeCount =
-        static_cast<std::size_t>(FaultCode::COMMAND_TIMEOUT) + 1;
+        static_cast<std::size_t>(FaultCode::BODY_COLLAPSE) + 1;
 
     struct FaultDecision {
         FaultCode code{FaultCode::NONE};

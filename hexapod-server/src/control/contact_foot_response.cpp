@@ -47,7 +47,17 @@ void adjustSwingTauAndVerticalExtension(const bool in_swing,
                                                                                        : ContactPhase::Search);
 
     if (foot_contact) {
-        tau_out = 1.0;
+        // At swing start the foot begins at ground level and the servo needs
+        // time (~servo_tau ~80 ms) to lift clear. While the fusion still
+        // reflects the prior stance (ConfirmedStance) and we are in early
+        // swing this is a normal liftoff artifact, not a premature touchdown.
+        const bool liftoff_artifact =
+            (contact_fusion != nullptr) &&
+            (contact_fusion->phase == ContactPhase::ConfirmedStance) &&
+            (tau01 < kLateTouchdownTau);
+        if (!liftoff_artifact) {
+            tau_out = 1.0;
+        }
         return;
     }
 

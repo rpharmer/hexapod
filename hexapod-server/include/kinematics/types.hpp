@@ -111,7 +111,8 @@ enum class FaultCode : uint8_t {
     ESTIMATOR_INVALID,
     MOTOR_FAULT,
     JOINT_LIMIT,
-    COMMAND_TIMEOUT
+    COMMAND_TIMEOUT,
+    BODY_COLLAPSE,
 };
 
 enum class FaultLifecycle : uint8_t {

@@ -71,6 +71,8 @@ const char* faultCodeName(const FaultCode fault) {
             return "JOINT_LIMIT";
         case FaultCode::COMMAND_TIMEOUT:
             return "COMMAND_TIMEOUT";
+        case FaultCode::BODY_COLLAPSE:
+            return "BODY_COLLAPSE";
     }
     return "UNKNOWN";
 }
@@ -1030,6 +1032,7 @@ void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
     telemetry_sample.process_resources = last_process_resources_;
     telemetry_sample.resource_sections = last_resource_sections_;
     telemetry_sample.timestamp_us = now;
+    telemetry_sample.governor = command_governor_state_.read();
     telemetry_publisher_->publishControlStep(telemetry_sample);
     (void)scope;
 }
@@ -1048,6 +1051,7 @@ void RobotRuntime::maybeWriteReplayRecord(const TimePointUs& now) {
     record.leg_targets = leg_targets_.read();
     record.gait_state = gait_state_.read();
     record.joint_targets = joint_targets_.read();
+    record.governor = command_governor_state_.read();
     record.transition_diagnostics =
         buildReplayTransitionDiagnostics(record.estimated_state, record.gait_state, record.joint_targets);
     if (navigation_manager_) {

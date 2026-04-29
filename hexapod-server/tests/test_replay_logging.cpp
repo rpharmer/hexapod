@@ -129,8 +129,10 @@ bool testSerializerIncludesKeySections()
     const auto payload = replay_json::serializeReplayTelemetryRecord(makeSampleRecord());
     return expect(payload.find("\"type\":\"replay\"") != std::string::npos,
                   "replay payload should include type") &&
-           expect(payload.find("\"schema_version\":3") != std::string::npos,
-                  "replay payload should include schema version 3") &&
+           expect(payload.find("\"schema_version\":4") != std::string::npos,
+                  "replay payload should include schema version 4") &&
+           expect(payload.find("\"governor\":{\"severity\":0") != std::string::npos,
+                  "replay payload should include governor snapshot") &&
            expect(payload.find("\"terrain_patch\":{\"fresh\":true") != std::string::npos,
                   "replay payload should include terrain patch summary") &&
            expect(payload.find("\"grid_origin_xy\"") != std::string::npos,

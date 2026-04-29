@@ -43,6 +43,7 @@ inline constexpr float kDefaultMaxBusCurrentA{25.0f};
 inline constexpr int kDefaultMinFootContacts{0};
 inline constexpr int kDefaultMaxFootContacts{kNumLegs};
 inline constexpr double kDefaultBodyHeightCollapseMarginM{0.0};
+inline constexpr double kDefaultBodyHeightCollapseMinSafeM{0.0};
 inline constexpr int kDefaultBodyHeightCollapseMaxContacts{3};
 inline constexpr double kDefaultNavBodyFrameIntegralKiFwdPerS{0.0};
 inline constexpr double kDefaultNavBodyFrameIntegralKiLatPerS{0.0};
@@ -115,8 +116,10 @@ struct SafetyConfig {
     float max_bus_current_a{kDefaultMaxBusCurrentA};
     int min_foot_contacts{kDefaultMinFootContacts};
     int max_foot_contacts{kDefaultMaxFootContacts};
-    /** Pre-fall trigger: body height loss beyond this margin while walking and support is sparse. */
+    /** Pre-fall trigger: body height loss beyond this margin while walking and support is sparse (legacy if min-safe unset). */
     double body_height_collapse_margin_m{kDefaultBodyHeightCollapseMarginM};
+    /** When > 0, trip BODY_COLLAPSE if measured body height (est) falls below this (m); ignores commanded height / governor squat. */
+    double body_height_collapse_min_safe_m{kDefaultBodyHeightCollapseMinSafeM};
     int body_height_collapse_max_contacts{kDefaultBodyHeightCollapseMaxContacts};
 };
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "command_governor.hpp"
 #include "geometry_config.hpp"
 #include "logger.hpp"
 #include "navigation_manager.hpp"
@@ -57,6 +58,7 @@ struct ControlStepTelemetry {
     RobotState estimated_state{};
     JointTargets joint_targets{};
     ControlStatus status{};
+    CommandGovernorState governor{};
     FusionTelemetrySnapshot fusion{};
     std::optional<NavigationMonitorSnapshot> navigation{};
     std::optional<resource_monitoring::ProcessResourceSnapshot> process_resources{};

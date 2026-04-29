@@ -152,7 +152,7 @@ def synthesize_joints_packet(record: dict[str, Any], geometry: dict[str, Any]) -
     body_position, body_yaw = body_pose(record)
     packet: dict[str, Any] = {
         "type": "joints",
-        "schema_version": 3,
+        "schema_version": 4,
         "timestamp_ms": int(int(record["timestamp_us"]) / 1000),
         "loop_counter": int(status.get("loop_counter", 0)),
         "mode": int(status.get("active_mode", 0)),

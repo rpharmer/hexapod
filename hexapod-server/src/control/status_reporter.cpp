@@ -23,6 +23,7 @@ const char* toString(FaultCode code) {
         case FaultCode::MOTOR_FAULT: return "MOTOR_FAULT";
         case FaultCode::JOINT_LIMIT: return "JOINT_LIMIT";
         case FaultCode::COMMAND_TIMEOUT: return "COMMAND_TIMEOUT";
+        case FaultCode::BODY_COLLAPSE: return "BODY_COLLAPSE";
     }
     return "UNKNOWN";
 }

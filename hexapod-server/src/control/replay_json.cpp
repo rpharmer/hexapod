@@ -1,8 +1,11 @@
 #include "replay_json.hpp"
 
+#include "command_governor.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <iomanip>
 #include <limits>
 #include <sstream>
@@ -250,6 +253,17 @@ void appendGaitState(std::ostringstream& payload, const GaitState& gait)
     payload << "]}";
 }
 
+void appendGovernorReplay(std::ostringstream& payload, const CommandGovernorState& g)
+{
+    payload << "\"governor\":{"
+            << "\"severity\":" << formatNumber(g.severity) << ','
+            << "\"body_height_delta_m\":" << formatNumber(g.body_height_delta_m) << ','
+            << "\"command_scale\":" << formatNumber(g.command_scale) << ','
+            << "\"cadence_scale\":" << formatNumber(g.cadence_scale) << ','
+            << "\"reasons\":\"0x" << std::hex << std::uppercase
+            << static_cast<std::uint32_t>(g.reasons) << std::dec << "\"}";
+}
+
 void appendJointTargets(std::ostringstream& payload, const JointTargets& joints)
 {
     payload << "\"joint_targets\":[";
@@ -315,6 +329,8 @@ std::string serializeReplayTelemetryRecord(const ReplayTelemetryRecord& record)
     appendGaitState(payload, record.gait_state);
     payload << ',';
     appendJointTargets(payload, record.joint_targets);
+    payload << ',';
+    appendGovernorReplay(payload, record.governor);
     payload << ',';
     appendTransitionDiagnostics(payload, record.transition_diagnostics);
     payload << ",\"terrain_patch\":{"

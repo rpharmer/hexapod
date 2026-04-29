@@ -1,5 +1,6 @@
 #include "telemetry_json.hpp"
 #include "visualiser_telemetry.hpp"
+#include "command_governor.hpp"
 
 #include <algorithm>
 #include <array>
@@ -77,6 +78,8 @@ const char* faultCodeToString(const FaultCode fault)
             return "JOINT_LIMIT";
         case FaultCode::COMMAND_TIMEOUT:
             return "COMMAND_TIMEOUT";
+        case FaultCode::BODY_COLLAPSE:
+            return "BODY_COLLAPSE";
     }
     return "UNKNOWN";
 }
@@ -128,6 +131,17 @@ void appendLegGeometryJson(std::ostringstream& payload, const HexapodGeometry& g
                 << "}";
     }
     payload << "]";
+}
+
+void appendGovernorJson(std::ostringstream& payload, const CommandGovernorState& g)
+{
+    payload << "\"governor\":{"
+            << "\"severity\":" << g.severity << ','
+            << "\"body_height_delta_m\":" << g.body_height_delta_m << ','
+            << "\"command_scale\":" << g.command_scale << ','
+            << "\"cadence_scale\":" << g.cadence_scale << ','
+            << "\"reasons\":\"0x" << std::hex << std::uppercase
+            << static_cast<std::uint32_t>(g.reasons) << std::dec << "\"}";
 }
 
 void appendFusionJson(std::ostringstream& payload, const telemetry::FusionTelemetrySnapshot& fusion) {
@@ -356,6 +370,8 @@ std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& te
     }
     payload << ',';
     appendFusionJson(payload, fusion);
+    payload << ',';
+    appendGovernorJson(payload, telemetry.governor);
     if (telemetry.resource_sections.has_value()) {
         payload << ",\"resource_sections\":";
         appendResourceSectionSummaryJson(payload, telemetry.resource_sections.value());

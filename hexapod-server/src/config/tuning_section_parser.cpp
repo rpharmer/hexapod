@@ -111,6 +111,9 @@ void parseTuningSection(const toml::value& root,
   out.bodyHeightCollapseMarginM = config_validation::parseDoubleWithFallback(
       root, "Tuning.BodyHeightCollapseMarginM", control_config::kDefaultBodyHeightCollapseMarginM, 0.0, 0.25,
       "tuning", logger);
+  out.bodyHeightCollapseMinSafeM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.BodyHeightCollapseMinSafeM", control_config::kDefaultBodyHeightCollapseMinSafeM, 0.0, 0.25,
+      "tuning", logger);
   out.bodyHeightCollapseMaxContacts = config_validation::parseIntWithFallback(
       root, "Tuning.BodyHeightCollapseMaxContacts", control_config::kDefaultBodyHeightCollapseMaxContacts, 0,
       kNumLegs, "tuning", logger);

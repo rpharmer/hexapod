@@ -1113,6 +1113,8 @@ const char* FaultCodeName(int fault) {
       return "JOINT_LIMIT";
     case 7:
       return "COMMAND_TIMEOUT";
+    case 8:
+      return "BODY_COLLAPSE";
     default:
       return "UNKNOWN";
   }

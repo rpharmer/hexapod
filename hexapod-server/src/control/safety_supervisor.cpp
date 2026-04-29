@@ -13,9 +13,11 @@ double planarBodyRateRadps(const RobotState& est) {
     return std::hypot(est.imu.gyro_radps.x, est.imu.gyro_radps.y);
 }
 
-double commandedPlanarSpeedMps(const MotionIntent& intent) {
-    const PlanarMotionCommand cmd = planarMotionCommand(intent);
-    return std::hypot(cmd.vx_mps, cmd.vy_mps);
+double measuredPlanarSpeedMps(const RobotState& est) {
+    if (!est.has_body_twist_state) {
+        return 0.0;
+    }
+    return std::hypot(est.body_twist_state.body_trans_mps.x, est.body_twist_state.body_trans_mps.y);
 }
 
 double commandedYawRateRadps(const MotionIntent& intent) {
@@ -39,6 +41,7 @@ int SafetySupervisor::faultPriority(FaultCode code) {
         case FaultCode::NONE: return 0;
         case FaultCode::COMMAND_TIMEOUT: return 10;
         case FaultCode::ESTIMATOR_INVALID: return 20;
+        case FaultCode::BODY_COLLAPSE: return 70;
         case FaultCode::BUS_TIMEOUT: return 80;
         case FaultCode::MOTOR_FAULT: return 90;
         case FaultCode::TIP_OVER: return 100;
@@ -120,9 +123,9 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
                 if (intent.requested_mode != RobotMode::WALK) {
                     return false;
                 }
-                const double planar_cmd_mps = commandedPlanarSpeedMps(intent);
+                const double planar_meas_mps = measuredPlanarSpeedMps(est);
                 const double yaw_cmd_radps = commandedYawRateRadps(intent);
-                if (planar_cmd_mps < 0.18 && yaw_cmd_radps < 0.35) {
+                if (planar_meas_mps < 0.18 && yaw_cmd_radps < 0.35) {
                     return false;
                 }
                 if (!est.has_body_twist_state || !est.has_imu || !est.imu.valid) {
@@ -139,29 +142,38 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
         },
         FaultRule{
             .is_triggered = [&](void) {
-                if (config_.body_height_collapse_margin_m <= 0.0) {
-                    return false;
-                }
                 if (intent.requested_mode != RobotMode::WALK) {
                     return false;
                 }
                 if (!est.has_body_twist_state) {
                     return false;
                 }
-                const double commanded_body_height_m = intent.twist.body_trans_m.z;
                 const double measured_body_height_m = est.body_twist_state.body_trans_m.z;
-                if (!std::isfinite(commanded_body_height_m) || !std::isfinite(measured_body_height_m)) {
-                    return false;
-                }
-                if (commanded_body_height_m <= 0.0 || measured_body_height_m <= 0.0) {
+                if (!std::isfinite(measured_body_height_m)) {
                     return false;
                 }
                 if (contact_count > config_.body_height_collapse_max_contacts) {
                     return false;
                 }
+                if (config_.body_height_collapse_min_safe_m > 0.0) {
+                    if (measured_body_height_m <= 0.0) {
+                        return false;
+                    }
+                    return measured_body_height_m < config_.body_height_collapse_min_safe_m;
+                }
+                if (config_.body_height_collapse_margin_m <= 0.0) {
+                    return false;
+                }
+                const double commanded_body_height_m = intent.twist.body_trans_m.z;
+                if (!std::isfinite(commanded_body_height_m)) {
+                    return false;
+                }
+                if (commanded_body_height_m <= 0.0 || measured_body_height_m <= 0.0) {
+                    return false;
+                }
                 return (commanded_body_height_m - measured_body_height_m) > config_.body_height_collapse_margin_m;
             },
-            .fault = FaultCode::TIP_OVER,
+            .fault = FaultCode::BODY_COLLAPSE,
             .torque_cut = true,
         },
     }};
