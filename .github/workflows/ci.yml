@@ -31,6 +31,7 @@ jobs:
             .deps/install
             .deps/src/toml11/build
             .deps/src/CppLinuxSerial/build
+            hexapod-physics-sim/build
             hexapod-server/build-tests
             hexapod-client/build-host-tests
           key: ${{ runner.os }}-quality-gates-${{ hashFiles('.github/workflows/ci.yml', 'scripts/verify.sh', '**/CMakeLists.txt', '**/CMakePresets.json') }}

@@ -633,6 +633,7 @@ bool RobotRuntime::init() {
     safety_state_.write(SafetyState{});
     leg_targets_.write(LegTargets{});
     gait_state_.write(GaitState{});
+    command_governor_state_.write(CommandGovernorState{});
     joint_targets_.write(JointTargets{});
     control_loop_counter_.store(0);
     control_dt_sum_us_.store(0);
@@ -807,15 +808,14 @@ void RobotRuntime::controlStep() {
         intent.twist.twist_vel_radps.x = 0.0;
         intent.twist.twist_vel_radps.y = 0.0;
         intent.twist.twist_vel_radps.z = 0.0;
-    } else if (intent.requested_mode == RobotMode::WALK &&
-               fusion_policy.aggressiveness_scale < 0.999) {
-        scaleMotionIntent(intent, fusion_policy.aggressiveness_scale);
     }
     const SafetyState safety_state = safety_state_.read();
     const bool bus_ok = raw_state_.read().bus_ok;
     uint64_t loop_counter = 0;
     FreshnessPolicy::Evaluation freshness{};
-    const auto traceControlLoop = [&](const ControlStatus& status, const bool accepted) {
+    const auto traceControlLoop = [&](const ControlStatus& status,
+                                      const bool accepted,
+                                      const CommandGovernorState* governor) {
         if (!config_.control_loop_trace_enabled || !logger_) {
             return;
         }
@@ -853,6 +853,42 @@ void RobotRuntime::controlStep() {
                  est.fusion.resync_requested ? 1 : 0,
                  " fusion_hard_reset=",
                  est.fusion.hard_reset_requested ? 1 : 0,
+                 " gov_scale=",
+                 governor != nullptr ? governor->command_scale : 1.0,
+                 " gov_req_speed_mps=",
+                 governor != nullptr ? governor->requested_planar_speed_mps : 0.0,
+                 " gov_out_speed_mps=",
+                 governor != nullptr ? governor->governed_planar_speed_mps : 0.0,
+                 " gov_req_yaw_radps=",
+                 governor != nullptr ? governor->requested_yaw_rate_radps : 0.0,
+                 " gov_out_yaw_radps=",
+                 governor != nullptr ? governor->governed_yaw_rate_radps : 0.0,
+                 " gov_req_body_h_m=",
+                 governor != nullptr ? governor->requested_body_height_m : 0.0,
+                 " gov_out_body_h_m=",
+                 governor != nullptr ? governor->governed_body_height_m : 0.0,
+                 " gov_cadence_scale=",
+                 governor != nullptr ? governor->cadence_scale : 1.0,
+                 " gov_severity=",
+                 governor != nullptr ? governor->severity : 0.0,
+                 " gov_support_m=",
+                 governor != nullptr ? governor->support_margin_m : 0.0,
+                 " gov_tilt_rad=",
+                 governor != nullptr ? governor->body_tilt_rad : 0.0,
+                 " gov_body_rate_radps=",
+                 governor != nullptr ? governor->body_rate_radps : 0.0,
+                 " gov_fusion_trust=",
+                 governor != nullptr ? governor->fusion_trust : 1.0,
+                 " gov_contact_mismatch=",
+                 governor != nullptr ? governor->contact_mismatch_ratio : 0.0,
+                 " gov_accel_mps2=",
+                 governor != nullptr ? governor->command_accel_mps2 : 0.0,
+                 " gov_swing_floor_m=",
+                 governor != nullptr ? governor->swing_height_floor_m : 0.0,
+                 " gov_body_delta_m=",
+                 governor != nullptr ? governor->body_height_delta_m : 0.0,
+                 " gov_reason_mask=",
+                 governor != nullptr ? static_cast<std::uint32_t>(governor->reasons) : 0u,
                  " fusion_max_pos_err=",
                  est.fusion.residuals.max_body_position_error_m,
                  " fusion_max_yaw_err=",
@@ -888,8 +924,9 @@ void RobotRuntime::controlStep() {
             status_.write(decision.status);
             leg_targets_.write(LegTargets{});
             gait_state_.write(GaitState{});
+            command_governor_state_.write(CommandGovernorState{});
             joint_targets_.write(decision.joint_targets);
-            traceControlLoop(decision.status, false);
+            traceControlLoop(decision.status, false, nullptr);
             maybePublishTelemetry(now);
             maybeWriteReplayRecord(now);
             (void)freshness_scope;
@@ -920,9 +957,10 @@ void RobotRuntime::controlStep() {
 
     leg_targets_.write(result.leg_targets);
     gait_state_.write(result.gait_state);
+    command_governor_state_.write(result.command_governor);
     joint_targets_.write(joint_targets);
     status_.write(result.status);
-    traceControlLoop(result.status, true);
+    traceControlLoop(result.status, true, &result.command_governor);
 
     if (logger_) {
         std::ostringstream support_snapshot;
@@ -1090,6 +1128,10 @@ void RobotRuntime::safetyStep() {
                  est.body_twist_state.twist_pos_rad.x,
                  " pitch=",
                  est.body_twist_state.twist_pos_rad.y,
+                 " body_rate_radps=",
+                 (est.has_imu && est.imu.valid)
+                     ? std::hypot(est.imu.gyro_radps.x, est.imu.gyro_radps.y)
+                     : 0.0,
                  " mode=",
                  static_cast<int>(intent.requested_mode));
         last_logged_safety_fault_ = s.active_fault;

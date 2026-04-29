@@ -36,6 +36,7 @@ MotionIntent intentNow(RobotMode mode) {
     MotionIntent intent{};
     intent.requested_mode = mode;
     intent.timestamp_us = now_us();
+    intent.twist.body_trans_m.z = 0.14;
     return intent;
 }
 
@@ -43,7 +44,23 @@ MotionIntent staleIntent(RobotMode mode) {
     MotionIntent intent{};
     intent.requested_mode = mode;
     intent.timestamp_us = TimePointUs{};
+    intent.twist.body_trans_m.z = 0.14;
     return intent;
+}
+
+control_config::SafetyConfig collapseSafetyConfig() {
+    control_config::SafetyConfig cfg{};
+    cfg.max_tilt_rad = AngleRad{0.55};
+    cfg.body_height_collapse_margin_m = 0.05;
+    cfg.body_height_collapse_max_contacts = 3;
+    return cfg;
+}
+
+control_config::SafetyConfig rapidMotionSafetyConfig() {
+    control_config::SafetyConfig cfg{};
+    cfg.max_tilt_rad = AngleRad{0.55};
+    cfg.rapid_body_rate_radps = 1.0;
+    return cfg;
 }
 
 bool testHigherPriorityFaultWins() {
@@ -126,6 +143,94 @@ bool testMotorFaultTorqueCut() {
     return expect(state.active_fault == FaultCode::MOTOR_FAULT,
                   "over-current should produce MOTOR_FAULT") &&
            expect(state.torque_cut, "MOTOR_FAULT should request torque cut");
+}
+
+bool testBodyHeightCollapseTriggersTipOverEarly() {
+    SafetySupervisor supervisor(collapseSafetyConfig());
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+
+    raw.foot_contacts = {true, true, false, false, false, false};
+    est.has_body_twist_state = true;
+    est.body_twist_state.body_trans_m.z = 0.08;
+    est.body_twist_state.twist_pos_rad.x = 0.10;
+    est.body_twist_state.twist_pos_rad.y = 0.12;
+
+    const SafetyState state =
+        supervisor.evaluate(raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+
+    return expect(state.active_fault == FaultCode::TIP_OVER,
+                  "body-height collapse with sparse support should trip TIP_OVER early") &&
+           expect(state.torque_cut, "collapse-triggered TIP_OVER should request torque cut");
+}
+
+bool testBodyHeightCollapseStaysQuietWithHealthySupport() {
+    SafetySupervisor supervisor(collapseSafetyConfig());
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+
+    raw.foot_contacts = {true, true, true, true, true, true};
+    est.has_body_twist_state = true;
+    est.body_twist_state.body_trans_m.z = 0.08;
+    est.body_twist_state.twist_pos_rad.x = 0.10;
+    est.body_twist_state.twist_pos_rad.y = 0.12;
+
+    const SafetyState state =
+        supervisor.evaluate(raw, est, intentNow(RobotMode::WALK), SafetySupervisor::FreshnessInputs{true, true});
+
+    return expect(state.active_fault == FaultCode::NONE,
+                  "healthy support should not trip the body-height collapse detector");
+}
+
+bool testRapidBodyRateTriggersTipOverEarly() {
+    SafetySupervisor supervisor(rapidMotionSafetyConfig());
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+    MotionIntent intent = intentNow(RobotMode::WALK);
+    intent.cmd_vx_mps = LinearRateMps{0.30};
+    intent.speed_mps = LinearRateMps{0.30};
+
+    raw.foot_contacts = {true, true, false, false, false, false};
+    est.has_body_twist_state = true;
+    est.has_imu = true;
+    est.imu.valid = true;
+    est.imu.gyro_radps.x = 0.95;
+    est.imu.gyro_radps.y = 0.35;
+    est.body_twist_state.body_trans_m.z = 0.12;
+    est.body_twist_state.twist_pos_rad.x = 0.16;
+    est.body_twist_state.twist_pos_rad.y = 0.18;
+
+    const SafetyState state =
+        supervisor.evaluate(raw, est, intent, SafetySupervisor::FreshnessInputs{true, true});
+
+    return expect(state.active_fault == FaultCode::TIP_OVER,
+                  "sparse support with high body-rate should trip TIP_OVER early") &&
+           expect(state.torque_cut, "rate-triggered TIP_OVER should request torque cut");
+}
+
+bool testRapidBodyRateStaysQuietWithHealthySupport() {
+    SafetySupervisor supervisor(rapidMotionSafetyConfig());
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+    MotionIntent intent = intentNow(RobotMode::WALK);
+    intent.cmd_vx_mps = LinearRateMps{0.06};
+    intent.speed_mps = LinearRateMps{0.06};
+
+    raw.foot_contacts = {true, true, true, true, true, true};
+    est.has_body_twist_state = true;
+    est.has_imu = true;
+    est.imu.valid = true;
+    est.imu.gyro_radps.x = 0.95;
+    est.imu.gyro_radps.y = 0.35;
+    est.body_twist_state.body_trans_m.z = 0.12;
+    est.body_twist_state.twist_pos_rad.x = 0.16;
+    est.body_twist_state.twist_pos_rad.y = 0.18;
+
+    const SafetyState state =
+        supervisor.evaluate(raw, est, intent, SafetySupervisor::FreshnessInputs{true, true});
+
+    return expect(state.active_fault == FaultCode::NONE,
+                  "healthy support should not trip the rapid body-rate detector");
 }
 
 bool testLatchedRemainsWhenIntentNotSafeIdle() {
@@ -222,6 +327,8 @@ int main() {
         !testEstimatorBeatsCommandTimeoutWithoutTorqueCut() ||
         !testBusTimeoutBeatsFreshnessFaults() ||
         !testMotorFaultTorqueCut() ||
+        !testBodyHeightCollapseTriggersTipOverEarly() ||
+        !testBodyHeightCollapseStaysQuietWithHealthySupport() ||
         !testLatchedRemainsWhenIntentNotSafeIdle() ||
         !testLatchedRemainsWhenIntentStale() ||
         !testRecoveryRequiresBothConditionsAndHoldTime()) {

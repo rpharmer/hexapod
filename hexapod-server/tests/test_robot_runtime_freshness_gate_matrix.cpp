@@ -206,7 +206,11 @@ bool testRuntimeInitSeedsFreshEstimatorSnapshot() {
         return false;
     }
 
-    runtime.setMotionIntent(makeIntentSample(500, now_us()));
+    MotionIntent startup_intent{};
+    startup_intent.requested_mode = RobotMode::SAFE_IDLE;
+    startup_intent.sample_id = 500;
+    startup_intent.timestamp_us = now_us();
+    runtime.setMotionIntent(startup_intent);
     runtime.controlStep();
     const ControlStatus status = runtime.getStatus();
     return expect(status.estimator_valid,

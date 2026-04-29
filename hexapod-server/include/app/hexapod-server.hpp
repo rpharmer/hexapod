@@ -4,6 +4,7 @@
 #include "serialCommsServer.hpp"
 #include "local_map.hpp"
 #include "local_planner.hpp"
+#include "control_config.hpp"
 #include "types.hpp"
 #include "config_validation.hpp"
 
@@ -51,6 +52,8 @@ struct ParsedToml
   int commandRefreshPeriodMs{100};
   int standSettlingDelayMs{2000};
   double maxTiltRad{0.70};
+  double rapidBodyRateRadps{0.0};
+  int rapidBodyRateMaxContacts{2};
   uint64_t commandTimeoutUs{300000};
   uint64_t estimatorMaxAgeUs{300000};
   uint64_t intentMaxAgeUs{300000};
@@ -79,12 +82,36 @@ struct ParsedToml
   double maxBusCurrentA{25.0};
   int minFootContacts{0};
   int maxFootContacts{kNumLegs};
+  double bodyHeightCollapseMarginM{0.0};
+  int bodyHeightCollapseMaxContacts{3};
 
   /** Optional NavLocomotionBridge body-frame position I outer loop; 0 = off. Ki in 1/s. */
   double navBodyFrameIntegralKiFwdPerS{0.0};
   double navBodyFrameIntegralKiLatPerS{0.0};
   /** Integral clamp per axis (m*s); 0 = no clamp in bridge. */
   double navBodyFrameIntegralAbsCapMetersSeconds{0.0};
+  double governorLowSpeedPlanarCutoffMps{control_config::kDefaultGovernorLowSpeedPlanarCutoffMps};
+  double governorLowSpeedYawCutoffRadps{control_config::kDefaultGovernorLowSpeedYawCutoffRadps};
+  double governorStartupSupportMarginM{control_config::kDefaultGovernorStartupSupportMarginM};
+  double governorSupportMarginSoftM{control_config::kDefaultGovernorSupportMarginSoftM};
+  double governorSupportMarginHardM{control_config::kDefaultGovernorSupportMarginHardM};
+  double governorTiltSoftRad{control_config::kDefaultGovernorTiltSoftRad};
+  double governorTiltHardRad{control_config::kDefaultGovernorTiltHardRad};
+  double governorBodyRateSoftRadps{control_config::kDefaultGovernorBodyRateSoftRadps};
+  double governorBodyRateHardRadps{control_config::kDefaultGovernorBodyRateHardRadps};
+  double governorFusionTrustSoft{control_config::kDefaultGovernorFusionTrustSoft};
+  double governorFusionTrustHard{control_config::kDefaultGovernorFusionTrustHard};
+  double governorContactMismatchSoft{control_config::kDefaultGovernorContactMismatchSoft};
+  double governorContactMismatchHard{control_config::kDefaultGovernorContactMismatchHard};
+  double governorCommandAccelSoftMps2{control_config::kDefaultGovernorCommandAccelSoftMps2};
+  double governorCommandAccelHardMps2{control_config::kDefaultGovernorCommandAccelHardMps2};
+  double governorLowSpeedMinScale{control_config::kDefaultGovernorLowSpeedMinScale};
+  double governorActiveMinScale{control_config::kDefaultGovernorActiveMinScale};
+  double governorLowSpeedCadenceMinScale{control_config::kDefaultGovernorLowSpeedCadenceMinScale};
+  double governorActiveCadenceMinScale{control_config::kDefaultGovernorActiveCadenceMinScale};
+  double governorBodyHeightSquatMaxM{control_config::kDefaultGovernorBodyHeightSquatMaxM};
+  double governorBodyHeightSquatSeverityThreshold{control_config::kDefaultGovernorBodyHeightSquatSeverityThreshold};
+  double governorSwingFloorBoostM{control_config::kDefaultGovernorSwingFloorBoostM};
   int localMapWidthCells{kDefaultLocalMapWidthCells};
   int localMapHeightCells{kDefaultLocalMapHeightCells};
   double localMapResolutionM{kDefaultLocalMapResolutionM};

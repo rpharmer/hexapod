@@ -586,6 +586,63 @@ bool testNavBridgeTuningKeysParseIntoControlConfig()
                 "nav_bridge.abs_cap should map from ParsedToml");
 }
 
+bool testCommandGovernorTuningKeysParseIntoControlConfig()
+{
+  std::string cfg = readText(configPath("config.txt"));
+  if (!expect(replaceOnce(cfg, "MaxFootContacts = 6",
+                           "MaxFootContacts = 6\n"
+                           "GovernorLowSpeedPlanarCutoffMps = 0.14\n"
+                           "GovernorLowSpeedYawCutoffRadps = 0.29\n"
+                           "GovernorStartupSupportMarginM = 0.025\n"
+                           "GovernorSupportMarginSoftM = 0.019\n"
+                           "GovernorSupportMarginHardM = -0.004\n"
+                           "GovernorTiltSoftRad = 0.15\n"
+                           "GovernorTiltHardRad = 0.36\n"
+                           "GovernorBodyRateSoftRadps = 0.68\n"
+                           "GovernorBodyRateHardRadps = 1.45\n"
+                           "GovernorFusionTrustSoft = 0.79\n"
+                           "GovernorFusionTrustHard = 0.44\n"
+                           "GovernorContactMismatchSoft = 0.16\n"
+                           "GovernorContactMismatchHard = 0.41\n"
+                           "GovernorCommandAccelSoftMps2 = 0.52\n"
+                           "GovernorCommandAccelHardMps2 = 1.15\n"
+                           "GovernorLowSpeedMinScale = 0.81\n"
+                           "GovernorActiveMinScale = 0.37\n"
+                           "GovernorLowSpeedCadenceMinScale = 0.91\n"
+                           "GovernorActiveCadenceMinScale = 0.73\n"
+                           "GovernorBodyHeightSquatMaxM = 0.018\n"
+                           "GovernorBodyHeightSquatSeverityThreshold = 0.42\n"
+                           "GovernorSwingFloorBoostM = 0.012"),
+              "baseline config missing MaxFootContacts = 6")) {
+    return false;
+  }
+
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(writeTemp("hexapod_governor_tuning.toml", cfg), parsed),
+              "command governor tuning keys should parse")) {
+    return false;
+  }
+
+  if (!expect(near(parsed.governorLowSpeedPlanarCutoffMps, 0.14),
+              "GovernorLowSpeedPlanarCutoffMps should parse") ||
+      !expect(near(parsed.governorSupportMarginSoftM, 0.019), "GovernorSupportMarginSoftM should parse") ||
+      !expect(near(parsed.governorBodyRateHardRadps, 1.45), "GovernorBodyRateHardRadps should parse") ||
+      !expect(near(parsed.governorSwingFloorBoostM, 0.012), "GovernorSwingFloorBoostM should parse")) {
+    return false;
+  }
+
+  const control_config::ControlConfig control = control_config::fromParsedToml(parsed);
+  return expect(near(control.command_governor.low_speed_planar_cutoff_mps, 0.14),
+                "command_governor.low_speed_planar_cutoff_mps should map") &&
+         expect(near(control.command_governor.support_margin_soft_m, 0.019),
+                "command_governor.support_margin_soft_m should map") &&
+         expect(near(control.command_governor.body_rate_hard_radps, 1.45),
+                "command_governor.body_rate_hard_radps should map") &&
+         expect(near(control.command_governor.swing_floor_boost_m, 0.012),
+                "command_governor.swing_floor_boost_m should map");
+}
+
 bool testFootTerrainTuningKeysParseIntoControlConfig()
 {
   std::string cfg = readText(configPath("config.txt"));
@@ -676,6 +733,7 @@ int main()
   testSwingTuningKeysParseIntoControlConfig();
   testFootTerrainTuningKeysParseIntoControlConfig();
   testNavBridgeTuningKeysParseIntoControlConfig();
+  testCommandGovernorTuningKeysParseIntoControlConfig();
   testSwingEaseMinMaxSwapAndWarning();
 
   if (g_failures != 0) {

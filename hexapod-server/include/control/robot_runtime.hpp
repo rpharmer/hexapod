@@ -50,6 +50,10 @@ public:
 
     /** Latest estimated state (for navigation / tests; same buffer the control step reads). */
     [[nodiscard]] RobotState estimatedSnapshot() const { return estimated_state_.read(); }
+    /** Latest gait state (for tests and targeted stability diagnostics). */
+    [[nodiscard]] GaitState gaitSnapshot() const { return gait_state_.read(); }
+    /** Latest command-governor snapshot from the control pipeline. */
+    [[nodiscard]] CommandGovernorState commandGovernorSnapshot() const { return command_governor_state_.read(); }
     [[nodiscard]] const NavigationManager* navigationManager() const { return navigation_manager_.get(); }
     [[nodiscard]] NavigationManager* navigationManager() { return navigation_manager_.get(); }
 
@@ -101,6 +105,7 @@ private:
     DoubleBuffer<SafetyState> safety_state_;
     DoubleBuffer<LegTargets> leg_targets_;
     DoubleBuffer<GaitState> gait_state_;
+    DoubleBuffer<CommandGovernorState> command_governor_state_;
     DoubleBuffer<JointTargets> joint_targets_;
     DoubleBuffer<ControlStatus> status_;
 

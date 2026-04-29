@@ -8,6 +8,13 @@ namespace {
 constexpr std::array<double, kNumLegs> kTripodOffsets = {0.0, 0.5, 0.0, 0.5, 0.0, 0.5};
 constexpr std::array<double, kNumLegs> kSequentialOffsets = {
     0.0, 1.0 / 6.0, 2.0 / 6.0, 3.0 / 6.0, 4.0 / 6.0, 5.0 / 6.0};
+constexpr double kMinSwingHeightM = 0.014;
+constexpr double kLowSpeedYawSwingBoostM = 0.004;
+constexpr double kSwingHeightFloorFractionOfBase = 0.70;
+
+double swingHeightFloorForPreset(const GaitPresetTemplate& preset) {
+    return std::max(kMinSwingHeightM, preset.base_swing_height_m * kSwingHeightFloorFractionOfBase);
+}
 
 /** Normalized walk command magnitude in [0, ~1.5] (same construction as legacy stride scaling). */
 double normalizedWalkCommandMag(const double vx_mps,
@@ -25,13 +32,6 @@ double normalizedWalkCommandMag(const double vx_mps,
     const double cmd_clamped = std::clamp(cmd_mag, 0.0, 1.5);
     const double fallback_norm = std::clamp(gait_cfg.fallback_speed_mag.value / v_nom, 0.0, 1.0);
     return std::max(cmd_clamped, fallback_norm);
-}
-
-/** 0 → favor CRAWL-style timing, 1 → favor TRIPOD. */
-double crawlTripodDynamicBlend01(const double cmd_mag_normalized) {
-    constexpr double kLow = 0.22;
-    constexpr double kHigh = 0.92;
-    return gaitSmoothstep01((cmd_mag_normalized - kLow) / std::max(kHigh - kLow, 1e-6));
 }
 
 } // namespace
@@ -106,6 +106,10 @@ GaitPresetTemplate gaitPresetTemplate(const GaitType gait) {
     return out;
 }
 
+double gaitPresetSwingHeightFloor(const GaitType gait) {
+    return swingHeightFloorForPreset(gaitPresetTemplate(gait));
+}
+
 UnifiedGaitDescription buildTargetUnifiedGait(const GaitType gait,
                                              const double vx_mps,
                                              const double vy_mps,
@@ -120,8 +124,8 @@ UnifiedGaitDescription buildTargetUnifiedGait(const GaitType gait,
 
     const double speed_mag = normalizedWalkCommandMag(vx_mps, vy_mps, yaw_rate_radps, gait_cfg);
     const double a_planar = std::hypot(cmd_ax_mps2, cmd_ay_mps2);
-    const double accel_cadence_boost = 1.0 + 0.22 * std::clamp(a_planar / 0.55, 0.0, 1.8);
-    const double accel_stride_boost = 1.0 + 0.18 * std::clamp(a_planar / 0.55, 0.0, 1.4);
+    const double accel_cadence_boost = 1.0 + 0.12 * std::clamp(a_planar / 0.55, 0.0, 1.2);
+    const double accel_stride_boost = 1.0 + 0.08 * std::clamp(a_planar / 0.55, 0.0, 1.2);
 
     desc.step_frequency_hz = std::clamp(
         preset.base_step_frequency_hz * (0.40 + 1.28 * speed_mag) * accel_cadence_boost, 0.28, 3.8);
@@ -132,6 +136,15 @@ UnifiedGaitDescription buildTargetUnifiedGait(const GaitType gait,
             std::max(gait_cfg.swing_height_scale, 1e-6),
         0.008,
         0.06);
+    // Keep slow and yaw-heavy gaits from collapsing swing clearance so far that the feet start
+    // scraping the floor. Forward walking still uses the nominal floor.
+    const double planar_speed_mps = std::hypot(vx_mps, vy_mps);
+    const double low_speed_scale = std::clamp((0.12 - planar_speed_mps) / 0.12, 0.0, 1.0);
+    const double yaw_scale = std::clamp(std::abs(yaw_rate_radps) / 0.45, 0.0, 1.0);
+    const double swing_height_floor_m =
+        std::max(swingHeightFloorForPreset(preset),
+                 kMinSwingHeightM + kLowSpeedYawSwingBoostM * low_speed_scale * (0.5 + 0.5 * yaw_scale));
+    desc.swing_height_m = std::max(desc.swing_height_m, swing_height_floor_m);
     desc.swing_time_ease =
         std::clamp(0.52 + 0.46 * (1.0 - std::min(speed_mag, 1.25) / 1.25), 0.40, 1.0);
     {
@@ -152,13 +165,10 @@ UnifiedGaitDescription buildAdaptiveTripodCrawlGait(const double vx_mps,
                                                     const double cmd_ax_mps2,
                                                     const double cmd_ay_mps2,
                                                     const control_config::GaitConfig& gait_cfg) {
-    const double cmd_mag = normalizedWalkCommandMag(vx_mps, vy_mps, yaw_rate_radps, gait_cfg);
-    const double t = crawlTripodDynamicBlend01(cmd_mag);
-    const UnifiedGaitDescription crawl =
-        buildTargetUnifiedGait(GaitType::CRAWL, vx_mps, vy_mps, yaw_rate_radps, gait_cfg, cmd_ax_mps2, cmd_ay_mps2);
-    const UnifiedGaitDescription tripod =
+    UnifiedGaitDescription out =
         buildTargetUnifiedGait(GaitType::TRIPOD, vx_mps, vy_mps, yaw_rate_radps, gait_cfg, cmd_ax_mps2, cmd_ay_mps2);
-    return blendUnifiedGait(crawl, tripod, t);
+    out.swing_height_m = std::max(out.swing_height_m, swingHeightFloorForPreset(gaitPresetTemplate(GaitType::TRIPOD)));
+    return out;
 }
 
 UnifiedGaitDescription buildAdaptiveRippleCrawlGait(const double vx_mps,
@@ -167,13 +177,10 @@ UnifiedGaitDescription buildAdaptiveRippleCrawlGait(const double vx_mps,
                                                     const double cmd_ax_mps2,
                                                     const double cmd_ay_mps2,
                                                     const control_config::GaitConfig& gait_cfg) {
-    const double cmd_mag = normalizedWalkCommandMag(vx_mps, vy_mps, yaw_rate_radps, gait_cfg);
-    const double t = crawlTripodDynamicBlend01(cmd_mag);
-    const UnifiedGaitDescription crawl =
-        buildTargetUnifiedGait(GaitType::CRAWL, vx_mps, vy_mps, yaw_rate_radps, gait_cfg, cmd_ax_mps2, cmd_ay_mps2);
-    const UnifiedGaitDescription ripple =
+    UnifiedGaitDescription out =
         buildTargetUnifiedGait(GaitType::RIPPLE, vx_mps, vy_mps, yaw_rate_radps, gait_cfg, cmd_ax_mps2, cmd_ay_mps2);
-    return blendUnifiedGait(crawl, ripple, t);
+    out.swing_height_m = std::max(out.swing_height_m, swingHeightFloorForPreset(gaitPresetTemplate(GaitType::RIPPLE)));
+    return out;
 }
 
 UnifiedGaitDescription buildAdaptiveWaveCrawlGait(const double vx_mps,
@@ -182,13 +189,10 @@ UnifiedGaitDescription buildAdaptiveWaveCrawlGait(const double vx_mps,
                                                   const double cmd_ax_mps2,
                                                   const double cmd_ay_mps2,
                                                   const control_config::GaitConfig& gait_cfg) {
-    const double cmd_mag = normalizedWalkCommandMag(vx_mps, vy_mps, yaw_rate_radps, gait_cfg);
-    const double t = crawlTripodDynamicBlend01(cmd_mag);
-    const UnifiedGaitDescription crawl =
-        buildTargetUnifiedGait(GaitType::CRAWL, vx_mps, vy_mps, yaw_rate_radps, gait_cfg, cmd_ax_mps2, cmd_ay_mps2);
-    const UnifiedGaitDescription wave =
+    UnifiedGaitDescription out =
         buildTargetUnifiedGait(GaitType::WAVE, vx_mps, vy_mps, yaw_rate_radps, gait_cfg, cmd_ax_mps2, cmd_ay_mps2);
-    return blendUnifiedGait(crawl, wave, t);
+    out.swing_height_m = std::max(out.swing_height_m, swingHeightFloorForPreset(gaitPresetTemplate(GaitType::WAVE)));
+    return out;
 }
 
 UnifiedGaitDescription blendUnifiedGait(const UnifiedGaitDescription& from,

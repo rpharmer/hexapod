@@ -19,11 +19,15 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.loop_timing.stand_settling_delay = std::chrono::milliseconds{config.standSettlingDelayMs};
 
     parsed.safety.max_tilt_rad = AngleRad{config.maxTiltRad};
+    parsed.safety.rapid_body_rate_radps = config.rapidBodyRateRadps;
+    parsed.safety.rapid_body_rate_max_contacts = config.rapidBodyRateMaxContacts;
     parsed.safety.command_timeout_us = DurationUs{config.commandTimeoutUs};
     parsed.safety.min_bus_voltage_v = static_cast<float>(config.minBusVoltageV);
     parsed.safety.max_bus_current_a = static_cast<float>(config.maxBusCurrentA);
     parsed.safety.min_foot_contacts = config.minFootContacts;
     parsed.safety.max_foot_contacts = config.maxFootContacts;
+    parsed.safety.body_height_collapse_margin_m = config.bodyHeightCollapseMarginM;
+    parsed.safety.body_height_collapse_max_contacts = config.bodyHeightCollapseMaxContacts;
 
     parsed.gait.fallback_speed_mag = LinearRateMps{config.fallbackSpeedMag};
     parsed.gait.transition_blend_s = config.gaitTransitionBlendS;
@@ -66,6 +70,29 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.nav_bridge.body_frame_integral_ki_fwd_per_s = config.navBodyFrameIntegralKiFwdPerS;
     parsed.nav_bridge.body_frame_integral_ki_lat_per_s = config.navBodyFrameIntegralKiLatPerS;
     parsed.nav_bridge.body_frame_integral_abs_cap_m_s = config.navBodyFrameIntegralAbsCapMetersSeconds;
+    parsed.command_governor.low_speed_planar_cutoff_mps = config.governorLowSpeedPlanarCutoffMps;
+    parsed.command_governor.low_speed_yaw_cutoff_radps = config.governorLowSpeedYawCutoffRadps;
+    parsed.command_governor.startup_support_margin_m = config.governorStartupSupportMarginM;
+    parsed.command_governor.support_margin_soft_m = config.governorSupportMarginSoftM;
+    parsed.command_governor.support_margin_hard_m = config.governorSupportMarginHardM;
+    parsed.command_governor.tilt_soft_rad = config.governorTiltSoftRad;
+    parsed.command_governor.tilt_hard_rad = config.governorTiltHardRad;
+    parsed.command_governor.body_rate_soft_radps = config.governorBodyRateSoftRadps;
+    parsed.command_governor.body_rate_hard_radps = config.governorBodyRateHardRadps;
+    parsed.command_governor.fusion_trust_soft = config.governorFusionTrustSoft;
+    parsed.command_governor.fusion_trust_hard = config.governorFusionTrustHard;
+    parsed.command_governor.contact_mismatch_soft = config.governorContactMismatchSoft;
+    parsed.command_governor.contact_mismatch_hard = config.governorContactMismatchHard;
+    parsed.command_governor.command_accel_soft_mps2 = config.governorCommandAccelSoftMps2;
+    parsed.command_governor.command_accel_hard_mps2 = config.governorCommandAccelHardMps2;
+    parsed.command_governor.low_speed_min_scale = config.governorLowSpeedMinScale;
+    parsed.command_governor.active_min_scale = config.governorActiveMinScale;
+    parsed.command_governor.low_speed_cadence_min_scale = config.governorLowSpeedCadenceMinScale;
+    parsed.command_governor.active_cadence_min_scale = config.governorActiveCadenceMinScale;
+    parsed.command_governor.body_height_squat_max_m = config.governorBodyHeightSquatMaxM;
+    parsed.command_governor.body_height_squat_severity_threshold =
+        config.governorBodyHeightSquatSeverityThreshold;
+    parsed.command_governor.swing_floor_boost_m = config.governorSwingFloorBoostM;
     parsed.local_map.width_cells = config.localMapWidthCells;
     parsed.local_map.height_cells = config.localMapHeightCells;
     parsed.local_map.resolution_m = config.localMapResolutionM;

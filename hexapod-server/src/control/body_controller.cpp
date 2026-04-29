@@ -20,8 +20,8 @@ namespace {
 constexpr double kNominalReachFraction = 0.55;
 constexpr double kReachMarginM = 0.005;
 constexpr double kFootReachInsetM = 0.004;
-constexpr double kBodyHeightHoldGain = 1.35;
-constexpr double kBodyHeightHoldMaxAdjustM = 0.260;
+constexpr double kBodyHeightHoldGain = 1.0;
+constexpr double kBodyHeightHoldMaxAdjustM = 0.120;
 constexpr double kTerrainBlendMinScale = 0.35;
 constexpr double kTerrainBlendSagScale = 0.65;
 
@@ -106,10 +106,10 @@ void strideDirectionXY(const double rx,
 
 } // namespace
 
-std::array<Vec3, kNumLegs> BodyController::nominalStance(double body_height_m) const {
+std::array<Vec3, kNumLegs> computeNominalStance(const HexapodGeometry& geometry, double body_height_m) {
     std::array<Vec3, kNumLegs> nominal{};
     for (int leg = 0; leg < kNumLegs; ++leg) {
-        const LegGeometry& leg_geo = geometry_.legGeometry[leg];
+        const LegGeometry& leg_geo = geometry.legGeometry[leg];
         const double femur_tibia_reach =
             std::max(0.0, leg_geo.femurLength.value + leg_geo.tibiaLength.value - kReachMarginM);
         const double desired_rho = kNominalReachFraction * (leg_geo.femurLength.value + leg_geo.tibiaLength.value);
@@ -130,6 +130,10 @@ std::array<Vec3, kNumLegs> BodyController::nominalStance(double body_height_m) c
     return nominal;
 }
 
+std::array<Vec3, kNumLegs> BodyController::nominalStance(double body_height_m) const {
+    return computeNominalStance(geometry_, body_height_m);
+}
+
 LegTargets BodyController::update(const RobotState& est,
                                   const MotionIntent& intent,
                                   const GaitState& gait,
@@ -140,19 +144,46 @@ LegTargets BodyController::update(const RobotState& est,
     out.timestamp_us = now_us();
 
     const PlanarMotionCommand cmd = planarMotionFromCommandTwist(cmd_twist);
-    const BodyPoseSetpoint pose =
-        computeBodyPoseSetpoint(intent, cmd, gait.static_stability_margin_m, gait.stride_phase_rate_hz.value);
-
-    const double commanded_body_height_m = pose.body_height_m;
     const bool walking =
         (intent.requested_mode == RobotMode::WALK) &&
         !safety.inhibit_motion &&
         !safety.torque_cut;
+    const double trust_scale = fusionTrustScale(est);
+    BodyPoseSetpoint pose =
+        computeBodyPoseSetpoint(intent, cmd, gait.static_stability_margin_m, gait.stride_phase_rate_hz.value);
+    if (walking && est.has_body_twist_state) {
+        const double roll_meas = est.body_twist_state.twist_pos_rad.x;
+        const double pitch_meas = est.body_twist_state.twist_pos_rad.y;
+        if (std::isfinite(roll_meas) && std::isfinite(pitch_meas)) {
+            constexpr double kTiltFeedbackGain = 0.24;
+            constexpr double kTiltFeedbackMaxRad = 0.24;
+            const double roll_error = roll_meas - pose.roll_rad;
+            const double pitch_error = pitch_meas - pose.pitch_rad;
+            const double roll_correction = std::clamp(
+                -kTiltFeedbackGain * trust_scale * roll_error, -kTiltFeedbackMaxRad, kTiltFeedbackMaxRad);
+            const double pitch_correction = std::clamp(
+                -kTiltFeedbackGain * trust_scale * pitch_error, -kTiltFeedbackMaxRad, kTiltFeedbackMaxRad);
+            pose.roll_rad += roll_correction;
+            pose.pitch_rad += pitch_correction;
+        }
+    }
+
+    const double commanded_body_height_m = pose.body_height_m;
     const double body_height_hold_m = bodyHeightHoldOffsetM(est, commanded_body_height_m);
+    double tilt_squat_m = 0.0;
+    if (walking && est.has_body_twist_state) {
+        const double roll_meas = est.body_twist_state.twist_pos_rad.x;
+        const double pitch_meas = est.body_twist_state.twist_pos_rad.y;
+        if (std::isfinite(roll_meas) && std::isfinite(pitch_meas)) {
+            const double tilt_mag = std::hypot(roll_meas, pitch_meas);
+            const double squat_over = std::max(0.0, tilt_mag - 0.08);
+            tilt_squat_m = std::clamp(0.12 * squat_over, 0.0, 0.06);
+        }
+    }
     const bool height_hold_active = body_height_hold_m > 1e-6;
     const double terrain_blend_scale =
         height_hold_active ? 0.0 : terrainBlendScaleForHeightHold(body_height_hold_m);
-    const double effective_body_height_m = commanded_body_height_m + body_height_hold_m;
+    const double effective_body_height_m = commanded_body_height_m + body_height_hold_m - tilt_squat_m;
     std::array<Vec3, kNumLegs> nominal = nominalStance(effective_body_height_m);
 
     if (walking && terrain_snapshot != nullptr && terrain_blend_scale > 0.0) {
@@ -166,7 +197,6 @@ LegTargets BodyController::update(const RobotState& est,
         intent.twist.body_trans_m.y,
         0.0};
 
-    const double trust_scale = fusionTrustScale(est);
     const BodyVelocityCommand body_mot =
         bodyVelocityForFootPlanning(est, cmd_twist, foot_estimator_blend_ * trust_scale);
     const double duty = std::clamp(gait.duty_factor, 0.06, 0.94);
@@ -188,8 +218,9 @@ LegTargets BodyController::update(const RobotState& est,
             double ph = clamp01(gait.phase[leg]);
             const Vec3 anchor = nominal[leg] - planar_body_offset;
             const Vec3 v_foot = supportFootVelocityAt(anchor, body_mot);
+            const bool hold_stance = gait.stability_hold_stance[static_cast<std::size_t>(leg)];
 
-            if (ph < duty) {
+            if (ph < duty || hold_stance) {
                 apply_workspace_clamp = false;
                 StanceFootInputs st{};
                 st.anchor = anchor;
@@ -254,7 +285,7 @@ LegTargets BodyController::update(const RobotState& est,
                 sw.swing_time_ease_01 = gait.swing_time_ease_01;
                 Vec3 p{};
                 Vec3 v{};
-                planSwingFoot(body_mot, sw, p, v);
+                planSwingFoot(est, cmd_twist, sw, p, v);
                 target = p;
                 if (terrain_snapshot != nullptr) {
                     applyTerrainSwingXYNudge(*terrain_snapshot, est, foot_terrain_cfg_, tau_for_terrain_xy, &target);

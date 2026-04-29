@@ -109,6 +109,23 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    GaitState swing_gait = walk_gait;
+    swing_gait.phase[0] = 0.75;
+    swing_gait.in_stance[0] = false;
+    const LegTargets swing_targets = controller.update(est, walk_intent, swing_gait, safety, walk_twist);
+
+    GaitState held_gait = swing_gait;
+    held_gait.stability_hold_stance[0] = true;
+    const LegTargets held_swing_targets = controller.update(est, walk_intent, held_gait, safety, walk_twist);
+    if (!expect(held_swing_targets.feet[0].pos_body_m.z < swing_targets.feet[0].pos_body_m.z - 0.02,
+                "stability hold should keep a threatened swing leg in stance kinematics")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(nearlyEqual(held_swing_targets.feet[0].vel_body_mps.z, 0.0, 2e-3),
+                "stability hold should suppress swing vertical motion")) {
+        return EXIT_FAILURE;
+    }
+
     RobotState low_body_est = est;
     low_body_est.has_body_twist_state = true;
     low_body_est.has_fusion_diagnostics = true;

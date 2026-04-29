@@ -36,6 +36,12 @@ void parseTuningSection(const toml::value& root,
       "tuning", logger);
   out.maxTiltRad = config_validation::parseDoubleWithFallback(
       root, "Tuning.MaxTiltRad", control_config::kDefaultMaxTiltRad.value, 0.1, 1.5, "tuning", logger);
+  out.rapidBodyRateRadps = config_validation::parseDoubleWithFallback(
+      root, "Tuning.RapidBodyRateRadps", control_config::kDefaultRapidBodyRateRadps, 0.0, 10.0, "tuning",
+      logger);
+  out.rapidBodyRateMaxContacts = config_validation::parseIntWithFallback(
+      root, "Tuning.RapidBodyRateMaxContacts", control_config::kDefaultRapidBodyRateMaxContacts, 0, kNumLegs,
+      "tuning", logger);
   out.commandTimeoutUs = config_validation::parseU64WithFallback(
       root, "Tuning.CommandTimeoutUs", control_config::kDefaultCommandTimeoutUs.value, 10000,
       2000000, "tuning", logger);
@@ -102,6 +108,12 @@ void parseTuningSection(const toml::value& root,
     out.minFootContacts = control_config::kDefaultMinFootContacts;
     out.maxFootContacts = control_config::kDefaultMaxFootContacts;
   }
+  out.bodyHeightCollapseMarginM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.BodyHeightCollapseMarginM", control_config::kDefaultBodyHeightCollapseMarginM, 0.0, 0.25,
+      "tuning", logger);
+  out.bodyHeightCollapseMaxContacts = config_validation::parseIntWithFallback(
+      root, "Tuning.BodyHeightCollapseMaxContacts", control_config::kDefaultBodyHeightCollapseMaxContacts, 0,
+      kNumLegs, "tuning", logger);
 
   out.navBodyFrameIntegralKiFwdPerS = config_validation::parseDoubleWithFallback(
       root, "Tuning.NavBodyFrameIntegralKiFwdPerS", control_config::kDefaultNavBodyFrameIntegralKiFwdPerS, 0.0, 5.0,
@@ -112,6 +124,72 @@ void parseTuningSection(const toml::value& root,
   out.navBodyFrameIntegralAbsCapMetersSeconds = config_validation::parseDoubleWithFallback(
       root, "Tuning.NavBodyFrameIntegralAbsCapMetersSeconds",
       control_config::kDefaultNavBodyFrameIntegralAbsCapMetersSeconds, 0.0, 50.0, "tuning", logger);
+  out.governorLowSpeedPlanarCutoffMps = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorLowSpeedPlanarCutoffMps", control_config::kDefaultGovernorLowSpeedPlanarCutoffMps,
+      0.0, 1.0, "tuning", logger);
+  out.governorLowSpeedYawCutoffRadps = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorLowSpeedYawCutoffRadps", control_config::kDefaultGovernorLowSpeedYawCutoffRadps,
+      0.0, 3.14, "tuning", logger);
+  out.governorStartupSupportMarginM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorStartupSupportMarginM", control_config::kDefaultGovernorStartupSupportMarginM,
+      -0.05, 0.2, "tuning", logger);
+  out.governorSupportMarginSoftM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorSupportMarginSoftM", control_config::kDefaultGovernorSupportMarginSoftM,
+      -0.05, 0.2, "tuning", logger);
+  out.governorSupportMarginHardM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorSupportMarginHardM", control_config::kDefaultGovernorSupportMarginHardM,
+      -0.1, 0.1, "tuning", logger);
+  out.governorTiltSoftRad = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorTiltSoftRad", control_config::kDefaultGovernorTiltSoftRad, 0.0, 1.0, "tuning",
+      logger);
+  out.governorTiltHardRad = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorTiltHardRad", control_config::kDefaultGovernorTiltHardRad, 0.05, 2.5, "tuning",
+      logger);
+  out.governorBodyRateSoftRadps = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorBodyRateSoftRadps", control_config::kDefaultGovernorBodyRateSoftRadps, 0.0, 10.0,
+      "tuning", logger);
+  out.governorBodyRateHardRadps = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorBodyRateHardRadps", control_config::kDefaultGovernorBodyRateHardRadps, 0.05, 20.0,
+      "tuning", logger);
+  out.governorFusionTrustSoft = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorFusionTrustSoft", control_config::kDefaultGovernorFusionTrustSoft, 0.0, 1.0,
+      "tuning", logger);
+  out.governorFusionTrustHard = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorFusionTrustHard", control_config::kDefaultGovernorFusionTrustHard, 0.0, 1.0,
+      "tuning", logger);
+  out.governorContactMismatchSoft = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorContactMismatchSoft", control_config::kDefaultGovernorContactMismatchSoft, 0.0, 1.0,
+      "tuning", logger);
+  out.governorContactMismatchHard = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorContactMismatchHard", control_config::kDefaultGovernorContactMismatchHard, 0.0, 1.0,
+      "tuning", logger);
+  out.governorCommandAccelSoftMps2 = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorCommandAccelSoftMps2", control_config::kDefaultGovernorCommandAccelSoftMps2, 0.0,
+      20.0, "tuning", logger);
+  out.governorCommandAccelHardMps2 = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorCommandAccelHardMps2", control_config::kDefaultGovernorCommandAccelHardMps2, 0.05,
+      30.0, "tuning", logger);
+  out.governorLowSpeedMinScale = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorLowSpeedMinScale", control_config::kDefaultGovernorLowSpeedMinScale, 0.0, 1.0,
+      "tuning", logger);
+  out.governorActiveMinScale = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorActiveMinScale", control_config::kDefaultGovernorActiveMinScale, 0.0, 1.0,
+      "tuning", logger);
+  out.governorLowSpeedCadenceMinScale = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorLowSpeedCadenceMinScale", control_config::kDefaultGovernorLowSpeedCadenceMinScale,
+      0.0, 1.0, "tuning", logger);
+  out.governorActiveCadenceMinScale = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorActiveCadenceMinScale", control_config::kDefaultGovernorActiveCadenceMinScale,
+      0.0, 1.0, "tuning", logger);
+  out.governorBodyHeightSquatMaxM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorBodyHeightSquatMaxM", control_config::kDefaultGovernorBodyHeightSquatMaxM,
+      0.0, 0.1, "tuning", logger);
+  out.governorBodyHeightSquatSeverityThreshold = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorBodyHeightSquatSeverityThreshold",
+      control_config::kDefaultGovernorBodyHeightSquatSeverityThreshold, 0.0, 1.0, "tuning", logger);
+  out.governorSwingFloorBoostM = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GovernorSwingFloorBoostM", control_config::kDefaultGovernorSwingFloorBoostM, 0.0, 0.05,
+      "tuning", logger);
   out.localMapWidthCells = config_validation::parseIntWithFallback(
       root, "Tuning.LocalMapWidthCells", kDefaultLocalMapWidthCells, 9, 401, "tuning", logger);
   out.localMapHeightCells = config_validation::parseIntWithFallback(

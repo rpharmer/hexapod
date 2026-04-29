@@ -33,25 +33,20 @@ int main() {
     est.body_twist_state.twist_vel_radps = AngularVelocityRadPerSec3{0.04, -0.01, 0.3};
 
     const BodyVelocityCommand blended = bodyVelocityForFootPlanning(est, cmd_twist, 0.35);
-    const double expected_x = cmd_twist.linear_mps.x * 0.65 + 0.08 * 0.35;
-    const double expected_y = cmd_twist.linear_mps.y * 0.65 + 0.005 * 0.35;
     const double expected_wz = cmd_twist.angular_radps.z * 0.65 + 0.3 * 0.35;
-    if (!expect(blended.linear_mps.x > 0.0,
-                "blended forward velocity should stay in the body-frame forward (+X) direction")) {
-        return EXIT_FAILURE;
-    }
-    if (!expect(nearlyEqual(blended.linear_mps.x, expected_x) &&
-                    nearlyEqual(blended.linear_mps.y, expected_y) &&
+    if (!expect(nearlyEqual(blended.linear_mps.x, cmd_twist.linear_mps.x) &&
+                    nearlyEqual(blended.linear_mps.y, cmd_twist.linear_mps.y) &&
+                    nearlyEqual(blended.linear_mps.z, cmd_twist.linear_mps.z) &&
                     nearlyEqual(blended.angular_radps.z, expected_wz),
-                "blended command should combine intent with estimator in the shared body frame")) {
+                "foot planning should keep linear motion intent-driven while blending estimator yaw")) {
         return EXIT_FAILURE;
     }
 
     const BodyVelocityCommand estimator_only = bodyVelocityForFootPlanning(est, cmd_twist, 1.0);
-    if (!expect(nearlyEqual(estimator_only.linear_mps.x, 0.08) &&
-                    nearlyEqual(estimator_only.linear_mps.y, 0.005) &&
+    if (!expect(nearlyEqual(estimator_only.linear_mps.x, cmd_twist.linear_mps.x) &&
+                    nearlyEqual(estimator_only.linear_mps.y, cmd_twist.linear_mps.y) &&
                     nearlyEqual(estimator_only.linear_mps.z, cmd_twist.linear_mps.z),
-                "full blend should map estimator linear velocity into the body frame directly")) {
+                "full blend should not feed estimator linear velocity back into the foot planner")) {
         return EXIT_FAILURE;
     }
     if (!expect(nearlyEqual(estimator_only.angular_radps.x, cmd_twist.angular_radps.x) &&

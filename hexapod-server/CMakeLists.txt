@@ -89,6 +89,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/body_pose_controller.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/calibration_probe.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/cli_options.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/command_governor.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/contact_foot_response.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/control_config.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/control_pipeline.cpp"
@@ -250,6 +251,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_control_pipeline_sanity PRIVATE hexapod_server_core)
     add_test(NAME control_pipeline_output_sanity COMMAND test_control_pipeline_sanity)
 
+    add_executable(test_command_governor tests/test_command_governor.cpp)
+    target_link_libraries(test_command_governor PRIVATE hexapod_server_core)
+    add_test(NAME command_governor_behavior COMMAND test_command_governor)
+
     add_executable(test_hardware_bridge_transport
         tests/test_hardware_bridge_transport_main.cpp
         tests/test_hardware_bridge_transport_handshake.cpp
@@ -371,6 +376,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_physics_sim_walk_entry_tracking PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_walk_entry_tracking COMMAND test_physics_sim_walk_entry_tracking)
 
+    add_executable(test_physics_sim_walk_stability tests/test_physics_sim_walk_stability.cpp)
+    target_link_libraries(test_physics_sim_walk_stability PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_walk_stability COMMAND test_physics_sim_walk_stability)
+
     add_executable(test_physics_sim_tripod_support_baseline tests/test_physics_sim_tripod_support_baseline.cpp)
     target_link_libraries(test_physics_sim_tripod_support_baseline PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_tripod_support_baseline COMMAND test_physics_sim_tripod_support_baseline)
@@ -472,6 +481,22 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_replay_logging tests/test_replay_logging.cpp)
     target_link_libraries(test_replay_logging PRIVATE hexapod_server_core)
     add_test(NAME replay_logging COMMAND test_replay_logging)
+
+    add_executable(test_locomotion_regression_suite tests/test_locomotion_regression_suite.cpp)
+    target_link_libraries(test_locomotion_regression_suite PRIVATE hexapod_server_core)
+    add_test(
+        NAME locomotion_regression_suite
+        COMMAND ${CMAKE_COMMAND} -E env
+                HEXAPOD_PHYSICS_SIM_EXE=${CMAKE_SOURCE_DIR}/../hexapod-physics-sim/build/hexapod-physics-sim
+                $<TARGET_FILE:test_locomotion_regression_suite> --profile canonical)
+    set_tests_properties(locomotion_regression_suite PROPERTIES TIMEOUT 3600)
+
+    add_test(
+        NAME locomotion_regression_suite_stress
+        COMMAND ${CMAKE_COMMAND} -E env
+                HEXAPOD_PHYSICS_SIM_EXE=${CMAKE_SOURCE_DIR}/../hexapod-physics-sim/build/hexapod-physics-sim
+                $<TARGET_FILE:test_locomotion_regression_suite> --profile stress)
+    set_tests_properties(locomotion_regression_suite_stress PROPERTIES TIMEOUT 3600 LABELS "locomotion-stress")
 
 
     add_executable(test_bridge_link_manager tests/test_bridge_link_manager.cpp)

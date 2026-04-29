@@ -10,8 +10,9 @@ namespace {
 
 constexpr double kVRefMps = 0.18;
 constexpr double kWRefRadps = 0.42;
-constexpr double kRaibertCaptureGain = 0.55;
-constexpr double kAccelCaptureGain = 0.42;
+constexpr double kCaptureLimitScale = 0.35;
+constexpr double kCaptureLimitMinM = 0.008;
+constexpr double kCaptureLimitMaxM = 0.032;
 void rotate2d(const double x, const double y, const double c, const double s, double* ox, double* oy) {
     *ox = x * c - y * s;
     *oy = x * s + y * c;
@@ -41,18 +42,16 @@ BodyVelocityCommand bodyVelocityForFootPlanning(const RobotState& est,
     }
 
     // The estimator body twist and the command twist are both expressed in the same body frame:
-    // +X forward, +Y left, +Z up. Blend them directly in that shared convention.
+    // +X forward, +Y left, +Z up. We keep linear foot-planning driven by intent so measured
+    // chassis motion cannot feed a lateral/forward capture loop back into the gait.
     // Angular velocity: simVecToServer preserves CCW-positive yaw (Y_sim→Z_svr) and maps
     // roll/pitch consistently, so no extra sign adjustment is needed here either.
-    const Vec3 lin_est{est.body_twist_state.body_trans_mps.x,
-                       est.body_twist_state.body_trans_mps.y,
-                       est.body_twist_state.body_trans_mps.z};
     const Vec3 ang_est{est.body_twist_state.twist_vel_radps.x,
                        est.body_twist_state.twist_vel_radps.y,
                        est.body_twist_state.twist_vel_radps.z};
 
     BodyVelocityCommand out{};
-    out.linear_mps = intent_only.linear_mps * (1.0 - k) + lin_est * k;
+    out.linear_mps = intent_only.linear_mps;
     // Foot planning should only chase commanded roll/pitch body motion. Feeding estimated
     // chassis rocking back into the twist field turns transient disturbances into large
     // stance drift and oversized swing capture. Blend estimator yaw only.
@@ -66,31 +65,20 @@ Vec3 supportFootVelocityAt(const Vec3& r_b, const BodyVelocityCommand& body) {
     return TwistField::stanceFootVelocity(body, r_b);
 }
 
-void planStanceFoot(const StanceFootInputs& in, Vec3& pos_body, Vec3& vel_body) {
-    // Integrate v_foot_body = twist-field stance velocity so the contact stays world-fixed (stage 4).
-    const double f = std::max(in.f_hz, 1e-6);
-    const double phi = clamp01(in.phase);
-    pos_body = in.anchor + in.v_foot_body * (phi / f);
-    vel_body = in.v_foot_body;
-}
+SwingFootPlanDecomposition computeSwingFootPlacement(const RobotState& est,
+                                                     const BodyTwist& nominal_body,
+                                                     const SwingFootInputs& in) {
+    SwingFootPlanDecomposition out{};
 
-void planSwingFoot(const BodyVelocityCommand& body, const SwingFootInputs& in, Vec3& pos_body, Vec3& vel_body) {
-    const double tau = clamp01(in.tau01);
     const double swing_span = std::max(in.swing_span, 1e-6);
     const double f_hz = std::max(in.f_hz, 1e-6);
     const double T_swing = swing_span / f_hz;
-    const double chain = (1.0 / swing_span) * f_hz;
-
-    const double wz = body.angular_radps.z;
-    const double v_planar = std::hypot(body.linear_mps.x, body.linear_mps.y);
-    const double w_norm = vecNorm(body.angular_radps);
+    const double wz = nominal_body.angular_radps.z;
+    const double v_planar = std::hypot(nominal_body.linear_mps.x, nominal_body.linear_mps.y);
+    const double w_norm = vecNorm(nominal_body.angular_radps);
     const double vel_scale =
         std::clamp(0.40 + 0.92 * (v_planar / kVRefMps) + 0.38 * (w_norm / kWRefRadps), 0.48, 1.55);
     const double step_len = std::max(in.step_length_m * vel_scale, 0.0);
-    const double swing_h = std::max(in.swing_height_m * vel_scale, 0.0);
-
-    const double p0x = in.stance_end.x;
-    const double p0y = in.stance_end.y;
 
     double stride_x = 0.0;
     double stride_y = 0.0;
@@ -101,23 +89,60 @@ void planSwingFoot(const BodyVelocityCommand& body, const SwingFootInputs& in, V
              &stride_x,
              &stride_y);
 
-    const double capture_x = kRaibertCaptureGain * body.linear_mps.x * T_swing;
-    const double capture_y = kRaibertCaptureGain * body.linear_mps.y * T_swing;
-    const double accel_x = kAccelCaptureGain * in.cmd_accel_body_x_mps2 * T_swing * T_swing;
-    const double accel_y = kAccelCaptureGain * in.cmd_accel_body_y_mps2 * T_swing * T_swing;
+    out.nominal_body = Vec3{in.stance_end.x + stride_x, in.stance_end.y + stride_y, in.stance_end.z};
 
-    const double horizon = T_swing + std::max(0.0, in.stance_lookahead_s);
-    Vec3 twist_extra = twistIntegratedFootholdDeltaXY(body, in.stance_end, horizon);
-    twist_extra = twist_extra + stabilityFootholdBiasXY(in.static_stability_margin_m, in.stance_end);
-    twist_extra = clampFootholdExtraXY(twist_extra, 0.58 * step_len);
+    Vec3 measured_capture{};
+    if (est.valid && est.has_body_twist_state) {
+        // Use a single planar capture channel driven by measured body motion. Roll/pitch are
+        // intentionally excluded here so the foothold correction does not double-count posture
+        // compensation that is already handled in pose / stance shaping.
+        BodyTwist measured{};
+        measured.linear_mps = est.body_twist_state.body_trans_mps.raw();
+        measured.angular_radps = est.body_twist_state.twist_vel_radps.raw();
+        measured.linear_mps.z = 0.0;
+        measured.angular_radps.x = 0.0;
+        measured.angular_radps.y = 0.0;
+        const double horizon = T_swing + std::max(0.0, in.stance_lookahead_s);
+        measured_capture = twistIntegratedFootholdDeltaXY(measured, in.stance_end, horizon);
+    }
+    measured_capture = measured_capture + stabilityFootholdBiasXY(in.static_stability_margin_m, in.stance_end);
+    out.capture_raw_body = measured_capture;
+    out.capture_limit_m = std::clamp(kCaptureLimitScale * step_len, kCaptureLimitMinM, kCaptureLimitMaxM);
+    out.capture_body = clampFootholdExtraXY(out.capture_raw_body, out.capture_limit_m);
+    out.final_body = out.nominal_body + out.capture_body;
+    return out;
+}
 
-    const double p3x = p0x + stride_x + capture_x + accel_x + twist_extra.x;
-    const double p3y = p0y + stride_y + capture_y + accel_y + twist_extra.y;
+void planStanceFoot(const StanceFootInputs& in, Vec3& pos_body, Vec3& vel_body) {
+    // Integrate v_foot_body = twist-field stance velocity so the contact stays world-fixed (stage 4).
+    const double f = std::max(in.f_hz, 1e-6);
+    const double phi = clamp01(in.phase);
+    pos_body = in.anchor + in.v_foot_body * (phi / f);
+    vel_body = in.v_foot_body;
+}
+
+void planSwingFoot(const RobotState& est, const BodyTwist& nominal_body, const SwingFootInputs& in, Vec3& pos_body, Vec3& vel_body) {
+    const double tau = clamp01(in.tau01);
+    const double swing_span = std::max(in.swing_span, 1e-6);
+    const double f_hz = std::max(in.f_hz, 1e-6);
+    const double T_swing = swing_span / f_hz;
+    const double chain = (1.0 / swing_span) * f_hz;
+    const double v_planar = std::hypot(nominal_body.linear_mps.x, nominal_body.linear_mps.y);
+    const double w_norm = vecNorm(nominal_body.angular_radps);
+    const double vel_scale =
+        std::clamp(0.40 + 0.92 * (v_planar / kVRefMps) + 0.38 * (w_norm / kWRefRadps), 0.48, 1.55);
+
+    const SwingFootPlanDecomposition foothold = computeSwingFootPlacement(est, nominal_body, in);
+    const double swing_h = std::max(in.swing_height_m * vel_scale, 0.0);
+    const double p0x = in.stance_end.x;
+    const double p0y = in.stance_end.y;
+    const double p3x = foothold.final_body.x;
+    const double p3y = foothold.final_body.y;
 
     const double m0x = in.v_liftoff_body.x * T_swing;
     const double m0y = in.v_liftoff_body.y * T_swing;
 
-    const Vec3 v_touch = supportFootVelocityAt(Vec3{p3x, p3y, in.anchor.z}, body);
+    const Vec3 v_touch = supportFootVelocityAt(Vec3{p3x, p3y, in.anchor.z}, nominal_body);
     double m1x = v_touch.x * T_swing;
     double m1y = v_touch.y * T_swing;
     const double stride_mag = std::hypot(p3x - p0x, p3y - p0y);

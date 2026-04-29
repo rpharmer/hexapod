@@ -23,6 +23,8 @@ inline constexpr int kDefaultTelemetryPublishPeriodMs = 50;
 inline constexpr int kDefaultTelemetryGeometryRefreshPeriodMs = 2000;
 inline constexpr int kDefaultTelemetryUdpPort = 9870;
 inline constexpr AngleRad kDefaultMaxTiltRad{0.70};
+inline constexpr double kDefaultRapidBodyRateRadps{0.0};
+inline constexpr int kDefaultRapidBodyRateMaxContacts{2};
 inline constexpr DurationUs kDefaultCommandTimeoutUs{300000};
 inline constexpr DurationUs kDefaultEstimatorMaxAgeUs{300000};
 inline constexpr DurationUs kDefaultIntentMaxAgeUs{300000};
@@ -40,9 +42,33 @@ inline constexpr float kDefaultMinBusVoltageV{10.5f};
 inline constexpr float kDefaultMaxBusCurrentA{25.0f};
 inline constexpr int kDefaultMinFootContacts{0};
 inline constexpr int kDefaultMaxFootContacts{kNumLegs};
+inline constexpr double kDefaultBodyHeightCollapseMarginM{0.0};
+inline constexpr int kDefaultBodyHeightCollapseMaxContacts{3};
 inline constexpr double kDefaultNavBodyFrameIntegralKiFwdPerS{0.0};
 inline constexpr double kDefaultNavBodyFrameIntegralKiLatPerS{0.0};
 inline constexpr double kDefaultNavBodyFrameIntegralAbsCapMetersSeconds{0.0};
+inline constexpr double kDefaultGovernorLowSpeedPlanarCutoffMps{0.12};
+inline constexpr double kDefaultGovernorLowSpeedYawCutoffRadps{0.25};
+inline constexpr double kDefaultGovernorStartupSupportMarginM{0.020};
+inline constexpr double kDefaultGovernorSupportMarginSoftM{0.015};
+inline constexpr double kDefaultGovernorSupportMarginHardM{-0.005};
+inline constexpr double kDefaultGovernorTiltSoftRad{0.12};
+inline constexpr double kDefaultGovernorTiltHardRad{0.32};
+inline constexpr double kDefaultGovernorBodyRateSoftRadps{0.55};
+inline constexpr double kDefaultGovernorBodyRateHardRadps{1.20};
+inline constexpr double kDefaultGovernorFusionTrustSoft{0.82};
+inline constexpr double kDefaultGovernorFusionTrustHard{0.45};
+inline constexpr double kDefaultGovernorContactMismatchSoft{0.18};
+inline constexpr double kDefaultGovernorContactMismatchHard{0.40};
+inline constexpr double kDefaultGovernorCommandAccelSoftMps2{0.45};
+inline constexpr double kDefaultGovernorCommandAccelHardMps2{1.20};
+inline constexpr double kDefaultGovernorLowSpeedMinScale{0.80};
+inline constexpr double kDefaultGovernorActiveMinScale{0.35};
+inline constexpr double kDefaultGovernorLowSpeedCadenceMinScale{0.92};
+inline constexpr double kDefaultGovernorActiveCadenceMinScale{0.72};
+inline constexpr double kDefaultGovernorBodyHeightSquatMaxM{0.020};
+inline constexpr double kDefaultGovernorBodyHeightSquatSeverityThreshold{0.40};
+inline constexpr double kDefaultGovernorSwingFloorBoostM{0.010};
 
 inline constexpr double kDefaultFootTerrainSwingMarginM{0.018};
 inline constexpr double kDefaultFootTerrainSwingMaxLiftM{0.040};
@@ -81,11 +107,17 @@ struct LoopTimingConfig {
 
 struct SafetyConfig {
     AngleRad max_tilt_rad{kDefaultMaxTiltRad};
+    /** Pre-fall trigger: body roll/pitch rate above this while walking and support is sparse. */
+    double rapid_body_rate_radps{kDefaultRapidBodyRateRadps};
+    int rapid_body_rate_max_contacts{kDefaultRapidBodyRateMaxContacts};
     DurationUs command_timeout_us{kDefaultCommandTimeoutUs};
     float min_bus_voltage_v{kDefaultMinBusVoltageV};
     float max_bus_current_a{kDefaultMaxBusCurrentA};
     int min_foot_contacts{kDefaultMinFootContacts};
     int max_foot_contacts{kDefaultMaxFootContacts};
+    /** Pre-fall trigger: body height loss beyond this margin while walking and support is sparse. */
+    double body_height_collapse_margin_m{kDefaultBodyHeightCollapseMarginM};
+    int body_height_collapse_max_contacts{kDefaultBodyHeightCollapseMaxContacts};
 };
 
 struct GaitConfig {
@@ -98,7 +130,7 @@ struct GaitConfig {
     double nominal_yaw_rate_radps{kDefaultGaitNominalYawRateRadps};
     /** Effective radius (m) for converting yaw rate into a tangential speed scale. */
     double turn_nominal_radius_m{kDefaultGaitTurnNominalRadiusM};
-    /** Blend factor [0,1] for measured body twist vs motion intent in `bodyVelocityForFootPlanning`. */
+    /** Blend factor [0,1] for measured body yaw vs motion intent in `bodyVelocityForFootPlanning`. */
     double foot_estimator_blend{kDefaultFootEstimatorBlend};
     /** Multiplier on preset swing height after velocity scaling (clamped to a safe range). */
     double swing_height_scale{kDefaultSwingHeightScale};
@@ -167,6 +199,31 @@ struct NavBridgeConfig {
     double body_frame_integral_abs_cap_m_s{kDefaultNavBodyFrameIntegralAbsCapMetersSeconds};
 };
 
+struct CommandGovernorConfig {
+    double low_speed_planar_cutoff_mps{kDefaultGovernorLowSpeedPlanarCutoffMps};
+    double low_speed_yaw_cutoff_radps{kDefaultGovernorLowSpeedYawCutoffRadps};
+    double startup_support_margin_m{kDefaultGovernorStartupSupportMarginM};
+    double support_margin_soft_m{kDefaultGovernorSupportMarginSoftM};
+    double support_margin_hard_m{kDefaultGovernorSupportMarginHardM};
+    double tilt_soft_rad{kDefaultGovernorTiltSoftRad};
+    double tilt_hard_rad{kDefaultGovernorTiltHardRad};
+    double body_rate_soft_radps{kDefaultGovernorBodyRateSoftRadps};
+    double body_rate_hard_radps{kDefaultGovernorBodyRateHardRadps};
+    double fusion_trust_soft{kDefaultGovernorFusionTrustSoft};
+    double fusion_trust_hard{kDefaultGovernorFusionTrustHard};
+    double contact_mismatch_soft{kDefaultGovernorContactMismatchSoft};
+    double contact_mismatch_hard{kDefaultGovernorContactMismatchHard};
+    double command_accel_soft_mps2{kDefaultGovernorCommandAccelSoftMps2};
+    double command_accel_hard_mps2{kDefaultGovernorCommandAccelHardMps2};
+    double low_speed_min_scale{kDefaultGovernorLowSpeedMinScale};
+    double active_min_scale{kDefaultGovernorActiveMinScale};
+    double low_speed_cadence_min_scale{kDefaultGovernorLowSpeedCadenceMinScale};
+    double active_cadence_min_scale{kDefaultGovernorActiveCadenceMinScale};
+    double body_height_squat_max_m{kDefaultGovernorBodyHeightSquatMaxM};
+    double body_height_squat_severity_threshold{kDefaultGovernorBodyHeightSquatSeverityThreshold};
+    double swing_floor_boost_m{kDefaultGovernorSwingFloorBoostM};
+};
+
 /** Tuning for LiDAR map–driven swing clearance, stance height bias, and late-swing XY nudges. */
 struct FootTerrainConfig {
     bool enable_stance_plane_bias{true};
@@ -213,6 +270,7 @@ struct ControlConfig {
     TelemetryConfig telemetry{};
     ReplayLogConfig replay_log{};
     NavBridgeConfig nav_bridge{};
+    CommandGovernorConfig command_governor{};
     FootTerrainConfig foot_terrain{};
     FusionConfig fusion{};
     LocalMapConfig local_map{};

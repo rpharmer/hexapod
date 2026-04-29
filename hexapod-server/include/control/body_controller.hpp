@@ -25,3 +25,6 @@ private:
     double foot_estimator_blend_{control_config::kDefaultFootEstimatorBlend};
     control_config::FootTerrainConfig foot_terrain_cfg_{};
 };
+
+/** Nominal stance placement for a given body height and leg geometry. */
+std::array<Vec3, kNumLegs> computeNominalStance(const HexapodGeometry& geometry, double body_height_m);

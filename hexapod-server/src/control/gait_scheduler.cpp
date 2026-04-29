@@ -29,7 +29,8 @@ void GaitScheduler::reset() {
 GaitState GaitScheduler::update(const RobotState&,
                                 const MotionIntent& intent,
                                 const SafetyState& safety,
-                                const BodyTwist& cmd_twist) {
+                                const BodyTwist& cmd_twist,
+                                const CommandGovernorState& governor) {
     GaitState out{};
     out.timestamp_us = now_us();
 
@@ -119,11 +120,13 @@ GaitState GaitScheduler::update(const RobotState&,
     last_blended_ = blended;
     have_last_blended_ = true;
 
-    const double step_hz = std::max(blended.step_frequency_hz, 1e-6);
+    const double governor_cadence_scale = std::clamp(governor.cadence_scale, 0.25, 1.0);
+    const double governor_swing_floor_m = std::max(0.0, governor.swing_height_floor_m);
+    const double step_hz = std::max(blended.step_frequency_hz * governor_cadence_scale, 1e-6);
     out.stride_phase_rate_hz = FrequencyHz{step_hz};
     out.duty_factor = blended.duty_factor;
     out.step_length_m = blended.step_length_m;
-    out.swing_height_m = blended.swing_height_m;
+    out.swing_height_m = std::max(blended.swing_height_m, governor_swing_floor_m);
     out.swing_time_ease_01 = blended.swing_time_ease;
     out.stance_duration_s = blended.stance_duration_s;
     out.swing_duration_s = blended.swing_duration_s;

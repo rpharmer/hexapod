@@ -1,6 +1,29 @@
 #include "safety_supervisor.hpp"
 
+#include "motion_intent_utils.hpp"
+
 #include <cmath>
+
+namespace {
+
+double planarBodyRateRadps(const RobotState& est) {
+    if (!est.has_imu || !est.imu.valid) {
+        return 0.0;
+    }
+    return std::hypot(est.imu.gyro_radps.x, est.imu.gyro_radps.y);
+}
+
+double commandedPlanarSpeedMps(const MotionIntent& intent) {
+    const PlanarMotionCommand cmd = planarMotionCommand(intent);
+    return std::hypot(cmd.vx_mps, cmd.vy_mps);
+}
+
+double commandedYawRateRadps(const MotionIntent& intent) {
+    const PlanarMotionCommand cmd = planarMotionCommand(intent);
+    return std::abs(cmd.yaw_rate_radps);
+}
+
+} // namespace
 
 SafetySupervisor::SafetySupervisor(control_config::SafetyConfig config)
     : config_(config) {}
@@ -39,10 +62,10 @@ bool SafetySupervisor::canAttemptClear(const MotionIntent& intent,
 SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
     const RobotState& raw,
     const RobotState& est,
-    const MotionIntent&,
+    const MotionIntent& intent,
     const FreshnessInputs& freshness,
     int contact_count) const {
-    const std::array<FaultRule, 6> rules{{
+    const std::array<FaultRule, 8> rules{{
         FaultRule{
             .is_triggered = [&](void) {
                 return !freshness.intent_valid;
@@ -85,6 +108,58 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
             .is_triggered = [&](void) {
                 return std::abs(est.body_twist_state.twist_pos_rad.x) > config_.max_tilt_rad.value ||
                        std::abs(est.body_twist_state.twist_pos_rad.y) > config_.max_tilt_rad.value;
+            },
+            .fault = FaultCode::TIP_OVER,
+            .torque_cut = true,
+        },
+        FaultRule{
+            .is_triggered = [&](void) {
+                if (config_.rapid_body_rate_radps <= 0.0) {
+                    return false;
+                }
+                if (intent.requested_mode != RobotMode::WALK) {
+                    return false;
+                }
+                const double planar_cmd_mps = commandedPlanarSpeedMps(intent);
+                const double yaw_cmd_radps = commandedYawRateRadps(intent);
+                if (planar_cmd_mps < 0.18 && yaw_cmd_radps < 0.35) {
+                    return false;
+                }
+                if (!est.has_body_twist_state || !est.has_imu || !est.imu.valid) {
+                    return false;
+                }
+                if (contact_count > config_.rapid_body_rate_max_contacts) {
+                    return false;
+                }
+                const double body_rate_radps = planarBodyRateRadps(est);
+                return std::isfinite(body_rate_radps) && body_rate_radps > config_.rapid_body_rate_radps;
+            },
+            .fault = FaultCode::TIP_OVER,
+            .torque_cut = true,
+        },
+        FaultRule{
+            .is_triggered = [&](void) {
+                if (config_.body_height_collapse_margin_m <= 0.0) {
+                    return false;
+                }
+                if (intent.requested_mode != RobotMode::WALK) {
+                    return false;
+                }
+                if (!est.has_body_twist_state) {
+                    return false;
+                }
+                const double commanded_body_height_m = intent.twist.body_trans_m.z;
+                const double measured_body_height_m = est.body_twist_state.body_trans_m.z;
+                if (!std::isfinite(commanded_body_height_m) || !std::isfinite(measured_body_height_m)) {
+                    return false;
+                }
+                if (commanded_body_height_m <= 0.0 || measured_body_height_m <= 0.0) {
+                    return false;
+                }
+                if (contact_count > config_.body_height_collapse_max_contacts) {
+                    return false;
+                }
+                return (commanded_body_height_m - measured_body_height_m) > config_.body_height_collapse_margin_m;
             },
             .fault = FaultCode::TIP_OVER,
             .torque_cut = true,

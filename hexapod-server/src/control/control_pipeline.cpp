@@ -7,14 +7,18 @@ ControlPipeline::ControlPipeline(control_config::GaitConfig gait_config,
                                  control_config::FootTerrainConfig foot_terrain_config,
                                  runtime_resource_monitoring::Profiler* profiler)
     : profiler_(profiler),
+      command_governor_(),
       gait_(gait_config),
       loco_cmd_(loco_config),
       body_(gait_config, foot_terrain_config) {}
 
 void ControlPipeline::reset() {
+    command_governor_.reset();
     gait_.reset();
     loco_cmd_.reset();
     locomotion_stability_.reset();
+    last_gait_state_ = GaitState{};
+    have_last_gait_state_ = false;
 }
 
 PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
@@ -32,7 +36,11 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
         active_mode = RobotMode::FAULT;
     }
 
-    const PlanarMotionCommand planar = planarMotionCommand(intent);
+    MotionIntent governed_intent = intent;
+    const CommandGovernorState governor =
+        command_governor_.apply(estimated, governed_intent, safety_state, last_gait_state_);
+
+    const PlanarMotionCommand planar = planarMotionCommand(governed_intent);
     TimePointUs command_clock = intent.timestamp_us;
     if (command_clock.isZero()) {
         command_clock = estimated.timestamp_us;
@@ -42,7 +50,7 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
         const auto loco_scope =
             profiler_ ? profiler_->scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::ControlPipelineLocoCommand))
                       : runtime_resource_monitoring::Profiler::Scope{};
-        cmd_twist = loco_cmd_.update(intent, planar, command_clock);
+        cmd_twist = loco_cmd_.update(governed_intent, planar, command_clock);
         (void)loco_scope;
     }
 
@@ -51,7 +59,7 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
         const auto gait_scope =
             profiler_ ? profiler_->scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::ControlPipelineGait))
                       : runtime_resource_monitoring::Profiler::Scope{};
-        gait_state = gait_.update(estimated, intent, safety_state, cmd_twist);
+        gait_state = gait_.update(estimated, governed_intent, safety_state, cmd_twist, governor);
         (void)gait_scope;
     }
 
@@ -59,7 +67,7 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
         const auto stability_scope =
             profiler_ ? profiler_->scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::ControlPipelineStability))
                       : runtime_resource_monitoring::Profiler::Scope{};
-        locomotion_stability_.apply(intent, gait_state);
+        locomotion_stability_.apply(estimated, governed_intent, gait_state);
         (void)stability_scope;
     }
 
@@ -68,7 +76,7 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
             profiler_ ? profiler_->scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::ControlPipelineBody))
                       : runtime_resource_monitoring::Profiler::Scope{};
         const LegTargets targets =
-            body_.update(estimated, intent, gait_state, safety_state, cmd_twist, terrain_snapshot);
+            body_.update(estimated, governed_intent, gait_state, safety_state, cmd_twist, terrain_snapshot);
         (void)body_scope;
         return targets;
     }();
@@ -95,5 +103,8 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     result.joint_targets = joint_targets;
     result.status = status;
     result.gait_state = gait_state;
+    result.command_governor = governor;
+    last_gait_state_ = gait_state;
+    have_last_gait_state_ = true;
     return result;
 }

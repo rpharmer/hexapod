@@ -25,8 +25,8 @@ struct StanceFootInputs {
 void planStanceFoot(const StanceFootInputs& in, Vec3& pos_body, Vec3& vel_body);
 
 // Swing: planar cubic Bezier + optional time warp (`swing_trajectory`), vertical profile on same
-// warped phase; touchdown XY is assembled first (stride + capture + twist foothold), then this
-// path decides how to move between liftoff and that foothold.
+// warped phase; touchdown XY is assembled as intent-only nominal stride plus one bounded capture
+// correction, then this path decides how to move between liftoff and that foothold.
 struct SwingFootInputs {
     Vec3 anchor{};
     Vec3 stance_end{};
@@ -39,7 +39,7 @@ struct SwingFootInputs {
     double swing_height_m{0.0};
     double stride_ux{1.0};
     double stride_uy{0.0};
-    /** Body XY commanded acceleration (m/s²) for touchdown shift. */
+    /** Reserved feedforward command acceleration fields; swing capture no longer consumes them. */
     double cmd_accel_body_x_mps2{0.0};
     double cmd_accel_body_y_mps2{0.0};
     /** Extra horizon beyond `T_swing` for twist-based foothold prediction (e.g. fraction of stance). */
@@ -50,4 +50,26 @@ struct SwingFootInputs {
     double swing_time_ease_01{1.0};
 };
 
-void planSwingFoot(const BodyVelocityCommand& body, const SwingFootInputs& in, Vec3& pos_body, Vec3& vel_body);
+/**
+ * Decomposed swing foothold placement.
+ * `nominal_body` is the intent-only stride target; `capture_raw_body` is the single corrective
+ * channel before bounding; `capture_body` is the bounded correction actually applied.
+ */
+struct SwingFootPlanDecomposition {
+    Vec3 nominal_body{};
+    Vec3 capture_raw_body{};
+    Vec3 capture_body{};
+    Vec3 final_body{};
+    double capture_limit_m{0.0};
+};
+
+/** Compute the nominal/capture swing foothold decomposition for tests and diagnostics. */
+SwingFootPlanDecomposition computeSwingFootPlacement(const RobotState& est,
+                                                     const BodyTwist& nominal_body,
+                                                     const SwingFootInputs& in);
+
+void planSwingFoot(const RobotState& est,
+                   const BodyTwist& nominal_body,
+                   const SwingFootInputs& in,
+                   Vec3& pos_body,
+                   Vec3& vel_body);

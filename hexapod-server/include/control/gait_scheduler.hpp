@@ -1,6 +1,7 @@
 #pragma once
 
 #include "control_config.hpp"
+#include "command_governor.hpp"
 #include "gait_params.hpp"
 #include "twist_field.hpp"
 #include "types.hpp"
@@ -18,7 +19,8 @@ public:
     GaitState update(const RobotState& est,
                       const MotionIntent& intent,
                       const SafetyState& safety,
-                      const BodyTwist& cmd_twist);
+                      const BodyTwist& cmd_twist,
+                      const CommandGovernorState& governor = CommandGovernorState{});
 
 private:
     control_config::GaitConfig config_{};

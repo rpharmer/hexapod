@@ -110,7 +110,7 @@ bool testStabilityStandClears() {
     gait.static_stability_margin_m = 0.05;
     gait.stability_hold_stance.fill(true);
 
-    stability.apply(intent, gait);
+    stability.apply(RobotState{}, intent, gait);
 
     if (!expect(gait.static_stability_margin_m == 0.0, "STAND should zero reported static margin")) {
         return false;
@@ -128,25 +128,65 @@ bool testStabilityWalkCenteredPositiveMargin() {
     LocomotionStability stability{};
     MotionIntent intent = walkIntent(0.12, 0.0, 0.0);
     GaitState gait = allStanceWalkGait(0.25, FrequencyHz{1.0});
-    stability.apply(intent, gait);
+    stability.apply(RobotState{}, intent, gait);
     return expect(gait.static_stability_margin_m > 0.002,
                   "centered COM with all feet in stance should yield positive static margin");
+}
+
+bool testStabilitySlowGaitIsNotMoreConservativeByDefault() {
+    LocomotionStability stability{};
+    MotionIntent intent = walkIntent(0.12, 0.0, 0.0);
+
+    GaitState fast_gait = allStanceWalkGait(0.25, FrequencyHz{1.0});
+    GaitState slow_gait = allStanceWalkGait(0.25, FrequencyHz{0.5});
+    stability.apply(RobotState{}, intent, fast_gait);
+    stability.apply(RobotState{}, intent, slow_gait);
+
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        const double fast_clearance = fast_gait.support_liftoff_clearance_m[static_cast<std::size_t>(leg)];
+        const double slow_clearance = slow_gait.support_liftoff_clearance_m[static_cast<std::size_t>(leg)];
+        if (!expect(slow_clearance > fast_clearance,
+                    "slow gait should be at least as permissive as nominal gait by default")) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool testStabilityComOutsideHullNegativeMargin() {
     LocomotionStability stability{};
     MotionIntent intent = walkIntent(0.12, 5.0, 0.0);
     GaitState gait = allStanceWalkGait(0.25, FrequencyHz{1.0});
-    stability.apply(intent, gait);
+    stability.apply(RobotState{}, intent, gait);
     return expect(gait.static_stability_margin_m < 0.0,
                   "large body XY offset should push projected COM outside nominal support");
+}
+
+bool testStabilityHighTiltForcesHold() {
+    LocomotionStability stability{};
+    MotionIntent intent = walkIntent(0.12, 0.0, 0.0);
+    RobotState est{};
+    est.valid = true;
+    est.has_body_twist_state = true;
+    est.body_twist_state.twist_pos_rad = EulerAnglesRad3{0.4, 0.3, 0.0};
+
+    GaitState gait = allStanceWalkGait(0.25, FrequencyHz{1.0});
+    stability.apply(est, intent, gait);
+
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        if (!expect(gait.stability_hold_stance[static_cast<std::size_t>(leg)],
+                     "large measured tilt should force all legs to hold stance")) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool testStabilitySupportDiagnosticsExposeAsymmetry() {
     LocomotionStability stability{};
     MotionIntent intent = walkIntent(0.12, 0.05, 0.02);
     GaitState gait = allStanceWalkGait(0.25, FrequencyHz{1.0});
-    stability.apply(intent, gait);
+    stability.apply(RobotState{}, intent, gait);
 
     const auto [min_it, max_it] = std::minmax_element(gait.support_liftoff_clearance_m.begin(),
                                                       gait.support_liftoff_clearance_m.end());
@@ -158,6 +198,62 @@ bool testStabilitySupportDiagnosticsExposeAsymmetry() {
                   "per-leg support diagnostics should show asymmetry when the body shifts");
 }
 
+bool testStabilityFastBodyRateThrottlesStride() {
+    LocomotionStability stability{};
+    MotionIntent intent = walkIntent(0.12, 0.0, 0.0);
+    intent.cmd_vx_mps = LinearRateMps{0.30};
+    intent.speed_mps = LinearRateMps{0.30};
+
+    RobotState calm{};
+    calm.valid = true;
+    calm.has_imu = true;
+    calm.imu.valid = true;
+    calm.imu.gyro_radps = AngularVelocityRadPerSec3{0.1, 0.1, 0.0};
+
+    RobotState fast = calm;
+    fast.imu.gyro_radps = AngularVelocityRadPerSec3{0.95, 0.95, 0.0};
+
+    GaitState calm_gait = allStanceWalkGait(0.25, FrequencyHz{1.0});
+    GaitState fast_gait = allStanceWalkGait(0.25, FrequencyHz{1.0});
+    stability.apply(calm, intent, calm_gait);
+    stability.apply(fast, intent, fast_gait);
+
+    if (!expect(fast_gait.step_length_m < calm_gait.step_length_m,
+                "high body rate should reduce commanded stride length")) {
+        return false;
+    }
+    return expect(fast_gait.stride_phase_rate_hz.value <= calm_gait.stride_phase_rate_hz.value,
+                  "high body rate should not increase stride cadence");
+}
+
+bool testStabilitySlowCommandDoesNotThrottleStride() {
+    LocomotionStability stability{};
+    MotionIntent intent = walkIntent(0.12, 0.0, 0.0);
+    intent.cmd_vx_mps = LinearRateMps{0.06};
+    intent.speed_mps = LinearRateMps{0.06};
+
+    RobotState calm{};
+    calm.valid = true;
+    calm.has_imu = true;
+    calm.imu.valid = true;
+    calm.imu.gyro_radps = AngularVelocityRadPerSec3{0.1, 0.1, 0.0};
+
+    RobotState fast = calm;
+    fast.imu.gyro_radps = AngularVelocityRadPerSec3{0.95, 0.95, 0.0};
+
+    GaitState calm_gait = allStanceWalkGait(0.25, FrequencyHz{1.0});
+    GaitState fast_gait = allStanceWalkGait(0.25, FrequencyHz{1.0});
+    stability.apply(calm, intent, calm_gait);
+    stability.apply(fast, intent, fast_gait);
+
+    if (!expect(nearlyEqual(fast_gait.step_length_m, calm_gait.step_length_m, 1e-9),
+                "low-speed command should not get body-rate stride throttling")) {
+        return false;
+    }
+    return expect(nearlyEqual(fast_gait.stride_phase_rate_hz.value, calm_gait.stride_phase_rate_hz.value, 1e-9),
+                  "low-speed command should not change stride cadence under body-rate throttling");
+}
+
 bool testStabilityStrictConfigLatchesNearLiftoff() {
     LocomotionStabilityConfig cfg{};
     cfg.min_margin_required_m = 50.0;
@@ -167,7 +263,7 @@ bool testStabilityStrictConfigLatchesNearLiftoff() {
 
     MotionIntent intent = walkIntent(0.12, 0.0, 0.0);
     GaitState gait = allStanceWalkGait(0.48, FrequencyHz{1.0});
-    stability.apply(intent, gait);
+    stability.apply(RobotState{}, intent, gait);
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
         if (!expect(gait.stability_hold_stance[static_cast<std::size_t>(leg)],
@@ -191,11 +287,11 @@ bool testStabilityResetClearsLatch() {
 
     MotionIntent intent = walkIntent(0.12, 0.0, 0.0);
     GaitState gait = allStanceWalkGait(0.48, FrequencyHz{1.0});
-    stability.apply(intent, gait);
+    stability.apply(RobotState{}, intent, gait);
 
     stability.reset();
     gait = allStanceWalkGait(0.20, FrequencyHz{1.0});
-    stability.apply(intent, gait);
+    stability.apply(RobotState{}, intent, gait);
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
         if (!expect(gait.stability_hold_stance[static_cast<std::size_t>(leg)],
@@ -213,7 +309,11 @@ int main() {
         !testBodyPoseDefaultHeight() || !testBodyPoseYawLeanRoll() ||
         !testBodyPoseSlowStrideBoostsLean() ||
         !testStabilityStandClears() || !testStabilityWalkCenteredPositiveMargin() ||
+        !testStabilitySlowGaitIsNotMoreConservativeByDefault() ||
         !testStabilityComOutsideHullNegativeMargin() || !testStabilitySupportDiagnosticsExposeAsymmetry() ||
+        !testStabilityFastBodyRateThrottlesStride() ||
+        !testStabilitySlowCommandDoesNotThrottleStride() ||
+        !testStabilityHighTiltForcesHold() ||
         !testStabilityStrictConfigLatchesNearLiftoff() ||
         !testStabilityResetClearsLatch()) {
         return EXIT_FAILURE;

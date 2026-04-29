@@ -29,6 +29,7 @@ struct GaitPresetTemplate {
 };
 
 GaitPresetTemplate gaitPresetTemplate(GaitType gait);
+double gaitPresetSwingHeightFloor(GaitType gait);
 
 UnifiedGaitDescription buildTargetUnifiedGait(GaitType gait,
                                               double vx_mps,
