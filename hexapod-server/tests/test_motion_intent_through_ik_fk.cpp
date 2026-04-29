@@ -34,6 +34,125 @@ bool finiteJointTargets(const JointTargets& targets) {
     return true;
 }
 
+struct IkCandidate {
+    LegState joint{};
+    double knee_height{0.0};
+};
+
+bool jointStatesClose(const LegState& lhs, const LegState& rhs, double eps) {
+    for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+        if (std::abs(lhs.joint_state[joint].pos_rad.value - rhs.joint_state[joint].pos_rad.value) > eps) {
+            return false;
+        }
+    }
+    return true;
+}
+
+IkCandidate buildIkCandidate(double q1,
+                             double Dclamped,
+                             double s3,
+                             double rhoSolved,
+                             double zSolved,
+                             const LegGeometry& leg)
+{
+    IkCandidate candidate{};
+    const double q3 = std::atan2(s3, Dclamped);
+    candidate.joint.joint_state[0].pos_rad = AngleRad{q1};
+    candidate.joint.joint_state[1].pos_rad = AngleRad{
+        std::atan2(zSolved, rhoSolved) -
+        std::atan2(leg.tibiaLength.value * std::sin(q3),
+                   leg.femurLength.value + leg.tibiaLength.value * std::cos(q3))};
+    candidate.joint.joint_state[2].pos_rad = AngleRad{q3};
+    candidate.knee_height = leg.femurLength.value * std::sin(candidate.joint.joint_state[1].pos_rad.value);
+    return candidate;
+}
+
+std::array<IkCandidate, 2> computeIkCandidates(const FootTarget& foot,
+                                               const LegGeometry& leg)
+{
+    const Vec3 relativeToCoxa = foot.pos_body_m - leg.bodyCoxaOffset;
+    const Mat3 R_leg = Mat3::rotZ(-leg.mountAngle.value);
+    const Vec3 footLeg = R_leg * relativeToCoxa;
+
+    const double x = footLeg.x;
+    const double y = footLeg.y;
+    const double z = footLeg.z;
+    const double q1 = std::atan2(y, x);
+    const double r = std::hypot(x, y);
+    const double rho = r - leg.coxaLength.value;
+    const double d = std::hypot(rho, z);
+    const double minReach = std::fabs(leg.femurLength.value - leg.tibiaLength.value);
+    const double maxReach = leg.femurLength.value + leg.tibiaLength.value;
+    const double clampedD = std::clamp(d, minReach, maxReach);
+    const double reachScale = (d > 1e-9) ? (clampedD / d) : 1.0;
+    const double rhoSolved = rho * reachScale;
+    const double zSolved = z * reachScale;
+    const double D =
+        (rhoSolved * rhoSolved + zSolved * zSolved - leg.femurLength.value * leg.femurLength.value -
+         leg.tibiaLength.value * leg.tibiaLength.value) /
+        (2.0 * leg.femurLength.value * leg.tibiaLength.value);
+    const double Dclamped = std::clamp(D, -1.0, 1.0);
+    const double s3abs = std::sqrt(std::max(0.0, 1.0 - Dclamped * Dclamped));
+
+    return {
+        buildIkCandidate(q1, Dclamped, -s3abs, rhoSolved, zSolved, leg),
+        buildIkCandidate(q1, Dclamped, +s3abs, rhoSolved, zSolved, leg),
+    };
+}
+
+const IkCandidate& chooseKneeUpCandidate(const std::array<IkCandidate, 2>& candidates) {
+    return (candidates[0].knee_height >= candidates[1].knee_height) ? candidates[0] : candidates[1];
+}
+
+bool ikTracksKneeUpBranch(const HexapodGeometry& geometry,
+                          LegIK& ik,
+                          LegFK& fk,
+                          const SafetyState& safety,
+                          const LegState& seed_joint)
+{
+    RobotState est{};
+    est.timestamp_us = now_us();
+
+    LegTargets body_targets{};
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        est.leg_states[leg] = geometry.legGeometry[leg].servo.toServoAngles(seed_joint);
+        body_targets.feet[leg] = fk.footInBodyFrame(seed_joint, geometry.legGeometry[leg]);
+    }
+
+    const JointTargets first = ik.solve(est, body_targets, safety);
+    const LegState first_joint = geometry.legGeometry[0].servo.toJointAngles(first.leg_states[0]);
+    const IkCandidate& expected_first =
+        chooseKneeUpCandidate(computeIkCandidates(body_targets.feet[0], geometry.legGeometry[0]));
+    if (!expect(jointStatesClose(first_joint, expected_first.joint, 1e-9),
+                "IK should choose the knee-up branch for the seed pose")) {
+        return false;
+    }
+
+    est.leg_states = first.leg_states;
+
+    LegTargets nudged_targets = body_targets;
+    nudged_targets.feet[0].pos_body_m.x += 0.002;
+    nudged_targets.feet[0].pos_body_m.y -= 0.001;
+
+    const JointTargets second = ik.solve(est, nudged_targets, safety);
+    const LegState second_joint = geometry.legGeometry[0].servo.toJointAngles(second.leg_states[0]);
+    const IkCandidate& expected_second =
+        chooseKneeUpCandidate(computeIkCandidates(nudged_targets.feet[0], geometry.legGeometry[0]));
+    if (!expect(jointStatesClose(second_joint, expected_second.joint, 1e-9),
+                "IK should keep the knee-up branch after a small foot move")) {
+        return false;
+    }
+
+    const double knee_delta =
+        std::abs(shortestAngleDeltaRad(first_joint.joint_state[2].pos_rad.value,
+                                       second_joint.joint_state[2].pos_rad.value));
+    if (!expect(knee_delta < 0.35, "IK should preserve the knee-up branch across a small foot move")) {
+        return false;
+    }
+
+    return true;
+}
+
 bool gaitSchedulerRespondsToWalkIntent() {
     GaitScheduler gait;
     RobotState est{};
@@ -86,6 +205,27 @@ bool bodyControllerUsesGaitState() {
 
     return expect(leg0_x != leg1_x, "stance and swing legs should get different x placement") &&
            expect(leg1_z > targets.feet[0].pos_body_m.z, "swing leg should receive swing height lift");
+}
+
+bool ikChoosesKneeUpBranch() {
+    const HexapodGeometry geometry = defaultHexapodGeometry();
+    LegIK ik(geometry);
+    LegFK fk;
+
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    safety.leg_enabled.fill(true);
+
+    LegState seed_negative{};
+    seed_negative.joint_state[0].pos_rad = AngleRad{0.15};
+    seed_negative.joint_state[1].pos_rad = AngleRad{-0.25};
+    seed_negative.joint_state[2].pos_rad = AngleRad{-0.85};
+
+    LegState seed_positive = seed_negative;
+    seed_positive.joint_state[2].pos_rad = AngleRad{0.85};
+
+    return ikTracksKneeUpBranch(geometry, ik, fk, safety, seed_negative) &&
+           ikTracksKneeUpBranch(geometry, ik, fk, safety, seed_positive);
 }
 
 bool ikFkChainTracksBodyTargets() {
@@ -194,6 +334,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!bodyControllerUsesGaitState()) {
+        return EXIT_FAILURE;
+    }
+    if (!ikChoosesKneeUpBranch()) {
         return EXIT_FAILURE;
     }
     if (!ikFkChainTracksBodyTargets()) {

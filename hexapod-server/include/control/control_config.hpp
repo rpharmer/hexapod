@@ -217,6 +217,7 @@ struct ControlConfig {
     FusionConfig fusion{};
     LocalMapConfig local_map{};
     LocalPlannerConfig local_planner{};
+    bool control_loop_trace_enabled{false};
 };
 
 ControlConfig fromParsedToml(const ParsedToml& config);

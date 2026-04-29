@@ -80,6 +80,8 @@ bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error)
       out.logFilePath = argv[++i];
     } else if (arg == "--console-only") {
       out.consoleOnlyLogging = true;
+    } else if (arg == "--trace-control-loop") {
+      out.traceControlLoop = true;
     } else if (arg == "--telemetry-enable") {
       out.telemetryEnabledOverride = true;
     } else if (arg == "--telemetry-disable") {

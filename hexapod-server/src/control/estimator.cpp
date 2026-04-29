@@ -1,8 +1,10 @@
 #include "estimator.hpp"
 
+#include <chrono>
 #include <cmath>
 
 #include "geometry_config.hpp"
+#include "math_types.hpp"
 #include "software_imu.hpp"
 
 namespace {
@@ -21,6 +23,16 @@ Vec3 computeFootInBodyFrame(const LegState& leg_state, const LegGeometry& leg_ge
     const Vec3 foot_leg_local{r * std::cos(q1), r * std::sin(q1), z_leg};
     const Vec3 foot_body_relative = Mat3::rotZ(leg_geometry.mountAngle.value) * foot_leg_local;
     return leg_geometry.bodyCoxaOffset + foot_body_relative;
+}
+
+LegState unwrapLegStateNear(const LegState& reference, const LegState& candidate) {
+    LegState out{};
+    for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+        const double ref = reference.joint_state[joint].pos_rad.value;
+        const double raw = candidate.joint_state[joint].pos_rad.value;
+        out.joint_state[joint].pos_rad = AngleRad{ref + shortestAngleDeltaRad(ref, raw)};
+    }
+    return out;
 }
 
 bool solveGroundPlane(const std::array<Vec3, kNumLegs>& points,
@@ -98,17 +110,36 @@ bool solveGroundPlane(const std::array<Vec3, kNumLegs>& points,
     return true;
 }
 
+double normalizedServoSign(const double sign) {
+    if (!std::isfinite(sign)) {
+        return 1.0;
+    }
+    return sign >= 0.0 ? 1.0 : -1.0;
+}
+
+double servoAngularRateFromMechanicalJointRate(const double mechanical_joint_rad_per_s,
+                                               const int joint_index,
+                                               const ServoCalibration& cal) {
+    const double s = joint_index == COXA ? normalizedServoSign(cal.coxaSign)
+                                         : joint_index == FEMUR ? normalizedServoSign(cal.femurSign)
+                                                                : normalizedServoSign(cal.tibiaSign);
+    return s * mechanical_joint_rad_per_s;
+}
+
 } // namespace
 
 void SimpleEstimator::configure(const control_config::FusionConfig& config) {
     fusion_.configure(config);
+    const auto hold_window_us = std::chrono::duration_cast<std::chrono::microseconds>(config.contact_hold_window);
+    contact_memory_window_us_ = static_cast<uint64_t>(std::max<int64_t>(0, hold_window_us.count()));
 }
 
 void SimpleEstimator::reset() {
     fusion_.reset();
     last_contact_points_body_m_.fill(Vec3{});
     last_contact_timestamps_.fill(TimePointUs{});
-    last_leg_states_.fill(LegState{});
+    last_continuous_leg_states_.fill(LegState{});
+    have_last_continuous_leg_state_.fill(false);
     last_leg_timestamp_ = TimePointUs{};
     last_twist_timestamp_ = TimePointUs{};
     last_twist_pos_rad_ = Vec3{};
@@ -128,34 +159,44 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
     est.timestamp_us = raw.timestamp_us;
     est.body_twist_state.body_trans_mps = Vec3{};
 
-    if (!last_leg_timestamp_.isZero()) {
-        const DurationUs dt_us = raw.timestamp_us - last_leg_timestamp_;
-        if (dt_us.value > 0) {
-            const double inv_dt_s = 1e6 / static_cast<double>(dt_us.value);
-            for (int leg = 0; leg < kNumLegs; ++leg) {
-                for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-                    const AngleRad current = raw.leg_states[leg].joint_state[joint].pos_rad;
-                    const AngleRad previous = last_leg_states_[leg].joint_state[joint].pos_rad;
-                    est.leg_states[leg].joint_state[joint].pos_rad = current;
-                    est.leg_states[leg].joint_state[joint].vel_radps =
-                        AngularRateRadPerSec{(current.value - previous.value) * inv_dt_s};
-                }
+    const HexapodGeometry& geometry = geometry_config::activeHexapodGeometry();
+
+    const bool have_dt = !last_leg_timestamp_.isZero() && raw.timestamp_us.value > last_leg_timestamp_.value;
+    const double inv_dt_s = have_dt
+                                ? 1e6 / static_cast<double>(raw.timestamp_us.value - last_leg_timestamp_.value)
+                                : 0.0;
+
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        const ServoCalibration& cal = geometry.legGeometry[leg].servo;
+        const LegState curr_joint = cal.toJointAngles(raw.leg_states[leg]);
+
+        LegState continuous_joint = curr_joint;
+        if (have_last_continuous_leg_state_[leg]) {
+            continuous_joint = unwrapLegStateNear(last_continuous_leg_states_[leg], curr_joint);
+        }
+
+        const LegState continuous_servo = cal.toServoAngles(continuous_joint);
+        est.leg_states[leg] = continuous_servo;
+
+        if (have_dt && have_last_continuous_leg_state_[leg]) {
+            const LegState& prev_continuous = last_continuous_leg_states_[leg];
+            for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+                const double prev = prev_continuous.joint_state[joint].pos_rad.value;
+                const double curr = continuous_joint.joint_state[joint].pos_rad.value;
+                const double delta_theta = shortestAngleDeltaRad(prev, curr);
+                const double mechanical_vel = delta_theta * inv_dt_s;
+                est.leg_states[leg].joint_state[joint].vel_radps =
+                    AngularRateRadPerSec{
+                        servoAngularRateFromMechanicalJointRate(mechanical_vel, joint, cal)};
             }
         }
+
+        last_continuous_leg_states_[leg] = continuous_joint;
+        have_last_continuous_leg_state_[leg] = true;
     }
 
-    if (last_leg_timestamp_.isZero() || raw.timestamp_us.value <= last_leg_timestamp_.value) {
-        for (int leg = 0; leg < kNumLegs; ++leg) {
-            for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-                est.leg_states[leg].joint_state[joint].pos_rad =
-                    raw.leg_states[leg].joint_state[joint].pos_rad;
-            }
-        }
-    }
-    last_leg_states_ = raw.leg_states;
     last_leg_timestamp_ = raw.timestamp_us;
 
-    const HexapodGeometry& geometry = geometry_config::activeHexapodGeometry();
     std::array<Vec3, kNumLegs> support_points_body_m{};
     std::array<bool, kNumLegs> support_point_valid{};
 
@@ -167,7 +208,7 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
         }
 
         const DurationUs age = raw.timestamp_us - last_contact_timestamps_[leg];
-        if (!last_contact_timestamps_[leg].isZero() && age.value <= kContactMemoryWindowUs) {
+        if (!last_contact_timestamps_[leg].isZero() && age.value <= contact_memory_window_us_) {
             support_points_body_m[leg] = last_contact_points_body_m_[leg];
             support_point_valid[leg] = true;
         }

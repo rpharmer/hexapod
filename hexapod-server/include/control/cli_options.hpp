@@ -22,6 +22,7 @@ struct CliOptions
   std::string controllerDevice;
   std::string logFilePath;
   bool consoleOnlyLogging{false};
+  bool traceControlLoop{false};
   std::optional<bool> telemetryEnabledOverride;
   std::optional<std::string> telemetryHostOverride;
   std::optional<int> telemetryPortOverride;

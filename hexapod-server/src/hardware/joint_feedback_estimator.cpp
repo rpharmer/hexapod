@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "geometry_config.hpp"
+#include "math_types.hpp"
 
 namespace {
 
@@ -49,11 +50,16 @@ void JointFeedbackEstimator::synthesize(RobotState& out) {
 
     const double dt = std::max(dt_s.value, 0.0);
     const HexapodGeometry& geometry = geometry_config::activeHexapodGeometry();
+
     for (int leg = 0; leg < kNumLegs; ++leg) {
+        const ServoCalibration& cal = geometry.legGeometry[leg].servo;
+        LegState joint_sim = cal.toJointAngles(estimated_state_.leg_states[leg]);
+        const LegState joint_tgt = cal.toJointAngles(last_written_.leg_states[leg]);
+
         for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-            AngleRad& simulated = estimated_state_.leg_states[leg].joint_state[joint].pos_rad;
-            const AngleRad target = last_written_.leg_states[leg].joint_state[joint].pos_rad;
-            const double error = target.value - simulated.value;
+            double& sj = joint_sim.joint_state[joint].pos_rad.value;
+            const double tj = joint_tgt.joint_state[joint].pos_rad.value;
+            const double error = shortestAngleDeltaRad(sj, tj);
             const ServoJointDynamics& dyn = geometry.legGeometry[leg].servoDynamics[joint];
             const ServoDirectionDynamics& direction =
                 (error >= 0.0) ? dyn.positive_direction : dyn.negative_direction;
@@ -68,8 +74,13 @@ void JointFeedbackEstimator::synthesize(RobotState& out) {
                 delta = std::clamp(delta, -max_delta, max_delta);
             }
 
-            simulated.value += delta;
-            out.leg_states[leg].joint_state[joint].pos_rad = simulated;
+            // Keep the synthesized feedback continuous so branch selection downstream does not
+            // see a synthetic 2π fold when the joint crosses the principal-angle boundary.
+            sj += delta;
         }
+
+        const LegState servo_sim = cal.toServoAngles(joint_sim);
+        estimated_state_.leg_states[leg] = servo_sim;
+        out.leg_states[leg] = servo_sim;
     }
 }

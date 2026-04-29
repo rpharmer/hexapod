@@ -1,5 +1,8 @@
 #include "sim_hardware_bridge.hpp"
 
+#include "geometry_config.hpp"
+#include "math_types.hpp"
+
 #include <cmath>
 
 SimHardwareBridge::SimHardwareBridge(SimHardwareFaultToggles fault_toggles,
@@ -38,12 +41,20 @@ bool SimHardwareBridge::read(RobotState& out) {
     const double dt_s = read_cycle_period_.value;
     const double alpha = (tau_s <= 0.0) ? 1.0 : clamp01(1.0 - std::exp(-dt_s / tau_s));
 
+    const HexapodGeometry& geo = geometry_config::activeHexapodGeometry();
+
+    // Smooth in mechanical joint space (servo radians are affine: sign·joint + offset, not 2π-periodic).
     for (int leg = 0; leg < kNumLegs; ++leg) {
-        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-            AngleRad& simulated = state_.leg_states[leg].joint_state[joint].pos_rad;
-            const AngleRad target = commanded_targets_.leg_states[leg].joint_state[joint].pos_rad;
-            simulated.value += alpha * (target.value - simulated.value);
+        const ServoCalibration& cal = geo.legGeometry[leg].servo;
+        LegState joint_sim = cal.toJointAngles(state_.leg_states[leg]);
+        const LegState joint_tgt = cal.toJointAngles(commanded_targets_.leg_states[leg]);
+        for (int j = 0; j < kJointsPerLeg; ++j) {
+            double& sj = joint_sim.joint_state[j].pos_rad.value;
+            const double tj = joint_tgt.joint_state[j].pos_rad.value;
+            const double shortest = shortestAngleDeltaRad(sj, tj);
+            sj += alpha * shortest;
         }
+        state_.leg_states[leg] = cal.toServoAngles(joint_sim);
     }
 
     state_.bus_ok = !fault_toggles_.drop_bus;

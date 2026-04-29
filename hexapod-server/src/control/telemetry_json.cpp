@@ -276,10 +276,11 @@ std::string serializeVisualiserJointsPacket(const HexapodGeometry& geometry,
         if (leg > 0) {
             out << ',';
         }
+        const auto& leg_state = joints.leg_states[static_cast<std::size_t>(kVisualiserLegOrder[leg])];
         out << '\"' << kLegOrder[leg] << "\":[";
-        out << formatNumber(rad2deg(joints.leg_states[leg].joint_state[COXA].pos_rad)) << ',';
-        out << formatNumber(rad2deg(joints.leg_states[leg].joint_state[FEMUR].pos_rad)) << ',';
-        out << formatNumber(rad2deg(joints.leg_states[leg].joint_state[TIBIA].pos_rad));
+        out << formatNumber(rad2deg(leg_state.joint_state[COXA].pos_rad)) << ',';
+        out << formatNumber(rad2deg(leg_state.joint_state[FEMUR].pos_rad)) << ',';
+        out << formatNumber(rad2deg(leg_state.joint_state[TIBIA].pos_rad));
         out << ']';
     }
     out << "}";
@@ -307,10 +308,12 @@ std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& te
         if (leg != 0) {
             payload << ",";
         }
+        const auto& leg_state =
+            telemetry.joint_targets.leg_states[static_cast<std::size_t>(kVisualiserLegOrder[leg])];
         payload << "\"" << kLegOrder[leg] << "\":["
-                << formatNumber(rad2deg(telemetry.joint_targets.leg_states[leg].joint_state[COXA].pos_rad)) << ','
-                << formatNumber(rad2deg(telemetry.joint_targets.leg_states[leg].joint_state[FEMUR].pos_rad)) << ','
-                << formatNumber(rad2deg(telemetry.joint_targets.leg_states[leg].joint_state[TIBIA].pos_rad))
+                << formatNumber(rad2deg(leg_state.joint_state[COXA].pos_rad)) << ','
+                << formatNumber(rad2deg(leg_state.joint_state[FEMUR].pos_rad)) << ','
+                << formatNumber(rad2deg(leg_state.joint_state[TIBIA].pos_rad))
                 << "]";
     }
 

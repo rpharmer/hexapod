@@ -195,8 +195,10 @@ int InteractiveRunner::run(RobotControl& robot,
       process_controller_events(true);
       maybeLogControllerProbe();
     } else {
-        robot.setMotionIntent(makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.14));
-      }
+      // With no controller attached, keep the robot in a neutral hold instead of
+      // forcing a walk cycle that can fight the estimator/fusion stack.
+      robot.setMotionIntent(makeMotionIntent(RobotMode::SAFE_IDLE, state.gait, state.walk_body_height_m));
+    }
 
     std::this_thread::sleep_for(refresh_period);
   }

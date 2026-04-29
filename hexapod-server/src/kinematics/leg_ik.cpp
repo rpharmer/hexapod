@@ -5,16 +5,32 @@
 
 namespace {
 
-double wrapAngleNear(const double reference, double candidate) {
-  constexpr double kPi = 3.14159265358979323846;
-  double adjusted = candidate;
-  while (adjusted - reference > kPi) {
-    adjusted -= 2.0 * kPi;
-  }
-  while (adjusted - reference < -kPi) {
-    adjusted += 2.0 * kPi;
-  }
-  return adjusted;
+struct IKCandidate {
+  double q1{0.0};
+  double q2{0.0};
+  double q3{0.0};
+  double knee_height{0.0};
+};
+
+IKCandidate buildCandidate(const double q1,
+                           const double Dclamped,
+                           const double s3,
+                           const double rhoSolved,
+                           const double zSolved,
+                           const LegGeometry& leg)
+{
+  IKCandidate candidate{};
+  candidate.q1 = q1;
+  candidate.q3 = std::atan2(s3, Dclamped);
+  candidate.q2 =
+      std::atan2(zSolved, rhoSolved) -
+      std::atan2(leg.tibiaLength.value * std::sin(candidate.q3),
+                 leg.femurLength.value + leg.tibiaLength.value * std::cos(candidate.q3));
+  // Compare femur joint height in the leg frame. The higher knee is the
+  // physical knee-up branch, and servo sign mirroring is applied after this
+  // joint-space choice is made.
+  candidate.knee_height = leg.femurLength.value * std::sin(candidate.q2);
+  return candidate;
 }
 
 void apply_estimated_leg_fallback(const RobotState& est,
@@ -38,8 +54,7 @@ JointTargets LegIK::solve(const RobotState& est,
   JointTargets joints{};
 
   for (int legID = 0; legID < kNumLegs; legID++) {
-    const bool solved = solveOneLeg(est.leg_states[legID],
-                                    joints.leg_states[legID],
+    const bool solved = solveOneLeg(joints.leg_states[legID],
                                     targets.feet[legID],
                                     hexGeo.legGeometry[legID]);
     const bool use_fallback = !solved || !safety.leg_enabled[legID];
@@ -51,8 +66,7 @@ JointTargets LegIK::solve(const RobotState& est,
   return joints;
 }
 
-bool LegIK::solveOneLeg(const LegState& est,
-                        LegState& out,
+bool LegIK::solveOneLeg(LegState& out,
                         const FootTarget& foot,
                         const LegGeometry& leg) {
   // Transform foot target coordinates so they are relative to Coxa mount
@@ -98,27 +112,19 @@ bool LegIK::solveOneLeg(const LegState& est,
 
   const double Dclamped = clamp(D, -1.0, 1.0);
 
-  // Choose one branch consistently.
-  // Switch the sign of sqrt(...) if your knee bends the wrong way.
-  const double q3 =
-      std::atan2(-std::sqrt(std::max(0.0, 1.0 - Dclamped * Dclamped)), Dclamped);
+  // The two sqrt(1 - D^2) signs are the two valid knee configurations. Choose the branch
+  // with the higher femur joint, which is the physical knee-up solution.
+  const double s3abs = std::sqrt(std::max(0.0, 1.0 - Dclamped * Dclamped));
+  const IKCandidate branch_a =
+      buildCandidate(q1, Dclamped, -s3abs, rhoSolved, zSolved, leg);
+  const IKCandidate branch_b =
+      buildCandidate(q1, Dclamped, +s3abs, rhoSolved, zSolved, leg);
 
-  // --------------------------------------------------------
-  // 3) Femur angle
-  // --------------------------------------------------------
-  const double q2 =
-      std::atan2(zSolved, rhoSolved) -
-      std::atan2(leg.tibiaLength.value * std::sin(q3),
-                 leg.femurLength.value + leg.tibiaLength.value * std::cos(q3));
+  const IKCandidate& best = (branch_a.knee_height >= branch_b.knee_height) ? branch_a : branch_b;
 
-  const LegState est_joint = leg.servo.toJointAngles(est);
-  const double q1_wrapped = wrapAngleNear(est_joint.joint_state[0].pos_rad.value, q1);
-  const double q2_wrapped = wrapAngleNear(est_joint.joint_state[1].pos_rad.value, q2);
-  const double q3_wrapped = wrapAngleNear(est_joint.joint_state[2].pos_rad.value, q3);
-
-  out.joint_state[0].pos_rad = AngleRad{q1_wrapped};
-  out.joint_state[1].pos_rad = AngleRad{q2_wrapped};
-  out.joint_state[2].pos_rad = AngleRad{q3_wrapped};
+  out.joint_state[0].pos_rad = AngleRad{best.q1};
+  out.joint_state[1].pos_rad = AngleRad{best.q2};
+  out.joint_state[2].pos_rad = AngleRad{best.q3};
   out = leg.servo.toServoAngles(out);
 
   return true;

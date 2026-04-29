@@ -1,8 +1,19 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 
 constexpr double kPi = 3.14159265358979323846;
+
+/** Shortest angle delta `to_rad - from_rad` into (−π, π]. */
+inline double shortestAngleDeltaRad(double from_rad, double to_rad) {
+    return std::remainder(to_rad - from_rad, 2.0 * kPi);
+}
+
+/** Map angle to principal value in (−π, π] (joint channels without multi-turn semantics). */
+inline double principalAngleRad(double angle_rad) {
+    return std::remainder(angle_rad, 2.0 * kPi);
+}
 
 template <typename Tag>
 struct UnitValue {

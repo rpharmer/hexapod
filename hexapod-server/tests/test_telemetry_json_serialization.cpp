@@ -111,9 +111,11 @@ bool test_joint_unit_conversion_radians_to_degrees()
 {
     HexapodGeometry geometry = geometry_config::buildDefaultHexapodGeometry();
     JointTargets joints{};
-    joints.leg_states[0].joint_state[COXA].pos_rad = AngleRad{deg2rad(15.0)};
-    joints.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{deg2rad(-20.0)};
-    joints.leg_states[0].joint_state[TIBIA].pos_rad = AngleRad{deg2rad(35.0)};
+    // The visualiser packet reorders legs into LF, LM, LR, RF, RM, RR.
+    const std::size_t lf_leg = static_cast<std::size_t>(LegID::L1);
+    joints.leg_states[lf_leg].joint_state[COXA].pos_rad = AngleRad{deg2rad(15.0)};
+    joints.leg_states[lf_leg].joint_state[FEMUR].pos_rad = AngleRad{deg2rad(-20.0)};
+    joints.leg_states[lf_leg].joint_state[TIBIA].pos_rad = AngleRad{deg2rad(35.0)};
 
     const std::string payload = telemetry_json::serializeVisualiserJointsPacket(geometry, joints, 100);
 

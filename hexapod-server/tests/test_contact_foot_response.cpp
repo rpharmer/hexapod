@@ -68,6 +68,18 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    FootContactFusion stale_confirmed{};
+    stale_confirmed.phase = ContactPhase::ConfirmedStance;
+    stale_confirmed.confidence = 0.9f;
+    tau = 0.95;
+    extra = 0.0;
+    contact_foot_response::adjustSwingTauAndVerticalExtension(
+        true, false, trusted, 0.95, tau, extra, &stale_confirmed);
+    if (!expect(std::abs(tau - 0.95) < 1e-12 && extra == 0.0,
+                 "stale confirmed stance fusion should not override a lifted swing leg")) {
+        return EXIT_FAILURE;
+    }
+
     tau = 0.0;
     extra = 0.0;
     contact_foot_response::adjustSwingTauAndVerticalExtension(

@@ -352,6 +352,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_physics_sim_bridge_state_correction PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_bridge_state_correction COMMAND test_physics_sim_bridge_state_correction)
 
+    add_executable(test_sim_hardware_bridge_continuity tests/test_sim_hardware_bridge_continuity.cpp)
+    target_link_libraries(test_sim_hardware_bridge_continuity PRIVATE hexapod_server_core)
+    add_test(NAME sim_hardware_bridge_continuity COMMAND test_sim_hardware_bridge_continuity)
+
     add_executable(test_robot_runtime_physics_sim_corrections tests/test_robot_runtime_physics_sim_corrections.cpp)
     target_link_libraries(test_robot_runtime_physics_sim_corrections PRIVATE hexapod_server_core)
     add_test(NAME robot_runtime_physics_sim_corrections COMMAND test_robot_runtime_physics_sim_corrections)

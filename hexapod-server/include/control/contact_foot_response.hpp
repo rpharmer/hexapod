@@ -8,8 +8,12 @@ namespace contact_foot_response {
 bool sensorsTrustedForContactResponse(const RobotState& est);
 
 /**
- * During swing: if foot reports contact, snap swing progress to touchdown (tau=1).
- * If near touchdown and still airborne, add negative Z in the planning frame (reach down).
+ * During swing: if the raw foot reports contact, snap swing progress to touchdown (tau=1).
+ * If the contact tracker is still in an expected-touchdown / candidate state and the foot is
+ * airborne, add negative Z in the planning frame (reach down).
+ *
+ * Stale confirmed-stance fusion state is intentionally treated as a no-op here so it cannot
+ * override a swing leg that has already lifted off in the raw sensor stream.
  */
 void adjustSwingTauAndVerticalExtension(bool in_swing,
                                         bool foot_contact,

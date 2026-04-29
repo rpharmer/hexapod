@@ -153,6 +153,19 @@ hexapod-server/fast:
 .PHONY : hexapod-server/fast
 
 #=============================================================================
+# Target rules for targets named hexapod-tripod-support-baseline
+
+# Build rule for target.
+hexapod-tripod-support-baseline: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 hexapod-tripod-support-baseline
+.PHONY : hexapod-tripod-support-baseline
+
+# fast build rule for target.
+hexapod-tripod-support-baseline/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod-tripod-support-baseline.dir/build.make CMakeFiles/hexapod-tripod-support-baseline.dir/build
+.PHONY : hexapod-tripod-support-baseline/fast
+
+#=============================================================================
 # Target rules for targets named test_robot_runtime_loop
 
 # Build rule for target.
@@ -543,6 +556,19 @@ test_physics_sim_bridge_state_correction/fast:
 .PHONY : test_physics_sim_bridge_state_correction/fast
 
 #=============================================================================
+# Target rules for targets named test_sim_hardware_bridge_continuity
+
+# Build rule for target.
+test_sim_hardware_bridge_continuity: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_sim_hardware_bridge_continuity
+.PHONY : test_sim_hardware_bridge_continuity
+
+# fast build rule for target.
+test_sim_hardware_bridge_continuity/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_sim_hardware_bridge_continuity.dir/build.make CMakeFiles/test_sim_hardware_bridge_continuity.dir/build
+.PHONY : test_sim_hardware_bridge_continuity/fast
+
+#=============================================================================
 # Target rules for targets named test_robot_runtime_physics_sim_corrections
 
 # Build rule for target.
@@ -580,6 +606,32 @@ test_physics_sim_walk_distance: cmake_check_build_system
 test_physics_sim_walk_distance/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_distance.dir/build.make CMakeFiles/test_physics_sim_walk_distance.dir/build
 .PHONY : test_physics_sim_walk_distance/fast
+
+#=============================================================================
+# Target rules for targets named test_physics_sim_walk_entry_tracking
+
+# Build rule for target.
+test_physics_sim_walk_entry_tracking: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_physics_sim_walk_entry_tracking
+.PHONY : test_physics_sim_walk_entry_tracking
+
+# fast build rule for target.
+test_physics_sim_walk_entry_tracking/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_entry_tracking.dir/build.make CMakeFiles/test_physics_sim_walk_entry_tracking.dir/build
+.PHONY : test_physics_sim_walk_entry_tracking/fast
+
+#=============================================================================
+# Target rules for targets named test_physics_sim_tripod_support_baseline
+
+# Build rule for target.
+test_physics_sim_tripod_support_baseline: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_physics_sim_tripod_support_baseline
+.PHONY : test_physics_sim_tripod_support_baseline
+
+# fast build rule for target.
+test_physics_sim_tripod_support_baseline/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_tripod_support_baseline.dir/build.make CMakeFiles/test_physics_sim_tripod_support_baseline.dir/build
+.PHONY : test_physics_sim_tripod_support_baseline/fast
 
 #=============================================================================
 # Target rules for targets named test_physics_sim_nav_waypoints
@@ -647,6 +699,19 @@ test_simple_estimator_ground_plane/fast:
 .PHONY : test_simple_estimator_ground_plane/fast
 
 #=============================================================================
+# Target rules for targets named test_physics_sim_estimator
+
+# Build rule for target.
+test_physics_sim_estimator: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_physics_sim_estimator
+.PHONY : test_physics_sim_estimator
+
+# fast build rule for target.
+test_physics_sim_estimator/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_estimator.dir/build.make CMakeFiles/test_physics_sim_estimator.dir/build
+.PHONY : test_physics_sim_estimator/fast
+
+#=============================================================================
 # Target rules for targets named test_body_controller_velocity
 
 # Build rule for target.
@@ -658,6 +723,19 @@ test_body_controller_velocity: cmake_check_build_system
 test_body_controller_velocity/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_body_controller_velocity.dir/build.make CMakeFiles/test_body_controller_velocity.dir/build
 .PHONY : test_body_controller_velocity/fast
+
+#=============================================================================
+# Target rules for targets named test_foot_planners_velocity_blend
+
+# Build rule for target.
+test_foot_planners_velocity_blend: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_foot_planners_velocity_blend
+.PHONY : test_foot_planners_velocity_blend
+
+# fast build rule for target.
+test_foot_planners_velocity_blend/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foot_planners_velocity_blend.dir/build.make CMakeFiles/test_foot_planners_velocity_blend.dir/build
+.PHONY : test_foot_planners_velocity_blend/fast
 
 #=============================================================================
 # Target rules for targets named test_locomotion_pose_and_stability
@@ -992,6 +1070,30 @@ src/app/hexapod-server.s: src/app/hexapod-server.cpp.s
 src/app/hexapod-server.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod-server.dir/build.make CMakeFiles/hexapod-server.dir/src/app/hexapod-server.cpp.s
 .PHONY : src/app/hexapod-server.cpp.s
+
+src/app/hexapod-tripod-support-baseline.o: src/app/hexapod-tripod-support-baseline.cpp.o
+.PHONY : src/app/hexapod-tripod-support-baseline.o
+
+# target to build an object file
+src/app/hexapod-tripod-support-baseline.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod-tripod-support-baseline.dir/build.make CMakeFiles/hexapod-tripod-support-baseline.dir/src/app/hexapod-tripod-support-baseline.cpp.o
+.PHONY : src/app/hexapod-tripod-support-baseline.cpp.o
+
+src/app/hexapod-tripod-support-baseline.i: src/app/hexapod-tripod-support-baseline.cpp.i
+.PHONY : src/app/hexapod-tripod-support-baseline.i
+
+# target to preprocess a source file
+src/app/hexapod-tripod-support-baseline.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod-tripod-support-baseline.dir/build.make CMakeFiles/hexapod-tripod-support-baseline.dir/src/app/hexapod-tripod-support-baseline.cpp.i
+.PHONY : src/app/hexapod-tripod-support-baseline.cpp.i
+
+src/app/hexapod-tripod-support-baseline.s: src/app/hexapod-tripod-support-baseline.cpp.s
+.PHONY : src/app/hexapod-tripod-support-baseline.s
+
+# target to generate assembly for a file
+src/app/hexapod-tripod-support-baseline.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod-tripod-support-baseline.dir/build.make CMakeFiles/hexapod-tripod-support-baseline.dir/src/app/hexapod-tripod-support-baseline.cpp.s
+.PHONY : src/app/hexapod-tripod-support-baseline.cpp.s
 
 src/app/runtime_teardown.o: src/app/runtime_teardown.cpp.o
 .PHONY : src/app/runtime_teardown.o
@@ -3177,6 +3279,30 @@ tests/test_control_pipeline_sanity.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_control_pipeline_sanity.dir/build.make CMakeFiles/test_control_pipeline_sanity.dir/tests/test_control_pipeline_sanity.cpp.s
 .PHONY : tests/test_control_pipeline_sanity.cpp.s
 
+tests/test_foot_planners_velocity_blend.o: tests/test_foot_planners_velocity_blend.cpp.o
+.PHONY : tests/test_foot_planners_velocity_blend.o
+
+# target to build an object file
+tests/test_foot_planners_velocity_blend.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foot_planners_velocity_blend.dir/build.make CMakeFiles/test_foot_planners_velocity_blend.dir/tests/test_foot_planners_velocity_blend.cpp.o
+.PHONY : tests/test_foot_planners_velocity_blend.cpp.o
+
+tests/test_foot_planners_velocity_blend.i: tests/test_foot_planners_velocity_blend.cpp.i
+.PHONY : tests/test_foot_planners_velocity_blend.i
+
+# target to preprocess a source file
+tests/test_foot_planners_velocity_blend.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foot_planners_velocity_blend.dir/build.make CMakeFiles/test_foot_planners_velocity_blend.dir/tests/test_foot_planners_velocity_blend.cpp.i
+.PHONY : tests/test_foot_planners_velocity_blend.cpp.i
+
+tests/test_foot_planners_velocity_blend.s: tests/test_foot_planners_velocity_blend.cpp.s
+.PHONY : tests/test_foot_planners_velocity_blend.s
+
+# target to generate assembly for a file
+tests/test_foot_planners_velocity_blend.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_foot_planners_velocity_blend.dir/build.make CMakeFiles/test_foot_planners_velocity_blend.dir/tests/test_foot_planners_velocity_blend.cpp.s
+.PHONY : tests/test_foot_planners_velocity_blend.cpp.s
+
 tests/test_foot_reachability.o: tests/test_foot_reachability.cpp.o
 .PHONY : tests/test_foot_reachability.o
 
@@ -3969,6 +4095,30 @@ tests/test_physics_sim_bridge_state_correction.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_bridge_state_correction.dir/build.make CMakeFiles/test_physics_sim_bridge_state_correction.dir/tests/test_physics_sim_bridge_state_correction.cpp.s
 .PHONY : tests/test_physics_sim_bridge_state_correction.cpp.s
 
+tests/test_physics_sim_estimator.o: tests/test_physics_sim_estimator.cpp.o
+.PHONY : tests/test_physics_sim_estimator.o
+
+# target to build an object file
+tests/test_physics_sim_estimator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_estimator.dir/build.make CMakeFiles/test_physics_sim_estimator.dir/tests/test_physics_sim_estimator.cpp.o
+.PHONY : tests/test_physics_sim_estimator.cpp.o
+
+tests/test_physics_sim_estimator.i: tests/test_physics_sim_estimator.cpp.i
+.PHONY : tests/test_physics_sim_estimator.i
+
+# target to preprocess a source file
+tests/test_physics_sim_estimator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_estimator.dir/build.make CMakeFiles/test_physics_sim_estimator.dir/tests/test_physics_sim_estimator.cpp.i
+.PHONY : tests/test_physics_sim_estimator.cpp.i
+
+tests/test_physics_sim_estimator.s: tests/test_physics_sim_estimator.cpp.s
+.PHONY : tests/test_physics_sim_estimator.s
+
+# target to generate assembly for a file
+tests/test_physics_sim_estimator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_estimator.dir/build.make CMakeFiles/test_physics_sim_estimator.dir/tests/test_physics_sim_estimator.cpp.s
+.PHONY : tests/test_physics_sim_estimator.cpp.s
+
 tests/test_physics_sim_ik_wire_roundtrip.o: tests/test_physics_sim_ik_wire_roundtrip.cpp.o
 .PHONY : tests/test_physics_sim_ik_wire_roundtrip.o
 
@@ -4113,6 +4263,30 @@ tests/test_physics_sim_serve_zero_g_udp.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_serve_zero_g_udp.dir/build.make CMakeFiles/test_physics_sim_serve_zero_g_udp.dir/tests/test_physics_sim_serve_zero_g_udp.cpp.s
 .PHONY : tests/test_physics_sim_serve_zero_g_udp.cpp.s
 
+tests/test_physics_sim_tripod_support_baseline.o: tests/test_physics_sim_tripod_support_baseline.cpp.o
+.PHONY : tests/test_physics_sim_tripod_support_baseline.o
+
+# target to build an object file
+tests/test_physics_sim_tripod_support_baseline.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_tripod_support_baseline.dir/build.make CMakeFiles/test_physics_sim_tripod_support_baseline.dir/tests/test_physics_sim_tripod_support_baseline.cpp.o
+.PHONY : tests/test_physics_sim_tripod_support_baseline.cpp.o
+
+tests/test_physics_sim_tripod_support_baseline.i: tests/test_physics_sim_tripod_support_baseline.cpp.i
+.PHONY : tests/test_physics_sim_tripod_support_baseline.i
+
+# target to preprocess a source file
+tests/test_physics_sim_tripod_support_baseline.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_tripod_support_baseline.dir/build.make CMakeFiles/test_physics_sim_tripod_support_baseline.dir/tests/test_physics_sim_tripod_support_baseline.cpp.i
+.PHONY : tests/test_physics_sim_tripod_support_baseline.cpp.i
+
+tests/test_physics_sim_tripod_support_baseline.s: tests/test_physics_sim_tripod_support_baseline.cpp.s
+.PHONY : tests/test_physics_sim_tripod_support_baseline.s
+
+# target to generate assembly for a file
+tests/test_physics_sim_tripod_support_baseline.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_tripod_support_baseline.dir/build.make CMakeFiles/test_physics_sim_tripod_support_baseline.dir/tests/test_physics_sim_tripod_support_baseline.cpp.s
+.PHONY : tests/test_physics_sim_tripod_support_baseline.cpp.s
+
 tests/test_physics_sim_walk_distance.o: tests/test_physics_sim_walk_distance.cpp.o
 .PHONY : tests/test_physics_sim_walk_distance.o
 
@@ -4136,6 +4310,30 @@ tests/test_physics_sim_walk_distance.s: tests/test_physics_sim_walk_distance.cpp
 tests/test_physics_sim_walk_distance.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_distance.dir/build.make CMakeFiles/test_physics_sim_walk_distance.dir/tests/test_physics_sim_walk_distance.cpp.s
 .PHONY : tests/test_physics_sim_walk_distance.cpp.s
+
+tests/test_physics_sim_walk_entry_tracking.o: tests/test_physics_sim_walk_entry_tracking.cpp.o
+.PHONY : tests/test_physics_sim_walk_entry_tracking.o
+
+# target to build an object file
+tests/test_physics_sim_walk_entry_tracking.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_entry_tracking.dir/build.make CMakeFiles/test_physics_sim_walk_entry_tracking.dir/tests/test_physics_sim_walk_entry_tracking.cpp.o
+.PHONY : tests/test_physics_sim_walk_entry_tracking.cpp.o
+
+tests/test_physics_sim_walk_entry_tracking.i: tests/test_physics_sim_walk_entry_tracking.cpp.i
+.PHONY : tests/test_physics_sim_walk_entry_tracking.i
+
+# target to preprocess a source file
+tests/test_physics_sim_walk_entry_tracking.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_entry_tracking.dir/build.make CMakeFiles/test_physics_sim_walk_entry_tracking.dir/tests/test_physics_sim_walk_entry_tracking.cpp.i
+.PHONY : tests/test_physics_sim_walk_entry_tracking.cpp.i
+
+tests/test_physics_sim_walk_entry_tracking.s: tests/test_physics_sim_walk_entry_tracking.cpp.s
+.PHONY : tests/test_physics_sim_walk_entry_tracking.s
+
+# target to generate assembly for a file
+tests/test_physics_sim_walk_entry_tracking.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_entry_tracking.dir/build.make CMakeFiles/test_physics_sim_walk_entry_tracking.dir/tests/test_physics_sim_walk_entry_tracking.cpp.s
+.PHONY : tests/test_physics_sim_walk_entry_tracking.cpp.s
 
 tests/test_protocol_command_metadata.o: tests/test_protocol_command_metadata.cpp.o
 .PHONY : tests/test_protocol_command_metadata.o
@@ -4425,6 +4623,30 @@ tests/test_shutdown_summary_logging.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_shutdown_summary_logging.dir/build.make CMakeFiles/test_shutdown_summary_logging.dir/tests/test_shutdown_summary_logging.cpp.s
 .PHONY : tests/test_shutdown_summary_logging.cpp.s
 
+tests/test_sim_hardware_bridge_continuity.o: tests/test_sim_hardware_bridge_continuity.cpp.o
+.PHONY : tests/test_sim_hardware_bridge_continuity.o
+
+# target to build an object file
+tests/test_sim_hardware_bridge_continuity.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_sim_hardware_bridge_continuity.dir/build.make CMakeFiles/test_sim_hardware_bridge_continuity.dir/tests/test_sim_hardware_bridge_continuity.cpp.o
+.PHONY : tests/test_sim_hardware_bridge_continuity.cpp.o
+
+tests/test_sim_hardware_bridge_continuity.i: tests/test_sim_hardware_bridge_continuity.cpp.i
+.PHONY : tests/test_sim_hardware_bridge_continuity.i
+
+# target to preprocess a source file
+tests/test_sim_hardware_bridge_continuity.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_sim_hardware_bridge_continuity.dir/build.make CMakeFiles/test_sim_hardware_bridge_continuity.dir/tests/test_sim_hardware_bridge_continuity.cpp.i
+.PHONY : tests/test_sim_hardware_bridge_continuity.cpp.i
+
+tests/test_sim_hardware_bridge_continuity.s: tests/test_sim_hardware_bridge_continuity.cpp.s
+.PHONY : tests/test_sim_hardware_bridge_continuity.s
+
+# target to generate assembly for a file
+tests/test_sim_hardware_bridge_continuity.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_sim_hardware_bridge_continuity.dir/build.make CMakeFiles/test_sim_hardware_bridge_continuity.dir/tests/test_sim_hardware_bridge_continuity.cpp.s
+.PHONY : tests/test_sim_hardware_bridge_continuity.cpp.s
+
 tests/test_simple_estimator_ground_plane.o: tests/test_simple_estimator_ground_plane.cpp.o
 .PHONY : tests/test_simple_estimator_ground_plane.o
 
@@ -4651,6 +4873,7 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... test"
 	@echo "... hexapod-server"
+	@echo "... hexapod-tripod-support-baseline"
 	@echo "... hexapod_server_core"
 	@echo "... test_body_controller_velocity"
 	@echo "... test_bridge_command_api"
@@ -4660,6 +4883,7 @@ help:
 	@echo "... test_command_flow_integration"
 	@echo "... test_contact_foot_response"
 	@echo "... test_control_pipeline_sanity"
+	@echo "... test_foot_planners_velocity_blend"
 	@echo "... test_foot_reachability"
 	@echo "... test_foot_terrain"
 	@echo "... test_foothold_planner"
@@ -4685,13 +4909,16 @@ help:
 	@echo "... test_navigation_runtime"
 	@echo "... test_physics_sim_bridge_frame_conversion"
 	@echo "... test_physics_sim_bridge_state_correction"
+	@echo "... test_physics_sim_estimator"
 	@echo "... test_physics_sim_ik_wire_roundtrip"
 	@echo "... test_physics_sim_local_map_source"
 	@echo "... test_physics_sim_mapping_roundtrip"
 	@echo "... test_physics_sim_nav_waypoints"
 	@echo "... test_physics_sim_navigation_acceptance"
 	@echo "... test_physics_sim_serve_zero_g_udp"
+	@echo "... test_physics_sim_tripod_support_baseline"
 	@echo "... test_physics_sim_walk_distance"
+	@echo "... test_physics_sim_walk_entry_tracking"
 	@echo "... test_protocol_command_metadata"
 	@echo "... test_replay_logging"
 	@echo "... test_robot_runtime_freshness_gate_matrix"
@@ -4704,6 +4931,7 @@ help:
 	@echo "... test_scenario_driver_validation"
 	@echo "... test_servo_calibration_unified_conversion"
 	@echo "... test_shutdown_summary_logging"
+	@echo "... test_sim_hardware_bridge_continuity"
 	@echo "... test_simple_estimator_ground_plane"
 	@echo "... test_state_fusion"
 	@echo "... test_swing_trajectory"
@@ -4719,6 +4947,9 @@ help:
 	@echo "... src/app/hexapod-server.o"
 	@echo "... src/app/hexapod-server.i"
 	@echo "... src/app/hexapod-server.s"
+	@echo "... src/app/hexapod-tripod-support-baseline.o"
+	@echo "... src/app/hexapod-tripod-support-baseline.i"
+	@echo "... src/app/hexapod-tripod-support-baseline.s"
 	@echo "... src/app/runtime_teardown.o"
 	@echo "... src/app/runtime_teardown.i"
 	@echo "... src/app/runtime_teardown.s"
@@ -4992,6 +5223,9 @@ help:
 	@echo "... tests/test_control_pipeline_sanity.o"
 	@echo "... tests/test_control_pipeline_sanity.i"
 	@echo "... tests/test_control_pipeline_sanity.s"
+	@echo "... tests/test_foot_planners_velocity_blend.o"
+	@echo "... tests/test_foot_planners_velocity_blend.i"
+	@echo "... tests/test_foot_planners_velocity_blend.s"
 	@echo "... tests/test_foot_reachability.o"
 	@echo "... tests/test_foot_reachability.i"
 	@echo "... tests/test_foot_reachability.s"
@@ -5091,6 +5325,9 @@ help:
 	@echo "... tests/test_physics_sim_bridge_state_correction.o"
 	@echo "... tests/test_physics_sim_bridge_state_correction.i"
 	@echo "... tests/test_physics_sim_bridge_state_correction.s"
+	@echo "... tests/test_physics_sim_estimator.o"
+	@echo "... tests/test_physics_sim_estimator.i"
+	@echo "... tests/test_physics_sim_estimator.s"
 	@echo "... tests/test_physics_sim_ik_wire_roundtrip.o"
 	@echo "... tests/test_physics_sim_ik_wire_roundtrip.i"
 	@echo "... tests/test_physics_sim_ik_wire_roundtrip.s"
@@ -5109,9 +5346,15 @@ help:
 	@echo "... tests/test_physics_sim_serve_zero_g_udp.o"
 	@echo "... tests/test_physics_sim_serve_zero_g_udp.i"
 	@echo "... tests/test_physics_sim_serve_zero_g_udp.s"
+	@echo "... tests/test_physics_sim_tripod_support_baseline.o"
+	@echo "... tests/test_physics_sim_tripod_support_baseline.i"
+	@echo "... tests/test_physics_sim_tripod_support_baseline.s"
 	@echo "... tests/test_physics_sim_walk_distance.o"
 	@echo "... tests/test_physics_sim_walk_distance.i"
 	@echo "... tests/test_physics_sim_walk_distance.s"
+	@echo "... tests/test_physics_sim_walk_entry_tracking.o"
+	@echo "... tests/test_physics_sim_walk_entry_tracking.i"
+	@echo "... tests/test_physics_sim_walk_entry_tracking.s"
 	@echo "... tests/test_protocol_command_metadata.o"
 	@echo "... tests/test_protocol_command_metadata.i"
 	@echo "... tests/test_protocol_command_metadata.s"
@@ -5148,6 +5391,9 @@ help:
 	@echo "... tests/test_shutdown_summary_logging.o"
 	@echo "... tests/test_shutdown_summary_logging.i"
 	@echo "... tests/test_shutdown_summary_logging.s"
+	@echo "... tests/test_sim_hardware_bridge_continuity.o"
+	@echo "... tests/test_sim_hardware_bridge_continuity.i"
+	@echo "... tests/test_sim_hardware_bridge_continuity.s"
 	@echo "... tests/test_simple_estimator_ground_plane.o"
 	@echo "... tests/test_simple_estimator_ground_plane.i"
 	@echo "... tests/test_simple_estimator_ground_plane.s"

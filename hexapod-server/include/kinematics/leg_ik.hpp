@@ -11,9 +11,8 @@ public:
                        const LegTargets& targets, const SafetyState& safety);
 
 private:
-    bool solveOneLeg(const LegState& est,
-                        LegState& out,
-                        const FootTarget& foot,
-                        const LegGeometry& leg);
+    bool solveOneLeg(LegState& out,
+                     const FootTarget& foot,
+                     const LegGeometry& leg);
     HexapodGeometry hexGeo;
 };

@@ -52,6 +52,30 @@ bool test_enabled_estimator_moves_toward_target() {
                   "enabled estimator should advance synthetic position toward target");
 }
 
+bool test_enabled_estimator_preserves_continuity_past_pi() {
+    JointFeedbackEstimator estimator;
+    estimator.reset();
+    estimator.set_enabled(false);
+
+    RobotState baseline{};
+    baseline.timestamp_us = TimePointUs{1000};
+    baseline.leg_states[0].joint_state[0].pos_rad = AngleRad{3.20};
+    estimator.on_hardware_read(baseline);
+
+    estimator.set_enabled(true);
+
+    JointTargets targets{};
+    targets.leg_states[0].joint_state[0].pos_rad = AngleRad{3.30};
+    estimator.on_write(targets);
+
+    RobotState out = baseline;
+    out.timestamp_us = TimePointUs{5000};
+    estimator.synthesize(out);
+
+    return expect(out.leg_states[0].joint_state[0].pos_rad.value > 3.0,
+                  "software feedback should not wrap continuous joint state back below pi");
+}
+
 }  // namespace
 
 int main() {
@@ -59,6 +83,9 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!test_enabled_estimator_moves_toward_target()) {
+        return EXIT_FAILURE;
+    }
+    if (!test_enabled_estimator_preserves_continuity_past_pi()) {
         return EXIT_FAILURE;
     }
 

@@ -197,6 +197,26 @@ bool testSafetyLenientIgnoresPureNonMonotonicSamples() {
                   "safety-lenient evaluation should ignore pure intent non-monotonicity");
 }
 
+bool testRuntimeInitSeedsFreshEstimatorSnapshot() {
+    auto bridge = std::make_unique<SimHardwareBridge>();
+    auto estimator = std::make_unique<ScriptedEstimator>();
+    RobotRuntime runtime(std::move(bridge), std::move(estimator), nullptr, strictFreshnessConfig());
+
+    if (!expect(runtime.init(), "runtime init should succeed")) {
+        return false;
+    }
+
+    runtime.setMotionIntent(makeIntentSample(500, now_us()));
+    runtime.controlStep();
+    const ControlStatus status = runtime.getStatus();
+    return expect(status.estimator_valid,
+                  "runtime init should seed a fresh estimator snapshot before the first control step") &&
+           expect(status.active_mode == RobotMode::SAFE_IDLE,
+                  "startup control step should remain in SAFE_IDLE") &&
+           expect(status.active_fault == FaultCode::NONE,
+                  "startup control step should not latch ESTIMATOR_INVALID");
+}
+
 } // namespace
 
 int main() {
@@ -204,7 +224,8 @@ int main() {
         !testStaleEstimatorTriggersEstimatorInvalidFault() ||
         !testStaleIntentTriggersCommandTimeoutFault() ||
         !testStaleEstimatorAndIntentPreferEstimatorFault() ||
-        !testSafetyLenientIgnoresPureNonMonotonicSamples()) {
+        !testSafetyLenientIgnoresPureNonMonotonicSamples() ||
+        !testRuntimeInitSeedsFreshEstimatorSnapshot()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

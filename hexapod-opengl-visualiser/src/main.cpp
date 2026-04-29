@@ -217,6 +217,7 @@ struct CameraState {
 
 struct Options {
   int udp_port = kDefaultUdpPort;
+  bool log_joint_positions = false;
 };
 
 struct SceneBounds {
@@ -1188,7 +1189,10 @@ RobotKinematics ComputeRobotLeg(const HexapodLegLayout& layout, const std::array
   const float coxa_rad = (coxa_deg - layout.coxa_attach_deg) * kPi / 180.0f;
   const float femur_rad = (femur_deg - layout.femur_attach_deg) * kPi / 180.0f * layout.femur_sign;
   const float tibia_rad = (tibia_deg - layout.tibia_attach_deg) * kPi / 180.0f * layout.tibia_sign;
-  const float yaw = layout.mount_angle_rad + coxa_rad * layout.coxa_sign;
+  // Telemetry mount angles are in the server hexapod convention (0 along +Y/forward).
+  // Convert to renderer kinematics convention (0 along +X) before applying coxa rotation.
+  const float base_yaw = (0.5f * kPi) - layout.mount_angle_rad;
+  const float yaw = base_yaw + coxa_rad * layout.coxa_sign;
 
   const float body_radius = std::sqrt(layout.body_coxa_offset.x * layout.body_coxa_offset.x
                                       + layout.body_coxa_offset.y * layout.body_coxa_offset.y);
@@ -1661,6 +1665,35 @@ void DrawHexapodModel(const HexapodGeometryState& geometry,
   }
 
   glPopMatrix();
+}
+
+void LogJointPositions(const HexapodGeometryState& geometry,
+                       const std::array<std::array<float, 3>, 6>& angles_deg,
+                       const HexapodBodyPoseState& pose,
+                       double now_s) {
+  std::ostringstream line;
+  line << std::fixed << std::setprecision(3);
+  line << "[viz-joints t=" << now_s << "s]";
+  for (std::size_t leg = 0; leg < geometry.legs.size() && leg < kLegKeys.size(); ++leg) {
+    const RobotKinematics kinematics = ComputeRobotLeg(geometry.legs[leg], angles_deg[leg]);
+    const Vec3 anchor_world = TransformBodyPoint(kinematics.anchor, pose);
+    const Vec3 shoulder_world = TransformBodyPoint(kinematics.shoulder, pose);
+    const Vec3 knee_world = TransformBodyPoint(kinematics.knee, pose);
+    const Vec3 foot_world = TransformBodyPoint(kinematics.foot, pose);
+    const Vec3 anchor_scene = ServerToSceneVec(anchor_world);
+    const Vec3 shoulder_scene = ServerToSceneVec(shoulder_world);
+    const Vec3 knee_scene = ServerToSceneVec(knee_world);
+    const Vec3 foot_scene = ServerToSceneVec(foot_world);
+    line << " " << kLegKeys[leg] << ".coxa=(" << anchor_scene.x << "," << anchor_scene.y << "," << anchor_scene.z
+         << ")";
+    line << " " << kLegKeys[leg] << ".femur=(" << shoulder_scene.x << "," << shoulder_scene.y << ","
+         << shoulder_scene.z << ")";
+    line << " " << kLegKeys[leg] << ".knee=(" << knee_scene.x << "," << knee_scene.y << "," << knee_scene.z
+         << ")";
+    line << " " << kLegKeys[leg] << ".foot=(" << foot_scene.x << "," << foot_scene.y << "," << foot_scene.z
+         << ")";
+  }
+  std::cout << line.str() << "\n";
 }
 
 bool ParseTerrainPatchPacket(const std::string& payload, TerrainPatchState& terrain_patch) {
@@ -2197,9 +2230,14 @@ Options ParseArgs(int argc, char** argv) {
       }
       continue;
     }
+    if (arg == "--log-joint-positions") {
+      options.log_joint_positions = true;
+      continue;
+    }
 
     if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: hexapod-opengl-visualiser [--udp-port <port>]\n"
+      std::cout << "Usage: hexapod-opengl-visualiser [--udp-port <port>] [--log-joint-positions]\n"
+                << "  --log-joint-positions   Print per-joint (x,y,z) once per second to stdout.\n"
                 << "Press F1 while running to toggle the overlay panel.\n";
       std::exit(0);
     }
@@ -2582,6 +2620,7 @@ int main(int argc, char** argv) {
   std::string last_packet_kind = "waiting";
   double last_packet_time_s = std::numeric_limits<double>::quiet_NaN();
   double last_title_update_s = -1.0;
+  double last_joint_log_s = -1.0;
   bool overlay_toggle_down = false;
 
   while (!glfwWindowShouldClose(window)) {
@@ -2606,11 +2645,19 @@ int main(int argc, char** argv) {
 
     const float time_s = static_cast<float>(glfwGetTime());
     DrawScene(entities, terrain_patch, telemetry, ui, camera, time_s);
+    const double now_s = glfwGetTime();
+    if (options.log_joint_positions
+        && telemetry.has_joints
+        && (last_joint_log_s < 0.0 || now_s - last_joint_log_s >= 1.0)) {
+      const HexapodGeometryState robot_geometry = telemetry.geometry.valid ? telemetry.geometry : MakeDefaultGeometryState();
+      LogJointPositions(robot_geometry, telemetry.angles_deg, telemetry.body_pose, now_s);
+      last_joint_log_s = now_s;
+    }
 
     ImGui_ImplOpenGL2_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-    const double packet_age_s = std::isfinite(last_packet_time_s) ? glfwGetTime() - last_packet_time_s
+    const double packet_age_s = std::isfinite(last_packet_time_s) ? now_s - last_packet_time_s
                                                                   : std::numeric_limits<double>::quiet_NaN();
     DrawUi(ui,
            camera,
@@ -2624,12 +2671,12 @@ int main(int argc, char** argv) {
     ImGui::Render();
     ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
 
-    if (last_title_update_s < 0.0 || glfwGetTime() - last_title_update_s > 0.25) {
+    if (last_title_update_s < 0.0 || now_s - last_title_update_s > 0.25) {
       std::ostringstream title;
       title << "Hexapod OpenGL Visualiser | " << last_packet_kind << " | UDP " << options.udp_port
             << " | entities " << entities.size() << " | packets " << accepted_packets;
       glfwSetWindowTitle(window, title.str().c_str());
-      last_title_update_s = glfwGetTime();
+      last_title_update_s = now_s;
     }
 
     glfwSwapBuffers(window);

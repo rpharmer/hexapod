@@ -46,8 +46,14 @@ void adjustSwingTauAndVerticalExtension(const bool in_swing,
                                                                                        ? ContactPhase::ConfirmedStance
                                                                                        : ContactPhase::Search);
 
-    if (phase == ContactPhase::ConfirmedStance || foot_contact) {
+    if (foot_contact) {
         tau_out = 1.0;
+        return;
+    }
+
+    // Raw contact is the only authoritative touchdown signal. A stale confirmed-stance fusion
+    // state can otherwise hold a lifted leg down and feed energy back into the gait loop.
+    if (phase == ContactPhase::ConfirmedStance) {
         return;
     }
 

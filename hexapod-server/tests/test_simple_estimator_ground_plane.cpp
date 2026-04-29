@@ -1,6 +1,7 @@
 #include "estimator.hpp"
 #include "math_types.hpp"
 
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -27,6 +28,14 @@ RobotState makeNeutralRaw(uint64_t sample_id, uint64_t timestamp_us) {
         leg.joint_state[TIBIA].pos_rad = AngleRad{0.0};
     }
 
+    return raw;
+}
+
+RobotState makeBoundaryCrossingRaw(uint64_t sample_id,
+                                   uint64_t timestamp_us,
+                                   double coxa_angle_rad) {
+    RobotState raw = makeNeutralRaw(sample_id, timestamp_us);
+    raw.leg_states[0].joint_state[COXA].pos_rad = AngleRad{coxa_angle_rad};
     return raw;
 }
 
@@ -82,6 +91,40 @@ int main() {
                 "without a plane estimate, software IMU should not be published") ||
         !expect(stale_est.has_fusion_diagnostics && !stale_est.foot_contacts[0],
                 "stale no-contact windows should drop confirmed stance")) {
+        return EXIT_FAILURE;
+    }
+
+    SimpleEstimator physics_estimator{};
+    control_config::FusionConfig physics_config{};
+    physics_config.touchdown_window = std::chrono::milliseconds{40};
+    physics_config.contact_hold_window = std::chrono::milliseconds{120};
+    physics_estimator.configure(physics_config);
+
+    const RobotState physics_first = makeNeutralRaw(10, 2'000'000);
+    (void)physics_estimator.update(physics_first);
+
+    RobotState physics_no_contact = physics_first;
+    physics_no_contact.sample_id = 11;
+    physics_no_contact.timestamp_us = TimePointUs{2'150'000};
+    physics_no_contact.foot_contacts = {false, false, false, false, false, false};
+
+    const RobotState physics_no_contact_est = physics_estimator.update(physics_no_contact);
+    if (!expect(!physics_no_contact_est.foot_contacts[0],
+                "short physics-sim contact hold should release stance sooner") ||
+        !expect(!physics_no_contact_est.has_body_twist_state,
+                "short physics-sim contact hold should stop reusing the stale ground plane")) {
+        return EXIT_FAILURE;
+    }
+
+    const RobotState branch_seed = makeBoundaryCrossingRaw(4, 1'700'000, 3.10);
+    const RobotState branch_seed_est = estimator.update(branch_seed);
+    const RobotState branch_wrap = makeBoundaryCrossingRaw(5, 1'800'000, -3.08);
+    const RobotState branch_wrap_est = estimator.update(branch_wrap);
+    if (!expect(branch_wrap_est.leg_states[0].joint_state[COXA].pos_rad.value >
+                    branch_seed_est.leg_states[0].joint_state[COXA].pos_rad.value,
+                "estimator should unwrap joint samples across the +/-pi boundary") ||
+        !expect(branch_wrap_est.leg_states[0].joint_state[COXA].pos_rad.value > 3.0,
+                "estimator should preserve a continuous joint value past pi")) {
         return EXIT_FAILURE;
     }
 

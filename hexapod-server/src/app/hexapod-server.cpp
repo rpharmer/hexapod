@@ -229,7 +229,8 @@ int main(int argc, char** argv)
   applyTelemetryCliOverrides(config, options, logger);
   applyInvestigationCliOverrides(config, options);
 
-  const control_config::ControlConfig control_cfg = control_config::fromParsedToml(config);
+  control_config::ControlConfig control_cfg = control_config::fromParsedToml(config);
+  control_cfg.control_loop_trace_enabled = options.traceControlLoop;
   geometry_config::loadFromParsedToml(config);
 
   LOG_INFO(logger, "Runtime.Mode=", config.runtimeMode);
@@ -259,6 +260,9 @@ int main(int argc, char** argv)
            control_cfg.replay_log.enabled,
            ", Path=",
            control_cfg.replay_log.file_path);
+  LOG_INFO(logger,
+           "Runtime.Trace.ControlLoop=",
+           control_cfg.control_loop_trace_enabled ? 1 : 0);
   LOG_INFO(logger,
            "Runtime.Investigation.TerrainStanceBiasEnabled=",
            control_cfg.foot_terrain.enable_stance_plane_bias,

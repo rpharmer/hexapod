@@ -315,6 +315,9 @@ Per control step, `ControlPipeline` performs:
 3. `LegIK::solve(...)`
 4. control status synthesis (`ControlStatus`)
 
+`LegIK::solve(...)` evaluates both valid knee branches in the planar chain and keeps the one closest
+to the estimator so mirrored legs stay on the physically consistent bend.
+
 `SafetySupervisor` runs independently in the safety loop. Cross-loop exchange uses `DoubleBuffer<T>`.
 
 ## Protocol bridge notes
