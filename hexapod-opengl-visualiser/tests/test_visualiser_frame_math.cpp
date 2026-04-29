@@ -1,4 +1,4 @@
-#include "visualiser_frame_math.hpp"
+#include "visualiser/math/frame.hpp"
 
 #include <cmath>
 #include <cstdlib>
@@ -19,12 +19,12 @@ bool nearlyEqual(float a, float b, float eps = 1e-6f) {
 }
 
 bool test_server_yaw_maps_to_scene_yaw() {
-  constexpr float half_pi = visualiser_frame_math::kSceneYawOffsetRad;
-  return expect(nearlyEqual(visualiser_frame_math::ServerYawToSceneYaw(0.0f), -half_pi),
+  constexpr float half_pi = visualiser::math::frame_math::kSceneYawOffsetRad;
+  return expect(nearlyEqual(visualiser::math::frame_math::ServerYawToSceneYaw(0.0f), -half_pi),
                 "server yaw 0 should map to scene yaw -90 degrees") &&
-         expect(nearlyEqual(visualiser_frame_math::ServerYawToSceneYaw(half_pi), 0.0f),
+         expect(nearlyEqual(visualiser::math::frame_math::ServerYawToSceneYaw(half_pi), 0.0f),
                 "server yaw +90 degrees should map to scene yaw 0") &&
-         expect(nearlyEqual(visualiser_frame_math::ServerYawToSceneYaw(3.0f * half_pi), 2.0f * half_pi),
+         expect(nearlyEqual(visualiser::math::frame_math::ServerYawToSceneYaw(3.0f * half_pi), 2.0f * half_pi),
                 "server yaw +270 degrees should map consistently in the scene basis");
 }
 

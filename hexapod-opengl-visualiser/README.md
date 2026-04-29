@@ -10,8 +10,13 @@ It can render either:
 ## Dependencies
 
 - CMake 3.16+
-- OpenGL development headers/libs
+- OpenGL 3.3 **core** profile (programmable pipeline; bundled GLAD loader in `third_party/glad/`)
 - GLFW 3.3+
+
+### Rendering notes
+
+- Wireframe lines use the programmable pipeline; **line width** may appear as 1px on some drivers (OpenGL core profile does not guarantee wide lines).
+- **MSAA** is enabled via `GLFW_SAMPLES=4` when supported.
 
 ## Build
 
