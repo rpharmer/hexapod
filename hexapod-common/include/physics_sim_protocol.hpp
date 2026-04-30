@@ -14,6 +14,10 @@ namespace physics_sim {
 // Assembly pitch (LegPitchDirection in Y-up sim) when placing femur/tibia in scenes.cpp.
 inline constexpr float kAssemblyFemurPitchRad = -0.20f;
 inline constexpr float kAssemblyTibiaPitchRad = -1.00f;
+/// Radius of the built-in spherical foot used by `hexapod-physics-sim`'s hexapod demo.
+inline constexpr float kHexapodFootRadiusM = 0.018f;
+/// Rigid tibia body length in the sim. The remaining reach comes from the spherical foot radius.
+inline constexpr float kHexapodTibiaLinkLengthM = 0.104f - kHexapodFootRadiusM;
 inline constexpr std::size_t kMaxObstacleFootprints = 16;
 
 // The built-in hexapod used by `hexapod-physics-sim --serve` defines wire angle zero at the

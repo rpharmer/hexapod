@@ -121,6 +121,8 @@ add_minphys3d_test(test_servo_stability_regression tests/test_servo_stability_re
 add_minphys3d_test(test_servo_regression_matrix tests/test_servo_regression_matrix.cpp)
 add_minphys3d_test(test_hexapod_live tests/test_hexapod_live.cpp)
 add_minphys3d_test(test_hexapod_live_pose_hold tests/test_hexapod_live_pose_hold.cpp)
+add_minphys3d_test(test_hexapod_geometry_alignment tests/test_hexapod_geometry_alignment.cpp)
+add_minphys3d_test(test_hexapod_planted_foot_drift tests/test_hexapod_planted_foot_drift.cpp)
 add_minphys3d_test(test_hexapod_zero_g tests/test_hexapod_zero_g.cpp)
 add_minphys3d_test(hex_diag tests/hex_diag.cpp)
 

@@ -126,6 +126,7 @@ int main(int argc, char** argv) {
     cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
     cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
     cfg.locomotion_cmd.enable_first_order_filter = false;
+    cfg.locomotion_cmd.enable_chassis_accel_limit = false;
 
     RobotRuntime runtime(
         std::move(bridge), std::make_unique<PhysicsSimEstimator>(), nullptr, cfg, telemetry::makeNoopTelemetryPublisher(), std::move(replay_logger));

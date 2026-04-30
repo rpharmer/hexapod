@@ -78,10 +78,12 @@ double computeStandingBodyHeightM() {
         kHexapodLegSpecs.front().mountOffsetBody
         + leg_axis * 0.043f
         + femur_direction * 0.060f
-        + tibia_direction * 0.104f
-        + Vec3{0.0f, -0.018f, 0.0f};
+        + tibia_direction * physics_sim::kHexapodTibiaLinkLengthM;
     constexpr double kSpawnHeightMargin = 0.002;
-    return std::max(0.04, 0.018 - static_cast<double>(foot_center_relative.y) + 0.001) + kSpawnHeightMargin;
+    return std::max(0.04,
+                    static_cast<double>(physics_sim::kHexapodFootRadiusM) -
+                        static_cast<double>(foot_center_relative.y) + 0.001) +
+           kSpawnHeightMargin;
 }
 
 Vec3 computeFootInBodyFrame(const LegState& leg_state, const LegGeometry& leg_geometry) {

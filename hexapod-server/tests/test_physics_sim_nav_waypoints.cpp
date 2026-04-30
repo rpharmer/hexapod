@@ -191,6 +191,7 @@ int main(int argc, char** argv) {
     cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
     /** Exercise the default foot-estimator blend here so live waypoint coverage matches the walking stack. */
     cfg.locomotion_cmd.enable_first_order_filter = false;
+    cfg.locomotion_cmd.enable_chassis_accel_limit = false;
 
     RobotRuntime runtime(std::move(bridge), std::make_unique<PhysicsSimEstimator>(), nullptr, cfg);
     if (!expect(runtime.init(), "runtime init should succeed against the live physics sim")) {

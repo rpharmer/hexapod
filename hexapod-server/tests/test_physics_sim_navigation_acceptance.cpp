@@ -243,6 +243,7 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
     // deterministic coverage protects the sign-conversion seam directly while this suite remains stable.
     cfg.gait.foot_estimator_blend = 0.0;
     cfg.locomotion_cmd.enable_first_order_filter = false;
+    cfg.locomotion_cmd.enable_chassis_accel_limit = false;
     cfg.local_map.width_cells = 61;
     cfg.local_map.height_cells = 61;
     cfg.local_map.resolution_m = 0.05;

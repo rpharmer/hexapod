@@ -14,7 +14,15 @@ BodyTwist rawLocomotionTwistFromIntent(const MotionIntent& intent, const PlanarM
 
 BodyTwist clampLocomotionTwist(const BodyTwist& in, const control_config::LocomotionCommandConfig& cfg);
 
-/** First-order hold on the filtered locomotion twist between control ticks. */
+/**
+ * Shapes locomotion BodyTwist each control tick.
+ *
+ * When control_config::LocomotionCommandConfig::enable_chassis_accel_limit is true (default),
+ * output velocities slew toward the clamped intent with bounded linear/angular acceleration in
+ * all modes (including stand / walk exit). The legacy first-order filter is not applied in that
+ * mode. When accel limiting is disabled, behavior matches the historical path: non-walk snaps to
+ * target, walk entry snaps, and optional exponential smoothing applies only while walking.
+ */
 class LocomotionCommandProcessor {
 public:
     explicit LocomotionCommandProcessor(control_config::LocomotionCommandConfig config = {});
@@ -22,10 +30,7 @@ public:
     void setConfig(control_config::LocomotionCommandConfig config) { config_ = config; }
     void reset();
 
-    /**
-     * Returns clamped-and-smoothed locomotion twist for this tick. When not walking, filtering
-     * state tracks the raw command (no inertial smoothing) so walk entry starts from current intent.
-     */
+    /** Returns clamped-and-shaped locomotion twist for this tick. */
     BodyTwist update(const MotionIntent& intent,
                      const PlanarMotionCommand& planar,
                      TimePointUs clock_tick_us);

@@ -257,6 +257,19 @@ test_control_pipeline_sanity/fast:
 .PHONY : test_control_pipeline_sanity/fast
 
 #=============================================================================
+# Target rules for targets named test_command_governor
+
+# Build rule for target.
+test_command_governor: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_command_governor
+.PHONY : test_command_governor
+
+# fast build rule for target.
+test_command_governor/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_command_governor.dir/build.make CMakeFiles/test_command_governor.dir/build
+.PHONY : test_command_governor/fast
+
+#=============================================================================
 # Target rules for targets named test_hardware_bridge_transport
 
 # Build rule for target.
@@ -621,6 +634,19 @@ test_physics_sim_walk_entry_tracking/fast:
 .PHONY : test_physics_sim_walk_entry_tracking/fast
 
 #=============================================================================
+# Target rules for targets named test_physics_sim_walk_stability
+
+# Build rule for target.
+test_physics_sim_walk_stability: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_physics_sim_walk_stability
+.PHONY : test_physics_sim_walk_stability
+
+# fast build rule for target.
+test_physics_sim_walk_stability/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_stability.dir/build.make CMakeFiles/test_physics_sim_walk_stability.dir/build
+.PHONY : test_physics_sim_walk_stability/fast
+
+#=============================================================================
 # Target rules for targets named test_physics_sim_tripod_support_baseline
 
 # Build rule for target.
@@ -957,6 +983,19 @@ test_replay_logging: cmake_check_build_system
 test_replay_logging/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_replay_logging.dir/build.make CMakeFiles/test_replay_logging.dir/build
 .PHONY : test_replay_logging/fast
+
+#=============================================================================
+# Target rules for targets named test_locomotion_regression_suite
+
+# Build rule for target.
+test_locomotion_regression_suite: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_locomotion_regression_suite
+.PHONY : test_locomotion_regression_suite
+
+# fast build rule for target.
+test_locomotion_regression_suite/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_locomotion_regression_suite.dir/build.make CMakeFiles/test_locomotion_regression_suite.dir/build
+.PHONY : test_locomotion_regression_suite/fast
 
 #=============================================================================
 # Target rules for targets named test_bridge_link_manager
@@ -1454,6 +1493,30 @@ src/control/cli_options.s: src/control/cli_options.cpp.s
 src/control/cli_options.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/cli_options.cpp.s
 .PHONY : src/control/cli_options.cpp.s
+
+src/control/command_governor.o: src/control/command_governor.cpp.o
+.PHONY : src/control/command_governor.o
+
+# target to build an object file
+src/control/command_governor.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/command_governor.cpp.o
+.PHONY : src/control/command_governor.cpp.o
+
+src/control/command_governor.i: src/control/command_governor.cpp.i
+.PHONY : src/control/command_governor.i
+
+# target to preprocess a source file
+src/control/command_governor.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/command_governor.cpp.i
+.PHONY : src/control/command_governor.cpp.i
+
+src/control/command_governor.s: src/control/command_governor.cpp.s
+.PHONY : src/control/command_governor.s
+
+# target to generate assembly for a file
+src/control/command_governor.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/hexapod_server_core.dir/build.make CMakeFiles/hexapod_server_core.dir/src/control/command_governor.cpp.s
+.PHONY : src/control/command_governor.cpp.s
 
 src/control/contact_foot_response.o: src/control/contact_foot_response.cpp.o
 .PHONY : src/control/contact_foot_response.o
@@ -3231,6 +3294,30 @@ tests/test_command_flow_integration.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_command_flow_integration.dir/build.make CMakeFiles/test_command_flow_integration.dir/tests/test_command_flow_integration.cpp.s
 .PHONY : tests/test_command_flow_integration.cpp.s
 
+tests/test_command_governor.o: tests/test_command_governor.cpp.o
+.PHONY : tests/test_command_governor.o
+
+# target to build an object file
+tests/test_command_governor.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_command_governor.dir/build.make CMakeFiles/test_command_governor.dir/tests/test_command_governor.cpp.o
+.PHONY : tests/test_command_governor.cpp.o
+
+tests/test_command_governor.i: tests/test_command_governor.cpp.i
+.PHONY : tests/test_command_governor.i
+
+# target to preprocess a source file
+tests/test_command_governor.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_command_governor.dir/build.make CMakeFiles/test_command_governor.dir/tests/test_command_governor.cpp.i
+.PHONY : tests/test_command_governor.cpp.i
+
+tests/test_command_governor.s: tests/test_command_governor.cpp.s
+.PHONY : tests/test_command_governor.s
+
+# target to generate assembly for a file
+tests/test_command_governor.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_command_governor.dir/build.make CMakeFiles/test_command_governor.dir/tests/test_command_governor.cpp.s
+.PHONY : tests/test_command_governor.cpp.s
+
 tests/test_contact_foot_response.o: tests/test_contact_foot_response.cpp.o
 .PHONY : tests/test_contact_foot_response.o
 
@@ -3831,6 +3918,30 @@ tests/test_locomotion_pose_and_stability.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_locomotion_pose_and_stability.dir/build.make CMakeFiles/test_locomotion_pose_and_stability.dir/tests/test_locomotion_pose_and_stability.cpp.s
 .PHONY : tests/test_locomotion_pose_and_stability.cpp.s
 
+tests/test_locomotion_regression_suite.o: tests/test_locomotion_regression_suite.cpp.o
+.PHONY : tests/test_locomotion_regression_suite.o
+
+# target to build an object file
+tests/test_locomotion_regression_suite.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_locomotion_regression_suite.dir/build.make CMakeFiles/test_locomotion_regression_suite.dir/tests/test_locomotion_regression_suite.cpp.o
+.PHONY : tests/test_locomotion_regression_suite.cpp.o
+
+tests/test_locomotion_regression_suite.i: tests/test_locomotion_regression_suite.cpp.i
+.PHONY : tests/test_locomotion_regression_suite.i
+
+# target to preprocess a source file
+tests/test_locomotion_regression_suite.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_locomotion_regression_suite.dir/build.make CMakeFiles/test_locomotion_regression_suite.dir/tests/test_locomotion_regression_suite.cpp.i
+.PHONY : tests/test_locomotion_regression_suite.cpp.i
+
+tests/test_locomotion_regression_suite.s: tests/test_locomotion_regression_suite.cpp.s
+.PHONY : tests/test_locomotion_regression_suite.s
+
+# target to generate assembly for a file
+tests/test_locomotion_regression_suite.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_locomotion_regression_suite.dir/build.make CMakeFiles/test_locomotion_regression_suite.dir/tests/test_locomotion_regression_suite.cpp.s
+.PHONY : tests/test_locomotion_regression_suite.cpp.s
+
 tests/test_loop_executor_timing.o: tests/test_loop_executor_timing.cpp.o
 .PHONY : tests/test_loop_executor_timing.o
 
@@ -4334,6 +4445,30 @@ tests/test_physics_sim_walk_entry_tracking.s: tests/test_physics_sim_walk_entry_
 tests/test_physics_sim_walk_entry_tracking.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_entry_tracking.dir/build.make CMakeFiles/test_physics_sim_walk_entry_tracking.dir/tests/test_physics_sim_walk_entry_tracking.cpp.s
 .PHONY : tests/test_physics_sim_walk_entry_tracking.cpp.s
+
+tests/test_physics_sim_walk_stability.o: tests/test_physics_sim_walk_stability.cpp.o
+.PHONY : tests/test_physics_sim_walk_stability.o
+
+# target to build an object file
+tests/test_physics_sim_walk_stability.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_stability.dir/build.make CMakeFiles/test_physics_sim_walk_stability.dir/tests/test_physics_sim_walk_stability.cpp.o
+.PHONY : tests/test_physics_sim_walk_stability.cpp.o
+
+tests/test_physics_sim_walk_stability.i: tests/test_physics_sim_walk_stability.cpp.i
+.PHONY : tests/test_physics_sim_walk_stability.i
+
+# target to preprocess a source file
+tests/test_physics_sim_walk_stability.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_stability.dir/build.make CMakeFiles/test_physics_sim_walk_stability.dir/tests/test_physics_sim_walk_stability.cpp.i
+.PHONY : tests/test_physics_sim_walk_stability.cpp.i
+
+tests/test_physics_sim_walk_stability.s: tests/test_physics_sim_walk_stability.cpp.s
+.PHONY : tests/test_physics_sim_walk_stability.s
+
+# target to generate assembly for a file
+tests/test_physics_sim_walk_stability.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_stability.dir/build.make CMakeFiles/test_physics_sim_walk_stability.dir/tests/test_physics_sim_walk_stability.cpp.s
+.PHONY : tests/test_physics_sim_walk_stability.cpp.s
 
 tests/test_protocol_command_metadata.o: tests/test_protocol_command_metadata.cpp.o
 .PHONY : tests/test_protocol_command_metadata.o
@@ -4881,6 +5016,7 @@ help:
 	@echo "... test_calibration_probe_fit"
 	@echo "... test_cli_mode_selection"
 	@echo "... test_command_flow_integration"
+	@echo "... test_command_governor"
 	@echo "... test_contact_foot_response"
 	@echo "... test_control_pipeline_sanity"
 	@echo "... test_foot_planners_velocity_blend"
@@ -4898,6 +5034,7 @@ help:
 	@echo "... test_local_planner"
 	@echo "... test_locomotion_command"
 	@echo "... test_locomotion_pose_and_stability"
+	@echo "... test_locomotion_regression_suite"
 	@echo "... test_loop_executor_timing"
 	@echo "... test_matrix_lidar"
 	@echo "... test_matrix_lidar_local_map_source"
@@ -4919,6 +5056,7 @@ help:
 	@echo "... test_physics_sim_tripod_support_baseline"
 	@echo "... test_physics_sim_walk_distance"
 	@echo "... test_physics_sim_walk_entry_tracking"
+	@echo "... test_physics_sim_walk_stability"
 	@echo "... test_protocol_command_metadata"
 	@echo "... test_replay_logging"
 	@echo "... test_robot_runtime_freshness_gate_matrix"
@@ -4995,6 +5133,9 @@ help:
 	@echo "... src/control/cli_options.o"
 	@echo "... src/control/cli_options.i"
 	@echo "... src/control/cli_options.s"
+	@echo "... src/control/command_governor.o"
+	@echo "... src/control/command_governor.i"
+	@echo "... src/control/command_governor.s"
 	@echo "... src/control/contact_foot_response.o"
 	@echo "... src/control/contact_foot_response.i"
 	@echo "... src/control/contact_foot_response.s"
@@ -5217,6 +5358,9 @@ help:
 	@echo "... tests/test_command_flow_integration.o"
 	@echo "... tests/test_command_flow_integration.i"
 	@echo "... tests/test_command_flow_integration.s"
+	@echo "... tests/test_command_governor.o"
+	@echo "... tests/test_command_governor.i"
+	@echo "... tests/test_command_governor.s"
 	@echo "... tests/test_contact_foot_response.o"
 	@echo "... tests/test_contact_foot_response.i"
 	@echo "... tests/test_contact_foot_response.s"
@@ -5292,6 +5436,9 @@ help:
 	@echo "... tests/test_locomotion_pose_and_stability.o"
 	@echo "... tests/test_locomotion_pose_and_stability.i"
 	@echo "... tests/test_locomotion_pose_and_stability.s"
+	@echo "... tests/test_locomotion_regression_suite.o"
+	@echo "... tests/test_locomotion_regression_suite.i"
+	@echo "... tests/test_locomotion_regression_suite.s"
 	@echo "... tests/test_loop_executor_timing.o"
 	@echo "... tests/test_loop_executor_timing.i"
 	@echo "... tests/test_loop_executor_timing.s"
@@ -5355,6 +5502,9 @@ help:
 	@echo "... tests/test_physics_sim_walk_entry_tracking.o"
 	@echo "... tests/test_physics_sim_walk_entry_tracking.i"
 	@echo "... tests/test_physics_sim_walk_entry_tracking.s"
+	@echo "... tests/test_physics_sim_walk_stability.o"
+	@echo "... tests/test_physics_sim_walk_stability.i"
+	@echo "... tests/test_physics_sim_walk_stability.s"
 	@echo "... tests/test_protocol_command_metadata.o"
 	@echo "... tests/test_protocol_command_metadata.i"
 	@echo "... tests/test_protocol_command_metadata.s"

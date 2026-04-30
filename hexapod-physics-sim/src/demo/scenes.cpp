@@ -98,9 +98,8 @@ constexpr float kFootMass = 0.008f;
 
 constexpr float kCoxaLength = 0.043f;
 constexpr float kFemurLength = 0.060f;
-constexpr float kTibiaLength = 0.104f;
+constexpr float kTibiaLength = physics_sim::kHexapodTibiaLinkLengthM;
 constexpr float kBodyToBottom = 0.040f;
-constexpr float kFootRadius = 0.018f;
 constexpr float kHipMountOutboard = 0.010f;
 constexpr float kCoxaRenderLength = kCoxaLength;
 constexpr float kFemurRenderLength = kFemurLength;
@@ -279,12 +278,12 @@ float ComputeStandingBodyHeight() {
         kHexapodLegSpecs.front().mountOffsetBody
         + leg_axis * kCoxaLength
         + femur_direction * kFemurLength
-        + tibia_direction * kTibiaLength
-        + Vec3{0.0f, -kFootRadius, 0.0f};
+        + tibia_direction * kTibiaLength;
     // Extra clearance so the first contact frames do not start with feet intersecting the plane when
     // identical servos ramp holding torque (slightly conservative over analytic foot height).
     constexpr float kSpawnHeightMargin = 0.002f;
-    return std::max(kBodyToBottom, kFootRadius - foot_center_relative.y + 0.001f) + kSpawnHeightMargin;
+    return std::max(kBodyToBottom, physics_sim::kHexapodFootRadiusM - foot_center_relative.y + 0.001f) +
+           kSpawnHeightMargin;
 }
 
 HexapodSceneObjects BuildHexapodScene(World& world) {
@@ -326,7 +325,7 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
         const Vec3 tibia_anchor = femur_anchor + femur_direction * kFemurLength;
         const Vec3 tibia_center = tibia_anchor + tibia_direction * kTibiaHalfLength;
         const Vec3 tibia_tip = tibia_anchor + tibia_direction * kTibiaLength;
-        const Vec3 foot_center = tibia_tip + Vec3{0.0f, -kFootRadius, 0.0f};
+        const Vec3 foot_center = tibia_tip;
 
         Body coxa = MakeBoxLinkBody(
             coxa_center,
@@ -357,7 +356,7 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
         tibia.angularDamping = 10.0f;
         tibia.compoundChildren = {
             MakeCompoundBoxChild({0.0f, 0.0f, 0.0f}, {kTibiaHalfLength, 0.009f, 0.009f}),
-            MakeCompoundSphereChild(foot_local_offset, kFootRadius),
+            MakeCompoundSphereChild(foot_local_offset, physics_sim::kHexapodFootRadiusM),
         };
         const std::uint32_t tibia_id = world.CreateBody(tibia);
 

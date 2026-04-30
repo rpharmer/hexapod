@@ -38,6 +38,12 @@ inline constexpr double kDefaultFootEstimatorBlend{0.35};
 inline constexpr double kDefaultSwingHeightScale{1.0};
 inline constexpr double kDefaultSwingEaseMin{0.40};
 inline constexpr double kDefaultSwingEaseMax{1.0};
+/** Chassis slew: max planar (XY) acceleration of commanded BodyTwist linear velocity (m/s²). */
+inline constexpr double kDefaultLocomotionMaxLinearAccelXYMps2{2.0};
+/** Chassis slew: max Z linear acceleration for body heave rate command (m/s²). */
+inline constexpr double kDefaultLocomotionMaxLinearAccelZMps2{1.5};
+/** Chassis slew: max angular acceleration per body rate axis (rad/s²). */
+inline constexpr double kDefaultLocomotionMaxAngularAccelRadps2{8.0};
 inline constexpr float kDefaultMinBusVoltageV{10.5f};
 inline constexpr float kDefaultMaxBusCurrentA{25.0f};
 inline constexpr int kDefaultMinFootContacts{0};
@@ -156,6 +162,19 @@ struct LocomotionCommandConfig {
     double max_abs_angular_x_radps{0.85};
     double max_abs_angular_y_radps{0.85};
     double max_abs_angular_z_radps{1.10};
+
+    /**
+     * When true, BodyTwist velocities slew toward the clamped target with bounded acceleration
+     * (all modes). Mutually exclusive with enable_first_order_filter while walking: enabling
+     * chassis accel uses only slew limiting, not the exponential filter.
+     */
+    bool enable_chassis_accel_limit{true};
+    /** Per-tick planar (XY) velocity change cap: max_linear_accel_xy_mps2 * dt. Zero = unlimited. */
+    double max_linear_accel_xy_mps2{kDefaultLocomotionMaxLinearAccelXYMps2};
+    /** Per-tick Z velocity change cap. Zero = unlimited. */
+    double max_linear_accel_z_mps2{kDefaultLocomotionMaxLinearAccelZMps2};
+    /** Per-tick change cap for each angular rate component. Zero = unlimited. */
+    double max_angular_accel_radps2{kDefaultLocomotionMaxAngularAccelRadps2};
 };
 
 struct StreamFreshnessConfig {
