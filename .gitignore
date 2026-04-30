@@ -1,5 +1,6 @@
 # --- CMake / build trees (any subdirectory) ---
 build/
+build-*/
 build-tests/
 build-host-tests/
 build-physics/
