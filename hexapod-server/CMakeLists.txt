@@ -367,6 +367,12 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
 
     add_executable(test_physics_sim_serve_zero_g_udp tests/test_physics_sim_serve_zero_g_udp.cpp)
     target_link_libraries(test_physics_sim_serve_zero_g_udp PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_serve_zero_g_udp COMMAND test_physics_sim_serve_zero_g_udp)
+
+    add_executable(test_physics_sim_server_initial_layout
+        tests/test_physics_sim_server_initial_layout.cpp)
+    target_link_libraries(test_physics_sim_server_initial_layout PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_server_initial_layout COMMAND test_physics_sim_server_initial_layout)
 
     add_executable(test_physics_sim_walk_distance tests/test_physics_sim_walk_distance.cpp)
     target_link_libraries(test_physics_sim_walk_distance PRIVATE hexapod_server_core)

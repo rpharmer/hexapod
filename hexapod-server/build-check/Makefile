@@ -608,6 +608,19 @@ test_physics_sim_serve_zero_g_udp/fast:
 .PHONY : test_physics_sim_serve_zero_g_udp/fast
 
 #=============================================================================
+# Target rules for targets named test_physics_sim_server_initial_layout
+
+# Build rule for target.
+test_physics_sim_server_initial_layout: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_physics_sim_server_initial_layout
+.PHONY : test_physics_sim_server_initial_layout
+
+# fast build rule for target.
+test_physics_sim_server_initial_layout/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_server_initial_layout.dir/build.make CMakeFiles/test_physics_sim_server_initial_layout.dir/build
+.PHONY : test_physics_sim_server_initial_layout/fast
+
+#=============================================================================
 # Target rules for targets named test_physics_sim_walk_distance
 
 # Build rule for target.
@@ -4374,6 +4387,30 @@ tests/test_physics_sim_serve_zero_g_udp.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_serve_zero_g_udp.dir/build.make CMakeFiles/test_physics_sim_serve_zero_g_udp.dir/tests/test_physics_sim_serve_zero_g_udp.cpp.s
 .PHONY : tests/test_physics_sim_serve_zero_g_udp.cpp.s
 
+tests/test_physics_sim_server_initial_layout.o: tests/test_physics_sim_server_initial_layout.cpp.o
+.PHONY : tests/test_physics_sim_server_initial_layout.o
+
+# target to build an object file
+tests/test_physics_sim_server_initial_layout.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_server_initial_layout.dir/build.make CMakeFiles/test_physics_sim_server_initial_layout.dir/tests/test_physics_sim_server_initial_layout.cpp.o
+.PHONY : tests/test_physics_sim_server_initial_layout.cpp.o
+
+tests/test_physics_sim_server_initial_layout.i: tests/test_physics_sim_server_initial_layout.cpp.i
+.PHONY : tests/test_physics_sim_server_initial_layout.i
+
+# target to preprocess a source file
+tests/test_physics_sim_server_initial_layout.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_server_initial_layout.dir/build.make CMakeFiles/test_physics_sim_server_initial_layout.dir/tests/test_physics_sim_server_initial_layout.cpp.i
+.PHONY : tests/test_physics_sim_server_initial_layout.cpp.i
+
+tests/test_physics_sim_server_initial_layout.s: tests/test_physics_sim_server_initial_layout.cpp.s
+.PHONY : tests/test_physics_sim_server_initial_layout.s
+
+# target to generate assembly for a file
+tests/test_physics_sim_server_initial_layout.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_server_initial_layout.dir/build.make CMakeFiles/test_physics_sim_server_initial_layout.dir/tests/test_physics_sim_server_initial_layout.cpp.s
+.PHONY : tests/test_physics_sim_server_initial_layout.cpp.s
+
 tests/test_physics_sim_tripod_support_baseline.o: tests/test_physics_sim_tripod_support_baseline.cpp.o
 .PHONY : tests/test_physics_sim_tripod_support_baseline.o
 
@@ -5053,6 +5090,7 @@ help:
 	@echo "... test_physics_sim_nav_waypoints"
 	@echo "... test_physics_sim_navigation_acceptance"
 	@echo "... test_physics_sim_serve_zero_g_udp"
+	@echo "... test_physics_sim_server_initial_layout"
 	@echo "... test_physics_sim_tripod_support_baseline"
 	@echo "... test_physics_sim_walk_distance"
 	@echo "... test_physics_sim_walk_entry_tracking"
@@ -5493,6 +5531,9 @@ help:
 	@echo "... tests/test_physics_sim_serve_zero_g_udp.o"
 	@echo "... tests/test_physics_sim_serve_zero_g_udp.i"
 	@echo "... tests/test_physics_sim_serve_zero_g_udp.s"
+	@echo "... tests/test_physics_sim_server_initial_layout.o"
+	@echo "... tests/test_physics_sim_server_initial_layout.i"
+	@echo "... tests/test_physics_sim_server_initial_layout.s"
 	@echo "... tests/test_physics_sim_tripod_support_baseline.o"
 	@echo "... tests/test_physics_sim_tripod_support_baseline.i"
 	@echo "... tests/test_physics_sim_tripod_support_baseline.s"

@@ -120,6 +120,18 @@ target_include_directories(test_visualiser_frame_math
 
 add_test(NAME test_visualiser_frame_math COMMAND test_visualiser_frame_math)
 
+add_executable(test_body_pose_transform
+  tests/test_body_pose_transform.cpp
+)
+target_link_libraries(test_body_pose_transform PRIVATE visualiser_core)
+add_test(NAME test_body_pose_transform COMMAND test_body_pose_transform)
+
+add_executable(test_server_visualiser_roundtrip
+  tests/test_server_visualiser_roundtrip.cpp
+)
+target_link_libraries(test_server_visualiser_roundtrip PRIVATE visualiser_core)
+add_test(NAME test_server_visualiser_roundtrip COMMAND test_server_visualiser_roundtrip)
+
 add_executable(test_json_extract
   tests/test_json_extract.cpp
 )

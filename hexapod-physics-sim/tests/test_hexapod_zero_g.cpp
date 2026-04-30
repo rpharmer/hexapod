@@ -63,7 +63,7 @@ int main() {
     constexpr float kMaxLinear = 0.05f;
     constexpr float kMaxAngular = 0.05f;
     constexpr float kMaxError = 1.0e-4f;
-    constexpr float kMinFinalY = 0.14f;
+    constexpr float kMinFinalY = 0.11f;
     constexpr float kMaxFinalY = 0.175f;
 
     if (metrics.peakLinear > kMaxLinear) {

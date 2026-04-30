@@ -122,8 +122,37 @@ add_minphys3d_test(test_servo_regression_matrix tests/test_servo_regression_matr
 add_minphys3d_test(test_hexapod_live tests/test_hexapod_live.cpp)
 add_minphys3d_test(test_hexapod_live_pose_hold tests/test_hexapod_live_pose_hold.cpp)
 add_minphys3d_test(test_hexapod_geometry_alignment tests/test_hexapod_geometry_alignment.cpp)
+add_executable(test_hexapod_initial_layout_matches_server
+    tests/test_hexapod_initial_layout_matches_server.cpp
+    ../hexapod-server/src/kinematics/types.cpp)
+target_link_libraries(test_hexapod_initial_layout_matches_server PRIVATE minphys3d_core)
+target_include_directories(test_hexapod_initial_layout_matches_server PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-server/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-server/include/kinematics)
+if(MSVC)
+    target_compile_options(test_hexapod_initial_layout_matches_server PRIVATE /W4)
+else()
+    target_compile_options(test_hexapod_initial_layout_matches_server PRIVATE -Wall -Wextra -pedantic)
+endif()
+add_test(NAME test_hexapod_initial_layout_matches_server
+    COMMAND test_hexapod_initial_layout_matches_server)
 add_minphys3d_test(test_hexapod_planted_foot_drift tests/test_hexapod_planted_foot_drift.cpp)
 add_minphys3d_test(test_hexapod_zero_g tests/test_hexapod_zero_g.cpp)
+add_executable(test_hexapod_server_alignment_zero_g
+    tests/test_hexapod_server_alignment_zero_g.cpp
+    ../hexapod-server/src/kinematics/types.cpp)
+target_link_libraries(test_hexapod_server_alignment_zero_g PRIVATE minphys3d_core)
+target_include_directories(test_hexapod_server_alignment_zero_g PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-server/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-server/include/kinematics)
+if(MSVC)
+    target_compile_options(test_hexapod_server_alignment_zero_g PRIVATE /W4)
+else()
+    target_compile_options(test_hexapod_server_alignment_zero_g PRIVATE -Wall -Wextra -pedantic)
+endif()
+add_test(NAME test_hexapod_server_alignment_zero_g COMMAND test_hexapod_server_alignment_zero_g)
 add_minphys3d_test(hex_diag tests/hex_diag.cpp)
 
     execute_process(
