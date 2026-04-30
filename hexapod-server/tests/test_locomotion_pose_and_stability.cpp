@@ -226,6 +226,30 @@ bool testStabilityFastBodyRateThrottlesStride() {
                   "high body rate should not increase stride cadence");
 }
 
+bool testStabilityRaisesSwingHeightOnBodySag() {
+    LocomotionStability stability{};
+    MotionIntent intent = walkIntent(0.14, 0.0, 0.0);
+    intent.cmd_yaw_radps = AngularRateRadPerSec{0.45};
+    intent.speed_mps = LinearRateMps{0.0};
+
+    RobotState sagging{};
+    sagging.valid = true;
+    sagging.has_body_twist_state = true;
+    sagging.body_twist_state.body_trans_m.z = 0.096;
+
+    GaitState gait = allStanceWalkGait(0.25, FrequencyHz{0.9});
+    gait.swing_height_m = 0.03;
+
+    stability.apply(sagging, intent, gait);
+
+    if (!expect(gait.swing_height_m > 0.05,
+                "sagging turn should raise swing height above the nominal floor")) {
+        return false;
+    }
+    return expect(gait.swing_height_m <= 0.06 + 1e-9,
+                  "governed swing height should stay within the safe ceiling");
+}
+
 bool testStabilitySlowCommandDoesNotThrottleStride() {
     LocomotionStability stability{};
     MotionIntent intent = walkIntent(0.12, 0.0, 0.0);
@@ -311,7 +335,7 @@ int main() {
         !testStabilityStandClears() || !testStabilityWalkCenteredPositiveMargin() ||
         !testStabilitySlowGaitIsNotMoreConservativeByDefault() ||
         !testStabilityComOutsideHullNegativeMargin() || !testStabilitySupportDiagnosticsExposeAsymmetry() ||
-        !testStabilityFastBodyRateThrottlesStride() ||
+        !testStabilityFastBodyRateThrottlesStride() || !testStabilityRaisesSwingHeightOnBodySag() ||
         !testStabilitySlowCommandDoesNotThrottleStride() ||
         !testStabilityHighTiltForcesHold() ||
         !testStabilityStrictConfigLatchesNearLiftoff() ||

@@ -621,6 +621,19 @@ test_physics_sim_server_initial_layout/fast:
 .PHONY : test_physics_sim_server_initial_layout/fast
 
 #=============================================================================
+# Target rules for targets named test_scenario_body_height_margin
+
+# Build rule for target.
+test_scenario_body_height_margin: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_scenario_body_height_margin
+.PHONY : test_scenario_body_height_margin
+
+# fast build rule for target.
+test_scenario_body_height_margin/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_scenario_body_height_margin.dir/build.make CMakeFiles/test_scenario_body_height_margin.dir/build
+.PHONY : test_scenario_body_height_margin/fast
+
+#=============================================================================
 # Target rules for targets named test_physics_sim_walk_distance
 
 # Build rule for target.
@@ -658,6 +671,32 @@ test_physics_sim_walk_stability: cmake_check_build_system
 test_physics_sim_walk_stability/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_stability.dir/build.make CMakeFiles/test_physics_sim_walk_stability.dir/build
 .PHONY : test_physics_sim_walk_stability/fast
+
+#=============================================================================
+# Target rules for targets named test_physics_sim_turn_foot_clearance
+
+# Build rule for target.
+test_physics_sim_turn_foot_clearance: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_physics_sim_turn_foot_clearance
+.PHONY : test_physics_sim_turn_foot_clearance
+
+# fast build rule for target.
+test_physics_sim_turn_foot_clearance/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_turn_foot_clearance.dir/build.make CMakeFiles/test_physics_sim_turn_foot_clearance.dir/build
+.PHONY : test_physics_sim_turn_foot_clearance/fast
+
+#=============================================================================
+# Target rules for targets named test_physics_sim_turn_raw_contact_loss
+
+# Build rule for target.
+test_physics_sim_turn_raw_contact_loss: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_physics_sim_turn_raw_contact_loss
+.PHONY : test_physics_sim_turn_raw_contact_loss
+
+# fast build rule for target.
+test_physics_sim_turn_raw_contact_loss/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_turn_raw_contact_loss.dir/build.make CMakeFiles/test_physics_sim_turn_raw_contact_loss.dir/build
+.PHONY : test_physics_sim_turn_raw_contact_loss/fast
 
 #=============================================================================
 # Target rules for targets named test_physics_sim_tripod_support_baseline
@@ -4435,6 +4474,54 @@ tests/test_physics_sim_tripod_support_baseline.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_tripod_support_baseline.dir/build.make CMakeFiles/test_physics_sim_tripod_support_baseline.dir/tests/test_physics_sim_tripod_support_baseline.cpp.s
 .PHONY : tests/test_physics_sim_tripod_support_baseline.cpp.s
 
+tests/test_physics_sim_turn_foot_clearance.o: tests/test_physics_sim_turn_foot_clearance.cpp.o
+.PHONY : tests/test_physics_sim_turn_foot_clearance.o
+
+# target to build an object file
+tests/test_physics_sim_turn_foot_clearance.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_turn_foot_clearance.dir/build.make CMakeFiles/test_physics_sim_turn_foot_clearance.dir/tests/test_physics_sim_turn_foot_clearance.cpp.o
+.PHONY : tests/test_physics_sim_turn_foot_clearance.cpp.o
+
+tests/test_physics_sim_turn_foot_clearance.i: tests/test_physics_sim_turn_foot_clearance.cpp.i
+.PHONY : tests/test_physics_sim_turn_foot_clearance.i
+
+# target to preprocess a source file
+tests/test_physics_sim_turn_foot_clearance.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_turn_foot_clearance.dir/build.make CMakeFiles/test_physics_sim_turn_foot_clearance.dir/tests/test_physics_sim_turn_foot_clearance.cpp.i
+.PHONY : tests/test_physics_sim_turn_foot_clearance.cpp.i
+
+tests/test_physics_sim_turn_foot_clearance.s: tests/test_physics_sim_turn_foot_clearance.cpp.s
+.PHONY : tests/test_physics_sim_turn_foot_clearance.s
+
+# target to generate assembly for a file
+tests/test_physics_sim_turn_foot_clearance.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_turn_foot_clearance.dir/build.make CMakeFiles/test_physics_sim_turn_foot_clearance.dir/tests/test_physics_sim_turn_foot_clearance.cpp.s
+.PHONY : tests/test_physics_sim_turn_foot_clearance.cpp.s
+
+tests/test_physics_sim_turn_raw_contact_loss.o: tests/test_physics_sim_turn_raw_contact_loss.cpp.o
+.PHONY : tests/test_physics_sim_turn_raw_contact_loss.o
+
+# target to build an object file
+tests/test_physics_sim_turn_raw_contact_loss.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_turn_raw_contact_loss.dir/build.make CMakeFiles/test_physics_sim_turn_raw_contact_loss.dir/tests/test_physics_sim_turn_raw_contact_loss.cpp.o
+.PHONY : tests/test_physics_sim_turn_raw_contact_loss.cpp.o
+
+tests/test_physics_sim_turn_raw_contact_loss.i: tests/test_physics_sim_turn_raw_contact_loss.cpp.i
+.PHONY : tests/test_physics_sim_turn_raw_contact_loss.i
+
+# target to preprocess a source file
+tests/test_physics_sim_turn_raw_contact_loss.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_turn_raw_contact_loss.dir/build.make CMakeFiles/test_physics_sim_turn_raw_contact_loss.dir/tests/test_physics_sim_turn_raw_contact_loss.cpp.i
+.PHONY : tests/test_physics_sim_turn_raw_contact_loss.cpp.i
+
+tests/test_physics_sim_turn_raw_contact_loss.s: tests/test_physics_sim_turn_raw_contact_loss.cpp.s
+.PHONY : tests/test_physics_sim_turn_raw_contact_loss.s
+
+# target to generate assembly for a file
+tests/test_physics_sim_turn_raw_contact_loss.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_turn_raw_contact_loss.dir/build.make CMakeFiles/test_physics_sim_turn_raw_contact_loss.dir/tests/test_physics_sim_turn_raw_contact_loss.cpp.s
+.PHONY : tests/test_physics_sim_turn_raw_contact_loss.cpp.s
+
 tests/test_physics_sim_walk_distance.o: tests/test_physics_sim_walk_distance.cpp.o
 .PHONY : tests/test_physics_sim_walk_distance.o
 
@@ -4722,6 +4809,30 @@ tests/test_safety_supervisor_faults.s: tests/test_safety_supervisor_faults.cpp.s
 tests/test_safety_supervisor_faults.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_safety_supervisor_faults.dir/build.make CMakeFiles/test_safety_supervisor_faults.dir/tests/test_safety_supervisor_faults.cpp.s
 .PHONY : tests/test_safety_supervisor_faults.cpp.s
+
+tests/test_scenario_body_height_margin.o: tests/test_scenario_body_height_margin.cpp.o
+.PHONY : tests/test_scenario_body_height_margin.o
+
+# target to build an object file
+tests/test_scenario_body_height_margin.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_scenario_body_height_margin.dir/build.make CMakeFiles/test_scenario_body_height_margin.dir/tests/test_scenario_body_height_margin.cpp.o
+.PHONY : tests/test_scenario_body_height_margin.cpp.o
+
+tests/test_scenario_body_height_margin.i: tests/test_scenario_body_height_margin.cpp.i
+.PHONY : tests/test_scenario_body_height_margin.i
+
+# target to preprocess a source file
+tests/test_scenario_body_height_margin.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_scenario_body_height_margin.dir/build.make CMakeFiles/test_scenario_body_height_margin.dir/tests/test_scenario_body_height_margin.cpp.i
+.PHONY : tests/test_scenario_body_height_margin.cpp.i
+
+tests/test_scenario_body_height_margin.s: tests/test_scenario_body_height_margin.cpp.s
+.PHONY : tests/test_scenario_body_height_margin.s
+
+# target to generate assembly for a file
+tests/test_scenario_body_height_margin.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_scenario_body_height_margin.dir/build.make CMakeFiles/test_scenario_body_height_margin.dir/tests/test_scenario_body_height_margin.cpp.s
+.PHONY : tests/test_scenario_body_height_margin.cpp.s
 
 tests/test_scenario_driver_validation.o: tests/test_scenario_driver_validation.cpp.o
 .PHONY : tests/test_scenario_driver_validation.o
@@ -5092,6 +5203,8 @@ help:
 	@echo "... test_physics_sim_serve_zero_g_udp"
 	@echo "... test_physics_sim_server_initial_layout"
 	@echo "... test_physics_sim_tripod_support_baseline"
+	@echo "... test_physics_sim_turn_foot_clearance"
+	@echo "... test_physics_sim_turn_raw_contact_loss"
 	@echo "... test_physics_sim_walk_distance"
 	@echo "... test_physics_sim_walk_entry_tracking"
 	@echo "... test_physics_sim_walk_stability"
@@ -5104,6 +5217,7 @@ help:
 	@echo "... test_runtime_helpers"
 	@echo "... test_runtime_teardown_logging"
 	@echo "... test_safety_supervisor_faults"
+	@echo "... test_scenario_body_height_margin"
 	@echo "... test_scenario_driver_validation"
 	@echo "... test_servo_calibration_unified_conversion"
 	@echo "... test_shutdown_summary_logging"
@@ -5537,6 +5651,12 @@ help:
 	@echo "... tests/test_physics_sim_tripod_support_baseline.o"
 	@echo "... tests/test_physics_sim_tripod_support_baseline.i"
 	@echo "... tests/test_physics_sim_tripod_support_baseline.s"
+	@echo "... tests/test_physics_sim_turn_foot_clearance.o"
+	@echo "... tests/test_physics_sim_turn_foot_clearance.i"
+	@echo "... tests/test_physics_sim_turn_foot_clearance.s"
+	@echo "... tests/test_physics_sim_turn_raw_contact_loss.o"
+	@echo "... tests/test_physics_sim_turn_raw_contact_loss.i"
+	@echo "... tests/test_physics_sim_turn_raw_contact_loss.s"
 	@echo "... tests/test_physics_sim_walk_distance.o"
 	@echo "... tests/test_physics_sim_walk_distance.i"
 	@echo "... tests/test_physics_sim_walk_distance.s"
@@ -5573,6 +5693,9 @@ help:
 	@echo "... tests/test_safety_supervisor_faults.o"
 	@echo "... tests/test_safety_supervisor_faults.i"
 	@echo "... tests/test_safety_supervisor_faults.s"
+	@echo "... tests/test_scenario_body_height_margin.o"
+	@echo "... tests/test_scenario_body_height_margin.i"
+	@echo "... tests/test_scenario_body_height_margin.s"
 	@echo "... tests/test_scenario_driver_validation.o"
 	@echo "... tests/test_scenario_driver_validation.i"
 	@echo "... tests/test_scenario_driver_validation.s"

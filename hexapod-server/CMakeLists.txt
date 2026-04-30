@@ -374,6 +374,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_physics_sim_server_initial_layout PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_server_initial_layout COMMAND test_physics_sim_server_initial_layout)
 
+    add_executable(test_scenario_body_height_margin tests/test_scenario_body_height_margin.cpp)
+    target_link_libraries(test_scenario_body_height_margin PRIVATE hexapod_server_core)
+    add_test(NAME scenario_body_height_margin COMMAND test_scenario_body_height_margin)
+
     add_executable(test_physics_sim_walk_distance tests/test_physics_sim_walk_distance.cpp)
     target_link_libraries(test_physics_sim_walk_distance PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_walk_distance COMMAND test_physics_sim_walk_distance)
@@ -385,6 +389,14 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_physics_sim_walk_stability tests/test_physics_sim_walk_stability.cpp)
     target_link_libraries(test_physics_sim_walk_stability PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_walk_stability COMMAND test_physics_sim_walk_stability)
+
+    add_executable(test_physics_sim_turn_foot_clearance tests/test_physics_sim_turn_foot_clearance.cpp)
+    target_link_libraries(test_physics_sim_turn_foot_clearance PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_turn_foot_clearance COMMAND test_physics_sim_turn_foot_clearance)
+
+    add_executable(test_physics_sim_turn_raw_contact_loss tests/test_physics_sim_turn_raw_contact_loss.cpp)
+    target_link_libraries(test_physics_sim_turn_raw_contact_loss PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_turn_raw_contact_loss COMMAND test_physics_sim_turn_raw_contact_loss)
 
     add_executable(test_physics_sim_tripod_support_baseline tests/test_physics_sim_tripod_support_baseline.cpp)
     target_link_libraries(test_physics_sim_tripod_support_baseline PRIVATE hexapod_server_core)

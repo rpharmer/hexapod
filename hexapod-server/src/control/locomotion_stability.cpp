@@ -1,6 +1,7 @@
 #include "locomotion_stability.hpp"
 
 #include "config/geometry_config.hpp"
+#include "gait_params.hpp"
 #include "motion_intent_utils.hpp"
 
 #include <algorithm>
@@ -294,6 +295,18 @@ void LocomotionStability::apply(const RobotState& est, const MotionIntent& inten
     const double gait_activity_scale = std::min(tilt_scale, body_rate_scale);
     gait.step_length_m *= gait_activity_scale;
     gait.stride_phase_rate_hz.value *= std::clamp(0.75 + 0.25 * gait_activity_scale, 0.55, 1.0);
+
+    const double commanded_body_height_m = intent.twist.body_trans_m.z;
+    const double measured_body_height_m =
+        (est.has_body_twist_state && std::isfinite(est.body_twist_state.body_trans_m.z))
+            ? est.body_twist_state.body_trans_m.z
+            : commanded_body_height_m;
+    const double body_height_deficit_m = std::max(0.0, commanded_body_height_m - measured_body_height_m);
+    const double support_deficit_m = std::max(0.0, config_.min_margin_required_m - gait.static_stability_margin_m);
+    const double swing_height_boost_m = std::clamp(body_height_deficit_m + 0.5 * support_deficit_m, 0.0, 0.06);
+    const double swing_height_floor_m = gaitPresetSwingHeightFloor(intent.gait);
+    gait.swing_height_m =
+        std::clamp(gait.swing_height_m + swing_height_boost_m, swing_height_floor_m, 0.06);
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
         std::vector<Pt2> others;
