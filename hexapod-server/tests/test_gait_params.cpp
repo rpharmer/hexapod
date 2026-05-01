@@ -71,6 +71,18 @@ int main() {
         std::cerr << "FAIL: yaw-heavy low-speed gait should gain more lift than still low-speed motion\n";
         return EXIT_FAILURE;
     }
+
+    // Lateral (crabbing) walk should get more swing clearance than straight forward walking at
+    // the same total planar speed. vy=0.06 m/s → lat_frac=1.0 → full oblique boost applies;
+    // vx=0.06 m/s → lat_frac=0 → only the base half-boost applies.
+    const UnifiedGaitDescription lateral_like =
+        buildAdaptiveTripodCrawlGait(0.0, 0.06, 0.0, 0.0, 0.0, gait);
+    const UnifiedGaitDescription fwd_same_speed =
+        buildAdaptiveTripodCrawlGait(0.06, 0.0, 0.0, 0.0, 0.0, gait);
+    if (!(lateral_like.swing_height_m > fwd_same_speed.swing_height_m)) {
+        std::cerr << "FAIL: lateral low-speed gait should have higher swing floor than straight forward at same speed\n";
+        return EXIT_FAILURE;
+    }
     if (!(wave_ref.swing_height_m >= kWaveSwingFloorM - 1e-9)) {
         std::cerr << "FAIL: fast WAVE should retain its swing floor\n";
         return EXIT_FAILURE;

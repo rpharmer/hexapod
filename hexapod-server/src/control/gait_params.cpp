@@ -136,14 +136,20 @@ UnifiedGaitDescription buildTargetUnifiedGait(const GaitType gait,
             std::max(gait_cfg.swing_height_scale, 1e-6),
         0.008,
         0.06);
-    // Keep slow and yaw-heavy gaits from collapsing swing clearance so far that the feet start
-    // scraping the floor. Forward walking still uses the nominal floor.
+    // Keep slow, yaw-heavy, and oblique gaits from collapsing swing clearance so far that
+    // the feet start scraping the floor. Forward walking still uses the nominal floor.
     const double planar_speed_mps = std::hypot(vx_mps, vy_mps);
     const double low_speed_scale = std::clamp((0.12 - planar_speed_mps) / 0.12, 0.0, 1.0);
     const double yaw_scale = std::clamp(std::abs(yaw_rate_radps) / 0.45, 0.0, 1.0);
+    // Oblique/lateral walking (large |vy| fraction) creates the same cross-axis foot arc
+    // exposure as turning; take the maximum of the two to avoid double-counting.
+    const double lat_frac = (planar_speed_mps > 1e-6)
+        ? std::clamp(std::abs(vy_mps) / planar_speed_mps, 0.0, 1.0)
+        : 0.0;
+    const double oblique_scale = std::max(yaw_scale, lat_frac);
     const double swing_height_floor_m =
         swingHeightFloorForPreset(preset) +
-        kLowSpeedYawSwingBoostM * low_speed_scale * (0.5 + 0.5 * yaw_scale);
+        kLowSpeedYawSwingBoostM * low_speed_scale * (0.5 + 0.5 * oblique_scale);
     desc.swing_height_m = std::max(desc.swing_height_m, swing_height_floor_m);
     desc.swing_time_ease =
         std::clamp(0.52 + 0.46 * (1.0 - std::min(speed_mag, 1.25) / 1.25), 0.40, 1.0);

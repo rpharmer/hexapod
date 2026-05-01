@@ -109,7 +109,7 @@ constexpr float kTibiaRenderLength = kTibiaLength;
 // Shared servo profile for every leg joint. All six legs get the same max torque so the
 // built-in preset stays symmetric and the solver/constraint behavior is not biased by joint type.
 constexpr float kHexapodServoMaxTorque = 28.0f;
-constexpr float kHexapodServoPositionGain = 102.0f;  // omega_n (rad/s)
+constexpr float kHexapodServoPositionGain = 160.0f;  // omega_n (rad/s)
 constexpr float kHexapodServoDampingGain = 1.24f;     // zeta (slightly overdamped)
 constexpr float kHexapodServoMaxSpeed = 8.0f;
 

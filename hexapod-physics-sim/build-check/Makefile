@@ -699,6 +699,19 @@ test_terrain_scroll/fast:
 .PHONY : test_terrain_scroll/fast
 
 #=============================================================================
+# Target rules for targets named test_minphys_viz_protocol
+
+# Build rule for target.
+test_minphys_viz_protocol: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_minphys_viz_protocol
+.PHONY : test_minphys_viz_protocol
+
+# fast build rule for target.
+test_minphys_viz_protocol/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_minphys_viz_protocol.dir/build.make CMakeFiles/test_minphys_viz_protocol.dir/build
+.PHONY : test_minphys_viz_protocol/fast
+
+#=============================================================================
 # Target rules for targets named test_servo_joint_target
 
 # Build rule for target.
@@ -777,6 +790,45 @@ test_hexapod_live_pose_hold/fast:
 .PHONY : test_hexapod_live_pose_hold/fast
 
 #=============================================================================
+# Target rules for targets named test_hexapod_geometry_alignment
+
+# Build rule for target.
+test_hexapod_geometry_alignment: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_hexapod_geometry_alignment
+.PHONY : test_hexapod_geometry_alignment
+
+# fast build rule for target.
+test_hexapod_geometry_alignment/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_geometry_alignment.dir/build.make CMakeFiles/test_hexapod_geometry_alignment.dir/build
+.PHONY : test_hexapod_geometry_alignment/fast
+
+#=============================================================================
+# Target rules for targets named test_hexapod_initial_layout_matches_server
+
+# Build rule for target.
+test_hexapod_initial_layout_matches_server: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_hexapod_initial_layout_matches_server
+.PHONY : test_hexapod_initial_layout_matches_server
+
+# fast build rule for target.
+test_hexapod_initial_layout_matches_server/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_initial_layout_matches_server.dir/build.make CMakeFiles/test_hexapod_initial_layout_matches_server.dir/build
+.PHONY : test_hexapod_initial_layout_matches_server/fast
+
+#=============================================================================
+# Target rules for targets named test_hexapod_planted_foot_drift
+
+# Build rule for target.
+test_hexapod_planted_foot_drift: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_hexapod_planted_foot_drift
+.PHONY : test_hexapod_planted_foot_drift
+
+# fast build rule for target.
+test_hexapod_planted_foot_drift/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_planted_foot_drift.dir/build.make CMakeFiles/test_hexapod_planted_foot_drift.dir/build
+.PHONY : test_hexapod_planted_foot_drift/fast
+
+#=============================================================================
 # Target rules for targets named test_hexapod_zero_g
 
 # Build rule for target.
@@ -788,6 +840,19 @@ test_hexapod_zero_g: cmake_check_build_system
 test_hexapod_zero_g/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_zero_g.dir/build.make CMakeFiles/test_hexapod_zero_g.dir/build
 .PHONY : test_hexapod_zero_g/fast
+
+#=============================================================================
+# Target rules for targets named test_hexapod_server_alignment_zero_g
+
+# Build rule for target.
+test_hexapod_server_alignment_zero_g: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_hexapod_server_alignment_zero_g
+.PHONY : test_hexapod_server_alignment_zero_g
+
+# fast build rule for target.
+test_hexapod_server_alignment_zero_g/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_server_alignment_zero_g.dir/build.make CMakeFiles/test_hexapod_server_alignment_zero_g.dir/build
+.PHONY : test_hexapod_server_alignment_zero_g/fast
 
 #=============================================================================
 # Target rules for targets named hex_diag
@@ -944,6 +1009,33 @@ test_state_correction_protocol: cmake_check_build_system
 test_state_correction_protocol/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_state_correction_protocol.dir/build.make CMakeFiles/test_state_correction_protocol.dir/build
 .PHONY : test_state_correction_protocol/fast
+
+home/volly/pico/hexapod/hexapod-server/src/kinematics/types.o: home/volly/pico/hexapod/hexapod-server/src/kinematics/types.cpp.o
+.PHONY : home/volly/pico/hexapod/hexapod-server/src/kinematics/types.o
+
+# target to build an object file
+home/volly/pico/hexapod/hexapod-server/src/kinematics/types.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_initial_layout_matches_server.dir/build.make CMakeFiles/test_hexapod_initial_layout_matches_server.dir/home/volly/pico/hexapod/hexapod-server/src/kinematics/types.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_server_alignment_zero_g.dir/build.make CMakeFiles/test_hexapod_server_alignment_zero_g.dir/home/volly/pico/hexapod/hexapod-server/src/kinematics/types.cpp.o
+.PHONY : home/volly/pico/hexapod/hexapod-server/src/kinematics/types.cpp.o
+
+home/volly/pico/hexapod/hexapod-server/src/kinematics/types.i: home/volly/pico/hexapod/hexapod-server/src/kinematics/types.cpp.i
+.PHONY : home/volly/pico/hexapod/hexapod-server/src/kinematics/types.i
+
+# target to preprocess a source file
+home/volly/pico/hexapod/hexapod-server/src/kinematics/types.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_initial_layout_matches_server.dir/build.make CMakeFiles/test_hexapod_initial_layout_matches_server.dir/home/volly/pico/hexapod/hexapod-server/src/kinematics/types.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_server_alignment_zero_g.dir/build.make CMakeFiles/test_hexapod_server_alignment_zero_g.dir/home/volly/pico/hexapod/hexapod-server/src/kinematics/types.cpp.i
+.PHONY : home/volly/pico/hexapod/hexapod-server/src/kinematics/types.cpp.i
+
+home/volly/pico/hexapod/hexapod-server/src/kinematics/types.s: home/volly/pico/hexapod/hexapod-server/src/kinematics/types.cpp.s
+.PHONY : home/volly/pico/hexapod/hexapod-server/src/kinematics/types.s
+
+# target to generate assembly for a file
+home/volly/pico/hexapod/hexapod-server/src/kinematics/types.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_initial_layout_matches_server.dir/build.make CMakeFiles/test_hexapod_initial_layout_matches_server.dir/home/volly/pico/hexapod/hexapod-server/src/kinematics/types.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_server_alignment_zero_g.dir/build.make CMakeFiles/test_hexapod_server_alignment_zero_g.dir/home/volly/pico/hexapod/hexapod-server/src/kinematics/types.cpp.s
+.PHONY : home/volly/pico/hexapod/hexapod-server/src/kinematics/types.cpp.s
 
 profiling/world_resource_profile_oneoff.o: profiling/world_resource_profile_oneoff.cpp.o
 .PHONY : profiling/world_resource_profile_oneoff.o
@@ -1821,6 +1913,54 @@ tests/test_gjk_regression.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gjk_regression.dir/build.make CMakeFiles/test_gjk_regression.dir/tests/test_gjk_regression.cpp.s
 .PHONY : tests/test_gjk_regression.cpp.s
 
+tests/test_hexapod_geometry_alignment.o: tests/test_hexapod_geometry_alignment.cpp.o
+.PHONY : tests/test_hexapod_geometry_alignment.o
+
+# target to build an object file
+tests/test_hexapod_geometry_alignment.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_geometry_alignment.dir/build.make CMakeFiles/test_hexapod_geometry_alignment.dir/tests/test_hexapod_geometry_alignment.cpp.o
+.PHONY : tests/test_hexapod_geometry_alignment.cpp.o
+
+tests/test_hexapod_geometry_alignment.i: tests/test_hexapod_geometry_alignment.cpp.i
+.PHONY : tests/test_hexapod_geometry_alignment.i
+
+# target to preprocess a source file
+tests/test_hexapod_geometry_alignment.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_geometry_alignment.dir/build.make CMakeFiles/test_hexapod_geometry_alignment.dir/tests/test_hexapod_geometry_alignment.cpp.i
+.PHONY : tests/test_hexapod_geometry_alignment.cpp.i
+
+tests/test_hexapod_geometry_alignment.s: tests/test_hexapod_geometry_alignment.cpp.s
+.PHONY : tests/test_hexapod_geometry_alignment.s
+
+# target to generate assembly for a file
+tests/test_hexapod_geometry_alignment.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_geometry_alignment.dir/build.make CMakeFiles/test_hexapod_geometry_alignment.dir/tests/test_hexapod_geometry_alignment.cpp.s
+.PHONY : tests/test_hexapod_geometry_alignment.cpp.s
+
+tests/test_hexapod_initial_layout_matches_server.o: tests/test_hexapod_initial_layout_matches_server.cpp.o
+.PHONY : tests/test_hexapod_initial_layout_matches_server.o
+
+# target to build an object file
+tests/test_hexapod_initial_layout_matches_server.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_initial_layout_matches_server.dir/build.make CMakeFiles/test_hexapod_initial_layout_matches_server.dir/tests/test_hexapod_initial_layout_matches_server.cpp.o
+.PHONY : tests/test_hexapod_initial_layout_matches_server.cpp.o
+
+tests/test_hexapod_initial_layout_matches_server.i: tests/test_hexapod_initial_layout_matches_server.cpp.i
+.PHONY : tests/test_hexapod_initial_layout_matches_server.i
+
+# target to preprocess a source file
+tests/test_hexapod_initial_layout_matches_server.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_initial_layout_matches_server.dir/build.make CMakeFiles/test_hexapod_initial_layout_matches_server.dir/tests/test_hexapod_initial_layout_matches_server.cpp.i
+.PHONY : tests/test_hexapod_initial_layout_matches_server.cpp.i
+
+tests/test_hexapod_initial_layout_matches_server.s: tests/test_hexapod_initial_layout_matches_server.cpp.s
+.PHONY : tests/test_hexapod_initial_layout_matches_server.s
+
+# target to generate assembly for a file
+tests/test_hexapod_initial_layout_matches_server.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_initial_layout_matches_server.dir/build.make CMakeFiles/test_hexapod_initial_layout_matches_server.dir/tests/test_hexapod_initial_layout_matches_server.cpp.s
+.PHONY : tests/test_hexapod_initial_layout_matches_server.cpp.s
+
 tests/test_hexapod_live.o: tests/test_hexapod_live.cpp.o
 .PHONY : tests/test_hexapod_live.o
 
@@ -1868,6 +2008,54 @@ tests/test_hexapod_live_pose_hold.s: tests/test_hexapod_live_pose_hold.cpp.s
 tests/test_hexapod_live_pose_hold.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_live_pose_hold.dir/build.make CMakeFiles/test_hexapod_live_pose_hold.dir/tests/test_hexapod_live_pose_hold.cpp.s
 .PHONY : tests/test_hexapod_live_pose_hold.cpp.s
+
+tests/test_hexapod_planted_foot_drift.o: tests/test_hexapod_planted_foot_drift.cpp.o
+.PHONY : tests/test_hexapod_planted_foot_drift.o
+
+# target to build an object file
+tests/test_hexapod_planted_foot_drift.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_planted_foot_drift.dir/build.make CMakeFiles/test_hexapod_planted_foot_drift.dir/tests/test_hexapod_planted_foot_drift.cpp.o
+.PHONY : tests/test_hexapod_planted_foot_drift.cpp.o
+
+tests/test_hexapod_planted_foot_drift.i: tests/test_hexapod_planted_foot_drift.cpp.i
+.PHONY : tests/test_hexapod_planted_foot_drift.i
+
+# target to preprocess a source file
+tests/test_hexapod_planted_foot_drift.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_planted_foot_drift.dir/build.make CMakeFiles/test_hexapod_planted_foot_drift.dir/tests/test_hexapod_planted_foot_drift.cpp.i
+.PHONY : tests/test_hexapod_planted_foot_drift.cpp.i
+
+tests/test_hexapod_planted_foot_drift.s: tests/test_hexapod_planted_foot_drift.cpp.s
+.PHONY : tests/test_hexapod_planted_foot_drift.s
+
+# target to generate assembly for a file
+tests/test_hexapod_planted_foot_drift.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_planted_foot_drift.dir/build.make CMakeFiles/test_hexapod_planted_foot_drift.dir/tests/test_hexapod_planted_foot_drift.cpp.s
+.PHONY : tests/test_hexapod_planted_foot_drift.cpp.s
+
+tests/test_hexapod_server_alignment_zero_g.o: tests/test_hexapod_server_alignment_zero_g.cpp.o
+.PHONY : tests/test_hexapod_server_alignment_zero_g.o
+
+# target to build an object file
+tests/test_hexapod_server_alignment_zero_g.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_server_alignment_zero_g.dir/build.make CMakeFiles/test_hexapod_server_alignment_zero_g.dir/tests/test_hexapod_server_alignment_zero_g.cpp.o
+.PHONY : tests/test_hexapod_server_alignment_zero_g.cpp.o
+
+tests/test_hexapod_server_alignment_zero_g.i: tests/test_hexapod_server_alignment_zero_g.cpp.i
+.PHONY : tests/test_hexapod_server_alignment_zero_g.i
+
+# target to preprocess a source file
+tests/test_hexapod_server_alignment_zero_g.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_server_alignment_zero_g.dir/build.make CMakeFiles/test_hexapod_server_alignment_zero_g.dir/tests/test_hexapod_server_alignment_zero_g.cpp.i
+.PHONY : tests/test_hexapod_server_alignment_zero_g.cpp.i
+
+tests/test_hexapod_server_alignment_zero_g.s: tests/test_hexapod_server_alignment_zero_g.cpp.s
+.PHONY : tests/test_hexapod_server_alignment_zero_g.s
+
+# target to generate assembly for a file
+tests/test_hexapod_server_alignment_zero_g.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_server_alignment_zero_g.dir/build.make CMakeFiles/test_hexapod_server_alignment_zero_g.dir/tests/test_hexapod_server_alignment_zero_g.cpp.s
+.PHONY : tests/test_hexapod_server_alignment_zero_g.cpp.s
 
 tests/test_hexapod_zero_g.o: tests/test_hexapod_zero_g.cpp.o
 .PHONY : tests/test_hexapod_zero_g.o
@@ -1940,6 +2128,30 @@ tests/test_joint_creation_refactor.s: tests/test_joint_creation_refactor.cpp.s
 tests/test_joint_creation_refactor.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_joint_creation_refactor.dir/build.make CMakeFiles/test_joint_creation_refactor.dir/tests/test_joint_creation_refactor.cpp.s
 .PHONY : tests/test_joint_creation_refactor.cpp.s
+
+tests/test_minphys_viz_protocol.o: tests/test_minphys_viz_protocol.cpp.o
+.PHONY : tests/test_minphys_viz_protocol.o
+
+# target to build an object file
+tests/test_minphys_viz_protocol.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_minphys_viz_protocol.dir/build.make CMakeFiles/test_minphys_viz_protocol.dir/tests/test_minphys_viz_protocol.cpp.o
+.PHONY : tests/test_minphys_viz_protocol.cpp.o
+
+tests/test_minphys_viz_protocol.i: tests/test_minphys_viz_protocol.cpp.i
+.PHONY : tests/test_minphys_viz_protocol.i
+
+# target to preprocess a source file
+tests/test_minphys_viz_protocol.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_minphys_viz_protocol.dir/build.make CMakeFiles/test_minphys_viz_protocol.dir/tests/test_minphys_viz_protocol.cpp.i
+.PHONY : tests/test_minphys_viz_protocol.cpp.i
+
+tests/test_minphys_viz_protocol.s: tests/test_minphys_viz_protocol.cpp.s
+.PHONY : tests/test_minphys_viz_protocol.s
+
+# target to generate assembly for a file
+tests/test_minphys_viz_protocol.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_minphys_viz_protocol.dir/build.make CMakeFiles/test_minphys_viz_protocol.dir/tests/test_minphys_viz_protocol.cpp.s
+.PHONY : tests/test_minphys_viz_protocol.cpp.s
 
 tests/test_process_resource_monitoring.o: tests/test_process_resource_monitoring.cpp.o
 .PHONY : tests/test_process_resource_monitoring.o
@@ -2352,11 +2564,16 @@ help:
 	@echo "... test_convex_dispatch_equivalence"
 	@echo "... test_cylinder_collision"
 	@echo "... test_gjk_regression"
+	@echo "... test_hexapod_geometry_alignment"
+	@echo "... test_hexapod_initial_layout_matches_server"
 	@echo "... test_hexapod_live"
 	@echo "... test_hexapod_live_pose_hold"
+	@echo "... test_hexapod_planted_foot_drift"
+	@echo "... test_hexapod_server_alignment_zero_g"
 	@echo "... test_hexapod_zero_g"
 	@echo "... test_island_ordering"
 	@echo "... test_joint_creation_refactor"
+	@echo "... test_minphys_viz_protocol"
 	@echo "... test_process_resource_monitoring"
 	@echo "... test_regression_step"
 	@echo "... test_serve_ipc"
@@ -2373,6 +2590,9 @@ help:
 	@echo "... test_world_resource_monitoring"
 	@echo "... test_world_topology_snapshot"
 	@echo "... world_resource_profile_oneoff"
+	@echo "... home/volly/pico/hexapod/hexapod-server/src/kinematics/types.o"
+	@echo "... home/volly/pico/hexapod/hexapod-server/src/kinematics/types.i"
+	@echo "... home/volly/pico/hexapod/hexapod-server/src/kinematics/types.s"
 	@echo "... profiling/world_resource_profile_oneoff.o"
 	@echo "... profiling/world_resource_profile_oneoff.i"
 	@echo "... profiling/world_resource_profile_oneoff.s"
@@ -2481,12 +2701,24 @@ help:
 	@echo "... tests/test_gjk_regression.o"
 	@echo "... tests/test_gjk_regression.i"
 	@echo "... tests/test_gjk_regression.s"
+	@echo "... tests/test_hexapod_geometry_alignment.o"
+	@echo "... tests/test_hexapod_geometry_alignment.i"
+	@echo "... tests/test_hexapod_geometry_alignment.s"
+	@echo "... tests/test_hexapod_initial_layout_matches_server.o"
+	@echo "... tests/test_hexapod_initial_layout_matches_server.i"
+	@echo "... tests/test_hexapod_initial_layout_matches_server.s"
 	@echo "... tests/test_hexapod_live.o"
 	@echo "... tests/test_hexapod_live.i"
 	@echo "... tests/test_hexapod_live.s"
 	@echo "... tests/test_hexapod_live_pose_hold.o"
 	@echo "... tests/test_hexapod_live_pose_hold.i"
 	@echo "... tests/test_hexapod_live_pose_hold.s"
+	@echo "... tests/test_hexapod_planted_foot_drift.o"
+	@echo "... tests/test_hexapod_planted_foot_drift.i"
+	@echo "... tests/test_hexapod_planted_foot_drift.s"
+	@echo "... tests/test_hexapod_server_alignment_zero_g.o"
+	@echo "... tests/test_hexapod_server_alignment_zero_g.i"
+	@echo "... tests/test_hexapod_server_alignment_zero_g.s"
 	@echo "... tests/test_hexapod_zero_g.o"
 	@echo "... tests/test_hexapod_zero_g.i"
 	@echo "... tests/test_hexapod_zero_g.s"
@@ -2496,6 +2728,9 @@ help:
 	@echo "... tests/test_joint_creation_refactor.o"
 	@echo "... tests/test_joint_creation_refactor.i"
 	@echo "... tests/test_joint_creation_refactor.s"
+	@echo "... tests/test_minphys_viz_protocol.o"
+	@echo "... tests/test_minphys_viz_protocol.i"
+	@echo "... tests/test_minphys_viz_protocol.s"
 	@echo "... tests/test_process_resource_monitoring.o"
 	@echo "... tests/test_process_resource_monitoring.i"
 	@echo "... tests/test_process_resource_monitoring.s"

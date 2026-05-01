@@ -24,6 +24,7 @@ private:
     HexapodGeometry geometry_{defaultHexapodGeometry()};
     double foot_estimator_blend_{control_config::kDefaultFootEstimatorBlend};
     control_config::FootTerrainConfig foot_terrain_cfg_{};
+    double height_hold_integral_m_{0.0};
 };
 
 /** Nominal stance placement for a given body height and leg geometry. */

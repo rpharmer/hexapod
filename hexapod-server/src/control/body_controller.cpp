@@ -22,6 +22,10 @@ constexpr double kReachMarginM = 0.005;
 constexpr double kFootReachInsetM = 0.004;
 constexpr double kBodyHeightHoldGain = 1.0;
 constexpr double kBodyHeightHoldMaxAdjustM = 0.120;
+constexpr double kBodyHeightHoldIntegralGain = 0.15;  // fraction of measured sag accumulated per step
+constexpr double kBodyHeightHoldIntegralCapM = 0.040; // max 40 mm: covers realistic compliance without runaway
+constexpr double kBodyHeightHoldIntegralDecay = 0.99;     // per-step decay when body is near commanded
+constexpr double kBodyHeightHoldIntegralDecayFast = 0.93; // fast decay when body is above commanded (~250 ms to clear)
 constexpr double kTerrainBlendMinScale = 0.35;
 constexpr double kTerrainBlendSagScale = 0.65;
 
@@ -169,7 +173,32 @@ LegTargets BodyController::update(const RobotState& est,
     }
 
     const double commanded_body_height_m = pose.body_height_m;
-    const double body_height_hold_m = bodyHeightHoldOffsetM(est, commanded_body_height_m);
+
+    // Integrate persistent body height sag. Converges toward zero steady-state error
+    // at a rate driven by actual servo compliance — no fixed compliance model assumed.
+    // Decays when the body is at or above the commanded height (anti-windup).
+    if (est.has_body_twist_state) {
+        const double measured_h = est.body_twist_state.body_trans_m.z;
+        if (std::isfinite(measured_h)) {
+            const double height_error_m = commanded_body_height_m - measured_h; // positive = sagging
+            if (height_error_m > 1e-4) {
+                height_hold_integral_m_ = std::clamp(
+                    height_hold_integral_m_ + kBodyHeightHoldIntegralGain * height_error_m,
+                    0.0, kBodyHeightHoldIntegralCapM);
+            } else if (height_error_m < -1e-4) {
+                // Body is above commanded: integral wound up during a slower phase.
+                // Clear quickly so the overshoot doesn't persist across gait transitions.
+                height_hold_integral_m_ *= kBodyHeightHoldIntegralDecayFast;
+            } else {
+                height_hold_integral_m_ *= kBodyHeightHoldIntegralDecay;
+            }
+        }
+    } else {
+        height_hold_integral_m_ *= kBodyHeightHoldIntegralDecay;
+    }
+
+    const double body_height_hold_m = bodyHeightHoldOffsetM(est, commanded_body_height_m)
+                                      + height_hold_integral_m_;
     double tilt_squat_m = 0.0;
     if (walking && est.has_body_twist_state) {
         const double roll_meas = est.body_twist_state.twist_pos_rad.x;
