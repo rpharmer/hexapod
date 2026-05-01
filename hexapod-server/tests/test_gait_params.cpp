@@ -81,5 +81,34 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    // Scenario 05 slow-phase swing heights: assert every phase's floor sits above the physics
+    // foot sphere radius (0.018 m) so the sphere bottom always clears the ground at peak swing.
+    // Computed against nominal_planar_speed_mps = 0.32 m/s (default GaitConfig).
+    constexpr double kPhysicsFootRadiusM = 0.018;  // kHexapodFootRadiusM in physics_sim_protocol.hpp
+
+    struct Scenario05Case {
+        GaitType gait;
+        double vx_mps;
+        double yaw_rate_radps;
+        const char* label;
+    };
+    const Scenario05Case scenario05_phases[] = {
+        {GaitType::TRIPOD, 0.06, 0.0, "scenario05_tripod_0.06mps"},
+        {GaitType::RIPPLE, 0.07, 0.0, "scenario05_ripple_0.07mps"},
+        {GaitType::WAVE,   0.05, 0.0, "scenario05_wave_0.05mps"},
+        {GaitType::TRIPOD, 0.05, 0.0, "scenario05_tripod_0.05mps"},
+        {GaitType::RIPPLE, 0.04, 0.0, "scenario05_ripple_0.04mps"},
+    };
+    for (const auto& c : scenario05_phases) {
+        const UnifiedGaitDescription desc =
+            buildTargetUnifiedGait(c.gait, c.vx_mps, 0.0, c.yaw_rate_radps, gait, 0.0, 0.0);
+        std::cout << c.label << " swing_height_m=" << desc.swing_height_m << '\n';
+        if (!(desc.swing_height_m >= kPhysicsFootRadiusM - 1e-9)) {
+            std::cerr << "FAIL: " << c.label << " swing_height_m=" << desc.swing_height_m
+                      << " must be >= physics foot radius " << kPhysicsFootRadiusM << '\n';
+            return EXIT_FAILURE;
+        }
+    }
+
     return EXIT_SUCCESS;
 }

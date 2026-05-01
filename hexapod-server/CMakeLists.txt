@@ -398,6 +398,18 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_physics_sim_turn_raw_contact_loss PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_turn_raw_contact_loss COMMAND test_physics_sim_turn_raw_contact_loss)
 
+    add_executable(test_physics_sim_slow_fwd_walk_foot_clearance tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp)
+    target_link_libraries(test_physics_sim_slow_fwd_walk_foot_clearance PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_slow_fwd_walk_foot_clearance COMMAND test_physics_sim_slow_fwd_walk_foot_clearance)
+
+    add_executable(test_physics_sim_wave_slow_walk_foot_clearance tests/test_physics_sim_wave_slow_walk_foot_clearance.cpp)
+    target_link_libraries(test_physics_sim_wave_slow_walk_foot_clearance PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_wave_slow_walk_foot_clearance COMMAND test_physics_sim_wave_slow_walk_foot_clearance)
+
+    add_executable(test_physics_sim_slow_fwd_walk_contact_loss tests/test_physics_sim_slow_fwd_walk_contact_loss.cpp)
+    target_link_libraries(test_physics_sim_slow_fwd_walk_contact_loss PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_slow_fwd_walk_contact_loss COMMAND test_physics_sim_slow_fwd_walk_contact_loss)
+
     add_executable(test_physics_sim_tripod_support_baseline tests/test_physics_sim_tripod_support_baseline.cpp)
     target_link_libraries(test_physics_sim_tripod_support_baseline PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_tripod_support_baseline COMMAND test_physics_sim_tripod_support_baseline)

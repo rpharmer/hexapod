@@ -699,6 +699,45 @@ test_physics_sim_turn_raw_contact_loss/fast:
 .PHONY : test_physics_sim_turn_raw_contact_loss/fast
 
 #=============================================================================
+# Target rules for targets named test_physics_sim_slow_fwd_walk_foot_clearance
+
+# Build rule for target.
+test_physics_sim_slow_fwd_walk_foot_clearance: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_physics_sim_slow_fwd_walk_foot_clearance
+.PHONY : test_physics_sim_slow_fwd_walk_foot_clearance
+
+# fast build rule for target.
+test_physics_sim_slow_fwd_walk_foot_clearance/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_slow_fwd_walk_foot_clearance.dir/build.make CMakeFiles/test_physics_sim_slow_fwd_walk_foot_clearance.dir/build
+.PHONY : test_physics_sim_slow_fwd_walk_foot_clearance/fast
+
+#=============================================================================
+# Target rules for targets named test_physics_sim_wave_slow_walk_foot_clearance
+
+# Build rule for target.
+test_physics_sim_wave_slow_walk_foot_clearance: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_physics_sim_wave_slow_walk_foot_clearance
+.PHONY : test_physics_sim_wave_slow_walk_foot_clearance
+
+# fast build rule for target.
+test_physics_sim_wave_slow_walk_foot_clearance/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_wave_slow_walk_foot_clearance.dir/build.make CMakeFiles/test_physics_sim_wave_slow_walk_foot_clearance.dir/build
+.PHONY : test_physics_sim_wave_slow_walk_foot_clearance/fast
+
+#=============================================================================
+# Target rules for targets named test_physics_sim_slow_fwd_walk_contact_loss
+
+# Build rule for target.
+test_physics_sim_slow_fwd_walk_contact_loss: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_physics_sim_slow_fwd_walk_contact_loss
+.PHONY : test_physics_sim_slow_fwd_walk_contact_loss
+
+# fast build rule for target.
+test_physics_sim_slow_fwd_walk_contact_loss/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_slow_fwd_walk_contact_loss.dir/build.make CMakeFiles/test_physics_sim_slow_fwd_walk_contact_loss.dir/build
+.PHONY : test_physics_sim_slow_fwd_walk_contact_loss/fast
+
+#=============================================================================
 # Target rules for targets named test_physics_sim_tripod_support_baseline
 
 # Build rule for target.
@@ -4450,6 +4489,54 @@ tests/test_physics_sim_server_initial_layout.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_server_initial_layout.dir/build.make CMakeFiles/test_physics_sim_server_initial_layout.dir/tests/test_physics_sim_server_initial_layout.cpp.s
 .PHONY : tests/test_physics_sim_server_initial_layout.cpp.s
 
+tests/test_physics_sim_slow_fwd_walk_contact_loss.o: tests/test_physics_sim_slow_fwd_walk_contact_loss.cpp.o
+.PHONY : tests/test_physics_sim_slow_fwd_walk_contact_loss.o
+
+# target to build an object file
+tests/test_physics_sim_slow_fwd_walk_contact_loss.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_slow_fwd_walk_contact_loss.dir/build.make CMakeFiles/test_physics_sim_slow_fwd_walk_contact_loss.dir/tests/test_physics_sim_slow_fwd_walk_contact_loss.cpp.o
+.PHONY : tests/test_physics_sim_slow_fwd_walk_contact_loss.cpp.o
+
+tests/test_physics_sim_slow_fwd_walk_contact_loss.i: tests/test_physics_sim_slow_fwd_walk_contact_loss.cpp.i
+.PHONY : tests/test_physics_sim_slow_fwd_walk_contact_loss.i
+
+# target to preprocess a source file
+tests/test_physics_sim_slow_fwd_walk_contact_loss.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_slow_fwd_walk_contact_loss.dir/build.make CMakeFiles/test_physics_sim_slow_fwd_walk_contact_loss.dir/tests/test_physics_sim_slow_fwd_walk_contact_loss.cpp.i
+.PHONY : tests/test_physics_sim_slow_fwd_walk_contact_loss.cpp.i
+
+tests/test_physics_sim_slow_fwd_walk_contact_loss.s: tests/test_physics_sim_slow_fwd_walk_contact_loss.cpp.s
+.PHONY : tests/test_physics_sim_slow_fwd_walk_contact_loss.s
+
+# target to generate assembly for a file
+tests/test_physics_sim_slow_fwd_walk_contact_loss.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_slow_fwd_walk_contact_loss.dir/build.make CMakeFiles/test_physics_sim_slow_fwd_walk_contact_loss.dir/tests/test_physics_sim_slow_fwd_walk_contact_loss.cpp.s
+.PHONY : tests/test_physics_sim_slow_fwd_walk_contact_loss.cpp.s
+
+tests/test_physics_sim_slow_fwd_walk_foot_clearance.o: tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp.o
+.PHONY : tests/test_physics_sim_slow_fwd_walk_foot_clearance.o
+
+# target to build an object file
+tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_slow_fwd_walk_foot_clearance.dir/build.make CMakeFiles/test_physics_sim_slow_fwd_walk_foot_clearance.dir/tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp.o
+.PHONY : tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp.o
+
+tests/test_physics_sim_slow_fwd_walk_foot_clearance.i: tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp.i
+.PHONY : tests/test_physics_sim_slow_fwd_walk_foot_clearance.i
+
+# target to preprocess a source file
+tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_slow_fwd_walk_foot_clearance.dir/build.make CMakeFiles/test_physics_sim_slow_fwd_walk_foot_clearance.dir/tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp.i
+.PHONY : tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp.i
+
+tests/test_physics_sim_slow_fwd_walk_foot_clearance.s: tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp.s
+.PHONY : tests/test_physics_sim_slow_fwd_walk_foot_clearance.s
+
+# target to generate assembly for a file
+tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_slow_fwd_walk_foot_clearance.dir/build.make CMakeFiles/test_physics_sim_slow_fwd_walk_foot_clearance.dir/tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp.s
+.PHONY : tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp.s
+
 tests/test_physics_sim_tripod_support_baseline.o: tests/test_physics_sim_tripod_support_baseline.cpp.o
 .PHONY : tests/test_physics_sim_tripod_support_baseline.o
 
@@ -4593,6 +4680,30 @@ tests/test_physics_sim_walk_stability.s: tests/test_physics_sim_walk_stability.c
 tests/test_physics_sim_walk_stability.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_walk_stability.dir/build.make CMakeFiles/test_physics_sim_walk_stability.dir/tests/test_physics_sim_walk_stability.cpp.s
 .PHONY : tests/test_physics_sim_walk_stability.cpp.s
+
+tests/test_physics_sim_wave_slow_walk_foot_clearance.o: tests/test_physics_sim_wave_slow_walk_foot_clearance.cpp.o
+.PHONY : tests/test_physics_sim_wave_slow_walk_foot_clearance.o
+
+# target to build an object file
+tests/test_physics_sim_wave_slow_walk_foot_clearance.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_wave_slow_walk_foot_clearance.dir/build.make CMakeFiles/test_physics_sim_wave_slow_walk_foot_clearance.dir/tests/test_physics_sim_wave_slow_walk_foot_clearance.cpp.o
+.PHONY : tests/test_physics_sim_wave_slow_walk_foot_clearance.cpp.o
+
+tests/test_physics_sim_wave_slow_walk_foot_clearance.i: tests/test_physics_sim_wave_slow_walk_foot_clearance.cpp.i
+.PHONY : tests/test_physics_sim_wave_slow_walk_foot_clearance.i
+
+# target to preprocess a source file
+tests/test_physics_sim_wave_slow_walk_foot_clearance.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_wave_slow_walk_foot_clearance.dir/build.make CMakeFiles/test_physics_sim_wave_slow_walk_foot_clearance.dir/tests/test_physics_sim_wave_slow_walk_foot_clearance.cpp.i
+.PHONY : tests/test_physics_sim_wave_slow_walk_foot_clearance.cpp.i
+
+tests/test_physics_sim_wave_slow_walk_foot_clearance.s: tests/test_physics_sim_wave_slow_walk_foot_clearance.cpp.s
+.PHONY : tests/test_physics_sim_wave_slow_walk_foot_clearance.s
+
+# target to generate assembly for a file
+tests/test_physics_sim_wave_slow_walk_foot_clearance.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_physics_sim_wave_slow_walk_foot_clearance.dir/build.make CMakeFiles/test_physics_sim_wave_slow_walk_foot_clearance.dir/tests/test_physics_sim_wave_slow_walk_foot_clearance.cpp.s
+.PHONY : tests/test_physics_sim_wave_slow_walk_foot_clearance.cpp.s
 
 tests/test_protocol_command_metadata.o: tests/test_protocol_command_metadata.cpp.o
 .PHONY : tests/test_protocol_command_metadata.o
@@ -5202,12 +5313,15 @@ help:
 	@echo "... test_physics_sim_navigation_acceptance"
 	@echo "... test_physics_sim_serve_zero_g_udp"
 	@echo "... test_physics_sim_server_initial_layout"
+	@echo "... test_physics_sim_slow_fwd_walk_contact_loss"
+	@echo "... test_physics_sim_slow_fwd_walk_foot_clearance"
 	@echo "... test_physics_sim_tripod_support_baseline"
 	@echo "... test_physics_sim_turn_foot_clearance"
 	@echo "... test_physics_sim_turn_raw_contact_loss"
 	@echo "... test_physics_sim_walk_distance"
 	@echo "... test_physics_sim_walk_entry_tracking"
 	@echo "... test_physics_sim_walk_stability"
+	@echo "... test_physics_sim_wave_slow_walk_foot_clearance"
 	@echo "... test_protocol_command_metadata"
 	@echo "... test_replay_logging"
 	@echo "... test_robot_runtime_freshness_gate_matrix"
@@ -5648,6 +5762,12 @@ help:
 	@echo "... tests/test_physics_sim_server_initial_layout.o"
 	@echo "... tests/test_physics_sim_server_initial_layout.i"
 	@echo "... tests/test_physics_sim_server_initial_layout.s"
+	@echo "... tests/test_physics_sim_slow_fwd_walk_contact_loss.o"
+	@echo "... tests/test_physics_sim_slow_fwd_walk_contact_loss.i"
+	@echo "... tests/test_physics_sim_slow_fwd_walk_contact_loss.s"
+	@echo "... tests/test_physics_sim_slow_fwd_walk_foot_clearance.o"
+	@echo "... tests/test_physics_sim_slow_fwd_walk_foot_clearance.i"
+	@echo "... tests/test_physics_sim_slow_fwd_walk_foot_clearance.s"
 	@echo "... tests/test_physics_sim_tripod_support_baseline.o"
 	@echo "... tests/test_physics_sim_tripod_support_baseline.i"
 	@echo "... tests/test_physics_sim_tripod_support_baseline.s"
@@ -5666,6 +5786,9 @@ help:
 	@echo "... tests/test_physics_sim_walk_stability.o"
 	@echo "... tests/test_physics_sim_walk_stability.i"
 	@echo "... tests/test_physics_sim_walk_stability.s"
+	@echo "... tests/test_physics_sim_wave_slow_walk_foot_clearance.o"
+	@echo "... tests/test_physics_sim_wave_slow_walk_foot_clearance.i"
+	@echo "... tests/test_physics_sim_wave_slow_walk_foot_clearance.s"
 	@echo "... tests/test_protocol_command_metadata.o"
 	@echo "... tests/test_protocol_command_metadata.i"
 	@echo "... tests/test_protocol_command_metadata.s"
