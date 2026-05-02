@@ -974,6 +974,57 @@ bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
         reason = "long walk should fault only after a sustained observation window";
         return false;
     }
+
+    constexpr const char* kSlowTripodPhaseLabel = "long_walk_observability_phase_2";
+    constexpr const char* kFastTripodPhaseLabel = "long_walk_observability_phase_3";
+    constexpr std::size_t kTransitionWindowSamples = 60; // 1.2 s at 50 Hz
+    constexpr std::size_t kBaselineTailSamples = 40;     // 0.8 s before the speed change
+    constexpr double kTransitionImprovementMinM = 0.001;
+    constexpr double kTransitionMaxBodyHeightM = 0.141;
+    std::vector<double> slow_tripod_body_heights_m{};
+    std::size_t transition_samples = 0;
+    double transition_sum_body_height_m = 0.0;
+    double transition_max_body_height_m = -std::numeric_limits<double>::infinity();
+    for (const MotionSample& sample : result.samples) {
+        if (sample.phase_label == kSlowTripodPhaseLabel) {
+            slow_tripod_body_heights_m.push_back(sample.position.z);
+        }
+        if (sample.phase_label != kFastTripodPhaseLabel) {
+            continue;
+        }
+        transition_sum_body_height_m += sample.position.z;
+        transition_max_body_height_m = std::max(transition_max_body_height_m, sample.position.z);
+        ++transition_samples;
+        if (transition_samples >= kTransitionWindowSamples) {
+            break;
+        }
+    }
+    if (slow_tripod_body_heights_m.size() < kBaselineTailSamples) {
+        reason = "long walk should expose enough slow-tripod samples before the fast transition";
+        return false;
+    }
+    if (transition_samples < kTransitionWindowSamples) {
+        reason = "long walk should expose enough early fast-tripod samples for transition validation";
+        return false;
+    }
+    double baseline_tail_sum_body_height_m = 0.0;
+    for (std::size_t i = slow_tripod_body_heights_m.size() - kBaselineTailSamples;
+         i < slow_tripod_body_heights_m.size();
+         ++i) {
+        baseline_tail_sum_body_height_m += slow_tripod_body_heights_m[i];
+    }
+    const double baseline_tail_mean_body_height_m =
+        baseline_tail_sum_body_height_m / static_cast<double>(kBaselineTailSamples);
+    const double transition_mean_body_height_m =
+        transition_sum_body_height_m / static_cast<double>(transition_samples);
+    if (!(transition_mean_body_height_m >= baseline_tail_mean_body_height_m + kTransitionImprovementMinM)) {
+        reason = "fast tripod transition should reduce sag promptly instead of carrying the slow-phase body-height offset";
+        return false;
+    }
+    if (!(transition_max_body_height_m <= kTransitionMaxBodyHeightM)) {
+        reason = "fast tripod transition should stay near commanded body height without overshooting upward";
+        return false;
+    }
     return true;
 }
 

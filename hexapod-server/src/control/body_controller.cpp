@@ -26,6 +26,8 @@ constexpr double kBodyHeightHoldIntegralGain = 0.15;  // fraction of measured sa
 constexpr double kBodyHeightHoldIntegralCapM = 0.040; // max 40 mm: covers realistic compliance without runaway
 constexpr double kBodyHeightHoldIntegralDecay = 0.99;     // per-step decay when body is near commanded
 constexpr double kBodyHeightHoldIntegralDecayFast = 0.93; // fast decay when body is above commanded (~250 ms to clear)
+constexpr double kBodyHeightHoldIntegralFastUnwindGapM = 0.004;
+constexpr double kBodyHeightHoldIntegralFastUnwindRatio = 0.60;
 constexpr double kTerrainBlendMinScale = 0.35;
 constexpr double kTerrainBlendSagScale = 0.65;
 
@@ -110,6 +112,41 @@ void strideDirectionXY(const double rx,
 
 } // namespace
 
+namespace body_controller_detail {
+
+double updateBodyHeightHoldIntegralM(const double current_integral_m,
+                                     const double commanded_body_height_m,
+                                     const bool has_measured_body_height,
+                                     const double measured_body_height_m) {
+    double integral_m = std::clamp(current_integral_m, 0.0, kBodyHeightHoldIntegralCapM);
+    if (!has_measured_body_height || !std::isfinite(measured_body_height_m)) {
+        return integral_m * kBodyHeightHoldIntegralDecay;
+    }
+
+    const double height_error_m = commanded_body_height_m - measured_body_height_m; // positive = sagging
+    if (height_error_m > 1e-4) {
+        const bool stale_transition_hold =
+            (integral_m - height_error_m) > kBodyHeightHoldIntegralFastUnwindGapM &&
+            height_error_m < (integral_m * kBodyHeightHoldIntegralFastUnwindRatio);
+        if (stale_transition_hold) {
+            return std::max(integral_m * kBodyHeightHoldIntegralDecayFast, height_error_m);
+        }
+        if (integral_m > height_error_m) {
+            return integral_m * kBodyHeightHoldIntegralDecay;
+        }
+        return std::clamp(
+            integral_m + kBodyHeightHoldIntegralGain * height_error_m,
+            0.0,
+            kBodyHeightHoldIntegralCapM);
+    }
+    if (height_error_m < -1e-4) {
+        return integral_m * kBodyHeightHoldIntegralDecayFast;
+    }
+    return integral_m * kBodyHeightHoldIntegralDecay;
+}
+
+} // namespace body_controller_detail
+
 std::array<Vec3, kNumLegs> computeNominalStance(const HexapodGeometry& geometry, double body_height_m) {
     std::array<Vec3, kNumLegs> nominal{};
     for (int leg = 0; leg < kNumLegs; ++leg) {
@@ -177,25 +214,15 @@ LegTargets BodyController::update(const RobotState& est,
     // Integrate persistent body height sag. Converges toward zero steady-state error
     // at a rate driven by actual servo compliance — no fixed compliance model assumed.
     // Decays when the body is at or above the commanded height (anti-windup).
-    if (est.has_body_twist_state) {
-        const double measured_h = est.body_twist_state.body_trans_m.z;
-        if (std::isfinite(measured_h)) {
-            const double height_error_m = commanded_body_height_m - measured_h; // positive = sagging
-            if (height_error_m > 1e-4) {
-                height_hold_integral_m_ = std::clamp(
-                    height_hold_integral_m_ + kBodyHeightHoldIntegralGain * height_error_m,
-                    0.0, kBodyHeightHoldIntegralCapM);
-            } else if (height_error_m < -1e-4) {
-                // Body is above commanded: integral wound up during a slower phase.
-                // Clear quickly so the overshoot doesn't persist across gait transitions.
-                height_hold_integral_m_ *= kBodyHeightHoldIntegralDecayFast;
-            } else {
-                height_hold_integral_m_ *= kBodyHeightHoldIntegralDecay;
-            }
-        }
-    } else {
-        height_hold_integral_m_ *= kBodyHeightHoldIntegralDecay;
-    }
+    const bool has_measured_body_height = est.has_body_twist_state &&
+                                          std::isfinite(est.body_twist_state.body_trans_m.z);
+    const double measured_body_height_m =
+        has_measured_body_height ? est.body_twist_state.body_trans_m.z : 0.0;
+    height_hold_integral_m_ = body_controller_detail::updateBodyHeightHoldIntegralM(
+        height_hold_integral_m_,
+        commanded_body_height_m,
+        has_measured_body_height,
+        measured_body_height_m);
 
     const double body_height_hold_m = bodyHeightHoldOffsetM(est, commanded_body_height_m)
                                       + height_hold_integral_m_;

@@ -29,3 +29,13 @@ private:
 
 /** Nominal stance placement for a given body height and leg geometry. */
 std::array<Vec3, kNumLegs> computeNominalStance(const HexapodGeometry& geometry, double body_height_m);
+
+namespace body_controller_detail {
+
+/** Internal/test seam for the height-hold integrator update. */
+double updateBodyHeightHoldIntegralM(double current_integral_m,
+                                     double commanded_body_height_m,
+                                     bool has_measured_body_height,
+                                     double measured_body_height_m);
+
+} // namespace body_controller_detail

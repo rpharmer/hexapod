@@ -122,5 +122,46 @@ int main() {
         }
     }
 
+    struct Scenario05HeadingCase {
+        GaitType gait;
+        double speed_mps;
+        double heading_rad;
+        bool expect_more_than_forward;
+        const char* label;
+    };
+    const Scenario05HeadingCase scenario05_heading_cases[] = {
+        {GaitType::RIPPLE, 0.07, 1.57, true, "scenario05_ripple_lateral_heading"},
+        {GaitType::WAVE, 0.05, 3.14, false, "scenario05_wave_backward_heading"},
+        {GaitType::TRIPOD, 0.05, -1.57, true, "scenario05_tripod_lateral_heading"},
+    };
+    for (const auto& c : scenario05_heading_cases) {
+        const double vx = c.speed_mps * std::cos(c.heading_rad);
+        const double vy = c.speed_mps * std::sin(c.heading_rad);
+        const UnifiedGaitDescription desc =
+            buildTargetUnifiedGait(c.gait, vx, vy, 0.0, gait, 0.0, 0.0);
+        const UnifiedGaitDescription forward_ref =
+            buildTargetUnifiedGait(c.gait, c.speed_mps, 0.0, 0.0, gait, 0.0, 0.0);
+        std::cout << c.label << " vx_mps=" << vx
+                  << " vy_mps=" << vy
+                  << " swing_height_m=" << desc.swing_height_m
+                  << " forward_ref_m=" << forward_ref.swing_height_m << '\n';
+        if (!(desc.swing_height_m >= kPhysicsFootRadiusM - 1e-9)) {
+            std::cerr << "FAIL: " << c.label << " swing_height_m=" << desc.swing_height_m
+                      << " must remain above the physics foot radius " << kPhysicsFootRadiusM << '\n';
+            return EXIT_FAILURE;
+        }
+        if (c.expect_more_than_forward) {
+            if (!(desc.swing_height_m > forward_ref.swing_height_m)) {
+                std::cerr << "FAIL: " << c.label
+                          << " should gain extra oblique/lateral clearance over forward motion at the same speed\n";
+                return EXIT_FAILURE;
+            }
+        } else if (!(desc.swing_height_m + 1e-6 >= forward_ref.swing_height_m)) {
+            std::cerr << "FAIL: " << c.label
+                      << " should not lose swing clearance relative to same-speed forward motion\n";
+            return EXIT_FAILURE;
+        }
+    }
+
     return EXIT_SUCCESS;
 }

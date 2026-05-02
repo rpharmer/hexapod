@@ -305,6 +305,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_gait_params PRIVATE hexapod_server_core)
     add_test(NAME gait_params COMMAND test_gait_params)
 
+    add_executable(test_body_controller_height_hold tests/test_body_controller_height_hold.cpp)
+    target_link_libraries(test_body_controller_height_hold PRIVATE hexapod_server_core)
+    add_test(NAME body_controller_height_hold COMMAND test_body_controller_height_hold)
+
     add_executable(test_nav_primitives tests/test_nav_primitives.cpp)
     target_link_libraries(test_nav_primitives PRIVATE hexapod_server_core)
     add_test(NAME nav_primitives COMMAND test_nav_primitives)
@@ -393,6 +397,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_physics_sim_turn_foot_clearance tests/test_physics_sim_turn_foot_clearance.cpp)
     target_link_libraries(test_physics_sim_turn_foot_clearance PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_turn_foot_clearance COMMAND test_physics_sim_turn_foot_clearance)
+
+    add_executable(test_physics_sim_oblique_walk_clearance tests/test_physics_sim_oblique_walk_clearance.cpp)
+    target_link_libraries(test_physics_sim_oblique_walk_clearance PRIVATE hexapod_server_core)
+    add_test(NAME physics_sim_oblique_walk_clearance COMMAND test_physics_sim_oblique_walk_clearance)
 
     add_executable(test_physics_sim_turn_raw_contact_loss tests/test_physics_sim_turn_raw_contact_loss.cpp)
     target_link_libraries(test_physics_sim_turn_raw_contact_loss PRIVATE hexapod_server_core)
