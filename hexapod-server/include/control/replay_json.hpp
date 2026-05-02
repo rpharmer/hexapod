@@ -1,6 +1,7 @@
 #pragma once
 
 #include "local_map.hpp"
+#include "locomotion_debug.hpp"
 #include "telemetry_publisher.hpp"
 #include "types.hpp"
 
@@ -29,6 +30,7 @@ struct ReplayTelemetryRecord {
     LegTargets leg_targets{};
     GaitState gait_state{};
     JointTargets joint_targets{};
+    telemetry::LocomotionDebugSnapshot locomotion_debug{};
     LocalMapSnapshot terrain_snapshot{};
     ReplayTransitionDiagnostics transition_diagnostics{};
 };

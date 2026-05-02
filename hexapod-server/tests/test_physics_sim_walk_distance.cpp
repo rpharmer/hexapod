@@ -1,5 +1,6 @@
 #include "control_config.hpp"
 #include "motion_intent_utils.hpp"
+#include "physics_sim_test_utils.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
 #include "robot_runtime.hpp"
@@ -114,9 +115,12 @@ template <typename MotionT>
 MotionRunResult runMotionSequence(RobotRuntime& runtime,
                                   CapturingPhysicsSimBridge& bridge,
                                   const ScenarioMotionIntent& stand_motion,
-                                  const MotionT& motion) {
-    constexpr int kStandWarmupSteps = 100;
-    constexpr int kWalkSteps = 600;
+                                  const MotionT& motion,
+                                  const int bus_loop_period_us) {
+    const int kStandWarmupSteps = static_cast<int>(
+        physics_sim_test_utils::scaledLegacyStepCount(100, bus_loop_period_us));
+    const int kWalkSteps = static_cast<int>(
+        physics_sim_test_utils::scaledLegacyStepCount(600, bus_loop_period_us));
 
     for (int i = 0; i < kStandWarmupSteps; ++i) {
         runControlLoopStep(runtime, stand_motion);
@@ -182,10 +186,11 @@ bool checkWalkCase(const std::string& label,
                    RobotRuntime& runtime,
                    CapturingPhysicsSimBridge& bridge,
                    const ScenarioMotionIntent& stand_motion,
-                   const ScenarioMotionIntent& walk_motion) {
+                   const ScenarioMotionIntent& walk_motion,
+                   const int bus_loop_period_us) {
     MotionRunResult result{};
     try {
-        result = runMotionSequence(runtime, bridge, stand_motion, walk_motion);
+        result = runMotionSequence(runtime, bridge, stand_motion, walk_motion, bus_loop_period_us);
     } catch (const std::exception& ex) {
         return expect(false, label + ": " + ex.what());
     }
@@ -269,10 +274,11 @@ bool checkStraightWalkCase(const std::string& label,
                            RobotRuntime& runtime,
                            CapturingPhysicsSimBridge& bridge,
                            const ScenarioMotionIntent& stand_motion,
-                           const ScenarioMotionIntent& walk_motion) {
+                           const ScenarioMotionIntent& walk_motion,
+                           const int bus_loop_period_us) {
     MotionRunResult result{};
     try {
-        result = runMotionSequence(runtime, bridge, stand_motion, walk_motion);
+        result = runMotionSequence(runtime, bridge, stand_motion, walk_motion, bus_loop_period_us);
     } catch (const std::exception& ex) {
         return expect(false, label + ": " + ex.what());
     }
@@ -377,10 +383,11 @@ bool checkTurnCase(const std::string& label,
                    RobotRuntime& runtime,
                    CapturingPhysicsSimBridge& bridge,
                    const ScenarioMotionIntent& stand_motion,
-                   const MotionIntent& turn_motion) {
+                   const MotionIntent& turn_motion,
+                   const int bus_loop_period_us) {
     MotionRunResult result{};
     try {
-        result = runMotionSequence(runtime, bridge, stand_motion, turn_motion);
+        result = runMotionSequence(runtime, bridge, stand_motion, turn_motion, bus_loop_period_us);
     } catch (const std::exception& ex) {
         return expect(false, label + ": " + ex.what());
     }
@@ -498,8 +505,9 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    const auto harness = physics_sim_test_utils::loadHarnessSettings();
     const int kPort = 22000 + (static_cast<int>(::getpid()) % 6000);
-    const int kBusLoopPeriodUs = 20000;
+    const int kBusLoopPeriodUs = harness.bus_loop_period_us;
 
     pid_t pid = ::fork();
     if (pid < 0) {
@@ -520,10 +528,11 @@ int main(int argc, char** argv) {
 
     std::this_thread::sleep_for(std::chrono::milliseconds{250});
 
-    auto bridge = std::make_unique<CapturingPhysicsSimBridge>("127.0.0.1", kPort, kBusLoopPeriodUs, 24);
+    auto bridge = std::make_unique<CapturingPhysicsSimBridge>(
+        "127.0.0.1", kPort, kBusLoopPeriodUs, harness.physics_solver_iterations);
     CapturingPhysicsSimBridge* bridge_ptr = bridge.get();
 
-    control_config::ControlConfig cfg{};
+    control_config::ControlConfig cfg = harness.control_cfg;
     cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
     cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
 
@@ -564,25 +573,33 @@ int main(int argc, char** argv) {
     turn_in_place_motion.twist.twist_vel_radps = Vec3{0.0, 0.0, 0.45};
     turn_in_place_motion.twist.twist_pos_rad = Vec3{0.0, 0.0, 0.0};
 
-    if (!checkWalkCase("forward_walk", runtime, *bridge_ptr, stand_motion, walk_forward_motion)) {
+    if (!checkWalkCase(
+            "forward_walk", runtime, *bridge_ptr, stand_motion, walk_forward_motion, kBusLoopPeriodUs)) {
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
     }
 
-    if (!checkWalkCase("reverse_walk", runtime, *bridge_ptr, stand_motion, walk_reverse_motion)) {
+    if (!checkWalkCase(
+            "reverse_walk", runtime, *bridge_ptr, stand_motion, walk_reverse_motion, kBusLoopPeriodUs)) {
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
     }
 
-    if (!checkStraightWalkCase("straight_walk", runtime, *bridge_ptr, stand_motion, walk_forward_motion)) {
+    if (!checkStraightWalkCase("straight_walk",
+                               runtime,
+                               *bridge_ptr,
+                               stand_motion,
+                               walk_forward_motion,
+                               kBusLoopPeriodUs)) {
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
     }
 
-    if (!checkTurnCase("turn_in_place", runtime, *bridge_ptr, stand_motion, turn_in_place_motion)) {
+    if (!checkTurnCase(
+            "turn_in_place", runtime, *bridge_ptr, stand_motion, turn_in_place_motion, kBusLoopPeriodUs)) {
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;

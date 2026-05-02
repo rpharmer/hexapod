@@ -9,6 +9,7 @@
 
 #include "geometry_config.hpp"
 #include "foot_terrain.hpp"
+#include "leg_fk.hpp"
 #include "local_map.hpp"
 #include "plane_estimation.hpp"
 #include "replay_json.hpp"
@@ -222,6 +223,84 @@ BodyPose makeBodyPose(const RobotState& est) {
     pose.pitch = AngleRad{est.body_twist_state.twist_pos_rad.y};
     pose.roll = AngleRad{est.body_twist_state.twist_pos_rad.x};
     return pose;
+}
+
+telemetry::LocomotionDebugSnapshot buildLocomotionDebugSnapshot(
+    const RobotState& estimated,
+    const JointTargets& joint_targets,
+    const HexapodGeometry& geometry,
+    std::array<bool, kNumLegs>& contact_anchor_valid,
+    std::array<Vec3, kNumLegs>& contact_anchor_world,
+    std::array<double, kNumLegs>& contact_anchor_max_drift_m) {
+    telemetry::LocomotionDebugSnapshot snapshot{};
+    if (!estimated.has_body_twist_state) {
+        contact_anchor_valid.fill(false);
+        contact_anchor_max_drift_m.fill(0.0);
+        return snapshot;
+    }
+
+    snapshot.valid = true;
+    snapshot.min_measured_foot_world_z_m = std::numeric_limits<double>::infinity();
+    snapshot.min_commanded_foot_world_z_m = std::numeric_limits<double>::infinity();
+
+    const BodyPose body_pose = makeBodyPose(estimated);
+    LegFK fk{};
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        const std::size_t leg_index = static_cast<std::size_t>(leg);
+        const LegGeometry& leg_geometry = geometry.legGeometry[leg_index];
+
+        const FootTarget measured_body = fk.footInBodyFrame(estimated.leg_states[leg_index], leg_geometry);
+        const FootTarget measured_world = fk.footInWorldFrame(estimated.leg_states[leg_index], body_pose, leg_geometry);
+        const FootTarget commanded_body = fk.footInBodyFrame(joint_targets.leg_states[leg_index], leg_geometry);
+        const FootTarget commanded_world =
+            fk.footInWorldFrame(joint_targets.leg_states[leg_index], body_pose, leg_geometry);
+
+        snapshot.measured_foot_body_m[leg_index] = measured_body.pos_body_m.raw();
+        snapshot.measured_foot_world_m[leg_index] = measured_world.pos_body_m.raw();
+        snapshot.commanded_foot_body_m[leg_index] = commanded_body.pos_body_m.raw();
+        snapshot.commanded_foot_world_m[leg_index] = commanded_world.pos_body_m.raw();
+
+        snapshot.min_measured_foot_world_z_m =
+            std::min(snapshot.min_measured_foot_world_z_m, snapshot.measured_foot_world_m[leg_index].z);
+        snapshot.min_commanded_foot_world_z_m =
+            std::min(snapshot.min_commanded_foot_world_z_m, snapshot.commanded_foot_world_m[leg_index].z);
+
+        const Vec3 commanded_tracking_error =
+            snapshot.commanded_foot_world_m[leg_index] - snapshot.measured_foot_world_m[leg_index];
+        const double tracking_error_m = vecNorm(commanded_tracking_error);
+        snapshot.commanded_tracking_error_m[leg_index] = tracking_error_m;
+        snapshot.max_commanded_tracking_error_m =
+            std::max(snapshot.max_commanded_tracking_error_m, tracking_error_m);
+
+        if (!estimated.foot_contacts[leg_index]) {
+            contact_anchor_valid[leg_index] = false;
+            contact_anchor_max_drift_m[leg_index] = 0.0;
+            continue;
+        }
+
+        if (!contact_anchor_valid[leg_index]) {
+            contact_anchor_valid[leg_index] = true;
+            contact_anchor_world[leg_index] = snapshot.measured_foot_world_m[leg_index];
+            contact_anchor_max_drift_m[leg_index] = 0.0;
+        }
+
+        snapshot.contact_anchor_valid[leg_index] = true;
+        snapshot.contact_anchor_world_m[leg_index] = contact_anchor_world[leg_index];
+        const double contact_anchor_drift_m = vecNorm(
+            snapshot.measured_foot_world_m[leg_index] - contact_anchor_world[leg_index]);
+        snapshot.contact_anchor_drift_m[leg_index] = contact_anchor_drift_m;
+        contact_anchor_max_drift_m[leg_index] =
+            std::max(contact_anchor_max_drift_m[leg_index], contact_anchor_drift_m);
+        snapshot.contact_anchor_max_drift_m[leg_index] = contact_anchor_max_drift_m[leg_index];
+    }
+
+    if (!std::isfinite(snapshot.min_measured_foot_world_z_m)) {
+        snapshot.min_measured_foot_world_z_m = 0.0;
+    }
+    if (!std::isfinite(snapshot.min_commanded_foot_world_z_m)) {
+        snapshot.min_commanded_foot_world_z_m = 0.0;
+    }
+    return snapshot;
 }
 
 bool solveTerrainPlane(const std::array<Vec3, kNumLegs>& points,
@@ -637,6 +716,7 @@ bool RobotRuntime::init() {
     gait_state_.write(GaitState{});
     command_governor_state_.write(CommandGovernorState{});
     joint_targets_.write(JointTargets{});
+    locomotion_debug_.write(telemetry::LocomotionDebugSnapshot{});
     control_loop_counter_.store(0);
     control_dt_sum_us_.store(0);
     control_jitter_max_us_.store(0);
@@ -654,6 +734,8 @@ bool RobotRuntime::init() {
     last_logged_safety_fault_ = FaultCode::NONE;
     last_fusion_correction_mode_ = static_cast<std::uint8_t>(PhysicsSimCorrectionMode::None);
     last_fusion_correction_ = {};
+    contact_anchor_valid_.fill(false);
+    contact_anchor_max_drift_m_.fill(0.0);
     last_process_resources_.reset();
     last_resource_sections_.reset();
     resource_profiler_.reset();
@@ -928,6 +1010,13 @@ void RobotRuntime::controlStep() {
             gait_state_.write(GaitState{});
             command_governor_state_.write(CommandGovernorState{});
             joint_targets_.write(decision.joint_targets);
+            locomotion_debug_.write(buildLocomotionDebugSnapshot(
+                est,
+                decision.joint_targets,
+                geometry_config::activeHexapodGeometry(),
+                contact_anchor_valid_,
+                contact_anchor_world_,
+                contact_anchor_max_drift_m_));
             traceControlLoop(decision.status, false, nullptr);
             maybePublishTelemetry(now);
             maybeWriteReplayRecord(now);
@@ -961,6 +1050,13 @@ void RobotRuntime::controlStep() {
     gait_state_.write(result.gait_state);
     command_governor_state_.write(result.command_governor);
     joint_targets_.write(joint_targets);
+    locomotion_debug_.write(buildLocomotionDebugSnapshot(
+        est,
+        joint_targets,
+        geometry_config::activeHexapodGeometry(),
+        contact_anchor_valid_,
+        contact_anchor_world_,
+        contact_anchor_max_drift_m_));
     status_.write(result.status);
     traceControlLoop(result.status, true, &result.command_governor);
 
@@ -1021,6 +1117,7 @@ void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
     telemetry::ControlStepTelemetry telemetry_sample{};
     telemetry_sample.estimated_state = estimated_state_.read();
     telemetry_sample.joint_targets = joint_targets_.read();
+    telemetry_sample.locomotion_debug = locomotion_debug_.read();
     telemetry_sample.status = status_.read();
     telemetry_sample.fusion.has_data = telemetry_sample.estimated_state.has_fusion_diagnostics;
     telemetry_sample.fusion.diagnostics = telemetry_sample.estimated_state.fusion;
@@ -1051,6 +1148,7 @@ void RobotRuntime::maybeWriteReplayRecord(const TimePointUs& now) {
     record.leg_targets = leg_targets_.read();
     record.gait_state = gait_state_.read();
     record.joint_targets = joint_targets_.read();
+    record.locomotion_debug = locomotion_debug_.read();
     record.governor = command_governor_state_.read();
     record.transition_diagnostics =
         buildReplayTransitionDiagnostics(record.estimated_state, record.gait_state, record.joint_targets);

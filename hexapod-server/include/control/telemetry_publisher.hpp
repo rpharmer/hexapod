@@ -3,6 +3,7 @@
 #include "command_governor.hpp"
 #include "geometry_config.hpp"
 #include "logger.hpp"
+#include "locomotion_debug.hpp"
 #include "navigation_manager.hpp"
 #include "process_resource_monitoring.hpp"
 #include "types.hpp"
@@ -57,6 +58,7 @@ struct FusionTelemetrySnapshot {
 struct ControlStepTelemetry {
     RobotState estimated_state{};
     JointTargets joint_targets{};
+    LocomotionDebugSnapshot locomotion_debug{};
     ControlStatus status{};
     CommandGovernorState governor{};
     FusionTelemetrySnapshot fusion{};

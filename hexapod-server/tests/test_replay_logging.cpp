@@ -89,6 +89,18 @@ replay_json::ReplayTelemetryRecord makeSampleRecord()
     record.joint_targets.leg_states[1].joint_state[1].pos_rad = AngleRad{-0.55};
     record.joint_targets.leg_states[1].joint_state[2].pos_rad = AngleRad{0.66};
 
+    record.locomotion_debug.valid = true;
+    record.locomotion_debug.measured_foot_world_m[0] = Vec3{0.22, -0.14, 0.0};
+    record.locomotion_debug.commanded_foot_world_m[0] = Vec3{0.23, -0.15, 0.01};
+    record.locomotion_debug.contact_anchor_world_m[0] = Vec3{0.22, -0.14, 0.0};
+    record.locomotion_debug.contact_anchor_drift_m[0] = 0.003;
+    record.locomotion_debug.contact_anchor_max_drift_m[0] = 0.005;
+    record.locomotion_debug.commanded_tracking_error_m[0] = 0.011;
+    record.locomotion_debug.contact_anchor_valid[0] = true;
+    record.locomotion_debug.min_measured_foot_world_z_m = -0.002;
+    record.locomotion_debug.min_commanded_foot_world_z_m = 0.001;
+    record.locomotion_debug.max_commanded_tracking_error_m = 0.011;
+
     record.transition_diagnostics.body_height_m = 0.56;
     record.transition_diagnostics.stance_leg_count = 3;
     record.transition_diagnostics.contact_leg_count = 3;
@@ -149,6 +161,12 @@ bool testSerializerIncludesKeySections()
                   "replay payload should include per-leg support clearances") &&
            expect(payload.find("\"joint_targets\":[[0.11,-0.22,0.33],[0.44,-0.55,0.66]") != std::string::npos,
                   "replay payload should include joint target telemetry") &&
+           expect(payload.find("\"locomotion_debug\":{\"valid\":true") != std::string::npos,
+                  "replay payload should include locomotion debug telemetry") &&
+           expect(payload.find("\"contact_anchor_drift_m\":[0.003") != std::string::npos,
+                  "replay payload should include per-leg contact anchor drift") &&
+           expect(payload.find("\"max_commanded_tracking_error_m\":0.011") != std::string::npos,
+                  "replay payload should include tracking error summary") &&
            expect(payload.find("\"transition_diagnostics\":{\"body_height_m\":0.56") != std::string::npos,
                   "replay payload should include walk-entry diagnostics") &&
            expect(payload.find("\"sample_id\":77") != std::string::npos,

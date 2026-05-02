@@ -22,6 +22,7 @@
 #include "nav_locomotion_bridge.hpp"
 #include "nav_primitives.hpp"
 #include "nav_to_locomotion.hpp"
+#include "physics_sim_test_utils.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
 #include "robot_runtime.hpp"
@@ -166,8 +167,9 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    const auto harness = physics_sim_test_utils::loadHarnessSettings();
     const int kPort = 23000 + (static_cast<int>(::getpid()) % 5000);
-    const int kBusLoopPeriodUs = 20000;
+    const int kBusLoopPeriodUs = harness.bus_loop_period_us;
 
     pid_t pid = ::fork();
     if (pid < 0) {
@@ -183,10 +185,11 @@ int main(int argc, char** argv) {
 
     std::this_thread::sleep_for(std::chrono::milliseconds{250});
 
-    auto bridge = std::make_unique<CapturingPhysicsSimBridge>("127.0.0.1", kPort, kBusLoopPeriodUs, 24);
+    auto bridge = std::make_unique<CapturingPhysicsSimBridge>(
+        "127.0.0.1", kPort, kBusLoopPeriodUs, harness.physics_solver_iterations);
     CapturingPhysicsSimBridge* bridge_ptr = bridge.get();
 
-    control_config::ControlConfig cfg{};
+    control_config::ControlConfig cfg = harness.control_cfg;
     cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
     cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
     /** Exercise the default foot-estimator blend here so live waypoint coverage matches the walking stack. */
@@ -203,7 +206,8 @@ int main(int argc, char** argv) {
     const ScenarioMotionIntent stand_motion{
         true, RobotMode::STAND, GaitType::TRIPOD, 0.06, 0.0, 0.0, 0.0};
 
-    constexpr int kStandWarmupSteps = 120;
+    const int kStandWarmupSteps = static_cast<int>(
+        physics_sim_test_utils::scaledLegacyStepCount(120, kBusLoopPeriodUs));
     for (int i = 0; i < kStandWarmupSteps; ++i) {
         runStandWarmupStep(runtime, stand_motion);
     }
@@ -253,7 +257,8 @@ int main(int argc, char** argv) {
     double path_wp = 0.0;
     Vec3 prev_wp = wp0;
     Vec3 pos_at_follow_done = wp0;
-    constexpr int kMaxFollowSteps = 26000;
+    const int kMaxFollowSteps = static_cast<int>(
+        physics_sim_test_utils::scaledLegacyStepCount(26000, kBusLoopPeriodUs));
     for (int i = 0; i < kMaxFollowSteps; ++i) {
         runFollowNavTick(runtime, nav, stand_fallback, dt_s);
         if (!bridge_ptr->last_state().has_value()) {
@@ -360,7 +365,8 @@ int main(int argc, char** argv) {
     const bool follow_completed = mon.lifecycle == NavLocomotionBridge::LifecycleState::Completed;
 
     if (follow_completed) {
-        constexpr int kStandBeforeRotate = 200;
+        const int kStandBeforeRotate = static_cast<int>(
+            physics_sim_test_utils::scaledLegacyStepCount(200, kBusLoopPeriodUs));
         for (int i = 0; i < kStandBeforeRotate; ++i) {
             runStandWarmupStep(runtime, stand_motion);
         }
@@ -379,7 +385,8 @@ int main(int argc, char** argv) {
         double path_r = 0.0;
         Vec3 prev_r = positionFromState(bridge_ptr->last_state().value());
         double yaw_done = yaw_r0;
-        constexpr int kMaxRot = 20000;
+        const int kMaxRot = static_cast<int>(
+            physics_sim_test_utils::scaledLegacyStepCount(20000, kBusLoopPeriodUs));
         for (int i = 0; i < kMaxRot; ++i) {
             runRotateNavTick(runtime, rot, turning, walk_base, stand_fallback, dt_s);
             if (!bridge_ptr->last_state().has_value()) {

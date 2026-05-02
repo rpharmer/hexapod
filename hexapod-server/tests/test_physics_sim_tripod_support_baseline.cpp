@@ -2,6 +2,7 @@
 #include "geometry_config.hpp"
 #include "leg_ik.hpp"
 #include "motion_intent_utils.hpp"
+#include "physics_sim_test_utils.hpp"
 #include "physics_sim_bridge.hpp"
 
 #include <algorithm>
@@ -153,8 +154,9 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    const auto harness = physics_sim_test_utils::loadHarnessSettings();
     const int port = 24000 + (static_cast<int>(::getpid()) % 4000);
-    const int bus_loop_period_us = 20000;
+    const int bus_loop_period_us = harness.bus_loop_period_us;
 
     pid_t pid = ::fork();
     if (pid < 0) {
@@ -170,7 +172,8 @@ int main(int argc, char** argv) {
 
     std::this_thread::sleep_for(std::chrono::milliseconds{250});
 
-    PhysicsSimBridge bridge("127.0.0.1", port, bus_loop_period_us, 24, nullptr);
+    PhysicsSimBridge bridge(
+        "127.0.0.1", port, bus_loop_period_us, harness.physics_solver_iterations, nullptr);
     if (!expect(bridge.init(), "physics sim bridge should initialize")) {
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
@@ -186,9 +189,12 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    constexpr int kStandWarmupSteps = 160;
-    constexpr int kTripodWarmupSteps = 260;
-    constexpr int kMetricsSteps = 180;
+    const int kStandWarmupSteps = static_cast<int>(
+        physics_sim_test_utils::scaledLegacyStepCount(160, bus_loop_period_us));
+    const int kTripodWarmupSteps = static_cast<int>(
+        physics_sim_test_utils::scaledLegacyStepCount(260, bus_loop_period_us));
+    const int kMetricsSteps = static_cast<int>(
+        physics_sim_test_utils::scaledLegacyStepCount(180, bus_loop_period_us));
 
     (void)holdPose(bridge, stand_targets, kStandWarmupSteps);
     const HoldMetrics stand_metrics = holdPose(bridge, stand_targets, kMetricsSteps);

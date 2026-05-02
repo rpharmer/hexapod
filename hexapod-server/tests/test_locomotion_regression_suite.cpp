@@ -1,12 +1,12 @@
 #include "control_config.hpp"
 #include "motion_intent_utils.hpp"
+#include "physics_sim_test_utils.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
 #include "replay_logger.hpp"
 #include "replay_json.hpp"
 #include "robot_runtime.hpp"
 #include "scenario_driver.hpp"
-#include "toml_parser.hpp"
 #include "telemetry_json.hpp"
 
 #include <algorithm>
@@ -37,8 +37,6 @@
 #endif
 
 namespace {
-
-constexpr double kControlLoopPeriodS = 0.020;
 
 bool expect(bool condition, const std::string& message) {
     if (!condition) {
@@ -309,6 +307,8 @@ struct MotionSample {
     double duty_factor{0.0};
     double model_trust{1.0};
     double contact_mismatch_ratio{0.0};
+    telemetry::LocomotionDebugSnapshot locomotion_debug{};
+    double sample_period_s{0.0};
 };
 
 struct ModeSegment {
@@ -326,6 +326,7 @@ struct GaitTransitionSegment {
 };
 
 struct LocomotionMetrics {
+    double sample_period_s{0.0};
     std::size_t sample_count{0};
     std::size_t walk_sample_count{0};
     std::size_t stride_count{0};
@@ -362,6 +363,11 @@ struct LocomotionMetrics {
     double min_step_length_m{1e9};
     double max_swing_height_m{0.0};
     double min_swing_height_m{1e9};
+    double max_contact_anchor_drift_m{0.0};
+    double max_contact_anchor_max_drift_m{0.0};
+    double min_measured_foot_world_z_m{std::numeric_limits<double>::infinity()};
+    double max_commanded_tracking_error_m{0.0};
+    double max_contact_tracking_error_m{0.0};
     std::vector<ModeSegment> mode_segments{};
     std::vector<GaitTransitionSegment> gait_segments{};
 };
@@ -436,6 +442,7 @@ std::string metricsToJson(const LocomotionMetrics& metrics) {
         << "\"final_mode\":\"" << robotModeName(metrics.final_mode) << "\","
         << "\"final_fault\":\"" << faultName(metrics.final_fault) << "\","
         << "\"duration_s\":" << formatDouble(metrics.duration_s) << ','
+        << "\"sample_period_s\":" << formatDouble(metrics.sample_period_s) << ','
         << "\"path_length_m\":" << formatDouble(metrics.path_length_m) << ','
         << "\"net_displacement_m\":" << formatDouble(metrics.net_displacement_m) << ','
         << "\"lateral_deviation_m\":" << formatDouble(metrics.lateral_deviation_m) << ','
@@ -461,6 +468,11 @@ std::string metricsToJson(const LocomotionMetrics& metrics) {
         << "\"min_step_length_m\":" << formatDouble(metrics.min_step_length_m) << ','
         << "\"max_swing_height_m\":" << formatDouble(metrics.max_swing_height_m) << ','
         << "\"min_swing_height_m\":" << formatDouble(metrics.min_swing_height_m) << ','
+        << "\"max_contact_anchor_drift_m\":" << formatDouble(metrics.max_contact_anchor_drift_m) << ','
+        << "\"max_contact_anchor_max_drift_m\":" << formatDouble(metrics.max_contact_anchor_max_drift_m) << ','
+        << "\"min_measured_foot_world_z_m\":" << formatDouble(metrics.min_measured_foot_world_z_m) << ','
+        << "\"max_commanded_tracking_error_m\":" << formatDouble(metrics.max_commanded_tracking_error_m) << ','
+        << "\"max_contact_tracking_error_m\":" << formatDouble(metrics.max_contact_tracking_error_m) << ','
         << "\"mode_segments\":[";
     for (std::size_t i = 0; i < metrics.mode_segments.size(); ++i) {
         if (i > 0) {
@@ -557,6 +569,20 @@ MotionPhase makePhase(const std::string& label,
     return phase;
 }
 
+void scalePhasesForHarness(std::vector<MotionPhase>& phases, const int bus_loop_period_us) {
+    for (MotionPhase& phase : phases) {
+        phase.steps = physics_sim_test_utils::scaledLegacyStepCount(phase.steps, bus_loop_period_us);
+    }
+}
+
+std::size_t samplesForDuration(const double duration_s, const double sample_period_s) {
+    if (sample_period_s <= 0.0) {
+        return 1;
+    }
+    return std::max<std::size_t>(
+        1, static_cast<std::size_t>(std::llround(duration_s / sample_period_s)));
+}
+
 void appendSample(LocomotionMetrics& metrics,
                   std::vector<MotionSample>& samples,
                   const MotionSample& sample) {
@@ -582,13 +608,33 @@ void appendSample(LocomotionMetrics& metrics,
     metrics.min_step_length_m = std::min(metrics.min_step_length_m, sample.step_length_m);
     metrics.max_swing_height_m = std::max(metrics.max_swing_height_m, sample.swing_height_m);
     metrics.min_swing_height_m = std::min(metrics.min_swing_height_m, sample.swing_height_m);
-    metrics.path_length_m += sample.horizontal_speed_mps * kControlLoopPeriodS;
+    metrics.path_length_m += sample.horizontal_speed_mps * metrics.sample_period_s;
     metrics.mean_horizontal_speed_mps += sample.horizontal_speed_mps;
     metrics.mean_yaw_rate_radps += std::abs(sample.yaw_rate_radps);
     metrics.peak_horizontal_speed_mps = std::max(metrics.peak_horizontal_speed_mps, sample.horizontal_speed_mps);
     metrics.peak_yaw_rate_radps = std::max(metrics.peak_yaw_rate_radps, std::abs(sample.yaw_rate_radps));
     metrics.yaw_delta_rad = wrapAngleDiff(samples.front().estimated.body_twist_state.twist_pos_rad.z,
                                           sample.estimated.body_twist_state.twist_pos_rad.z);
+    if (sample.locomotion_debug.valid) {
+        metrics.min_measured_foot_world_z_m = std::min(
+            metrics.min_measured_foot_world_z_m, sample.locomotion_debug.min_measured_foot_world_z_m);
+        metrics.max_commanded_tracking_error_m = std::max(
+            metrics.max_commanded_tracking_error_m, sample.locomotion_debug.max_commanded_tracking_error_m);
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            const std::size_t leg_index = static_cast<std::size_t>(leg);
+            metrics.max_contact_anchor_drift_m = std::max(
+                metrics.max_contact_anchor_drift_m,
+                sample.locomotion_debug.contact_anchor_drift_m[leg_index]);
+            metrics.max_contact_anchor_max_drift_m = std::max(
+                metrics.max_contact_anchor_max_drift_m,
+                sample.locomotion_debug.contact_anchor_max_drift_m[leg_index]);
+            if (sample.locomotion_debug.contact_anchor_valid[leg_index]) {
+                metrics.max_contact_tracking_error_m = std::max(
+                    metrics.max_contact_tracking_error_m,
+                    sample.locomotion_debug.commanded_tracking_error_m[leg_index]);
+            }
+        }
+    }
 
     if (sample.status.active_fault != FaultCode::NONE && !metrics.saw_fault) {
         metrics.saw_fault = true;
@@ -607,10 +653,11 @@ void finalizeMetrics(LocomotionMetrics& metrics, const std::vector<MotionSample>
         metrics.min_governed_yaw_rate_radps = 0.0;
         metrics.min_step_length_m = 0.0;
         metrics.min_swing_height_m = 0.0;
+        metrics.min_measured_foot_world_z_m = 0.0;
         return;
     }
 
-    metrics.duration_s = static_cast<double>(samples.size()) * kControlLoopPeriodS;
+    metrics.duration_s = static_cast<double>(samples.size()) * metrics.sample_period_s;
     metrics.mean_horizontal_speed_mps /= static_cast<double>(samples.size());
     metrics.mean_yaw_rate_radps /= static_cast<double>(samples.size());
     metrics.net_displacement_m = std::hypot(
@@ -690,6 +737,9 @@ void finalizeMetrics(LocomotionMetrics& metrics, const std::vector<MotionSample>
     if (metrics.min_support_margin_m == std::numeric_limits<double>::infinity()) {
         metrics.min_support_margin_m = 0.0;
     }
+    if (metrics.min_measured_foot_world_z_m == std::numeric_limits<double>::infinity()) {
+        metrics.min_measured_foot_world_z_m = 0.0;
+    }
 }
 
 bool runMotionSequence(RobotRuntime& runtime,
@@ -741,9 +791,11 @@ bool runMotionSequence(RobotRuntime& runtime,
             sample.model_trust = estimated.has_fusion_diagnostics ? estimated.fusion.model_trust : 1.0;
             sample.contact_mismatch_ratio =
                 estimated.has_fusion_diagnostics ? estimated.fusion.residuals.contact_mismatch_ratio : 0.0;
+            sample.locomotion_debug = runtime.locomotionDebugSnapshot();
+            sample.sample_period_s = metrics.sample_period_s;
 
             if (sample.status.active_mode == RobotMode::WALK && gait.stride_phase_rate_hz.value > 0.05) {
-                stride_cycles_accum += gait.stride_phase_rate_hz.value * kControlLoopPeriodS;
+                stride_cycles_accum += gait.stride_phase_rate_hz.value * metrics.sample_period_s;
             }
             appendSample(metrics, samples, sample);
             ++step_index;
@@ -755,23 +807,6 @@ bool runMotionSequence(RobotRuntime& runtime,
         metrics.stride_count,
         static_cast<std::size_t>(std::floor(stride_cycles_accum)));
     return true;
-}
-
-control_config::ControlConfig loadPhysicsSimConfig() {
-    ParsedToml parsed{};
-    const std::filesystem::path config_path = resolveExistingPath({
-        "config.physics-sim-wsl.txt",
-        "../config.physics-sim-wsl.txt",
-        "hexapod-server/config.physics-sim-wsl.txt",
-    });
-    if (config_path.empty()) {
-        throw std::runtime_error("unable to locate config.physics-sim-wsl.txt");
-    }
-    TomlParser parser{};
-    if (!parser.parse(config_path.string(), parsed)) {
-        throw std::runtime_error("failed to parse " + config_path.string());
-    }
-    return control_config::fromParsedToml(parsed);
 }
 
 std::string motionTimelineString(const std::vector<MotionPhase>& phases) {
@@ -815,8 +850,13 @@ CaseResult runCase(const std::string& sim_exe,
         throw std::runtime_error(spec.name + ": failed to start physics sim process");
     }
 
-    auto bridge = std::make_unique<CapturingPhysicsSimBridge>("127.0.0.1", port, 20000, 24);
-    control_config::ControlConfig cfg = loadPhysicsSimConfig();
+    const auto harness = physics_sim_test_utils::loadHarnessSettings();
+    auto bridge = std::make_unique<CapturingPhysicsSimBridge>(
+        "127.0.0.1",
+        port,
+        harness.bus_loop_period_us,
+        harness.physics_solver_iterations);
+    control_config::ControlConfig cfg = harness.control_cfg;
     cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
     cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
     cfg.control_loop_trace_enabled = false;
@@ -827,8 +867,11 @@ CaseResult runCase(const std::string& sim_exe,
         spec.configure(cfg);
     }
 
+    std::vector<MotionPhase> scaled_phases = spec.phases;
+    scalePhasesForHarness(scaled_phases, harness.bus_loop_period_us);
     std::vector<MotionSample> samples{};
     LocomotionMetrics metrics{};
+    metrics.sample_period_s = physics_sim_test_utils::controlLoopPeriodSeconds(cfg);
     auto replay_logger = std::make_unique<CollectingReplayLogger>(result.replay_path.string());
     const auto* replay_logger_ptr = replay_logger.get();
     {
@@ -843,7 +886,7 @@ CaseResult runCase(const std::string& sim_exe,
             throw std::runtime_error(spec.name + ": runtime init failed");
         }
 
-        if (!runMotionSequence(runtime, spec.phases, samples, metrics)) {
+        if (!runMotionSequence(runtime, scaled_phases, samples, metrics)) {
             throw std::runtime_error(spec.name + ": motion runner failed unexpectedly");
         }
         replay_logger_ptr->flush();
@@ -958,7 +1001,7 @@ bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
             "long walk observability should trip TIP_OVER or BODY_COLLAPSE at the end of the stress window";
         return false;
     }
-    if (!(m.walk_sample_count >= 500)) {
+    if (!(m.walk_sample_count >= samplesForDuration(10.0, m.sample_period_s))) {
         reason = "long walk should sustain a large walking window before the fault";
         return false;
     }
@@ -970,17 +1013,21 @@ bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
         reason = "long walk should accumulate path length";
         return false;
     }
-    if (!(m.first_fault_step > 500 && m.first_fault_step < 2500)) {
+    const double first_fault_time_s = static_cast<double>(m.first_fault_step) * m.sample_period_s;
+    if (!(first_fault_time_s > 10.0 && first_fault_time_s < 65.0)) {
         reason = "long walk should fault only after a sustained observation window";
         return false;
     }
 
     constexpr const char* kSlowTripodPhaseLabel = "long_walk_observability_phase_2";
     constexpr const char* kFastTripodPhaseLabel = "long_walk_observability_phase_3";
-    constexpr std::size_t kTransitionWindowSamples = 60; // 1.2 s at 50 Hz
-    constexpr std::size_t kBaselineTailSamples = 40;     // 0.8 s before the speed change
+    const std::size_t kTransitionWindowSamples = samplesForDuration(1.2, m.sample_period_s);
+    const std::size_t kBaselineTailSamples = samplesForDuration(0.8, m.sample_period_s);
     constexpr double kTransitionImprovementMinM = 0.001;
     constexpr double kTransitionMaxBodyHeightM = 0.141;
+    constexpr double kMaxContactAnchorMaxDriftM = 0.08;
+    constexpr double kMinMeasuredFootWorldZM = -0.03;
+    constexpr double kMaxContactTrackingErrorM = 0.10;
     std::vector<double> slow_tripod_body_heights_m{};
     std::size_t transition_samples = 0;
     double transition_sum_body_height_m = 0.0;
@@ -1023,6 +1070,18 @@ bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
     }
     if (!(transition_max_body_height_m <= kTransitionMaxBodyHeightM)) {
         reason = "fast tripod transition should stay near commanded body height without overshooting upward";
+        return false;
+    }
+    if (!(m.max_contact_anchor_max_drift_m <= kMaxContactAnchorMaxDriftM)) {
+        reason = "long walk should keep stance foot contact anchors from drifting excessively while contact is held";
+        return false;
+    }
+    if (!(m.min_measured_foot_world_z_m >= kMinMeasuredFootWorldZM)) {
+        reason = "long walk should keep measured feet from penetrating materially below the ground plane";
+        return false;
+    }
+    if (!(m.max_contact_tracking_error_m <= kMaxContactTrackingErrorM)) {
+        reason = "long walk should avoid sustained large commanded-versus-measured stance foot error";
         return false;
     }
     return true;

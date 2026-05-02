@@ -137,9 +137,26 @@ bool test_control_step_packet_includes_fusion_diagnostics()
     telemetry_sample.estimated_state.current = 1.9f;
     telemetry_sample.estimated_state.foot_contacts[0] = true;
     telemetry_sample.estimated_state.foot_contacts[3] = true;
+    telemetry_sample.estimated_state.has_body_twist_state = true;
+    telemetry_sample.estimated_state.body_twist_state.body_trans_m = PositionM3{0.1, -0.2, 0.3};
+    telemetry_sample.estimated_state.body_twist_state.twist_pos_rad = EulerAnglesRad3{0.01, -0.02, 0.03};
+    telemetry_sample.estimated_state.leg_states[0].joint_state[COXA].pos_rad = AngleRad{deg2rad(6.0)};
+    telemetry_sample.estimated_state.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{deg2rad(-11.0)};
+    telemetry_sample.estimated_state.leg_states[0].joint_state[TIBIA].pos_rad = AngleRad{deg2rad(16.0)};
     telemetry_sample.joint_targets.leg_states[0].joint_state[COXA].pos_rad = AngleRad{deg2rad(5.0)};
     telemetry_sample.joint_targets.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{deg2rad(-10.0)};
     telemetry_sample.joint_targets.leg_states[0].joint_state[TIBIA].pos_rad = AngleRad{deg2rad(15.0)};
+    telemetry_sample.locomotion_debug.valid = true;
+    telemetry_sample.locomotion_debug.measured_foot_world_m[0] = Vec3{0.2, 0.1, 0.0};
+    telemetry_sample.locomotion_debug.commanded_foot_world_m[0] = Vec3{0.21, 0.09, 0.01};
+    telemetry_sample.locomotion_debug.contact_anchor_world_m[0] = Vec3{0.2, 0.1, 0.0};
+    telemetry_sample.locomotion_debug.contact_anchor_drift_m[0] = 0.004;
+    telemetry_sample.locomotion_debug.contact_anchor_max_drift_m[0] = 0.006;
+    telemetry_sample.locomotion_debug.commanded_tracking_error_m[0] = 0.012;
+    telemetry_sample.locomotion_debug.contact_anchor_valid[0] = true;
+    telemetry_sample.locomotion_debug.min_measured_foot_world_z_m = -0.0015;
+    telemetry_sample.locomotion_debug.min_commanded_foot_world_z_m = 0.0025;
+    telemetry_sample.locomotion_debug.max_commanded_tracking_error_m = 0.012;
     telemetry_sample.fusion.has_data = true;
     telemetry_sample.fusion.diagnostics.model_trust = 0.72;
     telemetry_sample.fusion.diagnostics.resync_requested = true;
@@ -208,6 +225,18 @@ bool test_control_step_packet_includes_fusion_diagnostics()
                   "control step payload should include voltage") &&
            expect(payload.find("\"current\":1.9") != std::string::npos,
                   "control step payload should include current") &&
+           expect(payload.find("\"commanded_angles_deg\":{") != std::string::npos,
+                  "control step payload should include commanded joint angles in degrees") &&
+           expect(payload.find("\"measured_angles_deg\":{") != std::string::npos,
+                  "control step payload should include measured joint angles in degrees") &&
+           expect(payload.find("\"body_orientation_rad\":[0.01,-0.02,0.03]") != std::string::npos,
+                  "control step payload should include full measured body orientation") &&
+           expect(payload.find("\"locomotion_debug\":{\"valid\":true") != std::string::npos,
+                  "control step payload should include locomotion debug data") &&
+           expect(payload.find("\"contact_anchor_drift_m\":[0.004") != std::string::npos,
+                  "locomotion debug payload should include contact anchor drift") &&
+           expect(payload.find("\"max_commanded_tracking_error_m\":0.012") != std::string::npos,
+                  "locomotion debug payload should include max commanded tracking error") &&
            expect(payload.find("\"process_resource\":{") != std::string::npos,
                   "control step payload should include process resource snapshot") &&
            expect(payload.find("\"cpu_percent\":37.5") != std::string::npos,

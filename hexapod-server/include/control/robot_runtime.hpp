@@ -54,6 +54,10 @@ public:
     [[nodiscard]] GaitState gaitSnapshot() const { return gait_state_.read(); }
     /** Latest command-governor snapshot from the control pipeline. */
     [[nodiscard]] CommandGovernorState commandGovernorSnapshot() const { return command_governor_state_.read(); }
+    /** Latest measured-vs-commanded locomotion diagnostics snapshot. */
+    [[nodiscard]] telemetry::LocomotionDebugSnapshot locomotionDebugSnapshot() const {
+        return locomotion_debug_.read();
+    }
     [[nodiscard]] const NavigationManager* navigationManager() const { return navigation_manager_.get(); }
     [[nodiscard]] NavigationManager* navigationManager() { return navigation_manager_.get(); }
 
@@ -107,6 +111,7 @@ private:
     DoubleBuffer<GaitState> gait_state_;
     DoubleBuffer<CommandGovernorState> command_governor_state_;
     DoubleBuffer<JointTargets> joint_targets_;
+    DoubleBuffer<telemetry::LocomotionDebugSnapshot> locomotion_debug_;
     DoubleBuffer<ControlStatus> status_;
 
     TimePointUs next_telemetry_publish_at_{};
@@ -123,4 +128,7 @@ private:
     std::atomic<uint64_t> fusion_emit_strong_count_{0};
     std::atomic<uint64_t> fusion_emit_hard_reset_count_{0};
     std::atomic<uint64_t> fusion_suppressed_count_{0};
+    std::array<bool, kNumLegs> contact_anchor_valid_{};
+    std::array<Vec3, kNumLegs> contact_anchor_world_{};
+    std::array<double, kNumLegs> contact_anchor_max_drift_m_{};
 };

@@ -42,6 +42,45 @@ void appendEuler(std::ostringstream& payload, const EulerAnglesRad3& vec)
             << ']';
 }
 
+template <typename T, std::size_t N>
+void appendScalarArray(std::ostringstream& payload, const std::array<T, N>& values)
+{
+    payload << '[';
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) {
+            payload << ',';
+        }
+        payload << formatNumber(static_cast<double>(values[i]));
+    }
+    payload << ']';
+}
+
+template <std::size_t N>
+void appendBoolArray(std::ostringstream& payload, const std::array<bool, N>& values)
+{
+    payload << '[';
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) {
+            payload << ',';
+        }
+        payload << (values[i] ? "true" : "false");
+    }
+    payload << ']';
+}
+
+template <std::size_t N>
+void appendVec3Array(std::ostringstream& payload, const std::array<Vec3, N>& values)
+{
+    payload << '[';
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) {
+            payload << ',';
+        }
+        appendVec3(payload, values[i]);
+    }
+    payload << ']';
+}
+
 void appendNavPose(std::ostringstream& payload, const NavPose2d& pose)
 {
     payload << "{\"x_m\":" << formatNumber(pose.x_m)
@@ -308,6 +347,36 @@ void appendTransitionDiagnostics(std::ostringstream& payload,
     payload << "]}";
 }
 
+void appendLocomotionDebug(std::ostringstream& payload,
+                           const telemetry::LocomotionDebugSnapshot& debug)
+{
+    payload << "\"locomotion_debug\":{"
+            << "\"valid\":" << (debug.valid ? "true" : "false")
+            << ",\"measured_foot_body_m\":";
+    appendVec3Array(payload, debug.measured_foot_body_m);
+    payload << ",\"measured_foot_world_m\":";
+    appendVec3Array(payload, debug.measured_foot_world_m);
+    payload << ",\"commanded_foot_body_m\":";
+    appendVec3Array(payload, debug.commanded_foot_body_m);
+    payload << ",\"commanded_foot_world_m\":";
+    appendVec3Array(payload, debug.commanded_foot_world_m);
+    payload << ",\"contact_anchor_world_m\":";
+    appendVec3Array(payload, debug.contact_anchor_world_m);
+    payload << ",\"contact_anchor_drift_m\":";
+    appendScalarArray(payload, debug.contact_anchor_drift_m);
+    payload << ",\"contact_anchor_max_drift_m\":";
+    appendScalarArray(payload, debug.contact_anchor_max_drift_m);
+    payload << ",\"commanded_tracking_error_m\":";
+    appendScalarArray(payload, debug.commanded_tracking_error_m);
+    payload << ",\"contact_anchor_valid\":";
+    appendBoolArray(payload, debug.contact_anchor_valid);
+    payload << ",\"min_measured_foot_world_z_m\":" << formatNumber(debug.min_measured_foot_world_z_m)
+            << ",\"min_commanded_foot_world_z_m\":" << formatNumber(debug.min_commanded_foot_world_z_m)
+            << ",\"max_commanded_tracking_error_m\":"
+            << formatNumber(debug.max_commanded_tracking_error_m)
+            << '}';
+}
+
 } // namespace
 
 std::string serializeReplayTelemetryRecord(const ReplayTelemetryRecord& record)
@@ -333,6 +402,8 @@ std::string serializeReplayTelemetryRecord(const ReplayTelemetryRecord& record)
     appendGovernorReplay(payload, record.governor);
     payload << ',';
     appendTransitionDiagnostics(payload, record.transition_diagnostics);
+    payload << ',';
+    appendLocomotionDebug(payload, record.locomotion_debug);
     payload << ",\"terrain_patch\":{"
             << "\"fresh\":" << (record.terrain_snapshot.fresh ? "true" : "false") << ','
             << "\"has_observations\":" << (record.terrain_snapshot.has_observations ? "true" : "false") << ','

@@ -108,6 +108,87 @@ void appendVec3Json(std::ostringstream& payload, const VecLike& vec) {
     payload << '[' << vec.x << ',' << vec.y << ',' << vec.z << ']';
 }
 
+template <typename LegStateArray>
+void appendAnglesDegJson(std::ostringstream& payload, const LegStateArray& leg_states) {
+    payload << '{';
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        if (leg > 0) {
+            payload << ',';
+        }
+        const auto& leg_state = leg_states[static_cast<std::size_t>(kVisualiserLegOrder[leg])];
+        payload << '\"' << kLegOrder[leg] << "\":[";
+        payload << formatNumber(rad2deg(leg_state.joint_state[COXA].pos_rad)) << ',';
+        payload << formatNumber(rad2deg(leg_state.joint_state[FEMUR].pos_rad)) << ',';
+        payload << formatNumber(rad2deg(leg_state.joint_state[TIBIA].pos_rad));
+        payload << ']';
+    }
+    payload << '}';
+}
+
+template <typename T, std::size_t N>
+void appendScalarArrayJson(std::ostringstream& payload, const std::array<T, N>& values) {
+    payload << '[';
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (index > 0) {
+            payload << ',';
+        }
+        payload << values[index];
+    }
+    payload << ']';
+}
+
+template <std::size_t N>
+void appendBoolArrayJson(std::ostringstream& payload, const std::array<bool, N>& values) {
+    payload << '[';
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (index > 0) {
+            payload << ',';
+        }
+        payload << (values[index] ? "true" : "false");
+    }
+    payload << ']';
+}
+
+template <std::size_t N>
+void appendVec3ArrayJson(std::ostringstream& payload, const std::array<Vec3, N>& values) {
+    payload << '[';
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (index > 0) {
+            payload << ',';
+        }
+        appendVec3Json(payload, values[index]);
+    }
+    payload << ']';
+}
+
+void appendLocomotionDebugJson(std::ostringstream& payload,
+                               const telemetry::LocomotionDebugSnapshot& debug) {
+    payload << "\"locomotion_debug\":{"
+            << "\"valid\":" << (debug.valid ? "true" : "false")
+            << ",\"measured_foot_body_m\":";
+    appendVec3ArrayJson(payload, debug.measured_foot_body_m);
+    payload << ",\"measured_foot_world_m\":";
+    appendVec3ArrayJson(payload, debug.measured_foot_world_m);
+    payload << ",\"commanded_foot_body_m\":";
+    appendVec3ArrayJson(payload, debug.commanded_foot_body_m);
+    payload << ",\"commanded_foot_world_m\":";
+    appendVec3ArrayJson(payload, debug.commanded_foot_world_m);
+    payload << ",\"contact_anchor_world_m\":";
+    appendVec3ArrayJson(payload, debug.contact_anchor_world_m);
+    payload << ",\"contact_anchor_drift_m\":";
+    appendScalarArrayJson(payload, debug.contact_anchor_drift_m);
+    payload << ",\"contact_anchor_max_drift_m\":";
+    appendScalarArrayJson(payload, debug.contact_anchor_max_drift_m);
+    payload << ",\"commanded_tracking_error_m\":";
+    appendScalarArrayJson(payload, debug.commanded_tracking_error_m);
+    payload << ",\"contact_anchor_valid\":";
+    appendBoolArrayJson(payload, debug.contact_anchor_valid);
+    payload << ",\"min_measured_foot_world_z_m\":" << debug.min_measured_foot_world_z_m
+            << ",\"min_commanded_foot_world_z_m\":" << debug.min_commanded_foot_world_z_m
+            << ",\"max_commanded_tracking_error_m\":" << debug.max_commanded_tracking_error_m
+            << '}';
+}
+
 void appendLegGeometryJson(std::ostringstream& payload, const HexapodGeometry& geometry) {
     payload << ",\"legs\":[";
     for (std::size_t index = 0; index < kVisualiserLegOrder.size(); ++index) {
@@ -285,19 +366,8 @@ std::string serializeVisualiserJointsPacket(const HexapodGeometry& geometry,
     appendLegGeometryJson(out, geometry);
     out << "},";
 
-    out << "\"angles_deg\":{";
-    for (int leg = 0; leg < kNumLegs; ++leg) {
-        if (leg > 0) {
-            out << ',';
-        }
-        const auto& leg_state = joints.leg_states[static_cast<std::size_t>(kVisualiserLegOrder[leg])];
-        out << '\"' << kLegOrder[leg] << "\":[";
-        out << formatNumber(rad2deg(leg_state.joint_state[COXA].pos_rad)) << ',';
-        out << formatNumber(rad2deg(leg_state.joint_state[FEMUR].pos_rad)) << ',';
-        out << formatNumber(rad2deg(leg_state.joint_state[TIBIA].pos_rad));
-        out << ']';
-    }
-    out << "}";
+    out << "\"angles_deg\":";
+    appendAnglesDegJson(out, joints.leg_states);
 
     out << '}';
     return out.str();
@@ -316,22 +386,12 @@ std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& te
             << "\"estimator_valid\":" << (telemetry.status.estimator_valid ? "true" : "false") << ','
             << "\"voltage\":" << telemetry.estimated_state.voltage << ','
             << "\"current\":" << telemetry.estimated_state.current << ','
-            << "\"angles_deg\":{";
-
-    for (int leg = 0; leg < kNumLegs; ++leg) {
-        if (leg != 0) {
-            payload << ",";
-        }
-        const auto& leg_state =
-            telemetry.joint_targets.leg_states[static_cast<std::size_t>(kVisualiserLegOrder[leg])];
-        payload << "\"" << kLegOrder[leg] << "\":["
-                << formatNumber(rad2deg(leg_state.joint_state[COXA].pos_rad)) << ','
-                << formatNumber(rad2deg(leg_state.joint_state[FEMUR].pos_rad)) << ','
-                << formatNumber(rad2deg(leg_state.joint_state[TIBIA].pos_rad))
-                << "]";
-    }
-
-    payload << "}";
+            << "\"angles_deg\":";
+    appendAnglesDegJson(payload, telemetry.joint_targets.leg_states);
+    payload << ",\"commanded_angles_deg\":";
+    appendAnglesDegJson(payload, telemetry.joint_targets.leg_states);
+    payload << ",\"measured_angles_deg\":";
+    appendAnglesDegJson(payload, telemetry.estimated_state.leg_states);
     payload << ",\"raw_contacts\":[";
     for (int leg = 0; leg < kNumLegs; ++leg) {
         if (leg != 0) {
@@ -343,8 +403,12 @@ std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& te
     if (telemetry.estimated_state.has_body_twist_state) {
         payload << ",\"body_position\":";
         appendVec3Json(payload, telemetry.estimated_state.body_twist_state.body_trans_m);
+        payload << ",\"body_orientation_rad\":";
+        appendVec3Json(payload, telemetry.estimated_state.body_twist_state.twist_pos_rad);
         payload << ",\"body_yaw_rad\":" << telemetry.estimated_state.body_twist_state.twist_pos_rad.z;
     }
+    payload << ',';
+    appendLocomotionDebugJson(payload, telemetry.locomotion_debug);
     if (telemetry.navigation.has_value()) {
         const NavigationMonitorSnapshot& nav = telemetry.navigation.value();
         payload << ",\"nav\":{"

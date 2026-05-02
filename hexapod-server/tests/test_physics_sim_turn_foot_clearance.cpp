@@ -1,9 +1,9 @@
 #include "body_controller.hpp"
 #include "control_config.hpp"
-#include "config/toml_parser.hpp"
 #include "geometry_config.hpp"
 #include "leg_fk.hpp"
 #include "motion_intent_utils.hpp"
+#include "physics_sim_test_utils.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
 #include "robot_runtime.hpp"
@@ -110,8 +110,9 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    const auto harness = physics_sim_test_utils::loadHarnessSettings();
     const int port = 26000 + (static_cast<int>(::getpid()) % 4000);
-    const int bus_loop_period_us = 20000;
+    const int bus_loop_period_us = harness.bus_loop_period_us;
 
     pid_t pid = ::fork();
     if (pid < 0) {
@@ -127,19 +128,11 @@ int main(int argc, char** argv) {
 
     std::this_thread::sleep_for(std::chrono::milliseconds{250});
 
-    auto bridge = std::make_unique<CapturingPhysicsSimBridge>("127.0.0.1", port, bus_loop_period_us, 24);
+    auto bridge = std::make_unique<CapturingPhysicsSimBridge>(
+        "127.0.0.1", port, bus_loop_period_us, harness.physics_solver_iterations);
     CapturingPhysicsSimBridge* bridge_ptr = bridge.get();
 
-    ParsedToml parsed{};
-    const std::string config_path = "../config.physics-sim-wsl.txt";
-    const TomlParser parser{};
-    if (!expect(parser.parse(config_path, parsed), "physics-sim WSL config should parse for turn regression")) {
-        ::kill(pid, SIGTERM);
-        ::waitpid(pid, nullptr, 0);
-        return EXIT_FAILURE;
-    }
-
-    control_config::ControlConfig cfg = control_config::fromParsedToml(parsed);
+    control_config::ControlConfig cfg = harness.control_cfg;
     cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
     cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
 
@@ -155,7 +148,11 @@ int main(int argc, char** argv) {
     ScenarioMotionIntent turn_motion{true, RobotMode::WALK, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0};
     turn_motion.yaw_rate_radps = 0.45;
 
-    constexpr int kStandWarmupSteps = 140;
+    const int kStandWarmupSteps = static_cast<int>(
+        physics_sim_test_utils::scaledLegacyStepCount(140, bus_loop_period_us));
+    // Keep the live-harness turn smoke test focused on early swing-clearance behavior.
+    // Longer turn windows on the harsher 5 ms harness can eventually tip over for reasons
+    // unrelated to whether swing feet clear the ground.
     constexpr int kTurnObserveSteps = 1400;
 
     for (int i = 0; i < kStandWarmupSteps; ++i) {

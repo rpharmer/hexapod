@@ -11,6 +11,7 @@
 #include "matrix_lidar_local_map_source.hpp"
 #include "motion_intent_utils.hpp"
 #include "navigation_manager.hpp"
+#include "physics_sim_test_utils.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
 #include "physics_sim_local_map_source.hpp"
@@ -224,6 +225,7 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
                                                       const double blocked_timeout_s,
                                                       const int max_steps,
                                                       const int bus_loop_period_us) {
+    const auto harness = physics_sim_test_utils::loadHarnessSettings();
     const int port = 24000 + (static_cast<int>(::getpid()) % 3000) +
                      static_cast<int>(std::hash<std::string>{}(label) % 1000);
 
@@ -233,10 +235,11 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
         return std::nullopt;
     }
 
-    auto bridge = std::make_unique<PhysicsSimBridge>("127.0.0.1", port, bus_loop_period_us, 24, nullptr);
+    auto bridge = std::make_unique<PhysicsSimBridge>(
+        "127.0.0.1", port, bus_loop_period_us, harness.physics_solver_iterations, nullptr);
     PhysicsSimBridge* bridge_ptr = bridge.get();
 
-    control_config::ControlConfig cfg{};
+    control_config::ControlConfig cfg = harness.control_cfg;
     cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
     cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
     // Keep the broader live-navigation acceptance suite pinned to command-only blending for now;
@@ -288,7 +291,8 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
     MotionIntent stand_fallback = makeMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.06);
     MotionIntent walk_base = makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.06);
 
-    constexpr int kWarmupSteps = 140;
+    const int kWarmupSteps = static_cast<int>(
+        physics_sim_test_utils::scaledLegacyStepCount(140, bus_loop_period_us));
     for (int i = 0; i < kWarmupSteps; ++i) {
         runWarmupStep(runtime, stand_fallback);
     }
@@ -504,7 +508,8 @@ int main(int argc, char** argv) {
         return EXIT_SUCCESS;
     }
 
-    constexpr int kBusLoopPeriodUs = 20000;
+    const auto harness = physics_sim_test_utils::loadHarnessSettings();
+    const int kBusLoopPeriodUs = harness.bus_loop_period_us;
     constexpr double kGoalForwardM = 0.14;
 
     const std::filesystem::path single_box =
@@ -515,7 +520,13 @@ int main(int argc, char** argv) {
         resolveNavigationScene(sim_exe, "nav_midrun_intrusion.json");
 
     const auto direct =
-        runNavigationCase("direct_path", sim_exe, std::nullopt, kGoalForwardM, 1.2, 1800, kBusLoopPeriodUs);
+        runNavigationCase("direct_path",
+                          sim_exe,
+                          std::nullopt,
+                          kGoalForwardM,
+                          1.2,
+                          static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(1800, kBusLoopPeriodUs)),
+                          kBusLoopPeriodUs);
     if (direct.has_value()) {
         printSummary("direct_path", *direct);
     }
@@ -528,7 +539,7 @@ int main(int argc, char** argv) {
                                           single_box.string(),
                                           kGoalForwardM,
                                           1.2,
-                                          2200,
+                                          static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(2200, kBusLoopPeriodUs)),
                                           kBusLoopPeriodUs);
     if (detour.has_value()) {
         printSummary("single_obstacle", *detour);
@@ -542,7 +553,7 @@ int main(int argc, char** argv) {
                                            blocked_corridor.string(),
                                            kGoalForwardM,
                                            0.8,
-                                           900,
+                                           static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(900, kBusLoopPeriodUs)),
                                            kBusLoopPeriodUs);
     if (blocked.has_value()) {
         printSummary("blocked_corridor", *blocked);
@@ -556,7 +567,7 @@ int main(int argc, char** argv) {
                                              midrun_intrusion.string(),
                                              kGoalForwardM,
                                              1.0,
-                                             2200,
+                                             static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(2200, kBusLoopPeriodUs)),
                                              kBusLoopPeriodUs);
     if (intrusion.has_value()) {
         printSummary("midrun_intrusion", *intrusion);
