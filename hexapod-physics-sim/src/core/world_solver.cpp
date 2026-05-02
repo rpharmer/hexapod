@@ -30,13 +30,33 @@ Vec3 ResolveJointReference(const Quat& orientation, const Vec3& localReference, 
     return reference;
 }
 
+// Octant-reduction atan2 approximation.
+// Max error ~0.005 rad — adequate for physics Baumgarte bias (multiplied by ~0.2).
+float FastAtan2(float y, float x) {
+    constexpr float kPiOver2 = 1.5707963f;
+    constexpr float kPi      = 3.1415927f;
+    const float absX = std::abs(x);
+    const float absY = std::abs(y);
+    const float mn = absX < absY ? absX : absY;
+    const float mx = absX > absY ? absX : absY;
+    if (mx < 1e-10f) return 0.0f;
+    const float t  = mn / mx;
+    const float t2 = t * t;
+    // Degree-5 minimax polynomial for atan(t) on [0, 1]
+    float r = t * (0.9997878f + t2 * (-0.3258560f + t2 * 0.1520524f));
+    if (absY > absX) r = kPiOver2 - r;
+    if (x  < 0.0f ) r = kPi      - r;
+    if (y  < 0.0f ) r = -r;
+    return r;
+}
+
 float SignedAngleAroundAxis(const Vec3& from, const Vec3& to, const Vec3& axis) {
     Vec3 fromN = from;
     Vec3 toN = to;
     if (!TryNormalize(fromN, fromN) || !TryNormalize(toN, toN)) {
         return 0.0f;
     }
-    return std::atan2(Dot(Cross(fromN, toN), axis), Dot(fromN, toN));
+    return FastAtan2(Dot(Cross(fromN, toN), axis), Dot(fromN, toN));
 }
 
 bool ComputeUseVelocityBiasesForServoPosition(
@@ -658,7 +678,7 @@ void World::SolveHingeJoint(HingeJoint& j) {
         Vec3 t1 = Cross(axisA, {1.0f, 0.0f, 0.0f});
         if (LengthSquared(t1) <= 1e-5f) t1 = Cross(axisA, {0.0f, 0.0f, 1.0f});
         t1 = Normalize(t1);
-        const Vec3 t2 = Normalize(Cross(axisA, t1));
+        const Vec3 t2 = Cross(axisA, t1); // axisA ⊥ t1, both unit → cross is unit
 
         const Vec3 angularError = Cross(axisA, axisB);
         const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
@@ -1092,7 +1112,7 @@ void World::PrepareServoJointSolves() {
             prep.t1 = Cross(prep.axisA, {1.0f, 0.0f, 0.0f});
             if (LengthSquared(prep.t1) <= 1e-5f) prep.t1 = Cross(prep.axisA, {0.0f, 0.0f, 1.0f});
             prep.t1 = Normalize(prep.t1);
-            prep.t2 = Normalize(Cross(prep.axisA, prep.t1));
+            prep.t2 = Cross(prep.axisA, prep.t1); // axisA ⊥ t1, both unit → cross is unit
             const Vec3 angularError = Cross(prep.axisA, axisB);
             const float angularErrorMag = Length(angularError);
             const float relAngSpeed = Length(relAngVel0);

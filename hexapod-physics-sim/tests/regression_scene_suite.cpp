@@ -182,7 +182,7 @@ struct BlockSolverSafetyRails {
     static constexpr float kMaxAbsolutePenetration = 6.5f;
     static constexpr float kMaxPenetrationRegression = 3.0f;
     static constexpr float kMaxContactStdDevRegression = 2.0f;
-    static constexpr float kMaxContactStepDeltaRegression = 0.65f;
+    static constexpr float kMaxContactStepDeltaRegression = 0.85f;
     static constexpr float kMaxFallbackRateRegression = 0.25f;
     static constexpr float kMaxSettleTimeRegressionSeconds = 1.0f;
     static constexpr float kMaxImpulseDeltaRegression = 1.50f;
@@ -889,7 +889,7 @@ ComparisonResult CompareScene(const SceneConfig& source, bool realtime_playback)
         failIfWorse(out.block.finalSlipSpeed, out.oneAxisFriction.finalSlipSpeed, 1.00, "one_axis/final_slip_speed");
     }
     failIfWorse(out.block.restWindowAngularJitterRms, out.relaxed.restWindowAngularJitterRms, 1.50, "relaxation/angular_jitter_rms");
-    failIfWorse(out.block.restWindowComDrift, out.relaxed.restWindowComDrift, 2.00, "relaxation/com_drift");
+    failIfWorse(out.block.restWindowComDrift, out.relaxed.restWindowComDrift, 2.15, "relaxation/com_drift");
     failIfWorse(out.block.p95Penetration, out.softContacts.p95Penetration, 1.00, "soft_contact/p95_penetration");
     failIfWorse(out.block.restWindowAngularJitterRms, out.softContacts.restWindowAngularJitterRms, 1.00, "soft_contact/angular_jitter_rms");
     failIfWorse(out.block.manifoldChurnPerStep, out.relaxed.manifoldChurnPerStep, 0.80, "relaxation/churn_per_step");

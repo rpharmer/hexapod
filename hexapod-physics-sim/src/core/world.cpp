@@ -19,7 +19,7 @@ Vec3 ChooseJointReferenceVector(const Vec3& axis) {
 }
 
 Vec3 ComputeLocalDirection(const Body& body, const Vec3& worldDirection) {
-    return Rotate(Conjugate(Normalize(body.orientation)), worldDirection);
+    return RotateInverse(Normalize(body.orientation), worldDirection);
 }
 
 } // namespace
@@ -298,7 +298,7 @@ float World::ComputeServoJointAngleNoProfile(const ServoJoint& joint) const {
 
 Vec3 World::ComputeLocalAnchor(std::uint32_t bodyId, const Vec3& worldAnchor) const {
     const Body& body = bodies_.at(bodyId);
-    return Rotate(Conjugate(Normalize(body.orientation)), worldAnchor - body.position);
+    return RotateInverse(Normalize(body.orientation), worldAnchor - body.position);
 }
 
 bool World::TryComputeLocalJointAxes(
@@ -314,8 +314,8 @@ bool World::TryComputeLocalJointAxes(
         return false;
     }
 
-    outAxisA = Rotate(Conjugate(Normalize(bodies_.at(a).orientation)), axisN);
-    outAxisB = Rotate(Conjugate(Normalize(bodies_.at(b).orientation)), axisN);
+    outAxisA = RotateInverse(Normalize(bodies_.at(a).orientation), axisN);
+    outAxisB = RotateInverse(Normalize(bodies_.at(b).orientation), axisN);
     return true;
 }
 

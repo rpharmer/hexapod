@@ -35,10 +35,31 @@ inline Quat Normalize(const Quat& q) {
     return {q.w / len, q.x / len, q.y / len, q.z / len};
 }
 
+// Cross-product form: t = 2*(q_vec × v); v' = v + q.w*t + q_vec × t
+// ~30 flops vs ~64 for the quat-multiply sandwich. Changes FP rounding
+// order relative to the old form — baselines must be regenerated if used.
 inline Vec3 Rotate(const Quat& q, const Vec3& v) {
-    const Quat p{0.0f, v.x, v.y, v.z};
-    const Quat r = q * p * Conjugate(q);
-    return {r.x, r.y, r.z};
+    const float tx = 2.0f * (q.y * v.z - q.z * v.y);
+    const float ty = 2.0f * (q.z * v.x - q.x * v.z);
+    const float tz = 2.0f * (q.x * v.y - q.y * v.x);
+    return {
+        v.x + q.w * tx + (q.y * tz - q.z * ty),
+        v.y + q.w * ty + (q.z * tx - q.x * tz),
+        v.z + q.w * tz + (q.x * ty - q.y * tx),
+    };
+}
+
+// Equivalent to Rotate(Conjugate(q), v) for unit quaternion q.
+// Same cross-product form with q.w sign flipped.
+inline Vec3 RotateInverse(const Quat& q, const Vec3& v) {
+    const float tx = 2.0f * (q.y * v.z - q.z * v.y);
+    const float ty = 2.0f * (q.z * v.x - q.x * v.z);
+    const float tz = 2.0f * (q.x * v.y - q.y * v.x);
+    return {
+        v.x - q.w * tx + (q.y * tz - q.z * ty),
+        v.y - q.w * ty + (q.z * tx - q.x * tz),
+        v.z - q.w * tz + (q.x * ty - q.y * tx),
+    };
 }
 
 } // namespace minphys3d

@@ -52,7 +52,7 @@ bool LocalPointInsideOBB(const Vec3& local, const Vec3& he, float eps) {
 }
 
 Vec3 SupportPointCylinder(const Body& c, const Vec3& direction) {
-    Vec3 localDir = Rotate(Conjugate(Normalize(c.orientation)), direction);
+    Vec3 localDir = RotateInverse(Normalize(c.orientation), direction);
     const float radialLengthSq = localDir.x * localDir.x + localDir.z * localDir.z;
     Vec3 localPoint{0.0f, localDir.y >= 0.0f ? c.halfHeight : -c.halfHeight, 0.0f};
     if (radialLengthSq > kEpsilon * kEpsilon) {

@@ -33,7 +33,7 @@ ConvexSupport BuildConvexSupport(const Body& body) {
             body.position,
             body.orientation,
             [center = body.position, orientation = body.orientation, ext = body.halfExtents](const Vec3& direction) {
-                const Vec3 localDir = Rotate(Conjugate(orientation), direction);
+                const Vec3 localDir = RotateInverse(orientation, direction);
                 Vec3 local{
                     localDir.x >= 0.0f ? ext.x : -ext.x,
                     localDir.y >= 0.0f ? ext.y : -ext.y,
@@ -73,7 +73,7 @@ ConvexSupport BuildConvexSupport(const Body& body) {
             body.position,
             body.orientation,
             [center = body.position, orientation = body.orientation, halfHeight = body.halfHeight, radius = body.radius](const Vec3& direction) {
-                Vec3 localDir = Rotate(Conjugate(orientation), direction);
+                Vec3 localDir = RotateInverse(orientation, direction);
                 const float radialLengthSq = localDir.x * localDir.x + localDir.z * localDir.z;
                 Vec3 localPoint{0.0f, localDir.y >= 0.0f ? halfHeight : -halfHeight, 0.0f};
                 if (radialLengthSq > kEpsilon * kEpsilon) {
@@ -94,7 +94,7 @@ ConvexSupport BuildConvexSupport(const Body& body) {
             shapeOrigin,
             body.orientation,
             [center = shapeOrigin, orientation = body.orientation, halfHeight = body.halfHeight, radius = body.radius](const Vec3& direction) {
-                const Vec3 localDir = Rotate(Conjugate(orientation), direction);
+                const Vec3 localDir = RotateInverse(orientation, direction);
                 const float hx = radius;
                 const float hy = halfHeight;
 
@@ -587,8 +587,8 @@ void World::BuildManifolds() {
                 }
                 const Body& a = bodies_[c.a];
                 const Body& b = bodies_[c.b];
-                c.localAnchorA = Rotate(Conjugate(a.orientation), c.point - a.position);
-                c.localAnchorB = Rotate(Conjugate(b.orientation), c.point - b.position);
+                c.localAnchorA = RotateInverse(a.orientation, c.point - a.position);
+                c.localAnchorB = RotateInverse(b.orientation, c.point - b.position);
                 c.referenceSeparation = std::max(c.penetration, 0.0f);
                 c.anchorsValid = std::isfinite(c.referenceSeparation);
             }
