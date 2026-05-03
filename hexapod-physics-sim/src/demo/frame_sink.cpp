@@ -44,7 +44,7 @@ class DummySink final : public FrameSink {
 public:
     void begin_frame(int, float) override {}
     void emit_body(std::uint32_t, const Body&) override {}
-    void emit_terrain_patch(const TerrainPatch&) override {}
+    void emit_terrain_patch_snapshot(const TerrainPatchFrameSnapshot&) override {}
     void end_frame() override {}
 };
 
@@ -89,28 +89,8 @@ public:
         bodies_.push_back({body_id, body});
     }
 
-    void emit_terrain_patch(const TerrainPatch& terrain_patch) override {
-        viz_terrain_snapshot_.valid = terrain_patch.initialized();
-        if (!viz_terrain_snapshot_.valid) {
-            viz_terrain_snapshot_ = {};
-            return;
-        }
-
-        viz_terrain_snapshot_.config = terrain_patch.config();
-        viz_terrain_snapshot_.center_world = terrain_patch.center_world();
-        viz_terrain_snapshot_.grid_origin_world = terrain_patch.grid_origin_world();
-        viz_terrain_snapshot_.base_height_m = terrain_patch.base_height_m();
-        viz_terrain_snapshot_.last_normal = terrain_patch.last_normal();
-        viz_terrain_snapshot_.last_plane_height_m = terrain_patch.last_plane_height_m();
-        viz_terrain_snapshot_.heights = terrain_patch.surface_heights_m();
-        viz_terrain_snapshot_.confidences = terrain_patch.confidences();
-        if (terrain_patch.has_collision_layer()) {
-            viz_terrain_snapshot_.collision_heights = terrain_patch.collision_heights_m();
-            viz_terrain_snapshot_.schema_version = 2;
-        } else {
-            viz_terrain_snapshot_.collision_heights.clear();
-            viz_terrain_snapshot_.schema_version = 1;
-        }
+    void emit_terrain_patch_snapshot(const TerrainPatchFrameSnapshot& terrain_patch) override {
+        viz_terrain_snapshot_ = terrain_patch;
     }
 
     void end_frame() override {
@@ -181,20 +161,6 @@ private:
     struct BodySnapshot {
         std::uint32_t id = 0;
         Body body{};
-    };
-
-    struct VizTerrainSnapshot {
-        bool valid = false;
-        int schema_version = 1;
-        TerrainPatchConfig config{};
-        Vec3 center_world{};
-        Vec3 grid_origin_world{};
-        float base_height_m = 0.0f;
-        Vec3 last_normal{0.0f, 1.0f, 0.0f};
-        float last_plane_height_m = 0.0f;
-        std::vector<float> heights{};
-        std::vector<float> confidences{};
-        std::vector<float> collision_heights{};
     };
 
     void send_bytes(const std::vector<std::uint8_t>& payload) const {
@@ -306,7 +272,7 @@ private:
         packet_send_ptrs_.push_back(&out);
     }
 
-    void AppendTerrainPackets(const VizTerrainSnapshot& snap) {
+    void AppendTerrainPackets(const TerrainPatchFrameSnapshot& snap) {
         const int rows = snap.config.rows;
         const int cols = snap.config.cols;
         const std::size_t ncell = static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols);
@@ -461,7 +427,7 @@ private:
     float sim_time_s_ = 0.0f;
     std::uint32_t terrain_seq_{0};
     std::vector<BodySnapshot> bodies_{};
-    VizTerrainSnapshot viz_terrain_snapshot_{};
+    TerrainPatchFrameSnapshot viz_terrain_snapshot_{};
     std::map<std::uint32_t, BodyStaticDescriptor> last_static_descriptors_{};
     /// Pool of UDP payloads; acquire_packet() advances pool_next_; reset_packet_pool() starts each frame.
     mutable std::vector<std::vector<std::uint8_t>> packet_pool_{};
@@ -479,6 +445,28 @@ private:
 #endif
 
 } // namespace
+
+TerrainPatchFrameSnapshot CaptureTerrainPatchFrameSnapshot(const TerrainPatch& terrain_patch) {
+    TerrainPatchFrameSnapshot snapshot{};
+    snapshot.valid = terrain_patch.initialized();
+    if (!snapshot.valid) {
+        return snapshot;
+    }
+
+    snapshot.config = terrain_patch.config();
+    snapshot.center_world = terrain_patch.center_world();
+    snapshot.grid_origin_world = terrain_patch.grid_origin_world();
+    snapshot.base_height_m = terrain_patch.base_height_m();
+    snapshot.last_normal = terrain_patch.last_normal();
+    snapshot.last_plane_height_m = terrain_patch.last_plane_height_m();
+    snapshot.heights = terrain_patch.surface_heights_m();
+    snapshot.confidences = terrain_patch.confidences();
+    if (terrain_patch.has_collision_layer()) {
+        snapshot.collision_heights = terrain_patch.collision_heights_m();
+        snapshot.schema_version = 2;
+    }
+    return snapshot;
+}
 
 std::unique_ptr<FrameSink> MakeDummySink() {
     return std::make_unique<DummySink>();

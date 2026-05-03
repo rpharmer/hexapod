@@ -5,6 +5,7 @@
 #include "demo/process_resource_diagnostics.hpp"
 #include "demo/scene_json.hpp"
 #include "demo/scenes.hpp"
+#include "demo/serve_async.hpp"
 #include "demo/terrain_patch.hpp"
 #include "minphys3d/collision/shapes.hpp"
 #include "minphys3d/core/world.hpp"
@@ -15,18 +16,24 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <condition_variable>
 #include <cstring>
+#include <deque>
 #include <iostream>
-#include <optional>
-#include <memory>
 #include <limits>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
-#include <vector>
 #include <thread>
+#include <utility>
+#include <variant>
+#include <vector>
 #include <sys/time.h>
 
 #if defined(__linux__) || defined(__APPLE__)
@@ -731,12 +738,6 @@ void FillObstacleFootprints(const World& world,
     }
 }
 
-void EmitObstacleBodies(FrameSink& sink, const World& world, const std::vector<std::uint32_t>& obstacle_body_ids) {
-    for (const std::uint32_t body_id : obstacle_body_ids) {
-        sink.emit_body(body_id, world.GetBody(body_id));
-    }
-}
-
 /// Maps a leg tibia body id to [0, 6); returns -1 if not a hexapod foot body.
 int LegIndexForTibia(std::uint32_t body_id, const std::array<std::uint32_t, 6>& tibia_ids) {
     for (int i = 0; i < 6; ++i) {
@@ -802,6 +803,147 @@ void FillFootContactsFromManifolds(
     }
 }
 
+constexpr std::size_t kServeOutboundPacketBytes =
+    physics_sim::kStateResponseBytes > physics_sim::kConfigAckBytes
+    ? physics_sim::kStateResponseBytes
+    : physics_sim::kConfigAckBytes;
+
+struct ServePeerAddress {
+    sockaddr_in addr{};
+    socklen_t len{sizeof(sockaddr_in)};
+};
+
+using ServeInboundPayload = std::variant<
+    physics_sim::ConfigCommand,
+    physics_sim::StateCorrection,
+    physics_sim::StepCommand>;
+
+struct ServeInboundMessage {
+    ServePeerAddress peer{};
+    ServeInboundPayload payload{};
+};
+
+struct ServeOutboundPacket {
+    ServePeerAddress peer{};
+    std::size_t size{0};
+    std::array<std::byte, kServeOutboundPacketBytes> bytes{};
+};
+
+template <typename T>
+class ServeMessageQueue {
+public:
+    void push(T value) {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            queue_.push_back(std::move(value));
+        }
+        cv_.notify_one();
+    }
+
+    bool tryPop(T& out) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (queue_.empty()) {
+            return false;
+        }
+        out = std::move(queue_.front());
+        queue_.pop_front();
+        return true;
+    }
+
+    bool waitPopFor(T& out, std::chrono::milliseconds timeout, const std::atomic<bool>& stop_requested) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait_for(lock, timeout, [&]() { return !queue_.empty() || stop_requested.load(std::memory_order_acquire); });
+        if (queue_.empty()) {
+            return false;
+        }
+        out = std::move(queue_.front());
+        queue_.pop_front();
+        return true;
+    }
+
+    bool empty() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return queue_.empty();
+    }
+
+    void notifyAll() {
+        cv_.notify_all();
+    }
+
+private:
+    mutable std::mutex mutex_{};
+    std::condition_variable cv_{};
+    std::deque<T> queue_{};
+};
+
+int SetNonBlocking(int fd) {
+    const int flags = ::fcntl(fd, F_GETFL, 0);
+    if (flags < 0) {
+        return -1;
+    }
+    if (::fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+bool WakeIoThread(int wake_fd) {
+    if (wake_fd < 0) {
+        return false;
+    }
+    const std::uint8_t byte = 1;
+    const ssize_t written = ::write(wake_fd, &byte, sizeof(byte));
+    return written == static_cast<ssize_t>(sizeof(byte)) || (written < 0 && errno == EAGAIN);
+}
+
+void DrainWakePipe(int wake_fd) {
+    if (wake_fd < 0) {
+        return;
+    }
+    std::array<std::uint8_t, 64> discard{};
+    for (;;) {
+        const ssize_t n = ::read(wake_fd, discard.data(), discard.size());
+        if (n <= 0) {
+            if (n < 0 && errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        if (static_cast<std::size_t>(n) < discard.size()) {
+            break;
+        }
+    }
+}
+
+template <typename Packet>
+ServeOutboundPacket PackServeOutboundPacket(const ServePeerAddress& peer, const Packet& packet, std::size_t packet_size) {
+    ServeOutboundPacket out{};
+    out.peer = peer;
+    out.size = std::min(packet_size, out.bytes.size());
+    std::memcpy(out.bytes.data(), &packet, out.size);
+    return out;
+}
+
+PreviewFrameSnapshot BuildPreviewFrameSnapshot(int frame_index,
+                                              float sim_time_s,
+                                              const TerrainPatch& terrain_patch,
+                                              const World& world,
+                                              const HexapodSceneObjects& scene,
+                                              const std::vector<std::uint32_t>& obstacle_body_ids) {
+    PreviewFrameSnapshot snapshot{};
+    snapshot.frame_index = frame_index;
+    snapshot.sim_time_s = sim_time_s;
+    snapshot.terrain_patch = CaptureTerrainPatchFrameSnapshot(terrain_patch);
+    snapshot.bodies.reserve(scene.body_ids.size() + obstacle_body_ids.size());
+    for (const std::uint32_t body_id : scene.body_ids) {
+        snapshot.bodies.push_back(PreviewBodySnapshot{body_id, world.GetBody(body_id)});
+    }
+    for (const std::uint32_t body_id : obstacle_body_ids) {
+        snapshot.bodies.push_back(PreviewBodySnapshot{body_id, world.GetBody(body_id)});
+    }
+    return snapshot;
+}
+
 } // namespace
 
 int RunPhysicsServeMode(std::uint16_t listen_port,
@@ -828,15 +970,22 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         return 1;
     }
 
-    // Non-blocking socket; we gate recvfrom() with poll() so the serve loop spends
-    // its idle time in poll() (a single syscall with kernel-side timeout) instead
-    // of inside a 1-second blocking recvfrom(). This dramatically reduces the wall
-    // time charged to `serve.poll` (kernel wait) instead of `serve.recv_datagram` without changing CPU work.
-    {
-        const int flags = ::fcntl(fd, F_GETFL, 0);
-        if (flags < 0 || ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
-            std::perror("[serve] fcntl(O_NONBLOCK)");
-        }
+    if (SetNonBlocking(fd) != 0) {
+        std::perror("[serve] fcntl(O_NONBLOCK)");
+    }
+
+    int wake_pipe[2]{-1, -1};
+    if (::pipe(wake_pipe) != 0) {
+        std::perror("[serve] pipe");
+        ::close(fd);
+        return 1;
+    }
+    if (SetNonBlocking(wake_pipe[0]) != 0 || SetNonBlocking(wake_pipe[1]) != 0) {
+        std::perror("[serve] fcntl(wake_pipe)");
+        ::close(wake_pipe[0]);
+        ::close(wake_pipe[1]);
+        ::close(fd);
+        return 1;
     }
 
     World world(Vec3{0.0f, -9.81f, 0.0f});
@@ -853,6 +1002,8 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         if (!AppendWorldFromMinphysSceneJsonFile(
                 scene_file, world, solver_iterations, error, &appended_joints, &terrain_config, &terrain_seed)) {
             std::cerr << "[serve] failed to append scene file '" << scene_file << "': " << error << "\n";
+            ::close(wake_pipe[0]);
+            ::close(wake_pipe[1]);
             ::close(fd);
             return 1;
         }
@@ -881,88 +1032,16 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     }
 
     bool configured = false;
-    std::vector<std::byte> recv_buf(kRecvBufBytes);
-
-    std::unique_ptr<FrameSink> visual = MakeFrameSink(preview_sink, preview_udp_host, preview_udp_port);
+    AsyncPreviewCounters preview_counters{};
+    std::shared_ptr<FrameSink> preview_visual{};
+    std::unique_ptr<AsyncPreviewDispatcher> preview_dispatcher{};
     int preview_frame = 0;
     float preview_sim_time_s = 0.0f;
     const int preview_stride = preview_emit_stride < 1 ? 1 : preview_emit_stride;
     std::uint64_t preview_step_counter = 0;
 
-    std::cout << "[hexapod-physics-sim] serve mode UDP *:" << listen_port;
-    if (preview_sink == SinkKind::Udp) {
-        std::cout << "  preview UDP -> " << preview_udp_host << ":" << preview_udp_port;
-        if (preview_stride > 1) {
-            std::cout << "  preview_stride=" << preview_stride;
-        }
-    }
-    if (!scene_file.empty()) {
-        std::cout << "  scene_file=" << scene_file;
-    }
-    std::cout << "\n";
-
     ProcessResourceDiagnosticsState resource_diag{};
     resource_monitoring::SectionProfiler<kServeSectionLabels.size()> serve_profiler{kServeSectionLabels};
-
-    auto logResourceSnapshot = [&](const char* prefix = "[resource]") {
-        if (stdout == nullptr) {
-            return;
-        }
-        const DemoSteadyClock::time_point now = DemoSteadyClock::now();
-        if (resource_diag.next_emit_at.time_since_epoch().count() != 0 && now < resource_diag.next_emit_at) {
-            return;
-        }
-
-        const resource_monitoring::ProcessResourceSnapshot process_snapshot = resource_diag.sampler.sample();
-        const auto serve_sections = serve_profiler.topSections(10);
-        const auto world_sections = world.SnapshotResourceSections();
-        const auto topology = world.SnapshotTopology();
-        std::fprintf(stdout,
-                     "%s process_resource=%s serve_sections=%s world_sections=%s topology={bodies=%u dynamic=%u awake=%u contacts=%u manifolds=%u islands=%u max_island_bodies=%u max_island_manifolds=%u max_island_joints=%u max_island_servos=%u} terrain={adds=%llu cells=%llu emitted=%llu merges=%llu cache_hits=%llu dirty=%llu} face4={attempted=%llu used=%llu fallback_block2=%llu fallback_scalar=%llu blocked_coherence=%llu}\n",
-                     prefix,
-                     resource_monitoring::formatProcessResourceSnapshot(process_snapshot).c_str(),
-                     resource_monitoring::formatResourceSectionSummary(serve_sections).c_str(),
-                     resource_monitoring::formatResourceSectionSummary(world_sections).c_str(),
-                     topology.bodyCount,
-                     topology.dynamicBodyCount,
-                     topology.awakeBodyCount,
-                     topology.contactCount,
-                     topology.manifoldCount,
-                     topology.islandCount,
-                     topology.maxIslandBodyCount,
-                     topology.maxIslandManifoldCount,
-                     topology.maxIslandJointCount,
-                     topology.maxIslandServoCount,
-#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
-                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainContactAdds),
-                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainCellsTested),
-                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainContactsEmitted),
-                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainManifoldMerges),
-                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainCacheHits),
-                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainDirtyCellRefreshes),
-                     static_cast<unsigned long long>(world.GetSolverTelemetry().face4Attempted),
-                     static_cast<unsigned long long>(world.GetSolverTelemetry().face4Used),
-                     static_cast<unsigned long long>(world.GetSolverTelemetry().face4FallbackToBlock2),
-                     static_cast<unsigned long long>(world.GetSolverTelemetry().face4FallbackToScalar),
-                     static_cast<unsigned long long>(world.GetSolverTelemetry().face4BlockedByFrictionCoherenceGate)
-#else
-                     0ULL,
-                     0ULL,
-                     0ULL,
-                     0ULL,
-                     0ULL,
-                     0ULL,
-                     0ULL,
-                     0ULL,
-                     0ULL,
-                     0ULL,
-                     0ULL
-#endif
-        );
-        std::fflush(stdout);
-        resource_diag.next_emit_at = now + resource_diag.emit_interval;
-    };
-    logResourceSnapshot();
 
     CachedMatrixLidarFrame cached_lidar_frame{};
     std::uint64_t lidar_sim_time_us = 0;
@@ -1032,86 +1111,247 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         }
     };
 
-    // Hoisted out of the main loop: re-zeroing sockaddr_in every iteration was 8+4
-    // bytes of pointless writes. recvfrom() will overwrite it on success anyway.
-    sockaddr_in peer{};
-    socklen_t peer_len = sizeof(peer);
-    // The previous code called logResourceSnapshot() on every 1-second timeout. With
-    // non-blocking poll() the "no data" branch fires hundreds of times per second; gate
-    // the diagnostic output to at most once per kIdleLogInterval.
-    constexpr std::chrono::seconds kIdleLogInterval{1};
-    auto last_idle_log = std::chrono::steady_clock::now() - kIdleLogInterval;
-    // Reuse a single StateResponse buffer across responses. Each path fully overwrites
-    // the fields it cares about, so we just zero the trailing array fields that aren't
-    // unconditionally written. This avoids the ~1.6 KB zero-init that an in-branch
-    // `StateResponse rsp{}` paid on every step / snapshot response.
-    physics_sim::StateResponse rsp{};
-
-    for (;;) {
-        ssize_t n = 0;
-        {
-            const auto scopePoll = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PollWait));
-            // 5 ms poll wait: short enough that a freshly-arrived datagram is processed
-            // promptly, long enough that the serve thread doesn't burn CPU spinning when
-            // the controller is idle. POSIX poll(timeout) is one syscall whose kernel
-            // wait is effectively free CPU.
-            struct pollfd pfd{};
-            pfd.fd = fd;
-            pfd.events = POLLIN;
-            const int poll_rc = ::poll(&pfd, 1, 5);
-            (void)scopePoll;
-            if (poll_rc <= 0 || (pfd.revents & POLLIN) == 0) {
-                const auto now = std::chrono::steady_clock::now();
-                if (now - last_idle_log >= kIdleLogInterval) {
-                    logResourceSnapshot();
-                    last_idle_log = now;
+    if (preview_sink == SinkKind::Udp) {
+        preview_visual = std::shared_ptr<FrameSink>(MakeFrameSink(preview_sink, preview_udp_host, preview_udp_port).release());
+        preview_dispatcher = std::make_unique<AsyncPreviewDispatcher>(
+            [sink = preview_visual, &serve_profiler](const PreviewFrameSnapshot& frame) {
+                {
+                    const auto scopeBuild = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PreviewBuild));
+                    sink->begin_frame(frame.frame_index, frame.sim_time_s);
+                    sink->emit_terrain_patch_snapshot(frame.terrain_patch);
+                    for (const PreviewBodySnapshot& body : frame.bodies) {
+                        sink->emit_body(body.id, body.body);
+                    }
+                    (void)scopeBuild;
                 }
-                continue;
-            }
-            const auto scopeRecv = serve_profiler.scope(static_cast<std::size_t>(ServeSection::RecvDatagram));
-            peer_len = sizeof(peer);
-            n = ::recvfrom(
-                fd,
-                reinterpret_cast<char*>(recv_buf.data()),
-                recv_buf.size(),
-                0,
-                reinterpret_cast<sockaddr*>(&peer),
-                &peer_len);
-            (void)scopeRecv;
+                {
+                    const auto scopeFlush = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PreviewFlush));
+                    sink->end_frame();
+                    (void)scopeFlush;
+                }
+            },
+            &preview_counters);
+    }
+
+    std::cout << "[hexapod-physics-sim] serve mode UDP *:" << listen_port;
+    if (preview_dispatcher != nullptr) {
+        std::cout << "  preview UDP -> " << preview_udp_host << ":" << preview_udp_port;
+        if (preview_stride > 1) {
+            std::cout << "  preview_stride=" << preview_stride;
         }
-        if (n < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-                // poll() said readable but the datagram was already drained
-                // (extremely rare race). Loop back and poll again.
-                continue;
-            }
-            std::cerr << "[serve] recvfrom failed\n";
-            ::close(fd);
-            return 1;
+    }
+    if (!scene_file.empty()) {
+        std::cout << "  scene_file=" << scene_file;
+    }
+    std::cout << "\n";
+
+    auto logResourceSnapshot = [&](const char* prefix = "[resource]") {
+        if (stdout == nullptr) {
+            return;
+        }
+        const DemoSteadyClock::time_point now = DemoSteadyClock::now();
+        if (resource_diag.next_emit_at.time_since_epoch().count() != 0 && now < resource_diag.next_emit_at) {
+            return;
         }
 
-        if (n < 1) {
+        const resource_monitoring::ProcessResourceSnapshot process_snapshot = resource_diag.sampler.sample();
+        const auto serve_sections = serve_profiler.topSections(10);
+        const auto world_sections = world.SnapshotResourceSections();
+        const auto topology = world.SnapshotTopology();
+        std::fprintf(stdout,
+                     "%s process_resource=%s serve_sections=%s world_sections=%s topology={bodies=%u dynamic=%u awake=%u contacts=%u manifolds=%u islands=%u max_island_bodies=%u max_island_manifolds=%u max_island_joints=%u max_island_servos=%u} preview={enqueued=%llu sent=%llu dropped=%llu} terrain={adds=%llu cells=%llu emitted=%llu merges=%llu cache_hits=%llu dirty=%llu} face4={attempted=%llu used=%llu fallback_block2=%llu fallback_scalar=%llu blocked_coherence=%llu}\n",
+                     prefix,
+                     resource_monitoring::formatProcessResourceSnapshot(process_snapshot).c_str(),
+                     resource_monitoring::formatResourceSectionSummary(serve_sections).c_str(),
+                     resource_monitoring::formatResourceSectionSummary(world_sections).c_str(),
+                     topology.bodyCount,
+                     topology.dynamicBodyCount,
+                     topology.awakeBodyCount,
+                     topology.contactCount,
+                     topology.manifoldCount,
+                     topology.islandCount,
+                     topology.maxIslandBodyCount,
+                     topology.maxIslandManifoldCount,
+                     topology.maxIslandJointCount,
+                     topology.maxIslandServoCount,
+                     static_cast<unsigned long long>(preview_counters.enqueued.load(std::memory_order_relaxed)),
+                     static_cast<unsigned long long>(preview_counters.sent.load(std::memory_order_relaxed)),
+                     static_cast<unsigned long long>(preview_counters.dropped.load(std::memory_order_relaxed)),
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainContactAdds),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainCellsTested),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainContactsEmitted),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainManifoldMerges),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainCacheHits),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().terrainDirtyCellRefreshes),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().face4Attempted),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().face4Used),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().face4FallbackToBlock2),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().face4FallbackToScalar),
+                     static_cast<unsigned long long>(world.GetSolverTelemetry().face4BlockedByFrictionCoherenceGate)
+#else
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL,
+                     0ULL
+#endif
+        );
+        std::fflush(stdout);
+        resource_diag.next_emit_at = now + resource_diag.emit_interval;
+    };
+    logResourceSnapshot();
+
+    std::atomic<bool> shutdown_requested{false};
+    std::atomic<int> serve_status{0};
+    ServeMessageQueue<ServeInboundMessage> inbound_queue{};
+    ServeMessageQueue<ServeOutboundPacket> outbound_queue{};
+
+    auto requestShutdown = [&]() {
+        shutdown_requested.store(true, std::memory_order_release);
+        inbound_queue.notifyAll();
+        outbound_queue.notifyAll();
+        (void)WakeIoThread(wake_pipe[1]);
+    };
+
+    auto drainOutboundPackets = [&]() {
+        ServeOutboundPacket outbound{};
+        while (outbound_queue.tryPop(outbound)) {
+            const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::SendResponse));
+            (void)::sendto(
+                fd,
+                outbound.bytes.data(),
+                outbound.size,
+                0,
+                reinterpret_cast<const sockaddr*>(&outbound.peer.addr),
+                outbound.peer.len);
+            (void)scope;
+        }
+    };
+
+    std::thread io_thread([&]() {
+        std::vector<std::byte> recv_buf(kRecvBufBytes);
+        for (;;) {
+            drainOutboundPackets();
+            if (shutdown_requested.load(std::memory_order_acquire) && outbound_queue.empty()) {
+                break;
+            }
+
+            struct pollfd pfds[2]{};
+            pfds[0].fd = fd;
+            pfds[0].events = POLLIN;
+            pfds[1].fd = wake_pipe[0];
+            pfds[1].events = POLLIN;
+
+            int poll_rc = 0;
+            {
+                const auto scopePoll = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PollWait));
+                poll_rc = ::poll(pfds, 2, 5);
+                (void)scopePoll;
+            }
+            if (poll_rc < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                std::cerr << "[serve] poll failed\n";
+                serve_status.store(1, std::memory_order_release);
+                requestShutdown();
+                break;
+            }
+
+            if ((pfds[1].revents & POLLIN) != 0) {
+                DrainWakePipe(wake_pipe[0]);
+            }
+
+            if ((pfds[0].revents & POLLIN) != 0) {
+                for (;;) {
+                    ServePeerAddress peer{};
+                    ssize_t n = 0;
+                    {
+                        const auto scopeRecv = serve_profiler.scope(static_cast<std::size_t>(ServeSection::RecvDatagram));
+                        n = ::recvfrom(
+                            fd,
+                            reinterpret_cast<char*>(recv_buf.data()),
+                            recv_buf.size(),
+                            0,
+                            reinterpret_cast<sockaddr*>(&peer.addr),
+                            &peer.len);
+                        (void)scopeRecv;
+                    }
+                    if (n < 0) {
+                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                            break;
+                        }
+                        if (errno == EINTR) {
+                            continue;
+                        }
+                        std::cerr << "[serve] recvfrom failed\n";
+                        serve_status.store(1, std::memory_order_release);
+                        requestShutdown();
+                        return;
+                    }
+                    if (n < 1) {
+                        continue;
+                    }
+
+                    const auto* bytes = reinterpret_cast<const std::byte*>(recv_buf.data());
+                    const std::uint8_t mtype = static_cast<std::uint8_t>(*bytes);
+                    if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::ConfigCommand)) {
+                        physics_sim::ConfigCommand cmd{};
+                        const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::DecodeConfig));
+                        if (!physics_sim::tryDecodeConfigCommand(bytes, static_cast<std::size_t>(n), cmd)) {
+                            continue;
+                        }
+                        (void)scope;
+                        inbound_queue.push(ServeInboundMessage{peer, cmd});
+                        continue;
+                    }
+                    if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection)) {
+                        physics_sim::StateCorrection correction{};
+                        const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::DecodeCorrection));
+                        if (!physics_sim::tryDecodeStateCorrection(bytes, static_cast<std::size_t>(n), correction)) {
+                            continue;
+                        }
+                        (void)scope;
+                        inbound_queue.push(ServeInboundMessage{peer, correction});
+                        continue;
+                    }
+                    if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::StepCommand)) {
+                        physics_sim::StepCommand step{};
+                        const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::DecodeStep));
+                        if (!physics_sim::tryDecodeStepCommand(bytes, static_cast<std::size_t>(n), step)) {
+                            continue;
+                        }
+                        (void)scope;
+                        inbound_queue.push(ServeInboundMessage{peer, step});
+                    }
+                }
+            }
+        }
+    });
+
+    physics_sim::StateResponse rsp{};
+    for (;;) {
+        ServeInboundMessage inbound{};
+        if (!inbound_queue.waitPopFor(inbound, std::chrono::milliseconds(100), shutdown_requested)) {
+            if (shutdown_requested.load(std::memory_order_acquire) && inbound_queue.empty()) {
+                break;
+            }
+            logResourceSnapshot();
             continue;
         }
 
-        const auto* bytes = reinterpret_cast<const std::byte*>(recv_buf.data());
-        const std::uint8_t mtype = static_cast<std::uint8_t>(*bytes);
-
-        if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::ConfigCommand)) {
-            physics_sim::ConfigCommand cmd{};
-            {
-                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::DecodeConfig));
-                if (!physics_sim::tryDecodeConfigCommand(bytes, static_cast<std::size_t>(n), cmd)) {
-                    (void)scope;
-                    logResourceSnapshot();
-                    continue;
-                }
-                (void)scope;
-            }
+        if (const auto* cmd = std::get_if<physics_sim::ConfigCommand>(&inbound.payload)) {
             {
                 const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::ApplyConfig));
-                world.SetGravity(Vec3{cmd.gravity[0], cmd.gravity[1], cmd.gravity[2]});
-                solver_iterations = cmd.solver_iterations > 0 ? cmd.solver_iterations : 8;
+                world.SetGravity(Vec3{(*cmd).gravity[0], (*cmd).gravity[1], (*cmd).gravity[2]});
+                solver_iterations = (*cmd).solver_iterations > 0 ? (*cmd).solver_iterations : 8;
                 configured = true;
                 (void)scope;
             }
@@ -1120,31 +1360,16 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             ack.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::ConfigAck);
             ack.body_count = world.GetBodyCount() - (world.HasTerrainHeightfield() ? 1u : 0u);
             ack.joint_count = world.GetServoJointCount();
-            (void)::sendto(
-                fd,
-                &ack,
-                physics_sim::kConfigAckBytes,
-                0,
-                reinterpret_cast<sockaddr*>(&peer),
-                peer_len);
+            outbound_queue.push(PackServeOutboundPacket(inbound.peer, ack, physics_sim::kConfigAckBytes));
+            (void)WakeIoThread(wake_pipe[1]);
             logResourceSnapshot();
             continue;
         }
 
-        if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection)) {
-            physics_sim::StateCorrection correction{};
-            {
-                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::DecodeCorrection));
-                if (!physics_sim::tryDecodeStateCorrection(bytes, static_cast<std::size_t>(n), correction)) {
-                    (void)scope;
-                    logResourceSnapshot();
-                    continue;
-                }
-                (void)scope;
-            }
+        if (const auto* correction = std::get_if<physics_sim::StateCorrection>(&inbound.payload)) {
             {
                 const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::ApplyCorrection));
-                (void)ApplyStateCorrection(world, scene, correction, assimilation_state, terrain_patch, &serve_profiler);
+                (void)ApplyStateCorrection(world, scene, *correction, assimilation_state, terrain_patch, &serve_profiler);
                 (void)scope;
             }
             cached_lidar_frame.valid = false;
@@ -1153,105 +1378,20 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             continue;
         }
 
-        if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::StepCommand)) {
-            if (!configured) {
-                logResourceSnapshot();
-                continue;
-            }
-            physics_sim::StepCommand step{};
-            {
-                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::DecodeStep));
-                if (!physics_sim::tryDecodeStepCommand(bytes, static_cast<std::size_t>(n), step)) {
-                    (void)scope;
-                    logResourceSnapshot();
-                    continue;
-                }
-                (void)scope;
-            }
+        const auto* step = std::get_if<physics_sim::StepCommand>(&inbound.payload);
+        if (step == nullptr) {
+            logResourceSnapshot();
+            continue;
+        }
+        if (!configured) {
+            logResourceSnapshot();
+            continue;
+        }
 
-            // sequence_id == 0: return current state without stepping or applying joint_targets.
-            if (step.sequence_id == 0) {
-                // Reset the reused buffer. Memset is faster than {}-init since it bypasses
-                // the per-field default-init the aggregate would otherwise generate.
-                std::memset(&rsp, 0, sizeof(rsp));
-                rsp.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateResponse);
-                rsp.sequence_id = 0;
-
-                const Body& chassis = world.GetBody(scene.body);
-                rsp.body_position = {chassis.position.x, chassis.position.y, chassis.position.z};
-                rsp.body_orientation = {
-                    chassis.orientation.w,
-                    chassis.orientation.x,
-                    chassis.orientation.y,
-                    chassis.orientation.z,
-                };
-                rsp.body_linear_velocity = {chassis.velocity.x, chassis.velocity.y, chassis.velocity.z};
-                rsp.body_angular_velocity = {
-                    chassis.angularVelocity.x,
-                    chassis.angularVelocity.y,
-                    chassis.angularVelocity.z,
-                };
-
-                for (std::size_t i = 0; i < wire_joints.size(); ++i) {
-                    rsp.joint_angles[i] = world.GetServoJointAngle(wire_joints[i]);
-                    rsp.joint_velocities[i] = 0.0f;
-                }
-                {
-                    const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PackResponse));
-                    FillFootContactsFromManifolds(world, scene, rsp.foot_contacts, rsp.foot_contact_normals);
-                    FillObstacleFootprints(world, obstacle_body_ids, rsp);
-                    refreshMatrixLidarFrame(rsp, world.GetBody(scene.body), 0.0f, false);
-                    (void)scope;
-                }
-                {
-                    const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::SendResponse));
-                    (void)::sendto(
-                        fd,
-                        &rsp,
-                        physics_sim::kStateResponseBytes,
-                        0,
-                        reinterpret_cast<sockaddr*>(&peer),
-                        peer_len);
-                    (void)scope;
-                }
-                logResourceSnapshot();
-                continue;
-            }
-
-            if (step.dt_seconds <= 0.0f || !std::isfinite(step.dt_seconds)) {
-                logResourceSnapshot();
-                continue;
-            }
-
-            {
-                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::ApplyJointTargets));
-                for (std::size_t i = 0; i < wire_joints.size(); ++i) {
-                    ServoJoint& sj = world.GetServoJointMutable(wire_joints[i]);
-                    sj.targetAngle = step.joint_targets[i];
-                }
-                (void)scope;
-            }
-
-            for (std::size_t i = 0; i < wire_joints.size(); ++i) {
-                prev_angles[i] = world.GetServoJointAngle(wire_joints[i]);
-            }
-
-            const int physics_substeps = std::clamp(
-                static_cast<int>(std::ceil(step.dt_seconds / kServeMaxPhysicsSubstepSeconds)),
-                1,
-                kServeMaxPhysicsSubsteps);
-            const float substep_dt = step.dt_seconds / static_cast<float>(physics_substeps);
-            {
-                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PhysicsStep));
-                for (int substep = 0; substep < physics_substeps; ++substep) {
-                    world.Step(substep_dt, solver_iterations);
-                }
-                (void)scope;
-            }
-
-            std::memset(&rsp, 0, sizeof(rsp));
+        if (step->sequence_id == 0) {
+            rsp = physics_sim::StateResponse{};
             rsp.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateResponse);
-            rsp.sequence_id = step.sequence_id;
+            rsp.sequence_id = 0;
 
             const Body& chassis = world.GetBody(scene.body);
             rsp.body_position = {chassis.position.x, chassis.position.y, chassis.position.z};
@@ -1267,63 +1407,118 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 chassis.angularVelocity.y,
                 chassis.angularVelocity.z,
             };
-
-            const float inv_dt = 1.0f / step.dt_seconds;
             for (std::size_t i = 0; i < wire_joints.size(); ++i) {
-                const float ang_after = world.GetServoJointAngle(wire_joints[i]);
-                rsp.joint_angles[i] = ang_after;
-                rsp.joint_velocities[i] = (ang_after - prev_angles[i]) * inv_dt;
-                prev_angles[i] = ang_after;
+                rsp.joint_angles[i] = world.GetServoJointAngle(wire_joints[i]);
+                rsp.joint_velocities[i] = 0.0f;
             }
-
             {
                 const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PackResponse));
                 FillFootContactsFromManifolds(world, scene, rsp.foot_contacts, rsp.foot_contact_normals);
                 FillObstacleFootprints(world, obstacle_body_ids, rsp);
-                refreshMatrixLidarFrame(rsp, world.GetBody(scene.body), step.dt_seconds, true);
+                refreshMatrixLidarFrame(rsp, world.GetBody(scene.body), 0.0f, false);
                 (void)scope;
             }
-
-            {
-                const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::SendResponse));
-                (void)::sendto(
-                    fd,
-                    &rsp,
-                    physics_sim::kStateResponseBytes,
-                    0,
-                    reinterpret_cast<sockaddr*>(&peer),
-                    peer_len);
-                (void)scope;
-            }
-
-            preview_sim_time_s += step.dt_seconds;
-            const bool emit_preview =
-                preview_stride <= 1
-                || (preview_step_counter % static_cast<std::uint64_t>(preview_stride) == 0ULL);
-            ++preview_step_counter;
-
-            if (emit_preview) {
-                {
-                    const auto scopeBuild = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PreviewBuild));
-                    visual->begin_frame(preview_frame, preview_sim_time_s);
-                    visual->emit_terrain_patch(terrain_patch);
-                    EmitSceneBodies(*visual, world, scene);
-                    EmitObstacleBodies(*visual, world, obstacle_body_ids);
-                    (void)scopeBuild;
-                }
-                {
-                    const auto scopeFlush = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PreviewFlush));
-                    visual->end_frame();
-                    ++preview_frame;
-                    (void)scopeFlush;
-                }
-            }
+            outbound_queue.push(PackServeOutboundPacket(inbound.peer, rsp, physics_sim::kStateResponseBytes));
+            (void)WakeIoThread(wake_pipe[1]);
             logResourceSnapshot();
             continue;
         }
 
+        if (step->dt_seconds <= 0.0f || !std::isfinite(step->dt_seconds)) {
+            logResourceSnapshot();
+            continue;
+        }
+
+        {
+            const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::ApplyJointTargets));
+            for (std::size_t i = 0; i < wire_joints.size(); ++i) {
+                ServoJoint& sj = world.GetServoJointMutable(wire_joints[i]);
+                sj.targetAngle = step->joint_targets[i];
+            }
+            (void)scope;
+        }
+
+        for (std::size_t i = 0; i < wire_joints.size(); ++i) {
+            prev_angles[i] = world.GetServoJointAngle(wire_joints[i]);
+        }
+
+        const int physics_substeps = std::clamp(
+            static_cast<int>(std::ceil(step->dt_seconds / kServeMaxPhysicsSubstepSeconds)),
+            1,
+            kServeMaxPhysicsSubsteps);
+        const float substep_dt = step->dt_seconds / static_cast<float>(physics_substeps);
+        {
+            const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PhysicsStep));
+            for (int substep_index = 0; substep_index < physics_substeps; ++substep_index) {
+                world.Step(substep_dt, solver_iterations);
+            }
+            (void)scope;
+        }
+
+        rsp = physics_sim::StateResponse{};
+        rsp.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateResponse);
+        rsp.sequence_id = step->sequence_id;
+
+        const Body& chassis = world.GetBody(scene.body);
+        rsp.body_position = {chassis.position.x, chassis.position.y, chassis.position.z};
+        rsp.body_orientation = {
+            chassis.orientation.w,
+            chassis.orientation.x,
+            chassis.orientation.y,
+            chassis.orientation.z,
+        };
+        rsp.body_linear_velocity = {chassis.velocity.x, chassis.velocity.y, chassis.velocity.z};
+        rsp.body_angular_velocity = {
+            chassis.angularVelocity.x,
+            chassis.angularVelocity.y,
+            chassis.angularVelocity.z,
+        };
+
+        const float inv_dt = 1.0f / step->dt_seconds;
+        for (std::size_t i = 0; i < wire_joints.size(); ++i) {
+            const float ang_after = world.GetServoJointAngle(wire_joints[i]);
+            rsp.joint_angles[i] = ang_after;
+            rsp.joint_velocities[i] = (ang_after - prev_angles[i]) * inv_dt;
+            prev_angles[i] = ang_after;
+        }
+
+        {
+            const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PackResponse));
+            FillFootContactsFromManifolds(world, scene, rsp.foot_contacts, rsp.foot_contact_normals);
+            FillObstacleFootprints(world, obstacle_body_ids, rsp);
+            refreshMatrixLidarFrame(rsp, world.GetBody(scene.body), step->dt_seconds, true);
+            (void)scope;
+        }
+
+        outbound_queue.push(PackServeOutboundPacket(inbound.peer, rsp, physics_sim::kStateResponseBytes));
+        (void)WakeIoThread(wake_pipe[1]);
+
+        preview_sim_time_s += step->dt_seconds;
+        const bool emit_preview =
+            preview_dispatcher != nullptr
+            && (preview_stride <= 1
+                || (preview_step_counter % static_cast<std::uint64_t>(preview_stride) == 0ULL));
+        ++preview_step_counter;
+        if (emit_preview) {
+            preview_dispatcher->submit(
+                BuildPreviewFrameSnapshot(preview_frame, preview_sim_time_s, terrain_patch, world, scene, obstacle_body_ids));
+            ++preview_frame;
+        }
+
         logResourceSnapshot();
     }
+
+    requestShutdown();
+    if (io_thread.joinable()) {
+        io_thread.join();
+    }
+    if (preview_dispatcher != nullptr) {
+        preview_dispatcher->shutdown();
+    }
+    ::close(wake_pipe[0]);
+    ::close(wake_pipe[1]);
+    ::close(fd);
+    return serve_status.load(std::memory_order_acquire);
 }
 
 } // namespace minphys3d::demo

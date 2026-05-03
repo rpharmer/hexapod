@@ -9,6 +9,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(MINPHYS3D_BUILD_DEMO "Build hexapod-physics-sim demo executable" ON)
 option(MINPHYS3D_BUILD_TESTS "Build minphys3d test executables" ON)
 
+if(MINPHYS3D_BUILD_DEMO OR MINPHYS3D_BUILD_TESTS)
+    find_package(Threads REQUIRED)
+endif()
+
 set(MINPHYS3D_CORE_SOURCES
     src/core/world.cpp
     src/core/world_private_methods.cpp
@@ -76,7 +80,7 @@ if(MINPHYS3D_BUILD_DEMO)
         src/demo/interactive_terminal.cpp
         src/demo/scene_json.cpp
     )
-    target_link_libraries(hexapod-physics-sim PRIVATE minphys3d_core)
+    target_link_libraries(hexapod-physics-sim PRIVATE minphys3d_core Threads::Threads)
     target_include_directories(hexapod-physics-sim PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     if(MSVC)
         target_compile_options(hexapod-physics-sim PRIVATE /W4)
@@ -244,6 +248,19 @@ add_minphys3d_test(hex_diag tests/hex_diag.cpp)
         target_compile_options(test_serve_ipc PRIVATE -Wall -Wextra -pedantic)
     endif()
     add_test(NAME test_serve_ipc COMMAND test_serve_ipc $<TARGET_FILE:hexapod-physics-sim>)
+
+    add_executable(test_serve_ipc_preview tests/test_serve_ipc_preview.cpp)
+    target_include_directories(test_serve_ipc_preview PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/include)
+    target_link_libraries(test_serve_ipc_preview PRIVATE Threads::Threads)
+    if(MSVC)
+        target_compile_options(test_serve_ipc_preview PRIVATE /W4)
+    else()
+        target_compile_options(test_serve_ipc_preview PRIVATE -Wall -Wextra -pedantic)
+    endif()
+    add_test(NAME test_serve_ipc_preview COMMAND test_serve_ipc_preview $<TARGET_FILE:hexapod-physics-sim>)
+
+    add_minphys3d_test(test_serve_preview_async tests/test_serve_preview_async.cpp)
+    target_link_libraries(test_serve_preview_async PRIVATE Threads::Threads)
 
     add_executable(test_state_correction_protocol tests/test_state_correction_protocol.cpp)
     target_include_directories(test_state_correction_protocol PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/include)
