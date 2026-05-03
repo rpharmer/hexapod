@@ -597,140 +597,107 @@ bool World::SolveHingeAnchorBlock3x3(
     }
 
 void World::SolveHingeJoint(HingeJoint& j) {
+        // All geometry (ra, rb, axisA, t1, t2, invK, effective masses, hingeAngle) is
+        // precomputed once per substep in PrepareHingeJointSolves and cached in the prep.
+        // This function is called N_iter times per substep; only velocity-dependent terms
+        // (relVel, relAngVel) are recomputed here.
+        const std::size_t idx = static_cast<std::size_t>(&j - hingeJoints_.data());
+        const HingeJointPrep& prep = hingeJointPreps_[idx];
+
         Body& a = bodies_[j.a];
         Body& b = bodies_[j.b];
         const Mat3& invIA = bodyInvInertiaWorld_[j.a];
         const Mat3& invIB = bodyInvInertiaWorld_[j.b];
 
-        const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
-        const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
-        const Vec3 pa = a.position + ra;
-        const Vec3 pb = b.position + rb;
-        const Vec3 error = pb - pa;
-        const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
-        const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
-        const Vec3 relVel = vb - va;
-        const float relAngSpeed = Length(b.angularVelocity - a.angularVelocity);
-        if (Length(error) > kWakeContactPenetrationThreshold
-            || Length(relVel) > kWakeJointRelativeSpeedThreshold
-            || relAngSpeed > kWakeJointRelativeSpeedThreshold
-            || j.motorEnabled) {
-            WakeConnectedBodies(j.a);
-            WakeConnectedBodies(j.b);
-        }
-
-        bool usedBlockSolve = false;
-        if (jointSolverConfig_.useBlockSolver) {
-            Vec3 lambda{};
-            JointBlockFallbackReason fallbackReason = JointBlockFallbackReason::None;
-            if (SolveHingeAnchorBlock3x3(a, b, invIA, invIB, ra, rb, error, relVel, lambda, fallbackReason)) {
+        // ---- Anchor 3D constraint ----
+        if (jointSolverConfig_.useBlockSolver && prep.anchorValid) {
+            const Vec3 va = a.velocity + Cross(a.angularVelocity, prep.ra);
+            const Vec3 vb = b.velocity + Cross(b.angularVelocity, prep.rb);
+            const Vec3 relVel = vb - va;
+            const Vec3 rhs = jointSolverConfig_.hingeAnchorDampingFactor * relVel + prep.anchorBias;
+            const Vec3 lambda = -1.0f * (prep.invK * rhs);
+            if (std::isfinite(lambda.x) && std::isfinite(lambda.y) && std::isfinite(lambda.z)) {
                 j.impulseX += lambda.x;
                 j.impulseY += lambda.y;
                 j.impulseZ += lambda.z;
-                ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda);
-                usedBlockSolve = true;
+                ApplyImpulse(a, b, invIA, invIB, prep.ra, prep.rb, lambda);
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                 ++solverTelemetry_.jointBlockSolveUsed;
 #endif
-            } else {
-#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
-                switch (fallbackReason) {
-                    case JointBlockFallbackReason::DegenerateMassMatrix:
-                        ++solverTelemetry_.jointBlockFallbackDegenerate;
-                        break;
-                    case JointBlockFallbackReason::ConditionEstimateExceeded:
-                        ++solverTelemetry_.jointBlockFallbackConditionEstimate;
-                        break;
-                    case JointBlockFallbackReason::NonFiniteResult:
-                        ++solverTelemetry_.jointBlockFallbackNonFinite;
-                        break;
-                    case JointBlockFallbackReason::None:
-                        break;
-                }
-#endif
             }
-        }
-
-        if (!usedBlockSolve) {
-            const Vec3 axes[3] = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
+        } else {
+            // Per-axis scalar fallback (useBlockSolver==false or degenerate K).
+            const Vec3 va = a.velocity + Cross(a.angularVelocity, prep.ra);
+            const Vec3 vb = b.velocity + Cross(b.angularVelocity, prep.rb);
+            const Vec3 relVel = vb - va;
+            const Vec3 axes[3] = {{1,0,0},{0,1,0},{0,0,1}};
             float* impulseSums[3] = {&j.impulseX, &j.impulseY, &j.impulseZ};
             for (int i = 0; i < 3; ++i) {
-                const Vec3 n = axes[i];
-                const Vec3 raCrossN = Cross(ra, n);
-                const Vec3 rbCrossN = Cross(rb, n);
-                const float effMass = a.invMass + b.invMass
-                    + Dot(raCrossN, invIA * raCrossN)
-                    + Dot(rbCrossN, invIB * rbCrossN);
-                if (effMass <= kEpsilon) {
-                    continue;
-                }
-
-                const float bias = jointSolverConfig_.hingeAnchorBiasFactor * Dot(error, n)
-                    + jointSolverConfig_.hingeAnchorDampingFactor * Dot(relVel, n);
-                const float lambda = -bias / effMass;
+                if (prep.fallbackEffMass[i] <= kEpsilon) continue;
+                const float bias = prep.fallbackPosBias[i]
+                    + jointSolverConfig_.hingeAnchorDampingFactor * Dot(relVel, axes[i]);
+                const float lambda = -bias / prep.fallbackEffMass[i];
                 *impulseSums[i] += lambda;
-                ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda * n);
+                ApplyImpulse(a, b, invIA, invIB, prep.ra, prep.rb, lambda * axes[i]);
             }
         }
 
-        const Vec3 axisA = Normalize(Rotate(a.orientation, j.localAxisA));
-        const Vec3 axisB = Normalize(Rotate(b.orientation, j.localAxisB));
-        Vec3 t1 = Cross(axisA, {1.0f, 0.0f, 0.0f});
-        if (LengthSquared(t1) <= 1e-5f) t1 = Cross(axisA, {0.0f, 0.0f, 1.0f});
-        t1 = Normalize(t1);
-        const Vec3 t2 = Cross(axisA, t1); // axisA ⊥ t1, both unit → cross is unit
-
-        const Vec3 angularError = Cross(axisA, axisB);
-        const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
-
-        const Vec3 angAxes[2] = {t1, t2};
-        float* angImpulseSums[2] = {&j.angularImpulse1, &j.angularImpulse2};
-        for (int i = 0; i < 2; ++i) {
-            const Vec3 n = angAxes[i];
-            const float effMass = Dot(n, invIA * n) + Dot(n, invIB * n);
-            if (effMass <= kEpsilon) {
-                continue;
-            }
-            const float bias = 0.2f * Dot(angularError, n) + 0.1f * Dot(relAngVel, n);
-            float lambda = -bias / effMass;
+        // ---- Angular alignment (t1, t2 ⊥ axisA) ----
+        if (prep.t1Active) {
+            const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
+            const float bias = prep.angBiasT1 + 0.1f * Dot(relAngVel, prep.t1);
+            float lambda = -bias * prep.invDenomT1;
             if (j.maxMotorTorque > 0.0f) {
-                const float oldAxisImpulse = *angImpulseSums[i];
-                *angImpulseSums[i] = std::clamp(oldAxisImpulse + lambda, -j.maxMotorTorque, j.maxMotorTorque);
-                lambda = *angImpulseSums[i] - oldAxisImpulse;
+                const float old = j.angularImpulse1;
+                j.angularImpulse1 = std::clamp(old + lambda, -j.maxMotorTorque, j.maxMotorTorque);
+                lambda = j.angularImpulse1 - old;
             } else {
-                *angImpulseSums[i] += lambda;
+                j.angularImpulse1 += lambda;
             }
-            ApplyAngularImpulse(a, b, invIA, invIB, lambda * n);
+            ApplyAngularImpulse(a, b, invIA, invIB, lambda * prep.t1);
+        }
+        if (prep.t2Active) {
+            const Vec3 relAngVel = b.angularVelocity - a.angularVelocity; // re-read after t1 impulse
+            const float bias = prep.angBiasT2 + 0.1f * Dot(relAngVel, prep.t2);
+            float lambda = -bias * prep.invDenomT2;
+            if (j.maxMotorTorque > 0.0f) {
+                const float old = j.angularImpulse2;
+                j.angularImpulse2 = std::clamp(old + lambda, -j.maxMotorTorque, j.maxMotorTorque);
+                lambda = j.angularImpulse2 - old;
+            } else {
+                j.angularImpulse2 += lambda;
+            }
+            ApplyAngularImpulse(a, b, invIA, invIB, lambda * prep.t2);
         }
 
-        const Vec3 refA = ResolveJointReference(a.orientation, j.localReferenceA, axisA);
-        const Vec3 refB = ResolveJointReference(b.orientation, j.localReferenceB, axisA);
-        float hingeAngle = SignedAngleAroundAxis(refA, refB, axisA);
+        if (!prep.hingeEffMassActive) {
+            return;
+        }
+
+        // ---- Hinge angle limits ----
         if (j.limitsEnabled) {
             float limitError = 0.0f;
-            if (hingeAngle < j.lowerAngle) {
-                limitError = hingeAngle - j.lowerAngle;
-            } else if (hingeAngle > j.upperAngle) {
-                limitError = hingeAngle - j.upperAngle;
+            if (prep.hingeAngle < j.lowerAngle) {
+                limitError = prep.hingeAngle - j.lowerAngle;
+            } else if (prep.hingeAngle > j.upperAngle) {
+                limitError = prep.hingeAngle - j.upperAngle;
             }
             if (std::abs(limitError) > kEpsilon) {
-                const float effMass = Dot(axisA, invIA * axisA) + Dot(axisA, invIB * axisA);
-                if (effMass > kEpsilon) {
-                    const float lambda = -(0.2f * limitError + 0.05f * Dot(relAngVel, axisA)) / effMass;
-                    ApplyAngularImpulse(a, b, invIA, invIB, lambda * axisA);
-                }
+                const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
+                const float lambda = -(0.2f * limitError + 0.05f * Dot(relAngVel, prep.axisA))
+                                     * prep.invEffMassHinge;
+                ApplyAngularImpulse(a, b, invIA, invIB, lambda * prep.axisA);
             }
         }
 
+        // ---- Motor ----
         if (j.motorEnabled) {
-            const float effMass = Dot(axisA, invIA * axisA) + Dot(axisA, invIB * axisA);
-            if (effMass > kEpsilon) {
-                float lambda = -(Dot(relAngVel, axisA) - j.motorSpeed) / effMass;
-                const float oldImpulse = j.motorImpulseSum;
-                j.motorImpulseSum = std::clamp(j.motorImpulseSum + lambda, -j.maxMotorTorque, j.maxMotorTorque);
-                lambda = j.motorImpulseSum - oldImpulse;
-                ApplyAngularImpulse(a, b, invIA, invIB, lambda * axisA);
-            }
+            const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
+            float lambda = -(Dot(relAngVel, prep.axisA) - j.motorSpeed) * prep.invEffMassHinge;
+            const float oldImpulse = j.motorImpulseSum;
+            j.motorImpulseSum = std::clamp(j.motorImpulseSum + lambda, -j.maxMotorTorque, j.maxMotorTorque);
+            lambda = j.motorImpulseSum - oldImpulse;
+            ApplyAngularImpulse(a, b, invIA, invIB, lambda * prep.axisA);
         }
     }
 
@@ -945,6 +912,158 @@ void World::PrepareContactSolves() {
         }
     }
 
+void World::PrepareHingeJointSolves() {
+        const std::size_t n = hingeJoints_.size();
+        if (hingeJointPreps_.size() != n) {
+            hingeJointPreps_.assign(n, HingeJointPrep{});
+        }
+        if (n == 0) {
+            return;
+        }
+
+        const float anchorBiasFactor = jointSolverConfig_.hingeAnchorBiasFactor;
+        const float blockDiagMin     = jointSolverConfig_.blockDiagonalMinimum;
+        const float blockDetEps      = jointSolverConfig_.blockDeterminantEpsilon;
+        const float blockCondMax     = jointSolverConfig_.blockConditionEstimateMax;
+        const bool  useBlock         = jointSolverConfig_.useBlockSolver;
+
+        for (std::size_t idx = 0; idx < n; ++idx) {
+            const HingeJoint& j = hingeJoints_[idx];
+            HingeJointPrep& prep = hingeJointPreps_[idx];
+            prep = HingeJointPrep{};
+
+            const Body& a = bodies_[j.a];
+            const Body& b = bodies_[j.b];
+            const Mat3& invIA = bodyInvInertiaWorld_[j.a];
+            const Mat3& invIB = bodyInvInertiaWorld_[j.b];
+
+            // ---- Anchor kinematics ----
+            prep.ra = Rotate(a.orientation, j.localAnchorA);
+            prep.rb = Rotate(b.orientation, j.localAnchorB);
+            const Vec3 error = (b.position + prep.rb) - (a.position + prep.ra);
+            const Vec3 va0   = a.velocity + Cross(a.angularVelocity, prep.ra);
+            const Vec3 vb0   = b.velocity + Cross(b.angularVelocity, prep.rb);
+            const Vec3 relVel0 = vb0 - va0;
+            const float relAngSpeed = Length(b.angularVelocity - a.angularVelocity);
+
+            // Wake check once per substep (not per iteration).
+            if (Length(error) > kWakeContactPenetrationThreshold
+                || Length(relVel0) > kWakeJointRelativeSpeedThreshold
+                || relAngSpeed > kWakeJointRelativeSpeedThreshold
+                || j.motorEnabled) {
+                WakeConnectedBodies(j.a);
+                WakeConnectedBodies(j.b);
+            }
+
+            prep.anchorBias = anchorBiasFactor * error;
+
+            // ---- Anchor mass matrix ----
+            const float invMassSum = a.invMass + b.invMass;
+            const Vec3 axes[3] = {{1,0,0},{0,1,0},{0,0,1}};
+            Vec3 raCrossAxis[3]{}, rbCrossAxis[3]{};
+            for (int i = 0; i < 3; ++i) {
+                raCrossAxis[i] = Cross(prep.ra, axes[i]);
+                rbCrossAxis[i] = Cross(prep.rb, axes[i]);
+            }
+
+            if (useBlock) {
+                float K[3][3]{};
+                for (int i = 0; i < 3; ++i) {
+                    const Vec3 invIaCrossI = invIA * raCrossAxis[i];
+                    const Vec3 invIbCrossI = invIB * rbCrossAxis[i];
+                    for (int kk = 0; kk < 3; ++kk) {
+                        K[i][kk] = (i == kk ? invMassSum : 0.0f)
+                            + Dot(invIaCrossI, raCrossAxis[kk])
+                            + Dot(invIbCrossI, rbCrossAxis[kk]);
+                    }
+                }
+                bool ok = true;
+                for (int i = 0; i < 3; ++i) {
+                    if (K[i][i] <= blockDiagMin) { ok = false; break; }
+                }
+                float det = 0.0f;
+                if (ok) {
+                    det = K[0][0] * (K[1][1]*K[2][2] - K[1][2]*K[2][1])
+                        - K[0][1] * (K[1][0]*K[2][2] - K[1][2]*K[2][0])
+                        + K[0][2] * (K[1][0]*K[2][1] - K[1][1]*K[2][0]);
+                    if (std::abs(det) <= blockDetEps) ok = false;
+                }
+                float adj[3][3]{};
+                if (ok) {
+                    adj[0][0]=K[1][1]*K[2][2]-K[1][2]*K[2][1]; adj[0][1]=-(K[1][0]*K[2][2]-K[1][2]*K[2][0]); adj[0][2]=K[1][0]*K[2][1]-K[1][1]*K[2][0];
+                    adj[1][0]=-(K[0][1]*K[2][2]-K[0][2]*K[2][1]); adj[1][1]=K[0][0]*K[2][2]-K[0][2]*K[2][0]; adj[1][2]=-(K[0][0]*K[2][1]-K[0][1]*K[2][0]);
+                    adj[2][0]=K[0][1]*K[1][2]-K[0][2]*K[1][1]; adj[2][1]=-(K[0][0]*K[1][2]-K[0][2]*K[1][0]); adj[2][2]=K[0][0]*K[1][1]-K[0][1]*K[1][0];
+                    if (blockCondMax > 0.0f) {
+                        const float rowNorm = std::max({
+                            std::abs(K[0][0])+std::abs(K[0][1])+std::abs(K[0][2]),
+                            std::abs(K[1][0])+std::abs(K[1][1])+std::abs(K[1][2]),
+                            std::abs(K[2][0])+std::abs(K[2][1])+std::abs(K[2][2]),
+                        });
+                        const float invAbsDet = 1.0f / std::abs(det);
+                        const float invNorm = std::max({
+                            (std::abs(adj[0][0])+std::abs(adj[0][1])+std::abs(adj[0][2]))*invAbsDet,
+                            (std::abs(adj[1][0])+std::abs(adj[1][1])+std::abs(adj[1][2]))*invAbsDet,
+                            (std::abs(adj[2][0])+std::abs(adj[2][1])+std::abs(adj[2][2]))*invAbsDet,
+                        });
+                        if (!std::isfinite(rowNorm*invNorm) || rowNorm*invNorm > blockCondMax) ok = false;
+                    }
+                }
+                if (ok) {
+                    const float invDet = 1.0f / det;
+                    prep.invK = Mat3{{
+                        {adj[0][0]*invDet, adj[1][0]*invDet, adj[2][0]*invDet},
+                        {adj[0][1]*invDet, adj[1][1]*invDet, adj[2][1]*invDet},
+                        {adj[0][2]*invDet, adj[1][2]*invDet, adj[2][2]*invDet},
+                    }};
+                    prep.anchorValid = true;
+                }
+            }
+
+            // Per-axis scalar fallback (also used when !useBlock or !anchorValid).
+            for (int i = 0; i < 3; ++i) {
+                prep.fallbackEffMass[i] = invMassSum
+                    + Dot(raCrossAxis[i], invIA * raCrossAxis[i])
+                    + Dot(rbCrossAxis[i], invIB * rbCrossAxis[i]);
+                prep.fallbackPosBias[i] = anchorBiasFactor * Dot(error, axes[i]);
+            }
+
+            // ---- Axis-alignment ----
+            prep.axisA = Normalize(Rotate(a.orientation, j.localAxisA));
+            const Vec3 axisB = Normalize(Rotate(b.orientation, j.localAxisB));
+            prep.t1 = Cross(prep.axisA, {1.0f, 0.0f, 0.0f});
+            if (LengthSquared(prep.t1) <= 1e-5f) prep.t1 = Cross(prep.axisA, {0.0f, 0.0f, 1.0f});
+            prep.t1 = Normalize(prep.t1);
+            prep.t2 = Cross(prep.axisA, prep.t1); // axisA ⊥ t1, both unit → cross is unit
+
+            const Vec3 angularError = Cross(prep.axisA, axisB);
+            const float effMassT1 = Dot(prep.t1, invIA * prep.t1) + Dot(prep.t1, invIB * prep.t1);
+            if (effMassT1 > kEpsilon) {
+                prep.invDenomT1 = 1.0f / effMassT1;
+                prep.angBiasT1  = 0.2f * Dot(angularError, prep.t1);
+                prep.t1Active   = true;
+            }
+            const float effMassT2 = Dot(prep.t2, invIA * prep.t2) + Dot(prep.t2, invIB * prep.t2);
+            if (effMassT2 > kEpsilon) {
+                prep.invDenomT2 = 1.0f / effMassT2;
+                prep.angBiasT2  = 0.2f * Dot(angularError, prep.t2);
+                prep.t2Active   = true;
+            }
+
+            // ---- Limit + motor effective mass ----
+            const float effMassHinge = Dot(prep.axisA, invIA * prep.axisA)
+                                     + Dot(prep.axisA, invIB * prep.axisA);
+            if (effMassHinge > kEpsilon) {
+                prep.invEffMassHinge    = 1.0f / effMassHinge;
+                prep.hingeEffMassActive = true;
+                // Precompute hinge angle once — avoids ResolveJointReference + FastAtan2 per
+                // PGS iteration in the (N_iter - 1) redundant calls.
+                const Vec3 refA = ResolveJointReference(a.orientation, j.localReferenceA, prep.axisA);
+                const Vec3 refB = ResolveJointReference(b.orientation, j.localReferenceB, prep.axisA);
+                prep.hingeAngle = SignedAngleAroundAxis(refA, refB, prep.axisA);
+            }
+        }
+    }
+
 void World::PrepareServoJointSolves() {
         const std::size_t n = servoJoints_.size();
         if (servoJointPreps_.size() != n) {
@@ -984,6 +1103,15 @@ void World::PrepareServoJointSolves() {
         const float blockDiagMin = jointSolverConfig_.blockDiagonalMinimum;
         const float blockDetEps = jointSolverConfig_.blockDeterminantEpsilon;
         const float blockCondMax = jointSolverConfig_.blockConditionEstimateMax;
+
+        // Small flat cache: when multiple joints share the same (body_id, localAxisA)
+        // — e.g. all 6 hip joints use body_id=0 and localAxisA={0,1,0} — the world-space
+        // axis is computed once and reused for subsequent hits. Stack-allocated; cleared
+        // implicitly each PrepareServoJointSolves call.
+        struct AxisCacheEntry { std::uint32_t bodyId; Vec3 localAxis; Vec3 worldAxis; };
+        constexpr int kAxisCacheCapacity = 8;
+        AxisCacheEntry axisCache[kAxisCacheCapacity];
+        int axisCacheCount = 0;
 
         for (std::size_t idx = 0; idx < n; ++idx) {
             ServoJoint& j = servoJoints_[idx];
@@ -1107,12 +1235,46 @@ void World::PrepareServoJointSolves() {
             }
 
             // ---- Axis-alignment kinematics ----
-            prep.axisA = Normalize(Rotate(a.orientation, j.localAxisA));
+            // Change 2: if masterAxisJointIdx is set, copy {axisA,t1,t2} from the master
+            // joint's already-prepared prep (master must have a lower index → already done).
+            // Exploits the geometric invariant that the femur and tibia joints of each leg
+            // share the same world-space lateral axis (femur only rotates around that axis).
+            if (j.masterAxisJointIdx != ServoJoint::kNoMasterAxis
+                && j.masterAxisJointIdx < static_cast<std::uint32_t>(idx)) {
+                const ServoJointPrep& master = servoJointPreps_[j.masterAxisJointIdx];
+                prep.axisA = master.axisA;
+                prep.t1    = master.t1;
+                prep.t2    = master.t2;
+            } else {
+                // Change 1: probe the per-call flat cache keyed by (bodyA_id, localAxisA).
+                // Avoids recomputing Normalize(Rotate(...)) for joints that share a body and
+                // axis — e.g. all 6 hip joints use the same body orientation and {0,1,0}.
+                Vec3 worldAxis{};
+                bool foundInCache = false;
+                for (int c = 0; c < axisCacheCount; ++c) {
+                    const AxisCacheEntry& e = axisCache[c];
+                    if (e.bodyId == j.a
+                        && e.localAxis.x == j.localAxisA.x
+                        && e.localAxis.y == j.localAxisA.y
+                        && e.localAxis.z == j.localAxisA.z) {
+                        worldAxis = e.worldAxis;
+                        foundInCache = true;
+                        break;
+                    }
+                }
+                if (!foundInCache) {
+                    worldAxis = Normalize(Rotate(a.orientation, j.localAxisA));
+                    if (axisCacheCount < kAxisCacheCapacity) {
+                        axisCache[axisCacheCount++] = {j.a, j.localAxisA, worldAxis};
+                    }
+                }
+                prep.axisA = worldAxis;
+                prep.t1 = Cross(prep.axisA, {1.0f, 0.0f, 0.0f});
+                if (LengthSquared(prep.t1) <= 1e-5f) prep.t1 = Cross(prep.axisA, {0.0f, 0.0f, 1.0f});
+                prep.t1 = Normalize(prep.t1);
+                prep.t2 = Cross(prep.axisA, prep.t1); // axisA ⊥ t1, both unit → cross is unit
+            }
             const Vec3 axisB = Normalize(Rotate(b.orientation, j.localAxisB));
-            prep.t1 = Cross(prep.axisA, {1.0f, 0.0f, 0.0f});
-            if (LengthSquared(prep.t1) <= 1e-5f) prep.t1 = Cross(prep.axisA, {0.0f, 0.0f, 1.0f});
-            prep.t1 = Normalize(prep.t1);
-            prep.t2 = Cross(prep.axisA, prep.t1); // axisA ⊥ t1, both unit → cross is unit
             const Vec3 angularError = Cross(prep.axisA, axisB);
             const float angularErrorMag = Length(angularError);
             const float relAngSpeed = Length(relAngVel0);

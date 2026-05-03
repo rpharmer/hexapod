@@ -820,6 +820,39 @@ private:
     // RefreshBodyWorldInertias() and before the PGS iteration loop.
     void PrepareServoJointSolves();
 
+    // Per-substep solver cache for hinge joints. Mirrors ServoJointPrep: all fields
+    // derived from body position/orientation/inertia and joint definition, CONSTANT
+    // across PGS iterations. Only velocity-dependent quantities are recomputed in
+    // SolveHingeJoint per iteration.
+    struct HingeJointPrep {
+        // Anchor block (3D point-coincidence constraint)
+        Vec3 ra{}, rb{};
+        Vec3 anchorBias{};          // hingeAnchorBiasFactor * error
+        Mat3 invK{};                // 3×3 anchor inverse mass matrix (block path)
+        // Per-axis scalar fallback: used when !anchorValid or useBlockSolver==false
+        float fallbackEffMass[3]{};
+        float fallbackPosBias[3]{}; // hingeAnchorBiasFactor * Dot(error, axis_i)
+        bool  anchorValid = false;  // true → use invK block path
+
+        // Angular alignment (t1, t2 ⊥ axisA)
+        Vec3  axisA{}, t1{}, t2{};
+        float invDenomT1 = 0.0f;   // 1/effMassT1; 0 → row inactive
+        float invDenomT2 = 0.0f;   // 1/effMassT2; 0 → row inactive
+        float angBiasT1  = 0.0f;   // 0.2f * Dot(angularError, t1) — position part only
+        float angBiasT2  = 0.0f;   // 0.2f * Dot(angularError, t2)
+        bool  t1Active   = false;
+        bool  t2Active   = false;
+
+        // Limit + motor row (1D along axisA)
+        float invEffMassHinge    = 0.0f; // 1 / (Dot(axisA,invIA*axisA) + Dot(axisA,invIB*axisA))
+        float hingeAngle         = 0.0f; // SignedAngleAroundAxis — precomputed for limits
+        bool  hingeEffMassActive = false;
+    };
+
+    // Refresh the per-hinge-joint solver cache. Call once per substep, alongside
+    // PrepareServoJointSolves() and before the PGS iteration loop.
+    void PrepareHingeJointSolves();
+
     void PrepareIslandOrders();
 
     void SolveIslands();
@@ -947,6 +980,7 @@ private:
     std::vector<IslandOrderResult> islandOrders_;
     std::vector<DistanceJoint> joints_;
     std::vector<HingeJoint> hingeJoints_;
+    std::vector<HingeJointPrep> hingeJointPreps_;
     std::vector<BallSocketJoint> ballSocketJoints_;
     std::vector<FixedJoint> fixedJoints_;
     std::vector<PrismaticJoint> prismaticJoints_;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 
 #include "minphys3d/math/quat.hpp"
 #include "minphys3d/math/vec3.hpp"
@@ -119,6 +120,15 @@ struct ServoJoint {
     bool anchorEarlyOutActive = false;
     bool angularEarlyOutActive = false;
     bool hingeEarlyOutActive = false;
+
+    // Optional axis-sharing optimisation: when set to a valid joint index (< this joint's
+    // own index in the servoJoints_ array), PrepareServoJointSolves copies {axisA, t1, t2}
+    // from the named joint's prep instead of recomputing from b.orientation. Exploits the
+    // geometric invariant that a slave joint's rotation axis equals that of its master when
+    // the intermediate body only rotates around that axis (e.g. femur → tibia in a leg).
+    // Set to kNoMasterAxis (default) to disable.
+    static constexpr std::uint32_t kNoMasterAxis = std::numeric_limits<std::uint32_t>::max();
+    std::uint32_t masterAxisJointIdx = kNoMasterAxis;
 };
 
 } // namespace minphys3d

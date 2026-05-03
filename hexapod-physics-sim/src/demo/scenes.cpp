@@ -408,6 +408,12 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
             kHexapodServoMaxSpeed,
             0.5f);
 
+        // Geometric invariant: the femur body only rotates around the lateral axis, so
+        // the lateral axis in world space is identical for coxa_to_femur and femur_to_tibia.
+        // Let the tibia joint copy {axisA,t1,t2} from the femur joint's prep instead of
+        // recomputing from femur.orientation each substep.
+        world.GetServoJointMutable(femur_to_tibia_joint).masterAxisJointIdx = coxa_to_femur_joint;
+
         scene.legs[leg_index] = LegLinkIds{
             coxa_id,
             femur_id,

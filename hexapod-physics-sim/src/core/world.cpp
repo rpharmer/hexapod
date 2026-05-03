@@ -618,10 +618,11 @@ void World::Step(float dt, int solverIterations) {
             (void)scope;
         }
 
-        // Build per-servo-joint solver cache once per substep. All kinematic quantities
+        // Build per-joint solver caches once per substep. All kinematic quantities
         // (anchor offsets, K^-1, axis basis, effective masses, biases) are constant across
         // PGS iterations because positions/orientations are integrated only after the loop
-        // completes. SolveServoJoint then becomes a tight per-iteration impulse update.
+        // completes. The Solve*Joint functions then become tight per-iteration impulse updates.
+        PrepareHingeJointSolves();
         PrepareServoJointSolves();
         // Same idea for contacts: cache ra, rb, raCrossN, rbCrossN, normalMass once per
         // substep so the per-iteration normal-solve path (scalar / Block2 / Block4) doesn't
