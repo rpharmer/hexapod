@@ -3,6 +3,7 @@
 #include "demo/scenes.hpp"
 #include "demo/serve_mode.hpp"
 
+#include "minphys3d/core/world.hpp"
 #include "minphys3d/math/vec3.hpp"
 
 #include <charconv>
@@ -32,6 +33,22 @@ bool ParseUdpPort(const char* text, int& out_value) {
     return out_value <= 65535;
 }
 
+bool ParseResourceMonitoringMode(const std::string& text, minphys3d::ResourceMonitoringMode& out_mode) {
+    if (text == "full") {
+        out_mode = minphys3d::ResourceMonitoringMode::Full;
+        return true;
+    }
+    if (text == "top-level" || text == "toplevel" || text == "coarse") {
+        out_mode = minphys3d::ResourceMonitoringMode::TopLevel;
+        return true;
+    }
+    if (text == "off") {
+        out_mode = minphys3d::ResourceMonitoringMode::Off;
+        return true;
+    }
+    return false;
+}
+
 void PrintUsage(std::ostream& out) {
     out << "Usage: hexapod-physics-sim [options]\n"
            "  --sink dummy|udp          Frame sink (default: dummy)\n"
@@ -52,6 +69,7 @@ void PrintUsage(std::ostream& out) {
            "  --sink udp + --serve      Also stream minphys scene UDP for hexapod-opengl-visualiser\n"
             "                            (same as demo: --udp-host / --udp-port, default 127.0.0.1:9870)\n"
            "  --serve-preview-stride N  With UDP preview: emit preview every N physics steps (default: 1)\n"
+           "  --resource-monitoring MODE  Serve-mode resource instrumentation: full|top-level|off (default: full)\n"
            "  -h, --help                Show this help\n";
 }
 
@@ -70,6 +88,7 @@ int main(int argc, char** argv) {
     int serve_port = 9871;
     int serve_preview_stride = 1;
     int solver_iterations = minphys3d::demo::kHexapodPoseHoldBenchmarkSolverIterations;
+    minphys3d::ResourceMonitoringMode resource_monitoring_mode = minphys3d::ResourceMonitoringMode::Full;
     std::string scene_file;
     std::string udp_host = "127.0.0.1";
     int udp_port = 9870;
@@ -208,6 +227,17 @@ int main(int argc, char** argv) {
             }
             continue;
         }
+        if (arg == "--resource-monitoring") {
+            if (i + 1 >= argc) {
+                std::cerr << "Missing value for --resource-monitoring (expected full|top-level|off)\n";
+                return 1;
+            }
+            if (!ParseResourceMonitoringMode(argv[++i], resource_monitoring_mode)) {
+                std::cerr << "Invalid --resource-monitoring (expected full|top-level|off)\n";
+                return 1;
+            }
+            continue;
+        }
 
         std::cerr << "Unknown argument: " << arg << "\n";
         PrintUsage(std::cerr);
@@ -228,7 +258,8 @@ int main(int argc, char** argv) {
             udp_host,
             udp_port,
             scene_file,
-            serve_preview_stride);
+            serve_preview_stride,
+            resource_monitoring_mode);
     }
 
     if (interactive) {

@@ -35,6 +35,12 @@
 
 namespace minphys3d {
 
+enum class ResourceMonitoringMode : std::uint8_t {
+    Full,
+    TopLevel,
+    Off,
+};
+
 /// Expanded collision shapes for a body (primitive or compound children), used by contact generation.
 struct ResolvedCollisionShape {
     Body body{};
@@ -348,6 +354,7 @@ public:
     [[nodiscard]] world_resource_monitoring::SectionSummary SnapshotResourceSections(bool reset_window = true) const;
     /// All instrumented world sections, sorted by total self time (see `kMaxSections` in `world_resource_monitoring`).
     [[nodiscard]] world_resource_monitoring::SectionSummary SnapshotFullResourceSections(bool reset_window = true) const;
+    void SetResourceMonitoringMode(ResourceMonitoringMode mode);
 
     void AddForce(std::uint32_t id, const Vec3& force);
 

@@ -258,7 +258,23 @@ public:
         : labels_(std::move(labels)) {}
 
     [[nodiscard]] Scope scope(std::size_t section_index) {
+        if (section_index >= MaxSections || !section_enabled_[section_index].load(std::memory_order_relaxed)) {
+            return Scope();
+        }
         return Scope(*this, section_index);
+    }
+
+    void setSectionEnabled(std::size_t section_index, bool enabled) {
+        if (section_index >= MaxSections) {
+            return;
+        }
+        section_enabled_[section_index].store(enabled, std::memory_order_relaxed);
+    }
+
+    void setAllSectionsEnabled(bool enabled) {
+        for (std::size_t index = 0; index < MaxSections; ++index) {
+            section_enabled_[index].store(enabled, std::memory_order_relaxed);
+        }
     }
 
     [[nodiscard]] ResourceSectionSnapshot snapshot(std::size_t section_index,
@@ -418,6 +434,13 @@ private:
     mutable std::array<CopyableAtomic<std::uint64_t>, MaxSections> window_self_ns_{};
     std::array<CopyableAtomic<std::uint64_t>, MaxSections> max_self_ns_{};
     std::array<CopyableAtomic<std::uint64_t>, MaxSections> call_counts_{};
+    std::array<CopyableAtomic<bool>, MaxSections> section_enabled_{[]() {
+        std::array<CopyableAtomic<bool>, MaxSections> enabled{};
+        for (std::size_t index = 0; index < MaxSections; ++index) {
+            enabled[index].store(true, std::memory_order_relaxed);
+        }
+        return enabled;
+    }()};
 };
 
 class ProcessResourceSampler {

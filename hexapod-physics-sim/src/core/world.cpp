@@ -712,6 +712,22 @@ world_resource_monitoring::SectionSummary World::SnapshotFullResourceSections(bo
     return resource_profiler_.topSections(world_resource_monitoring::kMaxSections, reset_window);
 }
 
+void World::SetResourceMonitoringMode(ResourceMonitoringMode mode) {
+    resource_profiler_.setAllSectionsEnabled(false);
+    switch (mode) {
+        case ResourceMonitoringMode::Full:
+            resource_profiler_.setAllSectionsEnabled(true);
+            break;
+        case ResourceMonitoringMode::TopLevel:
+            resource_profiler_.setSectionEnabled(
+                world_resource_monitoring::toIndex(world_resource_monitoring::Section::Step),
+                true);
+            break;
+        case ResourceMonitoringMode::Off:
+            break;
+    }
+}
+
 World::TopologySnapshot World::SnapshotTopology() const {
     TopologySnapshot snapshot{};
     snapshot.bodyCount = static_cast<std::uint32_t>(bodies_.size());

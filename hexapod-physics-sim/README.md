@@ -59,6 +59,7 @@ Executable: `build/hexapod-physics-sim` (run from the build tree or pass paths a
 | `--model default\|hexapod` | Built-in scene when **not** using `--scene-file` |
 | `--scene-file PATH` | Load a **minphys** JSON scene (supported `schema_version`: **1** or **2**) |
 | `--serve` | **UDP physics server** (`hexapod-server` IPC): binary `ConfigCommand` / `StepCommand` → `ConfigAck` / `StateResponse` (listen **9871**, `--serve-port`). Add **`--sink udp`** to also emit minphys **scene JSON** each stepped frame to `--udp-host`:**`--udp-port`** for [`hexapod-opengl-visualiser`](../hexapod-opengl-visualiser) (same wire as the demo). |
+| `--resource-monitoring full\|top-level\|off` | Resource section detail for serve mode. `full` keeps the existing detailed per-section instrumentation, `top-level` keeps only coarse serve/world sections, and `off` disables section breakdowns while still logging top-level process CPU/RSS/VMS snapshots. |
 | `--udp-host HOST` | UDP destination (default `127.0.0.1`) |
 | `--udp-port PORT` | UDP destination port (default `9870`) |
 | `--frames N` | Number of simulation frames (default `1200`) |
@@ -100,6 +101,19 @@ cd ../hexapod-opengl-visualiser && ./build/hexapod-opengl-visualiser --udp-port 
 cd ../hexapod-physics-sim/build && ./hexapod-physics-sim --sink udp --realtime --model hexapod
 ```
 
+Serve-mode examples:
+
+```bash
+# Default detailed instrumentation
+./build/hexapod-physics-sim --serve --serve-port 9871 --resource-monitoring full
+
+# Coarse thread-level comparison without nested section noise
+./build/hexapod-physics-sim --serve --serve-port 9871 --resource-monitoring top-level
+
+# Process-only CPU/RSS/VMS snapshots
+./build/hexapod-physics-sim --serve --serve-port 9871 --resource-monitoring off
+```
+
 ### Run log
 
 Each demo run writes a text log when the `logs/` directory can be created next to the working directory (see `BuildDebugLogPath()` in `src/demo/scenes.cpp` / `scene_json.cpp`):
@@ -107,6 +121,7 @@ Each demo run writes a text log when the `logs/` directory can be created next t
 - Preferred: `logs/latest.log` (or `hexapod-physics-sim/logs/latest.log` when cwd is the repo root)
 - Fallback: `hexapod-physics-sim.log` in the current directory if directory creation fails
 - The demo, JSON-scene, and serve-mode loops also emit periodic `[resource] process_resource=...` snapshots with CPU and RSS/VMS data so you can compare deployment headroom across runs.
+- In serve mode, `--resource-monitoring full|top-level|off` controls whether those snapshots also include detailed section totals, only coarse top-level sections, or process-only stats.
 
 ## Scene JSON (minphys)
 

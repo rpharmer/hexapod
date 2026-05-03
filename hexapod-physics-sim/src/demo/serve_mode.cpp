@@ -96,6 +96,57 @@ inline constexpr std::array<const char*, static_cast<std::size_t>(ServeSection::
     "serve.terrain_patch_update",
 };
 
+template <std::size_t N>
+void EnableOnlySections(resource_monitoring::SectionProfiler<N>& profiler, std::initializer_list<std::size_t> enabled_indices) {
+    profiler.setAllSectionsEnabled(false);
+    for (const std::size_t index : enabled_indices) {
+        profiler.setSectionEnabled(index, true);
+    }
+}
+
+void ConfigureServeProfiler(resource_monitoring::SectionProfiler<kServeSectionLabels.size()>& profiler,
+                            ResourceMonitoringMode mode) {
+    switch (mode) {
+        case ResourceMonitoringMode::Full:
+            profiler.setAllSectionsEnabled(true);
+            break;
+        case ResourceMonitoringMode::TopLevel:
+            EnableOnlySections(
+                profiler,
+                {
+                    static_cast<std::size_t>(ServeSection::PollWait),
+                    static_cast<std::size_t>(ServeSection::RecvDatagram),
+                    static_cast<std::size_t>(ServeSection::ApplyConfig),
+                    static_cast<std::size_t>(ServeSection::ApplyCorrection),
+                    static_cast<std::size_t>(ServeSection::ApplyJointTargets),
+                    static_cast<std::size_t>(ServeSection::PhysicsStep),
+                    static_cast<std::size_t>(ServeSection::PackResponse),
+                    static_cast<std::size_t>(ServeSection::SendResponse),
+                    static_cast<std::size_t>(ServeSection::PreviewBuild),
+                    static_cast<std::size_t>(ServeSection::PreviewFlush),
+                    static_cast<std::size_t>(ServeSection::MatrixLidarScan),
+                    static_cast<std::size_t>(ServeSection::MatrixLidarFusion),
+                    static_cast<std::size_t>(ServeSection::TerrainPatchUpdate),
+                });
+            break;
+        case ResourceMonitoringMode::Off:
+            profiler.setAllSectionsEnabled(false);
+            break;
+    }
+}
+
+const char* ResourceMonitoringModeLabel(ResourceMonitoringMode mode) {
+    switch (mode) {
+        case ResourceMonitoringMode::Full:
+            return "full";
+        case ResourceMonitoringMode::TopLevel:
+            return "top-level";
+        case ResourceMonitoringMode::Off:
+            return "off";
+    }
+    return "unknown";
+}
+
 struct CachedMatrixLidarFrame {
     bool valid{false};
     std::uint64_t timestamp_us{0};
@@ -951,7 +1002,8 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                         const std::string& preview_udp_host,
                         int preview_udp_port,
                         const std::string& scene_file,
-                        int preview_emit_stride) {
+                        int preview_emit_stride,
+                        ResourceMonitoringMode resource_monitoring_mode) {
     const int fd = OpenUdpSocketWithRetry();
     if (fd < 0) {
         std::cerr << "[serve] socket() failed\n";
@@ -989,6 +1041,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     }
 
     World world(Vec3{0.0f, -9.81f, 0.0f});
+    world.SetResourceMonitoringMode(resource_monitoring_mode);
     HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
     int solver_iterations = 8;
@@ -1042,6 +1095,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
 
     ProcessResourceDiagnosticsState resource_diag{};
     resource_monitoring::SectionProfiler<kServeSectionLabels.size()> serve_profiler{kServeSectionLabels};
+    ConfigureServeProfiler(serve_profiler, resource_monitoring_mode);
 
     CachedMatrixLidarFrame cached_lidar_frame{};
     std::uint64_t lidar_sim_time_us = 0;
@@ -1140,6 +1194,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             std::cout << "  preview_stride=" << preview_stride;
         }
     }
+    std::cout << "  resource_monitoring=" << ResourceMonitoringModeLabel(resource_monitoring_mode);
     if (!scene_file.empty()) {
         std::cout << "  scene_file=" << scene_file;
     }
@@ -1155,15 +1210,20 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         }
 
         const resource_monitoring::ProcessResourceSnapshot process_snapshot = resource_diag.sampler.sample();
-        const auto serve_sections = serve_profiler.topSections(10);
-        const auto world_sections = world.SnapshotResourceSections();
+        const bool sections_enabled = resource_monitoring_mode != ResourceMonitoringMode::Off;
+        const std::string serve_sections_summary = sections_enabled
+            ? resource_monitoring::formatResourceSectionSummary(serve_profiler.topSections(10))
+            : "disabled";
+        const std::string world_sections_summary = sections_enabled
+            ? resource_monitoring::formatResourceSectionSummary(world.SnapshotResourceSections())
+            : "disabled";
         const auto topology = world.SnapshotTopology();
         std::fprintf(stdout,
                      "%s process_resource=%s serve_sections=%s world_sections=%s topology={bodies=%u dynamic=%u awake=%u contacts=%u manifolds=%u islands=%u max_island_bodies=%u max_island_manifolds=%u max_island_joints=%u max_island_servos=%u} preview={enqueued=%llu sent=%llu dropped=%llu} terrain={adds=%llu cells=%llu emitted=%llu merges=%llu cache_hits=%llu dirty=%llu} face4={attempted=%llu used=%llu fallback_block2=%llu fallback_scalar=%llu blocked_coherence=%llu}\n",
                      prefix,
                      resource_monitoring::formatProcessResourceSnapshot(process_snapshot).c_str(),
-                     resource_monitoring::formatResourceSectionSummary(serve_sections).c_str(),
-                     resource_monitoring::formatResourceSectionSummary(world_sections).c_str(),
+                     serve_sections_summary.c_str(),
+                     world_sections_summary.c_str(),
                      topology.bodyCount,
                      topology.dynamicBodyCount,
                      topology.awakeBodyCount,

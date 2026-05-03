@@ -1,6 +1,7 @@
 #pragma once
 
 #include "demo/frame_sink.hpp"
+#include "minphys3d/core/world.hpp"
 
 #include <cstdint>
 #include <string>
@@ -15,6 +16,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                         const std::string& preview_udp_host = "127.0.0.1",
                         int preview_udp_port = 9870,
                         const std::string& scene_file = "",
-                        int preview_emit_stride = 1);
+                        int preview_emit_stride = 1,
+                        ResourceMonitoringMode resource_monitoring_mode = ResourceMonitoringMode::Full);
 
 } // namespace minphys3d::demo
