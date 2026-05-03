@@ -23,6 +23,7 @@
 #include <cstdio>
 #endif
 
+#include "minphys3d/articulation/types.hpp"
 #include "minphys3d/broadphase/types.hpp"
 #include "minphys3d/core/body.hpp"
 #include "minphys3d/core/world_resource_monitoring.hpp"
@@ -301,6 +302,10 @@ public:
     std::uint32_t GetServoJointCount() const;
 
     float GetServoJointAngle(std::uint32_t id) const;
+
+    // Read-only access to articulation chains detected by BuildArticulationChains().
+    // Updated each substep (after BuildIslands()); empty before the first Step().
+    const std::vector<ArtChain>& GetArticulationChains() const { return articulationChains_; }
 
     std::uint32_t CreateDistanceJoint(std::uint32_t a, std::uint32_t b, const Vec3& worldAnchorA, const Vec3& worldAnchorB, float stiffness = 1.0f, float damping = 0.1f);
 
@@ -588,6 +593,18 @@ private:
     void CapturePersistentPointImpulseState(const std::vector<Manifold>& manifolds);
 
     void BuildIslands();
+
+    // Detect serial kinematic chains (trees of ServoJoints) and populate
+    // articulationChains_.  Called once per substep after BuildIslands().
+    // Marks each in-chain ServoJoint with inArticulationChain = true.
+    // Zero behaviour impact until PrepareArticulatedInertias() is also called.
+    void BuildArticulationChains();
+
+    // Compute Articulated Body Inertia (ABI) for each chain in articulationChains_
+    // and update ServoJointPrep::invDenomHinge for chain joints with the ABI-derived
+    // effective mass.  Requires bodyInertiaWorld_ to be populated.
+    // Called after PrepareServoJointSolves() each substep (Phase 1b+).
+    void PrepareArticulatedInertias();
 
     std::vector<Pair> ComputePotentialPairs() const;
 
@@ -993,6 +1010,13 @@ private:
     std::vector<PrismaticJoint> prismaticJoints_;
     std::vector<ServoJoint> servoJoints_;
     std::vector<ServoJointPrep> servoJointPreps_;
+    // Serial kinematic chains detected by BuildArticulationChains().
+    // Rebuilt every substep; indexed root-to-leaf.
+    std::vector<ArtChain> articulationChains_;
+    // Forward world-space inertia per body, populated alongside bodyInvInertiaWorld_
+    // by RefreshBodyWorldInertias() once bodyInertiaWorld_ storage is enabled (Phase 1b).
+    // Left empty until then; code that needs it must check size() first.
+    std::vector<Mat3> bodyInertiaWorld_;
     std::vector<ManifoldPrep> manifoldPreps_;
     std::vector<float> servoAngleSampleCache_;
     bool servoAngleSampleCacheValid_ = false;

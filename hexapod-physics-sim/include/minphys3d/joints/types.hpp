@@ -129,6 +129,12 @@ struct ServoJoint {
     // Set to kNoMasterAxis (default) to disable.
     static constexpr std::uint32_t kNoMasterAxis = std::numeric_limits<std::uint32_t>::max();
     std::uint32_t masterAxisJointIdx = kNoMasterAxis;
+
+    // Set to true by BuildArticulationChains() when this joint belongs to a detected
+    // serial kinematic chain. Used by PrepareArticulatedInertias() (Phase 1b+) to
+    // override invDenomHinge with the ABI-derived effective mass.
+    // Has no effect on the PGS solver until Phase 1b is implemented.
+    bool inArticulationChain = false;
 };
 
 } // namespace minphys3d

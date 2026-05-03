@@ -606,6 +606,9 @@ void World::Step(float dt, int solverIterations) {
             BuildIslands();
             (void)scope;
         }
+        // Detect serial kinematic chains (ServoJoint trees) from the updated island topology.
+        // Zero behaviour impact in Phase 1a; fills articulationChains_ for Phase 1b+.
+        BuildArticulationChains();
         PrepareIslandOrders();
         {
             const auto scope = resource_profiler_.scope(world_resource_monitoring::toIndex(world_resource_monitoring::Section::WarmStartContacts));

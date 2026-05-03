@@ -105,6 +105,7 @@ if(MINPHYS3D_BUILD_TESTS)
     endfunction()
 
     add_minphys3d_test(test_unit_math tests/test_unit_math.cpp)
+    add_minphys3d_test(test_articulation tests/test_articulation.cpp)
     add_minphys3d_test(test_regression_step tests/test_regression_step.cpp)
     add_minphys3d_test(test_broadphase_dynamic_tree tests/test_broadphase_dynamic_tree.cpp)
     add_minphys3d_test(regression_scene_suite tests/regression_scene_suite.cpp)

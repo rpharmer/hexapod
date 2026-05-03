@@ -912,6 +912,165 @@ void World::PrepareContactSolves() {
         }
     }
 
+// ---------------------------------------------------------------------------
+// BuildArticulationChains
+//   Detect serial kinematic chains (trees of ServoJoints) in the scene and
+//   populate articulationChains_.  Called once per substep after BuildIslands().
+//
+//   Algorithm:
+//   1. Build a child→parent map from the ServoJoint graph:
+//        childBody[j.b] = {j.a, joint_index}
+//   2. Root bodies are bodies that appear as j.a but never as j.b in any
+//      ServoJoint (i.e. they have outgoing joints but no incoming joint).
+//   3. DFS from each root, tracing every root→leaf path.  Each distinct path
+//      becomes one ArtChain.  Branching bodies (e.g. a chassis with 6 legs)
+//      spawn one chain per child branch.
+//   4. Mark every joint in a detected chain with inArticulationChain = true.
+//
+//   Zero behaviour impact in Phase 1a: inArticulationChain is set but no
+//   solver code reads it yet.
+// ---------------------------------------------------------------------------
+
+void World::BuildArticulationChains() {
+    // Reset — rebuild from scratch each substep (topology changes are rare but
+    // must be handled correctly, e.g. after a body is added mid-simulation).
+    articulationChains_.clear();
+
+    const std::size_t nJoints = servoJoints_.size();
+    if (nJoints == 0) {
+        return;
+    }
+
+    // Step 1: clear stale articulation flags, build child→parent adjacency.
+    for (ServoJoint& j : servoJoints_) {
+        j.inArticulationChain = false;
+    }
+
+    // childParent[body_b] = joint index  (only if body_b appears exactly once as b)
+    // Use max-value as "not set" sentinel.
+    constexpr std::uint32_t kNone = std::numeric_limits<std::uint32_t>::max();
+    const std::size_t nBodies = bodies_.size();
+    // childJoint[bodyIdx] = index of the ServoJoint that has bodyIdx as j.b,
+    //                        or kNone if bodyIdx never appears as j.b (i.e. it is a root or unconnected).
+    std::vector<std::uint32_t> childJoint(nBodies, kNone);
+    // outgoing[bodyIdx] = list of ServoJoint indices with j.a == bodyIdx
+    std::vector<std::vector<std::uint32_t>> outgoing(nBodies);
+
+    for (std::uint32_t ji = 0; ji < static_cast<std::uint32_t>(nJoints); ++ji) {
+        const ServoJoint& j = servoJoints_[ji];
+        // If body_b already appears as b in another joint, it is not a simple serial chain.
+        // Mark as kNone-1 (any non-kNone value) to indicate ambiguity; we won't include it.
+        constexpr std::uint32_t kAmbiguous = kNone - 1u;
+        if (j.b < nBodies) {
+            if (childJoint[j.b] == kNone) {
+                childJoint[j.b] = ji;
+            } else {
+                // body_b has more than one incoming joint — not a simple tree child
+                childJoint[j.b] = kAmbiguous;
+            }
+        }
+        if (j.a < nBodies) {
+            outgoing[j.a].push_back(ji);
+        }
+    }
+
+    // Step 2: find root bodies (have outgoing joints, are never a j.b in a simple chain).
+    // Stack-based DFS to trace paths and build chains.
+    struct DFSFrame {
+        std::uint32_t bodyIdx;  // current body
+        int           parentLinkIdx;  // index in chain.links of parent; -1 for root
+        std::uint32_t incomingJointIdx;  // joint from parent to this body; kNone for root
+        std::size_t   chainIdx;  // which ArtChain this path belongs to
+    };
+
+    std::vector<DFSFrame> stack;
+    stack.reserve(32);
+
+    for (std::uint32_t bodyIdx = 0; bodyIdx < static_cast<std::uint32_t>(nBodies); ++bodyIdx) {
+        // Root: has at least one outgoing joint AND never appears as a j.b in any joint.
+        if (outgoing[bodyIdx].empty()) continue;
+        if (childJoint[bodyIdx] != kNone) continue;  // has an incoming joint → not a root
+
+        // Start a DFS from this root body for each of its outgoing joints.
+        for (const std::uint32_t firstJointIdx : outgoing[bodyIdx]) {
+            const ServoJoint& firstJoint = servoJoints_[firstJointIdx];
+            // Skip if the child body has ambiguous parentage.
+            constexpr std::uint32_t kAmbiguous = kNone - 1u;
+            if (childJoint[firstJoint.b] == kAmbiguous) continue;
+
+            // Begin a new chain with root at bodyIdx.
+            const std::size_t chainIdx = articulationChains_.size();
+            articulationChains_.emplace_back();
+            ArtChain& chain = articulationChains_.back();
+
+            // Root link (no parent joint).
+            ArtLink rootLink{};
+            rootLink.bodyIdx            = bodyIdx;
+            rootLink.jointIdx           = ArtLink::kNoJoint;
+            rootLink.parent             = -1;
+            rootLink.jointAxisLocal     = {};
+            rootLink.jointAnchorWorld   = {};
+            chain.links.push_back(rootLink);
+
+            // Push the first child joint onto the DFS stack.
+            stack.push_back({firstJoint.b, /*parentLinkIdx=*/0, firstJointIdx, chainIdx});
+
+            while (!stack.empty()) {
+                const DFSFrame frame = stack.back();
+                stack.pop_back();
+
+                ArtChain& c = articulationChains_[frame.chainIdx];
+                const ServoJoint& joint = servoJoints_[frame.incomingJointIdx];
+
+                // Compute world-space anchor (body_a position + rotated local anchor)
+                const Body& bodyA = bodies_[joint.a];
+                const Vec3 anchorWorld =
+                    bodyA.position + Rotate(bodyA.orientation, joint.localAnchorA);
+
+                const int thisLinkIdx = static_cast<int>(c.links.size());
+                ArtLink link{};
+                link.bodyIdx          = frame.bodyIdx;
+                link.jointIdx         = frame.incomingJointIdx;
+                link.parent           = frame.parentLinkIdx;
+                link.jointAxisLocal   = joint.localAxisA;
+                link.jointAnchorWorld = anchorWorld;
+                c.links.push_back(link);
+
+                // Mark joint as belonging to an articulation chain.
+                servoJoints_[frame.incomingJointIdx].inArticulationChain = true;
+
+                // Push outgoing joints from this body (branches become separate entries
+                // on the same chain for now; for a hexapod each link has at most one child).
+                if (frame.bodyIdx < nBodies) {
+                    for (const std::uint32_t childJointIdx : outgoing[frame.bodyIdx]) {
+                        const ServoJoint& cj = servoJoints_[childJointIdx];
+                        if (childJoint[cj.b] == kAmbiguous) continue;
+                        stack.push_back({cj.b, thisLinkIdx, childJointIdx, frame.chainIdx});
+                    }
+                }
+            }
+
+            // Finalise: resize per-substep caches.
+            articulationChains_.back().resizeCaches();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PrepareArticulatedInertias  (Phase 1b placeholder)
+//   Computes ABI for each chain and updates ServoJointPrep::invDenomHinge.
+//   Currently a no-op stub; full implementation in Phase 1b once
+//   bodyInertiaWorld_ is populated by RefreshBodyWorldInertias().
+// ---------------------------------------------------------------------------
+
+void World::PrepareArticulatedInertias() {
+    // Phase 1b implementation will go here.
+    // Pre-condition: articulationChains_ is populated, servoJointPreps_ is ready,
+    // and bodyInertiaWorld_ has been filled by RefreshBodyWorldInertias().
+    (void)articulationChains_;
+    (void)bodyInertiaWorld_;
+}
+
 void World::PrepareHingeJointSolves() {
         const std::size_t n = hingeJoints_.size();
         if (hingeJointPreps_.size() != n) {
