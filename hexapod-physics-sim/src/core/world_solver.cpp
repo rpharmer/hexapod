@@ -2153,7 +2153,11 @@ void World::SolveArticulationChainPositions() {
     const float subDt = currentSubstepDt_;
     for (const ArtChain& chain : articulationChains_) {
         const std::size_t N = chain.links.size();
-        if (N < 2) {
+        // Only apply coordinated chain correction to chains long enough for the
+        // per-joint solver to fight itself (root + 3 DOF = 4 links minimum).
+        // 2-link chains (e.g. a single servo arm) are served better by the
+        // standard per-joint hinge snap in SolveJointPositions.
+        if (N < 4) {
             continue;
         }
         for (std::size_t linkIdx = 1; linkIdx < N; ++linkIdx) {
