@@ -44,6 +44,17 @@ static bool approxEqVec(const Vec3& a, const Vec3& b, float tol = 1e-4f) {
     return approxEq(a.x, b.x, tol) && approxEq(a.y, b.y, tol) && approxEq(a.z, b.z, tol);
 }
 
+static bool approxEqMat3(const Mat3& a, const Mat3& b, float tol = 1e-4f) {
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            if (!approxEq(a.m[i][j], b.m[i][j], tol)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Test 1: Skew matrix correctness  — Skew(v)*u == Cross(v, u)
 // ---------------------------------------------------------------------------
@@ -265,6 +276,103 @@ static void test_PropagateInertia() {
     check(approxEq(reduced.mass, m), "PropagateInertia: mass unchanged when mCross==0");
 }
 
+static void test_SameAxisReducedChildProjection_matches_translated_reference() {
+    const Vec3 s{0.0f, 0.0f, 1.0f};
+    const SpatialInertia childRigid = SpatialInertiaFromBody(
+        1.7f,
+        Mat3{{
+            {0.62f, 0.05f, 0.01f},
+            {0.05f, 0.48f, -0.02f},
+            {0.01f, -0.02f, 0.55f},
+        }},
+        Vec3{0.08f, -0.03f, 0.11f},
+        Vec3{0.01f, -0.02f, 0.04f});
+    float Dchild = 0.0f;
+    Vec3  childIsAng{}, childIsLin{};
+    const SpatialInertia childReduced = PropagateInertia(
+        childRigid, s, Dchild, childIsAng, childIsLin);
+
+    const Vec3 rParentMinusChild{0.23f, -0.19f, 0.07f};
+    const SpatialInertia translated =
+        SpatialInertiaPluckerTranslateChildToParent(childReduced, rParentMinusChild);
+    const float Dref = Dot(s, translated.Ioo * s);
+    const Vec3 IsAngRef = translated.Ioo * s;
+    const Vec3 IsLinRef = Transpose(translated.mCross) * s;
+
+    const Vec3 rs = Cross(rParentMinusChild, s);
+    const Vec3 childIsLinFast = childReduced.mass * rs;
+    const Vec3 childIsAngFast =
+        childReduced.mCross * rs - childReduced.mass * Cross(rParentMinusChild, rs);
+    const float Dfast = childReduced.mass * Dot(rs, rs);
+
+    check(approxEq(Dfast, Dref, 1e-4f),
+          "Same-axis child projection: scalar D matches translated reference");
+    check(approxEqVec(childIsAngFast, IsAngRef, 1e-4f),
+          "Same-axis child projection: IsAng matches translated reference");
+    check(approxEqVec(childIsLinFast, IsLinRef, 1e-4f),
+          "Same-axis child projection: IsLin matches translated reference");
+}
+
+static void test_SameAxisParentReduction_matches_generic_PropagateInertia() {
+    const Vec3 s{0.0f, 0.0f, 1.0f};
+    const Vec3 parentAnchor{0.12f, -0.08f, 0.03f};
+    const Vec3 childAnchor{-0.09f, 0.14f, -0.01f};
+    const SpatialInertia parentRigid = SpatialInertiaFromBody(
+        1.1f,
+        Mat3{{
+            {0.37f, 0.02f, 0.00f},
+            {0.02f, 0.41f, -0.01f},
+            {0.00f, -0.01f, 0.29f},
+        }},
+        Vec3{0.19f, -0.03f, 0.09f},
+        parentAnchor);
+    const SpatialInertia childRigid = SpatialInertiaFromBody(
+        0.8f,
+        Mat3{{
+            {0.21f, -0.01f, 0.02f},
+            {-0.01f, 0.26f, 0.03f},
+            {0.02f, 0.03f, 0.24f},
+        }},
+        Vec3{-0.01f, 0.19f, 0.05f},
+        childAnchor);
+    float Dchild = 0.0f;
+    const SpatialInertia childReduced = PropagateInertia(childRigid, s, Dchild);
+    const Vec3 rParentMinusChild = parentAnchor - childAnchor;
+    const SpatialInertia translatedChild =
+        SpatialInertiaPluckerTranslateChildToParent(childReduced, rParentMinusChild);
+    const SpatialInertia IaParent = parentRigid + translatedChild;
+
+    float Dref = 0.0f;
+    Vec3  IsAngRef{}, IsLinRef{};
+    const SpatialInertia reducedRef = PropagateInertia(
+        IaParent, s, Dref, IsAngRef, IsLinRef);
+
+    const Vec3 rs = Cross(rParentMinusChild, s);
+    const Vec3 ownIsAng = parentRigid.Ioo * s;
+    const Vec3 ownIsLin = Transpose(parentRigid.mCross) * s;
+    const Vec3 childIsLinFast = childReduced.mass * rs;
+    const Vec3 childIsAngFast =
+        childReduced.mCross * rs - childReduced.mass * Cross(rParentMinusChild, rs);
+    const Vec3 IsAngFast = ownIsAng + childIsAngFast;
+    const Vec3 IsLinFast = ownIsLin + childIsLinFast;
+    const float Dfast = Dot(s, ownIsAng) + childReduced.mass * Dot(rs, rs);
+    const SpatialInertia reducedFast =
+        PropagateInertiaFromProjection(IaParent, IsAngFast, IsLinFast, Dfast);
+
+    check(approxEq(Dfast, Dref, 1e-4f),
+          "Same-axis parent reduction: scalar D matches generic PropagateInertia");
+    check(approxEqVec(IsAngFast, IsAngRef, 1e-4f),
+          "Same-axis parent reduction: IsAng matches generic PropagateInertia");
+    check(approxEqVec(IsLinFast, IsLinRef, 1e-4f),
+          "Same-axis parent reduction: IsLin matches generic PropagateInertia");
+    check(approxEqMat3(reducedFast.Ioo, reducedRef.Ioo, 1e-4f),
+          "Same-axis parent reduction: reduced Ioo matches generic PropagateInertia");
+    check(approxEqMat3(reducedFast.mCross, reducedRef.mCross, 1e-4f),
+          "Same-axis parent reduction: reduced mCross matches generic PropagateInertia");
+    check(approxEq(reducedFast.mass, reducedRef.mass, 1e-4f),
+          "Same-axis parent reduction: reduced mass matches generic PropagateInertia");
+}
+
 // ---------------------------------------------------------------------------
 // Test 5: BuildArticulationChains on the hexapod scene
 // ---------------------------------------------------------------------------
@@ -309,6 +417,7 @@ static void test_BuildArticulationChains_Hexapod() {
         check(chain.vel.size()== chain.links.size(), "vel cache size matches links");
         check(chain.rigidSpatialI.size() == chain.links.size(), "rigidSpatialI cache size matches links");
         check(chain.paJointSnapshot.size() == chain.links.size(), "paJointSnapshot cache size matches links");
+        check(chain.iaPostJoint.size() == chain.links.size(), "iaPostJoint cache size matches links");
     }
 
     // Verify inArticulationChain flags: all 18 servo joints (3 per leg × 6 legs)
@@ -350,6 +459,10 @@ static void test_BuildArticulationChains_Hexapod() {
     for (const ArtChain& chain : chains) {
         check(LengthSquared(chain.links[0].jointAnchorWorld) > 1e-12f,
               "Root link jointAnchorWorld is set (first leg anchor on chassis)");
+        const std::uint32_t femurJoint = chain.links[2].jointIdx;
+        const std::uint32_t tibiaJoint = chain.links[3].jointIdx;
+        check(world.GetServoJoint(tibiaJoint).masterAxisJointIdx == femurJoint,
+              "Hexapod tibia joint masterAxisJointIdx points to the femur joint");
         for (std::size_t li = 1; li < chain.links.size(); ++li) {
             check(chain.D[li] > 1e-6f, "Hexapod chain joint D is positive");
         }
@@ -425,6 +538,7 @@ static void test_ArticulationConfig_roundTrip() {
     cfg.chassisCouplingAngularOnly                              = true;
     cfg.enableVelocityPreCorrectionChassisArticulatedTree       = false;
     cfg.enableVelocityPreCorrectionForwardCoriolis              = true;
+    cfg.enableSameAxisTwoDofShortcut                            = true;
     cfg.includeServoPdBiasInArticulationU                       = false;
     world.SetArticulationConfig(cfg);
     const World::ArticulationConfig out = world.GetArticulationConfig();
@@ -442,6 +556,8 @@ static void test_ArticulationConfig_roundTrip() {
           "ArticulationConfig round-trip: chassis tree flag");
     check(out.enableVelocityPreCorrectionForwardCoriolis,
           "ArticulationConfig round-trip: forward Coriolis flag");
+    check(out.enableSameAxisTwoDofShortcut,
+          "ArticulationConfig round-trip: same-axis 2-DOF shortcut flag");
     check(!out.includeServoPdBiasInArticulationU,
           "ArticulationConfig round-trip: includeServoPdBiasInArticulationU");
 }
@@ -716,6 +832,69 @@ static void test_VelocityPreCorrection_hexapod_finite() {
     }
 }
 
+static void test_VelocityPreCorrection_legacyPassC_axisCache_hexapod_finite() {
+    World world({0.0f, -9.81f, 0.0f});
+    (void)BuildHexapodScene(world);
+    World::ArticulationConfig cfg{};
+    cfg.enableVelocityPreCorrection               = true;
+    cfg.enableVelocityPreCorrectionKinematicsOnly = false;
+    cfg.enableVelocityPreCorrectionFullForwardPass = false;
+    world.SetArticulationConfig(cfg);
+    world.Step(1.0f / 240.0f, 1);
+    for (const ArtChain& ch : world.GetArticulationChains()) {
+        for (std::size_t li = 1; li < ch.links.size(); ++li) {
+            const Vec3 axis = ch.axisWorld[li];
+            check(!(axis.x == 0.0f && axis.y == 0.0f && axis.z == 0.0f),
+                  "Legacy Pass C axis cache: articulated joint axis was cached");
+        }
+    }
+    for (std::uint32_t bi = 0; bi < world.GetBodyCount(); ++bi) {
+        assertBodyKinematicsFinite(world.GetBody(bi));
+    }
+}
+
+static void test_PassB_sameAxisShortcut_hexapod_positive_without_velocityPreCorrection() {
+    World world({0.0f, -9.81f, 0.0f});
+    (void)BuildHexapodScene(world);
+    World::ArticulationConfig cfg = world.GetArticulationConfig();
+    cfg.enableVelocityPreCorrection = false;
+    cfg.enableSameAxisTwoDofShortcut = true;
+    world.SetArticulationConfig(cfg);
+    world.Step(1.0f / 240.0f, 1);
+    const std::vector<ArtChain>& chains = world.GetArticulationChains();
+    check(chains.size() == 6u, "Pass B same-axis smoke: hexapod still builds 6 articulation chains");
+    for (const ArtChain& ch : chains) {
+        check(ch.links.size() == 4u, "Pass B same-axis smoke: chain has 4 links");
+        check(ch.D[2] > 1e-6f && std::isfinite(ch.D[2]),
+              "Pass B same-axis smoke: femur joint D is positive without velocity pre-correction");
+        check(ch.D[3] > 1e-6f && std::isfinite(ch.D[3]),
+              "Pass B same-axis smoke: tibia joint D is positive without velocity pre-correction");
+    }
+}
+
+static void test_SameAxisTwoDofShortcut_gate_hexapod_finite() {
+    auto runWithGate = [](bool enabled) {
+        World world({0.0f, -9.81f, 0.0f});
+        (void)BuildHexapodScene(world);
+        World::ArticulationConfig cfg = world.GetArticulationConfig();
+        cfg.enableSameAxisTwoDofShortcut = enabled;
+        world.SetArticulationConfig(cfg);
+        world.Step(1.0f / 240.0f, 1);
+        for (const ArtChain& ch : world.GetArticulationChains()) {
+            for (std::size_t li = 1; li < ch.links.size(); ++li) {
+                check(std::isfinite(ch.D[li]) && ch.D[li] > 1e-6f,
+                      "Same-axis 2-DOF gate: articulated D remains finite and positive");
+            }
+        }
+        for (std::uint32_t bi = 0; bi < world.GetBodyCount(); ++bi) {
+            assertBodyKinematicsFinite(world.GetBody(bi));
+        }
+    };
+
+    runWithGate(false);
+    runWithGate(true);
+}
+
 static float absHingeErrorForServoJoint(const World& world, std::uint32_t jointIdx) {
     if (jointIdx == World::kInvalidJointId) {
         return 0.0f;
@@ -828,6 +1007,12 @@ int main() {
     std::printf("test_PropagateInertia...\n");
     test_PropagateInertia();
 
+    std::printf("test_SameAxisReducedChildProjection_matches_translated_reference...\n");
+    test_SameAxisReducedChildProjection_matches_translated_reference();
+
+    std::printf("test_SameAxisParentReduction_matches_generic_PropagateInertia...\n");
+    test_SameAxisParentReduction_matches_generic_PropagateInertia();
+
     std::printf("test_SpatialInertiaPlucker_kineticEnergyInvariant...\n");
     test_SpatialInertiaPlucker_kineticEnergyInvariant();
 
@@ -857,6 +1042,15 @@ int main() {
 
     std::printf("test_VelocityPreCorrection_hexapod_finite...\n");
     test_VelocityPreCorrection_hexapod_finite();
+
+    std::printf("test_VelocityPreCorrection_legacyPassC_axisCache_hexapod_finite...\n");
+    test_VelocityPreCorrection_legacyPassC_axisCache_hexapod_finite();
+
+    std::printf("test_PassB_sameAxisShortcut_hexapod_positive_without_velocityPreCorrection...\n");
+    test_PassB_sameAxisShortcut_hexapod_positive_without_velocityPreCorrection();
+
+    std::printf("test_SameAxisTwoDofShortcut_gate_hexapod_finite...\n");
+    test_SameAxisTwoDofShortcut_gate_hexapod_finite();
 
     std::printf("test_VelocityPreCorrection_fullForward_hexapod_finite...\n");
     test_VelocityPreCorrection_fullForward_hexapod_finite();

@@ -6,6 +6,7 @@
 #include "minphys3d/solver/block4_solver.hpp"
 #include "minphys3d/solver/island_ordering.hpp"
 
+#include <chrono>
 #include <cmath>
 
 namespace minphys3d {
@@ -1102,6 +1103,25 @@ void World::BuildArticulationChains() {
 // ---------------------------------------------------------------------------
 
 void World::PrepareArticulatedInertias() {
+    using Clock = std::chrono::steady_clock;
+    const auto elapsedNs = [](const Clock::time_point start, const Clock::time_point end) -> std::uint64_t {
+        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+        return ns > 0 ? static_cast<std::uint64_t>(ns) : 0ULL;
+    };
+
+    std::uint64_t setupRigidNs = 0;
+    std::uint64_t passANs = 0;
+    std::uint64_t passBGenericNs = 0;
+    std::uint64_t passBSameAxisNs = 0;
+    std::uint64_t passCFullForwardNs = 0;
+    std::uint64_t passCLegacyNs = 0;
+    std::uint64_t setupRigidCalls = 0;
+    std::uint64_t passACalls = 0;
+    std::uint64_t passBGenericCalls = 0;
+    std::uint64_t passBSameAxisCalls = 0;
+    std::uint64_t passCFullForwardCalls = 0;
+    std::uint64_t passCLegacyCalls = 0;
+
     const std::size_t nBodies = bodies_.size();
     artChainIndexForLeafBody_.assign(nBodies, kInvalidArticulationChain);
 
@@ -1139,11 +1159,13 @@ void World::PrepareArticulatedInertias() {
         }
         chain.resizeCaches();
 
+        const auto setupRigidStart = Clock::now();
         for (std::size_t li = 0; li < N; ++li) {
             const ArtLink& L = chain.links[li];
             const Body&    bd = bodies_[L.bodyIdx];
             if (bd.invMass <= 0.0f || !(bd.mass > kEpsilon)) {
                 chain.Ia[li] = SpatialInertia{};
+                chain.rigidSpatialI[li] = SpatialInertia{};
                 continue;
             }
             chain.Ia[li] = SpatialInertiaFromBody(
@@ -1151,13 +1173,13 @@ void World::PrepareArticulatedInertias() {
                 bodyInertiaWorld_[L.bodyIdx],
                 bd.position,
                 L.jointAnchorWorld);
+            chain.rigidSpatialI[li] = chain.Ia[li];
         }
+        setupRigidNs += elapsedNs(setupRigidStart, Clock::now());
+        ++setupRigidCalls;
 
         if (velocityPreCorr) {
-            for (std::size_t li = 0; li < N; ++li) {
-                chain.rigidSpatialI[li] = chain.Ia[li];
-            }
-
+            const auto passAStart = Clock::now();
             // Pass A — spatial motion at each link joint anchor (no body writes).
             {
                 const Body& rootBd = bodies_[chain.links[0].bodyIdx];
@@ -1179,9 +1201,11 @@ void World::PrepareArticulatedInertias() {
                 const Body&       childBd  = bodies_[sj.b];
                 Vec3              axis     = Rotate(parentBd.orientation, sj.localAxisA);
                 if (!TryNormalize(axis, axis)) {
+                    chain.axisWorld[li] = Vec3{};  // signal degenerate for Pass B / C
                     chain.vel[li] = SpatialVec{};
                     continue;
                 }
+                chain.axisWorld[li] = axis;  // cache for Pass B (tip→root) and Pass C reuse
                 const float dq = Dot(childBd.angularVelocity - parentBd.angularVelocity, axis);
                 const SpatialVec& vParent = chain.vel[li - 1u];
                 const Vec3        offset  = L.jointAnchorWorld - Lp.jointAnchorWorld;
@@ -1194,6 +1218,8 @@ void World::PrepareArticulatedInertias() {
                 chain.Pa[li] = SpatialBias(chain.rigidSpatialI[li], chain.vel[li])
                     - SpatialMul(chain.rigidSpatialI[li], spatialGravity);
             }
+            passANs += elapsedNs(passAStart, Clock::now());
+            ++passACalls;
         }
 
         for (int childLink = static_cast<int>(N) - 1; childLink >= 1; --childLink) {
@@ -1209,17 +1235,73 @@ void World::PrepareArticulatedInertias() {
                 chain.legSubtreePaAtCoxaAnchor = chain.Pa[1];
             }
             const ServoJoint& sj = servoJoints_[jidx];
-            const Body&      parentBody = bodies_[sj.a];
-            Vec3             axis = Rotate(parentBody.orientation, sj.localAxisA);
-            if (!TryNormalize(axis, axis)) {
-                continue;
+            // Read axis from Pass A cache when available (velocityPreCorr true = Pass A ran).
+            // Fall back to computing it when velocityPreCorr is false (Pass A did not run).
+            Vec3 axis;
+            if (velocityPreCorr) {
+                axis = chain.axisWorld[cIdx];
+                if (axis.x == 0.0f && axis.y == 0.0f && axis.z == 0.0f) {
+                    continue;  // degenerate axis — Pass A already wrote zero
+                }
+            } else {
+                const Body& parentBody = bodies_[sj.a];
+                axis = Rotate(parentBody.orientation, sj.localAxisA);
+                if (!TryNormalize(axis, axis)) {
+                    continue;
+                }
             }
             float D = 0.0f;
             chain.iaPreJoint[cIdx] = chain.Ia[cIdx];
             if (velocityPreCorr) {
                 chain.paJointSnapshot[cIdx] = chain.Pa[cIdx];
             }
-            const SpatialInertia reduced = PropagateInertia(chain.Ia[cIdx], axis, D);
+            Vec3 IsAng_cached{}, IsLin_cached{};
+            SpatialInertia reduced{};
+            const std::size_t childIdx = cIdx + 1u;
+            const bool hasImmediateChild = childIdx < N
+                && chain.links[childIdx].parent == static_cast<int>(cIdx);
+            bool useSameAxisShortcut = false;
+            if (hasImmediateChild) {
+                const std::uint32_t childJointIdx = chain.links[childIdx].jointIdx;
+                useSameAxisShortcut = childJointIdx != ArtLink::kNoJoint
+                    && childJointIdx < servoJoints_.size()
+                    && servoJoints_[childJointIdx].masterAxisJointIdx == jidx
+                    && articulationConfig_.enableSameAxisTwoDofShortcut;
+            }
+            if (useSameAxisShortcut) {
+                const auto sameAxisStart = Clock::now();
+#ifndef NDEBUG
+                if (velocityPreCorr) {
+                    const Vec3 childAxis = chain.axisWorld[childIdx];
+                    assert(!(childAxis.x == 0.0f && childAxis.y == 0.0f && childAxis.z == 0.0f));
+                    assert(Dot(axis, childAxis) > 0.9999f);
+                }
+#endif
+                // Default-disabled until profiling shows a clear win; retained for later review.
+                const SpatialInertia& ownRigid = chain.rigidSpatialI[cIdx];
+                const SpatialInertia& childReduced = chain.iaPostJoint[childIdx];
+                const Vec3 r = chain.links[cIdx].jointAnchorWorld - chain.links[childIdx].jointAnchorWorld;
+                const Vec3 rs = Cross(r, axis);
+                const Vec3 ownIsAng = ownRigid.Ioo * axis;
+                const Vec3 ownIsLin = Transpose(ownRigid.mCross) * axis;
+                const Vec3 childIsLin = childReduced.mass * rs;
+                const Vec3 childIsAng =
+                    childReduced.mCross * rs - childReduced.mass * Cross(r, rs);
+                IsAng_cached = ownIsAng + childIsAng;
+                IsLin_cached = ownIsLin + childIsLin;
+                D = Dot(axis, ownIsAng) + childReduced.mass * Dot(rs, rs);
+                reduced = PropagateInertiaFromProjection(
+                    chain.Ia[cIdx], IsAng_cached, IsLin_cached, D);
+                passBSameAxisNs += elapsedNs(sameAxisStart, Clock::now());
+                ++passBSameAxisCalls;
+            } else {
+                const auto genericStart = Clock::now();
+                // Generic path: capture Is vectors (IsAng/IsLin) so PropagateBias can reuse
+                // them without a redundant Ic*s mat-vec product.
+                reduced = PropagateInertia(chain.Ia[cIdx], axis, D, IsAng_cached, IsLin_cached);
+                passBGenericNs += elapsedNs(genericStart, Clock::now());
+                ++passBGenericCalls;
+            }
             chain.D[cIdx] = D;
             const ServoJointPrep& prepJoint = servoJointPreps_[jidx];
             const float          sPc    = velocityPreCorr ? Dot(axis, chain.Pa[cIdx].ang) : 0.0f;
@@ -1229,8 +1311,10 @@ void World::PrepareArticulatedInertias() {
             }
             uJoint += sj.articulationDriveTorque;
             chain.u[cIdx] = uJoint;
+            chain.iaPostJoint[cIdx] = reduced;
             if (velocityPreCorr) {
-                chain.Pa[pIdx] += PropagateBias(chain.Pa[cIdx], chain.Ia[cIdx], axis, D, uJoint);
+                chain.Pa[pIdx] += PropagateBias(
+                    chain.Pa[cIdx], IsAng_cached, IsLin_cached, axis, D, uJoint);
             }
             const Vec3 off =
                 chain.links[pIdx].jointAnchorWorld - chain.links[cIdx].jointAnchorWorld;
@@ -1264,6 +1348,7 @@ void World::PrepareArticulatedInertias() {
     const bool forwardCoriolis =
         fullForwardPass && articulationConfig_.enableVelocityPreCorrectionForwardCoriolis;
     if (fullForwardPass) {
+        const auto passCFullStart = Clock::now();
         for (ArtChain& chain : articulationChains_) {
             const std::size_t N = chain.links.size();
             // Match the chain position solve gate: 2-link chains (single servo arm with
@@ -1282,10 +1367,11 @@ void World::PrepareArticulatedInertias() {
                     continue;
                 }
                 const ServoJoint& sj = servoJoints_[L.jointIdx];
-                const Body&       parentBody = bodies_[sj.a];
-                Vec3              axis       = Rotate(parentBody.orientation, sj.localAxisA);
-                if (!TryNormalize(axis, axis)) {
-                    continue;
+                // Pass A already computed and cached the world-space axis (N≥4 gate above
+                // guarantees Pass A ran for this chain when velocityPreCorr is true).
+                const Vec3 axis = chain.axisWorld[linkIdx];
+                if (axis.x == 0.0f && axis.y == 0.0f && axis.z == 0.0f) {
+                    continue;  // degenerate axis flagged by Pass A
                 }
                 const float D = chain.D[linkIdx];
                 if (!(D > kEpsilon)) {
@@ -1314,7 +1400,10 @@ void World::PrepareArticulatedInertias() {
                 }
             }
         }
+        passCFullForwardNs += elapsedNs(passCFullStart, Clock::now());
+        ++passCFullForwardCalls;
     } else if (velocityPreCorr && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly) {
+        const auto passCLegacyStart = Clock::now();
         for (ArtChain& chain : articulationChains_) {
             const std::size_t N = chain.links.size();
             if (N < 4) {
@@ -1330,9 +1419,8 @@ void World::PrepareArticulatedInertias() {
                 if (child.invMass <= 0.0f) {
                     continue;
                 }
-                const Body& parentBody = bodies_[sj.a];
-                Vec3        axis = Rotate(parentBody.orientation, sj.localAxisA);
-                if (!TryNormalize(axis, axis)) {
+                const Vec3 axis = chain.axisWorld[linkIdx];
+                if (axis.x == 0.0f && axis.y == 0.0f && axis.z == 0.0f) {
                     continue;
                 }
                 const float D = chain.D[linkIdx];
@@ -1344,6 +1432,8 @@ void World::PrepareArticulatedInertias() {
                 child.angularVelocity += axis * (qdd * dt);
             }
         }
+        passCLegacyNs += elapsedNs(passCLegacyStart, Clock::now());
+        ++passCLegacyCalls;
     }
 
     // Optional chassis coupling: MVP (sum of post-backward Pa[0] at COM) or multi-tree aggregate
@@ -1479,6 +1569,37 @@ void World::PrepareArticulatedInertias() {
             }
         }
     }
+
+    resource_profiler_.recordSelfTime(
+        world_resource_monitoring::toIndex(
+            world_resource_monitoring::Section::PrepareArticulatedInertiasSetupRigid),
+        setupRigidNs,
+        setupRigidCalls);
+    resource_profiler_.recordSelfTime(
+        world_resource_monitoring::toIndex(
+            world_resource_monitoring::Section::PrepareArticulatedInertiasPassA),
+        passANs,
+        passACalls);
+    resource_profiler_.recordSelfTime(
+        world_resource_monitoring::toIndex(
+            world_resource_monitoring::Section::PrepareArticulatedInertiasPassBGeneric),
+        passBGenericNs,
+        passBGenericCalls);
+    resource_profiler_.recordSelfTime(
+        world_resource_monitoring::toIndex(
+            world_resource_monitoring::Section::PrepareArticulatedInertiasPassBSameAxis),
+        passBSameAxisNs,
+        passBSameAxisCalls);
+    resource_profiler_.recordSelfTime(
+        world_resource_monitoring::toIndex(
+            world_resource_monitoring::Section::PrepareArticulatedInertiasPassCFullForward),
+        passCFullForwardNs,
+        passCFullForwardCalls);
+    resource_profiler_.recordSelfTime(
+        world_resource_monitoring::toIndex(
+            world_resource_monitoring::Section::PrepareArticulatedInertiasPassCLegacy),
+        passCLegacyNs,
+        passCLegacyCalls);
 }
 
 void World::PrepareHingeJointSolves() {

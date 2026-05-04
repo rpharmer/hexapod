@@ -8,17 +8,35 @@
 #include "process_resource_monitoring.hpp"
 
 #include <chrono>
+#include <cstring>
 #include <cstdio>
 #include <iostream>
+#include <string_view>
 
-int main() {
+int main(int argc, char** argv) {
     using namespace minphys3d;
     using namespace minphys3d::demo;
+
+    bool sameAxisShortcut = false;
+    for (int i = 1; i < argc; ++i) {
+        const std::string_view arg = argv[i];
+        if (arg == "--same-axis-2dof=on") {
+            sameAxisShortcut = true;
+        } else if (arg == "--same-axis-2dof=off") {
+            sameAxisShortcut = false;
+        } else {
+            std::cerr << "unknown arg: " << arg << "\n";
+            return 2;
+        }
+    }
 
     World world(Vec3{0.0f, -9.81f, 0.0f});
     JointSolverConfig joint_cfg = world.GetJointSolverConfig();
     joint_cfg.servoPositionPasses = 8;
     world.SetJointSolverConfig(joint_cfg);
+    World::ArticulationConfig articulation_cfg = world.GetArticulationConfig();
+    articulation_cfg.enableSameAxisTwoDofShortcut = sameAxisShortcut;
+    world.SetArticulationConfig(articulation_cfg);
 
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
@@ -50,6 +68,8 @@ int main() {
               << " usedMovedSetOnlyUpdate=" << (bp.usedMovedSetOnlyUpdate ? 1 : 0)
               << " partialRebuildTriggered=" << (bp.partialRebuildTriggered ? 1 : 0)
               << " fullRebuildTriggered=" << (bp.fullRebuildTriggered ? 1 : 0) << "\n";
+    std::cout << "articulation_config: enableSameAxisTwoDofShortcut="
+              << (sameAxisShortcut ? 1 : 0) << "\n";
 
     const auto summary = world.SnapshotFullResourceSections(false);
     std::cout << "workload: hexapod " << kFrames << " frames @ 60Hz outer, " << kSubsteps

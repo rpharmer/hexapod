@@ -333,6 +333,13 @@ public:
         }
     }
 
+    void recordSelfTime(std::size_t section_index, std::uint64_t self_ns, std::uint64_t call_count = 1) {
+        if (section_index >= MaxSections || call_count == 0) {
+            return;
+        }
+        recordSection(section_index, self_ns, call_count);
+    }
+
 private:
     struct SectionCounters {
         CopyableAtomic<std::uint64_t> total_self_ns{0};
@@ -389,14 +396,14 @@ private:
         }
     }
 
-    void recordSection(std::size_t section_index, std::uint64_t self_ns) {
+    void recordSection(std::size_t section_index, std::uint64_t self_ns, std::uint64_t call_count = 1) {
         if (section_index >= MaxSections) {
             return;
         }
 
         totals_[section_index].total_self_ns.fetch_add(self_ns, std::memory_order_relaxed);
         window_self_ns_[section_index].fetch_add(self_ns, std::memory_order_relaxed);
-        call_counts_[section_index].fetch_add(1, std::memory_order_relaxed);
+        call_counts_[section_index].fetch_add(call_count, std::memory_order_relaxed);
 
         std::uint64_t current_max = max_self_ns_[section_index].load(std::memory_order_relaxed);
         while (self_ns > current_max &&

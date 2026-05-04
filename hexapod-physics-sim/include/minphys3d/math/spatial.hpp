@@ -155,23 +155,41 @@ inline SpatialVec SpatialBias(const SpatialInertia& Ia, const SpatialVec& vel) {
 //   Returns a zero SpatialInertia if D < kEpsilon (degenerate joint).
 // ---------------------------------------------------------------------------
 
-inline SpatialInertia PropagateInertia(const SpatialInertia& Ic, const Vec3& s, float& D) {
-    // Is = Ic * S = Ic * [s; 0]
-    //   ang component: Ioo * s
-    //   lin component: Transpose(mCross) * s
-    const Vec3 IsAng = Ic.Ioo * s;
-    const Vec3 IsLin = Transpose(Ic.mCross) * s;
-    D = Dot(s, IsAng);  // s^T * Ic * s  (scalar effective mass)
+inline SpatialInertia PropagateInertiaFromProjection(
+    const SpatialInertia& Ic, const Vec3& IsAng, const Vec3& IsLin, float D)
+{
     if (!(D > kEpsilon)) {
         return {};
     }
     const float invD = 1.0f / D;
-    // Ia_reduced = Ic - (Ic*S)(Ic*S)^T / D
     SpatialInertia r = Ic;
     r.Ioo    = r.Ioo    - invD * OuterProduct(IsAng, IsAng);
     r.mCross = r.mCross - invD * OuterProduct(IsAng, IsLin);
     r.mass   = r.mass   - invD * Dot(IsLin, IsLin);
     return r;
+}
+
+// Extended form: also returns IsAng = Ic.Ioo*s and IsLin = Transpose(Ic.mCross)*s so the
+// caller can pass them to PropagateBias without recomputing them (saves 2 Mat3*Vec3/joint).
+inline SpatialInertia PropagateInertia(
+    const SpatialInertia& Ic, const Vec3& s, float& D,
+    Vec3& IsAngOut, Vec3& IsLinOut)
+{
+    // Is = Ic * S = Ic * [s; 0]
+    //   ang component: Ioo * s
+    //   lin component: Transpose(mCross) * s
+    const Vec3 IsAng = Ic.Ioo * s;
+    const Vec3 IsLin = Transpose(Ic.mCross) * s;
+    IsAngOut = IsAng;
+    IsLinOut = IsLin;
+    D = Dot(s, IsAng);  // s^T * Ic * s  (scalar effective mass)
+    return PropagateInertiaFromProjection(Ic, IsAng, IsLin, D);
+}
+
+// Backward-compatible 3-parameter overload (does not return Is vectors).
+inline SpatialInertia PropagateInertia(const SpatialInertia& Ic, const Vec3& s, float& D) {
+    Vec3 dum1, dum2;
+    return PropagateInertia(Ic, s, D, dum1, dum2);
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +220,18 @@ inline SpatialVec PropagateBias(
         Pc.ang + IsAng * coeff,
         Pc.lin + IsLin * coeff,
     };
+}
+
+// Overload accepting pre-computed Is vectors from PropagateInertia, avoiding 2 Mat3*Vec3
+// products per joint that would otherwise be redundant (Ic and s are the same pair).
+inline SpatialVec PropagateBias(
+    const SpatialVec& Pc,
+    const Vec3& IsAng, const Vec3& IsLin,  // from PropagateInertia(..., IsAngOut, IsLinOut)
+    const Vec3& s, float D, float u)
+{
+    if (!(D > kEpsilon)) return {};
+    const float coeff = (u - Dot(s, Pc.ang)) / D;
+    return {Pc.ang + IsAng * coeff, Pc.lin + IsLin * coeff};
 }
 
 // ---------------------------------------------------------------------------
@@ -250,85 +280,24 @@ inline SpatialInertia SpatialInertiaTransport(const SpatialInertia& Ia, const Ve
 //   congruence that preserves kinetic energy with `v_parent = X v_child`.
 // ---------------------------------------------------------------------------
 
-inline void SpatialInertiaToMat6Sym(const SpatialInertia& I, float M[6][6]) {
-    for (int i = 0; i < 6; ++i) {
-        for (int j = 0; j < 6; ++j) {
-            M[i][j] = 0.0f;
-        }
-    }
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            M[i][j]     = I.Ioo.m[i][j];
-            M[i][j + 3] = I.mCross.m[i][j];
-            M[i + 3][j] = I.mCross.m[j][i]; // Transpose(mCross)
-        }
-        M[i + 3][i + 3] = I.mass;
-    }
-}
-
-inline SpatialInertia SpatialInertiaFromMat6Sym(const float M[6][6]) {
-    float S[6][6]{};
-    for (int i = 0; i < 6; ++i) {
-        for (int j = 0; j < 6; ++j) {
-            S[i][j] = 0.5f * (M[i][j] + M[j][i]);
-        }
-    }
-    SpatialInertia I{};
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            I.Ioo.m[i][j]    = S[i][j];
-            I.mCross.m[i][j] = S[i][j + 3];
-        }
-    }
-    I.mass = (S[3][3] + S[4][4] + S[5][5]) / 3.0f;
-    return I;
-}
-
-inline void Mat6Mul(const float A[6][6], const float B[6][6], float C[6][6]) {
-    for (int i = 0; i < 6; ++i) {
-        for (int j = 0; j < 6; ++j) {
-            float s = 0.0f;
-            for (int k = 0; k < 6; ++k) {
-                s += A[i][k] * B[k][j];
-            }
-            C[i][j] = s;
-        }
-    }
-}
-
 inline SpatialInertia SpatialInertiaPluckerTranslateChildToParent(
-    const SpatialInertia& IatChildAnchor,
-    const Vec3& rChildAnchorToParentAnchorWorld)
+    const SpatialInertia& I,
+    const Vec3& r)  // r = parentAnchor − childAnchor (world space)
 {
-    float Ic[6][6]{};
-    SpatialInertiaToMat6Sym(IatChildAnchor, Ic);
-
-    float Xinv[6][6]{};
-    for (int i = 0; i < 6; ++i) {
-        Xinv[i][i] = 1.0f;
-    }
-    const Mat3 Sr = Skew(rChildAnchorToParentAnchorWorld);
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            Xinv[i + 3][j] = Sr.m[i][j];
-        }
-    }
-
-    float XinvT[6][6]{};
-    for (int i = 0; i < 6; ++i) {
-        XinvT[i][i] = 1.0f;
-    }
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            XinvT[i][j + 3] = -Sr.m[i][j];
-        }
-    }
-
-    float tmp[6][6]{};
-    float Ip[6][6]{};
-    Mat6Mul(Ic, Xinv, tmp);
-    Mat6Mul(XinvT, tmp, Ip);
-    return SpatialInertiaFromMat6Sym(Ip);
+    // Plücker congruence I_parent = X^{-T} I X^{-1} with X^{-1} = [I3 0; Skew(r) I3].
+    // Block-analytic derivation (no 6×6 matrix needed, ~120 ops vs ~1620 for Mat6Mul):
+    //   mCross_new = mCross − mass · Skew(r)
+    //   Ioo_new    = Ioo + mCross·Skew(r) − Skew(r)·mCross^T
+    //                    + mass · (|r|²·I3 − r⊗r)
+    //   mass_new   = mass  (unchanged)
+    // The last term is the standard parallel-axis shift (same as SpatialInertiaFromBody).
+    const Mat3 Sr        = Skew(r);
+    const Mat3 mCrossNew = I.mCross - I.mass * Sr;
+    const Mat3 IooNew    = I.Ioo
+                         + I.mCross * Sr
+                         - Sr * Transpose(I.mCross)
+                         + I.mass * (ScaleIdentity(Dot(r, r)) - OuterProduct(r, r));
+    return {IooNew, mCrossNew, I.mass};
 }
 
 // ---------------------------------------------------------------------------

@@ -17,7 +17,7 @@
 
 namespace minphys3d::world_resource_monitoring {
 
-inline constexpr std::size_t kMaxSections = 38;
+inline constexpr std::size_t kMaxSections = 44;
 inline constexpr std::size_t kTopSectionsToReport = 8;
 
 enum class Section : std::size_t {
@@ -61,6 +61,12 @@ enum class Section : std::size_t {
     GenerateContactsSubTerrain,
     GenerateContactsSubEmitSeeds,
     PrepareArticulatedInertias,
+    PrepareArticulatedInertiasSetupRigid,
+    PrepareArticulatedInertiasPassA,
+    PrepareArticulatedInertiasPassBGeneric,
+    PrepareArticulatedInertiasPassBSameAxis,
+    PrepareArticulatedInertiasPassCFullForward,
+    PrepareArticulatedInertiasPassCLegacy,
     Count,
 };
 
@@ -109,6 +115,12 @@ inline constexpr std::array<const char*, kMaxSections> kSectionLabels = {
     "world.generate_contacts.terrain",
     "world.generate_contacts.emit_seeds",
     "world.prepare_articulated_inertias",
+    "world.prepare_articulated_inertias.setup_rigid",
+    "world.prepare_articulated_inertias.pass_a",
+    "world.prepare_articulated_inertias.pass_b_generic",
+    "world.prepare_articulated_inertias.pass_b_same_axis",
+    "world.prepare_articulated_inertias.pass_c_full_forward",
+    "world.prepare_articulated_inertias.pass_c_legacy",
 };
 
 inline constexpr std::size_t toIndex(Section section) {

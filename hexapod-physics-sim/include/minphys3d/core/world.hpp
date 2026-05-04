@@ -134,6 +134,11 @@ public:
         /// spatial acceleration bias across each link offset using Pass A parent velocity (ω×(ω×r))).
         /// Default off; approximate but improves spinning-link chains.
         bool enableVelocityPreCorrectionForwardCoriolis = false;
+        /// Enables the Pass B same-axis 2-DOF shortcut for immediate parent/child revolute pairs
+        /// annotated via `ServoJoint::masterAxisJointIdx`. This affects the ABI tip→root pass even
+        /// when `enableVelocityPreCorrection` is false because Pass B still runs. Default off until
+        /// profiling shows a clear benchmark win; retained in-tree for later review.
+        bool enableSameAxisTwoDofShortcut = false;
         /// When true (default), generalized force `u` includes the PD channel `D * servoBias`.
         /// When false, `u` uses only `s^T P_a` plus `ServoJoint::articulationDriveTorque`.
         bool includeServoPdBiasInArticulationU = true;

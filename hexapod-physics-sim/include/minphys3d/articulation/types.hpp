@@ -73,8 +73,19 @@ struct ArtChain {
     // Articulated composite inertia at link i's joint anchor **before** factoring
     // that joint's DOF (used by optional full forward acceleration pass).
     std::vector<SpatialInertia> iaPreJoint;
+    // Articulated composite inertia at link i's joint anchor **after** factoring that link's
+    // own revolute DOF in the tip→root ABI pass. Used by the same-axis 2-DOF specialization
+    // to reuse the child reduced subtree at its own joint anchor.
+    std::vector<SpatialInertia> iaPostJoint;
     // Spatial accelerations at each link joint anchor (optional forward pass).
     std::vector<SpatialVec> spatialAcc;
+    // Per-substep world-space joint axis cache (filled by Pass A of PrepareArticulatedInertias
+    // when enableVelocityPreCorrection is true). axisWorld[i] is the normalized axis for the
+    // joint connecting link i to its parent (index 0 unused; root has no parent joint).
+    // Zero vector = axis was degenerate (TryNormalize failed) — caller must skip that link.
+    // When velocityPreCorr is false, Pass A does not run; axisWorld stays all-zero and Pass B
+    // falls back to computing the axis directly.
+    std::vector<Vec3> axisWorld;
 
     // When `enableVelocityPreCorrectionChassisArticulatedTree` is on: articulated leg subtree
     // (links 1..N−1) at link-1 joint anchor, captured immediately before merging link 1 into the
@@ -96,7 +107,9 @@ struct ArtChain {
         rigidSpatialI.assign(n, SpatialInertia{});
         paJointSnapshot.assign(n, SpatialVec{});
         iaPreJoint.assign(n, SpatialInertia{});
+        iaPostJoint.assign(n, SpatialInertia{});
         spatialAcc.assign(n, SpatialVec{});
+        axisWorld.assign(n, Vec3{});
         legSubtreeIaAtCoxaAnchor = SpatialInertia{};
         legSubtreePaAtCoxaAnchor = SpatialVec{};
     }
