@@ -104,11 +104,13 @@ public:
         /// override in `PrepareContactSolves`, and chain topology detection all run
         /// unconditionally every substep for chains with N ≥ 2 — they are NOT gated here.
         ///
-        /// Default off because Pass C modifies body velocities before PGS warm-starting runs,
-        /// which shifts the impulse stream and can interact badly with contact biases,
-        /// accumulated warm-start impulses, and the six-leg chassis coupling — all requiring
-        /// careful per-scene validation before enabling.
-        bool enableVelocityPreCorrection = false;
+        /// Pass C is skipped for chains shorter than 4 links; short chains (single servo arm
+        /// with static/heavy base) are better served by PGS alone because ABA velocity nudges
+        /// overshoot with warm-starting still calibrated for uncorrected velocities.
+        ///
+        /// Default on: validated on the hexapod (6 × 4-link legs, 40 iter/substep).
+        /// Disable if adding a scene with non-hexapod chains that show warm-start instability.
+        bool enableVelocityPreCorrection = true;
         /// When true with `enableVelocityPreCorrection`, only fills `ArtChain::vel` (Pass A).
         bool enableVelocityPreCorrectionKinematicsOnly = false;
         /// When true with `enableVelocityPreCorrection` and not kinematics-only, runs a full

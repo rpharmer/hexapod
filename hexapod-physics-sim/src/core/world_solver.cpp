@@ -1266,7 +1266,10 @@ void World::PrepareArticulatedInertias() {
     if (fullForwardPass) {
         for (ArtChain& chain : articulationChains_) {
             const std::size_t N = chain.links.size();
-            if (N < 2) {
+            // Match the chain position solve gate: 2-link chains (single servo arm with
+            // static/heavy base) are better left for PGS; ABA velocity nudges on short
+            // chains overshoot with warm-starting still calibrated for uncorrected velocities.
+            if (N < 4) {
                 continue;
             }
             chain.spatialAcc.assign(N, SpatialVec{});
@@ -1314,7 +1317,7 @@ void World::PrepareArticulatedInertias() {
     } else if (velocityPreCorr && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly) {
         for (ArtChain& chain : articulationChains_) {
             const std::size_t N = chain.links.size();
-            if (N < 2) {
+            if (N < 4) {
                 continue;
             }
             for (std::size_t linkIdx = 1; linkIdx < N; ++linkIdx) {
