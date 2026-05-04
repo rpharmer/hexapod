@@ -97,9 +97,17 @@ public:
 
     /// Optional articulated-body solver behaviour (ABI passes, velocity pre-correction).
     struct ArticulationConfig {
-        /// When true, `PrepareArticulatedInertias` runs spatial velocity / ABI / optional Pass C
-        /// for chains with `N >= 2`, including ABI hinge `invDenomHinge` and articulated contact
-        /// mass on chain leaf bodies (`N >= 2`).
+        /// Gates Pass C of `PrepareArticulatedInertias`: the root→tip spatial velocity
+        /// pre-correction that writes Δv/Δω to body velocities *before* the PGS loop.
+        ///
+        /// Note: the ABI tip→root pass (Ia, D, u, Pa), the articulated contact effective mass
+        /// override in `PrepareContactSolves`, and chain topology detection all run
+        /// unconditionally every substep for chains with N ≥ 2 — they are NOT gated here.
+        ///
+        /// Default off because Pass C modifies body velocities before PGS warm-starting runs,
+        /// which shifts the impulse stream and can interact badly with contact biases,
+        /// accumulated warm-start impulses, and the six-leg chassis coupling — all requiring
+        /// careful per-scene validation before enabling.
         bool enableVelocityPreCorrection = false;
         /// When true with `enableVelocityPreCorrection`, only fills `ArtChain::vel` (Pass A).
         bool enableVelocityPreCorrectionKinematicsOnly = false;
@@ -108,7 +116,9 @@ public:
         /// the legacy angular-only Pass C child update. Default off.
         bool enableVelocityPreCorrectionFullForwardPass = false;
         /// Ordered chain hinge snap before `JointSolver::SolveJointPositions` for long chains.
-        bool enableChainPositionSolve = false;
+        /// Default on: hexapod legs are 4-link chains and benefit from coordinated position
+        /// correction that avoids the per-joint solver fighting itself.
+        bool enableChainPositionSolve = true;
         /// Sum per-leg `Pa[0]` wrenches at chassis COM (MVP shared-base coupling); default off.
         bool enableVelocityPreCorrectionChassisCoupling = false;
         /// Gain on chassis Δv/Δω from MVP coupling (clamped internally).
