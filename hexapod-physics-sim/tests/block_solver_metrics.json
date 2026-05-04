@@ -1,0 +1,4510 @@
+{
+  "suite": "block_solver_regression",
+  "scenes": [
+    {
+      "name": "manifold reorder stress case",
+      "pass": true,
+      "readiness_pass": true,
+      "scalar": {
+        "max_penetration": 0.017275,
+        "p95_penetration": 0.000568,
+        "contact_count_stddev": 1.105531,
+        "contact_count_mean_step_delta": 0.020855,
+        "max_impulse_delta": 2.252038,
+        "mean_impulse_delta": 0.004715,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.001617,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 0.248034,
+        "rest_window_com_drift": 0.248034,
+        "rest_window_angular_jitter_rms": 0.000016,
+        "manifold_churn_per_step": 0.026042,
+        "sleep_entry_latency": 1.675000,
+        "wake_flap_count": 7,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 0,
+          "blockSolveUsed": 0,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 16,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 64,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 0,
+            "fallback_used": 16,
+            "fallback_reason": {
+              "none": 0,
+              "ineligible": 16,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 0.000000,
+            "determinant_or_condition_estimate_samples": 0,
+            "impulse_continuity_metric_sum": 0.000000,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 0, "fallback_used": 16, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "block": {
+        "max_penetration": 0.017275,
+        "p95_penetration": 0.000562,
+        "contact_count_stddev": 1.105531,
+        "contact_count_mean_step_delta": 0.020855,
+        "max_impulse_delta": 2.252038,
+        "mean_impulse_delta": 0.004232,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.001572,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 0.248037,
+        "rest_window_com_drift": 0.248037,
+        "rest_window_angular_jitter_rms": 0.000000,
+        "manifold_churn_per_step": 0.026042,
+        "sleep_entry_latency": 1.675000,
+        "wake_flap_count": 7,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 46.154198,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.000000,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 46.154198, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "face4": {
+        "max_penetration": 0.017275,
+        "contact_count_stddev": 1.105531,
+        "contact_count_mean_step_delta": 0.020855,
+        "max_impulse_delta": 2.252038,
+        "mean_impulse_delta": 0.004232,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.001572,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 0.248037,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 46.154198,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.000000,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 46.154198, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "ablation": {
+        "manifold_budget_off": {
+          "manifold_tangent_impulse_continuity": 0.001572,
+          "slip_velocity_decay_ratio": 0.000000,
+          "final_slip_speed": 0.000000,
+          "resting_drift_distance": 0.248037
+        },
+        "two_axis_friction_off": {
+          "manifold_tangent_impulse_continuity": 0.001270,
+          "slip_velocity_decay_ratio": 0.000000,
+          "final_slip_speed": 0.000000,
+          "resting_drift_distance": 0.303623
+        }
+      },
+      "failures": []
+    },
+    {
+      "name": "2-point box resting on plane",
+      "pass": true,
+      "readiness_pass": true,
+      "scalar": {
+        "max_penetration": 0.024544,
+        "p95_penetration": 0.001832,
+        "contact_count_stddev": 0.911840,
+        "contact_count_mean_step_delta": 0.032181,
+        "max_impulse_delta": 2.454791,
+        "mean_impulse_delta": 0.006090,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.008326,
+        "slip_velocity_decay_ratio": 0.002413,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 0.240629,
+        "rest_window_com_drift": 0.240634,
+        "rest_window_angular_jitter_rms": 0.000133,
+        "manifold_churn_per_step": 0.041667,
+        "sleep_entry_latency": 1.750000,
+        "wake_flap_count": 6,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 0,
+          "blockSolveUsed": 0,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 16,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 48,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 48,
+            "selected_block_size": 32,
+            "block_used": 0,
+            "fallback_used": 16,
+            "fallback_reason": {
+              "none": 0,
+              "ineligible": 16,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 0.000000,
+            "determinant_or_condition_estimate_samples": 0,
+            "impulse_continuity_metric_sum": 0.000000,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 48, "selected_block_size": 32, "block_used": 0, "fallback_used": 16, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "block": {
+        "max_penetration": 0.024271,
+        "p95_penetration": 0.001365,
+        "contact_count_stddev": 1.195512,
+        "contact_count_mean_step_delta": 0.026222,
+        "max_impulse_delta": 2.701591,
+        "mean_impulse_delta": 0.004708,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.008387,
+        "slip_velocity_decay_ratio": 34.898724,
+        "final_slip_speed": 0.000349,
+        "resting_drift_distance": 0.241127,
+        "rest_window_com_drift": 0.241085,
+        "rest_window_angular_jitter_rms": 0.000138,
+        "manifold_churn_per_step": 0.038095,
+        "sleep_entry_latency": 1.741667,
+        "wake_flap_count": 6,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 138.335632,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.063183,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 138.335632, "impulse_continuity_metric_sum": 0.063183}
+          }
+        }
+      },
+      "face4": {
+        "max_penetration": 0.024271,
+        "contact_count_stddev": 1.195512,
+        "contact_count_mean_step_delta": 0.026222,
+        "max_impulse_delta": 2.701591,
+        "mean_impulse_delta": 0.004708,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.008387,
+        "slip_velocity_decay_ratio": 34.898724,
+        "final_slip_speed": 0.000349,
+        "resting_drift_distance": 0.241127,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 138.335632,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.063183,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 138.335632, "impulse_continuity_metric_sum": 0.063183}
+          }
+        }
+      },
+      "ablation": {
+        "manifold_budget_off": {
+          "manifold_tangent_impulse_continuity": 0.008390,
+          "slip_velocity_decay_ratio": 34.898331,
+          "final_slip_speed": 0.000349,
+          "resting_drift_distance": 0.241125
+        },
+        "two_axis_friction_off": {
+          "manifold_tangent_impulse_continuity": 0.004976,
+          "slip_velocity_decay_ratio": 25.303030,
+          "final_slip_speed": 0.000253,
+          "resting_drift_distance": 0.267449
+        }
+      },
+      "failures": []
+    },
+    {
+      "name": "tilted box settling",
+      "pass": true,
+      "readiness_pass": true,
+      "scalar": {
+        "max_penetration": 0.032864,
+        "p95_penetration": 0.001518,
+        "contact_count_stddev": 1.236843,
+        "contact_count_mean_step_delta": 0.019587,
+        "max_impulse_delta": 8.237784,
+        "mean_impulse_delta": 0.006451,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.014411,
+        "slip_velocity_decay_ratio": 52.711880,
+        "final_slip_speed": 0.000527,
+        "resting_drift_distance": 0.441369,
+        "rest_window_com_drift": 0.441205,
+        "rest_window_angular_jitter_rms": 0.000152,
+        "manifold_churn_per_step": 0.039130,
+        "sleep_entry_latency": 1.891667,
+        "wake_flap_count": 6,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 0,
+          "blockSolveUsed": 0,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 16,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 64,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 0,
+            "fallback_used": 16,
+            "fallback_reason": {
+              "none": 0,
+              "ineligible": 16,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 0.000000,
+            "determinant_or_condition_estimate_samples": 0,
+            "impulse_continuity_metric_sum": 0.069373,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 0, "fallback_used": 16, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.069373}
+          }
+        }
+      },
+      "block": {
+        "max_penetration": 0.032864,
+        "p95_penetration": 0.001517,
+        "contact_count_stddev": 1.236843,
+        "contact_count_mean_step_delta": 0.019587,
+        "max_impulse_delta": 8.237784,
+        "mean_impulse_delta": 0.006429,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.014413,
+        "slip_velocity_decay_ratio": 53.043728,
+        "final_slip_speed": 0.000530,
+        "resting_drift_distance": 0.441388,
+        "rest_window_com_drift": 0.441222,
+        "rest_window_angular_jitter_rms": 0.000157,
+        "manifold_churn_per_step": 0.039130,
+        "sleep_entry_latency": 1.891667,
+        "wake_flap_count": 6,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 76.054413,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.064736,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 76.054413, "impulse_continuity_metric_sum": 0.064736}
+          }
+        }
+      },
+      "face4": {
+        "max_penetration": 0.032864,
+        "contact_count_stddev": 1.236843,
+        "contact_count_mean_step_delta": 0.019587,
+        "max_impulse_delta": 8.237784,
+        "mean_impulse_delta": 0.006429,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.014413,
+        "slip_velocity_decay_ratio": 53.043728,
+        "final_slip_speed": 0.000530,
+        "resting_drift_distance": 0.441388,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 76.054413,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.064736,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 76.054413, "impulse_continuity_metric_sum": 0.064736}
+          }
+        }
+      },
+      "ablation": {
+        "manifold_budget_off": {
+          "manifold_tangent_impulse_continuity": 0.014413,
+          "slip_velocity_decay_ratio": 53.043259,
+          "final_slip_speed": 0.000530,
+          "resting_drift_distance": 0.441388
+        },
+        "two_axis_friction_off": {
+          "manifold_tangent_impulse_continuity": 0.011876,
+          "slip_velocity_decay_ratio": 7.991457,
+          "final_slip_speed": 0.000080,
+          "resting_drift_distance": 0.491398
+        }
+      },
+      "failures": []
+    },
+    {
+      "name": "slightly offset box stacks",
+      "pass": true,
+      "readiness_pass": true,
+      "scalar": {
+        "max_penetration": 2.407214,
+        "p95_penetration": 0.004529,
+        "contact_count_stddev": 4.371487,
+        "contact_count_mean_step_delta": 0.143143,
+        "max_impulse_delta": 14.631117,
+        "mean_impulse_delta": 0.022485,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.043002,
+        "slip_velocity_decay_ratio": 2.278430,
+        "final_slip_speed": 0.000023,
+        "resting_drift_distance": 6.060865,
+        "rest_window_com_drift": 6.060874,
+        "rest_window_angular_jitter_rms": 0.000033,
+        "manifold_churn_per_step": 0.855000,
+        "sleep_entry_latency": 2.950000,
+        "wake_flap_count": 15,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 0,
+          "blockSolveUsed": 0,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 48,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 3
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 48,
+          "tangentImpulseReprojected": 3,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 176,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 48,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 176,
+            "selected_block_size": 96,
+            "block_used": 0,
+            "fallback_used": 48,
+            "fallback_reason": {
+              "none": 0,
+              "ineligible": 48,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 0.000000,
+            "determinant_or_condition_estimate_samples": 0,
+            "impulse_continuity_metric_sum": 0.008808,
+            "impulse_continuity_metric_samples": 48
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 176, "selected_block_size": 96, "block_used": 0, "fallback_used": 48, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.008808}
+          }
+        }
+      },
+      "block": {
+        "max_penetration": 2.405920,
+        "p95_penetration": 0.001463,
+        "contact_count_stddev": 4.860588,
+        "contact_count_mean_step_delta": 0.118118,
+        "max_impulse_delta": 14.647740,
+        "mean_impulse_delta": 0.018536,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.045999,
+        "slip_velocity_decay_ratio": 36.657578,
+        "final_slip_speed": 0.000367,
+        "resting_drift_distance": 5.997182,
+        "rest_window_com_drift": 5.997183,
+        "rest_window_angular_jitter_rms": 0.000115,
+        "manifold_churn_per_step": 0.878000,
+        "sleep_entry_latency": 2.950000,
+        "wake_flap_count": 15,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 48,
+          "blockSolveUsed": 48,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 3
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 48,
+          "tangentImpulseReprojected": 3,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 96,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 48,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 192,
+            "selected_block_size": 96,
+            "block_used": 48,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 48,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 400.032040,
+            "determinant_or_condition_estimate_samples": 48,
+            "impulse_continuity_metric_sum": 0.211621,
+            "impulse_continuity_metric_samples": 48
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 192, "selected_block_size": 96, "block_used": 48, "fallback_used": 0, "determinant_or_condition_estimate_sum": 400.032040, "impulse_continuity_metric_sum": 0.211621}
+          }
+        }
+      },
+      "face4": {
+        "max_penetration": 2.405920,
+        "contact_count_stddev": 4.860588,
+        "contact_count_mean_step_delta": 0.118118,
+        "max_impulse_delta": 14.647740,
+        "mean_impulse_delta": 0.018536,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.045999,
+        "slip_velocity_decay_ratio": 36.657578,
+        "final_slip_speed": 0.000367,
+        "resting_drift_distance": 5.997182,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 48,
+          "blockSolveUsed": 48,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 3
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 48,
+          "tangentImpulseReprojected": 3,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 96,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 48,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 192,
+            "selected_block_size": 96,
+            "block_used": 48,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 48,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 400.032040,
+            "determinant_or_condition_estimate_samples": 48,
+            "impulse_continuity_metric_sum": 0.211621,
+            "impulse_continuity_metric_samples": 48
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 192, "selected_block_size": 96, "block_used": 48, "fallback_used": 0, "determinant_or_condition_estimate_sum": 400.032040, "impulse_continuity_metric_sum": 0.211621}
+          }
+        }
+      },
+      "ablation": {
+        "manifold_budget_off": {
+          "manifold_tangent_impulse_continuity": 0.046357,
+          "slip_velocity_decay_ratio": 36.661484,
+          "final_slip_speed": 0.000367,
+          "resting_drift_distance": 5.996189
+        },
+        "two_axis_friction_off": {
+          "manifold_tangent_impulse_continuity": 0.038757,
+          "slip_velocity_decay_ratio": 1870.946777,
+          "final_slip_speed": 0.018709,
+          "resting_drift_distance": 1.250584
+        }
+      },
+      "failures": []
+    },
+    {
+      "name": "minimized penetration stack case",
+      "pass": true,
+      "readiness_pass": true,
+      "scalar": {
+        "max_penetration": 2.407214,
+        "p95_penetration": 0.004533,
+        "contact_count_stddev": 3.555905,
+        "contact_count_mean_step_delta": 0.275530,
+        "max_impulse_delta": 14.631117,
+        "mean_impulse_delta": 0.079244,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.132797,
+        "slip_velocity_decay_ratio": 2.864689,
+        "final_slip_speed": 0.000029,
+        "resting_drift_distance": 6.060944,
+        "rest_window_com_drift": 5.946837,
+        "rest_window_angular_jitter_rms": 1.293363,
+        "manifold_churn_per_step": 1.644231,
+        "sleep_entry_latency": 2.950000,
+        "wake_flap_count": 3,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 0,
+          "blockSolveUsed": 0,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 48,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 3
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 48,
+          "tangentImpulseReprojected": 3,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 176,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 48,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 176,
+            "selected_block_size": 96,
+            "block_used": 0,
+            "fallback_used": 48,
+            "fallback_reason": {
+              "none": 0,
+              "ineligible": 48,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 0.000000,
+            "determinant_or_condition_estimate_samples": 0,
+            "impulse_continuity_metric_sum": 0.008907,
+            "impulse_continuity_metric_samples": 48
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 176, "selected_block_size": 96, "block_used": 0, "fallback_used": 48, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.008907}
+          }
+        }
+      },
+      "block": {
+        "max_penetration": 2.405920,
+        "p95_penetration": 0.003562,
+        "contact_count_stddev": 4.199756,
+        "contact_count_mean_step_delta": 0.227360,
+        "max_impulse_delta": 14.647740,
+        "mean_impulse_delta": 0.064167,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.145431,
+        "slip_velocity_decay_ratio": 36.659039,
+        "final_slip_speed": 0.000367,
+        "resting_drift_distance": 5.997192,
+        "rest_window_com_drift": 5.961906,
+        "rest_window_angular_jitter_rms": 1.765901,
+        "manifold_churn_per_step": 1.688462,
+        "sleep_entry_latency": 2.950000,
+        "wake_flap_count": 3,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 48,
+          "blockSolveUsed": 48,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 3
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 48,
+          "tangentImpulseReprojected": 3,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 96,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 48,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 192,
+            "selected_block_size": 96,
+            "block_used": 48,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 48,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 400.167717,
+            "determinant_or_condition_estimate_samples": 48,
+            "impulse_continuity_metric_sum": 0.211601,
+            "impulse_continuity_metric_samples": 48
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 192, "selected_block_size": 96, "block_used": 48, "fallback_used": 0, "determinant_or_condition_estimate_sum": 400.167717, "impulse_continuity_metric_sum": 0.211601}
+          }
+        }
+      },
+      "face4": {
+        "max_penetration": 2.405920,
+        "contact_count_stddev": 4.199756,
+        "contact_count_mean_step_delta": 0.227360,
+        "max_impulse_delta": 14.647740,
+        "mean_impulse_delta": 0.064167,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.145431,
+        "slip_velocity_decay_ratio": 36.659039,
+        "final_slip_speed": 0.000367,
+        "resting_drift_distance": 5.997192,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 48,
+          "blockSolveUsed": 48,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 3
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 48,
+          "tangentImpulseReprojected": 3,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 96,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 48,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 192,
+            "selected_block_size": 96,
+            "block_used": 48,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 48,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 400.167717,
+            "determinant_or_condition_estimate_samples": 48,
+            "impulse_continuity_metric_sum": 0.211601,
+            "impulse_continuity_metric_samples": 48
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 192, "selected_block_size": 96, "block_used": 48, "fallback_used": 0, "determinant_or_condition_estimate_sum": 400.167717, "impulse_continuity_metric_sum": 0.211601}
+          }
+        }
+      },
+      "ablation": {
+        "manifold_budget_off": {
+          "manifold_tangent_impulse_continuity": 0.147014,
+          "slip_velocity_decay_ratio": 36.662186,
+          "final_slip_speed": 0.000367,
+          "resting_drift_distance": 5.997033
+        },
+        "two_axis_friction_off": {
+          "manifold_tangent_impulse_continuity": 0.090578,
+          "slip_velocity_decay_ratio": 2101.991943,
+          "final_slip_speed": 0.021020,
+          "resting_drift_distance": 1.242856
+        }
+      },
+      "failures": []
+    },
+    {
+      "name": "minimized contact variance reorder case",
+      "pass": true,
+      "readiness_pass": true,
+      "scalar": {
+        "max_penetration": 0.017275,
+        "p95_penetration": 0.000566,
+        "contact_count_stddev": 1.490715,
+        "contact_count_mean_step_delta": 0.041754,
+        "max_impulse_delta": 2.252038,
+        "mean_impulse_delta": 0.008790,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.003535,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 0.248035,
+        "rest_window_com_drift": 0.248035,
+        "rest_window_angular_jitter_rms": 0.000016,
+        "manifold_churn_per_step": 0.052083,
+        "sleep_entry_latency": 1.675000,
+        "wake_flap_count": 3,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 0,
+          "blockSolveUsed": 0,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 16,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 64,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 0,
+            "fallback_used": 16,
+            "fallback_reason": {
+              "none": 0,
+              "ineligible": 16,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 0.000000,
+            "determinant_or_condition_estimate_samples": 0,
+            "impulse_continuity_metric_sum": 0.000000,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 0, "fallback_used": 16, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "block": {
+        "max_penetration": 0.017275,
+        "p95_penetration": 0.000562,
+        "contact_count_stddev": 1.490715,
+        "contact_count_mean_step_delta": 0.041754,
+        "max_impulse_delta": 2.252038,
+        "mean_impulse_delta": 0.008257,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.003463,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 0.248037,
+        "rest_window_com_drift": 0.248037,
+        "rest_window_angular_jitter_rms": 0.000000,
+        "manifold_churn_per_step": 0.052083,
+        "sleep_entry_latency": 1.675000,
+        "wake_flap_count": 3,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 46.154198,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.000000,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 46.154198, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "face4": {
+        "max_penetration": 0.017275,
+        "contact_count_stddev": 1.490715,
+        "contact_count_mean_step_delta": 0.041754,
+        "max_impulse_delta": 2.252038,
+        "mean_impulse_delta": 0.008257,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.003463,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 0.248037,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 46.154198,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.000000,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 46.154198, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "ablation": {
+        "manifold_budget_off": {
+          "manifold_tangent_impulse_continuity": 0.003463,
+          "slip_velocity_decay_ratio": 0.000000,
+          "final_slip_speed": 0.000000,
+          "resting_drift_distance": 0.248037
+        },
+        "two_axis_friction_off": {
+          "manifold_tangent_impulse_continuity": 0.002797,
+          "slip_velocity_decay_ratio": 0.000000,
+          "final_slip_speed": 0.000000,
+          "resting_drift_distance": 0.303623
+        }
+      },
+      "failures": []
+    },
+    {
+      "name": "sliding box coming to rest",
+      "pass": true,
+      "readiness_pass": true,
+      "scalar": {
+        "max_penetration": 0.005094,
+        "p95_penetration": 0.004166,
+        "contact_count_stddev": 0.871768,
+        "contact_count_mean_step_delta": 0.004449,
+        "max_impulse_delta": 3.092841,
+        "mean_impulse_delta": 0.002876,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.006796,
+        "slip_velocity_decay_ratio": 0.000001,
+        "final_slip_speed": 0.000002,
+        "resting_drift_distance": 1.326732,
+        "rest_window_com_drift": 1.326730,
+        "rest_window_angular_jitter_rms": 0.000016,
+        "manifold_churn_per_step": 0.001111,
+        "sleep_entry_latency": 1.408333,
+        "wake_flap_count": 7,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 0,
+          "blockSolveUsed": 0,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 16,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 64,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 0,
+            "fallback_used": 16,
+            "fallback_reason": {
+              "none": 0,
+              "ineligible": 16,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 0.000000,
+            "determinant_or_condition_estimate_samples": 0,
+            "impulse_continuity_metric_sum": 0.000297,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 0, "fallback_used": 16, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.000297}
+          }
+        }
+      },
+      "block": {
+        "max_penetration": 0.005094,
+        "p95_penetration": 0.004173,
+        "contact_count_stddev": 0.871768,
+        "contact_count_mean_step_delta": 0.004449,
+        "max_impulse_delta": 3.080585,
+        "mean_impulse_delta": 0.002585,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.006774,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 1.326757,
+        "rest_window_com_drift": 1.326757,
+        "rest_window_angular_jitter_rms": 0.000000,
+        "manifold_churn_per_step": 0.001111,
+        "sleep_entry_latency": 1.408333,
+        "wake_flap_count": 7,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 85.698029,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.000000,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 85.698029, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "face4": {
+        "max_penetration": 0.005094,
+        "contact_count_stddev": 0.871768,
+        "contact_count_mean_step_delta": 0.004449,
+        "max_impulse_delta": 3.080585,
+        "mean_impulse_delta": 0.002585,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.006774,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 1.326757,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 85.698029,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.000000,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 85.698029, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "ablation": {
+        "manifold_budget_off": {
+          "manifold_tangent_impulse_continuity": 0.006774,
+          "slip_velocity_decay_ratio": 0.000000,
+          "final_slip_speed": 0.000000,
+          "resting_drift_distance": 1.326757
+        },
+        "two_axis_friction_off": {
+          "manifold_tangent_impulse_continuity": 0.006737,
+          "slip_velocity_decay_ratio": 0.202026,
+          "final_slip_speed": 0.710618,
+          "resting_drift_distance": 5.485121
+        }
+      },
+      "failures": []
+    },
+    {
+      "name": "face-contact slide-to-rest",
+      "pass": true,
+      "readiness_pass": true,
+      "scalar": {
+        "max_penetration": 0.031150,
+        "p95_penetration": 0.004827,
+        "contact_count_stddev": 1.148277,
+        "contact_count_mean_step_delta": 0.020855,
+        "max_impulse_delta": 1.941589,
+        "mean_impulse_delta": 0.003375,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.006469,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 1.122862,
+        "rest_window_com_drift": 1.122861,
+        "rest_window_angular_jitter_rms": 0.000012,
+        "manifold_churn_per_step": 0.041667,
+        "sleep_entry_latency": 1.733333,
+        "wake_flap_count": 7,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 0,
+          "blockSolveUsed": 0,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 16,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 64,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 0,
+            "fallback_used": 16,
+            "fallback_reason": {
+              "none": 0,
+              "ineligible": 16,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 0.000000,
+            "determinant_or_condition_estimate_samples": 0,
+            "impulse_continuity_metric_sum": 0.000000,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 0, "fallback_used": 16, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "block": {
+        "max_penetration": 0.031150,
+        "p95_penetration": 0.004822,
+        "contact_count_stddev": 1.148277,
+        "contact_count_mean_step_delta": 0.020855,
+        "max_impulse_delta": 1.941589,
+        "mean_impulse_delta": 0.003000,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.006438,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 1.122853,
+        "rest_window_com_drift": 1.122853,
+        "rest_window_angular_jitter_rms": 0.000000,
+        "manifold_churn_per_step": 0.041667,
+        "sleep_entry_latency": 1.733333,
+        "wake_flap_count": 7,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 79.339279,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.000000,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 79.339279, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "face4": {
+        "max_penetration": 0.031150,
+        "contact_count_stddev": 1.148277,
+        "contact_count_mean_step_delta": 0.020855,
+        "max_impulse_delta": 1.941589,
+        "mean_impulse_delta": 0.003000,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.006438,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 1.122853,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 79.339279,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.000000,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 79.339279, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "ablation": {
+        "manifold_budget_off": {
+          "manifold_tangent_impulse_continuity": 0.006438,
+          "slip_velocity_decay_ratio": 0.000000,
+          "final_slip_speed": 0.000000,
+          "resting_drift_distance": 1.122853
+        },
+        "two_axis_friction_off": {
+          "manifold_tangent_impulse_continuity": 0.006249,
+          "slip_velocity_decay_ratio": 0.029302,
+          "final_slip_speed": 0.082256,
+          "resting_drift_distance": 0.780780
+        }
+      },
+      "failures": []
+    },
+    {
+      "name": "face-contact mild rocking",
+      "pass": true,
+      "readiness_pass": true,
+      "scalar": {
+        "max_penetration": 0.007322,
+        "p95_penetration": 0.003222,
+        "contact_count_stddev": 0.729876,
+        "contact_count_mean_step_delta": 0.003707,
+        "max_impulse_delta": 4.326710,
+        "mean_impulse_delta": 0.003430,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.005969,
+        "slip_velocity_decay_ratio": 0.000629,
+        "final_slip_speed": 0.000454,
+        "resting_drift_distance": 0.246292,
+        "rest_window_com_drift": 0.246159,
+        "rest_window_angular_jitter_rms": 0.000109,
+        "manifold_churn_per_step": 0.000926,
+        "sleep_entry_latency": 1.325000,
+        "wake_flap_count": 8,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 0,
+          "blockSolveUsed": 0,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 16,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 64,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 0,
+            "fallback_used": 16,
+            "fallback_reason": {
+              "none": 0,
+              "ineligible": 16,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 0.000000,
+            "determinant_or_condition_estimate_samples": 0,
+            "impulse_continuity_metric_sum": 0.093540,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 0, "fallback_used": 16, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.093540}
+          }
+        }
+      },
+      "block": {
+        "max_penetration": 0.007322,
+        "p95_penetration": 0.003247,
+        "contact_count_stddev": 0.729876,
+        "contact_count_mean_step_delta": 0.003707,
+        "max_impulse_delta": 4.326713,
+        "mean_impulse_delta": 0.003401,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.005971,
+        "slip_velocity_decay_ratio": 0.000634,
+        "final_slip_speed": 0.000457,
+        "resting_drift_distance": 0.246296,
+        "rest_window_com_drift": 0.246163,
+        "rest_window_angular_jitter_rms": 0.000113,
+        "manifold_churn_per_step": 0.000926,
+        "sleep_entry_latency": 1.325000,
+        "wake_flap_count": 8,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 83.051781,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.087522,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 83.051781, "impulse_continuity_metric_sum": 0.087522}
+          }
+        }
+      },
+      "face4": {
+        "max_penetration": 0.007322,
+        "contact_count_stddev": 0.729876,
+        "contact_count_mean_step_delta": 0.003707,
+        "max_impulse_delta": 4.326713,
+        "mean_impulse_delta": 0.003401,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.005971,
+        "slip_velocity_decay_ratio": 0.000634,
+        "final_slip_speed": 0.000457,
+        "resting_drift_distance": 0.246296,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 83.051781,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.087522,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 83.051781, "impulse_continuity_metric_sum": 0.087522}
+          }
+        }
+      },
+      "ablation": {
+        "manifold_budget_off": {
+          "manifold_tangent_impulse_continuity": 0.005971,
+          "slip_velocity_decay_ratio": 0.000634,
+          "final_slip_speed": 0.000457,
+          "resting_drift_distance": 0.246296
+        },
+        "two_axis_friction_off": {
+          "manifold_tangent_impulse_continuity": 0.003368,
+          "slip_velocity_decay_ratio": 0.838735,
+          "final_slip_speed": 0.604820,
+          "resting_drift_distance": 5.444703
+        }
+      },
+      "failures": []
+    },
+    {
+      "name": "face-contact stick-slip transition",
+      "pass": true,
+      "readiness_pass": true,
+      "scalar": {
+        "max_penetration": 0.028450,
+        "p95_penetration": 0.002528,
+        "contact_count_stddev": 1.087592,
+        "contact_count_mean_step_delta": 0.019627,
+        "max_impulse_delta": 1.403632,
+        "mean_impulse_delta": 0.002860,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.002867,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 0.548341,
+        "rest_window_com_drift": 0.548341,
+        "rest_window_angular_jitter_rms": 0.000015,
+        "manifold_churn_per_step": 0.035294,
+        "sleep_entry_latency": 1.691667,
+        "wake_flap_count": 7,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 0,
+          "blockSolveUsed": 0,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 16,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 64,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 0,
+            "fallback_used": 16,
+            "fallback_reason": {
+              "none": 0,
+              "ineligible": 16,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 0.000000,
+            "determinant_or_condition_estimate_samples": 0,
+            "impulse_continuity_metric_sum": 0.000001,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 0, "fallback_used": 16, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.000001}
+          }
+        }
+      },
+      "block": {
+        "max_penetration": 0.028450,
+        "p95_penetration": 0.002521,
+        "contact_count_stddev": 1.087592,
+        "contact_count_mean_step_delta": 0.019627,
+        "max_impulse_delta": 1.403632,
+        "mean_impulse_delta": 0.002528,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.002839,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 0.548333,
+        "rest_window_com_drift": 0.548333,
+        "rest_window_angular_jitter_rms": 0.000000,
+        "manifold_churn_per_step": 0.035294,
+        "sleep_entry_latency": 1.691667,
+        "wake_flap_count": 7,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 84.039711,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.000000,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 84.039711, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "face4": {
+        "max_penetration": 0.028450,
+        "contact_count_stddev": 1.087592,
+        "contact_count_mean_step_delta": 0.019627,
+        "max_impulse_delta": 1.403632,
+        "mean_impulse_delta": 0.002528,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.002839,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 0.548333,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 84.039711,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.000000,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 84.039711, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "ablation": {
+        "manifold_budget_off": {
+          "manifold_tangent_impulse_continuity": 0.002839,
+          "slip_velocity_decay_ratio": 0.000000,
+          "final_slip_speed": 0.000000,
+          "resting_drift_distance": 0.548333
+        },
+        "two_axis_friction_off": {
+          "manifold_tangent_impulse_continuity": 0.002519,
+          "slip_velocity_decay_ratio": 0.123405,
+          "final_slip_speed": 0.172767,
+          "resting_drift_distance": 1.649611
+        }
+      },
+      "failures": []
+    },
+    {
+      "name": "face4 ill-conditioned fallback case",
+      "pass": true,
+      "readiness_pass": true,
+      "scalar": {
+        "max_penetration": 0.017208,
+        "p95_penetration": 0.003250,
+        "contact_count_stddev": 0.837143,
+        "contact_count_mean_step_delta": 0.028241,
+        "max_impulse_delta": 0.180753,
+        "mean_impulse_delta": 0.000829,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.000912,
+        "slip_velocity_decay_ratio": 0.002207,
+        "final_slip_speed": 0.000221,
+        "resting_drift_distance": 0.067714,
+        "rest_window_com_drift": 0.067607,
+        "rest_window_angular_jitter_rms": 0.000508,
+        "manifold_churn_per_step": 0.025641,
+        "sleep_entry_latency": 1.466667,
+        "wake_flap_count": 6,
+        "mean_stable_type9_contacts": 3.758974,
+        "telemetry": {
+          "blockSolveEligible": 0,
+          "blockSolveUsed": 0,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 16,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 64,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 0,
+            "fallback_used": 16,
+            "fallback_reason": {
+              "none": 0,
+              "ineligible": 16,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 0.000000,
+            "determinant_or_condition_estimate_samples": 0,
+            "impulse_continuity_metric_sum": 0.016794,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "9": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 0, "fallback_used": 16, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.016794}
+          }
+        }
+      },
+      "block": {
+        "max_penetration": 0.017209,
+        "p95_penetration": 0.002245,
+        "contact_count_stddev": 0.909497,
+        "contact_count_mean_step_delta": 0.038511,
+        "max_impulse_delta": 0.177179,
+        "mean_impulse_delta": 0.000778,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.000883,
+        "slip_velocity_decay_ratio": 0.003303,
+        "final_slip_speed": 0.000330,
+        "resting_drift_distance": 0.070262,
+        "rest_window_com_drift": 0.070100,
+        "rest_window_angular_jitter_rms": 0.000709,
+        "manifold_churn_per_step": 0.034615,
+        "sleep_entry_latency": 1.533333,
+        "wake_flap_count": 5,
+        "mean_stable_type9_contacts": 3.717949,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 517.488281,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.005909,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "9": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 517.488281, "impulse_continuity_metric_sum": 0.005909}
+          }
+        }
+      },
+      "face4": {
+        "max_penetration": 0.017209,
+        "contact_count_stddev": 0.909497,
+        "contact_count_mean_step_delta": 0.038511,
+        "max_impulse_delta": 0.177179,
+        "mean_impulse_delta": 0.000778,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.000883,
+        "slip_velocity_decay_ratio": 0.003303,
+        "final_slip_speed": 0.000330,
+        "resting_drift_distance": 0.070262,
+        "mean_stable_type9_contacts": 3.717949,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 16,
+            "used": 0,
+            "fallback_to_block2": 16,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 517.488281,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.005909,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "9": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 517.488281, "impulse_continuity_metric_sum": 0.005909}
+          }
+        }
+      },
+      "ablation": {
+        "manifold_budget_off": {
+          "manifold_tangent_impulse_continuity": 0.000883,
+          "slip_velocity_decay_ratio": 0.003303,
+          "final_slip_speed": 0.000330,
+          "resting_drift_distance": 0.070262
+        },
+        "two_axis_friction_off": {
+          "manifold_tangent_impulse_continuity": 0.000538,
+          "slip_velocity_decay_ratio": 0.000527,
+          "final_slip_speed": 0.000053,
+          "resting_drift_distance": 0.063070
+        }
+      },
+      "failures": []
+    },
+    {
+      "name": "tall stack tower",
+      "pass": true,
+      "readiness_pass": true,
+      "scalar": {
+        "max_penetration": 1.789856,
+        "p95_penetration": 0.003287,
+        "contact_count_stddev": 10.606010,
+        "contact_count_mean_step_delta": 0.521268,
+        "max_impulse_delta": 12.470573,
+        "mean_impulse_delta": 0.013567,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.019291,
+        "slip_velocity_decay_ratio": 52.756912,
+        "final_slip_speed": 0.000528,
+        "resting_drift_distance": 2.669870,
+        "rest_window_com_drift": 2.669758,
+        "rest_window_angular_jitter_rms": 0.000611,
+        "manifold_churn_per_step": 2.080833,
+        "sleep_entry_latency": 3.283334,
+        "wake_flap_count": 44,
+        "mean_stable_type9_contacts": 0.005000,
+        "telemetry": {
+          "blockSolveEligible": 0,
+          "blockSolveUsed": 0,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 128,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 1,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 8
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 128,
+          "tangentImpulseReprojected": 8,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 1,
+          "anchor_reuse_hit_count": 416,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 96,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 1,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 432,
+            "selected_block_size": 224,
+            "block_used": 0,
+            "fallback_used": 128,
+            "fallback_reason": {
+              "none": 0,
+              "ineligible": 128,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 0.000000,
+            "determinant_or_condition_estimate_samples": 0,
+            "impulse_continuity_metric_sum": 0.170536,
+            "impulse_continuity_metric_samples": 128
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 416, "selected_block_size": 224, "block_used": 0, "fallback_used": 112, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.170536},
+            "10": {"manifold_contact_count": 16, "selected_block_size": 0, "block_used": 0, "fallback_used": 16, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "block": {
+        "max_penetration": 3.157517,
+        "p95_penetration": 0.004590,
+        "contact_count_stddev": 8.485712,
+        "contact_count_mean_step_delta": 0.645538,
+        "max_impulse_delta": 15.529226,
+        "mean_impulse_delta": 0.012532,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.015813,
+        "slip_velocity_decay_ratio": 45.428802,
+        "final_slip_speed": 0.000454,
+        "resting_drift_distance": 3.572482,
+        "rest_window_com_drift": 3.572458,
+        "rest_window_angular_jitter_rms": 0.000417,
+        "manifold_churn_per_step": 1.283333,
+        "sleep_entry_latency": 1.816667,
+        "wake_flap_count": 51,
+        "mean_stable_type9_contacts": 0.004167,
+        "telemetry": {
+          "blockSolveEligible": 112,
+          "blockSolveUsed": 112,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 1,
+          "manifoldPointRemoves": 1,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 7
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 112,
+          "tangentImpulseReprojected": 7,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 176,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 112,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 416,
+            "selected_block_size": 224,
+            "block_used": 112,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 112,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 1180.654572,
+            "determinant_or_condition_estimate_samples": 112,
+            "impulse_continuity_metric_sum": 0.218882,
+            "impulse_continuity_metric_samples": 112
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 416, "selected_block_size": 224, "block_used": 112, "fallback_used": 0, "determinant_or_condition_estimate_sum": 1180.654572, "impulse_continuity_metric_sum": 0.218882}
+          }
+        }
+      },
+      "face4": {
+        "max_penetration": 3.157517,
+        "contact_count_stddev": 8.485712,
+        "contact_count_mean_step_delta": 0.645538,
+        "max_impulse_delta": 15.529226,
+        "mean_impulse_delta": 0.012532,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.015813,
+        "slip_velocity_decay_ratio": 45.428802,
+        "final_slip_speed": 0.000454,
+        "resting_drift_distance": 3.572482,
+        "mean_stable_type9_contacts": 0.004167,
+        "telemetry": {
+          "blockSolveEligible": 112,
+          "blockSolveUsed": 112,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 1,
+          "manifoldPointRemoves": 1,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 7
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 112,
+          "tangentImpulseReprojected": 7,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 176,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 112,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 416,
+            "selected_block_size": 224,
+            "block_used": 112,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 112,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 1180.654572,
+            "determinant_or_condition_estimate_samples": 112,
+            "impulse_continuity_metric_sum": 0.218882,
+            "impulse_continuity_metric_samples": 112
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 416, "selected_block_size": 224, "block_used": 112, "fallback_used": 0, "determinant_or_condition_estimate_sum": 1180.654572, "impulse_continuity_metric_sum": 0.218882}
+          }
+        }
+      },
+      "ablation": {
+        "manifold_budget_off": {
+          "manifold_tangent_impulse_continuity": 0.018430,
+          "slip_velocity_decay_ratio": 29.773958,
+          "final_slip_speed": 0.000298,
+          "resting_drift_distance": 2.454937
+        },
+        "two_axis_friction_off": {
+          "manifold_tangent_impulse_continuity": 0.011741,
+          "slip_velocity_decay_ratio": 42096.902344,
+          "final_slip_speed": 0.420969,
+          "resting_drift_distance": 5.110660
+        }
+      },
+      "failures": []
+    },
+    {
+      "name": "heavy-on-light resting",
+      "pass": true,
+      "readiness_pass": true,
+      "scalar": {
+        "max_penetration": 3.694066,
+        "p95_penetration": 0.003074,
+        "contact_count_stddev": 2.406257,
+        "contact_count_mean_step_delta": 0.094532,
+        "max_impulse_delta": 18.799229,
+        "mean_impulse_delta": 0.026548,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.019527,
+        "slip_velocity_decay_ratio": 5.550501,
+        "final_slip_speed": 0.000056,
+        "resting_drift_distance": 0.999411,
+        "rest_window_com_drift": 0.999427,
+        "rest_window_angular_jitter_rms": 0.000024,
+        "manifold_churn_per_step": 0.356481,
+        "sleep_entry_latency": 1.658333,
+        "wake_flap_count": 12,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 0,
+          "blockSolveUsed": 0,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 32,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 2
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 32,
+          "tangentImpulseReprojected": 2,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 128,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 32,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 128,
+            "selected_block_size": 64,
+            "block_used": 0,
+            "fallback_used": 32,
+            "fallback_reason": {
+              "none": 0,
+              "ineligible": 32,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 0.000000,
+            "determinant_or_condition_estimate_samples": 0,
+            "impulse_continuity_metric_sum": 0.162261,
+            "impulse_continuity_metric_samples": 32
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 128, "selected_block_size": 64, "block_used": 0, "fallback_used": 32, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.162261}
+          }
+        }
+      },
+      "block": {
+        "max_penetration": 3.675577,
+        "p95_penetration": 0.004260,
+        "contact_count_stddev": 2.633107,
+        "contact_count_mean_step_delta": 0.077850,
+        "max_impulse_delta": 18.811531,
+        "mean_impulse_delta": 0.041960,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.022529,
+        "slip_velocity_decay_ratio": 16.845200,
+        "final_slip_speed": 0.000168,
+        "resting_drift_distance": 3.673191,
+        "rest_window_com_drift": 3.673112,
+        "rest_window_angular_jitter_rms": 0.000096,
+        "manifold_churn_per_step": 0.457407,
+        "sleep_entry_latency": 1.633333,
+        "wake_flap_count": 11,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 32,
+          "blockSolveUsed": 32,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 2
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 32,
+          "tangentImpulseReprojected": 2,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 64,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 32,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 128,
+            "selected_block_size": 64,
+            "block_used": 32,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 32,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 799.869563,
+            "determinant_or_condition_estimate_samples": 32,
+            "impulse_continuity_metric_sum": 0.027242,
+            "impulse_continuity_metric_samples": 32
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 128, "selected_block_size": 64, "block_used": 32, "fallback_used": 0, "determinant_or_condition_estimate_sum": 799.869563, "impulse_continuity_metric_sum": 0.027242}
+          }
+        }
+      },
+      "face4": {
+        "max_penetration": 3.675577,
+        "contact_count_stddev": 2.633107,
+        "contact_count_mean_step_delta": 0.077850,
+        "max_impulse_delta": 18.811531,
+        "mean_impulse_delta": 0.041960,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.022529,
+        "slip_velocity_decay_ratio": 16.845200,
+        "final_slip_speed": 0.000168,
+        "resting_drift_distance": 3.673191,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 32,
+          "blockSolveUsed": 32,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 2
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 32,
+          "tangentImpulseReprojected": 2,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 64,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 32,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 128,
+            "selected_block_size": 64,
+            "block_used": 32,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 32,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 799.869563,
+            "determinant_or_condition_estimate_samples": 32,
+            "impulse_continuity_metric_sum": 0.027242,
+            "impulse_continuity_metric_samples": 32
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 128, "selected_block_size": 64, "block_used": 32, "fallback_used": 0, "determinant_or_condition_estimate_sum": 799.869563, "impulse_continuity_metric_sum": 0.027242}
+          }
+        }
+      },
+      "ablation": {
+        "manifold_budget_off": {
+          "manifold_tangent_impulse_continuity": 0.022006,
+          "slip_velocity_decay_ratio": 44.198124,
+          "final_slip_speed": 0.000442,
+          "resting_drift_distance": 3.653065
+        },
+        "two_axis_friction_off": {
+          "manifold_tangent_impulse_continuity": 0.046021,
+          "slip_velocity_decay_ratio": 18958.316406,
+          "final_slip_speed": 0.189583,
+          "resting_drift_distance": 1.915778
+        }
+      },
+      "failures": []
+    },
+    {
+      "name": "edge-edge resting",
+      "pass": true,
+      "readiness_pass": true,
+      "scalar": {
+        "max_penetration": 0.030069,
+        "p95_penetration": 0.003117,
+        "contact_count_stddev": 1.154714,
+        "contact_count_mean_step_delta": 0.028874,
+        "max_impulse_delta": 2.657321,
+        "mean_impulse_delta": 0.005391,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.017267,
+        "slip_velocity_decay_ratio": 0.000166,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 0.718181,
+        "rest_window_com_drift": 0.718174,
+        "rest_window_angular_jitter_rms": 0.000241,
+        "manifold_churn_per_step": 0.019231,
+        "sleep_entry_latency": 2.866667,
+        "wake_flap_count": 6,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 0,
+          "blockSolveUsed": 0,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 16,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 64,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 0,
+            "fallback_used": 16,
+            "fallback_reason": {
+              "none": 0,
+              "ineligible": 16,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 0.000000,
+            "determinant_or_condition_estimate_samples": 0,
+            "impulse_continuity_metric_sum": 0.000000,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 0, "fallback_used": 16, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.000000}
+          }
+        }
+      },
+      "block": {
+        "max_penetration": 0.028855,
+        "p95_penetration": 0.003415,
+        "contact_count_stddev": 1.106085,
+        "contact_count_mean_step_delta": 0.153032,
+        "max_impulse_delta": 3.955453,
+        "mean_impulse_delta": 0.012089,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.018825,
+        "slip_velocity_decay_ratio": 94.270645,
+        "final_slip_speed": 0.000943,
+        "resting_drift_distance": 0.982552,
+        "rest_window_com_drift": 0.982508,
+        "rest_window_angular_jitter_rms": 0.000836,
+        "manifold_churn_per_step": 0.091346,
+        "sleep_entry_latency": 2.508333,
+        "wake_flap_count": 7,
+        "mean_stable_type9_contacts": 0.020192,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 1,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 16,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 48,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 80.765556,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.141931,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 48, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 80.765556, "impulse_continuity_metric_sum": 0.141931}
+          }
+        }
+      },
+      "face4": {
+        "max_penetration": 0.028855,
+        "contact_count_stddev": 1.106085,
+        "contact_count_mean_step_delta": 0.153032,
+        "max_impulse_delta": 3.955453,
+        "mean_impulse_delta": 0.012089,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.018825,
+        "slip_velocity_decay_ratio": 94.270645,
+        "final_slip_speed": 0.000943,
+        "resting_drift_distance": 0.982552,
+        "mean_stable_type9_contacts": 0.020192,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 1,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 16,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 48,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 80.765556,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.141931,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 48, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 80.765556, "impulse_continuity_metric_sum": 0.141931}
+          }
+        }
+      },
+      "ablation": {
+        "manifold_budget_off": {
+          "manifold_tangent_impulse_continuity": 0.018774,
+          "slip_velocity_decay_ratio": 51.881863,
+          "final_slip_speed": 0.000519,
+          "resting_drift_distance": 0.982614
+        },
+        "two_axis_friction_off": {
+          "manifold_tangent_impulse_continuity": 0.006810,
+          "slip_velocity_decay_ratio": 22964.318359,
+          "final_slip_speed": 0.229643,
+          "resting_drift_distance": 2.414095
+        }
+      },
+      "failures": []
+    },
+    {
+      "name": "slide-to-rest jitter",
+      "pass": true,
+      "readiness_pass": true,
+      "scalar": {
+        "max_penetration": 0.015094,
+        "p95_penetration": 0.000184,
+        "contact_count_stddev": 0.963306,
+        "contact_count_mean_step_delta": 0.018198,
+        "max_impulse_delta": 2.446415,
+        "mean_impulse_delta": 0.002896,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.005930,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 1.201325,
+        "rest_window_com_drift": 1.201324,
+        "rest_window_angular_jitter_rms": 0.000016,
+        "manifold_churn_per_step": 0.021818,
+        "sleep_entry_latency": 1.575000,
+        "wake_flap_count": 8,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 0,
+          "blockSolveUsed": 0,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 16,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 64,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 0,
+            "fallback_used": 16,
+            "fallback_reason": {
+              "none": 0,
+              "ineligible": 16,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 0.000000,
+            "determinant_or_condition_estimate_samples": 0,
+            "impulse_continuity_metric_sum": 0.000001,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 0, "fallback_used": 16, "determinant_or_condition_estimate_sum": 0.000000, "impulse_continuity_metric_sum": 0.000001}
+          }
+        }
+      },
+      "block": {
+        "max_penetration": 0.015094,
+        "p95_penetration": 0.000177,
+        "contact_count_stddev": 0.963306,
+        "contact_count_mean_step_delta": 0.018198,
+        "max_impulse_delta": 2.446415,
+        "mean_impulse_delta": 0.002557,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.005904,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 1.201318,
+        "rest_window_com_drift": 1.201318,
+        "rest_window_angular_jitter_rms": 0.000000,
+        "manifold_churn_per_step": 0.021818,
+        "sleep_entry_latency": 1.575000,
+        "wake_flap_count": 8,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 79.557968,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.000001,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 79.557968, "impulse_continuity_metric_sum": 0.000001}
+          }
+        }
+      },
+      "face4": {
+        "max_penetration": 0.015094,
+        "contact_count_stddev": 0.963306,
+        "contact_count_mean_step_delta": 0.018198,
+        "max_impulse_delta": 2.446415,
+        "mean_impulse_delta": 0.002557,
+        "settle_time_seconds": -1.000000,
+        "reorder_events": 0,
+        "tangent_basis_churn_ratio": 0.000000,
+        "manifold_tangent_impulse_continuity": 0.005904,
+        "slip_velocity_decay_ratio": 0.000000,
+        "final_slip_speed": 0.000000,
+        "resting_drift_distance": 1.201318,
+        "mean_stable_type9_contacts": 0.000000,
+        "telemetry": {
+          "blockSolveEligible": 16,
+          "blockSolveUsed": 16,
+          "scalarFallbackBuckets": {
+            "scalarPathIneligible": 0,
+            "persistenceGate": 0,
+            "invalidNormal": 0,
+            "normalMismatch": 0,
+            "missingSlots": 0,
+            "degenerateSystem": 0,
+            "conditionEstimate": 0,
+            "lcpFailure": 0,
+            "nonFinite": 0
+          },
+          "topologyChangeEvents": 0,
+          "featureIdChurnEvents": 0,
+          "selectedPairOscillationEvents": 0,
+          "impulseResetPoints": 0,
+          "reorderDetected": 0,
+          "manifoldPointAdds": 0,
+          "manifoldPointRemoves": 0,
+          "manifoldPointReorders": 0,
+          "manifoldQualityBuckets": {
+            "low": 0,
+            "medium": 0,
+            "high": 1
+          },
+          "tangentBasisResets": 0,
+          "tangentBasisReused": 16,
+          "tangentImpulseReprojected": 1,
+          "tangentImpulseReset": 0,
+          "manifoldFrictionBudgetSaturated": 0,
+          "anchor_reuse_hit_count": 32,
+          "anchor_reuse_fallback_count": 0,
+          "support_depth_order_applied": 0,
+          "support_depth_order_bypassed": 16,
+          "face4": {
+            "attempted": 0,
+            "used": 0,
+            "fallback_to_block2": 0,
+            "fallback_to_scalar": 0,
+            "blocked_by_friction_coherence_gate": 0
+          },
+          "budgetSaturationByPolicy": {
+            "selected_block_pair_only": 0,
+            "all_manifold_contacts": 0,
+            "blended_selected_pair_and_manifold": 0
+          },
+          "manifold_solve_scope": {
+            "manifold_contact_count": 64,
+            "selected_block_size": 32,
+            "block_used": 16,
+            "fallback_used": 0,
+            "fallback_reason": {
+              "none": 16,
+              "ineligible": 0,
+              "persistence_gate": 0,
+              "invalid_manifold_normal": 0,
+              "contact_normal_mismatch": 0,
+              "missing_block_slots": 0,
+              "degenerate_mass_matrix": 0,
+              "condition_estimate_exceeded": 0,
+              "lcp_failure": 0,
+              "non_finite_result": 0
+            },
+            "determinant_or_condition_estimate_sum": 79.557968,
+            "determinant_or_condition_estimate_samples": 16,
+            "impulse_continuity_metric_sum": 0.000001,
+            "impulse_continuity_metric_samples": 16
+          },
+          "manifold_type_scope": {
+            "7": {"manifold_contact_count": 64, "selected_block_size": 32, "block_used": 16, "fallback_used": 0, "determinant_or_condition_estimate_sum": 79.557968, "impulse_continuity_metric_sum": 0.000001}
+          }
+        }
+      },
+      "ablation": {
+        "manifold_budget_off": {
+          "manifold_tangent_impulse_continuity": 0.005904,
+          "slip_velocity_decay_ratio": 0.000000,
+          "final_slip_speed": 0.000000,
+          "resting_drift_distance": 1.201318
+        },
+        "two_axis_friction_off": {
+          "manifold_tangent_impulse_continuity": 0.005767,
+          "slip_velocity_decay_ratio": 0.016465,
+          "final_slip_speed": 0.052746,
+          "resting_drift_distance": 0.891381
+        }
+      },
+      "failures": []
+    }
+  ],
+  "readiness_pass": true,
+  "solver_config": {
+    "use_split_impulse": true,
+    "enable_relaxation_pass": false,
+    "relaxation_iterations": 0,
+    "enable_support_depth_ordering": false,
+    "split_impulse_correction_factor": 0.850000,
+    "penetration_bias_factor": 0.050000,
+    "penetration_slop": 0.005000,
+    "restitution_velocity_cutoff": 0.500000,
+    "static_friction_speed_threshold": 0.000000,
+    "static_to_dynamic_transition_speed": 0.200000,
+    "enable_two_axis_friction_solve": true,
+    "enable_manifold_friction_budget": true,
+    "friction_budget_normal_support_source": 1,
+    "friction_budget_selected_pair_blend_weight": 2.000000,
+    "face4_require_friction_coherence": true,
+    "use_face4_point_normal_block": false
+  }
+}
