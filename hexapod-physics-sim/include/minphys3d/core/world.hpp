@@ -95,6 +95,40 @@ public:
     void SetJointSolverConfig(const JointSolverConfig& config);
     void SetBroadphaseConfig(const BroadphaseConfig& config);
 
+    /// Optional articulated-body solver behaviour (ABI passes, velocity pre-correction).
+    struct ArticulationConfig {
+        /// When true, `PrepareArticulatedInertias` runs spatial velocity / ABI / optional Pass C
+        /// for chains with `N >= 2`, including ABI hinge `invDenomHinge` and articulated contact
+        /// mass on chain leaf bodies (`N >= 2`).
+        bool enableVelocityPreCorrection = false;
+        /// When true with `enableVelocityPreCorrection`, only fills `ArtChain::vel` (Pass A).
+        bool enableVelocityPreCorrectionKinematicsOnly = false;
+        /// When true with `enableVelocityPreCorrection` and not kinematics-only, runs a full
+        /// root→tip spatial acceleration pass and applies Δv/Δω at each link COM instead of
+        /// the legacy angular-only Pass C child update. Default off.
+        bool enableVelocityPreCorrectionFullForwardPass = false;
+        /// Ordered chain hinge snap before `JointSolver::SolveJointPositions` for long chains.
+        bool enableChainPositionSolve = false;
+        /// Sum per-leg `Pa[0]` wrenches at chassis COM (MVP shared-base coupling); default off.
+        bool enableVelocityPreCorrectionChassisCoupling = false;
+        /// Gain on chassis Δv/Δω from MVP coupling (clamped internally).
+        float chassisCouplingGain = 1.0f;
+        /// If true, MVP coupling only applies an angular velocity nudge from summed torque.
+        bool chassisCouplingAngularOnly = false;
+        /// Multi-tree Featherstone-style aggregate inertia + bias at chassis COM (replaces MVP
+        /// when true). Requires `enableVelocityPreCorrection`. Default off.
+        bool enableVelocityPreCorrectionChassisArticulatedTree = false;
+        /// When true with `enableVelocityPreCorrectionFullForwardPass`, adds a centripetal-style
+        /// spatial acceleration bias across each link offset using Pass A parent velocity (ω×(ω×r))).
+        /// Default off; approximate but improves spinning-link chains.
+        bool enableVelocityPreCorrectionForwardCoriolis = false;
+        /// When true (default), generalized force `u` includes the PD channel `D * servoBias`.
+        /// When false, `u` uses only `s^T P_a` plus `ServoJoint::articulationDriveTorque`.
+        bool includeServoPdBiasInArticulationU = true;
+    };
+    void SetArticulationConfig(const ArticulationConfig& config);
+    ArticulationConfig GetArticulationConfig() const;
+
     const ContactSolverConfig& GetContactSolverConfig() const;
     const JointSolverConfig& GetJointSolverConfig() const;
     const BroadphaseConfig& GetBroadphaseConfig() const;
@@ -356,6 +390,14 @@ public:
         float maxCorrectionAngle = 0.5f);
 
     void Step(float dt, int solverIterations = 8);
+
+    /// Hybrid articulation + legacy servo position correction: when
+    /// `ArticulationConfig::enableChainPositionSolve`, runs a single ordered pass over each
+    /// `ArtChain` using ABI `D` weighting (`SolveArticulationChainPositions`), sets
+    /// `servoSkipHingeSnapMask_` for those joints, then always calls `SolveJointPositions` so
+    /// non-chain servos and remaining rows still run. Public for regression tests and tooling.
+    void SolveArticulationPositions();
+
     [[nodiscard]] world_resource_monitoring::SectionSummary SnapshotResourceSections(bool reset_window = true) const;
     /// All instrumented world sections, sorted by total self time (see `kMaxSections` in `world_resource_monitoring`).
     [[nodiscard]] world_resource_monitoring::SectionSummary SnapshotFullResourceSections(bool reset_window = true) const;
@@ -602,7 +644,7 @@ private:
 
     // Compute Articulated Body Inertia (ABI) for each chain in articulationChains_
     // and update ServoJointPrep::invDenomHinge for chain joints with the ABI-derived
-    // effective mass.  Requires bodyInertiaWorld_ to be populated.
+    // effective mass.  Rebuilds bodyInertiaWorld_ scratch for forward inertia each call.
     // Called after PrepareServoJointSolves() each substep (Phase 1b+).
     void PrepareArticulatedInertias();
 
@@ -881,7 +923,11 @@ private:
 
     void SolveIslands();
 
-    void SolveJointPositions();
+    /// Optional per-servo mask: when set, `JointSolver` skips axis + hinge snap for those joints
+    /// (anchors still solved). Used with `enableChainPositionSolve`.
+    void SolveJointPositions(const std::vector<std::uint8_t>* skipServoHingeSnapMask = nullptr);
+
+    void SolveArticulationChainPositions();
     void BeginSplitImpulseSubstep();
     void ApplySplitStabilization();
     void AccumulateSplitImpulseCorrection(std::uint32_t bodyId, const Vec3& linearDelta, const Vec3& angularDelta);
@@ -1013,10 +1059,22 @@ private:
     // Serial kinematic chains detected by BuildArticulationChains().
     // Rebuilt every substep; indexed root-to-leaf.
     std::vector<ArtChain> articulationChains_;
-    // Forward world-space inertia per body, populated alongside bodyInvInertiaWorld_
-    // by RefreshBodyWorldInertias() once bodyInertiaWorld_ storage is enabled (Phase 1b).
-    // Left empty until then; code that needs it must check size() first.
+    ArticulationConfig articulationConfig_{};
+    /// `bodies_.size()` entries; `kInvalidArticulationChain` if body is not a chain leaf.
+    std::vector<std::uint32_t> artChainIndexForLeafBody_{};
+    static constexpr std::uint32_t kInvalidArticulationChain = std::numeric_limits<std::uint32_t>::max();
+    // Scratch: forward world-space inertia per body, rebuilt each substep inside
+    // `PrepareArticulatedInertias()` (not used by `RefreshBodyWorldInertias()`).
     std::vector<Mat3> bodyInertiaWorld_;
+    /// Per-servo index: when 1, `JointSolver` skips axis+hinge snap (handled by chain pass).
+    std::vector<std::uint8_t> servoSkipHingeSnapMask_{};
+    /// Scratch: per-body sums for Phase 2 chassis coupling (MVP wrench sum + chain count).
+    std::vector<SpatialVec>     chassisCouplingWrenchSum_{};
+    std::vector<std::uint32_t> chassisCouplingChainCount_{};
+    /// Scratch: articulated inertia sum at COM for multi-tree chassis coupling (Part A2).
+    std::vector<SpatialInertia> chassisArticulatedInertiaSum_{};
+    /// 1 once rigid chassis inertia at COM has been added for that body index in the tree pass.
+    std::vector<std::uint8_t> chassisArticulatedBaseInertiaAdded_{};
     std::vector<ManifoldPrep> manifoldPreps_;
     std::vector<float> servoAngleSampleCache_;
     bool servoAngleSampleCacheValid_ = false;

@@ -1,5 +1,9 @@
 #pragma once
 
+#include <cmath>
+#include <limits>
+#include <utility>
+
 // Spatial vector algebra for Featherstone articulated-body dynamics.
 //
 // Convention (Featherstone RBDA 2008, §2):
@@ -227,6 +231,266 @@ inline SpatialInertia SpatialInertiaTransport(const SpatialInertia& Ia, const Ve
                           + Ia.mCross * Transpose(dXSkew)
                           - Ia.mass * (ScaleIdentity(off2) - OuterProduct(offset, offset));
     return {IooNew, mCrossNew, Ia.mass};
+}
+
+// ---------------------------------------------------------------------------
+// SpatialInertiaPluckerTranslateChildToParent
+//   Exact Plücker-coordinate change of spatial inertia from the child joint
+//   anchor to the parent joint anchor when both frames share the same world
+//   orientation.  r = parentAnchor − childAnchor (world).
+//
+//   Motion map v_parent = X * v_child with X = [I, 0; −Skew(r), I], so
+//   v_parent_lin = v_child_lin − Skew(r) * ω.
+//   Then I_parent = X^{-T} * I_child * X^{-1} with X^{-1} = [I, 0; Skew(r), I].
+//
+//   Valid for any symmetric spatial inertia (including articulated reduced
+//   tensors).  This does **not** numerically match `SpatialInertiaTransport`
+//   on the same offset: transport applies parallel-axis shifts to the stacked
+//   `{Ioo, mCross, mass}` representation, while this transform is the Plücker
+//   congruence that preserves kinetic energy with `v_parent = X v_child`.
+// ---------------------------------------------------------------------------
+
+inline void SpatialInertiaToMat6Sym(const SpatialInertia& I, float M[6][6]) {
+    for (int i = 0; i < 6; ++i) {
+        for (int j = 0; j < 6; ++j) {
+            M[i][j] = 0.0f;
+        }
+    }
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            M[i][j]     = I.Ioo.m[i][j];
+            M[i][j + 3] = I.mCross.m[i][j];
+            M[i + 3][j] = I.mCross.m[j][i]; // Transpose(mCross)
+        }
+        M[i + 3][i + 3] = I.mass;
+    }
+}
+
+inline SpatialInertia SpatialInertiaFromMat6Sym(const float M[6][6]) {
+    float S[6][6]{};
+    for (int i = 0; i < 6; ++i) {
+        for (int j = 0; j < 6; ++j) {
+            S[i][j] = 0.5f * (M[i][j] + M[j][i]);
+        }
+    }
+    SpatialInertia I{};
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            I.Ioo.m[i][j]    = S[i][j];
+            I.mCross.m[i][j] = S[i][j + 3];
+        }
+    }
+    I.mass = (S[3][3] + S[4][4] + S[5][5]) / 3.0f;
+    return I;
+}
+
+inline void Mat6Mul(const float A[6][6], const float B[6][6], float C[6][6]) {
+    for (int i = 0; i < 6; ++i) {
+        for (int j = 0; j < 6; ++j) {
+            float s = 0.0f;
+            for (int k = 0; k < 6; ++k) {
+                s += A[i][k] * B[k][j];
+            }
+            C[i][j] = s;
+        }
+    }
+}
+
+inline SpatialInertia SpatialInertiaPluckerTranslateChildToParent(
+    const SpatialInertia& IatChildAnchor,
+    const Vec3& rChildAnchorToParentAnchorWorld)
+{
+    float Ic[6][6]{};
+    SpatialInertiaToMat6Sym(IatChildAnchor, Ic);
+
+    float Xinv[6][6]{};
+    for (int i = 0; i < 6; ++i) {
+        Xinv[i][i] = 1.0f;
+    }
+    const Mat3 Sr = Skew(rChildAnchorToParentAnchorWorld);
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            Xinv[i + 3][j] = Sr.m[i][j];
+        }
+    }
+
+    float XinvT[6][6]{};
+    for (int i = 0; i < 6; ++i) {
+        XinvT[i][i] = 1.0f;
+    }
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            XinvT[i][j + 3] = -Sr.m[i][j];
+        }
+    }
+
+    float tmp[6][6]{};
+    float Ip[6][6]{};
+    Mat6Mul(Ic, Xinv, tmp);
+    Mat6Mul(XinvT, tmp, Ip);
+    return SpatialInertiaFromMat6Sym(Ip);
+}
+
+// ---------------------------------------------------------------------------
+// SpatialMotionCompliance
+//   Computes h^T * inv(I) * h for a symmetric positive-definite spatial inertia
+//   and motion axis h = [ω; v] (same ordering as SpatialVec).  Used for
+//   frictionless contact effective mass when replacing rigid-body invMass +
+//   angular quadratic form with articulated inertia at a reference point.
+//
+//   Returns +infinity if the 6×6 system is singular / ill-conditioned.
+// ---------------------------------------------------------------------------
+
+inline float DotSpatial(const SpatialVec& a, const SpatialVec& b) {
+    return Dot(a.ang, b.ang) + Dot(a.lin, b.lin);
+}
+
+// ---------------------------------------------------------------------------
+// SpatialForceTranslateByOffset
+//   Shift a spatial force (wrench) reference from point A to point B with the
+//   same world orientation (pure translation).  offset = ref_B − ref_A.
+//   Moment update: n_B = n_A + offset × f  (Varignon).
+// ---------------------------------------------------------------------------
+
+inline SpatialVec SpatialForceTranslateByOffset(const SpatialVec& f, const Vec3& offsetRefBMinusRefA) {
+    return {f.ang + Cross(offsetRefBMinusRefA, f.lin), f.lin};
+}
+
+// ---------------------------------------------------------------------------
+// SpatialInertiaSolveMotion
+//   Solve I * x = rhs for the 6×6 symmetric spatial inertia in the same basis
+//   as `SpatialMul` / `SpatialMotionCompliance`.  Returns false if singular.
+// ---------------------------------------------------------------------------
+
+inline bool SpatialInertiaSolveMotion(const SpatialInertia& I, const SpatialVec& rhs, SpatialVec& out) {
+    float M[6][7]{};
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            M[i][j]     = I.Ioo.m[i][j];
+            M[i][j + 3] = I.mCross.m[i][j];
+        }
+    }
+    const Mat3 mCt = Transpose(I.mCross);
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            M[i + 3][j] = mCt.m[i][j];
+        }
+        for (int j = 0; j < 3; ++j) {
+            M[i + 3][j + 3] = (i == j) ? I.mass : 0.0f;
+        }
+    }
+    M[0][6] = rhs.ang.x;
+    M[1][6] = rhs.ang.y;
+    M[2][6] = rhs.ang.z;
+    M[3][6] = rhs.lin.x;
+    M[4][6] = rhs.lin.y;
+    M[5][6] = rhs.lin.z;
+
+    for (int col = 0; col < 6; ++col) {
+        int pivot = col;
+        float best = std::abs(M[col][col]);
+        for (int r = col + 1; r < 6; ++r) {
+            const float v = std::abs(M[r][col]);
+            if (v > best) {
+                best = v;
+                pivot = r;
+            }
+        }
+        if (!(best > 1e-18f)) {
+            return false;
+        }
+        if (pivot != col) {
+            for (int c = col; c < 7; ++c) {
+                std::swap(M[col][c], M[pivot][c]);
+            }
+        }
+        const float invPivot = 1.0f / M[col][col];
+        for (int c = col; c < 7; ++c) {
+            M[col][c] *= invPivot;
+        }
+        for (int r = 0; r < 6; ++r) {
+            if (r == col) {
+                continue;
+            }
+            const float f = M[r][col];
+            if (f == 0.0f) {
+                continue;
+            }
+            for (int c = col; c < 7; ++c) {
+                M[r][c] -= f * M[col][c];
+            }
+        }
+    }
+
+    out.ang = {M[0][6], M[1][6], M[2][6]};
+    out.lin = {M[3][6], M[4][6], M[5][6]};
+    return true;
+}
+
+inline float SpatialMotionCompliance(const SpatialInertia& I, const SpatialVec& h) {
+    // Assemble symmetric 6×6: [Ioo  mCross; mCross^T  m*I]
+    float M[6][7]{};
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            M[i][j]     = I.Ioo.m[i][j];
+            M[i][j + 3] = I.mCross.m[i][j];
+        }
+    }
+    const Mat3 mCt = Transpose(I.mCross);
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            M[i + 3][j] = mCt.m[i][j];
+        }
+        for (int j = 0; j < 3; ++j) {
+            M[i + 3][j + 3] = (i == j) ? I.mass : 0.0f;
+        }
+    }
+    M[0][6] = h.ang.x;
+    M[1][6] = h.ang.y;
+    M[2][6] = h.ang.z;
+    M[3][6] = h.lin.x;
+    M[4][6] = h.lin.y;
+    M[5][6] = h.lin.z;
+
+    // Gauss-Jordan elimination with partial pivot on augmented column 6.
+    for (int col = 0; col < 6; ++col) {
+        int pivot = col;
+        float best = std::abs(M[col][col]);
+        for (int r = col + 1; r < 6; ++r) {
+            const float v = std::abs(M[r][col]);
+            if (v > best) {
+                best = v;
+                pivot = r;
+            }
+        }
+        if (!(best > 1e-18f)) {
+            return std::numeric_limits<float>::infinity();
+        }
+        if (pivot != col) {
+            for (int c = col; c < 7; ++c) {
+                std::swap(M[col][c], M[pivot][c]);
+            }
+        }
+        const float invPivot = 1.0f / M[col][col];
+        for (int c = col; c < 7; ++c) {
+            M[col][c] *= invPivot;
+        }
+        for (int r = 0; r < 6; ++r) {
+            if (r == col) {
+                continue;
+            }
+            const float f = M[r][col];
+            if (f == 0.0f) {
+                continue;
+            }
+            for (int c = col; c < 7; ++c) {
+                M[r][c] -= f * M[col][c];
+            }
+        }
+    }
+
+    const SpatialVec x{Vec3{M[0][6], M[1][6], M[2][6]}, Vec3{M[3][6], M[4][6], M[5][6]}};
+    return DotSpatial(h, x);
 }
 
 } // namespace minphys3d

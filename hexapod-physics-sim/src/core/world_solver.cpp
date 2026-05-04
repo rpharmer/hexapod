@@ -906,7 +906,39 @@ void World::PrepareContactSolves() {
                 cp.rbCrossN = Cross(cp.rb, c.normal);
                 const float angularTermA = Dot(cp.raCrossN, invIA * cp.raCrossN);
                 const float angularTermB = Dot(cp.rbCrossN, invIB * cp.rbCrossN);
-                cp.normalMass = a.invMass + b.invMass + angularTermA + angularTermB;
+                float sideA = a.invMass + angularTermA;
+                float sideB = b.invMass + angularTermB;
+                if (c.a < artChainIndexForLeafBody_.size()) {
+                    const std::uint32_t ac = artChainIndexForLeafBody_[c.a];
+                    if (ac != kInvalidArticulationChain && ac < articulationChains_.size()) {
+                        const ArtChain& ch = articulationChains_[ac];
+                        if (!ch.Ia.empty() && !ch.links.empty()) {
+                            const Vec3  refRoot   = ch.links[0].jointAnchorWorld;
+                            const Vec3  raFromRef = c.point - refRoot;
+                            const SpatialVec h{Cross(raFromRef, c.normal), c.normal};
+                            const float comp = SpatialMotionCompliance(ch.Ia[0], h);
+                            if (std::isfinite(comp) && comp > kEpsilon && comp < 1e8f) {
+                                sideA = comp;
+                            }
+                        }
+                    }
+                }
+                if (c.b < artChainIndexForLeafBody_.size()) {
+                    const std::uint32_t bc = artChainIndexForLeafBody_[c.b];
+                    if (bc != kInvalidArticulationChain && bc < articulationChains_.size()) {
+                        const ArtChain& ch = articulationChains_[bc];
+                        if (!ch.Ia.empty() && !ch.links.empty()) {
+                            const Vec3  refRoot   = ch.links[0].jointAnchorWorld;
+                            const Vec3  rbFromRef = c.point - refRoot;
+                            const SpatialVec h{Cross(rbFromRef, c.normal), c.normal};
+                            const float comp = SpatialMotionCompliance(ch.Ia[0], h);
+                            if (std::isfinite(comp) && comp > kEpsilon && comp < 1e8f) {
+                                sideB = comp;
+                            }
+                        }
+                    }
+                }
+                cp.normalMass = sideA + sideB;
                 cp.invNormalMass = (cp.normalMass > kEpsilon) ? (1.0f / cp.normalMass) : 0.0f;
             }
         }
@@ -1009,7 +1041,14 @@ void World::BuildArticulationChains() {
             rootLink.jointIdx           = ArtLink::kNoJoint;
             rootLink.parent             = -1;
             rootLink.jointAxisLocal     = {};
-            rootLink.jointAnchorWorld   = {};
+            // Spatial inertia reference for the floating base: first joint anchor on this branch
+            // (matches the child link's incoming joint pivot so ABI merges share a common frame).
+            {
+                const ServoJoint& fj = servoJoints_[firstJointIdx];
+                const Body&      raBody = bodies_[fj.a];
+                rootLink.jointAnchorWorld =
+                    raBody.position + Rotate(raBody.orientation, fj.localAnchorA);
+            }
             chain.links.push_back(rootLink);
 
             // Push the first child joint onto the DFS stack.
@@ -1057,18 +1096,386 @@ void World::BuildArticulationChains() {
 }
 
 // ---------------------------------------------------------------------------
-// PrepareArticulatedInertias  (Phase 1b placeholder)
-//   Computes ABI for each chain and updates ServoJointPrep::invDenomHinge.
-//   Currently a no-op stub; full implementation in Phase 1b once
-//   bodyInertiaWorld_ is populated by RefreshBodyWorldInertias().
+// PrepareArticulatedInertias
+//   Tip→root articulated-body inertia pass; updates ServoJointPrep hinge
+//   denominators for in-chain servos and fills artChainIndexForLeafBody_ for contacts.
 // ---------------------------------------------------------------------------
 
 void World::PrepareArticulatedInertias() {
-    // Phase 1b implementation will go here.
-    // Pre-condition: articulationChains_ is populated, servoJointPreps_ is ready,
-    // and bodyInertiaWorld_ has been filled by RefreshBodyWorldInertias().
-    (void)articulationChains_;
-    (void)bodyInertiaWorld_;
+    const std::size_t nBodies = bodies_.size();
+    artChainIndexForLeafBody_.assign(nBodies, kInvalidArticulationChain);
+
+    if (servoJointPreps_.size() != servoJoints_.size()) {
+        return;
+    }
+
+    // Forward world inertia (local inverse → local forward → world); only used by this pass
+    // so we do not alter the global inverse-inertia cache behaviour for non-articulation scenes.
+    bodyInertiaWorld_.resize(nBodies);
+    for (std::size_t i = 0; i < nBodies; ++i) {
+        const Body& body = bodies_[i];
+        if (body.invMass <= 0.0f) {
+            bodyInertiaWorld_[i] = Mat3{};
+            continue;
+        }
+        const Mat3 R = RotationMatrix(body.orientation);
+        Mat3       Ilocal{};
+        if (!InvertMat3(body.invInertiaLocal, Ilocal)) {
+            bodyInertiaWorld_[i] = Mat3{};
+        } else {
+            bodyInertiaWorld_[i] = R * Ilocal * Transpose(R);
+        }
+    }
+
+    const float dt = currentSubstepDt_;
+    const SpatialVec spatialGravity{Vec3{0.0f, 0.0f, 0.0f}, gravity_};
+    const bool       velocityPreCorr = articulationConfig_.enableVelocityPreCorrection;
+
+    for (std::size_t ci = 0; ci < articulationChains_.size(); ++ci) {
+        ArtChain& chain = articulationChains_[ci];
+        const std::size_t N = chain.links.size();
+        if (N < 2) {
+            continue;
+        }
+        chain.resizeCaches();
+
+        for (std::size_t li = 0; li < N; ++li) {
+            const ArtLink& L = chain.links[li];
+            const Body&    bd = bodies_[L.bodyIdx];
+            if (bd.invMass <= 0.0f || !(bd.mass > kEpsilon)) {
+                chain.Ia[li] = SpatialInertia{};
+                continue;
+            }
+            chain.Ia[li] = SpatialInertiaFromBody(
+                bd.mass,
+                bodyInertiaWorld_[L.bodyIdx],
+                bd.position,
+                L.jointAnchorWorld);
+        }
+
+        if (velocityPreCorr) {
+            for (std::size_t li = 0; li < N; ++li) {
+                chain.rigidSpatialI[li] = chain.Ia[li];
+            }
+
+            // Pass A — spatial motion at each link joint anchor (no body writes).
+            {
+                const Body& rootBd = bodies_[chain.links[0].bodyIdx];
+                const Vec3  anchor0 = chain.links[0].jointAnchorWorld;
+                const Vec3  rCom0   = anchor0 - rootBd.position;
+                chain.vel[0].ang = rootBd.angularVelocity;
+                chain.vel[0].lin = rootBd.velocity + Cross(rootBd.angularVelocity, rCom0);
+            }
+            for (std::size_t li = 1; li < N; ++li) {
+                const ArtLink& L  = chain.links[li];
+                const ArtLink& Lp = chain.links[li - 1u];
+                const std::uint32_t jidx = L.jointIdx;
+                if (jidx == ArtLink::kNoJoint || jidx >= servoJoints_.size()) {
+                    chain.vel[li] = SpatialVec{};
+                    continue;
+                }
+                const ServoJoint& sj       = servoJoints_[jidx];
+                const Body&       parentBd = bodies_[sj.a];
+                const Body&       childBd  = bodies_[sj.b];
+                Vec3              axis     = Rotate(parentBd.orientation, sj.localAxisA);
+                if (!TryNormalize(axis, axis)) {
+                    chain.vel[li] = SpatialVec{};
+                    continue;
+                }
+                const float dq = Dot(childBd.angularVelocity - parentBd.angularVelocity, axis);
+                const SpatialVec& vParent = chain.vel[li - 1u];
+                const Vec3        offset  = L.jointAnchorWorld - Lp.jointAnchorWorld;
+                const Vec3        vAtChild = vParent.lin + Cross(vParent.ang, offset);
+                chain.vel[li].ang = childBd.angularVelocity;
+                chain.vel[li].lin = vAtChild + axis * dq;
+            }
+
+            for (std::size_t li = 0; li < N; ++li) {
+                chain.Pa[li] = SpatialBias(chain.rigidSpatialI[li], chain.vel[li])
+                    - SpatialMul(chain.rigidSpatialI[li], spatialGravity);
+            }
+        }
+
+        for (int childLink = static_cast<int>(N) - 1; childLink >= 1; --childLink) {
+            const std::size_t cIdx = static_cast<std::size_t>(childLink);
+            const std::size_t pIdx = cIdx - 1u;
+            const std::uint32_t jidx = chain.links[cIdx].jointIdx;
+            if (jidx == ArtLink::kNoJoint || jidx >= servoJoints_.size()) {
+                continue;
+            }
+            if (velocityPreCorr && articulationConfig_.enableVelocityPreCorrectionChassisArticulatedTree
+                && N >= 4 && cIdx == 1u) {
+                chain.legSubtreeIaAtCoxaAnchor = chain.Ia[1];
+                chain.legSubtreePaAtCoxaAnchor = chain.Pa[1];
+            }
+            const ServoJoint& sj = servoJoints_[jidx];
+            const Body&      parentBody = bodies_[sj.a];
+            Vec3             axis = Rotate(parentBody.orientation, sj.localAxisA);
+            if (!TryNormalize(axis, axis)) {
+                continue;
+            }
+            float D = 0.0f;
+            chain.iaPreJoint[cIdx] = chain.Ia[cIdx];
+            if (velocityPreCorr) {
+                chain.paJointSnapshot[cIdx] = chain.Pa[cIdx];
+            }
+            const SpatialInertia reduced = PropagateInertia(chain.Ia[cIdx], axis, D);
+            chain.D[cIdx] = D;
+            const ServoJointPrep& prepJoint = servoJointPreps_[jidx];
+            const float          sPc    = velocityPreCorr ? Dot(axis, chain.Pa[cIdx].ang) : 0.0f;
+            float                  uJoint = sPc;
+            if (articulationConfig_.includeServoPdBiasInArticulationU && prepJoint.hingeActive) {
+                uJoint += D * prepJoint.servoBias;
+            }
+            uJoint += sj.articulationDriveTorque;
+            chain.u[cIdx] = uJoint;
+            if (velocityPreCorr) {
+                chain.Pa[pIdx] += PropagateBias(chain.Pa[cIdx], chain.Ia[cIdx], axis, D, uJoint);
+            }
+            const Vec3 off =
+                chain.links[pIdx].jointAnchorWorld - chain.links[cIdx].jointAnchorWorld;
+            chain.Ia[pIdx] += SpatialInertiaPluckerTranslateChildToParent(reduced, off);
+        }
+
+        const std::uint32_t leafBody = chain.links.back().bodyIdx;
+        // Articulated contact mass: any detected chain with a leaf body (N>=2). If two chains
+        // shared a leaf body, last writer wins (not used by built-in scenes).
+        if (N >= 2 && leafBody < artChainIndexForLeafBody_.size()) {
+            artChainIndexForLeafBody_[leafBody] = static_cast<std::uint32_t>(ci);
+        }
+    }
+
+    // NOTE: ABI D[i] = s^T * Ioo_accumulated * s includes the parallel-axis term
+    // (I_com + m*|r×s|²) and downstream chain coupling.  SolveServoJoint applies a
+    // *pure angular impulse* (only angularVelocity is updated, not linearVelocity), so
+    // the correct effective mass for that constraint is the COM-frame angular inertia —
+    // exactly what PrepareServoJointSolves already computes as wHinge = invIA + invIB.
+    // Overriding invDenomHinge with Dabi/denomScale would make the impulse ~Dabi/I_com
+    // times too large (≈19× for a typical arm), causing velocity divergence.
+    //
+    // ABI data (D, Ia, Pa) is retained for Phase 1c (contact effective mass override)
+    // and Phase 2 (velocity pre-correction forward pass) where spatial impulses ARE used.
+
+    // Pass C — velocity pre-correction: either full spatial forward pass (optional) or legacy
+    // child-only angular projection (no root writes so six legs sharing a chassis do not apply
+    // six independent base deltas).
+    const bool fullForwardPass = velocityPreCorr && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly
+        && articulationConfig_.enableVelocityPreCorrectionFullForwardPass;
+    const bool forwardCoriolis =
+        fullForwardPass && articulationConfig_.enableVelocityPreCorrectionForwardCoriolis;
+    if (fullForwardPass) {
+        for (ArtChain& chain : articulationChains_) {
+            const std::size_t N = chain.links.size();
+            if (N < 2) {
+                continue;
+            }
+            chain.spatialAcc.assign(N, SpatialVec{});
+            // Floating base: zero spatial acceleration at root anchor (no extra gravity here;
+            // gravity is already in IntegrateForces / Pa bias).
+            chain.spatialAcc[0] = SpatialVec{};
+            for (std::size_t linkIdx = 1; linkIdx < N; ++linkIdx) {
+                const ArtLink& L = chain.links[linkIdx];
+                if (L.jointIdx == ArtLink::kNoJoint || L.jointIdx >= servoJoints_.size()) {
+                    continue;
+                }
+                const ServoJoint& sj = servoJoints_[L.jointIdx];
+                const Body&       parentBody = bodies_[sj.a];
+                Vec3              axis       = Rotate(parentBody.orientation, sj.localAxisA);
+                if (!TryNormalize(axis, axis)) {
+                    continue;
+                }
+                const float D = chain.D[linkIdx];
+                if (!(D > kEpsilon)) {
+                    continue;
+                }
+                const ArtLink& Lp    = chain.links[linkIdx - 1u];
+                const Vec3     off   = L.jointAnchorWorld - Lp.jointAnchorWorld;
+                const SpatialVec& ap = chain.spatialAcc[linkIdx - 1u];
+                SpatialVec          aPred{ap.ang, ap.lin + Cross(ap.ang, off)};
+                if (forwardCoriolis) {
+                    const SpatialVec& vParent = chain.vel[linkIdx - 1u];
+                    aPred.lin += Cross(vParent.ang, Cross(vParent.ang, off));
+                }
+                const SpatialVec  eta =
+                    SpatialMul(chain.iaPreJoint[linkIdx], aPred) + chain.paJointSnapshot[linkIdx];
+                const float qdd = (chain.u[linkIdx] - Dot(axis, eta.ang)) / D;
+                chain.spatialAcc[linkIdx] =
+                    SpatialVec{aPred.ang + axis * qdd, aPred.lin};
+                Body& child = bodies_[sj.b];
+                if (child.invMass > 0.0f && !child.isSleeping) {
+                    const Vec3 rCom = child.position - L.jointAnchorWorld;
+                    const Vec3 aLinCom =
+                        chain.spatialAcc[linkIdx].lin + Cross(chain.spatialAcc[linkIdx].ang, rCom);
+                    child.velocity += aLinCom * dt;
+                    child.angularVelocity += chain.spatialAcc[linkIdx].ang * dt;
+                }
+            }
+        }
+    } else if (velocityPreCorr && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly) {
+        for (ArtChain& chain : articulationChains_) {
+            const std::size_t N = chain.links.size();
+            if (N < 2) {
+                continue;
+            }
+            for (std::size_t linkIdx = 1; linkIdx < N; ++linkIdx) {
+                const ArtLink& L = chain.links[linkIdx];
+                if (L.jointIdx == ArtLink::kNoJoint || L.jointIdx >= servoJoints_.size()) {
+                    continue;
+                }
+                const ServoJoint& sj = servoJoints_[L.jointIdx];
+                Body&             child = bodies_[sj.b];
+                if (child.invMass <= 0.0f) {
+                    continue;
+                }
+                const Body& parentBody = bodies_[sj.a];
+                Vec3        axis = Rotate(parentBody.orientation, sj.localAxisA);
+                if (!TryNormalize(axis, axis)) {
+                    continue;
+                }
+                const float D = chain.D[linkIdx];
+                if (!(D > kEpsilon)) {
+                    continue;
+                }
+                const float sPa = Dot(axis, chain.paJointSnapshot[linkIdx].ang);
+                const float qdd = (chain.u[linkIdx] - sPa) / D;
+                child.angularVelocity += axis * (qdd * dt);
+            }
+        }
+    }
+
+    // Optional chassis coupling: MVP (sum of post-backward Pa[0] at COM) or multi-tree aggregate
+    // inertia at COM + single 6×6 solve (tree path). Runs after child Pass C; default off.
+    const bool chassisTree = velocityPreCorr && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly
+        && articulationConfig_.enableVelocityPreCorrectionChassisArticulatedTree;
+    const bool chassisMvp = velocityPreCorr && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly
+        && articulationConfig_.enableVelocityPreCorrectionChassisCoupling && !chassisTree;
+    if (chassisMvp || chassisTree) {
+        constexpr float kChassisMaxDw = 10.0f;
+        constexpr float kChassisMaxDv = 8.0f;
+        const float     gain = std::clamp(articulationConfig_.chassisCouplingGain, 0.0f, 4.0f);
+
+        chassisCouplingWrenchSum_.assign(nBodies, SpatialVec{});
+        chassisCouplingChainCount_.assign(nBodies, 0u);
+        if (chassisTree) {
+            chassisArticulatedInertiaSum_.assign(nBodies, SpatialInertia{});
+            chassisArticulatedBaseInertiaAdded_.assign(nBodies, 0u);
+        }
+
+        if (chassisMvp) {
+            for (ArtChain& chain : articulationChains_) {
+                const std::size_t N = chain.links.size();
+                if (N < 2) {
+                    continue;
+                }
+                const std::uint32_t rootBody = chain.links[0].bodyIdx;
+                if (rootBody >= nBodies) {
+                    continue;
+                }
+                Body& root = bodies_[rootBody];
+                if (root.invMass <= 0.0f || root.isSleeping) {
+                    continue;
+                }
+                const Vec3 com   = root.position;
+                const Vec3 anchor = chain.links[0].jointAnchorWorld;
+                const SpatialVec wCom =
+                    SpatialForceTranslateByOffset(chain.Pa[0], com - anchor);
+                chassisCouplingWrenchSum_[rootBody] += wCom;
+                ++chassisCouplingChainCount_[rootBody];
+            }
+
+            for (std::size_t bi = 0; bi < nBodies; ++bi) {
+                if (chassisCouplingChainCount_[bi] == 0u) {
+                    continue;
+                }
+                Body&       b   = bodies_[bi];
+                SpatialVec& sum = chassisCouplingWrenchSum_[bi];
+                if (b.invMass <= 0.0f || b.isSleeping) {
+                    continue;
+                }
+                Vec3 dw{};
+                if (!articulationConfig_.chassisCouplingAngularOnly) {
+                    const Vec3 dv = gain * dt * b.invMass * sum.lin;
+                    const Vec3 dvClamped{
+                        std::clamp(dv.x, -kChassisMaxDv, kChassisMaxDv),
+                        std::clamp(dv.y, -kChassisMaxDv, kChassisMaxDv),
+                        std::clamp(dv.z, -kChassisMaxDv, kChassisMaxDv),
+                    };
+                    b.velocity += dvClamped;
+                }
+                const Mat3 invI = b.InvInertiaWorld();
+                dw                     = gain * dt * (invI * sum.ang);
+                const Vec3 dwClamped = {
+                    std::clamp(dw.x, -kChassisMaxDw, kChassisMaxDw),
+                    std::clamp(dw.y, -kChassisMaxDw, kChassisMaxDw),
+                    std::clamp(dw.z, -kChassisMaxDw, kChassisMaxDw),
+                };
+                b.angularVelocity += dwClamped;
+            }
+        } else if (chassisTree) {
+            for (ArtChain& chain : articulationChains_) {
+                const std::size_t N = chain.links.size();
+                if (N < 4) {
+                    continue;
+                }
+                const std::uint32_t rootBody = chain.links[0].bodyIdx;
+                if (rootBody >= nBodies) {
+                    continue;
+                }
+                Body& root = bodies_[rootBody];
+                if (root.invMass <= 0.0f || root.isSleeping) {
+                    continue;
+                }
+                const Vec3 com = root.position;
+                if (chassisArticulatedBaseInertiaAdded_[rootBody] == 0u) {
+                    const Mat3&          Iw       = bodyInertiaWorld_[rootBody];
+                    const SpatialInertia IbaseCom =
+                        SpatialInertiaFromBody(root.mass, Iw, com, com);
+                    chassisArticulatedInertiaSum_[rootBody] += IbaseCom;
+                    const SpatialVec vCom{root.angularVelocity, root.velocity};
+                    chassisCouplingWrenchSum_[rootBody] +=
+                        SpatialBias(IbaseCom, vCom) - SpatialMul(IbaseCom, spatialGravity);
+                    chassisArticulatedBaseInertiaAdded_[rootBody] = 1u;
+                }
+                const Vec3 hip = chain.links[1].jointAnchorWorld;
+                chassisArticulatedInertiaSum_[rootBody] += SpatialInertiaPluckerTranslateChildToParent(
+                    chain.legSubtreeIaAtCoxaAnchor, com - hip);
+                chassisCouplingWrenchSum_[rootBody] += SpatialForceTranslateByOffset(
+                    chain.legSubtreePaAtCoxaAnchor, com - hip);
+            }
+
+            for (std::size_t bi = 0; bi < nBodies; ++bi) {
+                if (chassisArticulatedBaseInertiaAdded_[bi] == 0u) {
+                    continue;
+                }
+                Body& b = bodies_[bi];
+                if (b.invMass <= 0.0f || b.isSleeping) {
+                    continue;
+                }
+                const SpatialInertia& Iagg = chassisArticulatedInertiaSum_[bi];
+                if (!(Iagg.mass > kEpsilon)) {
+                    continue;
+                }
+                SpatialVec a{};
+                const SpatialVec rhs{-chassisCouplingWrenchSum_[bi].ang, -chassisCouplingWrenchSum_[bi].lin};
+                if (!SpatialInertiaSolveMotion(Iagg, rhs, a)) {
+                    continue;
+                }
+                Vec3 dv = gain * dt * a.lin;
+                Vec3 dw = gain * dt * a.ang;
+                if (articulationConfig_.chassisCouplingAngularOnly) {
+                    dv = Vec3{};
+                }
+                dv = {std::clamp(dv.x, -kChassisMaxDv, kChassisMaxDv),
+                    std::clamp(dv.y, -kChassisMaxDv, kChassisMaxDv),
+                    std::clamp(dv.z, -kChassisMaxDv, kChassisMaxDv)};
+                dw = {std::clamp(dw.x, -kChassisMaxDw, kChassisMaxDw),
+                    std::clamp(dw.y, -kChassisMaxDw, kChassisMaxDw),
+                    std::clamp(dw.z, -kChassisMaxDw, kChassisMaxDw)};
+                b.velocity += dv;
+                b.angularVelocity += dw;
+            }
+        }
+    }
 }
 
 void World::PrepareHingeJointSolves() {
@@ -1717,7 +2124,7 @@ bool World::ComputeServoPositionUseVelocityBiases() const {
         return servoPositionUseVelocityBiasesCached_;
     }
 
-void World::SolveJointPositions() {
+void World::SolveJointPositions(const std::vector<std::uint8_t>* skipServoHingeSnapMask) {
         const auto _scope = resource_profiler_.scope(
             world_resource_monitoring::toIndex(world_resource_monitoring::Section::SolveJointPositionsServo));
         core_internal::JointSolver jointSolver;
@@ -1737,9 +2144,85 @@ void World::SolveJointPositions() {
             &servoPositionFanoutScratch_,
             &servoPositionAngularAccumScratch_,
             &servoPositionAngularCountScratch_,
+            skipServoHingeSnapMask,
         };
         jointSolver.SolveJointPositions(context);
     }
+
+void World::SolveArticulationChainPositions() {
+    const float subDt = currentSubstepDt_;
+    for (const ArtChain& chain : articulationChains_) {
+        const std::size_t N = chain.links.size();
+        if (N < 2) {
+            continue;
+        }
+        for (std::size_t linkIdx = 1; linkIdx < N; ++linkIdx) {
+            const std::uint32_t jidx = chain.links[linkIdx].jointIdx;
+            if (jidx == ArtLink::kNoJoint || jidx >= servoJoints_.size()) {
+                continue;
+            }
+            ServoJoint& sj = servoJoints_[jidx];
+            if (!sj.inArticulationChain) {
+                continue;
+            }
+            if (jidx < servoSkipHingeSnapMask_.size()) {
+                servoSkipHingeSnapMask_[jidx] = 1u;
+            }
+            Body& a = bodies_[sj.a];
+            Body& b = bodies_[sj.b];
+            if (a.invMass + b.invMass <= kEpsilon) {
+                continue;
+            }
+            const float stab = std::clamp(sj.angleStabilizationScale, 0.0f, 1.0f);
+            if (stab <= 1e-7f) {
+                continue;
+            }
+
+            Vec3 axisA = Rotate(a.orientation, sj.localAxisA);
+            Vec3 axisB = Rotate(b.orientation, sj.localAxisB);
+            if (!TryNormalize(axisA, axisA) || !TryNormalize(axisB, axisB)) {
+                continue;
+            }
+
+            const Vec3 axisCorrection =
+                core_internal::ComputeServoAxisAlignmentCorrection(sj, axisA, axisB);
+            if (LengthSquared(axisCorrection) > 0.0f) {
+                core_internal::ApplyAngularPositionCorrection(a, b, axisCorrection);
+                axisA = Rotate(a.orientation, sj.localAxisA);
+                axisB = Rotate(b.orientation, sj.localAxisB);
+                if (!TryNormalize(axisA, axisA) || !TryNormalize(axisB, axisB)) {
+                    continue;
+                }
+            }
+
+            const float hingeAngle =
+                core_internal::ComputeServoJointAngle(a, b, sj);
+            const float targetError =
+                core_internal::WrapJointAngle(hingeAngle - sj.targetAngle);
+            const float maxServoSpeed = std::max(0.0f, sj.maxServoSpeed);
+            const float maxAngleCorrection = maxServoSpeed > 0.0f
+                ? std::min(0.06f * stab, maxServoSpeed * subDt)
+                : 0.06f * stab;
+            const float Dji = chain.D[linkIdx];
+            const float dScale = std::min(1.0f, 0.25f / std::max(Dji, kEpsilon));
+            const float raw = 0.15f * stab * targetError * dScale;
+            const float clampedAngle = std::clamp(raw, -maxAngleCorrection, maxAngleCorrection);
+            if (std::abs(clampedAngle) > 1e-5f) {
+                core_internal::ApplyAngularPositionCorrection(a, b, clampedAngle * axisA);
+            }
+        }
+    }
+}
+
+void World::SolveArticulationPositions() {
+    const std::vector<std::uint8_t>* maskPtr = nullptr;
+    if (articulationConfig_.enableChainPositionSolve) {
+        servoSkipHingeSnapMask_.assign(servoJoints_.size(), 0u);
+        SolveArticulationChainPositions();
+        maskPtr = &servoSkipHingeSnapMask_;
+    }
+    SolveJointPositions(maskPtr);
+}
 
 void World::BeginSplitImpulseSubstep() {
         splitLinearPositionDelta_.assign(bodies_.size(), Vec3{0.0f, 0.0f, 0.0f});

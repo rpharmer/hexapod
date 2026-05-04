@@ -12,17 +12,22 @@
 
 #include "minphys3d/articulation/types.hpp"
 #include "minphys3d/core/body.hpp"
+#include "minphys3d/core/subsystems.hpp"
 #include "minphys3d/core/world.hpp"
+#include "minphys3d/demo/hexapod_scene.hpp"
 #include "minphys3d/math/spatial.hpp"
 #include "minphys3d/math/vec3.hpp"
 #include "minphys3d/math/mat3.hpp"
 
 using namespace minphys3d;
+using namespace minphys3d::core_internal;
 using namespace minphys3d::demo;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+static void assertBodyKinematicsFinite(const Body& body);
 
 static void check(bool condition, const char* msg) {
     if (!condition) {
@@ -128,6 +133,111 @@ static void test_SpatialInertiaFromBody() {
 // Test 4: PropagateInertia — effective mass and Schur complement
 // ---------------------------------------------------------------------------
 
+static void test_SpatialMotionCompliance_RigidBody() {
+    // Single box at COM reference: compliance should match invMass + ra×n · invI · ra×n
+    const float m = 2.0f;
+    const float side = 0.2f;
+    const float Idiag = (m / 12.0f) * (side * side + side * side);
+    const Mat3  Iworld = ScaleIdentity(Idiag);
+    const Vec3  com{0.0f, 0.0f, 0.0f};
+    const Vec3  ref = com;
+    const SpatialInertia Isp = SpatialInertiaFromBody(m, Iworld, com, ref);
+
+    const Vec3 n = Normalize(Vec3{0.6f, 0.8f, 0.0f});
+    const Vec3 contact{0.03f, -0.02f, 0.01f};
+    const Vec3 ra = contact - com;
+    const Vec3 raCrossN = Cross(ra, n);
+    const Mat3 invI = ScaleIdentity(1.0f / Idiag);
+    const float expected = 1.0f / m + Dot(raCrossN, invI * raCrossN);
+
+    const SpatialVec h{Cross(ra, n), n};
+    const float comp = SpatialMotionCompliance(Isp, h);
+    check(std::isfinite(comp), "SpatialMotionCompliance finite");
+    check(approxEq(comp, expected, 2e-3f), "SpatialMotionCompliance matches rigid-body scalar");
+}
+
+static void test_ABI_chain_D_positive() {
+    World world({0.0f, -9.81f, 0.0f});
+    Body root{};
+    root.shape       = ShapeType::Box;
+    root.halfExtents = {0.1f, 0.1f, 0.1f};
+    root.mass        = 5.0f;
+    root.position    = {0.0f, 0.5f, 0.0f};
+    const std::uint32_t rootId = world.CreateBody(root);
+
+    Body bob{};
+    bob.shape    = ShapeType::Sphere;
+    bob.radius   = 0.08f;
+    bob.mass     = 0.4f;
+    bob.position = {0.2f, 0.5f, 0.0f};
+    const std::uint32_t bobId = world.CreateBody(bob);
+
+    world.CreateServoJoint(
+        rootId,
+        bobId,
+        {0.0f, 0.5f, 0.0f},
+        {0.0f, 0.0f, 1.0f},
+        0.0f,
+        5.0f,
+        20.0f,
+        1.0f,
+        0.0f,
+        0.5f,
+        0.0f,
+        1.0f,
+        0.0f,
+        0.5f);
+
+    world.Step(1.0f / 240.0f, 1);
+    const std::vector<ArtChain>& chains = world.GetArticulationChains();
+    check(chains.size() == 1u, "ABI test: one chain");
+    const ArtChain& ch = chains[0];
+    check(ch.links.size() == 2u, "ABI test: two links");
+    check(ch.D[1] > 1e-5f, "ABI joint D[1] is positive");
+}
+
+static void test_SpatialForceTranslateByOffset() {
+    const SpatialVec f{{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
+    const Vec3       r{1.0f, 0.0f, 0.0f};
+    const SpatialVec g = SpatialForceTranslateByOffset(f, r);
+    const Vec3       expectedN = Cross(r, f.lin);
+    check(approxEqVec(g.ang, expectedN), "SpatialForceTranslateByOffset: torque from offset force");
+    check(approxEqVec(g.lin, f.lin), "SpatialForceTranslateByOffset: force unchanged");
+}
+
+static void test_SpatialInertiaSolveMotion_diagonal() {
+    const float        m  = 1.0f;
+    const float        I0 = 0.4f;
+    const Mat3         Iworld = ScaleIdentity(I0);
+    const Vec3         com{0.0f, 0.0f, 0.0f};
+    const SpatialInertia Isp = SpatialInertiaFromBody(m, Iworld, com, com);
+    const SpatialVec     rhs{{1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}};
+    SpatialVec           x{};
+    check(SpatialInertiaSolveMotion(Isp, rhs, x), "SpatialInertiaSolveMotion succeeds");
+    check(approxEq(x.ang.x, 1.0f / I0) && approxEq(x.ang.y, 0.0f) && approxEq(x.ang.z, 0.0f),
+          "SpatialInertiaSolveMotion: angular part matches diagonal inverse");
+    check(approxEqVec(x.lin, Vec3{0.0f, 0.0f, 0.0f}),
+          "SpatialInertiaSolveMotion: zero linear RHS block gives zero linear motion");
+}
+
+static void test_SpatialInertiaPlucker_kineticEnergyInvariant() {
+    const float          m     = 2.0f;
+    const Mat3           Icom  = ScaleIdentity(0.3f);
+    const Vec3           com{0.1f, -0.05f, 0.02f};
+    const Vec3           childRef{-0.2f, 0.4f, 0.1f};
+    const SpatialInertia Ic = SpatialInertiaFromBody(m, Icom, com, childRef);
+    const Vec3           rChildToParent{0.15f, -0.22f, 0.08f};
+    const SpatialInertia Ip = SpatialInertiaPluckerTranslateChildToParent(Ic, rChildToParent);
+    const SpatialVec     vc{{0.2f, -0.1f, 0.3f}, {-0.5f, 0.4f, 0.2f}};
+    const SpatialVec     vp{vc.ang, vc.lin + Cross(vc.ang, rChildToParent)};
+    const float          Tc = DotSpatial(SpatialMul(Ic, vc), vc);
+    const float          Tp = DotSpatial(SpatialMul(Ip, vp), vp);
+    check(std::isfinite(Tc) && std::isfinite(Tp) && Tc > 0.0f,
+          "Plücker KE invariant: child quadratic form finite and positive");
+    check(approxEq(Tc, Tp, 1e-4f),
+          "Plücker KE invariant: T_child == T_parent under v_parent = X v_child");
+}
+
 static void test_PropagateInertia() {
     // Single rigid body (unit sphere, mass=1, inertia I at COM = reference)
     const float m = 1.0f;
@@ -197,6 +307,8 @@ static void test_BuildArticulationChains_Hexapod() {
         check(chain.D.size()  == chain.links.size(), "D  cache size matches links");
         check(chain.u.size()  == chain.links.size(), "u  cache size matches links");
         check(chain.vel.size()== chain.links.size(), "vel cache size matches links");
+        check(chain.rigidSpatialI.size() == chain.links.size(), "rigidSpatialI cache size matches links");
+        check(chain.paJointSnapshot.size() == chain.links.size(), "paJointSnapshot cache size matches links");
     }
 
     // Verify inArticulationChain flags: all 18 servo joints (3 per leg × 6 legs)
@@ -232,6 +344,15 @@ static void test_BuildArticulationChains_Hexapod() {
     }
     for (bool seen : coxaSeen) {
         check(seen, "Every leg appears in exactly one chain");
+    }
+
+    // After ABI pass, joint scalar masses and root anchor should be populated.
+    for (const ArtChain& chain : chains) {
+        check(LengthSquared(chain.links[0].jointAnchorWorld) > 1e-12f,
+              "Root link jointAnchorWorld is set (first leg anchor on chassis)");
+        for (std::size_t li = 1; li < chain.links.size(); ++li) {
+            check(chain.D[li] > 1e-6f, "Hexapod chain joint D is positive");
+        }
     }
 }
 
@@ -288,6 +409,406 @@ static void test_BuildArticulationChains_Pendulum() {
 
     check(world.GetServoJoint(jointId).inArticulationChain,
           "Pendulum joint is marked inArticulationChain");
+
+    check(chain.D[1] > 1e-8f, "Pendulum joint D is positive (static root + dynamic bob)");
+}
+
+static void test_ArticulationConfig_roundTrip() {
+    World world(Vec3{0.0f, 0.0f, 0.0f});
+    World::ArticulationConfig cfg{};
+    cfg.enableVelocityPreCorrection = true;
+    cfg.enableVelocityPreCorrectionKinematicsOnly = true;
+    cfg.enableVelocityPreCorrectionFullForwardPass = true;
+    cfg.enableChainPositionSolve = true;
+    cfg.enableVelocityPreCorrectionChassisCoupling            = true;
+    cfg.chassisCouplingGain                                     = 0.5f;
+    cfg.chassisCouplingAngularOnly                              = true;
+    cfg.enableVelocityPreCorrectionChassisArticulatedTree       = false;
+    cfg.enableVelocityPreCorrectionForwardCoriolis              = true;
+    cfg.includeServoPdBiasInArticulationU                       = false;
+    world.SetArticulationConfig(cfg);
+    const World::ArticulationConfig out = world.GetArticulationConfig();
+    check(out.enableVelocityPreCorrection, "ArticulationConfig round-trip: velocity pre-correction");
+    check(out.enableVelocityPreCorrectionKinematicsOnly,
+          "ArticulationConfig round-trip: kinematics-only flag");
+    check(out.enableVelocityPreCorrectionFullForwardPass,
+          "ArticulationConfig round-trip: full forward pass flag");
+    check(out.enableChainPositionSolve, "ArticulationConfig round-trip: chain position solve");
+    check(out.enableVelocityPreCorrectionChassisCoupling,
+          "ArticulationConfig round-trip: chassis coupling MVP flag");
+    check(approxEq(out.chassisCouplingGain, 0.5f), "ArticulationConfig round-trip: chassisCouplingGain");
+    check(out.chassisCouplingAngularOnly, "ArticulationConfig round-trip: chassisCouplingAngularOnly");
+    check(!out.enableVelocityPreCorrectionChassisArticulatedTree,
+          "ArticulationConfig round-trip: chassis tree flag");
+    check(out.enableVelocityPreCorrectionForwardCoriolis,
+          "ArticulationConfig round-trip: forward Coriolis flag");
+    check(!out.includeServoPdBiasInArticulationU,
+          "ArticulationConfig round-trip: includeServoPdBiasInArticulationU");
+}
+
+static void test_ABI_chain_u_nonzero_withServoBias() {
+    World world({0.0f, -9.81f, 0.0f});
+    Body anchor{};
+    anchor.shape       = ShapeType::Box;
+    anchor.halfExtents = {0.05f, 0.05f, 0.05f};
+    anchor.mass        = 1.0f;
+    anchor.isStatic    = true;
+    anchor.position    = {0.0f, 1.0f, 0.0f};
+    const std::uint32_t anchorId = world.CreateBody(anchor);
+
+    Body bob{};
+    bob.shape    = ShapeType::Sphere;
+    bob.radius   = 0.05f;
+    bob.mass     = 0.5f;
+    bob.position = {0.1f, 0.95f, 0.0f};
+    const std::uint32_t bobId = world.CreateBody(bob);
+
+    (void)world.CreateServoJoint(
+        anchorId,
+        bobId,
+        {0.0f, 1.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f},
+        /*targetAngle=*/0.35f,
+        10.0f,
+        10.0f,
+        1.0f,
+        0.0f,
+        0.5f,
+        1.0f,
+        5.0f,
+        0.0f);
+
+    World::ArticulationConfig cfg{};
+    cfg.enableVelocityPreCorrection               = true;
+    cfg.enableVelocityPreCorrectionKinematicsOnly = false;
+    world.SetArticulationConfig(cfg);
+
+    world.Step(1.0f / 240.0f, 1);
+    const std::vector<ArtChain>& chains = world.GetArticulationChains();
+    check(chains.size() == 1u, "ABI u test: one chain");
+    const ArtChain& ch = chains[0];
+    check(ch.links.size() == 2u, "ABI u test: two links");
+    check(std::abs(ch.u[1]) > 1e-4f, "ABI u[1] nonzero when hinge has PD bias (servo error)");
+}
+
+static void test_VelocityPreCorrection_fullForward_hexapod_finite() {
+    World world(Vec3{0.0f, 0.0f, 0.0f});
+    (void)BuildHexapodScene(world);
+    World::ArticulationConfig cfg{};
+    cfg.enableVelocityPreCorrection                      = true;
+    cfg.enableVelocityPreCorrectionKinematicsOnly        = false;
+    cfg.enableVelocityPreCorrectionFullForwardPass       = true;
+    world.SetArticulationConfig(cfg);
+    world.Step(1.0f / 240.0f, 1);
+    for (std::uint32_t bi = 0; bi < world.GetBodyCount(); ++bi) {
+        assertBodyKinematicsFinite(world.GetBody(bi));
+    }
+}
+
+static void test_VelocityPreCorrection_fullForward_coriolis_hexapod_finite() {
+    World world(Vec3{0.0f, 0.0f, 0.0f});
+    (void)BuildHexapodScene(world);
+    World::ArticulationConfig cfg{};
+    cfg.enableVelocityPreCorrection                      = true;
+    cfg.enableVelocityPreCorrectionKinematicsOnly        = false;
+    cfg.enableVelocityPreCorrectionFullForwardPass       = true;
+    cfg.enableVelocityPreCorrectionForwardCoriolis       = true;
+    world.SetArticulationConfig(cfg);
+    world.Step(1.0f / 240.0f, 1);
+    for (std::uint32_t bi = 0; bi < world.GetBodyCount(); ++bi) {
+        assertBodyKinematicsFinite(world.GetBody(bi));
+    }
+}
+
+static void test_articulation_driveTorque_shifts_chain_u() {
+    const Vec3 g{0.0f, -9.81f, 0.0f};
+    auto makeWorld = [&](float driveTau, bool pdInU) -> World {
+        World world(g);
+        Body anchor{};
+        anchor.shape       = ShapeType::Box;
+        anchor.halfExtents = {0.05f, 0.05f, 0.05f};
+        anchor.mass        = 1.0f;
+        anchor.isStatic    = true;
+        anchor.position    = {0.0f, 1.0f, 0.0f};
+        const std::uint32_t anchorId = world.CreateBody(anchor);
+
+        Body bob{};
+        bob.shape    = ShapeType::Sphere;
+        bob.radius   = 0.05f;
+        bob.mass     = 0.5f;
+        bob.position = {0.1f, 0.95f, 0.0f};
+        const std::uint32_t bobId = world.CreateBody(bob);
+
+        const std::uint32_t jointId = world.CreateServoJoint(
+            anchorId,
+            bobId,
+            {0.0f, 1.0f, 0.0f},
+            {0.0f, 0.0f, 1.0f},
+            /*targetAngle=*/0.35f,
+            10.0f,
+            10.0f,
+            1.0f,
+            0.0f,
+            0.5f,
+            1.0f,
+            5.0f,
+            0.0f);
+
+        World::ArticulationConfig cfg{};
+        cfg.enableVelocityPreCorrection               = true;
+        cfg.enableVelocityPreCorrectionKinematicsOnly = false;
+        cfg.includeServoPdBiasInArticulationU         = pdInU;
+        world.SetArticulationConfig(cfg);
+        world.GetServoJointMutable(jointId).articulationDriveTorque = driveTau;
+        world.Step(1.0f / 240.0f, 1);
+        return world;
+    };
+
+    const World w0 = makeWorld(0.0f, true);
+    const World wTau = makeWorld(4.25f, true);
+    const float u0   = w0.GetArticulationChains()[0].u[1];
+    const float uD   = wTau.GetArticulationChains()[0].u[1];
+    check(approxEq(uD - u0, 4.25f, 1e-3f),
+          "articulationDriveTorque adds literally to chain u[1] (PD bias in u on)");
+
+    const World wOff = makeWorld(3.0f, false);
+    const World wOff0 = makeWorld(0.0f, false);
+    check(approxEq(wOff.GetArticulationChains()[0].u[1] - wOff0.GetArticulationChains()[0].u[1], 3.0f, 1e-3f),
+          "articulationDriveTorque adds to u when PD bias excluded from u");
+}
+
+static void test_star_three_branch_root_Ia_compliance_finite() {
+    World world(Vec3{0.0f, 0.0f, 0.0f});
+
+    Body base{};
+    base.shape       = ShapeType::Box;
+    base.halfExtents = {0.15f, 0.05f, 0.15f};
+    base.mass        = 3.0f;
+    base.position    = {0.0f, 1.0f, 0.0f};
+    const std::uint32_t baseId = world.CreateBody(base);
+
+    auto armBody = [&](const Vec3& pos) {
+        Body arm{};
+        arm.shape       = ShapeType::Box;
+        arm.halfExtents = {0.04f, 0.04f, 0.04f};
+        arm.mass        = 0.35f;
+        arm.position    = pos;
+        return world.CreateBody(arm);
+    };
+
+    const std::uint32_t a0 = armBody({0.22f, 1.0f, 0.0f});
+    const std::uint32_t a1 = armBody({-0.18f, 1.0f, 0.2f});
+    const std::uint32_t a2 = armBody({-0.18f, 1.0f, -0.2f});
+
+    (void)world.CreateServoJoint(
+        baseId, a0, {0.15f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, 0.0f, 8.0f, 25.0f, 1.0f, 0.0f, 0.5f, 0.4f, 1.0f, 6.0f, 0.5f);
+    (void)world.CreateServoJoint(
+        baseId, a1, {-0.15f, 1.0f, 0.12f}, {0.0f, 1.0f, 0.0f}, 0.1f, 8.0f, 25.0f, 1.0f, 0.0f, 0.5f, 0.4f, 1.0f, 6.0f, 0.5f);
+    (void)world.CreateServoJoint(
+        baseId, a2, {-0.15f, 1.0f, -0.12f}, {1.0f, 0.0f, 0.0f}, -0.08f, 8.0f, 25.0f, 1.0f, 0.0f, 0.5f, 0.4f, 1.0f, 6.0f, 0.5f);
+
+    World::ArticulationConfig cfg{};
+    cfg.enableVelocityPreCorrection               = true;
+    cfg.enableVelocityPreCorrectionKinematicsOnly = false;
+    world.SetArticulationConfig(cfg);
+    world.Step(1.0f / 240.0f, 1);
+
+    const std::vector<ArtChain>& chains = world.GetArticulationChains();
+    check(chains.size() == 3u, "star: three serial chains from shared base");
+    const SpatialVec hTest{{0.35f, -0.2f, 0.6f}, Normalize(Vec3{0.1f, -0.3f, 0.5f})};
+    for (const ArtChain& ch : chains) {
+        check(ch.links.size() == 2u, "star: each branch is base + one child");
+        check(ch.links[0].bodyIdx == baseId, "star: shared root body");
+        check(ch.D[1] > 1e-6f, "star: positive ABI scalar at child joint");
+        check(std::isfinite(ch.Ia[0].mass) && ch.Ia[0].mass > 0.5f, "star: root articulated inertia mass sane");
+        const float comp = SpatialMotionCompliance(ch.Ia[0], hTest);
+        check(std::isfinite(comp) && comp > 0.0f, "star: root SpatialMotionCompliance(Ia[0], h) positive finite");
+    }
+    for (std::uint32_t bi = 0; bi < world.GetBodyCount(); ++bi) {
+        assertBodyKinematicsFinite(world.GetBody(bi));
+    }
+}
+
+static void test_VelocityPreCorrection_passA_pendulum() {
+    World world({0.0f, -9.81f, 0.0f});
+    Body anchor{};
+    anchor.shape       = ShapeType::Box;
+    anchor.halfExtents = {0.05f, 0.05f, 0.05f};
+    anchor.mass        = 1.0f;
+    anchor.isStatic    = true;
+    anchor.position    = {0.0f, 1.0f, 0.0f};
+    const std::uint32_t anchorId = world.CreateBody(anchor);
+
+    Body bob{};
+    bob.shape    = ShapeType::Sphere;
+    bob.radius   = 0.05f;
+    bob.mass     = 0.5f;
+    bob.position = {0.1f, 0.95f, 0.0f};
+    const std::uint32_t bobId = world.CreateBody(bob);
+
+    world.CreateServoJoint(
+        anchorId,
+        bobId,
+        {0.0f, 1.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f},
+        0.0f,
+        10.0f,
+        10.0f,
+        1.0f,
+        0.0f,
+        0.5f,
+        1.0f,
+        5.0f,
+        0.0f);
+
+    World::ArticulationConfig cfg{};
+    cfg.enableVelocityPreCorrection                   = true;
+    cfg.enableVelocityPreCorrectionKinematicsOnly     = true;
+    world.SetArticulationConfig(cfg);
+
+    world.Step(1.0f / 240.0f, 1);
+    const std::vector<ArtChain>& chains = world.GetArticulationChains();
+    check(chains.size() == 1u, "Pass A pendulum: one chain");
+    const ArtChain& ch = chains[0];
+    check(std::isfinite(ch.vel[1].lin.x) && std::isfinite(ch.vel[1].lin.y) && std::isfinite(ch.vel[1].lin.z),
+          "Pass A: child spatial lin velocity is finite");
+    check(std::isfinite(ch.vel[1].ang.x) && std::isfinite(ch.vel[1].ang.y) && std::isfinite(ch.vel[1].ang.z),
+          "Pass A: child spatial ang velocity is finite");
+}
+
+static void assertBodyKinematicsFinite(const Body& body) {
+    check(std::isfinite(body.position.x) && std::isfinite(body.position.y) && std::isfinite(body.position.z),
+          "body position finite");
+    check(std::isfinite(body.velocity.x) && std::isfinite(body.velocity.y) && std::isfinite(body.velocity.z),
+          "body velocity finite");
+    check(std::isfinite(body.angularVelocity.x) && std::isfinite(body.angularVelocity.y)
+            && std::isfinite(body.angularVelocity.z),
+          "body angular velocity finite");
+}
+
+static void test_VelocityPreCorrection_passC_pa_snapshot_finite_hexapod() {
+    World world({0.0f, -9.81f, 0.0f});
+    (void)BuildHexapodScene(world);
+    World::ArticulationConfig cfg{};
+    cfg.enableVelocityPreCorrection               = true;
+    cfg.enableVelocityPreCorrectionKinematicsOnly = false;
+    world.SetArticulationConfig(cfg);
+    world.Step(1.0f / 240.0f, 1);
+    const ArtChain& ch = world.GetArticulationChains()[0];
+    for (std::size_t li = 1; li < ch.links.size(); ++li) {
+        const SpatialVec& p = ch.paJointSnapshot[li];
+        check(std::isfinite(p.ang.x) && std::isfinite(p.ang.y) && std::isfinite(p.ang.z)
+                && std::isfinite(p.lin.x) && std::isfinite(p.lin.y) && std::isfinite(p.lin.z),
+              "Pass B/C: paJointSnapshot is finite at articulated joints");
+    }
+}
+
+static void test_VelocityPreCorrection_hexapod_finite() {
+    World world({0.0f, -9.81f, 0.0f});
+    (void)BuildHexapodScene(world);
+    World::ArticulationConfig cfg{};
+    cfg.enableVelocityPreCorrection               = true;
+    cfg.enableVelocityPreCorrectionKinematicsOnly = false;
+    world.SetArticulationConfig(cfg);
+    world.Step(1.0f / 240.0f, 1);
+    for (std::uint32_t bi = 0; bi < world.GetBodyCount(); ++bi) {
+        assertBodyKinematicsFinite(world.GetBody(bi));
+    }
+}
+
+static float absHingeErrorForServoJoint(const World& world, std::uint32_t jointIdx) {
+    if (jointIdx == World::kInvalidJointId) {
+        return 0.0f;
+    }
+    const ServoJoint& sj  = world.GetServoJoint(jointIdx);
+    const Body&       a   = world.GetBody(sj.a);
+    const Body&       b   = world.GetBody(sj.b);
+    const float       ang = ComputeServoJointAngle(a, b, sj);
+    return std::abs(WrapJointAngle(ang - sj.targetAngle));
+}
+
+static void test_hinge_literal_step_monotonicity_hexapod() {
+    World world(Vec3{0.0f, 0.0f, 0.0f});
+    const HexapodSceneObjects scene = BuildHexapodScene(world);
+    JointSolverConfig jc = world.GetJointSolverConfig();
+    jc.servoPositionSolveStride = 1u;
+    world.SetJointSolverConfig(jc);
+    RelaxZeroGravityHexapodServos(world, scene);
+    world.Step(1.0f / 240.0f, 1);
+
+    const std::uint32_t kneeJoint = scene.legs[0].femurToTibiaJoint;
+    const float         e0k       = absHingeErrorForServoJoint(world, kneeJoint);
+    const ServoJoint&   sj0       = world.GetServoJoint(kneeJoint);
+    const float         hinge0 =
+        ComputeServoJointAngle(world.GetBody(sj0.a), world.GetBody(sj0.b), sj0);
+    ServoJoint& sjMut = world.GetServoJointMutable(kneeJoint);
+    sjMut.targetAngle = hinge0 + 0.05f;
+    const float ePert = absHingeErrorForServoJoint(world, kneeJoint);
+    check(ePert > e0k + 1e-5f, "hinge monotonicity: small knee target offset increases that joint error");
+
+    World::ArticulationConfig cfg{};
+    cfg.enableChainPositionSolve = true;
+    world.SetArticulationConfig(cfg);
+    float eTrack = ePert;
+    for (int i = 0; i < 96; ++i) {
+        world.Step(1.0f / 240.0f, 10);
+        const float e = absHingeErrorForServoJoint(world, kneeJoint);
+        if (e < eTrack) {
+            eTrack = e;
+        }
+    }
+    const float eEnd = absHingeErrorForServoJoint(world, kneeJoint);
+    check(std::isfinite(eEnd), "literal Step: knee hinge error finite");
+    check(eTrack < ePert - 1e-5f,
+          "literal Step sequence (zero-G, stride=1, chain on): knee |hinge error| dips below post-offset");
+}
+
+static void test_chassis_coupling_mvp_hexapod_finite() {
+    World world(Vec3{0.0f, 0.0f, 0.0f});
+    (void)BuildHexapodScene(world);
+    World::ArticulationConfig cfg{};
+    cfg.enableVelocityPreCorrection               = true;
+    cfg.enableVelocityPreCorrectionKinematicsOnly = false;
+    cfg.enableVelocityPreCorrectionChassisCoupling = true;
+    cfg.chassisCouplingGain                         = 0.35f;
+    cfg.chassisCouplingAngularOnly                  = false;
+    world.SetArticulationConfig(cfg);
+    world.Step(1.0f / 240.0f, 1);
+    for (std::uint32_t bi = 0; bi < world.GetBodyCount(); ++bi) {
+        assertBodyKinematicsFinite(world.GetBody(bi));
+    }
+}
+
+static void test_chassis_coupling_tree_hexapod_finite() {
+    World world(Vec3{0.0f, 0.0f, 0.0f});
+    (void)BuildHexapodScene(world);
+    World::ArticulationConfig cfg{};
+    cfg.enableVelocityPreCorrection                      = true;
+    cfg.enableVelocityPreCorrectionKinematicsOnly      = false;
+    cfg.enableVelocityPreCorrectionChassisArticulatedTree = true;
+    cfg.chassisCouplingGain                              = 0.25f;
+    world.SetArticulationConfig(cfg);
+    world.Step(1.0f / 240.0f, 1);
+    for (std::uint32_t bi = 0; bi < world.GetBodyCount(); ++bi) {
+        assertBodyKinematicsFinite(world.GetBody(bi));
+    }
+}
+
+static void test_chain_position_solve_hexapod_smoke() {
+    World world(Vec3{0.0f, 0.0f, 0.0f});
+    const HexapodSceneObjects scene = BuildHexapodScene(world);
+    RelaxZeroGravityHexapodServos(world, scene);
+    world.Step(1.0f / 240.0f, 1);
+
+    World::ArticulationConfig cfg{};
+    cfg.enableChainPositionSolve = true;
+    world.SetArticulationConfig(cfg);
+    for (int i = 0; i < 20; ++i) {
+        world.Step(1.0f / 240.0f, 1);
+    }
+    for (std::uint32_t bi = 0; bi < world.GetBodyCount(); ++bi) {
+        assertBodyKinematicsFinite(world.GetBody(bi));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +827,60 @@ int main() {
 
     std::printf("test_PropagateInertia...\n");
     test_PropagateInertia();
+
+    std::printf("test_SpatialInertiaPlucker_kineticEnergyInvariant...\n");
+    test_SpatialInertiaPlucker_kineticEnergyInvariant();
+
+    std::printf("test_SpatialForceTranslateByOffset...\n");
+    test_SpatialForceTranslateByOffset();
+
+    std::printf("test_SpatialInertiaSolveMotion_diagonal...\n");
+    test_SpatialInertiaSolveMotion_diagonal();
+
+    std::printf("test_SpatialMotionCompliance_RigidBody...\n");
+    test_SpatialMotionCompliance_RigidBody();
+
+    std::printf("test_ABI_chain_D_positive...\n");
+    test_ABI_chain_D_positive();
+
+    std::printf("test_ArticulationConfig_roundTrip...\n");
+    test_ArticulationConfig_roundTrip();
+
+    std::printf("test_ABI_chain_u_nonzero_withServoBias...\n");
+    test_ABI_chain_u_nonzero_withServoBias();
+
+    std::printf("test_VelocityPreCorrection_passA_pendulum...\n");
+    test_VelocityPreCorrection_passA_pendulum();
+
+    std::printf("test_VelocityPreCorrection_passC_pa_snapshot_finite_hexapod...\n");
+    test_VelocityPreCorrection_passC_pa_snapshot_finite_hexapod();
+
+    std::printf("test_VelocityPreCorrection_hexapod_finite...\n");
+    test_VelocityPreCorrection_hexapod_finite();
+
+    std::printf("test_VelocityPreCorrection_fullForward_hexapod_finite...\n");
+    test_VelocityPreCorrection_fullForward_hexapod_finite();
+
+    std::printf("test_VelocityPreCorrection_fullForward_coriolis_hexapod_finite...\n");
+    test_VelocityPreCorrection_fullForward_coriolis_hexapod_finite();
+
+    std::printf("test_articulation_driveTorque_shifts_chain_u...\n");
+    test_articulation_driveTorque_shifts_chain_u();
+
+    std::printf("test_star_three_branch_root_Ia_compliance_finite...\n");
+    test_star_three_branch_root_Ia_compliance_finite();
+
+    std::printf("test_chain_position_solve_hexapod_smoke...\n");
+    test_chain_position_solve_hexapod_smoke();
+
+    std::printf("test_hinge_literal_step_monotonicity_hexapod...\n");
+    test_hinge_literal_step_monotonicity_hexapod();
+
+    std::printf("test_chassis_coupling_mvp_hexapod_finite...\n");
+    test_chassis_coupling_mvp_hexapod_finite();
+
+    std::printf("test_chassis_coupling_tree_hexapod_finite...\n");
+    test_chassis_coupling_tree_hexapod_finite();
 
     std::printf("test_BuildArticulationChains_Pendulum...\n");
     test_BuildArticulationChains_Pendulum();

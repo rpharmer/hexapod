@@ -114,6 +114,9 @@ struct ServoJoint {
     float smoothedAngleError = 0.0f;
     /// Max position error (rad) fed to bias velocity; limits correction rate for large errors.
     float maxCorrectionAngle = 0.5f;
+    /// Optional hinge-axis torque (N·m) added to articulated `u` in `PrepareArticulatedInertias`
+    /// (parent `localAxisA` / world hinge axis). Default 0 (PD-only path).
+    float articulationDriveTorque = 0.0f;
     /// Scales post-integration positional hinge correction for this joint (1 = default).
     float angleStabilizationScale = 1.0f;
     // Solver-side hysteresis flags for staged early-out gates.

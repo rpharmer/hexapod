@@ -47,6 +47,14 @@ void World::SetJointSolverConfig(const JointSolverConfig& config) {
     jointSolverConfig_ = config;
 }
 
+void World::SetArticulationConfig(const ArticulationConfig& config) {
+    articulationConfig_ = config;
+}
+
+World::ArticulationConfig World::GetArticulationConfig() const {
+    return articulationConfig_;
+}
+
 void World::SetBroadphaseConfig(const BroadphaseConfig& config) {
     broadphaseConfig_ = config;
 }
@@ -627,6 +635,12 @@ void World::Step(float dt, int solverIterations) {
         // completes. The Solve*Joint functions then become tight per-iteration impulse updates.
         PrepareHingeJointSolves();
         PrepareServoJointSolves();
+        {
+            const auto scope = resource_profiler_.scope(
+                world_resource_monitoring::toIndex(world_resource_monitoring::Section::PrepareArticulatedInertias));
+            PrepareArticulatedInertias();
+            (void)scope;
+        }
         // Same idea for contacts: cache ra, rb, raCrossN, rbCrossN, normalMass once per
         // substep so the per-iteration normal-solve path (scalar / Block2 / Block4) doesn't
         // recompute the constraint Jacobian every PGS iteration.
@@ -673,7 +687,7 @@ void World::Step(float dt, int solverIterations) {
             const bool runPositionSolve =
                 (servoPositionSolveSubstepCounter_ % static_cast<std::uint64_t>(solveStride)) == 0u;
             if (runPositionSolve) {
-                SolveJointPositions();
+                SolveArticulationPositions();
             }
             ++servoPositionSolveSubstepCounter_;
             (void)scope;

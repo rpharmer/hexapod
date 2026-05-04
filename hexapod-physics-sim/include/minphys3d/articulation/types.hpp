@@ -58,11 +58,29 @@ struct ArtChain {
     // Effective scalar mass at each joint: D[i] = s_i^T * Ia[i] * s_i.
     // D[0] is unused (root has no parent joint).
     std::vector<float> D;
-    // Generalised force at each joint: u[i] = tau_i − s_i^T * Pa[i].ang.
+    // Generalised force at each joint (scalar, revolute DOF).  Filled in
+    // `PrepareArticulatedInertias`: u = s^T*Pa + (optional) D*servoBias from
+    // `ArticulationConfig::includeServoPdBiasInArticulationU` + `ServoJoint::articulationDriveTorque`.
     // u[0] is unused.
     std::vector<float> u;
     // Spatial velocity of each link (computed root→tip in PrepareArticulatedInertias).
     std::vector<SpatialVec> vel;
+    // Rigid-body spatial inertia at each link anchor before ABI merge (Phase 2 Pa / diagnostics).
+    std::vector<SpatialInertia> rigidSpatialI;
+    // Pa at each link immediately before that link's joint is processed in the tip→root ABI loop
+    // (used for Phase 2 joint-acceleration projection).
+    std::vector<SpatialVec> paJointSnapshot;
+    // Articulated composite inertia at link i's joint anchor **before** factoring
+    // that joint's DOF (used by optional full forward acceleration pass).
+    std::vector<SpatialInertia> iaPreJoint;
+    // Spatial accelerations at each link joint anchor (optional forward pass).
+    std::vector<SpatialVec> spatialAcc;
+
+    // When `enableVelocityPreCorrectionChassisArticulatedTree` is on: articulated leg subtree
+    // (links 1..N−1) at link-1 joint anchor, captured immediately before merging link 1 into the
+    // chassis in the tip→root ABI loop (N >= 4).
+    SpatialInertia legSubtreeIaAtCoxaAnchor{};
+    SpatialVec    legSubtreePaAtCoxaAnchor{};
 
     // Convenience: number of links (chain length including root).
     std::size_t size() const { return links.size(); }
@@ -75,6 +93,12 @@ struct ArtChain {
         D.assign(n, 0.0f);
         u.assign(n, 0.0f);
         vel.assign(n, SpatialVec{});
+        rigidSpatialI.assign(n, SpatialInertia{});
+        paJointSnapshot.assign(n, SpatialVec{});
+        iaPreJoint.assign(n, SpatialInertia{});
+        spatialAcc.assign(n, SpatialVec{});
+        legSubtreeIaAtCoxaAnchor = SpatialInertia{};
+        legSubtreePaAtCoxaAnchor = SpatialVec{};
     }
 };
 

@@ -615,6 +615,9 @@ struct JointSolverContext {
     std::vector<std::uint16_t>* servoFanoutScratch = nullptr;
     std::vector<Vec3>* servoAngularAccumScratch = nullptr;
     std::vector<std::uint16_t>* servoAngularCountScratch = nullptr;
+    /// When non-null and `(*mask)[jointIndex] != 0`, skip axis-alignment + hinge snap for that
+    /// servo (anchors still solved). Used with `World::SolveArticulationChainPositions`.
+    const std::vector<std::uint8_t>* skipServoHingeSnapMask = nullptr;
 };
 
 inline float WrapJointAngle(float angle) {
@@ -893,7 +896,13 @@ public:
                 angularAccum.assign(context.bodies.size(), Vec3{0.0f, 0.0f, 0.0f});
                 angularCount.assign(context.bodies.size(), 0);
 
-                for (const ServoJoint& j : context.servoJoints) {
+                for (std::size_t ji = 0; ji < context.servoJoints.size(); ++ji) {
+                    const ServoJoint& j = context.servoJoints[ji];
+                    if (context.skipServoHingeSnapMask != nullptr
+                        && ji < context.skipServoHingeSnapMask->size()
+                        && (*context.skipServoHingeSnapMask)[ji] != 0u) {
+                        continue;
+                    }
                     Body& a = context.bodies[j.a];
                     Body& b = context.bodies[j.b];
                     if (a.invMass + b.invMass <= kEpsilon) continue;
@@ -943,7 +952,8 @@ public:
             }
 
             for (int pass = 0; pass < servoPositionPasses; ++pass) {
-                for (ServoJoint& j : context.servoJoints) {
+                for (std::size_t ji = 0; ji < context.servoJoints.size(); ++ji) {
+                    ServoJoint& j = context.servoJoints[ji];
                     Body& a = context.bodies[j.a];
                     Body& b = context.bodies[j.b];
                     if (a.invMass + b.invMass <= kEpsilon) continue;
@@ -963,6 +973,11 @@ public:
                     if (!b.isSleeping) b.position -= correction * b.invMass;
 
                     if (useVelocityBiases || stab <= 1e-7f) continue;
+                    if (context.skipServoHingeSnapMask != nullptr
+                        && ji < context.skipServoHingeSnapMask->size()
+                        && (*context.skipServoHingeSnapMask)[ji] != 0u) {
+                        continue;
+                    }
 
                     Vec3 axisA = Rotate(a.orientation, j.localAxisA);
                     Vec3 axisB = Rotate(b.orientation, j.localAxisB);
