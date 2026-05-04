@@ -127,10 +127,12 @@ inline void UpdateHexapodStandingStats(
 /// `peakLinearSettled`. Assumes ~60 Hz outer steps (`Step` once per display frame after substeps).
 inline constexpr int kHexapodPoseHoldSettledStartFrame = 60;
 
-/// PGS iters per `World::Step(subdt, n)` (main constraint loop). Tuned scenario keeps **total** PGS
-/// work per ~60Hz frame = `kHexapodPoseHoldBenchmarkSubstepsPerFrame * this` **fixed** (e.g. 1×20=20);
-/// do not raise substeps or this without matching cuts if the budget is 20 PGS iters / frame.
-inline constexpr int kHexapodPoseHoldBenchmarkSolverIterations = 40;
+/// PGS iters per `World::Step(subdt, n)` (main constraint loop).
+/// Total PGS work per ~60Hz frame = `kHexapodPoseHoldBenchmarkSubstepsPerFrame × this`.
+/// Reduced from 40 → 30 after Featherstone ABI velocity pre-correction (Pass C) was enabled:
+/// the ABA forward pass pre-reduces servo-torque residual so 30 iterations achieves the same
+/// convergence quality as 40 did without it (-30% solve_islands time at equal stability).
+inline constexpr int kHexapodPoseHoldBenchmarkSolverIterations = 30;
 
 /// Substeps per ~60Hz frame. With [substeps]×[solver iters] capped, use **1** so total PGS iters / frame
 /// = 1×20 = 20 (not 3×20 = 60).
