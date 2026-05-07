@@ -15,6 +15,7 @@ constexpr double kMarginSoftM = 0.022;
 constexpr double kMarginHardM = 0.004;
 constexpr double kSlowStrideHz = 0.78;
 constexpr double kSlowStrideLeanBoost = 1.18;
+constexpr double kObliqueRollBlendLimit = 0.45;
 
 } // namespace
 
@@ -39,7 +40,20 @@ BodyPoseSetpoint computeBodyPoseSetpoint(const MotionIntent& intent,
     const double yaw_n = std::clamp(cmd.yaw_rate_radps / kLeanYawRefRadps, -1.2, 1.2);
 
     out.pitch_rad += -kLeanPitchPerVx * vx_n * margin_scale;
-    out.roll_rad += kLeanRollPerYaw * yaw_n * margin_scale + kLeanRollPerVy * vy_n * margin_scale;
+
+    const double yaw_roll = kLeanRollPerYaw * yaw_n * margin_scale;
+    const double lateral_roll = kLeanRollPerVy * vy_n * margin_scale;
+    double combined_roll = yaw_roll + lateral_roll;
+    const bool same_sign = (yaw_roll >= 0.0 && lateral_roll >= 0.0) || (yaw_roll <= 0.0 && lateral_roll <= 0.0);
+    if (same_sign && std::abs(yaw_roll) > 1e-6 && std::abs(lateral_roll) > 1e-6) {
+        const double oblique_coupling = std::clamp(std::min(std::abs(yaw_n), std::abs(vy_n)), 0.0, 1.0);
+        const double dominant = std::max(std::abs(yaw_roll), std::abs(lateral_roll));
+        const double residual = std::abs(combined_roll) - dominant;
+        combined_roll = std::copysign(
+            dominant + residual * (1.0 - kObliqueRollBlendLimit * oblique_coupling),
+            combined_roll);
+    }
+    out.roll_rad += combined_roll;
 
     return out;
 }

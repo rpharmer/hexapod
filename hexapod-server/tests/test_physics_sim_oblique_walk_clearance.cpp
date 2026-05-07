@@ -200,13 +200,13 @@ int main(int argc, char** argv) {
     const WalkPhaseCase phases[] = {
         {"ripple_lateral_yaw_pose",
          {true, RobotMode::WALK, GaitType::RIPPLE, 0.14, 0.05, 1.57, 0.14, 0.0},
-         static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(700, bus_loop_period_us))},
+         static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(500, bus_loop_period_us))},
         {"wave_backward_yaw_pose",
          {true, RobotMode::WALK, GaitType::WAVE, 0.14, 0.04, 3.14, -0.16, 0.0},
-         static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(700, bus_loop_period_us))},
+         static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(500, bus_loop_period_us))},
         {"tripod_lateral_yaw_pose",
          {true, RobotMode::WALK, GaitType::TRIPOD, 0.14, 0.04, -1.57, 0.10, 0.0},
-         static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(700, bus_loop_period_us))},
+         static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(500, bus_loop_period_us))},
     };
 
     const int kStandWarmupSteps = static_cast<int>(

@@ -85,8 +85,8 @@ GaitPresetTemplate gaitPresetTemplate(const GaitType gait) {
         out.duty_factor = 0.82;
         out.phase_offset = kSequentialOffsets;
         out.base_step_frequency_hz = 0.95;
-        out.base_step_length_m = 0.05;
-        out.base_swing_height_m = 0.026;
+        out.base_step_length_m = 0.048;
+        out.base_swing_height_m = 0.028;
         break;
     case GaitType::CRAWL:
         out.duty_factor = 0.90;
@@ -147,9 +147,17 @@ UnifiedGaitDescription buildTargetUnifiedGait(const GaitType gait,
         ? std::clamp(std::abs(vy_mps) / planar_speed_mps, 0.0, 1.0)
         : 0.0;
     const double oblique_scale = std::max(yaw_scale, lat_frac);
+    const double lateral_step_scale = 1.0 - 0.08 * lat_frac;
+    const double wave_oblique_step_scale =
+        (gait == GaitType::WAVE) ? (1.0 - 0.10 * std::max(low_speed_scale, oblique_scale)) : 1.0;
+    desc.step_length_m = std::clamp(desc.step_length_m * lateral_step_scale * wave_oblique_step_scale, 0.012, 0.12);
+    const double gait_specific_clearance_boost_m =
+        (gait == GaitType::WAVE ? 0.004 * std::max(low_speed_scale, oblique_scale) : 0.0) +
+        0.002 * std::max(0.0, lat_frac - 0.35);
     const double swing_height_floor_m =
         swingHeightFloorForPreset(preset) +
-        kLowSpeedYawSwingBoostM * low_speed_scale * (0.5 + 0.5 * oblique_scale);
+        kLowSpeedYawSwingBoostM * low_speed_scale * (0.5 + 0.5 * oblique_scale) +
+        gait_specific_clearance_boost_m;
     desc.swing_height_m = std::max(desc.swing_height_m, swing_height_floor_m);
     desc.swing_time_ease =
         std::clamp(0.52 + 0.46 * (1.0 - std::min(speed_mag, 1.25) / 1.25), 0.40, 1.0);

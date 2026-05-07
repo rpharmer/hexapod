@@ -291,10 +291,24 @@ std::size_t samplesForDuration(const double duration_s, const double sample_peri
         1, static_cast<std::size_t>(std::llround(duration_s / sample_period_s)));
 }
 
+double locomotionLimitDouble(const char* case_name, const char* key, const double fallback) {
+    return test_limits::getDouble("locomotion_regression", case_name, "", key, fallback);
+}
+
+std::size_t locomotionLimitSizeT(const char* case_name, const char* key, const std::size_t fallback) {
+    return test_limits::getSizeT("locomotion_regression", case_name, "", key, fallback);
+}
+
 std::string locomotionRegressionLimitsAppliedJson(const std::string& case_name, const LocomotionMetrics& m) {
     std::ostringstream o;
     o << "{\"case_name\":\"" << jsonEscape(case_name) << '"';
     if (case_name == "steady_forward_walk") {
+        const double max_anchor =
+            locomotionLimitDouble(case_name.c_str(), "max_contact_anchor_max_drift_m", 0.80);
+        const double min_foot_z =
+            locomotionLimitDouble(case_name.c_str(), "min_measured_foot_world_z_m", -0.08);
+        const double max_track_err =
+            locomotionLimitDouble(case_name.c_str(), "max_contact_tracking_error_m", 0.20);
         o << ",\"walk_sample_count_min\":250"
           << ",\"stride_count_min\":5"
           << ",\"path_length_m_min\":0.12"
@@ -303,6 +317,9 @@ std::string locomotionRegressionLimitsAppliedJson(const std::string& case_name, 
           << ",\"max_abs_pitch_rad_max\":0.65"
           << ",\"mean_horizontal_speed_mps_min\":0.02"
           << ",\"mean_horizontal_speed_mps_max\":0.22"
+          << ",\"max_contact_anchor_max_drift_m\":" << formatDouble(max_anchor)
+          << ",\"min_measured_foot_world_z_m\":" << formatDouble(min_foot_z)
+          << ",\"max_contact_tracking_error_m\":" << formatDouble(max_track_err)
           << ",\"expect_fault\":false";
     } else if (case_name == "turn_in_place") {
         o << ",\"yaw_delta_abs_min_rad\":0.25"
@@ -311,27 +328,72 @@ std::string locomotionRegressionLimitsAppliedJson(const std::string& case_name, 
           << ",\"stride_count_min\":4"
           << ",\"expect_fault\":false";
     } else if (case_name == "gait_transition_stability") {
+        const std::size_t walk_sample_min =
+            locomotionLimitSizeT(case_name.c_str(), "walk_sample_count_min", 400);
+        const std::size_t stride_min =
+            locomotionLimitSizeT(case_name.c_str(), "stride_count_min", 6);
+        const double max_anchor =
+            locomotionLimitDouble(case_name.c_str(), "max_contact_anchor_max_drift_m", 0.60);
+        const double min_foot_z =
+            locomotionLimitDouble(case_name.c_str(), "min_measured_foot_world_z_m", -0.08);
+        const double max_track_err =
+            locomotionLimitDouble(case_name.c_str(), "max_contact_tracking_error_m", 0.12);
         o << ",\"mode_transition_count_min\":2"
           << ",\"gait_segments_min\":4"
+          << ",\"walk_sample_count_min\":" << walk_sample_min
+          << ",\"stride_count_min\":" << stride_min
           << ",\"step_length_delta_min_m\":0.001"
           << ",\"swing_height_delta_min_m\":0.001"
+          << ",\"max_contact_anchor_max_drift_m\":" << formatDouble(max_anchor)
+          << ",\"min_measured_foot_world_z_m\":" << formatDouble(min_foot_z)
+          << ",\"max_contact_tracking_error_m\":" << formatDouble(max_track_err)
           << ",\"expect_fault\":false";
     } else if (case_name == "aggressive_governor") {
+        const double max_anchor =
+            locomotionLimitDouble(case_name.c_str(), "max_contact_anchor_max_drift_m", 0.55);
+        const double min_foot_z =
+            locomotionLimitDouble(case_name.c_str(), "min_measured_foot_world_z_m", -0.11);
+        const double max_track_err =
+            locomotionLimitDouble(case_name.c_str(), "max_contact_tracking_error_m", 0.24);
         o << ",\"min_command_scale_max\":0.95"
           << ",\"min_cadence_scale_max\":0.97"
           << ",\"max_governed_speed_mps_min\":0.01"
           << ",\"stride_count_min\":2"
+          << ",\"max_contact_anchor_max_drift_m\":" << formatDouble(max_anchor)
+          << ",\"min_measured_foot_world_z_m\":" << formatDouble(min_foot_z)
+          << ",\"max_contact_tracking_error_m\":" << formatDouble(max_track_err)
           << ",\"expect_fault\":false";
     } else if (case_name == "command_timeout_fallback") {
+        const double path_max =
+            locomotionLimitDouble(case_name.c_str(), "path_length_m_max_after_fault", 0.25);
+        const double displacement_max =
+            locomotionLimitDouble(case_name.c_str(), "net_displacement_m_max_after_fault", 0.05);
+        const double max_roll =
+            locomotionLimitDouble(case_name.c_str(), "max_abs_roll_rad_max", 0.20);
+        const double max_pitch =
+            locomotionLimitDouble(case_name.c_str(), "max_abs_pitch_rad_max", 0.20);
         o << ",\"expect_fault\":true"
           << ",\"expected_fault\":\"COMMAND_TIMEOUT\""
           << ",\"final_mode\":\"SAFE_IDLE\""
-          << ",\"first_fault_step_min\":20";
+          << ",\"first_fault_step_min\":20"
+          << ",\"path_length_m_max_after_fault\":" << formatDouble(path_max)
+          << ",\"net_displacement_m_max_after_fault\":" << formatDouble(displacement_max)
+          << ",\"max_abs_roll_rad_max\":" << formatDouble(max_roll)
+          << ",\"max_abs_pitch_rad_max\":" << formatDouble(max_pitch);
     } else if (case_name == "low_support_walk") {
+        const double max_anchor =
+            locomotionLimitDouble(case_name.c_str(), "max_contact_anchor_max_drift_m", 0.30);
+        const double min_foot_z =
+            locomotionLimitDouble(case_name.c_str(), "min_measured_foot_world_z_m", -0.10);
+        const double max_track_err =
+            locomotionLimitDouble(case_name.c_str(), "max_contact_tracking_error_m", 0.08);
         o << ",\"walk_sample_count_min\":250"
           << ",\"stride_count_min\":4"
           << ",\"min_support_margin_m_max\":0.06"
           << ",\"governor_attenuation_required\":true"
+          << ",\"max_contact_anchor_max_drift_m\":" << formatDouble(max_anchor)
+          << ",\"min_measured_foot_world_z_m\":" << formatDouble(min_foot_z)
+          << ",\"max_contact_tracking_error_m\":" << formatDouble(max_track_err)
           << ",\"expect_fault\":false";
     } else if (case_name == "long_walk_observability") {
         constexpr const char* kSuite = "locomotion_regression";
@@ -370,12 +432,24 @@ std::string locomotionRegressionLimitsAppliedJson(const std::string& case_name, 
           << ",\"transition_window_samples\":" << trans_win
           << ",\"baseline_tail_samples\":" << base_tail;
     } else if (case_name == "tilt_safety_trip") {
+        const std::size_t first_fault_step_max =
+            locomotionLimitSizeT(case_name.c_str(), "first_fault_step_max", 1200);
+        const double max_roll =
+            locomotionLimitDouble(case_name.c_str(), "max_abs_roll_rad_max", 0.24);
+        const double max_pitch =
+            locomotionLimitDouble(case_name.c_str(), "max_abs_pitch_rad_max", 0.16);
+        const double max_track_err =
+            locomotionLimitDouble(case_name.c_str(), "max_contact_tracking_error_m", 0.16);
         o << ",\"expect_fault\":true"
           << ",\"expected_fault\":\"TIP_OVER\""
           << ",\"first_fault_step_min\":40"
+          << ",\"first_fault_step_max\":" << first_fault_step_max
           << ",\"path_length_m_min\":0.1"
           << ",\"configured_max_tilt_rad\":0.25"
-          << ",\"configured_rapid_body_rate_radps\":0.45";
+          << ",\"configured_rapid_body_rate_radps\":0.45"
+          << ",\"max_abs_roll_rad_max\":" << formatDouble(max_roll)
+          << ",\"max_abs_pitch_rad_max\":" << formatDouble(max_pitch)
+          << ",\"max_contact_tracking_error_m\":" << formatDouble(max_track_err);
     }
     o << '}';
     return o.str();
@@ -498,6 +572,7 @@ CaseResult runCase(const std::string& sim_exe,
 }
 
 bool caseSteadyForwardWalk(const CaseResult& result, std::string& reason) {
+    constexpr const char* kCase = "steady_forward_walk";
     const auto& m = result.metrics;
     if (!(m.walk_sample_count >= 250)) {
         reason = "steady walk should sustain many active samples";
@@ -525,6 +600,21 @@ bool caseSteadyForwardWalk(const CaseResult& result, std::string& reason) {
     }
     if (!(m.mean_horizontal_speed_mps >= 0.02 && m.mean_horizontal_speed_mps <= 0.22)) {
         reason = "steady walk mean speed should stay in the expected band";
+        return false;
+    }
+    if (!(m.max_contact_anchor_max_drift_m <=
+          locomotionLimitDouble(kCase, "max_contact_anchor_max_drift_m", 0.80))) {
+        reason = "steady walk should keep stance anchors bounded over repeated contacts";
+        return false;
+    }
+    if (!(m.min_measured_foot_world_z_m >=
+          locomotionLimitDouble(kCase, "min_measured_foot_world_z_m", -0.08))) {
+        reason = "steady walk should avoid deep measured foot penetration";
+        return false;
+    }
+    if (!(m.max_contact_tracking_error_m <=
+          locomotionLimitDouble(kCase, "max_contact_tracking_error_m", 0.20))) {
+        reason = "steady walk should keep stance tracking error bounded";
         return false;
     }
     return true;
@@ -556,6 +646,7 @@ bool caseTurnInPlace(const CaseResult& result, std::string& reason) {
 }
 
 bool caseGaitTransitionStability(const CaseResult& result, std::string& reason) {
+    constexpr const char* kCase = "gait_transition_stability";
     const auto& m = result.metrics;
     if (m.saw_fault) {
         reason = "gait transition case should not fault";
@@ -569,12 +660,35 @@ bool caseGaitTransitionStability(const CaseResult& result, std::string& reason) 
         reason = "gait transition case should preserve multiple gait segments";
         return false;
     }
+    if (!(m.walk_sample_count >= locomotionLimitSizeT(kCase, "walk_sample_count_min", 400))) {
+        reason = "gait transition case should preserve a sustained active walk window";
+        return false;
+    }
+    if (!(m.stride_count >= locomotionLimitSizeT(kCase, "stride_count_min", 6))) {
+        reason = "gait transition case should cover multiple strides across transitions";
+        return false;
+    }
     if (!(m.max_step_length_m > m.min_step_length_m + 0.001)) {
         reason = "gait transition case should change step length across gait changes";
         return false;
     }
     if (!(m.max_swing_height_m > m.min_swing_height_m + 0.001)) {
         reason = "gait transition case should change swing height across gait changes";
+        return false;
+    }
+    if (!(m.max_contact_anchor_max_drift_m <=
+          locomotionLimitDouble(kCase, "max_contact_anchor_max_drift_m", 0.60))) {
+        reason = "gait transitions should keep stance anchors bounded";
+        return false;
+    }
+    if (!(m.min_measured_foot_world_z_m >=
+          locomotionLimitDouble(kCase, "min_measured_foot_world_z_m", -0.08))) {
+        reason = "gait transitions should avoid deep measured foot penetration";
+        return false;
+    }
+    if (!(m.max_contact_tracking_error_m <=
+          locomotionLimitDouble(kCase, "max_contact_tracking_error_m", 0.12))) {
+        reason = "gait transitions should keep stance tracking error bounded";
         return false;
     }
     return true;
@@ -691,6 +805,7 @@ bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
 }
 
 bool caseTimeoutFallback(const CaseResult& result, std::string& reason) {
+    constexpr const char* kCase = "command_timeout_fallback";
     const auto& m = result.metrics;
     if (!m.saw_fault) {
         reason = "timeout fallback should eventually reject the stale intent";
@@ -708,10 +823,24 @@ bool caseTimeoutFallback(const CaseResult& result, std::string& reason) {
         reason = "timeout fallback should trip after the initial hold window";
         return false;
     }
+    if (!(m.path_length_m <= locomotionLimitDouble(kCase, "path_length_m_max_after_fault", 0.25))) {
+        reason = "timeout fallback should not keep accumulating path length after the freshness trip";
+        return false;
+    }
+    if (!(m.net_displacement_m <= locomotionLimitDouble(kCase, "net_displacement_m_max_after_fault", 0.05))) {
+        reason = "timeout fallback should not keep drifting materially after the freshness trip";
+        return false;
+    }
+    if (!(m.max_abs_roll_rad <= locomotionLimitDouble(kCase, "max_abs_roll_rad_max", 0.20) &&
+          m.max_abs_pitch_rad <= locomotionLimitDouble(kCase, "max_abs_pitch_rad_max", 0.20))) {
+        reason = "timeout fallback should settle without secondary instability";
+        return false;
+    }
     return true;
 }
 
 bool caseSparseSupportWalk(const CaseResult& result, std::string& reason) {
+    constexpr const char* kCase = "low_support_walk";
     const auto& m = result.metrics;
     if (!(m.walk_sample_count >= 250)) {
         reason = "low-support walk should keep moving";
@@ -733,10 +862,26 @@ bool caseSparseSupportWalk(const CaseResult& result, std::string& reason) {
         reason = "low-support walk should not fault";
         return false;
     }
+    if (!(m.max_contact_anchor_max_drift_m <=
+          locomotionLimitDouble(kCase, "max_contact_anchor_max_drift_m", 0.30))) {
+        reason = "low-support walk should keep stance anchors bounded";
+        return false;
+    }
+    if (!(m.min_measured_foot_world_z_m >=
+          locomotionLimitDouble(kCase, "min_measured_foot_world_z_m", -0.10))) {
+        reason = "low-support walk should avoid deep measured foot penetration";
+        return false;
+    }
+    if (!(m.max_contact_tracking_error_m <=
+          locomotionLimitDouble(kCase, "max_contact_tracking_error_m", 0.08))) {
+        reason = "low-support walk should keep stance tracking error bounded";
+        return false;
+    }
     return true;
 }
 
 bool caseAggressiveGovernor(const CaseResult& result, std::string& reason) {
+    constexpr const char* kCase = "aggressive_governor";
     const auto& m = result.metrics;
     if (!(m.min_command_scale < 0.95)) {
         reason = "aggressive command should be attenuated by the governor";
@@ -758,10 +903,26 @@ bool caseAggressiveGovernor(const CaseResult& result, std::string& reason) {
         reason = "aggressive governor case should remain in bounds";
         return false;
     }
+    if (!(m.max_contact_anchor_max_drift_m <=
+          locomotionLimitDouble(kCase, "max_contact_anchor_max_drift_m", 0.55))) {
+        reason = "aggressive governor case should keep stance anchors bounded";
+        return false;
+    }
+    if (!(m.min_measured_foot_world_z_m >=
+          locomotionLimitDouble(kCase, "min_measured_foot_world_z_m", -0.11))) {
+        reason = "aggressive governor case should avoid deep measured foot penetration";
+        return false;
+    }
+    if (!(m.max_contact_tracking_error_m <=
+          locomotionLimitDouble(kCase, "max_contact_tracking_error_m", 0.24))) {
+        reason = "aggressive governor case should keep stance tracking error bounded";
+        return false;
+    }
     return true;
 }
 
 bool caseTiltSafetyTrip(const CaseResult& result, std::string& reason) {
+    constexpr const char* kCase = "tilt_safety_trip";
     const auto& m = result.metrics;
     if (!m.saw_fault) {
         reason = "tilt safety case should trip a fault";
@@ -777,6 +938,20 @@ bool caseTiltSafetyTrip(const CaseResult& result, std::string& reason) {
     }
     if (!(m.path_length_m > 0.1)) {
         reason = "tilt safety case should accumulate motion before the fault";
+        return false;
+    }
+    if (!(m.first_fault_step <= locomotionLimitSizeT(kCase, "first_fault_step_max", 1200))) {
+        reason = "tilt safety case should fault before a prolonged unstable tail develops";
+        return false;
+    }
+    if (!(m.max_abs_roll_rad <= locomotionLimitDouble(kCase, "max_abs_roll_rad_max", 0.24) &&
+          m.max_abs_pitch_rad <= locomotionLimitDouble(kCase, "max_abs_pitch_rad_max", 0.16))) {
+        reason = "tilt safety case should trip before extreme secondary tilt develops";
+        return false;
+    }
+    if (!(m.max_contact_tracking_error_m <=
+          locomotionLimitDouble(kCase, "max_contact_tracking_error_m", 0.16))) {
+        reason = "tilt safety case should not accumulate extreme stance tracking error before the trip";
         return false;
     }
     return true;

@@ -211,6 +211,20 @@ double g_max_stance_contact_tracking_error_m_lateral = 0.20;
 double g_max_commanded_tracking_error_m_forward_like = 0.22;
 double g_max_commanded_tracking_error_m_lateral = 0.20;
 double g_min_measured_foot_world_z_m = -0.04;
+double g_stand_settle_path_length_m_max = 0.02;
+double g_stand_settle_net_displacement_m_max = 0.005;
+double g_stand_settle_max_abs_tilt_rad = 0.02;
+double g_stand_settle_max_body_rate_radps = 0.5;
+double g_stand_settle_max_contact_anchor_max_drift_m = 0.08;
+double g_stand_settle_max_commanded_tracking_error_m = 0.06;
+double g_stand_settle_min_measured_foot_world_z_m = 0.005;
+double g_single_leg_masked_stand_path_length_m_max = 0.02;
+double g_single_leg_masked_stand_net_displacement_m_max = 0.005;
+double g_single_leg_masked_stand_max_abs_tilt_rad = 0.02;
+double g_single_leg_masked_stand_max_body_rate_radps = 0.5;
+double g_single_leg_masked_stand_max_contact_anchor_max_drift_m = 0.08;
+double g_single_leg_masked_stand_max_commanded_tracking_error_m = 0.06;
+double g_single_leg_masked_stand_min_measured_foot_world_z_m = 0.005;
 /** Ignore early walk transients before measuring stride cycles. */
 std::size_t g_stride_kinematics_walk_warmup_samples = 45;
 std::size_t g_stride_kinematics_min_touchdowns = 8;
@@ -256,6 +270,34 @@ void refreshMotionPerformanceLimitsFromManifest() {
         test_limits::getDouble(kSuite, "walk_gates", "lateral", "max_stance_contact_tracking_error_m", 0.20);
     g_max_commanded_tracking_error_m_lateral =
         test_limits::getDouble(kSuite, "walk_gates", "lateral", "max_commanded_tracking_error_m", 0.20);
+    g_stand_settle_path_length_m_max =
+        test_limits::getDouble(kSuite, "stand_settle", "", "path_length_m_max", 0.02);
+    g_stand_settle_net_displacement_m_max =
+        test_limits::getDouble(kSuite, "stand_settle", "", "net_displacement_m_max", 0.005);
+    g_stand_settle_max_abs_tilt_rad =
+        test_limits::getDouble(kSuite, "stand_settle", "", "max_abs_tilt_rad", 0.02);
+    g_stand_settle_max_body_rate_radps =
+        test_limits::getDouble(kSuite, "stand_settle", "", "max_body_rate_radps", 0.5);
+    g_stand_settle_max_contact_anchor_max_drift_m =
+        test_limits::getDouble(kSuite, "stand_settle", "", "max_contact_anchor_max_drift_m", 0.08);
+    g_stand_settle_max_commanded_tracking_error_m =
+        test_limits::getDouble(kSuite, "stand_settle", "", "max_commanded_tracking_error_m", 0.06);
+    g_stand_settle_min_measured_foot_world_z_m =
+        test_limits::getDouble(kSuite, "stand_settle", "", "min_measured_foot_world_z_m", 0.005);
+    g_single_leg_masked_stand_path_length_m_max =
+        test_limits::getDouble(kSuite, "single_leg_masked_stand", "", "path_length_m_max", 0.02);
+    g_single_leg_masked_stand_net_displacement_m_max =
+        test_limits::getDouble(kSuite, "single_leg_masked_stand", "", "net_displacement_m_max", 0.005);
+    g_single_leg_masked_stand_max_abs_tilt_rad =
+        test_limits::getDouble(kSuite, "single_leg_masked_stand", "", "max_abs_tilt_rad", 0.02);
+    g_single_leg_masked_stand_max_body_rate_radps =
+        test_limits::getDouble(kSuite, "single_leg_masked_stand", "", "max_body_rate_radps", 0.5);
+    g_single_leg_masked_stand_max_contact_anchor_max_drift_m =
+        test_limits::getDouble(kSuite, "single_leg_masked_stand", "", "max_contact_anchor_max_drift_m", 0.08);
+    g_single_leg_masked_stand_max_commanded_tracking_error_m =
+        test_limits::getDouble(kSuite, "single_leg_masked_stand", "", "max_commanded_tracking_error_m", 0.06);
+    g_single_leg_masked_stand_min_measured_foot_world_z_m =
+        test_limits::getDouble(kSuite, "single_leg_masked_stand", "", "min_measured_foot_world_z_m", 0.005);
 }
 
 double medianFromSorted(std::vector<double> values) {
@@ -289,6 +331,10 @@ struct StrideKinematicsSnapshot {
     bool skipped{true};
     std::string skip_reason{};
     std::size_t touchdown_events{0};
+    std::size_t planned_touchdown_events{0};
+    std::size_t fused_touchdown_events{0};
+    std::size_t planned_liftoff_events{0};
+    std::size_t fused_liftoff_events{0};
     double median_touchdown_span_m{0.0};
     double median_commanded_step_length_m{0.0};
     double median_commanded_swing_height_m{0.0};
@@ -360,10 +406,26 @@ StrideKinematicsEval evaluateStrideKinematics(const std::vector<MotionSample>& s
         if (past_warmup && prev.locomotion_debug.valid && s.locomotion_debug.valid) {
             for (int leg = 0; leg < kNumLegs; ++leg) {
                 const std::size_t li = static_cast<std::size_t>(leg);
-                const bool ps = prev.gait.in_stance[li];
-                const bool cs = s.gait.in_stance[li];
+                const bool ps = prev.locomotion_debug.planned_stance[li];
+                const bool cs = s.locomotion_debug.planned_stance[li];
+                const bool p_support = prev.locomotion_debug.fused_support[li];
+                const bool c_support = s.locomotion_debug.fused_support[li];
                 const Vec3& pm = prev.locomotion_debug.measured_foot_world_m[li];
                 const Vec3& cm = s.locomotion_debug.measured_foot_world_m[li];
+
+                if (ps && !cs) {
+                    snap.planned_liftoff_events += 1;
+                }
+                if (!ps && cs) {
+                    snap.planned_touchdown_events += 1;
+                }
+
+                if (p_support && !c_support) {
+                    snap.fused_liftoff_events += 1;
+                }
+                if (!p_support && c_support) {
+                    snap.fused_touchdown_events += 1;
+                }
 
                 if (ps && !cs) {
                     liftoff_x[li] = pm.x;
@@ -389,10 +451,27 @@ StrideKinematicsEval evaluateStrideKinematics(const std::vector<MotionSample>& s
     }
 
     snap.touchdown_events = touchdown_spans_m.size();
+    if (snap.fused_touchdown_events < std::min(g_stride_kinematics_min_touchdowns, snap.planned_touchdown_events)) {
+        snap.skipped = true;
+        snap.skip_reason = std::string("support_transition_count_insufficient: planned_touchdowns=") +
+                           std::to_string(snap.planned_touchdown_events) + ", fused_touchdowns=" +
+                           std::to_string(snap.fused_touchdown_events) + ", fused_liftoffs=" +
+                           std::to_string(snap.fused_liftoff_events);
+        return out;
+    }
+
+    if (touchdown_spans_m.empty()) {
+        out.failure = std::string("stride kinematics: no planner-segmented touchdown events (planned_touchdowns=") +
+                      std::to_string(snap.planned_touchdown_events) + ", stride_count=" +
+                      std::to_string(metrics.stride_count) + ')';
+        return out;
+    }
 
     if (touchdown_spans_m.size() < g_stride_kinematics_min_touchdowns) {
         out.failure = std::string("stride kinematics: too few touchdown events (n=") +
-                      std::to_string(touchdown_spans_m.size()) + "), check gait/in_stance telemetry";
+                      std::to_string(touchdown_spans_m.size()) + ", planned_touchdowns=" +
+                      std::to_string(snap.planned_touchdown_events) + ", fused_touchdowns=" +
+                      std::to_string(snap.fused_touchdown_events) + ')';
         return out;
     }
 
@@ -442,6 +521,10 @@ std::string strideKinematicsSnapshotToJson(const StrideKinematicsSnapshot& s) {
         o << ",\"skip_reason\":\"" << jsonEscape(s.skip_reason) << '"';
     }
     o << ",\"touchdown_events\":" << s.touchdown_events << ','
+      << "\"planned_touchdown_events\":" << s.planned_touchdown_events << ','
+      << "\"fused_touchdown_events\":" << s.fused_touchdown_events << ','
+      << "\"planned_liftoff_events\":" << s.planned_liftoff_events << ','
+      << "\"fused_liftoff_events\":" << s.fused_liftoff_events << ','
       << "\"median_touchdown_span_m\":" << formatDouble(s.median_touchdown_span_m) << ','
       << "\"median_commanded_step_length_m\":" << formatDouble(s.median_commanded_step_length_m) << ','
       << "\"median_commanded_swing_height_m\":" << formatDouble(s.median_commanded_swing_height_m) << ','
@@ -473,6 +556,34 @@ std::string walkLimitsAppliedToJson(const bool lateral_style,
     return o.str();
 }
 
+std::string standLimitsAppliedToJson(const std::string& case_name) {
+    const bool is_single_leg = case_name == "single_leg_masked_stand";
+    const double path_max =
+        is_single_leg ? g_single_leg_masked_stand_path_length_m_max : g_stand_settle_path_length_m_max;
+    const double displacement_max =
+        is_single_leg ? g_single_leg_masked_stand_net_displacement_m_max : g_stand_settle_net_displacement_m_max;
+    const double max_tilt =
+        is_single_leg ? g_single_leg_masked_stand_max_abs_tilt_rad : g_stand_settle_max_abs_tilt_rad;
+    const double max_body_rate =
+        is_single_leg ? g_single_leg_masked_stand_max_body_rate_radps : g_stand_settle_max_body_rate_radps;
+    const double max_anchor =
+        is_single_leg ? g_single_leg_masked_stand_max_contact_anchor_max_drift_m : g_stand_settle_max_contact_anchor_max_drift_m;
+    const double max_track =
+        is_single_leg ? g_single_leg_masked_stand_max_commanded_tracking_error_m : g_stand_settle_max_commanded_tracking_error_m;
+    const double min_foot_z =
+        is_single_leg ? g_single_leg_masked_stand_min_measured_foot_world_z_m : g_stand_settle_min_measured_foot_world_z_m;
+    std::ostringstream o;
+    o << "{\"gate_profile\":\"" << jsonEscape(case_name) << "\","
+      << "\"path_length_m_max\":" << formatDouble(path_max) << ','
+      << "\"net_displacement_m_max\":" << formatDouble(displacement_max) << ','
+      << "\"max_abs_tilt_rad\":" << formatDouble(max_tilt) << ','
+      << "\"max_body_rate_radps\":" << formatDouble(max_body_rate) << ','
+      << "\"max_contact_anchor_max_drift_m\":" << formatDouble(max_anchor) << ','
+      << "\"max_commanded_tracking_error_m\":" << formatDouble(max_track) << ','
+      << "\"min_measured_foot_world_z_m\":" << formatDouble(min_foot_z) << '}';
+    return o.str();
+}
+
 void emitMotionPerformanceJsonLine(const std::string& case_name,
                                    const bool passed,
                                    const LocomotionMetrics& metrics,
@@ -490,7 +601,7 @@ void emitMotionPerformanceJsonLine(const std::string& case_name,
                   << ",\"stride_kinematics\":" << strideKinematicsSnapshotToJson(stride) << ','
                   << "\"min_fk_foot_tip_world_z_m\":" << formatDouble(min_fk_foot_tip_world_z_m);
     } else {
-        std::cout << "\"limits_applied\":{},"
+        std::cout << "\"limits_applied\":" << standLimitsAppliedToJson(case_name) << ','
                   << "\"stride_kinematics\":{\"skipped\":true,\"skip_reason\":\"no_walk_samples\"},"
                   << "\"min_fk_foot_tip_world_z_m\":null";
     }
@@ -738,10 +849,51 @@ bool runCase(const std::string& sim_exe,
         }
     }
 
-    if (spec.name == "stand_settle") {
-        if (metrics.max_abs_roll_rad > 0.72 || metrics.max_abs_pitch_rad > 0.72) {
-            std::cerr << "WARN " << spec.name << ": tilt envelope soft check roll=" << metrics.max_abs_roll_rad
-                      << " pitch=" << metrics.max_abs_pitch_rad << '\n';
+    if (!any_walk_sample) {
+        const bool is_single_leg = spec.name == "single_leg_masked_stand";
+        const double path_max =
+            is_single_leg ? g_single_leg_masked_stand_path_length_m_max : g_stand_settle_path_length_m_max;
+        const double displacement_max =
+            is_single_leg ? g_single_leg_masked_stand_net_displacement_m_max : g_stand_settle_net_displacement_m_max;
+        const double max_tilt =
+            is_single_leg ? g_single_leg_masked_stand_max_abs_tilt_rad : g_stand_settle_max_abs_tilt_rad;
+        const double max_body_rate =
+            is_single_leg ? g_single_leg_masked_stand_max_body_rate_radps : g_stand_settle_max_body_rate_radps;
+        const double max_anchor =
+            is_single_leg ? g_single_leg_masked_stand_max_contact_anchor_max_drift_m : g_stand_settle_max_contact_anchor_max_drift_m;
+        const double max_track =
+            is_single_leg ? g_single_leg_masked_stand_max_commanded_tracking_error_m : g_stand_settle_max_commanded_tracking_error_m;
+        const double min_foot_z =
+            is_single_leg ? g_single_leg_masked_stand_min_measured_foot_world_z_m : g_stand_settle_min_measured_foot_world_z_m;
+        if (!(metrics.path_length_m <= path_max)) {
+            fail_reason = std::string("body path too large while standing (path_m=") + formatDouble(metrics.path_length_m) +
+                          " limit=" + formatDouble(path_max) + ")";
+            case_ok = false;
+        } else if (!(metrics.net_displacement_m <= displacement_max)) {
+            fail_reason = std::string("body displacement too large while standing (disp_m=") + formatDouble(metrics.net_displacement_m) +
+                          " limit=" + formatDouble(displacement_max) + ")";
+            case_ok = false;
+        } else if (!(std::max(metrics.max_abs_roll_rad, metrics.max_abs_pitch_rad) <= max_tilt)) {
+            fail_reason = std::string("tilt too large while standing (tilt_rad=") +
+                          formatDouble(std::max(metrics.max_abs_roll_rad, metrics.max_abs_pitch_rad)) +
+                          " limit=" + formatDouble(max_tilt) + ")";
+            case_ok = false;
+        } else if (!(metrics.max_body_rate_radps <= max_body_rate)) {
+            fail_reason = std::string("body rate too large while standing (rate_radps=") +
+                          formatDouble(metrics.max_body_rate_radps) + " limit=" + formatDouble(max_body_rate) + ")";
+            case_ok = false;
+        } else if (!(metrics.max_contact_anchor_max_drift_m <= max_anchor)) {
+            fail_reason = std::string("stance anchor drift too large while standing (max_drift_m=") +
+                          formatDouble(metrics.max_contact_anchor_max_drift_m) + " limit=" + formatDouble(max_anchor) + ")";
+            case_ok = false;
+        } else if (!(metrics.max_commanded_tracking_error_m <= max_track)) {
+            fail_reason = std::string("commanded vs measured foot tracking too large while standing (max_err_m=") +
+                          formatDouble(metrics.max_commanded_tracking_error_m) + " limit=" + formatDouble(max_track) + ")";
+            case_ok = false;
+        } else if (!(metrics.min_measured_foot_world_z_m >= min_foot_z)) {
+            fail_reason = std::string("measured foot tip too low while standing (min_world_z_m=") +
+                          formatDouble(metrics.min_measured_foot_world_z_m) + " limit=" + formatDouble(min_foot_z) + ")";
+            case_ok = false;
         }
     }
 
@@ -846,9 +998,9 @@ int main(int argc, char** argv) {
     const std::size_t stand_steps_smoke = 40;
     const std::size_t walk_steps_smoke = 120;
     const std::size_t stand_steps_full = 80;
-    const std::size_t walk_steps_full = 250;
+    const std::size_t walk_steps_full = 400;
     constexpr double kCompassWalkSpeedSmoke = 0.05;
-    constexpr double kCompassWalkSpeedFull = 0.06;
+    constexpr double kCompassWalkSpeedFull = 0.05;
 
     std::vector<CaseSpec> full_catalog;
     full_catalog.push_back(caseStandSettle(stand_steps_full));

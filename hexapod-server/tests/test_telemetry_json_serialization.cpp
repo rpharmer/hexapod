@@ -147,6 +147,11 @@ bool test_control_step_packet_includes_fusion_diagnostics()
     telemetry_sample.joint_targets.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{deg2rad(-10.0)};
     telemetry_sample.joint_targets.leg_states[0].joint_state[TIBIA].pos_rad = AngleRad{deg2rad(15.0)};
     telemetry_sample.locomotion_debug.valid = true;
+    telemetry_sample.locomotion_debug.planned_stance[0] = true;
+    telemetry_sample.locomotion_debug.raw_contact[0] = true;
+    telemetry_sample.locomotion_debug.fused_support[0] = true;
+    telemetry_sample.locomotion_debug.fused_contact_phase[0] = static_cast<std::uint8_t>(ContactPhase::ConfirmedStance);
+    telemetry_sample.locomotion_debug.fused_contact_confidence[0] = 0.91;
     telemetry_sample.locomotion_debug.measured_foot_world_m[0] = Vec3{0.2, 0.1, 0.0};
     telemetry_sample.locomotion_debug.commanded_foot_world_m[0] = Vec3{0.21, 0.09, 0.01};
     telemetry_sample.locomotion_debug.contact_anchor_world_m[0] = Vec3{0.2, 0.1, 0.0};
@@ -233,6 +238,10 @@ bool test_control_step_packet_includes_fusion_diagnostics()
                   "control step payload should include full measured body orientation") &&
            expect(payload.find("\"locomotion_debug\":{\"valid\":true") != std::string::npos,
                   "control step payload should include locomotion debug data") &&
+           expect(payload.find("\"planned_stance\":[true,false,false,false,false,false]") != std::string::npos,
+                  "locomotion debug payload should include planned stance state") &&
+           expect(payload.find("\"fused_support\":[true,false,false,false,false,false]") != std::string::npos,
+                  "locomotion debug payload should include fused support state") &&
            expect(payload.find("\"contact_anchor_drift_m\":[0.004") != std::string::npos,
                   "locomotion debug payload should include contact anchor drift") &&
            expect(payload.find("\"max_commanded_tracking_error_m\":0.012") != std::string::npos,

@@ -6,8 +6,8 @@
 namespace contact_foot_response {
 namespace {
 
-constexpr double kLateTouchdownTau = 0.86;
-constexpr double kMaxSwingDownExtensionM = 0.014;
+constexpr double kLateTouchdownTau = 0.90;
+constexpr double kMaxSwingDownExtensionM = 0.008;
 constexpr double kLevelGainMPerRad = 0.055;
 constexpr double kMaxLevelDzM = 0.014;
 constexpr double kTiltDeadzoneRad = 0.004;
@@ -70,20 +70,14 @@ void adjustSwingTauAndVerticalExtension(const bool in_swing,
     if (phase == ContactPhase::ExpectedTouchdown || phase == ContactPhase::ContactCandidate) {
         const double confidence = contact_fusion != nullptr ? std::clamp(contact_fusion->confidence, 0.0f, 1.0f)
                                                             : 0.5;
-        const double target_tau = std::clamp(0.92 + 0.06 * confidence, 0.0, 1.0);
+        const double target_tau = std::clamp(0.94 + 0.04 * confidence, 0.0, 1.0);
         tau_out = std::max(tau_out, target_tau);
         if (tau01 >= kLateTouchdownTau) {
             const double span = std::max(1.0 - kLateTouchdownTau, 1e-6);
             const double s = std::clamp((tau01 - kLateTouchdownTau) / span, 0.0, 1.0);
-            extra_down_z_m = kMaxSwingDownExtensionM * s * std::max(0.35, confidence);
+            extra_down_z_m = kMaxSwingDownExtensionM * s * std::max(0.20, confidence);
         }
         return;
-    }
-
-    if (tau01 >= kLateTouchdownTau) {
-        const double span = std::max(1.0 - kLateTouchdownTau, 1e-6);
-        const double s = std::clamp((tau01 - kLateTouchdownTau) / span, 0.0, 1.0);
-        extra_down_z_m = kMaxSwingDownExtensionM * s;
     }
 }
 

@@ -352,7 +352,17 @@ void appendLocomotionDebug(std::ostringstream& payload,
 {
     payload << "\"locomotion_debug\":{"
             << "\"valid\":" << (debug.valid ? "true" : "false")
-            << ",\"measured_foot_body_m\":";
+            << ",\"planned_stance\":";
+    appendBoolArray(payload, debug.planned_stance);
+    payload << ",\"raw_contact\":";
+    appendBoolArray(payload, debug.raw_contact);
+    payload << ",\"fused_support\":";
+    appendBoolArray(payload, debug.fused_support);
+    payload << ",\"fused_contact_phase\":";
+    appendScalarArray(payload, debug.fused_contact_phase);
+    payload << ",\"fused_contact_confidence\":";
+    appendScalarArray(payload, debug.fused_contact_confidence);
+    payload << ",\"measured_foot_body_m\":";
     appendVec3Array(payload, debug.measured_foot_body_m);
     payload << ",\"measured_foot_world_m\":";
     appendVec3Array(payload, debug.measured_foot_world_m);

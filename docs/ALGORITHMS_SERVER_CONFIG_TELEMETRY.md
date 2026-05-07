@@ -58,6 +58,27 @@ Control-step telemetry packet includes:
 
 This is the primary observability path for verifying supervisory decisions and command shaping.
 
+### Locomotion debug field semantics
+
+The locomotion debug payload should be read as two separate channels:
+
+- planner intent
+  - `planned_stance`
+- physical support
+  - `raw_contact`
+  - `fused_support`
+  - `fused_contact_phase`
+  - `fused_contact_confidence`
+
+Per-leg drift/tracking fields are still emitted alongside those channels:
+
+- `contact_anchor_world_m`
+- `contact_anchor_drift_m`
+- `contact_anchor_max_drift_m`
+- `commanded_tracking_error_m`
+
+Tests that evaluate touchdown/liftoff quality should prefer `fused_support` edges, not `planned_stance` edges alone.
+
 ## 4) Recommended debug workflow
 
 When diagnosing motion behavior:

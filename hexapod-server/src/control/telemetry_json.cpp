@@ -164,8 +164,18 @@ void appendVec3ArrayJson(std::ostringstream& payload, const std::array<Vec3, N>&
 void appendLocomotionDebugJson(std::ostringstream& payload,
                                const telemetry::LocomotionDebugSnapshot& debug) {
     payload << "\"locomotion_debug\":{"
-            << "\"valid\":" << (debug.valid ? "true" : "false")
-            << ",\"measured_foot_body_m\":";
+            << "\"valid\":" << (debug.valid ? "true" : "false");
+    payload << ",\"planned_stance\":";
+    appendBoolArrayJson(payload, debug.planned_stance);
+    payload << ",\"raw_contact\":";
+    appendBoolArrayJson(payload, debug.raw_contact);
+    payload << ",\"fused_support\":";
+    appendBoolArrayJson(payload, debug.fused_support);
+    payload << ",\"fused_contact_phase\":";
+    appendScalarArrayJson(payload, debug.fused_contact_phase);
+    payload << ",\"fused_contact_confidence\":";
+    appendScalarArrayJson(payload, debug.fused_contact_confidence);
+    payload << ",\"measured_foot_body_m\":";
     appendVec3ArrayJson(payload, debug.measured_foot_body_m);
     payload << ",\"measured_foot_world_m\":";
     appendVec3ArrayJson(payload, debug.measured_foot_world_m);

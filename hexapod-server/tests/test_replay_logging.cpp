@@ -90,6 +90,11 @@ replay_json::ReplayTelemetryRecord makeSampleRecord()
     record.joint_targets.leg_states[1].joint_state[2].pos_rad = AngleRad{0.66};
 
     record.locomotion_debug.valid = true;
+    record.locomotion_debug.planned_stance[0] = true;
+    record.locomotion_debug.raw_contact[0] = true;
+    record.locomotion_debug.fused_support[0] = true;
+    record.locomotion_debug.fused_contact_phase[0] = static_cast<std::uint8_t>(ContactPhase::ConfirmedStance);
+    record.locomotion_debug.fused_contact_confidence[0] = 0.95;
     record.locomotion_debug.measured_foot_world_m[0] = Vec3{0.22, -0.14, 0.0};
     record.locomotion_debug.commanded_foot_world_m[0] = Vec3{0.23, -0.15, 0.01};
     record.locomotion_debug.contact_anchor_world_m[0] = Vec3{0.22, -0.14, 0.0};
@@ -163,6 +168,10 @@ bool testSerializerIncludesKeySections()
                   "replay payload should include joint target telemetry") &&
            expect(payload.find("\"locomotion_debug\":{\"valid\":true") != std::string::npos,
                   "replay payload should include locomotion debug telemetry") &&
+           expect(payload.find("\"planned_stance\":[true,false,false,false,false,false]") != std::string::npos,
+                  "replay payload should include planned stance telemetry") &&
+           expect(payload.find("\"fused_support\":[true,false,false,false,false,false]") != std::string::npos,
+                  "replay payload should include fused support telemetry") &&
            expect(payload.find("\"contact_anchor_drift_m\":[0.003") != std::string::npos,
                   "replay payload should include per-leg contact anchor drift") &&
            expect(payload.find("\"max_commanded_tracking_error_m\":0.011") != std::string::npos,

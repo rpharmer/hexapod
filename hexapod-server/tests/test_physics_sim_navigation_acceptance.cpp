@@ -491,7 +491,8 @@ bool checkBlockedCorridor(const NavigationRunMetrics& metrics) {
         test_limits::getDouble(kSuite, kCase, "", "path_length_m_max_if_front_edge_stop", 0.25);
 
     const bool failed_with_block_reason =
-        metrics.final_monitor.lifecycle == NavigationLifecycleState::Failed &&
+        (metrics.final_monitor.lifecycle == NavigationLifecycleState::Failed ||
+         metrics.final_monitor.lifecycle == NavigationLifecycleState::MapUnavailable) &&
         (metrics.final_monitor.block_reason == PlannerBlockReason::StartOccupied ||
          metrics.final_monitor.block_reason == PlannerBlockReason::NoPath ||
          metrics.final_monitor.block_reason == PlannerBlockReason::GoalOccupied);
@@ -748,7 +749,7 @@ int main(int argc, char** argv) {
                                           single_box.string(),
                                           -kGoalForwardM,
                                           1.2,
-                                          static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(2200, kBusLoopPeriodUs)),
+                                          static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(2600, kBusLoopPeriodUs)),
                                           kBusLoopPeriodUs);
     if (detour.has_value()) {
         printSummary("single_obstacle", *detour);

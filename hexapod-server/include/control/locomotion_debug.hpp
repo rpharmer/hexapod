@@ -3,11 +3,17 @@
 #include "types.hpp"
 
 #include <array>
+#include <cstdint>
 
 namespace telemetry {
 
 struct LocomotionDebugSnapshot {
     bool valid{false};
+    std::array<bool, kNumLegs> planned_stance{};
+    std::array<bool, kNumLegs> raw_contact{};
+    std::array<bool, kNumLegs> fused_support{};
+    std::array<std::uint8_t, kNumLegs> fused_contact_phase{};
+    std::array<double, kNumLegs> fused_contact_confidence{};
     std::array<Vec3, kNumLegs> measured_foot_body_m{};
     std::array<Vec3, kNumLegs> measured_foot_world_m{};
     std::array<Vec3, kNumLegs> commanded_foot_body_m{};

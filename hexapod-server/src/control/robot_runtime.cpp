@@ -227,7 +227,9 @@ BodyPose makeBodyPose(const RobotState& est) {
 }
 
 telemetry::LocomotionDebugSnapshot buildLocomotionDebugSnapshot(
+    const RobotState& raw,
     const RobotState& estimated,
+    const GaitState* gait_state,
     const JointTargets& joint_targets,
     const HexapodGeometry& geometry,
     std::array<bool, kNumLegs>& contact_anchor_valid,
@@ -249,6 +251,20 @@ telemetry::LocomotionDebugSnapshot buildLocomotionDebugSnapshot(
     for (int leg = 0; leg < kNumLegs; ++leg) {
         const std::size_t leg_index = static_cast<std::size_t>(leg);
         const LegGeometry& leg_geometry = geometry.legGeometry[leg_index];
+        const FootContactFusion& contact_fusion = estimated.foot_contact_fusion[leg_index];
+        const bool planned_stance = gait_state != nullptr ? gait_state->in_stance[leg_index] : false;
+        const bool raw_contact = raw.foot_contacts[leg_index];
+        const bool fused_load_bearing = estimated.foot_contacts[leg_index];
+        const bool fused_support_signal =
+            contact_fusion.phase != ContactPhase::Swing && contact_fusion.phase != ContactPhase::Search;
+        const bool anchor_support_active =
+            fused_load_bearing || (planned_stance && contact_fusion.phase == ContactPhase::LostCandidate);
+
+        snapshot.planned_stance[leg_index] = planned_stance;
+        snapshot.raw_contact[leg_index] = raw_contact;
+        snapshot.fused_support[leg_index] = fused_support_signal;
+        snapshot.fused_contact_phase[leg_index] = static_cast<std::uint8_t>(contact_fusion.phase);
+        snapshot.fused_contact_confidence[leg_index] = contact_fusion.confidence;
 
         const FootTarget measured_body = fk.footInBodyFrame(estimated.leg_states[leg_index], leg_geometry);
         const FootTarget measured_world = fk.footInWorldFrame(estimated.leg_states[leg_index], body_pose, leg_geometry);
@@ -273,7 +289,7 @@ telemetry::LocomotionDebugSnapshot buildLocomotionDebugSnapshot(
         snapshot.max_commanded_tracking_error_m =
             std::max(snapshot.max_commanded_tracking_error_m, tracking_error_m);
 
-        if (!estimated.foot_contacts[leg_index]) {
+        if (!anchor_support_active) {
             contact_anchor_valid[leg_index] = false;
             contact_anchor_max_drift_m[leg_index] = 0.0;
             continue;
@@ -872,8 +888,10 @@ void RobotRuntime::controlStep() {
     const TimePointUs now = now_us();
     timing_metrics_.update(now);
     const JointTargets previous_joint_targets = joint_targets_.read();
+    const GaitState previous_gait_state = gait_state_.read();
 
     const RobotState est = estimated_state_.read();
+    const RobotState raw = raw_state_.read();
     if (navigation_manager_ != nullptr) {
         navigation_manager_->refreshTerrainSnapshot(est, now);
     }
@@ -896,7 +914,7 @@ void RobotRuntime::controlStep() {
         intent.twist.twist_vel_radps.z = 0.0;
     }
     const SafetyState safety_state = safety_state_.read();
-    const bool bus_ok = raw_state_.read().bus_ok;
+    const bool bus_ok = raw.bus_ok;
     uint64_t loop_counter = 0;
     FreshnessPolicy::Evaluation freshness{};
     const auto traceControlLoop = [&](const ControlStatus& status,
@@ -1013,7 +1031,9 @@ void RobotRuntime::controlStep() {
             command_governor_state_.write(CommandGovernorState{});
             joint_targets_.write(decision.joint_targets);
             locomotion_debug_.write(buildLocomotionDebugSnapshot(
+                raw,
                 est,
+                &previous_gait_state,
                 decision.joint_targets,
                 geometry_config::activeHexapodGeometry(),
                 contact_anchor_valid_,
@@ -1053,7 +1073,9 @@ void RobotRuntime::controlStep() {
     command_governor_state_.write(result.command_governor);
     joint_targets_.write(joint_targets);
     locomotion_debug_.write(buildLocomotionDebugSnapshot(
+        raw,
         est,
+        &result.gait_state,
         joint_targets,
         geometry_config::activeHexapodGeometry(),
         contact_anchor_valid_,

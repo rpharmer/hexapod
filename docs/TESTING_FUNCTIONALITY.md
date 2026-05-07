@@ -47,7 +47,7 @@ Use this section as the fast path for before/after motion benchmarking.
 - Direction / strafe matrix (tripod, physics-backed):
   - `hexapod-server/tests/test_motion_performance_suite.cpp`
   - Cases `compass_forward`, `compass_backward`, `compass_strafe_left`, `compass_strafe_right`, `compass_diag_fwd_left`, `compass_diag_fwd_right` (smoke runs forward + strafe-left only; full profile runs all headings).
-  - Each walking case in that binary (compass, slow tripod, gait compare, etc.) applies **plausibility gates** on `WALK` samples: FK foot-tip minimum world Z vs ground; global commanded-vs-measured foot error; **stance** contact-anchor drift and stance tracking error (`locomotion_debug`, same idea as the long-walk regression case); measured foot world Z vs ground; plus **stride kinematics** when enough walk samples exist—median horizontal touchdown span vs commanded `step_length_m`, and a lower percentile of per-swing vertical lift vs `swing_height_m` (gait `in_stance` edges + measured foot world positions). Limits are **direction-aware** (tighter forward-like vs strafe/diagonal headings) and sized for long **full** profiles on the UDP sim—not the 0.08 m anchor cap from the intentional long-walk stress case.
+  - Each walking case in that binary (compass, slow tripod, gait compare, etc.) applies **plausibility gates** on `WALK` samples: FK foot-tip minimum world Z vs ground; global commanded-vs-measured foot error; **stance** contact-anchor drift and stance tracking error (`locomotion_debug`, same idea as the long-walk regression case); measured foot world Z vs ground; plus **stride kinematics** when enough walk samples exist—median horizontal touchdown span vs commanded `step_length_m`, and a lower percentile of per-swing vertical lift vs `swing_height_m`. Touchdown/liftoff are now derived from explicit `fused_support` transitions in `locomotion_debug`, while `planned_stance` remains a diagnostic comparison channel. Limits are **direction-aware** (tighter forward-like vs strafe/diagonal headings) and sized for long **full** profiles on the UDP sim—not the 0.08 m anchor cap from the intentional long-walk stress case.
 
 ## Physics fidelity: `PhysicsSimBridge` (UDP sim) vs `SimHardwareBridge` (synthetic)
 
@@ -338,6 +338,7 @@ Legend:
 | Behavior                                          | Current Coverage | Primary Tests                                                                                                                                                  | Notes                                                                                                   |
 | ------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | Stand/pose hold                                   | Strong           | `test_hexapod_live_pose_hold`, `test_physics_sim_server_initial_layout`                                                                                        | low drift / settle behavior covered                                                                     |
+| Three-leg static support strength                 | Strong           | `test_physics_sim_tripod_support_baseline`, `single_leg_masked_stand` in `test_motion_performance_suite`                                                      | tracks body creep, joint drift, and support-foot tracking under asymmetric load                         |
 | Straight walking distance/speed                   | Strong           | `test_physics_sim_walk_distance`, `steady_forward_walk` case in `test_locomotion_regression_suite`                                                             | quantitative path/speed metrics available                                                               |
 | Strafing / diagonal walking (body-frame headings) | Strong           | `test_motion_performance_suite` (`compass_*` cases), oblique clearance in `test_physics_sim_oblique_walk_clearance`, lateral gait checks in `test_gait_params` | compass + other walk cases: FK ground, tracking, stance anchor drift, measured stride span / swing lift |
 | Reverse walking                                   | Strong           | `test_physics_sim_walk_distance`                                                                                                                               | explicit reverse case                                                                                   |
@@ -360,6 +361,10 @@ Metrics below are primarily emitted by `test_locomotion_regression_suite` into `
 - `sample_count`: total control-loop samples captured in a case.
 - `walk_sample_count`: count of samples where mode is `WALK`.
 - `stride_count`: estimated completed strides from stride phase accumulation.
+- `planned_stance`: gait-scheduler stance intent per leg in `locomotion_debug`.
+- `raw_contact`: raw contact bit per leg in `locomotion_debug`.
+- `fused_support`: controller-facing physical support bit per leg in `locomotion_debug`.
+- `fused_contact_phase`, `fused_contact_confidence`: fused contact-state diagnostics per leg.
 - `path_length_m`: accumulated planar path (`sum(horizontal_speed * dt)`).
 - `net_displacement_m`: start-to-end planar displacement magnitude.
 - `lateral_deviation_m`: off-track lateral deviation relative to travel direction.
@@ -379,6 +384,7 @@ Metrics below are primarily emitted by `test_locomotion_regression_suite` into `
 - `max_swing_height_m`, `min_swing_height_m`: gait swing-height bounds.
 - `max_contact_anchor_drift_m`, `max_contact_anchor_max_drift_m`: contact anchor drift diagnostics.
 - `max_commanded_tracking_error_m`, `max_contact_tracking_error_m`: commanded vs measured foot tracking error diagnostics.
+- `tripod_body_height_creep_m`, `tripod_max_support_joint_drift_rad`, `tripod_max_support_commanded_tracking_error_m`: phase-0 static-support metrics from `test_physics_sim_tripod_support_baseline`.
 - `first_fault`, `first_fault_step`, `final_fault`, `saw_fault`: fault lifecycle summary.
 - `mode_segments`: contiguous mode windows with start/end step.
 - `gait_segments`: contiguous phase windows with mean step/duty fields.
@@ -568,4 +574,3 @@ Higher-level ideas not tied to a single PR (see **Implementation backlog** for s
 - Add artifact schema docs generated from code (keep JSON fields in sync).
 - Add dashboard export (CSV/JSON) for trends over commits.
 - Extend HIL with the schema parity checklist in the backlog table.
-

@@ -1,5 +1,6 @@
 #include "body_controller.hpp"
 #include "geometry_config.hpp"
+#include "leg_fk.hpp"
 #include "leg_ik.hpp"
 #include "motion_intent_utils.hpp"
 #include "physics_sim_metrics_emit.hpp"
@@ -39,8 +40,12 @@ bool expect(bool condition, const std::string& message) {
 struct HoldMetrics {
     double mean_body_height_m{0.0};
     double min_body_height_m{1e9};
+    double max_body_height_m{-1e9};
     double max_abs_roll_rad{0.0};
     double max_abs_pitch_rad{0.0};
+    double max_support_foot_world_drift_m{0.0};
+    double max_support_joint_drift_rad{0.0};
+    double max_support_commanded_tracking_error_m{0.0};
     RobotState last_state{};
 };
 
@@ -103,9 +108,26 @@ bool finiteJointTargets(const JointTargets& joints) {
     return true;
 }
 
-HoldMetrics holdPose(PhysicsSimBridge& bridge, const JointTargets& targets, int steps) {
+BodyPose makeBodyPose(const RobotState& state) {
+    BodyPose pose{};
+    pose.position = state.body_twist_state.body_trans_m;
+    pose.roll = AngleRad{state.body_twist_state.twist_pos_rad.x};
+    pose.pitch = AngleRad{state.body_twist_state.twist_pos_rad.y};
+    pose.yaw = AngleRad{state.body_twist_state.twist_pos_rad.z};
+    return pose;
+}
+
+HoldMetrics holdPose(PhysicsSimBridge& bridge,
+                     const JointTargets& targets,
+                     const std::array<bool, kNumLegs>& support_legs,
+                     int steps) {
     HoldMetrics metrics{};
     int samples = 0;
+    const HexapodGeometry geometry = defaultHexapodGeometry();
+    LegFK fk{};
+    std::array<bool, kNumLegs> have_reference{};
+    std::array<Vec3, kNumLegs> reference_world{};
+    std::array<LegState, kNumLegs> reference_joints{};
     for (int i = 0; i < steps; ++i) {
         if (!bridge.write(targets)) {
             break;
@@ -117,9 +139,37 @@ HoldMetrics holdPose(PhysicsSimBridge& bridge, const JointTargets& targets, int 
         const double z = state.body_twist_state.body_trans_m.z;
         metrics.mean_body_height_m += z;
         metrics.min_body_height_m = std::min(metrics.min_body_height_m, z);
+        metrics.max_body_height_m = std::max(metrics.max_body_height_m, z);
         metrics.max_abs_roll_rad = std::max(metrics.max_abs_roll_rad, std::abs(state.body_twist_state.twist_pos_rad.x));
         metrics.max_abs_pitch_rad =
             std::max(metrics.max_abs_pitch_rad, std::abs(state.body_twist_state.twist_pos_rad.y));
+        const BodyPose body_pose = makeBodyPose(state);
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            const std::size_t leg_index = static_cast<std::size_t>(leg);
+            if (!support_legs[leg_index]) {
+                continue;
+            }
+            const FootTarget measured_body = fk.footInBodyFrame(state.leg_states[leg_index], geometry.legGeometry[leg_index]);
+            const FootTarget measured_world = fk.footInWorldFrame(state.leg_states[leg_index], body_pose, geometry.legGeometry[leg_index]);
+            const FootTarget commanded_body = fk.footInBodyFrame(targets.leg_states[leg_index], geometry.legGeometry[leg_index]);
+            if (!have_reference[leg_index]) {
+                have_reference[leg_index] = true;
+                reference_world[leg_index] = measured_world.pos_body_m.raw();
+                reference_joints[leg_index] = state.leg_states[leg_index];
+            }
+            metrics.max_support_foot_world_drift_m = std::max(
+                metrics.max_support_foot_world_drift_m,
+                vecNorm(measured_world.pos_body_m.raw() - reference_world[leg_index]));
+            metrics.max_support_commanded_tracking_error_m = std::max(
+                metrics.max_support_commanded_tracking_error_m,
+                vecNorm(commanded_body.pos_body_m.raw() - measured_body.pos_body_m.raw()));
+            for (int joint = 0; joint < 3; ++joint) {
+                metrics.max_support_joint_drift_rad = std::max(
+                    metrics.max_support_joint_drift_rad,
+                    std::abs(state.leg_states[leg_index].joint_state[joint].pos_rad.value -
+                             reference_joints[leg_index].joint_state[joint].pos_rad.value));
+            }
+        }
         metrics.last_state = state;
         ++samples;
     }
@@ -128,6 +178,7 @@ HoldMetrics holdPose(PhysicsSimBridge& bridge, const JointTargets& targets, int 
         metrics.mean_body_height_m /= static_cast<double>(samples);
     } else {
         metrics.min_body_height_m = 0.0;
+        metrics.max_body_height_m = 0.0;
     }
     return metrics;
 }
@@ -136,8 +187,12 @@ void printMetrics(const std::string& label, const HoldMetrics& metrics) {
     std::cout << label
               << " mean_height_m=" << metrics.mean_body_height_m
               << " min_height_m=" << metrics.min_body_height_m
+              << " max_height_m=" << metrics.max_body_height_m
               << " max_roll_rad=" << metrics.max_abs_roll_rad
               << " max_pitch_rad=" << metrics.max_abs_pitch_rad
+              << " max_support_foot_world_drift_m=" << metrics.max_support_foot_world_drift_m
+              << " max_support_joint_drift_rad=" << metrics.max_support_joint_drift_rad
+              << " max_support_commanded_tracking_error_m=" << metrics.max_support_commanded_tracking_error_m
               << '\n';
 }
 
@@ -146,12 +201,24 @@ std::string tripodSupportBaselineLimitsJson(const double stand_mean_min,
                                             const double tripod_min_min,
                                             const double sag_max,
                                             const double roll_max,
-                                            const double pitch_max) {
+                                            const double pitch_max,
+                                            const double stand_body_height_creep_max,
+                                            const double tripod_body_height_creep_max,
+                                            const double stand_support_foot_drift_max,
+                                            const double tripod_support_foot_drift_max,
+                                            const double tripod_joint_drift_max,
+                                            const double tripod_tracking_error_max) {
     std::ostringstream o;
     o << std::setprecision(17) << "{\"stand_mean_body_height_m_min\":" << stand_mean_min
       << ",\"tripod_mean_body_height_m_min\":" << tripod_mean_min
       << ",\"tripod_min_body_height_m_min\":" << tripod_min_min << ",\"sag_vs_stand_m_max\":" << sag_max
-      << ",\"max_abs_roll_rad\":" << roll_max << ",\"max_abs_pitch_rad\":" << pitch_max << '}';
+      << ",\"max_abs_roll_rad\":" << roll_max << ",\"max_abs_pitch_rad\":" << pitch_max
+      << ",\"stand_body_height_creep_m_max\":" << stand_body_height_creep_max
+      << ",\"tripod_body_height_creep_m_max\":" << tripod_body_height_creep_max
+      << ",\"stand_support_foot_world_drift_m_max\":" << stand_support_foot_drift_max
+      << ",\"tripod_support_foot_world_drift_m_max\":" << tripod_support_foot_drift_max
+      << ",\"tripod_support_joint_drift_rad_max\":" << tripod_joint_drift_max
+      << ",\"tripod_support_commanded_tracking_error_m_max\":" << tripod_tracking_error_max << '}';
     return o.str();
 }
 
@@ -183,9 +250,32 @@ int main(int argc, char** argv) {
     const double kSagVsStandMax = test_limits::getDouble(kSuite, kCase, "", "sag_vs_stand_m_max", 0.05);
     const double kMaxAbsRoll = test_limits::getDouble(kSuite, kCase, "", "max_abs_roll_rad", 0.45);
     const double kMaxAbsPitch = test_limits::getDouble(kSuite, kCase, "", "max_abs_pitch_rad", 0.45);
+    const double kStandBodyHeightCreepMax =
+        test_limits::getDouble(kSuite, kCase, "", "stand_body_height_creep_m_max", 0.005);
+    const double kTripodBodyHeightCreepMax =
+        test_limits::getDouble(kSuite, kCase, "", "tripod_body_height_creep_m_max", 0.01);
+    const double kStandSupportFootWorldDriftMax =
+        test_limits::getDouble(kSuite, kCase, "", "stand_support_foot_world_drift_m_max", 0.01);
+    const double kTripodSupportFootWorldDriftMax =
+        test_limits::getDouble(kSuite, kCase, "", "tripod_support_foot_world_drift_m_max", 0.13);
+    const double kTripodSupportJointDriftMax =
+        test_limits::getDouble(kSuite, kCase, "", "tripod_support_joint_drift_rad_max", 0.14);
+    const double kTripodSupportTrackingErrorMax =
+        test_limits::getDouble(kSuite, kCase, "", "tripod_support_commanded_tracking_error_m_max", 0.045);
     const auto limitsJson = [&]() {
         return tripodSupportBaselineLimitsJson(
-            kStandMeanMin, kTripodMeanMin, kTripodMinMin, kSagVsStandMax, kMaxAbsRoll, kMaxAbsPitch);
+            kStandMeanMin,
+            kTripodMeanMin,
+            kTripodMinMin,
+            kSagVsStandMax,
+            kMaxAbsRoll,
+            kMaxAbsPitch,
+            kStandBodyHeightCreepMax,
+            kTripodBodyHeightCreepMax,
+            kStandSupportFootWorldDriftMax,
+            kTripodSupportFootWorldDriftMax,
+            kTripodSupportJointDriftMax,
+            kTripodSupportTrackingErrorMax);
     };
 
     const auto harness = physics_sim_test_utils::loadHarnessSettings();
@@ -237,12 +327,14 @@ int main(int argc, char** argv) {
         physics_sim_test_utils::scaledLegacyStepCount(260, bus_loop_period_us));
     const int kMetricsSteps = static_cast<int>(
         physics_sim_test_utils::scaledLegacyStepCount(180, bus_loop_period_us));
+    constexpr std::array<bool, kNumLegs> kStandSupportLegs{{true, true, true, true, true, true}};
+    constexpr std::array<bool, kNumLegs> kTripodSupportLegs{{true, false, true, false, true, false}};
 
-    (void)holdPose(bridge, stand_targets, kStandWarmupSteps);
-    const HoldMetrics stand_metrics = holdPose(bridge, stand_targets, kMetricsSteps);
+    (void)holdPose(bridge, stand_targets, kStandSupportLegs, kStandWarmupSteps);
+    const HoldMetrics stand_metrics = holdPose(bridge, stand_targets, kStandSupportLegs, kMetricsSteps);
 
-    (void)holdPose(bridge, tripod_targets, kTripodWarmupSteps);
-    const HoldMetrics tripod_metrics = holdPose(bridge, tripod_targets, kMetricsSteps);
+    (void)holdPose(bridge, tripod_targets, kTripodSupportLegs, kTripodWarmupSteps);
+    const HoldMetrics tripod_metrics = holdPose(bridge, tripod_targets, kTripodSupportLegs, kMetricsSteps);
 
     printMetrics("six_leg_stand", stand_metrics);
     printMetrics("tripod_support", tripod_metrics);
@@ -251,6 +343,8 @@ int main(int argc, char** argv) {
     ::waitpid(pid, nullptr, 0);
 
     const double sag_vs_stand_m = stand_metrics.mean_body_height_m - tripod_metrics.mean_body_height_m;
+    const double stand_body_height_creep_m = stand_metrics.max_body_height_m - stand_metrics.min_body_height_m;
+    const double tripod_body_height_creep_m = tripod_metrics.max_body_height_m - tripod_metrics.min_body_height_m;
 
     const bool ok = expect(stand_metrics.mean_body_height_m > kStandMeanMin,
                            "six-leg baseline should settle near nominal body height") &&
@@ -263,18 +357,38 @@ int main(int argc, char** argv) {
                     expect(tripod_metrics.max_abs_roll_rad < kMaxAbsRoll,
                            "tripod support should keep roll within a moderate bound") &&
                     expect(tripod_metrics.max_abs_pitch_rad < kMaxAbsPitch,
-                           "tripod support should keep pitch within a moderate bound");
+                           "tripod support should keep pitch within a moderate bound") &&
+                    expect(stand_body_height_creep_m < kStandBodyHeightCreepMax,
+                           "six-leg stand should not creep noticeably in body height") &&
+                    expect(tripod_body_height_creep_m < kTripodBodyHeightCreepMax,
+                           "tripod support should hold body height without large creep") &&
+                    expect(stand_metrics.max_support_foot_world_drift_m < kStandSupportFootWorldDriftMax,
+                           "six-leg stand should not drift its support feet") &&
+                    expect(tripod_metrics.max_support_foot_world_drift_m < kTripodSupportFootWorldDriftMax,
+                           "tripod support should keep support feet near their initial world anchors") &&
+                    expect(tripod_metrics.max_support_joint_drift_rad < kTripodSupportJointDriftMax,
+                           "tripod support should not accumulate large loaded joint drift") &&
+                    expect(tripod_metrics.max_support_commanded_tracking_error_m < kTripodSupportTrackingErrorMax,
+                           "tripod support should keep commanded-vs-measured support foot error bounded");
     if (emit_metrics_json) {
         std::ostringstream metrics;
         metrics << std::setprecision(17)
                 << "{\"six_leg_stand_mean_body_height_m\":" << stand_metrics.mean_body_height_m
                 << ",\"six_leg_stand_min_body_height_m\":" << stand_metrics.min_body_height_m
+                << ",\"six_leg_stand_max_body_height_m\":" << stand_metrics.max_body_height_m
                 << ",\"six_leg_stand_max_abs_roll_rad\":" << stand_metrics.max_abs_roll_rad
                 << ",\"six_leg_stand_max_abs_pitch_rad\":" << stand_metrics.max_abs_pitch_rad
+                << ",\"six_leg_stand_body_height_creep_m\":" << stand_body_height_creep_m
+                << ",\"six_leg_stand_max_support_foot_world_drift_m\":" << stand_metrics.max_support_foot_world_drift_m
                 << ",\"tripod_mean_body_height_m\":" << tripod_metrics.mean_body_height_m
                 << ",\"tripod_min_body_height_m\":" << tripod_metrics.min_body_height_m
+                << ",\"tripod_max_body_height_m\":" << tripod_metrics.max_body_height_m
                 << ",\"tripod_max_abs_roll_rad\":" << tripod_metrics.max_abs_roll_rad
                 << ",\"tripod_max_abs_pitch_rad\":" << tripod_metrics.max_abs_pitch_rad
+                << ",\"tripod_body_height_creep_m\":" << tripod_body_height_creep_m
+                << ",\"tripod_max_support_foot_world_drift_m\":" << tripod_metrics.max_support_foot_world_drift_m
+                << ",\"tripod_max_support_joint_drift_rad\":" << tripod_metrics.max_support_joint_drift_rad
+                << ",\"tripod_max_support_commanded_tracking_error_m\":" << tripod_metrics.max_support_commanded_tracking_error_m
                 << ",\"sag_vs_stand_m\":" << sag_vs_stand_m << '}';
         physics_sim_metrics::emitLine("physics_sim_tripod_support_baseline", "tripod_support_baseline", ok,
                                       limitsJson(), metrics.str());

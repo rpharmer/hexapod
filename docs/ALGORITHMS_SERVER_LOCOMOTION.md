@@ -131,8 +131,50 @@ flowchart TD
   navBridge[NavLocomotionBridge] --> navigationManager
 ```
 
+
+
 ## 7) Current caveats to document for operators
 
 - `hexapod-server/README.md` has a simplified control-pipeline sequence that does not include all active stages in `ControlPipeline`.
 - `ControlConfig` parses command-governor tuning, but `ControlPipeline` currently default-constructs `CommandGovernor` (config is not injected in current construction path).
 - Freshness gating is supervisory but separate from `SafetySupervisor`; both should be treated as part of motion admission policy.
+
+## 8) Static support invariants
+
+Before tuning harder gaits, the stack should hold a difficult three-leg support pose with:
+
+- bounded body-height creep
+- small loaded joint drift
+- small commanded-vs-measured support-foot error
+- emitted support-foot drift metrics for later tightening
+
+The current phase-0 acceptance for that behavior lives in
+`hexapod-server/tests/test_physics_sim_tripod_support_baseline.cpp`.
+
+## 9) Locomotion debug signal semantics
+
+`RobotRuntime` now emits locomotion debug with an explicit split between planner intent and physical support:
+
+- `planned_stance`: gait-scheduler stance intent
+- `raw_contact`: raw bridge contact bit
+- `fused_support`: controller-facing physical support signal
+- `fused_contact_phase`: fused phase enum per leg
+- `fused_contact_confidence`: fused phase confidence per leg
+
+Use these distinctions when reading replay or metrics:
+
+- planner/gait timing questions: start with `planned_stance`
+- physical touchdown/liftoff questions: start with `fused_support`
+- ambiguous support behavior: inspect `raw_contact`, `fused_contact_phase`, and confidence together
+
+## 10) Lateral+yaw ownership split
+
+The current intended ownership for oblique stability is:
+
+1. `body_pose_controller`: conservative nominal lean
+2. `locomotion_stability`: support-margin preservation and gait moderation
+3. `body_controller`: realization and measured pose correction
+4. `command_governor`: command envelope reduction
+5. `safety_supervisor`: terminal faulting only
+
+The review artifact for this split is `docs/PLAN_LATERAL_YAW_REVIEW.md`.

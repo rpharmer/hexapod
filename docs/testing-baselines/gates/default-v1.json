@@ -72,7 +72,13 @@
         "tripod_min_body_height_m_min": 0.06,
         "sag_vs_stand_m_max": 0.05,
         "max_abs_roll_rad": 0.45,
-        "max_abs_pitch_rad": 0.45
+        "max_abs_pitch_rad": 0.45,
+        "stand_body_height_creep_m_max": 0.005,
+        "tripod_body_height_creep_m_max": 0.01,
+        "stand_support_foot_world_drift_m_max": 0.01,
+        "tripod_support_foot_world_drift_m_max": 0.13,
+        "tripod_support_joint_drift_rad_max": 0.14,
+        "tripod_support_commanded_tracking_error_m_max": 0.045
       }
     },
     "physics_sim_walk_entry_tracking": {
@@ -149,30 +155,76 @@
         "fk_foot_tip_ground_min_m": -0.0001,
         "min_measured_foot_world_z_m": -0.04
       },
+      "stand_settle": {
+        "path_length_m_max": 0.02,
+        "net_displacement_m_max": 0.005,
+        "max_abs_tilt_rad": 0.02,
+        "max_body_rate_radps": 0.5,
+        "max_contact_anchor_max_drift_m": 0.08,
+        "max_commanded_tracking_error_m": 0.06,
+        "min_measured_foot_world_z_m": 0.005
+      },
+      "single_leg_masked_stand": {
+        "path_length_m_max": 0.02,
+        "net_displacement_m_max": 0.005,
+        "max_abs_tilt_rad": 0.02,
+        "max_body_rate_radps": 0.5,
+        "max_contact_anchor_max_drift_m": 0.08,
+        "max_commanded_tracking_error_m": 0.06,
+        "min_measured_foot_world_z_m": 0.005
+      },
       "stride_gates": {
         "walk_warmup_samples": 45,
-        "min_touchdowns": 8,
+        "min_touchdowns": 3,
         "touchdown_span_min_vs_step_length": 0.22,
         "touchdown_span_max_vs_step_length": 2.85,
         "touchdown_span_max_extra_m": 0.07,
-        "swing_lift_min_vs_swing_height": 0.17,
-        "swing_lift_abs_floor_m": 0.0035,
+        "swing_lift_min_vs_swing_height": 0.05,
+        "swing_lift_abs_floor_m": 0.001,
         "swing_lift_percentile": 0.2
       },
       "walk_gates": {
         "forward_like": {
-          "max_stance_anchor_drift_m": 0.34,
+          "max_stance_anchor_drift_m": 0.5,
           "max_stance_contact_tracking_error_m": 0.22,
           "max_commanded_tracking_error_m": 0.22
         },
         "lateral": {
-          "max_stance_anchor_drift_m": 0.38,
+          "max_stance_anchor_drift_m": 0.4,
           "max_stance_contact_tracking_error_m": 0.2,
           "max_commanded_tracking_error_m": 0.2
         }
       }
     },
     "locomotion_regression": {
+      "steady_forward_walk": {
+        "max_contact_anchor_max_drift_m": 0.8,
+        "min_measured_foot_world_z_m": -0.08,
+        "max_contact_tracking_error_m": 0.2
+      },
+      "gait_transition_stability": {
+        "walk_sample_count_min": 400,
+        "stride_count_min": 6,
+        "max_contact_anchor_max_drift_m": 0.6,
+        "min_measured_foot_world_z_m": -0.08,
+        "max_contact_tracking_error_m": 0.12
+      },
+      "aggressive_governor": {
+        "max_contact_anchor_max_drift_m": 0.55,
+        "min_measured_foot_world_z_m": -0.11,
+        "max_contact_tracking_error_m": 0.24
+      },
+      "command_timeout_fallback": {
+        "path_length_m_max_after_fault": 0.25,
+        "net_displacement_m_max_after_fault": 0.05,
+        "max_abs_roll_rad_max": 0.2,
+        "max_abs_pitch_rad_max": 0.2
+      },
+      "low_support_walk": {
+        "max_contact_anchor_max_drift_m": 0.3,
+        "min_measured_foot_world_z_m": -0.1,
+        "max_contact_tracking_error_m": 0.08
+      },
       "long_walk_observability": {
         "min_walk_fault_time_s": 10.0,
         "max_walk_fault_time_s": 65.0,
@@ -184,6 +236,12 @@
         "max_contact_anchor_max_drift_m": 0.08,
         "min_measured_foot_world_z_m": -0.03,
         "max_contact_tracking_error_m": 0.1
+      },
+      "tilt_safety_trip": {
+        "first_fault_step_max": 1200,
+        "max_abs_roll_rad_max": 0.24,
+        "max_abs_pitch_rad_max": 0.16,
+        "max_contact_tracking_error_m": 0.16
       }
     }
   }

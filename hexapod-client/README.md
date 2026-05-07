@@ -19,7 +19,7 @@ Firmware for the **Pimoroni Servo 2040**. It drives 18 servos, reads analog/sens
 - `power_commands.cpp` — relay and servo-enable handlers.
 - `firmware_context.cpp/.hpp` — shared firmware runtime state.
 - `serialCommsClient.cpp/.hpp` — USB serial transport.
-- `../hexapod-common/*` — framed protocol implementation and command IDs.
+- `../hexapod-common/`* — framed protocol implementation and command IDs.
 
 ## Runtime lifecycle
 
@@ -170,3 +170,4 @@ Payload shape expectations:
 - Root overview: `../README.md`
 - Shared protocol constants: `../hexapod-common/include/hexapod-common.hpp`
 - Wire protocol details: `../docs/FIRMWARE.md`
+
