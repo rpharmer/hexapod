@@ -97,7 +97,7 @@ int main() {
     const NavPose2d pose{0.0, 0.0, 0.0};
     const LocalMapObservation obs = source.collect(pose, est, TimePointUs{9000});
 
-    if (!expect(obs.timestamp_us.value == 5000, "observation should use lidar frame timestamp")) {
+    if (!expect(obs.timestamp_us.value == 9000, "observation freshness should use collection time")) {
         return EXIT_FAILURE;
     }
     if (!expect(!obs.samples.empty(), "center return should produce at least one occupied sample")) {

@@ -217,6 +217,7 @@ struct HexapodBodyPoseState {
   bool valid = false;
   Vec3 position{};
   float yaw_rad = 0.0f;
+  Vec3 orientation_rad{};
 };
 
 struct HexapodTelemetryState {
@@ -348,24 +349,65 @@ Vec3 RotateVector(const Quat& quat, const Vec3& vector) {
 
 Vec3 ServerToSceneVec(const Vec3& value);
 
+Vec3 SceneToServerVec(const Vec3& value) {
+  return Vec3{-value.z, value.x, value.y};
+}
+
+Vec3 RotateAroundSceneX(const Vec3& value, float roll_rad) {
+  const float c = std::cos(roll_rad);
+  const float s = std::sin(roll_rad);
+  return Vec3{value.x, value.y * c - value.z * s, value.y * s + value.z * c};
+}
+
+Vec3 RotateAroundSceneZ(const Vec3& value, float yaw_rad) {
+  const float c = std::cos(yaw_rad);
+  const float s = std::sin(yaw_rad);
+  return Vec3{value.x * c - value.y * s, value.x * s + value.y * c, value.z};
+}
+
 Vec3 RotateAroundSceneY(const Vec3& value, float yaw_rad) {
   const float c = std::cos(yaw_rad);
   const float s = std::sin(yaw_rad);
-  return Vec3{
-      value.x * c + value.z * s,
-      value.y,
-      -value.x * s + value.z * c,
-  };
+  return Vec3{value.x * c + value.z * s, value.y, -value.x * s + value.z * c};
+}
+
+Vec3 EffectiveOrientationRad(const HexapodBodyPoseState& pose) {
+  if (pose.orientation_rad.x != 0.0f || pose.orientation_rad.y != 0.0f || pose.orientation_rad.z != 0.0f) {
+    return pose.orientation_rad;
+  }
+  return Vec3{0.0f, 0.0f, pose.yaw_rad};
+}
+
+Vec3 RotateBodyVectorToScene(const Vec3& value, const HexapodBodyPoseState& pose) {
+  const Vec3 orientation = EffectiveOrientationRad(pose);
+  Vec3 rotated = ServerToSceneVec(value);
+  rotated = RotateAroundSceneZ(rotated, orientation.x);
+  rotated = RotateAroundSceneX(rotated, -orientation.y);
+  rotated = RotateAroundSceneY(rotated, -orientation.z);
+  return rotated;
 }
 
 Vec3 TransformBodyPoint(const Vec3& point, const HexapodBodyPoseState& pose) {
   if (!pose.valid) {
     return point;
   }
-  const Vec3 scene_point = ServerToSceneVec(point);
-  const Vec3 rotated = RotateAroundSceneY(scene_point, -visualiser_frame_math::ServerYawToSceneYaw(pose.yaw_rad));
+  const Vec3 rotated = RotateBodyVectorToScene(point, pose);
   const Vec3 origin = ServerToSceneVec(pose.position);
   return Vec3{origin.x + rotated.x, origin.y + rotated.y, origin.z + rotated.z};
+}
+
+Vec3 TransformSceneBodyPoint(const Vec3& point, const HexapodBodyPoseState& pose) {
+  if (!pose.valid) {
+    return point;
+  }
+  return TransformBodyPoint(SceneToServerVec(point), pose);
+}
+
+Vec3 TransformSceneBodyDirection(const Vec3& direction, const HexapodBodyPoseState& pose) {
+  if (!pose.valid) {
+    return direction;
+  }
+  return RotateBodyVectorToScene(SceneToServerVec(direction), pose);
 }
 
 void ExpandBounds(SceneBounds& bounds, const Vec3& point) {
@@ -1040,7 +1082,13 @@ bool ParseHexapodTelemetryPacket(std::string_view payload, HexapodTelemetryState
     telemetry.body_pose.position = {(*body_position)[0], (*body_position)[1], (*body_position)[2]};
     telemetry.body_pose.valid = true;
   }
-  if (const auto body_yaw = ExtractFloatField(payload, "body_yaw_rad")) {
+  if (const auto body_orientation = ExtractFloat3Field(payload, "body_orientation_rad")) {
+    telemetry.body_pose.orientation_rad =
+        {(*body_orientation)[0], (*body_orientation)[1], (*body_orientation)[2]};
+    telemetry.body_pose.yaw_rad = telemetry.body_pose.orientation_rad.z;
+    telemetry.body_pose.valid = true;
+  } else if (const auto body_yaw = ExtractFloatField(payload, "body_yaw_rad")) {
+    telemetry.body_pose.orientation_rad = {0.0f, 0.0f, *body_yaw};
     telemetry.body_pose.yaw_rad = *body_yaw;
     telemetry.body_pose.valid = true;
   }
@@ -1443,21 +1491,22 @@ void DrawHexapodModel(const HexapodGeometryState& geometry,
   const std::array<std::size_t, 6> body_loop = {0, 1, 2, 5, 4, 3};
   const float body_height = 0.015f;
   const bool healthy = status.bus_ok && status.estimator_valid && status.active_fault == 0;
-  visualiser::render::Mat4 pose_m = visualiser::render::Mat4::Identity();
-  if (pose.valid) {
-    const Vec3 origin = ServerToSceneVec(pose.position);
-    pose_m = visualiser::render::Mat4::Mul(
-        visualiser::render::Mat4::Translate(origin.x, origin.y, origin.z),
-        visualiser::render::Mat4::RotateY(-visualiser_frame_math::ServerYawToSceneYaw(pose.yaw_rad)));
-  }
   const RV fill_c{healthy ? 0.18f : 0.35f, healthy ? 0.32f : 0.18f, healthy ? 0.48f : 0.12f};
   const RV line_c{healthy ? 0.44f : 0.90f, healthy ? 0.74f : 0.32f, healthy ? 1.00f : 0.18f};
+  const auto transform_scene_point = [&pose](const RV& local_point) {
+    const Vec3 world = TransformSceneBodyPoint(Vec3{local_point.x, local_point.y, local_point.z}, pose);
+    return RV{world.x, world.y, world.z};
+  };
+  const auto transform_scene_dir = [&pose](const RV& direction) {
+    const Vec3 world = TransformSceneBodyDirection(Vec3{direction.x, direction.y, direction.z}, pose);
+    return RV{world.x, world.y, world.z};
+  };
   std::array<RV, 6> hull{};
   for (std::size_t i = 0; i < body_loop.size(); ++i) {
     const RobotKinematics leg = ComputeRobotLegScene(geometry.legs[body_loop[i]], angles_deg[body_loop[i]]);
-    hull[i] = pose_m.TransformPoint(RV{leg.anchor.x, body_height, leg.anchor.z});
+    hull[i] = transform_scene_point(RV{leg.anchor.x, body_height, leg.anchor.z});
   }
-  const RV body_n = visualiser::render::TransformDirection(pose_m, RV{0.0f, 1.0f, 0.0f});
+  const RV body_n = transform_scene_dir(RV{0.0f, 1.0f, 0.0f});
   for (std::size_t k = 1; k + 1 < hull.size(); ++k) {
     g_mesh_renderer.AddTriangle(hull[0], hull[k], hull[k + 1], body_n, fill_c);
   }
@@ -1465,13 +1514,13 @@ void DrawHexapodModel(const HexapodGeometryState& geometry,
     const std::size_t next = (k + 1) % hull.size();
     g_line_renderer.AddSegment(hull[k], hull[next], line_c);
   }
-  g_point_renderer.AddPoint(pose_m.TransformPoint(RV{0.0f, body_height, 0.0f}), RV{0.95f, 0.93f, 0.85f});
+  g_point_renderer.AddPoint(transform_scene_point(RV{0.0f, body_height, 0.0f}), RV{0.95f, 0.93f, 0.85f});
   for (std::size_t i = 0; i < geometry.legs.size(); ++i) {
     const RobotKinematics leg = ComputeRobotLegScene(geometry.legs[i], angles_deg[i]);
-    const RV a = pose_m.TransformPoint(RV{leg.anchor.x, leg.anchor.y, leg.anchor.z});
-    const RV s = pose_m.TransformPoint(RV{leg.shoulder.x, leg.shoulder.y, leg.shoulder.z});
-    const RV kk = pose_m.TransformPoint(RV{leg.knee.x, leg.knee.y, leg.knee.z});
-    const RV f = pose_m.TransformPoint(RV{leg.foot.x, leg.foot.y, leg.foot.z});
+    const RV a = transform_scene_point(RV{leg.anchor.x, leg.anchor.y, leg.anchor.z});
+    const RV s = transform_scene_point(RV{leg.shoulder.x, leg.shoulder.y, leg.shoulder.z});
+    const RV kk = transform_scene_point(RV{leg.knee.x, leg.knee.y, leg.knee.z});
+    const RV f = transform_scene_point(RV{leg.foot.x, leg.foot.y, leg.foot.z});
     g_line_renderer.AddSegment(a, s, RV{0.95f, 0.58f, 0.18f});
     g_line_renderer.AddSegment(s, kk, RV{0.30f, 0.80f, 0.42f});
     g_line_renderer.AddSegment(kk, f, RV{0.25f, 0.72f, 0.95f});
@@ -1490,14 +1539,10 @@ void LogJointPositions(const HexapodGeometryState& geometry,
   line << "[viz-joints t=" << now_s << "s]";
   for (std::size_t leg = 0; leg < geometry.legs.size() && leg < kLegKeys.size(); ++leg) {
     const RobotKinematics kinematics = ComputeRobotLeg(geometry.legs[leg], angles_deg[leg]);
-    const Vec3 anchor_world = TransformBodyPoint(kinematics.anchor, pose);
-    const Vec3 shoulder_world = TransformBodyPoint(kinematics.shoulder, pose);
-    const Vec3 knee_world = TransformBodyPoint(kinematics.knee, pose);
-    const Vec3 foot_world = TransformBodyPoint(kinematics.foot, pose);
-    const Vec3 anchor_scene = ServerToSceneVec(anchor_world);
-    const Vec3 shoulder_scene = ServerToSceneVec(shoulder_world);
-    const Vec3 knee_scene = ServerToSceneVec(knee_world);
-    const Vec3 foot_scene = ServerToSceneVec(foot_world);
+    const Vec3 anchor_scene = TransformBodyPoint(kinematics.anchor, pose);
+    const Vec3 shoulder_scene = TransformBodyPoint(kinematics.shoulder, pose);
+    const Vec3 knee_scene = TransformBodyPoint(kinematics.knee, pose);
+    const Vec3 foot_scene = TransformBodyPoint(kinematics.foot, pose);
     line << " " << kLegKeys[leg] << ".coxa=(" << anchor_scene.x << "," << anchor_scene.y << "," << anchor_scene.z
          << ")";
     line << " " << kLegKeys[leg] << ".femur=(" << shoulder_scene.x << "," << shoulder_scene.y << ","

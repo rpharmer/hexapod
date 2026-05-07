@@ -30,16 +30,20 @@ Vec3 SceneToServerVec(const Vec3& value) {
 }
 
 Vec3 SceneWorldToServerBody(const Vec3& scene_point, const HexapodBodyPoseState& pose) {
+  const Vec3 orientation = pose.orientation_rad.x != 0.0f || pose.orientation_rad.y != 0.0f ||
+                                   pose.orientation_rad.z != 0.0f
+                               ? pose.orientation_rad
+                               : Vec3{0.0f, 0.0f, pose.yaw_rad};
   const Vec3 origin = visualiser::robot::ServerToSceneVec(pose.position);
-  const Vec3 relative{
+  Vec3 relative{
       scene_point.x - origin.x,
       scene_point.y - origin.y,
       scene_point.z - origin.z,
   };
-  const Vec3 body_scene = visualiser::math::RotateAroundSceneY(
-      relative,
-      pose.yaw_rad - (0.5f * visualiser::math::kPi));
-  return SceneToServerVec(body_scene);
+  relative = visualiser::math::RotateAroundSceneY(relative, orientation.z - visualiser::math::kPi / 2.0f);
+  relative = visualiser::math::RotateAroundSceneZ(relative, orientation.y);
+  relative = visualiser::math::RotateAroundSceneX(relative, -orientation.x);
+  return SceneToServerVec(relative);
 }
 
 struct SamplePose {
@@ -59,21 +63,23 @@ int main() {
   bool ok = true;
 
   const std::array<SamplePose, 3> samples{{
-      {HexapodBodyPoseState{true, {0.0f, 0.0f, 0.0f}, 0.0f},
+      {HexapodBodyPoseState{true, {0.0f, 0.0f, 0.0f}, 0.0f, {0.0f, 0.0f, 0.0f}},
        {{{0.0f, 0.0f, 0.0f},
          {12.0f, -7.0f, 21.0f},
          {-8.0f, 10.0f, -16.0f},
          {6.0f, -14.0f, 11.0f},
          {-11.0f, 9.0f, -13.0f},
          {4.0f, 5.0f, -9.0f}}}},
-      {HexapodBodyPoseState{true, {0.35f, -0.20f, 0.75f}, 0.75f},
+      {HexapodBodyPoseState{true, {0.35f, -0.20f, 0.75f}, 0.75f,
+                            {0.20f, -0.15f, 0.75f}},
        {{{1.0f, 2.0f, 3.0f},
          {14.0f, -5.0f, 17.0f},
          {-10.0f, 8.0f, -18.0f},
          {7.0f, -12.0f, 15.0f},
          {-9.0f, 6.0f, -11.0f},
          {3.0f, 4.0f, -7.0f}}}},
-      {HexapodBodyPoseState{true, {-0.55f, 0.15f, -0.30f}, -1.0f},
+      {HexapodBodyPoseState{true, {-0.55f, 0.15f, -0.30f}, -1.0f,
+                            {-0.35f, 0.10f, -1.0f}},
        {{{-2.0f, 1.0f, -4.0f},
          {9.0f, -11.0f, 19.0f},
          {-7.0f, 13.0f, -15.0f},

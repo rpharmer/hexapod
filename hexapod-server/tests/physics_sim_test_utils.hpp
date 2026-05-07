@@ -5,9 +5,15 @@
 #include "toml_parser.hpp"
 
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <stdexcept>
 #include <vector>
+
+#if defined(__linux__)
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 namespace physics_sim_test_utils {
 
@@ -71,6 +77,25 @@ inline double controlLoopPeriodSeconds(const control_config::ControlConfig& cfg)
     return std::max(
         1.0e-6,
         static_cast<double>(cfg.loop_timing.control_loop_period.count()) * 1.0e-6);
+}
+
+inline void quietChildProcessStdIo() {
+#if defined(__linux__)
+    const char* keep_stdio = std::getenv("HEXAPOD_TEST_KEEP_SIM_STDIO");
+    if (keep_stdio != nullptr && keep_stdio[0] != '\0' && keep_stdio[0] != '0') {
+        return;
+    }
+
+    const int devnull = ::open("/dev/null", O_WRONLY);
+    if (devnull < 0) {
+        return;
+    }
+    (void)::dup2(devnull, STDOUT_FILENO);
+    (void)::dup2(devnull, STDERR_FILENO);
+    if (devnull > STDERR_FILENO) {
+        ::close(devnull);
+    }
+#endif
 }
 
 } // namespace physics_sim_test_utils

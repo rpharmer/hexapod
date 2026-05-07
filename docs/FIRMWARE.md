@@ -46,22 +46,24 @@ Decoder behavior on both host and firmware:
 
 ## Command table
 
-| Command | Value | Direction | Request payload | Response |
-|---|---:|---|---|---|
-| _Sequence handling_ | - | Bidirectional | Every request includes a 2-byte `SEQ` in the frame header. | Every response echoes the same `SEQ` value from the request. |
-| `HELLO` | `0x10` | Server → Client | `version:u8, capabilities:u8` | `ACK(version:u8,status:u8,device_id:u8)` or `NACK(error:u8)` |
-| `SET_ANGLE_CALIBRATIONS` | `0x01` | Server → Client | 18 × `(min:f32, max:f32)` | `ACK` or `NACK(error:u8)` |
-| `SET_TARGET_ANGLE` | `0x02` | Server → Client | `servo_id:u8, angle:f32` | `ACK` or `NACK(error:u8)` |
-| `SET_POWER_RELAY` | `0x03` | Server → Client | `relay_state:u8` (`0`/`1`) | `ACK` or `NACK(error:u8)` |
-| `GET_ANGLE_CALIBRATIONS` | `0x04` | Server → Client | _none_ | `ACK` + 18 × `(min:f32, max:f32)` or `NACK(error:u8)` |
-| `GET_CURRENT` | `0x05` | Server → Client | _none_ | `ACK(current:f32)` or `NACK(error:u8)` |
-| `GET_VOLTAGE` | `0x06` | Server → Client | _none_ | `ACK(voltage:f32)` or `NACK(error:u8)` |
-| `GET_SENSOR` | `0x07` | Server → Client | `sensor_id:u8` | `ACK(voltage:f32)` or `NACK(error:u8)` |
-| `SET_JOINT_TARGETS` | `0x13` | Server → Client | 18 × `target_pos_rad:f32` | `ACK` or `NACK(error:u8)` |
-| `GET_FULL_HARDWARE_STATE` | `0x14` | Server → Client | _none_ | `ACK` + 18 × `joint_pos_rad:f32`, 6 × `foot_contact:u8`, `voltage:f32`, `current:f32` or `NACK(error:u8)` |
-| `SET_SERVOS_ENABLED` | `0x15` | Server → Client | 18 × `enable:bool` | `ACK` or `NACK(error:u8)` |
-| `GET_SERVOS_ENABLED` | `0x16` | Server → Client | _none_ | `ACK` + 18 × `enable:bool` or `NACK(error:u8)` |
-| `SET_SERVOS_TO_MID` | `0x17` | Server → Client | _none_ | `ACK` or `NACK(error:u8)` |
+
+| Command                   | Value  | Direction       | Request payload                                            | Response                                                                                                  |
+| ------------------------- | ------ | --------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| *Sequence handling*       | -      | Bidirectional   | Every request includes a 2-byte `SEQ` in the frame header. | Every response echoes the same `SEQ` value from the request.                                              |
+| `HELLO`                   | `0x10` | Server → Client | `version:u8, capabilities:u8`                              | `ACK(version:u8,status:u8,device_id:u8)` or `NACK(error:u8)`                                              |
+| `SET_ANGLE_CALIBRATIONS`  | `0x01` | Server → Client | 18 × `(min:f32, max:f32)`                                  | `ACK` or `NACK(error:u8)`                                                                                 |
+| `SET_TARGET_ANGLE`        | `0x02` | Server → Client | `servo_id:u8, angle:f32`                                   | `ACK` or `NACK(error:u8)`                                                                                 |
+| `SET_POWER_RELAY`         | `0x03` | Server → Client | `relay_state:u8` (`0`/`1`)                                 | `ACK` or `NACK(error:u8)`                                                                                 |
+| `GET_ANGLE_CALIBRATIONS`  | `0x04` | Server → Client | *none*                                                     | `ACK` + 18 × `(min:f32, max:f32)` or `NACK(error:u8)`                                                     |
+| `GET_CURRENT`             | `0x05` | Server → Client | *none*                                                     | `ACK(current:f32)` or `NACK(error:u8)`                                                                    |
+| `GET_VOLTAGE`             | `0x06` | Server → Client | *none*                                                     | `ACK(voltage:f32)` or `NACK(error:u8)`                                                                    |
+| `GET_SENSOR`              | `0x07` | Server → Client | `sensor_id:u8`                                             | `ACK(voltage:f32)` or `NACK(error:u8)`                                                                    |
+| `SET_JOINT_TARGETS`       | `0x13` | Server → Client | 18 × `target_pos_rad:f32`                                  | `ACK` or `NACK(error:u8)`                                                                                 |
+| `GET_FULL_HARDWARE_STATE` | `0x14` | Server → Client | *none*                                                     | `ACK` + 18 × `joint_pos_rad:f32`, 6 × `foot_contact:u8`, `voltage:f32`, `current:f32` or `NACK(error:u8)` |
+| `SET_SERVOS_ENABLED`      | `0x15` | Server → Client | 18 × `enable:bool`                                         | `ACK` or `NACK(error:u8)`                                                                                 |
+| `GET_SERVOS_ENABLED`      | `0x16` | Server → Client | *none*                                                     | `ACK` + 18 × `enable:bool` or `NACK(error:u8)`                                                            |
+| `SET_SERVOS_TO_MID`       | `0x17` | Server → Client | *none*                                                     | `ACK` or `NACK(error:u8)`                                                                                 |
+
 
 > Multibyte numeric fields are serialized in little-endian byte order.
 
@@ -70,8 +72,8 @@ Decoder behavior on both host and firmware:
 1. Server sends framed `HELLO` request with payload `PROTOCOL_VERSION` and capability flags.
 2. Client validates version compatibility and readiness.
 3. Client responds with either:
-   - `ACK` payload: `PROTOCOL_VERSION, STATUS_OK, DEVICE_ID`, or
-   - `NACK` payload with an error code (for example `VERSION_MISMATCH`).
+  - `ACK` payload: `PROTOCOL_VERSION, STATUS_OK, DEVICE_ID`, or
+  - `NACK` payload with an error code (for example `VERSION_MISMATCH`).
 4. Server retries up to three times if handshake fails or times out.
 
 ## Implementation notes
@@ -99,3 +101,4 @@ Short version: **typed internally, raw at the protocol edges**.
 - Route matching and command switches must be typed (`CommandCode`), not raw integers.
 - Host command APIs (`CommandClient`, `BridgeCommandApi`) accept `CommandCode` parameters only.
 - Prefer enum names (`CommandCode::ACK`, `ErrorCode::INVALID_PAYLOAD_LENGTH`, etc.) over raw/legacy aliases in new internal logic.
+

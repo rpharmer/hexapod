@@ -1,0 +1,84 @@
+{
+  "baseline_name": "stress-local-2026-05-06",
+  "server_commit": "913e8b3ea05cf4ed837ba693fc09c606e5a6a8e6",
+  "sim_commit": "913e8b3ea05cf4ed837ba693fc09c606e5a6a8e6",
+  "config_path": "hexapod-server/config.physics-sim-wsl.txt",
+  "config_digest": "not-recorded",
+  "build_type": "build-tests preset",
+  "suite_binary": "hexapod-server/build-tests/test_locomotion_regression_suite",
+  "suite_profile": "stress",
+  "requested_repetitions": 5,
+  "suite_exit_codes": [
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "runs_per_case": {
+    "long_walk_observability": 5
+  },
+  "aggregates": {
+    "long_walk_observability": {
+      "pass_rate": 0.0,
+      "path_length_m": {
+        "median": 0.996909,
+        "min": 0.939763,
+        "max": 2739.572722
+      },
+      "net_displacement_m": {
+        "median": 0.236177,
+        "min": 0.213448,
+        "max": 462.188144
+      },
+      "mean_horizontal_speed_mps": {
+        "median": 0.016615,
+        "min": 0.015663,
+        "max": 45.659545
+      },
+      "peak_horizontal_speed_mps": {
+        "median": 0.538007,
+        "min": 0.495733,
+        "max": 118.11589
+      },
+      "yaw_delta_rad": {
+        "median": -0.369199,
+        "min": -2.560613,
+        "max": -0.208984
+      },
+      "mean_yaw_rate_radps": {
+        "median": 0.063655,
+        "min": 0.056533,
+        "max": 32.840089
+      },
+      "peak_yaw_rate_radps": {
+        "median": 2.663097,
+        "min": 2.516854,
+        "max": 175.636461
+      },
+      "stride_count": {
+        "median": 5,
+        "min": 5,
+        "max": 8
+      },
+      "max_abs_roll_rad": {
+        "median": 0.330775,
+        "min": 0.214071,
+        "max": 72.885401
+      },
+      "max_abs_pitch_rad": {
+        "median": 0.210604,
+        "min": 0.090079,
+        "max": 1.55209
+      },
+      "max_body_rate_radps": {
+        "median": 9.94542,
+        "min": 7.343251,
+        "max": 179.999995
+      }
+    }
+  },
+  "jsonl_path": "docs/testing-baselines/baseline-stress-2026-05-06-913e8b3.jsonl",
+  "created_utc": "2026-05-06T21:51:28Z",
+  "notes": "Generated locally via test_locomotion_regression_suite --profile stress --emit-metrics-json."
+}

@@ -21,18 +21,18 @@ bool nearlyEqual(const double lhs, const double rhs, const double eps = 1e-9) {
 bool testReducedSagTriggersFastUnwind() {
     constexpr double kCommandedBodyHeightM = 0.14;
     constexpr double kSlowPhaseMeasuredBodyHeightM = 0.12;  // 20 mm sag
-    constexpr double kFastPhaseMeasuredBodyHeightM = 0.136; // 4 mm sag
+    constexpr double kFastPhaseMeasuredBodyHeightM = 0.139; // 1 mm sag
 
     double integral_m = 0.0;
-    for (int i = 0; i < 7; ++i) {
+    for (int i = 0; i < 60; ++i) {
         integral_m = body_controller_detail::updateBodyHeightHoldIntegralM(
             integral_m,
             kCommandedBodyHeightM,
             true,
             kSlowPhaseMeasuredBodyHeightM);
     }
-    if (!expect(integral_m > 0.020 && integral_m < 0.022,
-                "slow sag phase should preload roughly 21 mm of integral hold")) {
+    if (!expect(integral_m > 0.017 && integral_m < 0.0195,
+                "slow sag phase should preload a meaningful retained-support term")) {
         return false;
     }
 
@@ -55,8 +55,23 @@ bool testReducedSagTriggersFastUnwind() {
             kFastPhaseMeasuredBodyHeightM);
     }
 
-    return expect(integral_m < 0.008,
+    return expect(integral_m < 0.0062,
                   "reduced-sag transition should collapse the stale integral within a few hundred milliseconds");
+}
+
+bool testActiveSagRetainsIntegral() {
+    constexpr double kCommandedBodyHeightM = 0.14;
+    constexpr double kMeasuredBodyHeightM = 0.132; // 8 mm sag still needs active support
+    constexpr double kPreloadedIntegralM = 0.014;  // previously enough to trip the stale-hold branch
+
+    const double updated_m = body_controller_detail::updateBodyHeightHoldIntegralM(
+        kPreloadedIntegralM,
+        kCommandedBodyHeightM,
+        true,
+        kMeasuredBodyHeightM);
+
+    return expect(updated_m > kPreloadedIntegralM,
+                  "active sag should keep accumulating retained support instead of draining it");
 }
 
 bool testOvershootStillUsesFastDecay() {
@@ -86,6 +101,7 @@ bool testMissingMeasurementUsesSlowDecay() {
 
 int main() {
     return testReducedSagTriggersFastUnwind() &&
+                   testActiveSagRetainsIntegral() &&
                    testOvershootStillUsesFastDecay() &&
                    testMissingMeasurementUsesSlowDecay()
                ? EXIT_SUCCESS

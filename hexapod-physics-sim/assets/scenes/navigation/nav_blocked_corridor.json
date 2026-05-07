@@ -5,7 +5,7 @@
     {
       "shape": "box",
       "static": true,
-      "position": [0.075, 0.15, -0.15],
+      "position": [0.075, -0.15, -0.15],
       "half_extents": [0.06, 0.15, 0.02],
       "static_friction": 0.9,
       "dynamic_friction": 0.7,
@@ -14,7 +14,7 @@
     {
       "shape": "box",
       "static": true,
-      "position": [-0.075, 0.15, -0.15],
+      "position": [-0.075, -0.15, -0.15],
       "half_extents": [0.06, 0.15, 0.02],
       "static_friction": 0.9,
       "dynamic_friction": 0.7,
@@ -23,7 +23,7 @@
     {
       "shape": "box",
       "static": true,
-      "position": [0.0, 0.15, -0.10],
+      "position": [0.0, -0.15, -0.10],
       "half_extents": [0.055, 0.15, 0.02],
       "static_friction": 0.9,
       "dynamic_friction": 0.7,

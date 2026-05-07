@@ -223,6 +223,26 @@ target_link_libraries(hexapod-tripod-support-baseline
 if(HEXAPOD_SERVER_BUILD_TESTS)
     enable_testing()
 
+    set(_HEXAPOD_GATES_DEFAULT_JSON "${CMAKE_CURRENT_SOURCE_DIR}/../docs/testing-baselines/gates/default-v1.json")
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/test_limits_manifest_paths.hpp"
+        "#pragma once\n#define HEXAPOD_DEFAULT_LIMITS_MANIFEST R\"(${_HEXAPOD_GATES_DEFAULT_JSON})\"\n")
+
+    include(FetchContent)
+    FetchContent_Declare(
+        nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.11.3
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+
+    add_library(hexapod_test_support STATIC tests/test_limits_manifest.cpp)
+    target_link_libraries(hexapod_test_support PUBLIC nlohmann_json::nlohmann_json)
+    target_include_directories(hexapod_test_support PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+        ${CMAKE_CURRENT_BINARY_DIR}/generated
+    )
+
     add_executable(test_robot_runtime_loop tests/test_robot_runtime_loop.cpp)
     target_link_libraries(test_robot_runtime_loop PRIVATE hexapod_server_core)
     add_test(NAME robot_runtime_loop_behavior COMMAND test_robot_runtime_loop)
@@ -382,53 +402,63 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_scenario_body_height_margin PRIVATE hexapod_server_core)
     add_test(NAME scenario_body_height_margin COMMAND test_scenario_body_height_margin)
 
+    set(_HEXAPOD_PHYSICS_SIM_EXE "${CMAKE_SOURCE_DIR}/../hexapod-physics-sim/build/hexapod-physics-sim")
+    function(hexapod_add_live_physics_sim_test test_name target_name)
+        add_test(
+            NAME ${test_name}
+            COMMAND ${CMAKE_COMMAND} -E env
+                    HEXAPOD_PHYSICS_SIM_EXE=${_HEXAPOD_PHYSICS_SIM_EXE}
+                    $<TARGET_FILE:${target_name}>)
+        set_tests_properties(${test_name} PROPERTIES TIMEOUT 1800)
+    endfunction()
+
     add_executable(test_physics_sim_walk_distance tests/test_physics_sim_walk_distance.cpp)
     target_link_libraries(test_physics_sim_walk_distance PRIVATE hexapod_server_core)
-    add_test(NAME physics_sim_walk_distance COMMAND test_physics_sim_walk_distance)
+    hexapod_add_live_physics_sim_test(physics_sim_walk_distance test_physics_sim_walk_distance)
 
     add_executable(test_physics_sim_walk_entry_tracking tests/test_physics_sim_walk_entry_tracking.cpp)
     target_link_libraries(test_physics_sim_walk_entry_tracking PRIVATE hexapod_server_core)
-    add_test(NAME physics_sim_walk_entry_tracking COMMAND test_physics_sim_walk_entry_tracking)
+    hexapod_add_live_physics_sim_test(physics_sim_walk_entry_tracking test_physics_sim_walk_entry_tracking)
 
     add_executable(test_physics_sim_walk_stability tests/test_physics_sim_walk_stability.cpp)
     target_link_libraries(test_physics_sim_walk_stability PRIVATE hexapod_server_core)
-    add_test(NAME physics_sim_walk_stability COMMAND test_physics_sim_walk_stability)
+    hexapod_add_live_physics_sim_test(physics_sim_walk_stability test_physics_sim_walk_stability)
 
     add_executable(test_physics_sim_turn_foot_clearance tests/test_physics_sim_turn_foot_clearance.cpp)
     target_link_libraries(test_physics_sim_turn_foot_clearance PRIVATE hexapod_server_core)
-    add_test(NAME physics_sim_turn_foot_clearance COMMAND test_physics_sim_turn_foot_clearance)
+    hexapod_add_live_physics_sim_test(physics_sim_turn_foot_clearance test_physics_sim_turn_foot_clearance)
 
     add_executable(test_physics_sim_oblique_walk_clearance tests/test_physics_sim_oblique_walk_clearance.cpp)
     target_link_libraries(test_physics_sim_oblique_walk_clearance PRIVATE hexapod_server_core)
-    add_test(NAME physics_sim_oblique_walk_clearance COMMAND test_physics_sim_oblique_walk_clearance)
+    hexapod_add_live_physics_sim_test(physics_sim_oblique_walk_clearance test_physics_sim_oblique_walk_clearance)
 
     add_executable(test_physics_sim_turn_raw_contact_loss tests/test_physics_sim_turn_raw_contact_loss.cpp)
     target_link_libraries(test_physics_sim_turn_raw_contact_loss PRIVATE hexapod_server_core)
-    add_test(NAME physics_sim_turn_raw_contact_loss COMMAND test_physics_sim_turn_raw_contact_loss)
+    hexapod_add_live_physics_sim_test(physics_sim_turn_raw_contact_loss test_physics_sim_turn_raw_contact_loss)
 
     add_executable(test_physics_sim_slow_fwd_walk_foot_clearance tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp)
     target_link_libraries(test_physics_sim_slow_fwd_walk_foot_clearance PRIVATE hexapod_server_core)
-    add_test(NAME physics_sim_slow_fwd_walk_foot_clearance COMMAND test_physics_sim_slow_fwd_walk_foot_clearance)
+    hexapod_add_live_physics_sim_test(physics_sim_slow_fwd_walk_foot_clearance test_physics_sim_slow_fwd_walk_foot_clearance)
 
     add_executable(test_physics_sim_wave_slow_walk_foot_clearance tests/test_physics_sim_wave_slow_walk_foot_clearance.cpp)
     target_link_libraries(test_physics_sim_wave_slow_walk_foot_clearance PRIVATE hexapod_server_core)
-    add_test(NAME physics_sim_wave_slow_walk_foot_clearance COMMAND test_physics_sim_wave_slow_walk_foot_clearance)
+    hexapod_add_live_physics_sim_test(physics_sim_wave_slow_walk_foot_clearance test_physics_sim_wave_slow_walk_foot_clearance)
 
     add_executable(test_physics_sim_slow_fwd_walk_contact_loss tests/test_physics_sim_slow_fwd_walk_contact_loss.cpp)
     target_link_libraries(test_physics_sim_slow_fwd_walk_contact_loss PRIVATE hexapod_server_core)
-    add_test(NAME physics_sim_slow_fwd_walk_contact_loss COMMAND test_physics_sim_slow_fwd_walk_contact_loss)
+    hexapod_add_live_physics_sim_test(physics_sim_slow_fwd_walk_contact_loss test_physics_sim_slow_fwd_walk_contact_loss)
 
     add_executable(test_physics_sim_tripod_support_baseline tests/test_physics_sim_tripod_support_baseline.cpp)
     target_link_libraries(test_physics_sim_tripod_support_baseline PRIVATE hexapod_server_core)
-    add_test(NAME physics_sim_tripod_support_baseline COMMAND test_physics_sim_tripod_support_baseline)
+    hexapod_add_live_physics_sim_test(physics_sim_tripod_support_baseline test_physics_sim_tripod_support_baseline)
 
     add_executable(test_physics_sim_nav_waypoints tests/test_physics_sim_nav_waypoints.cpp)
     target_link_libraries(test_physics_sim_nav_waypoints PRIVATE hexapod_server_core)
-    add_test(NAME physics_sim_nav_waypoints COMMAND test_physics_sim_nav_waypoints)
+    hexapod_add_live_physics_sim_test(physics_sim_nav_waypoints test_physics_sim_nav_waypoints)
 
     add_executable(test_physics_sim_navigation_acceptance tests/test_physics_sim_navigation_acceptance.cpp)
     target_link_libraries(test_physics_sim_navigation_acceptance PRIVATE hexapod_server_core)
-    add_test(NAME physics_sim_navigation_acceptance COMMAND test_physics_sim_navigation_acceptance)
+    hexapod_add_live_physics_sim_test(physics_sim_navigation_acceptance test_physics_sim_navigation_acceptance)
 
     add_executable(test_virtual_gamepad_controller tests/test_virtual_gamepad_controller.cpp)
     target_link_libraries(test_virtual_gamepad_controller PRIVATE hexapod_server_core)
@@ -525,16 +555,31 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_test(
         NAME locomotion_regression_suite
         COMMAND ${CMAKE_COMMAND} -E env
-                HEXAPOD_PHYSICS_SIM_EXE=${CMAKE_SOURCE_DIR}/../hexapod-physics-sim/build/hexapod-physics-sim
+                HEXAPOD_PHYSICS_SIM_EXE=${_HEXAPOD_PHYSICS_SIM_EXE}
                 $<TARGET_FILE:test_locomotion_regression_suite> --profile canonical)
     set_tests_properties(locomotion_regression_suite PROPERTIES TIMEOUT 3600)
 
     add_test(
         NAME locomotion_regression_suite_stress
         COMMAND ${CMAKE_COMMAND} -E env
-                HEXAPOD_PHYSICS_SIM_EXE=${CMAKE_SOURCE_DIR}/../hexapod-physics-sim/build/hexapod-physics-sim
+                HEXAPOD_PHYSICS_SIM_EXE=${_HEXAPOD_PHYSICS_SIM_EXE}
                 $<TARGET_FILE:test_locomotion_regression_suite> --profile stress)
     set_tests_properties(locomotion_regression_suite_stress PROPERTIES TIMEOUT 3600 LABELS "locomotion-stress")
+
+    add_executable(test_motion_performance_suite tests/test_motion_performance_suite.cpp)
+    target_link_libraries(test_motion_performance_suite PRIVATE hexapod_server_core)
+    add_test(
+        NAME motion_performance_suite
+        COMMAND ${CMAKE_COMMAND} -E env
+                HEXAPOD_PHYSICS_SIM_EXE=${_HEXAPOD_PHYSICS_SIM_EXE}
+                $<TARGET_FILE:test_motion_performance_suite> --profile smoke)
+    set_tests_properties(motion_performance_suite PROPERTIES TIMEOUT 1800)
+    add_test(
+        NAME motion_performance_suite_long
+        COMMAND ${CMAKE_COMMAND} -E env
+                HEXAPOD_PHYSICS_SIM_EXE=${_HEXAPOD_PHYSICS_SIM_EXE}
+                $<TARGET_FILE:test_motion_performance_suite> --profile full)
+    set_tests_properties(motion_performance_suite_long PROPERTIES TIMEOUT 3600 LABELS "motion-performance-long")
 
 
     add_executable(test_bridge_link_manager tests/test_bridge_link_manager.cpp)
@@ -556,4 +601,51 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_loop_executor_timing tests/test_loop_executor_timing.cpp)
     target_link_libraries(test_loop_executor_timing PRIVATE hexapod_server_core)
     add_test(NAME loop_executor_timing COMMAND test_loop_executor_timing)
+
+    set(_HEXAPOD_MANIFEST_TEST_TARGETS
+        test_physics_sim_walk_distance
+        test_physics_sim_walk_entry_tracking
+        test_physics_sim_walk_stability
+        test_physics_sim_turn_foot_clearance
+        test_physics_sim_oblique_walk_clearance
+        test_physics_sim_turn_raw_contact_loss
+        test_physics_sim_slow_fwd_walk_foot_clearance
+        test_physics_sim_wave_slow_walk_foot_clearance
+        test_physics_sim_slow_fwd_walk_contact_loss
+        test_physics_sim_tripod_support_baseline
+        test_physics_sim_nav_waypoints
+        test_physics_sim_navigation_acceptance
+        test_motion_performance_suite
+        test_locomotion_regression_suite
+    )
+    foreach(_hex_manifest_tgt IN LISTS _HEXAPOD_MANIFEST_TEST_TARGETS)
+        target_link_libraries(${_hex_manifest_tgt} PRIVATE hexapod_test_support)
+    endforeach()
+
+    option(HEXAPOD_CTEST_USE_LIMITS_MANIFEST "Set HEXAPOD_TEST_LIMITS_MANIFEST for manifest-aware CTests" OFF)
+    if(HEXAPOD_CTEST_USE_LIMITS_MANIFEST)
+        set(_HEX_CTEST_LIMITS_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/../docs/testing-baselines/gates/default-v1.json")
+        set(_HEX_MANIFEST_CTEST_NAMES
+            physics_sim_walk_distance
+            physics_sim_walk_entry_tracking
+            physics_sim_walk_stability
+            physics_sim_turn_foot_clearance
+            physics_sim_oblique_walk_clearance
+            physics_sim_turn_raw_contact_loss
+            physics_sim_slow_fwd_walk_foot_clearance
+            physics_sim_wave_slow_walk_foot_clearance
+            physics_sim_slow_fwd_walk_contact_loss
+            physics_sim_tripod_support_baseline
+            physics_sim_nav_waypoints
+            physics_sim_navigation_acceptance
+            motion_performance_suite
+            motion_performance_suite_long
+            locomotion_regression_suite
+            locomotion_regression_suite_stress
+        )
+        foreach(_hex_ctest_name IN LISTS _HEX_MANIFEST_CTEST_NAMES)
+            set_tests_properties(${_hex_ctest_name} PROPERTIES
+                ENVIRONMENT "HEXAPOD_TEST_LIMITS_MANIFEST=${_HEX_CTEST_LIMITS_MANIFEST}")
+        endforeach()
+    endif()
 endif()

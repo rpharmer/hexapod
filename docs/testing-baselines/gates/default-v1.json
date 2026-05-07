@@ -1,0 +1,190 @@
+{
+  "schema_version": 1,
+  "comment": "Default numeric gates for quantitative integration tests (override via --limits-manifest or HEXAPOD_TEST_LIMITS_MANIFEST).",
+  "suites": {
+    "physics_sim_walk_distance": {
+      "forward_walk": {
+        "min_path_length_m": 0.08,
+        "min_peak_horizontal_speed_mps": 0.02,
+        "min_average_speed_ratio": 0.2,
+        "max_average_speed_ratio": 0.9,
+        "require_active_mode_walk": true
+      },
+      "reverse_walk": {
+        "min_path_length_m": 0.08,
+        "min_peak_horizontal_speed_mps": 0.02,
+        "min_average_speed_ratio": 0.2,
+        "max_average_speed_ratio": 0.9,
+        "require_active_mode_walk": true
+      },
+      "straight_walk": {
+        "min_path_length_m": 0.08,
+        "max_lateral_deviation_m": 0.2,
+        "max_lateral_vs_path_ratio": 0.35,
+        "min_peak_horizontal_speed_mps": 0.02,
+        "min_average_speed_ratio": 0.2,
+        "max_average_speed_ratio": 0.9,
+        "require_active_mode_walk": true
+      },
+      "turn_in_place": {
+        "max_path_length_m": 2.25,
+        "max_net_horizontal_distance_m": 0.21,
+        "min_peak_yaw_rate_radps": 0.02,
+        "min_average_yaw_rate_ratio": 0.05,
+        "max_average_yaw_rate_ratio": 2.25,
+        "min_yaw_delta_abs_rad": 0.05,
+        "require_active_mode_walk": true
+      }
+    },
+    "physics_sim_turn_foot_clearance": {
+      "turn_foot_clearance": {
+        "min_foot_tip_world_z_m": -0.0001
+      }
+    },
+    "physics_sim_slow_fwd_walk_foot_clearance": {
+      "slow_fwd_walk_foot_clearance": {
+        "min_foot_tip_world_z_m": -0.0001,
+        "require_saw_raw_contact_loss": true,
+        "max_body_undershoot_m": 0.01,
+        "commanded_body_height_m": 0.14
+      }
+    },
+    "physics_sim_wave_slow_walk_foot_clearance": {
+      "wave_slow_walk_foot_clearance": {
+        "min_foot_tip_world_z_m": -0.0001,
+        "require_saw_raw_contact_loss": true,
+        "max_body_undershoot_m": 0.01,
+        "commanded_body_height_m": 0.14
+      }
+    },
+    "physics_sim_oblique_walk_clearance": {
+      "oblique_walk_clearance": {
+        "min_foot_tip_world_z_m": -0.0001,
+        "max_body_undershoot_m": 0.012,
+        "require_saw_raw_contact_loss_each_phase": true,
+        "commanded_body_height_m": 0.14
+      }
+    },
+    "physics_sim_tripod_support_baseline": {
+      "tripod_support_baseline": {
+        "stand_mean_body_height_m_min": 0.1,
+        "tripod_mean_body_height_m_min": 0.075,
+        "tripod_min_body_height_m_min": 0.06,
+        "sag_vs_stand_m_max": 0.05,
+        "max_abs_roll_rad": 0.45,
+        "max_abs_pitch_rad": 0.45
+      }
+    },
+    "physics_sim_walk_entry_tracking": {
+      "walk_entry_tracking": {
+        "min_body_height_m": 0.08,
+        "min_static_stability_margin_m": -0.03,
+        "max_stance_contact_mismatch": 5,
+        "max_worst_leg_tracking_error_rad": 6.5
+      }
+    },
+    "physics_sim_turn_raw_contact_loss": {
+      "turn_raw_contact_loss": {
+        "require_saw_raw_contact_loss": true
+      }
+    },
+    "physics_sim_slow_fwd_walk_contact_loss": {
+      "slow_fwd_walk_contact_loss": {
+        "require_saw_raw_contact_loss": true
+      }
+    },
+    "physics_sim_walk_stability": {
+      "tripod_walk_stability": {
+        "max_abs_roll_rad": 0.6,
+        "max_abs_pitch_rad": 0.65
+      }
+    },
+    "physics_sim_nav_waypoints": {
+      "follow_waypoints": {
+        "strict": {
+          "path_wp_min_m": 0.006,
+          "net_displacement_max_m": 0.2,
+          "err_goal_max_m": 0.11,
+          "require_lifecycle_completed": true
+        },
+        "loose": {
+          "path_wp_min_m": 0.006,
+          "net_displacement_max_m": 8.0,
+          "path_integrated_max_m": 120.0,
+          "err_goal_max_m_if_completed": 0.15
+        }
+      },
+      "rotate_to_heading": {
+        "max_yaw_err_rad": 0.25
+      }
+    },
+    "physics_sim_navigation_acceptance": {
+      "direct_path": {
+        "max_progress_m_min": 0.08,
+        "peak_replan_count_min": 1,
+        "path_length_m_max": 2.0
+      },
+      "single_obstacle": {
+        "path_length_delta_vs_baseline_min_m": 0.02,
+        "goal_error_m_max": 0.08,
+        "path_length_m_max": 0.8,
+        "max_progress_m_max": 0.3,
+        "min_progress_m_for_safe_block": 0.08,
+        "goal_error_m_max_if_blocked": 0.12
+      },
+      "blocked_corridor": {
+        "max_progress_m_max": 0.12,
+        "max_progress_m_max_if_front_edge_stop": 0.12,
+        "goal_error_m_max_if_front_edge_stop": 0.06,
+        "path_length_m_max_if_front_edge_stop": 0.25
+      },
+      "midrun_intrusion": {
+        "min_progress_m_for_safe_block_branch": 0.04,
+        "path_length_delta_vs_baseline_min_m_if_completed": 0.08,
+        "goal_error_m_max_if_completed": 0.05
+      }
+    },
+    "motion_performance": {
+      "_defaults": {
+        "fk_foot_tip_ground_min_m": -0.0001,
+        "min_measured_foot_world_z_m": -0.04
+      },
+      "stride_gates": {
+        "walk_warmup_samples": 45,
+        "min_touchdowns": 8,
+        "touchdown_span_min_vs_step_length": 0.22,
+        "touchdown_span_max_vs_step_length": 2.85,
+        "touchdown_span_max_extra_m": 0.07,
+        "swing_lift_min_vs_swing_height": 0.17,
+        "swing_lift_abs_floor_m": 0.0035,
+        "swing_lift_percentile": 0.2
+      },
+      "walk_gates": {
+        "forward_like": {
+          "max_stance_anchor_drift_m": 0.34,
+          "max_stance_contact_tracking_error_m": 0.22,
+          "max_commanded_tracking_error_m": 0.22
+        },
+        "lateral": {
+          "max_stance_anchor_drift_m": 0.38,
+          "max_stance_contact_tracking_error_m": 0.2,
+          "max_commanded_tracking_error_m": 0.2
+        }
+      }
+    },
+    "locomotion_regression": {
+      "long_walk_observability": {
+        "min_walk_fault_time_s": 10.0,
+        "max_walk_fault_time_s": 65.0,
+        "min_path_length_m": 0.75,
+        "min_stride_count": 6,
+        "min_walk_duration_before_fault_s": 10.0,
+        "transition_improvement_min_m": 0.001,
+        "transition_max_body_height_m": 0.141,
+        "max_contact_anchor_max_drift_m": 0.08,
+        "min_measured_foot_world_z_m": -0.03,
+        "max_contact_tracking_error_m": 0.1
+      }
+    }
+  }
+}

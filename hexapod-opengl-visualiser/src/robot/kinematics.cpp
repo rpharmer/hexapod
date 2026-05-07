@@ -9,6 +9,29 @@ namespace visualiser::robot {
 
 using visualiser::math::Vec3;
 
+Vec3 ServerToSceneVec(const Vec3& value);
+
+namespace {
+
+Vec3 EffectiveOrientationRad(const HexapodBodyPoseState& pose) {
+  if (pose.orientation_rad.x != 0.0f || pose.orientation_rad.y != 0.0f || pose.orientation_rad.z != 0.0f) {
+    return pose.orientation_rad;
+  }
+  return {0.0f, 0.0f, pose.yaw_rad};
+}
+
+Vec3 RotateBodyVectorToScene(const Vec3& value, const HexapodBodyPoseState& pose) {
+  const Vec3 orientation = EffectiveOrientationRad(pose);
+  Vec3 rotated = ServerToSceneVec(value);
+  rotated = visualiser::math::RotateAroundSceneX(rotated, orientation.x);
+  rotated = visualiser::math::RotateAroundSceneZ(rotated, -orientation.y);
+  rotated = visualiser::math::RotateAroundSceneY(
+      rotated, visualiser::math::frame_math::kSceneYawOffsetRad - orientation.z);
+  return rotated;
+}
+
+}  // namespace
+
 Vec3 ServerToSceneVec(const Vec3& value) {
   return {value.x, value.z, -value.y};
 }
@@ -17,11 +40,9 @@ Vec3 TransformBodyPoint(const Vec3& point, const HexapodBodyPoseState& pose) {
   if (!pose.valid) {
     return point;
   }
-  const Vec3 scene_point = ServerToSceneVec(point);
-  const Vec3 rotated = visualiser::math::RotateAroundSceneY(
-      scene_point, -visualiser::math::frame_math::ServerYawToSceneYaw(pose.yaw_rad));
+  const Vec3 rotated = RotateBodyVectorToScene(point, pose);
   const Vec3 origin = ServerToSceneVec(pose.position);
-  return Vec3{origin.x + rotated.x, origin.y + rotated.y, origin.z + rotated.z};
+  return {origin.x + rotated.x, origin.y + rotated.y, origin.z + rotated.z};
 }
 
 RobotKinematics ComputeRobotLeg(const HexapodLegLayout& layout, const std::array<float, 3>& angles_deg) {

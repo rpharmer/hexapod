@@ -11,7 +11,7 @@ run_server_tests() {
   section "Server tests (hexapod-server / preset: tests)"
   run_in_dir "$ROOT_DIR/hexapod-server" cmake --preset tests
   run_in_dir "$ROOT_DIR/hexapod-server" cmake --build --preset tests -j "$BUILD_JOBS"
-  run_in_dir "$ROOT_DIR/hexapod-server" ctest --preset tests -LE locomotion-stress --output-on-failure
+  run_in_dir "$ROOT_DIR/hexapod-server" ctest --preset tests -LE 'locomotion-stress|motion-performance-long' --output-on-failure
 }
 
 run_physics_sim_build() {

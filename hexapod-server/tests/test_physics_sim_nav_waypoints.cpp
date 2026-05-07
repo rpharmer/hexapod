@@ -22,7 +22,10 @@
 #include "nav_locomotion_bridge.hpp"
 #include "nav_primitives.hpp"
 #include "nav_to_locomotion.hpp"
+#include "physics_sim_metrics_emit.hpp"
+#include "physics_sim_test_argv.hpp"
 #include "physics_sim_test_utils.hpp"
+#include "test_limits_manifest.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
 #include "robot_runtime.hpp"
@@ -31,9 +34,11 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 
 #if defined(__linux__)
@@ -149,6 +154,44 @@ void runRotateNavTick(RobotRuntime& runtime,
     runtime.controlStep();
 }
 
+std::string navFollowLimitsAppliedJson(const bool strict) {
+    constexpr const char* kSuite = "physics_sim_nav_waypoints";
+    constexpr const char* kCase = "follow_waypoints";
+    const char* prof = strict ? "strict" : "loose";
+    const double path_wp_min_m = test_limits::getDouble(kSuite, kCase, prof, "path_wp_min_m", 0.006);
+    const double net_displacement_max_m =
+        test_limits::getDouble(kSuite, kCase, prof, "net_displacement_max_m", strict ? 0.20 : 8.0);
+    std::ostringstream o;
+    o << std::setprecision(17);
+    if (strict) {
+        const double err_goal_max_m = test_limits::getDouble(kSuite, kCase, prof, "err_goal_max_m", 0.11);
+        const bool require_lifecycle_completed =
+            test_limits::getBool(kSuite, kCase, prof, "require_lifecycle_completed", true);
+        o << "{\"mode\":\"strict\",\"path_wp_min_m\":" << path_wp_min_m
+          << ",\"net_displacement_max_m\":" << net_displacement_max_m << ",\"err_goal_max_m\":" << err_goal_max_m
+          << ",\"require_lifecycle_completed\":" << (require_lifecycle_completed ? "true" : "false") << '}';
+    } else {
+        const double path_integrated_max_m =
+            test_limits::getDouble(kSuite, kCase, prof, "path_integrated_max_m", 120.0);
+        const double err_goal_max_m_if_completed =
+            test_limits::getDouble(kSuite, kCase, prof, "err_goal_max_m_if_completed", 0.15);
+        o << "{\"mode\":\"loose\",\"path_wp_min_m\":" << path_wp_min_m
+          << ",\"net_displacement_max_m\":" << net_displacement_max_m
+          << ",\"path_integrated_max_m\":" << path_integrated_max_m
+          << ",\"err_goal_max_m_if_completed\":" << err_goal_max_m_if_completed << '}';
+    }
+    return o.str();
+}
+
+std::string navRotateLimitsAppliedJson() {
+    constexpr const char* kSuite = "physics_sim_nav_waypoints";
+    constexpr const char* kCase = "rotate_to_heading";
+    const double max_yaw_err_rad = test_limits::getDouble(kSuite, kCase, "", "max_yaw_err_rad", 0.25);
+    std::ostringstream o;
+    o << std::setprecision(17) << "{\"max_yaw_err_rad\":" << max_yaw_err_rad << '}';
+    return o.str();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -156,16 +199,38 @@ int main(int argc, char** argv) {
     std::cerr << "test_physics_sim_nav_waypoints: Linux-only\n";
     return EXIT_SUCCESS;
 #else
+    bool emit_metrics_json = false;
     const char* sim_exe = nullptr;
-    if (argc >= 2 && argv[1][0] != '\0') {
-        sim_exe = argv[1];
-    } else {
-        sim_exe = std::getenv("HEXAPOD_PHYSICS_SIM_EXE");
+    physics_sim_test_argv::parse(argc, argv, emit_metrics_json, sim_exe);
+    std::string manifest_err;
+    if (!test_limits::init(argc, argv, manifest_err)) {
+        std::cerr << manifest_err << '\n';
+        return 2;
     }
     if (sim_exe == nullptr || sim_exe[0] == '\0') {
         std::cout << "skip test_physics_sim_nav_waypoints (pass sim path or HEXAPOD_PHYSICS_SIM_EXE)\n";
         return 0;
     }
+
+    const char* strict_env_early = std::getenv("HEXAPOD_STRICT_PHYSICS_NAV");
+    const bool strict =
+        strict_env_early != nullptr && strict_env_early[0] != '\0' && std::string{strict_env_early} != "0";
+
+    constexpr const char* kNavLimitsSuite = "physics_sim_nav_waypoints";
+    const double kFollowPathWpMinM =
+        test_limits::getDouble(kNavLimitsSuite, "follow_waypoints", "strict", "path_wp_min_m", 0.006);
+    const double kFollowStrictNetDisplacementMaxM =
+        test_limits::getDouble(kNavLimitsSuite, "follow_waypoints", "strict", "net_displacement_max_m", 0.20);
+    const double kFollowStrictErrGoalMaxM =
+        test_limits::getDouble(kNavLimitsSuite, "follow_waypoints", "strict", "err_goal_max_m", 0.11);
+    const double kFollowLooseNetDisplacementMaxM =
+        test_limits::getDouble(kNavLimitsSuite, "follow_waypoints", "loose", "net_displacement_max_m", 8.0);
+    const double kFollowLoosePathIntegratedMaxM =
+        test_limits::getDouble(kNavLimitsSuite, "follow_waypoints", "loose", "path_integrated_max_m", 120.0);
+    const double kFollowLooseErrGoalMaxIfCompletedM =
+        test_limits::getDouble(kNavLimitsSuite, "follow_waypoints", "loose", "err_goal_max_m_if_completed", 0.15);
+    const double kRotateMaxYawErrRad =
+        test_limits::getDouble(kNavLimitsSuite, "rotate_to_heading", "", "max_yaw_err_rad", 0.25);
 
     const auto harness = physics_sim_test_utils::loadHarnessSettings();
     const int kPort = 23000 + (static_cast<int>(::getpid()) % 5000);
@@ -198,6 +263,10 @@ int main(int argc, char** argv) {
 
     RobotRuntime runtime(std::move(bridge), std::make_unique<PhysicsSimEstimator>(), nullptr, cfg);
     if (!expect(runtime.init(), "runtime init should succeed against the live physics sim")) {
+        if (emit_metrics_json) {
+            physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", false,
+                                          navFollowLimitsAppliedJson(strict), "{\"stage\":\"runtime_init_failed\"}");
+        }
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
@@ -214,6 +283,10 @@ int main(int argc, char** argv) {
 
     if (!bridge_ptr->last_state().has_value()) {
         std::cerr << "FAIL: bridge never produced state\n";
+        if (emit_metrics_json) {
+            physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", false,
+                                          navFollowLimitsAppliedJson(strict), "{\"stage\":\"no_bridge_state\"}");
+        }
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
@@ -263,6 +336,13 @@ int main(int argc, char** argv) {
         runFollowNavTick(runtime, nav, stand_fallback, dt_s);
         if (!bridge_ptr->last_state().has_value()) {
             std::cerr << "FAIL: lost sim state during follow\n";
+            if (emit_metrics_json) {
+                std::ostringstream m;
+                m << std::setprecision(17) << "{\"stage\":\"lost_state_during_follow\",\"follow_step\":" << i
+                  << ",\"path_wp_m\":" << path_wp << '}';
+                physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", false,
+                                              navFollowLimitsAppliedJson(strict), m.str());
+            }
             ::kill(pid, SIGTERM);
             ::waitpid(pid, nullptr, 0);
             return EXIT_FAILURE;
@@ -282,6 +362,12 @@ int main(int argc, char** argv) {
 
     const NavLocomotionBridge::MonitorSnapshot mon = nav.monitor();
     if (!expect(!nav.active(), "FollowWaypoints should finish (complete or stall-fail) in the physics sim")) {
+        if (emit_metrics_json) {
+            std::ostringstream m;
+            m << std::setprecision(17) << "{\"stage\":\"follow_still_active\",\"path_wp_m\":" << path_wp << '}';
+            physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", false,
+                                          navFollowLimitsAppliedJson(strict), m.str());
+        }
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
@@ -291,16 +377,19 @@ int main(int argc, char** argv) {
         std::hypot(pos_at_follow_done.x - g2x, pos_at_follow_done.y - g2y);
     const double net_wp = std::hypot(pos_at_follow_done.x - wp0.x, pos_at_follow_done.y - wp0.y);
 
-    if (!expect(path_wp >= 0.006, "follow phase should move measurably in the horizontal plane")) {
+    if (!expect(path_wp >= kFollowPathWpMinM, "follow phase should move measurably in the horizontal plane")) {
         std::cerr << "path_wp=" << path_wp << " err_goal=" << err_goal << '\n';
+        if (emit_metrics_json) {
+            std::ostringstream m;
+            m << std::setprecision(17) << "{\"stage\":\"path_wp_too_small\",\"path_wp_m\":" << path_wp
+              << ",\"err_goal_m\":" << err_goal << '}';
+            physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", false,
+                                          navFollowLimitsAppliedJson(strict), m.str());
+        }
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
     }
-
-    const char* strict_env = std::getenv("HEXAPOD_STRICT_PHYSICS_NAV");
-    const bool strict =
-        strict_env != nullptr && strict_env[0] != '\0' && std::string{strict_env} != "0";
 
     if (strict) {
         if (!expect(mon.lifecycle == NavLocomotionBridge::LifecycleState::Completed,
@@ -308,19 +397,43 @@ int main(int argc, char** argv) {
             std::cerr << "lifecycle=" << static_cast<int>(mon.lifecycle)
                       << " failure_reason=" << static_cast<int>(mon.failure_reason) << " path_wp=" << path_wp
                       << '\n';
+            if (emit_metrics_json) {
+                std::ostringstream m;
+                m << std::setprecision(17) << "{\"stage\":\"strict_lifecycle\",\"path_wp_m\":" << path_wp
+                  << ",\"net_displacement_m\":" << net_wp << ",\"err_goal_m\":" << err_goal
+                  << ",\"follow_lifecycle\":" << static_cast<int>(mon.lifecycle)
+                  << ",\"follow_failure_reason\":" << static_cast<int>(mon.failure_reason) << '}';
+                physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", false,
+                                              navFollowLimitsAppliedJson(strict), m.str());
+            }
             ::kill(pid, SIGTERM);
             ::waitpid(pid, nullptr, 0);
             return EXIT_FAILURE;
         }
-        if (!expect(net_wp <= 0.20, "strict mode: net displacement should stay small after success")) {
+        if (!expect(net_wp <= kFollowStrictNetDisplacementMaxM,
+                    "strict mode: net displacement should stay small after success")) {
             std::cerr << "net_wp=" << net_wp << " err_goal=" << err_goal << '\n';
+            if (emit_metrics_json) {
+                std::ostringstream m;
+                m << std::setprecision(17) << "{\"stage\":\"strict_net_wp\",\"path_wp_m\":" << path_wp
+                  << ",\"net_displacement_m\":" << net_wp << ",\"err_goal_m\":" << err_goal << '}';
+                physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", false,
+                                              navFollowLimitsAppliedJson(strict), m.str());
+            }
             ::kill(pid, SIGTERM);
             ::waitpid(pid, nullptr, 0);
             return EXIT_FAILURE;
         }
-        if (!expect(err_goal <= 0.11, "strict mode: body should finish near the final waypoint")) {
+        if (!expect(err_goal <= kFollowStrictErrGoalMaxM, "strict mode: body should finish near the final waypoint")) {
             std::cerr << "wp0=" << wp0.x << "," << wp0.y << " end=" << pos_at_follow_done.x << ","
                       << pos_at_follow_done.y << " g2=" << g2x << "," << g2y << " err=" << err_goal << '\n';
+            if (emit_metrics_json) {
+                std::ostringstream m;
+                m << std::setprecision(17) << "{\"stage\":\"strict_err_goal\",\"path_wp_m\":" << path_wp
+                  << ",\"net_displacement_m\":" << net_wp << ",\"err_goal_m\":" << err_goal << '}';
+                physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", false,
+                                              navFollowLimitsAppliedJson(strict), m.str());
+            }
             ::kill(pid, SIGTERM);
             ::waitpid(pid, nullptr, 0);
             return EXIT_FAILURE;
@@ -333,25 +446,58 @@ int main(int argc, char** argv) {
             std::cerr << "lifecycle=" << static_cast<int>(mon.lifecycle)
                       << " failure_reason=" << static_cast<int>(mon.failure_reason) << " path_wp=" << path_wp
                       << " net_wp=" << net_wp << '\n';
+            if (emit_metrics_json) {
+                std::ostringstream m;
+                m << std::setprecision(17) << "{\"stage\":\"loose_lifecycle\",\"path_wp_m\":" << path_wp
+                  << ",\"net_displacement_m\":" << net_wp << ",\"err_goal_m\":" << err_goal
+                  << ",\"follow_lifecycle\":" << static_cast<int>(mon.lifecycle)
+                  << ",\"follow_failure_reason\":" << static_cast<int>(mon.failure_reason) << '}';
+                physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", false,
+                                              navFollowLimitsAppliedJson(strict), m.str());
+            }
             ::kill(pid, SIGTERM);
             ::waitpid(pid, nullptr, 0);
             return EXIT_FAILURE;
         }
-        if (!expect(net_wp <= 8.0, "follow phase net displacement should stay bounded (loose guard)")) {
+        if (!expect(net_wp <= kFollowLooseNetDisplacementMaxM,
+                    "follow phase net displacement should stay bounded (loose guard)")) {
             std::cerr << "net_wp=" << net_wp << " err_goal=" << err_goal << '\n';
+            if (emit_metrics_json) {
+                std::ostringstream m;
+                m << std::setprecision(17) << "{\"stage\":\"loose_net_wp\",\"path_wp_m\":" << path_wp
+                  << ",\"net_displacement_m\":" << net_wp << ",\"err_goal_m\":" << err_goal << '}';
+                physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", false,
+                                              navFollowLimitsAppliedJson(strict), m.str());
+            }
             ::kill(pid, SIGTERM);
             ::waitpid(pid, nullptr, 0);
             return EXIT_FAILURE;
         }
-        if (!expect(path_wp <= 120.0, "follow phase path length guard (catch runaway loops)")) {
+        if (!expect(path_wp <= kFollowLoosePathIntegratedMaxM,
+                    "follow phase path length guard (catch runaway loops)")) {
             std::cerr << "path_wp=" << path_wp << '\n';
+            if (emit_metrics_json) {
+                std::ostringstream m;
+                m << std::setprecision(17) << "{\"stage\":\"loose_path_integrated\",\"path_wp_m\":" << path_wp
+                  << ",\"net_displacement_m\":" << net_wp << ",\"err_goal_m\":" << err_goal << '}';
+                physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", false,
+                                              navFollowLimitsAppliedJson(strict), m.str());
+            }
             ::kill(pid, SIGTERM);
             ::waitpid(pid, nullptr, 0);
             return EXIT_FAILURE;
         }
         if (completed) {
-            if (!expect(err_goal <= 0.15, "completed runs should finish near the final waypoint")) {
+            if (!expect(err_goal <= kFollowLooseErrGoalMaxIfCompletedM,
+                         "completed runs should finish near the final waypoint")) {
                 std::cerr << "err_goal=" << err_goal << " net_wp=" << net_wp << '\n';
+                if (emit_metrics_json) {
+                    std::ostringstream m;
+                    m << std::setprecision(17) << "{\"stage\":\"loose_err_goal_completed\",\"path_wp_m\":" << path_wp
+                      << ",\"net_displacement_m\":" << net_wp << ",\"err_goal_m\":" << err_goal << '}';
+                    physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", false,
+                                                  navFollowLimitsAppliedJson(strict), m.str());
+                }
                 ::kill(pid, SIGTERM);
                 ::waitpid(pid, nullptr, 0);
                 return EXIT_FAILURE;
@@ -363,6 +509,10 @@ int main(int argc, char** argv) {
               << " err_goal=" << err_goal << " net_wp=" << net_wp << " path_wp=" << path_wp << '\n';
 
     const bool follow_completed = mon.lifecycle == NavLocomotionBridge::LifecycleState::Completed;
+
+    double phase2_yaw_err_rad = 0.0;
+    double phase2_path_m = 0.0;
+    bool phase2_ran = false;
 
     if (follow_completed) {
         const int kStandBeforeRotate = static_cast<int>(
@@ -391,6 +541,20 @@ int main(int argc, char** argv) {
             runRotateNavTick(runtime, rot, turning, walk_base, stand_fallback, dt_s);
             if (!bridge_ptr->last_state().has_value()) {
                 std::cerr << "FAIL: lost sim state during rotate\n";
+                if (emit_metrics_json) {
+                    std::ostringstream fm;
+                    fm << std::setprecision(17) << "{\"path_wp_m\":" << path_wp << ",\"err_goal_m\":" << err_goal
+                       << ",\"net_displacement_m\":" << net_wp
+                       << ",\"follow_lifecycle\":" << static_cast<int>(mon.lifecycle)
+                       << ",\"follow_failure_reason\":" << static_cast<int>(mon.failure_reason) << '}';
+                    physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", true,
+                                                  navFollowLimitsAppliedJson(strict), fm.str());
+                    std::ostringstream rm;
+                    rm << std::setprecision(17) << "{\"stage\":\"lost_state_during_rotate\",\"rotate_step\":" << i
+                       << ",\"path_r_m\":" << path_r << '}';
+                    physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "rotate_to_heading", false,
+                                                  navRotateLimitsAppliedJson(), rm.str());
+                }
                 ::kill(pid, SIGTERM);
                 ::waitpid(pid, nullptr, 0);
                 return EXIT_FAILURE;
@@ -408,21 +572,74 @@ int main(int argc, char** argv) {
         }
 
         if (!expect(!turning, "RotateToHeading should complete after a successful follow")) {
+            if (emit_metrics_json) {
+                std::ostringstream fm;
+                fm << std::setprecision(17) << "{\"path_wp_m\":" << path_wp << ",\"err_goal_m\":" << err_goal
+                   << ",\"net_displacement_m\":" << net_wp
+                   << ",\"follow_lifecycle\":" << static_cast<int>(mon.lifecycle)
+                   << ",\"follow_failure_reason\":" << static_cast<int>(mon.failure_reason) << '}';
+                physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", true,
+                                              navFollowLimitsAppliedJson(strict), fm.str());
+                std::ostringstream rm;
+                rm << std::setprecision(17) << "{\"stage\":\"rotate_did_not_complete\",\"still_turning\":true,\"path_r_m\":"
+                   << path_r << '}';
+                physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "rotate_to_heading", false,
+                                              navRotateLimitsAppliedJson(), rm.str());
+            }
             ::kill(pid, SIGTERM);
             ::waitpid(pid, nullptr, 0);
             return EXIT_FAILURE;
         }
         const double yaw_err2 = std::abs(navWrapAngleRad(target_yaw - yaw_done));
-        if (!expect(yaw_err2 <= 0.25, "phase2 yaw should approach target")) {
+        if (!expect(yaw_err2 <= kRotateMaxYawErrRad, "phase2 yaw should approach target")) {
             std::cerr << "yaw_err2=" << yaw_err2 << " path_r=" << path_r << '\n';
+            if (emit_metrics_json) {
+                std::ostringstream fm;
+                fm << std::setprecision(17) << "{\"path_wp_m\":" << path_wp << ",\"err_goal_m\":" << err_goal
+                   << ",\"net_displacement_m\":" << net_wp
+                   << ",\"follow_lifecycle\":" << static_cast<int>(mon.lifecycle)
+                   << ",\"follow_failure_reason\":" << static_cast<int>(mon.failure_reason) << '}';
+                physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", true,
+                                              navFollowLimitsAppliedJson(strict), fm.str());
+                std::ostringstream rm;
+                rm << std::setprecision(17) << "{\"stage\":\"yaw_err_too_large\",\"phase2_yaw_err_rad\":" << yaw_err2
+                   << ",\"path_r_m\":" << path_r << '}';
+                physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "rotate_to_heading", false,
+                                              navRotateLimitsAppliedJson(), rm.str());
+            }
             ::kill(pid, SIGTERM);
             ::waitpid(pid, nullptr, 0);
             return EXIT_FAILURE;
         }
+        phase2_ran = true;
+        phase2_yaw_err_rad = yaw_err2;
+        phase2_path_m = path_r;
         std::cout << "test_physics_sim_nav_waypoints phase2_rotate ok yaw_err=" << yaw_err2
                   << " path_r=" << path_r << '\n';
     } else {
         std::cout << "test_physics_sim_nav_waypoints phase2_rotate skipped (follow did not complete)\n";
+    }
+
+    if (emit_metrics_json) {
+        const std::string fl = navFollowLimitsAppliedJson(strict);
+        std::ostringstream fm;
+        fm << std::setprecision(17) << "{\"path_wp_m\":" << path_wp << ",\"err_goal_m\":" << err_goal
+           << ",\"net_displacement_m\":" << net_wp
+           << ",\"follow_lifecycle\":" << static_cast<int>(mon.lifecycle)
+           << ",\"follow_failure_reason\":" << static_cast<int>(mon.failure_reason)
+           << ",\"strict_physics_nav\":" << (strict ? "true" : "false") << '}';
+        physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "follow_waypoints", true, fl, fm.str());
+
+        const std::string rl = navRotateLimitsAppliedJson();
+        if (phase2_ran) {
+            std::ostringstream rm;
+            rm << std::setprecision(17) << "{\"phase2_yaw_err_rad\":" << phase2_yaw_err_rad
+               << ",\"phase2_path_m\":" << phase2_path_m << '}';
+            physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "rotate_to_heading", true, rl, rm.str());
+        } else {
+            physics_sim_metrics::emitLine("physics_sim_nav_waypoints", "rotate_to_heading", true, rl,
+                                          "{\"skipped\":true,\"reason\":\"follow_not_completed\"}");
+        }
     }
 
     ::kill(pid, SIGTERM);

@@ -39,11 +39,18 @@ bool hasNearbySample(const LocalMapObservation& observation, double x_m, double 
 int main() {
     constexpr double kHalfPi = 1.5707963267948966;
     FakeObstacleProvider provider;
-    provider.footprints.push_back(PhysicsSimObstacleFootprint{1.0, 2.0, 0.10, 0.20, 0.0});
-    provider.footprints.push_back(PhysicsSimObstacleFootprint{0.0, 0.0, 0.10, 0.10, kHalfPi});
-
     PhysicsSimLocalMapObservationSource source(provider, 0.10);
     RobotState est{};
+    const LocalMapObservation empty = source.collect(NavPose2d{}, est, TimePointUs{123456});
+    if (!expect(empty.samples.empty(), "without obstacle footprints the observation should be empty")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(empty.timestamp_us.isZero(), "without obstacle footprints the source should not refresh map freshness")) {
+        return EXIT_FAILURE;
+    }
+
+    provider.footprints.push_back(PhysicsSimObstacleFootprint{1.0, 2.0, 0.10, 0.20, 0.0});
+    provider.footprints.push_back(PhysicsSimObstacleFootprint{0.0, 0.0, 0.10, 0.10, kHalfPi});
     const LocalMapObservation observation = source.collect(NavPose2d{}, est, TimePointUs{123456});
 
     if (!expect(observation.timestamp_us.value == 123456, "source should stamp observation with collection time")) {
@@ -65,6 +72,15 @@ int main() {
     }
     if (!expect(hasNearbySample(observation, -0.10, 0.0, 0.03),
                 "rotated obstacle should extend along world X after rasterization")) {
+        return EXIT_FAILURE;
+    }
+
+    provider.footprints = {PhysicsSimObstacleFootprint{0.0, 0.0, 0.0, 0.10, 0.0}};
+    const LocalMapObservation degenerate = source.collect(NavPose2d{}, est, TimePointUs{222222});
+    if (!expect(degenerate.samples.empty(), "degenerate footprints should not produce map samples")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(degenerate.timestamp_us.isZero(), "degenerate footprints should not refresh map freshness")) {
         return EXIT_FAILURE;
     }
 

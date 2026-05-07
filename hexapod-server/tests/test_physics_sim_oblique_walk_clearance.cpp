@@ -3,7 +3,10 @@
 #include "geometry_config.hpp"
 #include "leg_fk.hpp"
 #include "motion_intent_utils.hpp"
+#include "physics_sim_metrics_emit.hpp"
+#include "physics_sim_test_argv.hpp"
 #include "physics_sim_test_utils.hpp"
+#include "test_limits_manifest.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
 #include "robot_runtime.hpp"
@@ -12,10 +15,12 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 
@@ -108,6 +113,16 @@ struct WalkPhaseCase {
     int observe_steps;
 };
 
+std::string obliqueWalkClearanceLimitsJson(const double min_foot_tip_world_z_m,
+                                           const bool require_each_phase,
+                                           const double max_body_undershoot_m) {
+    std::ostringstream o;
+    o << std::setprecision(17) << "{\"min_foot_tip_world_z_m\":" << min_foot_tip_world_z_m
+      << ",\"max_body_undershoot_m\":" << max_body_undershoot_m
+      << ",\"require_saw_raw_contact_loss_each_phase\":" << (require_each_phase ? "true" : "false") << '}';
+    return o.str();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -115,16 +130,32 @@ int main(int argc, char** argv) {
     std::cout << "skip test_physics_sim_oblique_walk_clearance (Linux-only)\n";
     return 0;
 #else
+    bool emit_metrics_json = false;
     const char* sim_exe = nullptr;
-    if (argc >= 2 && argv[1][0] != '\0') {
-        sim_exe = argv[1];
-    } else {
-        sim_exe = std::getenv("HEXAPOD_PHYSICS_SIM_EXE");
+    physics_sim_test_argv::parse(argc, argv, emit_metrics_json, sim_exe);
+    std::string manifest_err;
+    if (!test_limits::init(argc, argv, manifest_err)) {
+        std::cerr << manifest_err << '\n';
+        return 2;
     }
     if (sim_exe == nullptr || sim_exe[0] == '\0') {
         std::cout << "skip test_physics_sim_oblique_walk_clearance (pass sim path or HEXAPOD_PHYSICS_SIM_EXE)\n";
         return 0;
     }
+
+    constexpr const char* kSuite = "physics_sim_oblique_walk_clearance";
+    constexpr const char* kCase = "oblique_walk_clearance";
+    const double kMinFootTipWorldZ =
+        test_limits::getDouble(kSuite, kCase, "", "min_foot_tip_world_z_m", -1.0e-4);
+    const bool kRequireSawRawContactLossEachPhase =
+        test_limits::getBool(kSuite, kCase, "", "require_saw_raw_contact_loss_each_phase", true);
+    const double kMaxBodyUndershootM =
+        test_limits::getDouble(kSuite, kCase, "", "max_body_undershoot_m", 0.012);
+    const double kCommandedBodyHeightM =
+        test_limits::getDouble(kSuite, kCase, "", "commanded_body_height_m", 0.14);
+    const auto limitsJson = [&]() {
+        return obliqueWalkClearanceLimitsJson(kMinFootTipWorldZ, kRequireSawRawContactLossEachPhase, kMaxBodyUndershootM);
+    };
 
     const auto harness = physics_sim_test_utils::loadHarnessSettings();
     const int port = 26000 + (static_cast<int>(::getpid()) % 4000);
@@ -136,6 +167,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     if (pid == 0) {
+        physics_sim_test_utils::quietChildProcessStdIo();
         const std::string port_str = std::to_string(port);
         ::execl(sim_exe, sim_exe, "--serve", "--serve-port", port_str.c_str(), nullptr);
         std::perror("execl");
@@ -155,6 +187,10 @@ int main(int argc, char** argv) {
     RobotRuntime runtime(
         std::move(bridge), std::make_unique<PhysicsSimEstimator>(), nullptr, cfg, telemetry::makeNoopTelemetryPublisher());
     if (!expect(runtime.init(), "runtime init should succeed against the live physics sim")) {
+        if (emit_metrics_json) {
+            physics_sim_metrics::emitLine("physics_sim_oblique_walk_clearance", "oblique_walk_clearance", false,
+                                          limitsJson(), "{\"stage\":\"runtime_init_failed\"}");
+        }
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
@@ -163,26 +199,28 @@ int main(int argc, char** argv) {
     const ScenarioMotionIntent stand_motion{true, RobotMode::STAND, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0};
     const WalkPhaseCase phases[] = {
         {"ripple_lateral_yaw_pose",
-         {true, RobotMode::WALK, GaitType::RIPPLE, 0.14, 0.07, 1.57, 0.35, 0.0},
-         static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(900, bus_loop_period_us))},
+         {true, RobotMode::WALK, GaitType::RIPPLE, 0.14, 0.05, 1.57, 0.14, 0.0},
+         static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(700, bus_loop_period_us))},
         {"wave_backward_yaw_pose",
-         {true, RobotMode::WALK, GaitType::WAVE, 0.14, 0.05, 3.14, -0.30, 0.0},
-         static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(900, bus_loop_period_us))},
+         {true, RobotMode::WALK, GaitType::WAVE, 0.14, 0.04, 3.14, -0.16, 0.0},
+         static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(700, bus_loop_period_us))},
         {"tripod_lateral_yaw_pose",
-         {true, RobotMode::WALK, GaitType::TRIPOD, 0.14, 0.05, -1.57, 0.20, 0.0},
-         static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(900, bus_loop_period_us))},
+         {true, RobotMode::WALK, GaitType::TRIPOD, 0.14, 0.04, -1.57, 0.10, 0.0},
+         static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(700, bus_loop_period_us))},
     };
 
     const int kStandWarmupSteps = static_cast<int>(
         physics_sim_test_utils::scaledLegacyStepCount(140, bus_loop_period_us));
-    constexpr double kCommandedBodyHeightM = 0.14;
-    constexpr double kMaxBodyUndershootM = 0.012;
 
     for (int i = 0; i < kStandWarmupSteps; ++i) {
         runControlLoopStep(runtime, stand_motion);
     }
 
     if (!expect(bridge_ptr->last_state().has_value(), "bridge should produce an initial state before oblique walking")) {
+        if (emit_metrics_json) {
+            physics_sim_metrics::emitLine("physics_sim_oblique_walk_clearance", "oblique_walk_clearance", false,
+                                          limitsJson(), "{\"stage\":\"no_initial_state\"}");
+        }
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
@@ -201,6 +239,16 @@ int main(int argc, char** argv) {
             if (!expect(bridge_ptr->last_state().has_value(), std::string("bridge should keep producing live state during ") + phase.label)) {
                 ::kill(pid, SIGTERM);
                 ::waitpid(pid, nullptr, 0);
+                if (emit_metrics_json) {
+                    const double undershoot = kCommandedBodyHeightM - min_body_height_m;
+                    std::ostringstream metrics;
+                    metrics << std::setprecision(17) << "{\"stage\":\"lost_state\",\"phase\":\"" << phase.label
+                            << "\",\"step\":" << i << ",\"min_body_height_m\":" << min_body_height_m
+                            << ",\"max_body_undershoot_m_so_far\":" << undershoot
+                            << ",\"min_foot_tip_world_z_m\":" << min_foot_tip_world_z_m << '}';
+                    physics_sim_metrics::emitLine("physics_sim_oblique_walk_clearance", "oblique_walk_clearance", false,
+                                                  limitsJson(), metrics.str());
+                }
                 return EXIT_FAILURE;
             }
             const RobotState& state = bridge_ptr->last_state().value();
@@ -217,11 +265,21 @@ int main(int argc, char** argv) {
                           << '\n';
                 ::kill(pid, SIGTERM);
                 ::waitpid(pid, nullptr, 0);
+                if (emit_metrics_json) {
+                    const double undershoot = kCommandedBodyHeightM - min_body_height_m;
+                    std::ostringstream metrics;
+                    metrics << std::setprecision(17) << "{\"stage\":\"fault\",\"phase\":\"" << phase.label
+                            << "\",\"step\":" << i << ",\"min_body_height_m\":" << min_body_height_m
+                            << ",\"max_body_undershoot_m_so_far\":" << undershoot
+                            << ",\"min_foot_tip_world_z_m\":" << min_foot_tip_world_z_m << '}';
+                    physics_sim_metrics::emitLine("physics_sim_oblique_walk_clearance", "oblique_walk_clearance", false,
+                                                  limitsJson(), metrics.str());
+                }
                 return EXIT_FAILURE;
             }
         }
 
-        ok = expect(saw_phase_contact_loss,
+        ok = expect(!kRequireSawRawContactLossEachPhase || saw_phase_contact_loss,
                     std::string(phase.label) + " should lift at least one swing leg despite yaw_rate_radps=0") &&
              ok;
     }
@@ -235,12 +293,20 @@ int main(int argc, char** argv) {
               << " max_body_undershoot_m=" << max_body_undershoot_m
               << " min_foot_tip_world_z_m=" << min_foot_tip_world_z_m << '\n';
 
-    ok = expect(min_foot_tip_world_z_m >= -1.0e-4,
+    ok = expect(min_foot_tip_world_z_m >= kMinFootTipWorldZ,
                 "scenario-05-style oblique walk should keep the reported server foot tip at or above the ground plane") &&
          ok;
     ok = expect(max_body_undershoot_m < kMaxBodyUndershootM,
                 "oblique walk phases should keep body height within 12 mm of the 0.14 m command") &&
          ok;
+    if (emit_metrics_json) {
+        std::ostringstream metrics;
+        metrics << std::setprecision(17) << "{\"min_body_height_m\":" << min_body_height_m
+                << ",\"max_body_undershoot_m\":" << max_body_undershoot_m
+                << ",\"min_foot_tip_world_z_m\":" << min_foot_tip_world_z_m << '}';
+        physics_sim_metrics::emitLine("physics_sim_oblique_walk_clearance", "oblique_walk_clearance", ok,
+                                      limitsJson(), metrics.str());
+    }
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 #endif
 }

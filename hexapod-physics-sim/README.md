@@ -24,7 +24,7 @@ This crate is intentionally lightweight: no rendering inside the simulator. Opti
 
 ## Configure and build
 
-From this directory:
+Run from `hexapod-physics-sim/`:
 
 ```bash
 cmake -S . -B build
@@ -39,6 +39,8 @@ cmake --build build -j
 | `MINPHYS3D_BUILD_TESTS` | `ON` | Build tests and register them with CTest |
 
 Examples:
+
+Run from `hexapod-physics-sim/`:
 
 ```bash
 cmake -S . -B build -DMINPHYS3D_BUILD_DEMO=OFF
@@ -58,7 +60,9 @@ Executable: `build/hexapod-physics-sim` (run from the build tree or pass paths a
 | `--sink dummy\|udp` | Output: no network (`dummy`) or UDP packets to `--udp-host` / `--udp-port` (`udp`) |
 | `--model default\|hexapod` | Built-in scene when **not** using `--scene-file` |
 | `--scene-file PATH` | Load a **minphys** JSON scene (supported `schema_version`: **1** or **2**) |
+| `--solver-iterations N` | Solver iterations per physics step in demo mode (default benchmark value from build) |
 | `--serve` | **UDP physics server** (`hexapod-server` IPC): binary `ConfigCommand` / `StepCommand` → `ConfigAck` / `StateResponse` (listen **9871**, `--serve-port`). Add **`--sink udp`** to also emit minphys **scene JSON** each stepped frame to `--udp-host`:**`--udp-port`** for [`hexapod-opengl-visualiser`](../hexapod-opengl-visualiser) (same wire as the demo). |
+| `--serve-preview-stride N` | In serve mode with UDP preview enabled, emit preview packets every N physics steps (default `1`) |
 | `--resource-monitoring full\|top-level\|off` | Resource section detail for serve mode. `full` keeps the existing detailed per-section instrumentation, `top-level` keeps only coarse serve/world sections, and `off` disables section breakdowns while still logging top-level process CPU/RSS/VMS snapshots. |
 | `--udp-host HOST` | UDP destination (default `127.0.0.1`) |
 | `--udp-port PORT` | UDP destination port (default `9870`) |
@@ -66,6 +70,8 @@ Executable: `build/hexapod-physics-sim` (run from the build tree or pass paths a
 | `--realtime` | Pace the loop near ~60 Hz (useful when driving a live viewer) |
 | `--zero-gravity` | Use zero gravity instead of `(0, -9.81, 0)` |
 | `--interactive`, `-i` | Terminal REPL (configure sink/host/scene, then run) |
+| `--autonext` | With `-i`, after each run load the next catalog preset automatically |
+| `--autonext-run` | With `-i`, same as `--autonext` and also start the next preset run automatically |
 | `-h`, `--help` | Print usage |
 
 ### Interactive mode (`-i`)
@@ -74,12 +80,16 @@ Inside the REPL, `presets` (or `catalog` / `scenarios`) prints a **large catalog
 
 Built-in demos:
 
+Run from repo root:
+
 ```bash
 ./build/hexapod-physics-sim --sink dummy --model default
 ./build/hexapod-physics-sim --sink dummy --model hexapod --frames 600
 ```
 
 JSON-driven run (paths relative to your cwd):
+
+Run from repo root:
 
 ```bash
 ./build/hexapod-physics-sim --sink dummy --scene-file ../hexapod-physics-sim/assets/scenes/examples/stack_minimal.json
@@ -95,13 +105,17 @@ Typical two-terminal workflow:
 
 ```bash
 # Terminal A — viewer listens
-cd ../hexapod-opengl-visualiser && ./build/hexapod-opengl-visualiser --udp-port 9870
+cd <repo-root>/hexapod-opengl-visualiser
+./build/hexapod-opengl-visualiser --udp-port 9870
 
 # Terminal B — sim sends to localhost
-cd ../hexapod-physics-sim/build && ./hexapod-physics-sim --sink udp --realtime --model hexapod
+cd <repo-root>/hexapod-physics-sim
+./build/hexapod-physics-sim --sink udp --realtime --model hexapod
 ```
 
 Serve-mode examples:
+
+Run from repo root:
 
 ```bash
 # Default detailed instrumentation
@@ -136,6 +150,8 @@ Supported **primitive** shape types include sphere, box, plane, capsule, cylinde
 
 With `MINPHYS3D_BUILD_TESTS=ON`, CMake registers one CTest entry per `add_minphys3d_test` target (collision, GJK, broadphase, block solvers, servo stability, regression scenes, etc.), plus **`test_servo_visual_presets_json`**, which loads the **servo** `assets/scenes/visual/vis_servo_*.json` presets (including a zero-gravity pass on `vis_servo_chain.json`) and checks bounded motion and servo angle error over multi-second runs. Set **`MINPHYS_SERVO_JSON_TEST_VERBOSE=1`** when running that test to print per-interval peaks to stderr.
 
+Run from `hexapod-physics-sim/`:
+
 ```bash
 cd build
 ctest --output-on-failure
@@ -156,6 +172,7 @@ For **per-frame** contact and servo diagnostics while running a JSON scene from 
 - **Determinism**: the contact pipeline can sort manifolds and contacts for stable ordering when enabled in solver config (used heavily by regression tests).
 
 For API details, start from `include/minphys3d/core/world.hpp` and `include/minphys3d/core/body.hpp`.
+For a full algorithm walkthrough, see `../docs/ALGORITHMS_PHYSICS_SIM.md`.
 
 ## Repository layout reminder
 

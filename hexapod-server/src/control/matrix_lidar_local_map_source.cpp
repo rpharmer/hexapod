@@ -12,9 +12,9 @@
 namespace {
 
 constexpr double kRaySampleSpacingM = 0.05;
-constexpr double kGroundHitHeightToleranceM = 0.05;
-constexpr double kGroundExpectedRangeAbsToleranceM = 0.06;
-constexpr double kGroundExpectedRangeRelTolerance = 0.12;
+constexpr double kGroundHitHeightToleranceM = 0.08;
+constexpr double kGroundExpectedRangeAbsToleranceM = 0.10;
+constexpr double kGroundExpectedRangeRelTolerance = 0.20;
 
 Vec3 normalizeVec3(const Vec3& v) {
     const double n = vecNorm(v);
@@ -156,11 +156,11 @@ LocalMapObservation MatrixLidarLocalMapObservationSource::collect(const NavPose2
     }
 
     if (!est.matrix_lidar.timestamp_us.isZero() &&
-        last_emitted_timestamp_.value == est.matrix_lidar.timestamp_us.value) {
+        last_sensor_timestamp_.value == est.matrix_lidar.timestamp_us.value) {
         return out;
     }
 
-    out.timestamp_us = est.matrix_lidar.timestamp_us.value != 0 ? est.matrix_lidar.timestamp_us : now;
+    out.timestamp_us = now;
 
     double fov_h = matrix_lidar_geom::kMatrix64x8FovHRad;
     double fov_v = matrix_lidar_geom::kMatrix64x8FovVRad;
@@ -240,8 +240,8 @@ LocalMapObservation MatrixLidarLocalMapObservationSource::collect(const NavPose2
         }
     }
 
-    if (!out.timestamp_us.isZero()) {
-        last_emitted_timestamp_ = out.timestamp_us;
+    if (!est.matrix_lidar.timestamp_us.isZero() && !out.timestamp_us.isZero()) {
+        last_sensor_timestamp_ = est.matrix_lidar.timestamp_us;
     }
 
     return out;

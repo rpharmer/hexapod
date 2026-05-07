@@ -1,6 +1,9 @@
 #include "control_config.hpp"
 #include "motion_intent_utils.hpp"
+#include "physics_sim_metrics_emit.hpp"
+#include "physics_sim_test_argv.hpp"
 #include "physics_sim_test_utils.hpp"
+#include "test_limits_manifest.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
 #include "replay_logger.hpp"
@@ -12,9 +15,11 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -82,6 +87,18 @@ void runControlLoopStep(RobotRuntime& runtime, const ScenarioMotionIntent& motio
     runtime.controlStep();
 }
 
+std::string walkEntryTrackingLimitsJson(const double min_body_height_m,
+                                        const double min_static_stability_margin_m,
+                                        const double max_stance_contact_mismatch,
+                                        const double max_worst_leg_tracking_error_rad) {
+    std::ostringstream o;
+    o << std::setprecision(17) << "{\"min_body_height_m\":" << min_body_height_m
+      << ",\"min_static_stability_margin_m\":" << min_static_stability_margin_m
+      << ",\"max_stance_contact_mismatch\":" << max_stance_contact_mismatch
+      << ",\"max_worst_leg_tracking_error_rad\":" << max_worst_leg_tracking_error_rad << '}';
+    return o.str();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -89,16 +106,34 @@ int main(int argc, char** argv) {
     std::cout << "skip test_physics_sim_walk_entry_tracking (Linux-only)\n";
     return 0;
 #else
+    bool emit_metrics_json = false;
     const char* sim_exe = nullptr;
-    if (argc >= 2 && argv[1][0] != '\0') {
-        sim_exe = argv[1];
-    } else {
-        sim_exe = std::getenv("HEXAPOD_PHYSICS_SIM_EXE");
+    physics_sim_test_argv::parse(argc, argv, emit_metrics_json, sim_exe);
+    std::string manifest_err;
+    if (!test_limits::init(argc, argv, manifest_err)) {
+        std::cerr << manifest_err << '\n';
+        return 2;
     }
     if (sim_exe == nullptr || sim_exe[0] == '\0') {
         std::cout << "skip test_physics_sim_walk_entry_tracking (pass sim path or HEXAPOD_PHYSICS_SIM_EXE)\n";
         return 0;
     }
+
+    constexpr const char* kSuite = "physics_sim_walk_entry_tracking";
+    constexpr const char* kCase = "walk_entry_tracking";
+    const double kMinBodyHeightM = test_limits::getDouble(kSuite, kCase, "", "min_body_height_m", 0.08);
+    const double kMinStaticStabilityMarginM =
+        test_limits::getDouble(kSuite, kCase, "", "min_static_stability_margin_m", -0.03);
+    const int kMaxStanceContactMismatch = static_cast<int>(test_limits::getDouble(
+        kSuite, kCase, "", "max_stance_contact_mismatch", 5.0));
+    const double kMaxWorstLegTrackingErrorRad =
+        test_limits::getDouble(kSuite, kCase, "", "max_worst_leg_tracking_error_rad", 6.5);
+    const auto limitsJson = [&]() {
+        return walkEntryTrackingLimitsJson(kMinBodyHeightM,
+                                           kMinStaticStabilityMarginM,
+                                           static_cast<double>(kMaxStanceContactMismatch),
+                                           kMaxWorstLegTrackingErrorRad);
+    };
 
     const auto harness = physics_sim_test_utils::loadHarnessSettings();
     const int port = 25000 + (static_cast<int>(::getpid()) % 4000);
@@ -134,6 +169,10 @@ int main(int argc, char** argv) {
     RobotRuntime runtime(
         std::move(bridge), std::make_unique<PhysicsSimEstimator>(), nullptr, cfg, telemetry::makeNoopTelemetryPublisher(), std::move(replay_logger));
     if (!expect(runtime.init(), "runtime init should succeed against the live physics sim")) {
+        if (emit_metrics_json) {
+            physics_sim_metrics::emitLine("physics_sim_walk_entry_tracking", "walk_entry_tracking", false,
+                                          limitsJson(), "{\"stage\":\"runtime_init_failed\"}");
+        }
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
@@ -158,6 +197,10 @@ int main(int argc, char** argv) {
     ::waitpid(pid, nullptr, 0);
 
     if (!expect(bridge_ptr->last_state().has_value(), "bridge should produce live sim state during walk entry")) {
+        if (emit_metrics_json) {
+            physics_sim_metrics::emitLine("physics_sim_walk_entry_tracking", "walk_entry_tracking", false,
+                                          limitsJson(), "{\"stage\":\"no_bridge_state\"}");
+        }
         return EXIT_FAILURE;
     }
 
@@ -172,6 +215,12 @@ int main(int argc, char** argv) {
         physics_sim_test_utils::scaledLegacyStepCount(60, bus_loop_period_us);
     if (!expect(walk_records.size() >= kRequiredWalkRecords,
                 "replay logger should capture a full early WALK analysis window")) {
+        if (emit_metrics_json) {
+            std::ostringstream metrics;
+            metrics << "{\"stage\":\"insufficient_walk_records\",\"walk_record_count\":" << walk_records.size() << '}';
+            physics_sim_metrics::emitLine("physics_sim_walk_entry_tracking", "walk_entry_tracking", false,
+                                          limitsJson(), metrics.str());
+        }
         return EXIT_FAILURE;
     }
 
@@ -208,15 +257,34 @@ int main(int argc, char** argv) {
               << " worst_peak_rad=" << worst_error
               << '\n';
 
-    return expect(min_body_height_m > 0.08,
-                  "walk entry smoke guard should keep body height above a collapse floor") &&
-           expect(min_margin_m > -0.03,
-                  "walk entry smoke guard should avoid a large static stability deficit") &&
-           expect(max_mismatch <= 5,
-                  "walk entry smoke guard should keep stance/contact mismatch bounded") &&
-           expect(worst_error < 6.5,
-                  "walk entry smoke guard should keep per-leg joint tracking below the coarse peak threshold")
-               ? EXIT_SUCCESS
-               : EXIT_FAILURE;
+    const bool ok = expect(min_body_height_m > kMinBodyHeightM,
+                           "walk entry smoke guard should keep body height above a collapse floor") &&
+                    expect(min_margin_m > kMinStaticStabilityMarginM,
+                           "walk entry smoke guard should avoid a large static stability deficit") &&
+                    expect(max_mismatch <= kMaxStanceContactMismatch,
+                           "walk entry smoke guard should keep stance/contact mismatch bounded") &&
+                    expect(worst_error < kMaxWorstLegTrackingErrorRad,
+                           "walk entry smoke guard should keep per-leg joint tracking below the coarse peak threshold");
+    if (emit_metrics_json) {
+        std::ostringstream leg_err;
+        leg_err << std::setprecision(17) << '[';
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            if (leg > 0) {
+                leg_err << ',';
+            }
+            leg_err << max_tracking_error_by_leg[static_cast<std::size_t>(leg)];
+        }
+        leg_err << ']';
+        std::ostringstream metrics;
+        metrics << std::setprecision(17) << "{\"min_body_height_m\":" << min_body_height_m
+                << ",\"min_static_stability_margin_m\":" << min_margin_m
+                << ",\"max_stance_contact_mismatch\":" << max_mismatch
+                << ",\"worst_leg_index\":" << worst_leg
+                << ",\"worst_peak_tracking_error_rad\":" << worst_error
+                << ",\"max_tracking_error_by_leg_rad\":" << leg_err.str() << '}';
+        physics_sim_metrics::emitLine("physics_sim_walk_entry_tracking", "walk_entry_tracking", ok,
+                                      limitsJson(), metrics.str());
+    }
+    return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 #endif
 }

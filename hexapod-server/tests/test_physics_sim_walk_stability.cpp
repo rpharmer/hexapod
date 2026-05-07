@@ -4,7 +4,10 @@
 #include "foot_planners.hpp"
 #include "geometry_config.hpp"
 #include "motion_intent_utils.hpp"
+#include "physics_sim_metrics_emit.hpp"
+#include "physics_sim_test_argv.hpp"
 #include "physics_sim_test_utils.hpp"
+#include "test_limits_manifest.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
 #include "robot_runtime.hpp"
@@ -12,9 +15,11 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 
@@ -151,6 +156,13 @@ SwingFootPlanDecomposition buildFaultDecomposition(const RobotState& est,
     return computeSwingFootPlacement(est, cmd_twist, swing);
 }
 
+std::string walkStabilityLimitsJson(const double max_abs_roll_rad, const double max_abs_pitch_rad) {
+    std::ostringstream o;
+    o << std::setprecision(17) << "{\"max_abs_roll_rad\":" << max_abs_roll_rad
+      << ",\"max_abs_pitch_rad\":" << max_abs_pitch_rad << ",\"expected_fault_if_any\":\"TIP_OVER\"}";
+    return o.str();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -158,16 +170,24 @@ int main(int argc, char** argv) {
     std::cout << "skip test_physics_sim_walk_stability (Linux-only)\n";
     return 0;
 #else
+    bool emit_metrics_json = false;
     const char* sim_exe = nullptr;
-    if (argc >= 2 && argv[1][0] != '\0') {
-        sim_exe = argv[1];
-    } else {
-        sim_exe = std::getenv("HEXAPOD_PHYSICS_SIM_EXE");
+    physics_sim_test_argv::parse(argc, argv, emit_metrics_json, sim_exe);
+    std::string manifest_err;
+    if (!test_limits::init(argc, argv, manifest_err)) {
+        std::cerr << manifest_err << '\n';
+        return 2;
     }
     if (sim_exe == nullptr || sim_exe[0] == '\0') {
         std::cout << "skip test_physics_sim_walk_stability (pass sim path or HEXAPOD_PHYSICS_SIM_EXE)\n";
         return 0;
     }
+
+    constexpr const char* kSuite = "physics_sim_walk_stability";
+    constexpr const char* kCase = "tripod_walk_stability";
+    const double kMaxAbsRollRad = test_limits::getDouble(kSuite, kCase, "", "max_abs_roll_rad", 0.60);
+    const double kMaxAbsPitchRad = test_limits::getDouble(kSuite, kCase, "", "max_abs_pitch_rad", 0.65);
+    const auto limitsJson = [&]() { return walkStabilityLimitsJson(kMaxAbsRollRad, kMaxAbsPitchRad); };
 
     const auto harness = physics_sim_test_utils::loadHarnessSettings();
     const int port = 27000 + (static_cast<int>(::getpid()) % 4000);
@@ -198,6 +218,10 @@ int main(int argc, char** argv) {
     RobotRuntime runtime(
         std::move(bridge), std::make_unique<PhysicsSimEstimator>(), nullptr, cfg, telemetry::makeNoopTelemetryPublisher());
     if (!expect(runtime.init(), "runtime init should succeed against the live physics sim")) {
+        if (emit_metrics_json) {
+            physics_sim_metrics::emitLine("physics_sim_walk_stability", "tripod_walk_stability", false,
+                                          limitsJson(), "{\"stage\":\"runtime_init_failed\"}");
+        }
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
@@ -216,6 +240,10 @@ int main(int argc, char** argv) {
     }
 
     if (!expect(bridge_ptr->last_state().has_value(), "bridge should produce an initial state before walking")) {
+        if (emit_metrics_json) {
+            physics_sim_metrics::emitLine("physics_sim_walk_stability", "tripod_walk_stability", false,
+                                          limitsJson(), "{\"stage\":\"no_initial_state\"}");
+        }
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
@@ -235,6 +263,16 @@ int main(int argc, char** argv) {
         if (!expect(bridge_ptr->last_state().has_value(), "bridge should keep producing live state during walk")) {
             ::kill(pid, SIGTERM);
             ::waitpid(pid, nullptr, 0);
+            if (emit_metrics_json) {
+                std::ostringstream metrics;
+                metrics << std::setprecision(17) << "{\"stage\":\"lost_state_during_walk\",\"walk_step\":" << i
+                        << ",\"max_abs_roll_rad\":" << max_abs_roll_rad
+                        << ",\"max_abs_pitch_rad\":" << max_abs_pitch_rad
+                        << ",\"min_model_trust\":" << min_model_trust
+                        << ",\"max_contact_mismatch\":" << max_contact_mismatch << '}';
+                physics_sim_metrics::emitLine("physics_sim_walk_stability", "tripod_walk_stability", false,
+                                              limitsJson(), metrics.str());
+            }
             return EXIT_FAILURE;
         }
         const RobotState& state = bridge_ptr->last_state().value();
@@ -266,6 +304,15 @@ int main(int argc, char** argv) {
                         "physics-sim walk should only fault by tripping TIP_OVER in this envelope")) {
                 ::kill(pid, SIGTERM);
                 ::waitpid(pid, nullptr, 0);
+                if (emit_metrics_json) {
+                    std::ostringstream metrics;
+                    metrics << std::setprecision(17) << "{\"stage\":\"unexpected_fault\",\"walk_step\":" << i
+                            << ",\"active_fault\":" << static_cast<int>(status.active_fault)
+                            << ",\"max_abs_roll_rad\":" << max_abs_roll_rad
+                            << ",\"max_abs_pitch_rad\":" << max_abs_pitch_rad << '}';
+                    physics_sim_metrics::emitLine("physics_sim_walk_stability", "tripod_walk_stability", false,
+                                                  limitsJson(), metrics.str());
+                }
                 return EXIT_FAILURE;
             }
             break;
@@ -292,6 +339,16 @@ int main(int argc, char** argv) {
                       << '\n';
             ::kill(pid, SIGTERM);
             ::waitpid(pid, nullptr, 0);
+            if (emit_metrics_json) {
+                std::ostringstream metrics;
+                metrics << std::setprecision(17) << "{\"stage\":\"unexpected_mode\",\"walk_step\":" << i
+                        << ",\"active_mode\":" << static_cast<int>(status.active_mode)
+                        << ",\"active_fault\":" << static_cast<int>(status.active_fault)
+                        << ",\"max_abs_roll_rad\":" << max_abs_roll_rad
+                        << ",\"max_abs_pitch_rad\":" << max_abs_pitch_rad << '}';
+                physics_sim_metrics::emitLine("physics_sim_walk_stability", "tripod_walk_stability", false,
+                                              limitsJson(), metrics.str());
+            }
             return EXIT_FAILURE;
         }
         max_abs_roll_rad = std::max(max_abs_roll_rad, std::abs(state.body_twist_state.twist_pos_rad.x));
@@ -312,13 +369,22 @@ int main(int argc, char** argv) {
               << " fault_seen=" << (fault_seen ? 1 : 0)
               << " fault_step=" << fault_step << '\n';
 
-    return expect(max_abs_roll_rad < 0.60,
-                  "physics-sim walk should keep roll comfortably below the tip-over threshold") &&
-           expect(max_abs_pitch_rad < 0.65,
-                  "physics-sim walk should keep pitch below the tip-over threshold") &&
-           expect(!fault_seen || fault_step >= 0,
-                  "physics-sim walk fault bookkeeping should be consistent")
-               ? EXIT_SUCCESS
-               : EXIT_FAILURE;
+    const bool ok = expect(max_abs_roll_rad < kMaxAbsRollRad,
+                           "physics-sim walk should keep roll comfortably below the tip-over threshold") &&
+                    expect(max_abs_pitch_rad < kMaxAbsPitchRad,
+                           "physics-sim walk should keep pitch below the tip-over threshold") &&
+                    expect(!fault_seen || fault_step >= 0,
+                           "physics-sim walk fault bookkeeping should be consistent");
+    if (emit_metrics_json) {
+        std::ostringstream metrics;
+        metrics << std::setprecision(17) << "{\"max_abs_roll_rad\":" << max_abs_roll_rad
+                << ",\"max_abs_pitch_rad\":" << max_abs_pitch_rad
+                << ",\"min_model_trust\":" << min_model_trust
+                << ",\"max_contact_mismatch\":" << max_contact_mismatch
+                << ",\"fault_seen\":" << (fault_seen ? "true" : "false") << ",\"fault_step\":" << fault_step << '}';
+        physics_sim_metrics::emitLine("physics_sim_walk_stability", "tripod_walk_stability", ok,
+                                      limitsJson(), metrics.str());
+    }
+    return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 #endif
 }

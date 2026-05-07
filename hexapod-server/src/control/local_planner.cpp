@@ -67,7 +67,7 @@ AStarLocalPlanner::AStarLocalPlanner(LocalPlannerConfig config)
 
 LocalPlanResult AStarLocalPlanner::plan(const LocalPlanRequest& request) const {
     LocalPlanResult out{};
-    if (request.map.has_observations && !request.map.fresh) {
+    if (request.map.has_primary_observations && !request.map.fresh) {
         out.status = LocalPlanStatus::MapUnavailable;
         return out;
     }

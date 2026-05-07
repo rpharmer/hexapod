@@ -5,6 +5,10 @@
 #include "physics_sim_estimator.hpp"
 #include "robot_runtime.hpp"
 #include "scenario_driver.hpp"
+#include "locomotion_metrics.hpp"
+#include "physics_sim_metrics_emit.hpp"
+#include "physics_sim_test_argv.hpp"
+#include "test_limits_manifest.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -13,6 +17,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -25,6 +30,8 @@
 #endif
 
 namespace {
+
+constexpr const char* kWalkDistanceSuite = "physics_sim_walk_distance";
 
 bool expect(bool condition, const std::string& message) {
     if (!condition) {
@@ -86,7 +93,12 @@ void runControlLoopStep(RobotRuntime& runtime, const ScenarioMotionIntent& motio
 }
 
 void runControlLoopStep(RobotRuntime& runtime, const MotionIntent& motion) {
-    runtime.setMotionIntent(motion);
+    MotionIntent fresh_motion = motion;
+    // This test reuses some handcrafted MotionIntent instances across many loop iterations.
+    // Clear transport freshness fields so RobotRuntime stamps a fresh command sample each step.
+    fresh_motion.timestamp_us = TimePointUs{};
+    fresh_motion.sample_id = 0;
+    runtime.setMotionIntent(fresh_motion);
     runtime.busStep();
     runtime.estimatorStep();
     runtime.safetyStep();
@@ -104,11 +116,126 @@ struct MotionRunResult {
     double peak_horizontal_speed_mps{0.0};
     double average_yaw_rate_radps{0.0};
     double peak_yaw_rate_radps{0.0};
+    int walk_mode_steps{0};
+    int non_walk_mode_steps{0};
+    int faulted_steps{0};
     ControlStatus final_status{};
 };
 
 double wrapAngleDiff(double start, double end) {
     return std::atan2(std::sin(end - start), std::cos(end - start));
+}
+
+std::string walkDistanceLimitsWalkEnvelopeJsonDynamic(const std::string& label,
+                                                      const double min_path_length_m,
+                                                      const double min_peak_horizontal_speed_mps,
+                                                      const double min_average_speed_ratio,
+                                                      const double max_average_speed_ratio,
+                                                      const bool require_active_mode_walk) {
+    using locomotion_test::formatDouble;
+    std::ostringstream o;
+    o << "{\"min_path_length_m\":" << formatDouble(min_path_length_m)
+      << ",\"min_peak_horizontal_speed_mps\":" << formatDouble(min_peak_horizontal_speed_mps)
+      << ",\"min_average_speed_ratio\":" << formatDouble(min_average_speed_ratio)
+      << ",\"max_average_speed_ratio\":" << formatDouble(max_average_speed_ratio)
+      << ",\"require_active_mode_walk\":" << (require_active_mode_walk ? "true" : "false") << '}';
+    (void)label;
+    return o.str();
+}
+
+std::string walkDistanceLimitsStraightJsonDynamic(const std::string& label,
+                                                  const double min_path_length_m,
+                                                  const double max_lateral_deviation_m,
+                                                  const double max_lateral_vs_path_ratio,
+                                                  const double min_peak_horizontal_speed_mps,
+                                                  const double min_average_speed_ratio,
+                                                  const double max_average_speed_ratio,
+                                                  const bool require_active_mode_walk) {
+    using locomotion_test::formatDouble;
+    std::ostringstream o;
+    o << "{\"min_path_length_m\":" << formatDouble(min_path_length_m)
+      << ",\"max_lateral_deviation_m\":" << formatDouble(max_lateral_deviation_m)
+      << ",\"max_lateral_vs_path_ratio\":" << formatDouble(max_lateral_vs_path_ratio)
+      << ",\"min_peak_horizontal_speed_mps\":" << formatDouble(min_peak_horizontal_speed_mps)
+      << ",\"min_average_speed_ratio\":" << formatDouble(min_average_speed_ratio)
+      << ",\"max_average_speed_ratio\":" << formatDouble(max_average_speed_ratio)
+      << ",\"require_active_mode_walk\":" << (require_active_mode_walk ? "true" : "false") << '}';
+    (void)label;
+    return o.str();
+}
+
+std::string walkDistanceLimitsTurnJsonDynamic(const std::string& label,
+                                              const double max_path_length_m,
+                                              const double max_net_horizontal_distance_m,
+                                              const double min_peak_yaw_rate_radps,
+                                              const double min_average_yaw_rate_ratio,
+                                              const double max_average_yaw_rate_ratio,
+                                              const double min_yaw_delta_abs_rad,
+                                              const bool require_active_mode_walk) {
+    using locomotion_test::formatDouble;
+    std::ostringstream o;
+    o << "{\"max_path_length_m\":" << formatDouble(max_path_length_m)
+      << ",\"max_net_horizontal_distance_m\":" << formatDouble(max_net_horizontal_distance_m)
+      << ",\"min_peak_yaw_rate_radps\":" << formatDouble(min_peak_yaw_rate_radps)
+      << ",\"min_average_yaw_rate_ratio\":" << formatDouble(min_average_yaw_rate_ratio)
+      << ",\"max_average_yaw_rate_ratio\":" << formatDouble(max_average_yaw_rate_ratio)
+      << ",\"min_yaw_delta_abs_rad\":" << formatDouble(min_yaw_delta_abs_rad)
+      << ",\"require_active_mode_walk\":" << (require_active_mode_walk ? "true" : "false") << '}';
+    (void)label;
+    return o.str();
+}
+
+std::string motionRunResultMetricsJson(const MotionRunResult& result,
+                                       const Vec3& delta,
+                                       const double horizontal_distance,
+                                       const double commanded_speed,
+                                       const double average_ratio) {
+    std::ostringstream o;
+    using locomotion_test::formatDouble;
+    o << "{\"walk_path_length_m\":" << formatDouble(result.walk_path_length_m)
+      << ",\"net_horizontal_distance_m\":" << formatDouble(horizontal_distance)
+      << ",\"delta_x_m\":" << formatDouble(delta.x) << ",\"delta_y_m\":" << formatDouble(delta.y)
+      << ",\"delta_z_m\":" << formatDouble(delta.z)
+      << ",\"max_lateral_deviation_m\":" << formatDouble(result.max_lateral_deviation_m)
+      << ",\"average_horizontal_speed_mps\":" << formatDouble(result.average_horizontal_speed_mps)
+      << ",\"peak_horizontal_speed_mps\":" << formatDouble(result.peak_horizontal_speed_mps)
+      << ",\"average_yaw_rate_radps\":" << formatDouble(result.average_yaw_rate_radps)
+      << ",\"peak_yaw_rate_radps\":" << formatDouble(result.peak_yaw_rate_radps)
+      << ",\"walk_mode_steps\":" << result.walk_mode_steps
+      << ",\"non_walk_mode_steps\":" << result.non_walk_mode_steps
+      << ",\"faulted_steps\":" << result.faulted_steps
+      << ",\"commanded_speed_mps\":" << formatDouble(commanded_speed)
+      << ",\"average_speed_ratio\":" << formatDouble(average_ratio)
+      << ",\"start_yaw_rad\":" << formatDouble(result.start_yaw_rad)
+      << ",\"end_yaw_rad\":" << formatDouble(result.end_yaw_rad)
+      << ",\"final_mode\":" << static_cast<int>(result.final_status.active_mode)
+      << ",\"final_fault\":" << static_cast<int>(result.final_status.active_fault) << '}';
+    return o.str();
+}
+
+std::string motionRunTurnMetricsJson(const MotionRunResult& result,
+                                     const Vec3& delta,
+                                     const double horizontal_distance,
+                                     const double yaw_delta,
+                                     const double commanded_yaw_rate,
+                                     const double average_ratio) {
+    std::ostringstream o;
+    using locomotion_test::formatDouble;
+    o << "{\"walk_path_length_m\":" << formatDouble(result.walk_path_length_m)
+      << ",\"net_horizontal_distance_m\":" << formatDouble(horizontal_distance)
+      << ",\"delta_x_m\":" << formatDouble(delta.x) << ",\"delta_y_m\":" << formatDouble(delta.y)
+      << ",\"delta_z_m\":" << formatDouble(delta.z)
+      << ",\"yaw_delta_rad\":" << formatDouble(yaw_delta)
+      << ",\"average_yaw_rate_radps\":" << formatDouble(result.average_yaw_rate_radps)
+      << ",\"peak_yaw_rate_radps\":" << formatDouble(result.peak_yaw_rate_radps)
+      << ",\"walk_mode_steps\":" << result.walk_mode_steps
+      << ",\"non_walk_mode_steps\":" << result.non_walk_mode_steps
+      << ",\"faulted_steps\":" << result.faulted_steps
+      << ",\"commanded_yaw_rate_radps\":" << formatDouble(commanded_yaw_rate)
+      << ",\"average_yaw_rate_ratio\":" << formatDouble(average_ratio)
+      << ",\"final_mode\":" << static_cast<int>(result.final_status.active_mode)
+      << ",\"final_fault\":" << static_cast<int>(result.final_status.active_fault) << '}';
+    return o.str();
 }
 
 template <typename MotionT>
@@ -161,6 +288,14 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
         yaw_speed_sum += yaw_rate;
         result.peak_yaw_rate_radps = std::max(result.peak_yaw_rate_radps, yaw_rate);
         result.final_status = runtime.getStatus();
+        if (result.final_status.active_mode == RobotMode::WALK) {
+            ++result.walk_mode_steps;
+        } else {
+            ++result.non_walk_mode_steps;
+        }
+        if (result.final_status.active_fault != FaultCode::NONE) {
+            ++result.faulted_steps;
+        }
     }
 
     result.end_position = positionFromState(bridge.last_state().value());
@@ -187,18 +322,21 @@ bool checkWalkCase(const std::string& label,
                    CapturingPhysicsSimBridge& bridge,
                    const ScenarioMotionIntent& stand_motion,
                    const ScenarioMotionIntent& walk_motion,
-                   const int bus_loop_period_us) {
+                   const int bus_loop_period_us,
+                   const bool emit_metrics_json) {
     MotionRunResult result{};
     try {
         result = runMotionSequence(runtime, bridge, stand_motion, walk_motion, bus_loop_period_us);
     } catch (const std::exception& ex) {
+        if (emit_metrics_json) {
+            physics_sim_metrics::emitLine(
+                "physics_sim_walk_distance",
+                label,
+                false,
+                walkDistanceLimitsWalkEnvelopeJsonDynamic(label, 0.08, 0.02, 0.20, 0.90, true),
+                std::string("{\"exception\":\"") + locomotion_test::jsonEscape(ex.what()) + "\"}");
+        }
         return expect(false, label + ": " + ex.what());
-    }
-
-    const RobotState fused_snapshot = runtime.estimatedSnapshot();
-    if (!expect(fused_snapshot.has_fusion_diagnostics,
-                label + ": estimator should publish fusion diagnostics during live sim walking")) {
-        return false;
     }
 
     const Vec3 delta = result.end_position - result.start_position;
@@ -206,13 +344,37 @@ bool checkWalkCase(const std::string& label,
     const double commanded_speed = walk_motion.speed_mps;
     const double average_ratio = commanded_speed > 0.0 ? (result.average_horizontal_speed_mps / commanded_speed) : 0.0;
 
-    constexpr double kMinPathLengthM = 0.08;
-    constexpr double kMinPeakHorizontalSpeedMps = 0.02;
-    // The walk controller has matured since this smoke test was written.
-    // Keep the envelope broad enough to catch regressions without penalizing
-    // the much healthier current gait response.
-    constexpr double kMinAverageSpeedRatio = 0.20;
-    constexpr double kMaxAverageSpeedRatio = 0.90;
+    const double kMinPathLengthM =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "min_path_length_m", 0.08);
+    const double kMinPeakHorizontalSpeedMps =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "min_peak_horizontal_speed_mps", 0.02);
+    const double kMinAverageSpeedRatio =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "min_average_speed_ratio", 0.20);
+    const double kMaxAverageSpeedRatio =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "max_average_speed_ratio", 0.90);
+    const bool kRequireActiveModeWalk =
+        test_limits::getBool(kWalkDistanceSuite, label, "", "require_active_mode_walk", true);
+    const std::string limits_walk_json = walkDistanceLimitsWalkEnvelopeJsonDynamic(
+        label, kMinPathLengthM, kMinPeakHorizontalSpeedMps, kMinAverageSpeedRatio, kMaxAverageSpeedRatio, kRequireActiveModeWalk);
+
+    const auto emit = [&](const bool pass) {
+        if (!emit_metrics_json) {
+            return;
+        }
+        physics_sim_metrics::emitLine("physics_sim_walk_distance",
+                                      label,
+                                      pass,
+                                      limits_walk_json,
+                                      motionRunResultMetricsJson(
+                                          result, delta, horizontal_distance, commanded_speed, average_ratio));
+    };
+
+    const RobotState fused_snapshot = runtime.estimatedSnapshot();
+    if (!expect(fused_snapshot.has_fusion_diagnostics,
+                label + ": estimator should publish fusion diagnostics during live sim walking")) {
+        emit(false);
+        return false;
+    }
 
     if (!expect(result.walk_path_length_m >= kMinPathLengthM,
                 label + ": walk should accumulate measurable horizontal travel")) {
@@ -226,6 +388,7 @@ bool checkWalkCase(const std::string& label,
                   << " ratio=" << average_ratio
                   << " peak_speed=" << result.peak_horizontal_speed_mps
                   << " mode=" << static_cast<int>(result.final_status.active_mode) << '\n';
+        emit(false);
         return false;
     }
 
@@ -236,6 +399,7 @@ bool checkWalkCase(const std::string& label,
                   << " ratio=" << average_ratio
                   << " mode=" << static_cast<int>(result.final_status.active_mode)
                   << " fault=" << static_cast<int>(result.final_status.active_fault) << '\n';
+        emit(false);
         return false;
     }
 
@@ -246,16 +410,24 @@ bool checkWalkCase(const std::string& label,
                   << " ratio=" << average_ratio
                   << " mode=" << static_cast<int>(result.final_status.active_mode)
                   << " fault=" << static_cast<int>(result.final_status.active_fault) << '\n';
+        emit(false);
         return false;
     }
 
     if (!expect(result.peak_horizontal_speed_mps >= kMinPeakHorizontalSpeedMps,
                 label + ": walk should produce a non-trivial horizontal body speed")) {
+        emit(false);
         return false;
     }
 
-    if (!expect(result.final_status.active_mode == RobotMode::WALK,
+    if (!expect(result.non_walk_mode_steps == 0,
                 label + ": runtime should remain in WALK mode while the motion command is active")) {
+        emit(false);
+        return false;
+    }
+    if (!expect(result.faulted_steps == 0,
+                label + ": walk should not trip safety faults during the commanded interval")) {
+        emit(false);
         return false;
     }
 
@@ -267,6 +439,7 @@ bool checkWalkCase(const std::string& label,
               << " avg_speed=" << result.average_horizontal_speed_mps
               << " ratio=" << average_ratio
               << " peak_speed=" << result.peak_horizontal_speed_mps << '\n';
+    emit(true);
     return true;
 }
 
@@ -275,27 +448,63 @@ bool checkStraightWalkCase(const std::string& label,
                            CapturingPhysicsSimBridge& bridge,
                            const ScenarioMotionIntent& stand_motion,
                            const ScenarioMotionIntent& walk_motion,
-                           const int bus_loop_period_us) {
+                           const int bus_loop_period_us,
+                           const bool emit_metrics_json) {
     MotionRunResult result{};
     try {
         result = runMotionSequence(runtime, bridge, stand_motion, walk_motion, bus_loop_period_us);
     } catch (const std::exception& ex) {
+        if (emit_metrics_json) {
+            physics_sim_metrics::emitLine(
+                "physics_sim_walk_distance",
+                label,
+                false,
+                walkDistanceLimitsStraightJsonDynamic(label, 0.08, 0.20, 0.35, 0.02, 0.20, 0.90, true),
+                std::string("{\"exception\":\"") + locomotion_test::jsonEscape(ex.what()) + "\"}");
+        }
         return expect(false, label + ": " + ex.what());
     }
 
     const Vec3 delta = result.end_position - result.start_position;
+    const double horizontal_distance = std::hypot(delta.x, delta.y);
     const double commanded_speed = walk_motion.speed_mps;
     const double average_ratio = commanded_speed > 0.0 ? (result.average_horizontal_speed_mps / commanded_speed) : 0.0;
 
-    constexpr double kMinPathLengthM = 0.08;
-    // This test was originally written when the gait was considerably rougher.
-    // The current motion stack still keeps the path broadly straight, but it
-    // naturally carries more lateral excursion than the old envelope allowed.
-    constexpr double kMaxLateralDeviationM = 0.20;
-    constexpr double kMinPeakHorizontalSpeedMps = 0.02;
-    // Match the same healthier motion envelope used by the forward walk case.
-    constexpr double kMinAverageSpeedRatio = 0.20;
-    constexpr double kMaxAverageSpeedRatio = 0.90;
+    const double kMinPathLengthM =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "min_path_length_m", 0.08);
+    const double kMaxLateralDeviationM =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "max_lateral_deviation_m", 0.20);
+    const double kMaxLateralVsPathRatio =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "max_lateral_vs_path_ratio", 0.35);
+    const double kMinPeakHorizontalSpeedMps =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "min_peak_horizontal_speed_mps", 0.02);
+    const double kMinAverageSpeedRatio =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "min_average_speed_ratio", 0.20);
+    const double kMaxAverageSpeedRatio =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "max_average_speed_ratio", 0.90);
+    const bool kRequireActiveModeWalk =
+        test_limits::getBool(kWalkDistanceSuite, label, "", "require_active_mode_walk", true);
+    const std::string limits_straight_json = walkDistanceLimitsStraightJsonDynamic(
+        label,
+        kMinPathLengthM,
+        kMaxLateralDeviationM,
+        kMaxLateralVsPathRatio,
+        kMinPeakHorizontalSpeedMps,
+        kMinAverageSpeedRatio,
+        kMaxAverageSpeedRatio,
+        kRequireActiveModeWalk);
+
+    const auto emit = [&](const bool pass) {
+        if (!emit_metrics_json) {
+            return;
+        }
+        physics_sim_metrics::emitLine("physics_sim_walk_distance",
+                                      label,
+                                      pass,
+                                      limits_straight_json,
+                                      motionRunResultMetricsJson(
+                                          result, delta, horizontal_distance, commanded_speed, average_ratio));
+    };
 
     if (!expect(result.walk_path_length_m >= kMinPathLengthM,
                 label + ": straight walk should accumulate measurable horizontal travel")) {
@@ -309,6 +518,7 @@ bool checkStraightWalkCase(const std::string& label,
                   << " ratio=" << average_ratio
                   << " peak_speed=" << result.peak_horizontal_speed_mps
                   << " mode=" << static_cast<int>(result.final_status.active_mode) << '\n';
+        emit(false);
         return false;
     }
 
@@ -322,10 +532,11 @@ bool checkStraightWalkCase(const std::string& label,
                   << " avg_speed=" << result.average_horizontal_speed_mps
                   << " command=" << commanded_speed
                   << " ratio=" << average_ratio << '\n';
+        emit(false);
         return false;
     }
 
-    if (!expect(result.max_lateral_deviation_m <= result.walk_path_length_m * 0.35,
+    if (!expect(result.max_lateral_deviation_m <= result.walk_path_length_m * kMaxLateralVsPathRatio,
                 label + ": straight walk should not crab away from its travel line")) {
         std::cerr << label << " path=" << result.walk_path_length_m
                   << " lateral_deviation=" << result.max_lateral_deviation_m
@@ -335,6 +546,7 @@ bool checkStraightWalkCase(const std::string& label,
                   << " avg_speed=" << result.average_horizontal_speed_mps
                   << " command=" << commanded_speed
                   << " ratio=" << average_ratio << '\n';
+        emit(false);
         return false;
     }
 
@@ -345,6 +557,7 @@ bool checkStraightWalkCase(const std::string& label,
                   << " ratio=" << average_ratio
                   << " mode=" << static_cast<int>(result.final_status.active_mode)
                   << " fault=" << static_cast<int>(result.final_status.active_fault) << '\n';
+        emit(false);
         return false;
     }
 
@@ -355,16 +568,24 @@ bool checkStraightWalkCase(const std::string& label,
                   << " ratio=" << average_ratio
                   << " mode=" << static_cast<int>(result.final_status.active_mode)
                   << " fault=" << static_cast<int>(result.final_status.active_fault) << '\n';
+        emit(false);
         return false;
     }
 
     if (!expect(result.peak_horizontal_speed_mps >= kMinPeakHorizontalSpeedMps,
                 label + ": straight walk should produce a non-trivial horizontal body speed")) {
+        emit(false);
         return false;
     }
 
-    if (!expect(result.final_status.active_mode == RobotMode::WALK,
-                label + ": runtime should remain in WALK mode while the motion command is active")) {
+    if (!expect(result.non_walk_mode_steps == 0,
+                label + ": runtime should remain in WALK mode while the straight command is active")) {
+        emit(false);
+        return false;
+    }
+    if (!expect(result.faulted_steps == 0,
+                label + ": straight walk should not trip safety faults during the commanded interval")) {
+        emit(false);
         return false;
     }
 
@@ -376,6 +597,7 @@ bool checkStraightWalkCase(const std::string& label,
               << " avg_speed=" << result.average_horizontal_speed_mps
               << " ratio=" << average_ratio
               << " peak_speed=" << result.peak_horizontal_speed_mps << '\n';
+    emit(true);
     return true;
 }
 
@@ -384,11 +606,20 @@ bool checkTurnCase(const std::string& label,
                    CapturingPhysicsSimBridge& bridge,
                    const ScenarioMotionIntent& stand_motion,
                    const MotionIntent& turn_motion,
-                   const int bus_loop_period_us) {
+                   const int bus_loop_period_us,
+                   const bool emit_metrics_json) {
     MotionRunResult result{};
     try {
         result = runMotionSequence(runtime, bridge, stand_motion, turn_motion, bus_loop_period_us);
     } catch (const std::exception& ex) {
+        if (emit_metrics_json) {
+            physics_sim_metrics::emitLine(
+                "physics_sim_walk_distance",
+                label,
+                false,
+                walkDistanceLimitsTurnJsonDynamic(label, 2.25, 0.21, 0.02, 0.05, 2.25, 0.05, true),
+                std::string("{\"exception\":\"") + locomotion_test::jsonEscape(ex.what()) + "\"}");
+        }
         return expect(false, label + ": " + ex.what());
     }
 
@@ -399,14 +630,40 @@ bool checkTurnCase(const std::string& label,
     const double average_ratio =
         commanded_yaw_rate > 0.0 ? (result.average_yaw_rate_radps / commanded_yaw_rate) : 0.0;
 
-    // Older builds needed a very tight path-length cap here, but the current
-    // gait traces a longer arc while still turning in place cleanly.
-    constexpr double kMaxPathLengthM = 2.25;
-    constexpr double kMaxNetHorizontalDistanceM = 0.21;
-    constexpr double kMinPeakYawRateRadps = 0.02;
-    constexpr double kMinAverageYawRateRatio = 0.05;
-    constexpr double kMaxAverageYawRateRatio = 2.25;
-    constexpr double kMinYawDeltaRad = 0.05;
+    const double kMaxPathLengthM =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "max_path_length_m", 2.25);
+    const double kMaxNetHorizontalDistanceM =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "max_net_horizontal_distance_m", 0.21);
+    const double kMinPeakYawRateRadps =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "min_peak_yaw_rate_radps", 0.02);
+    const double kMinAverageYawRateRatio =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "min_average_yaw_rate_ratio", 0.05);
+    const double kMaxAverageYawRateRatio =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "max_average_yaw_rate_ratio", 2.25);
+    const double kMinYawDeltaRad =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "min_yaw_delta_abs_rad", 0.05);
+    const bool kRequireActiveModeWalkTurn =
+        test_limits::getBool(kWalkDistanceSuite, label, "", "require_active_mode_walk", true);
+    const std::string limits_turn_json = walkDistanceLimitsTurnJsonDynamic(label,
+                                                                           kMaxPathLengthM,
+                                                                           kMaxNetHorizontalDistanceM,
+                                                                           kMinPeakYawRateRadps,
+                                                                           kMinAverageYawRateRatio,
+                                                                           kMaxAverageYawRateRatio,
+                                                                           kMinYawDeltaRad,
+                                                                           kRequireActiveModeWalkTurn);
+
+    const auto emit = [&](const bool pass) {
+        if (!emit_metrics_json) {
+            return;
+        }
+        physics_sim_metrics::emitLine("physics_sim_walk_distance",
+                                      label,
+                                      pass,
+                                      limits_turn_json,
+                                      motionRunTurnMetricsJson(
+                                          result, delta, horizontal_distance, yaw_delta, commanded_yaw_rate, average_ratio));
+    };
 
     if (!expect(horizontal_distance <= kMaxNetHorizontalDistanceM,
                 label + ": turn-in-place should keep net horizontal drift bounded")) {
@@ -421,6 +678,7 @@ bool checkTurnCase(const std::string& label,
                   << " ratio=" << average_ratio
                   << " peak_yaw_rate=" << result.peak_yaw_rate_radps
                   << " mode=" << static_cast<int>(result.final_status.active_mode) << '\n';
+        emit(false);
         return false;
     }
 
@@ -437,6 +695,7 @@ bool checkTurnCase(const std::string& label,
                   << " ratio=" << average_ratio
                   << " peak_yaw_rate=" << result.peak_yaw_rate_radps
                   << " mode=" << static_cast<int>(result.final_status.active_mode) << '\n';
+        emit(false);
         return false;
     }
 
@@ -446,6 +705,7 @@ bool checkTurnCase(const std::string& label,
                   << " avg_yaw_rate=" << result.average_yaw_rate_radps
                   << " command_yaw_rate=" << commanded_yaw_rate
                   << " ratio=" << average_ratio << '\n';
+        emit(false);
         return false;
     }
 
@@ -454,6 +714,7 @@ bool checkTurnCase(const std::string& label,
         std::cerr << label << " avg_yaw_rate=" << result.average_yaw_rate_radps
                   << " command_yaw_rate=" << commanded_yaw_rate
                   << " ratio=" << average_ratio << '\n';
+        emit(false);
         return false;
     }
 
@@ -462,16 +723,24 @@ bool checkTurnCase(const std::string& label,
         std::cerr << label << " avg_yaw_rate=" << result.average_yaw_rate_radps
                   << " command_yaw_rate=" << commanded_yaw_rate
                   << " ratio=" << average_ratio << '\n';
+        emit(false);
         return false;
     }
 
     if (!expect(result.peak_yaw_rate_radps >= kMinPeakYawRateRadps,
                 label + ": turn-in-place should produce a non-trivial yaw rate")) {
+        emit(false);
         return false;
     }
 
-    if (!expect(result.final_status.active_mode == RobotMode::WALK,
-                label + ": runtime should remain in WALK mode while the turn command is active")) {
+    if (!expect(result.non_walk_mode_steps <= 1,
+                label + ": turn command should stay in WALK mode for the full commanded interval apart from at most one trailing sample")) {
+        emit(false);
+        return false;
+    }
+    if (!expect(result.faulted_steps <= 1,
+                label + ": turn command should not trip more than one trailing safety reject")) {
+        emit(false);
         return false;
     }
 
@@ -484,6 +753,7 @@ bool checkTurnCase(const std::string& label,
               << " avg_yaw_rate=" << result.average_yaw_rate_radps
               << " ratio=" << average_ratio
               << " peak_yaw_rate=" << result.peak_yaw_rate_radps << '\n';
+    emit(true);
     return true;
 }
 
@@ -494,11 +764,13 @@ int main(int argc, char** argv) {
     std::cerr << "test_physics_sim_walk_distance: Linux-only\n";
     return EXIT_SUCCESS;
 #else
+    bool emit_metrics_json = false;
     const char* sim_exe = nullptr;
-    if (argc >= 2 && argv[1][0] != '\0') {
-        sim_exe = argv[1];
-    } else {
-        sim_exe = std::getenv("HEXAPOD_PHYSICS_SIM_EXE");
+    physics_sim_test_argv::parse(argc, argv, emit_metrics_json, sim_exe);
+    std::string manifest_err;
+    if (!test_limits::init(argc, argv, manifest_err)) {
+        std::cerr << manifest_err << '\n';
+        return 2;
     }
     if (sim_exe == nullptr || sim_exe[0] == '\0') {
         std::cout << "skip test_physics_sim_walk_distance (pass sim path or HEXAPOD_PHYSICS_SIM_EXE)\n";
@@ -515,6 +787,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     if (pid == 0) {
+        physics_sim_test_utils::quietChildProcessStdIo();
         const std::string port_str = std::to_string(kPort);
         ::execl(sim_exe,
                 sim_exe,
@@ -574,14 +847,14 @@ int main(int argc, char** argv) {
     turn_in_place_motion.twist.twist_pos_rad = Vec3{0.0, 0.0, 0.0};
 
     if (!checkWalkCase(
-            "forward_walk", runtime, *bridge_ptr, stand_motion, walk_forward_motion, kBusLoopPeriodUs)) {
+            "forward_walk", runtime, *bridge_ptr, stand_motion, walk_forward_motion, kBusLoopPeriodUs, emit_metrics_json)) {
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
     }
 
     if (!checkWalkCase(
-            "reverse_walk", runtime, *bridge_ptr, stand_motion, walk_reverse_motion, kBusLoopPeriodUs)) {
+            "reverse_walk", runtime, *bridge_ptr, stand_motion, walk_reverse_motion, kBusLoopPeriodUs, emit_metrics_json)) {
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
@@ -592,14 +865,15 @@ int main(int argc, char** argv) {
                                *bridge_ptr,
                                stand_motion,
                                walk_forward_motion,
-                               kBusLoopPeriodUs)) {
+                               kBusLoopPeriodUs,
+                               emit_metrics_json)) {
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
     }
 
     if (!checkTurnCase(
-            "turn_in_place", runtime, *bridge_ptr, stand_motion, turn_in_place_motion, kBusLoopPeriodUs)) {
+            "turn_in_place", runtime, *bridge_ptr, stand_motion, turn_in_place_motion, kBusLoopPeriodUs, emit_metrics_json)) {
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;

@@ -65,6 +65,7 @@ struct HexapodBodyPoseState {
   bool valid = false;
   visualiser::math::Vec3 position{};
   float yaw_rad = 0.0f;
+  visualiser::math::Vec3 orientation_rad{};
 };
 
 struct HexapodTelemetryState {

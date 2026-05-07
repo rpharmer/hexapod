@@ -6,6 +6,7 @@
 #include "motion_intent_utils.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <initializer_list>
 #include <optional>
@@ -208,7 +209,7 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
             if (mode == ValidationMode::Strict &&
                 !containsOnlyKeys(event_value,
                                   {"at_ms", "mode", "gait", "body_height_m", "speed_mps", "heading_rad", "yaw_rad",
-                                   "yaw_rate_radps", "vx_mps", "vy_mps", "faults", "sensors", "navigation",
+                                   "yaw_rate_radps", "vx_mps", "vy_mps", "faults", "sensors", "safety", "navigation",
                                    "map_obstacles"},
                                   "events[" + std::to_string(event_index) + "]", error)) {
                 return false;
@@ -313,6 +314,29 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
                 } else if (mode == ValidationMode::Strict && sensors.contains("contacts")) {
                     error = "scenario sensors.contacts cannot be provided when clear_contacts=true";
                     return false;
+                }
+            }
+
+            if (event_value.contains("safety")) {
+                event.has_safety_overrides = true;
+                const auto& safety = event_value.at("safety");
+                if (mode == ScenarioDriver::ValidationMode::Strict &&
+                    !containsOnlyKeys(safety, {"legs_enabled"},
+                                      "events[" + std::to_string(event_index) + "].safety", error)) {
+                    return false;
+                }
+                if (safety.contains("legs_enabled")) {
+                    const auto legs = toml::find<std::vector<bool>>(safety, "legs_enabled");
+                    if (legs.size() != static_cast<std::size_t>(kNumLegs)) {
+                        error = "scenario safety.legs_enabled must contain exactly " +
+                                std::to_string(kNumLegs) + " values";
+                        return false;
+                    }
+                    event.safety.has_legs_enabled = true;
+                    for (int i = 0; i < kNumLegs; ++i) {
+                        event.safety.legs_enabled[static_cast<std::size_t>(i)] =
+                            legs[static_cast<std::size_t>(i)];
+                    }
                 }
             }
 
@@ -434,6 +458,11 @@ bool ScenarioDriver::run(RobotControl& robot, const ScenarioDefinition& scenario
                 toggles.low_voltage_value = event.faults.low_voltage_value_v;
                 toggles.high_current = event.faults.high_current;
                 toggles.high_current_value = event.faults.high_current_value_a;
+            }
+
+            if (event.has_safety_overrides && event.safety.has_legs_enabled) {
+                robot.setSafetyLegEnabledTestMask(
+                    std::optional<std::array<bool, kNumLegs>>{event.safety.legs_enabled});
             }
 
             if (event.has_map_observation_override && map_source != nullptr) {

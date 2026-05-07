@@ -1,47 +1,31 @@
 # hexapod-server
 
-Linux host-side control process for the hexapod robot. It connects to firmware over USB serial, runs multi-loop control/safety logic, and streams joint targets.
+Linux host-side control process for the hexapod robot. It runs multi-loop control/safety logic against serial hardware or simulator backends (`sim`, `physics-sim`) and streams joint targets.
 
 ## Responsibilities
 
-- Load serial and calibration settings from `config.txt`.
-- Construct a serial-backed hardware bridge (`SimpleHardwareBridge`).
-- Execute `RobotControl` loops:
-  - bus loop (500 Hz)
-  - estimator loop (500 Hz)
-  - safety loop (500 Hz)
-  - control loop (250 Hz)
-  - diagnostics loop (2 Hz)
+- Load runtime, transport, and calibration settings from `config.txt`.
+- Construct the selected runtime hardware bridge (`SimpleHardwareBridge`, `SimHardwareBridge`, or `PhysicsSimBridge`) from config mode.
+- Execute `RobotControl` loops (default rates shown; tunable via `Tuning.*LoopPeriod*`):
+  - bus loop (500 Hz default)
+  - estimator loop (500 Hz default)
+  - safety loop (500 Hz default)
+  - control loop (250 Hz default)
+  - diagnostics loop (2 Hz default)
 - Emit `MotionIntent` updates while monitoring health and fault state.
 
-## Directory layout
+## Directory layout (high level)
 
 ```text
 hexapod-server/
 ├── CMakeLists.txt
+├── CMakePresets.json
 ├── config.txt
 ├── config.sim.txt
+├── config.physics-sim.txt
 ├── README.md
-├── include/
-│   ├── body_controller.hpp
-│   ├── control_config.hpp
-│   ├── control_pipeline.hpp
-│   ├── double_buffer.hpp
-│   ├── estimator.hpp
-│   ├── gait_scheduler.hpp
-│   ├── geometry_config.hpp
-│   ├── hardware_bridge.hpp
-│   ├── hexapod-server.hpp
-│   ├── leg_fk.hpp
-│   ├── leg_ik.hpp
-│   ├── logger.hpp
-│   ├── loop_timing.hpp
-│   ├── robot_control.hpp
-│   ├── safety_supervisor.hpp
-│   ├── serialCommsServer.hpp
-│   ├── status_reporter.hpp
-│   └── types.hpp
-├── src/
+├── include/        # control, config, kinematics, hardware, telemetry interfaces
+├── src/            # app entrypoint, runtime loops, parsers, modules
 ├── scenarios/
 └── tests/
 ```
@@ -56,6 +40,8 @@ Requirements:
 - `CppLinuxSerial`
 - `toml11`
 
+Run from `hexapod-server/`:
+
 ```bash
 cd hexapod-server
 cmake -S . -B build
@@ -63,6 +49,8 @@ cmake --build build -j
 ```
 
 Build with tests enabled:
+
+Run from `hexapod-server/`:
 
 ```bash
 cd hexapod-server
@@ -72,6 +60,8 @@ cmake --build build-tests -j
 
 ## Run
 
+Run from `hexapod-server/`:
+
 ```bash
 cd hexapod-server
 ./build/hexapod-server
@@ -80,6 +70,8 @@ cd hexapod-server
 Stop with `Ctrl+C`.
 
 Run with an explicit config file:
+
+Run from `hexapod-server/`:
 
 ```bash
 cd hexapod-server
@@ -103,6 +95,8 @@ Examples:
 ```
 
 Controller-driven loop (optional):
+
+Run from `hexapod-server/`:
 
 ```bash
 cd hexapod-server
@@ -164,28 +158,34 @@ Set `Runtime.Mode = "sim"` in `config.txt`, or copy `config.sim.txt` over `confi
 
 ### 2) Execute scenario runs
 
-Baseline scenarios in `hexapod-server/scenarios/`:
+Current scenarios in `hexapod-server/scenarios/`:
 
 - `01_nominal_stand_walk.toml`
 - `02_command_timeout_fallback.toml`
 - `03_power_fault_triggers.toml`
 - `04_contact_loss_edge_cases.toml`
+- `05_long_walk_observability.toml`
+- `06_map_aware_navigation.toml`
+- `07_single_leg_probe.toml`
 
 Convenience script from repository root:
 
 ```bash
+cd <repo-root>
 scripts/run_server_scenarios.sh
 ```
 
 Launch server + visualiser together (sim mode, telemetry linked):
 
 ```bash
+cd <repo-root>
 scripts/run_sim_stack.sh
 ```
 
 Run server only (serial or sim) while streaming telemetry to a visualiser IP:
 
 ```bash
+cd <repo-root>
 scripts/run_server_with_telemetry.sh --mode serial --telemetry-host <VISUALISER_IP> --telemetry-port 9870
 ```
 
@@ -214,6 +214,8 @@ done
 
 Recommended (preset-based) workflow:
 
+Run from `hexapod-server/`:
+
 ```bash
 cd hexapod-server
 cmake --preset tests
@@ -222,6 +224,8 @@ ctest --preset tests
 ```
 
 Equivalent explicit configure/build commands:
+
+Run from `hexapod-server/`:
 
 ```bash
 cd hexapod-server
@@ -232,7 +236,10 @@ ctest --test-dir build-tests --output-on-failure
 
 Run one test binary directly:
 
+Run from `hexapod-server/`:
+
 ```bash
+cd hexapod-server
 ./build-tests/test_robot_runtime_loop
 ```
 
@@ -265,13 +272,20 @@ Expected TOML fields:
 - `title = "Hexapod Config File"`
 - `Schema = "hexapod.server.config"`
 - `SchemaVersion = 1`
-- `SerialDevice` (for example `/dev/ttyACM0`)
-- `BaudRate` (for example `115200`)
-- `Timeout_ms`
 - `MotorCalibrations` with exactly 18 entries:
   - format: `["<JointID>", <min_pulse>, <max_pulse>]`
   - no duplicates or missing joint IDs
   - `500 <= min_pulse < max_pulse <= 2500`
+
+Serial transport keys are required only in `Runtime.Mode = "serial"`:
+
+- `SerialDevice` (for example `/dev/ttyACM0`)
+- `BaudRate` (for example `115200`)
+- `Timeout_ms`
+
+For the complete key reference (all `Runtime.*`, `Geometry.*`, `Tuning.*`, bounds/defaults, and override semantics), see:
+
+- `../docs/SERVER_CONFIG_REFERENCE.md`
 
 ### Stream freshness contract
 
@@ -310,15 +324,25 @@ Runtime tuning keys for the contract:
 
 Per control step, `ControlPipeline` performs:
 
-1. `GaitScheduler::update(...)`
-2. `BodyController::update(...)`
-3. `LegIK::solve(...)`
-4. control status synthesis (`ControlStatus`)
+1. `CommandGovernor::apply(...)`
+2. `LocomotionCommandProcessor::update(...)`
+3. `GaitScheduler::update(...)`
+4. `LocomotionStability::apply(...)`
+5. `BodyController::update(...)`
+6. `LegIK::solve(...)`
+7. control status synthesis (`ControlStatus`)
 
 `LegIK::solve(...)` evaluates both valid knee branches in the planar chain and keeps the one closest
 to the estimator so mirrored legs stay on the physically consistent bend.
 
-`SafetySupervisor` runs independently in the safety loop. Cross-loop exchange uses `DoubleBuffer<T>`.
+`SafetySupervisor` runs independently in the safety loop. Freshness gating also runs independently
+before the pipeline in `RobotRuntime::controlStep()`. Cross-loop exchange uses `DoubleBuffer<T>`.
+
+`CommandGovernor` is currently default-constructed inside `ControlPipeline`; verify effective governor
+tuning behavior against current code when changing `Tuning.Governor.*` keys.
+
+For a full architecture reference (roles and interactions of supervisor/governor/modules),
+see `../docs/ALGORITHMS_SERVER_LOCOMOTION.md` and `../docs/ALGORITHMS_SERVER_CONFIG_TELEMETRY.md`.
 
 ## Protocol bridge notes
 

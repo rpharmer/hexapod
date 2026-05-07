@@ -58,6 +58,16 @@ Vec3 RotateVector(const Quat& quat, const Vec3& vector) {
   return {rotated.x, rotated.y, rotated.z};
 }
 
+Vec3 RotateAroundSceneX(const Vec3& value, float roll_rad) {
+  const float c = std::cos(roll_rad);
+  const float s = std::sin(roll_rad);
+  return {
+      value.x,
+      value.y * c - value.z * s,
+      value.y * s + value.z * c,
+  };
+}
+
 Vec3 RotateAroundSceneY(const Vec3& value, float yaw_rad) {
   const float c = std::cos(yaw_rad);
   const float s = std::sin(yaw_rad);
@@ -65,6 +75,16 @@ Vec3 RotateAroundSceneY(const Vec3& value, float yaw_rad) {
       value.x * c + value.z * s,
       value.y,
       -value.x * s + value.z * c,
+  };
+}
+
+Vec3 RotateAroundSceneZ(const Vec3& value, float yaw_rad) {
+  const float c = std::cos(yaw_rad);
+  const float s = std::sin(yaw_rad);
+  return {
+      value.x * c - value.y * s,
+      value.x * s + value.y * c,
+      value.z,
   };
 }
 

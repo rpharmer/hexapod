@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <sstream>
 
 #include "geometry_config.hpp"
@@ -711,6 +712,7 @@ bool RobotRuntime::init() {
 
     motion_intent_.write(initial);
     status_.write(ControlStatus{});
+    safety_leg_enabled_test_mask_.reset();
     safety_state_.write(SafetyState{});
     leg_targets_.write(LegTargets{});
     gait_state_.write(GaitState{});
@@ -1171,7 +1173,13 @@ void RobotRuntime::safetyStep() {
     const SafetySupervisor::FreshnessInputs freshness_inputs{
         freshness.estimator.valid,
         freshness.intent.valid};
-    const SafetyState s = safety_.evaluate(raw, est, intent, freshness_inputs);
+    SafetyState s = safety_.evaluate(raw, est, intent, freshness_inputs);
+    if (safety_leg_enabled_test_mask_.has_value()) {
+        for (int i = 0; i < kNumLegs; ++i) {
+            const std::size_t li = static_cast<std::size_t>(i);
+            s.leg_enabled[li] = s.leg_enabled[li] && (*safety_leg_enabled_test_mask_)[li];
+        }
+    }
     if (logger_ && s.active_fault != last_logged_safety_fault_) {
         int contact_count = 0;
         for (const bool foot_contact : raw.foot_contacts) {
@@ -1384,6 +1392,10 @@ bool RobotRuntime::setSimFaultToggles(const SimHardwareFaultToggles& toggles) {
         return true;
     }
     return false;
+}
+
+void RobotRuntime::setSafetyLegEnabledTestMask(std::optional<std::array<bool, kNumLegs>> mask) {
+    safety_leg_enabled_test_mask_ = std::move(mask);
 }
 
 void RobotRuntime::setNavigationManager(std::unique_ptr<NavigationManager> navigation_manager) {

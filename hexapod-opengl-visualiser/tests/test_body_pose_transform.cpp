@@ -30,8 +30,10 @@ int main() {
   HexapodBodyPoseState pose{};
   pose.valid = true;
   pose.position = {0.0f, 0.0f, 0.0f};
+  pose.orientation_rad = {0.0f, 0.0f, 0.0f};
 
   pose.yaw_rad = 0.0f;
+  pose.orientation_rad = {0.0f, 0.0f, 0.0f};
   const Vec3 forward_at_zero = TransformBodyPoint({1.0f, 0.0f, 0.0f}, pose);
   ok = ok && expect(nearlyEqual(forward_at_zero.x, 0.0f) &&
                         nearlyEqual(forward_at_zero.y, 0.0f) &&
@@ -39,14 +41,31 @@ int main() {
                     "server +X should land on scene -Z at zero yaw");
 
   pose.yaw_rad = 0.5f * visualiser::math::kPi;
+  pose.orientation_rad = {0.0f, 0.0f, pose.yaw_rad};
   const Vec3 forward_at_ninety = TransformBodyPoint({1.0f, 0.0f, 0.0f}, pose);
   ok = ok && expect(nearlyEqual(forward_at_ninety.x, 1.0f) &&
                         nearlyEqual(forward_at_ninety.y, 0.0f) &&
                         nearlyEqual(forward_at_ninety.z, 0.0f),
                     "server +X should stay on scene +X at +90 degrees yaw");
 
+  pose.orientation_rad = {0.5f * visualiser::math::kPi, 0.0f, 0.0f};
   pose.yaw_rad = 0.0f;
+  const Vec3 roll_rotated = TransformBodyPoint({0.0f, 1.0f, 0.0f}, pose);
+  ok = ok && expect(nearlyEqual(roll_rotated.x, 0.0f) &&
+                        nearlyEqual(roll_rotated.y, 1.0f) &&
+                        nearlyEqual(roll_rotated.z, 0.0f),
+                    "roll should lift server +Y into scene +Y after full pose transform");
+
+  pose.orientation_rad = {0.0f, 0.5f * visualiser::math::kPi, 0.0f};
   pose.position = {2.0f, 3.0f, 4.0f};
+  const Vec3 pitch_rotated = TransformBodyPoint({1.0f, 0.0f, 0.0f}, pose);
+  ok = ok && expect(nearlyEqual(pitch_rotated.x, 2.0f) &&
+                        nearlyEqual(pitch_rotated.y, 3.0f) &&
+                        nearlyEqual(pitch_rotated.z, -3.0f),
+                    "pitch should rotate server +X into scene -Y before translation");
+
+  pose.orientation_rad = {0.0f, 0.0f, 0.0f};
+  pose.yaw_rad = 0.0f;
   const Vec3 origin_translated = TransformBodyPoint({0.0f, 0.0f, 0.0f}, pose);
   ok = ok && expect(nearlyEqual(origin_translated.x, 2.0f) &&
                         nearlyEqual(origin_translated.y, 4.0f) &&

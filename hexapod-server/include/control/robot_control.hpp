@@ -6,8 +6,10 @@
 #include "replay_logger.hpp"
 #include "robot_runtime.hpp"
 
+#include <array>
 #include <atomic>
 #include <memory>
+#include <optional>
 
 class RobotControl {
 public:
@@ -25,6 +27,7 @@ public:
 
     void setMotionIntent(const MotionIntent& intent);
     bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
+    void setSafetyLegEnabledTestMask(std::optional<std::array<bool, kNumLegs>> mask);
     void setNavigationManager(std::unique_ptr<NavigationManager> navigation_manager);
     ControlStatus getStatus() const;
     SafetyState getSafetyState() const;

@@ -3,6 +3,9 @@
 #include "geometry_config.hpp"
 #include "leg_fk.hpp"
 #include "motion_intent_utils.hpp"
+#include "physics_sim_metrics_emit.hpp"
+#include "physics_sim_test_argv.hpp"
+#include "test_limits_manifest.hpp"
 #include "physics_sim_test_utils.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
@@ -12,10 +15,12 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 
@@ -102,6 +107,16 @@ int rawFootContactCount(const RobotState& state) {
     return count;
 }
 
+std::string slowFwdWalkFootClearanceLimitsJson(const double min_foot_tip_world_z_m,
+                                                const bool require_saw_raw_contact_loss,
+                                                const double max_body_undershoot_m) {
+    std::ostringstream o;
+    o << std::setprecision(17) << "{\"min_foot_tip_world_z_m\":" << min_foot_tip_world_z_m
+      << ",\"require_saw_raw_contact_loss\":" << (require_saw_raw_contact_loss ? "true" : "false")
+      << ",\"max_body_undershoot_m\":" << max_body_undershoot_m << '}';
+    return o.str();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -109,16 +124,32 @@ int main(int argc, char** argv) {
     std::cout << "skip test_physics_sim_slow_fwd_walk_foot_clearance (Linux-only)\n";
     return 0;
 #else
+    bool emit_metrics_json = false;
     const char* sim_exe = nullptr;
-    if (argc >= 2 && argv[1][0] != '\0') {
-        sim_exe = argv[1];
-    } else {
-        sim_exe = std::getenv("HEXAPOD_PHYSICS_SIM_EXE");
+    physics_sim_test_argv::parse(argc, argv, emit_metrics_json, sim_exe);
+    std::string manifest_err;
+    if (!test_limits::init(argc, argv, manifest_err)) {
+        std::cerr << manifest_err << '\n';
+        return 2;
     }
     if (sim_exe == nullptr || sim_exe[0] == '\0') {
         std::cout << "skip test_physics_sim_slow_fwd_walk_foot_clearance (pass sim path or HEXAPOD_PHYSICS_SIM_EXE)\n";
         return 0;
     }
+
+    constexpr const char* kSuite = "physics_sim_slow_fwd_walk_foot_clearance";
+    constexpr const char* kCase = "slow_fwd_walk_foot_clearance";
+    const double kMinFootTipWorldZ =
+        test_limits::getDouble(kSuite, kCase, "", "min_foot_tip_world_z_m", -1.0e-4);
+    const bool kRequireSawRawContactLoss =
+        test_limits::getBool(kSuite, kCase, "", "require_saw_raw_contact_loss", true);
+    const double kMaxBodyUndershootM =
+        test_limits::getDouble(kSuite, kCase, "", "max_body_undershoot_m", 0.010);
+    const double kCommandedBodyHeightM =
+        test_limits::getDouble(kSuite, kCase, "", "commanded_body_height_m", 0.14);
+    const auto limitsJson = [&]() {
+        return slowFwdWalkFootClearanceLimitsJson(kMinFootTipWorldZ, kRequireSawRawContactLoss, kMaxBodyUndershootM);
+    };
 
     const auto harness = physics_sim_test_utils::loadHarnessSettings();
     const int port = 26000 + (static_cast<int>(::getpid()) % 4000);
@@ -130,6 +161,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     if (pid == 0) {
+        physics_sim_test_utils::quietChildProcessStdIo();
         const std::string port_str = std::to_string(port);
         ::execl(sim_exe, sim_exe, "--serve", "--serve-port", port_str.c_str(), nullptr);
         std::perror("execl");
@@ -149,6 +181,10 @@ int main(int argc, char** argv) {
     RobotRuntime runtime(
         std::move(bridge), std::make_unique<PhysicsSimEstimator>(), nullptr, cfg, telemetry::makeNoopTelemetryPublisher());
     if (!expect(runtime.init(), "runtime init should succeed against the live physics sim")) {
+        if (emit_metrics_json) {
+            physics_sim_metrics::emitLine("physics_sim_slow_fwd_walk_foot_clearance", "slow_fwd_walk_foot_clearance", false,
+                                          limitsJson(), "{\"stage\":\"runtime_init_failed\"}");
+        }
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
@@ -163,14 +199,15 @@ int main(int argc, char** argv) {
         physics_sim_test_utils::scaledLegacyStepCount(140, bus_loop_period_us));
     const int kWalkObserveSteps = static_cast<int>(
         physics_sim_test_utils::scaledLegacyStepCount(1400, bus_loop_period_us));
-    constexpr double kCommandedBodyHeightM = 0.14;
-    constexpr double kMaxBodyUndershootM = 0.010;
-
     for (int i = 0; i < kStandWarmupSteps; ++i) {
         runControlLoopStep(runtime, stand_motion);
     }
 
     if (!expect(bridge_ptr->last_state().has_value(), "bridge should produce an initial state before walking")) {
+        if (emit_metrics_json) {
+            physics_sim_metrics::emitLine("physics_sim_slow_fwd_walk_foot_clearance", "slow_fwd_walk_foot_clearance", false,
+                                          limitsJson(), "{\"stage\":\"no_initial_state\"}");
+        }
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
@@ -187,6 +224,15 @@ int main(int argc, char** argv) {
         if (!expect(bridge_ptr->last_state().has_value(), "bridge should keep producing live state during walk")) {
             ::kill(pid, SIGTERM);
             ::waitpid(pid, nullptr, 0);
+            if (emit_metrics_json) {
+                std::ostringstream metrics;
+                metrics << std::setprecision(17) << "{\"stage\":\"lost_state_during_walk\",\"walk_step\":" << i
+                        << ",\"min_body_height_m\":" << min_body_height_m
+                        << ",\"min_foot_tip_world_z_m\":" << min_foot_tip_world_z_m
+                        << ",\"saw_any_raw_contact_loss\":" << (saw_any_raw_contact_loss ? "true" : "false") << '}';
+                physics_sim_metrics::emitLine("physics_sim_slow_fwd_walk_foot_clearance", "slow_fwd_walk_foot_clearance", false,
+                                              limitsJson(), metrics.str());
+            }
             return EXIT_FAILURE;
         }
         const RobotState& state = bridge_ptr->last_state().value();
@@ -202,6 +248,17 @@ int main(int argc, char** argv) {
                       << '\n';
             ::kill(pid, SIGTERM);
             ::waitpid(pid, nullptr, 0);
+            if (emit_metrics_json) {
+                const double undershoot = kCommandedBodyHeightM - min_body_height_m;
+                std::ostringstream metrics;
+                metrics << std::setprecision(17) << "{\"stage\":\"fault_during_walk\",\"walk_step\":" << i
+                        << ",\"min_body_height_m\":" << min_body_height_m
+                        << ",\"max_body_undershoot_m\":" << undershoot
+                        << ",\"min_foot_tip_world_z_m\":" << min_foot_tip_world_z_m
+                        << ",\"saw_any_raw_contact_loss\":" << (saw_any_raw_contact_loss ? "true" : "false") << '}';
+                physics_sim_metrics::emitLine("physics_sim_slow_fwd_walk_foot_clearance", "slow_fwd_walk_foot_clearance", false,
+                                              limitsJson(), metrics.str());
+            }
             return EXIT_FAILURE;
         }
     }
@@ -217,15 +274,24 @@ int main(int argc, char** argv) {
               << " saw_any_raw_contact_loss=" << (saw_any_raw_contact_loss ? 1 : 0) << '\n';
 
     bool ok = true;
-    ok = expect(min_foot_tip_world_z_m >= -1.0e-4,
+    ok = expect(min_foot_tip_world_z_m >= kMinFootTipWorldZ,
                 "slow forward TRIPOD walk should keep the reported server foot tip at or above the ground plane") &&
          ok;
-    ok = expect(saw_any_raw_contact_loss,
+    ok = expect(!kRequireSawRawContactLoss || saw_any_raw_contact_loss,
                 "slow forward TRIPOD walk should see at least one swing-leg contact loss confirming feet lift") &&
          ok;
     ok = expect(max_body_undershoot_m < kMaxBodyUndershootM,
                 "body height should track within 10 mm of commanded 0.14 m during slow forward walk") &&
          ok;
+    if (emit_metrics_json) {
+        std::ostringstream metrics;
+        metrics << std::setprecision(17) << "{\"min_body_height_m\":" << min_body_height_m
+                << ",\"max_body_undershoot_m\":" << max_body_undershoot_m
+                << ",\"min_foot_tip_world_z_m\":" << min_foot_tip_world_z_m
+                << ",\"saw_any_raw_contact_loss\":" << (saw_any_raw_contact_loss ? "true" : "false") << '}';
+        physics_sim_metrics::emitLine("physics_sim_slow_fwd_walk_foot_clearance", "slow_fwd_walk_foot_clearance", ok,
+                                      limitsJson(), metrics.str());
+    }
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 #endif
 }

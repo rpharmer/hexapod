@@ -19,9 +19,11 @@
 #include "sim_hardware_bridge.hpp"
 #include "types.hpp"
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 class RobotRuntime {
 public:
@@ -44,6 +46,8 @@ public:
     void setMotionIntent(const MotionIntent& intent);
     void setMotionIntentForTest(const MotionIntent& intent);
     bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
+    /** Sim/scenario tests: AND-mask `SafetyState::leg_enabled` after supervisor evaluate; nullopt disables. */
+    void setSafetyLegEnabledTestMask(std::optional<std::array<bool, kNumLegs>> mask);
     void setNavigationManager(std::unique_ptr<NavigationManager> navigation_manager);
     ControlStatus getStatus() const;
     SafetyState getSafetyState() const;
@@ -131,4 +135,5 @@ private:
     std::array<bool, kNumLegs> contact_anchor_valid_{};
     std::array<Vec3, kNumLegs> contact_anchor_world_{};
     std::array<double, kNumLegs> contact_anchor_max_drift_m_{};
+    std::optional<std::array<bool, kNumLegs>> safety_leg_enabled_test_mask_{};
 };

@@ -3,7 +3,10 @@
 #include "geometry_config.hpp"
 #include "leg_fk.hpp"
 #include "motion_intent_utils.hpp"
+#include "physics_sim_metrics_emit.hpp"
+#include "physics_sim_test_argv.hpp"
 #include "physics_sim_test_utils.hpp"
+#include "test_limits_manifest.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
 #include "robot_runtime.hpp"
@@ -16,6 +19,7 @@
 #include <memory>
 #include <limits>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 
@@ -84,6 +88,11 @@ int rawFootContactCount(const RobotState& state) {
     return count;
 }
 
+std::string turnRawContactLossLimitsJson(const bool require_saw_raw_contact_loss) {
+    return std::string{"{\"require_saw_raw_contact_loss\":"} +
+           (require_saw_raw_contact_loss ? "true" : "false") + '}';
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -91,16 +100,24 @@ int main(int argc, char** argv) {
     std::cout << "skip test_physics_sim_turn_raw_contact_loss (Linux-only)\n";
     return 0;
 #else
+    bool emit_metrics_json = false;
     const char* sim_exe = nullptr;
-    if (argc >= 2 && argv[1][0] != '\0') {
-        sim_exe = argv[1];
-    } else {
-        sim_exe = std::getenv("HEXAPOD_PHYSICS_SIM_EXE");
+    physics_sim_test_argv::parse(argc, argv, emit_metrics_json, sim_exe);
+    std::string manifest_err;
+    if (!test_limits::init(argc, argv, manifest_err)) {
+        std::cerr << manifest_err << '\n';
+        return 2;
     }
     if (sim_exe == nullptr || sim_exe[0] == '\0') {
         std::cout << "skip test_physics_sim_turn_raw_contact_loss (pass sim path or HEXAPOD_PHYSICS_SIM_EXE)\n";
         return 0;
     }
+
+    constexpr const char* kSuite = "physics_sim_turn_raw_contact_loss";
+    constexpr const char* kCase = "turn_raw_contact_loss";
+    const bool kRequireSawRawContactLoss =
+        test_limits::getBool(kSuite, kCase, "", "require_saw_raw_contact_loss", true);
+    const auto limitsJson = [&]() { return turnRawContactLossLimitsJson(kRequireSawRawContactLoss); };
 
     const auto harness = physics_sim_test_utils::loadHarnessSettings();
     const int port = 26000 + (static_cast<int>(::getpid()) % 4000);
@@ -131,6 +148,10 @@ int main(int argc, char** argv) {
     RobotRuntime runtime(
         std::move(bridge), std::make_unique<PhysicsSimEstimator>(), nullptr, cfg, telemetry::makeNoopTelemetryPublisher());
     if (!expect(runtime.init(), "runtime init should succeed against the live physics sim")) {
+        if (emit_metrics_json) {
+            physics_sim_metrics::emitLine("physics_sim_turn_raw_contact_loss", "turn_raw_contact_loss", false,
+                                          limitsJson(), "{\"stage\":\"runtime_init_failed\"}");
+        }
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
@@ -151,6 +172,10 @@ int main(int argc, char** argv) {
     }
 
     if (!expect(bridge_ptr->last_state().has_value(), "bridge should produce an initial state before turning")) {
+        if (emit_metrics_json) {
+            physics_sim_metrics::emitLine("physics_sim_turn_raw_contact_loss", "turn_raw_contact_loss", false,
+                                          limitsJson(), "{\"stage\":\"no_initial_state\"}");
+        }
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;
@@ -166,6 +191,14 @@ int main(int argc, char** argv) {
         if (!expect(bridge_ptr->last_state().has_value(), "bridge should keep producing live state during turn")) {
             ::kill(pid, SIGTERM);
             ::waitpid(pid, nullptr, 0);
+            if (emit_metrics_json) {
+                std::ostringstream metrics;
+                metrics << "{\"stage\":\"lost_state_during_turn\",\"turn_step\":" << i
+                        << ",\"min_raw_contact_count\":" << min_raw_contact_count
+                        << ",\"saw_any_raw_contact_loss\":" << (saw_any_raw_contact_loss ? "true" : "false") << '}';
+                physics_sim_metrics::emitLine("physics_sim_turn_raw_contact_loss", "turn_raw_contact_loss", false,
+                                              limitsJson(), metrics.str());
+            }
             return EXIT_FAILURE;
         }
         const RobotState& state = bridge_ptr->last_state().value();
@@ -180,6 +213,14 @@ int main(int argc, char** argv) {
                       << '\n';
             ::kill(pid, SIGTERM);
             ::waitpid(pid, nullptr, 0);
+            if (emit_metrics_json) {
+                std::ostringstream metrics;
+                metrics << "{\"stage\":\"fault_during_turn\",\"fault_step\":" << i
+                        << ",\"min_raw_contact_count\":" << min_raw_contact_count
+                        << ",\"saw_any_raw_contact_loss\":" << (saw_any_raw_contact_loss ? "true" : "false") << '}';
+                physics_sim_metrics::emitLine("physics_sim_turn_raw_contact_loss", "turn_raw_contact_loss", false,
+                                              limitsJson(), metrics.str());
+            }
             return EXIT_FAILURE;
         }
     }
@@ -190,9 +231,15 @@ int main(int argc, char** argv) {
     std::cout << "turn_min_raw_contact_count=" << min_raw_contact_count
               << " turn_saw_any_raw_contact_loss=" << (saw_any_raw_contact_loss ? 1 : 0) << '\n';
 
-    return expect(saw_any_raw_contact_loss,
-                  "turning motion should report at least one raw foot contact loss while swing legs lift")
-               ? EXIT_SUCCESS
-               : EXIT_FAILURE;
+    const bool ok = expect(!kRequireSawRawContactLoss || saw_any_raw_contact_loss,
+                           "turning motion should report at least one raw foot contact loss while swing legs lift");
+    if (emit_metrics_json) {
+        std::ostringstream metrics;
+        metrics << "{\"min_raw_contact_count\":" << min_raw_contact_count
+                << ",\"saw_any_raw_contact_loss\":" << (saw_any_raw_contact_loss ? "true" : "false") << '}';
+        physics_sim_metrics::emitLine("physics_sim_turn_raw_contact_loss", "turn_raw_contact_loss", ok,
+                                      limitsJson(), metrics.str());
+    }
+    return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 #endif
 }

@@ -23,10 +23,14 @@ LocalMapObservation PhysicsSimLocalMapObservationSource::collect(const NavPose2d
                                                                  const RobotState& /*est*/,
                                                                  const TimePointUs now) {
     LocalMapObservation out{};
-    out.timestamp_us = now;
-    out.freshness_class = LocalMapObservationFreshnessClass::Auxiliary;
 
     const std::vector<PhysicsSimObstacleFootprint> footprints = provider_.latestObstacleFootprints();
+    if (footprints.empty()) {
+        return out;
+    }
+
+    out.timestamp_us = now;
+    out.freshness_class = LocalMapObservationFreshnessClass::Auxiliary;
     for (const PhysicsSimObstacleFootprint& footprint : footprints) {
         const double hx = std::max(0.0, footprint.half_extent_x_m);
         const double hy = std::max(0.0, footprint.half_extent_y_m);
@@ -53,6 +57,10 @@ LocalMapObservation PhysicsSimLocalMapObservationSource::collect(const NavPose2d
                     LocalMapObservationSample{world_x, world_y, LocalMapCellState::Occupied});
             }
         }
+    }
+
+    if (out.samples.empty()) {
+        out.timestamp_us = TimePointUs{};
     }
 
     return out;

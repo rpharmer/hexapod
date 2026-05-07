@@ -86,6 +86,20 @@ bool ParseHexapodTelemetryPacket(std::string_view payload, visualiser::robot::He
   }
   if (*type == "joints") {
     telemetry.has_joints = ParseAnglesPacket(payload, telemetry.angles_deg);
+    if (const auto body_position = ExtractFloat3Field(payload, "body_position")) {
+      telemetry.body_pose.position = {(*body_position)[0], (*body_position)[1], (*body_position)[2]};
+      telemetry.body_pose.valid = true;
+    }
+    if (const auto body_orientation = ExtractFloat3Field(payload, "body_orientation_rad")) {
+      telemetry.body_pose.orientation_rad =
+          {(*body_orientation)[0], (*body_orientation)[1], (*body_orientation)[2]};
+      telemetry.body_pose.yaw_rad = telemetry.body_pose.orientation_rad.z;
+      telemetry.body_pose.valid = true;
+    } else if (const auto body_yaw = ExtractFloatField(payload, "body_yaw_rad")) {
+      telemetry.body_pose.orientation_rad = {0.0f, 0.0f, *body_yaw};
+      telemetry.body_pose.yaw_rad = *body_yaw;
+      telemetry.body_pose.valid = true;
+    }
     return telemetry.has_joints;
   }
   if (*type == "status") {

@@ -36,6 +36,13 @@ struct ScenarioFaultOverrides {
     float high_current_value_a{25.0f};
 };
 
+/** Optional safety fields merged in sim/scenario runs (e.g. per-leg IK enable mask). */
+struct ScenarioSafetyOverrides {
+    /** When true, `legs_enabled` is AND-masked with `SafetySupervisor` output after evaluate. */
+    bool has_legs_enabled{false};
+    std::array<bool, kNumLegs> legs_enabled{true, true, true, true, true, true};
+};
+
 struct ScenarioNavigationCommand {
     enum class Action {
         None,
@@ -63,6 +70,8 @@ struct ScenarioEvent {
     ScenarioSensorOverrides sensors{};
     bool has_fault_overrides{false};
     ScenarioFaultOverrides faults{};
+    bool has_safety_overrides{false};
+    ScenarioSafetyOverrides safety{};
     bool has_navigation_command{false};
     ScenarioNavigationCommand navigation{};
     bool has_map_observation_override{false};

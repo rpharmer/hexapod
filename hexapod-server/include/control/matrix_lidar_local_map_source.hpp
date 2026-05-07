@@ -11,5 +11,5 @@ public:
     [[nodiscard]] LocalMapObservation collect(const NavPose2d& pose, const RobotState& est, TimePointUs now) override;
 
 private:
-    mutable TimePointUs last_emitted_timestamp_{};
+    mutable TimePointUs last_sensor_timestamp_{};
 };

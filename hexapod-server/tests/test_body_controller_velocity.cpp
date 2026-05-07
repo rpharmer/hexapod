@@ -133,7 +133,7 @@ int main() {
     low_body_est.body_twist_state.body_trans_m.z = 0.03;
     const LegTargets held_height_targets =
         controller.update(low_body_est, walk_intent, walk_gait, safety, walk_twist);
-    if (!expect(held_height_targets.feet[0].pos_body_m.z < walk_targets.feet[0].pos_body_m.z - 0.02,
+    if (!expect(held_height_targets.feet[0].pos_body_m.z < walk_targets.feet[0].pos_body_m.z - 0.008,
                 "walking height hold should materially lower stance feet when the body sags")) {
         return EXIT_FAILURE;
     }
@@ -141,7 +141,7 @@ int main() {
     MotionIntent idle_intent = stand_intent;
     idle_intent.requested_mode = RobotMode::SAFE_IDLE;
     const LegTargets idle_targets = controller.update(low_body_est, idle_intent, gait, safety, stand_twist);
-    if (!expect(idle_targets.feet[0].pos_body_m.z < stand_targets.feet[0].pos_body_m.z - 0.02,
+    if (!expect(idle_targets.feet[0].pos_body_m.z < stand_targets.feet[0].pos_body_m.z - 0.008,
                 "idle height hold should also materially lower stance feet when the body sags")) {
         return EXIT_FAILURE;
     }

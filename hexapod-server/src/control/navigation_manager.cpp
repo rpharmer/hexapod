@@ -211,7 +211,7 @@ MotionIntent NavigationManager::mergeIntent(const MotionIntent& fallback,
 
     const LocalMapSnapshot snapshot = refreshTerrainSnapshotLocked(pose, est, now);
 
-    if (snapshot.has_observations && !snapshot.fresh) {
+    if (snapshot.has_primary_observations && !snapshot.fresh) {
         monitor_.lifecycle = NavigationLifecycleState::MapUnavailable;
         monitor_.planner_status = LocalPlanStatus::MapUnavailable;
         bridge_.deactivate();
@@ -404,7 +404,7 @@ LocalMapSnapshot NavigationManager::refreshTerrainSnapshotLocked(const NavPose2d
 
     const LocalMapSnapshot snapshot = local_map_builder_.snapshot(now);
     cached_map_snapshot_ = snapshot;
-    monitor_.map_fresh = snapshot.has_observations ? snapshot.fresh : true;
+    monitor_.map_fresh = snapshot.has_primary_observations ? snapshot.fresh : true;
     monitor_.nearest_obstacle_distance_m = snapshot.nearest_obstacle_distance_m;
     return snapshot;
 }

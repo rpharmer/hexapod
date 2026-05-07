@@ -4,10 +4,13 @@
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
 #include "replay_logger.hpp"
+#include "locomotion_metrics.hpp"
+#include "locomotion_motion_sequence.hpp"
 #include "replay_json.hpp"
 #include "robot_runtime.hpp"
 #include "scenario_driver.hpp"
 #include "telemetry_json.hpp"
+#include "test_limits_manifest.hpp"
 
 #include <algorithm>
 #include <array>
@@ -38,71 +41,14 @@
 
 namespace {
 
+using namespace locomotion_test;
+
 bool expect(bool condition, const std::string& message) {
     if (!condition) {
         std::cerr << "FAIL: " << message << '\n';
         return false;
     }
     return true;
-}
-
-std::string jsonEscape(const std::string& value) {
-    std::string escaped;
-    escaped.reserve(value.size() + 8);
-    for (const char ch : value) {
-        switch (ch) {
-        case '\\':
-        case '"':
-            escaped.push_back('\\');
-            escaped.push_back(ch);
-            break;
-        case '\n':
-            escaped += "\\n";
-            break;
-        case '\r':
-            escaped += "\\r";
-            break;
-        case '\t':
-            escaped += "\\t";
-            break;
-        default:
-            escaped.push_back(ch);
-            break;
-        }
-    }
-    return escaped;
-}
-
-std::string formatDouble(const double value, const int precision = 6) {
-    std::ostringstream out;
-    out << std::fixed << std::setprecision(precision) << value;
-    std::string text = out.str();
-    const auto trailing = text.find_last_not_of('0');
-    if (trailing != std::string::npos && text[trailing] == '.') {
-        text.erase(trailing);
-    } else if (trailing != std::string::npos) {
-        text.erase(trailing + 1);
-    }
-    if (text.empty()) {
-        return "0";
-    }
-    return text;
-}
-
-std::string robotModeName(const RobotMode mode) {
-    switch (mode) {
-    case RobotMode::SAFE_IDLE:
-        return "SAFE_IDLE";
-    case RobotMode::HOMING:
-        return "HOMING";
-    case RobotMode::STAND:
-        return "STAND";
-    case RobotMode::WALK:
-        return "WALK";
-    case RobotMode::FAULT:
-        return "FAULT";
-    }
-    return "UNKNOWN";
 }
 
 std::string gaitName(const GaitType gait) {
@@ -119,62 +65,6 @@ std::string gaitName(const GaitType gait) {
         return "TURN_IN_PLACE";
     }
     return "UNKNOWN";
-}
-
-std::string faultName(const FaultCode fault) {
-    switch (fault) {
-    case FaultCode::NONE:
-        return "NONE";
-    case FaultCode::BUS_TIMEOUT:
-        return "BUS_TIMEOUT";
-    case FaultCode::ESTOP:
-        return "ESTOP";
-    case FaultCode::TIP_OVER:
-        return "TIP_OVER";
-    case FaultCode::ESTIMATOR_INVALID:
-        return "ESTIMATOR_INVALID";
-    case FaultCode::MOTOR_FAULT:
-        return "MOTOR_FAULT";
-    case FaultCode::JOINT_LIMIT:
-        return "JOINT_LIMIT";
-    case FaultCode::COMMAND_TIMEOUT:
-        return "COMMAND_TIMEOUT";
-    case FaultCode::BODY_COLLAPSE:
-        return "BODY_COLLAPSE";
-    }
-    return "UNKNOWN";
-}
-
-Vec3 positionFromState(const RobotState& state) {
-    return Vec3{
-        state.body_twist_state.body_trans_m.x,
-        state.body_twist_state.body_trans_m.y,
-        state.body_twist_state.body_trans_m.z,
-    };
-}
-
-double horizontalSpeedFromState(const RobotState& state) {
-    return std::hypot(state.body_twist_state.body_trans_mps.x,
-                      state.body_twist_state.body_trans_mps.y);
-}
-
-double bodyTiltFromState(const RobotState& state) {
-    if (!state.has_body_twist_state) {
-        return 0.0;
-    }
-    return std::hypot(state.body_twist_state.twist_pos_rad.x, state.body_twist_state.twist_pos_rad.y);
-}
-
-double bodyRateFromState(const RobotState& state) {
-    if (state.has_imu && state.imu.valid) {
-        return std::hypot(state.imu.gyro_radps.x, state.imu.gyro_radps.y);
-    }
-    return std::hypot(state.body_twist_state.twist_vel_radps.x,
-                      state.body_twist_state.twist_vel_radps.y);
-}
-
-double wrapAngleDiff(const double start, const double end) {
-    return std::atan2(std::sin(end - start), std::cos(end - start));
 }
 
 struct PhysicsSimProcess {
@@ -195,6 +85,7 @@ struct PhysicsSimProcess {
             return false;
         }
         if (pid_ == 0) {
+            physics_sim_test_utils::quietChildProcessStdIo();
             const std::string port_str = std::to_string(port_);
             ::execl(exe_path_.c_str(), exe_path_.c_str(), "--serve", "--serve-port", port_str.c_str(), nullptr);
             std::perror("execl");
@@ -278,100 +169,6 @@ public:
     std::vector<replay_json::ReplayTelemetryRecord> records{};
 };
 
-struct MotionPhase {
-    std::string label{};
-    ScenarioMotionIntent motion{};
-    std::size_t steps{0};
-    bool refresh_each_step{true};
-};
-
-struct MotionSample {
-    std::size_t step_index{0};
-    std::size_t phase_index{0};
-    std::string phase_label{};
-    ScenarioMotionIntent requested_motion{};
-    ControlStatus status{};
-    RobotState estimated{};
-    GaitState gait{};
-    CommandGovernorState governor{};
-    SafetyState safety{};
-    Vec3 position{};
-    double horizontal_speed_mps{0.0};
-    double body_tilt_rad{0.0};
-    double body_rate_radps{0.0};
-    double yaw_rate_radps{0.0};
-    double support_margin_m{0.0};
-    double stride_phase_rate_hz{0.0};
-    double step_length_m{0.0};
-    double swing_height_m{0.0};
-    double duty_factor{0.0};
-    double model_trust{1.0};
-    double contact_mismatch_ratio{0.0};
-    telemetry::LocomotionDebugSnapshot locomotion_debug{};
-    double sample_period_s{0.0};
-};
-
-struct ModeSegment {
-    RobotMode mode{RobotMode::SAFE_IDLE};
-    std::size_t start_step{0};
-    std::size_t end_step{0};
-};
-
-struct GaitTransitionSegment {
-    std::string phase_label{};
-    std::size_t start_step{0};
-    std::size_t end_step{0};
-    double mean_step_length_m{0.0};
-    double mean_duty_factor{0.0};
-};
-
-struct LocomotionMetrics {
-    double sample_period_s{0.0};
-    std::size_t sample_count{0};
-    std::size_t walk_sample_count{0};
-    std::size_t stride_count{0};
-    std::size_t mode_transition_count{0};
-    std::size_t fault_transition_count{0};
-    std::size_t first_fault_step{0};
-    bool saw_fault{false};
-    FaultCode first_fault{FaultCode::NONE};
-    RobotMode final_mode{RobotMode::SAFE_IDLE};
-    FaultCode final_fault{FaultCode::NONE};
-    double duration_s{0.0};
-    double path_length_m{0.0};
-    double net_displacement_m{0.0};
-    double lateral_deviation_m{0.0};
-    double max_abs_roll_rad{0.0};
-    double max_abs_pitch_rad{0.0};
-    double max_body_rate_radps{0.0};
-    double mean_horizontal_speed_mps{0.0};
-    double peak_horizontal_speed_mps{0.0};
-    double mean_yaw_rate_radps{0.0};
-    double peak_yaw_rate_radps{0.0};
-    double yaw_delta_rad{0.0};
-    double min_support_margin_m{std::numeric_limits<double>::infinity()};
-    double min_model_trust{1.0};
-    double max_contact_mismatch_ratio{0.0};
-    double min_command_scale{1.0};
-    double min_cadence_scale{1.0};
-    double max_governor_severity{0.0};
-    double max_governed_speed_mps{0.0};
-    double max_governed_yaw_rate_radps{0.0};
-    double min_governed_speed_mps{1e9};
-    double min_governed_yaw_rate_radps{1e9};
-    double max_step_length_m{0.0};
-    double min_step_length_m{1e9};
-    double max_swing_height_m{0.0};
-    double min_swing_height_m{1e9};
-    double max_contact_anchor_drift_m{0.0};
-    double max_contact_anchor_max_drift_m{0.0};
-    double min_measured_foot_world_z_m{std::numeric_limits<double>::infinity()};
-    double max_commanded_tracking_error_m{0.0};
-    double max_contact_tracking_error_m{0.0};
-    std::vector<ModeSegment> mode_segments{};
-    std::vector<GaitTransitionSegment> gait_segments{};
-};
-
 struct CaseResult {
     std::string name{};
     std::string description{};
@@ -420,98 +217,6 @@ void writeTextFile(const std::filesystem::path& path, const std::string& text) {
     out << text;
 }
 
-std::string modeSegmentJson(const ModeSegment& segment) {
-    std::ostringstream out;
-    out << "{\"mode\":\"" << robotModeName(segment.mode) << "\","
-        << "\"start_step\":" << segment.start_step << ','
-        << "\"end_step\":" << segment.end_step << '}';
-    return out.str();
-}
-
-std::string metricsToJson(const LocomotionMetrics& metrics) {
-    std::ostringstream out;
-    out << '{'
-        << "\"sample_count\":" << metrics.sample_count << ','
-        << "\"walk_sample_count\":" << metrics.walk_sample_count << ','
-        << "\"stride_count\":" << metrics.stride_count << ','
-        << "\"mode_transition_count\":" << metrics.mode_transition_count << ','
-        << "\"fault_transition_count\":" << metrics.fault_transition_count << ','
-        << "\"saw_fault\":" << (metrics.saw_fault ? "true" : "false") << ','
-        << "\"first_fault\":\"" << faultName(metrics.first_fault) << "\","
-        << "\"first_fault_step\":" << metrics.first_fault_step << ','
-        << "\"final_mode\":\"" << robotModeName(metrics.final_mode) << "\","
-        << "\"final_fault\":\"" << faultName(metrics.final_fault) << "\","
-        << "\"duration_s\":" << formatDouble(metrics.duration_s) << ','
-        << "\"sample_period_s\":" << formatDouble(metrics.sample_period_s) << ','
-        << "\"path_length_m\":" << formatDouble(metrics.path_length_m) << ','
-        << "\"net_displacement_m\":" << formatDouble(metrics.net_displacement_m) << ','
-        << "\"lateral_deviation_m\":" << formatDouble(metrics.lateral_deviation_m) << ','
-        << "\"max_abs_roll_rad\":" << formatDouble(metrics.max_abs_roll_rad) << ','
-        << "\"max_abs_pitch_rad\":" << formatDouble(metrics.max_abs_pitch_rad) << ','
-        << "\"max_body_rate_radps\":" << formatDouble(metrics.max_body_rate_radps) << ','
-        << "\"mean_horizontal_speed_mps\":" << formatDouble(metrics.mean_horizontal_speed_mps) << ','
-        << "\"peak_horizontal_speed_mps\":" << formatDouble(metrics.peak_horizontal_speed_mps) << ','
-        << "\"mean_yaw_rate_radps\":" << formatDouble(metrics.mean_yaw_rate_radps) << ','
-        << "\"peak_yaw_rate_radps\":" << formatDouble(metrics.peak_yaw_rate_radps) << ','
-        << "\"yaw_delta_rad\":" << formatDouble(metrics.yaw_delta_rad) << ','
-        << "\"min_support_margin_m\":" << formatDouble(metrics.min_support_margin_m) << ','
-        << "\"min_model_trust\":" << formatDouble(metrics.min_model_trust) << ','
-        << "\"max_contact_mismatch_ratio\":" << formatDouble(metrics.max_contact_mismatch_ratio) << ','
-        << "\"min_command_scale\":" << formatDouble(metrics.min_command_scale) << ','
-        << "\"min_cadence_scale\":" << formatDouble(metrics.min_cadence_scale) << ','
-        << "\"max_governor_severity\":" << formatDouble(metrics.max_governor_severity) << ','
-        << "\"max_governed_speed_mps\":" << formatDouble(metrics.max_governed_speed_mps) << ','
-        << "\"max_governed_yaw_rate_radps\":" << formatDouble(metrics.max_governed_yaw_rate_radps) << ','
-        << "\"min_governed_speed_mps\":" << formatDouble(metrics.min_governed_speed_mps) << ','
-        << "\"min_governed_yaw_rate_radps\":" << formatDouble(metrics.min_governed_yaw_rate_radps) << ','
-        << "\"max_step_length_m\":" << formatDouble(metrics.max_step_length_m) << ','
-        << "\"min_step_length_m\":" << formatDouble(metrics.min_step_length_m) << ','
-        << "\"max_swing_height_m\":" << formatDouble(metrics.max_swing_height_m) << ','
-        << "\"min_swing_height_m\":" << formatDouble(metrics.min_swing_height_m) << ','
-        << "\"max_contact_anchor_drift_m\":" << formatDouble(metrics.max_contact_anchor_drift_m) << ','
-        << "\"max_contact_anchor_max_drift_m\":" << formatDouble(metrics.max_contact_anchor_max_drift_m) << ','
-        << "\"min_measured_foot_world_z_m\":" << formatDouble(metrics.min_measured_foot_world_z_m) << ','
-        << "\"max_commanded_tracking_error_m\":" << formatDouble(metrics.max_commanded_tracking_error_m) << ','
-        << "\"max_contact_tracking_error_m\":" << formatDouble(metrics.max_contact_tracking_error_m) << ','
-        << "\"mode_segments\":[";
-    for (std::size_t i = 0; i < metrics.mode_segments.size(); ++i) {
-        if (i > 0) {
-            out << ',';
-        }
-        out << modeSegmentJson(metrics.mode_segments[i]);
-    }
-    out << "],\"gait_segments\":[";
-    for (std::size_t i = 0; i < metrics.gait_segments.size(); ++i) {
-        if (i > 0) {
-            out << ',';
-        }
-        const auto& segment = metrics.gait_segments[i];
-        out << "{\"phase_label\":\"" << jsonEscape(segment.phase_label) << "\","
-            << "\"start_step\":" << segment.start_step << ','
-            << "\"end_step\":" << segment.end_step << ','
-            << "\"mean_step_length_m\":" << formatDouble(segment.mean_step_length_m) << ','
-            << "\"mean_duty_factor\":" << formatDouble(segment.mean_duty_factor) << '}';
-    }
-    out << "]}";
-    return out.str();
-}
-
-std::string caseResultSummaryJson(const CaseResult& result) {
-    std::ostringstream out;
-    out << '{'
-        << "\"name\":\"" << jsonEscape(result.name) << "\","
-        << "\"description\":\"" << jsonEscape(result.description) << "\","
-        << "\"passed\":" << (result.passed ? "true" : "false") << ','
-        << "\"failure_reason\":\"" << jsonEscape(result.failure_reason) << "\","
-        << "\"replay_path\":\"" << jsonEscape(result.replay_path.string()) << "\","
-        << "\"geometry_path\":\"" << jsonEscape(result.geometry_path.string()) << "\","
-        << "\"summary_path\":\"" << jsonEscape(result.summary_path.string()) << "\","
-        << "\"metrics_path\":\"" << jsonEscape(result.metrics_path.string()) << "\","
-        << "\"metrics\":" << metricsToJson(result.metrics)
-        << '}';
-    return out.str();
-}
-
 std::filesystem::path resolveExistingPath(const std::vector<std::filesystem::path>& candidates) {
     for (const auto& candidate : candidates) {
         std::error_code ec;
@@ -552,6 +257,9 @@ std::vector<MotionPhase> buildPhasesFromScenario(const std::filesystem::path& pa
         phase.motion = event.motion;
         phase.steps = static_cast<std::size_t>(std::max<uint64_t>(1, span_ms / def.tick_ms));
         phase.refresh_each_step = def.refresh_motion_intent;
+        if (event.has_safety_overrides && event.safety.has_legs_enabled) {
+            phase.safety_leg_enabled_mask = event.safety.legs_enabled;
+        }
         phases.push_back(std::move(phase));
     }
     return phases;
@@ -583,230 +291,112 @@ std::size_t samplesForDuration(const double duration_s, const double sample_peri
         1, static_cast<std::size_t>(std::llround(duration_s / sample_period_s)));
 }
 
-void appendSample(LocomotionMetrics& metrics,
-                  std::vector<MotionSample>& samples,
-                  const MotionSample& sample) {
-    samples.push_back(sample);
-    metrics.sample_count = samples.size();
-    metrics.final_mode = sample.status.active_mode;
-    metrics.final_fault = sample.status.active_fault;
-    metrics.walk_sample_count += sample.status.active_mode == RobotMode::WALK ? 1 : 0;
-    metrics.max_abs_roll_rad = std::max(metrics.max_abs_roll_rad, std::abs(sample.estimated.body_twist_state.twist_pos_rad.x));
-    metrics.max_abs_pitch_rad = std::max(metrics.max_abs_pitch_rad, std::abs(sample.estimated.body_twist_state.twist_pos_rad.y));
-    metrics.max_body_rate_radps = std::max(metrics.max_body_rate_radps, sample.body_rate_radps);
-    metrics.max_governor_severity = std::max(metrics.max_governor_severity, sample.governor.severity);
-    metrics.min_support_margin_m = std::min(metrics.min_support_margin_m, sample.support_margin_m);
-    metrics.min_model_trust = std::min(metrics.min_model_trust, sample.model_trust);
-    metrics.max_contact_mismatch_ratio = std::max(metrics.max_contact_mismatch_ratio, sample.contact_mismatch_ratio);
-    metrics.min_command_scale = std::min(metrics.min_command_scale, sample.governor.command_scale);
-    metrics.min_cadence_scale = std::min(metrics.min_cadence_scale, sample.governor.cadence_scale);
-    metrics.max_governed_speed_mps = std::max(metrics.max_governed_speed_mps, sample.governor.governed_planar_speed_mps);
-    metrics.max_governed_yaw_rate_radps = std::max(metrics.max_governed_yaw_rate_radps, sample.governor.governed_yaw_rate_radps);
-    metrics.min_governed_speed_mps = std::min(metrics.min_governed_speed_mps, sample.governor.governed_planar_speed_mps);
-    metrics.min_governed_yaw_rate_radps = std::min(metrics.min_governed_yaw_rate_radps, sample.governor.governed_yaw_rate_radps);
-    metrics.max_step_length_m = std::max(metrics.max_step_length_m, sample.step_length_m);
-    metrics.min_step_length_m = std::min(metrics.min_step_length_m, sample.step_length_m);
-    metrics.max_swing_height_m = std::max(metrics.max_swing_height_m, sample.swing_height_m);
-    metrics.min_swing_height_m = std::min(metrics.min_swing_height_m, sample.swing_height_m);
-    metrics.path_length_m += sample.horizontal_speed_mps * metrics.sample_period_s;
-    metrics.mean_horizontal_speed_mps += sample.horizontal_speed_mps;
-    metrics.mean_yaw_rate_radps += std::abs(sample.yaw_rate_radps);
-    metrics.peak_horizontal_speed_mps = std::max(metrics.peak_horizontal_speed_mps, sample.horizontal_speed_mps);
-    metrics.peak_yaw_rate_radps = std::max(metrics.peak_yaw_rate_radps, std::abs(sample.yaw_rate_radps));
-    metrics.yaw_delta_rad = wrapAngleDiff(samples.front().estimated.body_twist_state.twist_pos_rad.z,
-                                          sample.estimated.body_twist_state.twist_pos_rad.z);
-    if (sample.locomotion_debug.valid) {
-        metrics.min_measured_foot_world_z_m = std::min(
-            metrics.min_measured_foot_world_z_m, sample.locomotion_debug.min_measured_foot_world_z_m);
-        metrics.max_commanded_tracking_error_m = std::max(
-            metrics.max_commanded_tracking_error_m, sample.locomotion_debug.max_commanded_tracking_error_m);
-        for (int leg = 0; leg < kNumLegs; ++leg) {
-            const std::size_t leg_index = static_cast<std::size_t>(leg);
-            metrics.max_contact_anchor_drift_m = std::max(
-                metrics.max_contact_anchor_drift_m,
-                sample.locomotion_debug.contact_anchor_drift_m[leg_index]);
-            metrics.max_contact_anchor_max_drift_m = std::max(
-                metrics.max_contact_anchor_max_drift_m,
-                sample.locomotion_debug.contact_anchor_max_drift_m[leg_index]);
-            if (sample.locomotion_debug.contact_anchor_valid[leg_index]) {
-                metrics.max_contact_tracking_error_m = std::max(
-                    metrics.max_contact_tracking_error_m,
-                    sample.locomotion_debug.commanded_tracking_error_m[leg_index]);
-            }
-        }
+std::string locomotionRegressionLimitsAppliedJson(const std::string& case_name, const LocomotionMetrics& m) {
+    std::ostringstream o;
+    o << "{\"case_name\":\"" << jsonEscape(case_name) << '"';
+    if (case_name == "steady_forward_walk") {
+        o << ",\"walk_sample_count_min\":250"
+          << ",\"stride_count_min\":5"
+          << ",\"path_length_m_min\":0.12"
+          << ",\"net_displacement_m_min\":0.08"
+          << ",\"max_abs_roll_rad_max\":0.65"
+          << ",\"max_abs_pitch_rad_max\":0.65"
+          << ",\"mean_horizontal_speed_mps_min\":0.02"
+          << ",\"mean_horizontal_speed_mps_max\":0.22"
+          << ",\"expect_fault\":false";
+    } else if (case_name == "turn_in_place") {
+        o << ",\"yaw_delta_abs_min_rad\":0.25"
+          << ",\"net_displacement_m_max\":0.20"
+          << ",\"path_length_m_max\":2.5"
+          << ",\"stride_count_min\":4"
+          << ",\"expect_fault\":false";
+    } else if (case_name == "gait_transition_stability") {
+        o << ",\"mode_transition_count_min\":2"
+          << ",\"gait_segments_min\":4"
+          << ",\"step_length_delta_min_m\":0.001"
+          << ",\"swing_height_delta_min_m\":0.001"
+          << ",\"expect_fault\":false";
+    } else if (case_name == "aggressive_governor") {
+        o << ",\"min_command_scale_max\":0.95"
+          << ",\"min_cadence_scale_max\":0.97"
+          << ",\"max_governed_speed_mps_min\":0.01"
+          << ",\"stride_count_min\":2"
+          << ",\"expect_fault\":false";
+    } else if (case_name == "command_timeout_fallback") {
+        o << ",\"expect_fault\":true"
+          << ",\"expected_fault\":\"COMMAND_TIMEOUT\""
+          << ",\"final_mode\":\"SAFE_IDLE\""
+          << ",\"first_fault_step_min\":20";
+    } else if (case_name == "low_support_walk") {
+        o << ",\"walk_sample_count_min\":250"
+          << ",\"stride_count_min\":4"
+          << ",\"min_support_margin_m_max\":0.06"
+          << ",\"governor_attenuation_required\":true"
+          << ",\"expect_fault\":false";
+    } else if (case_name == "long_walk_observability") {
+        constexpr const char* kSuite = "locomotion_regression";
+        constexpr const char* kCase = "long_walk_observability";
+        const std::size_t walk_min =
+            samplesForDuration(test_limits::getDouble(kSuite, kCase, "", "min_walk_duration_before_fault_s", 10.0),
+                               m.sample_period_s);
+        const std::size_t trans_win = samplesForDuration(1.2, m.sample_period_s);
+        const std::size_t base_tail = samplesForDuration(0.8, m.sample_period_s);
+        const std::size_t stride_min = test_limits::getSizeT(kSuite, kCase, "", "min_stride_count", 6);
+        const double path_min = test_limits::getDouble(kSuite, kCase, "", "min_path_length_m", 0.75);
+        const double fault_min_s = test_limits::getDouble(kSuite, kCase, "", "min_walk_fault_time_s", 10.0);
+        const double fault_max_s = test_limits::getDouble(kSuite, kCase, "", "max_walk_fault_time_s", 65.0);
+        const double trans_improve =
+            test_limits::getDouble(kSuite, kCase, "", "transition_improvement_min_m", 0.001);
+        const double trans_max_h =
+            test_limits::getDouble(kSuite, kCase, "", "transition_max_body_height_m", 0.141);
+        const double max_anchor_drift =
+            test_limits::getDouble(kSuite, kCase, "", "max_contact_anchor_max_drift_m", 0.08);
+        const double min_foot_z =
+            test_limits::getDouble(kSuite, kCase, "", "min_measured_foot_world_z_m", -0.03);
+        const double max_track_err =
+            test_limits::getDouble(kSuite, kCase, "", "max_contact_tracking_error_m", 0.10);
+        o << ",\"expect_fault\":true"
+          << ",\"expected_fault_any\":[\"TIP_OVER\",\"BODY_COLLAPSE\"]"
+          << ",\"walk_sample_count_min\":" << walk_min
+          << ",\"stride_count_min\":" << stride_min
+          << ",\"path_length_m_min\":" << formatDouble(path_min)
+          << ",\"first_fault_time_s_min\":" << formatDouble(fault_min_s)
+          << ",\"first_fault_time_s_max\":" << formatDouble(fault_max_s)
+          << ",\"transition_improvement_body_height_min_m\":" << formatDouble(trans_improve)
+          << ",\"transition_max_body_height_m\":" << formatDouble(trans_max_h)
+          << ",\"max_contact_anchor_max_drift_m\":" << formatDouble(max_anchor_drift)
+          << ",\"min_measured_foot_world_z_m\":" << formatDouble(min_foot_z)
+          << ",\"max_contact_tracking_error_m\":" << formatDouble(max_track_err)
+          << ",\"transition_window_samples\":" << trans_win
+          << ",\"baseline_tail_samples\":" << base_tail;
+    } else if (case_name == "tilt_safety_trip") {
+        o << ",\"expect_fault\":true"
+          << ",\"expected_fault\":\"TIP_OVER\""
+          << ",\"first_fault_step_min\":40"
+          << ",\"path_length_m_min\":0.1"
+          << ",\"configured_max_tilt_rad\":0.25"
+          << ",\"configured_rapid_body_rate_radps\":0.45";
     }
-
-    if (sample.status.active_fault != FaultCode::NONE && !metrics.saw_fault) {
-        metrics.saw_fault = true;
-        metrics.first_fault = sample.status.active_fault;
-        metrics.first_fault_step = sample.step_index;
-    }
+    o << '}';
+    return o.str();
 }
 
-void finalizeMetrics(LocomotionMetrics& metrics, const std::vector<MotionSample>& samples) {
-    if (samples.empty()) {
-        metrics.min_support_margin_m = 0.0;
-        metrics.min_model_trust = 0.0;
-        metrics.min_command_scale = 0.0;
-        metrics.min_cadence_scale = 0.0;
-        metrics.min_governed_speed_mps = 0.0;
-        metrics.min_governed_yaw_rate_radps = 0.0;
-        metrics.min_step_length_m = 0.0;
-        metrics.min_swing_height_m = 0.0;
-        metrics.min_measured_foot_world_z_m = 0.0;
-        return;
-    }
-
-    metrics.duration_s = static_cast<double>(samples.size()) * metrics.sample_period_s;
-    metrics.mean_horizontal_speed_mps /= static_cast<double>(samples.size());
-    metrics.mean_yaw_rate_radps /= static_cast<double>(samples.size());
-    metrics.net_displacement_m = std::hypot(
-        samples.back().position.x - samples.front().position.x,
-        samples.back().position.y - samples.front().position.y);
-    metrics.yaw_delta_rad = wrapAngleDiff(samples.front().estimated.body_twist_state.twist_pos_rad.z,
-                                          samples.back().estimated.body_twist_state.twist_pos_rad.z);
-
-    const Vec3 travel{
-        samples.back().position.x - samples.front().position.x,
-        samples.back().position.y - samples.front().position.y,
-        0.0};
-    const double denom = std::hypot(travel.x, travel.y);
-    if (denom > 1.0e-9) {
-        for (const MotionSample& sample : samples) {
-            const Vec3 offset{
-                sample.position.x - samples.front().position.x,
-                sample.position.y - samples.front().position.y,
-                0.0};
-            const double deviation = std::abs(travel.x * offset.y - travel.y * offset.x) / denom;
-            metrics.lateral_deviation_m = std::max(metrics.lateral_deviation_m, deviation);
-        }
-    }
-
-    metrics.mode_segments.clear();
-    if (!samples.empty()) {
-        ModeSegment current{samples.front().status.active_mode, samples.front().step_index, samples.front().step_index};
-        for (std::size_t i = 1; i < samples.size(); ++i) {
-            if (samples[i].status.active_mode != current.mode) {
-                current.end_step = samples[i - 1].step_index;
-                metrics.mode_segments.push_back(current);
-                ++metrics.mode_transition_count;
-                if (samples[i].status.active_fault != samples[i - 1].status.active_fault) {
-                    ++metrics.fault_transition_count;
-                }
-                current = ModeSegment{samples[i].status.active_mode, samples[i].step_index, samples[i].step_index};
-            } else if (samples[i].status.active_fault != samples[i - 1].status.active_fault) {
-                ++metrics.fault_transition_count;
-            }
-        }
-        current.end_step = samples.back().step_index;
-        metrics.mode_segments.push_back(current);
-    }
-
-    metrics.gait_segments.clear();
-    if (!samples.empty()) {
-        GaitTransitionSegment current{
-            samples.front().phase_label,
-            samples.front().step_index,
-            samples.front().step_index,
-            samples.front().step_length_m,
-            samples.front().duty_factor,
-        };
-        std::size_t gait_segment_samples = 1;
-        for (std::size_t i = 1; i < samples.size(); ++i) {
-            const MotionSample& prev = samples[i - 1];
-            const MotionSample& sample = samples[i];
-            if (sample.phase_label != prev.phase_label) {
-                current.end_step = samples[i - 1].step_index;
-                current.mean_step_length_m /= static_cast<double>(gait_segment_samples);
-                current.mean_duty_factor /= static_cast<double>(gait_segment_samples);
-                metrics.gait_segments.push_back(current);
-                current = GaitTransitionSegment{sample.phase_label, sample.step_index, sample.step_index, sample.step_length_m, sample.duty_factor};
-                gait_segment_samples = 1;
-            } else {
-                current.mean_step_length_m += sample.step_length_m;
-                current.mean_duty_factor += sample.duty_factor;
-                ++gait_segment_samples;
-                current.end_step = sample.step_index;
-            }
-        }
-        current.mean_step_length_m /= static_cast<double>(gait_segment_samples);
-        current.mean_duty_factor /= static_cast<double>(gait_segment_samples);
-        metrics.gait_segments.push_back(current);
-    }
-
-    if (metrics.min_support_margin_m == std::numeric_limits<double>::infinity()) {
-        metrics.min_support_margin_m = 0.0;
-    }
-    if (metrics.min_measured_foot_world_z_m == std::numeric_limits<double>::infinity()) {
-        metrics.min_measured_foot_world_z_m = 0.0;
-    }
-}
-
-bool runMotionSequence(RobotRuntime& runtime,
-                       const std::vector<MotionPhase>& phases,
-                       std::vector<MotionSample>& samples,
-                       LocomotionMetrics& metrics) {
-    std::size_t step_index = 0;
-    double stride_cycles_accum{0.0};
-    for (std::size_t phase_index = 0; phase_index < phases.size(); ++phase_index) {
-        const MotionPhase& phase = phases[phase_index];
-        if (phase.steps == 0) {
-            continue;
-        }
-
-        for (std::size_t step_in_phase = 0; step_in_phase < phase.steps; ++step_in_phase) {
-            if (phase.refresh_each_step || step_in_phase == 0) {
-                runtime.setMotionIntent(makeMotionIntent(phase.motion));
-            }
-            runtime.busStep();
-            runtime.estimatorStep();
-            runtime.safetyStep();
-            runtime.controlStep();
-
-            const RobotState estimated = runtime.estimatedSnapshot();
-            const GaitState gait = runtime.gaitSnapshot();
-            const ControlStatus status = runtime.getStatus();
-            const SafetyState safety = runtime.getSafetyState();
-            const CommandGovernorState governor = runtime.commandGovernorSnapshot();
-            MotionSample sample{};
-            sample.step_index = step_index;
-            sample.phase_index = phase_index;
-            sample.phase_label = phase.label;
-            sample.requested_motion = phase.motion;
-            sample.status = status;
-            sample.estimated = estimated;
-            sample.gait = gait;
-            sample.governor = governor;
-            sample.safety = safety;
-            sample.position = positionFromState(estimated);
-            sample.horizontal_speed_mps = horizontalSpeedFromState(estimated);
-            sample.body_tilt_rad = bodyTiltFromState(estimated);
-            sample.body_rate_radps = bodyRateFromState(estimated);
-            sample.yaw_rate_radps = estimated.body_twist_state.twist_vel_radps.z;
-            sample.support_margin_m = gait.static_stability_margin_m;
-            sample.stride_phase_rate_hz = gait.stride_phase_rate_hz.value;
-            sample.step_length_m = gait.step_length_m;
-            sample.swing_height_m = gait.swing_height_m;
-            sample.duty_factor = gait.duty_factor;
-            sample.model_trust = estimated.has_fusion_diagnostics ? estimated.fusion.model_trust : 1.0;
-            sample.contact_mismatch_ratio =
-                estimated.has_fusion_diagnostics ? estimated.fusion.residuals.contact_mismatch_ratio : 0.0;
-            sample.locomotion_debug = runtime.locomotionDebugSnapshot();
-            sample.sample_period_s = metrics.sample_period_s;
-
-            if (sample.status.active_mode == RobotMode::WALK && gait.stride_phase_rate_hz.value > 0.05) {
-                stride_cycles_accum += gait.stride_phase_rate_hz.value * metrics.sample_period_s;
-            }
-            appendSample(metrics, samples, sample);
-            ++step_index;
-        }
-    }
-
-    finalizeMetrics(metrics, samples);
-    metrics.stride_count = std::max<std::size_t>(
-        metrics.stride_count,
-        static_cast<std::size_t>(std::floor(stride_cycles_accum)));
-    return true;
+std::string caseResultSummaryJson(const CaseResult& result) {
+    std::ostringstream out;
+    out << '{'
+        << "\"suite\":\"locomotion_regression\","
+        << "\"name\":\"" << jsonEscape(result.name) << "\","
+        << "\"description\":\"" << jsonEscape(result.description) << "\","
+        << "\"passed\":" << (result.passed ? "true" : "false") << ','
+        << "\"failure_reason\":\"" << jsonEscape(result.failure_reason) << "\","
+        << "\"replay_path\":\"" << jsonEscape(result.replay_path.string()) << "\","
+        << "\"geometry_path\":\"" << jsonEscape(result.geometry_path.string()) << "\","
+        << "\"summary_path\":\"" << jsonEscape(result.summary_path.string()) << "\","
+        << "\"metrics_path\":\"" << jsonEscape(result.metrics_path.string()) << "\","
+        << "\"limits_applied\":" << locomotionRegressionLimitsAppliedJson(result.name, result.metrics) << ','
+        << "\"metrics\":" << metricsToJson(result.metrics)
+        << '}';
+    return out.str();
 }
 
 std::string motionTimelineString(const std::vector<MotionPhase>& phases) {
@@ -991,7 +581,25 @@ bool caseGaitTransitionStability(const CaseResult& result, std::string& reason) 
 }
 
 bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
+    constexpr const char* kSuite = "locomotion_regression";
+    constexpr const char* kCase = "long_walk_observability";
     const auto& m = result.metrics;
+    const double min_walk_duration_s =
+        test_limits::getDouble(kSuite, kCase, "", "min_walk_duration_before_fault_s", 10.0);
+    const std::size_t min_stride = test_limits::getSizeT(kSuite, kCase, "", "min_stride_count", 6);
+    const double min_path_m = test_limits::getDouble(kSuite, kCase, "", "min_path_length_m", 0.75);
+    const double min_fault_time_s = test_limits::getDouble(kSuite, kCase, "", "min_walk_fault_time_s", 10.0);
+    const double max_fault_time_s = test_limits::getDouble(kSuite, kCase, "", "max_walk_fault_time_s", 65.0);
+    const double kTransitionImprovementMinM =
+        test_limits::getDouble(kSuite, kCase, "", "transition_improvement_min_m", 0.001);
+    const double kTransitionMaxBodyHeightM =
+        test_limits::getDouble(kSuite, kCase, "", "transition_max_body_height_m", 0.141);
+    const double kMaxContactAnchorMaxDriftM =
+        test_limits::getDouble(kSuite, kCase, "", "max_contact_anchor_max_drift_m", 0.08);
+    const double kMinMeasuredFootWorldZM =
+        test_limits::getDouble(kSuite, kCase, "", "min_measured_foot_world_z_m", -0.03);
+    const double kMaxContactTrackingErrorM =
+        test_limits::getDouble(kSuite, kCase, "", "max_contact_tracking_error_m", 0.10);
     if (!m.saw_fault) {
         reason = "long walk observability should eventually reach the safety envelope";
         return false;
@@ -1001,20 +609,20 @@ bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
             "long walk observability should trip TIP_OVER or BODY_COLLAPSE at the end of the stress window";
         return false;
     }
-    if (!(m.walk_sample_count >= samplesForDuration(10.0, m.sample_period_s))) {
+    if (!(m.walk_sample_count >= samplesForDuration(min_walk_duration_s, m.sample_period_s))) {
         reason = "long walk should sustain a large walking window before the fault";
         return false;
     }
-    if (!(m.stride_count >= 6)) {
+    if (!(m.stride_count >= min_stride)) {
         reason = "long walk should accumulate many strides";
         return false;
     }
-    if (!(m.path_length_m >= 0.75)) {
+    if (!(m.path_length_m >= min_path_m)) {
         reason = "long walk should accumulate path length";
         return false;
     }
     const double first_fault_time_s = static_cast<double>(m.first_fault_step) * m.sample_period_s;
-    if (!(first_fault_time_s > 10.0 && first_fault_time_s < 65.0)) {
+    if (!(first_fault_time_s > min_fault_time_s && first_fault_time_s < max_fault_time_s)) {
         reason = "long walk should fault only after a sustained observation window";
         return false;
     }
@@ -1023,11 +631,6 @@ bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
     constexpr const char* kFastTripodPhaseLabel = "long_walk_observability_phase_3";
     const std::size_t kTransitionWindowSamples = samplesForDuration(1.2, m.sample_period_s);
     const std::size_t kBaselineTailSamples = samplesForDuration(0.8, m.sample_period_s);
-    constexpr double kTransitionImprovementMinM = 0.001;
-    constexpr double kTransitionMaxBodyHeightM = 0.141;
-    constexpr double kMaxContactAnchorMaxDriftM = 0.08;
-    constexpr double kMinMeasuredFootWorldZM = -0.03;
-    constexpr double kMaxContactTrackingErrorM = 0.10;
     std::vector<double> slow_tripod_body_heights_m{};
     std::size_t transition_samples = 0;
     double transition_sum_body_height_m = 0.0;
@@ -1355,8 +958,21 @@ int main(int argc, char** argv) {
     std::optional<std::filesystem::path> requested_artifact_dir{};
     const char* sim_exe = nullptr;
     CaseProfile requested_profile = CaseProfile::Canonical;
+    bool emit_metrics_json = false;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
+        if (arg == "--emit-metrics-json") {
+            emit_metrics_json = true;
+            continue;
+        }
+        if (arg == "--limits-manifest") {
+            if (i + 1 >= argc) {
+                std::cerr << "Missing value for --limits-manifest\n";
+                return EXIT_FAILURE;
+            }
+            ++i;
+            continue;
+        }
         if (arg == "--case") {
             if (i + 1 >= argc) {
                 std::cerr << "Missing value for --case\n";
@@ -1410,6 +1026,13 @@ int main(int argc, char** argv) {
             return EXIT_FAILURE;
         }
     }
+
+    std::string manifest_err;
+    if (!test_limits::init(argc, argv, manifest_err)) {
+        std::cerr << manifest_err << '\n';
+        return 2;
+    }
+
     if (sim_exe == nullptr) {
         sim_exe = std::getenv("HEXAPOD_PHYSICS_SIM_EXE");
     }
@@ -1469,8 +1092,19 @@ int main(int argc, char** argv) {
                       << " min_cadence=" << formatDouble(result.metrics.min_cadence_scale)
                       << " fault=" << faultName(result.metrics.final_fault)
                       << '\n';
+            if (emit_metrics_json) {
+                std::cout << "{\"suite\":\"locomotion_regression\",\"name\":\"" << jsonEscape(spec.name) << "\",\"passed\":"
+                          << (result.passed ? "true" : "false") << ",\"limits_applied\":"
+                          << locomotionRegressionLimitsAppliedJson(spec.name, result.metrics) << ",\"metrics\":"
+                          << metricsToJson(result.metrics) << "}\n";
+            }
             if (!result.passed) {
                 std::cerr << spec.name << ": " << result.failure_reason << '\n';
+                std::cerr << spec.name << " metrics: first_fault=" << faultName(result.metrics.first_fault)
+                          << " first_fault_step=" << result.metrics.first_fault_step
+                          << " max_body_rate_radps=" << formatDouble(result.metrics.max_body_rate_radps)
+                          << " max_abs_roll_rad=" << formatDouble(result.metrics.max_abs_roll_rad)
+                          << " max_abs_pitch_rad=" << formatDouble(result.metrics.max_abs_pitch_rad) << '\n';
             }
             results.push_back(std::move(result));
         } catch (const std::exception& ex) {

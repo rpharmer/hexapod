@@ -22,12 +22,13 @@ constexpr double kReachMarginM = 0.005;
 constexpr double kFootReachInsetM = 0.004;
 constexpr double kBodyHeightHoldGain = 1.0;
 constexpr double kBodyHeightHoldMaxAdjustM = 0.120;
-constexpr double kBodyHeightHoldIntegralGain = 0.15;  // fraction of measured sag accumulated per step
-constexpr double kBodyHeightHoldIntegralCapM = 0.040; // max 40 mm: covers realistic compliance without runaway
+constexpr double kBodyHeightHoldIntegralGain = 0.02;  // leaky extra-support term for persistent compliance sag
+constexpr double kBodyHeightHoldIntegralCapM = 0.020; // cap extra support so the chassis does not chase large transients
 constexpr double kBodyHeightHoldIntegralDecay = 0.99;     // per-step decay when body is near commanded
 constexpr double kBodyHeightHoldIntegralDecayFast = 0.93; // fast decay when body is above commanded (~250 ms to clear)
-constexpr double kBodyHeightHoldIntegralFastUnwindGapM = 0.004;
-constexpr double kBodyHeightHoldIntegralFastUnwindRatio = 0.60;
+constexpr double kBodyHeightHoldIntegralFastUnwindGapM = 0.002;
+constexpr double kBodyHeightHoldMinEffectiveMarginM = 0.008;
+constexpr double kBodyHeightHoldMaxEffectiveMarginM = 0.012;
 constexpr double kTerrainBlendMinScale = 0.35;
 constexpr double kTerrainBlendSagScale = 0.65;
 
@@ -125,17 +126,20 @@ double updateBodyHeightHoldIntegralM(const double current_integral_m,
 
     const double height_error_m = commanded_body_height_m - measured_body_height_m; // positive = sagging
     if (height_error_m > 1e-4) {
+        // Stale-integral fast-unwind: fires only when the body is already very close to the
+        // commanded height (error < 2 mm) but the integral has accumulated far
+        // more than the current error requires.  This drains leftover correction that built
+        // up during a previous gait phase without fighting the integrator when the body is
+        // still actively sagging.
         const bool stale_transition_hold =
             (integral_m - height_error_m) > kBodyHeightHoldIntegralFastUnwindGapM &&
-            height_error_m < (integral_m * kBodyHeightHoldIntegralFastUnwindRatio);
+            height_error_m < kBodyHeightHoldIntegralFastUnwindGapM;
         if (stale_transition_hold) {
-            return std::max(integral_m * kBodyHeightHoldIntegralDecayFast, height_error_m);
-        }
-        if (integral_m > height_error_m) {
-            return integral_m * kBodyHeightHoldIntegralDecay;
+            return integral_m * kBodyHeightHoldIntegralDecayFast;
         }
         return std::clamp(
-            integral_m + kBodyHeightHoldIntegralGain * height_error_m,
+            integral_m * kBodyHeightHoldIntegralDecay +
+                kBodyHeightHoldIntegralGain * height_error_m,
             0.0,
             kBodyHeightHoldIntegralCapM);
     }
@@ -236,10 +240,11 @@ LegTargets BodyController::update(const RobotState& est,
             tilt_squat_m = std::clamp(0.12 * squat_over, 0.0, 0.06);
         }
     }
-    const bool height_hold_active = body_height_hold_m > 1e-6;
-    const double terrain_blend_scale =
-        height_hold_active ? 0.0 : terrainBlendScaleForHeightHold(body_height_hold_m);
-    const double effective_body_height_m = commanded_body_height_m + body_height_hold_m - tilt_squat_m;
+    const double terrain_blend_scale = terrainBlendScaleForHeightHold(body_height_hold_m);
+    const double effective_body_height_m = std::clamp(
+        commanded_body_height_m + body_height_hold_m - tilt_squat_m,
+        std::max(0.04, commanded_body_height_m - kBodyHeightHoldMinEffectiveMarginM),
+        commanded_body_height_m + kBodyHeightHoldMaxEffectiveMarginM);
     std::array<Vec3, kNumLegs> nominal = nominalStance(effective_body_height_m);
 
     if (walking && terrain_snapshot != nullptr && terrain_blend_scale > 0.0) {

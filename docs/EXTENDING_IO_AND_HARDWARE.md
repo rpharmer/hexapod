@@ -3,7 +3,7 @@
 This guide explains how to wire in:
 
 1. a new **interactive input device** (controller/teleop source), and
-2. a new **hardware bridge backend** (anything other than current `serial` and `sim`).
+2. a new **hardware bridge backend** (anything other than current `serial`, `sim`, and `physics-sim`).
 
 It is focused on `hexapod-server` internals.
 
@@ -17,8 +17,8 @@ At startup, `hexapod-server` does the following:
 2. Create a hardware bridge (`IHardwareBridge`) in `makeHardwareBridge(...)`.
 3. Build `RobotControl` with that bridge.
 4. Run either:
-   - **scenario mode** (no controller), or
-   - **interactive mode** (optional `IControlDevice` implementation).
+  - **scenario mode** (no controller), or
+  - **interactive mode** (optional `IControlDevice` implementation).
 
 Relevant code:
 
@@ -96,6 +96,7 @@ Current backends:
 
 - `SimpleHardwareBridge` (`serial` runtime)
 - `SimHardwareBridge` (`sim` runtime)
+- `PhysicsSimBridge` (`physics-sim` runtime)
 
 ## 1) Implement `IHardwareBridge`
 
@@ -119,13 +120,14 @@ Backend choice is currently done in `makeHardwareBridge(...)` with `Runtime.Mode
 
 - `serial`
 - `sim`
+- `physics-sim`
 
 To add another mode (example: `canfd`, `udp`, `spi`):
 
 1. Extend accepted values in `runtime_section_parser.cpp`.
 2. Add any new parsed config fields to `ParsedToml` (`include/app/hexapod-server.hpp`) and parser modules.
 3. Branch in `makeHardwareBridge(...)` to instantiate your bridge.
-4. Preserve existing behavior for `serial` and `sim`.
+4. Preserve existing behavior for `serial`, `sim`, and `physics-sim`.
 
 ## 3) Add config schema/docs
 
@@ -157,13 +159,13 @@ Useful references:
 
 When adding either input or hardware extensions, verify all of these:
 
-- [ ] Interface implementation compiles (`IControlDevice` or `IHardwareBridge`)
-- [ ] Construction path is reachable from app startup/interactive runner
-- [ ] CLI/config parser supports selecting the new implementation
-- [ ] Logging clearly states which driver/backend is active
-- [ ] Failure path degrades safely (fallback or stop with explicit error)
-- [ ] Unit/integration tests added for normal + fault paths
-- [ ] README/docs updated for operators
+- Interface implementation compiles (`IControlDevice` or `IHardwareBridge`)
+- Construction path is reachable from app startup/interactive runner
+- CLI/config parser supports selecting the new implementation
+- Logging clearly states which driver/backend is active
+- Failure path degrades safely (fallback or stop with explicit error)
+- Unit/integration tests added for normal + fault paths
+- README/docs updated for operators
 
 ---
 

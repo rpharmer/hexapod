@@ -15,9 +15,9 @@ That coupling was noisy and expensive:
 
 - contact solving had to consider a lot of tiny terrain shapes
 - stepping the world in a single large update made the sim more sensitive to
-  frame-time spikes
+frame-time spikes
 - the terrain grid is useful for sensing and visualization even when we do not
-  want every cell to participate in collision response
+want every cell to participate in collision response
 
 The current change keeps the terrain grid available to the simulator, but
 disables collision on the terrain bodies after the patch is created. In the same
@@ -35,12 +35,12 @@ Relevant code paths:
 Key behavior changes:
 
 1. Terrain bodies are still created, but their collision masks are set to zero
-   after `TerrainPatch::initialize(...)`.
+  after `TerrainPatch::initialize(...)`.
 2. The old `RetargetRobotToTerrain(...)` helper was removed from serve mode.
 3. Serve mode now slices large physics steps into smaller substeps before
-   calling `world.Step(...)`.
+  calling `world.Step(...)`.
 4. The server-side safety check now treats missing power-state data as
-   non-fatal for the motor-fault rule, instead of assuming the values are valid
+  non-fatal for the motor-fault rule, instead of assuming the values are valid
    when they are not present.
 
 ## Why this is the preferred behavior
@@ -49,7 +49,7 @@ This keeps the simulator focused on two separate responsibilities:
 
 - terrain bodies describe the world for sensing, preview, and map generation
 - the physics solver handles robot motion and contact against the intended
-  collision surfaces without being overloaded by the full terrain grid
+collision surfaces without being overloaded by the full terrain grid
 
 That separation is easier to reason about and usually gives more stable serve
 mode behavior.
@@ -60,11 +60,11 @@ If we ever need to restore the previous terrain-contact behavior, the minimal
 rollback is:
 
 1. Reintroduce the old `RetargetRobotToTerrain(...)` logic in
-   `hexapod-physics-sim/src/demo/serve_mode.cpp`.
+  `hexapod-physics-sim/src/demo/serve_mode.cpp`.
 2. Remove the `collisionMask = 0` loop that currently disables terrain-body
-   collisions.
+  collisions.
 3. If sim timing issues reappear, also revert the substep logic and step the
-   world once per incoming frame as before.
+  world once per incoming frame as before.
 
 If the rollback is only meant to debug contact behavior, it is safest to do it
 temporarily and compare against the current behavior using the same scene and
@@ -78,4 +78,3 @@ After making any change here, confirm:
 - terrain remains visible in preview and usable for sensing
 - no unexpected motor-faults are triggered when power-state data is absent
 - the server and simulator still pass the usual smoke and regression tests
-

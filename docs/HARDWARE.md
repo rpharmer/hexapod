@@ -1,23 +1,14 @@
 # Hexapod Hardware Reference
 
-<img src="../illustrations/yellow2.png" height="300" />
-
 This document captures the mechanical and electrical reference data for the physical hexapod build.
 
 ## Mechanical build
 
 The chassis is based on the Chipo design from MakeYourPet:
 
-- GitHub build reference: <https://github.com/MakeYourPet/hexapod/tree/main>
-- Printables model files: <https://www.printables.com/model/479169-make-your-pet-chipo/files>
-- Servo limiter files: <https://www.printables.com/model/1021758-servo-limiter/files>
-
-<p float="left">
-  <img src="../illustrations/front-view.png" height="200" />
-  <img src="../illustrations/back-view.png" height="200" />
-  <img src="../illustrations/leg-components.png" height="200" />
-  <img src="../illustrations/tibia-components.png" height="200" />
-</p>
+- GitHub build reference: [https://github.com/MakeYourPet/hexapod/tree/main](https://github.com/MakeYourPet/hexapod/tree/main)
+- Printables model files: [https://www.printables.com/model/479169-make-your-pet-chipo/files](https://www.printables.com/model/479169-make-your-pet-chipo/files)
+- Servo limiter files: [https://www.printables.com/model/1021758-servo-limiter/files](https://www.printables.com/model/1021758-servo-limiter/files)
 
 ## Electrical components
 
@@ -55,13 +46,9 @@ Published values (model/vendor dependent):
 
 Reference wiring diagram:
 
-<img src="https://github.com/MakeYourPet/hexapod/blob/7d8fc8034d715d1c9373f48281ecfa500c994d8b/wiring-diagram-servo2040.png" height="400">
-
 Integration reminder: place UBEC inline between battery output and relay/servo power path.
 
 ## Controller board (Servo 2040)
-
-<img src="https://www.kiwi-electronics.com/image/cache/catalog/product/83habfak/servo-2040-2-1600x1066h.jpg" height="300">
 
 Servo 2040 capabilities used by this project:
 
@@ -74,13 +61,13 @@ Servo 2040 capabilities used by this project:
 
 Useful links:
 
-- Schematic: <https://cdn.shopify.com/s/files/1/0174/1800/files/servo2040_schematic.pdf>
-- RP2040 getting started guide: <https://files.waveshare.com/upload/3/30/Getting_started_with_pico.pdf>
-- Raspberry Pi 5 OpenOCD config discussion: <https://forums.raspberrypi.com/viewtopic.php?t=362826>
-- Pico boilerplate: <https://github.com/pimoroni/pico-boilerplate>
-- Pimoroni Pico SDK setup: <https://github.com/pimoroni/pimoroni-pico/blob/main/setting-up-the-pico-sdk.md>
-- Servo 2040 examples: <https://github.com/pimoroni/pimoroni-pico/tree/main/examples/servo2040>
-- Raspberry Pi Pico examples: <https://github.com/raspberrypi/pico-examples>
+- Schematic: [https://cdn.shopify.com/s/files/1/0174/1800/files/servo2040_schematic.pdf](https://cdn.shopify.com/s/files/1/0174/1800/files/servo2040_schematic.pdf)
+- RP2040 getting started guide: [https://files.waveshare.com/upload/3/30/Getting_started_with_pico.pdf](https://files.waveshare.com/upload/3/30/Getting_started_with_pico.pdf)
+- Raspberry Pi 5 OpenOCD config discussion: [https://forums.raspberrypi.com/viewtopic.php?t=362826](https://forums.raspberrypi.com/viewtopic.php?t=362826)
+- Pico boilerplate: [https://github.com/pimoroni/pico-boilerplate](https://github.com/pimoroni/pico-boilerplate)
+- Pimoroni Pico SDK setup: [https://github.com/pimoroni/pimoroni-pico/blob/main/setting-up-the-pico-sdk.md](https://github.com/pimoroni/pimoroni-pico/blob/main/setting-up-the-pico-sdk.md)
+- Servo 2040 examples: [https://github.com/pimoroni/pimoroni-pico/tree/main/examples/servo2040](https://github.com/pimoroni/pimoroni-pico/tree/main/examples/servo2040)
+- Raspberry Pi Pico examples: [https://github.com/raspberrypi/pico-examples](https://github.com/raspberrypi/pico-examples)
 
 ## Geometry constants
 
@@ -106,8 +93,3 @@ Servo attachment angle offsets (degrees):
 - `COXA_ATTACH_ANGLE = -8`
 - `FEMUR_ATTACH_ANGLE = 35`
 - `TIBIA_ATTACH_ANGLE = 83`
-
-<p float="left">
-  <img src="../illustrations/1000012480.png" height="300">
-  <img src="../illustrations/1000012586.png" height="300">
-</p>

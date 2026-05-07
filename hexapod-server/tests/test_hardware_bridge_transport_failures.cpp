@@ -300,6 +300,60 @@ bool test_capability_negotiation_failure_classification() {
                   "re-establish handshake failure should classify as capability/protocol domain");
 }
 
+bool test_truncated_state_ack_rejected() {
+    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
+    FakePacketEndpoint* endpoint_view = nullptr;
+    SimpleHardwareBridge* bridge = nullptr;
+
+    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
+                                     [](const DecodedPacket& request) {
+                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
+                                             return ok_hello_ack(request);
+                                         }
+                                         if (request.cmd == GET_FULL_HARDWARE_STATE) {
+                                             return std::vector<DecodedPacket>{{request.seq, ACK, {0x01}}};
+                                         }
+                                         return std::vector<DecodedPacket>{};
+                                     });
+    if (!expect(init_ok, "init should succeed before truncated state ack test")) {
+        return false;
+    }
+
+    RobotState out{};
+    if (!expect(!bridge->read(out), "read should fail when state ACK payload is too short")) {
+        return false;
+    }
+    return expect(bridge->last_error() == BridgeError::ProtocolFailure,
+                  "truncated state ACK should map to BridgeError::ProtocolFailure");
+}
+
+bool test_empty_state_ack_rejected() {
+    std::unique_ptr<SimpleHardwareBridge> bridge_owner;
+    FakePacketEndpoint* endpoint_view = nullptr;
+    SimpleHardwareBridge* bridge = nullptr;
+
+    const bool init_ok = init_bridge(endpoint_view, bridge, bridge_owner,
+                                     [](const DecodedPacket& request) {
+                                         if (request.cmd == HELLO || request.cmd == HEARTBEAT) {
+                                             return ok_hello_ack(request);
+                                         }
+                                         if (request.cmd == GET_FULL_HARDWARE_STATE) {
+                                             return std::vector<DecodedPacket>{{request.seq, ACK, {}}};
+                                         }
+                                         return std::vector<DecodedPacket>{};
+                                     });
+    if (!expect(init_ok, "init should succeed before empty state ack test")) {
+        return false;
+    }
+
+    RobotState out{};
+    if (!expect(!bridge->read(out), "read should fail when state ACK payload is empty")) {
+        return false;
+    }
+    return expect(bridge->last_error() == BridgeError::ProtocolFailure,
+                  "empty state ACK should map to BridgeError::ProtocolFailure");
+}
+
 }  // namespace
 
 bool run_failure_and_corruption_tests() {
@@ -327,7 +381,13 @@ bool run_failure_and_corruption_tests() {
     if (!test_unsupported_command_maps_to_unsupported_error()) {
         return false;
     }
-    return test_capability_negotiation_failure_classification();
+    if (!test_capability_negotiation_failure_classification()) {
+        return false;
+    }
+    if (!test_truncated_state_ack_rejected()) {
+        return false;
+    }
+    return test_empty_state_ack_rejected();
 }
 
 }  // namespace hardware_bridge_transport_test

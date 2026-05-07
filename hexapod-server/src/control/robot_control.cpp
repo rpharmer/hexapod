@@ -91,6 +91,10 @@ bool RobotControl::setSimFaultToggles(const SimHardwareFaultToggles& toggles) {
     return runtime_.setSimFaultToggles(toggles);
 }
 
+void RobotControl::setSafetyLegEnabledTestMask(std::optional<std::array<bool, kNumLegs>> mask) {
+    runtime_.setSafetyLegEnabledTestMask(std::move(mask));
+}
+
 void RobotControl::setNavigationManager(std::unique_ptr<NavigationManager> navigation_manager) {
     runtime_.setNavigationManager(std::move(navigation_manager));
 }

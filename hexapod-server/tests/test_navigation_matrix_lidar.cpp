@@ -52,6 +52,7 @@ void fillNavRobotState(RobotState& est,
     est.has_body_twist_state = true;
     est.body_twist_state.body_trans_m.x = pose.x_m;
     est.body_twist_state.body_trans_m.y = pose.y_m;
+    est.body_twist_state.body_trans_m.z = 0.12;
     est.body_twist_state.twist_pos_rad.z = pose.yaw_rad;
     est.sample_id = sample_id;
     est.timestamp_us = now;
