@@ -19,6 +19,7 @@ struct Metrics {
     float peakLinear = 0.0f;
     float peakAngular = 0.0f;
     float peakError = 0.0f;
+    float peakJointSpeed = 0.0f;
     Vec3 finalPosition{};
 };
 
@@ -30,6 +31,13 @@ Metrics RunZeroGravityHexapod() {
 
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxZeroGravityHexapodServos(world, scene);
+    std::array<float, 18> prevAngles{};
+    std::size_t jointWrite = 0;
+    for (const LegLinkIds& leg : scene.legs) {
+        prevAngles[jointWrite++] = world.GetServoJointAngle(leg.bodyToCoxaJoint);
+        prevAngles[jointWrite++] = world.GetServoJointAngle(leg.coxaToFemurJoint);
+        prevAngles[jointWrite++] = world.GetServoJointAngle(leg.femurToTibiaJoint);
+    }
 
     Metrics metrics;
     constexpr float kDt = 1.0f / 240.0f;
@@ -49,6 +57,18 @@ Metrics RunZeroGravityHexapod() {
                 metrics.peakError,
                 std::abs(WrapAngle(world.GetServoJointAngle(leg.femurToTibiaJoint) - world.GetServoJoint(leg.femurToTibiaJoint).targetAngle)));
         }
+        jointWrite = 0;
+        for (const LegLinkIds& leg : scene.legs) {
+            const std::array<float, 3> angles = {
+                world.GetServoJointAngle(leg.bodyToCoxaJoint),
+                world.GetServoJointAngle(leg.coxaToFemurJoint),
+                world.GetServoJointAngle(leg.femurToTibiaJoint)};
+            for (float angle : angles) {
+                const float speed = std::abs(WrapAngle(angle - prevAngles[jointWrite])) / kDt;
+                metrics.peakJointSpeed = std::max(metrics.peakJointSpeed, speed);
+                prevAngles[jointWrite++] = angle;
+            }
+        }
     }
 
     metrics.finalPosition = world.GetBody(scene.body).position;
@@ -63,6 +83,7 @@ int main() {
     constexpr float kMaxLinear = 0.05f;
     constexpr float kMaxAngular = 0.05f;
     constexpr float kMaxError = 1.0e-4f;
+    constexpr float kMaxJointSpeed = 8.2f;
     constexpr float kMinFinalY = 0.11f;
     constexpr float kMaxFinalY = 0.175f;
 
@@ -76,6 +97,10 @@ int main() {
     }
     if (metrics.peakError > kMaxError) {
         std::cerr << "hex_zero peak_error=" << metrics.peakError << " cap=" << kMaxError << "\n";
+        return 1;
+    }
+    if (metrics.peakJointSpeed > kMaxJointSpeed) {
+        std::cerr << "hex_zero peak_joint_speed=" << metrics.peakJointSpeed << " cap=" << kMaxJointSpeed << "\n";
         return 1;
     }
     if (metrics.finalPosition.y < kMinFinalY || metrics.finalPosition.y > kMaxFinalY) {

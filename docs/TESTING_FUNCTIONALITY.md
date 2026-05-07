@@ -166,8 +166,39 @@ Representative tests include:
 - `test_regression_step`, `regression_scene_suite`
 - `test_block2_solver`, `test_block4_solver`, `test_island_ordering`
 - `test_servo_chain_stability`, `test_servo_stability_regression`, `test_servo_regression_matrix`
-- `test_hexapod_live`, `test_hexapod_live_pose_hold`, `test_hexapod_planted_foot_drift`
+- `test_servo_torque_saturation_matches_inertia`, `test_servo_stall_under_overload`, `test_servo_chain_vertical_lift_under_gravity`
+- `test_hexapod_live`, `test_hexapod_live_pose_hold`, `test_hexapod_planted_foot_drift`, `test_hexapod_zero_g`
 - `test_serve_ipc`, `test_serve_ipc_preview`, `test_state_correction_protocol`
+
+### Zero-g no-terrain robustness procedure (self-collision ON)
+
+Use this when validating articulated solver robustness without terrain contacts.
+
+- Enable serve-mode no-contact test:
+  - `MINPHYS_HEXAPOD_NO_CONTACT_TEST=1 ./build/hexapod-physics-sim --serve --serve-port 9871`
+- Behavior under this mode:
+  - gravity is set to zero
+  - terrain heightfield is cleared (no terrain/ground contact generation)
+  - robot self-collision remains enabled (intentionally, to expose internal blow-ups)
+- Pair with server scenario runs (`hexapod-server`) to check for late instability/fault transitions.
+- For regression gating, run `test_hexapod_zero_g`:
+  - asserts bounded chassis drift/velocity in zero-g
+  - asserts tight servo target tracking
+  - asserts bounded peak joint speed (`peak_joint_speed <= 8.2 rad/s`)
+
+### Constraint/articulation/torque validation tiers
+
+- **Default-fast CI subset (new; sub-2-minute target):**
+  - `test_servo_torque_saturation_matches_inertia`
+  - `test_servo_stall_under_overload`
+  - `test_servo_chain_vertical_lift_under_gravity`
+- **Extended stress/payload subset (`physics-long` label):**
+  - `test_hexapod_pose_hold_with_payload`
+  - `test_constraint_solver_extreme_mass_ratio_stress`
+  - `test_articulation_impulse_response_decay`
+- Intent:
+  - default-fast focuses on servo torque-limit enforcement and bounded tracking/lift behavior
+  - `physics-long` focuses on payload robustness, extreme mass-ratio contact stability, and articulated impulse decay
 
 ## `hexapod-client`
 
@@ -509,6 +540,14 @@ Practical consumer contract:
   - `cd hexapod-server && ./build-tests/test_locomotion_regression_suite --sim ../hexapod-physics-sim/build/hexapod-physics-sim --case aggressive_governor --emit-metrics-json`
 - Run physics sim test catalog:
   - `cd hexapod-physics-sim && ctest --test-dir build --output-on-failure`
+- Run focused zero-g robustness regression:
+  - `cd hexapod-physics-sim && ctest --test-dir build -R '^test_hexapod_zero_g$' --output-on-failure`
+- Run focused default-fast solver/torque validation subset:
+  - `cd hexapod-physics-sim && ctest --test-dir build -R 'test_servo_torque_saturation_matches_inertia|test_servo_stall_under_overload|test_servo_chain_vertical_lift_under_gravity' --output-on-failure`
+- Run extended payload/robustness subset:
+  - `cd hexapod-physics-sim && ctest --test-dir build -L physics-long --output-on-failure`
+- Start no-terrain contact serve-mode run (self-collision enabled):
+  - `cd hexapod-physics-sim && MINPHYS_HEXAPOD_NO_CONTACT_TEST=1 ./build/hexapod-physics-sim --serve --serve-port 9871`
 - Run firmware host tests:
   - `cd hexapod-client && cmake --preset host-tests && cmake --build --preset host-tests -j && ctest --preset host-tests --output-on-failure`
 - Run full repo verification:

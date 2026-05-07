@@ -144,6 +144,19 @@ add_test(NAME test_hexapod_initial_layout_matches_server
     COMMAND test_hexapod_initial_layout_matches_server)
 add_minphys3d_test(test_hexapod_planted_foot_drift tests/test_hexapod_planted_foot_drift.cpp)
 add_minphys3d_test(test_hexapod_zero_g tests/test_hexapod_zero_g.cpp)
+add_minphys3d_test(test_servo_torque_saturation_matches_inertia tests/test_servo_torque_saturation_matches_inertia.cpp)
+add_minphys3d_test(test_servo_stall_under_overload tests/test_servo_stall_under_overload.cpp)
+add_minphys3d_test(test_servo_chain_vertical_lift_under_gravity tests/test_servo_chain_vertical_lift_under_gravity.cpp)
+add_minphys3d_test(test_hexapod_pose_hold_with_payload tests/test_hexapod_pose_hold_with_payload.cpp)
+add_minphys3d_test(test_constraint_solver_extreme_mass_ratio_stress tests/test_constraint_solver_extreme_mass_ratio_stress.cpp)
+add_minphys3d_test(test_articulation_impulse_response_decay tests/test_articulation_impulse_response_decay.cpp)
+set_tests_properties(
+    test_hexapod_pose_hold_with_payload
+    test_constraint_solver_extreme_mass_ratio_stress
+    test_articulation_impulse_response_decay
+    PROPERTIES
+    LABELS "physics-long"
+    TIMEOUT 45)
 add_executable(test_hexapod_server_alignment_zero_g
     tests/test_hexapod_server_alignment_zero_g.cpp
     ../hexapod-server/src/kinematics/types.cpp)

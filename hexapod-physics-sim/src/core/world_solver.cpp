@@ -1150,6 +1150,8 @@ void World::PrepareArticulatedInertias() {
     const float dt = currentSubstepDt_;
     const SpatialVec spatialGravity{Vec3{0.0f, 0.0f, 0.0f}, gravity_};
     const bool       velocityPreCorr = articulationConfig_.enableVelocityPreCorrection;
+    const bool       hasContactManifolds = !manifolds_.empty();
+    const bool       velocityPreCorrActive = velocityPreCorr && hasContactManifolds;
 
     for (std::size_t ci = 0; ci < articulationChains_.size(); ++ci) {
         ArtChain& chain = articulationChains_[ci];
@@ -1304,15 +1306,15 @@ void World::PrepareArticulatedInertias() {
             }
             chain.D[cIdx] = D;
             const ServoJointPrep& prepJoint = servoJointPreps_[jidx];
-            const float          sPc    = velocityPreCorr ? Dot(axis, chain.Pa[cIdx].ang) : 0.0f;
+            const float          sPc    = velocityPreCorrActive ? Dot(axis, chain.Pa[cIdx].ang) : 0.0f;
             float                  uJoint = sPc;
-            if (articulationConfig_.includeServoPdBiasInArticulationU && prepJoint.hingeActive) {
+            if (hasContactManifolds && articulationConfig_.includeServoPdBiasInArticulationU && prepJoint.hingeActive) {
                 uJoint += D * prepJoint.servoBias;
             }
             uJoint += sj.articulationDriveTorque;
             chain.u[cIdx] = uJoint;
             chain.iaPostJoint[cIdx] = reduced;
-            if (velocityPreCorr) {
+            if (velocityPreCorrActive) {
                 chain.Pa[pIdx] += PropagateBias(
                     chain.Pa[cIdx], IsAng_cached, IsLin_cached, axis, D, uJoint);
             }
@@ -1343,7 +1345,7 @@ void World::PrepareArticulatedInertias() {
     // Pass C — velocity pre-correction: either full spatial forward pass (optional) or legacy
     // child-only angular projection (no root writes so six legs sharing a chassis do not apply
     // six independent base deltas).
-    const bool fullForwardPass = velocityPreCorr && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly
+    const bool fullForwardPass = velocityPreCorrActive && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly
         && articulationConfig_.enableVelocityPreCorrectionFullForwardPass;
     const bool forwardCoriolis =
         fullForwardPass && articulationConfig_.enableVelocityPreCorrectionForwardCoriolis;
@@ -1402,7 +1404,7 @@ void World::PrepareArticulatedInertias() {
         }
         passCFullForwardNs += elapsedNs(passCFullStart, Clock::now());
         ++passCFullForwardCalls;
-    } else if (velocityPreCorr && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly) {
+    } else if (velocityPreCorrActive && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly) {
         const auto passCLegacyStart = Clock::now();
         for (ArtChain& chain : articulationChains_) {
             const std::size_t N = chain.links.size();
@@ -1438,9 +1440,9 @@ void World::PrepareArticulatedInertias() {
 
     // Optional chassis coupling: MVP (sum of post-backward Pa[0] at COM) or multi-tree aggregate
     // inertia at COM + single 6×6 solve (tree path). Runs after child Pass C; default off.
-    const bool chassisTree = velocityPreCorr && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly
+    const bool chassisTree = velocityPreCorrActive && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly
         && articulationConfig_.enableVelocityPreCorrectionChassisArticulatedTree;
-    const bool chassisMvp = velocityPreCorr && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly
+    const bool chassisMvp = velocityPreCorrActive && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly
         && articulationConfig_.enableVelocityPreCorrectionChassisCoupling && !chassisTree;
     if (chassisMvp || chassisTree) {
         constexpr float kChassisMaxDw = 10.0f;

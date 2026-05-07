@@ -23,6 +23,7 @@
 #include <cstddef>
 #include <condition_variable>
 #include <cstring>
+#include <cstdlib>
 #include <deque>
 #include <iostream>
 #include <limits>
@@ -1070,6 +1071,16 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     const Vec3 plane_normal = terrain_seed.has_plane_normal ? terrain_seed.plane_normal : world.GetBody(scene.plane).planeNormal;
     terrain_patch.initialize(world, patch_center, plane_height, plane_normal);
     SyncTerrainHeightfield(world, terrain_patch);
+
+    if (const char* no_contact_env = std::getenv("MINPHYS_HEXAPOD_NO_CONTACT_TEST");
+        no_contact_env != nullptr && no_contact_env[0] != '\0' && no_contact_env[0] != '0') {
+        world.SetGravity(Vec3{0.0f, 0.0f, 0.0f});
+        world.ClearTerrainHeightfield();
+        // Keep normal robot self-collision active to expose internal instability.
+        // "No contact" here means no terrain/ground contacts.
+        std::cout << "[serve] MINPHYS_HEXAPOD_NO_CONTACT_TEST enabled (zero-g + terrain contacts disabled, self-collision enabled)\n";
+    }
+
     const std::vector<std::uint32_t> obstacle_body_ids = CollectObstacleBodyIds(world, scene);
 
     JointSolverConfig joint_cfg = world.GetJointSolverConfig();
@@ -1077,6 +1088,17 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     joint_cfg.hingeAnchorBiasFactor = 0.25f;
     joint_cfg.hingeAnchorDampingFactor = 0.3f;
     world.SetJointSolverConfig(joint_cfg);
+
+    if (const char* disable_pre_corr = std::getenv("MINPHYS_DISABLE_VELOCITY_PRECORR");
+        disable_pre_corr != nullptr && disable_pre_corr[0] != '\0' && disable_pre_corr[0] != '0') {
+        auto articulation_cfg = world.GetArticulationConfig();
+        articulation_cfg.enableVelocityPreCorrection = false;
+        articulation_cfg.enableVelocityPreCorrectionFullForwardPass = false;
+        articulation_cfg.enableVelocityPreCorrectionChassisCoupling = false;
+        articulation_cfg.enableVelocityPreCorrectionChassisArticulatedTree = false;
+        world.SetArticulationConfig(articulation_cfg);
+        std::cout << "[serve] MINPHYS_DISABLE_VELOCITY_PRECORR enabled\n";
+    }
 
     const std::array<std::uint32_t, 18> wire_joints = ServoJointIdsInWireOrder(scene);
     std::array<float, 18> prev_angles{};
@@ -1538,7 +1560,10 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         for (std::size_t i = 0; i < wire_joints.size(); ++i) {
             const float ang_after = world.GetServoJointAngle(wire_joints[i]);
             rsp.joint_angles[i] = ang_after;
-            rsp.joint_velocities[i] = (ang_after - prev_angles[i]) * inv_dt;
+            // Joint angles are wrapped; unwrap delta first so crossing +/-pi does not
+            // produce a false ~2pi jump in one sample.
+            const float delta = WrapAngleRad(ang_after - prev_angles[i]);
+            rsp.joint_velocities[i] = delta * inv_dt;
             prev_angles[i] = ang_after;
         }
 
