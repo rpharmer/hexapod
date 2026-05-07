@@ -563,48 +563,62 @@ static void test_ArticulationConfig_roundTrip() {
 }
 
 static void test_ABI_chain_u_nonzero_withServoBias() {
-    World world({0.0f, -9.81f, 0.0f});
-    Body anchor{};
-    anchor.shape       = ShapeType::Box;
-    anchor.halfExtents = {0.05f, 0.05f, 0.05f};
-    anchor.mass        = 1.0f;
-    anchor.isStatic    = true;
-    anchor.position    = {0.0f, 1.0f, 0.0f};
-    const std::uint32_t anchorId = world.CreateBody(anchor);
+    auto makeWorld = [](bool pdInU) -> World {
+        World world({0.0f, -9.81f, 0.0f});
+        Body anchor{};
+        anchor.shape       = ShapeType::Box;
+        anchor.halfExtents = {0.05f, 0.05f, 0.05f};
+        anchor.mass        = 1.0f;
+        anchor.isStatic    = true;
+        anchor.position    = {0.0f, 1.0f, 0.0f};
+        const std::uint32_t anchorId = world.CreateBody(anchor);
 
-    Body bob{};
-    bob.shape    = ShapeType::Sphere;
-    bob.radius   = 0.05f;
-    bob.mass     = 0.5f;
-    bob.position = {0.1f, 0.95f, 0.0f};
-    const std::uint32_t bobId = world.CreateBody(bob);
+        Body bob{};
+        bob.shape       = ShapeType::Box;
+        bob.halfExtents = {0.05f, 0.03f, 0.03f};
+        bob.mass        = 0.5f;
+        bob.position    = {0.1f, 1.0f, 0.0f};
+        const std::uint32_t bobId = world.CreateBody(bob);
 
-    (void)world.CreateServoJoint(
-        anchorId,
-        bobId,
-        {0.0f, 1.0f, 0.0f},
-        {0.0f, 0.0f, 1.0f},
-        /*targetAngle=*/0.35f,
-        10.0f,
-        10.0f,
-        1.0f,
-        0.0f,
-        0.5f,
-        1.0f,
-        5.0f,
-        0.0f);
+        (void)world.CreateServoJoint(
+            anchorId,
+            bobId,
+            {0.0f, 1.0f, 0.0f},
+            {0.0f, 0.0f, 1.0f},
+            /*targetAngle=*/0.0f,
+            10.0f,
+            10.0f,
+            1.0f,
+            0.0f,
+            0.0f,
+            1.0f,
+            5.0f,
+            0.0f);
+        const float halfAngle = 0.55f * 0.5f;
+        world.GetBody(bobId).orientation =
+            Normalize(Quat{std::cos(halfAngle), 0.0f, 0.0f, std::sin(halfAngle)});
 
-    World::ArticulationConfig cfg{};
-    cfg.enableVelocityPreCorrection               = true;
-    cfg.enableVelocityPreCorrectionKinematicsOnly = false;
-    world.SetArticulationConfig(cfg);
+        World::ArticulationConfig cfg{};
+        cfg.enableVelocityPreCorrection               = true;
+        cfg.enableVelocityPreCorrectionKinematicsOnly = false;
+        cfg.includeServoPdBiasInArticulationU         = pdInU;
+        world.SetArticulationConfig(cfg);
+        world.Step(1.0f / 240.0f, 1);
+        return world;
+    };
 
-    world.Step(1.0f / 240.0f, 1);
-    const std::vector<ArtChain>& chains = world.GetArticulationChains();
-    check(chains.size() == 1u, "ABI u test: one chain");
-    const ArtChain& ch = chains[0];
-    check(ch.links.size() == 2u, "ABI u test: two links");
-    check(std::abs(ch.u[1]) > 1e-4f, "ABI u[1] nonzero when hinge has PD bias (servo error)");
+    const World withPdBias = makeWorld(true);
+    const World withoutPdBias = makeWorld(false);
+    const std::vector<ArtChain>& withPdChains = withPdBias.GetArticulationChains();
+    const std::vector<ArtChain>& withoutPdChains = withoutPdBias.GetArticulationChains();
+    check(withPdChains.size() == 1u, "ABI u test: one chain with PD bias");
+    check(withoutPdChains.size() == 1u, "ABI u test: one chain without PD bias");
+    check(withPdChains[0].links.size() == 2u, "ABI u test: two links with PD bias");
+    check(withoutPdChains[0].links.size() == 2u, "ABI u test: two links without PD bias");
+    const float uWithPd = withPdChains[0].u[1];
+    const float uWithoutPd = withoutPdChains[0].u[1];
+    check(std::abs(uWithPd - uWithoutPd) > 1e-4f,
+          "ABI u[1] changes when includeServoPdBiasInArticulationU toggles");
 }
 
 static void test_VelocityPreCorrection_fullForward_hexapod_finite() {

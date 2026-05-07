@@ -1150,8 +1150,18 @@ void World::PrepareArticulatedInertias() {
     const float dt = currentSubstepDt_;
     const SpatialVec spatialGravity{Vec3{0.0f, 0.0f, 0.0f}, gravity_};
     const bool       velocityPreCorr = articulationConfig_.enableVelocityPreCorrection;
-    const bool       hasContactManifolds = !manifolds_.empty();
-    const bool       velocityPreCorrActive = velocityPreCorr && hasContactManifolds;
+    const bool       hasSupportContacts = std::any_of(
+        manifolds_.begin(),
+        manifolds_.end(),
+        [this](const Manifold& manifold) {
+            if (manifold.contacts.empty()) {
+                return false;
+            }
+            const Body& bodyA = bodies_[manifold.a];
+            const Body& bodyB = bodies_[manifold.b];
+            return bodyA.isStatic || bodyB.isStatic || bodyA.isTerrainAttachment || bodyB.isTerrainAttachment;
+        });
+    const bool velocityPreCorrActive = velocityPreCorr && hasSupportContacts;
 
     for (std::size_t ci = 0; ci < articulationChains_.size(); ++ci) {
         ArtChain& chain = articulationChains_[ci];
@@ -1306,15 +1316,15 @@ void World::PrepareArticulatedInertias() {
             }
             chain.D[cIdx] = D;
             const ServoJointPrep& prepJoint = servoJointPreps_[jidx];
-            const float          sPc    = velocityPreCorrActive ? Dot(axis, chain.Pa[cIdx].ang) : 0.0f;
+            const float          sPc    = velocityPreCorr ? Dot(axis, chain.Pa[cIdx].ang) : 0.0f;
             float                  uJoint = sPc;
-            if (hasContactManifolds && articulationConfig_.includeServoPdBiasInArticulationU && prepJoint.hingeActive) {
+            if (articulationConfig_.includeServoPdBiasInArticulationU && prepJoint.hingeActive) {
                 uJoint += D * prepJoint.servoBias;
             }
             uJoint += sj.articulationDriveTorque;
             chain.u[cIdx] = uJoint;
             chain.iaPostJoint[cIdx] = reduced;
-            if (velocityPreCorrActive) {
+            if (velocityPreCorr) {
                 chain.Pa[pIdx] += PropagateBias(
                     chain.Pa[cIdx], IsAng_cached, IsLin_cached, axis, D, uJoint);
             }

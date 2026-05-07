@@ -1088,6 +1088,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     joint_cfg.hingeAnchorBiasFactor = 0.25f;
     joint_cfg.hingeAnchorDampingFactor = 0.3f;
     world.SetJointSolverConfig(joint_cfg);
+    world.SetBodyVelocityLimits(5.0f, 15.0f);
 
     if (const char* disable_pre_corr = std::getenv("MINPHYS_DISABLE_VELOCITY_PRECORR");
         disable_pre_corr != nullptr && disable_pre_corr[0] != '\0' && disable_pre_corr[0] != '0') {

@@ -500,6 +500,13 @@ void World::IntegrateForces(float dt) {
 
             body.velocity += linearAcceleration * dt;
             body.angularVelocity += angularAcceleration * dt;
+
+            if (body.linearDamping > 0.0f) {
+                body.velocity *= std::max(0.0f, 1.0f - body.linearDamping * dt);
+            }
+            if (body.angularDamping > 0.0f) {
+                body.angularVelocity *= std::max(0.0f, 1.0f - body.angularDamping * dt);
+            }
         }
     }
 

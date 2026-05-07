@@ -22,8 +22,10 @@ LiftResult runLiftCase(float max_servo_speed_radps) {
 
     constexpr float kLinkLength = 0.9f;
     constexpr float kLinkMass = 0.6f;
+    // Start clear of the static base so this remains a servo-rate overload test,
+    // not a self-contact fixture.
     const std::uint32_t link_id =
-        world.CreateBody(MakeArmLink({0.5f * kLinkLength, 0.0f, 0.0f}, kLinkLength, kLinkMass));
+        world.CreateBody(MakeArmLink({0.60f, 0.0f, 0.0f}, kLinkLength, kLinkMass));
 
     const std::uint32_t servo_id = world.CreateServoJoint(
         base_id,
