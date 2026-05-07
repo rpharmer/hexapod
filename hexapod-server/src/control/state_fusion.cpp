@@ -199,7 +199,10 @@ RobotState StateFusion::update(const RobotState& source, const FusionSourceMode 
             tracker.raw_gap_streak += 1;
 
             if (fc.phase == ContactPhase::ConfirmedStance) {
-                if (!fc.touchdown_window_end_us.isZero() && now.value <= fc.touchdown_window_end_us.value) {
+                const bool within_hold_window =
+                    !fc.touchdown_window_end_us.isZero() && now.value <= fc.touchdown_window_end_us.value;
+                const bool single_missed_sample = tracker.raw_gap_streak < 2;
+                if (within_hold_window && single_missed_sample) {
                     fc.confidence = static_cast<float>(std::max(
                         phaseConfidenceFloor(ContactPhase::ConfirmedStance),
                         static_cast<double>(fc.confidence) - decay * 0.35));

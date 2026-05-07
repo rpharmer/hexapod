@@ -167,8 +167,14 @@ void appendLocomotionDebugJson(std::ostringstream& payload,
             << "\"valid\":" << (debug.valid ? "true" : "false");
     payload << ",\"planned_stance\":";
     appendBoolArrayJson(payload, debug.planned_stance);
+    payload << ",\"hold_stance\":";
+    appendBoolArrayJson(payload, debug.hold_stance);
     payload << ",\"raw_contact\":";
     appendBoolArrayJson(payload, debug.raw_contact);
+    payload << ",\"fused_load_bearing\":";
+    appendBoolArrayJson(payload, debug.fused_load_bearing);
+    payload << ",\"fusion_phase_active\":";
+    appendBoolArrayJson(payload, debug.fusion_phase_active);
     payload << ",\"fused_support\":";
     appendBoolArrayJson(payload, debug.fused_support);
     payload << ",\"fused_contact_phase\":";

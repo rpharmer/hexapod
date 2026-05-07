@@ -10,7 +10,11 @@ namespace telemetry {
 struct LocomotionDebugSnapshot {
     bool valid{false};
     std::array<bool, kNumLegs> planned_stance{};
+    std::array<bool, kNumLegs> hold_stance{};
     std::array<bool, kNumLegs> raw_contact{};
+    std::array<bool, kNumLegs> fused_load_bearing{};
+    std::array<bool, kNumLegs> fusion_phase_active{};
+    // Backward-compatible alias for fused load-bearing support.
     std::array<bool, kNumLegs> fused_support{};
     std::array<std::uint8_t, kNumLegs> fused_contact_phase{};
     std::array<double, kNumLegs> fused_contact_confidence{};

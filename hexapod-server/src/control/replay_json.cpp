@@ -354,8 +354,14 @@ void appendLocomotionDebug(std::ostringstream& payload,
             << "\"valid\":" << (debug.valid ? "true" : "false")
             << ",\"planned_stance\":";
     appendBoolArray(payload, debug.planned_stance);
+    payload << ",\"hold_stance\":";
+    appendBoolArray(payload, debug.hold_stance);
     payload << ",\"raw_contact\":";
     appendBoolArray(payload, debug.raw_contact);
+    payload << ",\"fused_load_bearing\":";
+    appendBoolArray(payload, debug.fused_load_bearing);
+    payload << ",\"fusion_phase_active\":";
+    appendBoolArray(payload, debug.fusion_phase_active);
     payload << ",\"fused_support\":";
     appendBoolArray(payload, debug.fused_support);
     payload << ",\"fused_contact_phase\":";

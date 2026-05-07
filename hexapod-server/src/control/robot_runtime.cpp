@@ -253,16 +253,20 @@ telemetry::LocomotionDebugSnapshot buildLocomotionDebugSnapshot(
         const LegGeometry& leg_geometry = geometry.legGeometry[leg_index];
         const FootContactFusion& contact_fusion = estimated.foot_contact_fusion[leg_index];
         const bool planned_stance = gait_state != nullptr ? gait_state->in_stance[leg_index] : false;
+        const bool hold_stance = gait_state != nullptr ? gait_state->stability_hold_stance[leg_index] : false;
         const bool raw_contact = raw.foot_contacts[leg_index];
         const bool fused_load_bearing = estimated.foot_contacts[leg_index];
-        const bool fused_support_signal =
+        const bool fusion_phase_active =
             contact_fusion.phase != ContactPhase::Swing && contact_fusion.phase != ContactPhase::Search;
         const bool anchor_support_active =
             fused_load_bearing || (planned_stance && contact_fusion.phase == ContactPhase::LostCandidate);
 
         snapshot.planned_stance[leg_index] = planned_stance;
+        snapshot.hold_stance[leg_index] = hold_stance;
         snapshot.raw_contact[leg_index] = raw_contact;
-        snapshot.fused_support[leg_index] = fused_support_signal;
+        snapshot.fused_load_bearing[leg_index] = fused_load_bearing;
+        snapshot.fusion_phase_active[leg_index] = fusion_phase_active;
+        snapshot.fused_support[leg_index] = fused_load_bearing;
         snapshot.fused_contact_phase[leg_index] = static_cast<std::uint8_t>(contact_fusion.phase);
         snapshot.fused_contact_confidence[leg_index] = contact_fusion.confidence;
 

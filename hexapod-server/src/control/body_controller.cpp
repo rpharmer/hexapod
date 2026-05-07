@@ -279,9 +279,13 @@ LegTargets BodyController::update(const RobotState& est,
             double ph = clamp01(gait.phase[leg]);
             const Vec3 anchor = nominal[leg] - planar_body_offset;
             const Vec3 v_foot = supportFootVelocityAt(anchor, body_mot);
-            const bool hold_stance = gait.stability_hold_stance[static_cast<std::size_t>(leg)];
+            const std::size_t leg_index = static_cast<std::size_t>(leg);
+            const ContactPhase contact_phase = est.foot_contact_fusion[leg_index].phase;
+            const bool planned_stance = ph < duty;
+            const bool lost_candidate_grace = planned_stance && contact_phase == ContactPhase::LostCandidate;
+            const bool use_stance_kinematics = planned_stance || est.foot_contacts[leg_index] || lost_candidate_grace;
 
-            if (ph < duty || hold_stance) {
+            if (use_stance_kinematics) {
                 apply_workspace_clamp = false;
                 StanceFootInputs st{};
                 st.anchor = anchor;
@@ -294,7 +298,7 @@ LegTargets BodyController::update(const RobotState& est,
                 target = p;
                 target_vel = target_vel + v;
                 if (terrain_blend_scale > 0.0 && foot_terrain_cfg_.enable_stance_tilt_leveling &&
-                    est.foot_contacts[static_cast<std::size_t>(leg)]) {
+                    est.foot_contacts[leg_index]) {
                     target.z += terrain_blend_scale * trust_scale *
                                 contact_foot_response::stanceTiltLevelingDeltaZ(est, intent, anchor.x, anchor.y);
                 }
@@ -307,12 +311,12 @@ LegTargets BodyController::update(const RobotState& est,
                 double swing_extra_down_z = 0.0;
                 contact_foot_response::adjustSwingTauAndVerticalExtension(
                     true,
-                    est.foot_contacts[static_cast<std::size_t>(leg)],
+                    est.foot_contacts[leg_index],
                     est,
                     tau,
                     tau_use,
                     swing_extra_down_z,
-                    &est.foot_contact_fusion[static_cast<std::size_t>(leg)]);
+                    &est.foot_contact_fusion[leg_index]);
 
                 double ux = 0.0;
                 double uy = 0.0;

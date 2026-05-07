@@ -110,19 +110,37 @@ int main() {
     }
 
     GaitState swing_gait = walk_gait;
-    swing_gait.phase[0] = 0.75;
+    swing_gait.phase[0] = 0.60;
     swing_gait.in_stance[0] = false;
     const LegTargets swing_targets = controller.update(est, walk_intent, swing_gait, safety, walk_twist);
 
     GaitState held_gait = swing_gait;
     held_gait.stability_hold_stance[0] = true;
-    const LegTargets held_swing_targets = controller.update(est, walk_intent, held_gait, safety, walk_twist);
-    if (!expect(held_swing_targets.feet[0].pos_body_m.z < swing_targets.feet[0].pos_body_m.z - 0.02,
-                "stability hold should keep a threatened swing leg in stance kinematics")) {
+    RobotState airborne_est = est;
+    airborne_est.foot_contacts[0] = false;
+    airborne_est.foot_contact_fusion[0].phase = ContactPhase::Search;
+    const LegTargets held_airborne_targets =
+        controller.update(airborne_est, walk_intent, held_gait, safety, walk_twist);
+    if (!expect(nearlyEqual(held_airborne_targets.feet[0].pos_body_m.z, swing_targets.feet[0].pos_body_m.z, 2e-3),
+                "stability hold should not pin an unsupported swing leg back into stance")) {
         return EXIT_FAILURE;
     }
-    if (!expect(nearlyEqual(held_swing_targets.feet[0].vel_body_mps.z, 0.0, 2e-3),
-                "stability hold should suppress swing vertical motion")) {
+    if (!expect(nearlyEqual(held_airborne_targets.feet[0].vel_body_mps.z, swing_targets.feet[0].vel_body_mps.z, 2e-3),
+                "stability hold should preserve swing vertical motion when contact support is gone")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState supported_est = est;
+    supported_est.foot_contacts[0] = true;
+    supported_est.foot_contact_fusion[0].phase = ContactPhase::ConfirmedStance;
+    const LegTargets held_supported_targets =
+        controller.update(supported_est, walk_intent, held_gait, safety, walk_twist);
+    if (!expect(held_supported_targets.feet[0].pos_body_m.z < held_airborne_targets.feet[0].pos_body_m.z - 0.02,
+                "supported swing legs should stay in stance kinematics until support is released")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(nearlyEqual(held_supported_targets.feet[0].vel_body_mps.z, 0.0, 2e-3),
+                "supported swing legs kept in stance should suppress vertical swing motion")) {
         return EXIT_FAILURE;
     }
 
