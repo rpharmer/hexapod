@@ -8,6 +8,7 @@
 
 // Binary UDP protocol between hexapod-server (client) and hexapod-physics-sim --serve (host).
 // All structs are packed; wire format is little-endian (native on supported targets).
+// Scalar fields on the wire are float32; minphys3d uses double internally — convert at the sim boundary.
 
 namespace physics_sim {
 

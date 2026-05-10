@@ -55,14 +55,14 @@ inline bool ConvexOverlapGJK(const ConvexSupport& a, const ConvexSupport& b, int
     };
 
     auto sameDirection = [](const Vec3& direction, const Vec3& ao) {
-        return Dot(direction, ao) > 0.0f;
+        return Dot(direction, ao) > 0.0;
     };
 
     std::array<Vec3, 4> simplex{};
     int simplexSize = 0;
     Vec3 direction = b.Position() - a.Position();
     if (LengthSquared(direction) <= kEpsilon * kEpsilon) {
-        direction = {1.0f, 0.0f, 0.0f};
+        direction = {1.0, 0.0, 0.0};
     }
 
     simplex[simplexSize++] = supportMinkowski(direction);
@@ -70,7 +70,7 @@ inline bool ConvexOverlapGJK(const ConvexSupport& a, const ConvexSupport& b, int
 
     for (int i = 0; i < maxIterations; ++i) {
         const Vec3 newPoint = supportMinkowski(direction);
-        if (Dot(newPoint, direction) <= 0.0f) {
+        if (Dot(newPoint, direction) <= 0.0) {
             return false;
         }
 

@@ -11,17 +11,17 @@ int main() {
     in.sequence_id = 17;
     in.timestamp_us = 123456789u;
     in.flags = physics_sim::kStateCorrectionPoseValid | physics_sim::kStateCorrectionContactValid;
-    in.correction_strength = 0.75f;
-    in.body_position = {1.0f, 2.0f, 3.0f};
-    in.body_orientation = {0.9239f, 0.0f, 0.3827f, 0.0f};
-    in.body_linear_velocity = {0.1f, 0.2f, 0.3f};
-    in.body_angular_velocity = {0.4f, 0.5f, 0.6f};
+    in.correction_strength = 0.75;
+    in.body_position = {1.0, 2.0, 3.0};
+    in.body_orientation = {0.9239, 0.0, 0.3827, 0.0};
+    in.body_linear_velocity = {0.1, 0.2, 0.3};
+    in.body_angular_velocity = {0.4, 0.5, 0.6};
     in.foot_contact_phase[0] = static_cast<std::uint8_t>(physics_sim::ContactPhase::ConfirmedStance);
-    in.foot_contact_confidence[0] = 1.0f;
-    in.foot_ground_height_m[0] = 1.75f;
-    in.foot_ground_confidence[0] = 0.9f;
-    in.terrain_normal = {0.0f, 1.0f, 0.0f};
-    in.terrain_height_m = 1.75f;
+    in.foot_contact_confidence[0] = 1.0;
+    in.foot_ground_height_m[0] = 1.75;
+    in.foot_ground_confidence[0] = 0.9;
+    in.terrain_normal = {0.0, 1.0, 0.0};
+    in.terrain_height_m = 1.75;
 
     std::array<std::byte, physics_sim::kStateCorrectionBytes> bytes{};
     std::memcpy(bytes.data(), &in, sizeof(in));

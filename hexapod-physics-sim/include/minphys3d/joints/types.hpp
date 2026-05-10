@@ -13,10 +13,10 @@ struct DistanceJoint {
     std::uint32_t b = 0;
     Vec3 localAnchorA{};
     Vec3 localAnchorB{};
-    float restLength = 1.0f;
-    float stiffness = 1.0f;
-    float damping = 0.1f;
-    float impulseSum = 0.0f;
+    Real restLength = 1.0;
+    Real stiffness = 1.0;
+    Real damping = 0.1;
+    Real impulseSum = 0.0;
 };
 
 struct HingeJoint {
@@ -24,22 +24,22 @@ struct HingeJoint {
     std::uint32_t b = 0;
     Vec3 localAnchorA{};
     Vec3 localAnchorB{};
-    Vec3 localAxisA{0.0f, 1.0f, 0.0f};
-    Vec3 localAxisB{0.0f, 1.0f, 0.0f};
-    Vec3 localReferenceA{1.0f, 0.0f, 0.0f};
-    Vec3 localReferenceB{1.0f, 0.0f, 0.0f};
-    float impulseX = 0.0f;
-    float impulseY = 0.0f;
-    float impulseZ = 0.0f;
-    float angularImpulse1 = 0.0f;
-    float angularImpulse2 = 0.0f;
+    Vec3 localAxisA{0.0, 1.0, 0.0};
+    Vec3 localAxisB{0.0, 1.0, 0.0};
+    Vec3 localReferenceA{1.0, 0.0, 0.0};
+    Vec3 localReferenceB{1.0, 0.0, 0.0};
+    Real impulseX = 0.0;
+    Real impulseY = 0.0;
+    Real impulseZ = 0.0;
+    Real angularImpulse1 = 0.0;
+    Real angularImpulse2 = 0.0;
     bool limitsEnabled = false;
-    float lowerAngle = 0.0f;
-    float upperAngle = 0.0f;
+    Real lowerAngle = 0.0;
+    Real upperAngle = 0.0;
     bool motorEnabled = false;
-    float motorSpeed = 0.0f;
-    float maxMotorTorque = 0.0f;
-    float motorImpulseSum = 0.0f;
+    Real motorSpeed = 0.0;
+    Real maxMotorTorque = 0.0;
+    Real motorImpulseSum = 0.0;
 };
 
 struct BallSocketJoint {
@@ -47,9 +47,9 @@ struct BallSocketJoint {
     std::uint32_t b = 0;
     Vec3 localAnchorA{};
     Vec3 localAnchorB{};
-    float impulseX = 0.0f;
-    float impulseY = 0.0f;
-    float impulseZ = 0.0f;
+    Real impulseX = 0.0;
+    Real impulseY = 0.0;
+    Real impulseZ = 0.0;
 };
 
 struct FixedJoint {
@@ -58,12 +58,12 @@ struct FixedJoint {
     Vec3 localAnchorA{};
     Vec3 localAnchorB{};
     Quat referenceRotation{};
-    float impulseX = 0.0f;
-    float impulseY = 0.0f;
-    float impulseZ = 0.0f;
-    float angularImpulseX = 0.0f;
-    float angularImpulseY = 0.0f;
-    float angularImpulseZ = 0.0f;
+    Real impulseX = 0.0;
+    Real impulseY = 0.0;
+    Real impulseZ = 0.0;
+    Real angularImpulseX = 0.0;
+    Real angularImpulseY = 0.0;
+    Real angularImpulseZ = 0.0;
 };
 
 struct PrismaticJoint {
@@ -71,18 +71,18 @@ struct PrismaticJoint {
     std::uint32_t b = 0;
     Vec3 localAnchorA{};
     Vec3 localAnchorB{};
-    Vec3 localAxisA{1.0f, 0.0f, 0.0f};
-    Vec3 localAxisB{1.0f, 0.0f, 0.0f};
-    float impulseT1 = 0.0f;
-    float impulseT2 = 0.0f;
-    float impulseAxis = 0.0f;
+    Vec3 localAxisA{1.0, 0.0, 0.0};
+    Vec3 localAxisB{1.0, 0.0, 0.0};
+    Real impulseT1 = 0.0;
+    Real impulseT2 = 0.0;
+    Real impulseAxis = 0.0;
     bool limitsEnabled = false;
-    float lowerTranslation = 0.0f;
-    float upperTranslation = 0.0f;
+    Real lowerTranslation = 0.0;
+    Real upperTranslation = 0.0;
     bool motorEnabled = false;
-    float motorSpeed = 0.0f;
-    float maxMotorForce = 0.0f;
-    float motorImpulseSum = 0.0f;
+    Real motorSpeed = 0.0;
+    Real maxMotorForce = 0.0;
+    Real motorImpulseSum = 0.0;
 };
 
 struct ServoJoint {
@@ -90,35 +90,35 @@ struct ServoJoint {
     std::uint32_t b = 0;
     Vec3 localAnchorA{};
     Vec3 localAnchorB{};
-    Vec3 localAxisA{0.0f, 1.0f, 0.0f};
-    Vec3 localAxisB{0.0f, 1.0f, 0.0f};
-    Vec3 localReferenceA{1.0f, 0.0f, 0.0f};
-    Vec3 localReferenceB{1.0f, 0.0f, 0.0f};
-    float impulseX = 0.0f;
-    float impulseY = 0.0f;
-    float impulseZ = 0.0f;
-    float angularImpulse1 = 0.0f;
-    float angularImpulse2 = 0.0f;
-    float servoImpulseSum = 0.0f;
-    float targetAngle = 0.0f;
-    float maxServoTorque = 0.0f;
+    Vec3 localAxisA{0.0, 1.0, 0.0};
+    Vec3 localAxisB{0.0, 1.0, 0.0};
+    Vec3 localReferenceA{1.0, 0.0, 0.0};
+    Vec3 localReferenceB{1.0, 0.0, 0.0};
+    Real impulseX = 0.0;
+    Real impulseY = 0.0;
+    Real impulseZ = 0.0;
+    Real angularImpulse1 = 0.0;
+    Real angularImpulse2 = 0.0;
+    Real servoImpulseSum = 0.0;
+    Real targetAngle = 0.0;
+    Real maxServoTorque = 0.0;
     /// Max axis speed (rad/s) the servo bias is allowed to request; 0 disables the clamp.
-    float maxServoSpeed = 0.0f;
-    float positionGain = 40.0f;   // omega_n: natural frequency (rad/s)
-    float dampingGain = 1.0f;     // zeta: damping ratio
-    float integralGain = 0.0f;
-    float integralClamp = 0.5f;
-    float integralAccum = 0.0f;
+    Real maxServoSpeed = 0.0;
+    Real positionGain = 40.0;   // omega_n: natural frequency (rad/s)
+    Real dampingGain = 1.0;     // zeta: damping ratio
+    Real integralGain = 0.0;
+    Real integralClamp = 0.5;
+    Real integralAccum = 0.0;
     /// 0 = off; else each Step: smoothed P-error += min(value,1)*(raw-smoothed).
-    float positionErrorSmoothing = 0.0f;
-    float smoothedAngleError = 0.0f;
+    Real positionErrorSmoothing = 0.0;
+    Real smoothedAngleError = 0.0;
     /// Max position error (rad) fed to bias velocity; limits correction rate for large errors.
-    float maxCorrectionAngle = 0.5f;
+    Real maxCorrectionAngle = 0.5;
     /// Optional hinge-axis torque (N·m) added to articulated `u` in `PrepareArticulatedInertias`
     /// (parent `localAxisA` / world hinge axis). Default 0 (PD-only path).
-    float articulationDriveTorque = 0.0f;
+    Real articulationDriveTorque = 0.0;
     /// Scales post-integration positional hinge correction for this joint (1 = default).
-    float angleStabilizationScale = 1.0f;
+    Real angleStabilizationScale = 1.0;
     // Solver-side hysteresis flags for staged early-out gates.
     bool anchorEarlyOutActive = false;
     bool angularEarlyOutActive = false;
@@ -134,9 +134,9 @@ struct ServoJoint {
     std::uint32_t masterAxisJointIdx = kNoMasterAxis;
 
     // Set to true by BuildArticulationChains() when this joint belongs to a detected
-    // serial kinematic chain. Used by PrepareArticulatedInertias() (Phase 1b+) to
-    // override invDenomHinge with the ABI-derived effective mass.
-    // Has no effect on the PGS solver until Phase 1b is implemented.
+    // serial kinematic chain. Used by PrepareArticulatedInertias() to include the joint
+    // in ABI passes and optional articulated pre-correction; it does not override the
+    // hinge-only `invDenomHinge` used by the legacy servo impulse solve.
     bool inArticulationChain = false;
 };
 

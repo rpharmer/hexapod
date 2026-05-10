@@ -55,8 +55,8 @@ struct TerrainContactCandidate {
     std::uint32_t shapeFeature = 0;
     Vec3 normal{};
     Vec3 supportPoint{};
-    float penetration = 0.0f;
-    float height = 0.0f;
+    Real penetration = 0.0;
+    Real height = 0.0;
 };
 
 class World {
@@ -69,27 +69,27 @@ public:
         std::uint64_t revision = 0;
         int rows = 0;
         int cols = 0;
-        float cellSizeM = 0.0f;
+        Real cellSizeM = 0.0;
         Vec3 gridOriginWorld{};
         Vec3 centerWorld{};
-        Vec3 planeNormal{0.0f, 1.0f, 0.0f};
-        float planeHeightM = 0.0f;
-        float baseHeightM = 0.0f;
+        Vec3 planeNormal{0.0, 1.0, 0.0};
+        Real planeHeightM = 0.0;
+        Real baseHeightM = 0.0;
         bool useConservativeCollision = false;
         std::vector<float> surfaceHeightsM{};
         std::vector<float> collisionHeightsM{};
     };
 
-    explicit World(Vec3 gravity = {0.0f, -9.81f, 0.0f});
+    explicit World(Vec3 gravity = {0.0, -9.81, 0.0});
 
     void SetGravity(Vec3 gravity);
     Vec3 GetGravity() const;
 
     /// Caps dynamic body linear / angular speed magnitudes at the end of each physics substep (after
     /// contacts, joints, TOI, and orientation integration). Non-positive disables that component.
-    void SetBodyVelocityLimits(float maxLinearSpeed, float maxAngularSpeed);
-    float GetMaxBodyLinearSpeed() const { return maxBodyLinearSpeed_; }
-    float GetMaxBodyAngularSpeed() const { return maxBodyAngularSpeed_; }
+    void SetBodyVelocityLimits(Real maxLinearSpeed, Real maxAngularSpeed);
+    Real GetMaxBodyLinearSpeed() const { return maxBodyLinearSpeed_; }
+    Real GetMaxBodyAngularSpeed() const { return maxBodyAngularSpeed_; }
 
     void SetContactSolverConfig(const ContactSolverConfig& config);
     void SetJointSolverConfig(const JointSolverConfig& config);
@@ -124,7 +124,7 @@ public:
         /// Sum per-leg `Pa[0]` wrenches at chassis COM (MVP shared-base coupling); default off.
         bool enableVelocityPreCorrectionChassisCoupling = false;
         /// Gain on chassis Δv/Δω from MVP coupling (clamped internally).
-        float chassisCouplingGain = 1.0f;
+        Real chassisCouplingGain = 1.0;
         /// If true, MVP coupling only applies an angular velocity nudge from summed torque.
         bool chassisCouplingAngularOnly = false;
         /// Multi-tree Featherstone-style aggregate inertia + bias at chassis COM (replaces MVP
@@ -158,7 +158,7 @@ public:
         std::uint64_t matchedPoints = 0;
         std::uint64_t droppedPoints = 0;
         std::uint64_t newPoints = 0;
-        float churnRatio = 0.0f;
+        Real churnRatio = 0.0;
     };
     const PersistenceMatchDiagnostics& GetPersistenceMatchDiagnostics() const;
 
@@ -186,6 +186,25 @@ public:
 
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
     struct SolverTelemetry {
+        struct ArticulationChainTelemetry {
+            std::uint32_t chainIndex = 0;
+            std::uint32_t linkCount = 0;
+            bool passCSkippedShortChain = false;
+            bool passCSkippedContacts = false;
+            bool passCSkippedConditioning = false;
+            bool passCSkippedDeltaClamp = false;
+            bool chainPositionSkippedShortChain = false;
+            bool chainPositionSkippedConditioning = false;
+            bool contactComplianceRejected = false;
+            bool spatialSolveFailed = false;
+            bool spatialSolveRegularized = false;
+            Real minD = std::numeric_limits<float>::infinity();
+            Real maxD = 0.0;
+            Real minPivot = std::numeric_limits<float>::infinity();
+            Real maxDeltaV = 0.0;
+            Real maxDeltaW = 0.0;
+        };
+
         struct FallbackReasonCounters {
             std::uint64_t none = 0;
             std::uint64_t ineligible = 0;
@@ -267,9 +286,18 @@ public:
         std::uint64_t terrainManifoldMerges = 0;
         std::uint64_t terrainCacheHits = 0;
         std::uint64_t terrainDirtyCellRefreshes = 0;
+        std::uint64_t articulationContactComplianceAccepted = 0;
+        std::uint64_t articulationContactComplianceRejected = 0;
+        std::uint64_t articulationPassCSkippedContacts = 0;
+        std::uint64_t articulationPassCSkippedConditioning = 0;
+        std::uint64_t articulationPassCSkippedDeltaClamp = 0;
+        std::uint64_t articulationPositionSkippedConditioning = 0;
+        std::uint64_t articulationSpatialSolveFailures = 0;
+        std::uint64_t articulationSpatialSolveRegularized = 0;
 
         ManifoldSolveBucket manifoldSolveScope{};
         std::unordered_map<std::uint8_t, ManifoldSolveBucket> manifoldTypeBuckets{};
+        std::vector<ArticulationChainTelemetry> articulationChains{};
     };
 
     const SolverTelemetry& GetSolverTelemetry() const;
@@ -297,31 +325,31 @@ public:
     /// hits with t > maxT are pruned). Pass `dir` unit and `maxT` in metres for
     /// the typical case.
     template <typename Callback>
-    void QueryRayCandidates(const Vec3& origin, const Vec3& dir, float maxT, Callback&& cb) const {
+    void QueryRayCandidates(const Vec3& origin, const Vec3& dir, Real maxT, Callback&& cb) const {
         if (rootNode_ < 0 || treeNodes_.empty()) {
             return;
         }
-        constexpr float kTinyDir = 1.0e-30f;
+        constexpr Real kTinyDir = 1.0e-30;
         const Vec3 invDir{
-            (std::abs(dir.x) > kTinyDir) ? 1.0f / dir.x : std::copysign(1.0e30f, dir.x),
-            (std::abs(dir.y) > kTinyDir) ? 1.0f / dir.y : std::copysign(1.0e30f, dir.y),
-            (std::abs(dir.z) > kTinyDir) ? 1.0f / dir.z : std::copysign(1.0e30f, dir.z),
+            (std::abs(dir.x) > kTinyDir) ? 1.0 / dir.x : std::copysign(1.0e30, dir.x),
+            (std::abs(dir.y) > kTinyDir) ? 1.0 / dir.y : std::copysign(1.0e30, dir.y),
+            (std::abs(dir.z) > kTinyDir) ? 1.0 / dir.z : std::copysign(1.0e30, dir.z),
         };
 
         auto rayHitsBox = [&](const AABB& box) -> bool {
-            const float tx1 = (box.min.x - origin.x) * invDir.x;
-            const float tx2 = (box.max.x - origin.x) * invDir.x;
-            float tmin = std::min(tx1, tx2);
-            float tmax = std::max(tx1, tx2);
-            const float ty1 = (box.min.y - origin.y) * invDir.y;
-            const float ty2 = (box.max.y - origin.y) * invDir.y;
+            const Real tx1 = (box.min.x - origin.x) * invDir.x;
+            const Real tx2 = (box.max.x - origin.x) * invDir.x;
+            Real tmin = std::min(tx1, tx2);
+            Real tmax = std::max(tx1, tx2);
+            const Real ty1 = (box.min.y - origin.y) * invDir.y;
+            const Real ty2 = (box.max.y - origin.y) * invDir.y;
             tmin = std::max(tmin, std::min(ty1, ty2));
             tmax = std::min(tmax, std::max(ty1, ty2));
-            const float tz1 = (box.min.z - origin.z) * invDir.z;
-            const float tz2 = (box.max.z - origin.z) * invDir.z;
+            const Real tz1 = (box.min.z - origin.z) * invDir.z;
+            const Real tz2 = (box.max.z - origin.z) * invDir.z;
             tmin = std::max(tmin, std::min(tz1, tz2));
             tmax = std::min(tmax, std::max(tz1, tz2));
-            return tmax >= std::max(tmin, 0.0f) && tmin <= maxT;
+            return tmax >= std::max(tmin, 0.0) && tmin <= maxT;
         };
 
         // Scenes have <128 bodies; stack of 128 is more than enough for any tree depth.
@@ -352,25 +380,25 @@ public:
 
     std::uint32_t GetServoJointCount() const;
 
-    float GetServoJointAngle(std::uint32_t id) const;
+    Real GetServoJointAngle(std::uint32_t id) const;
 
     // Read-only access to articulation chains detected by BuildArticulationChains().
     // Updated each substep (after BuildIslands()); empty before the first Step().
     const std::vector<ArtChain>& GetArticulationChains() const { return articulationChains_; }
 
-    std::uint32_t CreateDistanceJoint(std::uint32_t a, std::uint32_t b, const Vec3& worldAnchorA, const Vec3& worldAnchorB, float stiffness = 1.0f, float damping = 0.1f);
+    std::uint32_t CreateDistanceJoint(std::uint32_t a, std::uint32_t b, const Vec3& worldAnchorA, const Vec3& worldAnchorB, Real stiffness = 1.0, Real damping = 0.1);
 
     std::uint32_t CreateHingeJoint(
         std::uint32_t a,
         std::uint32_t b,
         const Vec3& worldAnchor,
-        const Vec3& worldAxis = {0.0f, 1.0f, 0.0f},
+        const Vec3& worldAxis = {0.0, 1.0, 0.0},
         bool enableLimits = false,
-        float lowerAngle = 0.0f,
-        float upperAngle = 0.0f,
+        Real lowerAngle = 0.0,
+        Real upperAngle = 0.0,
         bool enableMotor = false,
-        float motorSpeed = 0.0f,
-        float maxMotorTorque = 0.0f);
+        Real motorSpeed = 0.0,
+        Real maxMotorTorque = 0.0);
     std::uint32_t CreateBallSocketJoint(
         std::uint32_t a,
         std::uint32_t b,
@@ -383,30 +411,30 @@ public:
         std::uint32_t a,
         std::uint32_t b,
         const Vec3& worldAnchor,
-        const Vec3& worldAxis = {1.0f, 0.0f, 0.0f},
+        const Vec3& worldAxis = {1.0, 0.0, 0.0},
         bool enableLimits = false,
-        float lowerTranslation = 0.0f,
-        float upperTranslation = 0.0f,
+        Real lowerTranslation = 0.0,
+        Real upperTranslation = 0.0,
         bool enableMotor = false,
-        float motorSpeed = 0.0f,
-        float maxMotorForce = 0.0f);
+        Real motorSpeed = 0.0,
+        Real maxMotorForce = 0.0);
     std::uint32_t CreateServoJoint(
         std::uint32_t a,
         std::uint32_t b,
         const Vec3& worldAnchor,
-        const Vec3& worldAxis = {0.0f, 1.0f, 0.0f},
-        float targetAngle = 0.0f,
-        float maxServoTorque = 1.0f,
-        float positionGain = 40.0f,
-        float dampingGain = 1.0f,
-        float integralGain = 0.0f,
-        float integralClamp = 0.5f,
-        float positionErrorSmoothing = 0.0f,
-        float angleStabilizationScale = 1.0f,
-        float maxServoSpeed = 0.0f,
-        float maxCorrectionAngle = 0.5f);
+        const Vec3& worldAxis = {0.0, 1.0, 0.0},
+        Real targetAngle = 0.0,
+        Real maxServoTorque = 1.0,
+        Real positionGain = 40.0,
+        Real dampingGain = 1.0,
+        Real integralGain = 0.0,
+        Real integralClamp = 0.5,
+        Real positionErrorSmoothing = 0.0,
+        Real angleStabilizationScale = 1.0,
+        Real maxServoSpeed = 0.0,
+        Real maxCorrectionAngle = 0.5);
 
-    void Step(float dt, int solverIterations = 8);
+    void Step(Real dt, int solverIterations = 8);
 
     /// Hybrid articulation + legacy servo position correction: when
     /// `ArticulationConfig::enableChainPositionSolve`, runs a single ordered pass over each
@@ -436,15 +464,15 @@ public:
     std::size_t BruteForcePairCount() const;
 
 private:
-    static constexpr float kQuaternionNormalizationTolerance = 1e-3f;
+    static constexpr Real kQuaternionNormalizationTolerance = 1e-3;
     static constexpr std::size_t kMaxContactsPerManifold = 4;
-    static constexpr float kWakeContactRelativeSpeedThreshold = 0.35f;
-    static constexpr float kWakeContactPenetrationThreshold = 0.02f;
-    static constexpr float kWakeJointRelativeSpeedThreshold = 0.15f;
-    static constexpr float kPersistenceLocalAnchorDriftThreshold = 0.06f;
-    static constexpr float kPersistenceWorldAnchorDriftThreshold = 0.08f;
+    static constexpr Real kWakeContactRelativeSpeedThreshold = 0.35;
+    static constexpr Real kWakeContactPenetrationThreshold = 0.02;
+    static constexpr Real kWakeJointRelativeSpeedThreshold = 0.15;
+    static constexpr Real kPersistenceLocalAnchorDriftThreshold = 0.06;
+    static constexpr Real kPersistenceWorldAnchorDriftThreshold = 0.08;
 
-    static bool IsFinite(float value);
+    static bool IsFinite(Real value);
     static bool IsFinite(const Vec3& v);
     static bool IsFinite(const Quat& q);
     static bool IsFinite(const Mat3& m);
@@ -467,12 +495,12 @@ private:
 
     static void AssertQuaternionNormalized(const Quat& q);
 
-    static AABB ExpandAABB(const AABB& aabb, float margin);
+    static AABB ExpandAABB(const AABB& aabb, Real margin);
     static bool Contains(const AABB& outer, const AABB& inner);
     static AABB MergeAABB(const AABB& a, const AABB& b);
-    static float SurfaceArea(const AABB& aabb);
+    static Real SurfaceArea(const AABB& aabb);
     void UpdateBroadphaseProxies();
-    float ComputeProxyMargin(const Body& body) const;
+    Real ComputeProxyMargin(const Body& body) const;
     void ReinsertProxy(std::uint32_t bodyId);
     void PartialRebuildBroadphase();
     void FullRebuildBroadphase();
@@ -492,40 +520,40 @@ private:
 
     std::int32_t Balance(std::int32_t iA);
 
-    int ComputeSubsteps(float dt) const;
+    int ComputeSubsteps(Real dt) const;
 
     struct TOIEvent {
         bool hit = false;
-        float toi = 0.0f;
+        Real toi = 0.0;
         std::uint32_t a = 0;
         std::uint32_t b = 0;
-        Vec3 normal{0.0f, 1.0f, 0.0f};
-        Vec3 point{0.0f, 0.0f, 0.0f};
+        Vec3 normal{0.0, 1.0, 0.0};
+        Vec3 point{0.0, 0.0, 0.0};
     };
 
-    static float ClosestPointParameter(const Vec3& a, const Vec3& b, const Vec3& p);
+    static Real ClosestPointParameter(const Vec3& a, const Vec3& b, const Vec3& p);
 
-    static float SmoothStep01(float t);
+    static Real SmoothStep01(Real t);
 
-    float EffectiveRestitutionCutoffSpeed() const;
+    Real EffectiveRestitutionCutoffSpeed() const;
 
-    float ComputeRestitution(float speedIntoContact, float restitutionA, float restitutionB) const;
+    Real ComputeRestitution(Real speedIntoContact, Real restitutionA, Real restitutionB) const;
 
-    float ComputeHighMassRatioBoost(const Body& a, const Body& b) const;
+    Real ComputeHighMassRatioBoost(const Body& a, const Body& b) const;
 
-    void AdvanceDynamicBodies(float dt);
+    void AdvanceDynamicBodies(Real dt);
 
     void ResolveTOIImpact(const TOIEvent& hit);
 
-    TOIEvent SweepSpherePlane(std::uint32_t sphereId, std::uint32_t planeId, float maxDt) const;
+    TOIEvent SweepSpherePlane(std::uint32_t sphereId, std::uint32_t planeId, Real maxDt) const;
 
-    TOIEvent SweepSphereBox(std::uint32_t sphereId, std::uint32_t boxId, float maxDt) const;
+    TOIEvent SweepSphereBox(std::uint32_t sphereId, std::uint32_t boxId, Real maxDt) const;
 
-    TOIEvent SweepSphereCapsule(std::uint32_t sphereId, std::uint32_t capsuleId, float maxDt) const;
+    TOIEvent SweepSphereCapsule(std::uint32_t sphereId, std::uint32_t capsuleId, Real maxDt) const;
 
-    TOIEvent FindEarliestTOI(float maxDt) const;
+    TOIEvent FindEarliestTOI(Real maxDt) const;
 
-    void ResolveTOIPipeline(float dt);
+    void ResolveTOIPipeline(Real dt);
 
     static std::pair<std::uint32_t, std::uint32_t> CanonicalBodyOrder(std::uint32_t a, std::uint32_t b);
 
@@ -552,32 +580,32 @@ private:
 
     void WakeConnectedBodies(std::uint32_t start);
 
-    static float ProjectBoxOntoAxis(const Body& box, const Vec3& axis);
+    static Real ProjectBoxOntoAxis(const Body& box, const Vec3& axis);
 
     static Vec3 ClosestPointOnBox(const Body& box, const Vec3& worldPoint);
 
-    void IntegrateForces(float dt);
+    void IntegrateForces(Real dt);
 
-    void IntegrateVelocities(float dt);
+    void IntegrateVelocities(Real dt);
 
-    void IntegrateOrientation(float dt);
+    void IntegrateOrientation(Real dt);
 
     void AddContact(
         std::uint32_t a,
         std::uint32_t b,
         const Vec3& normal,
         const Vec3& point,
-        float penetration,
+        Real penetration,
         std::uint8_t manifoldType = 0,
         std::uint64_t canonicalFeatureId = 0);
 
     static int FindBlockSlot(const Manifold& manifold, std::uint64_t contactKey);
 
-    static std::array<float, 3>* FindPerContactImpulseCache(Manifold& manifold, std::uint64_t contactKey);
+    static std::array<Real, 3>* FindPerContactImpulseCache(Manifold& manifold, std::uint64_t contactKey);
 
-    static const std::array<float, 3>* FindPerContactImpulseCache(const Manifold& manifold, std::uint64_t contactKey);
+    static const std::array<Real, 3>* FindPerContactImpulseCache(const Manifold& manifold, std::uint64_t contactKey);
 
-    static std::array<float, 3>& EnsurePerContactImpulseCache(Manifold& manifold, std::uint64_t contactKey);
+    static std::array<Real, 3>& EnsurePerContactImpulseCache(Manifold& manifold, std::uint64_t contactKey);
 
     static int FindFirstFreeBlockSlot(const std::array<bool, 2>& slotOccupied);
 
@@ -595,10 +623,10 @@ private:
     static void SortManifoldContacts(std::vector<Contact>& contacts);
 
     struct ManifoldQualityScore {
-        float penetration = 0.0f;
-        float spreadArea = 0.0f;
-        float normalCoherence = 0.0f;
-        float total = 0.0f;
+        Real penetration = 0.0;
+        Real spreadArea = 0.0;
+        Real normalCoherence = 0.0;
+        Real total = 0.0;
     };
 
     static ManifoldQualityScore ComputeManifoldQualityScore(const Manifold& manifold);
@@ -621,21 +649,21 @@ private:
     void BuildManifolds();
 
     struct PersistentPointImpulseState {
-        float normalImpulseSum = 0.0f;
-        float tangentImpulseSum0 = 0.0f;
-        float tangentImpulseSum1 = 0.0f;
+        Real normalImpulseSum = 0.0;
+        Real tangentImpulseSum0 = 0.0;
+        Real tangentImpulseSum1 = 0.0;
         std::uint16_t persistenceAge = 0;
         bool anchorsValid = false;
-        Vec3 localAnchorA{0.0f, 0.0f, 0.0f};
-        Vec3 localAnchorB{0.0f, 0.0f, 0.0f};
-        Vec3 worldPoint{0.0f, 0.0f, 0.0f};
+        Vec3 localAnchorA{0.0, 0.0, 0.0};
+        Vec3 localAnchorB{0.0, 0.0, 0.0};
+        Vec3 worldPoint{0.0, 0.0, 0.0};
     };
 
     struct PersistentPointMatchCandidate {
         PersistentPointKey key{};
         PersistentPointImpulseState state{};
-        float localAnchorDriftSq = 0.0f;
-        float worldAnchorDriftSq = 0.0f;
+        Real localAnchorDriftSq = 0.0;
+        Real worldAnchorDriftSq = 0.0;
     };
 
     static bool PersistentPointCandidateLess(
@@ -659,9 +687,9 @@ private:
     // Zero behaviour impact until PrepareArticulatedInertias() is also called.
     void BuildArticulationChains();
 
-    // Compute Articulated Body Inertia (ABI) for each chain in articulationChains_
-    // and update ServoJointPrep::invDenomHinge for chain joints with the ABI-derived
-    // effective mass.  Rebuilds bodyInertiaWorld_ scratch for forward inertia each call.
+    // Compute Articulated Body Inertia (ABI) for each chain in articulationChains_,
+    // populate articulated contact-mass scratch, and prepare optional Pass-C / chain-position
+    // data. Rebuilds bodyInertiaWorld_ scratch for forward inertia each call.
     // Called after PrepareServoJointSolves() each substep (Phase 1b+).
     void PrepareArticulatedInertias();
 
@@ -682,13 +710,13 @@ private:
 
     static Vec3 StableDirection(const Vec3& primary, const std::array<Vec3, 4>& fallbacks);
 
-    static std::pair<float, float> ClosestSegmentParameters(const Vec3& p1, const Vec3& q1, const Vec3& p2, const Vec3& q2);
+    static std::pair<Real, Real> ClosestSegmentParameters(const Vec3& p1, const Vec3& q1, const Vec3& p2, const Vec3& q2);
 
     struct SegmentBoxClosest {
-        float t = 0.0f;
+        Real t = 0.0;
         Vec3 segmentPoint{};
         Vec3 boxPoint{};
-        float distSq = 0.0f;
+        Real distSq = 0.0;
     };
 
     static SegmentBoxClosest ClosestSegmentPointToBox(const Vec3& segA, const Vec3& segB, const Vec3& extents);
@@ -753,8 +781,8 @@ private:
         Vec3 rb{};                  // c.point - b.position
         Vec3 raCrossN{};            // Cross(ra, c.normal)
         Vec3 rbCrossN{};            // Cross(rb, c.normal)
-        float normalMass = 0.0f;    // invMassSum + raCrossN·invIA·raCrossN + rbCrossN·invIB·rbCrossN
-        float invNormalMass = 0.0f; // 1 / normalMass (zero when normalMass <= kEpsilon)
+        Real normalMass = 0.0;    // invMassSum + raCrossN·invIA·raCrossN + rbCrossN·invIB·rbCrossN
+        Real invNormalMass = 0.0; // 1 / normalMass (zero when normalMass <= kEpsilon)
     };
 
     struct ManifoldPrep {
@@ -792,8 +820,8 @@ private:
 
     void RecordManifoldSolveTelemetry(const Manifold& manifold,
                                       BlockSolveFallbackReason fallbackReason,
-                                      float determinantOrConditionEstimate,
-                                      float impulseContinuityMetric);
+                                      Real determinantOrConditionEstimate,
+                                      Real impulseContinuityMetric);
 #endif
 
     static bool IsValidBlockContactPoint(const Contact& contact);
@@ -825,8 +853,8 @@ private:
 
     bool IsFace4PointBlockEligible(const Manifold& manifold, BlockSolveFallbackReason* outReason = nullptr);
 
-    bool SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fallbackReason, float& determinantOrConditionEstimate);
-    bool SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& fallbackReason, float& conditionEstimate);
+    bool SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fallbackReason, Real& determinantOrConditionEstimate);
+    bool SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& fallbackReason, Real& conditionEstimate);
 
     void SolveManifoldNormalImpulses(Manifold& manifold);
 
@@ -874,18 +902,28 @@ private:
         // independent scalar rows using invDenomT1/invDenomT2.
         Vec3 axisA{};
         Vec3 t1{}, t2{};
-        float invDenomT1 = 0.0f;    // 1 / (wT1 + axisGamma1), per-row fallback
-        float invDenomT2 = 0.0f;    // 1 / (wT2 + axisGamma2), per-row fallback
-        float axisBiasT1 = 0.0f;    // kAxisAlignOmega * Dot(angularError, t1) * invAxisDenom
-        float axisBiasT2 = 0.0f;
+        Real invDenomT1 = 0.0;    // 1 / (wT1 + axisGamma1), per-row fallback
+        Real invDenomT2 = 0.0;    // 1 / (wT2 + axisGamma2), per-row fallback
+        Real axisBiasT1 = 0.0;    // kAxisAlignOmega * Dot(angularError, t1) * invAxisDenom
+        Real axisBiasT2 = 0.0;
         // Symmetric 2x2 inverse stored as three floats: invK2 = [[aa, ab], [ab, bb]].
-        float invK2aa = 0.0f, invK2ab = 0.0f, invK2bb = 0.0f;
+        Real invK2aa = 0.0, invK2ab = 0.0, invK2bb = 0.0;
 
-        // Hinge servo (1D angular constraint around axisA).
-        float invDenomHinge = 0.0f; // 1 / (wHinge + hingeGamma)
-        float invWHingeForSpeed = 0.0f; // 1 / max(wHinge, kEpsilon) — used by post-solve speed clamp
-        float servoBias = 0.0f;     // PD bias velocity, pre-clamped to ±maxServoSpeed if applicable
-        float maxServoSpeed = 0.0f;
+        // Hinge servo (1D angular constraint around axisA). Two formulations live side-by-
+        // side, selected by jointSolverConfig_.enableServoStiffnessDampingDecoupling. The
+        // legacy (Catto-coupled) path uses {invDenomHinge, servoBias}; the decoupled path
+        // uses {invDenomHingePos, invDenomHingeDamp, servoBiasPos}.
+        Real invDenomHinge = 0.0; // legacy: 1 / (wHinge + hingeGamma)
+        Real invWHingeForSpeed = 0.0; // 1 / max(wHinge, kEpsilon) — used by post-solve speed clamp
+        Real servoBias = 0.0;     // legacy: combined PD bias velocity (pre-clamped to ±maxServoSpeed)
+        Real maxServoSpeed = 0.0;
+        // Decoupled formulation: separate PGS rows for stiffness and damping. Position row
+        // uses bias = err/dt with softness γ_pos derived from positionGain alone; damping
+        // row uses bias = 0 with softness γ_damp derived from dampingGain alone. Applied
+        // sequentially each iteration so neither parameter contaminates the other.
+        Real invDenomHingePos = 0.0;  // 1 / (wHinge + γ_pos)
+        Real invDenomHingeDamp = 0.0; // 1 / (wHinge + γ_damp)
+        Real servoBiasPos = 0.0;      // err / dt, clamped to ±maxServoSpeed
 
         // Flags
         bool anchorValid = false;   // false if K was degenerate
@@ -897,6 +935,8 @@ private:
         bool hingeActive = false;   // wHinge > kEpsilon
         bool skipHinge = false;
         bool hasSpeedClamp = false;
+        bool useDecoupledPD = false; // mirrors jointSolverConfig_.enableServoStiffnessDampingDecoupling
+        bool dampingRowActive = false; // false when 2ζωₙ ≈ 0 (no damping commanded)
     };
 
     // Refresh the per-servo-joint solver cache. Call once per substep, after
@@ -913,22 +953,22 @@ private:
         Vec3 anchorBias{};          // hingeAnchorBiasFactor * error
         Mat3 invK{};                // 3×3 anchor inverse mass matrix (block path)
         // Per-axis scalar fallback: used when !anchorValid or useBlockSolver==false
-        float fallbackEffMass[3]{};
-        float fallbackPosBias[3]{}; // hingeAnchorBiasFactor * Dot(error, axis_i)
+        Real fallbackEffMass[3]{};
+        Real fallbackPosBias[3]{}; // hingeAnchorBiasFactor * Dot(error, axis_i)
         bool  anchorValid = false;  // true → use invK block path
 
         // Angular alignment (t1, t2 ⊥ axisA)
         Vec3  axisA{}, t1{}, t2{};
-        float invDenomT1 = 0.0f;   // 1/effMassT1; 0 → row inactive
-        float invDenomT2 = 0.0f;   // 1/effMassT2; 0 → row inactive
-        float angBiasT1  = 0.0f;   // 0.2f * Dot(angularError, t1) — position part only
-        float angBiasT2  = 0.0f;   // 0.2f * Dot(angularError, t2)
+        Real invDenomT1 = 0.0;   // 1/effMassT1; 0 → row inactive
+        Real invDenomT2 = 0.0;   // 1/effMassT2; 0 → row inactive
+        Real angBiasT1  = 0.0;   // 0.2 * Dot(angularError, t1) — position part only
+        Real angBiasT2  = 0.0;   // 0.2 * Dot(angularError, t2)
         bool  t1Active   = false;
         bool  t2Active   = false;
 
         // Limit + motor row (1D along axisA)
-        float invEffMassHinge    = 0.0f; // 1 / (Dot(axisA,invIA*axisA) + Dot(axisA,invIB*axisA))
-        float hingeAngle         = 0.0f; // SignedAngleAroundAxis — precomputed for limits
+        Real invEffMassHinge    = 0.0; // 1 / (Dot(axisA,invIA*axisA) + Dot(axisA,invIB*axisA))
+        Real hingeAngle         = 0.0; // SignedAngleAroundAxis — precomputed for limits
         bool  hingeEffMassActive = false;
     };
 
@@ -948,7 +988,7 @@ private:
     void BeginSplitImpulseSubstep();
     void ApplySplitStabilization();
     void AccumulateSplitImpulseCorrection(std::uint32_t bodyId, const Vec3& linearDelta, const Vec3& angularDelta);
-    bool TryComputeAnchorSeparation(const Contact& c, float& outPenetration) const;
+    bool TryComputeAnchorSeparation(const Contact& c, Real& outPenetration) const;
 
     void ApplyImpulse(
         Body& a,
@@ -974,9 +1014,9 @@ private:
     void ClampBodyVelocities();
 
 private:
-    float ComputeServoJointAngleNoProfile(const ServoJoint& joint) const;
+    Real ComputeServoJointAngleNoProfile(const ServoJoint& joint) const;
     void PrepareServoJointControlSamples();
-    void AccumulateServoAngleIntegrals(float dt);
+    void AccumulateServoAngleIntegrals(Real dt);
     void InvalidateServoAngleSampleCache();
     void InvalidateServoPositionTopologyCache();
     bool ComputeServoPositionUseVelocityBiases() const;
@@ -1025,8 +1065,8 @@ private:
     [[nodiscard]] const std::vector<ResolvedCollisionShape>& ResolvedCollisionShapesForBody(std::uint32_t bodyId);
 
     Vec3 gravity_{};
-    float maxBodyLinearSpeed_ = 120.0f;
-    float maxBodyAngularSpeed_ = 180.0f;
+    Real maxBodyLinearSpeed_ = 120.0;
+    Real maxBodyAngularSpeed_ = 180.0;
     ContactSolverConfig contactSolverConfig_{};
     JointSolverConfig jointSolverConfig_{};
     BroadphaseConfig broadphaseConfig_{};
@@ -1034,7 +1074,7 @@ private:
     std::uint64_t broadphaseStepCounter_ = 0;
     std::uint64_t lastBroadphaseRebuildStep_ = 0;
     NarrowphaseDispatchPolicy narrowphaseDispatchPolicy_ = NarrowphaseDispatchPolicy::PreferSpecializedFastPaths;
-    float currentSubstepDt_ = 1.0f / 60.0f;
+    Real currentSubstepDt_ = 1.0 / 60.0;
     bool solverRelaxationPassActive_ = false;
     std::vector<Body> bodies_;
     // World-space inverse inertia per body, refreshed once per substep by

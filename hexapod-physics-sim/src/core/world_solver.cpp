@@ -8,16 +8,80 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 namespace minphys3d {
 
 namespace {
 
+constexpr Real kArticulationMinAcceptedD = 1.0e-6;
+constexpr Real kArticulationMaxAcceptedCompliance = 1.0e8;
+constexpr Real kArticulationMaxPassCDeltaLinear = 25.0;
+constexpr Real kArticulationMaxPassCDeltaAngular = 50.0;
+
+struct ArticulationConditionMetrics {
+    Real minD = std::numeric_limits<float>::infinity();
+    Real maxD = 0.0;
+    bool badConditioning = false;
+};
+
+ArticulationConditionMetrics AnalyzeArticulationChainConditioning(const ArtChain& chain) {
+    ArticulationConditionMetrics metrics{};
+    for (std::size_t linkIdx = 1; linkIdx < chain.links.size(); ++linkIdx) {
+        const Real d = chain.D[linkIdx];
+        if (!std::isfinite(d) || d <= kArticulationMinAcceptedD) {
+            metrics.badConditioning = true;
+        }
+        if (std::isfinite(d)) {
+            metrics.minD = std::min(metrics.minD, d);
+            metrics.maxD = std::max(metrics.maxD, d);
+        }
+    }
+    if (!std::isfinite(metrics.minD)) {
+        metrics.badConditioning = true;
+    }
+    return metrics;
+}
+
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+World::SolverTelemetry::ArticulationChainTelemetry* GetArticulationTelemetrySample(
+    World::SolverTelemetry& telemetry,
+    std::size_t chainIndex)
+{
+    return chainIndex < telemetry.articulationChains.size()
+        ? &telemetry.articulationChains[chainIndex]
+        : nullptr;
+}
+
+void UpdateArticulationTelemetrySolveDiagnostics(
+    World::SolverTelemetry& telemetry,
+    World::SolverTelemetry::ArticulationChainTelemetry* sample,
+    const SpatialSolveDiagnostics& diagnostics)
+{
+    if (sample == nullptr) {
+        return;
+    }
+    if (diagnostics.regularized) {
+        sample->spatialSolveRegularized = true;
+        ++telemetry.articulationSpatialSolveRegularized;
+    }
+    if (std::isfinite(diagnostics.minPivotAbs)) {
+        sample->minPivot = std::min(sample->minPivot, static_cast<Real>(diagnostics.minPivotAbs));
+    }
+    if (diagnostics.failed) {
+        sample->spatialSolveFailed = true;
+        ++telemetry.articulationSpatialSolveFailures;
+    }
+}
+#endif
+
 Vec3 JointReferenceFallback(const Vec3& axis) {
-    const Vec3 fallback = (std::abs(axis.y) < 0.9f) ? Vec3{0.0f, 1.0f, 0.0f} : Vec3{1.0f, 0.0f, 0.0f};
+    const Vec3 fallback = (std::abs(axis.y) < 0.9) ? Vec3{0.0, 1.0, 0.0} : Vec3{1.0, 0.0, 0.0};
     Vec3 reference = fallback - Dot(fallback, axis) * axis;
     if (!TryNormalize(reference, reference)) {
-        reference = {1.0f, 0.0f, 0.0f};
+        reference = {1.0, 0.0, 0.0};
     }
     return reference;
 }
@@ -33,29 +97,29 @@ Vec3 ResolveJointReference(const Quat& orientation, const Vec3& localReference, 
 
 // Octant-reduction atan2 approximation.
 // Max error ~0.005 rad — adequate for physics Baumgarte bias (multiplied by ~0.2).
-float FastAtan2(float y, float x) {
-    constexpr float kPiOver2 = 1.5707963f;
-    constexpr float kPi      = 3.1415927f;
-    const float absX = std::abs(x);
-    const float absY = std::abs(y);
-    const float mn = absX < absY ? absX : absY;
-    const float mx = absX > absY ? absX : absY;
-    if (mx < 1e-10f) return 0.0f;
-    const float t  = mn / mx;
-    const float t2 = t * t;
+Real FastAtan2(Real y, Real x) {
+    constexpr Real kPiOver2 = 1.5707963;
+    constexpr Real kPi      = 3.1415927;
+    const Real absX = std::abs(x);
+    const Real absY = std::abs(y);
+    const Real mn = absX < absY ? absX : absY;
+    const Real mx = absX > absY ? absX : absY;
+    if (mx < 1e-10) return 0.0;
+    const Real t  = mn / mx;
+    const Real t2 = t * t;
     // Degree-5 minimax polynomial for atan(t) on [0, 1]
-    float r = t * (0.9997878f + t2 * (-0.3258560f + t2 * 0.1520524f));
+    Real r = t * (0.9997878 + t2 * (-0.3258560 + t2 * 0.1520524));
     if (absY > absX) r = kPiOver2 - r;
-    if (x  < 0.0f ) r = kPi      - r;
-    if (y  < 0.0f ) r = -r;
+    if (x  < 0.0 ) r = kPi      - r;
+    if (y  < 0.0 ) r = -r;
     return r;
 }
 
-float SignedAngleAroundAxis(const Vec3& from, const Vec3& to, const Vec3& axis) {
+Real SignedAngleAroundAxis(const Vec3& from, const Vec3& to, const Vec3& axis) {
     Vec3 fromN = from;
     Vec3 toN = to;
     if (!TryNormalize(fromN, fromN) || !TryNormalize(toN, toN)) {
-        return 0.0f;
+        return 0.0;
     }
     return FastAtan2(Dot(Cross(fromN, toN), axis), Dot(fromN, toN));
 }
@@ -79,32 +143,32 @@ bool ComputeUseVelocityBiasesForServoPosition(
 
 } // namespace
 
-void World::ResolveTOIPipeline(float dt) {
-        float remaining = dt;
+void World::ResolveTOIPipeline(Real dt) {
+        Real remaining = dt;
         const int maxToiIterations = std::max(contactSolverConfig_.toi.max_iterations, 1);
-        const float toiMinTimeStep = std::max(contactSolverConfig_.toi.min_time_step, 1e-9f);
+        const Real toiMinTimeStep = std::max(contactSolverConfig_.toi.min_time_step, 1e-9);
         int iterations = 0;
         while (remaining > toiMinTimeStep && iterations < maxToiIterations) {
             const TOIEvent hit = FindEarliestTOI(remaining);
             if (!hit.hit) {
                 AdvanceDynamicBodies(remaining);
-                remaining = 0.0f;
+                remaining = 0.0;
                 break;
             }
 
-            const float advanceTime = std::max(0.0f, hit.toi);
-            if (advanceTime > 0.0f) {
+            const Real advanceTime = std::max(0.0, hit.toi);
+            if (advanceTime > 0.0) {
                 AdvanceDynamicBodies(advanceTime);
                 remaining -= advanceTime;
             }
             ResolveTOIImpact(hit);
             if (hit.toi <= toiMinTimeStep) {
-                remaining = std::max(0.0f, remaining - toiMinTimeStep);
+                remaining = std::max(0.0, remaining - toiMinTimeStep);
             }
             ++iterations;
         }
 
-        if (remaining > 0.0f) {
+        if (remaining > 0.0) {
             AdvanceDynamicBodies(remaining);
         }
     }
@@ -127,8 +191,8 @@ void World::WarmStartContacts() {
                         Contact& c = m.contacts[static_cast<std::size_t>(contactIndex)];
                         const int slot = FindBlockSlot(m, c.key);
                         if (slot >= 0) {
-                            const float cachedNormalImpulse = m.blockNormalImpulseSum[slot];
-                            if (cachedNormalImpulse != 0.0f) {
+                            const Real cachedNormalImpulse = m.blockNormalImpulseSum[slot];
+                            if (cachedNormalImpulse != 0.0) {
                                 Body& a = bodies_[c.a];
                                 Body& b = bodies_[c.b];
                                 const Mat3& invIA = bodyInvInertiaWorld_[c.a];
@@ -148,14 +212,14 @@ void World::WarmStartContacts() {
             const bool useManifoldTangentWarmStart =
                 m.tangentBasisValid && m.manifoldTangentImpulseValid && !m.contacts.empty();
             if (useManifoldTangentWarmStart) {
-                float totalNormal = 0.0f;
+                Real totalNormal = 0.0;
                 for (const Contact& c : m.contacts) {
-                    totalNormal += std::max(c.normalImpulseSum, 0.0f);
+                    totalNormal += std::max(c.normalImpulseSum, 0.0);
                 }
-                const float equalWeight = 1.0f / static_cast<float>(m.contacts.size());
+                const Real equalWeight = 1.0 / static_cast<Real>(m.contacts.size());
                 for (Contact& c : m.contacts) {
-                    const float w = totalNormal > kEpsilon
-                        ? std::max(c.normalImpulseSum, 0.0f) / totalNormal
+                    const Real w = totalNormal > kEpsilon
+                        ? std::max(c.normalImpulseSum, 0.0) / totalNormal
                         : equalWeight;
                     c.tangentImpulseSum0 = w * m.manifoldTangentImpulseSum[0];
                     c.tangentImpulseSum1 = w * m.manifoldTangentImpulseSum[1];
@@ -163,9 +227,9 @@ void World::WarmStartContacts() {
                 }
             }
             for (Contact& c : m.contacts) {
-                if (const std::array<float, 3>* cached = FindPerContactImpulseCache(m, c.key)) {
+                if (const std::array<Real, 3>* cached = FindPerContactImpulseCache(m, c.key)) {
                     // Normal impulse warm-start source precedence is unchanged: per-contact cache always applies.
-                    c.normalImpulseSum = std::max((*cached)[0], 0.0f);
+                    c.normalImpulseSum = std::max((*cached)[0], 0.0);
                     // Tangent warm-start precedence:
                     // 1) Manifold tangent accumulator (when manifold basis + impulses are valid).
                     // 2) Per-contact cache fallback only when manifold tangent basis is unavailable/invalid.
@@ -176,12 +240,12 @@ void World::WarmStartContacts() {
                     }
                 }
                 const bool skipNormal = skipPerContactNormal[contactIndex];
-                if (!skipNormal && c.normalImpulseSum == 0.0f
-                    && c.tangentImpulseSum0 == 0.0f && c.tangentImpulseSum1 == 0.0f) {
+                if (!skipNormal && c.normalImpulseSum == 0.0
+                    && c.tangentImpulseSum0 == 0.0 && c.tangentImpulseSum1 == 0.0) {
                     ++contactIndex;
                     continue;
                 }
-                if (skipNormal && c.tangentImpulseSum0 == 0.0f && c.tangentImpulseSum1 == 0.0f) {
+                if (skipNormal && c.tangentImpulseSum0 == 0.0 && c.tangentImpulseSum1 == 0.0) {
                     ++contactIndex;
                     continue;
                 }
@@ -193,8 +257,8 @@ void World::WarmStartContacts() {
                 const Vec3 ra = c.point - a.position;
                 const Vec3 rb = c.point - b.position;
 
-                const Vec3 normalImpulse = skipNormal ? Vec3{0.0f, 0.0f, 0.0f} : c.normalImpulseSum * c.normal;
-                Vec3 tangentImpulse{0.0f, 0.0f, 0.0f};
+                const Vec3 normalImpulse = skipNormal ? Vec3{0.0, 0.0, 0.0} : c.normalImpulseSum * c.normal;
+                Vec3 tangentImpulse{0.0, 0.0, 0.0};
                 if (m.tangentBasisValid) {
                     tangentImpulse = c.tangentImpulseSum0 * m.t0 + c.tangentImpulseSum1 * m.t1;
                 } else {
@@ -202,8 +266,8 @@ void World::WarmStartContacts() {
                 }
                 const Vec3 impulse = normalImpulse + tangentImpulse;
                 ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
-                std::array<float, 3>& cacheEntry = EnsurePerContactImpulseCache(m, c.key);
-                cacheEntry[0] = std::max(c.normalImpulseSum, 0.0f);
+                std::array<Real, 3>& cacheEntry = EnsurePerContactImpulseCache(m, c.key);
+                cacheEntry[0] = std::max(c.normalImpulseSum, 0.0);
                 cacheEntry[1] = c.tangentImpulseSum0;
                 cacheEntry[2] = c.tangentImpulseSum1;
                 ++contactIndex;
@@ -211,7 +275,7 @@ void World::WarmStartContacts() {
         }
     }
 
-bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fallbackReason, float& determinantOrConditionEstimate) {
+bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fallbackReason, Real& determinantOrConditionEstimate) {
         fallbackReason = BlockSolveFallbackReason::None;
         determinantOrConditionEstimate = std::numeric_limits<float>::quiet_NaN();
         if (manifold.contacts.size() < 2) {
@@ -241,7 +305,7 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
         }
         Vec3 normal0 = Normalize(c0.normal);
         Vec3 normal1 = Normalize(c1.normal);
-        if (Dot(c0.normal, manifoldNormal) < 0.95f || Dot(c1.normal, manifoldNormal) < 0.95f
+        if (Dot(c0.normal, manifoldNormal) < 0.95 || Dot(c1.normal, manifoldNormal) < 0.95
             || LengthSquared(normal0) <= kEpsilon || LengthSquared(normal1) <= kEpsilon) {
             fallbackReason = BlockSolveFallbackReason::ContactNormalMismatch;
             return false;
@@ -273,38 +337,38 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
         const Vec3 vb0 = b.velocity + Cross(b.angularVelocity, rb0);
         const Vec3 va1 = a.velocity + Cross(a.angularVelocity, ra1);
         const Vec3 vb1 = b.velocity + Cross(b.angularVelocity, rb1);
-        const float vn0 = Dot(vb0 - va0, normal0);
-        const float vn1 = Dot(vb1 - va1, normal1);
+        const Real vn0 = Dot(vb0 - va0, normal0);
+        const Real vn1 = Dot(vb1 - va1, normal1);
 
-        const float k11 = prep0.normalMass;
-        const float k22 = prep1.normalMass;
+        const Real k11 = prep0.normalMass;
+        const Real k22 = prep1.normalMass;
 
-        const auto computeRhs = [&](Contact& c, const Vec3& contactNormal, float separatingVelocity, float contactNormalMass) {
-            const float speedIntoContact = -separatingVelocity;
-            const float restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
-            const float massRatioBoost = ComputeHighMassRatioBoost(a, b);
+        const auto computeRhs = [&](Contact& c, const Vec3& contactNormal, Real separatingVelocity, Real contactNormalMass) {
+            const Real speedIntoContact = -separatingVelocity;
+            const Real restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
+            const Real massRatioBoost = ComputeHighMassRatioBoost(a, b);
 
-            float biasTerm = 0.0f;
-            const float penetrationError = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0f);
+            Real biasTerm = 0.0;
+            const Real penetrationError = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0);
             if (contactSolverConfig_.useSplitImpulse && !solverRelaxationPassActive_) {
-                if (penetrationError > 0.0f && contactNormalMass > kEpsilon) {
-                    const float boostedFactor = contactSolverConfig_.splitImpulseCorrectionFactor
-                        * (1.0f + contactSolverConfig_.highMassRatioSplitImpulseBoost * (massRatioBoost - 1.0f));
-                    const float correctionMagnitude = boostedFactor * penetrationError / contactNormalMass;
+                if (penetrationError > 0.0 && contactNormalMass > kEpsilon) {
+                    const Real boostedFactor = contactSolverConfig_.splitImpulseCorrectionFactor
+                        * (1.0 + contactSolverConfig_.highMassRatioSplitImpulseBoost * (massRatioBoost - 1.0));
+                    const Real correctionMagnitude = boostedFactor * penetrationError / contactNormalMass;
                     const Vec3 correction = correctionMagnitude * contactNormal;
-                    AccumulateSplitImpulseCorrection(c.a, -correction * a.invMass, {0.0f, 0.0f, 0.0f});
-                    AccumulateSplitImpulseCorrection(c.b, correction * b.invMass, {0.0f, 0.0f, 0.0f});
+                    AccumulateSplitImpulseCorrection(c.a, -correction * a.invMass, {0.0, 0.0, 0.0});
+                    AccumulateSplitImpulseCorrection(c.b, correction * b.invMass, {0.0, 0.0, 0.0});
                 }
             } else if (currentSubstepDt_ > kEpsilon && !solverRelaxationPassActive_) {
-                const float maxSafeSeparatingSpeed = penetrationError / currentSubstepDt_;
+                const Real maxSafeSeparatingSpeed = penetrationError / currentSubstepDt_;
                 if (separatingVelocity <= maxSafeSeparatingSpeed) {
-                    const float boostedBias = contactSolverConfig_.penetrationBiasFactor
-                        * (1.0f + contactSolverConfig_.highMassRatioBiasBoost * (massRatioBoost - 1.0f));
+                    const Real boostedBias = contactSolverConfig_.penetrationBiasFactor
+                        * (1.0 + contactSolverConfig_.highMassRatioBiasBoost * (massRatioBoost - 1.0));
                     biasTerm = (boostedBias * penetrationError) / currentSubstepDt_;
-                    biasTerm = std::min(biasTerm, std::max(contactSolverConfig_.penetrationBiasMaxSpeed, 0.0f));
+                    biasTerm = std::min(biasTerm, std::max(contactSolverConfig_.penetrationBiasMaxSpeed, 0.0));
                 }
             }
-            return -(1.0f + restitution) * separatingVelocity + std::max(biasTerm, 0.0f);
+            return -(1.0 + restitution) * separatingVelocity + std::max(biasTerm, 0.0);
         };
 
         solver_internal::Block2SolveInput solveInput{};
@@ -314,8 +378,8 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
         solveInput.blockDiagonalMinimum = contactSolverConfig_.blockDiagonalMinimum;
         solveInput.blockDeterminantEpsilon = contactSolverConfig_.blockDeterminantEpsilon;
         solveInput.blockConditionEstimateMax = contactSolverConfig_.blockConditionEstimateMax;
-        solveInput.contacts[0] = {normal0, ra0, rb0, std::max(c0.normalImpulseSum, 0.0f), computeRhs(c0, normal0, vn0, k11)};
-        solveInput.contacts[1] = {normal1, ra1, rb1, std::max(c1.normalImpulseSum, 0.0f), computeRhs(c1, normal1, vn1, k22)};
+        solveInput.contacts[0] = {normal0, ra0, rb0, std::max(c0.normalImpulseSum, 0.0), computeRhs(c0, normal0, vn0, k11)};
+        solveInput.contacts[1] = {normal1, ra1, rb1, std::max(c1.normalImpulseSum, 0.0), computeRhs(c1, normal1, vn1, k22)};
 
         const solver_internal::Block2SolveResult result = solver_internal::SolveBlock2NormalLcp(solveInput);
         determinantOrConditionEstimate = result.conditionEstimate;
@@ -343,7 +407,7 @@ bool World::SolveNormalBlock2(Manifold& manifold, BlockSolveFallbackReason& fall
         return true;
     }
 
-bool World::SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& fallbackReason, float& conditionEstimate) {
+bool World::SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& fallbackReason, Real& conditionEstimate) {
         fallbackReason = BlockSolveFallbackReason::None;
         conditionEstimate = std::numeric_limits<float>::quiet_NaN();
         if (manifold.contacts.size() != 4 || manifold.manifoldType != 9) {
@@ -381,7 +445,7 @@ bool World::SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& 
         for (int i = 0; i < 4; ++i) {
             Contact& c = manifold.contacts[static_cast<std::size_t>(i)];
             const Vec3 normal = Normalize(c.normal);
-            if (Dot(normal, manifoldNormal) < 0.95f) {
+            if (Dot(normal, manifoldNormal) < 0.95) {
                 fallbackReason = BlockSolveFallbackReason::ContactNormalMismatch;
                 return false;
             }
@@ -390,19 +454,19 @@ bool World::SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& 
             const Vec3& rb = cPrep.rb;
             const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
             const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
-            const float vn = Dot(vb - va, normal);
-            const float speedIntoContact = -vn;
-            const float restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
-            float biasTerm = 0.0f;
-            const float penetrationError = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0f);
+            const Real vn = Dot(vb - va, normal);
+            const Real speedIntoContact = -vn;
+            const Real restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
+            Real biasTerm = 0.0;
+            const Real penetrationError = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0);
             if (currentSubstepDt_ > kEpsilon && !contactSolverConfig_.useSplitImpulse && !solverRelaxationPassActive_) {
-                const float maxSafeSeparatingSpeed = penetrationError / currentSubstepDt_;
+                const Real maxSafeSeparatingSpeed = penetrationError / currentSubstepDt_;
                 if (vn <= maxSafeSeparatingSpeed) {
-                    const float massRatioBoost = ComputeHighMassRatioBoost(a, b);
-                    const float boostedBias = contactSolverConfig_.penetrationBiasFactor
-                        * (1.0f + contactSolverConfig_.highMassRatioBiasBoost * (massRatioBoost - 1.0f));
+                    const Real massRatioBoost = ComputeHighMassRatioBoost(a, b);
+                    const Real boostedBias = contactSolverConfig_.penetrationBiasFactor
+                        * (1.0 + contactSolverConfig_.highMassRatioBiasBoost * (massRatioBoost - 1.0));
                     biasTerm = (boostedBias * penetrationError) / currentSubstepDt_;
-                    biasTerm = std::min(biasTerm, std::max(contactSolverConfig_.penetrationBiasMaxSpeed, 0.0f));
+                    biasTerm = std::min(biasTerm, std::max(contactSolverConfig_.penetrationBiasMaxSpeed, 0.0));
                 }
             }
             solveInput.contacts[static_cast<std::size_t>(i)] = {
@@ -410,8 +474,8 @@ bool World::SolveNormalProjected4(Manifold& manifold, BlockSolveFallbackReason& 
                 normal,
                 ra,
                 rb,
-                std::max(c.normalImpulseSum, 0.0f),
-                -(1.0f + restitution) * vn + std::max(biasTerm, 0.0f),
+                std::max(c.normalImpulseSum, 0.0),
+                -(1.0 + restitution) * vn + std::max(biasTerm, 0.0),
             };
         }
 
@@ -452,7 +516,7 @@ void World::SolveDistanceJoint(DistanceJoint& j) {
         const Vec3 pa = a.position + ra;
         const Vec3 pb = b.position + rb;
         const Vec3 delta = pb - pa;
-        const float len = Length(delta);
+        const Real len = Length(delta);
         if (len <= kEpsilon) {
             return;
         }
@@ -460,8 +524,8 @@ void World::SolveDistanceJoint(DistanceJoint& j) {
         const Vec3 n = delta / len;
         const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
         const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
-        const float relVel = Dot(vb - va, n);
-        const float error = len - j.restLength;
+        const Real relVel = Dot(vb - va, n);
+        const Real error = len - j.restLength;
         if (std::abs(error) > kWakeContactPenetrationThreshold
             || std::abs(relVel) > kWakeJointRelativeSpeedThreshold) {
             WakeConnectedBodies(j.a);
@@ -470,15 +534,15 @@ void World::SolveDistanceJoint(DistanceJoint& j) {
 
         const Vec3 raCrossN = Cross(ra, n);
         const Vec3 rbCrossN = Cross(rb, n);
-        const float effMass = a.invMass + b.invMass
+        const Real effMass = a.invMass + b.invMass
             + Dot(raCrossN, invIA * raCrossN)
             + Dot(rbCrossN, invIB * rbCrossN);
         if (effMass <= kEpsilon) {
             return;
         }
 
-        const float bias = j.stiffness * error + j.damping * relVel;
-        const float lambda = -bias / effMass;
+        const Real bias = j.stiffness * error + j.damping * relVel;
+        const Real lambda = -bias / effMass;
         j.impulseSum += lambda;
         ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda * n);
     }
@@ -495,12 +559,12 @@ bool World::SolveHingeAnchorBlock3x3(
         Vec3& outLambda,
         JointBlockFallbackReason& outReason) const {
         outReason = JointBlockFallbackReason::None;
-        float K[3][3]{};
-        const float invMassSum = a.invMass + b.invMass;
+        Real K[3][3]{};
+        const Real invMassSum = a.invMass + b.invMass;
         const Vec3 axes[3] = {
-            {1.0f, 0.0f, 0.0f},
-            {0.0f, 1.0f, 0.0f},
-            {0.0f, 0.0f, 1.0f},
+            {1.0, 0.0, 0.0},
+            {0.0, 1.0, 0.0},
+            {0.0, 0.0, 1.0},
         };
         Vec3 raCrossAxis[3]{};
         Vec3 rbCrossAxis[3]{};
@@ -512,7 +576,7 @@ bool World::SolveHingeAnchorBlock3x3(
             const Vec3 invIaCrossI = invIA * raCrossAxis[i];
             const Vec3 invIbCrossI = invIB * rbCrossAxis[i];
             for (int j = 0; j < 3; ++j) {
-                K[i][j] = (i == j ? invMassSum : 0.0f)
+                K[i][j] = (i == j ? invMassSum : 0.0)
                     + Dot(invIaCrossI, raCrossAxis[j])
                     + Dot(invIbCrossI, rbCrossAxis[j]);
             }
@@ -525,7 +589,7 @@ bool World::SolveHingeAnchorBlock3x3(
             }
         }
 
-        const float det =
+        const Real det =
             K[0][0] * (K[1][1] * K[2][2] - K[1][2] * K[2][1])
             - K[0][1] * (K[1][0] * K[2][2] - K[1][2] * K[2][0])
             + K[0][2] * (K[1][0] * K[2][1] - K[1][1] * K[2][0]);
@@ -534,13 +598,13 @@ bool World::SolveHingeAnchorBlock3x3(
             return false;
         }
 
-        if (jointSolverConfig_.blockConditionEstimateMax > 0.0f) {
-            const float rowNorm = std::max({
+        if (jointSolverConfig_.blockConditionEstimateMax > 0.0) {
+            const Real rowNorm = std::max({
                 std::abs(K[0][0]) + std::abs(K[0][1]) + std::abs(K[0][2]),
                 std::abs(K[1][0]) + std::abs(K[1][1]) + std::abs(K[1][2]),
                 std::abs(K[2][0]) + std::abs(K[2][1]) + std::abs(K[2][2]),
             });
-            float adj[3][3]{};
+            Real adj[3][3]{};
             adj[0][0] = K[1][1] * K[2][2] - K[1][2] * K[2][1];
             adj[0][1] = -(K[1][0] * K[2][2] - K[1][2] * K[2][0]);
             adj[0][2] = K[1][0] * K[2][1] - K[1][1] * K[2][0];
@@ -550,13 +614,13 @@ bool World::SolveHingeAnchorBlock3x3(
             adj[2][0] = K[0][1] * K[1][2] - K[0][2] * K[1][1];
             adj[2][1] = -(K[0][0] * K[1][2] - K[0][2] * K[1][0]);
             adj[2][2] = K[0][0] * K[1][1] - K[0][1] * K[1][0];
-            const float invAbsDet = 1.0f / std::abs(det);
-            const float invNorm = std::max({
+            const Real invAbsDet = 1.0 / std::abs(det);
+            const Real invNorm = std::max({
                 (std::abs(adj[0][0]) + std::abs(adj[0][1]) + std::abs(adj[0][2])) * invAbsDet,
                 (std::abs(adj[1][0]) + std::abs(adj[1][1]) + std::abs(adj[1][2])) * invAbsDet,
                 (std::abs(adj[2][0]) + std::abs(adj[2][1]) + std::abs(adj[2][2])) * invAbsDet,
             });
-            const float conditionEstimate = rowNorm * invNorm;
+            const Real conditionEstimate = rowNorm * invNorm;
             if (!std::isfinite(conditionEstimate)
                 || conditionEstimate > jointSolverConfig_.blockConditionEstimateMax) {
                 outReason = JointBlockFallbackReason::ConditionEstimateExceeded;
@@ -569,9 +633,9 @@ bool World::SolveHingeAnchorBlock3x3(
             jointSolverConfig_.hingeAnchorBiasFactor * error.y + jointSolverConfig_.hingeAnchorDampingFactor * relVel.y,
             jointSolverConfig_.hingeAnchorBiasFactor * error.z + jointSolverConfig_.hingeAnchorDampingFactor * relVel.z,
         };
-        const Vec3 negRhs = -1.0f * rhs;
+        const Vec3 negRhs = -1.0 * rhs;
 
-        float adj[3][3]{};
+        Real adj[3][3]{};
         adj[0][0] = K[1][1] * K[2][2] - K[1][2] * K[2][1];
         adj[0][1] = -(K[1][0] * K[2][2] - K[1][2] * K[2][0]);
         adj[0][2] = K[1][0] * K[2][1] - K[1][1] * K[2][0];
@@ -581,7 +645,7 @@ bool World::SolveHingeAnchorBlock3x3(
         adj[2][0] = K[0][1] * K[1][2] - K[0][2] * K[1][1];
         adj[2][1] = -(K[0][0] * K[1][2] - K[0][2] * K[1][0]);
         adj[2][2] = K[0][0] * K[1][1] - K[0][1] * K[1][0];
-        const float invDet = 1.0f / det;
+        const Real invDet = 1.0 / det;
         const Mat3 invK{
             {
                 {adj[0][0] * invDet, adj[1][0] * invDet, adj[2][0] * invDet},
@@ -616,7 +680,7 @@ void World::SolveHingeJoint(HingeJoint& j) {
             const Vec3 vb = b.velocity + Cross(b.angularVelocity, prep.rb);
             const Vec3 relVel = vb - va;
             const Vec3 rhs = jointSolverConfig_.hingeAnchorDampingFactor * relVel + prep.anchorBias;
-            const Vec3 lambda = -1.0f * (prep.invK * rhs);
+            const Vec3 lambda = -1.0 * (prep.invK * rhs);
             if (std::isfinite(lambda.x) && std::isfinite(lambda.y) && std::isfinite(lambda.z)) {
                 j.impulseX += lambda.x;
                 j.impulseY += lambda.y;
@@ -632,12 +696,12 @@ void World::SolveHingeJoint(HingeJoint& j) {
             const Vec3 vb = b.velocity + Cross(b.angularVelocity, prep.rb);
             const Vec3 relVel = vb - va;
             const Vec3 axes[3] = {{1,0,0},{0,1,0},{0,0,1}};
-            float* impulseSums[3] = {&j.impulseX, &j.impulseY, &j.impulseZ};
+            Real* impulseSums[3] = {&j.impulseX, &j.impulseY, &j.impulseZ};
             for (int i = 0; i < 3; ++i) {
                 if (prep.fallbackEffMass[i] <= kEpsilon) continue;
-                const float bias = prep.fallbackPosBias[i]
+                const Real bias = prep.fallbackPosBias[i]
                     + jointSolverConfig_.hingeAnchorDampingFactor * Dot(relVel, axes[i]);
-                const float lambda = -bias / prep.fallbackEffMass[i];
+                const Real lambda = -bias / prep.fallbackEffMass[i];
                 *impulseSums[i] += lambda;
                 ApplyImpulse(a, b, invIA, invIB, prep.ra, prep.rb, lambda * axes[i]);
             }
@@ -646,10 +710,10 @@ void World::SolveHingeJoint(HingeJoint& j) {
         // ---- Angular alignment (t1, t2 ⊥ axisA) ----
         if (prep.t1Active) {
             const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
-            const float bias = prep.angBiasT1 + 0.1f * Dot(relAngVel, prep.t1);
-            float lambda = -bias * prep.invDenomT1;
-            if (j.maxMotorTorque > 0.0f) {
-                const float old = j.angularImpulse1;
+            const Real bias = prep.angBiasT1 + 0.1 * Dot(relAngVel, prep.t1);
+            Real lambda = -bias * prep.invDenomT1;
+            if (j.maxMotorTorque > 0.0) {
+                const Real old = j.angularImpulse1;
                 j.angularImpulse1 = std::clamp(old + lambda, -j.maxMotorTorque, j.maxMotorTorque);
                 lambda = j.angularImpulse1 - old;
             } else {
@@ -659,10 +723,10 @@ void World::SolveHingeJoint(HingeJoint& j) {
         }
         if (prep.t2Active) {
             const Vec3 relAngVel = b.angularVelocity - a.angularVelocity; // re-read after t1 impulse
-            const float bias = prep.angBiasT2 + 0.1f * Dot(relAngVel, prep.t2);
-            float lambda = -bias * prep.invDenomT2;
-            if (j.maxMotorTorque > 0.0f) {
-                const float old = j.angularImpulse2;
+            const Real bias = prep.angBiasT2 + 0.1 * Dot(relAngVel, prep.t2);
+            Real lambda = -bias * prep.invDenomT2;
+            if (j.maxMotorTorque > 0.0) {
+                const Real old = j.angularImpulse2;
                 j.angularImpulse2 = std::clamp(old + lambda, -j.maxMotorTorque, j.maxMotorTorque);
                 lambda = j.angularImpulse2 - old;
             } else {
@@ -677,7 +741,7 @@ void World::SolveHingeJoint(HingeJoint& j) {
 
         // ---- Hinge angle limits ----
         if (j.limitsEnabled) {
-            float limitError = 0.0f;
+            Real limitError = 0.0;
             if (prep.hingeAngle < j.lowerAngle) {
                 limitError = prep.hingeAngle - j.lowerAngle;
             } else if (prep.hingeAngle > j.upperAngle) {
@@ -685,7 +749,7 @@ void World::SolveHingeJoint(HingeJoint& j) {
             }
             if (std::abs(limitError) > kEpsilon) {
                 const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
-                const float lambda = -(0.2f * limitError + 0.05f * Dot(relAngVel, prep.axisA))
+                const Real lambda = -(0.2 * limitError + 0.05 * Dot(relAngVel, prep.axisA))
                                      * prep.invEffMassHinge;
                 ApplyAngularImpulse(a, b, invIA, invIB, lambda * prep.axisA);
             }
@@ -694,8 +758,8 @@ void World::SolveHingeJoint(HingeJoint& j) {
         // ---- Motor ----
         if (j.motorEnabled) {
             const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
-            float lambda = -(Dot(relAngVel, prep.axisA) - j.motorSpeed) * prep.invEffMassHinge;
-            const float oldImpulse = j.motorImpulseSum;
+            Real lambda = -(Dot(relAngVel, prep.axisA) - j.motorSpeed) * prep.invEffMassHinge;
+            const Real oldImpulse = j.motorImpulseSum;
             j.motorImpulseSum = std::clamp(j.motorImpulseSum + lambda, -j.maxMotorTorque, j.maxMotorTorque);
             lambda = j.motorImpulseSum - oldImpulse;
             ApplyAngularImpulse(a, b, invIA, invIB, lambda * prep.axisA);
@@ -724,21 +788,21 @@ void World::SolveBallSocketJoint(BallSocketJoint& j) {
         Vec3 lambda{};
         JointBlockFallbackReason fallbackReason = JointBlockFallbackReason::None;
         if (!SolveHingeAnchorBlock3x3(a, b, invIA, invIB, ra, rb, error, relVel, lambda, fallbackReason)) {
-            const Vec3 axes[3] = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
-            float* impulseSums[3] = {&j.impulseX, &j.impulseY, &j.impulseZ};
+            const Vec3 axes[3] = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}};
+            Real* impulseSums[3] = {&j.impulseX, &j.impulseY, &j.impulseZ};
             for (int i = 0; i < 3; ++i) {
                 const Vec3 n = axes[i];
                 const Vec3 raCrossN = Cross(ra, n);
                 const Vec3 rbCrossN = Cross(rb, n);
-                const float effMass = a.invMass + b.invMass
+                const Real effMass = a.invMass + b.invMass
                     + Dot(raCrossN, invIA * raCrossN)
                     + Dot(rbCrossN, invIB * rbCrossN);
                 if (effMass <= kEpsilon) {
                     continue;
                 }
-                const float bias = jointSolverConfig_.hingeAnchorBiasFactor * Dot(error, n)
+                const Real bias = jointSolverConfig_.hingeAnchorBiasFactor * Dot(error, n)
                     + jointSolverConfig_.hingeAnchorDampingFactor * Dot(relVel, n);
-                const float dl = -bias / effMass;
+                const Real dl = -bias / effMass;
                 *impulseSums[i] += dl;
                 ApplyImpulse(a, b, invIA, invIB, ra, rb, dl * n);
             }
@@ -777,21 +841,21 @@ void World::SolveFixedJoint(FixedJoint& j) {
 
         const Quat target = Normalize(Normalize(a.orientation) * j.referenceRotation);
         Quat dq = Normalize(Conjugate(Normalize(b.orientation)) * target);
-        if (dq.w < 0.0f) {
+        if (dq.w < 0.0) {
             dq = {-dq.w, -dq.x, -dq.y, -dq.z};
         }
         const Vec3 angularError{dq.x, dq.y, dq.z};
         const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
-        const Vec3 axes[3] = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
-        float* angularSums[3] = {&j.angularImpulseX, &j.angularImpulseY, &j.angularImpulseZ};
+        const Vec3 axes[3] = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}};
+        Real* angularSums[3] = {&j.angularImpulseX, &j.angularImpulseY, &j.angularImpulseZ};
         for (int i = 0; i < 3; ++i) {
             const Vec3 n = axes[i];
-            const float effMass = Dot(n, invIA * n) + Dot(n, invIB * n);
+            const Real effMass = Dot(n, invIA * n) + Dot(n, invIB * n);
             if (effMass <= kEpsilon) {
                 continue;
             }
-            const float bias = 0.3f * Dot(angularError, n) + 0.08f * Dot(relAngVel, n);
-            const float lambda = -bias / effMass;
+            const Real bias = 0.3 * Dot(angularError, n) + 0.08 * Dot(relAngVel, n);
+            const Real lambda = -bias / effMass;
             *angularSums[i] += lambda;
             ApplyAngularImpulse(a, b, invIA, invIB, lambda * n);
         }
@@ -813,8 +877,8 @@ void World::SolvePrismaticJoint(PrismaticJoint& j) {
         const Vec3 relVel = vb - va;
 
         Vec3 axis = Normalize(Rotate(a.orientation, j.localAxisA));
-        Vec3 t1 = Cross(axis, {0.0f, 1.0f, 0.0f});
-        if (LengthSquared(t1) <= 1e-5f) t1 = Cross(axis, {0.0f, 0.0f, 1.0f});
+        Vec3 t1 = Cross(axis, {0.0, 1.0, 0.0});
+        if (LengthSquared(t1) <= 1e-5) t1 = Cross(axis, {0.0, 0.0, 1.0});
         t1 = Normalize(t1);
         const Vec3 t2 = Normalize(Cross(axis, t1));
 
@@ -826,26 +890,26 @@ void World::SolvePrismaticJoint(PrismaticJoint& j) {
         }
 
         const Vec3 perpAxes[2] = {t1, t2};
-        float* perpSums[2] = {&j.impulseT1, &j.impulseT2};
+        Real* perpSums[2] = {&j.impulseT1, &j.impulseT2};
         for (int i = 0; i < 2; ++i) {
             const Vec3 n = perpAxes[i];
             const Vec3 raCrossN = Cross(ra, n);
             const Vec3 rbCrossN = Cross(rb, n);
-            const float effMass = a.invMass + b.invMass
+            const Real effMass = a.invMass + b.invMass
                 + Dot(raCrossN, invIA * raCrossN)
                 + Dot(rbCrossN, invIB * rbCrossN);
             if (effMass <= kEpsilon) {
                 continue;
             }
-            const float bias = jointSolverConfig_.hingeAnchorBiasFactor * Dot(errorPerp, n)
+            const Real bias = jointSolverConfig_.hingeAnchorBiasFactor * Dot(errorPerp, n)
                 + jointSolverConfig_.hingeAnchorDampingFactor * Dot(relVelPerp, n);
-            const float lambda = -bias / effMass;
+            const Real lambda = -bias / effMass;
             *perpSums[i] += lambda;
             ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda * n);
         }
 
-        const float translation = Dot(rawError, axis);
-        float axisBias = 0.0f;
+        const Real translation = Dot(rawError, axis);
+        Real axisBias = 0.0;
         if (j.limitsEnabled) {
             if (translation < j.lowerTranslation) {
                 axisBias = jointSolverConfig_.hingeAnchorBiasFactor * (translation - j.lowerTranslation);
@@ -853,14 +917,14 @@ void World::SolvePrismaticJoint(PrismaticJoint& j) {
                 axisBias = jointSolverConfig_.hingeAnchorBiasFactor * (translation - j.upperTranslation);
             }
         }
-        if (axisBias != 0.0f) {
+        if (axisBias != 0.0) {
             const Vec3 raCrossAxis = Cross(ra, axis);
             const Vec3 rbCrossAxis = Cross(rb, axis);
-            const float effMass = a.invMass + b.invMass
+            const Real effMass = a.invMass + b.invMass
                 + Dot(raCrossAxis, invIA * raCrossAxis)
                 + Dot(rbCrossAxis, invIB * rbCrossAxis);
             if (effMass > kEpsilon) {
-                const float lambda = -(axisBias + jointSolverConfig_.hingeAnchorDampingFactor * Dot(relVel, axis)) / effMass;
+                const Real lambda = -(axisBias + jointSolverConfig_.hingeAnchorDampingFactor * Dot(relVel, axis)) / effMass;
                 j.impulseAxis += lambda;
                 ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda * axis);
             }
@@ -869,12 +933,12 @@ void World::SolvePrismaticJoint(PrismaticJoint& j) {
         if (j.motorEnabled) {
             const Vec3 raCrossAxis = Cross(ra, axis);
             const Vec3 rbCrossAxis = Cross(rb, axis);
-            const float effMass = a.invMass + b.invMass
+            const Real effMass = a.invMass + b.invMass
                 + Dot(raCrossAxis, invIA * raCrossAxis)
                 + Dot(rbCrossAxis, invIB * rbCrossAxis);
             if (effMass > kEpsilon) {
-                float lambda = -(Dot(relVel, axis) - j.motorSpeed) / effMass;
-                const float oldImpulse = j.motorImpulseSum;
+                Real lambda = -(Dot(relVel, axis) - j.motorSpeed) / effMass;
+                const Real oldImpulse = j.motorImpulseSum;
                 j.motorImpulseSum = std::clamp(j.motorImpulseSum + lambda, -j.maxMotorForce, j.maxMotorForce);
                 lambda = j.motorImpulseSum - oldImpulse;
                 ApplyImpulse(a, b, invIA, invIB, ra, rb, lambda * axis);
@@ -905,10 +969,10 @@ void World::PrepareContactSolves() {
                 cp.rb = c.point - b.position;
                 cp.raCrossN = Cross(cp.ra, c.normal);
                 cp.rbCrossN = Cross(cp.rb, c.normal);
-                const float angularTermA = Dot(cp.raCrossN, invIA * cp.raCrossN);
-                const float angularTermB = Dot(cp.rbCrossN, invIB * cp.rbCrossN);
-                float sideA = a.invMass + angularTermA;
-                float sideB = b.invMass + angularTermB;
+                const Real angularTermA = Dot(cp.raCrossN, invIA * cp.raCrossN);
+                const Real angularTermB = Dot(cp.rbCrossN, invIB * cp.rbCrossN);
+                Real sideA = a.invMass + angularTermA;
+                Real sideB = b.invMass + angularTermB;
                 if (c.a < artChainIndexForLeafBody_.size()) {
                     const std::uint32_t ac = artChainIndexForLeafBody_[c.a];
                     if (ac != kInvalidArticulationChain && ac < articulationChains_.size()) {
@@ -917,9 +981,25 @@ void World::PrepareContactSolves() {
                             const Vec3  refRoot   = ch.links[0].jointAnchorWorld;
                             const Vec3  raFromRef = c.point - refRoot;
                             const SpatialVec h{Cross(raFromRef, c.normal), c.normal};
-                            const float comp = SpatialMotionCompliance(ch.Ia[0], h);
-                            if (std::isfinite(comp) && comp > kEpsilon && comp < 1e8f) {
+                            SpatialSolveDiagnostics diagnostics{};
+                            const Real comp = spatial_internal::SpatialMotionComplianceDetailed(ch.Ia[0], h, &diagnostics);
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                            if (auto* sample = GetArticulationTelemetrySample(solverTelemetry_, ac)) {
+                                UpdateArticulationTelemetrySolveDiagnostics(solverTelemetry_, sample, diagnostics);
+                            }
+#endif
+                            if (std::isfinite(comp) && comp > kEpsilon && comp < kArticulationMaxAcceptedCompliance) {
                                 sideA = comp;
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                                ++solverTelemetry_.articulationContactComplianceAccepted;
+#endif
+                            } else {
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                                if (auto* sample = GetArticulationTelemetrySample(solverTelemetry_, ac)) {
+                                    sample->contactComplianceRejected = true;
+                                }
+                                ++solverTelemetry_.articulationContactComplianceRejected;
+#endif
                             }
                         }
                     }
@@ -932,15 +1012,31 @@ void World::PrepareContactSolves() {
                             const Vec3  refRoot   = ch.links[0].jointAnchorWorld;
                             const Vec3  rbFromRef = c.point - refRoot;
                             const SpatialVec h{Cross(rbFromRef, c.normal), c.normal};
-                            const float comp = SpatialMotionCompliance(ch.Ia[0], h);
-                            if (std::isfinite(comp) && comp > kEpsilon && comp < 1e8f) {
+                            SpatialSolveDiagnostics diagnostics{};
+                            const Real comp = spatial_internal::SpatialMotionComplianceDetailed(ch.Ia[0], h, &diagnostics);
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                            if (auto* sample = GetArticulationTelemetrySample(solverTelemetry_, bc)) {
+                                UpdateArticulationTelemetrySolveDiagnostics(solverTelemetry_, sample, diagnostics);
+                            }
+#endif
+                            if (std::isfinite(comp) && comp > kEpsilon && comp < kArticulationMaxAcceptedCompliance) {
                                 sideB = comp;
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                                ++solverTelemetry_.articulationContactComplianceAccepted;
+#endif
+                            } else {
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                                if (auto* sample = GetArticulationTelemetrySample(solverTelemetry_, bc)) {
+                                    sample->contactComplianceRejected = true;
+                                }
+                                ++solverTelemetry_.articulationContactComplianceRejected;
+#endif
                             }
                         }
                     }
                 }
                 cp.normalMass = sideA + sideB;
-                cp.invNormalMass = (cp.normalMass > kEpsilon) ? (1.0f / cp.normalMass) : 0.0f;
+                cp.invNormalMass = (cp.normalMass > kEpsilon) ? (1.0 / cp.normalMass) : 0.0;
             }
         }
     }
@@ -1098,8 +1194,8 @@ void World::BuildArticulationChains() {
 
 // ---------------------------------------------------------------------------
 // PrepareArticulatedInertias
-//   Tip→root articulated-body inertia pass; updates ServoJointPrep hinge
-//   denominators for in-chain servos and fills artChainIndexForLeafBody_ for contacts.
+//   Tip→root articulated-body inertia pass; prepares articulated contact mass,
+//   Pass-C velocity pre-correction state, and per-chain diagnostics/fallbacks.
 // ---------------------------------------------------------------------------
 
 void World::PrepareArticulatedInertias() {
@@ -1124,6 +1220,7 @@ void World::PrepareArticulatedInertias() {
 
     const std::size_t nBodies = bodies_.size();
     artChainIndexForLeafBody_.assign(nBodies, kInvalidArticulationChain);
+    std::vector<std::uint32_t> artChainIndexForBody(nBodies, kInvalidArticulationChain);
 
     if (servoJointPreps_.size() != servoJoints_.size()) {
         return;
@@ -1134,7 +1231,7 @@ void World::PrepareArticulatedInertias() {
     bodyInertiaWorld_.resize(nBodies);
     for (std::size_t i = 0; i < nBodies; ++i) {
         const Body& body = bodies_[i];
-        if (body.invMass <= 0.0f) {
+        if (body.invMass <= 0.0) {
             bodyInertiaWorld_[i] = Mat3{};
             continue;
         }
@@ -1147,8 +1244,8 @@ void World::PrepareArticulatedInertias() {
         }
     }
 
-    const float dt = currentSubstepDt_;
-    const SpatialVec spatialGravity{Vec3{0.0f, 0.0f, 0.0f}, gravity_};
+    const Real dt = currentSubstepDt_;
+    const SpatialVec spatialGravity{Vec3{0.0, 0.0, 0.0}, gravity_};
     const bool       velocityPreCorr = articulationConfig_.enableVelocityPreCorrection;
     const bool       hasSupportContacts = std::any_of(
         manifolds_.begin(),
@@ -1163,6 +1260,15 @@ void World::PrepareArticulatedInertias() {
         });
     const bool velocityPreCorrActive = velocityPreCorr && hasSupportContacts;
 
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+    solverTelemetry_.articulationChains.assign(articulationChains_.size(), {});
+    for (std::size_t ci = 0; ci < articulationChains_.size(); ++ci) {
+        auto& sample = solverTelemetry_.articulationChains[ci];
+        sample.chainIndex = static_cast<std::uint32_t>(ci);
+        sample.linkCount = static_cast<std::uint32_t>(articulationChains_[ci].links.size());
+    }
+#endif
+
     for (std::size_t ci = 0; ci < articulationChains_.size(); ++ci) {
         ArtChain& chain = articulationChains_[ci];
         const std::size_t N = chain.links.size();
@@ -1170,12 +1276,17 @@ void World::PrepareArticulatedInertias() {
             continue;
         }
         chain.resizeCaches();
+        for (const ArtLink& link : chain.links) {
+            if (link.bodyIdx < artChainIndexForBody.size()) {
+                artChainIndexForBody[link.bodyIdx] = static_cast<std::uint32_t>(ci);
+            }
+        }
 
         const auto setupRigidStart = Clock::now();
         for (std::size_t li = 0; li < N; ++li) {
             const ArtLink& L = chain.links[li];
             const Body&    bd = bodies_[L.bodyIdx];
-            if (bd.invMass <= 0.0f || !(bd.mass > kEpsilon)) {
+            if (bd.invMass <= 0.0 || !(bd.mass > kEpsilon)) {
                 chain.Ia[li] = SpatialInertia{};
                 chain.rigidSpatialI[li] = SpatialInertia{};
                 continue;
@@ -1218,7 +1329,7 @@ void World::PrepareArticulatedInertias() {
                     continue;
                 }
                 chain.axisWorld[li] = axis;  // cache for Pass B (tip→root) and Pass C reuse
-                const float dq = Dot(childBd.angularVelocity - parentBd.angularVelocity, axis);
+                const Real dq = Dot(childBd.angularVelocity - parentBd.angularVelocity, axis);
                 const SpatialVec& vParent = chain.vel[li - 1u];
                 const Vec3        offset  = L.jointAnchorWorld - Lp.jointAnchorWorld;
                 const Vec3        vAtChild = vParent.lin + Cross(vParent.ang, offset);
@@ -1252,7 +1363,7 @@ void World::PrepareArticulatedInertias() {
             Vec3 axis;
             if (velocityPreCorr) {
                 axis = chain.axisWorld[cIdx];
-                if (axis.x == 0.0f && axis.y == 0.0f && axis.z == 0.0f) {
+                if (axis.x == 0.0 && axis.y == 0.0 && axis.z == 0.0) {
                     continue;  // degenerate axis — Pass A already wrote zero
                 }
             } else {
@@ -1262,7 +1373,7 @@ void World::PrepareArticulatedInertias() {
                     continue;
                 }
             }
-            float D = 0.0f;
+            Real D = 0.0;
             chain.iaPreJoint[cIdx] = chain.Ia[cIdx];
             if (velocityPreCorr) {
                 chain.paJointSnapshot[cIdx] = chain.Pa[cIdx];
@@ -1285,8 +1396,8 @@ void World::PrepareArticulatedInertias() {
 #ifndef NDEBUG
                 if (velocityPreCorr) {
                     const Vec3 childAxis = chain.axisWorld[childIdx];
-                    assert(!(childAxis.x == 0.0f && childAxis.y == 0.0f && childAxis.z == 0.0f));
-                    assert(Dot(axis, childAxis) > 0.9999f);
+                    assert(!(childAxis.x == 0.0 && childAxis.y == 0.0 && childAxis.z == 0.0));
+                    assert(Dot(axis, childAxis) > 0.9999);
                 }
 #endif
                 // Default-disabled until profiling shows a clear win; retained for later review.
@@ -1316,8 +1427,8 @@ void World::PrepareArticulatedInertias() {
             }
             chain.D[cIdx] = D;
             const ServoJointPrep& prepJoint = servoJointPreps_[jidx];
-            const float          sPc    = velocityPreCorr ? Dot(axis, chain.Pa[cIdx].ang) : 0.0f;
-            float                  uJoint = sPc;
+            const Real          sPc    = velocityPreCorr ? Dot(axis, chain.Pa[cIdx].ang) : 0.0;
+            Real                  uJoint = sPc;
             if (articulationConfig_.includeServoPdBiasInArticulationU && prepJoint.hingeActive) {
                 uJoint += D * prepJoint.servoBias;
             }
@@ -1338,6 +1449,33 @@ void World::PrepareArticulatedInertias() {
         // shared a leaf body, last writer wins (not used by built-in scenes).
         if (N >= 2 && leafBody < artChainIndexForLeafBody_.size()) {
             artChainIndexForLeafBody_[leafBody] = static_cast<std::uint32_t>(ci);
+        }
+
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+        if (auto* sample = GetArticulationTelemetrySample(solverTelemetry_, ci)) {
+            const ArticulationConditionMetrics metrics = AnalyzeArticulationChainConditioning(chain);
+            sample->minD = metrics.minD;
+            sample->maxD = metrics.maxD;
+        }
+#endif
+    }
+
+    std::vector<std::uint8_t> articulationChainHasContacts(articulationChains_.size(), 0u);
+    for (const Manifold& manifold : manifolds_) {
+        if (manifold.contacts.empty()) {
+            continue;
+        }
+        if (manifold.a < artChainIndexForBody.size()) {
+            const std::uint32_t ci = artChainIndexForBody[manifold.a];
+            if (ci != kInvalidArticulationChain && ci < articulationChainHasContacts.size()) {
+                articulationChainHasContacts[ci] = 1u;
+            }
+        }
+        if (manifold.b < artChainIndexForBody.size()) {
+            const std::uint32_t ci = artChainIndexForBody[manifold.b];
+            if (ci != kInvalidArticulationChain && ci < articulationChainHasContacts.size()) {
+                articulationChainHasContacts[ci] = 1u;
+            }
         }
     }
 
@@ -1361,15 +1499,55 @@ void World::PrepareArticulatedInertias() {
         fullForwardPass && articulationConfig_.enableVelocityPreCorrectionForwardCoriolis;
     if (fullForwardPass) {
         const auto passCFullStart = Clock::now();
-        for (ArtChain& chain : articulationChains_) {
+        for (std::size_t ci = 0; ci < articulationChains_.size(); ++ci) {
+            ArtChain& chain = articulationChains_[ci];
             const std::size_t N = chain.links.size();
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+            auto* sample = GetArticulationTelemetrySample(solverTelemetry_, ci);
+#endif
             // Match the chain position solve gate: 2-link chains (single servo arm with
             // static/heavy base) are better left for PGS; ABA velocity nudges on short
             // chains overshoot with warm-starting still calibrated for uncorrected velocities.
             if (N < 4) {
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                if (sample != nullptr) {
+                    sample->passCSkippedShortChain = true;
+                }
+#endif
+                continue;
+            }
+            const ArticulationConditionMetrics conditioning = AnalyzeArticulationChainConditioning(chain);
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+            if (sample != nullptr) {
+                sample->minD = conditioning.minD;
+                sample->maxD = conditioning.maxD;
+            }
+#endif
+            if (conditioning.badConditioning) {
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                if (sample != nullptr) {
+                    sample->passCSkippedConditioning = true;
+                }
+                ++solverTelemetry_.articulationPassCSkippedConditioning;
+#endif
+                continue;
+            }
+            if (ci < articulationChainHasContacts.size() && articulationChainHasContacts[ci] != 0u) {
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                if (sample != nullptr) {
+                    sample->passCSkippedContacts = true;
+                }
+                ++solverTelemetry_.articulationPassCSkippedContacts;
+#endif
                 continue;
             }
             chain.spatialAcc.assign(N, SpatialVec{});
+            std::vector<Vec3> deltaLinear(N, Vec3{});
+            std::vector<Vec3> deltaAngular(N, Vec3{});
+            Real maxDeltaV = 0.0;
+            Real maxDeltaW = 0.0;
+            bool chainUnsafe = false;
+            bool deltaClamped = false;
             // Floating base: zero spatial acceleration at root anchor (no extra gravity here;
             // gravity is already in IntegrateForces / Pa bias).
             chain.spatialAcc[0] = SpatialVec{};
@@ -1382,12 +1560,14 @@ void World::PrepareArticulatedInertias() {
                 // Pass A already computed and cached the world-space axis (N≥4 gate above
                 // guarantees Pass A ran for this chain when velocityPreCorr is true).
                 const Vec3 axis = chain.axisWorld[linkIdx];
-                if (axis.x == 0.0f && axis.y == 0.0f && axis.z == 0.0f) {
-                    continue;  // degenerate axis flagged by Pass A
+                if (axis.x == 0.0 && axis.y == 0.0 && axis.z == 0.0) {
+                    chainUnsafe = true;
+                    break;
                 }
-                const float D = chain.D[linkIdx];
+                const Real D = chain.D[linkIdx];
                 if (!(D > kEpsilon)) {
-                    continue;
+                    chainUnsafe = true;
+                    break;
                 }
                 const ArtLink& Lp    = chain.links[linkIdx - 1u];
                 const Vec3     off   = L.jointAnchorWorld - Lp.jointAnchorWorld;
@@ -1397,18 +1577,79 @@ void World::PrepareArticulatedInertias() {
                     const SpatialVec& vParent = chain.vel[linkIdx - 1u];
                     aPred.lin += Cross(vParent.ang, Cross(vParent.ang, off));
                 }
+                if (!std::isfinite(aPred.ang.x) || !std::isfinite(aPred.ang.y) || !std::isfinite(aPred.ang.z)
+                    || !std::isfinite(aPred.lin.x) || !std::isfinite(aPred.lin.y) || !std::isfinite(aPred.lin.z)) {
+                    chainUnsafe = true;
+                    break;
+                }
                 const SpatialVec  eta =
                     SpatialMul(chain.iaPreJoint[linkIdx], aPred) + chain.paJointSnapshot[linkIdx];
-                const float qdd = (chain.u[linkIdx] - Dot(axis, eta.ang)) / D;
+                const Real qdd = (chain.u[linkIdx] - Dot(axis, eta.ang)) / D;
+                if (!std::isfinite(qdd)) {
+                    chainUnsafe = true;
+                    break;
+                }
                 chain.spatialAcc[linkIdx] =
                     SpatialVec{aPred.ang + axis * qdd, aPred.lin};
+                if (!std::isfinite(chain.spatialAcc[linkIdx].ang.x) || !std::isfinite(chain.spatialAcc[linkIdx].ang.y)
+                    || !std::isfinite(chain.spatialAcc[linkIdx].ang.z) || !std::isfinite(chain.spatialAcc[linkIdx].lin.x)
+                    || !std::isfinite(chain.spatialAcc[linkIdx].lin.y) || !std::isfinite(chain.spatialAcc[linkIdx].lin.z)) {
+                    chainUnsafe = true;
+                    break;
+                }
                 Body& child = bodies_[sj.b];
-                if (child.invMass > 0.0f && !child.isSleeping) {
+                if (child.invMass > 0.0 && !child.isSleeping) {
                     const Vec3 rCom = child.position - L.jointAnchorWorld;
                     const Vec3 aLinCom =
                         chain.spatialAcc[linkIdx].lin + Cross(chain.spatialAcc[linkIdx].ang, rCom);
-                    child.velocity += aLinCom * dt;
-                    child.angularVelocity += chain.spatialAcc[linkIdx].ang * dt;
+                    deltaLinear[linkIdx] = aLinCom * dt;
+                    deltaAngular[linkIdx] = chain.spatialAcc[linkIdx].ang * dt;
+                    if (!std::isfinite(deltaLinear[linkIdx].x) || !std::isfinite(deltaLinear[linkIdx].y)
+                        || !std::isfinite(deltaLinear[linkIdx].z) || !std::isfinite(deltaAngular[linkIdx].x)
+                        || !std::isfinite(deltaAngular[linkIdx].y) || !std::isfinite(deltaAngular[linkIdx].z)) {
+                        chainUnsafe = true;
+                        break;
+                    }
+                    maxDeltaV = std::max(maxDeltaV, Length(deltaLinear[linkIdx]));
+                    maxDeltaW = std::max(maxDeltaW, Length(deltaAngular[linkIdx]));
+                    if (maxDeltaV > kArticulationMaxPassCDeltaLinear
+                        || maxDeltaW > kArticulationMaxPassCDeltaAngular) {
+                        deltaClamped = true;
+                        break;
+                    }
+                }
+            }
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+            if (sample != nullptr) {
+                sample->maxDeltaV = std::max(sample->maxDeltaV, maxDeltaV);
+                sample->maxDeltaW = std::max(sample->maxDeltaW, maxDeltaW);
+            }
+#endif
+            if (chainUnsafe || deltaClamped) {
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                if (sample != nullptr) {
+                    sample->passCSkippedConditioning = sample->passCSkippedConditioning || chainUnsafe;
+                    sample->passCSkippedDeltaClamp = sample->passCSkippedDeltaClamp || deltaClamped;
+                }
+                if (chainUnsafe) {
+                    ++solverTelemetry_.articulationPassCSkippedConditioning;
+                }
+                if (deltaClamped) {
+                    ++solverTelemetry_.articulationPassCSkippedDeltaClamp;
+                }
+#endif
+                continue;
+            }
+            for (std::size_t linkIdx = 1; linkIdx < N; ++linkIdx) {
+                const std::uint32_t jidx = chain.links[linkIdx].jointIdx;
+                if (jidx == ArtLink::kNoJoint || jidx >= servoJoints_.size()) {
+                    continue;
+                }
+                const ServoJoint& sj = servoJoints_[jidx];
+                Body& child = bodies_[sj.b];
+                if (child.invMass > 0.0 && !child.isSleeping) {
+                    child.velocity += deltaLinear[linkIdx];
+                    child.angularVelocity += deltaAngular[linkIdx];
                 }
             }
         }
@@ -1416,9 +1657,103 @@ void World::PrepareArticulatedInertias() {
         ++passCFullForwardCalls;
     } else if (velocityPreCorrActive && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly) {
         const auto passCLegacyStart = Clock::now();
-        for (ArtChain& chain : articulationChains_) {
+        for (std::size_t ci = 0; ci < articulationChains_.size(); ++ci) {
+            ArtChain& chain = articulationChains_[ci];
             const std::size_t N = chain.links.size();
             if (N < 4) {
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                if (auto* sample = GetArticulationTelemetrySample(solverTelemetry_, ci)) {
+                    sample->passCSkippedShortChain = true;
+                }
+#endif
+                continue;
+            }
+            const ArticulationConditionMetrics conditioning = AnalyzeArticulationChainConditioning(chain);
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+            auto* sample = GetArticulationTelemetrySample(solverTelemetry_, ci);
+            if (sample != nullptr) {
+                sample->minD = conditioning.minD;
+                sample->maxD = conditioning.maxD;
+            }
+#endif
+            if (conditioning.badConditioning) {
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                if (sample != nullptr) {
+                    sample->passCSkippedConditioning = true;
+                }
+                ++solverTelemetry_.articulationPassCSkippedConditioning;
+#endif
+                continue;
+            }
+            if (ci < articulationChainHasContacts.size() && articulationChainHasContacts[ci] != 0u) {
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                if (sample != nullptr) {
+                    sample->passCSkippedContacts = true;
+                }
+                ++solverTelemetry_.articulationPassCSkippedContacts;
+#endif
+                continue;
+            }
+            std::vector<Vec3> deltaAngular(N, Vec3{});
+            Real maxDeltaW = 0.0;
+            bool chainUnsafe = false;
+            bool deltaClamped = false;
+            for (std::size_t linkIdx = 1; linkIdx < N; ++linkIdx) {
+                const ArtLink& L = chain.links[linkIdx];
+                if (L.jointIdx == ArtLink::kNoJoint || L.jointIdx >= servoJoints_.size()) {
+                    continue;
+                }
+                const ServoJoint& sj = servoJoints_[L.jointIdx];
+                Body&             child = bodies_[sj.b];
+                if (child.invMass <= 0.0) {
+                    continue;
+                }
+                const Vec3 axis = chain.axisWorld[linkIdx];
+                if (axis.x == 0.0 && axis.y == 0.0 && axis.z == 0.0) {
+                    chainUnsafe = true;
+                    break;
+                }
+                const Real D = chain.D[linkIdx];
+                if (!(D > kEpsilon)) {
+                    chainUnsafe = true;
+                    break;
+                }
+                const Real sPa = Dot(axis, chain.paJointSnapshot[linkIdx].ang);
+                const Real qdd = (chain.u[linkIdx] - sPa) / D;
+                if (!std::isfinite(qdd)) {
+                    chainUnsafe = true;
+                    break;
+                }
+                deltaAngular[linkIdx] = axis * (qdd * dt);
+                if (!std::isfinite(deltaAngular[linkIdx].x) || !std::isfinite(deltaAngular[linkIdx].y)
+                    || !std::isfinite(deltaAngular[linkIdx].z)) {
+                    chainUnsafe = true;
+                    break;
+                }
+                maxDeltaW = std::max(maxDeltaW, Length(deltaAngular[linkIdx]));
+                if (maxDeltaW > kArticulationMaxPassCDeltaAngular) {
+                    deltaClamped = true;
+                    break;
+                }
+            }
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+            if (sample != nullptr) {
+                sample->maxDeltaW = std::max(sample->maxDeltaW, maxDeltaW);
+            }
+#endif
+            if (chainUnsafe || deltaClamped) {
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                if (sample != nullptr) {
+                    sample->passCSkippedConditioning = sample->passCSkippedConditioning || chainUnsafe;
+                    sample->passCSkippedDeltaClamp = sample->passCSkippedDeltaClamp || deltaClamped;
+                }
+                if (chainUnsafe) {
+                    ++solverTelemetry_.articulationPassCSkippedConditioning;
+                }
+                if (deltaClamped) {
+                    ++solverTelemetry_.articulationPassCSkippedDeltaClamp;
+                }
+#endif
                 continue;
             }
             for (std::size_t linkIdx = 1; linkIdx < N; ++linkIdx) {
@@ -1427,21 +1762,11 @@ void World::PrepareArticulatedInertias() {
                     continue;
                 }
                 const ServoJoint& sj = servoJoints_[L.jointIdx];
-                Body&             child = bodies_[sj.b];
-                if (child.invMass <= 0.0f) {
+                Body& child = bodies_[sj.b];
+                if (child.invMass <= 0.0) {
                     continue;
                 }
-                const Vec3 axis = chain.axisWorld[linkIdx];
-                if (axis.x == 0.0f && axis.y == 0.0f && axis.z == 0.0f) {
-                    continue;
-                }
-                const float D = chain.D[linkIdx];
-                if (!(D > kEpsilon)) {
-                    continue;
-                }
-                const float sPa = Dot(axis, chain.paJointSnapshot[linkIdx].ang);
-                const float qdd = (chain.u[linkIdx] - sPa) / D;
-                child.angularVelocity += axis * (qdd * dt);
+                child.angularVelocity += deltaAngular[linkIdx];
             }
         }
         passCLegacyNs += elapsedNs(passCLegacyStart, Clock::now());
@@ -1455,9 +1780,9 @@ void World::PrepareArticulatedInertias() {
     const bool chassisMvp = velocityPreCorrActive && !articulationConfig_.enableVelocityPreCorrectionKinematicsOnly
         && articulationConfig_.enableVelocityPreCorrectionChassisCoupling && !chassisTree;
     if (chassisMvp || chassisTree) {
-        constexpr float kChassisMaxDw = 10.0f;
-        constexpr float kChassisMaxDv = 8.0f;
-        const float     gain = std::clamp(articulationConfig_.chassisCouplingGain, 0.0f, 4.0f);
+        constexpr Real kChassisMaxDw = 10.0;
+        constexpr Real kChassisMaxDv = 8.0;
+        const Real     gain = std::clamp(articulationConfig_.chassisCouplingGain, 0.0, 4.0);
 
         chassisCouplingWrenchSum_.assign(nBodies, SpatialVec{});
         chassisCouplingChainCount_.assign(nBodies, 0u);
@@ -1477,7 +1802,7 @@ void World::PrepareArticulatedInertias() {
                     continue;
                 }
                 Body& root = bodies_[rootBody];
-                if (root.invMass <= 0.0f || root.isSleeping) {
+                if (root.invMass <= 0.0 || root.isSleeping) {
                     continue;
                 }
                 const Vec3 com   = root.position;
@@ -1494,7 +1819,7 @@ void World::PrepareArticulatedInertias() {
                 }
                 Body&       b   = bodies_[bi];
                 SpatialVec& sum = chassisCouplingWrenchSum_[bi];
-                if (b.invMass <= 0.0f || b.isSleeping) {
+                if (b.invMass <= 0.0 || b.isSleeping) {
                     continue;
                 }
                 Vec3 dw{};
@@ -1527,7 +1852,7 @@ void World::PrepareArticulatedInertias() {
                     continue;
                 }
                 Body& root = bodies_[rootBody];
-                if (root.invMass <= 0.0f || root.isSleeping) {
+                if (root.invMass <= 0.0 || root.isSleeping) {
                     continue;
                 }
                 const Vec3 com = root.position;
@@ -1553,7 +1878,7 @@ void World::PrepareArticulatedInertias() {
                     continue;
                 }
                 Body& b = bodies_[bi];
-                if (b.invMass <= 0.0f || b.isSleeping) {
+                if (b.invMass <= 0.0 || b.isSleeping) {
                     continue;
                 }
                 const SpatialInertia& Iagg = chassisArticulatedInertiaSum_[bi];
@@ -1562,9 +1887,18 @@ void World::PrepareArticulatedInertias() {
                 }
                 SpatialVec a{};
                 const SpatialVec rhs{-chassisCouplingWrenchSum_[bi].ang, -chassisCouplingWrenchSum_[bi].lin};
-                if (!SpatialInertiaSolveMotion(Iagg, rhs, a)) {
+                SpatialSolveDiagnostics diagnostics{};
+                if (!spatial_internal::SpatialInertiaSolveMotionDetailed(Iagg, rhs, a, &diagnostics)) {
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                    ++solverTelemetry_.articulationSpatialSolveFailures;
+#endif
                     continue;
                 }
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+                if (diagnostics.regularized) {
+                    ++solverTelemetry_.articulationSpatialSolveRegularized;
+                }
+#endif
                 Vec3 dv = gain * dt * a.lin;
                 Vec3 dw = gain * dt * a.ang;
                 if (articulationConfig_.chassisCouplingAngularOnly) {
@@ -1623,10 +1957,10 @@ void World::PrepareHingeJointSolves() {
             return;
         }
 
-        const float anchorBiasFactor = jointSolverConfig_.hingeAnchorBiasFactor;
-        const float blockDiagMin     = jointSolverConfig_.blockDiagonalMinimum;
-        const float blockDetEps      = jointSolverConfig_.blockDeterminantEpsilon;
-        const float blockCondMax     = jointSolverConfig_.blockConditionEstimateMax;
+        const Real anchorBiasFactor = jointSolverConfig_.hingeAnchorBiasFactor;
+        const Real blockDiagMin     = jointSolverConfig_.blockDiagonalMinimum;
+        const Real blockDetEps      = jointSolverConfig_.blockDeterminantEpsilon;
+        const Real blockCondMax     = jointSolverConfig_.blockConditionEstimateMax;
         const bool  useBlock         = jointSolverConfig_.useBlockSolver;
 
         for (std::size_t idx = 0; idx < n; ++idx) {
@@ -1646,7 +1980,7 @@ void World::PrepareHingeJointSolves() {
             const Vec3 va0   = a.velocity + Cross(a.angularVelocity, prep.ra);
             const Vec3 vb0   = b.velocity + Cross(b.angularVelocity, prep.rb);
             const Vec3 relVel0 = vb0 - va0;
-            const float relAngSpeed = Length(b.angularVelocity - a.angularVelocity);
+            const Real relAngSpeed = Length(b.angularVelocity - a.angularVelocity);
 
             // Wake check once per substep (not per iteration).
             if (Length(error) > kWakeContactPenetrationThreshold
@@ -1660,7 +1994,7 @@ void World::PrepareHingeJointSolves() {
             prep.anchorBias = anchorBiasFactor * error;
 
             // ---- Anchor mass matrix ----
-            const float invMassSum = a.invMass + b.invMass;
+            const Real invMassSum = a.invMass + b.invMass;
             const Vec3 axes[3] = {{1,0,0},{0,1,0},{0,0,1}};
             Vec3 raCrossAxis[3]{}, rbCrossAxis[3]{};
             for (int i = 0; i < 3; ++i) {
@@ -1669,12 +2003,12 @@ void World::PrepareHingeJointSolves() {
             }
 
             if (useBlock) {
-                float K[3][3]{};
+                Real K[3][3]{};
                 for (int i = 0; i < 3; ++i) {
                     const Vec3 invIaCrossI = invIA * raCrossAxis[i];
                     const Vec3 invIbCrossI = invIB * rbCrossAxis[i];
                     for (int kk = 0; kk < 3; ++kk) {
-                        K[i][kk] = (i == kk ? invMassSum : 0.0f)
+                        K[i][kk] = (i == kk ? invMassSum : 0.0)
                             + Dot(invIaCrossI, raCrossAxis[kk])
                             + Dot(invIbCrossI, rbCrossAxis[kk]);
                     }
@@ -1683,26 +2017,26 @@ void World::PrepareHingeJointSolves() {
                 for (int i = 0; i < 3; ++i) {
                     if (K[i][i] <= blockDiagMin) { ok = false; break; }
                 }
-                float det = 0.0f;
+                Real det = 0.0;
                 if (ok) {
                     det = K[0][0] * (K[1][1]*K[2][2] - K[1][2]*K[2][1])
                         - K[0][1] * (K[1][0]*K[2][2] - K[1][2]*K[2][0])
                         + K[0][2] * (K[1][0]*K[2][1] - K[1][1]*K[2][0]);
                     if (std::abs(det) <= blockDetEps) ok = false;
                 }
-                float adj[3][3]{};
+                Real adj[3][3]{};
                 if (ok) {
                     adj[0][0]=K[1][1]*K[2][2]-K[1][2]*K[2][1]; adj[0][1]=-(K[1][0]*K[2][2]-K[1][2]*K[2][0]); adj[0][2]=K[1][0]*K[2][1]-K[1][1]*K[2][0];
                     adj[1][0]=-(K[0][1]*K[2][2]-K[0][2]*K[2][1]); adj[1][1]=K[0][0]*K[2][2]-K[0][2]*K[2][0]; adj[1][2]=-(K[0][0]*K[2][1]-K[0][1]*K[2][0]);
                     adj[2][0]=K[0][1]*K[1][2]-K[0][2]*K[1][1]; adj[2][1]=-(K[0][0]*K[1][2]-K[0][2]*K[1][0]); adj[2][2]=K[0][0]*K[1][1]-K[0][1]*K[1][0];
-                    if (blockCondMax > 0.0f) {
-                        const float rowNorm = std::max({
+                    if (blockCondMax > 0.0) {
+                        const Real rowNorm = std::max({
                             std::abs(K[0][0])+std::abs(K[0][1])+std::abs(K[0][2]),
                             std::abs(K[1][0])+std::abs(K[1][1])+std::abs(K[1][2]),
                             std::abs(K[2][0])+std::abs(K[2][1])+std::abs(K[2][2]),
                         });
-                        const float invAbsDet = 1.0f / std::abs(det);
-                        const float invNorm = std::max({
+                        const Real invAbsDet = 1.0 / std::abs(det);
+                        const Real invNorm = std::max({
                             (std::abs(adj[0][0])+std::abs(adj[0][1])+std::abs(adj[0][2]))*invAbsDet,
                             (std::abs(adj[1][0])+std::abs(adj[1][1])+std::abs(adj[1][2]))*invAbsDet,
                             (std::abs(adj[2][0])+std::abs(adj[2][1])+std::abs(adj[2][2]))*invAbsDet,
@@ -1711,7 +2045,7 @@ void World::PrepareHingeJointSolves() {
                     }
                 }
                 if (ok) {
-                    const float invDet = 1.0f / det;
+                    const Real invDet = 1.0 / det;
                     prep.invK = Mat3{{
                         {adj[0][0]*invDet, adj[1][0]*invDet, adj[2][0]*invDet},
                         {adj[0][1]*invDet, adj[1][1]*invDet, adj[2][1]*invDet},
@@ -1732,30 +2066,30 @@ void World::PrepareHingeJointSolves() {
             // ---- Axis-alignment ----
             prep.axisA = Normalize(Rotate(a.orientation, j.localAxisA));
             const Vec3 axisB = Normalize(Rotate(b.orientation, j.localAxisB));
-            prep.t1 = Cross(prep.axisA, {1.0f, 0.0f, 0.0f});
-            if (LengthSquared(prep.t1) <= 1e-5f) prep.t1 = Cross(prep.axisA, {0.0f, 0.0f, 1.0f});
+            prep.t1 = Cross(prep.axisA, {1.0, 0.0, 0.0});
+            if (LengthSquared(prep.t1) <= 1e-5) prep.t1 = Cross(prep.axisA, {0.0, 0.0, 1.0});
             prep.t1 = Normalize(prep.t1);
             prep.t2 = Cross(prep.axisA, prep.t1); // axisA ⊥ t1, both unit → cross is unit
 
             const Vec3 angularError = Cross(prep.axisA, axisB);
-            const float effMassT1 = Dot(prep.t1, invIA * prep.t1) + Dot(prep.t1, invIB * prep.t1);
+            const Real effMassT1 = Dot(prep.t1, invIA * prep.t1) + Dot(prep.t1, invIB * prep.t1);
             if (effMassT1 > kEpsilon) {
-                prep.invDenomT1 = 1.0f / effMassT1;
-                prep.angBiasT1  = 0.2f * Dot(angularError, prep.t1);
+                prep.invDenomT1 = 1.0 / effMassT1;
+                prep.angBiasT1  = 0.2 * Dot(angularError, prep.t1);
                 prep.t1Active   = true;
             }
-            const float effMassT2 = Dot(prep.t2, invIA * prep.t2) + Dot(prep.t2, invIB * prep.t2);
+            const Real effMassT2 = Dot(prep.t2, invIA * prep.t2) + Dot(prep.t2, invIB * prep.t2);
             if (effMassT2 > kEpsilon) {
-                prep.invDenomT2 = 1.0f / effMassT2;
-                prep.angBiasT2  = 0.2f * Dot(angularError, prep.t2);
+                prep.invDenomT2 = 1.0 / effMassT2;
+                prep.angBiasT2  = 0.2 * Dot(angularError, prep.t2);
                 prep.t2Active   = true;
             }
 
             // ---- Limit + motor effective mass ----
-            const float effMassHinge = Dot(prep.axisA, invIA * prep.axisA)
+            const Real effMassHinge = Dot(prep.axisA, invIA * prep.axisA)
                                      + Dot(prep.axisA, invIB * prep.axisA);
             if (effMassHinge > kEpsilon) {
-                prep.invEffMassHinge    = 1.0f / effMassHinge;
+                prep.invEffMassHinge    = 1.0 / effMassHinge;
                 prep.hingeEffMassActive = true;
                 // Precompute hinge angle once — avoids ResolveJointReference + FastAtan2 per
                 // PGS iteration in the (N_iter - 1) redundant calls.
@@ -1775,36 +2109,36 @@ void World::PrepareServoJointSolves() {
             return;
         }
 
-        const float dt = currentSubstepDt_;
+        const Real dt = currentSubstepDt_;
         // Match the constants used in the original SolveServoJoint axis-alignment block.
-        constexpr float kAxisAlignOmega = 260.0f;
-        constexpr float kAxisAlignZeta  = 1.12f;
-        const float axisDenom = std::max(2.0f * kAxisAlignZeta + dt * kAxisAlignOmega, kEpsilon);
-        const float invAxisDenom = 1.0f / axisDenom;
-        const float axisGammaCoeff = invAxisDenom / (dt * kAxisAlignOmega);
-        const float axisBiasCoeff = kAxisAlignOmega * invAxisDenom;
-        const float resumeScale = std::max(1.0f, jointSolverConfig_.servoEarlyOutResumeScale);
-        const float impulseGuard = std::max(0.0f, jointSolverConfig_.servoEarlyOutImpulseGuardFraction);
-        const float wakeErrorSq = kWakeContactPenetrationThreshold * kWakeContactPenetrationThreshold;
-        const float wakeSpeedSq = kWakeJointRelativeSpeedThreshold * kWakeJointRelativeSpeedThreshold;
-        const float anchorErrorEnter = jointSolverConfig_.servoAnchorEarlyOutError;
-        const float anchorSpeedEnter = jointSolverConfig_.servoAnchorEarlyOutSpeed;
-        const float anchorErrorEnterSq = anchorErrorEnter * anchorErrorEnter;
-        const float anchorSpeedEnterSq = anchorSpeedEnter * anchorSpeedEnter;
-        const float anchorErrorExitSq = (anchorErrorEnter * resumeScale) * (anchorErrorEnter * resumeScale);
-        const float anchorSpeedExitSq = (anchorSpeedEnter * resumeScale) * (anchorSpeedEnter * resumeScale);
-        const float angularErrorEnter = jointSolverConfig_.servoAngularEarlyOutError;
-        const float angularSpeedEnter = jointSolverConfig_.servoAngularEarlyOutSpeed;
-        const float angularErrorExit = angularErrorEnter * resumeScale;
-        const float angularSpeedExit = angularSpeedEnter * resumeScale;
-        const float hingeErrorEnter = jointSolverConfig_.servoHingeEarlyOutError;
-        const float hingeSpeedEnter = jointSolverConfig_.servoHingeEarlyOutSpeed;
-        const float hingeErrorExit = hingeErrorEnter * resumeScale;
-        const float hingeSpeedExit = hingeSpeedEnter * resumeScale;
-        const float anchorBiasFactor = jointSolverConfig_.hingeAnchorBiasFactor;
-        const float blockDiagMin = jointSolverConfig_.blockDiagonalMinimum;
-        const float blockDetEps = jointSolverConfig_.blockDeterminantEpsilon;
-        const float blockCondMax = jointSolverConfig_.blockConditionEstimateMax;
+        constexpr Real kAxisAlignOmega = 260.0;
+        constexpr Real kAxisAlignZeta  = 1.12;
+        const Real axisDenom = std::max(2.0 * kAxisAlignZeta + dt * kAxisAlignOmega, kEpsilon);
+        const Real invAxisDenom = 1.0 / axisDenom;
+        const Real axisGammaCoeff = invAxisDenom / (dt * kAxisAlignOmega);
+        const Real axisBiasCoeff = kAxisAlignOmega * invAxisDenom;
+        const Real resumeScale = std::max(1.0, jointSolverConfig_.servoEarlyOutResumeScale);
+        const Real impulseGuard = std::max(0.0, jointSolverConfig_.servoEarlyOutImpulseGuardFraction);
+        const Real wakeErrorSq = kWakeContactPenetrationThreshold * kWakeContactPenetrationThreshold;
+        const Real wakeSpeedSq = kWakeJointRelativeSpeedThreshold * kWakeJointRelativeSpeedThreshold;
+        const Real anchorErrorEnter = jointSolverConfig_.servoAnchorEarlyOutError;
+        const Real anchorSpeedEnter = jointSolverConfig_.servoAnchorEarlyOutSpeed;
+        const Real anchorErrorEnterSq = anchorErrorEnter * anchorErrorEnter;
+        const Real anchorSpeedEnterSq = anchorSpeedEnter * anchorSpeedEnter;
+        const Real anchorErrorExitSq = (anchorErrorEnter * resumeScale) * (anchorErrorEnter * resumeScale);
+        const Real anchorSpeedExitSq = (anchorSpeedEnter * resumeScale) * (anchorSpeedEnter * resumeScale);
+        const Real angularErrorEnter = jointSolverConfig_.servoAngularEarlyOutError;
+        const Real angularSpeedEnter = jointSolverConfig_.servoAngularEarlyOutSpeed;
+        const Real angularErrorExit = angularErrorEnter * resumeScale;
+        const Real angularSpeedExit = angularSpeedEnter * resumeScale;
+        const Real hingeErrorEnter = jointSolverConfig_.servoHingeEarlyOutError;
+        const Real hingeSpeedEnter = jointSolverConfig_.servoHingeEarlyOutSpeed;
+        const Real hingeErrorExit = hingeErrorEnter * resumeScale;
+        const Real hingeSpeedExit = hingeSpeedEnter * resumeScale;
+        const Real anchorBiasFactor = jointSolverConfig_.hingeAnchorBiasFactor;
+        const Real blockDiagMin = jointSolverConfig_.blockDiagonalMinimum;
+        const Real blockDetEps = jointSolverConfig_.blockDeterminantEpsilon;
+        const Real blockCondMax = jointSolverConfig_.blockConditionEstimateMax;
 
         // Small flat cache: when multiple joints share the same (body_id, localAxisA)
         // — e.g. all 6 hip joints use body_id=0 and localAxisA={0,1,0} — the world-space
@@ -1842,9 +2176,9 @@ void World::PrepareServoJointSolves() {
                 WakeConnectedBodies(j.b);
             }
 
-            const float anchorErrorSq = LengthSquared(error);
-            const float anchorSpeedSq = LengthSquared(relVel0);
-            const float anchorImpulseSum = std::abs(j.impulseX) + std::abs(j.impulseY) + std::abs(j.impulseZ);
+            const Real anchorErrorSq = LengthSquared(error);
+            const Real anchorSpeedSq = LengthSquared(relVel0);
+            const Real anchorImpulseSum = std::abs(j.impulseX) + std::abs(j.impulseY) + std::abs(j.impulseZ);
             const bool anchorImpulseSmall = anchorImpulseSum <= (j.maxServoTorque * impulseGuard);
             if (jointSolverConfig_.enableServoAnchorEarlyOut) {
                 if (j.anchorEarlyOutActive) {
@@ -1864,9 +2198,9 @@ void World::PrepareServoJointSolves() {
             // We compute it even when skipAnchor is set so a later iteration that re-enters the
             // active path (unlikely within a single substep, but defensive) has a valid invK.
             // Skip when neither body has mass (degenerate trivially).
-            float K[3][3]{};
-            const float invMassSum = a.invMass + b.invMass;
-            const Vec3 axes[3] = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
+            Real K[3][3]{};
+            const Real invMassSum = a.invMass + b.invMass;
+            const Vec3 axes[3] = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}};
             Vec3 raCrossAxis[3]{};
             Vec3 rbCrossAxis[3]{};
             for (int i = 0; i < 3; ++i) {
@@ -1877,7 +2211,7 @@ void World::PrepareServoJointSolves() {
                 const Vec3 invIaCrossI = invIA * raCrossAxis[i];
                 const Vec3 invIbCrossI = invIB * rbCrossAxis[i];
                 for (int kCol = 0; kCol < 3; ++kCol) {
-                    K[i][kCol] = (i == kCol ? invMassSum : 0.0f)
+                    K[i][kCol] = (i == kCol ? invMassSum : 0.0)
                         + Dot(invIaCrossI, raCrossAxis[kCol])
                         + Dot(invIbCrossI, rbCrossAxis[kCol]);
                 }
@@ -1887,7 +2221,7 @@ void World::PrepareServoJointSolves() {
             for (int i = 0; i < 3; ++i) {
                 if (K[i][i] <= blockDiagMin) { anchorOK = false; break; }
             }
-            float det = 0.0f;
+            Real det = 0.0;
             if (anchorOK) {
                 det = K[0][0] * (K[1][1] * K[2][2] - K[1][2] * K[2][1])
                     - K[0][1] * (K[1][0] * K[2][2] - K[1][2] * K[2][0])
@@ -1896,7 +2230,7 @@ void World::PrepareServoJointSolves() {
                     anchorOK = false;
                 }
             }
-            float adj[3][3]{};
+            Real adj[3][3]{};
             if (anchorOK) {
                 adj[0][0] = K[1][1] * K[2][2] - K[1][2] * K[2][1];
                 adj[0][1] = -(K[1][0] * K[2][2] - K[1][2] * K[2][0]);
@@ -1907,32 +2241,56 @@ void World::PrepareServoJointSolves() {
                 adj[2][0] = K[0][1] * K[1][2] - K[0][2] * K[1][1];
                 adj[2][1] = -(K[0][0] * K[1][2] - K[0][2] * K[1][0]);
                 adj[2][2] = K[0][0] * K[1][1] - K[0][1] * K[1][0];
-                if (blockCondMax > 0.0f) {
-                    const float rowNorm = std::max({
+                if (blockCondMax > 0.0) {
+                    const Real rowNorm = std::max({
                         std::abs(K[0][0]) + std::abs(K[0][1]) + std::abs(K[0][2]),
                         std::abs(K[1][0]) + std::abs(K[1][1]) + std::abs(K[1][2]),
                         std::abs(K[2][0]) + std::abs(K[2][1]) + std::abs(K[2][2]),
                     });
-                    const float invAbsDet = 1.0f / std::abs(det);
-                    const float invNorm = std::max({
+                    const Real invAbsDet = 1.0 / std::abs(det);
+                    const Real invNorm = std::max({
                         (std::abs(adj[0][0]) + std::abs(adj[0][1]) + std::abs(adj[0][2])) * invAbsDet,
                         (std::abs(adj[1][0]) + std::abs(adj[1][1]) + std::abs(adj[1][2])) * invAbsDet,
                         (std::abs(adj[2][0]) + std::abs(adj[2][1]) + std::abs(adj[2][2])) * invAbsDet,
                     });
-                    const float conditionEstimate = rowNorm * invNorm;
+                    const Real conditionEstimate = rowNorm * invNorm;
                     if (!std::isfinite(conditionEstimate) || conditionEstimate > blockCondMax) {
                         anchorOK = false;
                     }
                 }
             }
             if (anchorOK) {
-                const float invDet = 1.0f / det;
+                const Real invDet = 1.0 / det;
                 prep.invK = Mat3{{
                     {adj[0][0] * invDet, adj[1][0] * invDet, adj[2][0] * invDet},
                     {adj[0][1] * invDet, adj[1][1] * invDet, adj[2][1] * invDet},
                     {adj[0][2] * invDet, adj[1][2] * invDet, adj[2][2] * invDet},
                 }};
-                prep.anchorBias = anchorBiasFactor * error;
+                // Cap the position error fed into the anchor bias to prevent large corrective
+                // impulses under hard landings or pathological joint-error states. Errors
+                // beyond this are still corrected, just at the same (bounded) rate.
+                const Real errorMag = Length(error);
+                const Real maxErrorForBias = jointSolverConfig_.hingeAnchorBiasMaxErrorM;
+                const bool biasCapped = (maxErrorForBias > 0.0 && errorMag > maxErrorForBias && errorMag > kEpsilon);
+                const Vec3 clampedError = biasCapped ? error * (maxErrorForBias / errorMag) : error;
+                // Diagnostic: log when the anchor bias cap fires.
+                // Enable with MINPHYS_DIAG_LOG=1.
+                if (biasCapped) {
+                    static bool s_diag_init = false;
+                    static bool s_diag_enabled = false;
+                    if (!s_diag_init) {
+                        const char* v = std::getenv("MINPHYS_DIAG_LOG");
+                        s_diag_enabled = v && v[0] != '\0' && v[0] != '0';
+                        s_diag_init = true;
+                    }
+                    if (s_diag_enabled) {
+                        std::fprintf(stderr,
+                            "[DIAG_BIAS] anchor_err=%.4f capped_to=%.4f\n",
+                            errorMag, maxErrorForBias);
+                        std::fflush(stderr);
+                    }
+                }
+                prep.anchorBias = anchorBiasFactor * clampedError;
                 prep.anchorValid = true;
             }
 
@@ -1971,15 +2329,15 @@ void World::PrepareServoJointSolves() {
                     }
                 }
                 prep.axisA = worldAxis;
-                prep.t1 = Cross(prep.axisA, {1.0f, 0.0f, 0.0f});
-                if (LengthSquared(prep.t1) <= 1e-5f) prep.t1 = Cross(prep.axisA, {0.0f, 0.0f, 1.0f});
+                prep.t1 = Cross(prep.axisA, {1.0, 0.0, 0.0});
+                if (LengthSquared(prep.t1) <= 1e-5) prep.t1 = Cross(prep.axisA, {0.0, 0.0, 1.0});
                 prep.t1 = Normalize(prep.t1);
                 prep.t2 = Cross(prep.axisA, prep.t1); // axisA ⊥ t1, both unit → cross is unit
             }
             const Vec3 axisB = Normalize(Rotate(b.orientation, j.localAxisB));
             const Vec3 angularError = Cross(prep.axisA, axisB);
-            const float angularErrorMag = Length(angularError);
-            const float relAngSpeed = Length(relAngVel0);
+            const Real angularErrorMag = Length(angularError);
+            const Real relAngSpeed = Length(relAngVel0);
             const bool angularImpulseSmall =
                 std::max(std::abs(j.angularImpulse1), std::abs(j.angularImpulse2))
                 <= (j.maxServoTorque * impulseGuard);
@@ -1999,19 +2357,19 @@ void World::PrepareServoJointSolves() {
             // Effective masses and pre-inverted denominators for the two angular axis rows.
             const Vec3 invISumT1 = invIA * prep.t1 + invIB * prep.t1;
             const Vec3 invISumT2 = invIA * prep.t2 + invIB * prep.t2;
-            const float wT1 = Dot(prep.t1, invISumT1);
-            const float wT2 = Dot(prep.t2, invISumT2);
-            const float wT12 = Dot(prep.t1, invISumT2); // == Dot(t2, invISumT1) since invIA, invIB symmetric
+            const Real wT1 = Dot(prep.t1, invISumT1);
+            const Real wT2 = Dot(prep.t2, invISumT2);
+            const Real wT12 = Dot(prep.t1, invISumT2); // == Dot(t2, invISumT1) since invIA, invIB symmetric
             prep.t1Active = wT1 > kEpsilon;
             prep.t2Active = wT2 > kEpsilon;
             if (prep.t1Active) {
-                const float gamma1 = wT1 * axisGammaCoeff;
-                prep.invDenomT1 = 1.0f / (wT1 + gamma1);
+                const Real gamma1 = wT1 * axisGammaCoeff;
+                prep.invDenomT1 = 1.0 / (wT1 + gamma1);
                 prep.axisBiasT1 = Dot(angularError, prep.t1) * axisBiasCoeff;
             }
             if (prep.t2Active) {
-                const float gamma2 = wT2 * axisGammaCoeff;
-                prep.invDenomT2 = 1.0f / (wT2 + gamma2);
+                const Real gamma2 = wT2 * axisGammaCoeff;
+                prep.invDenomT2 = 1.0 / (wT2 + gamma2);
                 prep.axisBiasT2 = Dot(angularError, prep.t2) * axisBiasCoeff;
             }
             // Try the coupled 2x2 block solve. Both rows share the same Baumgarte denominator
@@ -2019,16 +2377,16 @@ void World::PrepareServoJointSolves() {
             // gamma — gamma only damps each row's own constraint). Falls back to the two
             // scalar rows when the system is degenerate.
             if (prep.t1Active && prep.t2Active) {
-                const float gamma1 = wT1 * axisGammaCoeff;
-                const float gamma2 = wT2 * axisGammaCoeff;
-                const float K11 = wT1 + gamma1;
-                const float K22 = wT2 + gamma2;
-                const float K12 = wT12;
-                const float det2 = K11 * K22 - K12 * K12;
+                const Real gamma1 = wT1 * axisGammaCoeff;
+                const Real gamma2 = wT2 * axisGammaCoeff;
+                const Real K11 = wT1 + gamma1;
+                const Real K22 = wT2 + gamma2;
+                const Real K12 = wT12;
+                const Real det2 = K11 * K22 - K12 * K12;
                 // Require strict positivity and well-conditioning; use the per-row fallback
                 // otherwise so we never inject NaN/Inf into the velocity stream.
-                if (det2 > kEpsilon * std::max(K11 * K22, 1.0f)) {
-                    const float invDet2 = 1.0f / det2;
+                if (det2 > kEpsilon * std::max(K11 * K22, 1.0)) {
+                    const Real invDet2 = 1.0 / det2;
                     prep.invK2aa = K22 * invDet2;
                     prep.invK2ab = -K12 * invDet2;
                     prep.invK2bb = K11 * invDet2;
@@ -2037,18 +2395,18 @@ void World::PrepareServoJointSolves() {
             }
 
             // ---- Hinge servo kinematics ----
-            const float wHinge = Dot(prep.axisA, invIA * prep.axisA) + Dot(prep.axisA, invIB * prep.axisA);
+            const Real wHinge = Dot(prep.axisA, invIA * prep.axisA) + Dot(prep.axisA, invIB * prep.axisA);
             prep.hingeActive = wHinge > kEpsilon;
             if (prep.hingeActive) {
-                const float hingeAngle = core_internal::ComputeServoJointAngle(a, b, j);
-                const float rawPositionError = core_internal::WrapJointAngle(hingeAngle - j.targetAngle);
-                const float positionError = (j.positionErrorSmoothing > 0.0f) ? j.smoothedAngleError : rawPositionError;
+                const Real hingeAngle = core_internal::ComputeServoJointAngle(a, b, j);
+                const Real rawPositionError = core_internal::WrapJointAngle(hingeAngle - j.targetAngle);
+                const Real positionError = (j.positionErrorSmoothing > 0.0) ? j.smoothedAngleError : rawPositionError;
 
                 // Hinge early-out uses end-of-substep kinematic state (positionError) and
                 // start-of-substep dynamics (impulse + angular velocity sample). The original
                 // code re-evaluated this every iteration; freezing once per substep matches the
                 // prepare/iterate split and avoids re-running the std::abs+compares N times.
-                const float omegaAxis0 = Dot(relAngVel0, prep.axisA);
+                const Real omegaAxis0 = Dot(relAngVel0, prep.axisA);
                 const bool hingeImpulseSmall = std::abs(j.servoImpulseSum) <= (j.maxServoTorque * impulseGuard);
                 if (jointSolverConfig_.enableServoHingeEarlyOut) {
                     if (j.hingeEarlyOutActive) {
@@ -2063,21 +2421,70 @@ void World::PrepareServoJointSolves() {
                     j.hingeEarlyOutActive = false;
                 }
 
-                const float omega = j.positionGain;
-                const float zeta = j.dampingGain;
-                const float hingeDenom = std::max(2.0f * zeta + dt * omega, kEpsilon);
-                const float invHingeDenom = 1.0f / hingeDenom;
-                const float hingeGamma = wHinge * invHingeDenom / (dt * omega);
-                const float clampedError = std::clamp(positionError, -j.maxCorrectionAngle, j.maxCorrectionAngle);
-                float servoBias = omega * clampedError * invHingeDenom + j.integralGain * j.integralAccum;
-                prep.hasSpeedClamp = (j.maxServoSpeed > 0.0f && std::isfinite(j.maxServoSpeed));
+                const Real omega = j.positionGain;
+                const Real zeta = j.dampingGain;
+                const Real hingeDenom = std::max(2.0 * zeta + dt * omega, kEpsilon);
+                const Real invHingeDenom = 1.0 / hingeDenom;
+                const Real hingeGamma = wHinge * invHingeDenom / (dt * omega);
+                const Real clampedError = std::clamp(positionError, -j.maxCorrectionAngle, j.maxCorrectionAngle);
+                Real servoBias = omega * clampedError * invHingeDenom + j.integralGain * j.integralAccum;
+                prep.hasSpeedClamp = (j.maxServoSpeed > 0.0 && std::isfinite(j.maxServoSpeed));
                 if (prep.hasSpeedClamp) {
                     servoBias = std::clamp(servoBias, -j.maxServoSpeed, j.maxServoSpeed);
                     prep.maxServoSpeed = j.maxServoSpeed;
                 }
                 prep.servoBias = servoBias;
-                prep.invDenomHinge = 1.0f / (wHinge + hingeGamma);
-                prep.invWHingeForSpeed = 1.0f / std::max(wHinge, kEpsilon);
+                prep.invDenomHinge = 1.0 / (wHinge + hingeGamma);
+                prep.invWHingeForSpeed = 1.0 / std::max(wHinge, kEpsilon);
+                prep.useDecoupledPD = jointSolverConfig_.enableServoStiffnessDampingDecoupling;
+
+                // ---- Decoupled (stiffness + damping as separate PGS rows). The math:
+                //
+                //   Position row treats the constraint as a pure spring with stiffness
+                //   k = ωₙ² · I_hinge and zero damping. Catto soft-constraint coefficients
+                //   for that case are β_p = 1, γ_p = wHinge / (dt² · ωₙ²), giving:
+                //     bias_velocity = err / dt
+                //     softness term in PGS denominator = γ_p
+                //
+                //   Damping row treats the constraint as a pure damper with c = 2ζωₙ · I_hinge
+                //   and zero stiffness. Catto coefficients are β_d = 0, γ_d = wHinge / (dt · 2ζωₙ),
+                //   giving:
+                //     bias_velocity = 0
+                //     softness term in PGS denominator = γ_d
+                //
+                //   Applied sequentially per iteration: position first then damping. The order
+                //   matters within a single iteration but the PGS multi-iteration loop converges
+                //   to the same fixed point either way for well-conditioned cases.
+                //
+                //   The position bias is clamped at maxServoSpeed only AFTER the linear region
+                //   has saturated. In the linear region (|err| ≤ maxServoSpeed · dt), bias =
+                //   err/dt sits below the clamp and the classical-PD invariant holds. Outside
+                //   the linear region (large error transients, e.g. command-step responses),
+                //   the bias saturates at maxServoSpeed — same semantics as the legacy
+                //   formulation: "the servo cannot command faster than its rated max speed."
+                //   This preserves the test_servo_stall_under_overload contract where a very
+                //   low maxServoSpeed must bound commanded velocity.
+                if (prep.useDecoupledPD) {
+                    const Real omegaN2dt2 = std::max(dt * dt * omega * omega, kEpsilon);
+                    const Real gammaPos = wHinge / omegaN2dt2;
+                    prep.invDenomHingePos = 1.0 / std::max(wHinge + gammaPos, kEpsilon);
+                    Real biasPos = (dt > 0.0) ? (clampedError / dt) : 0.0;
+                    biasPos += j.integralGain * j.integralAccum;
+                    if (prep.hasSpeedClamp) {
+                        biasPos = std::clamp(biasPos, -j.maxServoSpeed, j.maxServoSpeed);
+                    }
+                    prep.servoBiasPos = biasPos;
+
+                    const Real dampScale = 2.0 * zeta * omega; // c / I_hinge
+                    if (dampScale > kEpsilon) {
+                        const Real gammaDamp = wHinge / (dt * dampScale);
+                        prep.invDenomHingeDamp = 1.0 / std::max(wHinge + gammaDamp, kEpsilon);
+                        prep.dampingRowActive = true;
+                    } else {
+                        prep.invDenomHingeDamp = 0.0;
+                        prep.dampingRowActive = false;
+                    }
+                }
             }
         }
     }
@@ -2094,15 +2501,27 @@ void World::SolveServoJoint(ServoJoint& j) {
         Body& b = bodies_[j.b];
         const Mat3& invIA = bodyInvInertiaWorld_[j.a];
         const Mat3& invIB = bodyInvInertiaWorld_[j.b];
-        const float dampingFactor = jointSolverConfig_.hingeAnchorDampingFactor;
+        const Real dampingFactor = jointSolverConfig_.hingeAnchorDampingFactor;
 
         // ---- Anchor 3D row ----
         if (!prep.skipAnchor && prep.anchorValid) {
             const Vec3 va = a.velocity + Cross(a.angularVelocity, prep.ra);
             const Vec3 vb = b.velocity + Cross(b.angularVelocity, prep.rb);
             const Vec3 relVel = vb - va;
-            const Vec3 rhs = dampingFactor * relVel + prep.anchorBias;
-            const Vec3 lambda = -1.0f * (prep.invK * rhs);
+            // Cap relative velocity to prevent the damping term from generating explosive
+            // impulses during violent contact events (e.g. fast foot landing while light-body
+            // joint chain is unsupported). Angular rows are already clamped at maxServoTorque;
+            // this brings the linear anchor into parity.
+            const Real maxRVMs = jointSolverConfig_.hingeAnchorDampingMaxRelVelMs;
+            Vec3 dampRelVel = relVel;
+            if (maxRVMs > 0.0) {
+                const Real rvLenSq = LengthSquared(relVel);
+                if (rvLenSq > maxRVMs * maxRVMs) {
+                    dampRelVel = relVel * (maxRVMs / std::sqrt(rvLenSq));
+                }
+            }
+            const Vec3 rhs = dampingFactor * dampRelVel + prep.anchorBias;
+            const Vec3 lambda = -1.0 * (prep.invK * rhs);
             if (std::isfinite(lambda.x) && std::isfinite(lambda.y) && std::isfinite(lambda.z)) {
                 j.impulseX += lambda.x;
                 j.impulseY += lambda.y;
@@ -2116,33 +2535,33 @@ void World::SolveServoJoint(ServoJoint& j) {
             const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
             if (prep.useBlockAxisSolve) {
                 // Coupled 2x2 solve: lambda = invK2 * -(rhs).
-                const float r1 = Dot(relAngVel, prep.t1) + prep.axisBiasT1;
-                const float r2 = Dot(relAngVel, prep.t2) + prep.axisBiasT2;
-                float lambda1 = -(prep.invK2aa * r1 + prep.invK2ab * r2);
-                float lambda2 = -(prep.invK2ab * r1 + prep.invK2bb * r2);
-                const float old1 = j.angularImpulse1;
-                const float old2 = j.angularImpulse2;
+                const Real r1 = Dot(relAngVel, prep.t1) + prep.axisBiasT1;
+                const Real r2 = Dot(relAngVel, prep.t2) + prep.axisBiasT2;
+                Real lambda1 = -(prep.invK2aa * r1 + prep.invK2ab * r2);
+                Real lambda2 = -(prep.invK2ab * r1 + prep.invK2bb * r2);
+                const Real old1 = j.angularImpulse1;
+                const Real old2 = j.angularImpulse2;
                 j.angularImpulse1 = std::clamp(old1 + lambda1, -j.maxServoTorque, j.maxServoTorque);
                 j.angularImpulse2 = std::clamp(old2 + lambda2, -j.maxServoTorque, j.maxServoTorque);
                 lambda1 = j.angularImpulse1 - old1;
                 lambda2 = j.angularImpulse2 - old2;
-                if (lambda1 != 0.0f || lambda2 != 0.0f) {
+                if (lambda1 != 0.0 || lambda2 != 0.0) {
                     ApplyAngularImpulse(a, b, invIA, invIB, lambda1 * prep.t1 + lambda2 * prep.t2);
                 }
             } else {
                 if (prep.t1Active) {
-                    const float velN = Dot(relAngVel, prep.t1);
-                    float angLambda = -(velN + prep.axisBiasT1) * prep.invDenomT1;
-                    const float oldAxisImpulse = j.angularImpulse1;
+                    const Real velN = Dot(relAngVel, prep.t1);
+                    Real angLambda = -(velN + prep.axisBiasT1) * prep.invDenomT1;
+                    const Real oldAxisImpulse = j.angularImpulse1;
                     j.angularImpulse1 = std::clamp(oldAxisImpulse + angLambda, -j.maxServoTorque, j.maxServoTorque);
                     angLambda = j.angularImpulse1 - oldAxisImpulse;
                     ApplyAngularImpulse(a, b, invIA, invIB, angLambda * prep.t1);
                 }
                 if (prep.t2Active) {
                     const Vec3 relAngVel2 = b.angularVelocity - a.angularVelocity;
-                    const float velN = Dot(relAngVel2, prep.t2);
-                    float angLambda = -(velN + prep.axisBiasT2) * prep.invDenomT2;
-                    const float oldAxisImpulse = j.angularImpulse2;
+                    const Real velN = Dot(relAngVel2, prep.t2);
+                    Real angLambda = -(velN + prep.axisBiasT2) * prep.invDenomT2;
+                    const Real oldAxisImpulse = j.angularImpulse2;
                     j.angularImpulse2 = std::clamp(oldAxisImpulse + angLambda, -j.maxServoTorque, j.maxServoTorque);
                     angLambda = j.angularImpulse2 - oldAxisImpulse;
                     ApplyAngularImpulse(a, b, invIA, invIB, angLambda * prep.t2);
@@ -2155,20 +2574,59 @@ void World::SolveServoJoint(ServoJoint& j) {
             return;
         }
         {
-            const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
-            const float omegaAxis = Dot(relAngVel, prep.axisA);
-            float servoLambda = -(omegaAxis + prep.servoBias) * prep.invDenomHinge;
-            const float oldImpulse = j.servoImpulseSum;
-            j.servoImpulseSum = std::clamp(j.servoImpulseSum + servoLambda, -j.maxServoTorque, j.maxServoTorque);
-            servoLambda = j.servoImpulseSum - oldImpulse;
-            ApplyAngularImpulse(a, b, invIA, invIB, servoLambda * prep.axisA);
+            // Two formulations live side-by-side, dispatched by prep.useDecoupledPD (set
+            // from JointSolverConfig::enableServoStiffnessDampingDecoupling at prepare time):
+            //  - LEGACY: single-row Catto soft constraint with bias = ωₙ·err/D and softness
+            //    γ = wHinge/(dt·ωₙ·D), where D = 2ζ + dt·ωₙ. This is the production path.
+            //  - DECOUPLED: separate stiffness and damping rows, with the position bias and
+            //    softness derived from a pure-spring model (β=1, γ=wHinge/(dt²·ωₙ²)) and the
+            //    damping row's softness from a pure-damper model (γ=wHinge/(dt·2ζωₙ)). This
+            //    recovers the classical PD invariant (steady-state error ⊥ ζ) — see
+            //    test_servo_classical_pd_invariant.
+            if (prep.useDecoupledPD) {
+                // Position row: pure stiffness.
+                {
+                    const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
+                    const Real omegaAxis = Dot(relAngVel, prep.axisA);
+                    Real lambda = -(omegaAxis + prep.servoBiasPos) * prep.invDenomHingePos;
+                    const Real oldImpulse = j.servoImpulseSum;
+                    j.servoImpulseSum =
+                        std::clamp(j.servoImpulseSum + lambda, -j.maxServoTorque, j.maxServoTorque);
+                    lambda = j.servoImpulseSum - oldImpulse;
+                    if (lambda != 0.0) {
+                        ApplyAngularImpulse(a, b, invIA, invIB, lambda * prep.axisA);
+                    }
+                }
+                // Damping row: drive ω → 0 with implicit-Euler softness.
+                if (prep.dampingRowActive) {
+                    const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
+                    const Real omegaAxis = Dot(relAngVel, prep.axisA);
+                    Real lambda = -omegaAxis * prep.invDenomHingeDamp;
+                    const Real oldImpulse = j.servoImpulseSum;
+                    j.servoImpulseSum =
+                        std::clamp(j.servoImpulseSum + lambda, -j.maxServoTorque, j.maxServoTorque);
+                    lambda = j.servoImpulseSum - oldImpulse;
+                    if (lambda != 0.0) {
+                        ApplyAngularImpulse(a, b, invIA, invIB, lambda * prep.axisA);
+                    }
+                }
+            } else {
+                const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
+                const Real omegaAxis = Dot(relAngVel, prep.axisA);
+                Real servoLambda = -(omegaAxis + prep.servoBias) * prep.invDenomHinge;
+                const Real oldImpulse = j.servoImpulseSum;
+                j.servoImpulseSum =
+                    std::clamp(j.servoImpulseSum + servoLambda, -j.maxServoTorque, j.maxServoTorque);
+                servoLambda = j.servoImpulseSum - oldImpulse;
+                ApplyAngularImpulse(a, b, invIA, invIB, servoLambda * prep.axisA);
+            }
 
             if (prep.hasSpeedClamp) {
-                const float postOmegaAxis = Dot(b.angularVelocity - a.angularVelocity, prep.axisA);
-                const float clampedOmegaAxis = std::clamp(postOmegaAxis, -prep.maxServoSpeed, prep.maxServoSpeed);
-                if (std::abs(clampedOmegaAxis - postOmegaAxis) > 1e-6f) {
-                    float speedLambda = (clampedOmegaAxis - postOmegaAxis) * prep.invWHingeForSpeed;
-                    const float speedImpulse = std::clamp(j.servoImpulseSum + speedLambda, -j.maxServoTorque, j.maxServoTorque);
+                const Real postOmegaAxis = Dot(b.angularVelocity - a.angularVelocity, prep.axisA);
+                const Real clampedOmegaAxis = std::clamp(postOmegaAxis, -prep.maxServoSpeed, prep.maxServoSpeed);
+                if (std::abs(clampedOmegaAxis - postOmegaAxis) > 1e-6) {
+                    Real speedLambda = (clampedOmegaAxis - postOmegaAxis) * prep.invWHingeForSpeed;
+                    const Real speedImpulse = std::clamp(j.servoImpulseSum + speedLambda, -j.maxServoTorque, j.maxServoTorque);
                     speedLambda = speedImpulse - j.servoImpulseSum;
                     j.servoImpulseSum = speedImpulse;
                     ApplyAngularImpulse(a, b, invIA, invIB, speedLambda * prep.axisA);
@@ -2187,7 +2645,7 @@ void World::SolveContactsInManifold(Manifold& manifold) {
             manifolds_,
             previousManifolds_,
             &bodyInvInertiaWorld_,
-            [this, &warmStartUsedKeys](const ManifoldKey& manifoldId, const Contact& contact, float& normal, std::array<float, 2>& tangent, std::uint16_t& age) {
+            [this, &warmStartUsedKeys](const ManifoldKey& manifoldId, const Contact& contact, Real& normal, std::array<Real, 2>& tangent, std::uint16_t& age) {
                 PersistentPointMatchCandidate match{};
                 std::unordered_set<PersistentPointKey, PersistentPointKeyHash>& usedKeys = warmStartUsedKeys[manifoldId];
                 if (!TryMatchPersistentPoint(persistentPointImpulses_, manifoldId, contact, usedKeys, match)) {
@@ -2281,19 +2739,45 @@ void World::SolveJointPositions(const std::vector<std::uint8_t>* skipServoHingeS
             &servoPositionAngularAccumScratch_,
             &servoPositionAngularCountScratch_,
             skipServoHingeSnapMask,
+            jointSolverConfig_.servoAnchorCorrectionMaxM,
         };
         jointSolver.SolveJointPositions(context);
     }
 
 void World::SolveArticulationChainPositions() {
-    const float subDt = currentSubstepDt_;
-    for (const ArtChain& chain : articulationChains_) {
+    const Real subDt = currentSubstepDt_;
+    for (std::size_t ci = 0; ci < articulationChains_.size(); ++ci) {
+        const ArtChain& chain = articulationChains_[ci];
         const std::size_t N = chain.links.size();
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+        auto* sample = GetArticulationTelemetrySample(solverTelemetry_, ci);
+#endif
         // Only apply coordinated chain correction to chains long enough for the
         // per-joint solver to fight itself (root + 3 DOF = 4 links minimum).
         // 2-link chains (e.g. a single servo arm) are served better by the
         // standard per-joint hinge snap in SolveJointPositions.
         if (N < 4) {
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+            if (sample != nullptr) {
+                sample->chainPositionSkippedShortChain = true;
+            }
+#endif
+            continue;
+        }
+        const ArticulationConditionMetrics conditioning = AnalyzeArticulationChainConditioning(chain);
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+        if (sample != nullptr) {
+            sample->minD = conditioning.minD;
+            sample->maxD = conditioning.maxD;
+        }
+#endif
+        if (conditioning.badConditioning) {
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+            if (sample != nullptr) {
+                sample->chainPositionSkippedConditioning = true;
+            }
+            ++solverTelemetry_.articulationPositionSkippedConditioning;
+#endif
             continue;
         }
         for (std::size_t linkIdx = 1; linkIdx < N; ++linkIdx) {
@@ -2313,8 +2797,8 @@ void World::SolveArticulationChainPositions() {
             if (a.invMass + b.invMass <= kEpsilon) {
                 continue;
             }
-            const float stab = std::clamp(sj.angleStabilizationScale, 0.0f, 1.0f);
-            if (stab <= 1e-7f) {
+            const Real stab = std::clamp(sj.angleStabilizationScale, 0.0, 1.0);
+            if (stab <= 1e-7) {
                 continue;
             }
 
@@ -2326,7 +2810,7 @@ void World::SolveArticulationChainPositions() {
 
             const Vec3 axisCorrection =
                 core_internal::ComputeServoAxisAlignmentCorrection(sj, axisA, axisB);
-            if (LengthSquared(axisCorrection) > 0.0f) {
+            if (LengthSquared(axisCorrection) > 0.0) {
                 core_internal::ApplyAngularPositionCorrection(a, b, axisCorrection);
                 axisA = Rotate(a.orientation, sj.localAxisA);
                 axisB = Rotate(b.orientation, sj.localAxisB);
@@ -2335,19 +2819,19 @@ void World::SolveArticulationChainPositions() {
                 }
             }
 
-            const float hingeAngle =
+            const Real hingeAngle =
                 core_internal::ComputeServoJointAngle(a, b, sj);
-            const float targetError =
+            const Real targetError =
                 core_internal::WrapJointAngle(hingeAngle - sj.targetAngle);
-            const float maxServoSpeed = std::max(0.0f, sj.maxServoSpeed);
-            const float maxAngleCorrection = maxServoSpeed > 0.0f
-                ? std::min(0.06f * stab, maxServoSpeed * subDt)
-                : 0.06f * stab;
-            const float Dji = chain.D[linkIdx];
-            const float dScale = std::min(1.0f, 0.25f / std::max(Dji, kEpsilon));
-            const float raw = 0.15f * stab * targetError * dScale;
-            const float clampedAngle = std::clamp(raw, -maxAngleCorrection, maxAngleCorrection);
-            if (std::abs(clampedAngle) > 1e-5f) {
+            const Real maxServoSpeed = std::max(0.0, sj.maxServoSpeed);
+            const Real maxAngleCorrection = maxServoSpeed > 0.0
+                ? std::min(0.06 * stab, maxServoSpeed * subDt)
+                : 0.06 * stab;
+            const Real Dji = chain.D[linkIdx];
+            const Real dScale = std::min(1.0, 0.25 / std::max(Dji, kEpsilon));
+            const Real raw = 0.15 * stab * targetError * dScale;
+            const Real clampedAngle = std::clamp(raw, -maxAngleCorrection, maxAngleCorrection);
+            if (std::abs(clampedAngle) > 1e-5) {
                 core_internal::ApplyAngularPositionCorrection(a, b, clampedAngle * axisA);
             }
         }
@@ -2365,8 +2849,8 @@ void World::SolveArticulationPositions() {
 }
 
 void World::BeginSplitImpulseSubstep() {
-        splitLinearPositionDelta_.assign(bodies_.size(), Vec3{0.0f, 0.0f, 0.0f});
-        splitAngularPositionDelta_.assign(bodies_.size(), Vec3{0.0f, 0.0f, 0.0f});
+        splitLinearPositionDelta_.assign(bodies_.size(), Vec3{0.0, 0.0, 0.0});
+        splitAngularPositionDelta_.assign(bodies_.size(), Vec3{0.0, 0.0, 0.0});
     }
 
 void World::AccumulateSplitImpulseCorrection(std::uint32_t bodyId, const Vec3& linearDelta, const Vec3& angularDelta) {
@@ -2386,14 +2870,14 @@ void World::ApplySplitStabilization() {
         }
         for (std::size_t i = 0; i < bodies_.size(); ++i) {
             Body& body = bodies_[i];
-            if (body.invMass == 0.0f || body.isSleeping) {
+            if (body.invMass == 0.0 || body.isSleeping) {
                 continue;
             }
             body.position += splitLinearPositionDelta_[i];
         }
     }
 
-bool World::TryComputeAnchorSeparation(const Contact& c, float& outPenetration) const {
+bool World::TryComputeAnchorSeparation(const Contact& c, Real& outPenetration) const {
         if (!c.anchorsValid || c.a >= bodies_.size() || c.b >= bodies_.size()) {
             return false;
         }
@@ -2401,8 +2885,8 @@ bool World::TryComputeAnchorSeparation(const Contact& c, float& outPenetration) 
         const Body& b = bodies_[c.b];
         const Vec3 worldAnchorA = a.position + Rotate(a.orientation, c.localAnchorA);
         const Vec3 worldAnchorB = b.position + Rotate(b.orientation, c.localAnchorB);
-        const float separation = Dot(worldAnchorB - worldAnchorA, c.normal);
-        const float penetration = std::max(0.0f, c.referenceSeparation - separation);
+        const Real separation = Dot(worldAnchorB - worldAnchorA, c.normal);
+        const Real penetration = std::max(0.0, c.referenceSeparation - separation);
         if (!std::isfinite(penetration)) {
             return false;
         }
@@ -2427,7 +2911,7 @@ void World::SolveIslands() {
             manifolds_,
             previousManifolds_,
             &bodyInvInertiaWorld_,
-            [this, &warmStartUsedKeys](const ManifoldKey& manifoldId, const Contact& contact, float& normal, std::array<float, 2>& tangent, std::uint16_t& age) {
+            [this, &warmStartUsedKeys](const ManifoldKey& manifoldId, const Contact& contact, Real& normal, std::array<Real, 2>& tangent, std::uint16_t& age) {
                 PersistentPointMatchCandidate match{};
                 std::unordered_set<PersistentPointKey, PersistentPointKeyHash>& usedKeys = warmStartUsedKeys[manifoldId];
                 if (!TryMatchPersistentPoint(persistentPointImpulses_, manifoldId, contact, usedKeys, match)) {

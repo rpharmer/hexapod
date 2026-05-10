@@ -16,24 +16,24 @@
 
 namespace minphys3d::demo {
 
-inline constexpr float kHexapodStabilityPi = 3.14159265358979323846f;
+inline constexpr Real kHexapodStabilityPi = 3.14159265358979323846;
 
-inline float WrapHexapodAngle(float angle) {
+inline Real WrapHexapodAngle(Real angle) {
     return std::atan2(std::sin(angle), std::cos(angle));
 }
 
 inline Vec3 BodyUpVectorStability(const Quat& orientation) {
-    return Rotate(orientation, Vec3{0.0f, 1.0f, 0.0f});
+    return Rotate(orientation, Vec3{0.0, 1.0, 0.0});
 }
 
-inline float BodyRollRadStability(const Quat& orientation) {
+inline Real BodyRollRadStability(const Quat& orientation) {
     const Vec3 up = BodyUpVectorStability(orientation);
-    return std::atan2(up.x, std::max(up.y, 1.0e-6f));
+    return std::atan2(up.x, std::max(up.y, 1.0e-6));
 }
 
-inline float BodyPitchRadStability(const Quat& orientation) {
+inline Real BodyPitchRadStability(const Quat& orientation) {
     const Vec3 up = BodyUpVectorStability(orientation);
-    return std::atan2(-up.z, std::max(up.y, 1.0e-6f));
+    return std::atan2(-up.z, std::max(up.y, 1.0e-6));
 }
 
 // --- Ground / contact rollups (moved from scenes.cpp; used for standing metrics) ---
@@ -41,8 +41,8 @@ inline float BodyPitchRadStability(const Quat& orientation) {
 struct HexapodLinkContactRollup {
     int manifolds = 0;
     int points = 0;
-    float totalNormalImpulse = 0.0f;
-    float maxPenetration = 0.0f;
+    Real totalNormalImpulse = 0.0;
+    Real maxPenetration = 0.0;
 };
 
 struct HexapodLegContactRollup {
@@ -87,7 +87,7 @@ inline std::array<HexapodLegContactRollup, 6> SummarizeHexapodGroundContacts(
         ++summary->manifolds;
         summary->points += static_cast<int>(manifold.contacts.size());
         for (const Contact& contact : manifold.contacts) {
-            summary->totalNormalImpulse += std::max(contact.normalImpulseSum, 0.0f);
+            summary->totalNormalImpulse += std::max(contact.normalImpulseSum, 0.0);
             summary->maxPenetration = std::max(summary->maxPenetration, contact.penetration);
         }
     }
@@ -96,11 +96,11 @@ inline std::array<HexapodLegContactRollup, 6> SummarizeHexapodGroundContacts(
 
 /// Min/max body height, peak tilt, joint speed, and minimum support (contact) counts over a run.
 struct HexapodStandingStats {
-    float minBodyHeight = std::numeric_limits<float>::infinity();
-    float maxBodyHeight = -std::numeric_limits<float>::infinity();
-    float maxAbsRollDeg = 0.0f;
-    float maxAbsPitchDeg = 0.0f;
-    float maxJointSpeedRadS = 0.0f;
+    Real minBodyHeight = std::numeric_limits<float>::infinity();
+    Real maxBodyHeight = -std::numeric_limits<float>::infinity();
+    Real maxAbsRollDeg = 0.0;
+    Real maxAbsPitchDeg = 0.0;
+    Real maxJointSpeedRadS = 0.0;
     int minContactManifolds = std::numeric_limits<int>::max();
     int minContactPoints = std::numeric_limits<int>::max();
 };
@@ -108,15 +108,15 @@ struct HexapodStandingStats {
 inline void UpdateHexapodStandingStats(
     HexapodStandingStats& stats,
     const Body& chassis,
-    float roll_rad,
-    float pitch_rad,
+    Real roll_rad,
+    Real pitch_rad,
     int contact_manifolds,
     int contact_points,
-    float max_joint_speed_rad_s) {
+    Real max_joint_speed_rad_s) {
     stats.minBodyHeight = std::min(stats.minBodyHeight, chassis.position.y);
     stats.maxBodyHeight = std::max(stats.maxBodyHeight, chassis.position.y);
-    stats.maxAbsRollDeg = std::max(stats.maxAbsRollDeg, std::abs(roll_rad) * 180.0f / kHexapodStabilityPi);
-    stats.maxAbsPitchDeg = std::max(stats.maxAbsPitchDeg, std::abs(pitch_rad) * 180.0f / kHexapodStabilityPi);
+    stats.maxAbsRollDeg = std::max(stats.maxAbsRollDeg, std::abs(roll_rad) * 180.0 / kHexapodStabilityPi);
+    stats.maxAbsPitchDeg = std::max(stats.maxAbsPitchDeg, std::abs(pitch_rad) * 180.0 / kHexapodStabilityPi);
     stats.maxJointSpeedRadS = std::max(stats.maxJointSpeedRadS, max_joint_speed_rad_s);
     stats.minContactManifolds = std::min(stats.minContactManifolds, contact_manifolds);
     stats.minContactPoints = std::min(stats.minContactPoints, contact_points);
@@ -142,40 +142,40 @@ inline constexpr int kHexapodPoseHoldBenchmarkSubstepsPerFrame = 2;
 /// but use default 8 to avoid extra work unless profiling shows a win.
 inline constexpr int kHexapodPoseHoldJointServoPositionPasses = 8;
 inline constexpr int kHexapodPoseHoldJointServoPositionStride = 3;
-inline constexpr float kHexapodPoseHoldHingeAnchorBias = 0.35f;
-inline constexpr float kHexapodPoseHoldHingeAnchorDamping = 0.45f;
-inline constexpr float kHexapodPoseHoldServoEarlyOutResumeScale = 1.6f;
-inline constexpr float kHexapodPoseHoldServoEarlyOutImpulseGuard = 0.18f;
-inline constexpr float kHexapodPoseHoldServoAngularEarlyOutError = 0.0014f;
-inline constexpr float kHexapodPoseHoldServoAngularEarlyOutSpeed = 0.055f;
-inline constexpr float kHexapodPoseHoldServoHingeEarlyOutError = 0.0011f;
-inline constexpr float kHexapodPoseHoldServoHingeEarlyOutSpeed = 0.045f;
+inline constexpr Real kHexapodPoseHoldHingeAnchorBias = 0.35;
+inline constexpr Real kHexapodPoseHoldHingeAnchorDamping = 0.45;
+inline constexpr Real kHexapodPoseHoldServoEarlyOutResumeScale = 1.6;
+inline constexpr Real kHexapodPoseHoldServoEarlyOutImpulseGuard = 0.18;
+inline constexpr Real kHexapodPoseHoldServoAngularEarlyOutError = 0.0014;
+inline constexpr Real kHexapodPoseHoldServoAngularEarlyOutSpeed = 0.055;
+inline constexpr Real kHexapodPoseHoldServoHingeEarlyOutError = 0.0011;
+inline constexpr Real kHexapodPoseHoldServoHingeEarlyOutSpeed = 0.045;
 /// Slightly reduce aggressive omega_n and add damping to limit chatter / residual velocity at 20 iters.
-inline constexpr float kHexapodPoseHoldServoPositionGainScale = 0.70f;
-inline constexpr float kHexapodPoseHoldServoDampingGainScale = 1.50f;
-inline constexpr float kHexapodPoseHoldServoMaxSpeedScale = 0.45f;
+inline constexpr Real kHexapodPoseHoldServoPositionGainScale = 0.70;
+inline constexpr Real kHexapodPoseHoldServoDampingGainScale = 1.50;
+inline constexpr Real kHexapodPoseHoldServoMaxSpeedScale = 0.45;
 /// Small post-step hinge snap (Relax zeros this; re-enable for under-converged velocity motors).
-inline constexpr float kHexapodPoseHoldAngleStabScale = 0.10f;
+inline constexpr Real kHexapodPoseHoldAngleStabScale = 0.10;
 
 /// Same metrics as `test_hexapod_live_pose_hold` — useful for iteration / tuning sweeps.
 struct HexapodPoseHoldMetrics {
     /// Max |v| for the chassis over the whole run (includes landing / initial transients).
-    float peakLinear = 0.0f;
+    Real peakLinear = 0.0;
     /// Max |v| for the chassis only for outer_frame_index >= kHexapodPoseHoldSettledStartFrame.
-    float peakLinearSettled = 0.0f;
-    float peakAngular = 0.0f;
-    float peakJointErrorRad = 0.0f;
-    float finalSpeed = 0.0f;
+    Real peakLinearSettled = 0.0;
+    Real peakAngular = 0.0;
+    Real peakJointErrorRad = 0.0;
+    Real finalSpeed = 0.0;
     Vec3 finalPosition{};
 };
 
-inline float MaxHexapodServoAngleErrorRads(const World& world, const HexapodSceneObjects& scene) {
-    float err = 0.0f;
+inline Real MaxHexapodServoAngleErrorRads(const World& world, const HexapodSceneObjects& scene) {
+    Real err = 0.0;
     for (const LegLinkIds& leg : scene.legs) {
         for (const std::uint32_t joint_id :
              {leg.bodyToCoxaJoint, leg.coxaToFemurJoint, leg.femurToTibiaJoint}) {
-            const float a = world.GetServoJointAngle(joint_id);
-            const float t = world.GetServoJoint(joint_id).targetAngle;
+            const Real a = world.GetServoJointAngle(joint_id);
+            const Real t = world.GetServoJoint(joint_id).targetAngle;
             err = std::max(err, std::abs(WrapHexapodAngle(a - t)));
         }
     }
@@ -189,7 +189,7 @@ inline void AccumulateHexapodPoseHoldFromSubstep(
     int outer_frame_index,
     HexapodPoseHoldMetrics& m) {
     const Body& chassis = world.GetBody(chassis_id);
-    const float linear_speed = Length(chassis.velocity);
+    const Real linear_speed = Length(chassis.velocity);
     m.peakLinear = std::max(m.peakLinear, linear_speed);
     if (outer_frame_index >= kHexapodPoseHoldSettledStartFrame) {
         m.peakLinearSettled = std::max(m.peakLinearSettled, linear_speed);
@@ -252,16 +252,16 @@ inline void ApplyHexapodPoseHoldStabilityTuning(World& world, const HexapodScene
 }
 
 /// Per outer-frame max joint rate (|Δangle|/frame_dt) for all 18 servos; updates `angles_prev` in place.
-inline float MaxHexapodJointSpeedRadSFrame(
+inline Real MaxHexapodJointSpeedRadSFrame(
     const World& world,
     const HexapodSceneObjects& scene,
-    std::array<float, 18>& angles_prev,
-    float frame_dt) {
-    float max_speed = 0.0f;
+    std::array<Real, 18>& angles_prev,
+    Real frame_dt) {
+    Real max_speed = 0.0;
     std::size_t i = 0;
     for (const std::uint32_t joint_id : HexapodServoJointIds(scene)) {
-        const float a = world.GetServoJointAngle(joint_id);
-        const float w = (a - angles_prev[i]) / frame_dt;
+        const Real a = world.GetServoJointAngle(joint_id);
+        const Real w = (a - angles_prev[i]) / frame_dt;
         max_speed = std::max(max_speed, std::abs(w));
         angles_prev[i] = a;
         ++i;

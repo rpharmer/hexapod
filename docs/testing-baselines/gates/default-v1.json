@@ -243,6 +243,12 @@
         "max_abs_pitch_rad_max": 0.16,
         "max_contact_tracking_error_m": 0.16
       }
+    },
+    "gravity_feedforward_stand": {
+      "stand_compare": {
+        "quiet_primary_score": 0.0075,
+        "min_primary_improve_frac": 0.0008
+      }
     }
   }
 }

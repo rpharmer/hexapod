@@ -13,50 +13,50 @@
 namespace minphys3d {
 namespace {
 
-constexpr float kPi = 3.14159265f;
+constexpr Real kPi = 3.14159265;
 
-float ProjectFullCylinderHalfExtent(const Body& cyl, const Vec3& axisUnit) {
-    const Vec3 cylAxis = Normalize(Rotate(cyl.orientation, {0.0f, 1.0f, 0.0f}));
-    const float u = std::abs(Dot(cylAxis, axisUnit));
-    const float ring = cyl.radius * std::sqrt(std::max(0.0f, 1.0f - u * u));
+Real ProjectFullCylinderHalfExtent(const Body& cyl, const Vec3& axisUnit) {
+    const Vec3 cylAxis = Normalize(Rotate(cyl.orientation, {0.0, 1.0, 0.0}));
+    const Real u = std::abs(Dot(cylAxis, axisUnit));
+    const Real ring = cyl.radius * std::sqrt(std::max(0.0, 1.0 - u * u));
     return cyl.halfHeight * u + ring;
 }
 
 void AppendCylinderSurfaceSamples(const Body& cyl, std::vector<Vec3>& out) {
-    const Vec3 A = Normalize(Rotate(cyl.orientation, {0.0f, 1.0f, 0.0f}));
-    Vec3 ref = (std::abs(A.x) < 0.85f) ? Vec3{1.0f, 0.0f, 0.0f} : Vec3{0.0f, 1.0f, 0.0f};
+    const Vec3 A = Normalize(Rotate(cyl.orientation, {0.0, 1.0, 0.0}));
+    Vec3 ref = (std::abs(A.x) < 0.85) ? Vec3{1.0, 0.0, 0.0} : Vec3{0.0, 1.0, 0.0};
     Vec3 u = Normalize(Cross(ref, A));
     if (LengthSquared(u) <= kEpsilon * kEpsilon) {
-        u = {1.0f, 0.0f, 0.0f};
+        u = {1.0, 0.0, 0.0};
     }
     const Vec3 v = Normalize(Cross(A, u));
     constexpr int kSegs = 8;
     for (int capSign : {-1, 1}) {
         const Vec3 capCenter = cyl.position + A * (static_cast<float>(capSign) * cyl.halfHeight);
         for (int k = 0; k < kSegs; ++k) {
-            const float ang = (2.0f * kPi * static_cast<float>(k)) / static_cast<float>(kSegs);
+            const Real ang = (2.0 * kPi * static_cast<float>(k)) / static_cast<float>(kSegs);
             out.push_back(capCenter + (u * std::cos(ang) + v * std::sin(ang)) * cyl.radius);
         }
     }
     for (int k = 0; k < kSegs; ++k) {
-        const float ang = (2.0f * kPi * static_cast<float>(k)) / static_cast<float>(kSegs);
+        const Real ang = (2.0 * kPi * static_cast<float>(k)) / static_cast<float>(kSegs);
         const Vec3 rad = (u * std::cos(ang) + v * std::sin(ang)) * cyl.radius;
         out.push_back(cyl.position + rad);
-        out.push_back(cyl.position + rad + A * (0.5f * cyl.halfHeight));
-        out.push_back(cyl.position + rad - A * (0.5f * cyl.halfHeight));
+        out.push_back(cyl.position + rad + A * (0.5 * cyl.halfHeight));
+        out.push_back(cyl.position + rad - A * (0.5 * cyl.halfHeight));
     }
 }
 
-bool LocalPointInsideOBB(const Vec3& local, const Vec3& he, float eps) {
+bool LocalPointInsideOBB(const Vec3& local, const Vec3& he, Real eps) {
     return std::abs(local.x) <= he.x + eps && std::abs(local.y) <= he.y + eps && std::abs(local.z) <= he.z + eps;
 }
 
 Vec3 SupportPointCylinder(const Body& c, const Vec3& direction) {
     Vec3 localDir = RotateInverse(Normalize(c.orientation), direction);
-    const float radialLengthSq = localDir.x * localDir.x + localDir.z * localDir.z;
-    Vec3 localPoint{0.0f, localDir.y >= 0.0f ? c.halfHeight : -c.halfHeight, 0.0f};
+    const Real radialLengthSq = localDir.x * localDir.x + localDir.z * localDir.z;
+    Vec3 localPoint{0.0, localDir.y >= 0.0 ? c.halfHeight : -c.halfHeight, 0.0};
     if (radialLengthSq > kEpsilon * kEpsilon) {
-        const float invRadialLength = 1.0f / std::sqrt(radialLengthSq);
+        const Real invRadialLength = 1.0 / std::sqrt(radialLengthSq);
         localPoint.x = localDir.x * invRadialLength * c.radius;
         localPoint.z = localDir.z * invRadialLength * c.radius;
     }
@@ -64,14 +64,14 @@ Vec3 SupportPointCylinder(const Body& c, const Vec3& direction) {
 }
 
 Vec3 SupportPointCapsule(const Body& c, const Vec3& direction) {
-    const Vec3 axis = Normalize(Rotate(c.orientation, {0.0f, 1.0f, 0.0f}));
+    const Vec3 axis = Normalize(Rotate(c.orientation, {0.0, 1.0, 0.0}));
     Vec3 dir = direction;
     if (LengthSquared(dir) <= kEpsilon * kEpsilon) {
         dir = axis;
     }
     dir = Normalize(dir);
-    const float side = Dot(dir, axis);
-    const bool upper = side >= 0.0f;
+    const Real side = Dot(dir, axis);
+    const bool upper = side >= 0.0;
     const Vec3 segmentPoint = c.position + axis * (upper ? c.halfHeight : -c.halfHeight);
     return segmentPoint + dir * c.radius;
 }
@@ -79,13 +79,13 @@ Vec3 SupportPointCapsule(const Body& c, const Vec3& direction) {
 Vec3 SupportPointHalfCylinder(const Body& body, const Vec3& direction) {
     const Quat invOrientation = Conjugate(Normalize(body.orientation));
     const Vec3 localDir = Rotate(invOrientation, direction);
-    const float hx = body.radius;
-    const float hy = body.halfHeight;
+    const Real hx = body.radius;
+    const Real hy = body.halfHeight;
 
     Vec3 best{};
-    float bestProj = -std::numeric_limits<float>::infinity();
+    Real bestProj = -std::numeric_limits<float>::infinity();
     const auto consider = [&](const Vec3& p) {
-        const float proj = localDir.x * p.x + localDir.y * p.y + localDir.z * p.z;
+        const Real proj = localDir.x * p.x + localDir.y * p.y + localDir.z * p.z;
         if (proj > bestProj) {
             bestProj = proj;
             best = p;
@@ -93,38 +93,38 @@ Vec3 SupportPointHalfCylinder(const Body& body, const Vec3& direction) {
     };
 
     {
-        const float x = (localDir.x > kEpsilon) ? hx : ((localDir.x < -kEpsilon) ? -hx : 0.0f);
-        const float y = (localDir.y > kEpsilon) ? hy : ((localDir.y < -kEpsilon) ? -hy : 0.0f);
-        consider({x, y, 0.0f});
+        const Real x = (localDir.x > kEpsilon) ? hx : ((localDir.x < -kEpsilon) ? -hx : 0.0);
+        const Real y = (localDir.y > kEpsilon) ? hy : ((localDir.y < -kEpsilon) ? -hy : 0.0);
+        consider({x, y, 0.0});
     }
 
-    const float radialLengthSq = localDir.x * localDir.x + localDir.z * localDir.z;
+    const Real radialLengthSq = localDir.x * localDir.x + localDir.z * localDir.z;
     if (radialLengthSq > kEpsilon * kEpsilon) {
-        const float invRadialLength = 1.0f / std::sqrt(radialLengthSq);
-        const float cx = localDir.x * invRadialLength * hx;
-        const float cz = localDir.z * invRadialLength * hx;
-        if (cz >= 0.0f) {
-            const float cy = localDir.y >= 0.0f ? hy : -hy;
+        const Real invRadialLength = 1.0 / std::sqrt(radialLengthSq);
+        const Real cx = localDir.x * invRadialLength * hx;
+        const Real cz = localDir.z * invRadialLength * hx;
+        if (cz >= 0.0) {
+            const Real cy = localDir.y >= 0.0 ? hy : -hy;
             consider({cx, cy, cz});
         }
     } else if (localDir.z > kEpsilon) {
-        const float ry = (localDir.y > kEpsilon) ? hy : ((localDir.y < -kEpsilon) ? -hy : 0.0f);
-        consider({0.0f, ry, hx});
+        const Real ry = (localDir.y > kEpsilon) ? hy : ((localDir.y < -kEpsilon) ? -hy : 0.0);
+        consider({0.0, ry, hx});
     }
 
-    const auto considerSemicap = [&](float capY) {
-        const float dx = localDir.x;
-        const float dz = localDir.z;
-        const float radialXZSq = dx * dx + dz * dz;
-        float sx = 0.0f;
-        float sz = 0.0f;
+    const auto considerSemicap = [&](Real capY) {
+        const Real dx = localDir.x;
+        const Real dz = localDir.z;
+        const Real radialXZSq = dx * dx + dz * dz;
+        Real sx = 0.0;
+        Real sz = 0.0;
         if (radialXZSq > kEpsilon * kEpsilon) {
-            const float inv = 1.0f / std::sqrt(radialXZSq);
+            const Real inv = 1.0 / std::sqrt(radialXZSq);
             sx = dx * inv * hx;
             sz = dz * inv * hx;
-            if (sz < 0.0f) {
-                sx = (dx > kEpsilon) ? hx : ((dx < -kEpsilon) ? -hx : 0.0f);
-                sz = 0.0f;
+            if (sz < 0.0) {
+                sx = (dx > kEpsilon) ? hx : ((dx < -kEpsilon) ? -hx : 0.0);
+                sz = 0.0;
             }
         }
         consider({sx, capY, sz});
@@ -135,36 +135,36 @@ Vec3 SupportPointHalfCylinder(const Body& body, const Vec3& direction) {
     return BodyWorldShapeOrigin(body) + Rotate(body.orientation, best);
 }
 
-std::pair<float, float> HalfCylinderProjectionInterval(const Body& hc, const Vec3& axisUnit) {
+std::pair<Real, Real> HalfCylinderProjectionInterval(const Body& hc, const Vec3& axisUnit) {
     const Vec3 pHi = SupportPointHalfCylinder(hc, axisUnit);
     const Vec3 pLo = SupportPointHalfCylinder(hc, -axisUnit);
     return {Dot(pLo, axisUnit), Dot(pHi, axisUnit)};
 }
 
-std::pair<float, float> FullCylinderProjectionInterval(const Body& cyl, const Vec3& axisUnit) {
-    const float c = Dot(cyl.position, axisUnit);
-    const float w = ProjectFullCylinderHalfExtent(cyl, axisUnit);
+std::pair<Real, Real> FullCylinderProjectionInterval(const Body& cyl, const Vec3& axisUnit) {
+    const Real c = Dot(cyl.position, axisUnit);
+    const Real w = ProjectFullCylinderHalfExtent(cyl, axisUnit);
     return {c - w, c + w};
 }
 
-float IntervalOverlapLength(float a0, float a1, float b0, float b1) {
+Real IntervalOverlapLength(Real a0, Real a1, Real b0, Real b1) {
     return std::min(a1, b1) - std::max(a0, b0);
 }
 
-bool PointInsideFullCylinderWorld(const Body& cyl, const Vec3& p, float eps) {
+bool PointInsideFullCylinderWorld(const Body& cyl, const Vec3& p, Real eps) {
     const Quat inv = Conjugate(Normalize(cyl.orientation));
     const Vec3 l = Rotate(inv, p - cyl.position);
-    const float h = cyl.halfHeight;
-    const float r = cyl.radius;
-    const float xz2 = l.x * l.x + l.z * l.z;
+    const Real h = cyl.halfHeight;
+    const Real r = cyl.radius;
+    const Real xz2 = l.x * l.x + l.z * l.z;
     return std::abs(l.y) <= h + eps && xz2 <= (r + eps) * (r + eps);
 }
 
-bool PointInsideHalfCylinderWorld(const Body& hc, const Vec3& p, float eps) {
+bool PointInsideHalfCylinderWorld(const Body& hc, const Vec3& p, Real eps) {
     const Quat inv = Conjugate(Normalize(hc.orientation));
     const Vec3 l = Rotate(inv, p - BodyWorldShapeOrigin(hc));
-    const float hy = hc.halfHeight;
-    const float r = hc.radius;
+    const Real hy = hc.halfHeight;
+    const Real r = hc.radius;
     if (l.z < -eps) {
         return false;
     }
@@ -178,15 +178,15 @@ Vec3 ClosestPointOnFullCylinderSurfaceWorld(const Body& cyl, const Vec3& pWorld)
     const Quat q = Normalize(cyl.orientation);
     const Quat inv = Conjugate(q);
     const Vec3 l = Rotate(inv, pWorld - cyl.position);
-    const float h = cyl.halfHeight;
-    const float r = cyl.radius;
+    const Real h = cyl.halfHeight;
+    const Real r = cyl.radius;
 
-    Vec3 bestW = cyl.position + Rotate(q, Vec3{r, h, 0.0f});
-    float bestD2 = LengthSquared(bestW - pWorld);
+    Vec3 bestW = cyl.position + Rotate(q, Vec3{r, h, 0.0});
+    Real bestD2 = LengthSquared(bestW - pWorld);
 
     const auto considerLocal = [&](const Vec3& candLocal) {
         const Vec3 w = cyl.position + Rotate(q, candLocal);
-        const float d2 = LengthSquared(w - pWorld);
+        const Real d2 = LengthSquared(w - pWorld);
         if (d2 < bestD2) {
             bestD2 = d2;
             bestW = w;
@@ -194,39 +194,39 @@ Vec3 ClosestPointOnFullCylinderSurfaceWorld(const Body& cyl, const Vec3& pWorld)
     };
 
     {
-        float rho = std::sqrt(l.x * l.x + l.z * l.z);
-        float sx = l.x;
-        float sz = l.z;
-        if (rho > 1e-8f && rho > r) {
+        Real rho = std::sqrt(l.x * l.x + l.z * l.z);
+        Real sx = l.x;
+        Real sz = l.z;
+        if (rho > 1e-8 && rho > r) {
             sx *= r / rho;
             sz *= r / rho;
         }
         considerLocal({sx, h, sz});
     }
     {
-        float rho = std::sqrt(l.x * l.x + l.z * l.z);
-        float sx = l.x;
-        float sz = l.z;
-        if (rho > 1e-8f && rho > r) {
+        Real rho = std::sqrt(l.x * l.x + l.z * l.z);
+        Real sx = l.x;
+        Real sz = l.z;
+        if (rho > 1e-8 && rho > r) {
             sx *= r / rho;
             sz *= r / rho;
         }
         considerLocal({sx, -h, sz});
     }
     {
-        const float yc = std::clamp(l.y, -h, h);
-        const float rho = std::sqrt(l.x * l.x + l.z * l.z);
-        if (rho > 1e-8f) {
+        const Real yc = std::clamp(l.y, -h, h);
+        const Real rho = std::sqrt(l.x * l.x + l.z * l.z);
+        if (rho > 1e-8) {
             considerLocal({l.x / rho * r, yc, l.z / rho * r});
         } else {
-            considerLocal({r, yc, 0.0f});
+            considerLocal({r, yc, 0.0});
         }
     }
     constexpr int kRim = 8;
     for (int i = 0; i < kRim; ++i) {
-        const float ang = (2.0f * kPi * static_cast<float>(i)) / static_cast<float>(kRim);
-        const float c = std::cos(ang) * r;
-        const float s = std::sin(ang) * r;
+        const Real ang = (2.0 * kPi * static_cast<float>(i)) / static_cast<float>(kRim);
+        const Real c = std::cos(ang) * r;
+        const Real s = std::sin(ang) * r;
         considerLocal({c, h, s});
         considerLocal({c, -h, s});
     }
@@ -239,9 +239,9 @@ Vec3 ClosestHalfCylinderSurfaceToPointWorld(const Body& hc, const Vec3& pWorld, 
     scratch.clear();
     AppendHalfCylinderSurfaceSamples(hc, scratch);
     Vec3 best = scratch[0];
-    float bestD2 = LengthSquared(best - pWorld);
+    Real bestD2 = LengthSquared(best - pWorld);
     for (const Vec3& s : scratch) {
-        const float d2 = LengthSquared(s - pWorld);
+        const Real d2 = LengthSquared(s - pWorld);
         if (d2 < bestD2) {
             bestD2 = d2;
             best = s;
@@ -253,12 +253,12 @@ Vec3 ClosestHalfCylinderSurfaceToPointWorld(const Body& hc, const Vec3& pWorld, 
 void AppendHalfCylinderSurfaceSamples(const Body& hc, std::vector<Vec3>& out) {
     const Vec3 origin = BodyWorldShapeOrigin(hc);
     const Quat q = Normalize(hc.orientation);
-    const Vec3 ex = Rotate(q, {1.0f, 0.0f, 0.0f});
-    const Vec3 ey = Rotate(q, {0.0f, 1.0f, 0.0f});
-    const Vec3 ez = Rotate(q, {0.0f, 0.0f, 1.0f});
-    const float r = hc.radius;
-    const float hy = hc.halfHeight;
-    const std::array<std::pair<float, float>, 4> flatCorners{{{r, hy}, {r, -hy}, {-r, hy}, {-r, -hy}}};
+    const Vec3 ex = Rotate(q, {1.0, 0.0, 0.0});
+    const Vec3 ey = Rotate(q, {0.0, 1.0, 0.0});
+    const Vec3 ez = Rotate(q, {0.0, 0.0, 1.0});
+    const Real r = hc.radius;
+    const Real hy = hc.halfHeight;
+    const std::array<std::pair<Real, Real>, 4> flatCorners{{{r, hy}, {r, -hy}, {-r, hy}, {-r, -hy}}};
     for (const auto& xy : flatCorners) {
         out.push_back(origin + ex * xy.first + ey * xy.second);
     }
@@ -268,11 +268,11 @@ void AppendHalfCylinderSurfaceSamples(const Body& hc, std::vector<Vec3>& out) {
 
     constexpr int kArc = 7;
     for (int iy = -1; iy <= 1; ++iy) {
-        const float y = static_cast<float>(iy) * hy;
+        const Real y = static_cast<float>(iy) * hy;
         for (int k = 0; k <= kArc; ++k) {
-            const float theta = (kPi * static_cast<float>(k)) / static_cast<float>(kArc);
-            const float lx = r * std::cos(theta);
-            const float lz = r * std::sin(theta);
+            const Real theta = (kPi * static_cast<float>(k)) / static_cast<float>(kArc);
+            const Real lx = r * std::cos(theta);
+            const Real lz = r * std::sin(theta);
             out.push_back(origin + ex * lx + ey * y + ez * lz);
         }
     }
@@ -285,7 +285,7 @@ ConvexSupport MakeSphereConvexSupport(const Body& s) {
         [center = s.position, radius = s.radius](const Vec3& direction) {
             Vec3 dir = direction;
             if (LengthSquared(dir) <= kEpsilon * kEpsilon) {
-                dir = {1.0f, 0.0f, 0.0f};
+                dir = {1.0, 0.0, 0.0};
             }
             dir = Normalize(dir);
             return ConvexSupportPoint{center + dir * radius, ShapeTopology{}};
@@ -299,13 +299,13 @@ ConvexSupport MakeHalfCylinderConvexSupport(const Body& body) {
         body.orientation,
         [center = shapeOrigin, orientation = body.orientation, halfHeight = body.halfHeight, radius = body.radius](const Vec3& direction) {
             const Vec3 localDir = Rotate(Conjugate(orientation), direction);
-            const float hx = radius;
-            const float hy = halfHeight;
+            const Real hx = radius;
+            const Real hy = halfHeight;
 
             Vec3 best{};
-            float bestProj = -std::numeric_limits<float>::infinity();
+            Real bestProj = -std::numeric_limits<float>::infinity();
             const auto consider = [&](const Vec3& p) {
-                const float proj = localDir.x * p.x + localDir.y * p.y + localDir.z * p.z;
+                const Real proj = localDir.x * p.x + localDir.y * p.y + localDir.z * p.z;
                 if (proj > bestProj) {
                     bestProj = proj;
                     best = p;
@@ -313,38 +313,38 @@ ConvexSupport MakeHalfCylinderConvexSupport(const Body& body) {
             };
 
             {
-                const float x = (localDir.x > kEpsilon) ? hx : ((localDir.x < -kEpsilon) ? -hx : 0.0f);
-                const float y = (localDir.y > kEpsilon) ? hy : ((localDir.y < -kEpsilon) ? -hy : 0.0f);
-                consider({x, y, 0.0f});
+                const Real x = (localDir.x > kEpsilon) ? hx : ((localDir.x < -kEpsilon) ? -hx : 0.0);
+                const Real y = (localDir.y > kEpsilon) ? hy : ((localDir.y < -kEpsilon) ? -hy : 0.0);
+                consider({x, y, 0.0});
             }
 
-            const float radialLengthSq = localDir.x * localDir.x + localDir.z * localDir.z;
+            const Real radialLengthSq = localDir.x * localDir.x + localDir.z * localDir.z;
             if (radialLengthSq > kEpsilon * kEpsilon) {
-                const float invRadialLength = 1.0f / std::sqrt(radialLengthSq);
-                const float cx = localDir.x * invRadialLength * hx;
-                const float cz = localDir.z * invRadialLength * hx;
-                if (cz >= 0.0f) {
-                    const float cy = localDir.y >= 0.0f ? hy : -hy;
+                const Real invRadialLength = 1.0 / std::sqrt(radialLengthSq);
+                const Real cx = localDir.x * invRadialLength * hx;
+                const Real cz = localDir.z * invRadialLength * hx;
+                if (cz >= 0.0) {
+                    const Real cy = localDir.y >= 0.0 ? hy : -hy;
                     consider({cx, cy, cz});
                 }
             } else if (localDir.z > kEpsilon) {
-                const float ry = (localDir.y > kEpsilon) ? hy : ((localDir.y < -kEpsilon) ? -hy : 0.0f);
-                consider({0.0f, ry, hx});
+                const Real ry = (localDir.y > kEpsilon) ? hy : ((localDir.y < -kEpsilon) ? -hy : 0.0);
+                consider({0.0, ry, hx});
             }
 
-            const auto considerSemicap = [&](float capY) {
-                const float dx = localDir.x;
-                const float dz = localDir.z;
-                const float radialXZSq = dx * dx + dz * dz;
-                float sx = 0.0f;
-                float sz = 0.0f;
+            const auto considerSemicap = [&](Real capY) {
+                const Real dx = localDir.x;
+                const Real dz = localDir.z;
+                const Real radialXZSq = dx * dx + dz * dz;
+                Real sx = 0.0;
+                Real sz = 0.0;
                 if (radialXZSq > kEpsilon * kEpsilon) {
-                    const float inv = 1.0f / std::sqrt(radialXZSq);
+                    const Real inv = 1.0 / std::sqrt(radialXZSq);
                     sx = dx * inv * hx;
                     sz = dz * inv * hx;
-                    if (sz < 0.0f) {
-                        sx = (dx > kEpsilon) ? hx : ((dx < -kEpsilon) ? -hx : 0.0f);
-                        sz = 0.0f;
+                    if (sz < 0.0) {
+                        sx = (dx > kEpsilon) ? hx : ((dx < -kEpsilon) ? -hx : 0.0);
+                        sz = 0.0;
                     }
                 }
                 consider({sx, capY, sz});
@@ -366,25 +366,25 @@ void World::SphereCylinder(std::uint32_t sphereId, std::uint32_t cylId) {
 
     const Body& s = bodies_[sphereId];
     const Body& c = bodies_[cylId];
-    const Vec3 axis = Normalize(Rotate(c.orientation, {0.0f, 1.0f, 0.0f}));
+    const Vec3 axis = Normalize(Rotate(c.orientation, {0.0, 1.0, 0.0}));
     const Vec3 segA = c.position - axis * c.halfHeight;
     const Vec3 segB = c.position + axis * c.halfHeight;
     const Vec3 ab = segB - segA;
-    const float denom = Dot(ab, ab);
-    float t = 0.0f;
+    const Real denom = Dot(ab, ab);
+    Real t = 0.0;
     if (denom > kEpsilon) {
-        t = std::clamp(Dot(s.position - segA, ab) / denom, 0.0f, 1.0f);
+        t = std::clamp(Dot(s.position - segA, ab) / denom, 0.0, 1.0);
     }
     const Vec3 closest = segA + ab * t;
     const Vec3 delta = closest - s.position;
-    const float distSq = LengthSquared(delta);
-    const float radiusSum = s.radius + c.radius;
+    const Real distSq = LengthSquared(delta);
+    const Real radiusSum = s.radius + c.radius;
     if (distSq > radiusSum * radiusSum) {
         return;
     }
-    const float dist = std::sqrt(std::max(distSq, kEpsilon));
-    const Vec3 normal = (dist > kEpsilon) ? (delta / dist) : Vec3{0.0f, 1.0f, 0.0f};
-    const std::uint8_t cylFeature = (t <= 1e-3f) ? 0u : ((t >= 1.0f - 1e-3f) ? 1u : 2u);
+    const Real dist = std::sqrt(std::max(distSq, kEpsilon));
+    const Vec3 normal = (dist > kEpsilon) ? (delta / dist) : Vec3{0.0, 1.0, 0.0};
+    const std::uint8_t cylFeature = (t <= 1e-3) ? 0u : ((t >= 1.0 - 1e-3) ? 1u : 2u);
     const std::uint64_t featureId = CanonicalFeaturePairId(sphereId, cylId, 0u, cylFeature);
     AddContact(sphereId, cylId, normal, s.position + normal * s.radius, radiusSum - dist, 14u, featureId);
 }
@@ -394,38 +394,38 @@ void World::CylinderBox(std::uint32_t cylId, std::uint32_t boxId) {
     const Body& cyl = bodies_[cylId];
     const Body& box = bodies_[boxId];
     const Vec3 d = box.position - cyl.position;
-    const Vec3 cylAxis = Normalize(Rotate(cyl.orientation, {0.0f, 1.0f, 0.0f}));
+    const Vec3 cylAxis = Normalize(Rotate(cyl.orientation, {0.0, 1.0, 0.0}));
     const Vec3 bAxes[3] = {
-        Rotate(box.orientation, {1.0f, 0.0f, 0.0f}),
-        Rotate(box.orientation, {0.0f, 1.0f, 0.0f}),
-        Rotate(box.orientation, {0.0f, 0.0f, 1.0f}),
+        Rotate(box.orientation, {1.0, 0.0, 0.0}),
+        Rotate(box.orientation, {0.0, 1.0, 0.0}),
+        Rotate(box.orientation, {0.0, 0.0, 1.0}),
     };
 
-    constexpr float kParallelAxisEps = 1e-8f;
-    constexpr float kCrossAxisBias = 0.0025f;
-    float bestScore = std::numeric_limits<float>::infinity();
-    float bestOverlap = std::numeric_limits<float>::infinity();
-    Vec3 bestAxis{1.0f, 0.0f, 0.0f};
+    constexpr Real kParallelAxisEps = 1e-8;
+    constexpr Real kCrossAxisBias = 0.0025;
+    Real bestScore = std::numeric_limits<float>::infinity();
+    Real bestOverlap = std::numeric_limits<float>::infinity();
+    Vec3 bestAxis{1.0, 0.0, 0.0};
 
     auto tryAxis = [&](const Vec3& axisIn, bool isCross) -> bool {
-        const float lenSq = LengthSquared(axisIn);
+        const Real lenSq = LengthSquared(axisIn);
         if (lenSq <= kParallelAxisEps) {
             return true;
         }
         const Vec3 axis = axisIn / std::sqrt(lenSq);
-        const float hc = ProjectFullCylinderHalfExtent(cyl, axis);
-        const float hb = ProjectBoxOntoAxis(box, axis);
-        const float dist = std::abs(Dot(d, axis));
-        const float overlap = hc + hb - dist;
-        if (overlap < 0.0f) {
+        const Real hc = ProjectFullCylinderHalfExtent(cyl, axis);
+        const Real hb = ProjectBoxOntoAxis(box, axis);
+        const Real dist = std::abs(Dot(d, axis));
+        const Real overlap = hc + hb - dist;
+        if (overlap < 0.0) {
             return false;
         }
-        const float biased = overlap + (isCross ? kCrossAxisBias : 0.0f);
+        const Real biased = overlap + (isCross ? kCrossAxisBias : 0.0);
         if (biased < bestScore) {
             bestScore = biased;
             bestOverlap = overlap;
             bestAxis = axis;
-            if (Dot(d, bestAxis) < 0.0f) {
+            if (Dot(d, bestAxis) < 0.0) {
                 bestAxis = -bestAxis;
             }
         }
@@ -455,7 +455,7 @@ void World::CylinderBox(std::uint32_t cylId, std::uint32_t boxId) {
 
     struct Sample {
         Vec3 point{};
-        float key = 0.0f;
+        Real key = 0.0;
         std::uint32_t feature = 0u;
     };
     std::vector<Vec3> raw;
@@ -466,7 +466,7 @@ void World::CylinderBox(std::uint32_t cylId, std::uint32_t boxId) {
     std::uint32_t geomId = 0;
     for (const Vec3& p : raw) {
         const Vec3 local = Rotate(invBoxQ, p - box.position);
-        if (!LocalPointInsideOBB(local, box.halfExtents, 2e-3f)) {
+        if (!LocalPointInsideOBB(local, box.halfExtents, 2e-3)) {
             ++geomId;
             continue;
         }
@@ -477,7 +477,7 @@ void World::CylinderBox(std::uint32_t cylId, std::uint32_t boxId) {
         s.feature = geomId++;
         bool duplicate = false;
         for (const Sample& e : hits) {
-            if (LengthSquared(e.point - s.point) < 1e-5f) {
+            if (LengthSquared(e.point - s.point) < 1e-5) {
                 duplicate = true;
                 break;
             }
@@ -508,17 +508,17 @@ void World::CylinderBox(std::uint32_t cylId, std::uint32_t boxId) {
         const auto coordOnPlane = [&hits, &n](std::size_t i, const Vec3& u, const Vec3& origin) {
             return Dot(hits[i].point - origin, u);
         };
-        const Vec3 ref = (std::abs(n.x) < 0.85f) ? Vec3{1.0f, 0.0f, 0.0f} : Vec3{0.0f, 1.0f, 0.0f};
+        const Vec3 ref = (std::abs(n.x) < 0.85) ? Vec3{1.0, 0.0, 0.0} : Vec3{0.0, 1.0, 0.0};
         const Vec3 u = Normalize(Cross(n, ref));
         const Vec3 v = Normalize(Cross(n, u));
         const Vec3 origin = box.position;
         const auto pickIndex = [&](bool maxU, bool maxV) {
             std::size_t bestI = 0;
-            float bestScore = -std::numeric_limits<float>::infinity();
+            Real bestScore = -std::numeric_limits<float>::infinity();
             for (std::size_t i = 0; i < hits.size(); ++i) {
-                const float uc = coordOnPlane(i, u, origin);
-                const float vc = coordOnPlane(i, v, origin);
-                const float score = (maxU ? uc : -uc) + (maxV ? vc : -vc);
+                const Real uc = coordOnPlane(i, u, origin);
+                const Real vc = coordOnPlane(i, v, origin);
+                const Real score = (maxU ? uc : -uc) + (maxV ? vc : -vc);
                 if (score > bestScore) {
                     bestScore = score;
                     bestI = i;
@@ -544,8 +544,8 @@ void World::CylinderCylinder(std::uint32_t aId, std::uint32_t bId) {
 
     const Body& a = bodies_[aId];
     const Body& b = bodies_[bId];
-    const Vec3 axisA = Normalize(Rotate(a.orientation, {0.0f, 1.0f, 0.0f}));
-    const Vec3 axisB = Normalize(Rotate(b.orientation, {0.0f, 1.0f, 0.0f}));
+    const Vec3 axisA = Normalize(Rotate(a.orientation, {0.0, 1.0, 0.0}));
+    const Vec3 axisB = Normalize(Rotate(b.orientation, {0.0, 1.0, 0.0}));
     const Vec3 p1 = a.position - axisA * a.halfHeight;
     const Vec3 q1 = a.position + axisA * a.halfHeight;
     const Vec3 p2 = b.position - axisB * b.halfHeight;
@@ -556,41 +556,41 @@ void World::CylinderCylinder(std::uint32_t aId, std::uint32_t bId) {
     const Vec3 c1 = p1 + d1 * s;
     const Vec3 c2 = p2 + d2 * t;
     const Vec3 delta = c2 - c1;
-    const float distSq = LengthSquared(delta);
-    const float radiusSum = a.radius + b.radius;
+    const Real distSq = LengthSquared(delta);
+    const Real radiusSum = a.radius + b.radius;
     if (distSq > radiusSum * radiusSum) {
         return;
     }
-    const float dist = std::sqrt(std::max(distSq, 0.0f));
+    const Real dist = std::sqrt(std::max(distSq, 0.0));
     const Vec3 centerDelta = b.position - a.position;
     Vec3 normal = StableDirection(delta, {centerDelta, axisA, axisB, Cross(axisA, axisB)});
-    if (Dot(normal, centerDelta) < 0.0f) {
+    if (Dot(normal, centerDelta) < 0.0) {
         normal = -normal;
     }
     const Vec3 point = c1 + normal * a.radius;
-    const float penetration = radiusSum - dist;
-    const std::uint8_t featureA = (s <= 1e-3f) ? 0u : ((s >= 1.0f - 1e-3f) ? 1u : 2u);
-    const std::uint8_t featureB = (t <= 1e-3f) ? 0u : ((t >= 1.0f - 1e-3f) ? 1u : 2u);
+    const Real penetration = radiusSum - dist;
+    const std::uint8_t featureA = (s <= 1e-3) ? 0u : ((s >= 1.0 - 1e-3) ? 1u : 2u);
+    const std::uint8_t featureB = (t <= 1e-3) ? 0u : ((t >= 1.0 - 1e-3) ? 1u : 2u);
     const std::uint64_t featureId = CanonicalFeaturePairId(aId, bId, featureA, featureB);
     AddContact(aId, bId, normal, point, penetration, 16u, featureId);
 
-    const float parallelFactor = std::abs(Dot(axisA, axisB));
-    if (parallelFactor > 0.98f && featureA == 2u && featureB == 2u) {
+    const Real parallelFactor = std::abs(Dot(axisA, axisB));
+    if (parallelFactor > 0.98 && featureA == 2u && featureB == 2u) {
         auto addProjectedEndpoint = [&](const Vec3& endpointA, std::uint8_t endpointFeature) {
             const auto [sProj, tProj] = ClosestSegmentParameters(endpointA, endpointA, p2, q2);
             (void)sProj;
             const Vec3 onB = p2 + d2 * tProj;
             const Vec3 epDelta = onB - endpointA;
-            const float epDistSq = LengthSquared(epDelta);
+            const Real epDistSq = LengthSquared(epDelta);
             if (epDistSq > radiusSum * radiusSum) {
                 return;
             }
             Vec3 epNormal = StableDirection(epDelta, {centerDelta, axisA, axisB, Cross(axisA, axisB)});
-            if (Dot(epNormal, centerDelta) < 0.0f) {
+            if (Dot(epNormal, centerDelta) < 0.0) {
                 epNormal = -epNormal;
             }
-            const float epDist = std::sqrt(std::max(epDistSq, 0.0f));
-            const std::uint8_t featureBProj = (tProj <= 1e-3f) ? 0u : ((tProj >= 1.0f - 1e-3f) ? 1u : 2u);
+            const Real epDist = std::sqrt(std::max(epDistSq, 0.0));
+            const std::uint8_t featureBProj = (tProj <= 1e-3) ? 0u : ((tProj >= 1.0 - 1e-3) ? 1u : 2u);
             const std::uint64_t mfid = CanonicalFeaturePairId(aId, bId, endpointFeature, featureBProj, 1u);
             AddContact(aId, bId, epNormal, endpointA + epNormal * a.radius, radiusSum - epDist, 16u, mfid);
         };
@@ -603,8 +603,8 @@ void World::CapsuleCylinder(std::uint32_t capsuleId, std::uint32_t cylId) {
 
     const Body& cap = bodies_[capsuleId];
     const Body& cyl = bodies_[cylId];
-    const Vec3 axisC = Normalize(Rotate(cap.orientation, {0.0f, 1.0f, 0.0f}));
-    const Vec3 axisY = Normalize(Rotate(cyl.orientation, {0.0f, 1.0f, 0.0f}));
+    const Vec3 axisC = Normalize(Rotate(cap.orientation, {0.0, 1.0, 0.0}));
+    const Vec3 axisY = Normalize(Rotate(cyl.orientation, {0.0, 1.0, 0.0}));
     const Vec3 p1 = cap.position - axisC * cap.halfHeight;
     const Vec3 q1 = cap.position + axisC * cap.halfHeight;
     const Vec3 p2 = cyl.position - axisY * cyl.halfHeight;
@@ -615,41 +615,41 @@ void World::CapsuleCylinder(std::uint32_t capsuleId, std::uint32_t cylId) {
     const Vec3 c1 = p1 + d1 * s;
     const Vec3 c2 = p2 + d2 * t;
     const Vec3 delta = c2 - c1;
-    const float distSq = LengthSquared(delta);
-    const float radiusSum = cap.radius + cyl.radius;
+    const Real distSq = LengthSquared(delta);
+    const Real radiusSum = cap.radius + cyl.radius;
     if (distSq > radiusSum * radiusSum) {
         return;
     }
-    const float dist = std::sqrt(std::max(distSq, 0.0f));
+    const Real dist = std::sqrt(std::max(distSq, 0.0));
     const Vec3 centerDelta = cyl.position - cap.position;
     Vec3 normal = StableDirection(delta, {centerDelta, axisC, axisY, Cross(axisC, axisY)});
-    if (Dot(normal, centerDelta) < 0.0f) {
+    if (Dot(normal, centerDelta) < 0.0) {
         normal = -normal;
     }
     const Vec3 point = c1 + normal * cap.radius;
-    const float penetration = radiusSum - dist;
-    const std::uint8_t featureCap = (s <= 1e-3f) ? 0u : ((s >= 1.0f - 1e-3f) ? 1u : 2u);
-    const std::uint8_t featureCyl = (t <= 1e-3f) ? 0u : ((t >= 1.0f - 1e-3f) ? 1u : 2u);
+    const Real penetration = radiusSum - dist;
+    const std::uint8_t featureCap = (s <= 1e-3) ? 0u : ((s >= 1.0 - 1e-3) ? 1u : 2u);
+    const std::uint8_t featureCyl = (t <= 1e-3) ? 0u : ((t >= 1.0 - 1e-3) ? 1u : 2u);
     const std::uint64_t featureId = CanonicalFeaturePairId(capsuleId, cylId, featureCap, featureCyl);
     AddContact(capsuleId, cylId, normal, point, penetration, 17u, featureId);
 
-    const float parallelFactor = std::abs(Dot(axisC, axisY));
-    if (parallelFactor > 0.98f && featureCap == 2u && featureCyl == 2u) {
+    const Real parallelFactor = std::abs(Dot(axisC, axisY));
+    if (parallelFactor > 0.98 && featureCap == 2u && featureCyl == 2u) {
         auto addEndpoint = [&](const Vec3& endpointCap, std::uint8_t capFeat) {
             const auto [sProj, tProj] = ClosestSegmentParameters(endpointCap, endpointCap, p2, q2);
             (void)sProj;
             const Vec3 onCyl = p2 + d2 * tProj;
             const Vec3 epD = onCyl - endpointCap;
-            const float epSq = LengthSquared(epD);
+            const Real epSq = LengthSquared(epD);
             if (epSq > radiusSum * radiusSum) {
                 return;
             }
             Vec3 epN = StableDirection(epD, {centerDelta, axisC, axisY, Cross(axisC, axisY)});
-            if (Dot(epN, centerDelta) < 0.0f) {
+            if (Dot(epN, centerDelta) < 0.0) {
                 epN = -epN;
             }
-            const float epDist = std::sqrt(std::max(epSq, 0.0f));
-            const std::uint8_t cylFeat = (tProj <= 1e-3f) ? 0u : ((tProj >= 1.0f - 1e-3f) ? 1u : 2u);
+            const Real epDist = std::sqrt(std::max(epSq, 0.0));
+            const std::uint8_t cylFeat = (tProj <= 1e-3) ? 0u : ((tProj >= 1.0 - 1e-3) ? 1u : 2u);
             const std::uint64_t mfid = CanonicalFeaturePairId(capsuleId, cylId, capFeat, cylFeat, 1u);
             AddContact(capsuleId, cylId, epN, endpointCap + epN * cap.radius, radiusSum - epDist, 17u, mfid);
         };
@@ -675,17 +675,17 @@ void World::SphereHalfCylinder(std::uint32_t sphereId, std::uint32_t halfCylinde
     if (gjk.simplex.size >= 3) {
         penetration = ComputePenetrationEPA(supportS, supportH, gjk.simplex);
     }
-    if (!penetration.valid || penetration.depth <= 0.0f) {
+    if (!penetration.valid || penetration.depth <= 0.0) {
         Vec3 sep = BodyWorldShapeOrigin(hc) - sphere.position;
         if (LengthSquared(sep) <= kEpsilon * kEpsilon) {
-            sep = {1.0f, 0.0f, 0.0f};
+            sep = {1.0, 0.0, 0.0};
         } else {
             sep = Normalize(sep);
         }
         const ConvexSupportPoint witnessA = supportS.Support(sep);
         const ConvexSupportPoint witnessB = supportH.Support(-sep);
-        const float depth = Dot(witnessA.point - witnessB.point, sep);
-        if (depth <= 0.0f) {
+        const Real depth = Dot(witnessA.point - witnessB.point, sep);
+        if (depth <= 0.0) {
             return;
         }
         penetration.valid = true;
@@ -695,7 +695,7 @@ void World::SphereHalfCylinder(std::uint32_t sphereId, std::uint32_t halfCylinde
         penetration.witnessB = witnessB.point;
     }
     Vec3 normal = penetration.normal;
-    if (Dot(normal, BodyWorldShapeOrigin(hc) - sphere.position) < 0.0f) {
+    if (Dot(normal, BodyWorldShapeOrigin(hc) - sphere.position) < 0.0) {
         normal = -normal;
     }
     const std::uint16_t detail = static_cast<std::uint16_t>(
@@ -705,7 +705,7 @@ void World::SphereHalfCylinder(std::uint32_t sphereId, std::uint32_t halfCylinde
         sphereId,
         halfCylinderId,
         normal,
-        0.5f * (penetration.witnessA + penetration.witnessB),
+        0.5 * (penetration.witnessA + penetration.witnessB),
         penetration.depth,
         18u,
         featureId);
@@ -716,41 +716,41 @@ void World::HalfCylinderBox(std::uint32_t halfCylinderId, std::uint32_t boxId) {
     const Body& hc = bodies_[halfCylinderId];
     const Body& box = bodies_[boxId];
     const Vec3 d = box.position - BodyWorldShapeOrigin(hc);
-    const Vec3 hcAxis = Normalize(Rotate(hc.orientation, {0.0f, 1.0f, 0.0f}));
-    const Vec3 flatOut = Normalize(Rotate(hc.orientation, {0.0f, 0.0f, -1.0f}));
+    const Vec3 hcAxis = Normalize(Rotate(hc.orientation, {0.0, 1.0, 0.0}));
+    const Vec3 flatOut = Normalize(Rotate(hc.orientation, {0.0, 0.0, -1.0}));
     const Vec3 bAxes[3] = {
-        Rotate(box.orientation, {1.0f, 0.0f, 0.0f}),
-        Rotate(box.orientation, {0.0f, 1.0f, 0.0f}),
-        Rotate(box.orientation, {0.0f, 0.0f, 1.0f}),
+        Rotate(box.orientation, {1.0, 0.0, 0.0}),
+        Rotate(box.orientation, {0.0, 1.0, 0.0}),
+        Rotate(box.orientation, {0.0, 0.0, 1.0}),
     };
 
-    constexpr float kParallelAxisEps = 1e-8f;
-    constexpr float kCrossAxisBias = 0.0025f;
-    float bestScore = std::numeric_limits<float>::infinity();
-    float bestOverlap = std::numeric_limits<float>::infinity();
-    Vec3 bestAxis{1.0f, 0.0f, 0.0f};
+    constexpr Real kParallelAxisEps = 1e-8;
+    constexpr Real kCrossAxisBias = 0.0025;
+    Real bestScore = std::numeric_limits<float>::infinity();
+    Real bestOverlap = std::numeric_limits<float>::infinity();
+    Vec3 bestAxis{1.0, 0.0, 0.0};
 
     auto tryAxis = [&](const Vec3& axisIn, bool isCross) -> bool {
-        const float lenSq = LengthSquared(axisIn);
+        const Real lenSq = LengthSquared(axisIn);
         if (lenSq <= kParallelAxisEps) {
             return true;
         }
         const Vec3 axis = axisIn / std::sqrt(lenSq);
         const auto [hc0, hc1] = HalfCylinderProjectionInterval(hc, axis);
-        const float boxC = Dot(box.position, axis);
-        const float hb = ProjectBoxOntoAxis(box, axis);
-        const float box0 = boxC - hb;
-        const float box1 = boxC + hb;
-        const float overlap = IntervalOverlapLength(hc0, hc1, box0, box1);
-        if (overlap < 0.0f) {
+        const Real boxC = Dot(box.position, axis);
+        const Real hb = ProjectBoxOntoAxis(box, axis);
+        const Real box0 = boxC - hb;
+        const Real box1 = boxC + hb;
+        const Real overlap = IntervalOverlapLength(hc0, hc1, box0, box1);
+        if (overlap < 0.0) {
             return false;
         }
-        const float biased = overlap + (isCross ? kCrossAxisBias : 0.0f);
+        const Real biased = overlap + (isCross ? kCrossAxisBias : 0.0);
         if (biased < bestScore) {
             bestScore = biased;
             bestOverlap = overlap;
             bestAxis = axis;
-            if (Dot(d, bestAxis) < 0.0f) {
+            if (Dot(d, bestAxis) < 0.0) {
                 bestAxis = -bestAxis;
             }
         }
@@ -789,7 +789,7 @@ void World::HalfCylinderBox(std::uint32_t halfCylinderId, std::uint32_t boxId) {
 
     struct Sample {
         Vec3 point{};
-        float key = 0.0f;
+        Real key = 0.0;
         std::uint32_t feature = 0u;
     };
     std::vector<Vec3> raw;
@@ -800,7 +800,7 @@ void World::HalfCylinderBox(std::uint32_t halfCylinderId, std::uint32_t boxId) {
     std::uint32_t geomId = 0;
     for (const Vec3& p : raw) {
         const Vec3 local = Rotate(invBoxQ, p - box.position);
-        if (!LocalPointInsideOBB(local, box.halfExtents, 2e-3f)) {
+        if (!LocalPointInsideOBB(local, box.halfExtents, 2e-3)) {
             ++geomId;
             continue;
         }
@@ -811,7 +811,7 @@ void World::HalfCylinderBox(std::uint32_t halfCylinderId, std::uint32_t boxId) {
         s.feature = geomId++;
         bool duplicate = false;
         for (const Sample& e : hits) {
-            if (LengthSquared(e.point - s.point) < 1e-5f) {
+            if (LengthSquared(e.point - s.point) < 1e-5) {
                 duplicate = true;
                 break;
             }
@@ -842,17 +842,17 @@ void World::HalfCylinderBox(std::uint32_t halfCylinderId, std::uint32_t boxId) {
         const auto coordOnPlane = [&hits, &n](std::size_t i, const Vec3& u, const Vec3& origin) {
             return Dot(hits[i].point - origin, u);
         };
-        const Vec3 ref = (std::abs(n.x) < 0.85f) ? Vec3{1.0f, 0.0f, 0.0f} : Vec3{0.0f, 1.0f, 0.0f};
+        const Vec3 ref = (std::abs(n.x) < 0.85) ? Vec3{1.0, 0.0, 0.0} : Vec3{0.0, 1.0, 0.0};
         const Vec3 u = Normalize(Cross(n, ref));
         const Vec3 v = Normalize(Cross(n, u));
         const Vec3 origin = box.position;
         const auto pickIndex = [&](bool maxU, bool maxV) {
             std::size_t bestI = 0;
-            float bestS = -std::numeric_limits<float>::infinity();
+            Real bestS = -std::numeric_limits<float>::infinity();
             for (std::size_t i = 0; i < hits.size(); ++i) {
-                const float uc = coordOnPlane(i, u, origin);
-                const float vc = coordOnPlane(i, v, origin);
-                const float score = (maxU ? uc : -uc) + (maxV ? vc : -vc);
+                const Real uc = coordOnPlane(i, u, origin);
+                const Real vc = coordOnPlane(i, v, origin);
+                const Real score = (maxU ? uc : -uc) + (maxV ? vc : -vc);
                 if (score > bestS) {
                     bestS = score;
                     bestI = i;
@@ -879,34 +879,34 @@ void World::HalfCylinderCylinder(std::uint32_t halfCylinderId, std::uint32_t cyl
     const Body& hc = bodies_[halfCylinderId];
     const Body& cyl = bodies_[cylinderId];
     const Vec3 d = cyl.position - BodyWorldShapeOrigin(hc);
-    const Vec3 axisH = Normalize(Rotate(hc.orientation, {0.0f, 1.0f, 0.0f}));
-    const Vec3 flatOut = Normalize(Rotate(hc.orientation, {0.0f, 0.0f, -1.0f}));
-    const Vec3 axisC = Normalize(Rotate(cyl.orientation, {0.0f, 1.0f, 0.0f}));
+    const Vec3 axisH = Normalize(Rotate(hc.orientation, {0.0, 1.0, 0.0}));
+    const Vec3 flatOut = Normalize(Rotate(hc.orientation, {0.0, 0.0, -1.0}));
+    const Vec3 axisC = Normalize(Rotate(cyl.orientation, {0.0, 1.0, 0.0}));
 
-    constexpr float kParallelAxisEps = 1e-8f;
-    constexpr float kCrossAxisBias = 0.0025f;
-    float bestScore = std::numeric_limits<float>::infinity();
-    float bestOverlap = std::numeric_limits<float>::infinity();
-    Vec3 bestAxis{1.0f, 0.0f, 0.0f};
+    constexpr Real kParallelAxisEps = 1e-8;
+    constexpr Real kCrossAxisBias = 0.0025;
+    Real bestScore = std::numeric_limits<float>::infinity();
+    Real bestOverlap = std::numeric_limits<float>::infinity();
+    Vec3 bestAxis{1.0, 0.0, 0.0};
 
     auto tryAxis = [&](const Vec3& axisIn, bool isCross) -> bool {
-        const float lenSq = LengthSquared(axisIn);
+        const Real lenSq = LengthSquared(axisIn);
         if (lenSq <= kParallelAxisEps) {
             return true;
         }
         const Vec3 axis = axisIn / std::sqrt(lenSq);
         const auto [h0, h1] = HalfCylinderProjectionInterval(hc, axis);
         const auto [c0, c1] = FullCylinderProjectionInterval(cyl, axis);
-        const float overlap = IntervalOverlapLength(h0, h1, c0, c1);
-        if (overlap < 0.0f) {
+        const Real overlap = IntervalOverlapLength(h0, h1, c0, c1);
+        if (overlap < 0.0) {
             return false;
         }
-        const float biased = overlap + (isCross ? kCrossAxisBias : 0.0f);
+        const Real biased = overlap + (isCross ? kCrossAxisBias : 0.0);
         if (biased < bestScore) {
             bestScore = biased;
             bestOverlap = overlap;
             bestAxis = axis;
-            if (Dot(d, bestAxis) < 0.0f) {
+            if (Dot(d, bestAxis) < 0.0) {
                 bestAxis = -bestAxis;
             }
         }
@@ -937,11 +937,11 @@ void World::HalfCylinderCylinder(std::uint32_t halfCylinderId, std::uint32_t cyl
     }
 
     const Vec3 n = bestAxis;
-    const Vec3 refOrigin = 0.5f * (BodyWorldShapeOrigin(hc) + cyl.position);
+    const Vec3 refOrigin = 0.5 * (BodyWorldShapeOrigin(hc) + cyl.position);
 
     struct Hit {
         Vec3 point{};
-        float key = 0.0f;
+        Real key = 0.0;
         std::uint32_t feature = 0u;
     };
     std::vector<Hit> hits;
@@ -951,8 +951,8 @@ void World::HalfCylinderCylinder(std::uint32_t halfCylinderId, std::uint32_t cyl
     AppendHalfCylinderSurfaceSamples(hc, sHc);
     AppendCylinderSurfaceSamples(cyl, sCyl);
 
-    const float insideEps = 0.02f;
-    const float mergeTolSq = 1e-5f;
+    const Real insideEps = 0.02;
+    const Real mergeTolSq = 1e-5;
     std::uint32_t geomId = 0;
 
     auto addUniqueHit = [&](const Vec3& contactOnCylinder) {
@@ -987,7 +987,7 @@ void World::HalfCylinderCylinder(std::uint32_t halfCylinderId, std::uint32_t cyl
         const Vec3 pHc = SupportPointHalfCylinder(hc, n);
         const Vec3 pCyl = SupportPointCylinder(cyl, -n);
         const std::uint64_t featureId = CanonicalFeaturePairId(halfCylinderId, cylinderId, 0u, 0u);
-        AddContact(halfCylinderId, cylinderId, n, 0.5f * (pHc + pCyl), bestOverlap, 20u, featureId);
+        AddContact(halfCylinderId, cylinderId, n, 0.5 * (pHc + pCyl), bestOverlap, 20u, featureId);
         return;
     }
 
@@ -1004,16 +1004,16 @@ void World::HalfCylinderCylinder(std::uint32_t halfCylinderId, std::uint32_t cyl
         const auto coordOnPlane = [&hits, &n](std::size_t i, const Vec3& u, const Vec3& origin) {
             return Dot(hits[i].point - origin, u);
         };
-        const Vec3 ref = (std::abs(n.x) < 0.85f) ? Vec3{1.0f, 0.0f, 0.0f} : Vec3{0.0f, 1.0f, 0.0f};
+        const Vec3 ref = (std::abs(n.x) < 0.85) ? Vec3{1.0, 0.0, 0.0} : Vec3{0.0, 1.0, 0.0};
         const Vec3 u = Normalize(Cross(n, ref));
         const Vec3 v = Normalize(Cross(n, u));
         const auto pickIndex = [&](bool maxU, bool maxV) {
             std::size_t bestI = 0;
-            float bestS = -std::numeric_limits<float>::infinity();
+            Real bestS = -std::numeric_limits<float>::infinity();
             for (std::size_t i = 0; i < hits.size(); ++i) {
-                const float uc = coordOnPlane(i, u, refOrigin);
-                const float vc = coordOnPlane(i, v, refOrigin);
-                const float score = (maxU ? uc : -uc) + (maxV ? vc : -vc);
+                const Real uc = coordOnPlane(i, u, refOrigin);
+                const Real vc = coordOnPlane(i, v, refOrigin);
+                const Real score = (maxU ? uc : -uc) + (maxV ? vc : -vc);
                 if (score > bestS) {
                     bestS = score;
                     bestI = i;
@@ -1040,35 +1040,35 @@ void World::HalfCylinderHalfCylinder(std::uint32_t aId, std::uint32_t bId) {
     const Body& a = bodies_[aId];
     const Body& b = bodies_[bId];
     const Vec3 d = BodyWorldShapeOrigin(b) - BodyWorldShapeOrigin(a);
-    const Vec3 axisA = Normalize(Rotate(a.orientation, {0.0f, 1.0f, 0.0f}));
-    const Vec3 flatA = Normalize(Rotate(a.orientation, {0.0f, 0.0f, -1.0f}));
-    const Vec3 axisB = Normalize(Rotate(b.orientation, {0.0f, 1.0f, 0.0f}));
-    const Vec3 flatB = Normalize(Rotate(b.orientation, {0.0f, 0.0f, -1.0f}));
+    const Vec3 axisA = Normalize(Rotate(a.orientation, {0.0, 1.0, 0.0}));
+    const Vec3 flatA = Normalize(Rotate(a.orientation, {0.0, 0.0, -1.0}));
+    const Vec3 axisB = Normalize(Rotate(b.orientation, {0.0, 1.0, 0.0}));
+    const Vec3 flatB = Normalize(Rotate(b.orientation, {0.0, 0.0, -1.0}));
 
-    constexpr float kParallelAxisEps = 1e-8f;
-    constexpr float kCrossAxisBias = 0.0025f;
-    float bestScore = std::numeric_limits<float>::infinity();
-    float bestOverlap = std::numeric_limits<float>::infinity();
-    Vec3 bestAxis{1.0f, 0.0f, 0.0f};
+    constexpr Real kParallelAxisEps = 1e-8;
+    constexpr Real kCrossAxisBias = 0.0025;
+    Real bestScore = std::numeric_limits<float>::infinity();
+    Real bestOverlap = std::numeric_limits<float>::infinity();
+    Vec3 bestAxis{1.0, 0.0, 0.0};
 
     auto tryAxis = [&](const Vec3& axisIn, bool isCross) -> bool {
-        const float lenSq = LengthSquared(axisIn);
+        const Real lenSq = LengthSquared(axisIn);
         if (lenSq <= kParallelAxisEps) {
             return true;
         }
         const Vec3 axis = axisIn / std::sqrt(lenSq);
         const auto [a0, a1] = HalfCylinderProjectionInterval(a, axis);
         const auto [b0, b1] = HalfCylinderProjectionInterval(b, axis);
-        const float overlap = IntervalOverlapLength(a0, a1, b0, b1);
-        if (overlap < 0.0f) {
+        const Real overlap = IntervalOverlapLength(a0, a1, b0, b1);
+        if (overlap < 0.0) {
             return false;
         }
-        const float biased = overlap + (isCross ? kCrossAxisBias : 0.0f);
+        const Real biased = overlap + (isCross ? kCrossAxisBias : 0.0);
         if (biased < bestScore) {
             bestScore = biased;
             bestOverlap = overlap;
             bestAxis = axis;
-            if (Dot(d, bestAxis) < 0.0f) {
+            if (Dot(d, bestAxis) < 0.0) {
                 bestAxis = -bestAxis;
             }
         }
@@ -1105,11 +1105,11 @@ void World::HalfCylinderHalfCylinder(std::uint32_t aId, std::uint32_t bId) {
     }
 
     const Vec3 n = bestAxis;
-    const Vec3 refOrigin = 0.5f * (BodyWorldShapeOrigin(a) + BodyWorldShapeOrigin(b));
+    const Vec3 refOrigin = 0.5 * (BodyWorldShapeOrigin(a) + BodyWorldShapeOrigin(b));
 
     struct Hit {
         Vec3 point{};
-        float key = 0.0f;
+        Real key = 0.0;
         std::uint32_t feature = 0u;
     };
     std::vector<Hit> hits;
@@ -1118,11 +1118,11 @@ void World::HalfCylinderHalfCylinder(std::uint32_t aId, std::uint32_t bId) {
     AppendHalfCylinderSurfaceSamples(a, sA);
     AppendHalfCylinderSurfaceSamples(b, sB);
 
-    const float rMin = std::min(std::min(a.radius, b.radius), 0.5f);
-    const float pairDist =
-        std::max(0.06f * rMin, std::min(0.18f * rMin, 0.25f * std::min(bestOverlap, 0.35f)));
-    const float pairTolSq = pairDist * pairDist;
-    const float mergeTolSq = 1e-5f;
+    const Real rMin = std::min(std::min(a.radius, b.radius), 0.5);
+    const Real pairDist =
+        std::max(0.06 * rMin, std::min(0.18 * rMin, 0.25 * std::min(bestOverlap, 0.35)));
+    const Real pairTolSq = pairDist * pairDist;
+    const Real mergeTolSq = 1e-5;
     std::uint32_t geomId = 0;
 
     auto addUniqueMid = [&](const Vec3& mid) {
@@ -1141,7 +1141,7 @@ void World::HalfCylinderHalfCylinder(std::uint32_t aId, std::uint32_t bId) {
     for (const Vec3& p : sA) {
         for (const Vec3& q : sB) {
             if (LengthSquared(p - q) <= pairTolSq) {
-                addUniqueMid(0.5f * (p + q));
+                addUniqueMid(0.5 * (p + q));
             }
         }
     }
@@ -1150,7 +1150,7 @@ void World::HalfCylinderHalfCylinder(std::uint32_t aId, std::uint32_t bId) {
         const Vec3 pA = SupportPointHalfCylinder(a, n);
         const Vec3 pB = SupportPointHalfCylinder(b, -n);
         const std::uint64_t featureId = CanonicalFeaturePairId(aId, bId, 0u, 0u);
-        AddContact(aId, bId, n, 0.5f * (pA + pB), bestOverlap, 21u, featureId);
+        AddContact(aId, bId, n, 0.5 * (pA + pB), bestOverlap, 21u, featureId);
         return;
     }
 
@@ -1167,16 +1167,16 @@ void World::HalfCylinderHalfCylinder(std::uint32_t aId, std::uint32_t bId) {
         const auto coordOnPlane = [&hits, &n](std::size_t i, const Vec3& u, const Vec3& origin) {
             return Dot(hits[i].point - origin, u);
         };
-        const Vec3 ref = (std::abs(n.x) < 0.85f) ? Vec3{1.0f, 0.0f, 0.0f} : Vec3{0.0f, 1.0f, 0.0f};
+        const Vec3 ref = (std::abs(n.x) < 0.85) ? Vec3{1.0, 0.0, 0.0} : Vec3{0.0, 1.0, 0.0};
         const Vec3 u = Normalize(Cross(n, ref));
         const Vec3 v = Normalize(Cross(n, u));
         const auto pickIndex = [&](bool maxU, bool maxV) {
             std::size_t bestI = 0;
-            float bestS = -std::numeric_limits<float>::infinity();
+            Real bestS = -std::numeric_limits<float>::infinity();
             for (std::size_t i = 0; i < hits.size(); ++i) {
-                const float uc = coordOnPlane(i, u, refOrigin);
-                const float vc = coordOnPlane(i, v, refOrigin);
-                const float score = (maxU ? uc : -uc) + (maxV ? vc : -vc);
+                const Real uc = coordOnPlane(i, u, refOrigin);
+                const Real vc = coordOnPlane(i, v, refOrigin);
+                const Real score = (maxU ? uc : -uc) + (maxV ? vc : -vc);
                 if (score > bestS) {
                     bestS = score;
                     bestI = i;
@@ -1203,34 +1203,34 @@ void World::CapsuleHalfCylinder(std::uint32_t capsuleId, std::uint32_t halfCylin
     const Body& cap = bodies_[capsuleId];
     const Body& hc = bodies_[halfCylinderId];
     const Vec3 d = BodyWorldShapeOrigin(hc) - cap.position;
-    const Vec3 axisC = Normalize(Rotate(cap.orientation, {0.0f, 1.0f, 0.0f}));
-    const Vec3 axisH = Normalize(Rotate(hc.orientation, {0.0f, 1.0f, 0.0f}));
-    const Vec3 flatH = Normalize(Rotate(hc.orientation, {0.0f, 0.0f, -1.0f}));
+    const Vec3 axisC = Normalize(Rotate(cap.orientation, {0.0, 1.0, 0.0}));
+    const Vec3 axisH = Normalize(Rotate(hc.orientation, {0.0, 1.0, 0.0}));
+    const Vec3 flatH = Normalize(Rotate(hc.orientation, {0.0, 0.0, -1.0}));
 
-    constexpr float kParallelAxisEps = 1e-8f;
-    constexpr float kCrossAxisBias = 0.0025f;
-    float bestScore = std::numeric_limits<float>::infinity();
-    float bestOverlap = std::numeric_limits<float>::infinity();
-    Vec3 bestAxis{1.0f, 0.0f, 0.0f};
+    constexpr Real kParallelAxisEps = 1e-8;
+    constexpr Real kCrossAxisBias = 0.0025;
+    Real bestScore = std::numeric_limits<float>::infinity();
+    Real bestOverlap = std::numeric_limits<float>::infinity();
+    Vec3 bestAxis{1.0, 0.0, 0.0};
 
     auto tryAxis = [&](const Vec3& axisIn, bool isCross) -> bool {
-        const float lenSq = LengthSquared(axisIn);
+        const Real lenSq = LengthSquared(axisIn);
         if (lenSq <= kParallelAxisEps) {
             return true;
         }
         const Vec3 axis = axisIn / std::sqrt(lenSq);
         const auto [c0, c1] = FullCylinderProjectionInterval(cap, axis);
         const auto [h0, h1] = HalfCylinderProjectionInterval(hc, axis);
-        const float overlap = IntervalOverlapLength(c0, c1, h0, h1);
-        if (overlap < 0.0f) {
+        const Real overlap = IntervalOverlapLength(c0, c1, h0, h1);
+        if (overlap < 0.0) {
             return false;
         }
-        const float biased = overlap + (isCross ? kCrossAxisBias : 0.0f);
+        const Real biased = overlap + (isCross ? kCrossAxisBias : 0.0);
         if (biased < bestScore) {
             bestScore = biased;
             bestOverlap = overlap;
             bestAxis = axis;
-            if (Dot(d, bestAxis) < 0.0f) {
+            if (Dot(d, bestAxis) < 0.0) {
                 bestAxis = -bestAxis;
             }
         }
@@ -1264,33 +1264,33 @@ void World::CapsuleHalfCylinder(std::uint32_t capsuleId, std::uint32_t halfCylin
     const Vec3 pCap = SupportPointCapsule(cap, n);
     const Vec3 pHc = SupportPointHalfCylinder(hc, -n);
     const std::uint64_t featureId = CanonicalFeaturePairId(capsuleId, halfCylinderId, 0u, 0u);
-    AddContact(capsuleId, halfCylinderId, n, 0.5f * (pCap + pHc), bestOverlap, 22u, featureId);
+    AddContact(capsuleId, halfCylinderId, n, 0.5 * (pCap + pHc), bestOverlap, 22u, featureId);
 
-    const float parallelFactor = std::abs(Dot(axisC, axisH));
-    if (parallelFactor > 0.98f) {
+    const Real parallelFactor = std::abs(Dot(axisC, axisH));
+    if (parallelFactor > 0.98) {
         const Vec3 hcOrigin = BodyWorldShapeOrigin(hc);
         const Vec3 p1 = cap.position - axisC * cap.halfHeight;
         const Vec3 q1 = cap.position + axisC * cap.halfHeight;
         const Vec3 p2 = hcOrigin - axisH * hc.halfHeight;
         const Vec3 q2 = hcOrigin + axisH * hc.halfHeight;
         const Vec3 hcD = q2 - p2;
-        const float radiusSum = cap.radius + hc.radius;
+        const Real radiusSum = cap.radius + hc.radius;
         const Vec3 centerDelta = hcOrigin - cap.position;
         auto addEndpoint = [&](const Vec3& endpointCap, std::uint8_t capFeat) {
             const auto [sProj, tProj] = ClosestSegmentParameters(endpointCap, endpointCap, p2, q2);
             (void)sProj;
             const Vec3 onHc = p2 + hcD * tProj;
             const Vec3 epD = onHc - endpointCap;
-            const float epSq = LengthSquared(epD);
+            const Real epSq = LengthSquared(epD);
             if (epSq > radiusSum * radiusSum) {
                 return;
             }
             Vec3 epN = StableDirection(epD, {centerDelta, axisC, axisH, Cross(axisC, axisH)});
-            if (Dot(epN, centerDelta) < 0.0f) {
+            if (Dot(epN, centerDelta) < 0.0) {
                 epN = -epN;
             }
-            const float epDist = std::sqrt(std::max(epSq, 0.0f));
-            const std::uint8_t hcFeat = (tProj <= 1e-3f) ? 0u : ((tProj >= 1.0f - 1e-3f) ? 1u : 2u);
+            const Real epDist = std::sqrt(std::max(epSq, 0.0));
+            const std::uint8_t hcFeat = (tProj <= 1e-3) ? 0u : ((tProj >= 1.0 - 1e-3) ? 1u : 2u);
             const std::uint64_t mfid = CanonicalFeaturePairId(capsuleId, halfCylinderId, capFeat, hcFeat, 1u);
             AddContact(capsuleId, halfCylinderId, epN, endpointCap + epN * cap.radius, radiusSum - epDist, 22u, mfid);
         };

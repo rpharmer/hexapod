@@ -13,8 +13,8 @@ struct SleepSystemContext {
     const std::vector<FixedJoint>& fixedJoints;
     const std::vector<PrismaticJoint>& prismaticJoints;
     const std::vector<ServoJoint>& servoJoints;
-    float linearThreshold;
-    float angularThreshold;
+    Real linearThreshold;
+    Real angularThreshold;
     std::uint32_t framesThreshold;
 };
 

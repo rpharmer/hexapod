@@ -152,6 +152,20 @@ struct ParsedToml
   double fusionCorrectionStrongReleaseFactor{0.72};
   double fusionCorrectionSoftReleaseFactor{0.84};
 
+  bool gravityFeedforwardEnabled{false};
+  double gravityFeedforwardMaxGyroRadps{control_config::kDefaultGravityFeedforwardMaxGyroRadps};
+  double gravityFeedforwardAccelNormMarginMps2{control_config::kDefaultGravityFeedforwardAccelNormMarginMps2};
+  double gravityFeedforwardScaleCoxa{control_config::kDefaultGravityFeedforwardScaleCoxa};
+  double gravityFeedforwardScaleFemur{control_config::kDefaultGravityFeedforwardScaleFemur};
+  double gravityFeedforwardScaleTibia{control_config::kDefaultGravityFeedforwardScaleTibia};
+  bool gravityFeedforwardIncludeFootReaction{true};
+  bool gravityFeedforwardIncludeSelfWeight{false};
+  double gravityFeedforwardStiffnessGainScale{control_config::kDefaultGravityFeedforwardStiffnessGainScale};
+  double gravityFeedforwardDeltaLpfTauS{control_config::kDefaultGravityFeedforwardDeltaLpfTauS};
+  double gravityFeedforwardMaxDeltaCoxaRad{control_config::kDefaultGravityFeedforwardMaxDeltaCoxaRad};
+  double gravityFeedforwardMaxDeltaFemurRad{control_config::kDefaultGravityFeedforwardMaxDeltaFemurRad};
+  double gravityFeedforwardMaxDeltaTibiaRad{control_config::kDefaultGravityFeedforwardMaxDeltaTibiaRad};
+
   double coxaLengthM{0.043};
   double femurLengthM{0.060};
   double tibiaLengthM{0.104};

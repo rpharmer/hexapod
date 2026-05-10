@@ -212,8 +212,17 @@ bool test_control_step_packet_includes_fusion_diagnostics()
     telemetry_sample.governor.body_height_delta_m = -0.008;
     telemetry_sample.governor.command_scale = 0.88;
     telemetry_sample.governor.cadence_scale = 0.91;
+    telemetry_sample.governor.support_margin_m = -0.012;
+    telemetry_sample.governor.current_support_margin_m = -0.024;
+    telemetry_sample.governor.current_support_count = 2;
+    telemetry_sample.governor.confirmed_support_count = 1;
+    telemetry_sample.governor.uncertain_support_count = 1;
+    telemetry_sample.governor.recovery_stage = RecoveryStage::Settling;
+    telemetry_sample.governor.recovery_release_ready = true;
+    telemetry_sample.governor.recovery_hold_active = true;
+    telemetry_sample.governor.freeze_phase = true;
     telemetry_sample.governor.reasons =
-        CommandGovernorReason::LowSpeedRegime | CommandGovernorReason::HighTilt;
+        CommandGovernorReason::LowSpeedRegime | CommandGovernorReason::HighTilt | CommandGovernorReason::RecoveryHold;
 
     const std::string payload = telemetry_json::serializeControlStepPacket(telemetry_sample);
 
@@ -291,7 +300,21 @@ bool test_control_step_packet_includes_fusion_diagnostics()
                   "control step payload should include governor object") &&
            expect(payload.find("\"severity\":0.42") != std::string::npos,
                   "governor payload should include severity") &&
-           expect(payload.find("\"reasons\":\"0x5\"") != std::string::npos,
+           expect(payload.find("\"current_support_count\":2") != std::string::npos,
+                  "governor payload should include current support count") &&
+           expect(payload.find("\"confirmed_support_count\":1") != std::string::npos,
+                  "governor payload should include confirmed support count") &&
+           expect(payload.find("\"uncertain_support_count\":1") != std::string::npos,
+                  "governor payload should include uncertain support count") &&
+           expect(payload.find("\"recovery_stage\":\"settling\"") != std::string::npos,
+                  "governor payload should include the explicit recovery stage") &&
+           expect(payload.find("\"recovery_release_ready\":true") != std::string::npos,
+                  "governor payload should include release readiness") &&
+           expect(payload.find("\"recovery_hold_active\":true") != std::string::npos,
+                  "governor payload should include recovery-hold state") &&
+           expect(payload.find("\"freeze_phase\":true") != std::string::npos,
+                  "governor payload should include freeze-phase state") &&
+           expect(payload.find("\"reasons\":\"0x85\"") != std::string::npos,
                   "governor payload should include reasons bitmask");
 }
 

@@ -18,11 +18,11 @@ struct BroadphaseUpdateContext {
     std::uint64_t& lastBroadphaseRebuildStep;
     std::size_t& lastBroadphaseMovedProxyCount;
 
-    std::function<float(const Body&)> computeProxyMargin;
+    std::function<Real(const Body&)> computeProxyMargin;
     std::function<void(std::uint32_t)> ensureProxyInTree;
     std::function<void(std::int32_t)> removeLeaf;
     std::function<std::int32_t(std::uint32_t, const AABB&)> insertLeaf;
-    std::function<AABB(const AABB&, float)> expandAabb;
+    std::function<AABB(const AABB&, Real)> expandAabb;
     std::function<bool(const AABB&, const AABB&)> contains;
     std::function<void()> updateBroadphaseQualityMetrics;
     std::function<void()> maybeTriggerBroadphaseRebuild;

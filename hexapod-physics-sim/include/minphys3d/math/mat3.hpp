@@ -7,13 +7,13 @@
 namespace minphys3d {
 
 struct Mat3 {
-    float m[3][3]{};
+    Real m[3][3]{};
 
     static Mat3 Identity() {
         Mat3 r{};
-        r.m[0][0] = 1.0f;
-        r.m[1][1] = 1.0f;
-        r.m[2][2] = 1.0f;
+        r.m[0][0] = 1.0;
+        r.m[1][1] = 1.0;
+        r.m[2][2] = 1.0;
         return r;
     }
 };
@@ -58,7 +58,7 @@ inline Mat3 operator-(const Mat3& A, const Mat3& B) {
     return r;
 }
 
-inline Mat3 operator*(float s, const Mat3& M) {
+inline Mat3 operator*(Real s, const Mat3& M) {
     Mat3 r{};
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
@@ -82,7 +82,7 @@ inline Mat3 OuterProduct(const Vec3& u, const Vec3& v) {
     return r;
 }
 
-inline Mat3 ScaleIdentity(float s) {
+inline Mat3 ScaleIdentity(Real s) {
     Mat3 r{};
     r.m[0][0] = s;
     r.m[1][1] = s;
@@ -92,24 +92,24 @@ inline Mat3 ScaleIdentity(float s) {
 
 // General 3×3 inverse; returns false if singular.
 inline bool InvertMat3(const Mat3& a, Mat3& out) {
-    const float c00 = a.m[1][1] * a.m[2][2] - a.m[1][2] * a.m[2][1];
-    const float c01 = a.m[1][2] * a.m[2][0] - a.m[1][0] * a.m[2][2];
-    const float c02 = a.m[1][0] * a.m[2][1] - a.m[1][1] * a.m[2][0];
+    const Real c00 = a.m[1][1] * a.m[2][2] - a.m[1][2] * a.m[2][1];
+    const Real c01 = a.m[1][2] * a.m[2][0] - a.m[1][0] * a.m[2][2];
+    const Real c02 = a.m[1][0] * a.m[2][1] - a.m[1][1] * a.m[2][0];
 
-    const float det = a.m[0][0] * c00 + a.m[0][1] * c01 + a.m[0][2] * c02;
-    if (!(std::abs(det) > 1e-18f)) {
+    const Real det = a.m[0][0] * c00 + a.m[0][1] * c01 + a.m[0][2] * c02;
+    if (!(std::abs(det) > 1e-18)) {
         return false;
     }
 
-    const float invDet = 1.0f / det;
+    const Real invDet = 1.0 / det;
 
-    const float c10 = a.m[0][2] * a.m[2][1] - a.m[0][1] * a.m[2][2];
-    const float c11 = a.m[0][0] * a.m[2][2] - a.m[0][2] * a.m[2][0];
-    const float c12 = a.m[0][1] * a.m[2][0] - a.m[0][0] * a.m[2][1];
+    const Real c10 = a.m[0][2] * a.m[2][1] - a.m[0][1] * a.m[2][2];
+    const Real c11 = a.m[0][0] * a.m[2][2] - a.m[0][2] * a.m[2][0];
+    const Real c12 = a.m[0][1] * a.m[2][0] - a.m[0][0] * a.m[2][1];
 
-    const float c20 = a.m[0][1] * a.m[1][2] - a.m[0][2] * a.m[1][1];
-    const float c21 = a.m[0][2] * a.m[1][0] - a.m[0][0] * a.m[1][2];
-    const float c22 = a.m[0][0] * a.m[1][1] - a.m[0][1] * a.m[1][0];
+    const Real c20 = a.m[0][1] * a.m[1][2] - a.m[0][2] * a.m[1][1];
+    const Real c21 = a.m[0][2] * a.m[1][0] - a.m[0][0] * a.m[1][2];
+    const Real c22 = a.m[0][0] * a.m[1][1] - a.m[0][1] * a.m[1][0];
 
     out.m[0][0] = c00 * invDet;
     out.m[0][1] = c10 * invDet;
@@ -125,26 +125,26 @@ inline bool InvertMat3(const Mat3& a, Mat3& out) {
 
 inline Mat3 RotationMatrix(const Quat& q_) {
     const Quat q = Normalize(q_);
-    const float xx = q.x * q.x;
-    const float yy = q.y * q.y;
-    const float zz = q.z * q.z;
-    const float xy = q.x * q.y;
-    const float xz = q.x * q.z;
-    const float yz = q.y * q.z;
-    const float wx = q.w * q.x;
-    const float wy = q.w * q.y;
-    const float wz = q.w * q.z;
+    const Real xx = q.x * q.x;
+    const Real yy = q.y * q.y;
+    const Real zz = q.z * q.z;
+    const Real xy = q.x * q.y;
+    const Real xz = q.x * q.z;
+    const Real yz = q.y * q.z;
+    const Real wx = q.w * q.x;
+    const Real wy = q.w * q.y;
+    const Real wz = q.w * q.z;
 
     Mat3 r{};
-    r.m[0][0] = 1.0f - 2.0f * (yy + zz);
-    r.m[0][1] = 2.0f * (xy - wz);
-    r.m[0][2] = 2.0f * (xz + wy);
-    r.m[1][0] = 2.0f * (xy + wz);
-    r.m[1][1] = 1.0f - 2.0f * (xx + zz);
-    r.m[1][2] = 2.0f * (yz - wx);
-    r.m[2][0] = 2.0f * (xz - wy);
-    r.m[2][1] = 2.0f * (yz + wx);
-    r.m[2][2] = 1.0f - 2.0f * (xx + yy);
+    r.m[0][0] = 1.0 - 2.0 * (yy + zz);
+    r.m[0][1] = 2.0 * (xy - wz);
+    r.m[0][2] = 2.0 * (xz + wy);
+    r.m[1][0] = 2.0 * (xy + wz);
+    r.m[1][1] = 1.0 - 2.0 * (xx + zz);
+    r.m[1][2] = 2.0 * (yz - wx);
+    r.m[2][0] = 2.0 * (xz - wy);
+    r.m[2][1] = 2.0 * (yz + wx);
+    r.m[2][2] = 1.0 - 2.0 * (xx + yy);
     return r;
 }
 

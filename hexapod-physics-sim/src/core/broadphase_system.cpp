@@ -28,7 +28,7 @@ void BroadphaseSystem::UpdateProxies(const BroadphaseUpdateContext& context) con
             continue;
         }
         const AABB current = body.ComputeAABB();
-        const float margin = context.computeProxyMargin(body);
+        const Real margin = context.computeProxyMargin(body);
         if (!context.proxies[i].valid) {
             context.proxies[i].fatBox = context.expandAabb(current, margin);
             context.proxies[i].leaf = -1;
@@ -50,12 +50,12 @@ void BroadphaseSystem::UpdateProxies(const BroadphaseUpdateContext& context) con
     if (context.previousBodyActiveState.size() != context.bodies.size()) {
         context.previousBodyActiveState.assign(context.bodies.size(), 0u);
         for (std::size_t i = 0; i < context.bodies.size(); ++i) {
-            const bool active = !(context.bodies[i].invMass == 0.0f || context.bodies[i].isSleeping);
+            const bool active = !(context.bodies[i].invMass == 0.0 || context.bodies[i].isSleeping);
             context.previousBodyActiveState[i] = active ? 1u : 0u;
         }
     } else {
         for (std::size_t i = 0; i < context.bodies.size(); ++i) {
-            const bool active = !(context.bodies[i].invMass == 0.0f || context.bodies[i].isSleeping);
+            const bool active = !(context.bodies[i].invMass == 0.0 || context.bodies[i].isSleeping);
             const std::uint8_t current = active ? 1u : 0u;
             if (context.previousBodyActiveState[i] != current) {
                 context.movedProxyIds.push_back(static_cast<std::uint32_t>(i));

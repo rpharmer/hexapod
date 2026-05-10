@@ -4,68 +4,68 @@ namespace minphys3d {
 
 void World::AssertQuaternionNormalized(const Quat& q) {
 
-        const float lenSq = q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z;
+        const Real lenSq = q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z;
         assert(IsFinite(lenSq));
-        assert(std::abs(lenSq - 1.0f) <= kQuaternionNormalizationTolerance);
+        assert(std::abs(lenSq - 1.0) <= kQuaternionNormalizationTolerance);
     }
 
-float World::ClosestPointParameter(const Vec3& a, const Vec3& b, const Vec3& p) {
+Real World::ClosestPointParameter(const Vec3& a, const Vec3& b, const Vec3& p) {
 
         const Vec3 ab = b - a;
-        const float denom = Dot(ab, ab);
+        const Real denom = Dot(ab, ab);
         if (denom <= kEpsilon) {
-            return 0.0f;
+            return 0.0;
         }
-        return std::clamp(Dot(p - a, ab) / denom, 0.0f, 1.0f);
+        return std::clamp(Dot(p - a, ab) / denom, 0.0, 1.0);
     }
 
-float World::SmoothStep01(float t) {
+Real World::SmoothStep01(Real t) {
 
-        const float x = std::clamp(t, 0.0f, 1.0f);
-        return x * x * (3.0f - 2.0f * x);
+        const Real x = std::clamp(t, 0.0, 1.0);
+        return x * x * (3.0 - 2.0 * x);
     }
 
-float World::EffectiveRestitutionCutoffSpeed() const {
+Real World::EffectiveRestitutionCutoffSpeed() const {
 
         return std::max({
-            0.0f,
+            0.0,
             contactSolverConfig_.bounceVelocityThreshold,
             contactSolverConfig_.restitutionSuppressionSpeed,
             contactSolverConfig_.restitutionVelocityCutoff,
         });
     }
 
-float World::ComputeRestitution(float speedIntoContact, float restitutionA, float restitutionB) const {
+Real World::ComputeRestitution(Real speedIntoContact, Real restitutionA, Real restitutionB) const {
 
-        if (speedIntoContact <= 0.0f || speedIntoContact < EffectiveRestitutionCutoffSpeed()) {
-            return 0.0f;
+        if (speedIntoContact <= 0.0 || speedIntoContact < EffectiveRestitutionCutoffSpeed()) {
+            return 0.0;
         }
-        return std::clamp(std::min(restitutionA, restitutionB), 0.0f, 1.0f);
+        return std::clamp(std::min(restitutionA, restitutionB), 0.0, 1.0);
     }
 
-float World::ComputeHighMassRatioBoost(const Body& a, const Body& b) const {
+Real World::ComputeHighMassRatioBoost(const Body& a, const Body& b) const {
 
-        if (a.invMass <= 0.0f || b.invMass <= 0.0f) {
-            return 1.0f;
+        if (a.invMass <= 0.0 || b.invMass <= 0.0) {
+            return 1.0;
         }
-        const float massA = 1.0f / a.invMass;
-        const float massB = 1.0f / b.invMass;
-        const float massRatio = std::max(massA, massB) / std::max(std::min(massA, massB), kEpsilon);
+        const Real massA = 1.0 / a.invMass;
+        const Real massB = 1.0 / b.invMass;
+        const Real massRatio = std::max(massA, massB) / std::max(std::min(massA, massB), kEpsilon);
         if (massRatio <= contactSolverConfig_.highMassRatioThreshold) {
-            return 1.0f;
+            return 1.0;
         }
-        const float extra = (massRatio - contactSolverConfig_.highMassRatioThreshold)
-            / std::max(contactSolverConfig_.highMassRatioThreshold, 1.0f);
-        return 1.0f + std::max(extra, 0.0f);
+        const Real extra = (massRatio - contactSolverConfig_.highMassRatioThreshold)
+            / std::max(contactSolverConfig_.highMassRatioThreshold, 1.0);
+        return 1.0 + std::max(extra, 0.0);
     }
 
-void World::AdvanceDynamicBodies(float dt) {
+void World::AdvanceDynamicBodies(Real dt) {
 
-        if (dt <= 0.0f) {
+        if (dt <= 0.0) {
             return;
         }
         for (Body& body : bodies_) {
-            if (body.invMass == 0.0f || body.isSleeping) {
+            if (body.invMass == 0.0 || body.isSleeping) {
                 continue;
             }
             body.position += body.velocity * dt;
@@ -78,38 +78,38 @@ void World::ResolveTOIImpact(const TOIEvent& hit) {
         Body& b = bodies_[hit.b];
         const Vec3 n = Normalize(hit.normal);
         const Vec3 relativeVelocity = a.velocity - b.velocity;
-        const float vn = Dot(relativeVelocity, n);
-        if (vn < 0.0f) {
-            const float invMassSum = a.invMass + b.invMass;
+        const Real vn = Dot(relativeVelocity, n);
+        if (vn < 0.0) {
+            const Real invMassSum = a.invMass + b.invMass;
             if (invMassSum > kEpsilon) {
-                const float speedIntoContact = -vn;
-                const float restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
-                const float impulse = -(1.0f + restitution) * vn / invMassSum;
+                const Real speedIntoContact = -vn;
+                const Real restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
+                const Real impulse = -(1.0 + restitution) * vn / invMassSum;
                 const Vec3 impulseVector = n * impulse;
-                if (a.invMass > 0.0f) {
+                if (a.invMass > 0.0) {
                     a.velocity += impulseVector * a.invMass;
                 }
-                if (b.invMass > 0.0f) {
+                if (b.invMass > 0.0) {
                     b.velocity -= impulseVector * b.invMass;
                 }
             }
         }
 
-        const float correctionSlop = 1e-4f;
-        const float push = 4e-4f;
-        const float invMassSum = a.invMass + b.invMass;
+        const Real correctionSlop = 1e-4;
+        const Real push = 4e-4;
+        const Real invMassSum = a.invMass + b.invMass;
         if (invMassSum > kEpsilon) {
             const Vec3 correction = n * std::max(push, correctionSlop);
-            if (a.invMass > 0.0f) {
+            if (a.invMass > 0.0) {
                 a.position += correction * (a.invMass / invMassSum);
             }
-            if (b.invMass > 0.0f) {
+            if (b.invMass > 0.0) {
                 b.position -= correction * (b.invMass / invMassSum);
             }
         }
     }
 
-World::TOIEvent World::SweepSpherePlane(std::uint32_t sphereId, std::uint32_t planeId, float maxDt) const {
+World::TOIEvent World::SweepSpherePlane(std::uint32_t sphereId, std::uint32_t planeId, Real maxDt) const {
 
         const Body& s = bodies_[sphereId];
         const Body& p = bodies_[planeId];
@@ -117,13 +117,13 @@ World::TOIEvent World::SweepSpherePlane(std::uint32_t sphereId, std::uint32_t pl
         if (!TryGetPlaneNormal(p, n)) {
             return {};
         }
-        const float d0 = Dot(n, s.position) - p.planeOffset - s.radius;
-        const float vn = Dot(n, s.velocity);
-        if (d0 <= 0.0f || vn >= -kEpsilon) {
+        const Real d0 = Dot(n, s.position) - p.planeOffset - s.radius;
+        const Real vn = Dot(n, s.velocity);
+        if (d0 <= 0.0 || vn >= -kEpsilon) {
             return {};
         }
-        const float toi = -d0 / vn;
-        if (toi < 0.0f || toi > maxDt) {
+        const Real toi = -d0 / vn;
+        if (toi < 0.0 || toi > maxDt) {
             return {};
         }
         TOIEvent hit;
@@ -136,7 +136,7 @@ World::TOIEvent World::SweepSpherePlane(std::uint32_t sphereId, std::uint32_t pl
         return hit;
     }
 
-World::TOIEvent World::SweepSphereBox(std::uint32_t sphereId, std::uint32_t boxId, float maxDt) const {
+World::TOIEvent World::SweepSphereBox(std::uint32_t sphereId, std::uint32_t boxId, Real maxDt) const {
 
         const Body& s = bodies_[sphereId];
         const Body& b = bodies_[boxId];
@@ -145,14 +145,14 @@ World::TOIEvent World::SweepSphereBox(std::uint32_t sphereId, std::uint32_t boxI
         const Vec3 vRel = Rotate(invQ, s.velocity - b.velocity);
         const Vec3 ext = b.halfExtents + Vec3{s.radius, s.radius, s.radius};
 
-        float tEnter = 0.0f;
-        float tExit = maxDt;
+        Real tEnter = 0.0;
+        Real tExit = maxDt;
         int enteringAxis = -1;
-        float enteringSign = 0.0f;
+        Real enteringSign = 0.0;
         for (int axis = 0; axis < 3; ++axis) {
-            const float p = (axis == 0) ? p0.x : (axis == 1) ? p0.y : p0.z;
-            const float v = (axis == 0) ? vRel.x : (axis == 1) ? vRel.y : vRel.z;
-            const float e = (axis == 0) ? ext.x : (axis == 1) ? ext.y : ext.z;
+            const Real p = (axis == 0) ? p0.x : (axis == 1) ? p0.y : p0.z;
+            const Real v = (axis == 0) ? vRel.x : (axis == 1) ? vRel.y : vRel.z;
+            const Real e = (axis == 0) ? ext.x : (axis == 1) ? ext.y : ext.z;
 
             if (std::abs(v) <= kEpsilon) {
                 if (p < -e || p > e) {
@@ -161,12 +161,12 @@ World::TOIEvent World::SweepSphereBox(std::uint32_t sphereId, std::uint32_t boxI
                 continue;
             }
 
-            float t1 = (-e - p) / v;
-            float t2 = (e - p) / v;
-            float sign = -1.0f;
+            Real t1 = (-e - p) / v;
+            Real t2 = (e - p) / v;
+            Real sign = -1.0;
             if (t1 > t2) {
                 std::swap(t1, t2);
-                sign = 1.0f;
+                sign = 1.0;
             }
             if (t1 > tEnter) {
                 tEnter = t1;
@@ -179,11 +179,11 @@ World::TOIEvent World::SweepSphereBox(std::uint32_t sphereId, std::uint32_t boxI
             }
         }
 
-        if (tEnter < 0.0f || tEnter > maxDt || enteringAxis < 0) {
+        if (tEnter < 0.0 || tEnter > maxDt || enteringAxis < 0) {
             return {};
         }
 
-        Vec3 normalLocal{0.0f, 0.0f, 0.0f};
+        Vec3 normalLocal{0.0, 0.0, 0.0};
         if (enteringAxis == 0) {
             normalLocal.x = enteringSign;
         } else if (enteringAxis == 1) {
@@ -203,32 +203,32 @@ World::TOIEvent World::SweepSphereBox(std::uint32_t sphereId, std::uint32_t boxI
         return hit;
     }
 
-World::TOIEvent World::SweepSphereCapsule(std::uint32_t sphereId, std::uint32_t capsuleId, float maxDt) const {
+World::TOIEvent World::SweepSphereCapsule(std::uint32_t sphereId, std::uint32_t capsuleId, Real maxDt) const {
 
         const Body& s = bodies_[sphereId];
         const Body& c = bodies_[capsuleId];
-        const Vec3 axis = Normalize(Rotate(c.orientation, {0.0f, 1.0f, 0.0f}));
+        const Vec3 axis = Normalize(Rotate(c.orientation, {0.0, 1.0, 0.0}));
         const Vec3 segA = c.position - axis * c.halfHeight;
         const Vec3 segB = c.position + axis * c.halfHeight;
         const Vec3 vRel = s.velocity - c.velocity;
-        const float combinedRadius = s.radius + c.radius;
+        const Real combinedRadius = s.radius + c.radius;
 
-        float t = 0.0f;
+        Real t = 0.0;
         for (int i = 0; i < 12 && t <= maxDt; ++i) {
             const Vec3 center = s.position + vRel * t;
-            const float segT = ClosestPointParameter(segA, segB, center);
+            const Real segT = ClosestPointParameter(segA, segB, center);
             const Vec3 closest = segA + (segB - segA) * segT;
             Vec3 delta = center - closest;
-            float dist = Length(delta);
-            if (dist <= combinedRadius + 1e-4f) {
+            Real dist = Length(delta);
+            if (dist <= combinedRadius + 1e-4) {
                 TOIEvent hit;
                 hit.hit = true;
-                hit.toi = std::clamp(t, 0.0f, maxDt);
+                hit.toi = std::clamp(t, 0.0, maxDt);
                 if (dist <= kEpsilon) {
-                    delta = StableDirection(vRel, {{axis, -axis, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}}});
-                    dist = 1.0f;
+                    delta = StableDirection(vRel, {{axis, -axis, {1.0, 0.0, 0.0}, {0.0, 0.0, 1.0}}});
+                    dist = 1.0;
                 }
-                hit.normal = delta * (1.0f / dist);
+                hit.normal = delta * (1.0 / dist);
                 hit.a = sphereId;
                 hit.b = capsuleId;
                 hit.point = center - hit.normal * s.radius;
@@ -236,13 +236,13 @@ World::TOIEvent World::SweepSphereCapsule(std::uint32_t sphereId, std::uint32_t 
             }
 
             const Vec3 n = delta / std::max(dist, kEpsilon);
-            const float closingSpeed = Dot(vRel, n);
+            const Real closingSpeed = Dot(vRel, n);
             if (closingSpeed >= -kEpsilon) {
                 break;
             }
-            const float dt = (dist - combinedRadius) / -closingSpeed;
-            if (dt <= 1e-5f) {
-                t += 1e-5f;
+            const Real dt = (dist - combinedRadius) / -closingSpeed;
+            if (dt <= 1e-5) {
+                t += 1e-5;
             } else {
                 t += dt;
             }
@@ -250,14 +250,14 @@ World::TOIEvent World::SweepSphereCapsule(std::uint32_t sphereId, std::uint32_t 
         return {};
     }
 
-World::TOIEvent World::FindEarliestTOI(float maxDt) const {
+World::TOIEvent World::FindEarliestTOI(Real maxDt) const {
 
         TOIEvent earliest;
-        earliest.toi = maxDt + 1.0f;
+        earliest.toi = maxDt + 1.0;
 
         for (std::uint32_t i = 0; i < bodies_.size(); ++i) {
             const Body& a = bodies_[i];
-            if (a.shape != ShapeType::Sphere || a.invMass == 0.0f || a.isSleeping || a.isTerrainAttachment) {
+            if (a.shape != ShapeType::Sphere || a.invMass == 0.0 || a.isSleeping || a.isTerrainAttachment) {
                 continue;
             }
             for (std::uint32_t j = 0; j < bodies_.size(); ++j) {
@@ -279,7 +279,7 @@ World::TOIEvent World::FindEarliestTOI(float maxDt) const {
                 if (!hit.hit) {
                     continue;
                 }
-                if (!earliest.hit || hit.toi < earliest.toi - 1e-6f || (std::abs(hit.toi - earliest.toi) <= 1e-6f && ((hit.a < earliest.a) || (hit.a == earliest.a && hit.b < earliest.b)))) {
+                if (!earliest.hit || hit.toi < earliest.toi - 1e-6 || (std::abs(hit.toi - earliest.toi) <= 1e-6 && ((hit.a < earliest.a) || (hit.a == earliest.a && hit.b < earliest.b)))) {
                     earliest = hit;
                 }
             }
@@ -339,7 +339,7 @@ PersistentPointKey World::MakePersistentPointKey(const ManifoldKey& manifoldId, 
 
 void World::WakeBody(Body& body) {
 
-        if (body.invMass == 0.0f) {
+        if (body.invMass == 0.0) {
             return;
         }
         body.isSleeping = false;
@@ -351,7 +351,7 @@ void World::WakeConnectedBodies(std::uint32_t start) {
         if (start >= bodies_.size()) {
             return;
         }
-        if (bodies_[start].invMass == 0.0f) {
+        if (bodies_[start].invMass == 0.0) {
             return;
         }
 
@@ -369,7 +369,7 @@ void World::WakeConnectedBodies(std::uint32_t start) {
                 else if (m.b == id) other = m.a;
                 else continue;
 
-                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0f) {
+                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0) {
                     visited[other] = true;
                     stack.push_back(other);
                 }
@@ -381,7 +381,7 @@ void World::WakeConnectedBodies(std::uint32_t start) {
                 else if (j.b == id) other = j.a;
                 else continue;
 
-                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0f) {
+                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0) {
                     visited[other] = true;
                     stack.push_back(other);
                 }
@@ -393,7 +393,7 @@ void World::WakeConnectedBodies(std::uint32_t start) {
                 else if (j.b == id) other = j.a;
                 else continue;
 
-                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0f) {
+                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0) {
                     visited[other] = true;
                     stack.push_back(other);
                 }
@@ -405,7 +405,7 @@ void World::WakeConnectedBodies(std::uint32_t start) {
                 else if (j.b == id) other = j.a;
                 else continue;
 
-                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0f) {
+                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0) {
                     visited[other] = true;
                     stack.push_back(other);
                 }
@@ -417,7 +417,7 @@ void World::WakeConnectedBodies(std::uint32_t start) {
                 else if (j.b == id) other = j.a;
                 else continue;
 
-                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0f) {
+                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0) {
                     visited[other] = true;
                     stack.push_back(other);
                 }
@@ -429,7 +429,7 @@ void World::WakeConnectedBodies(std::uint32_t start) {
                 else if (j.b == id) other = j.a;
                 else continue;
 
-                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0f) {
+                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0) {
                     visited[other] = true;
                     stack.push_back(other);
                 }
@@ -441,7 +441,7 @@ void World::WakeConnectedBodies(std::uint32_t start) {
                 else if (j.b == id) other = j.a;
                 else continue;
 
-                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0f) {
+                if (other < bodies_.size() && !visited[other] && bodies_[other].invMass != 0.0) {
                     visited[other] = true;
                     stack.push_back(other);
                 }
@@ -449,11 +449,11 @@ void World::WakeConnectedBodies(std::uint32_t start) {
         }
     }
 
-float World::ProjectBoxOntoAxis(const Body& box, const Vec3& axis) {
+Real World::ProjectBoxOntoAxis(const Body& box, const Vec3& axis) {
 
-        const Vec3 u0 = Rotate(box.orientation, {1.0f, 0.0f, 0.0f});
-        const Vec3 u1 = Rotate(box.orientation, {0.0f, 1.0f, 0.0f});
-        const Vec3 u2 = Rotate(box.orientation, {0.0f, 0.0f, 1.0f});
+        const Vec3 u0 = Rotate(box.orientation, {1.0, 0.0, 0.0});
+        const Vec3 u1 = Rotate(box.orientation, {0.0, 1.0, 0.0});
+        const Vec3 u2 = Rotate(box.orientation, {0.0, 0.0, 1.0});
         return std::abs(Dot(axis, u0)) * box.halfExtents.x
              + std::abs(Dot(axis, u1)) * box.halfExtents.y
              + std::abs(Dot(axis, u2)) * box.halfExtents.z;
@@ -478,7 +478,7 @@ void World::RefreshBodyWorldInertias() {
         }
         for (std::size_t i = 0; i < n; ++i) {
             const Body& body = bodies_[i];
-            if (body.invMass == 0.0f) {
+            if (body.invMass == 0.0) {
                 bodyInvInertiaWorld_[i] = Mat3{};
                 continue;
             }
@@ -487,11 +487,11 @@ void World::RefreshBodyWorldInertias() {
         }
     }
 
-void World::IntegrateForces(float dt) {
+void World::IntegrateForces(Real dt) {
 
         for (std::size_t i = 0; i < bodies_.size(); ++i) {
             Body& body = bodies_[i];
-            if (body.invMass == 0.0f || body.isSleeping) {
+            if (body.invMass == 0.0 || body.isSleeping) {
                 continue;
             }
 
@@ -501,34 +501,34 @@ void World::IntegrateForces(float dt) {
             body.velocity += linearAcceleration * dt;
             body.angularVelocity += angularAcceleration * dt;
 
-            if (body.linearDamping > 0.0f) {
-                body.velocity *= std::max(0.0f, 1.0f - body.linearDamping * dt);
+            if (body.linearDamping > 0.0) {
+                body.velocity *= std::max(0.0, 1.0 - body.linearDamping * dt);
             }
-            if (body.angularDamping > 0.0f) {
-                body.angularVelocity *= std::max(0.0f, 1.0f - body.angularDamping * dt);
+            if (body.angularDamping > 0.0) {
+                body.angularVelocity *= std::max(0.0, 1.0 - body.angularDamping * dt);
             }
         }
     }
 
-void World::IntegrateVelocities(float dt) {
+void World::IntegrateVelocities(Real dt) {
 
         for (Body& body : bodies_) {
-            if (body.invMass == 0.0f || body.isSleeping) {
+            if (body.invMass == 0.0 || body.isSleeping) {
                 continue;
             }
             body.position += body.velocity * dt;
         }
     }
 
-void World::IntegrateOrientation(float dt) {
+void World::IntegrateOrientation(Real dt) {
 
         for (Body& body : bodies_) {
-            if (body.invMass == 0.0f || body.isSleeping) {
+            if (body.invMass == 0.0 || body.isSleeping) {
                 continue;
             }
 
-            const Quat omega{0.0f, body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z};
-            const Quat dq = (omega * body.orientation) * (0.5f * dt);
+            const Quat omega{0.0, body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z};
+            const Quat dq = (omega * body.orientation) * (0.5 * dt);
             body.orientation = Normalize(body.orientation + dq);
             AssertQuaternionNormalized(body.orientation);
         }
@@ -539,7 +539,7 @@ void World::AddContact(
         std::uint32_t b,
         const Vec3& normal,
         const Vec3& point,
-        float penetration,
+        Real penetration,
         std::uint8_t manifoldType,
         std::uint64_t canonicalFeatureId) {
 
@@ -548,14 +548,14 @@ void World::AddContact(
         c.b = b;
         c.normal = normal;
         c.point = point;
-        c.penetration = std::max(penetration, 0.0f);
+        c.penetration = std::max(penetration, 0.0);
         c.manifoldType = manifoldType;
         c.featureKey = canonicalFeatureId;
         c.key = ContactKeyStableValue(MakeContactKey(a, b, manifoldType, canonicalFeatureId));
         assert(IsFinite(c.normal));
         assert(IsFinite(c.point));
         assert(IsFinite(c.penetration));
-        assert(c.penetration >= 0.0f);
+        assert(c.penetration >= 0.0);
 
         contacts_.push_back(c);
         const Body& bodyA = bodies_[a];
@@ -565,7 +565,7 @@ void World::AddContact(
             ++solverTelemetry_.terrainContactAdds;
         }
 #endif
-        const float relSpeed = Length(bodyB.velocity - bodyA.velocity);
+        const Real relSpeed = Length(bodyB.velocity - bodyA.velocity);
         const bool contactTouchesSleepingBody = (bodyA.isSleeping && !bodyB.isSleeping)
                                              || (!bodyA.isSleeping && bodyB.isSleeping);
         const bool strongContact = relSpeed >= kWakeContactRelativeSpeedThreshold
@@ -587,7 +587,7 @@ int World::FindBlockSlot(const Manifold& manifold, std::uint64_t contactKey) {
         return -1;
     }
 
-std::array<float, 3>* World::FindPerContactImpulseCache(Manifold& manifold, std::uint64_t contactKey) {
+std::array<Real, 3>* World::FindPerContactImpulseCache(Manifold& manifold, std::uint64_t contactKey) {
 
         auto it = manifold.cachedImpulseByContactKey.find(contactKey);
         if (it == manifold.cachedImpulseByContactKey.end()) {
@@ -596,7 +596,7 @@ std::array<float, 3>* World::FindPerContactImpulseCache(Manifold& manifold, std:
         return &it->second;
     }
 
-const std::array<float, 3>* World::FindPerContactImpulseCache(const Manifold& manifold, std::uint64_t contactKey) {
+const std::array<Real, 3>* World::FindPerContactImpulseCache(const Manifold& manifold, std::uint64_t contactKey) {
 
         auto it = manifold.cachedImpulseByContactKey.find(contactKey);
         if (it == manifold.cachedImpulseByContactKey.end()) {
@@ -605,7 +605,7 @@ const std::array<float, 3>* World::FindPerContactImpulseCache(const Manifold& ma
         return &it->second;
     }
 
-std::array<float, 3>& World::EnsurePerContactImpulseCache(Manifold& manifold, std::uint64_t contactKey) {
+std::array<Real, 3>& World::EnsurePerContactImpulseCache(Manifold& manifold, std::uint64_t contactKey) {
 
         return manifold.cachedImpulseByContactKey[contactKey];
     }
@@ -628,8 +628,8 @@ int World::EnsureBlockSlotForContact(
         int slot = FindBlockSlot(manifold, contact.key);
         if (slot >= 0) {
             slotOccupied[slot] = true;
-            std::array<float, 3>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
-            entry[0] = std::max(contact.normalImpulseSum, 0.0f);
+            std::array<Real, 3>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
+            entry[0] = std::max(contact.normalImpulseSum, 0.0);
             entry[1] = contact.tangentImpulseSum0;
             entry[2] = contact.tangentImpulseSum1;
             return slot;
@@ -637,8 +637,8 @@ int World::EnsureBlockSlotForContact(
 
         slot = FindFirstFreeBlockSlot(slotOccupied);
         if (slot < 0) {
-            std::array<float, 3>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
-            entry[0] = std::max(contact.normalImpulseSum, 0.0f);
+            std::array<Real, 3>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
+            entry[0] = std::max(contact.normalImpulseSum, 0.0);
             entry[1] = contact.tangentImpulseSum0;
             entry[2] = contact.tangentImpulseSum1;
             return -1;
@@ -646,8 +646,8 @@ int World::EnsureBlockSlotForContact(
 
         manifold.blockSlotValid[slot] = true;
         manifold.blockContactKeys[slot] = contact.key;
-        const std::array<float, 3>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
-        manifold.blockNormalImpulseSum[slot] = std::max(entry[0], 0.0f);
+        const std::array<Real, 3>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
+        manifold.blockNormalImpulseSum[slot] = std::max(entry[0], 0.0);
         slotOccupied[slot] = true;
         return slot;
     }
@@ -684,9 +684,9 @@ void World::RefreshManifoldBlockCache(Manifold& manifold) {
         for (const std::size_t i : contactVisitOrder) {
             Contact& contact = manifold.contacts[i];
             currentKeys.insert(contact.key);
-            std::array<float, 3>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
-            entry[0] = std::max(entry[0], 0.0f);
-            contact.normalImpulseSum = std::max(entry[0], 0.0f);
+            std::array<Real, 3>& entry = EnsurePerContactImpulseCache(manifold, contact.key);
+            entry[0] = std::max(entry[0], 0.0);
+            contact.normalImpulseSum = std::max(entry[0], 0.0);
             contact.tangentImpulseSum0 = entry[1];
             contact.tangentImpulseSum1 = entry[2];
             contact.tangentImpulseSum = contact.tangentImpulseSum0;
@@ -708,14 +708,14 @@ void World::RefreshManifoldBlockCache(Manifold& manifold) {
             if (!slotOccupied[slot]) {
                 manifold.blockSlotValid[slot] = false;
                 manifold.blockContactKeys[slot] = 0u;
-                manifold.blockNormalImpulseSum[slot] = 0.0f;
+                manifold.blockNormalImpulseSum[slot] = 0.0;
                 continue;
             }
             if (slotToContactIndex[slot] < 0) {
                 continue;
             }
             manifold.contacts[slotToContactIndex[slot]].normalImpulseSum = manifold.blockNormalImpulseSum[slot];
-            std::array<float, 3>& entry = EnsurePerContactImpulseCache(
+            std::array<Real, 3>& entry = EnsurePerContactImpulseCache(
                 manifold, manifold.contacts[slotToContactIndex[slot]].key);
             entry[0] = manifold.blockNormalImpulseSum[slot];
         }
@@ -730,8 +730,8 @@ std::uint64_t World::StableContactFallbackKey(const Contact& contact) {
         std::uint64_t h = contact.key;
         h ^= static_cast<std::uint64_t>(contact.a) << 32;
         h ^= static_cast<std::uint64_t>(contact.b);
-        const auto quantize = [](float value) {
-            return static_cast<std::int32_t>(std::lround(value * 10000.0f));
+        const auto quantize = [](Real value) {
+            return static_cast<std::int32_t>(std::lround(value * 10000.0));
         };
         h ^= static_cast<std::uint64_t>(static_cast<std::uint32_t>(quantize(contact.normal.x))) << 1;
         h ^= static_cast<std::uint64_t>(static_cast<std::uint32_t>(quantize(contact.normal.y))) << 11;
@@ -790,13 +790,13 @@ World::ManifoldQualityScore World::ComputeManifoldQualityScore(const Manifold& m
             normal = manifold.contacts.front().normal;
         }
         normal = Normalize(normal);
-        Vec3 centroid{0.0f, 0.0f, 0.0f};
+        Vec3 centroid{0.0, 0.0, 0.0};
         for (const Contact& c : manifold.contacts) {
-            score.penetration += std::max(c.penetration, 0.0f);
+            score.penetration += std::max(c.penetration, 0.0);
             centroid += c.point;
-            score.normalCoherence += std::max(0.0f, Dot(Normalize(c.normal), normal));
+            score.normalCoherence += std::max(0.0, Dot(Normalize(c.normal), normal));
         }
-        const float invN = 1.0f / static_cast<float>(manifold.contacts.size());
+        const Real invN = 1.0 / static_cast<float>(manifold.contacts.size());
         centroid *= invN;
         score.penetration *= invN;
         score.normalCoherence *= invN;
@@ -807,7 +807,7 @@ World::ManifoldQualityScore World::ComputeManifoldQualityScore(const Manifold& m
                 score.spreadArea = std::max(score.spreadArea, Length(Cross(ai, aj)));
             }
         }
-        score.total = score.penetration + (0.5f * score.spreadArea) + (0.25f * score.normalCoherence);
+        score.total = score.penetration + (0.5 * score.spreadArea) + (0.25 * score.normalCoherence);
         return score;
     }
 
@@ -817,21 +817,21 @@ void World::ReduceManifoldToMaxPoints(Manifold& manifold, std::size_t maxPoints)
             return;
         }
         const Vec3 centroid = [&]() {
-            Vec3 c{0.0f, 0.0f, 0.0f};
+            Vec3 c{0.0, 0.0, 0.0};
             for (const Contact& contact : manifold.contacts) {
                 c += contact.point;
             }
-            return c * (1.0f / static_cast<float>(manifold.contacts.size()));
+            return c * (1.0 / static_cast<float>(manifold.contacts.size()));
         }();
         Vec3 manifoldNormal = Normalize(manifold.normal);
         if (LengthSquared(manifoldNormal) <= kEpsilon) {
-            manifoldNormal = {0.0f, 1.0f, 0.0f};
+            manifoldNormal = {0.0, 1.0, 0.0};
         }
         std::stable_sort(manifold.contacts.begin(), manifold.contacts.end(), [&](const Contact& lhs, const Contact& rhs) {
-            const float lhsSpread = LengthSquared(lhs.point - centroid);
-            const float rhsSpread = LengthSquared(rhs.point - centroid);
-            const float lhsScore = std::max(lhs.penetration, 0.0f) + (0.25f * lhsSpread) + 0.25f * std::max(0.0f, Dot(lhs.normal, manifoldNormal));
-            const float rhsScore = std::max(rhs.penetration, 0.0f) + (0.25f * rhsSpread) + 0.25f * std::max(0.0f, Dot(rhs.normal, manifoldNormal));
+            const Real lhsSpread = LengthSquared(lhs.point - centroid);
+            const Real rhsSpread = LengthSquared(rhs.point - centroid);
+            const Real lhsScore = std::max(lhs.penetration, 0.0) + (0.25 * lhsSpread) + 0.25 * std::max(0.0, Dot(lhs.normal, manifoldNormal));
+            const Real rhsScore = std::max(rhs.penetration, 0.0) + (0.25 * rhsSpread) + 0.25 * std::max(0.0, Dot(rhs.normal, manifoldNormal));
             if (lhsScore != rhsScore) {
                 return lhsScore > rhsScore;
             }
@@ -846,7 +846,7 @@ void World::ManifoldManager::Process(Manifold& manifold, const Manifold* previou
             std::unordered_map<std::uint64_t, Contact> mergedByKey;
             mergedByKey.reserve(manifold.contacts.size());
             for (const Contact& contact : manifold.contacts) {
-                if (!std::isfinite(contact.penetration) || contact.penetration <= 0.0f) {
+                if (!std::isfinite(contact.penetration) || contact.penetration <= 0.0) {
                     continue;
                 }
                 auto it = mergedByKey.find(contact.key);
@@ -868,11 +868,11 @@ void World::ManifoldManager::Process(Manifold& manifold, const Manifold* previou
             ReduceManifoldToMaxPoints(manifold, 4);
             SortManifoldContacts(manifold.contacts);
             const ManifoldQualityScore qualityScore = ComputeManifoldQualityScore(manifold);
-            manifold.lowQuality = qualityScore.total < 0.05f || qualityScore.normalCoherence < 0.5f;
+            manifold.lowQuality = qualityScore.total < 0.05 || qualityScore.normalCoherence < 0.5;
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
-            if (qualityScore.total < 0.05f) {
+            if (qualityScore.total < 0.05) {
                 ++world_.solverTelemetry_.manifoldQualityLow;
-            } else if (qualityScore.total < 0.2f) {
+            } else if (qualityScore.total < 0.2) {
                 ++world_.solverTelemetry_.manifoldQualityMedium;
             } else {
                 ++world_.solverTelemetry_.manifoldQualityHigh;
@@ -927,8 +927,8 @@ bool World::PersistentPointCandidateLess(
         const PersistentPointMatchCandidate& lhs,
         const PersistentPointMatchCandidate& rhs) {
 
-        const float lhsScore = lhs.localAnchorDriftSq + lhs.worldAnchorDriftSq;
-        const float rhsScore = rhs.localAnchorDriftSq + rhs.worldAnchorDriftSq;
+        const Real lhsScore = lhs.localAnchorDriftSq + lhs.worldAnchorDriftSq;
+        const Real rhsScore = rhs.localAnchorDriftSq + rhs.worldAnchorDriftSq;
         if (lhsScore != rhsScore) {
             return lhsScore < rhsScore;
         }
@@ -953,8 +953,8 @@ bool World::TryMatchPersistentPoint(
 
         bool found = false;
         PersistentPointMatchCandidate bestCandidate{};
-        const float localThresholdSq = kPersistenceLocalAnchorDriftThreshold * kPersistenceLocalAnchorDriftThreshold;
-        const float worldThresholdSq = kPersistenceWorldAnchorDriftThreshold * kPersistenceWorldAnchorDriftThreshold;
+        const Real localThresholdSq = kPersistenceLocalAnchorDriftThreshold * kPersistenceLocalAnchorDriftThreshold;
+        const Real worldThresholdSq = kPersistenceWorldAnchorDriftThreshold * kPersistenceWorldAnchorDriftThreshold;
         for (const auto& [key, state] : previousState) {
             if (!(key.manifold == manifoldId) || key.canonicalFeatureId != contact.featureKey) {
                 continue;
@@ -963,8 +963,8 @@ bool World::TryMatchPersistentPoint(
                 continue;
             }
 
-            float localDriftSq = worldThresholdSq;
-            float worldDriftSq = worldThresholdSq;
+            Real localDriftSq = worldThresholdSq;
+            Real worldDriftSq = worldThresholdSq;
             if (state.anchorsValid && contact.anchorsValid) {
                 const Vec3 dA = contact.localAnchorA - state.localAnchorA;
                 const Vec3 dB = contact.localAnchorB - state.localAnchorB;
@@ -1041,7 +1041,7 @@ void World::CapturePersistentPointImpulseState(const std::vector<Manifold>& mani
         persistenceMatchDiagnostics_.droppedPoints = previousState.size() >= usedKeys.size()
             ? static_cast<std::uint64_t>(previousState.size() - usedKeys.size())
             : 0u;
-        const float denom = static_cast<float>(std::max<std::uint64_t>(1u, previousState.size()));
+        const Real denom = static_cast<float>(std::max<std::uint64_t>(1u, previousState.size()));
         persistenceMatchDiagnostics_.churnRatio = static_cast<float>(
             static_cast<double>(persistenceMatchDiagnostics_.droppedPoints + persistenceMatchDiagnostics_.newPoints) / denom);
     }
@@ -1055,7 +1055,7 @@ void World::BuildIslands() {
             if (visited[start]) {
                 continue;
             }
-            if (bodies_[start].invMass == 0.0f || bodies_[start].isSleeping) {
+            if (bodies_[start].invMass == 0.0 || bodies_[start].isSleeping) {
                 visited[start] = true;
                 continue;
             }
@@ -1080,7 +1080,7 @@ void World::BuildIslands() {
                         island.manifolds.push_back(mi);
                     }
 
-                    if (!visited[other] && bodies_[other].invMass != 0.0f && !bodies_[other].isSleeping) {
+                    if (!visited[other] && bodies_[other].invMass != 0.0 && !bodies_[other].isSleeping) {
                         visited[other] = true;
                         stack.push_back(other);
                     }
@@ -1097,7 +1097,7 @@ void World::BuildIslands() {
                         island.joints.push_back(ji);
                     }
 
-                    if (!visited[other] && bodies_[other].invMass != 0.0f && !bodies_[other].isSleeping) {
+                    if (!visited[other] && bodies_[other].invMass != 0.0 && !bodies_[other].isSleeping) {
                         visited[other] = true;
                         stack.push_back(other);
                     }
@@ -1114,7 +1114,7 @@ void World::BuildIslands() {
                         island.hinges.push_back(hi);
                     }
 
-                    if (!visited[other] && bodies_[other].invMass != 0.0f && !bodies_[other].isSleeping) {
+                    if (!visited[other] && bodies_[other].invMass != 0.0 && !bodies_[other].isSleeping) {
                         visited[other] = true;
                         stack.push_back(other);
                     }
@@ -1131,7 +1131,7 @@ void World::BuildIslands() {
                         island.ballSockets.push_back(bi);
                     }
 
-                    if (!visited[other] && bodies_[other].invMass != 0.0f && !bodies_[other].isSleeping) {
+                    if (!visited[other] && bodies_[other].invMass != 0.0 && !bodies_[other].isSleeping) {
                         visited[other] = true;
                         stack.push_back(other);
                     }
@@ -1148,7 +1148,7 @@ void World::BuildIslands() {
                         island.fixeds.push_back(fi);
                     }
 
-                    if (!visited[other] && bodies_[other].invMass != 0.0f && !bodies_[other].isSleeping) {
+                    if (!visited[other] && bodies_[other].invMass != 0.0 && !bodies_[other].isSleeping) {
                         visited[other] = true;
                         stack.push_back(other);
                     }
@@ -1165,7 +1165,7 @@ void World::BuildIslands() {
                         island.prismatics.push_back(pi);
                     }
 
-                    if (!visited[other] && bodies_[other].invMass != 0.0f && !bodies_[other].isSleeping) {
+                    if (!visited[other] && bodies_[other].invMass != 0.0 && !bodies_[other].isSleeping) {
                         visited[other] = true;
                         stack.push_back(other);
                     }
@@ -1182,7 +1182,7 @@ void World::BuildIslands() {
                         island.servos.push_back(si);
                     }
 
-                    if (!visited[other] && bodies_[other].invMass != 0.0f && !bodies_[other].isSleeping) {
+                    if (!visited[other] && bodies_[other].invMass != 0.0 && !bodies_[other].isSleeping) {
                         visited[other] = true;
                         stack.push_back(other);
                     }
@@ -1221,7 +1221,7 @@ std::vector<Pair> World::ComputePotentialPairsBruteForce() const {
                 if (a.isTerrainAttachment || b.isTerrainAttachment) {
                     continue;
                 }
-                if ((a.invMass == 0.0f && b.invMass == 0.0f) || (a.isSleeping && b.isSleeping)) {
+                if ((a.invMass == 0.0 && b.invMass == 0.0) || (a.isSleeping && b.isSleeping)) {
                     continue;
                 }
                 if ((a.collisionGroup & b.collisionMask) == 0
@@ -1269,49 +1269,49 @@ Vec3 World::StableDirection(const Vec3& primary, const std::array<Vec3, 4>& fall
                 return Normalize(candidate);
             }
         }
-        return {0.0f, 1.0f, 0.0f};
+        return {0.0, 1.0, 0.0};
     }
 
-std::pair<float, float> World::ClosestSegmentParameters(const Vec3& p1, const Vec3& q1, const Vec3& p2, const Vec3& q2) {
+std::pair<Real, Real> World::ClosestSegmentParameters(const Vec3& p1, const Vec3& q1, const Vec3& p2, const Vec3& q2) {
 
         const Vec3 d1 = q1 - p1;
         const Vec3 d2 = q2 - p2;
         const Vec3 r = p1 - p2;
-        const float aLen = Dot(d1, d1);
-        const float eLen = Dot(d2, d2);
-        const float f = Dot(d2, r);
+        const Real aLen = Dot(d1, d1);
+        const Real eLen = Dot(d2, d2);
+        const Real f = Dot(d2, r);
 
-        float s = 0.0f;
-        float t = 0.0f;
+        Real s = 0.0;
+        Real t = 0.0;
         if (aLen <= kEpsilon && eLen <= kEpsilon) {
-            return {0.0f, 0.0f};
+            return {0.0, 0.0};
         }
         if (aLen <= kEpsilon) {
-            t = std::clamp(f / eLen, 0.0f, 1.0f);
-            return {0.0f, t};
+            t = std::clamp(f / eLen, 0.0, 1.0);
+            return {0.0, t};
         }
 
-        const float cTerm = Dot(d1, r);
+        const Real cTerm = Dot(d1, r);
         if (eLen <= kEpsilon) {
-            s = std::clamp(-cTerm / aLen, 0.0f, 1.0f);
-            return {s, 0.0f};
+            s = std::clamp(-cTerm / aLen, 0.0, 1.0);
+            return {s, 0.0};
         }
 
-        const float bDot = Dot(d1, d2);
-        const float denom = aLen * eLen - bDot * bDot;
+        const Real bDot = Dot(d1, d2);
+        const Real denom = aLen * eLen - bDot * bDot;
         if (std::abs(denom) > kEpsilon) {
-            s = std::clamp((bDot * f - cTerm * eLen) / denom, 0.0f, 1.0f);
+            s = std::clamp((bDot * f - cTerm * eLen) / denom, 0.0, 1.0);
         } else {
-            s = 0.0f;
+            s = 0.0;
         }
 
         t = (bDot * s + f) / eLen;
-        if (t < 0.0f) {
-            t = 0.0f;
-            s = std::clamp(-cTerm / aLen, 0.0f, 1.0f);
-        } else if (t > 1.0f) {
-            t = 1.0f;
-            s = std::clamp((bDot - cTerm) / aLen, 0.0f, 1.0f);
+        if (t < 0.0) {
+            t = 0.0;
+            s = std::clamp(-cTerm / aLen, 0.0, 1.0);
+        } else if (t > 1.0) {
+            t = 1.0;
+            s = std::clamp((bDot - cTerm) / aLen, 0.0, 1.0);
         }
 
         return {s, t};
@@ -1320,29 +1320,29 @@ std::pair<float, float> World::ClosestSegmentParameters(const Vec3& p1, const Ve
 World::SegmentBoxClosest World::ClosestSegmentPointToBox(const Vec3& segA, const Vec3& segB, const Vec3& extents) {
 
         const Vec3 d = segB - segA;
-        auto eval = [&](float t) {
+        auto eval = [&](Real t) {
             SegmentBoxClosest result;
-            result.t = std::clamp(t, 0.0f, 1.0f);
+            result.t = std::clamp(t, 0.0, 1.0);
             result.segmentPoint = segA + d * result.t;
             result.boxPoint = ClampPointToExtents(result.segmentPoint, extents);
             result.distSq = LengthSquared(result.segmentPoint - result.boxPoint);
             return result;
         };
 
-        SegmentBoxClosest best = eval(0.0f);
-        auto consider = [&](float t) {
+        SegmentBoxClosest best = eval(0.0);
+        auto consider = [&](Real t) {
             const SegmentBoxClosest candidate = eval(t);
             if (candidate.distSq < best.distSq) {
                 best = candidate;
             }
         };
 
-        consider(1.0f);
+        consider(1.0);
 
         for (int axisIndex = 0; axisIndex < 3; ++axisIndex) {
-            const float p0 = (axisIndex == 0) ? segA.x : (axisIndex == 1 ? segA.y : segA.z);
-            const float vd = (axisIndex == 0) ? d.x : (axisIndex == 1 ? d.y : d.z);
-            const float extent = (axisIndex == 0) ? extents.x : (axisIndex == 1 ? extents.y : extents.z);
+            const Real p0 = (axisIndex == 0) ? segA.x : (axisIndex == 1 ? segA.y : segA.z);
+            const Real vd = (axisIndex == 0) ? d.x : (axisIndex == 1 ? d.y : d.z);
+            const Real extent = (axisIndex == 0) ? extents.x : (axisIndex == 1 ? extents.y : extents.z);
             if (std::abs(vd) <= kEpsilon) {
                 continue;
             }
@@ -1350,18 +1350,18 @@ World::SegmentBoxClosest World::ClosestSegmentPointToBox(const Vec3& segA, const
             consider(( extent - p0) / vd);
         }
 
-        float lo = 0.0f;
-        float hi = 1.0f;
+        Real lo = 0.0;
+        Real hi = 1.0;
         for (int i = 0; i < 32; ++i) {
-            const float m1 = lo + (hi - lo) / 3.0f;
-            const float m2 = hi - (hi - lo) / 3.0f;
+            const Real m1 = lo + (hi - lo) / 3.0;
+            const Real m2 = hi - (hi - lo) / 3.0;
             if (eval(m1).distSq < eval(m2).distSq) {
                 hi = m2;
             } else {
                 lo = m1;
             }
         }
-        consider(0.5f * (lo + hi));
+        consider(0.5 * (lo + hi));
 
         return best;
     }
@@ -1374,7 +1374,7 @@ void World::SpherePlane(std::uint32_t sphereId, std::uint32_t planeId) {
         if (!TryGetPlaneNormal(p, n)) {
             return;
         }
-        const float signedDistance = Dot(n, s.position) - p.planeOffset;
+        const Real signedDistance = Dot(n, s.position) - p.planeOffset;
         if (signedDistance >= s.radius) {
             return;
         }
@@ -1386,7 +1386,7 @@ void World::CapsulePlane(std::uint32_t capsuleId, std::uint32_t planeId) {
 
         const Body& c = bodies_[capsuleId];
         const Body& p = bodies_[planeId];
-        const Vec3 axis = Normalize(Rotate(c.orientation, {0.0f, 1.0f, 0.0f}));
+        const Vec3 axis = Normalize(Rotate(c.orientation, {0.0, 1.0, 0.0}));
         const Vec3 ends[2] = {c.position - axis * c.halfHeight, c.position + axis * c.halfHeight};
         Vec3 n{};
         if (!TryGetPlaneNormal(p, n)) {
@@ -1394,7 +1394,7 @@ void World::CapsulePlane(std::uint32_t capsuleId, std::uint32_t planeId) {
         }
         for (int endpoint = 0; endpoint < 2; ++endpoint) {
             const Vec3& center = ends[endpoint];
-            const float signedDistance = Dot(n, center) - p.planeOffset;
+            const Real signedDistance = Dot(n, center) - p.planeOffset;
             if (signedDistance < c.radius) {
                 const std::uint32_t capsuleFeature = static_cast<std::uint32_t>(endpoint);
                 const std::uint64_t featureId = CanonicalFeaturePairId(capsuleId, planeId, capsuleFeature, 0u);
@@ -1407,25 +1407,25 @@ void World::SphereCapsule(std::uint32_t sphereId, std::uint32_t capsuleId) {
 
         const Body& s = bodies_[sphereId];
         const Body& c = bodies_[capsuleId];
-        const Vec3 axis = Normalize(Rotate(c.orientation, {0.0f, 1.0f, 0.0f}));
+        const Vec3 axis = Normalize(Rotate(c.orientation, {0.0, 1.0, 0.0}));
         const Vec3 a = c.position - axis * c.halfHeight;
         const Vec3 b = c.position + axis * c.halfHeight;
         const Vec3 ab = b - a;
-        const float denom = Dot(ab, ab);
-        float t = 0.0f;
+        const Real denom = Dot(ab, ab);
+        Real t = 0.0;
         if (denom > kEpsilon) {
-            t = std::clamp(Dot(s.position - a, ab) / denom, 0.0f, 1.0f);
+            t = std::clamp(Dot(s.position - a, ab) / denom, 0.0, 1.0);
         }
         const Vec3 closest = a + ab * t;
         const Vec3 delta = closest - s.position;
-        const float distSq = LengthSquared(delta);
-        const float radiusSum = s.radius + c.radius;
+        const Real distSq = LengthSquared(delta);
+        const Real radiusSum = s.radius + c.radius;
         if (distSq > radiusSum * radiusSum) {
             return;
         }
-        const float dist = std::sqrt(std::max(distSq, kEpsilon));
-        const Vec3 normal = (dist > kEpsilon) ? (delta / dist) : Vec3{0.0f, 1.0f, 0.0f};
-        const std::uint8_t capsuleFeature = (t <= 1e-3f) ? 0u : ((t >= 1.0f - 1e-3f) ? 1u : 2u);
+        const Real dist = std::sqrt(std::max(distSq, kEpsilon));
+        const Vec3 normal = (dist > kEpsilon) ? (delta / dist) : Vec3{0.0, 1.0, 0.0};
+        const std::uint8_t capsuleFeature = (t <= 1e-3) ? 0u : ((t >= 1.0 - 1e-3) ? 1u : 2u);
         const std::uint64_t featureId = CanonicalFeaturePairId(sphereId, capsuleId, 0u, capsuleFeature);
         AddContact(sphereId, capsuleId, normal, s.position + normal * s.radius, radiusSum - dist, 4u, featureId);
     }
@@ -1435,8 +1435,8 @@ void World::CapsuleCapsule(std::uint32_t aId, std::uint32_t bId) {
         const Body& a = bodies_[aId];
         const Body& b = bodies_[bId];
 
-        const Vec3 axisA = Normalize(Rotate(a.orientation, {0.0f, 1.0f, 0.0f}));
-        const Vec3 axisB = Normalize(Rotate(b.orientation, {0.0f, 1.0f, 0.0f}));
+        const Vec3 axisA = Normalize(Rotate(a.orientation, {0.0, 1.0, 0.0}));
+        const Vec3 axisB = Normalize(Rotate(b.orientation, {0.0, 1.0, 0.0}));
         const Vec3 p1 = a.position - axisA * a.halfHeight;
         const Vec3 q1 = a.position + axisA * a.halfHeight;
         const Vec3 p2 = b.position - axisB * b.halfHeight;
@@ -1449,42 +1449,42 @@ void World::CapsuleCapsule(std::uint32_t aId, std::uint32_t bId) {
         const Vec3 c1 = p1 + d1 * s;
         const Vec3 c2 = p2 + d2 * t;
         const Vec3 delta = c2 - c1;
-        const float distSq = LengthSquared(delta);
-        const float radiusSum = a.radius + b.radius;
+        const Real distSq = LengthSquared(delta);
+        const Real radiusSum = a.radius + b.radius;
         if (distSq > radiusSum * radiusSum) {
             return;
         }
 
-        const float dist = std::sqrt(std::max(distSq, 0.0f));
+        const Real dist = std::sqrt(std::max(distSq, 0.0));
         const Vec3 centerDelta = b.position - a.position;
         Vec3 normal = StableDirection(delta, {centerDelta, axisA, axisB, Cross(axisA, axisB)});
-        if (Dot(normal, centerDelta) < 0.0f) {
+        if (Dot(normal, centerDelta) < 0.0) {
             normal = -normal;
         }
 
         const Vec3 point = c1 + normal * a.radius;
-        const std::uint8_t featureA = (s <= 1e-3f) ? 0u : ((s >= 1.0f - 1e-3f) ? 1u : 2u);
-        const std::uint8_t featureB = (t <= 1e-3f) ? 0u : ((t >= 1.0f - 1e-3f) ? 1u : 2u);
+        const std::uint8_t featureA = (s <= 1e-3) ? 0u : ((s >= 1.0 - 1e-3) ? 1u : 2u);
+        const std::uint8_t featureB = (t <= 1e-3) ? 0u : ((t >= 1.0 - 1e-3) ? 1u : 2u);
         const std::uint64_t featureId = CanonicalFeaturePairId(aId, bId, featureA, featureB);
         AddContact(aId, bId, normal, point, radiusSum - dist, 5u, featureId);
 
-        const float parallelFactor = std::abs(Dot(axisA, axisB));
-        if (parallelFactor > 0.98f && featureA == 2u && featureB == 2u) {
+        const Real parallelFactor = std::abs(Dot(axisA, axisB));
+        if (parallelFactor > 0.98 && featureA == 2u && featureB == 2u) {
             auto addProjectedEndpointContact = [&](const Vec3& endpointA, std::uint8_t endpointFeature) {
                 const auto [sProj, tProj] = ClosestSegmentParameters(endpointA, endpointA, p2, q2);
                 (void)sProj;
                 const Vec3 onB = p2 + d2 * tProj;
                 const Vec3 endpointDelta = onB - endpointA;
-                const float endpointDistSq = LengthSquared(endpointDelta);
+                const Real endpointDistSq = LengthSquared(endpointDelta);
                 if (endpointDistSq > radiusSum * radiusSum) {
                     return;
                 }
                 Vec3 endpointNormal = StableDirection(endpointDelta, {centerDelta, axisA, axisB, Cross(axisA, axisB)});
-                if (Dot(endpointNormal, centerDelta) < 0.0f) {
+                if (Dot(endpointNormal, centerDelta) < 0.0) {
                     endpointNormal = -endpointNormal;
                 }
-                const float endpointDist = std::sqrt(std::max(endpointDistSq, 0.0f));
-                const std::uint8_t featureBProj = (tProj <= 1e-3f) ? 0u : ((tProj >= 1.0f - 1e-3f) ? 1u : 2u);
+                const Real endpointDist = std::sqrt(std::max(endpointDistSq, 0.0));
+                const std::uint8_t featureBProj = (tProj <= 1e-3) ? 0u : ((tProj >= 1.0 - 1e-3) ? 1u : 2u);
                 const std::uint64_t manifoldFeatureId = CanonicalFeaturePairId(aId, bId, endpointFeature, featureBProj, 1u);
                 AddContact(aId, bId, endpointNormal, endpointA + endpointNormal * a.radius, radiusSum - endpointDist, 5u, manifoldFeatureId);
             };
@@ -1498,7 +1498,7 @@ void World::CapsuleBox(std::uint32_t capsuleId, std::uint32_t boxId) {
 
         const Body& c = bodies_[capsuleId];
         const Body& b = bodies_[boxId];
-        const Vec3 axis = Normalize(Rotate(c.orientation, {0.0f, 1.0f, 0.0f}));
+        const Vec3 axis = Normalize(Rotate(c.orientation, {0.0, 1.0, 0.0}));
         const Vec3 segAWorld = c.position - axis * c.halfHeight;
         const Vec3 segBWorld = c.position + axis * c.halfHeight;
 
@@ -1511,24 +1511,24 @@ void World::CapsuleBox(std::uint32_t capsuleId, std::uint32_t boxId) {
         }
 
         const Vec3 localDelta = closest.segmentPoint - closest.boxPoint;
-        const float dist = std::sqrt(std::max(closest.distSq, 0.0f));
-        Vec3 normalLocal = StableDirection(localDelta, {closest.segmentPoint, segB - segA, axis, {0.0f, 1.0f, 0.0f}});
+        const Real dist = std::sqrt(std::max(closest.distSq, 0.0));
+        Vec3 normalLocal = StableDirection(localDelta, {closest.segmentPoint, segB - segA, axis, {0.0, 1.0, 0.0}});
         if (closest.distSq <= kEpsilon * kEpsilon) {
-            const float dx = b.halfExtents.x - std::abs(closest.segmentPoint.x);
-            const float dy = b.halfExtents.y - std::abs(closest.segmentPoint.y);
-            const float dz = b.halfExtents.z - std::abs(closest.segmentPoint.z);
+            const Real dx = b.halfExtents.x - std::abs(closest.segmentPoint.x);
+            const Real dy = b.halfExtents.y - std::abs(closest.segmentPoint.y);
+            const Real dz = b.halfExtents.z - std::abs(closest.segmentPoint.z);
             if (dx <= dy && dx <= dz) {
-                normalLocal = {(closest.segmentPoint.x >= 0.0f) ? 1.0f : -1.0f, 0.0f, 0.0f};
+                normalLocal = {(closest.segmentPoint.x >= 0.0) ? 1.0 : -1.0, 0.0, 0.0};
             } else if (dy <= dz) {
-                normalLocal = {0.0f, (closest.segmentPoint.y >= 0.0f) ? 1.0f : -1.0f, 0.0f};
+                normalLocal = {0.0, (closest.segmentPoint.y >= 0.0) ? 1.0 : -1.0, 0.0};
             } else {
-                normalLocal = {0.0f, 0.0f, (closest.segmentPoint.z >= 0.0f) ? 1.0f : -1.0f};
+                normalLocal = {0.0, 0.0, (closest.segmentPoint.z >= 0.0) ? 1.0 : -1.0};
             }
         }
         const Vec3 normalWorld = Rotate(b.orientation, normalLocal);
         const Vec3 pointWorld = b.position + Rotate(b.orientation, closest.boxPoint);
-        const float segT = closest.t;
-        const std::uint8_t capsuleFeature = (segT <= 1e-3f) ? 0u : ((segT >= 1.0f - 1e-3f) ? 1u : 2u);
+        const Real segT = closest.t;
+        const std::uint8_t capsuleFeature = (segT <= 1e-3) ? 0u : ((segT >= 1.0 - 1e-3) ? 1u : 2u);
         const std::uint64_t featureId = CanonicalFeaturePairId(capsuleId, boxId, capsuleFeature, 0u);
         AddContact(capsuleId, boxId, -normalWorld, pointWorld, c.radius - dist, 6u, featureId);
     }
@@ -1543,9 +1543,9 @@ void World::BoxPlane(std::uint32_t boxId, std::uint32_t planeId) {
         }
 
         const Vec3 axes[3] = {
-            Rotate(box.orientation, {1.0f, 0.0f, 0.0f}),
-            Rotate(box.orientation, {0.0f, 1.0f, 0.0f}),
-            Rotate(box.orientation, {0.0f, 0.0f, 1.0f}),
+            Rotate(box.orientation, {1.0, 0.0, 0.0}),
+            Rotate(box.orientation, {0.0, 1.0, 0.0}),
+            Rotate(box.orientation, {0.0, 0.0, 1.0}),
         };
 
         int added = 0;
@@ -1561,8 +1561,8 @@ void World::BoxPlane(std::uint32_t boxId, std::uint32_t planeId) {
                         + axes[0] * local.x
                         + axes[1] * local.y
                         + axes[2] * local.z;
-                    const float signedDistance = Dot(n, worldPoint) - plane.planeOffset;
-                    if (signedDistance < 0.0f) {
+                    const Real signedDistance = Dot(n, worldPoint) - plane.planeOffset;
+                    if (signedDistance < 0.0) {
                         const std::uint8_t vertexId = static_cast<std::uint8_t>((sx > 0 ? 1 : 0) | ((sy > 0 ? 1 : 0) << 1) | ((sz > 0 ? 1 : 0) << 2));
                         const std::uint64_t featureId = CanonicalFeaturePairId(boxId, planeId, vertexId, 0u);
                         AddContact(boxId, planeId, -n, worldPoint, -signedDistance, 7u, featureId);
@@ -1591,42 +1591,42 @@ void World::SphereBox(std::uint32_t sphereId, std::uint32_t boxId) {
         };
 
         const Vec3 deltaLocal = sphereCenterLocal - closestLocal;
-        const float distSq = LengthSquared(deltaLocal);
+        const Real distSq = LengthSquared(deltaLocal);
         if (distSq > s.radius * s.radius) {
             return;
         }
 
         Vec3 normalWorld{};
         Vec3 pointWorld{};
-        float penetration = 0.0f;
+        Real penetration = 0.0;
 
         if (distSq > kEpsilon) {
-            const float dist = std::sqrt(distSq);
+            const Real dist = std::sqrt(distSq);
             const Vec3 normalLocal = deltaLocal / dist;
             normalWorld = Rotate(b.orientation, normalLocal);
             pointWorld = b.position + Rotate(b.orientation, closestLocal);
             penetration = s.radius - dist;
         } else {
-            const float dx = b.halfExtents.x - std::abs(sphereCenterLocal.x);
-            const float dy = b.halfExtents.y - std::abs(sphereCenterLocal.y);
-            const float dz = b.halfExtents.z - std::abs(sphereCenterLocal.z);
+            const Real dx = b.halfExtents.x - std::abs(sphereCenterLocal.x);
+            const Real dy = b.halfExtents.y - std::abs(sphereCenterLocal.y);
+            const Real dz = b.halfExtents.z - std::abs(sphereCenterLocal.z);
 
             Vec3 normalLocal;
             if (dx <= dy && dx <= dz) {
-                normalLocal = {(sphereCenterLocal.x >= 0.0f) ? 1.0f : -1.0f, 0.0f, 0.0f};
+                normalLocal = {(sphereCenterLocal.x >= 0.0) ? 1.0 : -1.0, 0.0, 0.0};
                 penetration = s.radius + dx;
             } else if (dy <= dz) {
-                normalLocal = {0.0f, (sphereCenterLocal.y >= 0.0f) ? 1.0f : -1.0f, 0.0f};
+                normalLocal = {0.0, (sphereCenterLocal.y >= 0.0) ? 1.0 : -1.0, 0.0};
                 penetration = s.radius + dy;
             } else {
-                normalLocal = {0.0f, 0.0f, (sphereCenterLocal.z >= 0.0f) ? 1.0f : -1.0f};
+                normalLocal = {0.0, 0.0, (sphereCenterLocal.z >= 0.0) ? 1.0 : -1.0};
                 penetration = s.radius + dz;
             }
 
             const Vec3 facePointLocal = {
-                normalLocal.x != 0.0f ? normalLocal.x * b.halfExtents.x : sphereCenterLocal.x,
-                normalLocal.y != 0.0f ? normalLocal.y * b.halfExtents.y : sphereCenterLocal.y,
-                normalLocal.z != 0.0f ? normalLocal.z * b.halfExtents.z : sphereCenterLocal.z,
+                normalLocal.x != 0.0 ? normalLocal.x * b.halfExtents.x : sphereCenterLocal.x,
+                normalLocal.y != 0.0 ? normalLocal.y * b.halfExtents.y : sphereCenterLocal.y,
+                normalLocal.z != 0.0 ? normalLocal.z * b.halfExtents.z : sphereCenterLocal.z,
             };
 
             normalWorld = Rotate(b.orientation, normalLocal);
@@ -1636,15 +1636,15 @@ void World::SphereBox(std::uint32_t sphereId, std::uint32_t boxId) {
         std::uint8_t referenceFace = 0;
         std::uint8_t incidentFeature = 0;
         const Vec3 localPoint = Rotate(invBoxOrientation, pointWorld - b.position);
-        const float dx = std::abs(std::abs(localPoint.x) - b.halfExtents.x);
-        const float dy = std::abs(std::abs(localPoint.y) - b.halfExtents.y);
-        const float dz = std::abs(std::abs(localPoint.z) - b.halfExtents.z);
+        const Real dx = std::abs(std::abs(localPoint.x) - b.halfExtents.x);
+        const Real dy = std::abs(std::abs(localPoint.y) - b.halfExtents.y);
+        const Real dz = std::abs(std::abs(localPoint.z) - b.halfExtents.z);
         if (dx <= dy && dx <= dz) {
-            referenceFace = static_cast<std::uint8_t>((localPoint.x >= 0.0f) ? 0 : 1);
+            referenceFace = static_cast<std::uint8_t>((localPoint.x >= 0.0) ? 0 : 1);
         } else if (dy <= dz) {
-            referenceFace = static_cast<std::uint8_t>((localPoint.y >= 0.0f) ? 2 : 3);
+            referenceFace = static_cast<std::uint8_t>((localPoint.y >= 0.0) ? 2 : 3);
         } else {
-            referenceFace = static_cast<std::uint8_t>((localPoint.z >= 0.0f) ? 4 : 5);
+            referenceFace = static_cast<std::uint8_t>((localPoint.z >= 0.0) ? 4 : 5);
         }
         incidentFeature = 0;
         const std::uint64_t featureId = CanonicalFeaturePairId(sphereId, boxId, incidentFeature, referenceFace);
@@ -1654,7 +1654,7 @@ void World::SphereBox(std::uint32_t sphereId, std::uint32_t boxId) {
 void World::WarmStartJoints() {
 
         for (DistanceJoint& j : joints_) {
-            if (j.impulseSum == 0.0f) {
+            if (j.impulseSum == 0.0) {
                 continue;
             }
             Body& a = bodies_[j.a];
@@ -1662,7 +1662,7 @@ void World::WarmStartJoints() {
             const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
             const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
             const Vec3 delta = (b.position + rb) - (a.position + ra);
-            const float len = Length(delta);
+            const Real len = Length(delta);
             if (len <= kEpsilon) {
                 continue;
             }
@@ -1671,8 +1671,8 @@ void World::WarmStartJoints() {
         }
 
         for (HingeJoint& j : hingeJoints_) {
-            const float linearSum = std::abs(j.impulseX) + std::abs(j.impulseY) + std::abs(j.impulseZ);
-            const float angularSum = std::abs(j.angularImpulse1) + std::abs(j.angularImpulse2) + std::abs(j.motorImpulseSum);
+            const Real linearSum = std::abs(j.impulseX) + std::abs(j.impulseY) + std::abs(j.impulseZ);
+            const Real angularSum = std::abs(j.angularImpulse1) + std::abs(j.angularImpulse2) + std::abs(j.motorImpulseSum);
             if (linearSum + angularSum <= kEpsilon) {
                 continue;
             }
@@ -1686,8 +1686,8 @@ void World::WarmStartJoints() {
             ApplyImpulse(a, b, invIA, invIB, ra, rb, impulse);
 
             const Vec3 axisA = Normalize(Rotate(a.orientation, j.localAxisA));
-            Vec3 t1 = Cross(axisA, {1.0f, 0.0f, 0.0f});
-            if (LengthSquared(t1) <= 1e-5f) t1 = Cross(axisA, {0.0f, 0.0f, 1.0f});
+            Vec3 t1 = Cross(axisA, {1.0, 0.0, 0.0});
+            if (LengthSquared(t1) <= 1e-5) t1 = Cross(axisA, {0.0, 0.0, 1.0});
             t1 = Normalize(t1);
             const Vec3 t2 = Normalize(Cross(axisA, t1));
             ApplyAngularImpulse(a, b, invIA, invIB, j.angularImpulse1 * t1);
@@ -1707,8 +1707,8 @@ void World::WarmStartJoints() {
         }
 
         for (FixedJoint& j : fixedJoints_) {
-            const float linearSum = std::abs(j.impulseX) + std::abs(j.impulseY) + std::abs(j.impulseZ);
-            const float angularSum = std::abs(j.angularImpulseX) + std::abs(j.angularImpulseY) + std::abs(j.angularImpulseZ);
+            const Real linearSum = std::abs(j.impulseX) + std::abs(j.impulseY) + std::abs(j.impulseZ);
+            const Real angularSum = std::abs(j.angularImpulseX) + std::abs(j.angularImpulseY) + std::abs(j.angularImpulseZ);
             if (linearSum + angularSum <= kEpsilon) {
                 continue;
             }
@@ -1723,7 +1723,7 @@ void World::WarmStartJoints() {
         }
 
         for (PrismaticJoint& j : prismaticJoints_) {
-            const float sum = std::abs(j.impulseT1) + std::abs(j.impulseT2) + std::abs(j.impulseAxis) + std::abs(j.motorImpulseSum);
+            const Real sum = std::abs(j.impulseT1) + std::abs(j.impulseT2) + std::abs(j.impulseAxis) + std::abs(j.motorImpulseSum);
             if (sum <= kEpsilon) {
                 continue;
             }
@@ -1734,8 +1734,8 @@ void World::WarmStartJoints() {
             const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
             const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
             Vec3 axis = Normalize(Rotate(a.orientation, j.localAxisA));
-            Vec3 t1 = Cross(axis, {0.0f, 1.0f, 0.0f});
-            if (LengthSquared(t1) <= 1e-5f) t1 = Cross(axis, {0.0f, 0.0f, 1.0f});
+            Vec3 t1 = Cross(axis, {0.0, 1.0, 0.0});
+            if (LengthSquared(t1) <= 1e-5) t1 = Cross(axis, {0.0, 0.0, 1.0});
             t1 = Normalize(t1);
             const Vec3 t2 = Normalize(Cross(axis, t1));
             const Vec3 impulse = j.impulseT1 * t1 + j.impulseT2 * t2 + (j.impulseAxis + j.motorImpulseSum) * axis;
@@ -1743,8 +1743,8 @@ void World::WarmStartJoints() {
         }
 
         for (ServoJoint& j : servoJoints_) {
-            const float linearSum = std::abs(j.impulseX) + std::abs(j.impulseY) + std::abs(j.impulseZ);
-            const float angularSum = std::abs(j.angularImpulse1) + std::abs(j.angularImpulse2) + std::abs(j.servoImpulseSum);
+            const Real linearSum = std::abs(j.impulseX) + std::abs(j.impulseY) + std::abs(j.impulseZ);
+            const Real angularSum = std::abs(j.angularImpulse1) + std::abs(j.angularImpulse2) + std::abs(j.servoImpulseSum);
             if (linearSum + angularSum <= kEpsilon) {
                 continue;
             }
@@ -1757,8 +1757,8 @@ void World::WarmStartJoints() {
             ApplyImpulse(a, b, invIA, invIB, ra, rb, {j.impulseX, j.impulseY, j.impulseZ});
 
             const Vec3 axisA = Normalize(Rotate(a.orientation, j.localAxisA));
-            Vec3 t1 = Cross(axisA, {1.0f, 0.0f, 0.0f});
-            if (LengthSquared(t1) <= 1e-5f) t1 = Cross(axisA, {0.0f, 0.0f, 1.0f});
+            Vec3 t1 = Cross(axisA, {1.0, 0.0, 0.0});
+            if (LengthSquared(t1) <= 1e-5) t1 = Cross(axisA, {0.0, 0.0, 1.0});
             t1 = Normalize(t1);
             const Vec3 t2 = Normalize(Cross(axisA, t1));
             ApplyAngularImpulse(a, b, invIA, invIB, j.angularImpulse1 * t1);
@@ -1781,19 +1781,19 @@ void World::SolveNormalScalar(Contact& c, const ContactPrep& prep) {
         const Vec3 va = a.velocity + Cross(a.angularVelocity, ra);
         const Vec3 vb = b.velocity + Cross(b.angularVelocity, rb);
         const Vec3 relativeVelocity = vb - va;
-        const float separatingVelocity = Dot(relativeVelocity, c.normal);
+        const Real separatingVelocity = Dot(relativeVelocity, c.normal);
 
-        const float speedIntoContact = -separatingVelocity;
-        const float restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
-        const float normalMass = prep.normalMass;
+        const Real speedIntoContact = -separatingVelocity;
+        const Real restitution = ComputeRestitution(speedIntoContact, a.restitution, b.restitution);
+        const Real normalMass = prep.normalMass;
         if (normalMass <= kEpsilon) {
             return;
         }
 
-        float biasTerm = 0.0f;
-        float penetration = c.penetration;
+        Real biasTerm = 0.0;
+        Real penetration = c.penetration;
         if (c.anchorsValid && c.persistenceAge >= contactSolverConfig_.manifoldAnchorReuseMinAge) {
-            float anchorPenetration = 0.0f;
+            Real anchorPenetration = 0.0;
             if (TryComputeAnchorSeparation(c, anchorPenetration)) {
                 penetration = anchorPenetration;
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
@@ -1805,50 +1805,50 @@ void World::SolveNormalScalar(Contact& c, const ContactPrep& prep) {
 #endif
             }
         }
-        const float penetrationError = std::max(penetration - contactSolverConfig_.penetrationSlop, 0.0f);
-        const float massRatioBoost = ComputeHighMassRatioBoost(a, b);
+        const Real penetrationError = std::max(penetration - contactSolverConfig_.penetrationSlop, 0.0);
+        const Real massRatioBoost = ComputeHighMassRatioBoost(a, b);
         if (contactSolverConfig_.useSplitImpulse && !solverRelaxationPassActive_) {
-            if (penetrationError > 0.0f) {
+            if (penetrationError > 0.0) {
                 if (normalMass > kEpsilon) {
-                    const float boostedFactor = contactSolverConfig_.splitImpulseCorrectionFactor
-                        * (1.0f + contactSolverConfig_.highMassRatioSplitImpulseBoost * (massRatioBoost - 1.0f));
-                    const float correctionMagnitude = boostedFactor * penetrationError / normalMass;
+                    const Real boostedFactor = contactSolverConfig_.splitImpulseCorrectionFactor
+                        * (1.0 + contactSolverConfig_.highMassRatioSplitImpulseBoost * (massRatioBoost - 1.0));
+                    const Real correctionMagnitude = boostedFactor * penetrationError / normalMass;
                     const Vec3 correction = correctionMagnitude * c.normal;
-                    AccumulateSplitImpulseCorrection(c.a, -correction * a.invMass, {0.0f, 0.0f, 0.0f});
-                    AccumulateSplitImpulseCorrection(c.b, correction * b.invMass, {0.0f, 0.0f, 0.0f});
+                    AccumulateSplitImpulseCorrection(c.a, -correction * a.invMass, {0.0, 0.0, 0.0});
+                    AccumulateSplitImpulseCorrection(c.b, correction * b.invMass, {0.0, 0.0, 0.0});
                 }
             }
         } else if (currentSubstepDt_ > kEpsilon && !solverRelaxationPassActive_) {
-            const float maxSafeSeparatingSpeed = penetrationError / currentSubstepDt_;
+            const Real maxSafeSeparatingSpeed = penetrationError / currentSubstepDt_;
             if (separatingVelocity <= maxSafeSeparatingSpeed) {
-                const float boostedBias = contactSolverConfig_.penetrationBiasFactor
-                    * (1.0f + contactSolverConfig_.highMassRatioBiasBoost * (massRatioBoost - 1.0f));
+                const Real boostedBias = contactSolverConfig_.penetrationBiasFactor
+                    * (1.0 + contactSolverConfig_.highMassRatioBiasBoost * (massRatioBoost - 1.0));
                 biasTerm = (boostedBias * penetrationError) / currentSubstepDt_;
-                biasTerm = std::min(biasTerm, std::max(contactSolverConfig_.penetrationBiasMaxSpeed, 0.0f));
+                biasTerm = std::min(biasTerm, std::max(contactSolverConfig_.penetrationBiasMaxSpeed, 0.0));
             }
         }
-        if (contactSolverConfig_.softContactBiasRate > 0.0f
-            && contactSolverConfig_.softContactCompliance > 0.0f
+        if (contactSolverConfig_.softContactBiasRate > 0.0
+            && contactSolverConfig_.softContactCompliance > 0.0
             && c.persistenceAge >= contactSolverConfig_.softContactMinAge
             && std::abs(separatingVelocity) <= contactSolverConfig_.softContactMaxNormalSpeed
-            && separatingVelocity <= 0.0f) {
-            const float softBias = (contactSolverConfig_.softContactBiasRate * penetrationError)
+            && separatingVelocity <= 0.0) {
+            const Real softBias = (contactSolverConfig_.softContactBiasRate * penetrationError)
                 / std::max(currentSubstepDt_, kEpsilon);
-            const float softenedMass = normalMass + contactSolverConfig_.softContactCompliance;
-            const float lambdaSoft = (softBias - separatingVelocity) / std::max(softenedMass, kEpsilon);
-            const float oldNormalImpulse = c.normalImpulseSum;
-            c.normalImpulseSum = std::max(0.0f, c.normalImpulseSum + lambdaSoft);
-            const float softDelta = c.normalImpulseSum - oldNormalImpulse;
+            const Real softenedMass = normalMass + contactSolverConfig_.softContactCompliance;
+            const Real lambdaSoft = (softBias - separatingVelocity) / std::max(softenedMass, kEpsilon);
+            const Real oldNormalImpulse = c.normalImpulseSum;
+            c.normalImpulseSum = std::max(0.0, c.normalImpulseSum + lambdaSoft);
+            const Real softDelta = c.normalImpulseSum - oldNormalImpulse;
             ApplyImpulse(a, b, invIA, invIB, ra, rb, softDelta * c.normal);
             return;
         }
 
-        float lambdaN = -(1.0f + restitution) * separatingVelocity / normalMass;
-        if (biasTerm > 0.0f) {
+        Real lambdaN = -(1.0 + restitution) * separatingVelocity / normalMass;
+        if (biasTerm > 0.0) {
             lambdaN += biasTerm / normalMass;
         }
-        const float oldNormalImpulse = c.normalImpulseSum;
-        c.normalImpulseSum = std::max(0.0f, c.normalImpulseSum + lambdaN);
+        const Real oldNormalImpulse = c.normalImpulseSum;
+        c.normalImpulseSum = std::max(0.0, c.normalImpulseSum + lambdaN);
         lambdaN = c.normalImpulseSum - oldNormalImpulse;
         ApplyImpulse(a, b, invIA, invIB, ra, rb, lambdaN * c.normal);
     }
@@ -1856,9 +1856,9 @@ void World::SolveNormalScalar(Contact& c, const ContactPrep& prep) {
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
 void World::ResetBlockSolveDebugStep(Manifold& manifold) {
 
-        manifold.blockSolveDebug.selectedPreNormalImpulses = {0.0f, 0.0f};
-        manifold.blockSolveDebug.selectedPostNormalImpulses = {0.0f, 0.0f};
-        manifold.blockSolveDebug.selectedPairPenetrationStep = 0.0f;
+        manifold.blockSolveDebug.selectedPreNormalImpulses = {0.0, 0.0};
+        manifold.blockSolveDebug.selectedPostNormalImpulses = {0.0, 0.0};
+        manifold.blockSolveDebug.selectedPairPenetrationStep = 0.0;
     }
 
 void World::IncrementBlockSolveFallbackCounter(Manifold& manifold, BlockSolveFallbackReason reason) {
@@ -1938,8 +1938,8 @@ void World::IncrementFallbackReasonTelemetry(SolverTelemetry::FallbackReasonCoun
 
 void World::RecordManifoldSolveTelemetry(const Manifold& manifold,
                                       BlockSolveFallbackReason fallbackReason,
-                                      float determinantOrConditionEstimate,
-                                      float impulseContinuityMetric) {
+                                      Real determinantOrConditionEstimate,
+                                      Real impulseContinuityMetric) {
 
         auto accumulate = [&](SolverTelemetry::ManifoldSolveBucket& bucket) {
             ++bucket.solveCount;
@@ -1971,7 +1971,7 @@ void World::RecordManifoldSolveTelemetry(const Manifold& manifold,
 
 bool World::IsValidBlockContactPoint(const Contact& contact) {
 
-        if (!std::isfinite(contact.penetration) || contact.penetration <= 0.0f) {
+        if (!std::isfinite(contact.penetration) || contact.penetration <= 0.0) {
             return false;
         }
         if (!std::isfinite(contact.normal.x) || !std::isfinite(contact.normal.y) || !std::isfinite(contact.normal.z)) {
@@ -2100,12 +2100,12 @@ void World::DebugLogContactTransitions(const Manifold& previous, const Manifold&
 void World::SelectBlockSolvePair(Manifold& manifold) const {
 
         // Geometry-first pair selection tuning knobs for 3+ contact manifolds.
-        constexpr float kPairScoreEpsilon = 1e-6f;
-        constexpr float kSupportAreaProxyScale = 0.25f;
-        constexpr float kQualityMinSpreadSq = 1e-6f;
-        constexpr float kQualityMinSupportAreaProxy = 1e-7f;
-        constexpr float kQualityMinLeverSq = 1e-8f;
-        constexpr float kQualityMinPenetrationSum = 1e-6f;
+        constexpr Real kPairScoreEpsilon = 1e-6;
+        constexpr Real kSupportAreaProxyScale = 0.25;
+        constexpr Real kQualityMinSpreadSq = 1e-6;
+        constexpr Real kQualityMinSupportAreaProxy = 1e-7;
+        constexpr Real kQualityMinLeverSq = 1e-8;
+        constexpr Real kQualityMinPenetrationSum = 1e-6;
 
         const std::array<std::uint64_t, 2> previousSelectedKeys = manifold.selectedBlockContactKeys;
         manifold.selectedBlockContactIndices = {-1, -1};
@@ -2151,23 +2151,23 @@ void World::SelectBlockSolvePair(Manifold& manifold) const {
         struct PairSelection {
             int i = -1;
             int j = -1;
-            float supportAreaProxy = -1.0f;
-            float penetration = -1.0f;
-            float spread = -1.0f;
-            float lever = -1.0f;
+            Real supportAreaProxy = -1.0;
+            Real penetration = -1.0;
+            Real spread = -1.0;
+            Real lever = -1.0;
             int ageMin = -1;
             int ageSum = -1;
-            float continuity = 0.0f;
+            Real continuity = 0.0;
             std::array<std::uint64_t, 2> sortedKeys{0u, 0u};
         };
 
         const auto computePairQuality = [&](const Contact& a, const Contact& b) {
-            const float penetration = a.penetration + b.penetration;
-            const float spread = LengthSquared(a.point - b.point);
-            const float supportAreaProxy = spread * std::max(0.0f, penetration) * kSupportAreaProxyScale;
-            const Vec3 midPoint = 0.5f * (a.point + b.point);
-            const Vec3 centers = 0.5f * (bodies_[manifold.a].position + bodies_[manifold.b].position);
-            const float lever = LengthSquared(midPoint - centers);
+            const Real penetration = a.penetration + b.penetration;
+            const Real spread = LengthSquared(a.point - b.point);
+            const Real supportAreaProxy = spread * std::max(0.0, penetration) * kSupportAreaProxyScale;
+            const Vec3 midPoint = 0.5 * (a.point + b.point);
+            const Vec3 centers = 0.5 * (bodies_[manifold.a].position + bodies_[manifold.b].position);
+            const Real lever = LengthSquared(midPoint - centers);
             return spread >= kQualityMinSpreadSq
                 && supportAreaProxy >= kQualityMinSupportAreaProxy
                 && lever >= kQualityMinLeverSq
@@ -2212,7 +2212,7 @@ void World::SelectBlockSolvePair(Manifold& manifold) const {
             }
         }
 
-        const Vec3 centers = 0.5f * (bodies_[manifold.a].position + bodies_[manifold.b].position);
+        const Vec3 centers = 0.5 * (bodies_[manifold.a].position + bodies_[manifold.b].position);
         PairSelection best{};
         for (std::size_t i = 0; i < manifold.contacts.size(); ++i) {
             const Contact& a = manifold.contacts[static_cast<std::size_t>(i)];
@@ -2231,8 +2231,8 @@ void World::SelectBlockSolvePair(Manifold& manifold) const {
                 candidate.penetration = a.penetration + b.penetration;
                 candidate.spread = LengthSquared(a.point - b.point);
                 candidate.supportAreaProxy =
-                    candidate.spread * std::max(0.0f, candidate.penetration) * kSupportAreaProxyScale;
-                const Vec3 midPoint = 0.5f * (a.point + b.point);
+                    candidate.spread * std::max(0.0, candidate.penetration) * kSupportAreaProxyScale;
+                const Vec3 midPoint = 0.5 * (a.point + b.point);
                 candidate.lever = LengthSquared(midPoint - centers);
                 candidate.ageMin = static_cast<int>(std::min(a.persistenceAge, b.persistenceAge));
                 candidate.ageSum = static_cast<int>(a.persistenceAge + b.persistenceAge);
@@ -2240,7 +2240,7 @@ void World::SelectBlockSolvePair(Manifold& manifold) const {
                     && previousSelectedKeys[1] != 0u
                     && (a.key == previousSelectedKeys[0] || a.key == previousSelectedKeys[1])
                     && (b.key == previousSelectedKeys[0] || b.key == previousSelectedKeys[1]);
-                candidate.continuity = keyMatch ? 1.0f : 0.0f;
+                candidate.continuity = keyMatch ? 1.0 : 0.0;
                 candidate.sortedKeys = SortedContactKeyPair(a.key, b.key);
 
                 const bool betterSupportAreaProxy =
@@ -2387,7 +2387,7 @@ bool World::IsBlockSolveEligible(const Manifold& manifold, BlockSolveFallbackRea
             if (!IsValidBlockContactPoint(*contact)) {
                 return false;
             }
-            if (Dot(contact->normal, manifoldNormal) < 0.95f) {
+            if (Dot(contact->normal, manifoldNormal) < 0.95) {
                 return false;
             }
         }
@@ -2569,7 +2569,7 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
                     manifold.contacts[static_cast<std::size_t>(selectedIdx0)].normalImpulseSum,
                     manifold.contacts[static_cast<std::size_t>(selectedIdx1)].normalImpulseSum};
             }
-            const float impulseContinuityMetric = std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[0] - manifold.blockSolveDebug.selectedPreNormalImpulses[0])
+            const Real impulseContinuityMetric = std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[0] - manifold.blockSolveDebug.selectedPreNormalImpulses[0])
                 + std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[1] - manifold.blockSolveDebug.selectedPreNormalImpulses[1]);
             RecordManifoldSolveTelemetry(manifold, ineligibleReason, std::numeric_limits<float>::quiet_NaN(), impulseContinuityMetric);
 #endif
@@ -2577,7 +2577,7 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
         }
 
         BlockSolveFallbackReason fallbackReason = BlockSolveFallbackReason::None;
-        float determinantOrConditionEstimate = std::numeric_limits<float>::quiet_NaN();
+        Real determinantOrConditionEstimate = std::numeric_limits<float>::quiet_NaN();
         bool blockSolved = false;
         bool usedFace4 = false;
         if (contactSolverConfig_.useFace4PointNormalBlock
@@ -2628,7 +2628,7 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
                 }
             }
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
-            const float impulseContinuityMetric = std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[0] - manifold.blockSolveDebug.selectedPreNormalImpulses[0])
+            const Real impulseContinuityMetric = std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[0] - manifold.blockSolveDebug.selectedPreNormalImpulses[0])
                 + std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[1] - manifold.blockSolveDebug.selectedPreNormalImpulses[1]);
             RecordManifoldSolveTelemetry(manifold, fallbackReason, determinantOrConditionEstimate, impulseContinuityMetric);
 #endif
@@ -2700,7 +2700,7 @@ void World::SolveManifoldNormalImpulses(Manifold& manifold) {
                 manifold.contacts[static_cast<std::size_t>(selectedIdx0)].normalImpulseSum,
                 manifold.contacts[static_cast<std::size_t>(selectedIdx1)].normalImpulseSum};
         }
-        const float impulseContinuityMetric = std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[0] - manifold.blockSolveDebug.selectedPreNormalImpulses[0])
+        const Real impulseContinuityMetric = std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[0] - manifold.blockSolveDebug.selectedPreNormalImpulses[0])
             + std::abs(manifold.blockSolveDebug.selectedPostNormalImpulses[1] - manifold.blockSolveDebug.selectedPreNormalImpulses[1]);
         RecordManifoldSolveTelemetry(manifold, fallbackReason, determinantOrConditionEstimate, impulseContinuityMetric);
 #endif
@@ -2751,12 +2751,12 @@ void World::PositionalCorrection() {
                 Body& a = bodies_[c.a];
                 Body& b = bodies_[c.b];
 
-                const float invMassSum = a.invMass + b.invMass;
+                const Real invMassSum = a.invMass + b.invMass;
                 if (invMassSum <= kEpsilon) {
                     continue;
                 }
 
-                const float correctionMagnitude = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0f)
+                const Real correctionMagnitude = std::max(c.penetration - contactSolverConfig_.penetrationSlop, 0.0)
                     * contactSolverConfig_.positionalCorrectionPercent / invMassSum;
                 const Vec3 correction = correctionMagnitude * c.normal;
 
@@ -2773,25 +2773,25 @@ void World::PositionalCorrection() {
 void World::ClearAccumulators() {
 
         for (Body& body : bodies_) {
-            body.force = {0.0f, 0.0f, 0.0f};
-            body.torque = {0.0f, 0.0f, 0.0f};
+            body.force = {0.0, 0.0, 0.0};
+            body.torque = {0.0, 0.0, 0.0};
         }
     }
 
 void World::ClampBodyVelocities() {
 
         for (Body& body : bodies_) {
-            if (body.invMass == 0.0f || body.isSleeping) {
+            if (body.invMass == 0.0 || body.isSleeping) {
                 continue;
             }
-            if (maxBodyLinearSpeed_ > 0.0f) {
-                const float linearMag = Length(body.velocity);
+            if (maxBodyLinearSpeed_ > 0.0) {
+                const Real linearMag = Length(body.velocity);
                 if (linearMag > maxBodyLinearSpeed_) {
                     body.velocity *= maxBodyLinearSpeed_ / linearMag;
                 }
             }
-            if (maxBodyAngularSpeed_ > 0.0f) {
-                const float angularMag = Length(body.angularVelocity);
+            if (maxBodyAngularSpeed_ > 0.0) {
+                const Real angularMag = Length(body.angularVelocity);
                 if (angularMag > maxBodyAngularSpeed_) {
                     body.angularVelocity *= maxBodyAngularSpeed_ / angularMag;
                 }

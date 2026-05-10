@@ -130,6 +130,15 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    GaitState recovery_hold_gait = held_gait;
+    recovery_hold_gait.stride_phase_rate_hz = FrequencyHz{0.0};
+    const LegTargets recovery_touchdown_targets =
+        controller.update(airborne_est, walk_intent, recovery_hold_gait, safety, walk_twist);
+    if (!expect(recovery_touchdown_targets.feet[0].pos_body_m.z < held_airborne_targets.feet[0].pos_body_m.z - 1e-4,
+                "recovery hold should drive unsupported swing legs toward touchdown instead of freezing them mid-air")) {
+        return EXIT_FAILURE;
+    }
+
     RobotState supported_est = est;
     supported_est.foot_contacts[0] = true;
     supported_est.foot_contact_fusion[0].phase = ContactPhase::ConfirmedStance;
@@ -141,6 +150,16 @@ int main() {
     }
     if (!expect(nearlyEqual(held_supported_targets.feet[0].vel_body_mps.z, 0.0, 2e-3),
                 "supported swing legs kept in stance should suppress vertical swing motion")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState touchdown_est = est;
+    touchdown_est.foot_contacts[0] = false;
+    touchdown_est.foot_contact_fusion[0].phase = ContactPhase::LostCandidate;
+    const LegTargets held_touchdown_targets =
+        controller.update(touchdown_est, walk_intent, held_gait, safety, walk_twist);
+    if (!expect(held_touchdown_targets.feet[0].pos_body_m.z < held_airborne_targets.feet[0].pos_body_m.z - 0.02,
+                "recovery hold should keep touchdown-completing supported legs in stance until load is released")) {
         return EXIT_FAILURE;
     }
 

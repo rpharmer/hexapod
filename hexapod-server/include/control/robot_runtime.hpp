@@ -124,6 +124,8 @@ private:
     uint64_t last_fusion_reset_sample_id_{0};
     uint64_t last_fusion_correction_sample_id_{0};
     FaultCode last_logged_safety_fault_{FaultCode::NONE};
+    bool last_logged_recovery_hold_active_{false};
+    RecoveryStage last_logged_recovery_stage_{RecoveryStage::None};
     std::uint8_t last_fusion_correction_mode_{0};
     telemetry::FusionCorrectionTelemetry last_fusion_correction_{};
     std::atomic<uint64_t> fusion_hard_reset_request_count_{0};

@@ -8,9 +8,9 @@ int main() {
     using namespace minphys3d::solver_internal;
 
     std::vector<Body> bodies(3);
-    bodies[0].invMass = 0.0f;
-    bodies[1].invMass = 1.0f;
-    bodies[2].invMass = 1.0f;
+    bodies[0].invMass = 0.0;
+    bodies[1].invMass = 1.0;
+    bodies[2].invMass = 1.0;
 
     std::vector<Manifold> manifolds(2);
     manifolds[0].a = 1;

@@ -18,11 +18,12 @@ namespace {
 
 using minphys3d::Body;
 using minphys3d::Length;
+using minphys3d::Real;
 using minphys3d::ServoJoint;
 using minphys3d::Vec3;
 using minphys3d::World;
 
-float WrapAngleRad(float a) {
+Real WrapAngleRad(Real a) {
     return std::atan2(std::sin(a), std::cos(a));
 }
 
@@ -53,10 +54,10 @@ struct ServoSceneCase {
     const char* label;
     minphys3d::Vec3 gravity;
     int steps;
-    float max_linear_speed;
-    float max_angular_speed;
-    float max_servo_angle_error;
-    float max_body_position_radius;
+    Real max_linear_speed;
+    Real max_angular_speed;
+    Real max_servo_angle_error;
+    Real max_body_position_radius;
 };
 
 bool BodyStateFinite(const Body& b) {
@@ -84,11 +85,11 @@ bool RunCase(const ServoSceneCase& c, bool verbose) {
         return false;
     }
 
-    constexpr float kDt = 1.0f / 60.0f;
-    float peak_v = 0.0f;
-    float peak_w = 0.0f;
-    float peak_err = 0.0f;
-    float peak_pos_r = 0.0f;
+    constexpr Real kDt = 1.0 / 60.0;
+    Real peak_v = 0.0;
+    Real peak_w = 0.0;
+    Real peak_err = 0.0;
+    Real peak_pos_r = 0.0;
 
     for (int step = 0; step < c.steps; ++step) {
         world.Step(kDt, solver_iterations);
@@ -103,14 +104,14 @@ bool RunCase(const ServoSceneCase& c, bool verbose) {
                 return false;
             }
             peak_pos_r = std::max(peak_pos_r, Length(b.position));
-            if (b.invMass > 0.0f && !b.isSleeping) {
+            if (b.invMass > 0.0 && !b.isSleeping) {
                 peak_v = std::max(peak_v, Length(b.velocity));
                 peak_w = std::max(peak_w, Length(b.angularVelocity));
             }
         }
         for (std::uint32_t sj = 0; sj < world.GetServoJointCount(); ++sj) {
             const ServoJoint& j = world.GetServoJoint(sj);
-            const float ang = world.GetServoJointAngle(sj);
+            const Real ang = world.GetServoJointAngle(sj);
             peak_err = std::max(peak_err, std::abs(WrapAngleRad(ang - j.targetAngle)));
         }
         if (verbose && (step % 120 == 0 || step == c.steps - 1)) {
@@ -150,68 +151,68 @@ int main() {
     const ServoSceneCase kCases[] = {
         {"assets/scenes/visual/vis_servo_arm.json",
             "vis_servo_arm",
-            {0.0f, -9.81f, 0.0f},
+            {0.0, -9.81, 0.0},
             720,
-            0.12f,
-            1.2f,
-            0.38f,
-            6.0f},
+            0.12,
+            1.2,
+            0.38,
+            6.0},
         {"assets/scenes/visual/vis_servo_chain.json",
             "vis_servo_chain",
-            {0.0f, -9.81f, 0.0f},
+            {0.0, -9.81, 0.0},
             900,
-            18.0f,
-            14.0f,
-            1.15f,
-            8.0f},
+            18.0,
+            14.0,
+            1.15,
+            8.0},
         {"assets/scenes/visual/vis_servo_chain.json",
             "vis_servo_chain_zero_g",
-            {0.0f, 0.0f, 0.0f},
+            {0.0, 0.0, 0.0},
             600,
-            6.0f,
-            5.0f,
-            1.2f,
-            8.0f},
+            6.0,
+            5.0,
+            1.2,
+            8.0},
         {"assets/scenes/visual/vis_servo_soft_track.json",
             "vis_servo_soft_track",
-            {0.0f, -9.81f, 0.0f},
+            {0.0, -9.81, 0.0},
             900,
-            0.15f,
-            1.5f,
-            0.55f,
-            6.0f},
+            0.15,
+            1.5,
+            0.55,
+            6.0},
         {"assets/scenes/visual/vis_servo_stiff_hold.json",
             "vis_servo_stiff_hold",
-            {0.0f, -9.81f, 0.0f},
+            {0.0, -9.81, 0.0},
             720,
-            0.2f,
-            2.0f,
-            0.45f,
-            6.0f},
+            0.2,
+            2.0,
+            0.45,
+            6.0},
         {"assets/scenes/visual/vis_servo_integral_bar.json",
             "vis_servo_integral_bar",
-            {0.0f, -9.81f, 0.0f},
+            {0.0, -9.81, 0.0},
             1440,
-            4.0f,
-            8.0f,
-            0.65f,
-            6.0f},
+            4.0,
+            8.0,
+            0.65,
+            6.0},
         {"assets/scenes/visual/vis_servo_y_swing.json",
             "vis_servo_y_swing",
-            {0.0f, -9.81f, 0.0f},
+            {0.0, -9.81, 0.0},
             900,
-            3.5f,
-            6.0f,
-            0.95f,
-            6.0f},
+            3.5,
+            6.0,
+            0.95,
+            6.0},
         {"assets/scenes/visual/vis_servo_torsion_stack.json",
             "vis_servo_torsion_stack",
-            {0.0f, -9.81f, 0.0f},
+            {0.0, -9.81, 0.0},
             960,
-            12.0f,
-            10.0f,
-            0.85f,
-            6.0f},
+            12.0,
+            10.0,
+            0.85,
+            6.0},
     };
 
     const char* v = std::getenv("MINPHYS_SERVO_JSON_TEST_VERBOSE");

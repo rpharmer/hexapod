@@ -26,26 +26,26 @@ struct Block2ContactInput {
     Vec3 normal{};
     Vec3 ra{};
     Vec3 rb{};
-    float oldImpulse = 0.0f;
-    float rhs = 0.0f;
+    Real oldImpulse = 0.0;
+    Real rhs = 0.0;
 };
 
 struct Block2SolveInput {
     Mat3 invIA{};
     Mat3 invIB{};
-    float invMassSum = 0.0f;
-    float blockDiagonalMinimum = 0.0f;
-    float blockDeterminantEpsilon = 0.0f;
-    float blockConditionEstimateMax = 0.0f;
+    Real invMassSum = 0.0;
+    Real blockDiagonalMinimum = 0.0;
+    Real blockDeterminantEpsilon = 0.0;
+    Real blockConditionEstimateMax = 0.0;
     std::array<Block2ContactInput, 2> contacts{};
 };
 
 struct Block2SolveResult {
     bool success = false;
     BlockSolveFallbackCode fallbackReason = BlockSolveFallbackCode::LcpFailure;
-    std::array<float, 2> impulseDeltas{0.0f, 0.0f};
-    std::array<float, 2> solvedImpulses{0.0f, 0.0f};
-    float conditionEstimate = 0.0f;
+    std::array<Real, 2> impulseDeltas{0.0, 0.0};
+    std::array<Real, 2> solvedImpulses{0.0, 0.0};
+    Real conditionEstimate = 0.0;
 };
 
 Block2SolveResult SolveBlock2NormalLcp(const Block2SolveInput& input);

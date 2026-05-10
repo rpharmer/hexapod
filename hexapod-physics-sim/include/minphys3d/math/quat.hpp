@@ -7,16 +7,16 @@
 namespace minphys3d {
 
 struct Quat {
-    float w = 1.0f;
-    float x = 0.0f;
-    float y = 0.0f;
-    float z = 0.0f;
+    Real w = 1.0;
+    Real x = 0.0;
+    Real y = 0.0;
+    Real z = 0.0;
 
     Quat() = default;
-    Quat(float w_, float x_, float y_, float z_) : w(w_), x(x_), y(y_), z(z_) {}
+    Quat(Real w_, Real x_, Real y_, Real z_) : w(w_), x(x_), y(y_), z(z_) {}
 
     Quat operator+(const Quat& rhs) const { return {w + rhs.w, x + rhs.x, y + rhs.y, z + rhs.z}; }
-    Quat operator*(float s) const { return {w * s, x * s, y * s, z * s}; }
+    Quat operator*(Real s) const { return {w * s, x * s, y * s, z * s}; }
 };
 
 inline Quat operator*(const Quat& a, const Quat& b) {
@@ -30,8 +30,8 @@ inline Quat operator*(const Quat& a, const Quat& b) {
 
 inline Quat Conjugate(const Quat& q) { return {q.w, -q.x, -q.y, -q.z}; }
 inline Quat Normalize(const Quat& q) {
-    const float len = std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
-    if (len <= kEpsilon) return {1.0f, 0.0f, 0.0f, 0.0f};
+    const Real len = std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
+    if (len <= kEpsilon) return {1.0, 0.0, 0.0, 0.0};
     return {q.w / len, q.x / len, q.y / len, q.z / len};
 }
 
@@ -39,9 +39,9 @@ inline Quat Normalize(const Quat& q) {
 // ~30 flops vs ~64 for the quat-multiply sandwich. Changes FP rounding
 // order relative to the old form — baselines must be regenerated if used.
 inline Vec3 Rotate(const Quat& q, const Vec3& v) {
-    const float tx = 2.0f * (q.y * v.z - q.z * v.y);
-    const float ty = 2.0f * (q.z * v.x - q.x * v.z);
-    const float tz = 2.0f * (q.x * v.y - q.y * v.x);
+    const Real tx = 2.0 * (q.y * v.z - q.z * v.y);
+    const Real ty = 2.0 * (q.z * v.x - q.x * v.z);
+    const Real tz = 2.0 * (q.x * v.y - q.y * v.x);
     return {
         v.x + q.w * tx + (q.y * tz - q.z * ty),
         v.y + q.w * ty + (q.z * tx - q.x * tz),
@@ -52,9 +52,9 @@ inline Vec3 Rotate(const Quat& q, const Vec3& v) {
 // Equivalent to Rotate(Conjugate(q), v) for unit quaternion q.
 // Same cross-product form with q.w sign flipped.
 inline Vec3 RotateInverse(const Quat& q, const Vec3& v) {
-    const float tx = 2.0f * (q.y * v.z - q.z * v.y);
-    const float ty = 2.0f * (q.z * v.x - q.x * v.z);
-    const float tz = 2.0f * (q.x * v.y - q.y * v.x);
+    const Real tx = 2.0 * (q.y * v.z - q.z * v.y);
+    const Real ty = 2.0 * (q.z * v.x - q.x * v.z);
+    const Real tz = 2.0 * (q.x * v.y - q.y * v.x);
     return {
         v.x - q.w * tx + (q.y * tz - q.z * ty),
         v.y - q.w * ty + (q.z * tx - q.x * tz),

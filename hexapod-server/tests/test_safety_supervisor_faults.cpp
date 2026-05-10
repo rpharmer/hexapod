@@ -211,6 +211,34 @@ bool testRapidBodyRateTriggersTipOverEarly() {
            expect(state.torque_cut, "rate-triggered TIP_OVER should request torque cut");
 }
 
+bool testRapidBodyRateIgnoresTransientRawDropWhenFusedSupportRemains() {
+    SafetySupervisor supervisor(rapidMotionSafetyConfig());
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+    MotionIntent intent = intentNow(RobotMode::WALK);
+    intent.cmd_vx_mps = LinearRateMps{0.30};
+    intent.speed_mps = LinearRateMps{0.30};
+
+    raw.foot_contacts = {true, false, false, false, true, false};
+    est.foot_contacts = {true, true, true, true, true, false};
+    est.has_body_twist_state = true;
+    est.body_twist_state.body_trans_mps.x = 0.30;
+    est.body_twist_state.body_trans_mps.y = 0.0;
+    est.has_imu = true;
+    est.imu.valid = true;
+    est.imu.gyro_radps.x = 3.80;
+    est.imu.gyro_radps.y = 0.35;
+    est.body_twist_state.body_trans_m.z = 0.12;
+    est.body_twist_state.twist_pos_rad.x = 0.16;
+    est.body_twist_state.twist_pos_rad.y = 0.18;
+
+    const SafetyState state =
+        supervisor.evaluate(raw, est, intent, SafetySupervisor::FreshnessInputs{true, true});
+
+    return expect(state.active_fault == FaultCode::NONE,
+                  "rapid body-rate detector should ignore a transient raw-contact dropout when fused support is still ample");
+}
+
 bool testRapidBodyRateStaysQuietWithHealthySupport() {
     SafetySupervisor supervisor(rapidMotionSafetyConfig());
     RobotState raw = nominalRaw();
@@ -334,6 +362,9 @@ int main() {
         !testMotorFaultTorqueCut() ||
         !testBodyHeightCollapseTriggersTipOverEarly() ||
         !testBodyHeightCollapseStaysQuietWithHealthySupport() ||
+        !testRapidBodyRateTriggersTipOverEarly() ||
+        !testRapidBodyRateIgnoresTransientRawDropWhenFusedSupportRemains() ||
+        !testRapidBodyRateStaysQuietWithHealthySupport() ||
         !testLatchedRemainsWhenIntentNotSafeIdle() ||
         !testLatchedRemainsWhenIntentStale() ||
         !testRecoveryRequiresBothConditionsAndHoldTime()) {

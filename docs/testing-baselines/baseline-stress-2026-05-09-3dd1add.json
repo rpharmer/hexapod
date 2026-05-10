@@ -1,0 +1,81 @@
+{
+  "baseline_name": "stress-local-2026-05-09",
+  "server_commit": "3dd1add755b54624e6c5f1faa7ee157375d82b7e",
+  "sim_commit": "3dd1add755b54624e6c5f1faa7ee157375d82b7e",
+  "config_path": "hexapod-server/config.physics-sim-wsl.txt",
+  "config_digest": "not-recorded",
+  "build_type": "build-tests preset",
+  "suite_binary": "hexapod-server/build-tests/test_locomotion_regression_suite",
+  "suite_profile": "stress",
+  "requested_repetitions": 5,
+  "suite_exit_codes": [
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "runs_per_case": {
+    "long_walk_observability": 5
+  },
+  "aggregates": {
+    "long_walk_observability": {
+      "pass_rate": 0.0,
+      "path_length_m": {
+        "median": 1.558486,
+        "min": 1.50538,
+        "max": 146.301654
+      },
+      "net_displacement_m": {
+        "median": 0.231562,
+        "min": 0.213677,
+        "max": 10313653792.957376
+      },
+      "mean_horizontal_speed_mps": {
+        "median": 0.025975,
+        "min": 0.02509,
+        "max": 2.438361
+      },
+      "peak_horizontal_speed_mps": {
+        "median": 0.384375,
+        "min": 0.353405,
+        "max": 4.941627
+      },
+      "yaw_delta_rad": {
+        "median": -0.437924,
+        "min": -2.058853,
+        "max": -0.343672
+      },
+      "mean_yaw_rate_radps": {
+        "median": 0.075785,
+        "min": 0.075266,
+        "max": 0.094648
+      },
+      "peak_yaw_rate_radps": {
+        "median": 2.800146,
+        "min": 2.768953,
+        "max": 11.493243
+      },
+      "stride_count": {
+        "median": 6.0,
+        "min": 2.0,
+        "max": 8.0
+      },
+      "max_abs_roll_rad": {
+        "median": 0.08795,
+        "min": 0.074532,
+        "max": 4.05136
+      },
+      "max_abs_pitch_rad": {
+        "median": 0.10656,
+        "min": 0.092528,
+        "max": 1.247368
+      },
+      "max_body_rate_radps": {
+        "median": 2.510014,
+        "min": 2.283584,
+        "max": 14.994261
+      }
+    }
+  }
+}

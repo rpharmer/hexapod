@@ -104,6 +104,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/geometry_profile_service.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/interactive_calibration_actions.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/interactive_input_mapper.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/joint_angle_gravity_feedforward.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/local_map.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/local_planner.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/loop_executor.cpp"
@@ -132,6 +133,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/state_fusion.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/servo_dynamics_fit.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/status_reporter.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/support_assessment.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/swing_trajectory.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/telemetry_json.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/telemetry_publisher.cpp"
@@ -262,6 +264,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_imu_physics tests/test_imu_physics.cpp)
     target_link_libraries(test_imu_physics PRIVATE hexapod_server_core)
     add_test(NAME imu_physics COMMAND test_imu_physics)
+
+    add_executable(test_joint_angle_gravity_feedforward tests/test_joint_angle_gravity_feedforward.cpp)
+    target_link_libraries(test_joint_angle_gravity_feedforward PRIVATE hexapod_server_core)
+    add_test(NAME joint_angle_gravity_feedforward COMMAND test_joint_angle_gravity_feedforward)
 
     add_executable(test_matrix_lidar tests/test_matrix_lidar.cpp)
     target_link_libraries(test_matrix_lidar PRIVATE hexapod_server_core)
@@ -423,6 +429,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_physics_sim_walk_stability tests/test_physics_sim_walk_stability.cpp)
     target_link_libraries(test_physics_sim_walk_stability PRIVATE hexapod_server_core)
     hexapod_add_live_physics_sim_test(physics_sim_walk_stability test_physics_sim_walk_stability)
+
+    add_executable(test_gravity_feedforward_stand_quiescence tests/test_gravity_feedforward_stand_quiescence.cpp)
+    target_link_libraries(test_gravity_feedforward_stand_quiescence PRIVATE hexapod_server_core)
+    hexapod_add_live_physics_sim_test(physics_feedforward_stand_quiescence test_gravity_feedforward_stand_quiescence)
 
     add_executable(test_physics_sim_turn_foot_clearance tests/test_physics_sim_turn_foot_clearance.cpp)
     target_link_libraries(test_physics_sim_turn_foot_clearance PRIVATE hexapod_server_core)
@@ -606,6 +616,7 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
         test_physics_sim_walk_distance
         test_physics_sim_walk_entry_tracking
         test_physics_sim_walk_stability
+        test_gravity_feedforward_stand_quiescence
         test_physics_sim_turn_foot_clearance
         test_physics_sim_oblique_walk_clearance
         test_physics_sim_turn_raw_contact_loss
@@ -626,6 +637,7 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     if(HEXAPOD_CTEST_USE_LIMITS_MANIFEST)
         set(_HEX_CTEST_LIMITS_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/../docs/testing-baselines/gates/default-v1.json")
         set(_HEX_MANIFEST_CTEST_NAMES
+            physics_feedforward_stand_quiescence
             physics_sim_walk_distance
             physics_sim_walk_entry_tracking
             physics_sim_walk_stability

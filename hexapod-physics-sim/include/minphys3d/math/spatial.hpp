@@ -23,7 +23,6 @@
 // No Mat6 type is used — all operations are expressed with the existing Vec3 and Mat3 primitives.
 
 #include "minphys3d/math/mat3.hpp"
-#include "minphys3d/math/vec3.hpp"
 
 namespace minphys3d {
 
@@ -47,7 +46,7 @@ inline SpatialVec& operator+=(SpatialVec& a, const SpatialVec& b) {
     a.lin += b.lin;
     return a;
 }
-inline SpatialVec operator*(float s, const SpatialVec& v) {
+inline SpatialVec operator*(Real s, const SpatialVec& v) {
     return {s * v.ang, s * v.lin};
 }
 
@@ -59,7 +58,7 @@ struct SpatialInertia {
     Mat3  Ioo{};      // upper-left  3×3: rotational inertia about reference point
     Mat3  mCross{};   // upper-right 3×3: m * Skew(r),  r = COM − ref
                       // lower-left  3×3: Transpose(mCross)  (implicit)
-    float mass = 0.0f;
+    Real mass = 0.0;
 };
 
 inline SpatialInertia operator+(const SpatialInertia& A, const SpatialInertia& B) {
@@ -110,10 +109,10 @@ inline SpatialVec SpatialMul(const SpatialInertia& I, const SpatialVec& v) {
 // ---------------------------------------------------------------------------
 
 inline SpatialInertia SpatialInertiaFromBody(
-    float mass, const Mat3& Iworld, const Vec3& comWorld, const Vec3& refWorld)
+    Real mass, const Mat3& Iworld, const Vec3& comWorld, const Vec3& refWorld)
 {
     const Vec3  r     = comWorld - refWorld;
-    const float rLen2 = Dot(r, r);
+    const Real rLen2 = Dot(r, r);
     // Parallel-axis theorem: I_ref = I_com + m*(|r|^2*I3 - outer(r,r))
     const Mat3  shiftedI = Iworld + mass * (ScaleIdentity(rLen2) - OuterProduct(r, r));
     const Mat3  mX       = mass * Skew(r);
@@ -156,12 +155,12 @@ inline SpatialVec SpatialBias(const SpatialInertia& Ia, const SpatialVec& vel) {
 // ---------------------------------------------------------------------------
 
 inline SpatialInertia PropagateInertiaFromProjection(
-    const SpatialInertia& Ic, const Vec3& IsAng, const Vec3& IsLin, float D)
+    const SpatialInertia& Ic, const Vec3& IsAng, const Vec3& IsLin, Real D)
 {
     if (!(D > kEpsilon)) {
         return {};
     }
-    const float invD = 1.0f / D;
+    const Real invD = 1.0 / D;
     SpatialInertia r = Ic;
     r.Ioo    = r.Ioo    - invD * OuterProduct(IsAng, IsAng);
     r.mCross = r.mCross - invD * OuterProduct(IsAng, IsLin);
@@ -172,7 +171,7 @@ inline SpatialInertia PropagateInertiaFromProjection(
 // Extended form: also returns IsAng = Ic.Ioo*s and IsLin = Transpose(Ic.mCross)*s so the
 // caller can pass them to PropagateBias without recomputing them (saves 2 Mat3*Vec3/joint).
 inline SpatialInertia PropagateInertia(
-    const SpatialInertia& Ic, const Vec3& s, float& D,
+    const SpatialInertia& Ic, const Vec3& s, Real& D,
     Vec3& IsAngOut, Vec3& IsLinOut)
 {
     // Is = Ic * S = Ic * [s; 0]
@@ -187,7 +186,7 @@ inline SpatialInertia PropagateInertia(
 }
 
 // Backward-compatible 3-parameter overload (does not return Is vectors).
-inline SpatialInertia PropagateInertia(const SpatialInertia& Ic, const Vec3& s, float& D) {
+inline SpatialInertia PropagateInertia(const SpatialInertia& Ic, const Vec3& s, Real& D) {
     Vec3 dum1, dum2;
     return PropagateInertia(Ic, s, D, dum1, dum2);
 }
@@ -209,11 +208,11 @@ inline SpatialInertia PropagateInertia(const SpatialInertia& Ic, const Vec3& s, 
 
 inline SpatialVec PropagateBias(
     const SpatialVec& Pc, const SpatialInertia& Ic,
-    const Vec3& s, float D, float u)
+    const Vec3& s, Real D, Real u)
 {
     if (!(D > kEpsilon)) return {};
-    const float sPc   = Dot(s, Pc.ang);         // s^T * Pc  (revolute: angular only)
-    const float coeff = (u - sPc) / D;
+    const Real sPc   = Dot(s, Pc.ang);         // s^T * Pc  (revolute: angular only)
+    const Real coeff = (u - sPc) / D;
     const Vec3  IsAng = Ic.Ioo * s;
     const Vec3  IsLin = Transpose(Ic.mCross) * s;
     return {
@@ -227,10 +226,10 @@ inline SpatialVec PropagateBias(
 inline SpatialVec PropagateBias(
     const SpatialVec& Pc,
     const Vec3& IsAng, const Vec3& IsLin,  // from PropagateInertia(..., IsAngOut, IsLinOut)
-    const Vec3& s, float D, float u)
+    const Vec3& s, Real D, Real u)
 {
     if (!(D > kEpsilon)) return {};
-    const float coeff = (u - Dot(s, Pc.ang)) / D;
+    const Real coeff = (u - Dot(s, Pc.ang)) / D;
     return {Pc.ang + IsAng * coeff, Pc.lin + IsLin * coeff};
 }
 
@@ -255,7 +254,7 @@ inline SpatialInertia SpatialInertiaTransport(const SpatialInertia& Ia, const Ve
     //   Ioo_new = Ioo_old − Skew(offset)*Transpose(mCross) + mCross*Skew(offset)^T
     //             − m * Skew(offset) * Skew(offset)^T
     const Mat3 dXSkew    = Skew(offset);
-    const float off2     = Dot(offset, offset);
+    const Real off2     = Dot(offset, offset);
     const Mat3 IooNew    = Ia.Ioo
                           - dXSkew * Transpose(Ia.mCross)
                           + Ia.mCross * Transpose(dXSkew)
@@ -310,7 +309,7 @@ inline SpatialInertia SpatialInertiaPluckerTranslateChildToParent(
 //   Returns +infinity if the 6×6 system is singular / ill-conditioned.
 // ---------------------------------------------------------------------------
 
-inline float DotSpatial(const SpatialVec& a, const SpatialVec& b) {
+inline Real DotSpatial(const SpatialVec& a, const SpatialVec& b) {
     return Dot(a.ang, b.ang) + Dot(a.lin, b.lin);
 }
 
@@ -325,6 +324,239 @@ inline SpatialVec SpatialForceTranslateByOffset(const SpatialVec& f, const Vec3&
     return {f.ang + Cross(offsetRefBMinusRefA, f.lin), f.lin};
 }
 
+struct SpatialSolveDiagnostics {
+    bool regularized = false;
+    bool failed = false;
+    double minPivotAbs = std::numeric_limits<double>::infinity();
+};
+
+namespace spatial_internal {
+
+constexpr double kSpatialSolveDiagRidge = 1.0e-10;
+constexpr double kSpatialSolvePivotEps = 1.0e-12;
+
+inline void AssembleSpatialSolveSystem(const SpatialInertia& I, double M[6][6]) {
+    for (int r = 0; r < 6; ++r) {
+        for (int c = 0; c < 6; ++c) {
+            M[r][c] = 0.0;
+        }
+    }
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            M[i][j] = static_cast<double>(I.Ioo.m[i][j]);
+            M[i][j + 3] = static_cast<double>(I.mCross.m[i][j]);
+        }
+    }
+    const Mat3 mCt = Transpose(I.mCross);
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            M[i + 3][j] = static_cast<double>(mCt.m[i][j]);
+            M[i + 3][j + 3] = (i == j) ? static_cast<double>(I.mass) : 0.0;
+        }
+    }
+}
+
+inline bool FactorSpatialSolveSystem(
+    const SpatialInertia& I,
+    double L[6][6],
+    double D[6],
+    int perm[6],
+    SpatialSolveDiagnostics* diagnostics)
+{
+    double A[6][6]{};
+    AssembleSpatialSolveSystem(I, A);
+    for (int i = 0; i < 6; ++i) {
+        A[i][i] += kSpatialSolveDiagRidge;
+        perm[i] = i;
+        D[i] = 0.0;
+        for (int j = 0; j < 6; ++j) {
+            L[i][j] = (i == j) ? 1.0 : 0.0;
+        }
+    }
+
+    if (diagnostics) {
+        diagnostics->regularized = true;
+        diagnostics->failed = false;
+        diagnostics->minPivotAbs = std::numeric_limits<double>::infinity();
+    }
+
+    for (int k = 0; k < 6; ++k) {
+        int pivot = k;
+        double best = std::abs(A[k][k]);
+        for (int i = k + 1; i < 6; ++i) {
+            const double candidate = std::abs(A[i][i]);
+            if (candidate > best) {
+                best = candidate;
+                pivot = i;
+            }
+        }
+        if (!std::isfinite(best) || best <= kSpatialSolvePivotEps) {
+            if (diagnostics) {
+                diagnostics->failed = true;
+                diagnostics->minPivotAbs = std::min(diagnostics->minPivotAbs, best);
+            }
+            return false;
+        }
+        if (pivot != k) {
+            for (int c = 0; c < 6; ++c) {
+                std::swap(A[k][c], A[pivot][c]);
+            }
+            for (int r = 0; r < 6; ++r) {
+                std::swap(A[r][k], A[r][pivot]);
+            }
+            for (int r = 0; r < k; ++r) {
+                std::swap(L[k][r], L[pivot][r]);
+            }
+            std::swap(perm[k], perm[pivot]);
+        }
+
+        const double diag = A[k][k];
+        const double absDiag = std::abs(diag);
+        if (!std::isfinite(diag) || absDiag <= kSpatialSolvePivotEps) {
+            if (diagnostics) {
+                diagnostics->failed = true;
+                diagnostics->minPivotAbs = std::min(diagnostics->minPivotAbs, absDiag);
+            }
+            return false;
+        }
+        D[k] = diag;
+        if (diagnostics) {
+            diagnostics->minPivotAbs = std::min(diagnostics->minPivotAbs, absDiag);
+        }
+
+        for (int i = k + 1; i < 6; ++i) {
+            const double lik = A[i][k] / diag;
+            if (!std::isfinite(lik)) {
+                if (diagnostics) {
+                    diagnostics->failed = true;
+                }
+                return false;
+            }
+            L[i][k] = lik;
+            for (int j = k + 1; j <= i; ++j) {
+                A[i][j] -= lik * diag * L[j][k];
+                A[j][i] = A[i][j];
+            }
+        }
+    }
+
+    if (diagnostics && !std::isfinite(diagnostics->minPivotAbs)) {
+        diagnostics->failed = true;
+        return false;
+    }
+    return true;
+}
+
+inline bool SolveSpatialFactorized(
+    const double L[6][6],
+    const double D[6],
+    const int perm[6],
+    const SpatialVec& rhs,
+    SpatialVec& out)
+{
+    double rhsVec[6] = {
+        static_cast<double>(rhs.ang.x),
+        static_cast<double>(rhs.ang.y),
+        static_cast<double>(rhs.ang.z),
+        static_cast<double>(rhs.lin.x),
+        static_cast<double>(rhs.lin.y),
+        static_cast<double>(rhs.lin.z),
+    };
+    double b[6]{};
+    for (int i = 0; i < 6; ++i) {
+        b[i] = rhsVec[perm[i]];
+    }
+
+    double y[6]{};
+    for (int i = 0; i < 6; ++i) {
+        double sum = b[i];
+        for (int j = 0; j < i; ++j) {
+            sum -= L[i][j] * y[j];
+        }
+        y[i] = sum;
+    }
+
+    double z[6]{};
+    for (int i = 0; i < 6; ++i) {
+        if (!std::isfinite(D[i]) || std::abs(D[i]) <= kSpatialSolvePivotEps) {
+            return false;
+        }
+        z[i] = y[i] / D[i];
+    }
+
+    double xPerm[6]{};
+    for (int i = 5; i >= 0; --i) {
+        double sum = z[i];
+        for (int j = i + 1; j < 6; ++j) {
+            sum -= L[j][i] * xPerm[j];
+        }
+        xPerm[i] = sum;
+    }
+
+    double x[6]{};
+    for (int i = 0; i < 6; ++i) {
+        x[perm[i]] = xPerm[i];
+    }
+    for (double value : x) {
+        if (!std::isfinite(value)) {
+            return false;
+        }
+    }
+
+    out.ang = {
+        static_cast<Real>(x[0]),
+        static_cast<Real>(x[1]),
+        static_cast<Real>(x[2]),
+    };
+    out.lin = {
+        static_cast<Real>(x[3]),
+        static_cast<Real>(x[4]),
+        static_cast<Real>(x[5]),
+    };
+    return std::isfinite(out.ang.x) && std::isfinite(out.ang.y) && std::isfinite(out.ang.z)
+        && std::isfinite(out.lin.x) && std::isfinite(out.lin.y) && std::isfinite(out.lin.z);
+}
+
+inline bool SpatialInertiaSolveMotionDetailed(
+    const SpatialInertia& I,
+    const SpatialVec& rhs,
+    SpatialVec& out,
+    SpatialSolveDiagnostics* diagnostics)
+{
+    double L[6][6]{};
+    double D[6]{};
+    int perm[6]{};
+    if (!FactorSpatialSolveSystem(I, L, D, perm, diagnostics)) {
+        return false;
+    }
+    const bool ok = SolveSpatialFactorized(L, D, perm, rhs, out);
+    if (diagnostics && !ok) {
+        diagnostics->failed = true;
+    }
+    return ok;
+}
+
+inline Real SpatialMotionComplianceDetailed(
+    const SpatialInertia& I,
+    const SpatialVec& h,
+    SpatialSolveDiagnostics* diagnostics)
+{
+    SpatialVec x{};
+    if (!SpatialInertiaSolveMotionDetailed(I, h, x, diagnostics)) {
+        return std::numeric_limits<Real>::infinity();
+    }
+    const Real compliance = DotSpatial(h, x);
+    if (!std::isfinite(compliance) || !(compliance > 0.0)) {
+        if (diagnostics) {
+            diagnostics->failed = true;
+        }
+        return std::numeric_limits<Real>::infinity();
+    }
+    return compliance;
+}
+
+} // namespace spatial_internal
+
 // ---------------------------------------------------------------------------
 // SpatialInertiaSolveMotion
 //   Solve I * x = rhs for the 6×6 symmetric spatial inertia in the same basis
@@ -332,134 +564,11 @@ inline SpatialVec SpatialForceTranslateByOffset(const SpatialVec& f, const Vec3&
 // ---------------------------------------------------------------------------
 
 inline bool SpatialInertiaSolveMotion(const SpatialInertia& I, const SpatialVec& rhs, SpatialVec& out) {
-    float M[6][7]{};
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            M[i][j]     = I.Ioo.m[i][j];
-            M[i][j + 3] = I.mCross.m[i][j];
-        }
-    }
-    const Mat3 mCt = Transpose(I.mCross);
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            M[i + 3][j] = mCt.m[i][j];
-        }
-        for (int j = 0; j < 3; ++j) {
-            M[i + 3][j + 3] = (i == j) ? I.mass : 0.0f;
-        }
-    }
-    M[0][6] = rhs.ang.x;
-    M[1][6] = rhs.ang.y;
-    M[2][6] = rhs.ang.z;
-    M[3][6] = rhs.lin.x;
-    M[4][6] = rhs.lin.y;
-    M[5][6] = rhs.lin.z;
-
-    for (int col = 0; col < 6; ++col) {
-        int pivot = col;
-        float best = std::abs(M[col][col]);
-        for (int r = col + 1; r < 6; ++r) {
-            const float v = std::abs(M[r][col]);
-            if (v > best) {
-                best = v;
-                pivot = r;
-            }
-        }
-        if (!(best > 1e-18f)) {
-            return false;
-        }
-        if (pivot != col) {
-            for (int c = col; c < 7; ++c) {
-                std::swap(M[col][c], M[pivot][c]);
-            }
-        }
-        const float invPivot = 1.0f / M[col][col];
-        for (int c = col; c < 7; ++c) {
-            M[col][c] *= invPivot;
-        }
-        for (int r = 0; r < 6; ++r) {
-            if (r == col) {
-                continue;
-            }
-            const float f = M[r][col];
-            if (f == 0.0f) {
-                continue;
-            }
-            for (int c = col; c < 7; ++c) {
-                M[r][c] -= f * M[col][c];
-            }
-        }
-    }
-
-    out.ang = {M[0][6], M[1][6], M[2][6]};
-    out.lin = {M[3][6], M[4][6], M[5][6]};
-    return true;
+    return spatial_internal::SpatialInertiaSolveMotionDetailed(I, rhs, out, nullptr);
 }
 
-inline float SpatialMotionCompliance(const SpatialInertia& I, const SpatialVec& h) {
-    // Assemble symmetric 6×6: [Ioo  mCross; mCross^T  m*I]
-    float M[6][7]{};
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            M[i][j]     = I.Ioo.m[i][j];
-            M[i][j + 3] = I.mCross.m[i][j];
-        }
-    }
-    const Mat3 mCt = Transpose(I.mCross);
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            M[i + 3][j] = mCt.m[i][j];
-        }
-        for (int j = 0; j < 3; ++j) {
-            M[i + 3][j + 3] = (i == j) ? I.mass : 0.0f;
-        }
-    }
-    M[0][6] = h.ang.x;
-    M[1][6] = h.ang.y;
-    M[2][6] = h.ang.z;
-    M[3][6] = h.lin.x;
-    M[4][6] = h.lin.y;
-    M[5][6] = h.lin.z;
-
-    // Gauss-Jordan elimination with partial pivot on augmented column 6.
-    for (int col = 0; col < 6; ++col) {
-        int pivot = col;
-        float best = std::abs(M[col][col]);
-        for (int r = col + 1; r < 6; ++r) {
-            const float v = std::abs(M[r][col]);
-            if (v > best) {
-                best = v;
-                pivot = r;
-            }
-        }
-        if (!(best > 1e-18f)) {
-            return std::numeric_limits<float>::infinity();
-        }
-        if (pivot != col) {
-            for (int c = col; c < 7; ++c) {
-                std::swap(M[col][c], M[pivot][c]);
-            }
-        }
-        const float invPivot = 1.0f / M[col][col];
-        for (int c = col; c < 7; ++c) {
-            M[col][c] *= invPivot;
-        }
-        for (int r = 0; r < 6; ++r) {
-            if (r == col) {
-                continue;
-            }
-            const float f = M[r][col];
-            if (f == 0.0f) {
-                continue;
-            }
-            for (int c = col; c < 7; ++c) {
-                M[r][c] -= f * M[col][c];
-            }
-        }
-    }
-
-    const SpatialVec x{Vec3{M[0][6], M[1][6], M[2][6]}, Vec3{M[3][6], M[4][6], M[5][6]}};
-    return DotSpatial(h, x);
+inline Real SpatialMotionCompliance(const SpatialInertia& I, const SpatialVec& h) {
+    return spatial_internal::SpatialMotionComplianceDetailed(I, h, nullptr);
 }
 
 } // namespace minphys3d

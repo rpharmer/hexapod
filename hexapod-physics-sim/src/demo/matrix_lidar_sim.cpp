@@ -12,8 +12,8 @@
 namespace minphys3d::demo {
 namespace {
 
-constexpr float kMinRangeM = static_cast<float>(matrix_lidar_geom::kMinRangeMatrix64x8Mm) / 1000.0f;
-constexpr float kMaxRangeM = static_cast<float>(matrix_lidar_geom::kMaxRangeMatrix64x8Mm) / 1000.0f;
+constexpr Real kMinRangeM = static_cast<float>(matrix_lidar_geom::kMinRangeMatrix64x8Mm) / 1000.0;
+constexpr Real kMaxRangeM = static_cast<float>(matrix_lidar_geom::kMaxRangeMatrix64x8Mm) / 1000.0;
 constexpr int kMmResolution = 14;
 
 // Build a bitset (1 byte per body) marking the bodies that LiDAR rays must skip.
@@ -46,36 +46,36 @@ bool RayPlaneHit(const Vec3& o,
                  const Vec3& d,
                  const Vec3& plane_point,
                  const Vec3& plane_normal_unit,
-                 float& t_out) {
-    const float denom = Dot(d, plane_normal_unit);
-    if (std::abs(denom) < 1.0e-8f) {
+                 Real& t_out) {
+    const Real denom = Dot(d, plane_normal_unit);
+    if (std::abs(denom) < 1.0e-8) {
         return false;
     }
-    const float t = Dot(plane_point - o, plane_normal_unit) / denom;
-    if (!std::isfinite(t) || t <= 1.0e-4f) {
+    const Real t = Dot(plane_point - o, plane_normal_unit) / denom;
+    if (!std::isfinite(t) || t <= 1.0e-4) {
         return false;
     }
     t_out = t;
     return true;
 }
 
-bool RaySphereHit(const Vec3& o, const Vec3& d, const Vec3& center, float radius, float& t_out) {
-    if (radius <= 1.0e-6f) {
+bool RaySphereHit(const Vec3& o, const Vec3& d, const Vec3& center, Real radius, Real& t_out) {
+    if (radius <= 1.0e-6) {
         return false;
     }
     const Vec3 oc = o - center;
-    const float b = Dot(oc, d);
-    const float c = Dot(oc, oc) - radius * radius;
-    const float disc = b * b - c;
-    if (disc < 0.0f) {
+    const Real b = Dot(oc, d);
+    const Real c = Dot(oc, oc) - radius * radius;
+    const Real disc = b * b - c;
+    if (disc < 0.0) {
         return false;
     }
-    const float s = std::sqrt(disc);
-    float t = -b - s;
-    if (t <= 1.0e-4f) {
+    const Real s = std::sqrt(disc);
+    Real t = -b - s;
+    if (t <= 1.0e-4) {
         t = -b + s;
     }
-    if (!std::isfinite(t) || t <= 1.0e-4f) {
+    if (!std::isfinite(t) || t <= 1.0e-4) {
         return false;
     }
     t_out = t;
@@ -87,33 +87,33 @@ bool RayObbHit(const Vec3& o,
                const Vec3& center,
                const Quat& orientation,
                const Vec3& half_extents,
-               float& t_out) {
+               Real& t_out) {
     const Quat q_inv = Conjugate(Normalize(orientation));
     const Vec3 o_l = Rotate(q_inv, o - center);
     const Vec3 d_l = Rotate(q_inv, d);
 
-    float t_min = -std::numeric_limits<float>::infinity();
-    float t_max = std::numeric_limits<float>::infinity();
+    Real t_min = -std::numeric_limits<float>::infinity();
+    Real t_max = std::numeric_limits<float>::infinity();
 
-    const float ox = o_l.x;
-    const float oy = o_l.y;
-    const float oz = o_l.z;
-    const float dx = d_l.x;
-    const float dy = d_l.y;
-    const float dz = d_l.z;
-    const float hx = half_extents.x;
-    const float hy = half_extents.y;
-    const float hz = half_extents.z;
+    const Real ox = o_l.x;
+    const Real oy = o_l.y;
+    const Real oz = o_l.z;
+    const Real dx = d_l.x;
+    const Real dy = d_l.y;
+    const Real dz = d_l.z;
+    const Real hx = half_extents.x;
+    const Real hy = half_extents.y;
+    const Real hz = half_extents.z;
 
-    auto slab = [&](float origin, float dir, float he, float& in_min, float& in_max) -> bool {
-        if (std::abs(dir) < 1.0e-8f) {
+    auto slab = [&](Real origin, Real dir, Real he, Real& in_min, Real& in_max) -> bool {
+        if (std::abs(dir) < 1.0e-8) {
             if (origin < -he || origin > he) {
                 return false;
             }
             return true;
         }
-        float t1 = (-he - origin) / dir;
-        float t2 = (he - origin) / dir;
+        Real t1 = (-he - origin) / dir;
+        Real t2 = (he - origin) / dir;
         if (t1 > t2) {
             std::swap(t1, t2);
         }
@@ -132,31 +132,31 @@ bool RayObbHit(const Vec3& o,
         return false;
     }
 
-    float t_hit = t_min;
-    if (t_hit <= 1.0e-4f) {
+    Real t_hit = t_min;
+    if (t_hit <= 1.0e-4) {
         t_hit = t_max;
     }
-    if (!std::isfinite(t_hit) || t_hit <= 1.0e-4f) {
+    if (!std::isfinite(t_hit) || t_hit <= 1.0e-4) {
         return false;
     }
     t_out = t_hit;
     return true;
 }
 
-bool RayAabbHit(const Vec3& o, const Vec3& d, const AABB& box, float& t_out) {
-    float t_min = -std::numeric_limits<float>::infinity();
-    float t_max = std::numeric_limits<float>::infinity();
+bool RayAabbHit(const Vec3& o, const Vec3& d, const AABB& box, Real& t_out) {
+    Real t_min = -std::numeric_limits<float>::infinity();
+    Real t_max = std::numeric_limits<float>::infinity();
 
-    auto axis = [&](float o_a, float d_a, float b_min, float b_max) -> bool {
-        if (std::abs(d_a) < 1.0e-8f) {
+    auto axis = [&](Real o_a, Real d_a, Real b_min, Real b_max) -> bool {
+        if (std::abs(d_a) < 1.0e-8) {
             if (o_a < b_min || o_a > b_max) {
                 return false;
             }
             return true;
         }
-        float inv = 1.0f / d_a;
-        float t1 = (b_min - o_a) * inv;
-        float t2 = (b_max - o_a) * inv;
+        Real inv = 1.0 / d_a;
+        Real t1 = (b_min - o_a) * inv;
+        Real t2 = (b_max - o_a) * inv;
         if (t1 > t2) {
             std::swap(t1, t2);
         }
@@ -175,11 +175,11 @@ bool RayAabbHit(const Vec3& o, const Vec3& d, const AABB& box, float& t_out) {
         return false;
     }
 
-    float t_hit = t_min;
-    if (t_hit <= 1.0e-4f) {
+    Real t_hit = t_min;
+    if (t_hit <= 1.0e-4) {
         t_hit = t_max;
     }
-    if (!std::isfinite(t_hit) || t_hit <= 1.0e-4f) {
+    if (!std::isfinite(t_hit) || t_hit <= 1.0e-4) {
         return false;
     }
     t_out = t_hit;
@@ -195,16 +195,16 @@ bool RayAabbHit(const Vec3& o, const Vec3& d, const AABB& box, float& t_out) {
 // Unlike the previous implementation we walk the broadphase BVH via
 // `World::QueryRayCandidates` and only test bodies whose fat-AABB is intersected
 // by the ray — turning what was O(N bodies) per ray into O(log N + hits).
-float CastRay(const World& world,
+Real CastRay(const World& world,
               const HexapodSceneObjects& scene,
               const TerrainPatch& terrain_patch,
               const std::vector<std::uint8_t>& skip_bodies,
               const Vec3& origin,
               const Vec3& dir_unit) {
     (void)scene;
-    float best = kMaxRangeM + 1.0f;
+    Real best = kMaxRangeM + 1.0;
 
-    float terrain_hit = -1.0f;
+    Real terrain_hit = -1.0;
     if (terrain_patch.RaycastWorld(origin, dir_unit, terrain_hit)) {
         best = terrain_hit;
     }
@@ -214,7 +214,7 @@ float CastRay(const World& world,
             return;
         }
         const Body& b = world.GetBody(id);
-        float t_hit = std::numeric_limits<float>::infinity();
+        Real t_hit = std::numeric_limits<float>::infinity();
 
         if (b.shape == ShapeType::Plane) {
             Vec3 n{};
@@ -246,26 +246,26 @@ float CastRay(const World& world,
     });
 
     if (best > kMaxRangeM || !std::isfinite(best)) {
-        return -1.0f;
+        return -1.0;
     }
     return best;
 }
 
 Vec3 ChassisForward(const Quat& q_body) {
     // Body local −Z is toward the front leg row (see `scenes.cpp` mount offsets).
-    return Normalize(Rotate(q_body, Vec3{0.0f, 0.0f, -1.0f}));
+    return Normalize(Rotate(q_body, Vec3{0.0, 0.0, -1.0}));
 }
 
 Vec3 ChassisUp(const Quat& q_body) {
-    return Normalize(Rotate(q_body, Vec3{0.0f, 1.0f, 0.0f}));
+    return Normalize(Rotate(q_body, Vec3{0.0, 1.0, 0.0}));
 }
 
-std::uint16_t RangeToWireMm(float range_m) {
+std::uint16_t RangeToWireMm(Real range_m) {
     if (range_m < kMinRangeM) {
         return physics_sim::kMatrixLidarInvalidMm;
     }
-    int mm = static_cast<int>(std::lround(range_m * 1000.0f));
-    mm = std::max(static_cast<int>(kMinRangeM * 1000.0f), std::min(mm, static_cast<int>(kMaxRangeM * 1000.0f)));
+    int mm = static_cast<int>(std::lround(range_m * 1000.0));
+    mm = std::max(static_cast<int>(kMinRangeM * 1000.0), std::min(mm, static_cast<int>(kMaxRangeM * 1000.0)));
     const int q = static_cast<int>(std::lround(static_cast<float>(mm) / static_cast<float>(kMmResolution)))
         * kMmResolution;
     const int clamped = std::max(1, std::min(q, 65534));
@@ -289,7 +289,7 @@ void FillSimMatrixLidar64x8(const World& world,
     const Vec3 forward = ChassisForward(q);
     const Vec3 up = ChassisUp(q);
     // Pitch the optical axis slightly down so central beams are not parallel to an infinite ground plane.
-    const float kOpticalAxisPitchDownRad = static_cast<float>(matrix_lidar_geom::kOpticalAxisPitchDownRad);
+    const Real kOpticalAxisPitchDownRad = static_cast<float>(matrix_lidar_geom::kOpticalAxisPitchDownRad);
     const Vec3 optical_axis =
         Normalize(forward * std::cos(kOpticalAxisPitchDownRad) - up * std::sin(kOpticalAxisPitchDownRad));
     const Vec3 optical_right = Normalize(Cross(up, optical_axis));
@@ -321,17 +321,17 @@ void FillSimMatrixLidar64x8(const World& world,
                 matrix_lidar_geom::kMatrix64x8FovVRad,
                 az_d,
                 el_d);
-            const float az = static_cast<float>(az_d);
-            const float el = static_cast<float>(el_d);
+            const Real az = static_cast<float>(az_d);
+            const Real el = static_cast<float>(el_d);
 
-            const float c_el = std::cos(el);
+            const Real c_el = std::cos(el);
             const Vec3 dir = Normalize(
                 optical_axis * (c_el * std::cos(az)) + optical_right * (c_el * std::sin(az))
                 + optical_up * std::sin(el));
 
-            const float hit_m = CastRay(world, scene, terrain_patch, skip_bodies, sensor_origin, dir);
+            const Real hit_m = CastRay(world, scene, terrain_patch, skip_bodies, sensor_origin, dir);
             const std::size_t idx = static_cast<std::size_t>(row * kCols + col);
-            if (hit_m < 0.0f) {
+            if (hit_m < 0.0) {
                 rsp.matrix_lidar_ranges_mm[idx] = physics_sim::kMatrixLidarInvalidMm;
             } else {
                 rsp.matrix_lidar_ranges_mm[idx] = RangeToWireMm(hit_m);
@@ -352,7 +352,7 @@ void AppendMatrixLidarTerrainSamples(const World& world,
                                      const physics_sim::StateResponse& rsp,
                                      const TerrainPatchConfig& terrain_config,
                                      std::vector<TerrainSample>& out_samples) {
-    if (rsp.matrix_lidar_valid == 0 || terrain_config.lidar_sample_weight <= 1.0e-6f) {
+    if (rsp.matrix_lidar_valid == 0 || terrain_config.lidar_sample_weight <= 1.0e-6) {
         return;
     }
     if (rsp.matrix_lidar_model != physics_sim::MatrixLidarModel::Matrix64x8) {
@@ -363,7 +363,7 @@ void AppendMatrixLidarTerrainSamples(const World& world,
     const Quat q = Normalize(chassis.orientation);
     const Vec3 forward = ChassisForward(q);
     const Vec3 up = ChassisUp(q);
-    const float kOpticalAxisPitchDownRad = static_cast<float>(matrix_lidar_geom::kOpticalAxisPitchDownRad);
+    const Real kOpticalAxisPitchDownRad = static_cast<float>(matrix_lidar_geom::kOpticalAxisPitchDownRad);
     const Vec3 optical_axis =
         Normalize(forward * std::cos(kOpticalAxisPitchDownRad) - up * std::sin(kOpticalAxisPitchDownRad));
     const Vec3 optical_right = Normalize(Cross(up, optical_axis));
@@ -393,38 +393,38 @@ void AppendMatrixLidarTerrainSamples(const World& world,
                 matrix_lidar_geom::kMatrix64x8FovVRad,
                 az_d,
                 el_d);
-            const float az = static_cast<float>(az_d);
-            const float el = static_cast<float>(el_d);
+            const Real az = static_cast<float>(az_d);
+            const Real el = static_cast<float>(el_d);
 
-            const float c_el = std::cos(el);
+            const Real c_el = std::cos(el);
             const Vec3 dir = Normalize(
                 optical_axis * (c_el * std::cos(az)) + optical_right * (c_el * std::sin(az))
                 + optical_up * std::sin(el));
 
-            float t_terrain = -1.0f;
+            Real t_terrain = -1.0;
             const bool terrain_hit = terrain_patch.RaycastWorld(sensor_origin, dir, t_terrain);
-            if (!terrain_hit || t_terrain <= 1.0e-4f) {
+            if (!terrain_hit || t_terrain <= 1.0e-4) {
                 continue;
             }
-            const float t_full = CastRay(world, scene, terrain_patch, skip_bodies, sensor_origin, dir);
-            if (t_full < 0.0f || !std::isfinite(t_full)) {
+            const Real t_full = CastRay(world, scene, terrain_patch, skip_bodies, sensor_origin, dir);
+            if (t_full < 0.0 || !std::isfinite(t_full)) {
                 continue;
             }
-            if (std::abs(t_full - t_terrain) > 0.04f) {
+            if (std::abs(t_full - t_terrain) > 0.04) {
                 continue;
             }
 
             const Vec3 hit = sensor_origin + dir * t_full;
-            float surface_confidence = 0.0f;
+            Real surface_confidence = 0.0;
             (void)terrain_patch.SampleHeightAndConfidenceWorld(hit.x, hit.z, &surface_confidence);
             if (!std::isfinite(surface_confidence) ||
                 surface_confidence < terrain_config.lidar_min_surface_confidence) {
                 continue;
             }
-            const float incidence = std::max(0.15f, std::abs(dir.y));
-            const float conf =
-                terrain_config.lidar_sample_weight * surface_confidence * incidence * std::max(0.2f, std::abs(c_el));
-            out_samples.push_back(TerrainSample{hit, hit.y, std::clamp(conf, 0.0f, 1.0f)});
+            const Real incidence = std::max(0.15, std::abs(dir.y));
+            const Real conf =
+                terrain_config.lidar_sample_weight * surface_confidence * incidence * std::max(0.2, std::abs(c_el));
+            out_samples.push_back(TerrainSample{hit, hit.y, std::clamp(conf, 0.0, 1.0)});
         }
     }
 }

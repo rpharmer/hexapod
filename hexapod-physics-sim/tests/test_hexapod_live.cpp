@@ -11,31 +11,31 @@ namespace {
 using namespace minphys3d;
 using namespace minphys3d::demo;
 
-float WrapAngle(float angle) {
+Real WrapAngle(Real angle) {
     return std::atan2(std::sin(angle), std::cos(angle));
 }
 
 struct Metrics {
-    float peakLinear = 0.0f;
-    float peakAngular = 0.0f;
-    float peakError = 0.0f;
-    float finalSpeed = 0.0f;
+    Real peakLinear = 0.0;
+    Real peakAngular = 0.0;
+    Real peakError = 0.0;
+    Real finalSpeed = 0.0;
     Vec3 finalPosition{};
 };
 
 Metrics RunLiveHexapod() {
-    World world({0.0f, -9.81f, 0.0f});
+    World world({0.0, -9.81, 0.0});
     JointSolverConfig joint_cfg = world.GetJointSolverConfig();
     joint_cfg.servoPositionPasses = 0;
-    joint_cfg.hingeAnchorBiasFactor = 0.25f;
-    joint_cfg.hingeAnchorDampingFactor = 0.3f;
+    joint_cfg.hingeAnchorBiasFactor = 0.25;
+    joint_cfg.hingeAnchorDampingFactor = 0.3;
     world.SetJointSolverConfig(joint_cfg);
 
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
 
     Metrics metrics;
-    constexpr float kDt = 1.0f / 240.0f;
+    constexpr Real kDt = 1.0 / 240.0;
     for (int step = 0; step < 240; ++step) {
         world.Step(kDt, 24);
         const Body& chassis = world.GetBody(scene.body);
@@ -65,11 +65,11 @@ Metrics RunLiveHexapod() {
 int main() {
     const Metrics metrics = RunLiveHexapod();
 
-    constexpr float kMaxLinear = 1.5f;
-    constexpr float kMaxAngular = 0.1f;
-    constexpr float kMaxError = 2.0f;
-    constexpr float kMaxFinalSpeed = 0.05f;
-    constexpr float kMinFinalY = 0.030f;
+    constexpr Real kMaxLinear = 1.5;
+    constexpr Real kMaxAngular = 0.1;
+    constexpr Real kMaxError = 2.0;
+    constexpr Real kMaxFinalSpeed = 0.05;
+    constexpr Real kMinFinalY = 0.030;
 
     if (metrics.peakLinear > kMaxLinear) {
         std::cerr << "hex_live peak_linear=" << metrics.peakLinear << " cap=" << kMaxLinear << "\n";

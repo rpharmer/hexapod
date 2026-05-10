@@ -12,64 +12,64 @@ namespace {
 
 using namespace minphys3d;
 
-float SignedAngleAroundAxis(const Vec3& from, const Vec3& to, const Vec3& axis) {
+Real SignedAngleAroundAxis(const Vec3& from, const Vec3& to, const Vec3& axis) {
     Vec3 from_n = from;
     Vec3 to_n = to;
     Vec3 axis_n = axis;
     const bool valid = TryNormalize(from_n, from_n) && TryNormalize(to_n, to_n) && TryNormalize(axis_n, axis_n);
     if (!valid) {
-        return 0.0f;
+        return 0.0;
     }
     return std::atan2(Dot(Cross(from_n, to_n), axis_n), Dot(from_n, to_n));
 }
 
 bool CheckServoSpeedLimit() {
-    World world({0.0f, 0.0f, 0.0f});
+    World world({0.0, 0.0, 0.0});
 
     Body base;
     base.shape = ShapeType::Box;
-    base.halfExtents = {0.2f, 0.2f, 0.2f};
+    base.halfExtents = {0.2, 0.2, 0.2};
     base.isStatic = true;
     const std::uint32_t base_id = world.CreateBody(base);
 
     Body link;
     link.shape = ShapeType::Box;
-    link.position = {0.6f, 0.0f, 0.0f};
-    link.halfExtents = {0.4f, 0.05f, 0.05f};
-    link.mass = 1.0f;
+    link.position = {0.6, 0.0, 0.0};
+    link.halfExtents = {0.4, 0.05, 0.05};
+    link.mass = 1.0;
     const std::uint32_t link_id = world.CreateBody(link);
 
-    constexpr float kTargetAngle = 1.10f;
-    constexpr float kMaxServoSpeed = 0.15f;
+    constexpr Real kTargetAngle = 1.10;
+    constexpr Real kMaxServoSpeed = 0.15;
     const std::uint32_t servo_id = world.CreateServoJoint(
         base_id,
         link_id,
-        {0.0f, 0.0f, 0.0f},
-        {0.0f, 1.0f, 0.0f},
+        {0.0, 0.0, 0.0},
+        {0.0, 1.0, 0.0},
         kTargetAngle,
-        6.0f,
-        25.0f,
-        2.0f,
-        0.0f,
-        0.5f,
-        0.0f,
-        1.0f,
+        6.0,
+        25.0,
+        2.0,
+        0.0,
+        0.5,
+        0.0,
+        1.0,
         kMaxServoSpeed,
-        0.5f);
+        0.5);
     assert(servo_id == 0);
 
-    constexpr float kDt = 1.0f / 120.0f;
-    float peak_rate = 0.0f;
-    float prev_angle = world.GetServoJointAngle(servo_id);
+    constexpr Real kDt = 1.0 / 120.0;
+    Real peak_rate = 0.0;
+    Real prev_angle = world.GetServoJointAngle(servo_id);
     for (int step = 0; step < 240; ++step) {
         world.Step(kDt, 24);
-        const float angle = world.GetServoJointAngle(servo_id);
-        const float rate = std::abs(std::atan2(std::sin(angle - prev_angle), std::cos(angle - prev_angle))) / kDt;
+        const Real angle = world.GetServoJointAngle(servo_id);
+        const Real rate = std::abs(std::atan2(std::sin(angle - prev_angle), std::cos(angle - prev_angle))) / kDt;
         peak_rate = std::max(peak_rate, rate);
         prev_angle = angle;
     }
 
-    constexpr float kAllowedPeakRate = 0.50f;
+    constexpr Real kAllowedPeakRate = 0.50;
     if (peak_rate > kAllowedPeakRate) {
         std::cerr << "peak_rate=" << peak_rate << " cap=" << kAllowedPeakRate << "\n";
         return false;
@@ -84,42 +84,42 @@ int main() {
         return 1;
     }
 
-    World world({0.0f, 0.0f, 0.0f});
+    World world({0.0, 0.0, 0.0});
 
     Body base;
     base.shape = ShapeType::Box;
-    base.halfExtents = {0.2f, 0.2f, 0.2f};
+    base.halfExtents = {0.2, 0.2, 0.2};
     base.isStatic = true;
     const std::uint32_t base_id = world.CreateBody(base);
 
     Body link;
     link.shape = ShapeType::Box;
-    link.position = {0.6f, 0.0f, 0.0f};
-    link.halfExtents = {0.4f, 0.05f, 0.05f};
-    link.mass = 1.0f;
+    link.position = {0.6, 0.0, 0.0};
+    link.halfExtents = {0.4, 0.05, 0.05};
+    link.mass = 1.0;
     const std::uint32_t link_id = world.CreateBody(link);
 
-    constexpr float kTargetAngle = 0.45f;
+    constexpr Real kTargetAngle = 0.45;
     const std::uint32_t servo_id = world.CreateServoJoint(
         base_id,
         link_id,
-        {0.0f, 0.0f, 0.0f},
-        {0.0f, 1.0f, 0.0f},
+        {0.0, 0.0, 0.0},
+        {0.0, 1.0, 0.0},
         kTargetAngle,
-        2.5f,
-        10.0f,
-        1.5f);
+        2.5,
+        10.0,
+        1.5);
     assert(servo_id == 0);
 
-    constexpr float kDt = 1.0f / 120.0f;
+    constexpr Real kDt = 1.0 / 120.0;
     for (int step = 0; step < 360; ++step) {
         world.Step(kDt, 20);
     }
 
     const Body& rotated_link = world.GetBody(link_id);
-    const Vec3 long_axis = Rotate(rotated_link.orientation, {1.0f, 0.0f, 0.0f});
-    const float measured_angle = SignedAngleAroundAxis({1.0f, 0.0f, 0.0f}, long_axis, {0.0f, 1.0f, 0.0f});
-    if (std::abs(measured_angle - kTargetAngle) >= 0.20f) {
+    const Vec3 long_axis = Rotate(rotated_link.orientation, {1.0, 0.0, 0.0});
+    const Real measured_angle = SignedAngleAroundAxis({1.0, 0.0, 0.0}, long_axis, {0.0, 1.0, 0.0});
+    if (std::abs(measured_angle - kTargetAngle) >= 0.20) {
         std::cerr << "measured_angle=" << measured_angle << " target=" << kTargetAngle << "\n";
         return 1;
     }

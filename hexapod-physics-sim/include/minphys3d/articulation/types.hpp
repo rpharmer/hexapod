@@ -101,8 +101,8 @@ struct ArtChain {
         const std::size_t n = links.size();
         Ia.assign(n, SpatialInertia{});
         Pa.assign(n, SpatialVec{});
-        D.assign(n, 0.0f);
-        u.assign(n, 0.0f);
+        D.assign(n, 0.0);
+        u.assign(n, 0.0);
         vel.assign(n, SpatialVec{});
         rigidSpatialI.assign(n, SpatialInertia{});
         paJointSnapshot.assign(n, SpatialVec{});

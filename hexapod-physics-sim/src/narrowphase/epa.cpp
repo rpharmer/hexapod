@@ -20,7 +20,7 @@ struct EpaFace {
     int i1 = 0;
     int i2 = 0;
     Vec3 normal{};
-    float distance = 0.0f;
+    Real distance = 0.0;
     bool valid = false;
 };
 
@@ -31,7 +31,7 @@ struct Edge {
 
 EpaVertex Support(const ConvexSupport& a, const ConvexSupport& b, Vec3 direction) {
     if (LengthSquared(direction) <= kEpsilon * kEpsilon) {
-        direction = {1.0f, 0.0f, 0.0f};
+        direction = {1.0, 0.0, 0.0};
     }
     direction = Normalize(direction);
     const ConvexSupportPoint sa = a.Support(direction);
@@ -39,7 +39,7 @@ EpaVertex Support(const ConvexSupport& a, const ConvexSupport& b, Vec3 direction
     return EpaVertex{sa.point, sb.point, sa.point - sb.point};
 }
 
-bool IsDuplicatePoint(const std::vector<EpaVertex>& vertices, const EpaVertex& candidate, float epsilon) {
+bool IsDuplicatePoint(const std::vector<EpaVertex>& vertices, const EpaVertex& candidate, Real epsilon) {
     for (const EpaVertex& v : vertices) {
         if (LengthSquared(v.point - candidate.point) <= epsilon * epsilon) {
             return true;
@@ -48,20 +48,20 @@ bool IsDuplicatePoint(const std::vector<EpaVertex>& vertices, const EpaVertex& c
     return false;
 }
 
-bool BuildFace(const std::vector<EpaVertex>& vertices, int i0, int i1, int i2, float faceEps, EpaFace& out) {
+bool BuildFace(const std::vector<EpaVertex>& vertices, int i0, int i1, int i2, Real faceEps, EpaFace& out) {
     const Vec3& a = vertices[static_cast<std::size_t>(i0)].point;
     const Vec3& b = vertices[static_cast<std::size_t>(i1)].point;
     const Vec3& c = vertices[static_cast<std::size_t>(i2)].point;
 
     Vec3 n = Cross(b - a, c - a);
-    const float lenSq = LengthSquared(n);
+    const Real lenSq = LengthSquared(n);
     if (lenSq <= faceEps * faceEps) {
         return false;
     }
 
     n = n / std::sqrt(lenSq);
-    float d = Dot(n, a);
-    if (d < 0.0f) {
+    Real d = Dot(n, a);
+    if (d < 0.0) {
         n = -n;
         d = -d;
         std::swap(i1, i2);
@@ -93,7 +93,7 @@ Vec3 AnyStableNormal(const std::vector<EpaVertex>& vertices) {
             return Normalize(n);
         }
     }
-    return {1.0f, 0.0f, 0.0f};
+    return {1.0, 0.0, 0.0};
 }
 
 ConvexSupport OffsetSupport(const ConvexSupport& src, const Vec3& offset) {
@@ -114,19 +114,19 @@ bool ConservativeAdvanceRecover(
     int bisectionIters,
     Vec3& outWitnessA,
     Vec3& outWitnessB,
-    float& outDepth) {
+    Real& outDepth) {
     if (LengthSquared(normal) <= kEpsilon * kEpsilon) {
         normal = b.Position() - a.Position();
         if (LengthSquared(normal) <= kEpsilon * kEpsilon) {
-            normal = {1.0f, 0.0f, 0.0f};
+            normal = {1.0, 0.0, 0.0};
         }
     }
     normal = Normalize(normal);
 
-    float hi = 0.0f;
+    Real hi = 0.0;
     bool separated = false;
     for (int i = 0; i < 12; ++i) {
-        hi = (i == 0) ? 1e-4f : hi * 2.0f;
+        hi = (i == 0) ? 1e-4 : hi * 2.0;
         const ConvexSupport aShift = OffsetSupport(a, -normal * hi);
         const ConvexSupport bShift = OffsetSupport(b, normal * hi);
         const GjkDistanceResult probe = GjkDistance(aShift, bShift);
@@ -139,15 +139,15 @@ bool ConservativeAdvanceRecover(
     if (!separated) {
         const EpaVertex sa = Support(a, b, normal);
         const EpaVertex sb = Support(a, b, -normal);
-        outWitnessA = 0.5f * (sa.pointA + sb.pointA);
-        outWitnessB = 0.5f * (sa.pointB + sb.pointB);
-        outDepth = std::max(0.0f, Dot(sa.pointA - sa.pointB, normal));
-        return outDepth > 0.0f;
+        outWitnessA = 0.5 * (sa.pointA + sb.pointA);
+        outWitnessB = 0.5 * (sa.pointB + sb.pointB);
+        outDepth = std::max(0.0, Dot(sa.pointA - sa.pointB, normal));
+        return outDepth > 0.0;
     }
 
-    float lo = 0.0f;
+    Real lo = 0.0;
     for (int i = 0; i < bisectionIters; ++i) {
-        const float mid = 0.5f * (lo + hi);
+        const Real mid = 0.5 * (lo + hi);
         const ConvexSupport aShift = OffsetSupport(a, -normal * mid);
         const ConvexSupport bShift = OffsetSupport(b, normal * mid);
         const GjkDistanceResult probe = GjkDistance(aShift, bShift);
@@ -170,13 +170,13 @@ bool ConservativeAdvanceRecover(
         outWitnessB = sa.pointB;
     }
 
-    const float geometricDepth = Dot(outWitnessA - outWitnessB, normal);
-    outDepth = std::max(geometricDepth, hi * 2.0f);
-    return outDepth > 0.0f;
+    const Real geometricDepth = Dot(outWitnessA - outWitnessB, normal);
+    outDepth = std::max(geometricDepth, hi * 2.0);
+    return outDepth > 0.0;
 }
 
 void LocalClipWitness(const ConvexSupport& a, const ConvexSupport& b, const Vec3& normal, Vec3& ioA, Vec3& ioB) {
-    Vec3 tangent0 = Cross(normal, std::abs(normal.y) < 0.9f ? Vec3{0.0f, 1.0f, 0.0f} : Vec3{1.0f, 0.0f, 0.0f});
+    Vec3 tangent0 = Cross(normal, std::abs(normal.y) < 0.9 ? Vec3{0.0, 1.0, 0.0} : Vec3{1.0, 0.0, 0.0});
     if (!TryNormalize(tangent0, tangent0)) {
         return;
     }
@@ -187,10 +187,10 @@ void LocalClipWitness(const ConvexSupport& a, const ConvexSupport& b, const Vec3
     Vec3 sumB = ioB;
     int count = 1;
     for (const Vec3& t : dirs) {
-        const EpaVertex sa = Support(a, b, normal + 0.3f * t);
-        const EpaVertex sb = Support(a, b, normal - 0.3f * t);
-        sumA += 0.5f * (sa.pointA + sb.pointA);
-        sumB += 0.5f * (sa.pointB + sb.pointB);
+        const EpaVertex sa = Support(a, b, normal + 0.3 * t);
+        const EpaVertex sb = Support(a, b, normal - 0.3 * t);
+        sumA += 0.5 * (sa.pointA + sb.pointA);
+        sumB += 0.5 * (sa.pointB + sb.pointB);
         ++count;
     }
     ioA = sumA / static_cast<float>(count);
@@ -216,7 +216,7 @@ EpaPenetrationResult ComputePenetrationEPA(const ConvexSupport& a, const ConvexS
         const Vec3 triNormal = Cross(vertices[1].point - vertices[0].point, vertices[2].point - vertices[0].point);
         Vec3 dir = (LengthSquared(triNormal) > settings.faceEpsilon * settings.faceEpsilon)
             ? triNormal
-            : Vec3{1.0f, 0.0f, 0.0f};
+            : Vec3{1.0, 0.0, 0.0};
         EpaVertex extra = Support(a, b, dir);
         if (IsDuplicatePoint(vertices, extra, settings.duplicateEpsilon)) {
             extra = Support(a, b, -dir);
@@ -229,7 +229,7 @@ EpaPenetrationResult ComputePenetrationEPA(const ConvexSupport& a, const ConvexS
     if (vertices.size() < 4) {
         out.usedFallback = true;
         Vec3 normal = AnyStableNormal(vertices);
-        if (Dot(b.Position() - a.Position(), normal) < 0.0f) {
+        if (Dot(b.Position() - a.Position(), normal) < 0.0) {
             normal = -normal;
         }
         if (ConservativeAdvanceRecover(a, b, normal, settings.fallbackBisectionIterations, out.witnessA, out.witnessB, out.depth)) {
@@ -260,7 +260,7 @@ EpaPenetrationResult ComputePenetrationEPA(const ConvexSupport& a, const ConvexS
         out.usedFallback = true;
         Vec3 normal = Normalize(b.Position() - a.Position());
         if (LengthSquared(normal) <= kEpsilon * kEpsilon) {
-            normal = {1.0f, 0.0f, 0.0f};
+            normal = {1.0, 0.0, 0.0};
         }
         if (ConservativeAdvanceRecover(a, b, normal, settings.fallbackBisectionIterations, out.witnessA, out.witnessB, out.depth)) {
             LocalClipWitness(a, b, normal, out.witnessA, out.witnessB);
@@ -272,7 +272,7 @@ EpaPenetrationResult ComputePenetrationEPA(const ConvexSupport& a, const ConvexS
 
     for (int iter = 0; iter < settings.maxIterations; ++iter) {
         out.iterations = iter + 1;
-        float bestDist = std::numeric_limits<float>::infinity();
+        Real bestDist = std::numeric_limits<float>::infinity();
         int bestFace = -1;
         for (int i = 0; i < static_cast<int>(faces.size()); ++i) {
             if (!faces[static_cast<std::size_t>(i)].valid) {
@@ -290,8 +290,8 @@ EpaPenetrationResult ComputePenetrationEPA(const ConvexSupport& a, const ConvexS
 
         const EpaFace face = faces[static_cast<std::size_t>(bestFace)];
         const EpaVertex candidate = Support(a, b, face.normal);
-        const float supportDist = Dot(candidate.point, face.normal);
-        const float advance = supportDist - face.distance;
+        const Real supportDist = Dot(candidate.point, face.normal);
+        const Real advance = supportDist - face.distance;
 
         if (advance <= settings.convergenceEpsilon || IsDuplicatePoint(vertices, candidate, settings.duplicateEpsilon)) {
             const Vec3& pa = vertices[static_cast<std::size_t>(face.i0)].point;
@@ -302,26 +302,26 @@ EpaPenetrationResult ComputePenetrationEPA(const ConvexSupport& a, const ConvexS
             const Vec3 v0 = pb - pa;
             const Vec3 v1 = pc - pa;
             const Vec3 v2 = p - pa;
-            const float d00 = Dot(v0, v0);
-            const float d01 = Dot(v0, v1);
-            const float d11 = Dot(v1, v1);
-            const float d20 = Dot(v2, v0);
-            const float d21 = Dot(v2, v1);
-            const float denom = d00 * d11 - d01 * d01;
+            const Real d00 = Dot(v0, v0);
+            const Real d01 = Dot(v0, v1);
+            const Real d11 = Dot(v1, v1);
+            const Real d20 = Dot(v2, v0);
+            const Real d21 = Dot(v2, v1);
+            const Real denom = d00 * d11 - d01 * d01;
 
-            float u = 1.0f;
-            float v = 0.0f;
-            float w = 0.0f;
+            Real u = 1.0;
+            Real v = 0.0;
+            Real w = 0.0;
             if (std::abs(denom) > kEpsilon) {
                 v = (d11 * d20 - d01 * d21) / denom;
                 w = (d00 * d21 - d01 * d20) / denom;
-                u = 1.0f - v - w;
-                u = std::clamp(u, 0.0f, 1.0f);
-                v = std::clamp(v, 0.0f, 1.0f);
-                w = std::clamp(w, 0.0f, 1.0f);
-                const float sum = u + v + w;
+                u = 1.0 - v - w;
+                u = std::clamp(u, 0.0, 1.0);
+                v = std::clamp(v, 0.0, 1.0);
+                w = std::clamp(w, 0.0, 1.0);
+                const Real sum = u + v + w;
                 if (sum > kEpsilon) {
-                    const float inv = 1.0f / sum;
+                    const Real inv = 1.0 / sum;
                     u *= inv;
                     v *= inv;
                     w *= inv;
@@ -334,9 +334,9 @@ EpaPenetrationResult ComputePenetrationEPA(const ConvexSupport& a, const ConvexS
 
             out.witnessA = u * va.pointA + v * vb.pointA + w * vc.pointA;
             out.witnessB = u * va.pointB + v * vb.pointB + w * vc.pointB;
-            out.depth = std::max(0.0f, Dot(out.witnessA - out.witnessB, face.normal));
+            out.depth = std::max(0.0, Dot(out.witnessA - out.witnessB, face.normal));
             out.normal = face.normal;
-            if (Dot(b.Position() - a.Position(), out.normal) < 0.0f) {
+            if (Dot(b.Position() - a.Position(), out.normal) < 0.0) {
                 out.normal = -out.normal;
             }
             out.valid = true;

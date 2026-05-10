@@ -16,9 +16,9 @@ struct TerrainPatchSeed {
     bool has_center{false};
     minphys3d::Vec3 center{};
     bool has_plane_height{false};
-    float plane_height_m{0.0f};
+    Real plane_height_m{0.0};
     bool has_plane_normal{false};
-    minphys3d::Vec3 plane_normal{0.0f, 1.0f, 0.0f};
+    minphys3d::Vec3 plane_normal{0.0, 1.0, 0.0};
 };
 
 /// Loads `bodies` and optional `joints` from minphys scene JSON (see `assets/scenes/examples/`).

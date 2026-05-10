@@ -37,7 +37,7 @@ void SleepSystem::UpdateSleeping(const SleepSystemContext& context) const {
     }
 
     for (std::uint32_t start = 0; start < n; ++start) {
-        if (visited_[start] || context.bodies[start].invMass == 0.0f) continue;
+        if (visited_[start] || context.bodies[start].invMass == 0.0) continue;
 
         islandBodies_.clear();
         stack_.clear();
@@ -56,7 +56,7 @@ void SleepSystem::UpdateSleeping(const SleepSystemContext& context) const {
             islandNearlyStill = islandNearlyStill && nearlyStill;
 
             for (std::uint32_t other : adj_[id]) {
-                if (other < n && context.bodies[other].invMass != 0.0f && !visited_[other]) {
+                if (other < n && context.bodies[other].invMass != 0.0 && !visited_[other]) {
                     visited_[other] = true;
                     stack_.push_back(other);
                 }
@@ -69,8 +69,8 @@ void SleepSystem::UpdateSleeping(const SleepSystemContext& context) const {
                 ++body.sleepCounter;
                 if (body.sleepCounter >= static_cast<int>(context.framesThreshold)) {
                     body.isSleeping = true;
-                    body.velocity = {0.0f, 0.0f, 0.0f};
-                    body.angularVelocity = {0.0f, 0.0f, 0.0f};
+                    body.velocity = {0.0, 0.0, 0.0};
+                    body.angularVelocity = {0.0, 0.0, 0.0};
                 }
             } else {
                 body.isSleeping = false;

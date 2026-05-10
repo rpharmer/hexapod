@@ -179,7 +179,7 @@ struct ContactSolverContext {
     // Constant across PGS iterations; nullptr is permitted for callers that haven't
     // populated it yet (will fall back to Body::InvInertiaWorld()).
     const std::vector<Mat3>* bodyInvInertiaWorld = nullptr;
-    std::function<bool(const ManifoldKey&, const Contact&, float&, std::array<float, 2>&, std::uint16_t&)> tryGetPersistentImpulseState;
+    std::function<bool(const ManifoldKey&, const Contact&, Real&, std::array<Real, 2>&, std::uint16_t&)> tryGetPersistentImpulseState;
     std::function<void(Manifold&, const Manifold*)> manageManifoldContacts;
     std::function<void(Manifold&)> refreshManifoldBlockCache;
     std::function<void(Manifold&)> selectBlockSolvePair;
@@ -281,14 +281,14 @@ public:
             context.manageManifoldContacts(m, previous);
 
             if (previous == nullptr) {
-                m.blockNormalImpulseSum = {0.0f, 0.0f};
+                m.blockNormalImpulseSum = {0.0, 0.0};
                 m.blockContactKeys = {0u, 0u};
                 m.blockSlotValid = {false, false};
                 m.selectedBlockContactKeys = {0u, 0u};
                 m.t0 = {};
                 m.t1 = {};
                 m.tangentBasisValid = false;
-                m.manifoldTangentImpulseSum = {0.0f, 0.0f};
+                m.manifoldTangentImpulseSum = {0.0, 0.0};
                 m.manifoldTangentImpulseValid = false;
                 m.stickConstraintActive = false;
                 m.stickConstraintAge = 0;
@@ -305,8 +305,8 @@ public:
 
             const ManifoldKey manifoldId{std::min(m.a, m.b), std::max(m.a, m.b), m.manifoldType};
             for (Contact& c : m.contacts) {
-                float normalImpulse = 0.0f;
-                std::array<float, 2> tangentImpulse{0.0f, 0.0f};
+                Real normalImpulse = 0.0;
+                std::array<Real, 2> tangentImpulse{0.0, 0.0};
                 std::uint16_t persistenceAge = 0;
                 if (context.tryGetPersistentImpulseState(manifoldId, c, normalImpulse, tangentImpulse, persistenceAge)) {
                     c.normalImpulseSum = normalImpulse;
@@ -315,17 +315,17 @@ public:
                     c.tangentImpulseSum = c.tangentImpulseSum0;
                     c.persistenceAge = persistenceAge;
                 } else {
-                    c.normalImpulseSum = 0.0f;
-                    c.tangentImpulseSum0 = 0.0f;
-                    c.tangentImpulseSum1 = 0.0f;
-                    c.tangentImpulseSum = 0.0f;
+                    c.normalImpulseSum = 0.0;
+                    c.tangentImpulseSum0 = 0.0;
+                    c.tangentImpulseSum1 = 0.0;
+                    c.tangentImpulseSum = 0.0;
                     c.persistenceAge = 0;
                 }
             }
 
             if (previous != nullptr && previous->manifoldTangentImpulseValid && previous->tangentBasisValid) {
-                const float old0 = previous->manifoldTangentImpulseSum[0];
-                const float old1 = previous->manifoldTangentImpulseSum[1];
+                const Real old0 = previous->manifoldTangentImpulseSum[0];
+                const Real old1 = previous->manifoldTangentImpulseSum[1];
                 m.manifoldTangentImpulseSum = {old0, old1};
                 m.manifoldTangentImpulseValid = true;
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
@@ -334,7 +334,7 @@ public:
                 }
 #endif
             } else {
-                m.manifoldTangentImpulseSum = {0.0f, 0.0f};
+                m.manifoldTangentImpulseSum = {0.0, 0.0};
                 m.manifoldTangentImpulseValid = false;
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                 if (context.recordManifoldTangentReprojection) {
@@ -398,7 +398,7 @@ public:
         const bool reuseBasisHint = manifold.tangentBasisValid;
         const Vec3 previousT0 = manifold.t0;
         const Vec3 previousT1 = manifold.t1;
-        const std::array<float, 2> previousManifoldImpulse = manifold.manifoldTangentImpulseSum;
+        const std::array<Real, 2> previousManifoldImpulse = manifold.manifoldTangentImpulseSum;
         const bool previousImpulseValid = manifold.manifoldTangentImpulseValid && manifold.tangentBasisValid;
         const Vec3* preferredTangent = manifold.tangentBasisValid ? &manifold.t0 : nullptr;
         const bool basisValid = World::ComputeStableTangentFrame(
@@ -415,36 +415,36 @@ public:
             manifold.manifoldTangentImpulseValid = true;
         }
         if (!manifold.tangentBasisValid) {
-            manifold.manifoldTangentImpulseSum = {0.0f, 0.0f};
+            manifold.manifoldTangentImpulseSum = {0.0, 0.0};
             manifold.manifoldTangentImpulseValid = false;
             for (Contact& c : manifold.contacts) {
-                c.tangentImpulseSum0 = 0.0f;
-                c.tangentImpulseSum1 = 0.0f;
-                c.tangentImpulseSum = 0.0f;
+                c.tangentImpulseSum0 = 0.0;
+                c.tangentImpulseSum1 = 0.0;
+                c.tangentImpulseSum = 0.0;
             }
             return;
         }
 
         const auto sumAllContactSupport = [&]() {
-            float total = 0.0f;
+            Real total = 0.0;
             for (const Contact& c : manifold.contacts) {
-                total += std::max(c.normalImpulseSum, 0.0f);
+                total += std::max(c.normalImpulseSum, 0.0);
             }
             return total;
         };
         const auto sumSelectedPairSupport = [&]() {
-            float total = 0.0f;
+            Real total = 0.0;
             for (int idx : manifold.selectedBlockContactIndices) {
                 if (idx >= 0 && static_cast<std::size_t>(idx) < manifold.contacts.size()) {
-                    total += std::max(manifold.contacts[static_cast<std::size_t>(idx)].normalImpulseSum, 0.0f);
+                    total += std::max(manifold.contacts[static_cast<std::size_t>(idx)].normalImpulseSum, 0.0);
                 }
             }
             return total;
         };
 
-        const float allContactSupport = sumAllContactSupport();
-        const float selectedPairSupport = sumSelectedPairSupport();
-        float totalNormalSupport = allContactSupport;
+        const Real allContactSupport = sumAllContactSupport();
+        const Real selectedPairSupport = sumSelectedPairSupport();
+        Real totalNormalSupport = allContactSupport;
         switch (context.config.frictionBudgetNormalSupportSource) {
             case FrictionBudgetNormalSupportSource::SelectedBlockPairOnly:
                 totalNormalSupport = selectedPairSupport > kEpsilon ? selectedPairSupport : allContactSupport;
@@ -453,30 +453,30 @@ public:
                 totalNormalSupport = allContactSupport;
                 break;
             case FrictionBudgetNormalSupportSource::BlendedSelectedPairAndManifold: {
-                const float selectedWeight = std::max(context.config.frictionBudgetSelectedPairBlendWeight, 0.0f);
-                const float manifoldWeight = 1.0f;
-                const float weightedSum = selectedWeight * selectedPairSupport + manifoldWeight * allContactSupport;
-                const float denom = selectedWeight + manifoldWeight;
+                const Real selectedWeight = std::max(context.config.frictionBudgetSelectedPairBlendWeight, 0.0);
+                const Real manifoldWeight = 1.0;
+                const Real weightedSum = selectedWeight * selectedPairSupport + manifoldWeight * allContactSupport;
+                const Real denom = selectedWeight + manifoldWeight;
                 totalNormalSupport = denom > kEpsilon ? (weightedSum / denom) : allContactSupport;
                 break;
             }
         }
         const Body& firstA = context.bodies[manifold.contacts.front().a];
         const Body& firstB = context.bodies[manifold.contacts.front().b];
-        const float muS = 0.5f * (firstA.staticFriction + firstB.staticFriction);
-        const float muD = 0.5f * (firstA.dynamicFriction + firstB.dynamicFriction);
-        const float mu = std::max(std::max(muS, muD), 0.0f);
-        const float manifoldBudget = std::max(0.0f, context.config.manifoldFrictionBudgetScale) * mu * totalNormalSupport;
-        const bool useManifoldBudget = context.config.enableManifoldFrictionBudget && manifoldBudget > 0.0f;
+        const Real muS = 0.5 * (firstA.staticFriction + firstB.staticFriction);
+        const Real muD = 0.5 * (firstA.dynamicFriction + firstB.dynamicFriction);
+        const Real mu = std::max(std::max(muS, muD), 0.0);
+        const Real manifoldBudget = std::max(0.0, context.config.manifoldFrictionBudgetScale) * mu * totalNormalSupport;
+        const bool useManifoldBudget = context.config.enableManifoldFrictionBudget && manifoldBudget > 0.0;
         const bool canUseStick = context.config.enablePersistentStickConstraints
             && manifold.manifoldTangentImpulseValid
             && manifold.contacts.size() >= 2;
 
-        std::array<float, 2> accumulatedTangent{0.0f, 0.0f};
+        std::array<Real, 2> accumulatedTangent{0.0, 0.0};
         if (manifold.manifoldTangentImpulseValid) {
             accumulatedTangent = manifold.manifoldTangentImpulseSum;
         }
-        float meanSlipSpeed = 0.0f;
+        Real meanSlipSpeed = 0.0;
         std::uint32_t slipSamples = 0;
 
         for (Contact& c : manifold.contacts) {
@@ -497,7 +497,7 @@ public:
             const Vec3 va2 = a.velocity + Cross(a.angularVelocity, ra);
             const Vec3 vb2 = b.velocity + Cross(b.angularVelocity, rb);
             const Vec3 rv2 = vb2 - va2;
-            const float slipSpeed = std::sqrt(
+            const Real slipSpeed = std::sqrt(
                 Dot(rv2, manifold.t0) * Dot(rv2, manifold.t0)
                 + Dot(rv2, manifold.t1) * Dot(rv2, manifold.t1));
             meanSlipSpeed += slipSpeed;
@@ -506,47 +506,47 @@ public:
             const Vec3 rbCrossT0 = Cross(rb, manifold.t0);
             const Vec3 raCrossT1 = Cross(ra, manifold.t1);
             const Vec3 rbCrossT1 = Cross(rb, manifold.t1);
-            const float tangentMass0 = a.invMass + b.invMass + Dot(raCrossT0, invIA * raCrossT0) + Dot(rbCrossT0, invIB * rbCrossT0);
-            const float tangentMass1 = context.config.enableTwoAxisFrictionSolve
+            const Real tangentMass0 = a.invMass + b.invMass + Dot(raCrossT0, invIA * raCrossT0) + Dot(rbCrossT0, invIB * rbCrossT0);
+            const Real tangentMass1 = context.config.enableTwoAxisFrictionSolve
                 ? (a.invMass + b.invMass + Dot(raCrossT1, invIA * raCrossT1) + Dot(rbCrossT1, invIB * rbCrossT1))
                 : std::numeric_limits<float>::infinity();
             if (tangentMass0 <= kEpsilon || tangentMass1 <= kEpsilon) {
                 continue;
             }
 
-            const std::array<float, 2> oldT{c.tangentImpulseSum0, c.tangentImpulseSum1};
-            std::array<float, 2> newT{
+            const std::array<Real, 2> oldT{c.tangentImpulseSum0, c.tangentImpulseSum1};
+            std::array<Real, 2> newT{
                 c.tangentImpulseSum0 - Dot(rv2, manifold.t0) / tangentMass0,
                 c.tangentImpulseSum1 - Dot(rv2, manifold.t1) / tangentMass1};
             if (!context.config.enableTwoAxisFrictionSolve) {
-                newT[1] = 0.0f;
+                newT[1] = 0.0;
             }
             if (canUseStick && manifold.stickConstraintActive) {
-                const float retention = std::clamp(context.config.stickImpulseRetention, 0.0f, 1.0f);
-                newT[0] = retention * oldT[0] + (1.0f - retention) * newT[0];
-                newT[1] = retention * oldT[1] + (1.0f - retention) * newT[1];
+                const Real retention = std::clamp(context.config.stickImpulseRetention, 0.0, 1.0);
+                newT[0] = retention * oldT[0] + (1.0 - retention) * newT[0];
+                newT[1] = retention * oldT[1] + (1.0 - retention) * newT[1];
             }
 
-            const float perContactLimit = mu * std::max(c.normalImpulseSum, 0.0f);
-            const float contactLenSq = newT[0] * newT[0] + newT[1] * newT[1];
+            const Real perContactLimit = mu * std::max(c.normalImpulseSum, 0.0);
+            const Real contactLenSq = newT[0] * newT[0] + newT[1] * newT[1];
             if (contactLenSq > perContactLimit * perContactLimit && perContactLimit > kEpsilon) {
-                const float scale = perContactLimit / std::sqrt(contactLenSq);
+                const Real scale = perContactLimit / std::sqrt(contactLenSq);
                 newT[0] *= scale;
                 newT[1] *= scale;
             } else if (perContactLimit <= kEpsilon) {
-                newT = {0.0f, 0.0f};
+                newT = {0.0, 0.0};
             }
 
-            std::array<float, 2> candidateAccumulated{
+            std::array<Real, 2> candidateAccumulated{
                 accumulatedTangent[0] - oldT[0] + newT[0],
                 accumulatedTangent[1] - oldT[1] + newT[1]};
             if (useManifoldBudget) {
                 if (context.config.frictionBudgetUseRadialClamp) {
-                    const float lenSq = candidateAccumulated[0] * candidateAccumulated[0]
+                    const Real lenSq = candidateAccumulated[0] * candidateAccumulated[0]
                         + candidateAccumulated[1] * candidateAccumulated[1];
-                    const float maxLenSq = manifoldBudget * manifoldBudget;
+                    const Real maxLenSq = manifoldBudget * manifoldBudget;
                     if (lenSq > maxLenSq && manifoldBudget > kEpsilon) {
-                        const float scale = manifoldBudget / std::sqrt(lenSq);
+                        const Real scale = manifoldBudget / std::sqrt(lenSq);
                         newT[0] = oldT[0] + (newT[0] - oldT[0]) * scale;
                         newT[1] = oldT[1] + (newT[1] - oldT[1]) * scale;
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
@@ -564,8 +564,8 @@ public:
             c.tangentImpulseSum0 = newT[0];
             c.tangentImpulseSum1 = newT[1];
             c.tangentImpulseSum = c.tangentImpulseSum0;
-            const float lambdaT0 = c.tangentImpulseSum0 - oldT[0];
-            const float lambdaT1 = c.tangentImpulseSum1 - oldT[1];
+            const Real lambdaT0 = c.tangentImpulseSum0 - oldT[0];
+            const Real lambdaT1 = c.tangentImpulseSum1 - oldT[1];
             const Vec3 tangentImpulse = lambdaT0 * manifold.t0 + lambdaT1 * manifold.t1;
             context.applyImpulse(a, b, invIA, invIB, ra, rb, tangentImpulse);
             accumulatedTangent[0] += lambdaT0;
@@ -573,7 +573,7 @@ public:
         }
         manifold.manifoldTangentImpulseSum = accumulatedTangent;
         manifold.manifoldTangentImpulseValid = true;
-        const float averageSlip = (slipSamples > 0) ? (meanSlipSpeed / static_cast<float>(slipSamples)) : std::numeric_limits<float>::infinity();
+        const Real averageSlip = (slipSamples > 0) ? (meanSlipSpeed / static_cast<float>(slipSamples)) : std::numeric_limits<float>::infinity();
         const bool stableAgedContacts = std::all_of(
             manifold.contacts.begin(),
             manifold.contacts.end(),
@@ -604,10 +604,10 @@ struct JointSolverContext {
     /// Mirrors `JointSolverConfig::servoPositionPasses`.
     std::uint8_t servoPositionPasses = 4;
     /// World gravity; used to strip vertical anchor snap for static-backed servos (see servo position pass).
-    Vec3 gravity{0.0f, -9.81f, 0.0f};
+    Vec3 gravity{0.0, -9.81, 0.0};
     /// Substep duration — used to convert angular position corrections into velocity biases so
     /// they interact correctly with servo PD damping instead of injecting phantom energy.
-    float substepDt = 1.0f / 360.0f;
+    Real substepDt = 1.0 / 360.0;
     /// Optional override for the high-fanout servo-position mode decision.
     bool hasUseVelocityBiasesOverride = false;
     bool useVelocityBiasesOverride = false;
@@ -618,19 +618,22 @@ struct JointSolverContext {
     /// When non-null and `(*mask)[jointIndex] != 0`, skip axis-alignment + hinge snap for that
     /// servo (anchors still solved). Used with `World::SolveArticulationChainPositions`.
     const std::vector<std::uint8_t>* skipServoHingeSnapMask = nullptr;
+    /// Maximum error magnitude (meters) fed into the servo anchor position correction per pass.
+    /// 0 = disabled. See JointSolverConfig::servoAnchorCorrectionMaxM.
+    Real servoAnchorCorrectionMaxM = 0.0;
 };
 
-inline float WrapJointAngle(float angle) {
+inline Real WrapJointAngle(Real angle) {
     // IEEE-754 remainder gives the canonical signed wrap to [-pi, pi]; on x86-64 this lowers
     // to a single hardware sequence rather than the original sin/cos/atan2 trio.
-    return std::remainder(angle, 6.28318530717958647692f);
+    return std::remainder(angle, 6.28318530717958647692);
 }
 
 inline Vec3 JointReferenceFallback(const Vec3& axis) {
-    const Vec3 fallback = (std::abs(axis.y) < 0.9f) ? Vec3{0.0f, 1.0f, 0.0f} : Vec3{1.0f, 0.0f, 0.0f};
+    const Vec3 fallback = (std::abs(axis.y) < 0.9) ? Vec3{0.0, 1.0, 0.0} : Vec3{1.0, 0.0, 0.0};
     Vec3 reference = fallback - Dot(fallback, axis) * axis;
     if (!TryNormalize(reference, reference)) {
-        reference = {1.0f, 0.0f, 0.0f};
+        reference = {1.0, 0.0, 0.0};
     }
     return reference;
 }
@@ -644,19 +647,19 @@ inline Vec3 ResolveJointReference(const Quat& orientation, const Vec3& localRefe
     return reference;
 }
 
-inline float SignedAngleAroundAxis(const Vec3& from, const Vec3& to, const Vec3& axis) {
+inline Real SignedAngleAroundAxis(const Vec3& from, const Vec3& to, const Vec3& axis) {
     Vec3 fromN = from;
     Vec3 toN = to;
     if (!TryNormalize(fromN, fromN) || !TryNormalize(toN, toN)) {
-        return 0.0f;
+        return 0.0;
     }
     return std::atan2(Dot(Cross(fromN, toN), axis), Dot(fromN, toN));
 }
 
-inline float ComputeServoJointAngle(const Body& a, const Body& b, const ServoJoint& joint) {
+inline Real ComputeServoJointAngle(const Body& a, const Body& b, const ServoJoint& joint) {
     Vec3 axisA = Rotate(a.orientation, joint.localAxisA);
     if (!TryNormalize(axisA, axisA)) {
-        return 0.0f;
+        return 0.0;
     }
     const Vec3 refA = ResolveJointReference(a.orientation, joint.localReferenceA, axisA);
     const Vec3 refB = ResolveJointReference(b.orientation, joint.localReferenceB, axisA);
@@ -668,20 +671,20 @@ inline float ComputeServoJointAngle(const Body& a, const Body& b, const ServoJoi
 /// This keeps the correction directly focused on the axis mismatch instead of averaging it down
 /// through the high-fanout hub path.
 inline Vec3 ComputeServoAxisAlignmentCorrection(const ServoJoint& j, const Vec3& axisA, const Vec3& axisB) {
-    const float stab = std::clamp(j.angleStabilizationScale, 0.0f, 1.0f);
-    if (stab <= 1e-7f) {
+    const Real stab = std::clamp(j.angleStabilizationScale, 0.0, 1.0);
+    if (stab <= 1e-7) {
         return {};
     }
 
     Vec3 axisError = Cross(axisA, axisB);
-    const float axisErrorMagnitude = Length(axisError);
-    if (axisErrorMagnitude <= 1e-6f) {
+    const Real axisErrorMagnitude = Length(axisError);
+    if (axisErrorMagnitude <= 1e-6) {
         return {};
     }
 
-    constexpr float kAxisAlignmentGain = 0.45f;
-    constexpr float kAxisAlignmentMaxCorrection = 0.30f;
-    const float correctionMagnitude = std::min(kAxisAlignmentMaxCorrection * stab,
+    constexpr Real kAxisAlignmentGain = 0.45;
+    constexpr Real kAxisAlignmentMaxCorrection = 0.30;
+    const Real correctionMagnitude = std::min(kAxisAlignmentMaxCorrection * stab,
                                                kAxisAlignmentGain * stab * axisErrorMagnitude);
     return axisError * (correctionMagnitude / axisErrorMagnitude);
 }
@@ -692,59 +695,59 @@ inline Vec3 ComputeServoAxisAlignmentCorrection(const ServoJoint& j, const Vec3&
 /// `invMass` weights (which over-rotate light links on a heavy chassis and destabilize multi-pass
 /// servo chains). Keeps the legacy opposite-sign convention on body B.
 inline void ApplyAngularPositionCorrection(Body& a, Body& b, const Vec3& correction) {
-    if (LengthSquared(correction) <= 1e-18f) {
+    if (LengthSquared(correction) <= 1e-18) {
         return;
     }
-    const Vec3 u = correction * (1.0f / Length(correction));
+    const Vec3 u = correction * (1.0 / Length(correction));
     const Mat3 invIA = a.InvInertiaWorld();
     const Mat3 invIB = b.InvInertiaWorld();
-    const float wa = Dot(u, invIA * u);
-    const float wb = Dot(u, invIB * u);
-    const float denom = wa + wb;
-    float weightA;
-    float weightB;
+    const Real wa = Dot(u, invIA * u);
+    const Real wb = Dot(u, invIB * u);
+    const Real denom = wa + wb;
+    Real weightA;
+    Real weightB;
     if (denom > kEpsilon) {
         weightA = wa / denom;
         weightB = wb / denom;
     } else {
-        const float invMassSum = std::max(a.invMass + b.invMass, kEpsilon);
+        const Real invMassSum = std::max(a.invMass + b.invMass, kEpsilon);
         weightA = a.invMass / invMassSum;
         weightB = b.invMass / invMassSum;
     }
-    if (!a.isSleeping && a.invMass > 0.0f) {
+    if (!a.isSleeping && a.invMass > 0.0) {
         a.orientation =
-            Normalize(a.orientation * Quat{1.0f, correction.x * weightA, correction.y * weightA, correction.z * weightA});
+            Normalize(a.orientation * Quat{1.0, correction.x * weightA, correction.y * weightA, correction.z * weightA});
     }
-    if (!b.isSleeping && b.invMass > 0.0f) {
+    if (!b.isSleeping && b.invMass > 0.0) {
         b.orientation = Normalize(
-            b.orientation * Quat{1.0f, -correction.x * weightB, -correction.y * weightB, -correction.z * weightB});
+            b.orientation * Quat{1.0, -correction.x * weightB, -correction.y * weightB, -correction.z * weightB});
     }
 }
 
 /// Compute the per-body angular correction weight for a correction vector, split by inverse inertia.
 /// Returns {weightA, weightB}. Does not modify the bodies.
-inline std::pair<float, float> ComputeAngularCorrectionWeights(const Body& a, const Body& b, const Vec3& correction) {
-    if (LengthSquared(correction) <= 1e-18f) {
-        return {0.0f, 0.0f};
+inline std::pair<Real, Real> ComputeAngularCorrectionWeights(const Body& a, const Body& b, const Vec3& correction) {
+    if (LengthSquared(correction) <= 1e-18) {
+        return {0.0, 0.0};
     }
-    const Vec3 u = correction * (1.0f / Length(correction));
+    const Vec3 u = correction * (1.0 / Length(correction));
     const Mat3 invIA = a.InvInertiaWorld();
     const Mat3 invIB = b.InvInertiaWorld();
-    const float wa = Dot(u, invIA * u);
-    const float wb = Dot(u, invIB * u);
-    const float denom = wa + wb;
+    const Real wa = Dot(u, invIA * u);
+    const Real wb = Dot(u, invIB * u);
+    const Real denom = wa + wb;
     if (denom > kEpsilon) {
         return {wa / denom, wb / denom};
     }
-    const float invMassSum = std::max(a.invMass + b.invMass, kEpsilon);
+    const Real invMassSum = std::max(a.invMass + b.invMass, kEpsilon);
     return {a.invMass / invMassSum, b.invMass / invMassSum};
 }
 
 /// Apply a pre-computed angular correction directly to a body's orientation.
 inline void ApplyAngularCorrectionToBody(Body& body, const Vec3& correction) {
-    if (!body.isSleeping && body.invMass > 0.0f && LengthSquared(correction) > 1e-18f) {
+    if (!body.isSleeping && body.invMass > 0.0 && LengthSquared(correction) > 1e-18) {
         body.orientation = Normalize(
-            body.orientation * Quat{1.0f, correction.x, correction.y, correction.z});
+            body.orientation * Quat{1.0, correction.x, correction.y, correction.z});
     }
 }
 
@@ -758,9 +761,9 @@ public:
             const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
             const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
             const Vec3 delta = (b.position + rb) - (a.position + ra);
-            const float len = Length(delta);
+            const Real len = Length(delta);
             if (len <= kEpsilon) continue;
-            const Vec3 correction = (0.15f * (len - j.restLength) / (a.invMass + b.invMass)) * (delta / len);
+            const Vec3 correction = (0.15 * (len - j.restLength) / (a.invMass + b.invMass)) * (delta / len);
             if (!a.isSleeping) a.position += correction * a.invMass;
             if (!b.isSleeping) b.position -= correction * b.invMass;
         }
@@ -772,7 +775,7 @@ public:
             const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
             const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
             const Vec3 error = (b.position + rb) - (a.position + ra);
-            const Vec3 correction = (0.2f / std::max(a.invMass + b.invMass, kEpsilon)) * error;
+            const Vec3 correction = (0.2 / std::max(a.invMass + b.invMass, kEpsilon)) * error;
             if (!a.isSleeping) a.position += correction * a.invMass;
             if (!b.isSleeping) b.position -= correction * b.invMass;
         }
@@ -784,7 +787,7 @@ public:
             const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
             const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
             const Vec3 error = (b.position + rb) - (a.position + ra);
-            const Vec3 correction = (0.2f / std::max(a.invMass + b.invMass, kEpsilon)) * error;
+            const Vec3 correction = (0.2 / std::max(a.invMass + b.invMass, kEpsilon)) * error;
             if (!a.isSleeping) a.position += correction * a.invMass;
             if (!b.isSleeping) b.position -= correction * b.invMass;
         }
@@ -796,23 +799,23 @@ public:
             const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
             const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
             const Vec3 anchorError = (b.position + rb) - (a.position + ra);
-            const Vec3 correction = (0.2f / std::max(a.invMass + b.invMass, kEpsilon)) * anchorError;
+            const Vec3 correction = (0.2 / std::max(a.invMass + b.invMass, kEpsilon)) * anchorError;
             if (!a.isSleeping) a.position += correction * a.invMass;
             if (!b.isSleeping) b.position -= correction * b.invMass;
 
             const Quat target = Normalize(Normalize(a.orientation) * j.referenceRotation);
             Quat dq = Normalize(Conjugate(Normalize(b.orientation)) * target);
-            if (dq.w < 0.0f) {
+            if (dq.w < 0.0) {
                 dq = {-dq.w, -dq.x, -dq.y, -dq.z};
             }
             Vec3 angularError{dq.x, dq.y, dq.z};
             if (LengthSquared(angularError) > kEpsilon * kEpsilon) {
-                angularError = 0.3f * angularError;
+                angularError = 0.3 * angularError;
                 if (!a.isSleeping) {
-                    a.orientation = Normalize(a.orientation * Quat{1.0f, -angularError.x * a.invMass, -angularError.y * a.invMass, -angularError.z * a.invMass});
+                    a.orientation = Normalize(a.orientation * Quat{1.0, -angularError.x * a.invMass, -angularError.y * a.invMass, -angularError.z * a.invMass});
                 }
                 if (!b.isSleeping) {
-                    b.orientation = Normalize(b.orientation * Quat{1.0f, angularError.x * b.invMass, angularError.y * b.invMass, angularError.z * b.invMass});
+                    b.orientation = Normalize(b.orientation * Quat{1.0, angularError.x * b.invMass, angularError.y * b.invMass, angularError.z * b.invMass});
                 }
             }
         }
@@ -825,21 +828,21 @@ public:
             const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
             const Vec3 axis = Normalize(Rotate(a.orientation, j.localAxisA));
             Vec3 error = (b.position + rb) - (a.position + ra);
-            const float along = Dot(error, axis);
+            const Real along = Dot(error, axis);
             error -= along * axis;
-            const Vec3 correction = (0.2f / std::max(a.invMass + b.invMass, kEpsilon)) * error;
+            const Vec3 correction = (0.2 / std::max(a.invMass + b.invMass, kEpsilon)) * error;
             if (!a.isSleeping) a.position += correction * a.invMass;
             if (!b.isSleeping) b.position -= correction * b.invMass;
 
             if (j.limitsEnabled) {
-                float limitError = 0.0f;
+                Real limitError = 0.0;
                 if (along < j.lowerTranslation) {
                     limitError = along - j.lowerTranslation;
                 } else if (along > j.upperTranslation) {
                     limitError = along - j.upperTranslation;
                 }
                 if (std::abs(limitError) > kEpsilon) {
-                    const Vec3 limitCorrection = (0.15f * limitError / std::max(a.invMass + b.invMass, kEpsilon)) * axis;
+                    const Vec3 limitCorrection = (0.15 * limitError / std::max(a.invMass + b.invMass, kEpsilon)) * axis;
                     if (!a.isSleeping) a.position += limitCorrection * a.invMass;
                     if (!b.isSleeping) b.position -= limitCorrection * b.invMass;
                 }
@@ -862,7 +865,7 @@ public:
             // regardless of joint count. The bias is computed ONCE (not per-pass) to avoid
             // amplification by the pass count.
             constexpr std::uint16_t kFanoutThreshold = 2;
-            const float invDt = (context.substepDt > 1e-8f) ? (1.0f / context.substepDt) : 0.0f;
+            const Real invDt = (context.substepDt > 1e-8) ? (1.0 / context.substepDt) : 0.0;
 
             bool useVelocityBiases = false;
             if (context.hasUseVelocityBiasesOverride) {
@@ -893,7 +896,7 @@ public:
                 std::vector<std::uint16_t>& angularCount = context.servoAngularCountScratch != nullptr
                     ? *context.servoAngularCountScratch
                     : localAngularCount;
-                angularAccum.assign(context.bodies.size(), Vec3{0.0f, 0.0f, 0.0f});
+                angularAccum.assign(context.bodies.size(), Vec3{0.0, 0.0, 0.0});
                 angularCount.assign(context.bodies.size(), 0);
 
                 for (std::size_t ji = 0; ji < context.servoJoints.size(); ++ji) {
@@ -906,15 +909,15 @@ public:
                     Body& a = context.bodies[j.a];
                     Body& b = context.bodies[j.b];
                     if (a.invMass + b.invMass <= kEpsilon) continue;
-                    const float stab = std::clamp(j.angleStabilizationScale, 0.0f, 1.0f);
-                    if (stab <= 1e-7f) continue;
+                    const Real stab = std::clamp(j.angleStabilizationScale, 0.0, 1.0);
+                    if (stab <= 1e-7) continue;
 
                     Vec3 axisA = Rotate(a.orientation, j.localAxisA);
                     Vec3 axisB = Rotate(b.orientation, j.localAxisB);
                     if (!TryNormalize(axisA, axisA) || !TryNormalize(axisB, axisB)) continue;
 
                     const Vec3 axisCorrection = ComputeServoAxisAlignmentCorrection(j, axisA, axisB);
-                    if (LengthSquared(axisCorrection) > 0.0f) {
+                    if (LengthSquared(axisCorrection) > 0.0) {
                         ApplyAngularPositionCorrection(a, b, axisCorrection);
                         axisA = Rotate(a.orientation, j.localAxisA);
                         axisB = Rotate(b.orientation, j.localAxisB);
@@ -923,15 +926,15 @@ public:
 
                     const Vec3 refA = ResolveJointReference(a.orientation, j.localReferenceA, axisA);
                     const Vec3 refB = ResolveJointReference(b.orientation, j.localReferenceB, axisA);
-                    const float hingeAngle = SignedAngleAroundAxis(refA, refB, axisA);
-                    const float targetError = WrapJointAngle(hingeAngle - j.targetAngle);
-                    const float maxServoSpeed = std::max(0.0f, j.maxServoSpeed);
-                    const float maxAngleCorrection = maxServoSpeed > 0.0f
-                        ? std::min(0.06f * stab, maxServoSpeed * context.substepDt)
-                        : 0.06f * stab;
-                    const float clampedAngle = std::clamp(
-                        0.15f * stab * targetError, -maxAngleCorrection, maxAngleCorrection);
-                    if (std::abs(clampedAngle) > 1e-5f) {
+                    const Real hingeAngle = SignedAngleAroundAxis(refA, refB, axisA);
+                    const Real targetError = WrapJointAngle(hingeAngle - j.targetAngle);
+                    const Real maxServoSpeed = std::max(0.0, j.maxServoSpeed);
+                    const Real maxAngleCorrection = maxServoSpeed > 0.0
+                        ? std::min(0.06 * stab, maxServoSpeed * context.substepDt)
+                        : 0.06 * stab;
+                    const Real clampedAngle = std::clamp(
+                        0.15 * stab * targetError, -maxAngleCorrection, maxAngleCorrection);
+                    if (std::abs(clampedAngle) > 1e-5) {
                         const Vec3 hc = clampedAngle * axisA;
                         const auto [wA, wB] = ComputeAngularCorrectionWeights(a, b, hc);
                         angularAccum[j.a] = angularAccum[j.a] + hc * wA;
@@ -944,8 +947,8 @@ public:
                 for (std::size_t i = 0; i < context.bodies.size(); ++i) {
                     if (angularCount[i] > 0) {
                         Body& body = context.bodies[i];
-                        if (body.isSleeping || body.invMass <= 0.0f) continue;
-                        const Vec3 avg = angularAccum[i] * (1.0f / static_cast<float>(angularCount[i]));
+                        if (body.isSleeping || body.invMass <= 0.0) continue;
+                        const Vec3 avg = angularAccum[i] * (1.0 / static_cast<float>(angularCount[i]));
                         body.angularVelocity = body.angularVelocity + avg * invDt;
                     }
                 }
@@ -957,22 +960,29 @@ public:
                     Body& a = context.bodies[j.a];
                     Body& b = context.bodies[j.b];
                     if (a.invMass + b.invMass <= kEpsilon) continue;
-                    const float stab = std::clamp(j.angleStabilizationScale, 0.0f, 1.0f);
+                    const Real stab = std::clamp(j.angleStabilizationScale, 0.0, 1.0);
 
                     const Vec3 ra = Rotate(a.orientation, j.localAnchorA);
                     const Vec3 rb = Rotate(b.orientation, j.localAnchorB);
                     const Vec3 error = (b.position + rb) - (a.position + ra);
-                    Vec3 correction = (0.28f / std::max(a.invMass + b.invMass, kEpsilon)) * error;
-                    const float gLenSq = LengthSquared(context.gravity);
+                    Vec3 cappedError = error;
+                    if (context.servoAnchorCorrectionMaxM > 0.0) {
+                        const Real errLen = Length(error);
+                        if (errLen > context.servoAnchorCorrectionMaxM) {
+                            cappedError = error * (context.servoAnchorCorrectionMaxM / errLen);
+                        }
+                    }
+                    Vec3 correction = (0.28 / std::max(a.invMass + b.invMass, kEpsilon)) * cappedError;
+                    const Real gLenSq = LengthSquared(context.gravity);
                     const bool oneStatic = a.isStatic != b.isStatic;
-                    if (oneStatic && gLenSq > 1e-12f) {
-                        const Vec3 gHat = context.gravity * (1.0f / std::sqrt(gLenSq));
+                    if (oneStatic && gLenSq > 1e-12) {
+                        const Vec3 gHat = context.gravity * (1.0 / std::sqrt(gLenSq));
                         correction -= Dot(correction, gHat) * gHat;
                     }
                     if (!a.isSleeping) a.position += correction * a.invMass;
                     if (!b.isSleeping) b.position -= correction * b.invMass;
 
-                    if (useVelocityBiases || stab <= 1e-7f) continue;
+                    if (useVelocityBiases || stab <= 1e-7) continue;
                     if (context.skipServoHingeSnapMask != nullptr
                         && ji < context.skipServoHingeSnapMask->size()
                         && (*context.skipServoHingeSnapMask)[ji] != 0u) {
@@ -984,7 +994,7 @@ public:
                     if (!TryNormalize(axisA, axisA) || !TryNormalize(axisB, axisB)) continue;
 
                     const Vec3 axisCorrection = ComputeServoAxisAlignmentCorrection(j, axisA, axisB);
-                    if (LengthSquared(axisCorrection) > 0.0f) {
+                    if (LengthSquared(axisCorrection) > 0.0) {
                         ApplyAngularPositionCorrection(a, b, axisCorrection);
                         axisA = Rotate(a.orientation, j.localAxisA);
                         axisB = Rotate(b.orientation, j.localAxisB);
@@ -993,15 +1003,15 @@ public:
 
                     const Vec3 refA = ResolveJointReference(a.orientation, j.localReferenceA, axisA);
                     const Vec3 refB = ResolveJointReference(b.orientation, j.localReferenceB, axisA);
-                    const float hingeAngle = SignedAngleAroundAxis(refA, refB, axisA);
-                    const float targetError = WrapJointAngle(hingeAngle - j.targetAngle);
-                    const float maxServoSpeed = std::max(0.0f, j.maxServoSpeed);
-                    const float maxAngleCorrection = maxServoSpeed > 0.0f
-                        ? std::min(0.06f * stab, maxServoSpeed * context.substepDt / std::max(servoPositionPasses, 1))
-                        : 0.06f * stab;
-                    const float clampedAngleCorrection = std::clamp(
-                        0.15f * stab * targetError, -maxAngleCorrection, maxAngleCorrection);
-                    if (std::abs(clampedAngleCorrection) > 1e-5f) {
+                    const Real hingeAngle = SignedAngleAroundAxis(refA, refB, axisA);
+                    const Real targetError = WrapJointAngle(hingeAngle - j.targetAngle);
+                    const Real maxServoSpeed = std::max(0.0, j.maxServoSpeed);
+                    const Real maxAngleCorrection = maxServoSpeed > 0.0
+                        ? std::min(0.06 * stab, maxServoSpeed * context.substepDt / std::max(servoPositionPasses, 1))
+                        : 0.06 * stab;
+                    const Real clampedAngleCorrection = std::clamp(
+                        0.15 * stab * targetError, -maxAngleCorrection, maxAngleCorrection);
+                    if (std::abs(clampedAngleCorrection) > 1e-5) {
                         ApplyAngularPositionCorrection(a, b, clampedAngleCorrection * axisA);
                     }
                 }

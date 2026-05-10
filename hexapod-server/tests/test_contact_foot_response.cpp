@@ -84,8 +84,8 @@ int main() {
     extra = 0.0;
     contact_foot_response::adjustSwingTauAndVerticalExtension(
         true, false, trusted, 0.95, tau, extra);
-    if (!expect(extra == 0.0 && std::abs(tau - 0.95) < 1e-12,
-                 "late swing without touchdown evidence should not force the foot downward")) {
+    if (!expect(extra > 0.0 && std::abs(tau - 0.95) < 1e-12,
+                 "late swing without touchdown evidence should allow a bounded downward reach")) {
         return EXIT_FAILURE;
     }
 

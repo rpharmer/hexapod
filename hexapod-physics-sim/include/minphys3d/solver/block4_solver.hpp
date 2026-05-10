@@ -13,31 +13,31 @@ struct Block4ContactInput {
     Vec3 normal{};
     Vec3 ra{};
     Vec3 rb{};
-    float oldImpulse = 0.0f;
-    float rhs = 0.0f;
+    Real oldImpulse = 0.0;
+    Real rhs = 0.0;
 };
 
 struct Block4SolveInput {
     Mat3 invIA{};
     Mat3 invIB{};
-    float invMassSum = 0.0f;
-    float blockDiagonalMinimum = 0.0f;
-    float blockConditionEstimateMax = 0.0f;
-    float face4ConditionEstimateMax = 0.0f;
+    Real invMassSum = 0.0;
+    Real blockDiagonalMinimum = 0.0;
+    Real blockConditionEstimateMax = 0.0;
+    Real face4ConditionEstimateMax = 0.0;
     int face4Iterations = 1;
-    float face4ProjectedGaussSeidelEpsilon = 1e-5f;
-    float face4MinSpreadSq = 0.0f;
-    float face4MinArea = 0.0f;
-    float symmetryTolerance = 2e-3f;
+    Real face4ProjectedGaussSeidelEpsilon = 1e-5;
+    Real face4MinSpreadSq = 0.0;
+    Real face4MinArea = 0.0;
+    Real symmetryTolerance = 2e-3;
     std::array<Block4ContactInput, 4> contacts{};
 };
 
 struct Block4SolveResult {
     bool success = false;
     BlockSolveFallbackCode fallbackReason = BlockSolveFallbackCode::LcpFailure;
-    std::array<float, 4> impulseDeltas{0.0f, 0.0f, 0.0f, 0.0f};
-    std::array<float, 4> solvedImpulses{0.0f, 0.0f, 0.0f, 0.0f};
-    float conditionEstimate = 0.0f;
+    std::array<Real, 4> impulseDeltas{0.0, 0.0, 0.0, 0.0};
+    std::array<Real, 4> solvedImpulses{0.0, 0.0, 0.0, 0.0};
+    Real conditionEstimate = 0.0;
 };
 
 Block4SolveResult SolveBlock4ProjectedGaussSeidel(const Block4SolveInput& input);

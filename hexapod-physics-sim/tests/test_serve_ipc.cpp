@@ -64,14 +64,14 @@ bool sendCorrection(int fd, const physics_sim::StateCorrection& correction) {
 }
 
 float YawAboutSimUp(const std::array<float, 4>& q) {
-    const float siny_cosp = 2.0f * (q[0] * q[2] + q[1] * q[3]);
-    const float cosy_cosp = 1.0f - 2.0f * (q[2] * q[2] + q[3] * q[3]);
+    const float siny_cosp = 2.0 * (q[0] * q[2] + q[1] * q[3]);
+    const float cosy_cosp = 1.0 - 2.0 * (q[2] * q[2] + q[3] * q[3]);
     return std::atan2(siny_cosp, cosy_cosp);
 }
 
 std::array<float, 4> QuaternionFromYaw(float yaw_rad) {
-    const float half = 0.5f * yaw_rad;
-    return {std::cos(half), 0.0f, std::sin(half), 0.0f};
+    const float half = 0.5 * yaw_rad;
+    return {std::cos(half), 0.0, std::sin(half), 0.0};
 }
 
 std::uint16_t MinFiniteLidarMm(const physics_sim::StateResponse& rsp) {
@@ -157,7 +157,7 @@ int main(int argc, char** argv) {
 
     physics_sim::ConfigCommand cfg{};
     cfg.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::ConfigCommand);
-    cfg.gravity = {0.0f, -9.81f, 0.0f};
+    cfg.gravity = {0.0, -9.81, 0.0};
     cfg.solver_iterations = 16;
     if (!sendAll(fd, &cfg, physics_sim::kConfigCommandBytes)) {
         std::cerr << "send ConfigCommand failed\n";
@@ -194,7 +194,7 @@ int main(int argc, char** argv) {
     physics_sim::StepCommand peek{};
     peek.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StepCommand);
     peek.sequence_id = 0;
-    peek.dt_seconds = 1.0f;
+    peek.dt_seconds = 1.0;
     if (!sendAll(fd, &peek, physics_sim::kStepCommandBytes)) {
         std::cerr << "send peek StepCommand failed\n";
         ::close(fd);
@@ -225,7 +225,7 @@ int main(int argc, char** argv) {
         ::waitpid(pid, nullptr, 0);
         return 11;
     }
-    if (peek_rsp.body_position[1] < 0.05f) {
+    if (peek_rsp.body_position[1] < 0.05) {
         std::cerr << "peek expected chassis above ground\n";
         ::close(fd);
         ::kill(pid, SIGTERM);
@@ -284,7 +284,7 @@ int main(int argc, char** argv) {
         physics_sim::StepCommand cadence_step{};
         cadence_step.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StepCommand);
         cadence_step.sequence_id = sequence_id;
-        cadence_step.dt_seconds = 1.0f / 240.0f;
+        cadence_step.dt_seconds = 1.0 / 240.0;
         if (!sendAll(fd, &cadence_step, physics_sim::kStepCommandBytes)) {
             return false;
         }
@@ -331,12 +331,12 @@ int main(int argc, char** argv) {
     lift.flags = physics_sim::kStateCorrectionPoseValid |
                  physics_sim::kStateCorrectionTwistValid |
                  physics_sim::kStateCorrectionHardReset;
-    lift.correction_strength = 1.0f;
+    lift.correction_strength = 1.0;
     lift.body_position = base_pos;
-    lift.body_position[1] += 0.25f;
+    lift.body_position[1] += 0.25;
     lift.body_orientation = base_ori;
-    lift.body_linear_velocity = {0.0f, 0.0f, 0.0f};
-    lift.body_angular_velocity = {0.0f, 0.0f, 0.0f};
+    lift.body_linear_velocity = {0.0, 0.0, 0.0};
+    lift.body_angular_velocity = {0.0, 0.0, 0.0};
     if (!sendCorrection(fd, lift)) {
         std::cerr << "send lift correction failed\n";
         ::close(fd);
@@ -348,9 +348,9 @@ int main(int argc, char** argv) {
     physics_sim::StepCommand step{};
     step.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StepCommand);
     step.sequence_id = 42;
-    step.dt_seconds = 1.0f / 240.0f;
+    step.dt_seconds = 1.0 / 240.0;
     for (float& j : step.joint_targets) {
-        j = 0.0f;
+        j = 0.0;
     }
     if (!sendAll(fd, &step, physics_sim::kStepCommandBytes)) {
         std::cerr << "send StepCommand failed\n";
@@ -383,7 +383,7 @@ int main(int argc, char** argv) {
         ::waitpid(pid, nullptr, 0);
         return 16;
     }
-    if (rsp.body_position[1] < base_pos[1] + 0.20f) {
+    if (rsp.body_position[1] < base_pos[1] + 0.20) {
         std::cerr << "lift expected chassis to move upward\n";
         ::close(fd);
         ::kill(pid, SIGTERM);
@@ -405,10 +405,10 @@ int main(int argc, char** argv) {
     contact.sequence_id = 2;
     contact.timestamp_us = 2000;
     contact.flags = physics_sim::kStateCorrectionContactValid;
-    contact.correction_strength = 1.0f;
+    contact.correction_strength = 1.0;
     for (std::size_t i = 0; i < contact.foot_contact_phase.size(); ++i) {
         contact.foot_contact_phase[i] = static_cast<std::uint8_t>(physics_sim::ContactPhase::ConfirmedStance);
-        contact.foot_contact_confidence[i] = 1.0f;
+        contact.foot_contact_confidence[i] = 1.0;
     }
     if (!sendCorrection(fd, contact)) {
         std::cerr << "send contact correction failed\n";
@@ -456,7 +456,7 @@ int main(int argc, char** argv) {
             return 21;
         }
     }
-    if (rsp.body_position[1] < base_pos[1] + 0.20f) {
+    if (rsp.body_position[1] < base_pos[1] + 0.20) {
         std::cerr << "contact correction should not collapse the airborne chassis\n";
         ::close(fd);
         ::kill(pid, SIGTERM);
@@ -469,10 +469,10 @@ int main(int argc, char** argv) {
     yaw.sequence_id = 3;
     yaw.timestamp_us = 3000;
     yaw.flags = physics_sim::kStateCorrectionPoseValid;
-    yaw.correction_strength = 0.75f;
+    yaw.correction_strength = 0.75;
     yaw.body_position = rsp.body_position;
     const float current_yaw = YawAboutSimUp(rsp.body_orientation);
-    const float target_yaw = current_yaw + 0.60f;
+    const float target_yaw = current_yaw + 0.60;
     yaw.body_orientation = QuaternionFromYaw(target_yaw);
     if (!sendCorrection(fd, yaw)) {
         std::cerr << "send yaw correction failed\n";
@@ -506,7 +506,7 @@ int main(int argc, char** argv) {
     }
     const float blended_yaw = YawAboutSimUp(rsp.body_orientation);
     const float yaw_delta = std::atan2(std::sin(blended_yaw - current_yaw), std::cos(blended_yaw - current_yaw));
-    if (!(std::abs(yaw_delta) > 0.03f && std::abs(yaw_delta) < 0.60f)) {
+    if (!(std::abs(yaw_delta) > 0.03 && std::abs(yaw_delta) < 0.60)) {
         std::cerr << "yaw correction should blend, delta=" << yaw_delta << "\n";
         ::close(fd);
         ::kill(pid, SIGTERM);
@@ -522,13 +522,13 @@ int main(int argc, char** argv) {
                   physics_sim::kStateCorrectionTwistValid |
                   physics_sim::kStateCorrectionTerrainValid |
                   physics_sim::kStateCorrectionHardReset;
-    reset.correction_strength = 1.0f;
+    reset.correction_strength = 1.0;
     reset.body_position = base_pos;
     reset.body_orientation = base_ori;
-    reset.body_linear_velocity = {0.0f, 0.0f, 0.0f};
-    reset.body_angular_velocity = {0.0f, 0.0f, 0.0f};
+    reset.body_linear_velocity = {0.0, 0.0, 0.0};
+    reset.body_angular_velocity = {0.0, 0.0, 0.0};
     reset.terrain_height_m = base_pos[1];
-    reset.terrain_normal = {0.0f, 1.0f, 0.0f};
+    reset.terrain_normal = {0.0, 1.0, 0.0};
     if (!sendCorrection(fd, reset)) {
         std::cerr << "send reset correction failed\n";
         ::close(fd);
@@ -566,7 +566,7 @@ int main(int argc, char** argv) {
         ::waitpid(pid, nullptr, 0);
         return 29;
     }
-    if (std::abs(rsp.body_position[1] - base_pos[1]) > 0.05f) {
+    if (std::abs(rsp.body_position[1] - base_pos[1]) > 0.05) {
         std::cerr << "reset should restore the chassis height\n";
         ::close(fd);
         ::kill(pid, SIGTERM);
@@ -574,7 +574,7 @@ int main(int argc, char** argv) {
         return 30;
     }
     if (std::abs(std::atan2(std::sin(YawAboutSimUp(rsp.body_orientation) - YawAboutSimUp(base_ori)),
-                            std::cos(YawAboutSimUp(rsp.body_orientation) - YawAboutSimUp(base_ori)))) > 0.10f) {
+                            std::cos(YawAboutSimUp(rsp.body_orientation) - YawAboutSimUp(base_ori)))) > 0.10) {
         std::cerr << "reset should restore the heading\n";
         ::close(fd);
         ::kill(pid, SIGTERM);
@@ -594,9 +594,9 @@ int main(int argc, char** argv) {
     terrain.sequence_id = 0;
     terrain.timestamp_us = 5000;
     terrain.flags = physics_sim::kStateCorrectionTerrainValid;
-    terrain.correction_strength = 0.85f;
-    terrain.terrain_height_m = base_pos[1] + 0.14f;
-    terrain.terrain_normal = {0.0f, 1.0f, 0.0f};
+    terrain.correction_strength = 0.85;
+    terrain.terrain_height_m = base_pos[1] + 0.14;
+    terrain.terrain_normal = {0.0, 1.0, 0.0};
     if (!sendCorrection(fd, terrain)) {
         std::cerr << "send terrain correction failed\n";
         ::close(fd);

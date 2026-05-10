@@ -25,17 +25,17 @@ std::optional<std::size_t> LegIndexForTibia(const HexapodSceneObjects& scene, st
 } // namespace
 
 int main() {
-    World world({0.0f, -9.81f, 0.0f});
+    World world({0.0, -9.81, 0.0});
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
     ApplyHexapodPoseHoldStabilityTuning(world, scene);
 
     std::array<bool, 6> have_reference{};
     std::array<Vec3, 6> reference_positions{};
-    std::array<float, 6> max_drift{};
+    std::array<Real, 6> max_drift{};
     std::array<int, 6> settled_contact_frames{};
 
-    constexpr float kFrameDt = 1.0f / 240.0f;
+    constexpr Real kFrameDt = 1.0 / 240.0;
     for (int frame = 0; frame < 360; ++frame) {
         world.Step(kFrameDt, 24);
         for (const Manifold& manifold : world.DebugManifolds()) {
@@ -54,7 +54,7 @@ int main() {
             for (const Contact& contact : manifold.contacts) {
                 point_sum = point_sum + contact.point;
             }
-            const Vec3 contact_point = point_sum * (1.0f / static_cast<float>(manifold.contacts.size()));
+            const Vec3 contact_point = point_sum * (1.0 / static_cast<float>(manifold.contacts.size()));
 
             if (frame >= 120) {
                 if (!have_reference[*leg_index]) {

@@ -172,6 +172,10 @@ struct LocomotionMetrics {
     double min_command_scale{1.0};
     double min_cadence_scale{1.0};
     double max_governor_severity{0.0};
+    std::size_t recovery_hold_activation_count{0};
+    bool saw_recovery_hold{false};
+    bool saw_recovery_settling{false};
+    std::size_t recovery_settling_transition_count{0};
     double max_governed_speed_mps{0.0};
     double max_governed_yaw_rate_radps{0.0};
     double min_governed_speed_mps{1e9};
@@ -229,6 +233,10 @@ inline std::string metricsToJson(const LocomotionMetrics& metrics) {
         << "\"min_command_scale\":" << formatDouble(metrics.min_command_scale) << ','
         << "\"min_cadence_scale\":" << formatDouble(metrics.min_cadence_scale) << ','
         << "\"max_governor_severity\":" << formatDouble(metrics.max_governor_severity) << ','
+        << "\"recovery_hold_activation_count\":" << metrics.recovery_hold_activation_count << ','
+        << "\"saw_recovery_hold\":" << (metrics.saw_recovery_hold ? "true" : "false") << ','
+        << "\"saw_recovery_settling\":" << (metrics.saw_recovery_settling ? "true" : "false") << ','
+        << "\"recovery_settling_transition_count\":" << metrics.recovery_settling_transition_count << ','
         << "\"max_governed_speed_mps\":" << formatDouble(metrics.max_governed_speed_mps) << ','
         << "\"max_governed_yaw_rate_radps\":" << formatDouble(metrics.max_governed_yaw_rate_radps) << ','
         << "\"min_governed_speed_mps\":" << formatDouble(metrics.min_governed_speed_mps) << ','
@@ -277,6 +285,17 @@ inline void appendSample(LocomotionMetrics& metrics,
     metrics.max_abs_pitch_rad = std::max(metrics.max_abs_pitch_rad, std::abs(sample.estimated.body_twist_state.twist_pos_rad.y));
     metrics.max_body_rate_radps = std::max(metrics.max_body_rate_radps, sample.body_rate_radps);
     metrics.max_governor_severity = std::max(metrics.max_governor_severity, sample.governor.severity);
+    metrics.saw_recovery_hold = metrics.saw_recovery_hold || sample.governor.recovery_hold_active;
+    if (sample.governor.recovery_hold_active &&
+        (samples.size() == 1 || !samples[samples.size() - 2].governor.recovery_hold_active)) {
+        ++metrics.recovery_hold_activation_count;
+    }
+    metrics.saw_recovery_settling =
+        metrics.saw_recovery_settling || sample.governor.recovery_stage == RecoveryStage::Settling;
+    if (sample.governor.recovery_stage == RecoveryStage::Settling &&
+        (samples.size() == 1 || samples[samples.size() - 2].governor.recovery_stage != RecoveryStage::Settling)) {
+        ++metrics.recovery_settling_transition_count;
+    }
     metrics.min_support_margin_m = std::min(metrics.min_support_margin_m, sample.support_margin_m);
     metrics.min_model_trust = std::min(metrics.min_model_trust, sample.model_trust);
     metrics.max_contact_mismatch_ratio = std::max(metrics.max_contact_mismatch_ratio, sample.contact_mismatch_ratio);

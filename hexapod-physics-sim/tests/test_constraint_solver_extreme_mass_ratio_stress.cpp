@@ -12,7 +12,7 @@ using namespace minphys3d;
 using namespace minphys3d::tests;
 
 int runCase() {
-    World world({0.0f, -9.81f, 0.0f});
+    World world({0.0, -9.81, 0.0});
     ContactSolverConfig cfg = world.GetContactSolverConfig();
     cfg.useBlockSolver = true;
     cfg.enableDeterministicOrdering = true;
@@ -21,33 +21,33 @@ int runCase() {
     Body plane;
     plane.shape = ShapeType::Plane;
     plane.isStatic = true;
-    plane.planeNormal = {0.0f, 1.0f, 0.0f};
+    plane.planeNormal = {0.0, 1.0, 0.0};
     world.CreateBody(plane);
 
     Body light;
     light.shape = ShapeType::Box;
-    light.halfExtents = {0.15f, 0.15f, 0.15f};
-    light.mass = 0.02f;
-    light.position = {0.0f, 0.18f, 0.0f};
-    light.restitution = 0.0f;
-    light.linearDamping = 0.03f;
-    light.angularDamping = 0.03f;
+    light.halfExtents = {0.15, 0.15, 0.15};
+    light.mass = 0.02;
+    light.position = {0.0, 0.18, 0.0};
+    light.restitution = 0.0;
+    light.linearDamping = 0.03;
+    light.angularDamping = 0.03;
     const std::uint32_t light_id = world.CreateBody(light);
 
     Body heavy;
     heavy.shape = ShapeType::Box;
-    heavy.halfExtents = {0.22f, 0.22f, 0.22f};
-    heavy.mass = 5000.0f;
-    heavy.position = {0.0f, 0.75f, 0.0f};
-    heavy.restitution = 0.0f;
-    heavy.linearDamping = 0.02f;
-    heavy.angularDamping = 0.02f;
+    heavy.halfExtents = {0.22, 0.22, 0.22};
+    heavy.mass = 5000.0;
+    heavy.position = {0.0, 0.75, 0.0};
+    heavy.restitution = 0.0;
+    heavy.linearDamping = 0.02;
+    heavy.angularDamping = 0.02;
     const std::uint32_t heavy_id = world.CreateBody(heavy);
 
-    float max_abs_speed = 0.0f;
-    float min_light_y = std::numeric_limits<float>::infinity();
+    Real max_abs_speed = 0.0;
+    Real min_light_y = std::numeric_limits<float>::infinity();
     std::size_t max_manifolds = 0;
-    constexpr float kDt = 1.0f / 240.0f;
+    constexpr Real kDt = 1.0 / 240.0;
     for (int step = 0; step < 900; ++step) {
         world.Step(kDt, 6);
         const Body& b_light = world.GetBody(light_id);
@@ -62,11 +62,11 @@ int runCase() {
         max_manifolds = std::max(max_manifolds, world.DebugManifolds().size());
     }
 
-    if (max_abs_speed > 140.0f) {
+    if (max_abs_speed > 140.0) {
         std::cerr << "mass_ratio_stress max_speed=" << max_abs_speed << " cap=140\n";
         return 1;
     }
-    if (min_light_y < -0.35f) {
+    if (min_light_y < -0.35) {
         std::cerr << "mass_ratio_stress min_light_y=" << min_light_y << " floor=-0.35\n";
         return 1;
     }

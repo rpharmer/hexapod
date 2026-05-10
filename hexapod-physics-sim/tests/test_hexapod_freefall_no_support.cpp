@@ -11,15 +11,15 @@ using namespace minphys3d;
 using namespace minphys3d::demo;
 
 struct Metrics {
-    float peakChassisAngularSpeed = 0.0f;
+    Real peakChassisAngularSpeed = 0.0;
 };
 
 Metrics RunFreefallNoSupport() {
-    World world({0.0f, 0.0f, 0.0f});
+    World world({0.0, 0.0, 0.0});
     JointSolverConfig joint_cfg = world.GetJointSolverConfig();
     joint_cfg.servoPositionPasses = 0;
-    joint_cfg.hingeAnchorBiasFactor = 0.25f;
-    joint_cfg.hingeAnchorDampingFactor = 0.3f;
+    joint_cfg.hingeAnchorBiasFactor = 0.25;
+    joint_cfg.hingeAnchorDampingFactor = 0.3;
     world.SetJointSolverConfig(joint_cfg);
 
     const HexapodSceneObjects scene = BuildHexapodScene(world);
@@ -27,10 +27,10 @@ Metrics RunFreefallNoSupport() {
 
     // Sink the plane so no support contacts form and the free-floating
     // articulation path stays active for the full production iteration count.
-    world.GetBody(scene.plane).planeOffset = -1000.0f;
+    world.GetBody(scene.plane).planeOffset = -1000.0;
 
     Metrics metrics;
-    constexpr float kDt = 1.0f / 240.0f;
+    constexpr Real kDt = 1.0 / 240.0;
     constexpr int kSolverIterations = 40;
     for (int step = 0; step < 240; ++step) {
         world.Step(kDt, kSolverIterations);
@@ -46,7 +46,7 @@ Metrics RunFreefallNoSupport() {
 int main() {
     const Metrics metrics = RunFreefallNoSupport();
 
-    constexpr float kMaxAngularSpeed = 5.0f;
+    constexpr Real kMaxAngularSpeed = 5.0;
 
     if (metrics.peakChassisAngularSpeed > kMaxAngularSpeed) {
         std::cerr << "freefall_no_support peak_angular=" << metrics.peakChassisAngularSpeed

@@ -6,7 +6,7 @@
 
 namespace {
 
-bool Near(float a, float b, float eps) {
+bool Near(minphys3d::Real a, minphys3d::Real b, minphys3d::Real eps) {
     return std::abs(a - b) <= eps;
 }
 
@@ -18,68 +18,68 @@ int main() {
 
     World world;
     TerrainPatch patch{};
-    patch.initialize(world, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+    patch.initialize(world, Vec3{0.0, 0.0, 0.0}, 0.0);
 
-    const float flat_height = patch.SampleHeightWorld(0.0f, 0.0f);
-    if (!Near(flat_height, 0.0f, 1.0e-3f)) {
+    const Real flat_height = patch.SampleHeightWorld(0.0, 0.0);
+    if (!Near(flat_height, 0.0, 1.0e-3)) {
         std::cerr << "expected flat terrain near 0, got " << flat_height << "\n";
         return 1;
     }
-    if (!Near(patch.grid_origin_x(), -0.35f, 1.0e-5f) ||
-        !Near(patch.grid_origin_z(), -0.35f, 1.0e-5f)) {
+    if (!Near(patch.grid_origin_x(), -0.35, 1.0e-5) ||
+        !Near(patch.grid_origin_z(), -0.35, 1.0e-5)) {
         std::cerr << "unexpected default grid origin\n";
         return 1;
     }
 
-    const Vec3 flat_normal = patch.SampleNormalWorld(0.0f, 0.0f);
-    if (flat_normal.y < 0.95f) {
+    const Vec3 flat_normal = patch.SampleNormalWorld(0.0, 0.0);
+    if (flat_normal.y < 0.95) {
         std::cerr << "expected upward normal on flat terrain, got y=" << flat_normal.y << "\n";
         return 2;
     }
 
-    float flat_hit = 0.0f;
-    if (!patch.RaycastWorld(Vec3{0.0f, 1.0f, 0.0f}, Vec3{0.0f, -1.0f, 0.0f}, flat_hit)) {
+    Real flat_hit = 0.0;
+    if (!patch.RaycastWorld(Vec3{0.0, 1.0, 0.0}, Vec3{0.0, -1.0, 0.0}, flat_hit)) {
         std::cerr << "expected raycast hit on flat terrain\n";
         return 3;
     }
-    if (!Near(flat_hit, 1.0f, 0.08f)) {
+    if (!Near(flat_hit, 1.0, 0.08)) {
         std::cerr << "expected flat terrain hit near 1.0, got " << flat_hit << "\n";
         return 4;
     }
 
     std::vector<TerrainSample> bump_samples{
-        TerrainSample{Vec3{0.0f, 0.0f, 0.0f}, 0.18f, 1.0f},
+        TerrainSample{Vec3{0.0, 0.0, 0.0}, 0.18, 1.0},
     };
-    patch.update(world, Vec3{0.0f, 0.0f, 0.0f}, 0.0f, Vec3{0.0f, 1.0f, 0.0f}, bump_samples, 0.0f);
+    patch.update(world, Vec3{0.0, 0.0, 0.0}, 0.0, Vec3{0.0, 1.0, 0.0}, bump_samples, 0.0);
 
-    const float bump_height = patch.SampleHeightWorld(0.0f, 0.0f);
-    if (bump_height <= 0.03f) {
+    const Real bump_height = patch.SampleHeightWorld(0.0, 0.0);
+    if (bump_height <= 0.03) {
         std::cerr << "expected terrain bump to raise height, got " << bump_height << "\n";
         return 5;
     }
 
-    float bump_hit = 0.0f;
-    if (!patch.RaycastWorld(Vec3{0.0f, 1.0f, 0.0f}, Vec3{0.0f, -1.0f, 0.0f}, bump_hit)) {
+    Real bump_hit = 0.0;
+    if (!patch.RaycastWorld(Vec3{0.0, 1.0, 0.0}, Vec3{0.0, -1.0, 0.0}, bump_hit)) {
         std::cerr << "expected raycast hit on bumped terrain\n";
         return 6;
     }
-    if (!(bump_hit < flat_hit - 0.03f)) {
+    if (!(bump_hit < flat_hit - 0.03)) {
         std::cerr << "expected bumped terrain hit closer than flat hit (flat=" << flat_hit
                   << " bump=" << bump_hit << ")\n";
         return 7;
     }
 
-    patch.update(world, Vec3{0.0f, 0.0f, 0.0f}, 0.0f, Vec3{0.0f, 1.0f, 0.0f}, {}, 5.0f);
-    const float decayed_height = patch.SampleHeightWorld(0.0f, 0.0f);
-    if (!(decayed_height < bump_height && decayed_height < 0.08f)) {
+    patch.update(world, Vec3{0.0, 0.0, 0.0}, 0.0, Vec3{0.0, 1.0, 0.0}, {}, 5.0);
+    const Real decayed_height = patch.SampleHeightWorld(0.0, 0.0);
+    if (!(decayed_height < bump_height && decayed_height < 0.08)) {
         std::cerr << "expected bump to decay back toward plane, bump=" << bump_height
                   << " decayed=" << decayed_height << "\n";
         return 8;
     }
 
-    float conf_at = 0.0f;
-    (void)patch.SampleHeightAndConfidenceWorld(0.0f, 0.0f, &conf_at);
-    if (!std::isfinite(conf_at) || conf_at < 0.0f || conf_at > 1.0f) {
+    Real conf_at = 0.0;
+    (void)patch.SampleHeightAndConfidenceWorld(0.0, 0.0, &conf_at);
+    if (!std::isfinite(conf_at) || conf_at < 0.0 || conf_at > 1.0) {
         std::cerr << "SampleHeightAndConfidenceWorld confidence out of range\n";
         return 9;
     }
@@ -88,26 +88,26 @@ int main() {
         TerrainPatchConfig narrow_cfg{};
         narrow_cfg.rows = 5;
         narrow_cfg.cols = 5;
-        narrow_cfg.cell_size_m = 0.02f;
-        narrow_cfg.base_update_blend = 1.0f;
-        narrow_cfg.decay_update_boost = 0.0f;
+        narrow_cfg.cell_size_m = 0.02;
+        narrow_cfg.base_update_blend = 1.0;
+        narrow_cfg.decay_update_boost = 0.0;
         World world_n;
         TerrainPatch narrow{narrow_cfg};
-        narrow.initialize(world_n, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+        narrow.initialize(world_n, Vec3{0.0, 0.0, 0.0}, 0.0);
         narrow.update(world_n,
-                        Vec3{0.0f, 0.0f, 0.0f},
-                        0.0f,
-                        Vec3{0.0f, 1.0f, 0.0f},
+                        Vec3{0.0, 0.0, 0.0},
+                        0.0,
+                        Vec3{0.0, 1.0, 0.0},
                         std::vector<TerrainSample>{
-                            TerrainSample{Vec3{0.0f, 0.0f, 0.0f}, 0.09f, 1.0f},
+                            TerrainSample{Vec3{0.0, 0.0, 0.0}, 0.09, 1.0},
                         },
-                        0.0f);
-        float narrow_hit = 0.0f;
-        if (!narrow.RaycastWorld(Vec3{0.0f, 0.25f, 0.0f}, Vec3{0.0f, -1.0f, 0.0f}, narrow_hit)) {
+                        0.0);
+        Real narrow_hit = 0.0;
+        if (!narrow.RaycastWorld(Vec3{0.0, 0.25, 0.0}, Vec3{0.0, -1.0, 0.0}, narrow_hit)) {
             std::cerr << "expected narrow-grid raycast hit\n";
             return 10;
         }
-        if (narrow_hit > 0.22f) {
+        if (narrow_hit > 0.22) {
             std::cerr << "expected narrow bump hit well below 0.25, got " << narrow_hit << "\n";
             return 11;
         }
@@ -117,35 +117,35 @@ int main() {
         TerrainPatchConfig ray_cfg{};
         ray_cfg.rows = 9;
         ray_cfg.cols = 9;
-        ray_cfg.cell_size_m = 0.05f;
+        ray_cfg.cell_size_m = 0.05;
         World world_r;
         TerrainPatch pr{ray_cfg};
-        pr.initialize(world_r, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+        pr.initialize(world_r, Vec3{0.0, 0.0, 0.0}, 0.0);
 
-        float shallow_hit = 0.0f;
-        if (!pr.RaycastWorld(Vec3{-0.18f, 0.003f, 0.0f}, Vec3{1.0f, -0.01f, 0.0f}, shallow_hit)) {
+        Real shallow_hit = 0.0;
+        if (!pr.RaycastWorld(Vec3{-0.18, 0.003, 0.0}, Vec3{1.0, -0.01, 0.0}, shallow_hit)) {
             std::cerr << "expected shallow grazing ray to hit flat terrain\n";
             return 12;
         }
-        if (!Near(shallow_hit, 0.30f, 0.03f)) {
+        if (!Near(shallow_hit, 0.30, 0.03)) {
             std::cerr << "unexpected shallow grazing hit distance " << shallow_hit << "\n";
             return 13;
         }
 
-        float tangent_miss = 0.0f;
-        if (pr.RaycastWorld(Vec3{-0.18f, 0.02f, 0.0f}, Vec3{1.0f, 0.0f, 0.0f}, tangent_miss)) {
+        Real tangent_miss = 0.0;
+        if (pr.RaycastWorld(Vec3{-0.18, 0.02, 0.0}, Vec3{1.0, 0.0, 0.0}, tangent_miss)) {
             std::cerr << "horizontal ray above terrain should miss\n";
             return 14;
         }
 
-        float edge_hit = 0.0f;
-        if (!pr.RaycastWorld(Vec3{-0.25f, 0.004f, 0.20f}, Vec3{1.0f, -0.01f, 0.0f}, edge_hit)) {
+        Real edge_hit = 0.0;
+        if (!pr.RaycastWorld(Vec3{-0.25, 0.004, 0.20}, Vec3{1.0, -0.01, 0.0}, edge_hit)) {
             std::cerr << "expected patch-edge grazing ray to hit\n";
             return 15;
         }
 
-        float boundary_hit = 0.0f;
-        if (!pr.RaycastWorld(Vec3{-0.15f, 0.006f, -0.15f}, Vec3{1.0f, -0.02f, 1.0f}, boundary_hit)) {
+        Real boundary_hit = 0.0;
+        if (!pr.RaycastWorld(Vec3{-0.15, 0.006, -0.15}, Vec3{1.0, -0.02, 1.0}, boundary_hit)) {
             std::cerr << "expected diagonal cell-boundary ray to hit\n";
             return 16;
         }
@@ -156,18 +156,18 @@ int main() {
         bin_cfg.rows = 9;
         bin_cfg.cols = 9;
         bin_cfg.use_sample_binning = true;
-        bin_cfg.sample_bin_size_m = 0.2f;
-        bin_cfg.base_update_blend = 1.0f;
+        bin_cfg.sample_bin_size_m = 0.2;
+        bin_cfg.base_update_blend = 1.0;
         World world_b;
         TerrainPatch pb{bin_cfg};
-        pb.initialize(world_b, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+        pb.initialize(world_b, Vec3{0.0, 0.0, 0.0}, 0.0);
         std::vector<TerrainSample> many{};
         for (int i = 0; i < 24; ++i) {
-            const float x = 0.01f * static_cast<float>(i - 12);
-            many.push_back(TerrainSample{Vec3{x, 0.0f, 0.02f * static_cast<float>(i % 5)}, 0.04f, 0.5f});
+            const Real x = 0.01 * static_cast<float>(i - 12);
+            many.push_back(TerrainSample{Vec3{x, 0.0, 0.02 * static_cast<float>(i % 5)}, 0.04, 0.5});
         }
-        pb.update(world_b, Vec3{0.0f, 0.0f, 0.0f}, 0.0f, Vec3{0.0f, 1.0f, 0.0f}, many, 0.0f);
-        if (!std::isfinite(pb.SampleHeightWorld(0.0f, 0.0f))) {
+        pb.update(world_b, Vec3{0.0, 0.0, 0.0}, 0.0, Vec3{0.0, 1.0, 0.0}, many, 0.0);
+        if (!std::isfinite(pb.SampleHeightWorld(0.0, 0.0))) {
             std::cerr << "binning path produced non-finite height\n";
             return 17;
         }
@@ -178,25 +178,25 @@ int main() {
         cons_cfg.rows = 7;
         cons_cfg.cols = 7;
         cons_cfg.use_conservative_collision = true;
-        cons_cfg.base_update_blend = 1.0f;
-        cons_cfg.decay_update_boost = 0.0f;
+        cons_cfg.base_update_blend = 1.0;
+        cons_cfg.decay_update_boost = 0.0;
         World world_c;
         TerrainPatch pc{cons_cfg};
-        pc.initialize(world_c, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+        pc.initialize(world_c, Vec3{0.0, 0.0, 0.0}, 0.0);
         pc.update(world_c,
-                    Vec3{0.0f, 0.0f, 0.0f},
-                    0.0f,
-                    Vec3{0.0f, 1.0f, 0.0f},
+                    Vec3{0.0, 0.0, 0.0},
+                    0.0,
+                    Vec3{0.0, 1.0, 0.0},
                     std::vector<TerrainSample>{
-                        TerrainSample{Vec3{0.0f, 0.0f, 0.0f}, 0.14f, 1.0f},
+                        TerrainSample{Vec3{0.0, 0.0, 0.0}, 0.14, 1.0},
                     },
-                    0.0f);
+                    0.0);
         if (!pc.has_collision_layer()) {
             std::cerr << "expected collision layer when conservative collision enabled\n";
             return 18;
         }
         for (std::size_t i = 0; i < pc.surface_heights_m().size(); ++i) {
-            if (pc.collision_heights_m()[i] + 1.0e-4f < pc.surface_heights_m()[i]) {
+            if (pc.collision_heights_m()[i] + 1.0e-4 < pc.surface_heights_m()[i]) {
                 std::cerr << "collision height below surface at " << i << "\n";
                 return 19;
             }
@@ -207,30 +207,30 @@ int main() {
         TerrainPatchConfig perf_cfg{};
         perf_cfg.rows = 64;
         perf_cfg.cols = 64;
-        perf_cfg.cell_size_m = 0.025f;
+        perf_cfg.cell_size_m = 0.025;
         perf_cfg.use_sample_binning = true;
-        perf_cfg.sample_bin_size_m = 0.12f;
-        perf_cfg.base_update_blend = 1.0f;
-        perf_cfg.decay_update_boost = 0.0f;
+        perf_cfg.sample_bin_size_m = 0.12;
+        perf_cfg.base_update_blend = 1.0;
+        perf_cfg.decay_update_boost = 0.0;
         World world_p;
         TerrainPatch pp{perf_cfg};
-        pp.initialize(world_p, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+        pp.initialize(world_p, Vec3{0.0, 0.0, 0.0}, 0.0);
         std::vector<TerrainSample> samples;
         samples.reserve(256);
         for (int i = 0; i < 256; ++i) {
-            const float x = -0.70f + 0.10f * static_cast<float>(i % 15);
-            const float z = -0.70f + 0.10f * static_cast<float>((i / 15) % 15);
-            const float h = 0.03f * std::sin(static_cast<float>(i) * 0.11f);
-            samples.push_back(TerrainSample{Vec3{x, h, z}, h, 0.4f});
+            const Real x = -0.70 + 0.10 * static_cast<float>(i % 15);
+            const Real z = -0.70 + 0.10 * static_cast<float>((i / 15) % 15);
+            const Real h = 0.03 * std::sin(static_cast<float>(i) * 0.11);
+            samples.push_back(TerrainSample{Vec3{x, h, z}, h, 0.4});
         }
 
         const auto start = std::chrono::steady_clock::now();
-        pp.update(world_p, Vec3{0.0f, 0.0f, 0.0f}, 0.0f, Vec3{0.0f, 1.0f, 0.0f}, samples, 0.0f);
+        pp.update(world_p, Vec3{0.0, 0.0, 0.0}, 0.0, Vec3{0.0, 1.0, 0.0}, samples, 0.0);
         int hits = 0;
         for (int i = 0; i < 512; ++i) {
-            float t = 0.0f;
-            const float z = -0.70f + 1.40f * static_cast<float>(i % 64) / 63.0f;
-            if (pp.RaycastWorld(Vec3{-0.75f, 0.20f, z}, Vec3{1.0f, -0.18f, 0.03f}, t)) {
+            Real t = 0.0;
+            const Real z = -0.70 + 1.40 * static_cast<float>(i % 64) / 63.0;
+            if (pp.RaycastWorld(Vec3{-0.75, 0.20, z}, Vec3{1.0, -0.18, 0.03}, t)) {
                 ++hits;
             }
         }

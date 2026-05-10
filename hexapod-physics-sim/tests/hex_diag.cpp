@@ -9,18 +9,18 @@
 using namespace minphys3d;
 using namespace minphys3d::demo;
 
-void RunConfig(const char* label, float stabOverride) {
-    World world({0.0f, -9.81f, 0.0f});
+void RunConfig(const char* label, Real stabOverride) {
+    World world({0.0, -9.81, 0.0});
     JointSolverConfig joint_cfg = world.GetJointSolverConfig();
     joint_cfg.servoPositionPasses = 8;
-    joint_cfg.hingeAnchorBiasFactor = 0.25f;
-    joint_cfg.hingeAnchorDampingFactor = 0.3f;
+    joint_cfg.hingeAnchorBiasFactor = 0.25;
+    joint_cfg.hingeAnchorDampingFactor = 0.3;
     world.SetJointSolverConfig(joint_cfg);
 
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
 
-    if (stabOverride >= 0.0f) {
+    if (stabOverride >= 0.0) {
         for (int leg = 0; leg < 6; ++leg) {
             world.GetServoJointMutable(scene.legs[leg].bodyToCoxaJoint).angleStabilizationScale = stabOverride;
             world.GetServoJointMutable(scene.legs[leg].coxaToFemurJoint).angleStabilizationScale = stabOverride;
@@ -28,10 +28,10 @@ void RunConfig(const char* label, float stabOverride) {
         }
     }
 
-    constexpr float kFrameDt = 1.0f / 60.0f;
+    constexpr Real kFrameDt = 1.0 / 60.0;
     const int kSubsteps = kHexapodPoseHoldBenchmarkSubstepsPerFrame;
     constexpr int kIter = 40; // match kHexapodPoseHoldBenchmarkSolverIterations
-    const float subDt = kFrameDt / float(kSubsteps);
+    const Real subDt = kFrameDt / Real(kSubsteps);
 
     for (int frame = 0; frame < 480; ++frame) {
         for (int sub = 0; sub < kSubsteps; ++sub) {
@@ -41,15 +41,15 @@ void RunConfig(const char* label, float stabOverride) {
         if (frame == 59 || frame == 479) {
             const Body& ch = world.GetBody(scene.body);
 
-            float total_chassis_N = 0.0f, total_foot_N = 0.0f;
+            Real total_chassis_N = 0.0, total_foot_N = 0.0;
             for (const Manifold& m : world.DebugManifolds()) {
                 if ((m.a == scene.plane && m.b == scene.body) || (m.a == scene.body && m.b == scene.plane)) {
-                    for (const Contact& c : m.contacts) total_chassis_N += std::max(c.normalImpulseSum, 0.0f);
+                    for (const Contact& c : m.contacts) total_chassis_N += std::max(c.normalImpulseSum, 0.0);
                 }
                 for (int leg = 0; leg < 6; ++leg) {
                     if ((m.a == scene.plane && m.b == scene.legs[leg].tibia) ||
                         (m.a == scene.legs[leg].tibia && m.b == scene.plane)) {
-                        for (const Contact& c : m.contacts) total_foot_N += std::max(c.normalImpulseSum, 0.0f);
+                        for (const Contact& c : m.contacts) total_foot_N += std::max(c.normalImpulseSum, 0.0);
                     }
                 }
             }
@@ -65,21 +65,48 @@ void RunConfig(const char* label, float stabOverride) {
 
             const Vec3 axA0 = Normalize(Rotate(bA.orientation, hip0.localAxisA));
             const Vec3 axB0 = Normalize(Rotate(bB.orientation, hip0.localAxisB));
-            const float axisErr = Length(Cross(axA0, axB0));
+            const Real axisErr = Length(Cross(axA0, axB0));
 
             std::printf("[%s] frame=%d chassis_y=%.4f bottom=%.4f | hip_y=%.4f femJ_y=%.4f coxa_tilt=%.4f | "
-                "chassisN=%.4f feetN=%.4f ratio=%.0f%% | axisAlignErr=%.6f\n",
-                label, frame, ch.position.y, ch.position.y - 0.034f,
+                "chassisN=%.4f feetN=%.4f ratio=%.0%% | axisAlignErr=%.6f\n",
+                label, frame, ch.position.y, ch.position.y - 0.034,
                 hipWorldA.y, femWorld.y, femWorld.y - hipWorldA.y,
                 total_chassis_N, total_foot_N,
-                (total_chassis_N + total_foot_N > 0.001f) ? 100.0f * total_chassis_N / (total_chassis_N + total_foot_N) : 0.0f,
+                (total_chassis_N + total_foot_N > 0.001) ? 100.0 * total_chassis_N / (total_chassis_N + total_foot_N) : 0.0,
                 axisErr);
+
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+            const auto& telemetry = world.GetSolverTelemetry();
+            for (const auto& sample : telemetry.articulationChains) {
+                std::printf(
+                    "[%s] art chain=%u N=%u passC_short=%d passC_contact=%d passC_cond=%d passC_dclamp=%d "
+                    "pos_short=%d pos_cond=%d comp_reject=%d solve_fail=%d reg=%d minD=%.6g maxD=%.6g "
+                    "minPivot=%.6g dV=%.6g dW=%.6g\n",
+                    label,
+                    sample.chainIndex,
+                    sample.linkCount,
+                    sample.passCSkippedShortChain ? 1 : 0,
+                    sample.passCSkippedContacts ? 1 : 0,
+                    sample.passCSkippedConditioning ? 1 : 0,
+                    sample.passCSkippedDeltaClamp ? 1 : 0,
+                    sample.chainPositionSkippedShortChain ? 1 : 0,
+                    sample.chainPositionSkippedConditioning ? 1 : 0,
+                    sample.contactComplianceRejected ? 1 : 0,
+                    sample.spatialSolveFailed ? 1 : 0,
+                    sample.spatialSolveRegularized ? 1 : 0,
+                    sample.minD,
+                    sample.maxD,
+                    sample.minPivot,
+                    sample.maxDeltaV,
+                    sample.maxDeltaW);
+            }
+#endif
         }
     }
 }
 
 int main() {
-    RunConfig("stab=0.0", 0.0f);
-    RunConfig("stab=0.1", 0.1f);
+    RunConfig("stab=0.0", 0.0);
+    RunConfig("stab=0.1", 0.1);
     return 0;
 }

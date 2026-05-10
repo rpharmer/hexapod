@@ -11,8 +11,8 @@
 namespace minphys3d::demo {
 namespace {
 
-const minphys3d::Vec3 kEarthG{0.0f, -9.81f, 0.0f};
-const minphys3d::Vec3 kZeroG{0.0f, 0.0f, 0.0f};
+const minphys3d::Vec3 kEarthG{0.0, -9.81, 0.0};
+const minphys3d::Vec3 kZeroG{0.0, 0.0, 0.0};
 
 enum class PresetKind : std::uint8_t {
     BuiltinClassic,
@@ -44,7 +44,7 @@ static const PresetEntry kPresetTable[] = {
         false,
         960},
     {"hex-zero|hex-0g|hex-zerog",
-        "Built-in hexapod, zero gravity float",
+        "Built-in hexapod, zero gravity Real",
         "No weight: post-step servo snap is disabled for this preset so the rig stays coherent; expect slow drift + joint PD, not explosive snapping.",
         PresetKind::BuiltinHex,
         SceneModel::Hexapod,
@@ -63,7 +63,7 @@ static const PresetEntry kPresetTable[] = {
         900},
     {"classic-zero|classic-0g",
         "Built-in classic scene, zero gravity",
-        "Same topology as classic but weightless: bodies should float slowly with joint constraints still visible.",
+        "Same topology as classic but weightless: bodies should Real slowly with joint constraints still visible.",
         PresetKind::BuiltinClassic,
         SceneModel::Default,
         nullptr,

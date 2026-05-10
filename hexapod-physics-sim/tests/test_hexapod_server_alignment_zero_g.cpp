@@ -36,7 +36,7 @@ minphys3d::Vec3 footContactPointWorld(const Body& tibia) {
     for (const CompoundChild& child : tibia.compoundChildren) {
         if (child.shape == ShapeType::Sphere) {
             const minphys3d::Vec3 center_world = tibia.position + Rotate(tibia.orientation, child.localPosition);
-            const minphys3d::Vec3 foot_axis_world = Rotate(tibia.orientation, minphys3d::Vec3{1.0f, 0.0f, 0.0f});
+            const minphys3d::Vec3 foot_axis_world = Rotate(tibia.orientation, minphys3d::Vec3{1.0, 0.0, 0.0});
             return center_world + foot_axis_world * child.radius;
         }
     }
@@ -90,7 +90,7 @@ ExpectedLegPose computeExpectedLegPose(const ::LegGeometry& leg, const ::LegStat
 } // namespace
 
 int main() {
-    World world({0.0f, 0.0f, 0.0f});
+    World world({0.0, 0.0, 0.0});
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxZeroGravityHexapodServos(world, scene);
 
@@ -106,9 +106,9 @@ int main() {
         const ::LegGeometry& leg_geo = server_geo.legGeometry[leg];
         const ::ServoCalibration& cal = leg_geo.servo;
 
-        const float sim_q0 = world.GetServoJointAngle(sim_leg.bodyToCoxaJoint);
-        const float sim_q1 = world.GetServoJointAngle(sim_leg.coxaToFemurJoint);
-        const float sim_q2 = world.GetServoJointAngle(sim_leg.femurToTibiaJoint);
+        const Real sim_q0 = world.GetServoJointAngle(sim_leg.bodyToCoxaJoint);
+        const Real sim_q1 = world.GetServoJointAngle(sim_leg.coxaToFemurJoint);
+        const Real sim_q2 = world.GetServoJointAngle(sim_leg.femurToTibiaJoint);
         const ::LegState mech =
             physics_sim_joint_wire_mapping::jointMechanicalFromSimWireAngles(cal,
                                                                              static_cast<int>(leg),

@@ -34,7 +34,7 @@ int RunPhysicsDemo(
     SceneModel model = SceneModel::Default,
     int frame_count = 1200,
     bool realtime_playback = false,
-    minphys3d::Vec3 gravity = minphys3d::Vec3{0.0f, -9.81f, 0.0f},
+    minphys3d::Vec3 gravity = minphys3d::Vec3{0.0, -9.81, 0.0},
     const std::string& udp_host = "127.0.0.1",
     int udp_port = 9870,
     DemoRunControl* run_control = nullptr,

@@ -299,6 +299,15 @@ void appendGovernorReplay(std::ostringstream& payload, const CommandGovernorStat
             << "\"body_height_delta_m\":" << formatNumber(g.body_height_delta_m) << ','
             << "\"command_scale\":" << formatNumber(g.command_scale) << ','
             << "\"cadence_scale\":" << formatNumber(g.cadence_scale) << ','
+            << "\"support_margin_m\":" << formatNumber(g.support_margin_m) << ','
+            << "\"current_support_margin_m\":" << formatNumber(g.current_support_margin_m) << ','
+            << "\"current_support_count\":" << g.current_support_count << ','
+            << "\"confirmed_support_count\":" << g.confirmed_support_count << ','
+            << "\"uncertain_support_count\":" << g.uncertain_support_count << ','
+            << "\"recovery_stage\":\"" << recoveryStageName(g.recovery_stage) << "\","
+            << "\"recovery_release_ready\":" << (g.recovery_release_ready ? "true" : "false") << ','
+            << "\"recovery_hold_active\":" << (g.recovery_hold_active ? "true" : "false") << ','
+            << "\"freeze_phase\":" << (g.freeze_phase ? "true" : "false") << ','
             << "\"reasons\":\"0x" << std::hex << std::uppercase
             << static_cast<std::uint32_t>(g.reasons) << std::dec << "\"}";
 }

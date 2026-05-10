@@ -42,7 +42,7 @@ minphys_viz::VizCompoundChildWire PackCompoundChild(const CompoundChild& c) {
 
 class DummySink final : public FrameSink {
 public:
-    void begin_frame(int, float) override {}
+    void begin_frame(int, Real) override {}
     void emit_body(std::uint32_t, const Body&) override {}
     void emit_terrain_patch_snapshot(const TerrainPatchFrameSnapshot&) override {}
     void end_frame() override {}
@@ -74,7 +74,7 @@ public:
         }
     }
 
-    void begin_frame(int frame_index, float sim_time_s) override {
+    void begin_frame(int frame_index, Real sim_time_s) override {
         frame_index_ = frame_index;
         sim_time_s_ = sim_time_s;
         bodies_.clear();
@@ -147,15 +147,15 @@ public:
 private:
     struct BodyStaticDescriptor {
         ShapeType shape = ShapeType::Sphere;
-        float radius = 0.0f;
-        float half_height = 0.0f;
+        Real radius = 0.0;
+        Real half_height = 0.0;
         minphys3d::Vec3 half_extents{};
         std::vector<CompoundChild> compound_children{};
         minphys3d::Vec3 plane_normal{};
-        float plane_offset = 0.0f;
-        float static_friction = 0.0f;
-        float dynamic_friction = 0.0f;
-        float restitution = 0.0f;
+        Real plane_offset = 0.0;
+        Real static_friction = 0.0;
+        Real dynamic_friction = 0.0;
+        Real restitution = 0.0;
     };
 
     struct BodySnapshot {
@@ -349,8 +349,8 @@ private:
         }
     }
 
-    static bool AlmostEqual(float lhs, float rhs) {
-        constexpr float kTolerance = 1e-6f;
+    static bool AlmostEqual(Real lhs, Real rhs) {
+        constexpr Real kTolerance = 1e-6;
         return std::fabs(lhs - rhs) <= kTolerance;
     }
 
@@ -424,7 +424,7 @@ private:
     sockaddr_in dest_addr_{};
 
     int frame_index_ = 0;
-    float sim_time_s_ = 0.0f;
+    Real sim_time_s_ = 0.0;
     std::uint32_t terrain_seq_{0};
     std::vector<BodySnapshot> bodies_{};
     TerrainPatchFrameSnapshot viz_terrain_snapshot_{};

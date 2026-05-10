@@ -23,7 +23,7 @@ Result RunStride(int stride, int frames) {
     Result out{};
     out.stride = stride;
 
-    World world({0.0f, -9.81f, 0.0f});
+    World world({0.0, -9.81, 0.0});
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
     ApplyHexapodPoseHoldStabilityTuning(world, scene);
@@ -32,9 +32,9 @@ Result RunStride(int stride, int frames) {
     jc.servoPositionSolveStride = static_cast<std::uint8_t>(std::max(1, stride));
     world.SetJointSolverConfig(jc);
 
-    constexpr float kFrameDt = 1.0f / 60.0f;
-    const float subDt = kFrameDt / static_cast<float>(kHexapodPoseHoldBenchmarkSubstepsPerFrame);
-    std::array<float, 18> previousAngles{};
+    constexpr Real kFrameDt = 1.0 / 60.0;
+    const Real subDt = kFrameDt / static_cast<float>(kHexapodPoseHoldBenchmarkSubstepsPerFrame);
+    std::array<Real, 18> previousAngles{};
     std::size_t ai = 0;
     for (const std::uint32_t id : HexapodServoJointIds(scene)) {
         previousAngles[ai++] = world.GetServoJointAngle(id);
@@ -47,8 +47,8 @@ Result RunStride(int stride, int frames) {
             AccumulateHexapodPoseHoldFromSubstep(world, scene, scene.body, frame, out.pose);
         }
         const Body& chassis = world.GetBody(scene.body);
-        const float bodyRoll = BodyRollRadStability(chassis.orientation);
-        const float bodyPitch = BodyPitchRadStability(chassis.orientation);
+        const Real bodyRoll = BodyRollRadStability(chassis.orientation);
+        const Real bodyPitch = BodyPitchRadStability(chassis.orientation);
         const std::array<HexapodLegContactRollup, 6> contacts =
             SummarizeHexapodGroundContacts(world, scene);
         int totalManifolds = 0;
@@ -57,7 +57,7 @@ Result RunStride(int stride, int frames) {
             totalManifolds += c.coxa.manifolds + c.femur.manifolds + c.tibia.manifolds;
             totalPoints += c.coxa.points + c.femur.points + c.tibia.points;
         }
-        const float maxJointSpeed = MaxHexapodJointSpeedRadSFrame(world, scene, previousAngles, kFrameDt);
+        const Real maxJointSpeed = MaxHexapodJointSpeedRadSFrame(world, scene, previousAngles, kFrameDt);
         UpdateHexapodStandingStats(
             out.standing, chassis, bodyRoll, bodyPitch, totalManifolds, totalPoints, maxJointSpeed);
     }

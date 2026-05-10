@@ -1,5 +1,7 @@
 #pragma once
 
+#include "minphys3d/math/scalar.hpp"
+
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -39,7 +41,7 @@ inline bool CooperativeCancelled(DemoRunControl* control) {
     return control != nullptr && control->cancel_requested.load(std::memory_order_relaxed);
 }
 
-inline void PaceRealtimeOuterFrame(bool pace, DemoSteadyClock::time_point t0, int frame_index, float dt) {
+inline void PaceRealtimeOuterFrame(bool pace, DemoSteadyClock::time_point t0, int frame_index, Real dt) {
     if (!pace) {
         return;
     }

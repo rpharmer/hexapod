@@ -21,7 +21,7 @@ ConvexSupport BuildConvexSupport(const Body& body) {
             [center = body.position, radius = body.radius](const Vec3& direction) {
                 Vec3 dir = direction;
                 if (LengthSquared(dir) <= kEpsilon * kEpsilon) {
-                    dir = {1.0f, 0.0f, 0.0f};
+                    dir = {1.0, 0.0, 0.0};
                 }
                 dir = Normalize(dir);
                 return ConvexSupportPoint{center + dir * radius, ShapeTopology{}};
@@ -35,11 +35,11 @@ ConvexSupport BuildConvexSupport(const Body& body) {
             [center = body.position, orientation = body.orientation, ext = body.halfExtents](const Vec3& direction) {
                 const Vec3 localDir = RotateInverse(orientation, direction);
                 Vec3 local{
-                    localDir.x >= 0.0f ? ext.x : -ext.x,
-                    localDir.y >= 0.0f ? ext.y : -ext.y,
-                    localDir.z >= 0.0f ? ext.z : -ext.z,
+                    localDir.x >= 0.0 ? ext.x : -ext.x,
+                    localDir.y >= 0.0 ? ext.y : -ext.y,
+                    localDir.z >= 0.0 ? ext.z : -ext.z,
                 };
-                const std::uint8_t vertexId = static_cast<std::uint8_t>((local.x > 0.0f ? 1u : 0u) | (local.y > 0.0f ? 2u : 0u) | (local.z > 0.0f ? 4u : 0u));
+                const std::uint8_t vertexId = static_cast<std::uint8_t>((local.x > 0.0 ? 1u : 0u) | (local.y > 0.0 ? 2u : 0u) | (local.z > 0.0 ? 4u : 0u));
                 return ConvexSupportPoint{
                     center + Rotate(orientation, local),
                     ShapeTopology{vertexId, std::nullopt, std::nullopt},
@@ -52,14 +52,14 @@ ConvexSupport BuildConvexSupport(const Body& body) {
             body.position,
             body.orientation,
             [center = body.position, orientation = body.orientation, halfHeight = body.halfHeight, radius = body.radius](const Vec3& direction) {
-                const Vec3 axis = Normalize(Rotate(orientation, {0.0f, 1.0f, 0.0f}));
+                const Vec3 axis = Normalize(Rotate(orientation, {0.0, 1.0, 0.0}));
                 Vec3 dir = direction;
                 if (LengthSquared(dir) <= kEpsilon * kEpsilon) {
                     dir = axis;
                 }
                 dir = Normalize(dir);
-                const float side = Dot(dir, axis);
-                const bool upper = side >= 0.0f;
+                const Real side = Dot(dir, axis);
+                const bool upper = side >= 0.0;
                 const Vec3 segmentPoint = center + axis * (upper ? halfHeight : -halfHeight);
                 return ConvexSupportPoint{
                     segmentPoint + dir * radius,
@@ -74,10 +74,10 @@ ConvexSupport BuildConvexSupport(const Body& body) {
             body.orientation,
             [center = body.position, orientation = body.orientation, halfHeight = body.halfHeight, radius = body.radius](const Vec3& direction) {
                 Vec3 localDir = RotateInverse(orientation, direction);
-                const float radialLengthSq = localDir.x * localDir.x + localDir.z * localDir.z;
-                Vec3 localPoint{0.0f, localDir.y >= 0.0f ? halfHeight : -halfHeight, 0.0f};
+                const Real radialLengthSq = localDir.x * localDir.x + localDir.z * localDir.z;
+                Vec3 localPoint{0.0, localDir.y >= 0.0 ? halfHeight : -halfHeight, 0.0};
                 if (radialLengthSq > kEpsilon * kEpsilon) {
-                    const float invRadialLength = 1.0f / std::sqrt(radialLengthSq);
+                    const Real invRadialLength = 1.0 / std::sqrt(radialLengthSq);
                     localPoint.x = localDir.x * invRadialLength * radius;
                     localPoint.z = localDir.z * invRadialLength * radius;
                 }
@@ -95,13 +95,13 @@ ConvexSupport BuildConvexSupport(const Body& body) {
             body.orientation,
             [center = shapeOrigin, orientation = body.orientation, halfHeight = body.halfHeight, radius = body.radius](const Vec3& direction) {
                 const Vec3 localDir = RotateInverse(orientation, direction);
-                const float hx = radius;
-                const float hy = halfHeight;
+                const Real hx = radius;
+                const Real hy = halfHeight;
 
                 Vec3 best{};
-                float bestProj = -std::numeric_limits<float>::infinity();
+                Real bestProj = -std::numeric_limits<float>::infinity();
                 const auto consider = [&](const Vec3& p) {
-                    const float proj = localDir.x * p.x + localDir.y * p.y + localDir.z * p.z;
+                    const Real proj = localDir.x * p.x + localDir.y * p.y + localDir.z * p.z;
                     if (proj > bestProj) {
                         bestProj = proj;
                         best = p;
@@ -110,41 +110,41 @@ ConvexSupport BuildConvexSupport(const Body& body) {
 
                 // Flat face z = 0, |x| <= hx, |y| <= hy
                 {
-                    const float x = (localDir.x > kEpsilon) ? hx : ((localDir.x < -kEpsilon) ? -hx : 0.0f);
-                    const float y = (localDir.y > kEpsilon) ? hy : ((localDir.y < -kEpsilon) ? -hy : 0.0f);
-                    consider({x, y, 0.0f});
+                    const Real x = (localDir.x > kEpsilon) ? hx : ((localDir.x < -kEpsilon) ? -hx : 0.0);
+                    const Real y = (localDir.y > kEpsilon) ? hy : ((localDir.y < -kEpsilon) ? -hy : 0.0);
+                    consider({x, y, 0.0});
                 }
 
                 // Cylindrical side / cap rim: (x,z) on circle, y = ±hy, only z >= 0
-                const float radialLengthSq = localDir.x * localDir.x + localDir.z * localDir.z;
+                const Real radialLengthSq = localDir.x * localDir.x + localDir.z * localDir.z;
                 if (radialLengthSq > kEpsilon * kEpsilon) {
-                    const float invRadialLength = 1.0f / std::sqrt(radialLengthSq);
-                    const float cx = localDir.x * invRadialLength * hx;
-                    const float cz = localDir.z * invRadialLength * hx;
-                    if (cz >= 0.0f) {
-                        const float cy = localDir.y >= 0.0f ? hy : -hy;
+                    const Real invRadialLength = 1.0 / std::sqrt(radialLengthSq);
+                    const Real cx = localDir.x * invRadialLength * hx;
+                    const Real cz = localDir.z * invRadialLength * hx;
+                    if (cz >= 0.0) {
+                        const Real cy = localDir.y >= 0.0 ? hy : -hy;
                         consider({cx, cy, cz});
                     }
                 } else if (localDir.z > kEpsilon) {
                     // Ridge x = 0, z = hx (pure +Z or nearly axial); pick y to maximize d·p along the segment |y| <= hy
-                    const float ry = (localDir.y > kEpsilon) ? hy : ((localDir.y < -kEpsilon) ? -hy : 0.0f);
-                    consider({0.0f, ry, hx});
+                    const Real ry = (localDir.y > kEpsilon) ? hy : ((localDir.y < -kEpsilon) ? -hy : 0.0);
+                    consider({0.0, ry, hx});
                 }
 
                 // Top / bottom semicircular caps (y = ±hy, x^2 + z^2 <= hx^2, z >= 0)
-                const auto considerSemicap = [&](float capY) {
-                    const float dx = localDir.x;
-                    const float dz = localDir.z;
-                    const float radialXZSq = dx * dx + dz * dz;
-                    float sx = 0.0f;
-                    float sz = 0.0f;
+                const auto considerSemicap = [&](Real capY) {
+                    const Real dx = localDir.x;
+                    const Real dz = localDir.z;
+                    const Real radialXZSq = dx * dx + dz * dz;
+                    Real sx = 0.0;
+                    Real sz = 0.0;
                     if (radialXZSq > kEpsilon * kEpsilon) {
-                        const float inv = 1.0f / std::sqrt(radialXZSq);
+                        const Real inv = 1.0 / std::sqrt(radialXZSq);
                         sx = dx * inv * hx;
                         sz = dz * inv * hx;
-                        if (sz < 0.0f) {
-                            sx = (dx > kEpsilon) ? hx : ((dx < -kEpsilon) ? -hx : 0.0f);
-                            sz = 0.0f;
+                        if (sz < 0.0) {
+                            sx = (dx > kEpsilon) ? hx : ((dx < -kEpsilon) ? -hx : 0.0);
+                            sz = 0.0;
                         }
                     }
                     consider({sx, capY, sz});
@@ -221,22 +221,22 @@ bool ComputeConvexPenetration(const Body& a, const Body& b, EpaPenetrationResult
     }
     if (gjk.simplex.size >= 3) {
         outPenetration = ComputePenetrationEPA(supportA, supportB, gjk.simplex);
-        if (outPenetration.valid && outPenetration.depth > 0.0f) {
+        if (outPenetration.valid && outPenetration.depth > 0.0) {
             return true;
         }
     }
 
     Vec3 normal = b.position - a.position;
     if (LengthSquared(normal) <= kEpsilon * kEpsilon) {
-        normal = {1.0f, 0.0f, 0.0f};
+        normal = {1.0, 0.0, 0.0};
     } else {
         normal = Normalize(normal);
     }
 
     const ConvexSupportPoint witnessA = supportA.Support(normal);
     const ConvexSupportPoint witnessB = supportB.Support(-normal);
-    const float depth = Dot(witnessA.point - witnessB.point, normal);
-    if (depth <= 0.0f) {
+    const Real depth = Dot(witnessA.point - witnessB.point, normal);
+    if (depth <= 0.0) {
         return false;
     }
 
@@ -256,10 +256,10 @@ const std::vector<float>& TerrainCollisionHeights(const World::TerrainHeightfiel
 bool SampleTerrainCellBilinear(const World::TerrainHeightfieldAttachment& terrain,
                                 int row,
                                 int col,
-                                float sampleX,
-                                float sampleZ,
-                                float invCell,
-                                float& outHeight,
+                                Real sampleX,
+                                Real sampleZ,
+                                Real invCell,
+                                Real& outHeight,
                                 Vec3& outNormal) {
     if (!terrain.enabled || terrain.rows < 2 || terrain.cols < 2) {
         return false;
@@ -276,25 +276,25 @@ bool SampleTerrainCellBilinear(const World::TerrainHeightfieldAttachment& terrai
         return false;
     }
 
-    const float cellX0 = terrain.gridOriginWorld.x + static_cast<float>(col) * terrain.cellSizeM;
-    const float cellZ0 = terrain.gridOriginWorld.z + static_cast<float>(row) * terrain.cellSizeM;
-    const float tx = std::clamp((sampleX - cellX0) * invCell, 0.0f, 1.0f);
-    const float tz = std::clamp((sampleZ - cellZ0) * invCell, 0.0f, 1.0f);
+    const Real cellX0 = terrain.gridOriginWorld.x + static_cast<float>(col) * terrain.cellSizeM;
+    const Real cellZ0 = terrain.gridOriginWorld.z + static_cast<float>(row) * terrain.cellSizeM;
+    const Real tx = std::clamp((sampleX - cellX0) * invCell, 0.0, 1.0);
+    const Real tz = std::clamp((sampleZ - cellZ0) * invCell, 0.0, 1.0);
 
-    const float h00 = heights[idx00];
-    const float h10 = heights[idx10];
-    const float h01 = heights[idx01];
-    const float h11 = heights[idx11];
-    const float hx = h10 - h00;
-    const float hz = h01 - h00;
-    const float hxz = h00 - h10 - h01 + h11;
+    const Real h00 = heights[idx00];
+    const Real h10 = heights[idx10];
+    const Real h01 = heights[idx01];
+    const Real h11 = heights[idx11];
+    const Real hx = h10 - h00;
+    const Real hz = h01 - h00;
+    const Real hxz = h00 - h10 - h01 + h11;
 
     outHeight = h00 + hx * tx + hz * tz + hxz * tx * tz;
-    const float dhdx = (hx + hxz * tz) * invCell;
-    const float dhdz = (hz + hxz * tx) * invCell;
-    outNormal = {-dhdx, 1.0f, -dhdz};
+    const Real dhdx = (hx + hxz * tz) * invCell;
+    const Real dhdz = (hz + hxz * tx) * invCell;
+    outNormal = {-dhdx, 1.0, -dhdz};
     if (!TryNormalize(outNormal, outNormal)) {
-        outNormal = {0.0f, 1.0f, 0.0f};
+        outNormal = {0.0, 1.0, 0.0};
     }
     return true;
 }
@@ -302,7 +302,7 @@ bool SampleTerrainCellBilinear(const World::TerrainHeightfieldAttachment& terrai
 Vec3 SphereTerrainSupportPoint(const Body& sphereBody, const Vec3& direction) {
     Vec3 dir = direction;
     if (LengthSquared(dir) <= kEpsilon * kEpsilon) {
-        dir = {1.0f, 0.0f, 0.0f};
+        dir = {1.0, 0.0, 0.0};
     } else {
         dir = Normalize(dir);
     }
@@ -319,11 +319,11 @@ bool TerrainCellRangeForAabb(const World::TerrainHeightfieldAttachment& terrain,
         return false;
     }
 
-    const float cellSize = std::max(terrain.cellSizeM, 1.0e-6f);
-    const float minX = terrain.gridOriginWorld.x;
-    const float minZ = terrain.gridOriginWorld.z;
-    const float maxX = minX + static_cast<float>(terrain.cols - 1) * cellSize;
-    const float maxZ = minZ + static_cast<float>(terrain.rows - 1) * cellSize;
+    const Real cellSize = std::max(terrain.cellSizeM, 1.0e-6);
+    const Real minX = terrain.gridOriginWorld.x;
+    const Real minZ = terrain.gridOriginWorld.z;
+    const Real maxX = minX + static_cast<float>(terrain.cols - 1) * cellSize;
+    const Real maxZ = minZ + static_cast<float>(terrain.rows - 1) * cellSize;
     if (bounds.max.x < minX || bounds.min.x > maxX || bounds.max.z < minZ || bounds.min.z > maxZ) {
         return false;
     }
@@ -349,8 +349,8 @@ void World::ConvexPlane(std::uint32_t convexBodyId, std::uint32_t planeId) {
         return;
     }
     const ConvexSupportPoint sp = support.Support(-n);
-    const float signedDistance = Dot(n, sp.point) - plane.planeOffset;
-    if (signedDistance >= 0.0f) {
+    const Real signedDistance = Dot(n, sp.point) - plane.planeOffset;
+    if (signedDistance >= 0.0) {
         return;
     }
     const std::uint64_t featureId = CanonicalFeaturePairId(convexBodyId, planeId, 0u, 0u);
@@ -368,7 +368,7 @@ void World::ConvexConvexEPA(std::uint32_t bodyAId, std::uint32_t bodyBId) {
         return;
     }
     Vec3 normal = penetration.normal;
-    if (Dot(normal, bb.position - ba.position) < 0.0f) {
+    if (Dot(normal, bb.position - ba.position) < 0.0) {
         normal = -normal;
     }
     const std::uint16_t detail = static_cast<std::uint16_t>(
@@ -378,7 +378,7 @@ void World::ConvexConvexEPA(std::uint32_t bodyAId, std::uint32_t bodyBId) {
         bodyAId,
         bodyBId,
         normal,
-        0.5f * (penetration.witnessA + penetration.witnessB),
+        0.5 * (penetration.witnessA + penetration.witnessB),
         penetration.depth,
         12u,
         featureId);
@@ -386,11 +386,11 @@ void World::ConvexConvexEPA(std::uint32_t bodyAId, std::uint32_t bodyBId) {
 
 std::uint64_t World::ComputeShapeGeometrySignature(const Body& body) {
     std::uint64_t seed = static_cast<std::uint64_t>(body.shape);
-    auto mixFloat = [&seed](float value) {
-        std::uint32_t bits = 0;
-        static_assert(sizeof(bits) == sizeof(value), "float size mismatch");
+    auto mixFloat = [&seed](Real value) {
+        static_assert(sizeof(Real) == sizeof(std::uint64_t), "Real must be 64-bit for signature mixing");
+        std::uint64_t bits = 0;
         std::memcpy(&bits, &value, sizeof(bits));
-        seed ^= static_cast<std::uint64_t>(bits) + 0x9e3779b97f4a7c15ull + (seed << 6u) + (seed >> 2u);
+        seed ^= bits + 0x9e3779b97f4a7c15ull + (seed << 6u) + (seed >> 2u);
     };
     auto mixU64 = [&seed](std::uint64_t value) {
         seed ^= value + 0x9e3779b97f4a7c15ull + (seed << 6u) + (seed >> 2u);
@@ -516,7 +516,7 @@ void World::BuildManifolds() {
             manifolds_,
             previousManifolds_,
             &bodyInvInertiaWorld_,
-            [this, &warmStartUsedKeys](const ManifoldKey& manifoldId, const Contact& contact, float& normal, std::array<float, 2>& tangent, std::uint16_t& age) {
+            [this, &warmStartUsedKeys](const ManifoldKey& manifoldId, const Contact& contact, Real& normal, std::array<Real, 2>& tangent, std::uint16_t& age) {
                 PersistentPointMatchCandidate match{};
                 std::unordered_set<PersistentPointKey, PersistentPointKeyHash>& usedKeys = warmStartUsedKeys[manifoldId];
                 if (!TryMatchPersistentPoint(persistentPointImpulses_, manifoldId, contact, usedKeys, match)) {
@@ -589,7 +589,7 @@ void World::BuildManifolds() {
                 const Body& b = bodies_[c.b];
                 c.localAnchorA = RotateInverse(a.orientation, c.point - a.position);
                 c.localAnchorB = RotateInverse(b.orientation, c.point - b.position);
-                c.referenceSeparation = std::max(c.penetration, 0.0f);
+                c.referenceSeparation = std::max(c.penetration, 0.0);
                 c.anchorsValid = std::isfinite(c.referenceSeparation);
             }
         }
@@ -727,8 +727,8 @@ void World::GenerateContacts() {
                             continue;
                         }
                         const ConvexSupportPoint sp = support.Support(-n);
-                        const float signedDistance = Dot(n, sp.point) - plane.planeOffset;
-                        if (signedDistance >= 0.0f) {
+                        const Real signedDistance = Dot(n, sp.point) - plane.planeOffset;
+                        if (signedDistance >= 0.0) {
                             continue;
                         }
                         const std::uint64_t featureId = CanonicalFeaturePairId(convexBodyId, planeBodyId, convexFeature, planeFeature);
@@ -745,7 +745,7 @@ void World::GenerateContacts() {
                         continue;
                     }
                     Vec3 normal = penetration.normal;
-                    if (Dot(normal, shapeB.body.position - shapeA.body.position) < 0.0f) {
+                    if (Dot(normal, shapeB.body.position - shapeA.body.position) < 0.0) {
                         normal = -normal;
                     }
                     const std::uint16_t detail = static_cast<std::uint16_t>(
@@ -761,7 +761,7 @@ void World::GenerateContacts() {
                         bodyAId,
                         bodyBId,
                         normal,
-                        0.5f * (penetration.witnessA + penetration.witnessB),
+                        0.5 * (penetration.witnessA + penetration.witnessB),
                         penetration.depth,
                         12u,
                         featureId);
@@ -837,15 +837,15 @@ void World::GenerateTerrainContacts() {
             return;
         }
 
-        const float terrainInvCell = 1.0f / std::max(terrainAttachment_.cellSizeM, 1.0e-6f);
-        const float cellSizeM = terrainAttachment_.cellSizeM;
+        const Real terrainInvCell = 1.0 / std::max(terrainAttachment_.cellSizeM, 1.0e-6);
+        const Real cellSizeM = terrainAttachment_.cellSizeM;
         const std::uint32_t terrainBodyId = terrainAttachmentBodyId_;
         for (std::uint32_t bodyId = 0; bodyId < bodies_.size(); ++bodyId) {
             if (bodyId == terrainBodyId) {
                 continue;
             }
             const Body& body = bodies_[bodyId];
-            if (body.isTerrainAttachment || body.invMass == 0.0f || body.isSleeping) {
+            if (body.isTerrainAttachment || body.invMass == 0.0 || body.isSleeping) {
                 continue;
             }
 
@@ -856,7 +856,7 @@ void World::GenerateTerrainContacts() {
 
             const std::vector<ResolvedCollisionShape>& shapes = ResolvedCollisionShapesForBody(bodyId);
             for (const ResolvedCollisionShape& shape : shapes) {
-                if (shape.body.invMass == 0.0f) {
+                if (shape.body.invMass == 0.0) {
                     continue;
                 }
                 int row0 = 0;
@@ -881,15 +881,15 @@ void World::GenerateTerrainContacts() {
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
                         ++solverTelemetry_.terrainCellsTested;
 #endif
-                        const float cellX0 =
+                        const Real cellX0 =
                             terrainAttachment_.gridOriginWorld.x + static_cast<float>(col) * cellSizeM;
-                        const float cellZ0 =
+                        const Real cellZ0 =
                             terrainAttachment_.gridOriginWorld.z + static_cast<float>(row) * cellSizeM;
-                        const float cellX1 = cellX0 + cellSizeM;
-                        const float cellZ1 = cellZ0 + cellSizeM;
-                        const float sampleX = std::clamp(shape.body.position.x, cellX0, cellX1);
-                        const float sampleZ = std::clamp(shape.body.position.z, cellZ0, cellZ1);
-                        float terrainHeight = 0.0f;
+                        const Real cellX1 = cellX0 + cellSizeM;
+                        const Real cellZ1 = cellZ0 + cellSizeM;
+                        const Real sampleX = std::clamp(shape.body.position.x, cellX0, cellX1);
+                        const Real sampleZ = std::clamp(shape.body.position.z, cellZ0, cellZ1);
+                        Real terrainHeight = 0.0;
                         Vec3 terrainNormal{};
                         if (!SampleTerrainCellBilinear(
                                 terrainAttachment_, row, col, sampleX, sampleZ, terrainInvCell, terrainHeight, terrainNormal)) {
@@ -899,8 +899,8 @@ void World::GenerateTerrainContacts() {
                         const Vec3 supportPoint = sphereTerrainFastPath
                             ? SphereTerrainSupportPoint(shape.body, -terrainNormal)
                             : convexSupport.Support(-terrainNormal).point;
-                        const float signedDistance = Dot(terrainNormal, supportPoint) - terrainHeight;
-                        if (signedDistance >= 0.0f) {
+                        const Real signedDistance = Dot(terrainNormal, supportPoint) - terrainHeight;
+                        if (signedDistance >= 0.0) {
                             continue;
                         }
 
@@ -924,7 +924,7 @@ void World::GenerateTerrainContacts() {
                 terrainContactCandidatesScratch_.begin(),
                 terrainContactCandidatesScratch_.end(),
                 [](const TerrainContactCandidate& lhs, const TerrainContactCandidate& rhs) {
-                    if (std::abs(lhs.penetration - rhs.penetration) > 1.0e-6f) {
+                    if (std::abs(lhs.penetration - rhs.penetration) > 1.0e-6) {
                         return lhs.penetration > rhs.penetration;
                     }
                     if (lhs.row != rhs.row) {
@@ -993,7 +993,7 @@ void World::EmitConvexManifoldSeeds() {
             contactPairKeys.insert((static_cast<std::uint64_t>(lo) << 32u) | static_cast<std::uint64_t>(hi));
         }
         for (const auto& [key, seed] : convexManifoldSeeds_) {
-            if (!seed.valid || seed.depth <= 0.0f) {
+            if (!seed.valid || seed.depth <= 0.0) {
                 continue;
             }
             const std::uint64_t pairKey =
@@ -1001,7 +1001,7 @@ void World::EmitConvexManifoldSeeds() {
             if (contactPairKeys.find(pairKey) != contactPairKeys.end()) {
                 continue;
             }
-            const Vec3 point = 0.5f * (seed.witnessA + seed.witnessB);
+            const Vec3 point = 0.5 * (seed.witnessA + seed.witnessB);
             const std::uint64_t featureId = CanonicalFeaturePairId(key.loBody, key.hiBody, 0u, 0u);
             AddContact(key.loBody, key.hiBody, seed.normal, point, seed.depth, 10u, featureId);
         }
@@ -1027,14 +1027,14 @@ void World::SphereSphere(std::uint32_t ia, std::uint32_t ib) {
         const Body& a = bodies_[ia];
         const Body& b = bodies_[ib];
         const Vec3 delta = b.position - a.position;
-        const float distSq = LengthSquared(delta);
-        const float radiusSum = a.radius + b.radius;
+        const Real distSq = LengthSquared(delta);
+        const Real radiusSum = a.radius + b.radius;
         if (distSq > radiusSum * radiusSum) {
             return;
         }
 
-        const float dist = std::sqrt(std::max(distSq, kEpsilon));
-        const Vec3 normal = (dist > kEpsilon) ? (delta / dist) : Vec3{1.0f, 0.0f, 0.0f};
+        const Real dist = std::sqrt(std::max(distSq, kEpsilon));
+        const Vec3 normal = (dist > kEpsilon) ? (delta / dist) : Vec3{1.0, 0.0, 0.0};
         const std::uint64_t featureId = CanonicalFeaturePairId(ia, ib, 0u, 0u);
         AddContact(ia, ib, normal, a.position + normal * a.radius, radiusSum - dist, 1u, featureId);
     }
@@ -1044,14 +1044,14 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
         const Body& b = bodies_[bId];
 
         const Vec3 aAxes[3] = {
-            Rotate(a.orientation, {1.0f, 0.0f, 0.0f}),
-            Rotate(a.orientation, {0.0f, 1.0f, 0.0f}),
-            Rotate(a.orientation, {0.0f, 0.0f, 1.0f}),
+            Rotate(a.orientation, {1.0, 0.0, 0.0}),
+            Rotate(a.orientation, {0.0, 1.0, 0.0}),
+            Rotate(a.orientation, {0.0, 0.0, 1.0}),
         };
         const Vec3 bAxes[3] = {
-            Rotate(b.orientation, {1.0f, 0.0f, 0.0f}),
-            Rotate(b.orientation, {0.0f, 1.0f, 0.0f}),
-            Rotate(b.orientation, {0.0f, 0.0f, 1.0f}),
+            Rotate(b.orientation, {1.0, 0.0, 0.0}),
+            Rotate(b.orientation, {0.0, 1.0, 0.0}),
+            Rotate(b.orientation, {0.0, 0.0, 1.0}),
         };
 
         struct AxisCandidate {
@@ -1059,7 +1059,7 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
             int type = 0; // 0 = face A, 1 = face B, 2 = edge-edge
             int indexA = -1;
             int indexB = -1;
-            float overlap = 0.0f;
+            Real overlap = 0.0;
         };
 
         AxisCandidate candidates[15];
@@ -1073,35 +1073,35 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
         }
 
         const Vec3 centerDelta = b.position - a.position;
-        constexpr float kParallelAxisEps = 1e-8f;
-        constexpr float kFaceAxisBias = 0.0025f;
-        float bestOverlap = std::numeric_limits<float>::infinity();
-        float bestScore = std::numeric_limits<float>::infinity();
+        constexpr Real kParallelAxisEps = 1e-8;
+        constexpr Real kFaceAxisBias = 0.0025;
+        Real bestOverlap = std::numeric_limits<float>::infinity();
+        Real bestScore = std::numeric_limits<float>::infinity();
         AxisCandidate best{};
 
         for (int i = 0; i < axisCount; ++i) {
             Vec3 axis = candidates[i].axis;
-            const float lenSq = LengthSquared(axis);
+            const Real lenSq = LengthSquared(axis);
             if (lenSq <= kParallelAxisEps) {
                 continue;
             }
             axis = axis / std::sqrt(lenSq);
 
-            const float ra = ProjectBoxOntoAxis(a, axis);
-            const float rb = ProjectBoxOntoAxis(b, axis);
-            const float distance = std::abs(Dot(centerDelta, axis));
-            const float overlap = ra + rb - distance;
-            if (overlap < 0.0f) {
+            const Real ra = ProjectBoxOntoAxis(a, axis);
+            const Real rb = ProjectBoxOntoAxis(b, axis);
+            const Real distance = std::abs(Dot(centerDelta, axis));
+            const Real overlap = ra + rb - distance;
+            if (overlap < 0.0) {
                 return;
             }
-            const float biasedOverlap = overlap + ((candidates[i].type == 2) ? kFaceAxisBias : 0.0f);
+            const Real biasedOverlap = overlap + ((candidates[i].type == 2) ? kFaceAxisBias : 0.0);
             if (biasedOverlap < bestScore) {
                 bestScore = biasedOverlap;
                 bestOverlap = overlap;
                 best = candidates[i];
                 best.axis = axis;
                 best.overlap = overlap;
-                if (Dot(centerDelta, best.axis) < 0.0f) {
+                if (Dot(centerDelta, best.axis) < 0.0) {
                     best.axis = -best.axis;
                 }
             }
@@ -1115,10 +1115,10 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
             Vec3 point{};
             std::uint8_t incidentFeature = 0; // 0..3 face vertices, 4..7 clipped face edges
             std::uint8_t clipMask = 0; // reference-side clipping planes touched
-            float depth = 0.0f;
+            Real depth = 0.0;
         };
 
-        auto localFaceVertices = [](const Vec3& he, int axis, float sign) {
+        auto localFaceVertices = [](const Vec3& he, int axis, Real sign) {
             std::vector<ClipVertex> verts;
             verts.reserve(4);
             if (axis == 0) {
@@ -1144,7 +1144,7 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
             return body.position + Rotate(body.orientation, p);
         };
 
-        auto clipPolygonAgainstPlane = [](const std::vector<ClipVertex>& poly, const Vec3& n, float d, std::uint8_t planeBit) {
+        auto clipPolygonAgainstPlane = [](const std::vector<ClipVertex>& poly, const Vec3& n, Real d, std::uint8_t planeBit) {
             std::vector<ClipVertex> out;
             if (poly.empty()) {
                 return out;
@@ -1152,27 +1152,27 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
             for (std::size_t i = 0; i < poly.size(); ++i) {
                 const ClipVertex& va = poly[i];
                 const ClipVertex& vb = poly[(i + 1) % poly.size()];
-                const float da = Dot(n, va.point) - d;
-                const float db = Dot(n, vb.point) - d;
-                const bool ina = da <= 0.0f;
-                const bool inb = db <= 0.0f;
+                const Real da = Dot(n, va.point) - d;
+                const Real db = Dot(n, vb.point) - d;
+                const bool ina = da <= 0.0;
+                const bool inb = db <= 0.0;
 
                 if (ina && inb) {
                     ClipVertex kept = vb;
-                    if (std::abs(db) <= 1e-4f) {
+                    if (std::abs(db) <= 1e-4) {
                         kept.clipMask = static_cast<std::uint8_t>(kept.clipMask | (1u << planeBit));
                     }
                     out.push_back(kept);
                 } else if (ina && !inb) {
-                    const float t = da / (da - db + kEpsilon);
+                    const Real t = da / (da - db + kEpsilon);
                     const std::uint8_t edgeId = static_cast<std::uint8_t>(4u + (i & 3u));
-                    out.push_back({va.point + (vb.point - va.point) * t, edgeId, static_cast<std::uint8_t>((va.clipMask | vb.clipMask) | (1u << planeBit)), 0.0f});
+                    out.push_back({va.point + (vb.point - va.point) * t, edgeId, static_cast<std::uint8_t>((va.clipMask | vb.clipMask) | (1u << planeBit)), 0.0});
                 } else if (!ina && inb) {
-                    const float t = da / (da - db + kEpsilon);
+                    const Real t = da / (da - db + kEpsilon);
                     const std::uint8_t edgeId = static_cast<std::uint8_t>(4u + (i & 3u));
-                    out.push_back({va.point + (vb.point - va.point) * t, edgeId, static_cast<std::uint8_t>((va.clipMask | vb.clipMask) | (1u << planeBit)), 0.0f});
+                    out.push_back({va.point + (vb.point - va.point) * t, edgeId, static_cast<std::uint8_t>((va.clipMask | vb.clipMask) | (1u << planeBit)), 0.0});
                     ClipVertex kept = vb;
-                    if (std::abs(db) <= 1e-4f) {
+                    if (std::abs(db) <= 1e-4) {
                         kept.clipMask = static_cast<std::uint8_t>(kept.clipMask | (1u << planeBit));
                     }
                     out.push_back(kept);
@@ -1183,7 +1183,7 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
 
         auto addUniqueContact = [&](std::vector<ClipVertex>& pts, const ClipVertex& candidate) {
             for (ClipVertex& existing : pts) {
-                if (LengthSquared(existing.point - candidate.point) < 1e-4f) {
+                if (LengthSquared(existing.point - candidate.point) < 1e-4) {
                     existing.clipMask = static_cast<std::uint8_t>(existing.clipMask | candidate.clipMask);
                     return;
                 }
@@ -1203,33 +1203,33 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
             }
 
             const Vec3 refBasis[3] = {
-                Rotate(ref.orientation, {1.0f, 0.0f, 0.0f}),
-                Rotate(ref.orientation, {0.0f, 1.0f, 0.0f}),
-                Rotate(ref.orientation, {0.0f, 0.0f, 1.0f}),
+                Rotate(ref.orientation, {1.0, 0.0, 0.0}),
+                Rotate(ref.orientation, {0.0, 1.0, 0.0}),
+                Rotate(ref.orientation, {0.0, 0.0, 1.0}),
             };
             const Vec3 incBasis[3] = {
-                Rotate(inc.orientation, {1.0f, 0.0f, 0.0f}),
-                Rotate(inc.orientation, {0.0f, 1.0f, 0.0f}),
-                Rotate(inc.orientation, {0.0f, 0.0f, 1.0f}),
+                Rotate(inc.orientation, {1.0, 0.0, 0.0}),
+                Rotate(inc.orientation, {0.0, 1.0, 0.0}),
+                Rotate(inc.orientation, {0.0, 0.0, 1.0}),
             };
 
             Vec3 refAxisDir = refBasis[refAxis];
-            float refSign = 1.0f;
-            if (Dot(refAxisDir, refNormal) < 0.0f) {
+            Real refSign = 1.0;
+            if (Dot(refAxisDir, refNormal) < 0.0) {
                 refAxisDir = -refAxisDir;
-                refSign = -1.0f;
+                refSign = -1.0;
             }
 
             int incidentAxis = 0;
-            float minDot = std::numeric_limits<float>::infinity();
+            Real minDot = std::numeric_limits<float>::infinity();
             for (int i = 0; i < 3; ++i) {
-                const float d = Dot(incBasis[i], refNormal);
+                const Real d = Dot(incBasis[i], refNormal);
                 if (d < minDot) {
                     minDot = d;
                     incidentAxis = i;
                 }
             }
-            float incSign = (Dot(incBasis[incidentAxis], refNormal) > 0.0f) ? -1.0f : 1.0f;
+            Real incSign = (Dot(incBasis[incidentAxis], refNormal) > 0.0) ? -1.0 : 1.0;
 
             std::vector<ClipVertex> poly = localFaceVertices(inc.halfExtents, incidentAxis, incSign);
             for (ClipVertex& p : poly) {
@@ -1240,8 +1240,8 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
             const int v = (refAxis + 2) % 3;
             const Vec3 sideU = refBasis[u];
             const Vec3 sideV = refBasis[v];
-            const float limitU = (u == 0 ? ref.halfExtents.x : (u == 1 ? ref.halfExtents.y : ref.halfExtents.z));
-            const float limitV = (v == 0 ? ref.halfExtents.x : (v == 1 ? ref.halfExtents.y : ref.halfExtents.z));
+            const Real limitU = (u == 0 ? ref.halfExtents.x : (u == 1 ? ref.halfExtents.y : ref.halfExtents.z));
+            const Real limitV = (v == 0 ? ref.halfExtents.x : (v == 1 ? ref.halfExtents.y : ref.halfExtents.z));
 
             poly = clipPolygonAgainstPlane(poly,  sideU, Dot(sideU, ref.position) + limitU, 0);
             poly = clipPolygonAgainstPlane(poly, -sideU, Dot(-sideU, ref.position) + limitU, 1);
@@ -1249,15 +1249,15 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
             poly = clipPolygonAgainstPlane(poly, -sideV, Dot(-sideV, ref.position) + limitV, 3);
 
             Vec3 localPlanePoint{};
-            if (refAxis == 0) localPlanePoint = {refSign * ref.halfExtents.x, 0.0f, 0.0f};
-            if (refAxis == 1) localPlanePoint = {0.0f, refSign * ref.halfExtents.y, 0.0f};
-            if (refAxis == 2) localPlanePoint = {0.0f, 0.0f, refSign * ref.halfExtents.z};
+            if (refAxis == 0) localPlanePoint = {refSign * ref.halfExtents.x, 0.0, 0.0};
+            if (refAxis == 1) localPlanePoint = {0.0, refSign * ref.halfExtents.y, 0.0};
+            if (refAxis == 2) localPlanePoint = {0.0, 0.0, refSign * ref.halfExtents.z};
             const Vec3 planePoint = worldFromLocal(ref, localPlanePoint);
 
             std::vector<ClipVertex> contacts;
             for (const ClipVertex& p : poly) {
-                const float depth = Dot(planePoint - p.point, refNormal);
-                if (depth >= -0.02f) {
+                const Real depth = Dot(planePoint - p.point, refNormal);
+                if (depth >= -0.02) {
                     ClipVertex c = p;
                     c.point = p.point;
                     c.depth = depth;
@@ -1268,29 +1268,29 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
             if (contacts.empty()) {
                 const Vec3 pointA = ClosestPointOnBox(a, b.position);
                 const Vec3 pointB = ClosestPointOnBox(b, a.position);
-                contacts.push_back({0.5f * (pointA + pointB), 0, 0, best.overlap});
+                contacts.push_back({0.5 * (pointA + pointB), 0, 0, best.overlap});
             }
 
             const auto coordOnAxis = [](const Vec3& p, const Vec3& origin, const Vec3& axis) {
                 return Dot(p - origin, axis);
             };
             std::sort(contacts.begin(), contacts.end(), [&](const ClipVertex& lhs, const ClipVertex& rhs) {
-                const float lu = coordOnAxis(lhs.point, ref.position, sideU);
-                const float ru = coordOnAxis(rhs.point, ref.position, sideU);
-                if (std::abs(lu - ru) > 1e-4f) return lu < ru;
-                const float lv = coordOnAxis(lhs.point, ref.position, sideV);
-                const float rv = coordOnAxis(rhs.point, ref.position, sideV);
+                const Real lu = coordOnAxis(lhs.point, ref.position, sideU);
+                const Real ru = coordOnAxis(rhs.point, ref.position, sideU);
+                if (std::abs(lu - ru) > 1e-4) return lu < ru;
+                const Real lv = coordOnAxis(lhs.point, ref.position, sideV);
+                const Real rv = coordOnAxis(rhs.point, ref.position, sideV);
                 return lv < rv;
             });
 
             if (contacts.size() > 4) {
                 const auto pickIndex = [&](bool maxU, bool maxV) {
                     std::size_t bestIndex = 0;
-                    float bestScore = -std::numeric_limits<float>::infinity();
+                    Real bestScore = -std::numeric_limits<float>::infinity();
                     for (std::size_t i = 0; i < contacts.size(); ++i) {
-                        const float uCoord = coordOnAxis(contacts[i].point, ref.position, sideU);
-                        const float vCoord = coordOnAxis(contacts[i].point, ref.position, sideV);
-                        const float score = (maxU ? uCoord : -uCoord) + (maxV ? vCoord : -vCoord);
+                        const Real uCoord = coordOnAxis(contacts[i].point, ref.position, sideU);
+                        const Real vCoord = coordOnAxis(contacts[i].point, ref.position, sideV);
+                        const Real score = (maxU ? uCoord : -uCoord) + (maxV ? vCoord : -vCoord);
                         if (score > bestScore) {
                             bestScore = score;
                             bestIndex = i;
@@ -1312,18 +1312,18 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
                 }
                 contacts = std::move(reduced);
                 std::sort(contacts.begin(), contacts.end(), [&](const ClipVertex& lhs, const ClipVertex& rhs) {
-                    const float lu = coordOnAxis(lhs.point, ref.position, sideU);
-                    const float ru = coordOnAxis(rhs.point, ref.position, sideU);
-                    if (std::abs(lu - ru) > 1e-4f) return lu < ru;
-                    const float lv = coordOnAxis(lhs.point, ref.position, sideV);
-                    const float rv = coordOnAxis(rhs.point, ref.position, sideV);
+                    const Real lu = coordOnAxis(lhs.point, ref.position, sideU);
+                    const Real ru = coordOnAxis(rhs.point, ref.position, sideU);
+                    if (std::abs(lu - ru) > 1e-4) return lu < ru;
+                    const Real lv = coordOnAxis(lhs.point, ref.position, sideV);
+                    const Real rv = coordOnAxis(rhs.point, ref.position, sideV);
                     return lv < rv;
                 });
             }
 
             const Vec3 normalAB = aReference ? best.axis : -best.axis;
-            const std::uint8_t referenceFaceIndex = static_cast<std::uint8_t>(refAxis * 2 + (refSign > 0.0f ? 0 : 1));
-            const std::uint8_t incidentFaceIndex = static_cast<std::uint8_t>(incidentAxis * 2 + (incSign > 0.0f ? 0 : 1));
+            const std::uint8_t referenceFaceIndex = static_cast<std::uint8_t>(refAxis * 2 + (refSign > 0.0 ? 0 : 1));
+            const std::uint8_t incidentFaceIndex = static_cast<std::uint8_t>(incidentAxis * 2 + (incSign > 0.0 ? 0 : 1));
             for (std::size_t i = 0; i < std::min<std::size_t>(4, contacts.size()); ++i) {
                 const std::uint32_t referenceFeature =
                     (static_cast<std::uint32_t>(referenceFaceIndex) << 8u) | static_cast<std::uint32_t>(contacts[i].clipMask);
@@ -1340,52 +1340,52 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
             return (axis == 0) ? he.x : ((axis == 1) ? he.y : he.z);
         };
         const auto edgeSegment = [&](const Body& box, const Vec3 axes[3], int axis, const Vec3& n) {
-            Vec3 local{0.0f, 0.0f, 0.0f};
+            Vec3 local{0.0, 0.0, 0.0};
             for (int i = 0; i < 3; ++i) {
                 if (i == axis) continue;
-                const float extent = halfExtentAxis(box.halfExtents, i);
-                const float value = (Dot(axes[i], n) >= 0.0f) ? extent : -extent;
+                const Real extent = halfExtentAxis(box.halfExtents, i);
+                const Real value = (Dot(axes[i], n) >= 0.0) ? extent : -extent;
                 if (i == 0) local.x = value;
                 else if (i == 1) local.y = value;
                 else local.z = value;
             }
-            const float edgeExtent = halfExtentAxis(box.halfExtents, axis);
-            const Vec3 p0 = box.position + Rotate(box.orientation, local - Vec3{axis == 0 ? edgeExtent : 0.0f, axis == 1 ? edgeExtent : 0.0f, axis == 2 ? edgeExtent : 0.0f});
-            const Vec3 p1 = box.position + Rotate(box.orientation, local + Vec3{axis == 0 ? edgeExtent : 0.0f, axis == 1 ? edgeExtent : 0.0f, axis == 2 ? edgeExtent : 0.0f});
+            const Real edgeExtent = halfExtentAxis(box.halfExtents, axis);
+            const Vec3 p0 = box.position + Rotate(box.orientation, local - Vec3{axis == 0 ? edgeExtent : 0.0, axis == 1 ? edgeExtent : 0.0, axis == 2 ? edgeExtent : 0.0});
+            const Vec3 p1 = box.position + Rotate(box.orientation, local + Vec3{axis == 0 ? edgeExtent : 0.0, axis == 1 ? edgeExtent : 0.0, axis == 2 ? edgeExtent : 0.0});
             return std::pair<Vec3, Vec3>{p0, p1};
         };
         const auto closestPointsOnSegments = [](const Vec3& p1, const Vec3& q1, const Vec3& p2, const Vec3& q2) {
             const Vec3 d1 = q1 - p1;
             const Vec3 d2 = q2 - p2;
             const Vec3 r = p1 - p2;
-            const float aLen = Dot(d1, d1);
-            const float eLen = Dot(d2, d2);
-            const float f = Dot(d2, r);
+            const Real aLen = Dot(d1, d1);
+            const Real eLen = Dot(d2, d2);
+            const Real f = Dot(d2, r);
 
-            float s = 0.0f;
-            float t = 0.0f;
+            Real s = 0.0;
+            Real t = 0.0;
             if (aLen <= kEpsilon && eLen <= kEpsilon) {
                 return std::pair<Vec3, Vec3>{p1, p2};
             }
             if (aLen <= kEpsilon) {
-                t = std::clamp(f / (eLen + kEpsilon), 0.0f, 1.0f);
+                t = std::clamp(f / (eLen + kEpsilon), 0.0, 1.0);
             } else {
-                const float c = Dot(d1, r);
+                const Real c = Dot(d1, r);
                 if (eLen <= kEpsilon) {
-                    s = std::clamp(-c / (aLen + kEpsilon), 0.0f, 1.0f);
+                    s = std::clamp(-c / (aLen + kEpsilon), 0.0, 1.0);
                 } else {
-                    const float bDot = Dot(d1, d2);
-                    const float denom = aLen * eLen - bDot * bDot;
+                    const Real bDot = Dot(d1, d2);
+                    const Real denom = aLen * eLen - bDot * bDot;
                     if (denom > kEpsilon) {
-                        s = std::clamp((bDot * f - c * eLen) / denom, 0.0f, 1.0f);
+                        s = std::clamp((bDot * f - c * eLen) / denom, 0.0, 1.0);
                     }
                     t = (bDot * s + f) / (eLen + kEpsilon);
-                    if (t < 0.0f) {
-                        t = 0.0f;
-                        s = std::clamp(-c / (aLen + kEpsilon), 0.0f, 1.0f);
-                    } else if (t > 1.0f) {
-                        t = 1.0f;
-                        s = std::clamp((bDot - c) / (aLen + kEpsilon), 0.0f, 1.0f);
+                    if (t < 0.0) {
+                        t = 0.0;
+                        s = std::clamp(-c / (aLen + kEpsilon), 0.0, 1.0);
+                    } else if (t > 1.0) {
+                        t = 1.0;
+                        s = std::clamp((bDot - c) / (aLen + kEpsilon), 0.0, 1.0);
                     }
                 }
             }
@@ -1399,7 +1399,7 @@ void World::BoxBox(std::uint32_t aId, std::uint32_t bId) {
         const auto [pointA, pointB] = closestPointsOnSegments(a0, a1, b0, b1);
 
         const std::uint64_t featureId = CanonicalFeaturePairId(aId, bId, edgeA, edgeB);
-        AddContact(aId, bId, best.axis, 0.5f * (pointA + pointB), best.overlap, 10u, featureId);
+        AddContact(aId, bId, best.axis, 0.5 * (pointA + pointB), best.overlap, 10u, featureId);
     }
 
 

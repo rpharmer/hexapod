@@ -35,6 +35,9 @@ public:
                      const PlanarMotionCommand& planar,
                      TimePointUs clock_tick_us);
 
+    /** Immediately snaps the shaped locomotion state to the provided twist. */
+    BodyTwist snapTo(const BodyTwist& twist, TimePointUs clock_tick_us);
+
 private:
     control_config::LocomotionCommandConfig config_{};
     BodyTwist filtered_{};

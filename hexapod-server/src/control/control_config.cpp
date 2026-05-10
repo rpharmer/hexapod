@@ -40,6 +40,20 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.gait.swing_ease_min = config.swingEaseMin;
     parsed.gait.swing_ease_max = config.swingEaseMax;
 
+    parsed.gravity_feedforward.enabled = config.gravityFeedforwardEnabled;
+    parsed.gravity_feedforward.max_gyro_radps = config.gravityFeedforwardMaxGyroRadps;
+    parsed.gravity_feedforward.accel_norm_margin_mps2 = config.gravityFeedforwardAccelNormMarginMps2;
+    parsed.gravity_feedforward.scale_coxa = config.gravityFeedforwardScaleCoxa;
+    parsed.gravity_feedforward.scale_femur = config.gravityFeedforwardScaleFemur;
+    parsed.gravity_feedforward.scale_tibia = config.gravityFeedforwardScaleTibia;
+    parsed.gravity_feedforward.include_foot_reaction = config.gravityFeedforwardIncludeFootReaction;
+    parsed.gravity_feedforward.include_self_weight = config.gravityFeedforwardIncludeSelfWeight;
+    parsed.gravity_feedforward.stiffness_gain_scale = config.gravityFeedforwardStiffnessGainScale;
+    parsed.gravity_feedforward.delta_lpf_tau_s = config.gravityFeedforwardDeltaLpfTauS;
+    parsed.gravity_feedforward.max_delta_coxa_rad = config.gravityFeedforwardMaxDeltaCoxaRad;
+    parsed.gravity_feedforward.max_delta_femur_rad = config.gravityFeedforwardMaxDeltaFemurRad;
+    parsed.gravity_feedforward.max_delta_tibia_rad = config.gravityFeedforwardMaxDeltaTibiaRad;
+
     parsed.freshness.estimator.max_allowed_age_us = DurationUs{config.estimatorMaxAgeUs};
     parsed.freshness.estimator.require_timestamp = config.estimatorRequireTimestamp;
     parsed.freshness.estimator.require_nonzero_sample_id = config.estimatorRequireSampleId;

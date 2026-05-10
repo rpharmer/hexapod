@@ -20,9 +20,9 @@ struct GjkSimplex {
 
 struct GjkSettings {
     int maxIterations = 32;
-    float supportEpsilon = 1e-6f;
-    float distanceEpsilon = 1e-6f;
-    float duplicateEpsilon = 1e-7f;
+    Real supportEpsilon = 1e-6;
+    Real distanceEpsilon = 1e-6;
+    Real duplicateEpsilon = 1e-7;
 };
 
 struct GjkDistanceResult {
@@ -30,16 +30,16 @@ struct GjkDistanceResult {
     bool intersecting = false;
     bool reachedIterationLimit = false;
     int iterations = 0;
-    float distance = 0.0f;
+    Real distance = 0.0;
     Vec3 closestA{};
     Vec3 closestB{};
-    Vec3 separatingAxis{1.0f, 0.0f, 0.0f};
+    Vec3 separatingAxis{1.0, 0.0, 0.0};
     GjkSimplex simplex{};
 };
 
 struct NarrowphaseCache {
     GjkSimplex simplex{};
-    Vec3 separatingAxis{1.0f, 0.0f, 0.0f};
+    Vec3 separatingAxis{1.0, 0.0, 0.0};
     bool hasSimplex = false;
     bool lastResultIntersecting = false;
 };

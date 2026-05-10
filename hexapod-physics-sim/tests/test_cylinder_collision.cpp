@@ -22,14 +22,14 @@ bool HasManifoldBetween(const World& world, std::uint32_t a, std::uint32_t b) {
     return false;
 }
 
-Quat AxisAngle(const Vec3& axis, float radians) {
+Quat AxisAngle(const Vec3& axis, Real radians) {
     Vec3 n = axis;
     if (LengthSquared(n) <= kEpsilon * kEpsilon) {
-        return {1.0f, 0.0f, 0.0f, 0.0f};
+        return {1.0, 0.0, 0.0, 0.0};
     }
     n = Normalize(n);
-    const float half = 0.5f * radians;
-    const float s = std::sin(half);
+    const Real half = 0.5 * radians;
+    const Real s = std::sin(half);
     return Normalize(Quat{std::cos(half), n.x * s, n.y * s, n.z * s});
 }
 
@@ -37,7 +37,7 @@ Quat AxisAngle(const Vec3& axis, float radians) {
 
 int main() {
     {
-        World world({0.0f, -9.81f, 0.0f});
+        World world({0.0, -9.81, 0.0});
 
         Body plane;
         plane.shape = ShapeType::Plane;
@@ -45,41 +45,41 @@ int main() {
 
         Body cyl;
         cyl.shape = ShapeType::Cylinder;
-        cyl.radius = 0.2f;
-        cyl.halfHeight = 0.2f;
-        cyl.mass = 1.0f;
-        cyl.restitution = 0.0f;
-        cyl.position = {0.0f, 0.55f, 0.0f};
+        cyl.radius = 0.2;
+        cyl.halfHeight = 0.2;
+        cyl.mass = 1.0;
+        cyl.restitution = 0.0;
+        cyl.position = {0.0, 0.55, 0.0};
         const std::uint32_t cylId = world.CreateBody(cyl);
 
         for (int i = 0; i < 200; ++i) {
-            world.Step(1.0f / 120.0f, 10);
+            world.Step(1.0 / 120.0, 10);
         }
         const Body& settled = world.GetBody(cylId);
         assert(std::isfinite(settled.position.y));
-        assert(settled.position.y > cyl.radius * 0.5f);
+        assert(settled.position.y > cyl.radius * 0.5);
     }
 
     {
-        World world({0.0f, 0.0f, 0.0f});
+        World world({0.0, 0.0, 0.0});
 
         Body box;
         box.shape = ShapeType::Box;
         box.isStatic = true;
-        box.halfExtents = {0.5f, 0.15f, 0.5f};
-        box.position = {0.0f, 0.0f, 0.0f};
+        box.halfExtents = {0.5, 0.15, 0.5};
+        box.position = {0.0, 0.0, 0.0};
         const std::uint32_t boxId = world.CreateBody(box);
 
         Body cyl;
         cyl.shape = ShapeType::Cylinder;
-        cyl.radius = 0.18f;
-        cyl.halfHeight = 0.22f;
-        cyl.mass = 1.0f;
-        cyl.restitution = 0.0f;
-        cyl.position = {0.0f, 0.28f, 0.0f};
+        cyl.radius = 0.18;
+        cyl.halfHeight = 0.22;
+        cyl.mass = 1.0;
+        cyl.restitution = 0.0;
+        cyl.position = {0.0, 0.28, 0.0};
         const std::uint32_t cylId = world.CreateBody(cyl);
 
-        world.Step(1.0f / 120.0f, 12);
+        world.Step(1.0 / 120.0, 12);
         assert(HasManifoldBetween(world, boxId, cylId));
         constexpr std::uint8_t kCylinderBoxManifold = 15u;
         const std::uint32_t lo = std::min(boxId, cylId);
@@ -98,76 +98,76 @@ int main() {
     }
 
     {
-        World world({0.0f, 0.0f, 0.0f});
+        World world({0.0, 0.0, 0.0});
 
         Body cap;
         cap.shape = ShapeType::Capsule;
         cap.isStatic = true;
-        cap.radius = 0.12f;
-        cap.halfHeight = 0.35f;
-        cap.position = {0.0f, 0.0f, 0.0f};
+        cap.radius = 0.12;
+        cap.halfHeight = 0.35;
+        cap.position = {0.0, 0.0, 0.0};
         const std::uint32_t capId = world.CreateBody(cap);
 
         Body cyl;
         cyl.shape = ShapeType::Cylinder;
-        cyl.radius = 0.16f;
-        cyl.halfHeight = 0.2f;
-        cyl.mass = 1.0f;
-        cyl.restitution = 0.0f;
-        cyl.position = {0.18f, 0.0f, 0.0f};
+        cyl.radius = 0.16;
+        cyl.halfHeight = 0.2;
+        cyl.mass = 1.0;
+        cyl.restitution = 0.0;
+        cyl.position = {0.18, 0.0, 0.0};
         const std::uint32_t cylId = world.CreateBody(cyl);
 
         for (int i = 0; i < 4; ++i) {
-            world.Step(1.0f / 120.0f, 12);
+            world.Step(1.0 / 120.0, 12);
         }
         assert(HasManifoldBetween(world, capId, cylId));
     }
 
     {
-        World world({0.0f, 0.0f, 0.0f});
+        World world({0.0, 0.0, 0.0});
 
         Body a;
         a.shape = ShapeType::Cylinder;
         a.isStatic = true;
-        a.radius = 0.15f;
-        a.halfHeight = 0.25f;
-        a.position = {0.0f, 0.0f, 0.0f};
+        a.radius = 0.15;
+        a.halfHeight = 0.25;
+        a.position = {0.0, 0.0, 0.0};
         const std::uint32_t aId = world.CreateBody(a);
 
         Body b;
         b.shape = ShapeType::Cylinder;
-        b.radius = 0.14f;
-        b.halfHeight = 0.22f;
-        b.mass = 1.0f;
-        b.restitution = 0.0f;
-        b.position = {0.22f, 0.05f, 0.0f};
+        b.radius = 0.14;
+        b.halfHeight = 0.22;
+        b.mass = 1.0;
+        b.restitution = 0.0;
+        b.position = {0.22, 0.05, 0.0};
         const std::uint32_t bId = world.CreateBody(b);
 
-        world.Step(1.0f / 120.0f, 12);
+        world.Step(1.0 / 120.0, 12);
         assert(HasManifoldBetween(world, aId, bId));
     }
 
     {
-        World world({0.0f, 0.0f, 0.0f});
+        World world({0.0, 0.0, 0.0});
 
         Body box;
         box.shape = ShapeType::Box;
         box.isStatic = true;
-        box.halfExtents = {0.4f, 0.12f, 0.4f};
-        box.position = {0.0f, 0.0f, 0.0f};
+        box.halfExtents = {0.4, 0.12, 0.4};
+        box.position = {0.0, 0.0, 0.0};
         const std::uint32_t boxId = world.CreateBody(box);
 
         Body hc;
         hc.shape = ShapeType::HalfCylinder;
-        hc.radius = 0.2f;
-        hc.halfHeight = 0.18f;
-        hc.mass = 1.0f;
-        hc.restitution = 0.0f;
-        hc.orientation = AxisAngle({1.0f, 0.0f, 0.0f}, 3.14159265f * 0.5f);
-        hc.position = {0.0f, 0.22f, 0.15f};
+        hc.radius = 0.2;
+        hc.halfHeight = 0.18;
+        hc.mass = 1.0;
+        hc.restitution = 0.0;
+        hc.orientation = AxisAngle({1.0, 0.0, 0.0}, 3.14159265 * 0.5);
+        hc.position = {0.0, 0.22, 0.15};
         const std::uint32_t hcId = world.CreateBody(hc);
 
-        world.Step(1.0f / 120.0f, 12);
+        world.Step(1.0 / 120.0, 12);
         assert(HasManifoldBetween(world, boxId, hcId));
         constexpr std::uint8_t kHalfCylinderBoxManifold = 19u;
         const std::uint32_t lo = std::min(boxId, hcId);
@@ -184,25 +184,25 @@ int main() {
     }
 
     {
-        World world({0.0f, 0.0f, 0.0f});
+        World world({0.0, 0.0, 0.0});
 
         Body sph;
         sph.shape = ShapeType::Sphere;
         sph.isStatic = true;
-        sph.radius = 0.2f;
-        sph.position = {0.0f, 0.0f, 0.0f};
+        sph.radius = 0.2;
+        sph.position = {0.0, 0.0, 0.0};
         const std::uint32_t sphId = world.CreateBody(sph);
 
         Body hc;
         hc.shape = ShapeType::HalfCylinder;
-        hc.radius = 0.22f;
-        hc.halfHeight = 0.15f;
-        hc.mass = 1.0f;
-        hc.restitution = 0.0f;
-        hc.position = {0.28f, 0.0f, 0.0f};
+        hc.radius = 0.22;
+        hc.halfHeight = 0.15;
+        hc.mass = 1.0;
+        hc.restitution = 0.0;
+        hc.position = {0.28, 0.0, 0.0};
         const std::uint32_t hcId = world.CreateBody(hc);
 
-        world.Step(1.0f / 120.0f, 12);
+        world.Step(1.0 / 120.0, 12);
         assert(HasManifoldBetween(world, sphId, hcId));
         constexpr std::uint8_t kSphereHalfCylinderManifold = 18u;
         const std::uint32_t lo = std::min(sphId, hcId);
@@ -219,25 +219,25 @@ int main() {
     }
 
     {
-        World world({0.0f, 0.0f, 0.0f});
+        World world({0.0, 0.0, 0.0});
 
         Body cyl;
         cyl.shape = ShapeType::Cylinder;
         cyl.isStatic = true;
-        cyl.radius = 0.25f;
-        cyl.halfHeight = 0.35f;
-        cyl.position = {0.0f, 0.0f, 0.0f};
+        cyl.radius = 0.25;
+        cyl.halfHeight = 0.35;
+        cyl.position = {0.0, 0.0, 0.0};
         const std::uint32_t cylId = world.CreateBody(cyl);
 
         Body sph;
         sph.shape = ShapeType::Sphere;
-        sph.radius = 0.12f;
-        sph.mass = 1.0f;
-        sph.restitution = 0.0f;
-        sph.position = {0.32f, 0.0f, 0.0f};
+        sph.radius = 0.12;
+        sph.mass = 1.0;
+        sph.restitution = 0.0;
+        sph.position = {0.32, 0.0, 0.0};
         const std::uint32_t sphId = world.CreateBody(sph);
 
-        world.Step(1.0f / 120.0f, 12);
+        world.Step(1.0 / 120.0, 12);
         assert(HasManifoldBetween(world, cylId, sphId));
         constexpr std::uint8_t kSphereCylinderManifold = 14u;
         const std::uint32_t lo = std::min(cylId, sphId);
@@ -254,50 +254,50 @@ int main() {
     }
 
     {
-        World world({0.0f, 0.0f, 0.0f});
+        World world({0.0, 0.0, 0.0});
 
         Body cyl;
         cyl.shape = ShapeType::Cylinder;
         cyl.isStatic = true;
-        cyl.radius = 0.18f;
-        cyl.halfHeight = 0.25f;
-        cyl.position = {0.0f, 0.0f, 0.0f};
+        cyl.radius = 0.18;
+        cyl.halfHeight = 0.25;
+        cyl.position = {0.0, 0.0, 0.0};
         const std::uint32_t cylId = world.CreateBody(cyl);
 
         Body hc;
         hc.shape = ShapeType::HalfCylinder;
-        hc.radius = 0.16f;
-        hc.halfHeight = 0.2f;
-        hc.mass = 1.0f;
-        hc.restitution = 0.0f;
-        hc.position = {0.26f, 0.0f, 0.08f};
+        hc.radius = 0.16;
+        hc.halfHeight = 0.2;
+        hc.mass = 1.0;
+        hc.restitution = 0.0;
+        hc.position = {0.26, 0.0, 0.08};
         const std::uint32_t hcId = world.CreateBody(hc);
 
-        world.Step(1.0f / 120.0f, 12);
+        world.Step(1.0 / 120.0, 12);
         assert(HasManifoldBetween(world, cylId, hcId));
     }
 
     {
-        World world({0.0f, 0.0f, 0.0f});
+        World world({0.0, 0.0, 0.0});
 
         Body cyl;
         cyl.shape = ShapeType::Cylinder;
         cyl.isStatic = true;
-        cyl.radius = 0.4f;
-        cyl.halfHeight = 0.38f;
-        cyl.position = {0.0f, 0.0f, 0.0f};
+        cyl.radius = 0.4;
+        cyl.halfHeight = 0.38;
+        cyl.position = {0.0, 0.0, 0.0};
         const std::uint32_t cylId = world.CreateBody(cyl);
 
         Body hc;
         hc.shape = ShapeType::HalfCylinder;
-        hc.radius = 0.35f;
-        hc.halfHeight = 0.34f;
-        hc.mass = 1.0f;
-        hc.restitution = 0.0f;
-        hc.position = {0.42f, 0.0f, 0.03f};
+        hc.radius = 0.35;
+        hc.halfHeight = 0.34;
+        hc.mass = 1.0;
+        hc.restitution = 0.0;
+        hc.position = {0.42, 0.0, 0.03};
         const std::uint32_t hcId = world.CreateBody(hc);
 
-        world.Step(1.0f / 120.0f, 12);
+        world.Step(1.0 / 120.0, 12);
         assert(HasManifoldBetween(world, cylId, hcId));
         constexpr std::uint8_t kHalfCylinderCylinderManifold = 20u;
         const std::uint32_t lo = std::min(cylId, hcId);
@@ -314,51 +314,51 @@ int main() {
     }
 
     {
-        World world({0.0f, 0.0f, 0.0f});
+        World world({0.0, 0.0, 0.0});
 
         Body a;
         a.shape = ShapeType::HalfCylinder;
         a.isStatic = true;
-        a.radius = 0.14f;
-        a.halfHeight = 0.2f;
-        a.position = {0.0f, 0.0f, 0.0f};
+        a.radius = 0.14;
+        a.halfHeight = 0.2;
+        a.position = {0.0, 0.0, 0.0};
         const std::uint32_t aId = world.CreateBody(a);
 
         Body b;
         b.shape = ShapeType::HalfCylinder;
-        b.radius = 0.13f;
-        b.halfHeight = 0.18f;
-        b.mass = 1.0f;
-        b.restitution = 0.0f;
-        b.orientation = AxisAngle({0.0f, 1.0f, 0.0f}, 0.35f);
-        b.position = {0.2f, 0.02f, 0.06f};
+        b.radius = 0.13;
+        b.halfHeight = 0.18;
+        b.mass = 1.0;
+        b.restitution = 0.0;
+        b.orientation = AxisAngle({0.0, 1.0, 0.0}, 0.35);
+        b.position = {0.2, 0.02, 0.06};
         const std::uint32_t bId = world.CreateBody(b);
 
-        world.Step(1.0f / 120.0f, 12);
+        world.Step(1.0 / 120.0, 12);
         assert(HasManifoldBetween(world, aId, bId));
     }
 
     {
-        World world({0.0f, 0.0f, 0.0f});
+        World world({0.0, 0.0, 0.0});
 
         Body a;
         a.shape = ShapeType::HalfCylinder;
         a.isStatic = true;
-        a.radius = 0.48f;
-        a.halfHeight = 0.42f;
-        a.position = {0.0f, 0.0f, 0.0f};
+        a.radius = 0.48;
+        a.halfHeight = 0.42;
+        a.position = {0.0, 0.0, 0.0};
         const std::uint32_t aId = world.CreateBody(a);
 
         Body b;
         b.shape = ShapeType::HalfCylinder;
-        b.radius = 0.46f;
-        b.halfHeight = 0.4f;
-        b.mass = 1.0f;
-        b.restitution = 0.0f;
-        b.position = {0.52f, 0.0f, 0.04f};
+        b.radius = 0.46;
+        b.halfHeight = 0.4;
+        b.mass = 1.0;
+        b.restitution = 0.0;
+        b.position = {0.52, 0.0, 0.04};
         const std::uint32_t bId = world.CreateBody(b);
 
-        world.Step(1.0f / 120.0f, 12);
+        world.Step(1.0 / 120.0, 12);
         assert(HasManifoldBetween(world, aId, bId));
         constexpr std::uint8_t kHalfCylinderHalfCylinderManifold = 21u;
         const std::uint32_t lo = std::min(aId, bId);
@@ -375,27 +375,27 @@ int main() {
     }
 
     {
-        World world({0.0f, 0.0f, 0.0f});
+        World world({0.0, 0.0, 0.0});
 
         Body hc;
         hc.shape = ShapeType::HalfCylinder;
         hc.isStatic = true;
-        hc.radius = 0.2f;
-        hc.halfHeight = 0.25f;
-        hc.position = {0.0f, 0.0f, 0.0f};
+        hc.radius = 0.2;
+        hc.halfHeight = 0.25;
+        hc.position = {0.0, 0.0, 0.0};
         const std::uint32_t hcId = world.CreateBody(hc);
 
         Body cap;
         cap.shape = ShapeType::Capsule;
-        cap.radius = 0.1f;
-        cap.halfHeight = 0.2f;
-        cap.mass = 1.0f;
-        cap.restitution = 0.0f;
-        cap.position = {0.22f, 0.0f, 0.06f};
+        cap.radius = 0.1;
+        cap.halfHeight = 0.2;
+        cap.mass = 1.0;
+        cap.restitution = 0.0;
+        cap.position = {0.22, 0.0, 0.06};
         const std::uint32_t capId = world.CreateBody(cap);
 
         for (int i = 0; i < 4; ++i) {
-            world.Step(1.0f / 120.0f, 12);
+            world.Step(1.0 / 120.0, 12);
         }
         assert(HasManifoldBetween(world, hcId, capId));
     }

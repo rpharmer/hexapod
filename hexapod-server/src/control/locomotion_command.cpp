@@ -153,3 +153,11 @@ BodyTwist LocomotionCommandProcessor::update(const MotionIntent& intent,
     filtered_.angular_radps = lerpVec3(filtered_.angular_radps, target.angular_radps, a);
     return filtered_;
 }
+
+BodyTwist LocomotionCommandProcessor::snapTo(const BodyTwist& twist, const TimePointUs clock_tick_us) {
+    filtered_ = clampLocomotionTwist(twist, config_);
+    last_clock_ = clock_tick_us;
+    have_clock_ = !clock_tick_us.isZero();
+    prev_walking_ = true;
+    return filtered_;
+}

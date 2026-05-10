@@ -76,6 +76,12 @@ inline constexpr double kDefaultGovernorActiveCadenceMinScale{0.72};
 inline constexpr double kDefaultGovernorBodyHeightSquatMaxM{0.020};
 inline constexpr double kDefaultGovernorBodyHeightSquatSeverityThreshold{0.40};
 inline constexpr double kDefaultGovernorSwingFloorBoostM{0.010};
+inline constexpr double kDefaultGovernorBodyHeightDeltaSlewMps{0.04};
+inline constexpr double kDefaultGovernorRampOutHealthEntry{0.55};
+inline constexpr double kDefaultGovernorRampOutHealthAbort{0.20};
+inline constexpr double kDefaultGovernorRampOutHealthFilterTauS{0.080};
+inline constexpr double kDefaultGovernorRampOutMinDwellS{0.300};
+inline constexpr double kDefaultGovernorRampOutAbortPersistS{0.100};
 
 inline constexpr double kDefaultFootTerrainSwingMarginM{0.018};
 inline constexpr double kDefaultFootTerrainSwingMaxLiftM{0.040};
@@ -147,6 +153,46 @@ struct GaitConfig {
     double swing_ease_min{kDefaultSwingEaseMin};
     /** Clamp upper bound for `swing_time_ease`. */
     double swing_ease_max{kDefaultSwingEaseMax};
+};
+
+inline constexpr double kDefaultGravityFeedforwardMaxGyroRadps{0.35};
+inline constexpr double kDefaultGravityFeedforwardAccelNormMarginMps2{1.5};
+inline constexpr double kDefaultGravityFeedforwardMaxDeltaCoxaRad{0.08};
+inline constexpr double kDefaultGravityFeedforwardMaxDeltaFemurRad{0.12};
+inline constexpr double kDefaultGravityFeedforwardMaxDeltaTibiaRad{0.12};
+inline constexpr double kDefaultGravityFeedforwardScaleCoxa{0.0};
+inline constexpr double kDefaultGravityFeedforwardScaleFemur{1.0};
+inline constexpr double kDefaultGravityFeedforwardScaleTibia{1.0};
+inline constexpr double kDefaultGravityFeedforwardStiffnessGainScale{1.0};
+inline constexpr double kDefaultGravityFeedforwardDeltaLpfTauS{0.0};
+
+/** Joint-space gravity feedforward: biases commanded servo angles from IMU + stance/contact gates. */
+struct GravityFeedforwardConfig {
+    bool enabled{false};
+    /** Skip feedforward when ‖gyro‖ exceeds this (rad/s). */
+    double max_gyro_radps{kDefaultGravityFeedforwardMaxGyroRadps};
+    /**
+     * Quasi-static IMU gate: require |‖accel‖ − g| ≤ margin (m/s²). Non-positive disables the check.
+     */
+    double accel_norm_margin_mps2{kDefaultGravityFeedforwardAccelNormMarginMps2};
+    /** Multipliers on analytical Δq per joint (coxa model unused → keep 0). */
+    double scale_coxa{kDefaultGravityFeedforwardScaleCoxa};
+    double scale_femur{kDefaultGravityFeedforwardScaleFemur};
+    double scale_tibia{kDefaultGravityFeedforwardScaleTibia};
+    /**
+     * Scales ωₙ² in the sag map (Δq ∝ τ/(ωₙ²I)). Values below 1 soften the modeled actuator (larger Δq for
+     * the same τ); tune to match effective sim/hardware stiffness.
+     */
+    double stiffness_gain_scale{kDefaultGravityFeedforwardStiffnessGainScale};
+    /** First-order low-pass time constant (s) on femur/tibia Δq per leg; 0 disables filtering. */
+    double delta_lpf_tau_s{kDefaultGravityFeedforwardDeltaLpfTauS};
+    /** Model share of body weight as upward reaction at each stance foot (world +Z), rotated to leg frame. */
+    bool include_foot_reaction{true};
+    /** Add link self-weight torques about pitch axes (optional; can overlap reaction model if mis-tuned). */
+    bool include_self_weight{false};
+    double max_delta_coxa_rad{kDefaultGravityFeedforwardMaxDeltaCoxaRad};
+    double max_delta_femur_rad{kDefaultGravityFeedforwardMaxDeltaFemurRad};
+    double max_delta_tibia_rad{kDefaultGravityFeedforwardMaxDeltaTibiaRad};
 };
 
 /** Limits and optional low-pass on the unified body-frame locomotion twist (Stage 1 command layer). */
@@ -244,6 +290,12 @@ struct CommandGovernorConfig {
     double body_height_squat_max_m{kDefaultGovernorBodyHeightSquatMaxM};
     double body_height_squat_severity_threshold{kDefaultGovernorBodyHeightSquatSeverityThreshold};
     double swing_floor_boost_m{kDefaultGovernorSwingFloorBoostM};
+    double body_height_delta_slew_mps{kDefaultGovernorBodyHeightDeltaSlewMps};
+    double ramp_out_health_entry{kDefaultGovernorRampOutHealthEntry};
+    double ramp_out_health_abort{kDefaultGovernorRampOutHealthAbort};
+    double ramp_out_health_filter_tau_s{kDefaultGovernorRampOutHealthFilterTauS};
+    double ramp_out_min_dwell_s{kDefaultGovernorRampOutMinDwellS};
+    double ramp_out_abort_persist_s{kDefaultGovernorRampOutAbortPersistS};
 };
 
 /** Tuning for LiDAR map–driven swing clearance, stance height bias, and late-swing XY nudges. */
@@ -287,6 +339,7 @@ struct ControlConfig {
     LoopTimingConfig loop_timing{};
     SafetyConfig safety{};
     GaitConfig gait{};
+    GravityFeedforwardConfig gravity_feedforward{};
     LocomotionCommandConfig locomotion_cmd{};
     FreshnessConfig freshness{};
     TelemetryConfig telemetry{};

@@ -20,8 +20,8 @@
 namespace minphys3d::demo {
 namespace {
 
-const minphys3d::Vec3 kEarthGravity{0.0f, -9.81f, 0.0f};
-const minphys3d::Vec3 kZeroGravity{0.0f, 0.0f, 0.0f};
+const minphys3d::Vec3 kEarthGravity{0.0, -9.81, 0.0};
+const minphys3d::Vec3 kZeroGravity{0.0, 0.0, 0.0};
 
 void TrimInPlace(std::string& s) {
     while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) {
@@ -45,7 +45,7 @@ bool ParsePositiveInt(std::string_view text, int& out_value) {
 }
 
 bool GravityIsOff(const minphys3d::Vec3& g) {
-    return minphys3d::LengthSquared(g) < 1e-12f;
+    return minphys3d::LengthSquared(g) < 1e-12;
 }
 
 const char* SinkLabel(SinkKind k) {

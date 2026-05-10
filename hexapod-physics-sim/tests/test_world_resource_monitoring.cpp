@@ -29,28 +29,28 @@ const resource_monitoring::ResourceSectionSnapshot* findSection(
 }
 
 bool testTerrainHeavyWorldProfiling() {
-    minphys3d::World world{minphys3d::Vec3{0.0f, -9.81f, 0.0f}};
+    minphys3d::World world{minphys3d::Vec3{0.0, -9.81, 0.0}};
     minphys3d::demo::TerrainPatchConfig terrain_cfg{};
     terrain_cfg.rows = 10;
     terrain_cfg.cols = 10;
-    terrain_cfg.cell_size_m = 0.08f;
-    terrain_cfg.base_margin_m = 0.03f;
-    terrain_cfg.min_cell_thickness_m = 0.02f;
+    terrain_cfg.cell_size_m = 0.08;
+    terrain_cfg.base_margin_m = 0.03;
+    terrain_cfg.min_cell_thickness_m = 0.02;
     minphys3d::demo::TerrainPatch terrain_patch{terrain_cfg};
-    terrain_patch.initialize(world, minphys3d::Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+    terrain_patch.initialize(world, minphys3d::Vec3{0.0, 0.0, 0.0}, 0.0);
     world.SetTerrainHeightfield(terrain_patch.BuildTerrainHeightfieldAttachment());
 
     minphys3d::Body sphere{};
     sphere.shape = minphys3d::ShapeType::Sphere;
-    sphere.radius = 0.05f;
-    sphere.mass = 1.0f;
-    sphere.position = minphys3d::Vec3{0.0f, 0.04f, 0.0f};
+    sphere.radius = 0.05;
+    sphere.mass = 1.0;
+    sphere.position = minphys3d::Vec3{0.0, 0.04, 0.0};
     const std::uint32_t sphere_id = world.CreateBody(sphere);
     (void)sphere_id;
 
     std::uint64_t terrain_contact_total = 0;
     for (int i = 0; i < 3; ++i) {
-        world.Step(1.0f / 60.0f, 8);
+        world.Step(1.0 / 60.0, 8);
 #if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
         terrain_contact_total += world.GetSolverTelemetry().terrainContactAdds;
 #endif

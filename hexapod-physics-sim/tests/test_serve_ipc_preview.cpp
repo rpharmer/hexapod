@@ -126,7 +126,7 @@ int main(int argc, char** argv) {
 
     physics_sim::ConfigCommand cfg{};
     cfg.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::ConfigCommand);
-    cfg.gravity = {0.0f, -9.81f, 0.0f};
+    cfg.gravity = {0.0, -9.81, 0.0};
     cfg.solver_iterations = 16;
     if (!sendAll(fd, &cfg, physics_sim::kConfigCommandBytes)) {
         std::cerr << "send ConfigCommand failed\n";
@@ -163,9 +163,9 @@ int main(int argc, char** argv) {
     physics_sim::StepCommand step{};
     step.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StepCommand);
     step.sequence_id = 7;
-    step.dt_seconds = 1.0f / 60.0f;
+    step.dt_seconds = 1.0 / 60.0;
     for (float& target : step.joint_targets) {
-        target = 0.05f;
+        target = 0.05;
     }
     if (!sendAll(fd, &step, physics_sim::kStepCommandBytes)) {
         std::cerr << "send StepCommand failed\n";
@@ -198,7 +198,7 @@ int main(int argc, char** argv) {
         ::waitpid(pid, nullptr, 0);
         return 13;
     }
-    if (!std::isfinite(rsp.body_position[1]) || rsp.body_position[1] < 0.05f) {
+    if (!std::isfinite(rsp.body_position[1]) || rsp.body_position[1] < 0.05) {
         std::cerr << "expected chassis above ground\n";
         ::close(fd);
         ::kill(pid, SIGTERM);

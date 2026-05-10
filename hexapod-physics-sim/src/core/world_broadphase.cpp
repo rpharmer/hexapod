@@ -5,9 +5,9 @@
 #include <chrono>
 
 namespace minphys3d {
-float World::ComputeProxyMargin(const Body& body) const {
-    const float linearSweep = Length(body.velocity) * currentSubstepDt_ * broadphaseConfig_.linearVelocityMarginScale;
-    float radiusLike = 0.5f;
+Real World::ComputeProxyMargin(const Body& body) const {
+    const Real linearSweep = Length(body.velocity) * currentSubstepDt_ * broadphaseConfig_.linearVelocityMarginScale;
+    Real radiusLike = 0.5;
     if (body.shape == ShapeType::Sphere) {
         radiusLike = body.radius;
     } else if (body.shape == ShapeType::Box) {
@@ -15,15 +15,15 @@ float World::ComputeProxyMargin(const Body& body) const {
     } else if (body.shape == ShapeType::Capsule) {
         radiusLike = body.halfHeight + body.radius;
     } else if (body.shape == ShapeType::Cylinder || body.shape == ShapeType::HalfCylinder) {
-        radiusLike = std::sqrt(body.radius * body.radius * 2.0f + body.halfHeight * body.halfHeight);
+        radiusLike = std::sqrt(body.radius * body.radius * 2.0 + body.halfHeight * body.halfHeight);
     } else if (body.shape == ShapeType::Compound) {
         const AABB bounds = body.ComputeAABB();
-        const Vec3 halfExtents = 0.5f * (bounds.max - bounds.min);
-        radiusLike = std::max(Length(halfExtents), 0.5f);
+        const Vec3 halfExtents = 0.5 * (bounds.max - bounds.min);
+        radiusLike = std::max(Length(halfExtents), 0.5);
     }
-    const float angularSweep = Length(body.angularVelocity) * radiusLike * currentSubstepDt_ * broadphaseConfig_.angularVelocityMarginScale;
-    const float sweptMargin = linearSweep + angularSweep;
-    const float dynamicMargin = std::clamp(sweptMargin, broadphaseConfig_.minSweptMargin, broadphaseConfig_.maxSweptMargin);
+    const Real angularSweep = Length(body.angularVelocity) * radiusLike * currentSubstepDt_ * broadphaseConfig_.angularVelocityMarginScale;
+    const Real sweptMargin = linearSweep + angularSweep;
+    const Real dynamicMargin = std::clamp(sweptMargin, broadphaseConfig_.minSweptMargin, broadphaseConfig_.maxSweptMargin);
     return std::max(broadphaseConfig_.baseFatAabbMargin, dynamicMargin);
 }
 
@@ -43,7 +43,7 @@ void World::UpdateBroadphaseProxies() {
         [this](std::uint32_t bodyId) { EnsureProxyInTree(bodyId); },
         [this](std::int32_t leaf) { RemoveLeaf(leaf); },
         [this](std::uint32_t bodyId, const AABB& fatBox) { return InsertLeaf(bodyId, fatBox); },
-        [](const AABB& aabb, float margin) { return ExpandAABB(aabb, margin); },
+        [](const AABB& aabb, Real margin) { return ExpandAABB(aabb, margin); },
         [](const AABB& outer, const AABB& inner) { return Contains(outer, inner); },
         [this]() { UpdateBroadphaseQualityMetrics(); },
         [this]() { MaybeTriggerBroadphaseRebuild(); },
@@ -102,7 +102,7 @@ void World::UpdateBroadphaseQualityMetrics() {
         return;
     }
 
-    float totalArea = 0.0f;
+    Real totalArea = 0.0;
     std::uint32_t maxDepth = 0;
     std::uint32_t leafCount = 0;
     std::uint64_t depthSum = 0;
@@ -127,10 +127,10 @@ void World::UpdateBroadphaseQualityMetrics() {
         stack.push_back({node.right, depth + 1u});
     }
 
-    const float rootArea = std::max(SurfaceArea(treeNodes_[rootNode_].box), kEpsilon);
+    const Real rootArea = std::max(SurfaceArea(treeNodes_[rootNode_].box), kEpsilon);
     broadphaseMetrics_.areaRatio = totalArea / rootArea;
     broadphaseMetrics_.maxDepth = static_cast<float>(maxDepth);
-    broadphaseMetrics_.avgDepth = (leafCount > 0) ? static_cast<float>(depthSum) / static_cast<float>(leafCount) : 0.0f;
+    broadphaseMetrics_.avgDepth = (leafCount > 0) ? static_cast<float>(depthSum) / static_cast<float>(leafCount) : 0.0;
     broadphaseMetrics_.movedProxyRatio = static_cast<float>(lastBroadphaseMovedProxyCount_) / static_cast<float>(validProxyCount);
 }
 
@@ -199,24 +199,24 @@ std::int32_t World::InsertLeaf(std::uint32_t bodyId, const AABB& fatBox) {
         while (!treeNodes_[index].IsLeaf()) {
             const std::int32_t left = treeNodes_[index].left;
             const std::int32_t right = treeNodes_[index].right;
-            const float baseCost = 2.0f * SurfaceArea(MergeAABB(treeNodes_[index].box, fatBox));
-            const float inheritanceCost = 2.0f * (SurfaceArea(MergeAABB(treeNodes_[index].box, fatBox)) - SurfaceArea(treeNodes_[index].box));
+            const Real baseCost = 2.0 * SurfaceArea(MergeAABB(treeNodes_[index].box, fatBox));
+            const Real inheritanceCost = 2.0 * (SurfaceArea(MergeAABB(treeNodes_[index].box, fatBox)) - SurfaceArea(treeNodes_[index].box));
 
-            float leftCost = 0.0f;
+            Real leftCost = 0.0;
             if (treeNodes_[left].IsLeaf()) {
                 leftCost = SurfaceArea(MergeAABB(treeNodes_[left].box, fatBox)) + inheritanceCost;
             } else {
-                const float oldArea = SurfaceArea(treeNodes_[left].box);
-                const float newArea = SurfaceArea(MergeAABB(treeNodes_[left].box, fatBox));
+                const Real oldArea = SurfaceArea(treeNodes_[left].box);
+                const Real newArea = SurfaceArea(MergeAABB(treeNodes_[left].box, fatBox));
                 leftCost = (newArea - oldArea) + inheritanceCost;
             }
 
-            float rightCost = 0.0f;
+            Real rightCost = 0.0;
             if (treeNodes_[right].IsLeaf()) {
                 rightCost = SurfaceArea(MergeAABB(treeNodes_[right].box, fatBox)) + inheritanceCost;
             } else {
-                const float oldArea = SurfaceArea(treeNodes_[right].box);
-                const float newArea = SurfaceArea(MergeAABB(treeNodes_[right].box, fatBox));
+                const Real oldArea = SurfaceArea(treeNodes_[right].box);
+                const Real newArea = SurfaceArea(MergeAABB(treeNodes_[right].box, fatBox));
                 rightCost = (newArea - oldArea) + inheritanceCost;
             }
 
@@ -382,9 +382,9 @@ std::vector<Pair> World::ComputePotentialPairs() const {
     const auto startTime = std::chrono::steady_clock::now();
     std::vector<Pair> pairs;
     broadphaseMetrics_.queryNodeVisits = 0;
-    broadphaseMetrics_.queryNodeVisitsPerProxy = 0.0f;
-    broadphaseMetrics_.pairGenerationMs = 0.0f;
-    broadphaseMetrics_.pairCacheHitRate = 0.0f;
+    broadphaseMetrics_.queryNodeVisitsPerProxy = 0.0;
+    broadphaseMetrics_.pairGenerationMs = 0.0;
+    broadphaseMetrics_.pairCacheHitRate = 0.0;
     broadphaseMetrics_.pairCacheQueries = 0;
     broadphaseMetrics_.pairCacheHits = 0;
     broadphaseMetrics_.usedMovedSetOnlyUpdate = false;
@@ -509,7 +509,7 @@ std::vector<Pair> World::ComputePotentialPairs() const {
 
     const auto endTime = std::chrono::steady_clock::now();
     broadphaseMetrics_.pairGenerationMs =
-        std::chrono::duration<float, std::milli>(endTime - startTime).count();
+        std::chrono::duration<Real, std::milli>(endTime - startTime).count();
     if (pairsUnchanged) {
         return pairs;
     }
@@ -533,7 +533,7 @@ bool World::IsPairEligible(std::uint32_t a, std::uint32_t b) const {
     if (bodyA.isTerrainAttachment || bodyB.isTerrainAttachment) {
         return false;
     }
-    if ((bodyA.invMass == 0.0f && bodyB.invMass == 0.0f) || (bodyA.isSleeping && bodyB.isSleeping)) {
+    if ((bodyA.invMass == 0.0 && bodyB.invMass == 0.0) || (bodyA.isSleeping && bodyB.isSleeping)) {
         return false;
     }
     return (bodyA.collisionGroup & bodyB.collisionMask) != 0

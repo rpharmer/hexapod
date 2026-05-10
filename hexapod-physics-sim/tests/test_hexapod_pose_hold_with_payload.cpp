@@ -15,15 +15,15 @@ using namespace minphys3d::demo;
 using namespace minphys3d::tests;
 
 struct PoseHoldMetrics {
-    float peakLinear = 0.0f;
-    float peakAngular = 0.0f;
-    float peakJointError = 0.0f;
-    float finalHeight = 0.0f;
+    Real peakLinear = 0.0;
+    Real peakAngular = 0.0;
+    Real peakJointError = 0.0;
+    Real finalHeight = 0.0;
     bool finite = true;
 };
 
-PoseHoldMetrics runPoseHold(float payload_mass_kg) {
-    World world({0.0f, -9.81f, 0.0f});
+PoseHoldMetrics runPoseHold(Real payload_mass_kg) {
+    World world({0.0, -9.81, 0.0});
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
     ApplyHexapodPoseHoldStabilityTuning(world, scene);
@@ -33,7 +33,7 @@ PoseHoldMetrics runPoseHold(float payload_mass_kg) {
     chassis.RecomputeMassProperties();
 
     PoseHoldMetrics m{};
-    constexpr float kDt = 1.0f / 240.0f;
+    constexpr Real kDt = 1.0 / 240.0;
     for (int step = 0; step < 600; ++step) {
         world.Step(kDt, 24);
         const Body& c = world.GetBody(scene.body);
@@ -61,29 +61,29 @@ PoseHoldMetrics runPoseHold(float payload_mass_kg) {
 }
 
 int runCase() {
-    const PoseHoldMetrics supported = runPoseHold(0.4f);
-    const PoseHoldMetrics overload = runPoseHold(2.6f);
+    const PoseHoldMetrics supported = runPoseHold(0.4);
+    const PoseHoldMetrics overload = runPoseHold(2.6);
 
     if (!supported.finite || !overload.finite) {
         std::cerr << "hexapod_payload non-finite state observed\n";
         return 1;
     }
-    if (supported.finalHeight < 0.02f) {
+    if (supported.finalHeight < 0.02) {
         std::cerr << "hexapod_payload supported_final_height=" << supported.finalHeight << " floor=0.02\n";
         return 1;
     }
-    if (supported.peakLinear > 6.0f || supported.peakJointError > 3.0f) {
+    if (supported.peakLinear > 6.0 || supported.peakJointError > 3.0) {
         std::cerr << "hexapod_payload supported peak_linear=" << supported.peakLinear
                   << " peak_joint_error=" << supported.peakJointError << "\n";
         return 1;
     }
-    if (overload.peakLinear > 200.0f || overload.peakAngular > 200.0f || overload.peakJointError > 6.3f) {
+    if (overload.peakLinear > 200.0 || overload.peakAngular > 200.0 || overload.peakJointError > 6.3) {
         std::cerr << "hexapod_payload overload instability peak_linear=" << overload.peakLinear
                   << " peak_angular=" << overload.peakAngular
                   << " peak_joint_error=" << overload.peakJointError << "\n";
         return 1;
     }
-    if (overload.finalHeight > supported.finalHeight + 0.03f) {
+    if (overload.finalHeight > supported.finalHeight + 0.03) {
         std::cerr << "hexapod_payload overload did not degrade as expected overload_h=" << overload.finalHeight
                   << " supported_h=" << supported.finalHeight << "\n";
         return 1;

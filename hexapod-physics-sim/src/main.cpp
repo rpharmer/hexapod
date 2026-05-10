@@ -244,8 +244,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    const minphys3d::Vec3 gravity = zero_gravity ? minphys3d::Vec3{0.0f, 0.0f, 0.0f}
-                                                 : minphys3d::Vec3{0.0f, -9.81f, 0.0f};
+    const minphys3d::Vec3 gravity = zero_gravity ? minphys3d::Vec3{0.0, 0.0, 0.0}
+                                                 : minphys3d::Vec3{0.0, -9.81, 0.0};
 
     if (serve_mode) {
         if (serve_port < 1 || serve_port > 65535) {

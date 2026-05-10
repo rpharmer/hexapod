@@ -142,6 +142,22 @@ else()
 endif()
 add_test(NAME test_hexapod_initial_layout_matches_server
     COMMAND test_hexapod_initial_layout_matches_server)
+add_executable(test_gravity_feedforward_model_consistency
+    tests/test_gravity_feedforward_model_consistency.cpp
+    ../hexapod-server/src/control/joint_angle_gravity_feedforward.cpp
+    ../hexapod-server/src/kinematics/types.cpp)
+target_include_directories(test_gravity_feedforward_model_consistency PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-server/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-server/include/control
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-server/include/kinematics
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-common/include)
+target_compile_features(test_gravity_feedforward_model_consistency PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(test_gravity_feedforward_model_consistency PRIVATE /W4)
+else()
+    target_compile_options(test_gravity_feedforward_model_consistency PRIVATE -Wall -Wextra -pedantic)
+endif()
+add_test(NAME test_gravity_feedforward_model_consistency COMMAND test_gravity_feedforward_model_consistency)
 add_minphys3d_test(test_hexapod_planted_foot_drift tests/test_hexapod_planted_foot_drift.cpp)
 add_minphys3d_test(test_hexapod_zero_g tests/test_hexapod_zero_g.cpp)
 add_minphys3d_test(test_hexapod_freefall_no_support tests/test_hexapod_freefall_no_support.cpp)
@@ -151,6 +167,19 @@ add_minphys3d_test(test_servo_chain_vertical_lift_under_gravity tests/test_servo
 add_minphys3d_test(test_hexapod_pose_hold_with_payload tests/test_hexapod_pose_hold_with_payload.cpp)
 add_minphys3d_test(test_constraint_solver_extreme_mass_ratio_stress tests/test_constraint_solver_extreme_mass_ratio_stress.cpp)
 add_minphys3d_test(test_articulation_impulse_response_decay tests/test_articulation_impulse_response_decay.cpp)
+add_minphys3d_test(test_world_step_determinism tests/test_world_step_determinism.cpp)
+add_minphys3d_test(test_hexapod_stand_quiescence tests/test_hexapod_stand_quiescence.cpp)
+add_minphys3d_test(test_hexapod_substep_convergence tests/test_hexapod_substep_convergence.cpp)
+add_minphys3d_test(test_zero_gravity_energy_conservation tests/test_zero_gravity_energy_conservation.cpp)
+add_minphys3d_test(test_single_leg_pd_response tests/test_single_leg_pd_response.cpp)
+add_minphys3d_test(test_single_leg_pd_oscillation_sweep tests/test_single_leg_pd_oscillation_sweep.cpp)
+add_minphys3d_test(test_servo_classical_pd_invariant tests/test_servo_classical_pd_invariant.cpp)
+set_tests_properties(
+    test_hexapod_stand_quiescence
+    test_hexapod_substep_convergence
+    PROPERTIES
+    LABELS "physics-long"
+    TIMEOUT 60)
 set_tests_properties(
     test_hexapod_pose_hold_with_payload
     test_constraint_solver_extreme_mass_ratio_stress

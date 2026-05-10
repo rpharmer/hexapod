@@ -16,6 +16,11 @@ public:
     explicit GaitScheduler(control_config::GaitConfig config = {});
 
     void reset();
+    GaitState preview(const RobotState& est,
+                      const MotionIntent& intent,
+                      const SafetyState& safety,
+                      const BodyTwist& cmd_twist,
+                      const CommandGovernorState& governor = CommandGovernorState{});
     GaitState update(const RobotState& est,
                       const MotionIntent& intent,
                       const SafetyState& safety,
@@ -25,6 +30,11 @@ public:
 private:
     control_config::GaitConfig config_{};
     double wrap01(double x) const;
+    GaitState compute(const MotionIntent& intent,
+                      const SafetyState& safety,
+                      const BodyTwist& cmd_twist,
+                      const CommandGovernorState& governor,
+                      bool commit_state);
     double phase_accum_{0.0};
     TimePointUs last_update_us_{};
 

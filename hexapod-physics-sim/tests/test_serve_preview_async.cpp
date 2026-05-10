@@ -33,7 +33,7 @@ int main() {
     auto makeFrame = [](int frame_index) {
         PreviewFrameSnapshot frame{};
         frame.frame_index = frame_index;
-        frame.sim_time_s = static_cast<float>(frame_index) / 60.0f;
+        frame.sim_time_s = static_cast<float>(frame_index) / 60.0;
         return frame;
     };
 

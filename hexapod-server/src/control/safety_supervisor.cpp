@@ -67,7 +67,8 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
     const RobotState& est,
     const MotionIntent& intent,
     const FreshnessInputs& freshness,
-    int contact_count) const {
+    int raw_contact_count,
+    int support_contact_count) const {
     const std::array<FaultRule, 8> rules{{
         FaultRule{
             .is_triggered = [&](void) {
@@ -78,8 +79,8 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
         },
         FaultRule{
             .is_triggered = [&](void) {
-                return contact_count < config_.min_foot_contacts ||
-                       contact_count > config_.max_foot_contacts;
+                return raw_contact_count < config_.min_foot_contacts ||
+                       raw_contact_count > config_.max_foot_contacts;
             },
             .fault = FaultCode::ESTIMATOR_INVALID,
             .torque_cut = false,
@@ -131,7 +132,7 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
                 if (!est.has_body_twist_state || !est.has_imu || !est.imu.valid) {
                     return false;
                 }
-                if (contact_count > config_.rapid_body_rate_max_contacts) {
+                if (support_contact_count > config_.rapid_body_rate_max_contacts) {
                     return false;
                 }
                 const double body_rate_radps = planarBodyRateRadps(est);
@@ -152,7 +153,7 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
                 if (!std::isfinite(measured_body_height_m)) {
                     return false;
                 }
-                if (contact_count > config_.body_height_collapse_max_contacts) {
+                if (raw_contact_count > config_.body_height_collapse_max_contacts) {
                     return false;
                 }
                 if (config_.body_height_collapse_min_safe_m > 0.0) {
@@ -196,14 +197,21 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateCurrentFault(const Rob
                                                                        const RobotState& est,
                                                                        const MotionIntent& intent,
                                                                        const FreshnessInputs& freshness) const {
-    int contact_count = 0;
+    int raw_contact_count = 0;
     for (bool foot_contact : raw.foot_contacts) {
         if (foot_contact) {
-            ++contact_count;
+            ++raw_contact_count;
         }
     }
+    int fused_load_bearing_contact_count = 0;
+    for (bool foot_contact : est.foot_contacts) {
+        if (foot_contact) {
+            ++fused_load_bearing_contact_count;
+        }
+    }
+    const int support_contact_count = std::max(raw_contact_count, fused_load_bearing_contact_count);
 
-    return evaluateFaultRules(raw, est, intent, freshness, contact_count);
+    return evaluateFaultRules(raw, est, intent, freshness, raw_contact_count, support_contact_count);
 }
 
 void SafetySupervisor::trip(FaultCode code, bool torque_cut, TimePointUs timestamp_us) {

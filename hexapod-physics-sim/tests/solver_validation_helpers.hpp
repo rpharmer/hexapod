@@ -8,7 +8,7 @@
 
 namespace minphys3d::tests {
 
-inline float WrapAngle(float angle) {
+inline Real WrapAngle(Real angle) {
     return std::atan2(std::sin(angle), std::cos(angle));
 }
 
@@ -20,32 +20,32 @@ inline bool IsFiniteQuat(const Quat& q) {
     return std::isfinite(q.w) && std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z);
 }
 
-inline Body MakeStaticBase(const Vec3& position = {0.0f, 0.0f, 0.0f}) {
+inline Body MakeStaticBase(const Vec3& position = {0.0, 0.0, 0.0}) {
     Body base;
     base.shape = ShapeType::Box;
     base.isStatic = true;
     base.position = position;
-    base.halfExtents = {0.12f, 0.12f, 0.12f};
-    base.restitution = 0.0f;
+    base.halfExtents = {0.12, 0.12, 0.12};
+    base.restitution = 0.0;
     return base;
 }
 
-inline Body MakeArmLink(const Vec3& center, float length, float mass) {
+inline Body MakeArmLink(const Vec3& center, Real length, Real mass) {
     Body link;
     link.shape = ShapeType::Box;
     link.position = center;
-    link.halfExtents = {0.5f * length, 0.03f, 0.03f};
+    link.halfExtents = {0.5 * length, 0.03, 0.03};
     link.mass = mass;
-    link.restitution = 0.0f;
-    link.staticFriction = 0.8f;
-    link.dynamicFriction = 0.6f;
-    link.linearDamping = 0.05f;
-    link.angularDamping = 0.08f;
+    link.restitution = 0.0;
+    link.staticFriction = 0.8;
+    link.dynamicFriction = 0.6;
+    link.linearDamping = 0.05;
+    link.angularDamping = 0.08;
     return link;
 }
 
-inline float BoxInertiaAboutY(float mass, float full_x, float full_z) {
-    return (mass / 12.0f) * (full_x * full_x + full_z * full_z);
+inline Real BoxInertiaAboutY(Real mass, Real full_x, Real full_z) {
+    return (mass / 12.0) * (full_x * full_x + full_z * full_z);
 }
 
 } // namespace minphys3d::tests

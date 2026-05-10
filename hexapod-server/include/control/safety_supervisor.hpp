@@ -58,7 +58,8 @@ private:
                                      const RobotState& est,
                                      const MotionIntent& intent,
                                      const FreshnessInputs& freshness,
-                                     int contact_count) const;
+                                     int raw_contact_count,
+                                     int support_contact_count) const;
     FaultDecision evaluateCurrentFault(const RobotState& raw,
                                        const RobotState& est,
                                        const MotionIntent& intent,

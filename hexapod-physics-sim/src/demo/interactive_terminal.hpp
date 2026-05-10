@@ -13,7 +13,7 @@ struct InteractiveSessionSeed {
     SceneModel scene_model = SceneModel::Default;
     int frame_count = 1200;
     bool realtime_playback = false;
-    minphys3d::Vec3 gravity = minphys3d::Vec3{0.0f, -9.81f, 0.0f};
+    minphys3d::Vec3 gravity = minphys3d::Vec3{0.0, -9.81, 0.0};
     /// When non-empty, `r` runs `RunPhysicsDemoFromJsonFile` instead of built-in demos.
     std::string scene_json_path;
     std::string udp_host = "127.0.0.1";

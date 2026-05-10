@@ -22,7 +22,7 @@ struct PreviewBodySnapshot {
 
 struct PreviewFrameSnapshot {
     int frame_index{0};
-    float sim_time_s{0.0f};
+    Real sim_time_s{0.0};
     TerrainPatchFrameSnapshot terrain_patch{};
     std::vector<PreviewBodySnapshot> bodies{};
 };

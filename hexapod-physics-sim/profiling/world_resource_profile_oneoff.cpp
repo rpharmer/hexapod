@@ -30,7 +30,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    World world(Vec3{0.0f, -9.81f, 0.0f});
+    World world(Vec3{0.0, -9.81, 0.0});
     JointSolverConfig joint_cfg = world.GetJointSolverConfig();
     joint_cfg.servoPositionPasses = 8;
     world.SetJointSolverConfig(joint_cfg);
@@ -41,10 +41,10 @@ int main(int argc, char** argv) {
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
 
-    constexpr float kFrameDt = 1.0f / 60.0f;
+    constexpr Real kFrameDt = 1.0 / 60.0;
     const int kSubsteps = kHexapodPoseHoldBenchmarkSubstepsPerFrame;
     const int kIter = kHexapodPoseHoldBenchmarkSolverIterations;
-    const float subDt = kFrameDt / static_cast<float>(kSubsteps);
+    const Real subDt = kFrameDt / static_cast<float>(kSubsteps);
 
     const auto t0 = std::chrono::steady_clock::now();
     constexpr int kFrames = 120;

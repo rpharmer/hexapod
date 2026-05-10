@@ -1,5 +1,6 @@
 #include "tuning_section_parser.hpp"
 
+#include <string>
 #include <utility>
 
 #include "config_validation.hpp"
@@ -7,6 +8,22 @@
 #include "logger.hpp"
 
 using namespace logging;
+
+namespace {
+
+bool tuningTableHasKey(const toml::value& root, const char* leaf_key) {
+  try {
+    const auto& tun = root.at("Tuning");
+    if (!tun.is_table()) {
+      return false;
+    }
+    return tun.as_table().count(std::string(leaf_key)) > 0;
+  } catch (...) {
+    return false;
+  }
+}
+
+} // namespace
 
 namespace tuning_section_parser {
 
@@ -301,6 +318,52 @@ void parseTuningSection(const toml::value& root,
   out.fusionCorrectionSoftReleaseFactor = config_validation::parseDoubleWithFallback(
       root, "Tuning.FusionCorrectionSoftReleaseFactor",
       control_config::kDefaultFusionCorrectionSoftReleaseFactor, 0.1, 1.0, "tuning", logger);
+
+  out.gravityFeedforwardEnabled =
+      config_validation::parseBoolWithFallback(root, "Tuning.GravityFeedforwardEnabled", false);
+  out.gravityFeedforwardMaxGyroRadps = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GravityFeedforwardMaxGyroRadps", control_config::kDefaultGravityFeedforwardMaxGyroRadps,
+      0.0, 5.0, "tuning", logger);
+  out.gravityFeedforwardAccelNormMarginMps2 = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GravityFeedforwardAccelNormMarginMps2",
+      control_config::kDefaultGravityFeedforwardAccelNormMarginMps2, 0.0, 20.0, "tuning", logger);
+  out.gravityFeedforwardScaleCoxa = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GravityFeedforwardScaleCoxa", control_config::kDefaultGravityFeedforwardScaleCoxa, 0.0,
+      4.0, "tuning", logger);
+  out.gravityFeedforwardScaleFemur = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GravityFeedforwardScaleFemur", control_config::kDefaultGravityFeedforwardScaleFemur, 0.0,
+      4.0, "tuning", logger);
+  out.gravityFeedforwardScaleTibia = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GravityFeedforwardScaleTibia", control_config::kDefaultGravityFeedforwardScaleTibia, 0.0,
+      4.0, "tuning", logger);
+  out.gravityFeedforwardIncludeFootReaction =
+      config_validation::parseBoolWithFallback(root, "Tuning.GravityFeedforwardIncludeFootReaction", true);
+  out.gravityFeedforwardIncludeSelfWeight =
+      config_validation::parseBoolWithFallback(root, "Tuning.GravityFeedforwardIncludeSelfWeight", false);
+  out.gravityFeedforwardStiffnessGainScale = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GravityFeedforwardStiffnessGainScale",
+      control_config::kDefaultGravityFeedforwardStiffnessGainScale, 0.05, 20.0, "tuning", logger);
+  out.gravityFeedforwardDeltaLpfTauS = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GravityFeedforwardDeltaLpfTauS", control_config::kDefaultGravityFeedforwardDeltaLpfTauS, 0.0,
+      0.5, "tuning", logger);
+  if (tuningTableHasKey(root, "GravityFeedforwardGainCoxaRad") ||
+      tuningTableHasKey(root, "GravityFeedforwardGainFemurRad") ||
+      tuningTableHasKey(root, "GravityFeedforwardGainTibiaRad")) {
+    if (logger) {
+      LOG_WARN(logger,
+               "[tuning] Tuning.GravityFeedforwardGain*Rad keys are deprecated; use "
+               "Tuning.GravityFeedforwardScaleCoxa/Femur/Tibia (physics-based sag scales).");
+    }
+  }
+  out.gravityFeedforwardMaxDeltaCoxaRad = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GravityFeedforwardMaxDeltaCoxaRad",
+      control_config::kDefaultGravityFeedforwardMaxDeltaCoxaRad, 0.0, 0.5, "tuning", logger);
+  out.gravityFeedforwardMaxDeltaFemurRad = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GravityFeedforwardMaxDeltaFemurRad",
+      control_config::kDefaultGravityFeedforwardMaxDeltaFemurRad, 0.0, 0.5, "tuning", logger);
+  out.gravityFeedforwardMaxDeltaTibiaRad = config_validation::parseDoubleWithFallback(
+      root, "Tuning.GravityFeedforwardMaxDeltaTibiaRad",
+      control_config::kDefaultGravityFeedforwardMaxDeltaTibiaRad, 0.0, 0.5, "tuning", logger);
 }
 
 } // namespace tuning_section_parser

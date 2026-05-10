@@ -8,7 +8,7 @@ int main() {
     static_assert(sizeof(minphys_viz::VizEntityFrameBody) == 40);
 
     std::vector<std::uint8_t> frame;
-    minphys_viz::EncodeEntityFrame(frame, 42u, 9, 0.125f, 1.0f, 2.0f, 3.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    minphys_viz::EncodeEntityFrame(frame, 42u, 9, 0.125, 1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0);
     if (!minphys_viz::IsVizBinaryPayload(frame.data(), frame.size())) {
         return 1;
     }

@@ -9,6 +9,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 BodyController::BodyController(control_config::GaitConfig gait_cfg,
                                control_config::FootTerrainConfig foot_terrain_cfg)
@@ -282,8 +285,60 @@ LegTargets BodyController::update(const RobotState& est,
             const std::size_t leg_index = static_cast<std::size_t>(leg);
             const ContactPhase contact_phase = est.foot_contact_fusion[leg_index].phase;
             const bool planned_stance = ph < duty;
-            const bool lost_candidate_grace = planned_stance && contact_phase == ContactPhase::LostCandidate;
-            const bool use_stance_kinematics = planned_stance || est.foot_contacts[leg_index] || lost_candidate_grace;
+            const bool support_hold =
+                gait.stability_hold_stance[leg_index] &&
+                (est.foot_contacts[leg_index] || contact_phase == ContactPhase::LostCandidate);
+            const bool effective_stance = planned_stance || support_hold;
+            const bool recovery_touchdown =
+                gait.stride_phase_rate_hz.value <= 1e-6 &&
+                !effective_stance &&
+                !est.foot_contacts[leg_index] &&
+                contact_phase != ContactPhase::LostCandidate;
+            if (recovery_touchdown) {
+                // During recovery hold the gait cadence is frozen. Unsupported swing legs still
+                // need to finish their touchdown arc instead of hovering mid-swing, so bias them
+                // to the late-swing segment while supported legs are held in stance.
+                ph = std::max(ph, duty + 0.98 * swing_span);
+            }
+            // When transitioning to swing the foot is still touching ground while the servo
+            // begins to lift. Raw contact during early swing with a ConfirmedStance fusion
+            // phase is a liftoff artifact: sending stance targets creates a deadlock where
+            // the server never commands lift. Allow swing kinematics during this grace window
+            // so the servo can actually drive the foot off the ground.
+            const double tau_swing_prelim = effective_stance ? 0.0 : clamp01((ph - duty) / swing_span);
+            // Grace fires on any contact during early swing regardless of fusion phase.
+            // The ConfirmedStance check was too strict: fusion transitions away quickly,
+            // leaving 50%+ of early-swing contacts incorrectly locked to stance targets.
+            const bool liftoff_grace = !effective_stance
+                && est.foot_contacts[leg_index]
+                && tau_swing_prelim < 0.45;
+            const bool lost_candidate_grace = effective_stance && contact_phase == ContactPhase::LostCandidate;
+            const bool use_stance_kinematics =
+                effective_stance || (est.foot_contacts[leg_index] && !liftoff_grace) || lost_candidate_grace;
+
+            // Diagnostic: log kinematics selection when in early-swing contact.
+            // Enable with HEXAPOD_DIAG_LOG=1.
+            if (est.foot_contacts[leg_index] && !planned_stance) {
+                static bool s_diag_init = false;
+                static bool s_diag_enabled = false;
+                if (!s_diag_init) {
+                    const char* v = std::getenv("HEXAPOD_DIAG_LOG");
+                    s_diag_enabled = v && v[0] != '\0' && v[0] != '0';
+                    s_diag_init = true;
+                }
+                if (s_diag_enabled) {
+                    std::fprintf(stderr,
+                        "[DIAG_SVR] leg=%d ph=%.3f tau_sw=%.3f grace=%d hold=%d use_stance=%d fusion=%d\n",
+                        leg,
+                        ph,
+                        tau_swing_prelim,
+                        static_cast<int>(liftoff_grace),
+                        static_cast<int>(support_hold),
+                        static_cast<int>(use_stance_kinematics),
+                        static_cast<int>(contact_phase));
+                    std::fflush(stderr);
+                }
+            }
 
             if (use_stance_kinematics) {
                 apply_workspace_clamp = false;
@@ -303,7 +358,8 @@ LegTargets BodyController::update(const RobotState& est,
                                 contact_foot_response::stanceTiltLevelingDeltaZ(est, intent, anchor.x, anchor.y);
                 }
             } else {
-                const Vec3 stance_end = anchor + v_foot * (duty / f_hz);
+                const double swing_f_hz = recovery_touchdown ? 1.0 : f_hz;
+                const Vec3 stance_end = anchor + v_foot * (duty / swing_f_hz);
                 const Vec3 v_liftoff = supportFootVelocityAt(stance_end, body_mot);
                 const double tau = clamp01((ph - duty) / swing_span);
                 const double tau_for_terrain_xy = tau;
@@ -338,14 +394,14 @@ LegTargets BodyController::update(const RobotState& est,
                 sw.v_liftoff_body = v_liftoff;
                 sw.tau01 = tau_use;
                 sw.swing_span = swing_span;
-                sw.f_hz = f_hz;
+                sw.f_hz = swing_f_hz;
                 sw.step_length_m = step_len;
                 sw.swing_height_m = swing_h;
                 sw.stride_ux = ux;
                 sw.stride_uy = uy;
                 sw.cmd_accel_body_x_mps2 = gait.cmd_accel_body_x_mps2;
                 sw.cmd_accel_body_y_mps2 = gait.cmd_accel_body_y_mps2;
-                sw.stance_lookahead_s = (duty / f_hz) * 0.48;
+                sw.stance_lookahead_s = (duty / swing_f_hz) * 0.48;
                 sw.static_stability_margin_m = gait.static_stability_margin_m;
                 sw.swing_time_ease_01 = gait.swing_time_ease_01;
                 Vec3 p{};

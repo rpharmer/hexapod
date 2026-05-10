@@ -23,7 +23,9 @@ class ControlPipeline {
 public:
     explicit ControlPipeline(control_config::GaitConfig gait_config = {},
                              control_config::LocomotionCommandConfig loco_config = {},
+                             control_config::SafetyConfig safety_config = {},
                              control_config::FootTerrainConfig foot_terrain_config = {},
+                             control_config::GravityFeedforwardConfig gravity_feedforward_config = {},
                              runtime_resource_monitoring::Profiler* profiler = nullptr);
 
     void reset();
@@ -42,6 +44,7 @@ private:
     LocomotionStability locomotion_stability_{};
     BodyController body_;
     LegIK ik_;
+    control_config::GravityFeedforwardConfig gravity_feedforward_{};
     GaitState last_gait_state_{};
     bool have_last_gait_state_{false};
 };

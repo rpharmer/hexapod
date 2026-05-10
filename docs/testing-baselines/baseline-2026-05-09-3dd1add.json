@@ -1,0 +1,435 @@
+{
+  "baseline_name": "canonical-local-2026-05-09",
+  "server_commit": "3dd1add755b54624e6c5f1faa7ee157375d82b7e",
+  "sim_commit": "3dd1add755b54624e6c5f1faa7ee157375d82b7e",
+  "config_path": "hexapod-server/config.physics-sim-wsl.txt",
+  "config_digest": "not-recorded",
+  "build_type": "build-tests preset",
+  "suite_binary": "hexapod-server/build-tests/test_locomotion_regression_suite",
+  "suite_profile": "canonical",
+  "requested_repetitions": 5,
+  "suite_exit_codes": [
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "runs_per_case": {
+    "aggressive_governor": 5,
+    "command_timeout_fallback": 5,
+    "gait_transition_stability": 5,
+    "low_support_walk": 5,
+    "steady_forward_walk": 5,
+    "tilt_safety_trip": 5,
+    "turn_in_place": 5
+  },
+  "aggregates": {
+    "aggressive_governor": {
+      "pass_rate": 0.0,
+      "path_length_m": {
+        "median": 0.206386,
+        "min": 0.14146,
+        "max": 0.212117
+      },
+      "net_displacement_m": {
+        "median": 0.03526,
+        "min": 0.030794,
+        "max": 0.045655
+      },
+      "mean_horizontal_speed_mps": {
+        "median": 0.032248,
+        "min": 0.022103,
+        "max": 0.033143
+      },
+      "peak_horizontal_speed_mps": {
+        "median": 0.360405,
+        "min": 0.334209,
+        "max": 0.383813
+      },
+      "yaw_delta_rad": {
+        "median": -0.052974,
+        "min": -0.113467,
+        "max": -0.028923
+      },
+      "mean_yaw_rate_radps": {
+        "median": 0.058822,
+        "min": 0.051236,
+        "max": 0.064991
+      },
+      "peak_yaw_rate_radps": {
+        "median": 0.882834,
+        "min": 0.8536,
+        "max": 0.947001
+      },
+      "stride_count": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "max_abs_roll_rad": {
+        "median": 0.162494,
+        "min": 0.152241,
+        "max": 0.17487
+      },
+      "max_abs_pitch_rad": {
+        "median": 0.15818,
+        "min": 0.133789,
+        "max": 0.159237
+      },
+      "max_body_rate_radps": {
+        "median": 3.486354,
+        "min": 3.450479,
+        "max": 3.783822
+      }
+    },
+    "command_timeout_fallback": {
+      "pass_rate": 1.0,
+      "path_length_m": {
+        "median": 0.10721,
+        "min": 0.069803,
+        "max": 0.128961
+      },
+      "net_displacement_m": {
+        "median": 0.007384,
+        "min": 0.000754,
+        "max": 0.013153
+      },
+      "mean_horizontal_speed_mps": {
+        "median": 0.026802,
+        "min": 0.017451,
+        "max": 0.03224
+      },
+      "peak_horizontal_speed_mps": {
+        "median": 0.232228,
+        "min": 0.194768,
+        "max": 0.249216
+      },
+      "yaw_delta_rad": {
+        "median": 0.003486,
+        "min": -0.006185,
+        "max": 0.0104
+      },
+      "mean_yaw_rate_radps": {
+        "median": 0.016353,
+        "min": 0.012434,
+        "max": 0.023201
+      },
+      "peak_yaw_rate_radps": {
+        "median": 0.199785,
+        "min": 0.178731,
+        "max": 0.354375
+      },
+      "stride_count": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "max_abs_roll_rad": {
+        "median": 0.018755,
+        "min": 0.013421,
+        "max": 0.057393
+      },
+      "max_abs_pitch_rad": {
+        "median": 0.090845,
+        "min": 0.071413,
+        "max": 0.101972
+      },
+      "max_body_rate_radps": {
+        "median": 1.6566,
+        "min": 1.414872,
+        "max": 1.797547
+      }
+    },
+    "gait_transition_stability": {
+      "pass_rate": 0.0,
+      "path_length_m": {
+        "median": 0.511595,
+        "min": 0.447274,
+        "max": 0.694908
+      },
+      "net_displacement_m": {
+        "median": 0.154609,
+        "min": 0.123289,
+        "max": 0.2546
+      },
+      "mean_horizontal_speed_mps": {
+        "median": 0.027212,
+        "min": 0.023791,
+        "max": 0.036963
+      },
+      "peak_horizontal_speed_mps": {
+        "median": 0.369433,
+        "min": 0.344125,
+        "max": 0.407857
+      },
+      "yaw_delta_rad": {
+        "median": -0.1441,
+        "min": -0.223677,
+        "max": -0.101992
+      },
+      "mean_yaw_rate_radps": {
+        "median": 0.083272,
+        "min": 0.066593,
+        "max": 0.12686
+      },
+      "peak_yaw_rate_radps": {
+        "median": 2.281062,
+        "min": 2.242544,
+        "max": 2.593348
+      },
+      "stride_count": {
+        "median": 2.0,
+        "min": 1.0,
+        "max": 3.0
+      },
+      "max_abs_roll_rad": {
+        "median": 0.047456,
+        "min": 0.041936,
+        "max": 0.057779
+      },
+      "max_abs_pitch_rad": {
+        "median": 0.082741,
+        "min": 0.068165,
+        "max": 0.092721
+      },
+      "max_body_rate_radps": {
+        "median": 2.116024,
+        "min": 1.951625,
+        "max": 2.320438
+      }
+    },
+    "low_support_walk": {
+      "pass_rate": 1.0,
+      "path_length_m": {
+        "median": 0.399467,
+        "min": 0.394434,
+        "max": 0.402245
+      },
+      "net_displacement_m": {
+        "median": 0.185389,
+        "min": 0.183085,
+        "max": 0.191133
+      },
+      "mean_horizontal_speed_mps": {
+        "median": 0.029373,
+        "min": 0.029002,
+        "max": 0.029577
+      },
+      "peak_horizontal_speed_mps": {
+        "median": 0.309664,
+        "min": 0.302239,
+        "max": 0.326106
+      },
+      "yaw_delta_rad": {
+        "median": -0.039087,
+        "min": -0.044512,
+        "max": -0.0349
+      },
+      "mean_yaw_rate_radps": {
+        "median": 0.051851,
+        "min": 0.049848,
+        "max": 0.057155
+      },
+      "peak_yaw_rate_radps": {
+        "median": 0.835764,
+        "min": 0.827316,
+        "max": 0.874001
+      },
+      "stride_count": {
+        "median": 4.0,
+        "min": 4.0,
+        "max": 4.0
+      },
+      "max_abs_roll_rad": {
+        "median": 0.039958,
+        "min": 0.03933,
+        "max": 0.059154
+      },
+      "max_abs_pitch_rad": {
+        "median": 0.061316,
+        "min": 0.05959,
+        "max": 0.064187
+      },
+      "max_body_rate_radps": {
+        "median": 1.522772,
+        "min": 1.240124,
+        "max": 1.697301
+      }
+    },
+    "steady_forward_walk": {
+      "pass_rate": 0.0,
+      "path_length_m": {
+        "median": 0.555386,
+        "min": 0.445091,
+        "max": 0.632383
+      },
+      "net_displacement_m": {
+        "median": 0.153095,
+        "min": 0.140141,
+        "max": 0.201198
+      },
+      "mean_horizontal_speed_mps": {
+        "median": 0.031556,
+        "min": 0.025289,
+        "max": 0.035931
+      },
+      "peak_horizontal_speed_mps": {
+        "median": 0.353878,
+        "min": 0.317489,
+        "max": 0.370641
+      },
+      "yaw_delta_rad": {
+        "median": -0.173598,
+        "min": -0.218986,
+        "max": -0.142954
+      },
+      "mean_yaw_rate_radps": {
+        "median": 0.070039,
+        "min": 0.05556,
+        "max": 0.074726
+      },
+      "peak_yaw_rate_radps": {
+        "median": 1.170174,
+        "min": 1.089243,
+        "max": 1.206383
+      },
+      "stride_count": {
+        "median": 1.0,
+        "min": 0.0,
+        "max": 1.0
+      },
+      "max_abs_roll_rad": {
+        "median": 0.057739,
+        "min": 0.055268,
+        "max": 0.065272
+      },
+      "max_abs_pitch_rad": {
+        "median": 0.072401,
+        "min": 0.071483,
+        "max": 0.077148
+      },
+      "max_body_rate_radps": {
+        "median": 2.111365,
+        "min": 1.986142,
+        "max": 2.150951
+      }
+    },
+    "tilt_safety_trip": {
+      "pass_rate": 1.0,
+      "path_length_m": {
+        "median": 0.26619,
+        "min": 0.259473,
+        "max": 0.293772
+      },
+      "net_displacement_m": {
+        "median": 0.077302,
+        "min": 0.076294,
+        "max": 0.086471
+      },
+      "mean_horizontal_speed_mps": {
+        "median": 0.019014,
+        "min": 0.018534,
+        "max": 0.020984
+      },
+      "peak_horizontal_speed_mps": {
+        "median": 0.341349,
+        "min": 0.327522,
+        "max": 0.425748
+      },
+      "yaw_delta_rad": {
+        "median": 0.0276,
+        "min": 0.018461,
+        "max": 0.028705
+      },
+      "mean_yaw_rate_radps": {
+        "median": 0.010415,
+        "min": 0.006878,
+        "max": 0.019752
+      },
+      "peak_yaw_rate_radps": {
+        "median": 0.376572,
+        "min": 0.312554,
+        "max": 0.981805
+      },
+      "stride_count": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "max_abs_roll_rad": {
+        "median": 0.127536,
+        "min": 0.102358,
+        "max": 0.175512
+      },
+      "max_abs_pitch_rad": {
+        "median": 0.103594,
+        "min": 0.102885,
+        "max": 0.107941
+      },
+      "max_body_rate_radps": {
+        "median": 2.690916,
+        "min": 2.26042,
+        "max": 3.991184
+      }
+    },
+    "turn_in_place": {
+      "pass_rate": 0.0,
+      "path_length_m": {
+        "median": 0.241728,
+        "min": 0.212372,
+        "max": 0.248107
+      },
+      "net_displacement_m": {
+        "median": 0.024006,
+        "min": 0.004179,
+        "max": 0.029543
+      },
+      "mean_horizontal_speed_mps": {
+        "median": 0.014054,
+        "min": 0.012347,
+        "max": 0.014425
+      },
+      "peak_horizontal_speed_mps": {
+        "median": 0.164541,
+        "min": 0.145138,
+        "max": 0.227865
+      },
+      "yaw_delta_rad": {
+        "median": -0.408967,
+        "min": -0.468177,
+        "max": -0.325299
+      },
+      "mean_yaw_rate_radps": {
+        "median": 0.124808,
+        "min": 0.119785,
+        "max": 0.130175
+      },
+      "peak_yaw_rate_radps": {
+        "median": 2.516559,
+        "min": 1.890762,
+        "max": 2.803525
+      },
+      "stride_count": {
+        "median": 2.0,
+        "min": 2.0,
+        "max": 2.0
+      },
+      "max_abs_roll_rad": {
+        "median": 0.110292,
+        "min": 0.109743,
+        "max": 0.113524
+      },
+      "max_abs_pitch_rad": {
+        "median": 0.092259,
+        "min": 0.083629,
+        "max": 0.101919
+      },
+      "max_body_rate_radps": {
+        "median": 1.688419,
+        "min": 1.24,
+        "max": 2.775571
+      }
+    }
+  }
+}

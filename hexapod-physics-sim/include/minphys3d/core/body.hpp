@@ -15,9 +15,9 @@ struct CompoundChild {
     ShapeType shape = ShapeType::Box;
     Vec3 localPosition{};
     Quat localOrientation{};
-    float radius = 0.5f;
-    float halfHeight = 0.5f;
-    Vec3 halfExtents{0.5f, 0.5f, 0.5f};
+    Real radius = 0.5;
+    Real halfHeight = 0.5;
+    Vec3 halfExtents{0.5, 0.5, 0.5};
 };
 
 inline bool IsCompoundChildShapeSupported(ShapeType shape) {
@@ -35,22 +35,22 @@ struct Body {
     Vec3 angularVelocity{};
     Vec3 torque{};
 
-    float radius = 0.5f;
-    float halfHeight = 0.5f;
-    Vec3 halfExtents{0.5f, 0.5f, 0.5f};
+    Real radius = 0.5;
+    Real halfHeight = 0.5;
+    Vec3 halfExtents{0.5, 0.5, 0.5};
     std::vector<CompoundChild> compoundChildren{};
 
-    Vec3 planeNormal{0.0f, 1.0f, 0.0f};
-    float planeOffset = 0.0f;
+    Vec3 planeNormal{0.0, 1.0, 0.0};
+    Real planeOffset = 0.0;
 
-    float mass = 1.0f;
-    float invMass = 1.0f;
+    Real mass = 1.0;
+    Real invMass = 1.0;
     Mat3 invInertiaLocal = Mat3::Identity();
-    float restitution = 0.2f;
-    float staticFriction = 0.6f;
-    float dynamicFriction = 0.4f;
-    float linearDamping = 0.0f;
-    float angularDamping = 0.0f;
+    Real restitution = 0.2;
+    Real staticFriction = 0.6;
+    Real dynamicFriction = 0.4;
+    Real linearDamping = 0.0;
+    Real angularDamping = 0.0;
     bool isStatic = false;
     bool isSleeping = false;
     bool isTerrainAttachment = false;
@@ -71,9 +71,9 @@ struct Body {
 
 /// Solid half-cylinder with local y along the cylinder axis and material in z>=0 (flat cut at z=0).
 /// Returns the vector from the primitive origin (mid-height, center of the flat diameter) to the uniform-density COM.
-inline Vec3 HalfCylinderComOffsetFromShapeOriginLocal(float radius) {
-    constexpr float kPi = 3.14159265f;
-    return {0.0f, 0.0f, 4.0f * radius / (3.0f * kPi)};
+inline Vec3 HalfCylinderComOffsetFromShapeOriginLocal(Real radius) {
+    constexpr Real kPi = 3.14159265;
+    return {0.0, 0.0, 4.0 * radius / (3.0 * kPi)};
 }
 
 /// World-space primitive frame origin used for collision geometry (equals `body.position` when `centerOfMassLocal` is zero).
@@ -94,7 +94,7 @@ inline Vec3 PrimitiveShapeBoundsHalfExtents(const Body& body) {
         case ShapeType::Box:
             return body.halfExtents;
         case ShapeType::Plane:
-            return {1e9f, 1e9f, 1e9f};
+            return {1e9, 1e9, 1e9};
         case ShapeType::Compound:
             return body.halfExtents;
     }
@@ -112,11 +112,11 @@ inline AABB ComputePrimitiveAABB(
     ShapeType shape,
     const Vec3& position,
     const Quat& orientation,
-    float radius,
-    float halfHeight,
+    Real radius,
+    Real halfHeight,
     const Vec3& halfExtents,
     const Vec3& planeNormal,
-    float planeOffset) {
+    Real planeOffset) {
     if (shape == ShapeType::Sphere) {
         return {
             {position.x - radius, position.y - radius, position.z - radius},
@@ -124,7 +124,7 @@ inline AABB ComputePrimitiveAABB(
         };
     }
     if (shape == ShapeType::Capsule) {
-        const Vec3 axis = Rotate(orientation, {0.0f, 1.0f, 0.0f});
+        const Vec3 axis = Rotate(orientation, {0.0, 1.0, 0.0});
         const Vec3 top = position + axis * halfHeight;
         const Vec3 bottom = position - axis * halfHeight;
         return {
@@ -135,10 +135,10 @@ inline AABB ComputePrimitiveAABB(
     if (shape == ShapeType::Plane) {
         Vec3 n{};
         if (!TryNormalize(planeNormal, n)) {
-            return {{-1e9f, -1e9f, -1e9f}, {1e9f, 1e9f, 1e9f}};
+            return {{-1e9, -1e9, -1e9}, {1e9, 1e9, 1e9}};
         }
         (void)planeOffset;
-        return {{-1e9f, -1e9f, -1e9f}, {1e9f, 1e9f, 1e9f}};
+        return {{-1e9, -1e9, -1e9}, {1e9, 1e9, 1e9}};
     }
 
     Vec3 boundsHalfExtents = halfExtents;
@@ -149,9 +149,9 @@ inline AABB ComputePrimitiveAABB(
     } else if (shape == ShapeType::Cylinder || shape == ShapeType::HalfCylinder) {
         boundsHalfExtents = {radius, halfHeight, radius};
     }
-    const Vec3 ax = Rotate(orientation, {1.0f, 0.0f, 0.0f});
-    const Vec3 ay = Rotate(orientation, {0.0f, 1.0f, 0.0f});
-    const Vec3 az = Rotate(orientation, {0.0f, 0.0f, 1.0f});
+    const Vec3 ax = Rotate(orientation, {1.0, 0.0, 0.0});
+    const Vec3 ay = Rotate(orientation, {0.0, 1.0, 0.0});
+    const Vec3 az = Rotate(orientation, {0.0, 0.0, 1.0});
     const Vec3 ext = {
         std::abs(ax.x) * boundsHalfExtents.x + std::abs(ay.x) * boundsHalfExtents.y + std::abs(az.x) * boundsHalfExtents.z,
         std::abs(ax.y) * boundsHalfExtents.x + std::abs(ay.y) * boundsHalfExtents.y + std::abs(az.y) * boundsHalfExtents.z,
@@ -190,7 +190,7 @@ inline Vec3 CompoundLocalBoundsHalfExtents(const Body& body) {
     if (!hasSupportedChild) {
         return body.halfExtents;
     }
-    return 0.5f * (merged.max - merged.min);
+    return 0.5 * (merged.max - merged.min);
 }
 
 inline Vec3 ShapeBoundsHalfExtents(const Body& body) {
@@ -200,7 +200,7 @@ inline Vec3 ShapeBoundsHalfExtents(const Body& body) {
     return PrimitiveShapeBoundsHalfExtents(body);
 }
 
-inline Mat3 DiagonalMat3(float ix, float iy, float iz) {
+inline Mat3 DiagonalMat3(Real ix, Real iy, Real iz) {
     Mat3 d{};
     d.m[0][0] = ix;
     d.m[1][1] = iy;
@@ -209,60 +209,60 @@ inline Mat3 DiagonalMat3(float ix, float iy, float iz) {
 }
 
 // Convex child volume in the child's local frame (used for mass splitting on compounds).
-inline float CompoundChildConvexVolume(const CompoundChild& c) {
+inline Real CompoundChildConvexVolume(const CompoundChild& c) {
     switch (c.shape) {
         case ShapeType::Box:
-            return 8.0f * c.halfExtents.x * c.halfExtents.y * c.halfExtents.z;
+            return 8.0 * c.halfExtents.x * c.halfExtents.y * c.halfExtents.z;
         case ShapeType::Sphere:
-            return (4.0f / 3.0f) * 3.14159265f * c.radius * c.radius * c.radius;
+            return (4.0 / 3.0) * 3.14159265 * c.radius * c.radius * c.radius;
         case ShapeType::Capsule: {
-            const float h = 2.0f * c.halfHeight;
-            const float cylinder = 3.14159265f * c.radius * c.radius * h;
-            const float caps = (4.0f / 3.0f) * 3.14159265f * c.radius * c.radius * c.radius;
+            const Real h = 2.0 * c.halfHeight;
+            const Real cylinder = 3.14159265 * c.radius * c.radius * h;
+            const Real caps = (4.0 / 3.0) * 3.14159265 * c.radius * c.radius * c.radius;
             return cylinder + caps;
         }
         case ShapeType::Cylinder: {
-            const float h = 2.0f * c.halfHeight;
-            return 3.14159265f * c.radius * c.radius * h;
+            const Real h = 2.0 * c.halfHeight;
+            return 3.14159265 * c.radius * c.radius * h;
         }
         default:
-            return 0.0f;
+            return 0.0;
     }
 }
 
 // Principal moments (diagonal) about the child's center, expressed in the child's principal axes.
-inline void CompoundChildPrincipalMoments(const CompoundChild& c, float childMass, float& ix, float& iy, float& iz) {
+inline void CompoundChildPrincipalMoments(const CompoundChild& c, Real childMass, Real& ix, Real& iy, Real& iz) {
     switch (c.shape) {
         case ShapeType::Sphere: {
-            const float i = 0.4f * childMass * c.radius * c.radius;
+            const Real i = 0.4 * childMass * c.radius * c.radius;
             ix = iy = iz = i;
             return;
         }
         case ShapeType::Box: {
-            const float wx = c.halfExtents.x * 2.0f;
-            const float wy = c.halfExtents.y * 2.0f;
-            const float wz = c.halfExtents.z * 2.0f;
-            ix = (childMass / 12.0f) * (wy * wy + wz * wz);
-            iy = (childMass / 12.0f) * (wx * wx + wz * wz);
-            iz = (childMass / 12.0f) * (wx * wx + wy * wy);
+            const Real wx = c.halfExtents.x * 2.0;
+            const Real wy = c.halfExtents.y * 2.0;
+            const Real wz = c.halfExtents.z * 2.0;
+            ix = (childMass / 12.0) * (wy * wy + wz * wz);
+            iy = (childMass / 12.0) * (wx * wx + wz * wz);
+            iz = (childMass / 12.0) * (wx * wx + wy * wy);
             return;
         }
         case ShapeType::Capsule: {
-            const float capsuleHeight = c.halfHeight * 2.0f + 2.0f * c.radius;
-            ix = 0.25f * childMass * c.radius * c.radius + (1.0f / 12.0f) * childMass * capsuleHeight * capsuleHeight;
-            iy = 0.5f * childMass * c.radius * c.radius;
+            const Real capsuleHeight = c.halfHeight * 2.0 + 2.0 * c.radius;
+            ix = 0.25 * childMass * c.radius * c.radius + (1.0 / 12.0) * childMass * capsuleHeight * capsuleHeight;
+            iy = 0.5 * childMass * c.radius * c.radius;
             iz = ix;
             return;
         }
         case ShapeType::Cylinder: {
-            const float height = c.halfHeight * 2.0f;
-            ix = (childMass / 12.0f) * (3.0f * c.radius * c.radius + height * height);
-            iy = 0.5f * childMass * c.radius * c.radius;
+            const Real height = c.halfHeight * 2.0;
+            ix = (childMass / 12.0) * (3.0 * c.radius * c.radius + height * height);
+            iy = 0.5 * childMass * c.radius * c.radius;
             iz = ix;
             return;
         }
         default:
-            ix = iy = iz = 0.0f;
+            ix = iy = iz = 0.0;
             return;
     }
 }
@@ -274,7 +274,7 @@ inline bool TryCompoundInvInertiaFromChildren(const Body& body, Mat3& invInertia
         return false;
     }
 
-    float totalVolume = 0.0f;
+    Real totalVolume = 0.0;
     for (const CompoundChild& ch : body.compoundChildren) {
         if (!IsCompoundChildShapeSupported(ch.shape)) {
             return false;
@@ -282,7 +282,7 @@ inline bool TryCompoundInvInertiaFromChildren(const Body& body, Mat3& invInertia
         if (ch.shape == ShapeType::HalfCylinder) {
             return false;
         }
-        const float v = CompoundChildConvexVolume(ch);
+        const Real v = CompoundChildConvexVolume(ch);
         if (v <= kEpsilon) {
             return false;
         }
@@ -293,37 +293,37 @@ inline bool TryCompoundInvInertiaFromChildren(const Body& body, Mat3& invInertia
         return false;
     }
 
-    const float mass = body.mass;
+    const Real mass = body.mass;
     Vec3 weightedPos{};
     for (const CompoundChild& ch : body.compoundChildren) {
-        const float v = CompoundChildConvexVolume(ch);
-        const float mi = mass * (v / totalVolume);
+        const Real v = CompoundChildConvexVolume(ch);
+        const Real mi = mass * (v / totalVolume);
         weightedPos += mi * ch.localPosition;
     }
     const Vec3 rCom = weightedPos / mass;
 
     Mat3 inertiaAboutOrigin{};
     for (const CompoundChild& ch : body.compoundChildren) {
-        const float v = CompoundChildConvexVolume(ch);
-        const float mi = mass * (v / totalVolume);
-        float pix = 0.0f;
-        float piy = 0.0f;
-        float piz = 0.0f;
+        const Real v = CompoundChildConvexVolume(ch);
+        const Real mi = mass * (v / totalVolume);
+        Real pix = 0.0;
+        Real piy = 0.0;
+        Real piz = 0.0;
         CompoundChildPrincipalMoments(ch, mi, pix, piy, piz);
         const Mat3 R = RotationMatrix(Normalize(ch.localOrientation));
         const Mat3 inertiaChildCm = R * DiagonalMat3(pix, piy, piz) * Transpose(R);
         const Vec3& ri = ch.localPosition;
-        const float rLenSq = Dot(ri, ri);
+        const Real rLenSq = Dot(ri, ri);
         inertiaAboutOrigin = inertiaAboutOrigin + inertiaChildCm + mi * (ScaleIdentity(rLenSq) - OuterProduct(ri, ri));
     }
 
-    const float comLenSq = Dot(rCom, rCom);
+    const Real comLenSq = Dot(rCom, rCom);
     const Mat3 inertiaAboutCom = inertiaAboutOrigin - mass * (ScaleIdentity(comLenSq) - OuterProduct(rCom, rCom));
 
     Mat3 sym{};
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            sym.m[i][j] = 0.5f * (inertiaAboutCom.m[i][j] + inertiaAboutCom.m[j][i]);
+            sym.m[i][j] = 0.5 * (inertiaAboutCom.m[i][j] + inertiaAboutCom.m[j][i]);
         }
     }
 
@@ -336,83 +336,83 @@ inline void Body::RecomputeMassProperties() {
 
     if (isStatic || mass <= kEpsilon) {
         mass = std::numeric_limits<float>::infinity();
-        invMass = 0.0f;
+        invMass = 0.0;
         invInertiaLocal = {};
         isStatic = true;
         isSleeping = false;
         return;
     }
 
-    invMass = 1.0f / mass;
+    invMass = 1.0 / mass;
     invInertiaLocal = {};
 
     if (shape == ShapeType::Sphere) {
-        const float inertia = 0.4f * mass * radius * radius;
-        const float invI = (inertia > kEpsilon) ? (1.0f / inertia) : 0.0f;
+        const Real inertia = 0.4 * mass * radius * radius;
+        const Real invI = (inertia > kEpsilon) ? (1.0 / inertia) : 0.0;
         invInertiaLocal.m[0][0] = invI;
         invInertiaLocal.m[1][1] = invI;
         invInertiaLocal.m[2][2] = invI;
     } else if (shape == ShapeType::Capsule) {
-        const float capsuleHeight = halfHeight * 2.0f + 2.0f * radius;
-        const float ix = 0.25f * mass * radius * radius + (1.0f / 12.0f) * mass * capsuleHeight * capsuleHeight;
-        const float iy = 0.5f * mass * radius * radius;
-        invInertiaLocal.m[0][0] = (ix > kEpsilon) ? (1.0f / ix) : 0.0f;
-        invInertiaLocal.m[1][1] = (iy > kEpsilon) ? (1.0f / iy) : 0.0f;
-        invInertiaLocal.m[2][2] = (ix > kEpsilon) ? (1.0f / ix) : 0.0f;
+        const Real capsuleHeight = halfHeight * 2.0 + 2.0 * radius;
+        const Real ix = 0.25 * mass * radius * radius + (1.0 / 12.0) * mass * capsuleHeight * capsuleHeight;
+        const Real iy = 0.5 * mass * radius * radius;
+        invInertiaLocal.m[0][0] = (ix > kEpsilon) ? (1.0 / ix) : 0.0;
+        invInertiaLocal.m[1][1] = (iy > kEpsilon) ? (1.0 / iy) : 0.0;
+        invInertiaLocal.m[2][2] = (ix > kEpsilon) ? (1.0 / ix) : 0.0;
     } else if (shape == ShapeType::Cylinder) {
-        const float height = halfHeight * 2.0f;
-        const float ix = (mass / 12.0f) * (3.0f * radius * radius + height * height);
-        const float iy = 0.5f * mass * radius * radius;
-        invInertiaLocal.m[0][0] = (ix > kEpsilon) ? (1.0f / ix) : 0.0f;
-        invInertiaLocal.m[1][1] = (iy > kEpsilon) ? (1.0f / iy) : 0.0f;
-        invInertiaLocal.m[2][2] = (ix > kEpsilon) ? (1.0f / ix) : 0.0f;
+        const Real height = halfHeight * 2.0;
+        const Real ix = (mass / 12.0) * (3.0 * radius * radius + height * height);
+        const Real iy = 0.5 * mass * radius * radius;
+        invInertiaLocal.m[0][0] = (ix > kEpsilon) ? (1.0 / ix) : 0.0;
+        invInertiaLocal.m[1][1] = (iy > kEpsilon) ? (1.0 / iy) : 0.0;
+        invInertiaLocal.m[2][2] = (ix > kEpsilon) ? (1.0 / ix) : 0.0;
     } else if (shape == ShapeType::HalfCylinder) {
         centerOfMassLocal = HalfCylinderComOffsetFromShapeOriginLocal(radius);
-        const float H = halfHeight;
-        const float R = radius;
-        const float zc = centerOfMassLocal.z;
-        const float IxxO = mass * (H * H / 3.0f + R * R / 4.0f);
-        const float IyyO = 0.5f * mass * R * R;
-        const float IzzO = mass * (H * H / 3.0f + R * R / 4.0f);
-        const float mzc2 = mass * zc * zc;
-        const float Ixx = std::max(IxxO - mzc2, kEpsilon * mass);
-        const float Iyy = std::max(IyyO - mzc2, kEpsilon * mass);
-        const float Izz = std::max(IzzO - mzc2, kEpsilon * mass);
-        invInertiaLocal.m[0][0] = 1.0f / Ixx;
-        invInertiaLocal.m[1][1] = 1.0f / Iyy;
-        invInertiaLocal.m[2][2] = 1.0f / Izz;
+        const Real H = halfHeight;
+        const Real R = radius;
+        const Real zc = centerOfMassLocal.z;
+        const Real IxxO = mass * (H * H / 3.0 + R * R / 4.0);
+        const Real IyyO = 0.5 * mass * R * R;
+        const Real IzzO = mass * (H * H / 3.0 + R * R / 4.0);
+        const Real mzc2 = mass * zc * zc;
+        const Real Ixx = std::max(IxxO - mzc2, kEpsilon * mass);
+        const Real Iyy = std::max(IyyO - mzc2, kEpsilon * mass);
+        const Real Izz = std::max(IzzO - mzc2, kEpsilon * mass);
+        invInertiaLocal.m[0][0] = 1.0 / Ixx;
+        invInertiaLocal.m[1][1] = 1.0 / Iyy;
+        invInertiaLocal.m[2][2] = 1.0 / Izz;
     } else if (shape == ShapeType::Box) {
-        const float wx = halfExtents.x * 2.0f;
-        const float wy = halfExtents.y * 2.0f;
-        const float wz = halfExtents.z * 2.0f;
+        const Real wx = halfExtents.x * 2.0;
+        const Real wy = halfExtents.y * 2.0;
+        const Real wz = halfExtents.z * 2.0;
 
-        const float ix = (mass / 12.0f) * (wy * wy + wz * wz);
-        const float iy = (mass / 12.0f) * (wx * wx + wz * wz);
-        const float iz = (mass / 12.0f) * (wx * wx + wy * wy);
+        const Real ix = (mass / 12.0) * (wy * wy + wz * wz);
+        const Real iy = (mass / 12.0) * (wx * wx + wz * wz);
+        const Real iz = (mass / 12.0) * (wx * wx + wy * wy);
 
-        invInertiaLocal.m[0][0] = (ix > kEpsilon) ? (1.0f / ix) : 0.0f;
-        invInertiaLocal.m[1][1] = (iy > kEpsilon) ? (1.0f / iy) : 0.0f;
-        invInertiaLocal.m[2][2] = (iz > kEpsilon) ? (1.0f / iz) : 0.0f;
+        invInertiaLocal.m[0][0] = (ix > kEpsilon) ? (1.0 / ix) : 0.0;
+        invInertiaLocal.m[1][1] = (iy > kEpsilon) ? (1.0 / iy) : 0.0;
+        invInertiaLocal.m[2][2] = (iz > kEpsilon) ? (1.0 / iz) : 0.0;
     } else if (shape == ShapeType::Compound) {
         if (!TryCompoundInvInertiaFromChildren(*this, invInertiaLocal)) {
             const Vec3 localHalfExtents = CompoundLocalBoundsHalfExtents(*this);
-            const float wx = std::max(localHalfExtents.x * 2.0f, kEpsilon);
-            const float wy = std::max(localHalfExtents.y * 2.0f, kEpsilon);
-            const float wz = std::max(localHalfExtents.z * 2.0f, kEpsilon);
+            const Real wx = std::max(localHalfExtents.x * 2.0, kEpsilon);
+            const Real wy = std::max(localHalfExtents.y * 2.0, kEpsilon);
+            const Real wz = std::max(localHalfExtents.z * 2.0, kEpsilon);
 
-            const float ix = (mass / 12.0f) * (wy * wy + wz * wz);
-            const float iy = (mass / 12.0f) * (wx * wx + wz * wz);
-            const float iz = (mass / 12.0f) * (wx * wx + wy * wy);
+            const Real ix = (mass / 12.0) * (wy * wy + wz * wz);
+            const Real iy = (mass / 12.0) * (wx * wx + wz * wz);
+            const Real iz = (mass / 12.0) * (wx * wx + wy * wy);
 
-            invInertiaLocal.m[0][0] = (ix > kEpsilon) ? (1.0f / ix) : 0.0f;
-            invInertiaLocal.m[1][1] = (iy > kEpsilon) ? (1.0f / iy) : 0.0f;
-            invInertiaLocal.m[2][2] = (iz > kEpsilon) ? (1.0f / iz) : 0.0f;
+            invInertiaLocal.m[0][0] = (ix > kEpsilon) ? (1.0 / ix) : 0.0;
+            invInertiaLocal.m[1][1] = (iy > kEpsilon) ? (1.0 / iy) : 0.0;
+            invInertiaLocal.m[2][2] = (iz > kEpsilon) ? (1.0 / iz) : 0.0;
         }
     }
 }
 
 inline Mat3 Body::InvInertiaWorld() const {
-    if (invMass == 0.0f) return {};
+    if (invMass == 0.0) return {};
     const Mat3 R = RotationMatrix(orientation);
     return R * invInertiaLocal * Transpose(R);
 }

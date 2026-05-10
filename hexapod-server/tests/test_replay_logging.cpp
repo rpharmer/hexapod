@@ -141,6 +141,12 @@ replay_json::ReplayTelemetryRecord makeSampleRecord()
     record.terrain_snapshot.elevation_has_data = true;
     record.terrain_snapshot.ground_elevation_has_data = true;
     record.terrain_snapshot.nearest_obstacle_distance_m = 0.18;
+
+    record.governor.current_support_count = 6;
+    record.governor.confirmed_support_count = 6;
+    record.governor.uncertain_support_count = 0;
+    record.governor.recovery_stage = RecoveryStage::RampOut;
+    record.governor.recovery_release_ready = true;
     return record;
 }
 
@@ -153,6 +159,12 @@ bool testSerializerIncludesKeySections()
                   "replay payload should include schema version 4") &&
            expect(payload.find("\"governor\":{\"severity\":0") != std::string::npos,
                   "replay payload should include governor snapshot") &&
+           expect(payload.find("\"recovery_stage\":\"ramp_out\"") != std::string::npos,
+                  "replay payload should include recovery stage") &&
+           expect(payload.find("\"recovery_release_ready\":true") != std::string::npos,
+                  "replay payload should include recovery release readiness") &&
+           expect(payload.find("\"recovery_hold_active\":false") != std::string::npos,
+                  "replay payload should include recovery-hold state") &&
            expect(payload.find("\"terrain_patch\":{\"fresh\":true") != std::string::npos,
                   "replay payload should include terrain patch summary") &&
            expect(payload.find("\"grid_origin_xy\"") != std::string::npos,

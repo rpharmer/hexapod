@@ -21,12 +21,13 @@
 #include "minphys3d/core/world.hpp"
 #include "minphys3d/demo/hexapod_scene.hpp"
 #include "minphys3d/demo/hexapod_stability.hpp"
+#include "hexapod_dynamics_constants.hpp"
 #include "physics_sim_protocol.hpp"
 
 namespace minphys3d::demo {
 namespace {
 
-constexpr float kPi = 3.14159265358979323846f;
+constexpr Real kPi = 3.14159265358979323846;
 
 const char* SinkName(SinkKind sink_kind) {
     switch (sink_kind) {
@@ -78,86 +79,91 @@ private:
 
 struct HexapodLegSpec {
     Vec3 mountOffsetBody{};
-    float mountAngleDegrees = 0.0f;
+    Real mountAngleDegrees = 0.0;
 };
 
 const std::array<HexapodLegSpec, 6> kHexapodLegSpecs{{
-    {{0.063f, -0.007f, -0.0835f}, 143.0f},
-    {{-0.063f, -0.007f, -0.0835f}, 217.0f},
-    {{0.0815f, -0.007f, 0.0f}, 90.0f},
-    {{-0.0815f, -0.007f, 0.0f}, 270.0f},
-    {{0.063f, -0.007f, 0.0835f}, 37.0f},
-    {{-0.063f, -0.007f, 0.0835f}, 323.0f},
+    {{0.063, -0.007, -0.0835}, 143.0},
+    {{-0.063, -0.007, -0.0835}, 217.0},
+    {{0.0815, -0.007, 0.0}, 90.0},
+    {{-0.0815, -0.007, 0.0}, 270.0},
+    {{0.063, -0.007, 0.0835}, 37.0},
+    {{-0.063, -0.007, 0.0835}, 323.0},
 }};
 
-constexpr float kBodyMass = 0.40f;
-constexpr float kCoxaMass = 0.055f;
-constexpr float kFemurMass = 0.070f;
-constexpr float kTibiaMass = 0.055f;
-constexpr float kFootMass = 0.008f;
+constexpr Real kBodyMass = static_cast<float>(hexapod_dynamics::kBodyMassKg);
+constexpr Real kCoxaMass = static_cast<float>(hexapod_dynamics::kCoxaMassKg);
+constexpr Real kFemurMass = static_cast<float>(hexapod_dynamics::kFemurMassKg);
+constexpr Real kTibiaMass = static_cast<float>(hexapod_dynamics::kTibiaMassKg);
+constexpr Real kFootMass = static_cast<float>(hexapod_dynamics::kFootMassKg);
 
-constexpr float kCoxaLength = 0.043f;
-constexpr float kFemurLength = 0.060f;
-constexpr float kTibiaLength = physics_sim::kHexapodTibiaLinkLengthM;
-constexpr float kBodyToBottom = 0.040f;
-constexpr float kHipMountOutboard = 0.010f;
-constexpr float kCoxaRenderLength = kCoxaLength;
-constexpr float kFemurRenderLength = kFemurLength;
-constexpr float kTibiaRenderLength = kTibiaLength;
+constexpr Real kCoxaLength = 0.043;
+constexpr Real kFemurLength = 0.060;
+constexpr Real kTibiaLength = static_cast<float>(hexapod_dynamics::kTibiaLinkLengthM);
+constexpr Real kBodyToBottom = 0.040;
+constexpr Real kHipMountOutboard = 0.010;
+constexpr Real kCoxaRenderLength = kCoxaLength;
+constexpr Real kFemurRenderLength = kFemurLength;
+constexpr Real kTibiaRenderLength = kTibiaLength;
 
 
 // Shared servo profile for every leg joint. All six legs get the same max torque so the
 // built-in preset stays symmetric and the solver/constraint behavior is not biased by joint type.
-constexpr float kHexapodServoMaxTorque = 28.0f;
-constexpr float kHexapodServoPositionGain = 160.0f;  // omega_n (rad/s)
-constexpr float kHexapodServoDampingGain = 1.24f;     // zeta (slightly overdamped)
-constexpr float kHexapodServoMaxSpeed = 8.0f;
+constexpr Real kHexapodServoMaxTorque = static_cast<float>(hexapod_dynamics::kServoMaxTorqueNm);
+constexpr Real kHexapodServoPositionGain = static_cast<float>(hexapod_dynamics::kServoOmegaN);
+constexpr Real kHexapodServoDampingGain = static_cast<float>(hexapod_dynamics::kServoZeta);
+// Joint velocity envelope. The original 8 rad/s value was being pinned every stride during
+// fast tripod transitions (max_joint_vel_radps = 7.99954, max_foot_speed_mps ≈ 8 × 0.2 m).
+// Raising to 10 rad/s gives the controller's commanded swing speeds genuine headroom and
+// removes the silent-saturation symptom. Real digital hobby/metal-gear servos in this size
+// class run 8–12 rad/s no-load — 10 keeps the constraint plausible.
+constexpr Real kHexapodServoMaxSpeed = 10.0;
 
 Quat QuaternionFromBasis(const Vec3& x_axis, const Vec3& y_axis, const Vec3& z_axis) {
-    const float m00 = x_axis.x;
-    const float m01 = y_axis.x;
-    const float m02 = z_axis.x;
-    const float m10 = x_axis.y;
-    const float m11 = y_axis.y;
-    const float m12 = z_axis.y;
-    const float m20 = x_axis.z;
-    const float m21 = y_axis.z;
-    const float m22 = z_axis.z;
+    const Real m00 = x_axis.x;
+    const Real m01 = y_axis.x;
+    const Real m02 = z_axis.x;
+    const Real m10 = x_axis.y;
+    const Real m11 = y_axis.y;
+    const Real m12 = z_axis.y;
+    const Real m20 = x_axis.z;
+    const Real m21 = y_axis.z;
+    const Real m22 = z_axis.z;
 
-    const float trace = m00 + m11 + m22;
-    if (trace > 0.0f) {
-        const float s = std::sqrt(trace + 1.0f) * 2.0f;
+    const Real trace = m00 + m11 + m22;
+    if (trace > 0.0) {
+        const Real s = std::sqrt(trace + 1.0) * 2.0;
         return Normalize(Quat{
-            0.25f * s,
+            0.25 * s,
             (m21 - m12) / s,
             (m02 - m20) / s,
             (m10 - m01) / s,
         });
     }
     if (m00 > m11 && m00 > m22) {
-        const float s = std::sqrt(1.0f + m00 - m11 - m22) * 2.0f;
+        const Real s = std::sqrt(1.0 + m00 - m11 - m22) * 2.0;
         return Normalize(Quat{
             (m21 - m12) / s,
-            0.25f * s,
+            0.25 * s,
             (m01 + m10) / s,
             (m02 + m20) / s,
         });
     }
     if (m11 > m22) {
-        const float s = std::sqrt(1.0f + m11 - m00 - m22) * 2.0f;
+        const Real s = std::sqrt(1.0 + m11 - m00 - m22) * 2.0;
         return Normalize(Quat{
             (m02 - m20) / s,
             (m01 + m10) / s,
-            0.25f * s,
+            0.25 * s,
             (m12 + m21) / s,
         });
     }
-    const float s = std::sqrt(1.0f + m22 - m00 - m11) * 2.0f;
+    const Real s = std::sqrt(1.0 + m22 - m00 - m11) * 2.0;
     return Normalize(Quat{
         (m10 - m01) / s,
         (m02 + m20) / s,
         (m12 + m21) / s,
-        0.25f * s,
+        0.25 * s,
     });
 }
 
@@ -168,7 +174,7 @@ Quat OrientationFromLongAxisAndHint(const Vec3& long_axis, const Vec3& hint_axis
     }
     Vec3 y_axis = hint_axis - Dot(hint_axis, x_axis) * x_axis;
     if (!TryNormalize(y_axis, y_axis)) {
-        const Vec3 fallback = (std::abs(x_axis.y) < 0.9f) ? Vec3{0.0f, 1.0f, 0.0f} : Vec3{1.0f, 0.0f, 0.0f};
+        const Vec3 fallback = (std::abs(x_axis.y) < 0.9) ? Vec3{0.0, 1.0, 0.0} : Vec3{1.0, 0.0, 0.0};
         y_axis = fallback - Dot(fallback, x_axis) * x_axis;
         if (!TryNormalize(y_axis, y_axis)) {
             return {};
@@ -179,27 +185,27 @@ Quat OrientationFromLongAxisAndHint(const Vec3& long_axis, const Vec3& hint_axis
     return QuaternionFromBasis(x_axis, y_axis, z_axis);
 }
 
-Vec3 LegAxisFromMountAngleDegrees(float angle_degrees) {
-    const float radians = angle_degrees * kPi / 180.0f;
-    return Normalize(Vec3{std::sin(radians), 0.0f, std::cos(radians)});
+Vec3 LegAxisFromMountAngleDegrees(Real angle_degrees) {
+    const Real radians = angle_degrees * kPi / 180.0;
+    return Normalize(Vec3{std::sin(radians), 0.0, std::cos(radians)});
 }
 
-Vec3 LegPitchDirection(const Vec3& leg_axis, float angle_radians) {
-    return Normalize(leg_axis * std::cos(angle_radians) + Vec3{0.0f, 1.0f, 0.0f} * std::sin(angle_radians));
+Vec3 LegPitchDirection(const Vec3& leg_axis, Real angle_radians) {
+    return Normalize(leg_axis * std::cos(angle_radians) + Vec3{0.0, 1.0, 0.0} * std::sin(angle_radians));
 }
 
-Body MakeBoxLinkBody(const Vec3& position, const Quat& orientation, const Vec3& half_extents, float mass) {
+Body MakeBoxLinkBody(const Vec3& position, const Quat& orientation, const Vec3& half_extents, Real mass) {
     Body body;
     body.shape = ShapeType::Box;
     body.position = position;
     body.orientation = orientation;
     body.halfExtents = half_extents;
     body.mass = mass;
-    body.restitution = 0.02f;
-    body.staticFriction = 0.65f;
-    body.dynamicFriction = 0.45f;
-    body.linearDamping = 2.0f;
-    body.angularDamping = 10.0f;
+    body.restitution = 0.02;
+    body.staticFriction = 0.65;
+    body.dynamicFriction = 0.45;
+    body.linearDamping = 2.0;
+    body.angularDamping = 10.0;
     return body;
 }
 
@@ -212,7 +218,7 @@ CompoundChild MakeCompoundBoxChild(const Vec3& local_position, const Vec3& half_
     return child;
 }
 
-CompoundChild MakeCompoundSphereChild(const Vec3& local_position, float radius) {
+CompoundChild MakeCompoundSphereChild(const Vec3& local_position, Real radius) {
     CompoundChild child;
     child.shape = ShapeType::Sphere;
     child.localPosition = local_position;
@@ -227,24 +233,24 @@ Vec3 CompoundChildWorldPosition(const Body& body, std::size_t child_index) {
     return body.position + Rotate(body.orientation, body.compoundChildren[child_index].localPosition);
 }
 
-Body MakeCompoundChassisBody(const Vec3& position, float mass) {
+Body MakeCompoundChassisBody(const Vec3& position, Real mass) {
     Body body;
     body.shape = ShapeType::Compound;
     body.position = position;
     body.mass = mass;
-    body.restitution = 0.0f;
-    body.staticFriction = 0.60f;
-    body.dynamicFriction = 0.45f;
-    body.linearDamping = 2.0f;
-    body.angularDamping = 16.0f;
+    body.restitution = 0.0;
+    body.staticFriction = 0.60;
+    body.dynamicFriction = 0.45;
+    body.linearDamping = 2.0;
+    body.angularDamping = 16.0;
     body.compoundChildren = {
-        MakeCompoundBoxChild({0.0f, -0.024f, 0.0f}, {0.050f, 0.010f, 0.052f}),
-        MakeCompoundBoxChild({0.0f, -0.024f, 0.070f}, {0.050f, 0.010f, 0.018f}),
-        MakeCompoundBoxChild({0.0f, -0.024f, -0.070f}, {0.050f, 0.010f, 0.018f}),
-        MakeCompoundBoxChild({0.067f, -0.024f, 0.0f}, {0.009f, 0.010f, 0.048f}),
-        MakeCompoundBoxChild({-0.067f, -0.024f, 0.0f}, {0.009f, 0.010f, 0.048f}),
-        MakeCompoundBoxChild({0.0f, -0.010f, 0.0f}, {0.072f, 0.008f, 0.030f}),
-        MakeCompoundBoxChild({0.0f, 0.012f, 0.0f}, {0.038f, 0.016f, 0.042f}),
+        MakeCompoundBoxChild({0.0, -0.024, 0.0}, {0.050, 0.010, 0.052}),
+        MakeCompoundBoxChild({0.0, -0.024, 0.070}, {0.050, 0.010, 0.018}),
+        MakeCompoundBoxChild({0.0, -0.024, -0.070}, {0.050, 0.010, 0.018}),
+        MakeCompoundBoxChild({0.067, -0.024, 0.0}, {0.009, 0.010, 0.048}),
+        MakeCompoundBoxChild({-0.067, -0.024, 0.0}, {0.009, 0.010, 0.048}),
+        MakeCompoundBoxChild({0.0, -0.010, 0.0}, {0.072, 0.008, 0.030}),
+        MakeCompoundBoxChild({0.0, 0.012, 0.0}, {0.038, 0.016, 0.042}),
     };
     return body;
 }
@@ -264,12 +270,12 @@ void SyncBuiltInHexapodServoTargets(World& world, const HexapodSceneObjects& sce
         for (const std::uint32_t joint_id : joint_ids) {
             ServoJoint& joint = world.GetServoJointMutable(joint_id);
             joint.targetAngle = world.GetServoJointAngle(joint_id);
-            joint.integralAccum = 0.0f;
+            joint.integralAccum = 0.0;
         }
     }
 }
 
-float ComputeStandingBodyHeight() {
+Real ComputeStandingBodyHeight() {
     const Vec3 leg_axis = LegAxisFromMountAngleDegrees(kHexapodLegSpecs.front().mountAngleDegrees);
     const Vec3 femur_direction = LegPitchDirection(leg_axis, physics_sim::kAssemblyFemurPitchRad);
     const Vec3 tibia_direction =
@@ -281,8 +287,8 @@ float ComputeStandingBodyHeight() {
         + tibia_direction * kTibiaLength;
     // Extra clearance so the first contact frames do not start with feet intersecting the plane when
     // identical servos ramp holding torque (slightly conservative over analytic foot height).
-    constexpr float kSpawnHeightMargin = 0.002f;
-    return std::max(kBodyToBottom, physics_sim::kHexapodFootRadiusM - foot_center_relative.y + 0.001f) +
+    constexpr Real kSpawnHeightMargin = 0.002;
+    return std::max(kBodyToBottom, physics_sim::kHexapodFootRadiusM - foot_center_relative.y + 0.001) +
            kSpawnHeightMargin;
 }
 
@@ -291,29 +297,29 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
 
     Body plane;
     plane.shape = ShapeType::Plane;
-    plane.planeNormal = {0.0f, 1.0f, 0.0f};
-    plane.planeOffset = 0.0f;
-    plane.restitution = 0.05f;
-    plane.staticFriction = 0.9f;
-    plane.dynamicFriction = 0.65f;
+    plane.planeNormal = {0.0, 1.0, 0.0};
+    plane.planeOffset = 0.0;
+    plane.restitution = 0.05;
+    plane.staticFriction = 0.9;
+    plane.dynamicFriction = 0.65;
     plane.collisionMask = ~std::uint32_t(0x0002);
     scene.plane = world.CreateBody(plane);
     scene.body_ids.push_back(scene.plane);
 
-    const float body_height = ComputeStandingBodyHeight();
-    Body chassis = MakeCompoundChassisBody({0.0f, body_height, 0.0f}, kBodyMass);
+    const Real body_height = ComputeStandingBodyHeight();
+    Body chassis = MakeCompoundChassisBody({0.0, body_height, 0.0}, kBodyMass);
     chassis.collisionGroup = 0x0002;
     scene.body = world.CreateBody(chassis);
     scene.body_ids.push_back(scene.body);
 
-    constexpr float kCoxaHalfLength = 0.5f * kCoxaRenderLength;
-    constexpr float kFemurHalfLength = 0.5f * kFemurRenderLength;
-    constexpr float kTibiaHalfLength = 0.5f * kTibiaRenderLength;
+    constexpr Real kCoxaHalfLength = 0.5 * kCoxaRenderLength;
+    constexpr Real kFemurHalfLength = 0.5 * kFemurRenderLength;
+    constexpr Real kTibiaHalfLength = 0.5 * kTibiaRenderLength;
 
     for (std::size_t leg_index = 0; leg_index < kHexapodLegSpecs.size(); ++leg_index) {
         const HexapodLegSpec& leg_spec = kHexapodLegSpecs[leg_index];
         const Vec3 leg_axis = LegAxisFromMountAngleDegrees(leg_spec.mountAngleDegrees);
-        const Vec3 lateral_axis = Normalize(Cross(leg_axis, Vec3{0.0f, 1.0f, 0.0f}));
+        const Vec3 lateral_axis = Normalize(Cross(leg_axis, Vec3{0.0, 1.0, 0.0}));
         const Vec3 hip_anchor = chassis.position + leg_spec.mountOffsetBody + leg_axis * kHipMountOutboard;
         const Vec3 femur_direction = LegPitchDirection(leg_axis, physics_sim::kAssemblyFemurPitchRad);
         const Vec3 tibia_direction =
@@ -329,15 +335,15 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
 
         Body coxa = MakeBoxLinkBody(
             coxa_center,
-            OrientationFromLongAxisAndHint(leg_axis, {0.0f, 1.0f, 0.0f}),
-            {kCoxaHalfLength, 0.009f, 0.011f},
+            OrientationFromLongAxisAndHint(leg_axis, {0.0, 1.0, 0.0}),
+            {kCoxaHalfLength, 0.009, 0.011},
             kCoxaMass);
         const std::uint32_t coxa_id = world.CreateBody(coxa);
 
         Body femur = MakeBoxLinkBody(
             femur_center,
             OrientationFromLongAxisAndHint(femur_direction, lateral_axis),
-            {kFemurHalfLength, 0.010f, 0.012f},
+            {kFemurHalfLength, 0.010, 0.012},
             kFemurMass);
         const std::uint32_t femur_id = world.CreateBody(femur);
 
@@ -349,13 +355,13 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
         tibia.position = tibia_center;
         tibia.orientation = tibia_orientation;
         tibia.mass = kTibiaMass + kFootMass;
-        tibia.restitution = 0.0f;
-        tibia.staticFriction = 0.60f;
-        tibia.dynamicFriction = 0.45f;
-        tibia.linearDamping = 2.0f;
-        tibia.angularDamping = 10.0f;
+        tibia.restitution = 0.0;
+        tibia.staticFriction = 0.60;
+        tibia.dynamicFriction = 0.45;
+        tibia.linearDamping = 2.0;
+        tibia.angularDamping = 10.0;
         tibia.compoundChildren = {
-            MakeCompoundBoxChild({0.0f, 0.0f, 0.0f}, {kTibiaHalfLength, 0.009f, 0.009f}),
+            MakeCompoundBoxChild({0.0, 0.0, 0.0}, {kTibiaHalfLength, 0.009, 0.009}),
             MakeCompoundSphereChild(foot_local_offset, physics_sim::kHexapodFootRadiusM),
         };
         const std::uint32_t tibia_id = world.CreateBody(tibia);
@@ -364,49 +370,49 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
             scene.body,
             coxa_id,
             hip_anchor,
-            {0.0f, 1.0f, 0.0f},
-            0.0f,
+            {0.0, 1.0, 0.0},
+            0.0,
             kHexapodServoMaxTorque,
             kHexapodServoPositionGain,
             kHexapodServoDampingGain,
-            0.0f,
-            0.5f,
-            0.0f,
-            1.0f,
+            0.0,
+            0.5,
+            0.0,
+            1.0,
             kHexapodServoMaxSpeed,
-            0.5f);
+            0.5);
 
         const std::uint32_t coxa_to_femur_joint = world.CreateServoJoint(
             coxa_id,
             femur_id,
             femur_anchor,
             lateral_axis,
-            0.0f,
+            0.0,
             kHexapodServoMaxTorque,
             kHexapodServoPositionGain,
             kHexapodServoDampingGain,
-            0.0f,
-            0.5f,
-            0.0f,
-            1.0f,
+            0.0,
+            0.5,
+            0.0,
+            1.0,
             kHexapodServoMaxSpeed,
-            0.5f);
+            0.5);
 
         const std::uint32_t femur_to_tibia_joint = world.CreateServoJoint(
             femur_id,
             tibia_id,
             tibia_anchor,
             lateral_axis,
-            0.0f,
+            0.0,
             kHexapodServoMaxTorque,
             kHexapodServoPositionGain,
             kHexapodServoDampingGain,
-            0.0f,
-            0.5f,
-            0.0f,
-            1.0f,
+            0.0,
+            0.5,
+            0.0,
+            1.0,
             kHexapodServoMaxSpeed,
-            0.5f);
+            0.5);
 
         // Geometric invariant: the femur body only rotates around the lateral axis, so
         // the lateral axis in world space is identical for coxa_to_femur and femur_to_tibia.
@@ -441,12 +447,12 @@ void RelaxBuiltInHexapodServos(World& world, const HexapodSceneObjects& scene) {
     // Servo gains are now omega_n / zeta (mass-normalized by the soft constraint formulation),
     // so no linear gain scaling is needed. Position-pass stabilization is disabled to avoid
     // double stabilization with the velocity-level soft constraint motor.
-    constexpr float kIntegralToPositionRatio = 0.0f;
-    constexpr float kAngleStabilizationScale = 0.0f;
+    constexpr Real kIntegralToPositionRatio = 0.0;
+    constexpr Real kAngleStabilizationScale = 0.0;
     for (const std::uint32_t joint_id : HexapodServoJointIds(scene)) {
         ServoJoint& joint = world.GetServoJointMutable(joint_id);
         joint.integralGain = kIntegralToPositionRatio * joint.positionGain;
-        joint.integralClamp = std::max(joint.integralClamp, 0.75f);
+        joint.integralClamp = std::max(joint.integralClamp, 0.75);
         joint.angleStabilizationScale = kAngleStabilizationScale;
     }
 }
@@ -455,14 +461,14 @@ void RelaxZeroGravityHexapodServos(World& world, const HexapodSceneObjects& scen
     // The built-in hexapod gains are tuned to hold the chassis up against gravity + foot contacts.
     // In zero-G that same stiffness overdrives the free-floating articulated tree, so keep the pose
     // targets but scale the motor terms down for the weightless preview preset.
-    constexpr float kZeroGServoScale = 0.25f;
+    constexpr Real kZeroGServoScale = 0.25;
     for (const std::uint32_t joint_id : HexapodServoJointIds(scene)) {
         ServoJoint& joint = world.GetServoJointMutable(joint_id);
         joint.maxServoTorque *= kZeroGServoScale;
         joint.positionGain *= kZeroGServoScale;
         joint.dampingGain *= kZeroGServoScale;
         joint.integralGain *= kZeroGServoScale;
-        joint.angleStabilizationScale = 0.0f;
+        joint.angleStabilizationScale = 0.0;
     }
 }
 
@@ -498,67 +504,67 @@ int RunClassicDemo(
 
     Body plane;
     plane.shape = ShapeType::Plane;
-    plane.planeNormal = {0.0f, 1.0f, 0.0f};
-    plane.planeOffset = 0.0f;
-    plane.restitution = 0.05f;
-    plane.staticFriction = 0.9f;
-    plane.dynamicFriction = 0.65f;
+    plane.planeNormal = {0.0, 1.0, 0.0};
+    plane.planeOffset = 0.0;
+    plane.restitution = 0.05;
+    plane.staticFriction = 0.9;
+    plane.dynamicFriction = 0.65;
     const std::uint32_t plane_id = world.CreateBody(plane);
 
     Body box_a;
     box_a.shape = ShapeType::Box;
-    box_a.position = {0.0f, 0.9f, 0.0f};
-    box_a.halfExtents = {0.6f, 0.25f, 0.5f};
-    box_a.mass = 3.0f;
-    box_a.restitution = 0.05f;
-    box_a.staticFriction = 0.8f;
-    box_a.dynamicFriction = 0.55f;
+    box_a.position = {0.0, 0.9, 0.0};
+    box_a.halfExtents = {0.6, 0.25, 0.5};
+    box_a.mass = 3.0;
+    box_a.restitution = 0.05;
+    box_a.staticFriction = 0.8;
+    box_a.dynamicFriction = 0.55;
     const std::uint32_t box_a_id = world.CreateBody(box_a);
 
     Body box_b;
     box_b.shape = ShapeType::Box;
-    box_b.position = {0.1f, 2.1f, 0.0f};
-    box_b.velocity = {0.0f, -0.2f, 0.0f};
-    box_b.halfExtents = {0.5f, 0.25f, 0.4f};
-    box_b.mass = 2.0f;
-    box_b.restitution = 0.03f;
-    box_b.staticFriction = 0.78f;
-    box_b.dynamicFriction = 0.5f;
-    box_b.orientation = Normalize(Quat{0.9914f, 0.0f, 0.0f, 0.1305f});
+    box_b.position = {0.1, 2.1, 0.0};
+    box_b.velocity = {0.0, -0.2, 0.0};
+    box_b.halfExtents = {0.5, 0.25, 0.4};
+    box_b.mass = 2.0;
+    box_b.restitution = 0.03;
+    box_b.staticFriction = 0.78;
+    box_b.dynamicFriction = 0.5;
+    box_b.orientation = Normalize(Quat{0.9914, 0.0, 0.0, 0.1305});
     const std::uint32_t box_b_id = world.CreateBody(box_b);
 
     Body sphere;
     sphere.shape = ShapeType::Sphere;
-    sphere.position = {1.25f, 2.8f, 0.0f};
-    sphere.velocity = {-3.2f, -0.2f, 0.1f};
-    sphere.radius = 0.35f;
-    sphere.mass = 1.0f;
-    sphere.restitution = 0.25f;
+    sphere.position = {1.25, 2.8, 0.0};
+    sphere.velocity = {-3.2, -0.2, 0.1};
+    sphere.radius = 0.35;
+    sphere.mass = 1.0;
+    sphere.restitution = 0.25;
     const std::uint32_t sphere_id = world.CreateBody(sphere);
 
     world.CreateDistanceJoint(
         box_b_id,
         sphere_id,
-        world.GetBody(box_b_id).position + Vec3{0.0f, 0.25f, 0.0f},
+        world.GetBody(box_b_id).position + Vec3{0.0, 0.25, 0.0},
         world.GetBody(sphere_id).position,
-        0.2f,
-        0.15f);
+        0.2,
+        0.15);
 
     world.CreateHingeJoint(
         box_a_id,
         box_b_id,
-        world.GetBody(box_a_id).position + Vec3{0.0f, 0.25f, 0.0f},
-        {0.0f, 1.0f, 0.0f},
+        world.GetBody(box_a_id).position + Vec3{0.0, 0.25, 0.0},
+        {0.0, 1.0, 0.0},
         true,
-        -0.5f,
-        0.5f,
+        -0.5,
+        0.5,
         true,
-        0.5f,
-        0.2f);
+        0.5,
+        0.2);
 
     std::unique_ptr<FrameSink> sink = MakeFrameSink(sink_kind, udp_host, udp_port);
 
-    constexpr float dt = 1.0f / 60.0f;
+    constexpr Real dt = 1.0 / 60.0;
     const DemoSteadyClock::time_point t0 = DemoSteadyClock::now();
     for (int frame = 0; frame < frame_count; ++frame) {
         world.Step(dt, 16);
@@ -646,14 +652,14 @@ int RunHexapodDemo(
     std::unique_ptr<FrameSink> sink = MakeFrameSink(sink_kind, udp_host, udp_port);
 
     // Zero-G still needs an extra downscale because there is no gravity/contact damping at all.
-    if (minphys3d::LengthSquared(gravity) < 1.0e-4f) {
+    if (minphys3d::LengthSquared(gravity) < 1.0e-4) {
         RelaxZeroGravityHexapodServos(world, scene);
     }
 
-    constexpr float dt = 1.0f / 60.0f;
+    constexpr Real dt = 1.0 / 60.0;
     const int kPhysicsSubstepsPerFrame = kHexapodPoseHoldBenchmarkSubstepsPerFrame;
     const int effective_solver_iterations = std::max(1, solver_iterations);
-    std::array<float, 18> previous_angles{};
+    std::array<Real, 18> previous_angles{};
     {
         std::size_t angle_index = 0;
         for (const std::uint32_t joint_id : HexapodServoJointIds(scene)) {
@@ -680,15 +686,15 @@ int RunHexapodDemo(
         if (run_log.available()) {
             const Body& chassis = world.GetBody(scene.body);
             const std::array<HexapodLegContactRollup, 6> contact_summary = SummarizeHexapodGroundContacts(world, scene);
-            const float body_roll_rad = BodyRollRadStability(chassis.orientation);
-            const float body_pitch_rad = BodyPitchRadStability(chassis.orientation);
+            const Real body_roll_rad = BodyRollRadStability(chassis.orientation);
+            const Real body_pitch_rad = BodyPitchRadStability(chassis.orientation);
             int total_contact_manifolds = 0;
             int total_contact_points = 0;
             for (const HexapodLegContactRollup& leg_contacts : contact_summary) {
                 total_contact_manifolds += leg_contacts.coxa.manifolds + leg_contacts.femur.manifolds + leg_contacts.tibia.manifolds;
                 total_contact_points += leg_contacts.coxa.points + leg_contacts.femur.points + leg_contacts.tibia.points;
             }
-            float max_joint_speed_rad_s = 0.0f;
+            Real max_joint_speed_rad_s = 0.0;
             std::fprintf(run_log.stream(),
                          "frame=%d body=(%.6f, %.6f, %.6f) body_height=%.6f body_roll_deg=%.6f body_pitch_deg=%.6f body_vel=(%.6f, %.6f, %.6f) body_rot=(%.6f, %.6f, %.6f, %.6f) body_ang_vel=(%.6f, %.6f, %.6f) contact_manifolds=%d contact_points=%d\n",
                          frame,
@@ -696,8 +702,8 @@ int RunHexapodDemo(
                          chassis.position.y,
                          chassis.position.z,
                          chassis.position.y,
-                         body_roll_rad * 180.0f / kPi,
-                         body_pitch_rad * 180.0f / kPi,
+                         body_roll_rad * 180.0 / kPi,
+                         body_pitch_rad * 180.0 / kPi,
                          chassis.velocity.x,
                          chassis.velocity.y,
                          chassis.velocity.z,
@@ -712,12 +718,12 @@ int RunHexapodDemo(
                          total_contact_points);
             for (std::size_t leg_index = 0; leg_index < scene.legs.size(); ++leg_index) {
                 const LegLinkIds& leg = scene.legs[leg_index];
-                const float coxa_angle = world.GetServoJointAngle(leg.bodyToCoxaJoint);
-                const float femur_angle = world.GetServoJointAngle(leg.coxaToFemurJoint);
-                const float tibia_angle = world.GetServoJointAngle(leg.femurToTibiaJoint);
-                const float coxa_speed = (coxa_angle - previous_angles[leg_index * 3 + 0]) / dt;
-                const float femur_speed = (femur_angle - previous_angles[leg_index * 3 + 1]) / dt;
-                const float tibia_speed = (tibia_angle - previous_angles[leg_index * 3 + 2]) / dt;
+                const Real coxa_angle = world.GetServoJointAngle(leg.bodyToCoxaJoint);
+                const Real femur_angle = world.GetServoJointAngle(leg.coxaToFemurJoint);
+                const Real tibia_angle = world.GetServoJointAngle(leg.femurToTibiaJoint);
+                const Real coxa_speed = (coxa_angle - previous_angles[leg_index * 3 + 0]) / dt;
+                const Real femur_speed = (femur_angle - previous_angles[leg_index * 3 + 1]) / dt;
+                const Real tibia_speed = (tibia_angle - previous_angles[leg_index * 3 + 2]) / dt;
                 max_joint_speed_rad_s = std::max(max_joint_speed_rad_s,
                                                  std::max(std::abs(coxa_speed), std::max(std::abs(femur_speed), std::abs(tibia_speed))));
                 const ServoJoint& coxa_joint = world.GetServoJoint(leg.bodyToCoxaJoint);
@@ -765,8 +771,8 @@ int RunHexapodDemo(
                                 max_joint_speed_rad_s);
         } else {
             const Body& chassis = world.GetBody(scene.body);
-            const float body_roll_rad = BodyRollRadStability(chassis.orientation);
-            const float body_pitch_rad = BodyPitchRadStability(chassis.orientation);
+            const Real body_roll_rad = BodyRollRadStability(chassis.orientation);
+            const Real body_pitch_rad = BodyPitchRadStability(chassis.orientation);
             std::array<HexapodLegContactRollup, 6> contact_summary = SummarizeHexapodGroundContacts(world, scene);
             int total_contact_manifolds = 0;
             int total_contact_points = 0;
@@ -774,15 +780,15 @@ int RunHexapodDemo(
                 total_contact_manifolds += leg_contacts.coxa.manifolds + leg_contacts.femur.manifolds + leg_contacts.tibia.manifolds;
                 total_contact_points += leg_contacts.coxa.points + leg_contacts.femur.points + leg_contacts.tibia.points;
             }
-            float max_joint_speed_rad_s = 0.0f;
+            Real max_joint_speed_rad_s = 0.0;
             for (std::size_t leg_index = 0; leg_index < scene.legs.size(); ++leg_index) {
                 const LegLinkIds& leg = scene.legs[leg_index];
-                const float coxa_angle = world.GetServoJointAngle(leg.bodyToCoxaJoint);
-                const float femur_angle = world.GetServoJointAngle(leg.coxaToFemurJoint);
-                const float tibia_angle = world.GetServoJointAngle(leg.femurToTibiaJoint);
-                const float coxa_speed = (coxa_angle - previous_angles[leg_index * 3 + 0]) / dt;
-                const float femur_speed = (femur_angle - previous_angles[leg_index * 3 + 1]) / dt;
-                const float tibia_speed = (tibia_angle - previous_angles[leg_index * 3 + 2]) / dt;
+                const Real coxa_angle = world.GetServoJointAngle(leg.bodyToCoxaJoint);
+                const Real femur_angle = world.GetServoJointAngle(leg.coxaToFemurJoint);
+                const Real tibia_angle = world.GetServoJointAngle(leg.femurToTibiaJoint);
+                const Real coxa_speed = (coxa_angle - previous_angles[leg_index * 3 + 0]) / dt;
+                const Real femur_speed = (femur_angle - previous_angles[leg_index * 3 + 1]) / dt;
+                const Real tibia_speed = (tibia_angle - previous_angles[leg_index * 3 + 2]) / dt;
                 max_joint_speed_rad_s = std::max(max_joint_speed_rad_s,
                                                  std::max(std::abs(coxa_speed), std::max(std::abs(femur_speed), std::abs(tibia_speed))));
                 previous_angles[leg_index * 3 + 0] = coxa_angle;
@@ -822,7 +828,7 @@ int RunHexapodDemo(
     return 0;
 }
 
-const Vec3 kDemoEarthGravity{0.0f, -9.81f, 0.0f};
+const Vec3 kDemoEarthGravity{0.0, -9.81, 0.0};
 
 int RunModelDemo(
     SinkKind sink_kind,

@@ -11,38 +11,38 @@ using namespace minphys3d;
 using namespace minphys3d::tests;
 
 struct AccelSample {
-    float peak_impulse = 0.0f;
-    float peak_norm_utilization = 0.0f;
+    Real peak_impulse = 0.0;
+    Real peak_norm_utilization = 0.0;
     bool respected_limit = true;
 };
 
-AccelSample runSample(float max_servo_torque) {
-    World world({0.0f, 0.0f, 0.0f});
+AccelSample runSample(Real max_servo_torque) {
+    World world({0.0, 0.0, 0.0});
 
     const std::uint32_t base_id = world.CreateBody(MakeStaticBase());
-    constexpr float kLinkLength = 1.0f;
-    const std::uint32_t link_id = world.CreateBody(MakeArmLink({0.5f * kLinkLength, 0.0f, 0.0f}, kLinkLength, 1.2f));
+    constexpr Real kLinkLength = 1.0;
+    const std::uint32_t link_id = world.CreateBody(MakeArmLink({0.5 * kLinkLength, 0.0, 0.0}, kLinkLength, 1.2));
 
     const std::uint32_t servo_id = world.CreateServoJoint(
         base_id,
         link_id,
-        {0.0f, 0.0f, 0.0f},
-        {0.0f, 1.0f, 0.0f},
-        1.2f,
+        {0.0, 0.0, 0.0},
+        {0.0, 1.0, 0.0},
+        1.2,
         max_servo_torque,
-        35.0f,
-        3.0f);
+        35.0,
+        3.0);
 
-    constexpr float kDt = 1.0f / 240.0f;
+    constexpr Real kDt = 1.0 / 240.0;
     AccelSample out{};
     for (int step = 0; step < 180; ++step) {
-        world.AddTorque(link_id, {0.0f, 0.0f, -40.0f});
+        world.AddTorque(link_id, {0.0, 0.0, -40.0});
         world.Step(kDt, 48);
         const ServoJoint& servo = world.GetServoJoint(servo_id);
-        const float impulse = std::abs(servo.servoImpulseSum);
+        const Real impulse = std::abs(servo.servoImpulseSum);
         out.peak_impulse = std::max(out.peak_impulse, impulse);
         out.peak_norm_utilization = std::max(out.peak_norm_utilization, impulse / max_servo_torque);
-        if (impulse > max_servo_torque + 1.0e-3f) {
+        if (impulse > max_servo_torque + 1.0e-3) {
             out.respected_limit = false;
         }
     }
@@ -50,14 +50,14 @@ AccelSample runSample(float max_servo_torque) {
 }
 
 int runCase() {
-    const AccelSample low = runSample(1.0f);
-    const AccelSample high = runSample(5.0f);
+    const AccelSample low = runSample(1.0);
+    const AccelSample high = runSample(5.0);
     if (!low.respected_limit || !high.respected_limit) {
         std::cerr << "torque_limit violation low_ok=" << low.respected_limit
                   << " high_ok=" << high.respected_limit << "\n";
         return 1;
     }
-    if (low.peak_norm_utilization < 0.70f) {
+    if (low.peak_norm_utilization < 0.70) {
         std::cerr << "torque_limit low-cap utilization too small=" << low.peak_norm_utilization << "\n";
         return 1;
     }

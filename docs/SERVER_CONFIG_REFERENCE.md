@@ -256,6 +256,28 @@ Primary parser: `tuning_section_parser.cpp`.
 - `Tuning.FusionCorrectionStrongReleaseFactor` (`0.1..1.0`)
 - `Tuning.FusionCorrectionSoftReleaseFactor` (`0.1..1.0`)
 
+### Gravity feedforward (joint-angle, opt-in)
+
+Small biases on commanded servo angles after IK from IMU gravity direction (quasi-static gates) and per-leg stance/contact context. Uses FK-consistent static torques and a nominal position-loop stiffness map (see `joint_angle_gravity_feedforward`). **Default off**; set `Tuning.GravityFeedforwardEnabled = true` and tune scales for your platform. Does not command torques directly.
+
+- `Tuning.GravityFeedforwardEnabled` (`bool`, default `false`)
+- `Tuning.GravityFeedforwardMaxGyroRadps` (`0.0..5.0`, default `0.35`) — skip when ‖gyro‖ exceeds this
+- `Tuning.GravityFeedforwardAccelNormMarginMps2` (`0.0..20.0`, default `1.5`) — require |‖accel‖ − g| ≤ margin; `0` disables the check
+- `Tuning.GravityFeedforwardScaleCoxa` (`0.0..4.0`, default `0`) — multiplier on modeled coxa Δq (model keeps coxa at 0 today)
+- `Tuning.GravityFeedforwardScaleFemur` (`0.0..4.0`, default `1`)
+- `Tuning.GravityFeedforwardScaleTibia` (`0.0..4.0`, default `1`)
+- `Tuning.GravityFeedforwardStiffnessGainScale` (`0.05..20.0`, default `1`) — scales ωₙ² in the sag denominator; **&lt; 1** increases predicted Δq (softer modeled actuator / better match to a soft sim)
+- `Tuning.GravityFeedforwardDeltaLpfTauS` (`0.0..0.5`, default `0`) — first-order low-pass time constant on femur/tibia Δq per leg; `0` disables
+- `Tuning.GravityFeedforwardIncludeFootReaction` (`bool`, default `true`) — equal-share `m_body·g / N_stance` support along world +Z, mapped to each leg frame
+- `Tuning.GravityFeedforwardIncludeSelfWeight` (`bool`, default `false`) — add femur/tibia (and coxa) link-weight torques; leave off until tuned to avoid double-counting with the reaction model
+- `Tuning.GravityFeedforwardMaxDeltaCoxaRad` (`0.0..0.5`, default `0.08`)
+- `Tuning.GravityFeedforwardMaxDeltaFemurRad` (`0.0..0.5`, default `0.12`)
+- `Tuning.GravityFeedforwardMaxDeltaTibiaRad` (`0.0..0.5`, default `0.12`)
+
+**Deprecated:** `Tuning.GravityFeedforwardGainCoxaRad`, `Tuning.GravityFeedforwardGainFemurRad`, `Tuning.GravityFeedforwardGainTibiaRad` — if any of these keys are present under `[Tuning]`, the parser logs a one-time warning; they are **not** applied (use `Scale*` keys instead).
+
+**Harness tuning (physics sim):** [`scripts/sweep_gravity_feedforward_stand.sh`](scripts/sweep_gravity_feedforward_stand.sh) runs `test_gravity_feedforward_stand_quiescence` over a small scale grid with `HEXAPOD_FF_CSV=1`. Optional env overrides: `HEXAPOD_FF_SCALE_FEMUR`, `HEXAPOD_FF_SCALE_TIBIA` (harness defaults `0.30`), `HEXAPOD_FF_STIFFNESS_GAIN_SCALE` (default `0.62`), `HEXAPOD_FF_DELTA_LPF_TAU_S` (default `0.08`), `HEXAPOD_FF_USE_CODE_DEFAULTS`.
+
 ## Consumer mapping summary
 
 - Transport/calibration/runtime mode: `hexapod-server/src/app/hexapod-server.cpp`

@@ -10,10 +10,10 @@ namespace minphys3d {
 namespace {
 
 Vec3 ChooseJointReferenceVector(const Vec3& axis) {
-    const Vec3 fallback = (std::abs(axis.y) < 0.9f) ? Vec3{0.0f, 1.0f, 0.0f} : Vec3{1.0f, 0.0f, 0.0f};
+    const Vec3 fallback = (std::abs(axis.y) < 0.9) ? Vec3{0.0, 1.0, 0.0} : Vec3{1.0, 0.0, 0.0};
     Vec3 reference = fallback - Dot(fallback, axis) * axis;
     if (!TryNormalize(reference, reference)) {
-        reference = {1.0f, 0.0f, 0.0f};
+        reference = {1.0, 0.0, 0.0};
     }
     return reference;
 }
@@ -34,7 +34,7 @@ Vec3 World::GetGravity() const {
     return gravity_;
 }
 
-void World::SetBodyVelocityLimits(float maxLinearSpeed, float maxAngularSpeed) {
+void World::SetBodyVelocityLimits(Real maxLinearSpeed, Real maxAngularSpeed) {
     maxBodyLinearSpeed_ = maxLinearSpeed;
     maxBodyAngularSpeed_ = maxAngularSpeed;
 }
@@ -101,7 +101,7 @@ bool World::ComputeStableTangentFrame(
     } else if (projectToTangent(relativeVelocity, t0)) {
         // align with current slip direction
     } else {
-        const Vec3 fallbackAxis = (std::abs(n.y) < 0.9f) ? Vec3{0.0f, 1.0f, 0.0f} : Vec3{1.0f, 0.0f, 0.0f};
+        const Vec3 fallbackAxis = (std::abs(n.y) < 0.9) ? Vec3{0.0, 1.0, 0.0} : Vec3{1.0, 0.0, 0.0};
         if (!projectToTangent(fallbackAxis, t0)) {
             return false;
         }
@@ -174,7 +174,7 @@ void World::SetTerrainHeightfield(TerrainHeightfieldAttachment terrain) {
         ClearTerrainHeightfield();
         return;
     }
-    if (!std::isfinite(terrain.cellSizeM) || terrain.cellSizeM <= 0.0f) {
+    if (!std::isfinite(terrain.cellSizeM) || terrain.cellSizeM <= 0.0) {
         ClearTerrainHeightfield();
         return;
     }
@@ -185,13 +185,13 @@ void World::SetTerrainHeightfield(TerrainHeightfieldAttachment terrain) {
     if (hadAttachment
         && terrainAttachment_.rows == terrain.rows
         && terrainAttachment_.cols == terrain.cols
-        && std::abs(terrainAttachment_.cellSizeM - terrain.cellSizeM) <= 1.0e-6f
-        && std::abs(terrainAttachment_.baseHeightM - terrain.baseHeightM) <= 1.0e-6f
+        && std::abs(terrainAttachment_.cellSizeM - terrain.cellSizeM) <= 1.0e-6
+        && std::abs(terrainAttachment_.baseHeightM - terrain.baseHeightM) <= 1.0e-6
         && prevCellCount == expectedCellCount) {
         const auto countDirty = [&](const std::vector<float>& previous, const std::vector<float>& current) {
             std::uint64_t count = 0;
             for (std::size_t i = 0; i < current.size(); ++i) {
-                if (i >= previous.size() || std::abs(previous[i] - current[i]) > 1.0e-6f) {
+                if (i >= previous.size() || std::abs(previous[i] - current[i]) > 1.0e-6) {
                     ++count;
                 }
             }
@@ -216,11 +216,11 @@ void World::SetTerrainHeightfield(TerrainHeightfieldAttachment terrain) {
         terrainBody.position = terrainAttachment_.centerWorld;
         terrainBody.planeNormal = terrainAttachment_.planeNormal;
         terrainBody.planeOffset = terrainAttachment_.planeHeightM;
-        terrainBody.mass = 0.0f;
-        terrainBody.invMass = 0.0f;
-        terrainBody.restitution = 0.0f;
-        terrainBody.staticFriction = 0.95f;
-        terrainBody.dynamicFriction = 0.75f;
+        terrainBody.mass = 0.0;
+        terrainBody.invMass = 0.0;
+        terrainBody.restitution = 0.0;
+        terrainBody.staticFriction = 0.95;
+        terrainBody.dynamicFriction = 0.75;
         terrainBody.isStatic = true;
         terrainBody.isSleeping = true;
         terrainBody.collisionGroup = 0x0004;
@@ -234,11 +234,11 @@ void World::SetTerrainHeightfield(TerrainHeightfieldAttachment terrain) {
         terrainBody.position = terrainAttachment_.centerWorld;
         terrainBody.planeNormal = terrainAttachment_.planeNormal;
         terrainBody.planeOffset = terrainAttachment_.planeHeightM;
-        terrainBody.mass = 0.0f;
-        terrainBody.invMass = 0.0f;
-        terrainBody.restitution = 0.0f;
-        terrainBody.staticFriction = 0.95f;
-        terrainBody.dynamicFriction = 0.75f;
+        terrainBody.mass = 0.0;
+        terrainBody.invMass = 0.0;
+        terrainBody.restitution = 0.0;
+        terrainBody.staticFriction = 0.95;
+        terrainBody.dynamicFriction = 0.75;
         terrainBody.isStatic = true;
         terrainBody.isSleeping = true;
         terrainBody.collisionGroup = 0x0004;
@@ -292,13 +292,13 @@ std::uint32_t World::GetServoJointCount() const {
     return static_cast<std::uint32_t>(servoJoints_.size());
 }
 
-float World::GetServoJointAngle(std::uint32_t id) const {
+Real World::GetServoJointAngle(std::uint32_t id) const {
     const auto _scope = resource_profiler_.scope(
         world_resource_monitoring::toIndex(world_resource_monitoring::Section::GetServoJointAngle));
     return ComputeServoJointAngleNoProfile(servoJoints_.at(id));
 }
 
-float World::ComputeServoJointAngleNoProfile(const ServoJoint& joint) const {
+Real World::ComputeServoJointAngleNoProfile(const ServoJoint& joint) const {
     const Body& a = bodies_.at(joint.a);
     const Body& b = bodies_.at(joint.b);
     return core_internal::ComputeServoJointAngle(a, b, joint);
@@ -327,7 +327,7 @@ bool World::TryComputeLocalJointAxes(
     return true;
 }
 
-std::uint32_t World::CreateDistanceJoint(std::uint32_t a, std::uint32_t b, const Vec3& worldAnchorA, const Vec3& worldAnchorB, float stiffness, float damping) {
+std::uint32_t World::CreateDistanceJoint(std::uint32_t a, std::uint32_t b, const Vec3& worldAnchorA, const Vec3& worldAnchorB, Real stiffness, Real damping) {
     DistanceJoint j;
     j.a = a;
     j.b = b;
@@ -346,11 +346,11 @@ std::uint32_t World::CreateHingeJoint(
     const Vec3& worldAnchor,
     const Vec3& worldAxis,
     bool enableLimits,
-    float lowerAngle,
-    float upperAngle,
+    Real lowerAngle,
+    Real upperAngle,
     bool enableMotor,
-    float motorSpeed,
-    float maxMotorTorque) {
+    Real motorSpeed,
+    Real maxMotorTorque) {
     HingeJoint j;
     j.a = a;
     j.b = b;
@@ -407,11 +407,11 @@ std::uint32_t World::CreatePrismaticJoint(
     const Vec3& worldAnchor,
     const Vec3& worldAxis,
     bool enableLimits,
-    float lowerTranslation,
-    float upperTranslation,
+    Real lowerTranslation,
+    Real upperTranslation,
     bool enableMotor,
-    float motorSpeed,
-    float maxMotorForce) {
+    Real motorSpeed,
+    Real maxMotorForce) {
     PrismaticJoint j;
     j.a = a;
     j.b = b;
@@ -435,16 +435,16 @@ std::uint32_t World::CreateServoJoint(
     std::uint32_t b,
     const Vec3& worldAnchor,
     const Vec3& worldAxis,
-    float targetAngle,
-    float maxServoTorque,
-    float positionGain,
-    float dampingGain,
-    float integralGain,
-    float integralClamp,
-    float positionErrorSmoothing,
-    float angleStabilizationScale,
-    float maxServoSpeed,
-    float maxCorrectionAngle) {
+    Real targetAngle,
+    Real maxServoTorque,
+    Real positionGain,
+    Real dampingGain,
+    Real integralGain,
+    Real integralClamp,
+    Real positionErrorSmoothing,
+    Real angleStabilizationScale,
+    Real maxServoSpeed,
+    Real maxCorrectionAngle) {
     ServoJoint j{};
     j.a = a;
     j.b = b;
@@ -459,15 +459,15 @@ std::uint32_t World::CreateServoJoint(
     j.localReferenceA = ComputeLocalDirection(bodies_.at(a), worldReference);
     j.localReferenceB = ComputeLocalDirection(bodies_.at(b), worldReference);
     j.targetAngle = targetAngle;
-    j.maxServoTorque = std::max(0.0f, maxServoTorque);
-    j.positionGain = std::max(0.0f, positionGain);
-    j.dampingGain = std::max(0.0f, dampingGain);
-    j.integralGain = std::max(0.0f, integralGain);
-    j.integralClamp = std::max(1e-5f, integralClamp);
-    j.positionErrorSmoothing = std::max(0.0f, positionErrorSmoothing);
-    j.maxCorrectionAngle = std::max(0.01f, maxCorrectionAngle);
-    j.angleStabilizationScale = std::clamp(angleStabilizationScale, 0.0f, 1.0f);
-    j.maxServoSpeed = std::max(0.0f, maxServoSpeed);
+    j.maxServoTorque = std::max(0.0, maxServoTorque);
+    j.positionGain = std::max(0.0, positionGain);
+    j.dampingGain = std::max(0.0, dampingGain);
+    j.integralGain = std::max(0.0, integralGain);
+    j.integralClamp = std::max(1e-5, integralClamp);
+    j.positionErrorSmoothing = std::max(0.0, positionErrorSmoothing);
+    j.maxCorrectionAngle = std::max(0.01, maxCorrectionAngle);
+    j.angleStabilizationScale = std::clamp(angleStabilizationScale, 0.0, 1.0);
+    j.maxServoSpeed = std::max(0.0, maxServoSpeed);
     servoJoints_.push_back(j);
     InvalidateServoAngleSampleCache();
     InvalidateServoPositionTopologyCache();
@@ -485,7 +485,7 @@ void World::InvalidateServoPositionTopologyCache() {
 
 void World::PrepareServoJointControlSamples() {
     if (!servoAngleSampleCacheValid_ || servoAngleSampleCache_.size() != servoJoints_.size()) {
-        servoAngleSampleCache_.assign(servoJoints_.size(), 0.0f);
+        servoAngleSampleCache_.assign(servoJoints_.size(), 0.0);
         for (std::size_t i = 0; i < servoJoints_.size(); ++i) {
             servoAngleSampleCache_[i] = ComputeServoJointAngleNoProfile(servoJoints_[i]);
         }
@@ -493,11 +493,11 @@ void World::PrepareServoJointControlSamples() {
     }
     for (std::size_t i = 0; i < servoJoints_.size(); ++i) {
         ServoJoint& j = servoJoints_[i];
-        const float angle = servoAngleSampleCache_[i];
-        float raw = angle - j.targetAngle;
-        raw = std::remainder(raw, 6.28318530717958647692f);
-        if (j.positionErrorSmoothing > 0.0f) {
-            const float alpha = std::min(j.positionErrorSmoothing, 1.0f);
+        const Real angle = servoAngleSampleCache_[i];
+        Real raw = angle - j.targetAngle;
+        raw = std::remainder(raw, 6.28318530717958647692);
+        if (j.positionErrorSmoothing > 0.0) {
+            const Real alpha = std::min(j.positionErrorSmoothing, 1.0);
             j.smoothedAngleError = j.smoothedAngleError + alpha * (raw - j.smoothedAngleError);
         } else {
             j.smoothedAngleError = raw;
@@ -505,37 +505,37 @@ void World::PrepareServoJointControlSamples() {
     }
 }
 
-void World::AccumulateServoAngleIntegrals(float dt) {
+void World::AccumulateServoAngleIntegrals(Real dt) {
     // Uses the outer `World::Step` dt (not per-substep dt): integral is a slow bias into the
     // inner `SolveServoJoint` PD loop accumulated once per step.
-    if (dt <= 0.0f) {
+    if (dt <= 0.0) {
         return;
     }
     if (servoAngleSampleCache_.size() != servoJoints_.size()) {
-        servoAngleSampleCache_.assign(servoJoints_.size(), 0.0f);
+        servoAngleSampleCache_.assign(servoJoints_.size(), 0.0);
     }
     for (std::size_t i = 0; i < servoJoints_.size(); ++i) {
         ServoJoint& j = servoJoints_[i];
-        const float angle = ComputeServoJointAngleNoProfile(j);
+        const Real angle = ComputeServoJointAngleNoProfile(j);
         servoAngleSampleCache_[i] = angle;
-        if (j.integralGain <= 0.0f) {
+        if (j.integralGain <= 0.0) {
             continue;
         }
-        const float saturationRatio = std::abs(j.servoImpulseSum) / std::max(j.maxServoTorque, 1e-6f);
-        if (saturationRatio > 0.95f) {
-            j.integralAccum *= 0.9f;
+        const Real saturationRatio = std::abs(j.servoImpulseSum) / std::max(j.maxServoTorque, 1e-6);
+        if (saturationRatio > 0.95) {
+            j.integralAccum *= 0.9;
             continue;
         }
-        float err = angle - j.targetAngle;
-        err = std::remainder(err, 6.28318530717958647692f);
+        Real err = angle - j.targetAngle;
+        err = std::remainder(err, 6.28318530717958647692);
         j.integralAccum += err * dt;
         j.integralAccum = std::clamp(j.integralAccum, -j.integralClamp, j.integralClamp);
     }
     servoAngleSampleCacheValid_ = true;
 }
 
-void World::Step(float dt, int solverIterations) {
-    if (dt <= 0.0f) {
+void World::Step(Real dt, int solverIterations) {
+    if (dt <= 0.0) {
         return;
     }
 
@@ -553,14 +553,14 @@ void World::Step(float dt, int solverIterations) {
     CapturePersistentPointImpulseState(previousManifolds_);
 
     const int substeps = ComputeSubsteps(dt);
-    const float subDt = dt / static_cast<float>(substeps);
+    const Real subDt = dt / static_cast<float>(substeps);
 
     // Servo warm-start terms are accumulated inside a single Step to help the iterative solve converge.
     // Re-using the full cached impulse state across outer Steps can inject energy into free-floating
     // articulated rigs, but hard-resetting everything every frame also makes loaded pose-hold servos
     // give up too much support torque. Keep a strongly damped fraction so each frame retains some
     // convergence history without re-applying the full stale correction.
-    constexpr float kServoWarmStartDecay = 0.5f;
+    constexpr Real kServoWarmStartDecay = 0.5;
     for (ServoJoint& j : servoJoints_) {
         j.impulseX *= kServoWarmStartDecay;
         j.impulseY *= kServoWarmStartDecay;
@@ -753,7 +753,7 @@ World::TopologySnapshot World::SnapshotTopology() const {
     snapshot.islandCount = static_cast<std::uint32_t>(islands_.size());
 
     for (const Body& body : bodies_) {
-        if (body.invMass > 0.0f) {
+        if (body.invMass > 0.0) {
             ++snapshot.dynamicBodyCount;
             if (!body.isSleeping) {
                 ++snapshot.awakeBodyCount;
@@ -823,7 +823,7 @@ std::size_t World::BruteForcePairCount() const {
             }
             const Body& a = bodies_[i];
             const Body& b = bodies_[j];
-            if ((a.invMass == 0.0f && b.invMass == 0.0f) || (a.isSleeping && b.isSleeping)) {
+            if ((a.invMass == 0.0 && b.invMass == 0.0) || (a.isSleeping && b.isSleeping)) {
                 continue;
             }
             ++count;
@@ -832,7 +832,7 @@ std::size_t World::BruteForcePairCount() const {
     return count;
 }
 
-bool World::IsFinite(float value) {
+bool World::IsFinite(Real value) {
     return std::isfinite(value);
 }
 
@@ -878,10 +878,10 @@ void World::AssertBodyStateFinite(const Body& body) {
 }
 
 void World::AssertMassInertiaConsistency(const Body& body) {
-    assert(IsFinite(body.mass) || body.invMass == 0.0f);
+    assert(IsFinite(body.mass) || body.invMass == 0.0);
     assert(IsFinite(body.invMass));
     assert(IsFinite(body.invInertiaLocal));
-    if (body.invMass == 0.0f) {
+    if (body.invMass == 0.0) {
         assert(body.isStatic || !std::isfinite(body.mass));
         assert(IsZeroInertia(body.invInertiaLocal));
         return;
@@ -889,7 +889,7 @@ void World::AssertMassInertiaConsistency(const Body& body) {
 
     assert(body.mass > kEpsilon);
     assert(std::isfinite(body.mass));
-    assert(std::abs(body.invMass - (1.0f / body.mass)) <= 1e-4f);
+    assert(std::abs(body.invMass - (1.0 / body.mass)) <= 1e-4);
     assert(body.invInertiaLocal.m[0][0] >= -kEpsilon);
     assert(body.invInertiaLocal.m[1][1] >= -kEpsilon);
     assert(body.invInertiaLocal.m[2][2] >= -kEpsilon);
@@ -902,7 +902,7 @@ void World::AssertBodyInvariants() const {
     }
 }
 
-AABB World::ExpandAABB(const AABB& aabb, float margin) {
+AABB World::ExpandAABB(const AABB& aabb, Real margin) {
     AABB out = aabb;
     out.min.x -= margin;
     out.min.y -= margin;
@@ -925,9 +925,9 @@ AABB World::MergeAABB(const AABB& a, const AABB& b) {
     return out;
 }
 
-float World::SurfaceArea(const AABB& aabb) {
+Real World::SurfaceArea(const AABB& aabb) {
     const Vec3 e = aabb.max - aabb.min;
-    return 2.0f * (e.x * e.y + e.y * e.z + e.z * e.x);
+    return 2.0 * (e.x * e.y + e.y * e.z + e.z * e.x);
 }
 
 void World::FreeNode(std::int32_t nodeId) {
@@ -940,30 +940,30 @@ void World::FreeNode(std::int32_t nodeId) {
     freeNode_ = nodeId;
 }
 
-int World::ComputeSubsteps(float dt) const {
-    float maxRatio = 0.0f;
+int World::ComputeSubsteps(Real dt) const {
+    Real maxRatio = 0.0;
     for (const Body& body : bodies_) {
-        if (body.invMass == 0.0f || body.isSleeping) {
+        if (body.invMass == 0.0 || body.isSleeping) {
             continue;
         }
-        float characteristic = 1.0f;
+        Real characteristic = 1.0;
         if (body.shape == ShapeType::Sphere) {
-            characteristic = std::max(body.radius, 0.05f);
+            characteristic = std::max(body.radius, 0.05);
         } else if (body.shape == ShapeType::Box) {
-            characteristic = std::max({body.halfExtents.x, body.halfExtents.y, body.halfExtents.z, 0.05f});
+            characteristic = std::max({body.halfExtents.x, body.halfExtents.y, body.halfExtents.z, 0.05});
         } else if (body.shape == ShapeType::Capsule) {
-            characteristic = std::max(body.radius, 0.05f);
+            characteristic = std::max(body.radius, 0.05);
         } else if (body.shape == ShapeType::Cylinder || body.shape == ShapeType::HalfCylinder) {
-            characteristic = std::max({body.radius, body.halfHeight, 0.05f});
+            characteristic = std::max({body.radius, body.halfHeight, 0.05});
         } else if (body.shape == ShapeType::Compound) {
             const AABB bounds = body.ComputeAABB();
-            const Vec3 halfExtents = 0.5f * (bounds.max - bounds.min);
-            characteristic = std::max({halfExtents.x, halfExtents.y, halfExtents.z, 0.05f});
+            const Vec3 halfExtents = 0.5 * (bounds.max - bounds.min);
+            characteristic = std::max({halfExtents.x, halfExtents.y, halfExtents.z, 0.05});
         }
-        const float travel = Length(body.velocity) * dt;
+        const Real travel = Length(body.velocity) * dt;
         maxRatio = std::max(maxRatio, travel / (characteristic * kMaxSubstepDistanceFactor));
     }
-    return std::clamp(static_cast<int>(std::ceil(std::max(1.0f, maxRatio))), 1, 8);
+    return std::clamp(static_cast<int>(std::ceil(std::max(1.0, maxRatio))), 1, 8);
 }
 
 } // namespace minphys3d

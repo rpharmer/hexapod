@@ -8,7 +8,7 @@
 
 namespace {
 
-bool Near(float a, float b, float eps) {
+bool Near(minphys3d::Real a, minphys3d::Real b, minphys3d::Real eps) {
     return std::abs(a - b) <= eps;
 }
 
@@ -72,25 +72,25 @@ int main() {
         std::cerr << "unexpected terrain patch grid dims\n";
         return 4;
     }
-    if (!Near(config.cell_size_m, 0.07f, 1.0e-6f) || !Near(config.base_margin_m, 0.11f, 1.0e-6f)) {
+    if (!Near(config.cell_size_m, 0.07, 1.0e-6) || !Near(config.base_margin_m, 0.11, 1.0e-6)) {
         std::cerr << "unexpected terrain patch tuning\n";
         return 5;
     }
-    if (!Near(seed.center.x, 1.25f, 1.0e-6f) || !Near(seed.center.z, -0.5f, 1.0e-6f)) {
+    if (!Near(seed.center.x, 1.25, 1.0e-6) || !Near(seed.center.z, -0.5, 1.0e-6)) {
         std::cerr << "unexpected terrain patch center\n";
         return 6;
     }
-    if (!Near(seed.plane_height_m, 0.32f, 1.0e-6f)) {
+    if (!Near(seed.plane_height_m, 0.32, 1.0e-6)) {
         std::cerr << "unexpected terrain patch plane height\n";
         return 7;
     }
-    if (seed.plane_normal.y < 0.95f) {
+    if (seed.plane_normal.y < 0.95) {
         std::cerr << "unexpected terrain patch plane normal\n";
         return 8;
     }
-    if (!Near(config.lidar_min_surface_confidence, 0.31f, 1.0e-6f) ||
-        !Near(config.lidar_contact_arbitration_radius_m, 0.14f, 1.0e-6f) ||
-        !Near(config.lidar_contact_disagreement_m, 0.025f, 1.0e-6f)) {
+    if (!Near(config.lidar_min_surface_confidence, 0.31, 1.0e-6) ||
+        !Near(config.lidar_contact_arbitration_radius_m, 0.14, 1.0e-6) ||
+        !Near(config.lidar_contact_disagreement_m, 0.025, 1.0e-6)) {
         std::cerr << "unexpected terrain patch lidar arbitration tuning\n";
         return 9;
     }

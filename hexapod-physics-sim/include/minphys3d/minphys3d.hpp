@@ -1,5 +1,6 @@
 #pragma once
 
+#include "minphys3d/math/scalar.hpp"
 #include "minphys3d/math/vec3.hpp"
 #include "minphys3d/math/quat.hpp"
 #include "minphys3d/math/mat3.hpp"

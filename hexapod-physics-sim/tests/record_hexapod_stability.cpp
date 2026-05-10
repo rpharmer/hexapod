@@ -22,7 +22,7 @@ static const char kStabilityGit[] =
     ;
 
 void RunRecord(const char* out_path) {
-    World world({0.0f, -9.81f, 0.0f});
+    World world({0.0, -9.81, 0.0});
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
     ApplyHexapodPoseHoldStabilityTuning(world, scene);
@@ -30,10 +30,10 @@ void RunRecord(const char* out_path) {
     HexapodPoseHoldMetrics pose{};
     HexapodStandingStats standing{};
 
-    constexpr float kFrameDt = 1.0f / 60.0f;
-    const float sub_dt = kFrameDt / static_cast<float>(kHexapodPoseHoldBenchmarkSubstepsPerFrame);
+    constexpr Real kFrameDt = 1.0 / 60.0;
+    const Real sub_dt = kFrameDt / static_cast<float>(kHexapodPoseHoldBenchmarkSubstepsPerFrame);
 
-    std::array<float, 18> previous_angles{};
+    std::array<Real, 18> previous_angles{};
     {
         std::size_t i = 0;
         for (const std::uint32_t joint_id : HexapodServoJointIds(scene)) {
@@ -49,8 +49,8 @@ void RunRecord(const char* out_path) {
 
         // Match RunHexapod demo: one standing sample per display frame, joint rates vs frame dt.
         const Body& chassis = world.GetBody(scene.body);
-        const float body_roll = BodyRollRadStability(chassis.orientation);
-        const float body_pitch = BodyPitchRadStability(chassis.orientation);
+        const Real body_roll = BodyRollRadStability(chassis.orientation);
+        const Real body_pitch = BodyPitchRadStability(chassis.orientation);
         const std::array<HexapodLegContactRollup, 6> contact_summary =
             SummarizeHexapodGroundContacts(world, scene);
         int total_manifolds = 0;
@@ -61,15 +61,15 @@ void RunRecord(const char* out_path) {
             total_points +=
                 leg_contacts.coxa.points + leg_contacts.femur.points + leg_contacts.tibia.points;
         }
-        float max_joint_speed_rad_s = 0.0f;
+        Real max_joint_speed_rad_s = 0.0;
         for (std::size_t leg_index = 0; leg_index < scene.legs.size(); ++leg_index) {
             const LegLinkIds& leg = scene.legs[leg_index];
-            const float coxa_angle = world.GetServoJointAngle(leg.bodyToCoxaJoint);
-            const float femur_angle = world.GetServoJointAngle(leg.coxaToFemurJoint);
-            const float tibia_angle = world.GetServoJointAngle(leg.femurToTibiaJoint);
-            const float coxa_speed = (coxa_angle - previous_angles[leg_index * 3 + 0]) / kFrameDt;
-            const float femur_speed = (femur_angle - previous_angles[leg_index * 3 + 1]) / kFrameDt;
-            const float tibia_speed = (tibia_angle - previous_angles[leg_index * 3 + 2]) / kFrameDt;
+            const Real coxa_angle = world.GetServoJointAngle(leg.bodyToCoxaJoint);
+            const Real femur_angle = world.GetServoJointAngle(leg.coxaToFemurJoint);
+            const Real tibia_angle = world.GetServoJointAngle(leg.femurToTibiaJoint);
+            const Real coxa_speed = (coxa_angle - previous_angles[leg_index * 3 + 0]) / kFrameDt;
+            const Real femur_speed = (femur_angle - previous_angles[leg_index * 3 + 1]) / kFrameDt;
+            const Real tibia_speed = (tibia_angle - previous_angles[leg_index * 3 + 2]) / kFrameDt;
             max_joint_speed_rad_s = std::max(
                 max_joint_speed_rad_s,
                 std::max(std::abs(coxa_speed), std::max(std::abs(femur_speed), std::abs(tibia_speed))));

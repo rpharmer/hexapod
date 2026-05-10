@@ -23,7 +23,7 @@ minphys3d::Vec3 footContactPointWorld(const Body& tibia) {
     for (const CompoundChild& child : tibia.compoundChildren) {
         if (child.shape == ShapeType::Sphere) {
             const minphys3d::Vec3 center_world = tibia.position + Rotate(tibia.orientation, child.localPosition);
-            const minphys3d::Vec3 foot_axis_world = Rotate(tibia.orientation, minphys3d::Vec3{1.0f, 0.0f, 0.0f});
+            const minphys3d::Vec3 foot_axis_world = Rotate(tibia.orientation, minphys3d::Vec3{1.0, 0.0, 0.0});
             return center_world + foot_axis_world * child.radius;
         }
     }
@@ -35,18 +35,18 @@ double maxAbsComponent(const ::Vec3& v) {
 }
 
 const std::array<::Vec3, 6> kExpectedFootContactPositionsBody{{
-    {0.152965f, -0.115852f, -0.202887f},
-    {-0.152965f, -0.115852f, -0.202887f},
-    {0.230989f, -0.115852f, 0.0f},
-    {-0.230989f, -0.115852f, 0.0f},
-    {0.152965f, -0.115852f, 0.202887f},
-    {-0.152965f, -0.115852f, 0.202887f},
+    {0.152965, -0.115852, -0.202887},
+    {-0.152965, -0.115852, -0.202887},
+    {0.230989, -0.115852, 0.0},
+    {-0.230989, -0.115852, 0.0},
+    {0.152965, -0.115852, 0.202887},
+    {-0.152965, -0.115852, 0.202887},
 }};
 
 }  // namespace
 
 int main() {
-    World world({0.0f, 0.0f, 0.0f});
+    World world({0.0, 0.0, 0.0});
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     const Body& chassis = world.GetBody(scene.body);
     bool ok = true;

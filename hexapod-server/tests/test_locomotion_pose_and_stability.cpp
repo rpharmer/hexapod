@@ -1,5 +1,7 @@
 #include "body_pose_controller.hpp"
+#include "geometry_config.hpp"
 #include "locomotion_stability.hpp"
+#include "support_assessment.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -198,6 +200,110 @@ bool testStabilitySupportDiagnosticsExposeAsymmetry() {
                   "per-leg support diagnostics should show asymmetry when the body shifts");
 }
 
+bool testStabilityUsesConfirmedSupportWhenPhaseLags() {
+    LocomotionStability stability{};
+    MotionIntent intent = walkIntent(0.12, 0.0, 0.0);
+    GaitState empty_support_gait{};
+    empty_support_gait.duty_factor = 0.5;
+    empty_support_gait.stride_phase_rate_hz = FrequencyHz{1.0};
+    empty_support_gait.phase = {0.75, 0.25, 0.75, 0.25, 0.75, 0.25};
+    empty_support_gait.in_stance = {false, false, false, false, false, false};
+
+    GaitState gait = empty_support_gait;
+    RobotState est{};
+    est.valid = true;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        est.foot_contacts[static_cast<std::size_t>(leg)] = (leg % 2) == 0;
+        est.foot_contact_fusion[static_cast<std::size_t>(leg)].phase =
+            est.foot_contacts[static_cast<std::size_t>(leg)] ? ContactPhase::ConfirmedStance : ContactPhase::Search;
+    }
+
+    stability.apply(RobotState{}, intent, empty_support_gait);
+    stability.apply(est, intent, gait);
+
+    if (!expect(gait.static_stability_margin_m > empty_support_gait.static_stability_margin_m + 0.05,
+                "confirmed support should materially improve the support margin when phase lags")) {
+        return false;
+    }
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        if ((leg % 2) != 0) {
+            continue;
+        }
+        if (!expect(gait.stability_hold_stance[static_cast<std::size_t>(leg)],
+                    "supported swing legs should be held until support transfers cleanly")) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool testSupportAssessmentUsesConfirmedSupportWhenPhaseLags() {
+    MotionIntent intent = walkIntent(0.12, 0.0, 0.0);
+    GaitState gait{};
+    gait.duty_factor = 0.5;
+    gait.stride_phase_rate_hz = FrequencyHz{1.0};
+    gait.phase = {0.75, 0.25, 0.75, 0.25, 0.75, 0.25};
+    gait.in_stance = {false, false, false, false, false, false};
+
+    RobotState est{};
+    est.valid = true;
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        est.foot_contacts[static_cast<std::size_t>(leg)] = (leg % 2) == 0;
+        est.foot_contact_fusion[static_cast<std::size_t>(leg)].phase =
+            est.foot_contacts[static_cast<std::size_t>(leg)] ? ContactPhase::ConfirmedStance : ContactPhase::Search;
+    }
+
+    const HexapodGeometry geometry = geometry_config::activeHexapodGeometry();
+    const SupportAssessment no_observation = assessSupportState(RobotState{}, intent, gait, geometry);
+    const SupportAssessment confirmed_support = assessSupportState(est, intent, gait, geometry);
+    return expect(confirmed_support.support_count == 3,
+                  "support assessment should count confirmed stance contacts") &&
+           expect(confirmed_support.confirmed_support_count == 3,
+                  "support assessment should mark confirmed stance support as confirmed") &&
+           expect(confirmed_support.uncertain_support_count == 0,
+                  "support assessment should not add uncertainty when all support is confirmed") &&
+           expect(confirmed_support.search_leg_count == 3,
+                  "support assessment should count the lagging search-phase legs") &&
+           expect(confirmed_support.all_support_confirmed,
+                  "support assessment should recognize when all effective support is confirmed") &&
+           expect(confirmed_support.static_margin_m > no_observation.static_margin_m + 0.05,
+                  "support assessment should improve support margin when confirmed support is present") &&
+           expect(confirmed_support.degraded_support,
+                  "alternating confirmed support with no planned stance should still be treated as degraded");
+}
+
+bool testSupportAssessmentTracksUncertainSupportPhases() {
+    MotionIntent intent = walkIntent(0.12, 0.0, 0.0);
+    GaitState gait = allStanceWalkGait(0.25, FrequencyHz{1.0});
+
+    RobotState est{};
+    est.valid = true;
+    est.foot_contacts = {true, true, true, true, false, false};
+    est.foot_contact_fusion[0].phase = ContactPhase::ConfirmedStance;
+    est.foot_contact_fusion[1].phase = ContactPhase::ExpectedTouchdown;
+    est.foot_contact_fusion[2].phase = ContactPhase::LostCandidate;
+    est.foot_contact_fusion[3].phase = ContactPhase::Search;
+    est.foot_contact_fusion[4].phase = ContactPhase::Swing;
+    est.foot_contact_fusion[5].phase = ContactPhase::Swing;
+
+    const HexapodGeometry geometry = geometry_config::activeHexapodGeometry();
+    const SupportAssessment support = assessSupportState(est, intent, gait, geometry);
+    return expect(support.support_count == 4,
+                  "support assessment should preserve effective support from contact-backed stance legs") &&
+           expect(support.confirmed_support_count == 1,
+                  "only confirmed-stance support should count as confirmed under uncertain phases") &&
+           expect(support.uncertain_support_count == 3,
+                  "support assessment should report uncertainty for search, touchdown, and lost-candidate support") &&
+           expect(support.search_leg_count == 1,
+                  "support assessment should report search-phase legs") &&
+           expect(support.lost_candidate_count == 1,
+                  "support assessment should report lost-candidate legs") &&
+           expect(support.expected_touchdown_count == 1,
+                  "support assessment should report expected-touchdown legs") &&
+           expect(!support.all_support_confirmed,
+                  "support assessment should refuse all-support-confirmed when any support leg is uncertain");
+}
+
 bool testStabilityFastBodyRateThrottlesStride() {
     LocomotionStability stability{};
     MotionIntent intent = walkIntent(0.12, 0.0, 0.0);
@@ -278,6 +384,43 @@ bool testStabilitySlowCommandDoesNotThrottleStride() {
                   "low-speed command should not change stride cadence under body-rate throttling");
 }
 
+bool testStabilityNegativeMarginRecoveryForcesAllStance() {
+    LocomotionStability stability{};
+    MotionIntent intent = walkIntent(0.12, 5.0, 0.0);
+    intent.cmd_vx_mps = LinearRateMps{0.25};
+    intent.speed_mps = LinearRateMps{0.25};
+
+    GaitState gait{};
+    gait.duty_factor = 0.5;
+    gait.stride_phase_rate_hz = FrequencyHz{1.0};
+    gait.phase = {0.25, 0.75, 0.25, 0.75, 0.25, 0.75};
+    gait.in_stance = {true, false, true, false, true, false};
+
+    stability.apply(RobotState{}, intent, gait);
+
+    if (!expect(gait.static_stability_margin_m < 0.0,
+                "recovery-stance test should produce a negative support margin")) {
+        return false;
+    }
+    if (!expect(gait.step_length_m == 0.0,
+                "negative-margin recovery should stop step progression")) {
+        return false;
+    }
+    if (!expect(gait.stride_phase_rate_hz.value == 0.0,
+                "negative-margin recovery should freeze gait cadence")) {
+        return false;
+    }
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        if (!expect(gait.in_stance[static_cast<std::size_t>(leg)],
+                    "negative-margin recovery should force every leg into stance") ||
+            !expect(gait.stability_hold_stance[static_cast<std::size_t>(leg)],
+                    "negative-margin recovery should hold every leg in stance")) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool testStabilityStrictConfigLatchesNearLiftoff() {
     LocomotionStabilityConfig cfg{};
     cfg.min_margin_required_m = 50.0;
@@ -335,8 +478,12 @@ int main() {
         !testStabilityStandClears() || !testStabilityWalkCenteredPositiveMargin() ||
         !testStabilitySlowGaitIsNotMoreConservativeByDefault() ||
         !testStabilityComOutsideHullNegativeMargin() || !testStabilitySupportDiagnosticsExposeAsymmetry() ||
+        !testStabilityUsesConfirmedSupportWhenPhaseLags() ||
+        !testSupportAssessmentUsesConfirmedSupportWhenPhaseLags() ||
+        !testSupportAssessmentTracksUncertainSupportPhases() ||
         !testStabilityFastBodyRateThrottlesStride() || !testStabilityRaisesSwingHeightOnBodySag() ||
         !testStabilitySlowCommandDoesNotThrottleStride() ||
+        !testStabilityNegativeMarginRecoveryForcesAllStance() ||
         !testStabilityHighTiltForcesHold() ||
         !testStabilityStrictConfigLatchesNearLiftoff() ||
         !testStabilityResetClearsLatch()) {

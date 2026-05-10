@@ -1075,6 +1075,16 @@ std::vector<CaseSpec> buildCaseCatalog() {
         true,
         false,
         caseLongWalkObservability,
+        [](control_config::ControlConfig& cfg) {
+            cfg.gravity_feedforward.enabled = true;
+            cfg.gravity_feedforward.scale_coxa = 0.0;
+            cfg.gravity_feedforward.scale_femur = 0.30;
+            cfg.gravity_feedforward.scale_tibia = 0.30;
+            cfg.gravity_feedforward.stiffness_gain_scale = 0.62;
+            cfg.gravity_feedforward.delta_lpf_tau_s = 0.08;
+            cfg.gravity_feedforward.include_foot_reaction = true;
+            cfg.gravity_feedforward.include_self_weight = false;
+        },
     });
 
     cases.push_back(CaseSpec{

@@ -36,16 +36,16 @@ IslandOrderResult ComputeIslandOrder(const Island& island,
         // harmless because the sort only touches manifolds belonging to this island.
         std::vector<std::uint32_t> supportDepth(bodies.size(), 0u);
         for (std::uint32_t id : island.bodies) {
-            supportDepth[id] = (bodies[id].invMass == 0.0f) ? 0u : 1u;
+            supportDepth[id] = (bodies[id].invMass == 0.0) ? 0u : 1u;
         }
         for (std::uint32_t iter = 0; iter < config.ordering.support_depth_relaxation_passes; ++iter) {
             for (std::size_t mi : island.manifolds) {
                 const Manifold& m = manifolds[mi];
                 const std::uint32_t da = supportDepth[m.a];
                 const std::uint32_t db = supportDepth[m.b];
-                if (bodies[m.a].invMass == 0.0f && bodies[m.b].invMass > 0.0f) {
+                if (bodies[m.a].invMass == 0.0 && bodies[m.b].invMass > 0.0) {
                     supportDepth[m.b] = std::max(supportDepth[m.b], da + 1);
-                } else if (bodies[m.b].invMass == 0.0f && bodies[m.a].invMass > 0.0f) {
+                } else if (bodies[m.b].invMass == 0.0 && bodies[m.a].invMass > 0.0) {
                     supportDepth[m.a] = std::max(supportDepth[m.a], db + 1);
                 }
             }

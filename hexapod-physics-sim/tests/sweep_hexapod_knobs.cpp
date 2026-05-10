@@ -21,8 +21,8 @@ struct KnobConfig {
     int servoPositionPasses = 8;
     int servoPositionSolveStride = 1;
     bool anchorEarlyOut = true;
-    float anchorEarlyOutError = 2.5e-4f;
-    float anchorEarlyOutSpeed = 0.03f;
+    Real anchorEarlyOutError = 2.5e-4;
+    Real anchorEarlyOutSpeed = 0.03;
 };
 
 struct KnobResult {
@@ -50,7 +50,7 @@ KnobResult RunKnob(const KnobConfig& cfg) {
     KnobResult out{};
     out.cfg = cfg;
 
-    World world({0.0f, -9.81f, 0.0f});
+    World world({0.0, -9.81, 0.0});
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
     ApplyHexapodPoseHoldStabilityTuning(world, scene);
@@ -63,11 +63,11 @@ KnobResult RunKnob(const KnobConfig& cfg) {
     jc.servoAnchorEarlyOutSpeed = cfg.anchorEarlyOutSpeed;
     world.SetJointSolverConfig(jc);
 
-    constexpr float kFrameDt = 1.0f / 60.0f;
+    constexpr Real kFrameDt = 1.0 / 60.0;
     constexpr int kFrames = 240;
-    const float subDt = kFrameDt / static_cast<float>(std::max(cfg.substeps, 1));
+    const Real subDt = kFrameDt / static_cast<float>(std::max(cfg.substeps, 1));
 
-    std::array<float, 18> previousAngles{};
+    std::array<Real, 18> previousAngles{};
     std::size_t ai = 0;
     for (const std::uint32_t id : HexapodServoJointIds(scene)) {
         previousAngles[ai++] = world.GetServoJointAngle(id);
@@ -81,8 +81,8 @@ KnobResult RunKnob(const KnobConfig& cfg) {
         }
 
         const Body& chassis = world.GetBody(scene.body);
-        const float bodyRoll = BodyRollRadStability(chassis.orientation);
-        const float bodyPitch = BodyPitchRadStability(chassis.orientation);
+        const Real bodyRoll = BodyRollRadStability(chassis.orientation);
+        const Real bodyPitch = BodyPitchRadStability(chassis.orientation);
         const std::array<HexapodLegContactRollup, 6> contactSummary =
             SummarizeHexapodGroundContacts(world, scene);
         int totalManifolds = 0;
@@ -91,7 +91,7 @@ KnobResult RunKnob(const KnobConfig& cfg) {
             totalManifolds += c.coxa.manifolds + c.femur.manifolds + c.tibia.manifolds;
             totalPoints += c.coxa.points + c.femur.points + c.tibia.points;
         }
-        const float maxJointSpeed = MaxHexapodJointSpeedRadSFrame(world, scene, previousAngles, kFrameDt);
+        const Real maxJointSpeed = MaxHexapodJointSpeedRadSFrame(world, scene, previousAngles, kFrameDt);
         UpdateHexapodStandingStats(
             out.standing, chassis, bodyRoll, bodyPitch, totalManifolds, totalPoints, maxJointSpeed);
     }
@@ -114,13 +114,13 @@ int main() {
     const std::vector<KnobConfig> sweep = {
         // Focused anchor-fastpath A/B at current tuned operating point.
         // Anchor early-out sweep (stride 1).
-        {40, 2, 8, 1, false, 0.0f, 0.0f},
-        {40, 2, 8, 1, true, 1.0e-4f, 0.02f},
-        {40, 2, 8, 1, true, 2.5e-4f, 0.03f},
-        {40, 2, 8, 1, true, 5.0e-4f, 0.05f},
+        {40, 2, 8, 1, false, 0.0, 0.0},
+        {40, 2, 8, 1, true, 1.0e-4, 0.02},
+        {40, 2, 8, 1, true, 2.5e-4, 0.03},
+        {40, 2, 8, 1, true, 5.0e-4, 0.05},
         // SolveJointPositions stride sweep at chosen early-out thresholds.
-        {40, 2, 8, 2, true, 1.0e-4f, 0.02f},
-        {40, 2, 8, 3, true, 1.0e-4f, 0.02f},
+        {40, 2, 8, 2, true, 1.0e-4, 0.02},
+        {40, 2, 8, 3, true, 1.0e-4, 0.02},
     };
 
     std::printf(

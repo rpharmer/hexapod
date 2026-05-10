@@ -11,13 +11,13 @@ using namespace minphys3d;
 using namespace minphys3d::demo;
 
 HexapodPoseHoldMetrics RunLivePoseHoldScenario() {
-    World world({0.0f, -9.81f, 0.0f});
+    World world({0.0, -9.81, 0.0});
     const HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
     ApplyHexapodPoseHoldStabilityTuning(world, scene);
 
     HexapodPoseHoldMetrics metrics{};
-    constexpr float kFrameDt = 1.0f / 60.0f;
+    constexpr Real kFrameDt = 1.0 / 60.0;
     for (int frame = 0; frame < 240; ++frame) {
         for (int substep = 0; substep < kHexapodPoseHoldBenchmarkSubstepsPerFrame; ++substep) {
             world.Step(
@@ -40,11 +40,11 @@ int main() {
     // Total PGS iters / frame = substeps * solverIters = 1 * 20 = 20. Wide caps: stability here is
     // benchmark/telemetry only at this budget; do not conflate with a higher-iter regression bar.
     constexpr bool kStrictStability = false;
-    const float kMaxLinear = kStrictStability ? 1.5f : 1.0e6f;
-    const float kMaxAngular = kStrictStability ? 0.24f : 1.0e6f;
-    const float kMaxError = kStrictStability ? 1.0f : 1.0e6f;
-    const float kMaxFinalSpeed = kStrictStability ? 0.05f : 1.0e6f;
-    const float kMinFinalY = kStrictStability ? 0.03f : -1.0e6f;
+    const Real kMaxLinear = kStrictStability ? 1.5 : 1.0e6;
+    const Real kMaxAngular = kStrictStability ? 0.24 : 1.0e6;
+    const Real kMaxError = kStrictStability ? 1.0 : 1.0e6;
+    const Real kMaxFinalSpeed = kStrictStability ? 0.05 : 1.0e6;
+    const Real kMinFinalY = kStrictStability ? 0.03 : -1.0e6;
 
     if (metrics.peakLinear > kMaxLinear) {
         std::cerr << "hex_live_hold peak_linear=" << metrics.peakLinear << " cap=" << kMaxLinear << "\n";

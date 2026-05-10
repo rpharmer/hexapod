@@ -11,6 +11,8 @@ constexpr std::array<double, kNumLegs> kSequentialOffsets = {
 constexpr double kMinSwingHeightM = 0.014;
 constexpr double kLowSpeedYawSwingBoostM = 0.008;
 constexpr double kSwingHeightFloorFractionOfBase = 0.70;
+constexpr double kTripodLateralStepTrim = 0.20;
+constexpr double kTripodLateralSwingBoostM = 0.004;
 
 double swingHeightFloorForPreset(const GaitPresetTemplate& preset) {
     return std::max(kMinSwingHeightM, preset.base_swing_height_m * kSwingHeightFloorFractionOfBase);
@@ -181,6 +183,19 @@ UnifiedGaitDescription buildAdaptiveTripodCrawlGait(const double vx_mps,
                                                     const control_config::GaitConfig& gait_cfg) {
     UnifiedGaitDescription out =
         buildTargetUnifiedGait(GaitType::TRIPOD, vx_mps, vy_mps, yaw_rate_radps, gait_cfg, cmd_ax_mps2, cmd_ay_mps2);
+    const double planar_speed_mps = std::hypot(vx_mps, vy_mps);
+    const double lat_frac =
+        (planar_speed_mps > 1e-6) ? std::clamp(std::abs(vy_mps) / planar_speed_mps, 0.0, 1.0) : 0.0;
+    if (lat_frac > 1e-9) {
+        out.step_length_m = std::clamp(
+            out.step_length_m * (1.0 - kTripodLateralStepTrim * lat_frac),
+            0.012,
+            0.12);
+        out.swing_height_m = std::clamp(
+            out.swing_height_m + kTripodLateralSwingBoostM * lat_frac,
+            0.008,
+            0.06);
+    }
     out.swing_height_m = std::max(out.swing_height_m, swingHeightFloorForPreset(gaitPresetTemplate(GaitType::TRIPOD)));
     return out;
 }

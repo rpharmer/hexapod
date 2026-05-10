@@ -169,6 +169,42 @@ const char* contactPhaseName(const ContactPhase phase) {
     }
 }
 
+template <typename T, std::size_t N, typename Formatter>
+void appendArray(std::ostringstream& out, const std::array<T, N>& values, Formatter formatter) {
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) {
+            out << ',';
+        }
+        formatter(out, values[i]);
+    }
+}
+
+void appendBoolArray01(std::ostringstream& out, const std::array<bool, kNumLegs>& values) {
+    appendArray(out, values, [](std::ostringstream& stream, const bool value) { stream << (value ? '1' : '0'); });
+}
+
+void appendDoubleArray(std::ostringstream& out, const std::array<double, kNumLegs>& values) {
+    appendArray(out, values, [](std::ostringstream& stream, const double value) { stream << value; });
+}
+
+void appendContactPhaseArray(std::ostringstream& out, const RobotState& est) {
+    for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+        if (leg > 0) {
+            out << ',';
+        }
+        out << contactPhaseName(est.foot_contact_fusion[leg].phase);
+    }
+}
+
+void appendContactConfidenceArray(std::ostringstream& out, const RobotState& est) {
+    for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+        if (leg > 0) {
+            out << ',';
+        }
+        out << est.foot_contact_fusion[leg].confidence;
+    }
+}
+
 Vec3 serverToSimVec(const Vec3& v) {
     return Vec3{v.y, v.z, -v.x};
 }
@@ -704,7 +740,12 @@ RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
       config_(config),
       telemetry_publisher_(std::move(telemetry_publisher)),
       replay_logger_(std::move(replay_logger)),
-      pipeline_(config_.gait, config_.locomotion_cmd, config_.foot_terrain, &resource_profiler_),
+      pipeline_(config_.gait,
+                config_.locomotion_cmd,
+                config_.safety,
+                config_.foot_terrain,
+                config_.gravity_feedforward,
+                &resource_profiler_),
       safety_(config_.safety),
       freshness_policy_(config_.freshness),
       freshness_gate_(freshness_policy_),
@@ -754,6 +795,8 @@ bool RobotRuntime::init() {
     last_fusion_reset_sample_id_ = 0;
     last_fusion_correction_sample_id_ = 0;
     last_logged_safety_fault_ = FaultCode::NONE;
+    last_logged_recovery_hold_active_ = false;
+    last_logged_recovery_stage_ = RecoveryStage::None;
     last_fusion_correction_mode_ = static_cast<std::uint8_t>(PhysicsSimCorrectionMode::None);
     last_fusion_correction_ = {};
     contact_anchor_valid_.fill(false);
@@ -981,6 +1024,10 @@ void RobotRuntime::controlStep() {
                  governor != nullptr ? governor->severity : 0.0,
                  " gov_support_m=",
                  governor != nullptr ? governor->support_margin_m : 0.0,
+                 " gov_current_support_m=",
+                 governor != nullptr ? governor->current_support_margin_m : 0.0,
+                 " gov_current_support_count=",
+                 governor != nullptr ? governor->current_support_count : 0,
                  " gov_tilt_rad=",
                  governor != nullptr ? governor->body_tilt_rad : 0.0,
                  " gov_body_rate_radps=",
@@ -995,6 +1042,10 @@ void RobotRuntime::controlStep() {
                  governor != nullptr ? governor->swing_height_floor_m : 0.0,
                  " gov_body_delta_m=",
                  governor != nullptr ? governor->body_height_delta_m : 0.0,
+                 " gov_recovery_hold=",
+                 governor != nullptr && governor->recovery_hold_active ? 1 : 0,
+                 " gov_freeze_phase=",
+                 governor != nullptr && governor->freeze_phase ? 1 : 0,
                  " gov_reason_mask=",
                  governor != nullptr ? static_cast<std::uint32_t>(governor->reasons) : 0u,
                  " fusion_max_pos_err=",
@@ -1088,7 +1139,82 @@ void RobotRuntime::controlStep() {
     status_.write(result.status);
     traceControlLoop(result.status, true, &result.command_governor);
 
-    if (logger_) {
+    if (logger_ && result.command_governor.recovery_stage != last_logged_recovery_stage_) {
+        const RecoveryStage previous_stage = last_logged_recovery_stage_;
+        LOG_INFO(logger_,
+                 "recovery_stage_transition",
+                 " loop=",
+                 loop_counter,
+                 " stage=",
+                 recoveryStageName(result.command_governor.recovery_stage),
+                 " support_count=",
+                 result.command_governor.current_support_count,
+                 " confirmed_support_count=",
+                 result.command_governor.confirmed_support_count,
+                 " uncertain_support_count=",
+                 result.command_governor.uncertain_support_count,
+                 " current_support_margin_m=",
+                 result.command_governor.current_support_margin_m,
+                 " legacy_support_margin_m=",
+                 result.command_governor.support_margin_m,
+                 " collapse_headroom_m=",
+                 result.command_governor.recovery_collapse_headroom_m,
+                 " body_rate_radps=",
+                 result.command_governor.body_rate_radps,
+                 " body_tilt_rad=",
+                 result.command_governor.body_tilt_rad,
+                 " requested_speed_mps=",
+                 result.command_governor.requested_planar_speed_mps,
+                 " requested_yaw_radps=",
+                 result.command_governor.requested_yaw_rate_radps,
+                 " command_scale=",
+                 result.command_governor.command_scale,
+                 " cadence_scale=",
+                 result.command_governor.cadence_scale,
+                 " release_ready=",
+                 result.command_governor.recovery_release_ready ? 1 : 0);
+        if (previous_stage == RecoveryStage::RampOut &&
+            result.command_governor.recovery_stage == RecoveryStage::ActiveHold) {
+            LOG_INFO(logger_,
+                     "ramp_out_abort_reason",
+                     " loop=",
+                     loop_counter,
+                     " support_count=",
+                     result.command_governor.current_support_count,
+                     " confirmed_support_count=",
+                     result.command_governor.confirmed_support_count,
+                     " uncertain_support_count=",
+                     result.command_governor.uncertain_support_count,
+                     " current_support_margin_m=",
+                     result.command_governor.current_support_margin_m,
+                     " collapse_headroom_m=",
+                     result.command_governor.recovery_collapse_headroom_m,
+                     " body_rate_radps=",
+                     result.command_governor.body_rate_radps,
+                     " body_tilt_rad=",
+                     result.command_governor.body_tilt_rad);
+        } else if (previous_stage == RecoveryStage::RampOut &&
+                   result.command_governor.recovery_stage == RecoveryStage::None) {
+            LOG_INFO(logger_,
+                     "ramp_out_complete",
+                     " loop=",
+                     loop_counter,
+                     " support_count=",
+                     result.command_governor.current_support_count,
+                     " current_support_margin_m=",
+                     result.command_governor.current_support_margin_m,
+                     " collapse_headroom_m=",
+                     result.command_governor.recovery_collapse_headroom_m,
+                     " body_rate_radps=",
+                     result.command_governor.body_rate_radps,
+                     " body_tilt_rad=",
+                     result.command_governor.body_tilt_rad);
+        }
+        last_logged_recovery_stage_ = result.command_governor.recovery_stage;
+        last_logged_recovery_hold_active_ = result.command_governor.recovery_hold_active;
+    }
+
+    if (logger_ && config_.control_loop_trace_enabled) {
         std::ostringstream support_snapshot;
         support_snapshot << "stance_support_snapshot clearance_m=[";
         for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
@@ -1270,6 +1396,61 @@ void RobotRuntime::safetyStep() {
                      : 0.0,
                  " mode=",
                  static_cast<int>(intent.requested_mode));
+        if (s.active_fault == FaultCode::BODY_COLLAPSE) {
+            const GaitState gait = gait_state_.read();
+            const int fused_contact_count = std::count(est.foot_contacts.begin(), est.foot_contacts.end(), true);
+            const double measured_body_height_m =
+                est.has_body_twist_state ? est.body_twist_state.body_trans_m.z : std::numeric_limits<double>::quiet_NaN();
+            const double commanded_body_height_m = intent.twist.body_trans_m.z;
+            const double collapse_delta_m = commanded_body_height_m - measured_body_height_m;
+            const bool using_min_safe_height = config_.safety.body_height_collapse_min_safe_m > 0.0;
+            std::ostringstream collapse_snapshot;
+            collapse_snapshot << "body_collapse_context"
+                              << " recovery_stage=" << recoveryStageName(command_governor_state_.read().recovery_stage)
+                              << " cmd_body_height_m=" << commanded_body_height_m
+                              << " measured_body_height_m=" << measured_body_height_m
+                              << " collapse_delta_m=" << collapse_delta_m
+                              << " rule=" << (using_min_safe_height ? "min_safe_height" : "margin_drop")
+                              << " threshold_m="
+                              << (using_min_safe_height ? config_.safety.body_height_collapse_min_safe_m
+                                                        : config_.safety.body_height_collapse_margin_m)
+                              << " raw_contact_count=" << contact_count
+                              << " fused_contact_count=" << fused_contact_count
+                              << " body_height_collapse_max_contacts=" << config_.safety.body_height_collapse_max_contacts
+                              << " gait=" << static_cast<int>(intent.gait)
+                              << " cmd_vx_mps=" << intent.cmd_vx_mps.value
+                              << " cmd_vy_mps=" << intent.cmd_vy_mps.value
+                              << " cmd_yaw_radps=" << intent.cmd_yaw_radps.value
+                              << " meas_vx_mps=" << est.body_twist_state.body_trans_mps.x
+                              << " meas_vy_mps=" << est.body_twist_state.body_trans_mps.y
+                              << " roll_rad=" << est.body_twist_state.twist_pos_rad.x
+                              << " pitch_rad=" << est.body_twist_state.twist_pos_rad.y
+                              << " stride_phase_rate_hz=" << gait.stride_phase_rate_hz.value
+                              << " duty_factor=" << gait.duty_factor
+                              << " step_length_m=" << gait.step_length_m
+                              << " swing_height_m=" << gait.swing_height_m
+                              << " static_margin_m=" << gait.static_stability_margin_m
+                              << " raw_contacts=[";
+            appendBoolArray01(collapse_snapshot, raw.foot_contacts);
+            collapse_snapshot << "] fused_contacts=[";
+            appendBoolArray01(collapse_snapshot, est.foot_contacts);
+            collapse_snapshot << "] phase=[";
+            appendDoubleArray(collapse_snapshot, gait.phase);
+            collapse_snapshot << "] in_stance=[";
+            appendBoolArray01(collapse_snapshot, gait.in_stance);
+            collapse_snapshot << "] hold_stance=[";
+            appendBoolArray01(collapse_snapshot, gait.stability_hold_stance);
+            collapse_snapshot << "] safe_to_lift=[";
+            appendBoolArray01(collapse_snapshot, gait.support_liftoff_safe_to_lift);
+            collapse_snapshot << "] clearance_m=[";
+            appendDoubleArray(collapse_snapshot, gait.support_liftoff_clearance_m);
+            collapse_snapshot << "] contact_phase=[";
+            appendContactPhaseArray(collapse_snapshot, est);
+            collapse_snapshot << "] contact_confidence=[";
+            appendContactConfidenceArray(collapse_snapshot, est);
+            collapse_snapshot << ']';
+            LOG_WARN(logger_, collapse_snapshot.str());
+        }
         last_logged_safety_fault_ = s.active_fault;
     }
     safety_state_.write(s);
@@ -1601,6 +1782,8 @@ RobotRuntime::FusionControlPolicy RobotRuntime::applyFusionConsistency(const Rob
     pipeline_.reset();
     freshness_gate_.reset();
     last_effective_intent_estimator_sample_id_ = 0;
+    last_logged_recovery_hold_active_ = false;
+    last_logged_recovery_stage_ = RecoveryStage::None;
     (void)scope;
     return policy;
 }

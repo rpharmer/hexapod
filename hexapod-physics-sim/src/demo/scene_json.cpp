@@ -443,7 +443,7 @@ bool RequireVec3(const JsonObject& o, const std::string& key, Vec3& out, std::st
 bool GetQuat(const JsonObject& o, const std::string& key, Quat& out, std::string& err) {
     const JsonValue* v = FindMember(o, key);
     if (!v) {
-        out = Quat{1.0f, 0.0f, 0.0f, 0.0f};
+        out = Quat{1.0, 0.0, 0.0, 0.0};
         return true;
     }
     if (v->type != JsonValue::Array || v->array.size() != 4) {
@@ -539,7 +539,7 @@ bool ParseJointObject(const JsonObject& o, World& world, std::string& err, std::
         if (!RequireVec3(o, "anchor", anchor, err)) {
             return false;
         }
-        Vec3 axis{0.0f, 1.0f, 0.0f};
+        Vec3 axis{0.0, 1.0, 0.0};
         if (!GetVec3(o, "axis", axis, err, axis)) {
             return false;
         }
@@ -597,7 +597,7 @@ bool ParseJointObject(const JsonObject& o, World& world, std::string& err, std::
         if (!RequireVec3(o, "anchor", anchor, err)) {
             return false;
         }
-        Vec3 axis{1.0f, 0.0f, 0.0f};
+        Vec3 axis{1.0, 0.0, 0.0};
         if (!GetVec3(o, "axis", axis, err, axis)) {
             return false;
         }
@@ -637,7 +637,7 @@ bool ParseJointObject(const JsonObject& o, World& world, std::string& err, std::
         if (!RequireVec3(o, "anchor", anchor, err)) {
             return false;
         }
-        Vec3 axis{0.0f, 1.0f, 0.0f};
+        Vec3 axis{0.0, 1.0, 0.0};
         if (!GetVec3(o, "axis", axis, err, axis)) {
             return false;
         }
@@ -754,7 +754,7 @@ bool ParseCompoundChildren(const JsonValue& arrVal, std::vector<CompoundChild>& 
         double hh = 0.5;
         (void)GetNumber(ch.object, "half_height", hh, err, false);
         child.halfHeight = static_cast<float>(hh);
-        if (!GetVec3(ch.object, "half_extents", child.halfExtents, err, {0.5f, 0.5f, 0.5f})) {
+        if (!GetVec3(ch.object, "half_extents", child.halfExtents, err, {0.5, 0.5, 0.5})) {
             return false;
         }
         out.push_back(child);
@@ -964,11 +964,11 @@ bool ParseBodyObject(const JsonObject& o, Body& body, std::string& err) {
         (void)GetNumber(o, "radius", rad, err, false);
         body.radius = static_cast<float>(rad);
     } else if (body.shape == ShapeType::Box) {
-        if (!GetVec3(o, "half_extents", body.halfExtents, err, {0.5f, 0.5f, 0.5f})) {
+        if (!GetVec3(o, "half_extents", body.halfExtents, err, {0.5, 0.5, 0.5})) {
             return false;
         }
     } else if (body.shape == ShapeType::Plane) {
-        if (!GetVec3(o, "plane_normal", body.planeNormal, err, {0.0f, 1.0f, 0.0f})) {
+        if (!GetVec3(o, "plane_normal", body.planeNormal, err, {0.0, 1.0, 0.0})) {
             return false;
         }
         body.planeNormal = Normalize(body.planeNormal);
@@ -993,7 +993,7 @@ bool ParseBodyObject(const JsonObject& o, Body& body, std::string& err) {
         if (!ParseCompoundChildren(*ch, body.compoundChildren, err)) {
             return false;
         }
-        if (!GetVec3(o, "half_extents", body.halfExtents, err, {0.5f, 0.5f, 0.5f})) {
+        if (!GetVec3(o, "half_extents", body.halfExtents, err, {0.5, 0.5, 0.5})) {
             return false;
         }
     }
@@ -1082,7 +1082,7 @@ std::filesystem::path ResolveSceneFilePath(const std::string& pathIn) {
 
 namespace {
 
-float WrapAngleRad(float a) {
+Real WrapAngleRad(Real a) {
     return std::atan2(std::sin(a), std::cos(a));
 }
 
@@ -1092,18 +1092,18 @@ void LogJsonSceneFrameDiagnostics(std::FILE* out, int frame, const World& world)
     }
     const std::vector<Manifold>& manifolds = world.DebugManifolds();
     std::size_t contact_count = 0;
-    float max_pen = 0.0f;
+    Real max_pen = 0.0;
     for (const Manifold& m : manifolds) {
         for (const Contact& c : m.contacts) {
             ++contact_count;
             max_pen = std::max(max_pen, c.penetration);
         }
     }
-    float max_dyn_w = 0.0f;
-    float max_dyn_v = 0.0f;
+    Real max_dyn_w = 0.0;
+    Real max_dyn_v = 0.0;
     for (std::uint32_t i = 0; i < world.GetBodyCount(); ++i) {
         const Body& b = world.GetBody(i);
-        if (b.invMass <= 0.0f || b.isSleeping) {
+        if (b.invMass <= 0.0 || b.isSleeping) {
             continue;
         }
         max_dyn_w = std::max(max_dyn_w, Length(b.angularVelocity));
@@ -1120,8 +1120,8 @@ void LogJsonSceneFrameDiagnostics(std::FILE* out, int frame, const World& world)
     const std::uint32_t servo_count = world.GetServoJointCount();
     for (std::uint32_t sj = 0; sj < servo_count; ++sj) {
         const ServoJoint& joint = world.GetServoJoint(sj);
-        const float angle = world.GetServoJointAngle(sj);
-        const float err = WrapAngleRad(angle - joint.targetAngle);
+        const Real angle = world.GetServoJointAngle(sj);
+        const Real err = WrapAngleRad(angle - joint.targetAngle);
         std::fprintf(out, " servo%u_err=%.6f servo%u_imp=%.6f", sj, err, sj, joint.servoImpulseSum);
     }
     std::fprintf(out, "\n");
@@ -1352,7 +1352,7 @@ int RunPhysicsDemoFromJsonFile(
 
     std::unique_ptr<FrameSink> sink = MakeFrameSink(sink_kind, udp_host, udp_port);
 
-    constexpr float dt = 1.0f / 60.0f;
+    constexpr Real dt = 1.0 / 60.0;
     const DemoSteadyClock::time_point t0 = DemoSteadyClock::now();
     for (int frame = 0; frame < frame_count; ++frame) {
         world.Step(dt, solver_iterations);
