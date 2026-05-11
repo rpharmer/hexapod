@@ -33,14 +33,43 @@ IKCandidate buildCandidate(const double q1,
   return candidate;
 }
 
-void apply_estimated_leg_fallback(const RobotState& est,
-                                  JointTargets& joints,
-                                  int legID)
+bool jointSourceCanHold(const JointStateQuality& quality)
 {
-  for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-    joints.leg_states[legID].joint_state[joint].pos_rad =
-        est.leg_states[legID].joint_state[joint].pos_rad;
+  if (!quality.position_valid) {
+    return false;
   }
+  switch (quality.source) {
+    case JointStateSource::Measured:
+    case JointStateSource::Simulated:
+      return true;
+    case JointStateSource::ObserverEstimate:
+      return quality.confidence >= 0.45;
+    case JointStateSource::CommandEcho:
+    case JointStateSource::None:
+    default:
+      return false;
+  }
+}
+
+bool apply_source_aware_leg_fallback(const RobotState& est,
+                                     const JointTargets& last_commanded,
+                                     const std::array<bool, kNumLegs>& have_last_commanded,
+                                     JointTargets& joints,
+                                     int legID)
+{
+  const std::size_t leg_index = static_cast<std::size_t>(legID);
+  if (jointSourceCanHold(est.joint_state_quality[leg_index])) {
+    for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+      joints.leg_states[legID].joint_state[joint].pos_rad =
+          est.leg_states[legID].joint_state[joint].pos_rad;
+    }
+    return true;
+  }
+  if (have_last_commanded[leg_index]) {
+    joints.leg_states[legID] = last_commanded.leg_states[leg_index];
+    return true;
+  }
+  return false;
 }
 
 } // namespace
@@ -59,8 +88,11 @@ JointTargets LegIK::solve(const RobotState& est,
                                     hexGeo.legGeometry[legID]);
     const bool use_fallback = !solved || !safety.leg_enabled[legID];
     if (use_fallback) {
-      apply_estimated_leg_fallback(est, joints, legID);
+      (void)apply_source_aware_leg_fallback(
+          est, last_commanded_targets_, have_last_commanded_target_, joints, legID);
     }
+    last_commanded_targets_.leg_states[legID] = joints.leg_states[legID];
+    have_last_commanded_target_[static_cast<std::size_t>(legID)] = true;
   }
 
   return joints;

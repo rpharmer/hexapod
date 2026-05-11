@@ -23,6 +23,25 @@ bool tuningTableHasKey(const toml::value& root, const char* leaf_key) {
   }
 }
 
+std::string parseTuningStringWithFallback(const toml::value& root,
+                                          const char* leaf_key,
+                                          const std::string& fallback) {
+  try {
+    const auto& tun = root.at("Tuning");
+    if (!tun.is_table()) {
+      return fallback;
+    }
+    const auto& table = tun.as_table();
+    const auto it = table.find(std::string(leaf_key));
+    if (it == table.end() || !it->second.is_string()) {
+      return fallback;
+    }
+    return it->second.as_string();
+  } catch (...) {
+    return fallback;
+  }
+}
+
 } // namespace
 
 namespace tuning_section_parser {
@@ -134,6 +153,28 @@ void parseTuningSection(const toml::value& root,
   out.bodyHeightCollapseMaxContacts = config_validation::parseIntWithFallback(
       root, "Tuning.BodyHeightCollapseMaxContacts", control_config::kDefaultBodyHeightCollapseMaxContacts, 0,
       kNumLegs, "tuning", logger);
+
+  // Parsed after `runtime_section_parser` so these override `Runtime.Investigation.Disable*` when present.
+  out.investigationDisableTerrainStanceBias = config_validation::parseBoolWithFallback(
+      root, "Tuning.InvestigationDisableTerrainStanceBias", out.investigationDisableTerrainStanceBias);
+  out.investigationDisableTerrainSwingClearance = config_validation::parseBoolWithFallback(
+      root, "Tuning.InvestigationDisableTerrainSwingClearance", out.investigationDisableTerrainSwingClearance);
+  out.investigationDisableTerrainSwingXYNudge = config_validation::parseBoolWithFallback(
+      root, "Tuning.InvestigationDisableTerrainSwingXYNudge", out.investigationDisableTerrainSwingXYNudge);
+  out.investigationDisableStanceTiltLeveling = config_validation::parseBoolWithFallback(
+      root, "Tuning.InvestigationDisableStanceTiltLeveling", out.investigationDisableStanceTiltLeveling);
+  out.locomotionFeasibilityTelemetry = config_validation::parseBoolWithFallback(
+      root, "Tuning.LocomotionFeasibilityTelemetry", out.locomotionFeasibilityTelemetry);
+  out.locomotionFeasibilityRecovery = config_validation::parseBoolWithFallback(
+      root, "Tuning.LocomotionFeasibilityRecovery", out.locomotionFeasibilityRecovery);
+  out.locomotionFeasibilityLiftGating = config_validation::parseBoolWithFallback(
+      root, "Tuning.LocomotionFeasibilityLiftGating", out.locomotionFeasibilityLiftGating);
+  out.locomotionContactModePlanning = config_validation::parseBoolWithFallback(
+      root, "Tuning.LocomotionContactModePlanning", out.locomotionContactModePlanning);
+  out.locomotionHeightPolicy = config_validation::parseBoolWithFallback(
+      root, "Tuning.LocomotionHeightPolicy", out.locomotionHeightPolicy);
+  out.locomotionControlMarginSource =
+      parseTuningStringWithFallback(root, "LocomotionControlMarginSource", out.locomotionControlMarginSource);
 
   out.navBodyFrameIntegralKiFwdPerS = config_validation::parseDoubleWithFallback(
       root, "Tuning.NavBodyFrameIntegralKiFwdPerS", control_config::kDefaultNavBodyFrameIntegralKiFwdPerS, 0.0, 5.0,
@@ -284,6 +325,18 @@ void parseTuningSection(const toml::value& root,
       "tuning", logger);
   out.fusionContactHoldWindowMs = config_validation::parseIntWithFallback(
       root, "Tuning.FusionContactHoldWindowMs", control_config::kDefaultFusionContactHoldWindowMs, 1, 4000,
+      "tuning", logger);
+  out.fusionContactRiseTauS = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FusionContactRiseTauS", control_config::kDefaultFusionContactRiseTauS, 0.001, 2.0,
+      "tuning", logger);
+  out.fusionContactDecayTauS = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FusionContactDecayTauS", control_config::kDefaultFusionContactDecayTauS, 0.001, 2.0,
+      "tuning", logger);
+  out.fusionLiftoffGraceS = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FusionLiftoffGraceS", control_config::kDefaultFusionLiftoffGraceS, 0.0, 2.0,
+      "tuning", logger);
+  out.fusionTouchdownConfirmS = config_validation::parseDoubleWithFallback(
+      root, "Tuning.FusionTouchdownConfirmS", control_config::kDefaultFusionTouchdownConfirmS, 0.0, 2.0,
       "tuning", logger);
   out.fusionTrustDecayPerMismatch = config_validation::parseDoubleWithFallback(
       root, "Tuning.FusionTrustDecayPerMismatch", control_config::kDefaultFusionTrustDecayPerMismatch, 0.0, 1.0,

@@ -49,7 +49,11 @@ bool test_enabled_estimator_moves_toward_target() {
     estimator.synthesize(out);
 
     return expect(out.leg_states[0].joint_state[0].pos_rad.value > 0.0,
-                  "enabled estimator should advance synthetic position toward target");
+                  "enabled estimator should advance synthetic position toward target") &&
+           expect(out.joint_state_quality[0].source == JointStateSource::ObserverEstimate,
+                  "enabled estimator should mark synthetic joint state as observer estimate") &&
+           expect(out.joint_state_quality[0].position_valid,
+                  "enabled estimator should mark synthetic joint position valid");
 }
 
 bool test_enabled_estimator_preserves_continuity_past_pi() {

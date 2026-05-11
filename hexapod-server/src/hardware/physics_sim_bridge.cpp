@@ -579,6 +579,11 @@ bool PhysicsSimBridge::read(RobotState& out) {
             AngularRateRadPerSec{cal.femurSign * v_f};
         out.leg_states[leg].joint_state[TIBIA].vel_radps =
             AngularRateRadPerSec{cal.tibiaSign * v_t};
+        out.joint_state_quality[leg].position_valid = true;
+        out.joint_state_quality[leg].velocity_valid = true;
+        out.joint_state_quality[leg].source = JointStateSource::Simulated;
+        out.joint_state_quality[leg].age_us = 0;
+        out.joint_state_quality[leg].confidence = 1.0;
     }
 
     for (std::size_t i = 0; i < kNumLegs; ++i) {

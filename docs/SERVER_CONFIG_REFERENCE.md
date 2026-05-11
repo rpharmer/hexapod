@@ -83,6 +83,8 @@ Note: current runtime computes effective UDP host/port and periods from primary 
 - `Runtime.Investigation.SuppressFusionCorrections` (bool)
 - `Runtime.Investigation.SuppressFusionResets` (bool)
 
+The same disable flags may also appear under `[Tuning]` as `Tuning.InvestigationDisableTerrainStanceBias`, `Tuning.InvestigationDisableTerrainSwingClearance`, `Tuning.InvestigationDisableTerrainSwingXYNudge`, and `Tuning.InvestigationDisableStanceTiltLeveling` (bool). The tuning section is parsed **after** the runtime section; when a tuning key is present, it **overrides** the corresponding `ParsedToml` field (so tuning wins over `Runtime.Investigation.*` for these four).
+
 ## Transport keys (top-level)
 
 Primary parser: `transport_section_parser.cpp`.
@@ -166,6 +168,16 @@ Primary parser: `tuning_section_parser.cpp`.
 - `Tuning.BodyHeightCollapseMarginM` (`0.0..0.25`)
 - `Tuning.BodyHeightCollapseMinSafeM` (`0.0..0.25`)
 - `Tuning.BodyHeightCollapseMaxContacts` (`0..kNumLegs`)
+- `Tuning.InvestigationDisableTerrainStanceBias` (bool; optional; same meaning as `Runtime.Investigation.DisableTerrainStanceBias`, parsed after runtime)
+- `Tuning.InvestigationDisableTerrainSwingClearance` (bool; optional; same pattern)
+- `Tuning.InvestigationDisableTerrainSwingXYNudge` (bool; optional; same pattern)
+- `Tuning.InvestigationDisableStanceTiltLeveling` (bool; optional; same pattern)
+- `Tuning.LocomotionFeasibilityTelemetry` (bool; default `true`) — publish feasibility/contact/height decision telemetry without changing behavior.
+- `Tuning.LocomotionFeasibilityRecovery` (bool; default `false`) — use the feasibility product for pipeline recovery-entry latching.
+- `Tuning.LocomotionFeasibilityLiftGating` (bool; default `false`) — derive stability liftoff gates from the feasibility product.
+- `Tuning.LocomotionContactModePlanning` (bool; default `false`) — use the shared per-leg contact mode for body planning and gravity feedforward stance masks.
+- `Tuning.LocomotionHeightPolicy` (bool; default `false`) — emit and enable the consolidated height-policy output; compatibility behavior remains default.
+- `Tuning.LocomotionControlMarginSource` (`nominal`, `actual`, or `conservative`; default `nominal`) — selects the support margin source used by the feasibility product.
 
 ### Gait and locomotion command
 

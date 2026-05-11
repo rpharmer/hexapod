@@ -34,6 +34,12 @@ RobotState imuUpright() {
     est.imu.valid = true;
     est.imu.accel_mps2 = {0.0, 0.0, 9.80665};
     est.imu.gyro_radps = {0.0, 0.0, 0.0};
+    for (auto& quality : est.joint_state_quality) {
+        quality.position_valid = true;
+        quality.velocity_valid = true;
+        quality.source = JointStateSource::Simulated;
+        quality.confidence = 1.0;
+    }
     return est;
 }
 
@@ -170,6 +176,36 @@ int main() {
         applyJointAngleGravityFeedforward(cfg, geo, est, gait, jt);
         if (!expect(jt.leg_states[2].joint_state[FEMUR].pos_rad.value == 0.0,
                     "no foot contact should skip feedforward for that leg")) {
+            return 1;
+        }
+    }
+
+    {
+        control_config::GravityFeedforwardConfig cfg = sampleConfig();
+        cfg.mode = control_config::GravityFeedforwardMode::Off;
+        RobotState est = imuUpright();
+        GaitState gait = allStanceContacts();
+        est.foot_contacts.fill(true);
+        JointTargets jt{};
+        jt.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{0.1};
+        applyJointAngleGravityFeedforward(cfg, geo, est, gait, jt);
+        if (!expect(std::abs(jt.leg_states[0].joint_state[FEMUR].pos_rad.value - 0.1) < 1e-9,
+                    "off mode should not change joints")) {
+            return 1;
+        }
+    }
+
+    {
+        control_config::GravityFeedforwardConfig cfg = sampleConfig();
+        RobotState est = imuUpright();
+        est.joint_state_quality[0].source = JointStateSource::CommandEcho;
+        est.joint_state_quality[0].confidence = 0.2;
+        GaitState gait = allStanceContacts();
+        est.foot_contacts.fill(true);
+        JointTargets jt{};
+        applyJointAngleGravityFeedforward(cfg, geo, est, gait, jt);
+        if (!expect(jt.leg_states[0].joint_state[FEMUR].pos_rad.value == 0.0,
+                    "bounded mode should skip command-echo-only joint state")) {
             return 1;
         }
     }

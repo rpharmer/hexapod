@@ -59,8 +59,9 @@ public:
         ++geometry_count;
     }
 
-    void publishControlStep(const telemetry::ControlStepTelemetry&) override {
+    void publishControlStep(const telemetry::ControlStepTelemetry& telemetry) override {
         ++control_step_count;
+        last_control_step = telemetry;
     }
 
     telemetry::TelemetryPublishCounters counters() const override {
@@ -71,6 +72,7 @@ public:
 
     size_t geometry_count{0};
     size_t control_step_count{0};
+    telemetry::ControlStepTelemetry last_control_step{};
 };
 
 class CountingReplayLogger final : public replay::IReplayLogger {
@@ -229,7 +231,15 @@ bool runTelemetryCadenceSuccessCase() {
     runControlStep(runtime);
 
     if (!expect(telemetry_raw->control_step_count == 1,
-                "first successful control step should publish telemetry")) {
+                "first successful control step should publish telemetry") ||
+        !expect(telemetry_raw->last_control_step.epoch.control_seq_id == 1,
+                "telemetry should expose the control snapshot sequence") ||
+        !expect(telemetry_raw->last_control_step.epoch.est_seq_id == 500,
+                "telemetry should expose the estimator sample used by the control step") ||
+        !expect(telemetry_raw->last_control_step.epoch.intent_seq_id == 500,
+                "telemetry should expose the intent sample used by the control step") ||
+        !expect(telemetry_raw->last_control_step.estimated_state.sample_id == 500,
+                "telemetry estimated state should come from the control snapshot")) {
         return false;
     }
 
@@ -273,7 +283,15 @@ bool runTelemetryCadenceRejectCase() {
     runControlStep(runtime);
 
     if (!expect(telemetry_raw->control_step_count == 1,
-                "first rejected control step should publish telemetry")) {
+                "first rejected control step should publish telemetry") ||
+        !expect(telemetry_raw->last_control_step.epoch.control_seq_id == 1,
+                "rejected telemetry should expose the control snapshot sequence") ||
+        !expect(telemetry_raw->last_control_step.epoch.est_seq_id == 600,
+                "rejected telemetry should expose the estimator sample used by the control step") ||
+        !expect(telemetry_raw->last_control_step.epoch.intent_seq_id == 600,
+                "rejected telemetry should expose the intent sample used by the freshness gate") ||
+        !expect(!telemetry_raw->last_control_step.epoch.intent_valid,
+                "rejected telemetry should expose intent freshness failure")) {
         return false;
     }
 

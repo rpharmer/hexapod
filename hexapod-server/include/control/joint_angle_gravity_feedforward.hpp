@@ -1,6 +1,7 @@
 #pragma once
 
 #include "control_config.hpp"
+#include "locomotion_feasibility.hpp"
 #include "types.hpp"
 
 /** Per-leg gravity compensation (radians), before global max-delta clamps in apply(). */
@@ -30,7 +31,8 @@ void applyJointAngleGravityFeedforward(const control_config::GravityFeedforwardC
                                        const HexapodGeometry& geometry,
                                        const RobotState& est,
                                        const GaitState& gait,
-                                       JointTargets& in_out);
+                                       JointTargets& in_out,
+                                       const std::array<LegContactDecision, kNumLegs>* contact_modes = nullptr);
 
 /** Clears internal Δq low-pass state (call from ControlPipeline::reset). */
 void resetJointAngleGravityFeedforwardState();

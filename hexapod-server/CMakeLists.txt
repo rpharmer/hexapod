@@ -110,6 +110,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/loop_executor.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/loop_timing.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/locomotion_command.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/locomotion_feasibility.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/locomotion_stability.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/mode_runners.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/motion_intent_utils.cpp"
@@ -130,6 +131,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime_freshness_gate.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/runtime_timing_metrics.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/safety_supervisor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/servo_observer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/state_fusion.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/servo_dynamics_fit.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/status_reporter.cpp"
@@ -310,6 +312,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_locomotion_command tests/test_locomotion_command.cpp)
     target_link_libraries(test_locomotion_command PRIVATE hexapod_server_core)
     add_test(NAME locomotion_command COMMAND test_locomotion_command)
+
+    add_executable(test_locomotion_feasibility tests/test_locomotion_feasibility.cpp)
+    target_link_libraries(test_locomotion_feasibility PRIVATE hexapod_server_core)
+    add_test(NAME locomotion_feasibility COMMAND test_locomotion_feasibility)
 
     add_executable(test_foothold_planner tests/test_foothold_planner.cpp)
     target_link_libraries(test_foothold_planner PRIVATE hexapod_server_core)
@@ -603,6 +609,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_joint_feedback_estimator tests/test_joint_feedback_estimator.cpp)
     target_link_libraries(test_joint_feedback_estimator PRIVATE hexapod_server_core)
     add_test(NAME joint_feedback_estimator COMMAND test_joint_feedback_estimator)
+    add_executable(test_servo_observer tests/test_servo_observer.cpp)
+    target_link_libraries(test_servo_observer PRIVATE hexapod_server_core)
+    add_test(NAME servo_observer COMMAND test_servo_observer)
 
     add_executable(test_command_flow_integration tests/test_command_flow_integration.cpp)
     target_link_libraries(test_command_flow_integration PRIVATE hexapod_server_core)

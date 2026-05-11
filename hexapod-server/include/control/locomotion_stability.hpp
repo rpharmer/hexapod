@@ -2,6 +2,8 @@
 
 #include "types.hpp"
 
+struct LocomotionFeasibility;
+
 struct LocomotionStabilityConfig {
     /** Minimum clearance from projected COM to support boundary when allowing a liftoff (m). */
     double min_margin_required_m{0.008};
@@ -20,7 +22,10 @@ public:
     explicit LocomotionStability(LocomotionStabilityConfig config = {});
 
     /** Updates stance hold flags, per-leg liftoff clearance diagnostics, and the static support margin. */
-    void apply(const RobotState& est, const MotionIntent& intent, GaitState& gait);
+    void apply(const RobotState& est,
+               const MotionIntent& intent,
+               GaitState& gait,
+               const LocomotionFeasibility* feasibility = nullptr);
 
     void reset();
 

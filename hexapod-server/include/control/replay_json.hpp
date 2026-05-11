@@ -2,6 +2,7 @@
 
 #include "local_map.hpp"
 #include "locomotion_debug.hpp"
+#include "locomotion_feasibility.hpp"
 #include "telemetry_publisher.hpp"
 #include "types.hpp"
 
@@ -31,6 +32,7 @@ struct ReplayTelemetryRecord {
     GaitState gait_state{};
     JointTargets joint_targets{};
     telemetry::LocomotionDebugSnapshot locomotion_debug{};
+    LocomotionFeasibility locomotion_feasibility{};
     LocalMapSnapshot terrain_snapshot{};
     ReplayTransitionDiagnostics transition_diagnostics{};
 };

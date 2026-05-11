@@ -25,6 +25,24 @@ double commandedYawRateRadps(const MotionIntent& intent) {
     return std::abs(cmd.yaw_rate_radps);
 }
 
+bool hasCredibleJointObservation(const RobotState& est) {
+    for (const JointStateQuality& quality : est.joint_state_quality) {
+        if (!quality.position_valid) {
+            continue;
+        }
+        if (quality.source == JointStateSource::Measured ||
+            quality.source == JointStateSource::Simulated ||
+            (quality.source == JointStateSource::ObserverEstimate && quality.confidence >= 0.45)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool actuatorStateUnobserved(const RobotState& est) {
+    return !hasCredibleJointObservation(est);
+}
+
 } // namespace
 
 SafetySupervisor::SafetySupervisor(control_config::SafetyConfig config)
@@ -69,7 +87,7 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
     const FreshnessInputs& freshness,
     int raw_contact_count,
     int support_contact_count) const {
-    const std::array<FaultRule, 8> rules{{
+    const std::array<FaultRule, 9> rules{{
         FaultRule{
             .is_triggered = [&](void) {
                 return !freshness.intent_valid;
@@ -88,6 +106,21 @@ SafetySupervisor::FaultDecision SafetySupervisor::evaluateFaultRules(
         FaultRule{
             .is_triggered = [&](void) {
                 return !freshness.estimator_valid;
+            },
+            .fault = FaultCode::ESTIMATOR_INVALID,
+            .torque_cut = false,
+        },
+        FaultRule{
+            .is_triggered = [&](void) {
+                if (intent.requested_mode != RobotMode::WALK) {
+                    return false;
+                }
+                if (!actuatorStateUnobserved(est)) {
+                    return false;
+                }
+                const PlanarMotionCommand cmd = planarMotionCommand(intent);
+                return std::hypot(cmd.vx_mps, cmd.vy_mps) >= 0.18 ||
+                       std::abs(cmd.yaw_rate_radps) >= 0.35;
             },
             .fault = FaultCode::ESTIMATOR_INVALID,
             .torque_cut = false,
@@ -270,6 +303,11 @@ SafetyState SafetySupervisor::evaluate(const RobotState& raw,
 
     state_.inhibit_motion =
         (state_.active_fault != FaultCode::NONE) || (intent.requested_mode == RobotMode::SAFE_IDLE);
+    state_.actuator_state_unobserved = actuatorStateUnobserved(est);
+    state_.degraded_mode =
+        state_.actuator_state_unobserved && intent.requested_mode == RobotMode::WALK
+            ? DegradedMode::ContactAndImuLocomotion
+            : DegradedMode::None;
 
     if (state_.active_fault == FaultCode::NONE) {
         state_.torque_cut = false;

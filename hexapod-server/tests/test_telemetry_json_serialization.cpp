@@ -143,6 +143,10 @@ bool test_control_step_packet_includes_fusion_diagnostics()
     telemetry_sample.estimated_state.leg_states[0].joint_state[COXA].pos_rad = AngleRad{deg2rad(6.0)};
     telemetry_sample.estimated_state.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{deg2rad(-11.0)};
     telemetry_sample.estimated_state.leg_states[0].joint_state[TIBIA].pos_rad = AngleRad{deg2rad(16.0)};
+    telemetry_sample.estimated_state.joint_state_quality[0].source = JointStateSource::ObserverEstimate;
+    telemetry_sample.estimated_state.joint_state_quality[0].position_valid = true;
+    telemetry_sample.estimated_state.joint_state_quality[0].velocity_valid = false;
+    telemetry_sample.estimated_state.joint_state_quality[0].confidence = 0.65;
     telemetry_sample.joint_targets.leg_states[0].joint_state[COXA].pos_rad = AngleRad{deg2rad(5.0)};
     telemetry_sample.joint_targets.leg_states[0].joint_state[FEMUR].pos_rad = AngleRad{deg2rad(-10.0)};
     telemetry_sample.joint_targets.leg_states[0].joint_state[TIBIA].pos_rad = AngleRad{deg2rad(15.0)};
@@ -157,6 +161,10 @@ bool test_control_step_packet_includes_fusion_diagnostics()
     telemetry_sample.locomotion_debug.fused_contact_confidence[0] = 0.91;
     telemetry_sample.locomotion_debug.measured_foot_world_m[0] = Vec3{0.2, 0.1, 0.0};
     telemetry_sample.locomotion_debug.commanded_foot_world_m[0] = Vec3{0.21, 0.09, 0.01};
+    telemetry_sample.locomotion_debug.planned_leg_target_body_m[0] = Vec3{0.12, -0.08, -0.14};
+    telemetry_sample.locomotion_debug.post_clamp_fk_body_m[0] = Vec3{0.118, -0.083, -0.151};
+    telemetry_sample.locomotion_debug.post_clamp_distortion_m[0] = 0.0116;
+    telemetry_sample.locomotion_debug.max_post_clamp_distortion_m = 0.0116;
     telemetry_sample.locomotion_debug.contact_anchor_world_m[0] = Vec3{0.2, 0.1, 0.0};
     telemetry_sample.locomotion_debug.contact_anchor_drift_m[0] = 0.004;
     telemetry_sample.locomotion_debug.contact_anchor_max_drift_m[0] = 0.006;
@@ -223,6 +231,19 @@ bool test_control_step_packet_includes_fusion_diagnostics()
     telemetry_sample.governor.freeze_phase = true;
     telemetry_sample.governor.reasons =
         CommandGovernorReason::LowSpeedRegime | CommandGovernorReason::HighTilt | CommandGovernorReason::RecoveryHold;
+    telemetry_sample.governor_config.support_margin_soft_m = 0.12345;
+    telemetry_sample.governor_config.active_min_scale = 0.23456;
+    telemetry_sample.governor_config.ramp_out_health_entry = 0.87654;
+    telemetry_sample.epoch.control_seq_id = 7;
+    telemetry_sample.epoch.raw_seq_id = 91;
+    telemetry_sample.epoch.est_seq_id = 92;
+    telemetry_sample.epoch.intent_seq_id = 93;
+    telemetry_sample.epoch.raw_age_us = 1'100;
+    telemetry_sample.epoch.est_age_us = 1'200;
+    telemetry_sample.epoch.intent_age_us = 1'300;
+    telemetry_sample.epoch.raw_valid = true;
+    telemetry_sample.epoch.est_valid = true;
+    telemetry_sample.epoch.intent_valid = true;
 
     const std::string payload = telemetry_json::serializeControlStepPacket(telemetry_sample);
 
@@ -248,6 +269,10 @@ bool test_control_step_packet_includes_fusion_diagnostics()
                   "control step payload should include measured joint angles in degrees") &&
            expect(payload.find("\"body_orientation_rad\":[0.01,-0.02,0.03]") != std::string::npos,
                   "control step payload should include full measured body orientation") &&
+           expect(payload.find("\"joint_state_quality\":[{\"source\":\"observer_estimate\"") != std::string::npos,
+                  "control step payload should include joint state provenance") &&
+           expect(payload.find("\"confidence\":0.65") != std::string::npos,
+                  "joint state quality payload should include confidence") &&
            expect(payload.find("\"locomotion_debug\":{\"valid\":true") != std::string::npos,
                   "control step payload should include locomotion debug data") &&
            expect(payload.find("\"planned_stance\":[true,false,false,false,false,false]") != std::string::npos,
@@ -264,6 +289,10 @@ bool test_control_step_packet_includes_fusion_diagnostics()
                   "locomotion debug payload should include contact anchor drift") &&
            expect(payload.find("\"max_commanded_tracking_error_m\":0.012") != std::string::npos,
                   "locomotion debug payload should include max commanded tracking error") &&
+           expect(payload.find("\"post_clamp_fk_body_m\":[[0.118,-0.083,-0.151]") != std::string::npos,
+                  "locomotion debug payload should include post-clamp FK feet") &&
+           expect(payload.find("\"max_post_clamp_distortion_m\":0.0116") != std::string::npos,
+                  "locomotion debug payload should include max post-clamp distortion") &&
            expect(payload.find("\"process_resource\":{") != std::string::npos,
                   "control step payload should include process resource snapshot") &&
            expect(payload.find("\"cpu_percent\":37.5") != std::string::npos,
@@ -315,7 +344,25 @@ bool test_control_step_packet_includes_fusion_diagnostics()
            expect(payload.find("\"freeze_phase\":true") != std::string::npos,
                   "governor payload should include freeze-phase state") &&
            expect(payload.find("\"reasons\":\"0x85\"") != std::string::npos,
-                  "governor payload should include reasons bitmask");
+                  "governor payload should include reasons bitmask") &&
+           expect(payload.find("\"governor_config\":{") != std::string::npos,
+                  "control step payload should include active governor config") &&
+           expect(payload.find("\"support_margin_soft_m\":0.12345") != std::string::npos,
+                  "governor config payload should include support margin soft threshold") &&
+           expect(payload.find("\"active_min_scale\":0.23456") != std::string::npos,
+                  "governor config payload should include active min scale") &&
+           expect(payload.find("\"ramp_out_health_entry\":0.87654") != std::string::npos,
+                  "governor config payload should include ramp-out health entry") &&
+           expect(payload.find("\"epoch\":{") != std::string::npos,
+                  "control step payload should include epoch metadata") &&
+           expect(payload.find("\"raw_seq_id\":91") != std::string::npos,
+                  "epoch payload should include raw sequence id") &&
+           expect(payload.find("\"est_seq_id\":92") != std::string::npos,
+                  "epoch payload should include estimator sequence id") &&
+           expect(payload.find("\"intent_age_us\":1300") != std::string::npos,
+                  "epoch payload should include intent age") &&
+           expect(payload.find("\"intent_valid\":true") != std::string::npos,
+                  "epoch payload should include intent freshness validity");
 }
 
 } // namespace

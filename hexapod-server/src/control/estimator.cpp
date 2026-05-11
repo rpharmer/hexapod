@@ -157,6 +157,7 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
     est.has_matrix_lidar = raw.has_matrix_lidar;
     est.sample_id = raw.sample_id;
     est.timestamp_us = raw.timestamp_us;
+    est.joint_state_quality = raw.joint_state_quality;
     est.body_twist_state.body_trans_mps = Vec3{};
 
     const HexapodGeometry& geometry = geometry_config::activeHexapodGeometry();
@@ -189,7 +190,15 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
                     AngularRateRadPerSec{
                         servoAngularRateFromMechanicalJointRate(mechanical_vel, joint, cal)};
             }
+            est.joint_state_quality[leg].velocity_valid = true;
+        } else {
+            est.joint_state_quality[leg].velocity_valid = false;
         }
+        if (est.joint_state_quality[leg].source == JointStateSource::None) {
+            est.joint_state_quality[leg].source = JointStateSource::CommandEcho;
+        }
+        est.joint_state_quality[leg].position_valid = true;
+        est.joint_state_quality[leg].age_us = 0;
 
         last_continuous_leg_states_[leg] = continuous_joint;
         have_last_continuous_leg_state_[leg] = true;

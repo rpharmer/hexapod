@@ -29,6 +29,12 @@ RobotState nominalRaw() {
 RobotState nominalEstimated() {
     RobotState est{};
     est.timestamp_us = now_us();
+    for (auto& quality : est.joint_state_quality) {
+        quality.position_valid = true;
+        quality.velocity_valid = true;
+        quality.source = JointStateSource::Simulated;
+        quality.confidence = 1.0;
+    }
     return est;
 }
 
@@ -266,6 +272,31 @@ bool testRapidBodyRateStaysQuietWithHealthySupport() {
                   "healthy support should not trip the rapid body-rate detector");
 }
 
+bool testAggressiveWalkRequiresObservedActuatorState() {
+    SafetySupervisor supervisor;
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+    for (auto& quality : est.joint_state_quality) {
+        quality.position_valid = true;
+        quality.velocity_valid = false;
+        quality.source = JointStateSource::CommandEcho;
+        quality.confidence = 0.2;
+    }
+    MotionIntent intent = intentNow(RobotMode::WALK);
+    intent.cmd_vx_mps = LinearRateMps{0.24};
+    intent.speed_mps = LinearRateMps{0.24};
+
+    const SafetyState state =
+        supervisor.evaluate(raw, est, intent, SafetySupervisor::FreshnessInputs{true, true});
+
+    return expect(state.active_fault == FaultCode::ESTIMATOR_INVALID,
+                  "aggressive walk should be inhibited when actuator state is only command echo") &&
+           expect(state.actuator_state_unobserved,
+                  "safety state should distinguish unobserved actuator state") &&
+           expect(state.degraded_mode == DegradedMode::ContactAndImuLocomotion,
+                  "safety state should expose contact-and-IMU degraded mode");
+}
+
 bool testLatchedRemainsWhenIntentNotSafeIdle() {
     SafetySupervisor supervisor;
     RobotState raw = nominalRaw();
@@ -365,6 +396,7 @@ int main() {
         !testRapidBodyRateTriggersTipOverEarly() ||
         !testRapidBodyRateIgnoresTransientRawDropWhenFusedSupportRemains() ||
         !testRapidBodyRateStaysQuietWithHealthySupport() ||
+        !testAggressiveWalkRequiresObservedActuatorState() ||
         !testLatchedRemainsWhenIntentNotSafeIdle() ||
         !testLatchedRemainsWhenIntentStale() ||
         !testRecoveryRequiresBothConditionsAndHoldTime()) {

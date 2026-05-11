@@ -7,6 +7,7 @@
 #include "leg_ik.hpp"
 #include "local_map.hpp"
 #include "locomotion_command.hpp"
+#include "locomotion_feasibility.hpp"
 #include "locomotion_stability.hpp"
 #include "runtime_resource_monitoring.hpp"
 #include "types.hpp"
@@ -17,6 +18,7 @@ struct PipelineStepResult {
     ControlStatus status{};
     GaitState gait_state{};
     CommandGovernorState command_governor{};
+    LocomotionFeasibility locomotion_feasibility{};
 };
 
 class ControlPipeline {
@@ -24,11 +26,14 @@ public:
     explicit ControlPipeline(control_config::GaitConfig gait_config = {},
                              control_config::LocomotionCommandConfig loco_config = {},
                              control_config::SafetyConfig safety_config = {},
+                             control_config::CommandGovernorConfig governor_config = {},
                              control_config::FootTerrainConfig foot_terrain_config = {},
                              control_config::GravityFeedforwardConfig gravity_feedforward_config = {},
+                             control_config::LocomotionRedesignConfig locomotion_redesign_config = {},
                              runtime_resource_monitoring::Profiler* profiler = nullptr);
 
     void reset();
+    [[nodiscard]] const control_config::CommandGovernorConfig& commandGovernorConfig() const;
     PipelineStepResult runStep(const RobotState& estimated,
                                const MotionIntent& intent,
                                const SafetyState& safety_state,
@@ -45,6 +50,7 @@ private:
     BodyController body_;
     LegIK ik_;
     control_config::GravityFeedforwardConfig gravity_feedforward_{};
+    control_config::LocomotionRedesignConfig locomotion_redesign_{};
     GaitState last_gait_state_{};
     bool have_last_gait_state_{false};
 };

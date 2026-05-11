@@ -9,11 +9,23 @@ struct SupportPoint2 {
     double y{0.0};
 };
 
+enum class SupportPointSource : std::uint8_t {
+    Nominal = 0,
+    JointFk = 1,
+    AnchorFallback = 2,
+};
+
 struct SupportAssessment {
     std::array<bool, kNumLegs> effective_support{};
+    /** Active support point set used by control. */
     std::array<SupportPoint2, kNumLegs> foot_xy_body_m{};
+    std::array<SupportPoint2, kNumLegs> nominal_foot_xy_body_m{};
+    std::array<SupportPoint2, kNumLegs> actual_foot_xy_body_m{};
+    std::array<SupportPointSource, kNumLegs> support_point_source{};
     SupportPoint2 projected_com_xy_m{};
     double static_margin_m{0.0};
+    double nominal_static_margin_m{0.0};
+    double actual_static_margin_m{0.0};
     int support_count{0};
     int confirmed_support_count{0};
     int uncertain_support_count{0};

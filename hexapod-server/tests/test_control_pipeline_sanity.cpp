@@ -36,6 +36,16 @@ int main() {
     control_config::SafetyConfig pipeline_safety{};
     pipeline_safety.body_height_collapse_margin_m = 0.05;
     ControlPipeline pipeline{{}, {}, pipeline_safety};
+    control_config::CommandGovernorConfig canary_governor{};
+    canary_governor.support_margin_soft_m = 0.12345;
+    canary_governor.active_min_scale = 0.23456;
+    ControlPipeline canary_pipeline{{}, {}, pipeline_safety, canary_governor};
+    if (!expect(canary_pipeline.commandGovernorConfig().support_margin_soft_m == canary_governor.support_margin_soft_m,
+                "pipeline should retain parsed governor support margin config") ||
+        !expect(canary_pipeline.commandGovernorConfig().active_min_scale == canary_governor.active_min_scale,
+                "pipeline should retain parsed governor active min scale config")) {
+        return EXIT_FAILURE;
+    }
 
     RobotState estimated{};
     estimated.timestamp_us = now_us();

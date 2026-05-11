@@ -119,6 +119,13 @@ const char* bridgePhaseName(const BridgeFailurePhase phase) {
     return "unknown";
 }
 
+uint64_t ageUsAt(const TimePointUs now, const TimePointUs then) {
+    if (then.isZero() || now.value <= then.value) {
+        return 0;
+    }
+    return now.value - then.value;
+}
+
 telemetry::FusionCorrectionMode toTelemetryCorrectionMode(const PhysicsSimCorrectionMode mode) {
     switch (mode) {
         case PhysicsSimCorrectionMode::Soft:
@@ -266,6 +273,7 @@ telemetry::LocomotionDebugSnapshot buildLocomotionDebugSnapshot(
     const RobotState& raw,
     const RobotState& estimated,
     const GaitState* gait_state,
+    const LegTargets* planned_leg_targets,
     const JointTargets& joint_targets,
     const HexapodGeometry& geometry,
     std::array<bool, kNumLegs>& contact_anchor_valid,
@@ -316,6 +324,21 @@ telemetry::LocomotionDebugSnapshot buildLocomotionDebugSnapshot(
         snapshot.measured_foot_world_m[leg_index] = measured_world.pos_body_m.raw();
         snapshot.commanded_foot_body_m[leg_index] = commanded_body.pos_body_m.raw();
         snapshot.commanded_foot_world_m[leg_index] = commanded_world.pos_body_m.raw();
+        snapshot.post_clamp_fk_body_m[leg_index] = commanded_body.pos_body_m.raw();
+        if (planned_leg_targets != nullptr) {
+            snapshot.planned_leg_target_body_m[leg_index] =
+                planned_leg_targets->feet[leg_index].pos_body_m.raw();
+            snapshot.post_clamp_distortion_m[leg_index] = vecNorm(
+                snapshot.post_clamp_fk_body_m[leg_index] - snapshot.planned_leg_target_body_m[leg_index]);
+            snapshot.max_post_clamp_distortion_m =
+                std::max(snapshot.max_post_clamp_distortion_m, snapshot.post_clamp_distortion_m[leg_index]);
+            const Vec3 velocity_delta =
+                commanded_body.vel_body_mps.raw() - planned_leg_targets->feet[leg_index].vel_body_mps.raw();
+            snapshot.post_clamp_fk_vel_body_mps[leg_index] = commanded_body.vel_body_mps.raw();
+            snapshot.post_clamp_distortion_mps[leg_index] = vecNorm(velocity_delta);
+            snapshot.max_post_clamp_distortion_mps =
+                std::max(snapshot.max_post_clamp_distortion_mps, snapshot.post_clamp_distortion_mps[leg_index]);
+        }
 
         snapshot.min_measured_foot_world_z_m =
             std::min(snapshot.min_measured_foot_world_z_m, snapshot.measured_foot_world_m[leg_index].z);
@@ -743,8 +766,10 @@ RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
       pipeline_(config_.gait,
                 config_.locomotion_cmd,
                 config_.safety,
+                config_.command_governor,
                 config_.foot_terrain,
                 config_.gravity_feedforward,
+                config_.locomotion_redesign,
                 &resource_profiler_),
       safety_(config_.safety),
       freshness_policy_(config_.freshness),
@@ -780,6 +805,7 @@ bool RobotRuntime::init() {
     command_governor_state_.write(CommandGovernorState{});
     joint_targets_.write(JointTargets{});
     locomotion_debug_.write(telemetry::LocomotionDebugSnapshot{});
+    locomotion_feasibility_.write(LocomotionFeasibility{});
     control_loop_counter_.store(0);
     control_dt_sum_us_.store(0);
     control_jitter_max_us_.store(0);
@@ -809,6 +835,33 @@ bool RobotRuntime::init() {
         estimator_->reset();
     }
     pipeline_.reset();
+    if (logger_) {
+        const auto& gov = pipeline_.commandGovernorConfig();
+        LOG_INFO(logger_,
+                 "command_governor_config",
+                 " low_speed_planar_cutoff_mps=",
+                 gov.low_speed_planar_cutoff_mps,
+                 " low_speed_yaw_cutoff_radps=",
+                 gov.low_speed_yaw_cutoff_radps,
+                 " support_margin_soft_m=",
+                 gov.support_margin_soft_m,
+                 " support_margin_hard_m=",
+                 gov.support_margin_hard_m,
+                 " tilt_soft_rad=",
+                 gov.tilt_soft_rad,
+                 " tilt_hard_rad=",
+                 gov.tilt_hard_rad,
+                 " active_min_scale=",
+                 gov.active_min_scale,
+                 " active_cadence_min_scale=",
+                 gov.active_cadence_min_scale,
+                 " body_height_delta_slew_mps=",
+                 gov.body_height_delta_slew_mps,
+                 " ramp_out_health_entry=",
+                 gov.ramp_out_health_entry,
+                 " ramp_out_health_abort=",
+                 gov.ramp_out_health_abort);
+    }
 
     // Seed a valid idle estimate so the very first control cycle does not race
     // ahead of the estimator thread and latch ESTIMATOR_INVALID on startup.
@@ -934,36 +987,47 @@ void RobotRuntime::controlStep() {
     const auto step_scope = resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::ControlStep));
     const TimePointUs now = now_us();
     timing_metrics_.update(now);
-    const JointTargets previous_joint_targets = joint_targets_.read();
-    const GaitState previous_gait_state = gait_state_.read();
-
-    const RobotState est = estimated_state_.read();
-    const RobotState raw = raw_state_.read();
+    ControlInputSnapshot snapshot{};
+    snapshot.now = now;
+    snapshot.previous_joint_targets = joint_targets_.read();
+    snapshot.previous_gait_state = gait_state_.read();
+    snapshot.estimated = estimated_state_.read();
+    snapshot.raw = raw_state_.read();
     if (navigation_manager_ != nullptr) {
-        navigation_manager_->refreshTerrainSnapshot(est, now);
+        navigation_manager_->refreshTerrainSnapshot(snapshot.estimated, now);
     }
-    const LocalMapSnapshot* terrain_ptr = nullptr;
     if (navigation_manager_ != nullptr) {
-        terrain_ptr = navigation_manager_->footTerrainSnapshot(now);
+        snapshot.terrain_snapshot = navigation_manager_->footTerrainSnapshot(now);
+        if (snapshot.terrain_snapshot != nullptr) {
+            snapshot.terrain_timestamp_us = snapshot.terrain_snapshot->last_observation_timestamp;
+        }
     }
-    const FusionControlPolicy fusion_policy = applyFusionConsistency(est, now, terrain_ptr);
-    MotionIntent intent = resolveEffectiveIntent(est, now);
+    const FusionControlPolicy fusion_policy = applyFusionConsistency(snapshot.estimated, now, snapshot.terrain_snapshot);
+    snapshot.intent = resolveEffectiveIntent(snapshot.estimated, now);
     if (fusion_policy.force_stand) {
-        intent.requested_mode = RobotMode::STAND;
-        intent.speed_mps = LinearRateMps{};
-        intent.cmd_vx_mps = LinearRateMps{};
-        intent.cmd_vy_mps = LinearRateMps{};
-        intent.cmd_yaw_radps = AngularRateRadPerSec{};
-        intent.twist.body_trans_m.x = 0.0;
-        intent.twist.body_trans_m.y = 0.0;
-        intent.twist.twist_vel_radps.x = 0.0;
-        intent.twist.twist_vel_radps.y = 0.0;
-        intent.twist.twist_vel_radps.z = 0.0;
+        snapshot.intent.requested_mode = RobotMode::STAND;
+        snapshot.intent.speed_mps = LinearRateMps{};
+        snapshot.intent.cmd_vx_mps = LinearRateMps{};
+        snapshot.intent.cmd_vy_mps = LinearRateMps{};
+        snapshot.intent.cmd_yaw_radps = AngularRateRadPerSec{};
+        snapshot.intent.twist.body_trans_m.x = 0.0;
+        snapshot.intent.twist.body_trans_m.y = 0.0;
+        snapshot.intent.twist.twist_vel_radps.x = 0.0;
+        snapshot.intent.twist.twist_vel_radps.y = 0.0;
+        snapshot.intent.twist.twist_vel_radps.z = 0.0;
     }
-    const SafetyState safety_state = safety_state_.read();
-    const bool bus_ok = raw.bus_ok;
-    uint64_t loop_counter = 0;
-    FreshnessPolicy::Evaluation freshness{};
+    snapshot.safety_state = safety_state_.read();
+    snapshot.bus_ok = snapshot.raw.bus_ok;
+    const RobotState& est = snapshot.estimated;
+    const RobotState& raw = snapshot.raw;
+    const MotionIntent& intent = snapshot.intent;
+    const SafetyState& safety_state = snapshot.safety_state;
+    const JointTargets& previous_joint_targets = snapshot.previous_joint_targets;
+    const GaitState& previous_gait_state = snapshot.previous_gait_state;
+    const LocalMapSnapshot* terrain_ptr = snapshot.terrain_snapshot;
+    bool& bus_ok = snapshot.bus_ok;
+    uint64_t& loop_counter = snapshot.loop_counter;
+    FreshnessPolicy::Evaluation& freshness = snapshot.freshness;
     const auto traceControlLoop = [&](const ControlStatus& status,
                                       const bool accepted,
                                       const CommandGovernorState* governor) {
@@ -1085,18 +1149,20 @@ void RobotRuntime::controlStep() {
             gait_state_.write(GaitState{});
             command_governor_state_.write(CommandGovernorState{});
             joint_targets_.write(decision.joint_targets);
+            locomotion_feasibility_.write(LocomotionFeasibility{});
             locomotion_debug_.write(buildLocomotionDebugSnapshot(
                 raw,
                 est,
                 &previous_gait_state,
+                nullptr,
                 decision.joint_targets,
                 geometry_config::activeHexapodGeometry(),
                 contact_anchor_valid_,
                 contact_anchor_world_,
                 contact_anchor_max_drift_m_));
             traceControlLoop(decision.status, false, nullptr);
-            maybePublishTelemetry(now);
-            maybeWriteReplayRecord(now);
+            maybePublishTelemetry(snapshot);
+            maybeWriteReplayRecord(snapshot);
             (void)freshness_scope;
             (void)step_scope;
             return;
@@ -1126,11 +1192,13 @@ void RobotRuntime::controlStep() {
     leg_targets_.write(result.leg_targets);
     gait_state_.write(result.gait_state);
     command_governor_state_.write(result.command_governor);
+    locomotion_feasibility_.write(result.locomotion_feasibility);
     joint_targets_.write(joint_targets);
     locomotion_debug_.write(buildLocomotionDebugSnapshot(
         raw,
         est,
         &result.gait_state,
+        &result.leg_targets,
         joint_targets,
         geometry_config::activeHexapodGeometry(),
         contact_anchor_valid_,
@@ -1242,34 +1310,34 @@ void RobotRuntime::controlStep() {
         LOG_INFO(logger_, support_snapshot.str());
     }
 
-    maybePublishTelemetry(now);
-    maybeWriteReplayRecord(now);
+    maybePublishTelemetry(snapshot);
+    maybeWriteReplayRecord(snapshot);
     (void)step_scope;
 }
 
-void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
+void RobotRuntime::maybePublishTelemetry(const ControlInputSnapshot& snapshot) {
     if (!telemetry_publisher_ || !config_.telemetry.enabled) {
         return;
     }
 
-    if (now.value < next_telemetry_publish_at_.value) {
+    if (snapshot.now.value < next_telemetry_publish_at_.value) {
         return;
     }
 
     const uint64_t publish_period_us =
         static_cast<uint64_t>(config_.telemetry.publish_period.count()) * 1000ULL;
-    next_telemetry_publish_at_ = TimePointUs{now.value + publish_period_us};
+    next_telemetry_publish_at_ = TimePointUs{snapshot.now.value + publish_period_us};
 
-    if (now.value >= next_geometry_refresh_at_.value) {
+    if (snapshot.now.value >= next_geometry_refresh_at_.value) {
         telemetry_publisher_->publishGeometry(geometry_config::activeHexapodGeometry());
         const uint64_t geometry_refresh_period_us =
             static_cast<uint64_t>(config_.telemetry.geometry_refresh_period.count()) * 1000ULL;
-        next_geometry_refresh_at_ = TimePointUs{now.value + geometry_refresh_period_us};
+        next_geometry_refresh_at_ = TimePointUs{snapshot.now.value + geometry_refresh_period_us};
     }
 
     const auto scope = resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::TelemetryPublish));
     telemetry::ControlStepTelemetry telemetry_sample{};
-    telemetry_sample.estimated_state = estimated_state_.read();
+    telemetry_sample.estimated_state = snapshot.estimated;
     telemetry_sample.joint_targets = joint_targets_.read();
     telemetry_sample.locomotion_debug = locomotion_debug_.read();
     telemetry_sample.status = status_.read();
@@ -1282,32 +1350,51 @@ void RobotRuntime::maybePublishTelemetry(const TimePointUs& now) {
     }
     telemetry_sample.process_resources = last_process_resources_;
     telemetry_sample.resource_sections = last_resource_sections_;
-    telemetry_sample.timestamp_us = now;
+    telemetry_sample.timestamp_us = snapshot.now;
     telemetry_sample.governor = command_governor_state_.read();
+    telemetry_sample.governor_config = pipeline_.commandGovernorConfig();
+    telemetry_sample.locomotion_feasibility = locomotion_feasibility_.read();
+    telemetry_sample.epoch.control_seq_id = snapshot.loop_counter;
+    telemetry_sample.epoch.raw_seq_id = snapshot.raw.sample_id;
+    telemetry_sample.epoch.est_seq_id = snapshot.estimated.sample_id;
+    telemetry_sample.epoch.intent_seq_id = snapshot.intent.sample_id;
+    telemetry_sample.epoch.raw_timestamp_us = snapshot.raw.timestamp_us.value;
+    telemetry_sample.epoch.est_timestamp_us = snapshot.estimated.timestamp_us.value;
+    telemetry_sample.epoch.intent_timestamp_us = snapshot.intent.timestamp_us.value;
+    telemetry_sample.epoch.terrain_timestamp_us = snapshot.terrain_timestamp_us.value;
+    telemetry_sample.epoch.raw_age_us = ageUsAt(snapshot.now, snapshot.raw.timestamp_us);
+    telemetry_sample.epoch.est_age_us = snapshot.freshness.estimator.age_us;
+    telemetry_sample.epoch.intent_age_us = snapshot.freshness.intent.age_us;
+    telemetry_sample.epoch.terrain_age_us = ageUsAt(snapshot.now, snapshot.terrain_timestamp_us);
+    telemetry_sample.epoch.raw_valid = snapshot.raw.valid || !snapshot.raw.timestamp_us.isZero() || snapshot.raw.sample_id != 0;
+    telemetry_sample.epoch.est_valid = snapshot.freshness.estimator.valid;
+    telemetry_sample.epoch.intent_valid = snapshot.freshness.intent.valid;
+    telemetry_sample.epoch.terrain_valid = snapshot.terrain_snapshot != nullptr && !snapshot.terrain_timestamp_us.isZero();
     telemetry_publisher_->publishControlStep(telemetry_sample);
     (void)scope;
 }
 
-void RobotRuntime::maybeWriteReplayRecord(const TimePointUs& now) {
+void RobotRuntime::maybeWriteReplayRecord(const ControlInputSnapshot& snapshot) {
     if (!replay_logger_) {
         return;
     }
 
     const auto scope = resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::ReplayWrite));
     replay_json::ReplayTelemetryRecord record{};
-    record.timestamp_us = now;
-    record.sample_id = estimated_state_.read().sample_id;
+    record.timestamp_us = snapshot.now;
+    record.sample_id = snapshot.estimated.sample_id;
     record.status = status_.read();
-    record.estimated_state = estimated_state_.read();
+    record.estimated_state = snapshot.estimated;
     record.leg_targets = leg_targets_.read();
     record.gait_state = gait_state_.read();
     record.joint_targets = joint_targets_.read();
     record.locomotion_debug = locomotion_debug_.read();
     record.governor = command_governor_state_.read();
+    record.locomotion_feasibility = locomotion_feasibility_.read();
     record.transition_diagnostics =
         buildReplayTransitionDiagnostics(record.estimated_state, record.gait_state, record.joint_targets);
     if (navigation_manager_) {
-        record.terrain_snapshot = navigation_manager_->latestMapSnapshot(now);
+        record.terrain_snapshot = navigation_manager_->latestMapSnapshot(snapshot.now);
     }
     replay_logger_->write(record);
     (void)scope;

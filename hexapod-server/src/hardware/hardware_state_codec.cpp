@@ -32,6 +32,13 @@ bool HardwareStateCodec::decode_full_hardware_state(const std::vector<uint8_t>& 
             leg.joint_state[j].pos_rad = AngleRad{decoded.joint_positions_rad[idx++]};
         }
     }
+    for (auto& quality : out.joint_state_quality) {
+        quality.position_valid = true;
+        quality.velocity_valid = false;
+        quality.source = JointStateSource::CommandEcho;
+        quality.age_us = 0;
+        quality.confidence = 0.35;
+    }
 
     for (std::size_t i = 0; i < kProtocolFootSensorCount; ++i) {
         out.foot_contacts[i] = (decoded.foot_contacts[i] != 0);

@@ -25,12 +25,17 @@ struct HarnessSettings {
     int physics_solver_iterations{0};
 };
 
-inline std::filesystem::path resolvePhysicsSimConfigPath() {
-    const std::vector<std::filesystem::path> candidates = {
-        "config.physics-sim-wsl.txt",
-        "../config.physics-sim-wsl.txt",
-        "hexapod-server/config.physics-sim-wsl.txt",
-    };
+/** When `prefer_test_harness_config` is true, prefer `config.physics-sim-test-harness.txt` (CTest walk/speed profile). */
+inline std::filesystem::path resolvePhysicsSimConfigPath(bool prefer_test_harness_config = false) {
+    std::vector<std::filesystem::path> candidates{};
+    if (prefer_test_harness_config) {
+        candidates.push_back("config.physics-sim-test-harness.txt");
+        candidates.push_back("../config.physics-sim-test-harness.txt");
+        candidates.push_back("hexapod-server/config.physics-sim-test-harness.txt");
+    }
+    candidates.push_back("config.physics-sim-wsl.txt");
+    candidates.push_back("../config.physics-sim-wsl.txt");
+    candidates.push_back("hexapod-server/config.physics-sim-wsl.txt");
     for (const auto& candidate : candidates) {
         std::error_code ec;
         if (std::filesystem::exists(candidate, ec)) {
@@ -40,11 +45,12 @@ inline std::filesystem::path resolvePhysicsSimConfigPath() {
     return {};
 }
 
-inline HarnessSettings loadHarnessSettings() {
+inline HarnessSettings loadHarnessSettings(bool prefer_test_harness_config = false) {
     HarnessSettings settings{};
-    settings.config_path = resolvePhysicsSimConfigPath();
+    settings.config_path = resolvePhysicsSimConfigPath(prefer_test_harness_config);
     if (settings.config_path.empty()) {
-        throw std::runtime_error("unable to locate config.physics-sim-wsl.txt");
+        throw std::runtime_error(
+            "unable to locate config.physics-sim-test-harness.txt (when requested) or config.physics-sim-wsl.txt");
     }
 
     TomlParser parser{};

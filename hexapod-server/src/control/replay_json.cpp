@@ -312,6 +312,49 @@ void appendGovernorReplay(std::ostringstream& payload, const CommandGovernorStat
             << static_cast<std::uint32_t>(g.reasons) << std::dec << "\"}";
 }
 
+void appendLocomotionFeasibility(std::ostringstream& payload, const LocomotionFeasibility& f)
+{
+    payload << "\"locomotion_feasibility\":{"
+            << "\"valid\":" << (f.valid ? "true" : "false") << ','
+            << "\"enabled\":" << (f.enabled ? "true" : "false") << ','
+            << "\"control_margin_source\":\"" << controlMarginSourceName(f.control_margin_source) << "\","
+            << "\"nominal_margin_m\":" << formatNumber(f.nominal_margin_m) << ','
+            << "\"actual_margin_m\":" << formatNumber(f.actual_margin_m) << ','
+            << "\"control_margin_m\":" << formatNumber(f.control_margin_m) << ','
+            << "\"support_count\":" << f.support.support_count << ','
+            << "\"confirmed_support_count\":" << f.support.confirmed_support_count << ','
+            << "\"uncertain_support_count\":" << f.support.uncertain_support_count << ','
+            << "\"body_tilt_rad\":" << formatNumber(f.body_tilt_rad) << ','
+            << "\"body_rate_radps\":" << formatNumber(f.body_rate_radps) << ','
+            << "\"high_demand\":" << (f.high_demand ? "true" : "false") << ','
+            << "\"dynamic_risk\":" << (f.dynamic_risk ? "true" : "false") << ','
+            << "\"sparse_support\":" << (f.sparse_support ? "true" : "false") << ','
+            << "\"deadlocked\":" << (f.deadlocked ? "true" : "false") << ','
+            << "\"recovery_recommended\":" << (f.recovery_recommended ? "true" : "false")
+            << ",\"safe_to_lift\":";
+    appendBoolArray(payload, f.safe_to_lift);
+    payload << ",\"lift_clearance_m\":";
+    appendScalarArray(payload, f.lift_clearance_m);
+    payload << ",\"contact_mode\":[";
+    for (std::size_t leg = 0; leg < f.contact.size(); ++leg) {
+        if (leg > 0) {
+            payload << ',';
+        }
+        payload << '\"' << legContactModeName(f.contact[leg].mode) << '\"';
+    }
+    payload << "],\"height_policy\":{"
+            << "\"valid\":" << (f.height.valid ? "true" : "false") << ','
+            << "\"enabled\":" << (f.height.enabled ? "true" : "false") << ','
+            << "\"commanded_body_height_m\":" << formatNumber(f.height.commanded_body_height_m) << ','
+            << "\"measured_body_height_m\":" << formatNumber(f.height.measured_body_height_m) << ','
+            << "\"governor_delta_m\":" << formatNumber(f.height.governor_delta_m) << ','
+            << "\"compliance_sag_m\":" << formatNumber(f.height.compliance_sag_m) << ','
+            << "\"tilt_squat_request_m\":" << formatNumber(f.height.tilt_squat_request_m) << ','
+            << "\"swing_clearance_request_m\":" << formatNumber(f.height.swing_clearance_request_m) << ','
+            << "\"policy_body_height_m\":" << formatNumber(f.height.policy_body_height_m)
+            << "}}";
+}
+
 void appendJointTargets(std::ostringstream& payload, const JointTargets& joints)
 {
     payload << "\"joint_targets\":[";
@@ -425,6 +468,8 @@ std::string serializeReplayTelemetryRecord(const ReplayTelemetryRecord& record)
     appendJointTargets(payload, record.joint_targets);
     payload << ',';
     appendGovernorReplay(payload, record.governor);
+    payload << ',';
+    appendLocomotionFeasibility(payload, record.locomotion_feasibility);
     payload << ',';
     appendTransitionDiagnostics(payload, record.transition_diagnostics);
     payload << ',';

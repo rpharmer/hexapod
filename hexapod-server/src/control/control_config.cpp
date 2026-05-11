@@ -1,12 +1,30 @@
 #include "control_config.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 #include "hexapod-server.hpp"
 #include "types.hpp"
 
 namespace control_config {
+
+namespace {
+
+ControlMarginSource parseControlMarginSource(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    if (value == "actual") {
+        return ControlMarginSource::Actual;
+    }
+    if (value == "conservative") {
+        return ControlMarginSource::Conservative;
+    }
+    return ControlMarginSource::Nominal;
+}
+
+} // namespace
 
 ControlConfig fromParsedToml(const ParsedToml& config) {
     ControlConfig parsed{};
@@ -139,6 +157,10 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
         std::clamp(config.fusionContactDebounceSamples, 1, 16);
     parsed.fusion.touchdown_window = std::chrono::milliseconds{config.fusionTouchdownWindowMs};
     parsed.fusion.contact_hold_window = std::chrono::milliseconds{config.fusionContactHoldWindowMs};
+    parsed.fusion.contact_rise_tau_s = config.fusionContactRiseTauS;
+    parsed.fusion.contact_decay_tau_s = config.fusionContactDecayTauS;
+    parsed.fusion.liftoff_grace_s = config.fusionLiftoffGraceS;
+    parsed.fusion.touchdown_confirm_s = config.fusionTouchdownConfirmS;
     parsed.fusion.trust_decay_per_mismatch = config.fusionTrustDecayPerMismatch;
     parsed.fusion.predictive_trust_bias = config.fusionPredictiveTrustBias;
     parsed.fusion.soft_pose_resync_m = config.fusionSoftPoseResyncM;
@@ -152,6 +174,13 @@ ControlConfig fromParsedToml(const ParsedToml& config) {
     parsed.fusion.correction_mode_soft_release_factor = config.fusionCorrectionSoftReleaseFactor;
     parsed.fusion.emit_physics_sim_corrections = !config.investigationSuppressFusionCorrections;
     parsed.fusion.suppress_fusion_resets = config.investigationSuppressFusionResets;
+    parsed.locomotion_redesign.emit_telemetry = config.locomotionFeasibilityTelemetry;
+    parsed.locomotion_redesign.enable_feasibility_recovery = config.locomotionFeasibilityRecovery;
+    parsed.locomotion_redesign.enable_feasibility_lift_gating = config.locomotionFeasibilityLiftGating;
+    parsed.locomotion_redesign.enable_contact_mode_planning = config.locomotionContactModePlanning;
+    parsed.locomotion_redesign.enable_height_policy = config.locomotionHeightPolicy;
+    parsed.locomotion_redesign.control_margin_source =
+        parseControlMarginSource(config.locomotionControlMarginSource);
 
     return parsed;
 }

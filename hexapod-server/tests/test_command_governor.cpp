@@ -149,8 +149,8 @@ int main() {
     }
 
     MotionIntent recovery_intent = makeWalkIntent(0.24, 0.52, 3'000'000);
-    const RobotState recovery_state = makeState(0.18, 2.15, 0.88, 0.02);
-    const SupportAssessment sparse_support = makeSupport(-0.018, 2);
+    const RobotState recovery_state = makeState(0.22, 3.20, 0.88, 0.02);
+    const SupportAssessment sparse_support = makeSupport(-0.018, 1);
     const CommandGovernorState recovery_out =
         governor.apply(recovery_state, recovery_intent, healthy_safety, stressed_gait, &sparse_support);
     if (!expect(recovery_out.recovery_stage == RecoveryStage::ActiveHold,
@@ -160,7 +160,7 @@ int main() {
         !expect(recovery_out.command_scale == 0.0, "recovery hold should zero command scale") ||
         !expect(recovery_out.cadence_scale == 0.0, "recovery hold should zero cadence scale") ||
         !expect(recovery_out.body_height_delta_m == 0.0, "recovery hold should suppress body squat") ||
-        !expect(recovery_out.current_support_count == 2, "recovery hold should report current support count") ||
+        !expect(recovery_out.current_support_count == 1, "recovery hold should report current support count") ||
         !expect(hasCommandGovernorReason(recovery_out.reasons, CommandGovernorReason::RecoveryHold),
                 "recovery hold should set its reason bit")) {
         return EXIT_FAILURE;
@@ -347,8 +347,8 @@ int main() {
 
         // Latch into ActiveHold by simulating a degraded prior frame.
         MotionIntent enter = makeWalkIntent(0.20, 0.30, 6'000'000);
-        const RobotState bad = makeState(0.20, 2.10, 0.85, 0.03);
-        const SupportAssessment sparse = makeSupport(-0.020, 2);
+        const RobotState bad = makeState(0.22, 3.20, 0.85, 0.03);
+        const SupportAssessment sparse = makeSupport(-0.020, 1);
         spike_governor.apply(bad, enter, healthy_safety, steady_gait, &sparse);
 
         // Wait the healthy-confirmation window with clean state to advance to Settling.
@@ -430,8 +430,8 @@ int main() {
         const RobotState calm_six = makeState(0.04, 0.40, 0.92, 0.03);
 
         MotionIntent enter = makeWalkIntent(0.20, 0.30, 8'000'000);
-        const RobotState bad = makeState(0.20, 2.10, 0.85, 0.03);
-        const SupportAssessment sparse = makeSupport(-0.020, 2);
+        const RobotState bad = makeState(0.22, 3.20, 0.85, 0.03);
+        const SupportAssessment sparse = makeSupport(-0.020, 1);
         dwell_governor.apply(bad, enter, healthy_safety, steady_gait, &sparse);
 
         for (uint64_t t = 8'050'000; t <= 8'700'000; t += 300'000) {

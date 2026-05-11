@@ -82,5 +82,10 @@ void JointFeedbackEstimator::synthesize(RobotState& out) {
         const LegState servo_sim = cal.toServoAngles(joint_sim);
         estimated_state_.leg_states[leg] = servo_sim;
         out.leg_states[leg] = servo_sim;
+        out.joint_state_quality[leg].position_valid = true;
+        out.joint_state_quality[leg].velocity_valid = false;
+        out.joint_state_quality[leg].source = JointStateSource::ObserverEstimate;
+        out.joint_state_quality[leg].age_us = 0;
+        out.joint_state_quality[leg].confidence = 0.65;
     }
 }

@@ -3,6 +3,7 @@
 #include "control_config.hpp"
 #include "geometry_config.hpp"
 #include "local_map.hpp"
+#include "locomotion_feasibility.hpp"
 #include "twist_field.hpp"
 #include "types.hpp"
 
@@ -16,7 +17,8 @@ public:
                       const GaitState& gait,
                       const SafetyState& safety,
                       const BodyTwist& cmd_twist,
-                      const LocalMapSnapshot* terrain_snapshot = nullptr);
+                      const LocalMapSnapshot* terrain_snapshot = nullptr,
+                      const std::array<LegContactDecision, kNumLegs>* contact_modes = nullptr);
 
 private:
     std::array<Vec3, kNumLegs> nominalStance(double body_height_m) const;

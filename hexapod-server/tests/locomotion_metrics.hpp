@@ -2,6 +2,7 @@
 
 #include "command_governor.hpp"
 #include "locomotion_debug.hpp"
+#include "locomotion_feasibility.hpp"
 #include "scenario_driver.hpp"
 #include "types.hpp"
 
@@ -111,6 +112,7 @@ struct MotionSample {
     RobotState estimated{};
     GaitState gait{};
     CommandGovernorState governor{};
+    LocomotionFeasibility locomotion_feasibility{};
     SafetyState safety{};
     Vec3 position{};
     double horizontal_speed_mps{0.0};

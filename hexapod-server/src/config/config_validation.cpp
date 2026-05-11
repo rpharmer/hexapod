@@ -195,7 +195,8 @@ bool parseBoolWithFallback(const toml::value& root,
                            const std::string& key,
                            bool default_value)
 {
-  return toml::find_or<bool>(root, key, default_value);
+  // Use dotted-path traversal (e.g. Tuning.* under [Tuning]); toml::find_or does not split on '.'.
+  return findOrByPath<bool>(root, key, default_value);
 }
 
 std::vector<double> parseDoubleListWithFallback(const toml::value& root,

@@ -42,19 +42,29 @@ BodyVelocityCommand bodyVelocityForFootPlanning(const RobotState& est,
     }
 
     // The estimator body twist and the command twist are both expressed in the same body frame:
-    // +X forward, +Y left, +Z up. We keep linear foot-planning driven by intent so measured
-    // chassis motion cannot feed a lateral/forward capture loop back into the gait.
-    // Angular velocity: simVecToServer preserves CCW-positive yaw (Y_sim→Z_svr) and maps
-    // roll/pitch consistently, so no extra sign adjustment is needed here either.
+    // +X forward, +Y left, +Z up. Linear estimator feedback is only trusted when fusion/support
+    // are credible; yaw blending remains the legacy behaviour for sparse diagnostics.
     const Vec3 ang_est{est.body_twist_state.twist_vel_radps.x,
                        est.body_twist_state.twist_vel_radps.y,
                        est.body_twist_state.twist_vel_radps.z};
+    const Vec3 lin_est{est.body_twist_state.body_trans_mps.x,
+                       est.body_twist_state.body_trans_mps.y,
+                       est.body_twist_state.body_trans_mps.z};
+
+    int support_count = 0;
+    for (const bool contact : est.foot_contacts) {
+        support_count += contact ? 1 : 0;
+    }
+    const bool support_sparse = support_count > 0 && support_count < 3;
+    const double fusion_trust = est.has_fusion_diagnostics ? est.fusion.model_trust : 1.0;
+    const bool trust_good = fusion_trust >= 0.55;
+    constexpr bool kEnableLinearEstimatorBlend = false;
+    const double linear_k = (kEnableLinearEstimatorBlend && !support_sparse && trust_good) ? k : 0.0;
 
     BodyVelocityCommand out{};
     out.linear_mps = intent_only.linear_mps;
-    // Foot planning should only chase commanded roll/pitch body motion. Feeding estimated
-    // chassis rocking back into the twist field turns transient disturbances into large
-    // stance drift and oversized swing capture. Blend estimator yaw only.
+    out.linear_mps.x = intent_only.linear_mps.x * (1.0 - linear_k) + lin_est.x * linear_k;
+    out.linear_mps.y = intent_only.linear_mps.y * (1.0 - linear_k) + lin_est.y * linear_k;
     out.angular_radps = intent_only.angular_radps;
     out.angular_radps.z = intent_only.angular_radps.z * (1.0 - k) + ang_est.z * k;
     out.linear_mps.z = intent_only.linear_mps.z;

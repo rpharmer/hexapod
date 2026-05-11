@@ -69,6 +69,12 @@ struct ParsedToml
   bool investigationDisableStanceTiltLeveling{false};
   bool investigationSuppressFusionCorrections{false};
   bool investigationSuppressFusionResets{false};
+  bool locomotionFeasibilityTelemetry{true};
+  bool locomotionFeasibilityRecovery{false};
+  bool locomotionFeasibilityLiftGating{false};
+  bool locomotionContactModePlanning{false};
+  bool locomotionHeightPolicy{false};
+  std::string locomotionControlMarginSource{"nominal"};
   double fallbackSpeedMag{0.01};
   double gaitTransitionBlendS{0.35};
   double gaitNominalPlanarSpeedMps{0.25};
@@ -140,6 +146,10 @@ struct ParsedToml
   int fusionContactDebounceSamples{2};
   int fusionTouchdownWindowMs{120};
   int fusionContactHoldWindowMs{250};
+  double fusionContactRiseTauS{control_config::kDefaultFusionContactRiseTauS};
+  double fusionContactDecayTauS{control_config::kDefaultFusionContactDecayTauS};
+  double fusionLiftoffGraceS{control_config::kDefaultFusionLiftoffGraceS};
+  double fusionTouchdownConfirmS{control_config::kDefaultFusionTouchdownConfirmS};
   double fusionTrustDecayPerMismatch{0.18};
   double fusionPredictiveTrustBias{0.80};
   double fusionSoftPoseResyncM{0.04};

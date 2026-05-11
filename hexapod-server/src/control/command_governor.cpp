@@ -11,8 +11,6 @@ namespace {
 constexpr DurationUs kRecoveryHealthyConfirmUs{300'000};
 constexpr DurationUs kRecoverySettlingUs{250'000};
 constexpr DurationUs kRecoveryRampOutUs{1'200'000};
-constexpr double kRecoveryHighDemandPlanarSpeedMps = 0.18;
-constexpr double kRecoveryHighDemandYawRateRadps = 0.35;
 constexpr double kRecoveryReleaseHeightBufferM = 0.01;
 constexpr int kRecoveryReleaseSupportCount = kNumLegs;
 
@@ -382,22 +380,17 @@ CommandGovernorState CommandGovernor::apply(const RobotState& est,
     const double body_height_delta_target_unrecov =
         -config_.body_height_squat_max_m * smoothStep01(squat_severity);
 
-    const bool high_demand_walk =
-        out.requested_planar_speed_mps >= kRecoveryHighDemandPlanarSpeedMps ||
-        out.requested_yaw_rate_radps >= kRecoveryHighDemandYawRateRadps;
-    const bool elevated_dynamic_risk =
-        body_tilt_rad >= config_.tilt_soft_rad ||
-        body_rate_radps >=
-            std::max(releaseBodyRateLimit(config_, safety_config_), config_.body_rate_soft_radps) ||
-        high_demand_walk;
-    const int sparse_support_limit = std::max(
-        1,
-        std::max(safety_config_.rapid_body_rate_max_contacts, safety_config_.body_height_collapse_max_contacts));
+    const int sparse_support_limit = std::max(1, safety_config_.rapid_body_rate_max_contacts - 1);
     const bool support_sparse_now =
-        current_support != nullptr && current_support->support_count <= sparse_support_limit;
+        current_support != nullptr &&
+        current_support->support_count <= sparse_support_limit &&
+        current_support->uncertain_support_count == 0;
+    const bool emergency_dynamic_risk =
+        body_tilt_rad >= 0.20 ||
+        body_rate_radps >= 3.0;
     const bool support_margin_bad_now =
         current_support != nullptr &&
-        (current_support->static_margin_m <= 0.0 || support_margin <= config_.support_margin_hard_m);
+        current_support->static_margin_m <= 0.0;
     const bool previous_support_blocked = std::none_of(
         previous_gait.support_liftoff_safe_to_lift.begin(),
         previous_gait.support_liftoff_safe_to_lift.end(),
@@ -405,13 +398,13 @@ CommandGovernorState CommandGovernor::apply(const RobotState& est,
     const bool zero_margin_deadlock_now =
         current_support != nullptr &&
         current_support->static_margin_m <= 0.0 &&
+        current_support->support_count == kNumLegs &&
         previous_support_blocked;
     const bool trigger_recovery_hold =
         current_support != nullptr &&
-        elevated_dynamic_risk &&
+        emergency_dynamic_risk &&
         ((support_sparse_now && support_margin_bad_now) ||
-         zero_margin_deadlock_now ||
-         (support_margin <= config_.support_margin_hard_m && previous_support_blocked));
+         zero_margin_deadlock_now);
 
     if (trigger_recovery_hold) {
         enterRecoveryHold(now);
@@ -529,9 +522,7 @@ CommandGovernorState CommandGovernor::finalizeRecovery(const RobotState& est,
         state.body_rate_radps <= release_body_rate_limit &&
         state.fusion_trust >= config_.fusion_trust_soft &&
         state.contact_mismatch_ratio <= config_.contact_mismatch_soft;
-    const int sparse_support_limit = std::max(
-        1,
-        std::max(safety_config_.rapid_body_rate_max_contacts, safety_config_.body_height_collapse_max_contacts));
+    const int sparse_support_limit = std::max(1, safety_config_.rapid_body_rate_max_contacts);
     const bool healthy_support_state =
         allLegsInStance(gait) &&
         current_support.support_count == kRecoveryReleaseSupportCount &&

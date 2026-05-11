@@ -189,6 +189,12 @@ void appendLocomotionDebugJson(std::ostringstream& payload,
     appendVec3ArrayJson(payload, debug.commanded_foot_body_m);
     payload << ",\"commanded_foot_world_m\":";
     appendVec3ArrayJson(payload, debug.commanded_foot_world_m);
+    payload << ",\"planned_leg_target_body_m\":";
+    appendVec3ArrayJson(payload, debug.planned_leg_target_body_m);
+    payload << ",\"post_clamp_fk_body_m\":";
+    appendVec3ArrayJson(payload, debug.post_clamp_fk_body_m);
+    payload << ",\"post_clamp_fk_vel_body_mps\":";
+    appendVec3ArrayJson(payload, debug.post_clamp_fk_vel_body_mps);
     payload << ",\"contact_anchor_world_m\":";
     appendVec3ArrayJson(payload, debug.contact_anchor_world_m);
     payload << ",\"contact_anchor_drift_m\":";
@@ -197,11 +203,17 @@ void appendLocomotionDebugJson(std::ostringstream& payload,
     appendScalarArrayJson(payload, debug.contact_anchor_max_drift_m);
     payload << ",\"commanded_tracking_error_m\":";
     appendScalarArrayJson(payload, debug.commanded_tracking_error_m);
+    payload << ",\"post_clamp_distortion_m\":";
+    appendScalarArrayJson(payload, debug.post_clamp_distortion_m);
+    payload << ",\"post_clamp_distortion_mps\":";
+    appendScalarArrayJson(payload, debug.post_clamp_distortion_mps);
     payload << ",\"contact_anchor_valid\":";
     appendBoolArrayJson(payload, debug.contact_anchor_valid);
     payload << ",\"min_measured_foot_world_z_m\":" << debug.min_measured_foot_world_z_m
             << ",\"min_commanded_foot_world_z_m\":" << debug.min_commanded_foot_world_z_m
             << ",\"max_commanded_tracking_error_m\":" << debug.max_commanded_tracking_error_m
+            << ",\"max_post_clamp_distortion_m\":" << debug.max_post_clamp_distortion_m
+            << ",\"max_post_clamp_distortion_mps\":" << debug.max_post_clamp_distortion_mps
             << '}';
 }
 
@@ -248,6 +260,149 @@ void appendGovernorJson(std::ostringstream& payload, const CommandGovernorState&
             << "\"freeze_phase\":" << (g.freeze_phase ? "true" : "false") << ','
             << "\"reasons\":\"0x" << std::hex << std::uppercase
             << static_cast<std::uint32_t>(g.reasons) << std::dec << "\"}";
+}
+
+void appendGovernorConfigJson(std::ostringstream& payload, const control_config::CommandGovernorConfig& cfg)
+{
+    payload << "\"governor_config\":{"
+            << "\"low_speed_planar_cutoff_mps\":" << cfg.low_speed_planar_cutoff_mps << ','
+            << "\"low_speed_yaw_cutoff_radps\":" << cfg.low_speed_yaw_cutoff_radps << ','
+            << "\"startup_support_margin_m\":" << cfg.startup_support_margin_m << ','
+            << "\"support_margin_soft_m\":" << cfg.support_margin_soft_m << ','
+            << "\"support_margin_hard_m\":" << cfg.support_margin_hard_m << ','
+            << "\"tilt_soft_rad\":" << cfg.tilt_soft_rad << ','
+            << "\"tilt_hard_rad\":" << cfg.tilt_hard_rad << ','
+            << "\"body_rate_soft_radps\":" << cfg.body_rate_soft_radps << ','
+            << "\"body_rate_hard_radps\":" << cfg.body_rate_hard_radps << ','
+            << "\"fusion_trust_soft\":" << cfg.fusion_trust_soft << ','
+            << "\"fusion_trust_hard\":" << cfg.fusion_trust_hard << ','
+            << "\"contact_mismatch_soft\":" << cfg.contact_mismatch_soft << ','
+            << "\"contact_mismatch_hard\":" << cfg.contact_mismatch_hard << ','
+            << "\"command_accel_soft_mps2\":" << cfg.command_accel_soft_mps2 << ','
+            << "\"command_accel_hard_mps2\":" << cfg.command_accel_hard_mps2 << ','
+            << "\"low_speed_min_scale\":" << cfg.low_speed_min_scale << ','
+            << "\"active_min_scale\":" << cfg.active_min_scale << ','
+            << "\"low_speed_cadence_min_scale\":" << cfg.low_speed_cadence_min_scale << ','
+            << "\"active_cadence_min_scale\":" << cfg.active_cadence_min_scale << ','
+            << "\"body_height_squat_max_m\":" << cfg.body_height_squat_max_m << ','
+            << "\"body_height_squat_severity_threshold\":" << cfg.body_height_squat_severity_threshold << ','
+            << "\"swing_floor_boost_m\":" << cfg.swing_floor_boost_m << ','
+            << "\"body_height_delta_slew_mps\":" << cfg.body_height_delta_slew_mps << ','
+            << "\"ramp_out_health_entry\":" << cfg.ramp_out_health_entry << ','
+            << "\"ramp_out_health_abort\":" << cfg.ramp_out_health_abort << ','
+            << "\"ramp_out_health_filter_tau_s\":" << cfg.ramp_out_health_filter_tau_s << ','
+            << "\"ramp_out_min_dwell_s\":" << cfg.ramp_out_min_dwell_s << ','
+            << "\"ramp_out_abort_persist_s\":" << cfg.ramp_out_abort_persist_s
+            << '}';
+}
+
+void appendLocomotionFeasibilityJson(std::ostringstream& payload, const LocomotionFeasibility& f)
+{
+    payload << "\"locomotion_feasibility\":{"
+            << "\"valid\":" << (f.valid ? "true" : "false") << ','
+            << "\"enabled\":" << (f.enabled ? "true" : "false") << ','
+            << "\"control_margin_source\":\"" << controlMarginSourceName(f.control_margin_source) << "\","
+            << "\"nominal_margin_m\":" << f.nominal_margin_m << ','
+            << "\"actual_margin_m\":" << f.actual_margin_m << ','
+            << "\"control_margin_m\":" << f.control_margin_m << ','
+            << "\"support_count\":" << f.support.support_count << ','
+            << "\"confirmed_support_count\":" << f.support.confirmed_support_count << ','
+            << "\"uncertain_support_count\":" << f.support.uncertain_support_count << ','
+            << "\"body_tilt_rad\":" << f.body_tilt_rad << ','
+            << "\"body_rate_radps\":" << f.body_rate_radps << ','
+            << "\"high_demand\":" << (f.high_demand ? "true" : "false") << ','
+            << "\"dynamic_risk\":" << (f.dynamic_risk ? "true" : "false") << ','
+            << "\"sparse_support\":" << (f.sparse_support ? "true" : "false") << ','
+            << "\"deadlocked\":" << (f.deadlocked ? "true" : "false") << ','
+            << "\"recovery_recommended\":" << (f.recovery_recommended ? "true" : "false");
+    payload << ",\"safe_to_lift\":";
+    appendBoolArrayJson(payload, f.safe_to_lift);
+    payload << ",\"lift_clearance_m\":";
+    appendScalarArrayJson(payload, f.lift_clearance_m);
+    payload << ",\"contact_mode\":[";
+    for (std::size_t leg = 0; leg < f.contact.size(); ++leg) {
+        if (leg > 0) {
+            payload << ',';
+        }
+        payload << '\"' << legContactModeName(f.contact[leg].mode) << '\"';
+    }
+    payload << "],\"contact_use_stance_kinematics\":[";
+    for (std::size_t leg = 0; leg < f.contact.size(); ++leg) {
+        if (leg > 0) {
+            payload << ',';
+        }
+        payload << (f.contact[leg].use_stance_kinematics ? "true" : "false");
+    }
+    payload << "],\"height_policy\":{"
+            << "\"valid\":" << (f.height.valid ? "true" : "false") << ','
+            << "\"enabled\":" << (f.height.enabled ? "true" : "false") << ','
+            << "\"commanded_body_height_m\":" << f.height.commanded_body_height_m << ','
+            << "\"measured_body_height_m\":" << f.height.measured_body_height_m << ','
+            << "\"governor_delta_m\":" << f.height.governor_delta_m << ','
+            << "\"compliance_sag_m\":" << f.height.compliance_sag_m << ','
+            << "\"tilt_squat_request_m\":" << f.height.tilt_squat_request_m << ','
+            << "\"swing_clearance_request_m\":" << f.height.swing_clearance_request_m << ','
+            << "\"terrain_stance_request_m\":" << f.height.terrain_stance_request_m << ','
+            << "\"policy_body_height_m\":" << f.height.policy_body_height_m
+            << "}}";
+}
+
+const char* jointStateSourceName(const JointStateSource source)
+{
+    switch (source) {
+        case JointStateSource::CommandEcho:
+            return "command_echo";
+        case JointStateSource::ObserverEstimate:
+            return "observer_estimate";
+        case JointStateSource::Measured:
+            return "measured";
+        case JointStateSource::Simulated:
+            return "simulated";
+        case JointStateSource::None:
+        default:
+            return "none";
+    }
+}
+
+void appendJointQualityJson(std::ostringstream& payload,
+                            const std::array<JointStateQuality, kNumLegs>& quality)
+{
+    payload << "\"joint_state_quality\":[";
+    for (std::size_t leg = 0; leg < quality.size(); ++leg) {
+        if (leg > 0) {
+            payload << ',';
+        }
+        const JointStateQuality& q = quality[leg];
+        payload << "{\"source\":\"" << jointStateSourceName(q.source) << "\","
+                << "\"position_valid\":" << (q.position_valid ? "true" : "false") << ','
+                << "\"velocity_valid\":" << (q.velocity_valid ? "true" : "false") << ','
+                << "\"age_us\":" << q.age_us << ','
+                << "\"confidence\":" << q.confidence
+                << '}';
+    }
+    payload << ']';
+}
+
+void appendEpochJson(std::ostringstream& payload, const telemetry::ControlStepTelemetry::EpochTelemetry& epoch)
+{
+    payload << "\"epoch\":{"
+            << "\"control_seq_id\":" << epoch.control_seq_id << ','
+            << "\"raw_seq_id\":" << epoch.raw_seq_id << ','
+            << "\"est_seq_id\":" << epoch.est_seq_id << ','
+            << "\"intent_seq_id\":" << epoch.intent_seq_id << ','
+            << "\"raw_timestamp_us\":" << epoch.raw_timestamp_us << ','
+            << "\"est_timestamp_us\":" << epoch.est_timestamp_us << ','
+            << "\"intent_timestamp_us\":" << epoch.intent_timestamp_us << ','
+            << "\"terrain_timestamp_us\":" << epoch.terrain_timestamp_us << ','
+            << "\"raw_age_us\":" << epoch.raw_age_us << ','
+            << "\"est_age_us\":" << epoch.est_age_us << ','
+            << "\"intent_age_us\":" << epoch.intent_age_us << ','
+            << "\"terrain_age_us\":" << epoch.terrain_age_us << ','
+            << "\"raw_valid\":" << (epoch.raw_valid ? "true" : "false") << ','
+            << "\"est_valid\":" << (epoch.est_valid ? "true" : "false") << ','
+            << "\"intent_valid\":" << (epoch.intent_valid ? "true" : "false") << ','
+            << "\"terrain_valid\":" << (epoch.terrain_valid ? "true" : "false")
+            << '}';
 }
 
 void appendFusionJson(std::ostringstream& payload, const telemetry::FusionTelemetrySnapshot& fusion) {
@@ -434,6 +589,8 @@ std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& te
     }
     payload << ',';
     appendLocomotionDebugJson(payload, telemetry.locomotion_debug);
+    payload << ',';
+    appendJointQualityJson(payload, telemetry.estimated_state.joint_state_quality);
     if (telemetry.navigation.has_value()) {
         const NavigationMonitorSnapshot& nav = telemetry.navigation.value();
         payload << ",\"nav\":{"
@@ -461,6 +618,12 @@ std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& te
     appendFusionJson(payload, fusion);
     payload << ',';
     appendGovernorJson(payload, telemetry.governor);
+    payload << ',';
+    appendGovernorConfigJson(payload, telemetry.governor_config);
+    payload << ',';
+    appendLocomotionFeasibilityJson(payload, telemetry.locomotion_feasibility);
+    payload << ',';
+    appendEpochJson(payload, telemetry.epoch);
     if (telemetry.resource_sections.has_value()) {
         payload << ",\"resource_sections\":";
         appendResourceSectionSummaryJson(payload, telemetry.resource_sections.value());

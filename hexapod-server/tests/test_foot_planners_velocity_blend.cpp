@@ -38,7 +38,7 @@ int main() {
                     nearlyEqual(blended.linear_mps.y, cmd_twist.linear_mps.y) &&
                     nearlyEqual(blended.linear_mps.z, cmd_twist.linear_mps.z) &&
                     nearlyEqual(blended.angular_radps.z, expected_wz),
-                "foot planning should keep linear motion intent-driven while blending estimator yaw")) {
+                "foot planning should keep default linear motion intent-driven while blending estimator yaw")) {
         return EXIT_FAILURE;
     }
 
@@ -46,13 +46,24 @@ int main() {
     if (!expect(nearlyEqual(estimator_only.linear_mps.x, cmd_twist.linear_mps.x) &&
                     nearlyEqual(estimator_only.linear_mps.y, cmd_twist.linear_mps.y) &&
                     nearlyEqual(estimator_only.linear_mps.z, cmd_twist.linear_mps.z),
-                "full blend should not feed estimator linear velocity back into the foot planner")) {
+                "default full blend should not feed estimator linear velocity into the foot planner")) {
         return EXIT_FAILURE;
     }
     if (!expect(nearlyEqual(estimator_only.angular_radps.x, cmd_twist.angular_radps.x) &&
                     nearlyEqual(estimator_only.angular_radps.y, cmd_twist.angular_radps.y) &&
                     nearlyEqual(estimator_only.angular_radps.z, 0.3),
                 "full blend should preserve commanded roll/pitch while blending estimator yaw")) {
+        return EXIT_FAILURE;
+    }
+
+    RobotState low_trust_est = est;
+    low_trust_est.has_fusion_diagnostics = true;
+    low_trust_est.fusion.model_trust = 0.25;
+    const BodyVelocityCommand low_trust = bodyVelocityForFootPlanning(low_trust_est, cmd_twist, 1.0);
+    if (!expect(nearlyEqual(low_trust.linear_mps.x, cmd_twist.linear_mps.x) &&
+                    nearlyEqual(low_trust.linear_mps.y, cmd_twist.linear_mps.y) &&
+                    nearlyEqual(low_trust.angular_radps.z, est.body_twist_state.twist_vel_radps.z),
+                "low fusion trust should suppress linear velocity blend while preserving yaw blend")) {
         return EXIT_FAILURE;
     }
 

@@ -90,6 +90,7 @@ public:
 
     void reset();
     void latchRecoveryHold(TimePointUs now = {});
+    [[nodiscard]] const control_config::CommandGovernorConfig& config() const { return config_; }
 
     CommandGovernorState preview(const RobotState& est,
                                  MotionIntent& intent,

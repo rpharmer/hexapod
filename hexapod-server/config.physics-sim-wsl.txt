@@ -48,7 +48,7 @@ SafetyLoopPeriodUs = 5000
 DiagnosticsPeriodMs = 1000
 CommandRefreshPeriodMs = 100
 StandSettlingDelayMs = 2000
-MaxTiltRad = 0.55
+MaxTiltRad = 0.60
 # Sim IMU gyro can exceed 2 rad/s briefly with <=2 contacts; 1.20 caused harness-only TIP_OVER flakes.
 RapidBodyRateRadps = 2.50
 RapidBodyRateMaxContacts = 2
@@ -59,7 +59,7 @@ FallbackSpeedMag = 0.01
 # Keep the physics-sim walk planner intent-driven; estimator feed-forward was
 # amplifying the closed-loop instability in the WSL sim path.
 FootEstimatorBlend = 0.0
-BodyHeightCollapseMarginM = 0.05
+BodyHeightCollapseMarginM = 0.06
 BodyHeightCollapseMaxContacts = 3
 InvestigationDisableTerrainStanceBias = true
 InvestigationDisableTerrainSwingClearance = true

@@ -9,15 +9,18 @@
 ControlPipeline::ControlPipeline(control_config::GaitConfig gait_config,
                                  control_config::LocomotionCommandConfig loco_config,
                                  control_config::SafetyConfig safety_config,
+                                 control_config::CommandGovernorConfig governor_config,
                                  control_config::FootTerrainConfig foot_terrain_config,
                                  control_config::GravityFeedforwardConfig gravity_feedforward_config,
+                                 control_config::LocomotionRedesignConfig locomotion_redesign_config,
                                  runtime_resource_monitoring::Profiler* profiler)
     : profiler_(profiler),
-      command_governor_({}, safety_config),
+      command_governor_(governor_config, safety_config),
       gait_(gait_config),
       loco_cmd_(loco_config),
       body_(gait_config, foot_terrain_config),
-      gravity_feedforward_(gravity_feedforward_config) {}
+      gravity_feedforward_(gravity_feedforward_config),
+      locomotion_redesign_(locomotion_redesign_config) {}
 
 void ControlPipeline::reset() {
     command_governor_.reset();
@@ -27,6 +30,10 @@ void ControlPipeline::reset() {
     resetJointAngleGravityFeedforwardState();
     last_gait_state_ = GaitState{};
     have_last_gait_state_ = false;
+}
+
+const control_config::CommandGovernorConfig& ControlPipeline::commandGovernorConfig() const {
+    return command_governor_.config();
 }
 
 PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
@@ -88,7 +95,19 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
         const auto stability_scope =
             profiler_ ? profiler_->scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::ControlPipelineStability))
                       : runtime_resource_monitoring::Profiler::Scope{};
-        locomotion_stability_.apply(estimated, governed_intent, gait_state);
+        const LocomotionFeasibility pre_stability_feasibility = computeLocomotionFeasibility(
+            estimated,
+            governed_intent,
+            gait_state,
+            last_gait_state_,
+            safety_state,
+            geometry_config::activeHexapodGeometry(),
+            locomotion_redesign_);
+        locomotion_stability_.apply(
+            estimated,
+            governed_intent,
+            gait_state,
+            locomotion_redesign_.enable_feasibility_lift_gating ? &pre_stability_feasibility : nullptr);
         (void)stability_scope;
     }
 
@@ -100,15 +119,32 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
         gait_state.stability_hold_stance.begin(),
         gait_state.stability_hold_stance.end(),
         [](const bool hold) { return hold; });
+    const SupportAssessment post_stability_support = assessSupportState(
+        estimated, governed_intent, gait_state, geometry_config::activeHexapodGeometry());
+    LocomotionFeasibility locomotion_feasibility = computeLocomotionFeasibility(
+        estimated,
+        governed_intent,
+        gait_state,
+        last_gait_state_,
+        safety_state,
+        geometry_config::activeHexapodGeometry(),
+        locomotion_redesign_);
     const bool high_demand_walk =
         governor.requested_planar_speed_mps >= 0.18 ||
         governor.requested_yaw_rate_radps >= 0.35;
     const bool support_deadlocked = no_leg_safe_to_lift && all_legs_held;
-    const bool force_recovery_hold =
+    const bool sparse_support_deadlocked =
+        post_stability_support.support_count <= 2 &&
+        post_stability_support.uncertain_support_count == 0;
+    const bool legacy_force_recovery_hold =
         governed_intent.requested_mode == RobotMode::WALK &&
         high_demand_walk &&
+        sparse_support_deadlocked &&
         gait_state.static_stability_margin_m <= 0.0 &&
         support_deadlocked;
+    const bool force_recovery_hold = locomotion_redesign_.enable_feasibility_recovery
+                                         ? locomotion_feasibility.recovery_recommended
+                                         : legacy_force_recovery_hold;
     if (force_recovery_hold &&
         governor.recovery_stage != RecoveryStage::ActiveHold &&
         governor.recovery_stage != RecoveryStage::Settling) {
@@ -130,6 +166,8 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
         estimated, governed_intent, gait_state, geometry_config::activeHexapodGeometry());
     governor = command_governor_.finalizeRecovery(
         estimated, governed_intent, safety_state, gait_state, final_support, governor, command_clock);
+    locomotion_feasibility.height = evaluateHeightPolicySnapshot(
+        estimated, governed_intent, gait_state, governor, locomotion_redesign_);
 
     MotionIntent body_intent = governed_intent;
     const bool recovery_force_stand =
@@ -156,8 +194,10 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
         const auto body_scope =
             profiler_ ? profiler_->scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::ControlPipelineBody))
                       : runtime_resource_monitoring::Profiler::Scope{};
+        const auto* contact_modes =
+            locomotion_redesign_.enable_contact_mode_planning ? &locomotion_feasibility.contact : nullptr;
         const LegTargets targets =
-            body_.update(estimated, body_intent, gait_state, safety_state, cmd_twist, terrain_snapshot);
+            body_.update(estimated, body_intent, gait_state, safety_state, cmd_twist, terrain_snapshot, contact_modes);
         (void)body_scope;
         return targets;
     }();
@@ -171,7 +211,12 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
         return targets;
     }();
     applyJointAngleGravityFeedforward(
-        gravity_feedforward_, geometry_config::activeHexapodGeometry(), estimated, gait_state, joint_targets);
+        gravity_feedforward_,
+        geometry_config::activeHexapodGeometry(),
+        estimated,
+        gait_state,
+        joint_targets,
+        locomotion_redesign_.enable_contact_mode_planning ? &locomotion_feasibility.contact : nullptr);
     (void)pipeline_scope;
 
     ControlStatus status{};
@@ -187,6 +232,7 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     result.status = status;
     result.gait_state = gait_state;
     result.command_governor = governor;
+    result.locomotion_feasibility = locomotion_feasibility;
     last_gait_state_ = gait_state;
     have_last_gait_state_ = true;
     return result;

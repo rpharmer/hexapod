@@ -75,6 +75,15 @@ double lpfDeltaRad(double raw, double tau_s, double& y, bool& init) {
     return y;
 }
 
+bool gravityFeedforwardCanUseJointState(const JointStateQuality& quality) {
+    if (!quality.position_valid) {
+        return false;
+    }
+    return quality.source == JointStateSource::Measured ||
+           quality.source == JointStateSource::Simulated ||
+           (quality.source == JointStateSource::ObserverEstimate && quality.confidence >= 0.45);
+}
+
 } // namespace
 
 LegGravityCompensation computeLegGravityCompensation(const LegGeometry& leg,
@@ -185,8 +194,9 @@ void applyJointAngleGravityFeedforward(const control_config::GravityFeedforwardC
                                        const HexapodGeometry& geometry,
                                        const RobotState& est,
                                        const GaitState& gait,
-                                       JointTargets& in_out) {
-    if (!cfg.enabled) {
+                                       JointTargets& in_out,
+                                       const std::array<LegContactDecision, kNumLegs>* contact_modes) {
+    if (!cfg.enabled || cfg.mode == control_config::GravityFeedforwardMode::Off) {
         g_ff_lpf.fill({});
         return;
     }
@@ -216,7 +226,12 @@ void applyJointAngleGravityFeedforward(const control_config::GravityFeedforwardC
 
     int n_stance = 0;
     for (int leg = 0; leg < kNumLegs; ++leg) {
-        if (gait.in_stance[leg] && est.foot_contacts[leg]) {
+        const std::size_t idx = static_cast<std::size_t>(leg);
+        const bool feedforward_stance =
+            contact_modes != nullptr
+                ? ((*contact_modes)[idx].use_stance_kinematics && (*contact_modes)[idx].raw_contact)
+                : (gait.in_stance[idx] && est.foot_contacts[idx]);
+        if (feedforward_stance) {
             ++n_stance;
         }
     }
@@ -230,13 +245,28 @@ void applyJointAngleGravityFeedforward(const control_config::GravityFeedforwardC
                                    : 0.0);
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
-        if (!gait.in_stance[leg] || !est.foot_contacts[leg]) {
+        const std::size_t idx = static_cast<std::size_t>(leg);
+        const bool feedforward_stance =
+            contact_modes != nullptr
+                ? ((*contact_modes)[idx].use_stance_kinematics && (*contact_modes)[idx].raw_contact)
+                : (gait.in_stance[idx] && est.foot_contacts[idx]);
+        if (!feedforward_stance) {
             g_ff_lpf[static_cast<std::size_t>(leg)] = {};
         }
     }
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
-        if (!gait.in_stance[leg] || !est.foot_contacts[leg]) {
+        const std::size_t idx = static_cast<std::size_t>(leg);
+        const bool feedforward_stance =
+            contact_modes != nullptr
+                ? ((*contact_modes)[idx].use_stance_kinematics && (*contact_modes)[idx].raw_contact)
+                : (gait.in_stance[idx] && est.foot_contacts[idx]);
+        if (!feedforward_stance) {
+            continue;
+        }
+        if (cfg.mode == control_config::GravityFeedforwardMode::Bounded &&
+            !gravityFeedforwardCanUseJointState(est.joint_state_quality[static_cast<std::size_t>(leg)])) {
+            g_ff_lpf[static_cast<std::size_t>(leg)] = {};
             continue;
         }
 

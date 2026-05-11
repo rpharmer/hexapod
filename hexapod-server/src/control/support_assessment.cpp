@@ -1,5 +1,7 @@
 #include "support_assessment.hpp"
 
+#include "leg_fk.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -221,6 +223,15 @@ bool hasSupportObservation(const RobotState& est) {
     return false;
 }
 
+bool jointQualitySupportsFk(const JointStateQuality& quality) {
+    if (!quality.position_valid) {
+        return false;
+    }
+    return quality.source == JointStateSource::Measured ||
+           quality.source == JointStateSource::Simulated ||
+           (quality.source == JointStateSource::ObserverEstimate && quality.confidence >= 0.45);
+}
+
 } // namespace
 
 SupportAssessment assessSupportState(const RobotState& est,
@@ -235,9 +246,18 @@ SupportAssessment assessSupportState(const RobotState& est,
     }
     const Vec3 planar_offset{intent.twist.body_trans_m.x, intent.twist.body_trans_m.y, 0.0};
     const std::array<Vec3, kNumLegs> nominal = nominalStancePositions(geometry, body_height_m);
+    LegFK fk{};
     for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
-        const Vec3 point = nominal[leg] - planar_offset;
-        out.foot_xy_body_m[leg] = SupportPoint2{point.x, point.y};
+        const Vec3 nominal_point = nominal[leg] - planar_offset;
+        out.nominal_foot_xy_body_m[leg] = SupportPoint2{nominal_point.x, nominal_point.y};
+        out.actual_foot_xy_body_m[leg] = out.nominal_foot_xy_body_m[leg];
+        out.support_point_source[leg] = SupportPointSource::Nominal;
+        if (jointQualitySupportsFk(est.joint_state_quality[leg])) {
+            const FootTarget actual = fk.footInBodyFrame(est.leg_states[leg], geometry.legGeometry[leg]);
+            out.actual_foot_xy_body_m[leg] = SupportPoint2{actual.pos_body_m.x, actual.pos_body_m.y};
+            out.support_point_source[leg] = SupportPointSource::JointFk;
+        }
+        out.foot_xy_body_m[leg] = out.actual_foot_xy_body_m[leg];
     }
 
     out.projected_com_xy_m = SupportPoint2{
@@ -247,7 +267,9 @@ SupportAssessment assessSupportState(const RobotState& est,
 
     const bool use_support_observation = hasSupportObservation(est);
     std::vector<SupportPoint2> stance_now;
+    std::vector<SupportPoint2> nominal_stance_now;
     stance_now.reserve(kNumLegs);
+    nominal_stance_now.reserve(kNumLegs);
     for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
         const bool planned_stance = gait.in_stance[leg];
         const bool contact_support = est.foot_contacts[leg];
@@ -278,12 +300,18 @@ SupportAssessment assessSupportState(const RobotState& est,
                 ++out.confirmed_support_count;
             }
             stance_now.push_back(out.foot_xy_body_m[leg]);
+            nominal_stance_now.push_back(out.nominal_foot_xy_body_m[leg]);
         }
     }
 
     out.uncertain_support_count = out.support_count - out.confirmed_support_count;
     out.all_support_confirmed = out.support_count > 0 && out.uncertain_support_count == 0;
-    out.static_margin_m = staticStabilityMargin(out.projected_com_xy_m, stance_now);
+    out.nominal_static_margin_m = staticStabilityMargin(out.projected_com_xy_m, nominal_stance_now);
+    out.actual_static_margin_m = staticStabilityMargin(out.projected_com_xy_m, stance_now);
+    // Keep existing control behaviour on the nominal support metric until the actual-margin
+    // controller path is explicitly enabled and retuned. The actual margin is still published
+    // for diagnostics and A/B validation.
+    out.static_margin_m = out.nominal_static_margin_m;
     out.sparse_support = out.support_count <= 3;
     out.degraded_support = out.sparse_support || out.static_margin_m < 0.0;
     return out;

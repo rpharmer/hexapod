@@ -27,6 +27,7 @@ ctest --preset tests -LE 'locomotion-stress|motion-performance-long' --output-on
 
 - **Symptom:** `forward_walk` average projected speed below the lower band vs commanded speed.
 - **Sample output:** `avg_speed=0.0334287 command=0.2 ratio=0.167144 mode=3 fault=0`
+- **Status (2026-05-10):** Fixed without changing gates — `Tuning.InvestigationDisable*` in `config.physics-sim-wsl.txt` began taking effect once `parseBoolWithFallback` traversed dotted paths, disabling terrain/stance-tilt aids and depressing average reported walk speed. `test_physics_sim_walk_distance` now loads `config.physics-sim-test-harness.txt` (same tuning except those flags stay **false**) via `loadHarnessSettings(true)` in `physics_sim_test_utils.hpp`.
 
 ### `physics_sim_navigation_acceptance`
 
@@ -108,7 +109,7 @@ Use `- [ ]` / `- [x]` as you fix or intentionally skip.
 
 ### Server
 
-- [ ] `physics_sim_walk_distance`
+- [x] `physics_sim_walk_distance`
 - [ ] `physics_sim_navigation_acceptance`
 - [ ] `locomotion_regression_suite`
 

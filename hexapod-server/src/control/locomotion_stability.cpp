@@ -2,6 +2,7 @@
 
 #include "config/geometry_config.hpp"
 #include "gait_params.hpp"
+#include "locomotion_feasibility.hpp"
 #include "motion_intent_utils.hpp"
 #include "support_assessment.hpp"
 
@@ -25,7 +26,10 @@ LocomotionStability::LocomotionStability(LocomotionStabilityConfig config)
 void LocomotionStability::reset() {
 }
 
-void LocomotionStability::apply(const RobotState& est, const MotionIntent& intent, GaitState& gait) {
+void LocomotionStability::apply(const RobotState& est,
+                                const MotionIntent& intent,
+                                GaitState& gait,
+                                const LocomotionFeasibility* feasibility) {
     gait.stability_hold_stance.fill(false);
     gait.support_liftoff_clearance_m.fill(0.0);
     gait.support_liftoff_safe_to_lift.fill(false);
@@ -37,8 +41,10 @@ void LocomotionStability::apply(const RobotState& est, const MotionIntent& inten
     }
 
     const HexapodGeometry geo = geometry_config::activeHexapodGeometry();
-    const SupportAssessment support = assessSupportState(est, intent, gait, geo);
-    gait.static_stability_margin_m = support.static_margin_m;
+    const SupportAssessment support =
+        feasibility != nullptr ? feasibility->support : assessSupportState(est, intent, gait, geo);
+    gait.static_stability_margin_m =
+        feasibility != nullptr ? feasibility->control_margin_m : support.static_margin_m;
 
     double margin_need = config_.min_margin_required_m;
     bool emergency_tilt_hold = false;
@@ -52,9 +58,9 @@ void LocomotionStability::apply(const RobotState& est, const MotionIntent& inten
             // another leg to leave the ground. This keeps the gait from chasing a growing tilt
             // with the same lift pattern that caused it.
             margin_need += std::clamp(0.04 * tilt_mag, 0.0, 0.05);
-            const double tilt_over = std::max(0.0, tilt_mag - 0.12);
-            tilt_scale = std::clamp(1.0 - 0.75 * tilt_over, 0.45, 1.0);
-            emergency_tilt_hold = tilt_mag > 0.30;
+            const double tilt_over = std::max(0.0, tilt_mag - 0.10);
+            tilt_scale = std::clamp(1.0 - 1.6 * tilt_over, 0.35, 1.0);
+            emergency_tilt_hold = tilt_mag > 0.20;
         }
     }
     if (gait.stride_phase_rate_hz.value < config_.slow_stride_hz_threshold) {
@@ -95,8 +101,13 @@ void LocomotionStability::apply(const RobotState& est, const MotionIntent& inten
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
         const double lift_clearance_m =
-            supportPolygonClearanceExcludingLeg(support, leg, margin_need, config_.support_inset_m);
-        const bool can_lift = lift_clearance_m >= 0.0 && !emergency_tilt_hold;
+            feasibility != nullptr
+                ? feasibility->lift_clearance_m[static_cast<std::size_t>(leg)]
+                : supportPolygonClearanceExcludingLeg(support, leg, margin_need, config_.support_inset_m);
+        const bool can_lift =
+            feasibility != nullptr
+                ? feasibility->safe_to_lift[static_cast<std::size_t>(leg)]
+                : (lift_clearance_m >= 0.0 && !emergency_tilt_hold);
         const bool supported_swing_leg =
             support.effective_support[static_cast<std::size_t>(leg)] &&
             !gait.in_stance[static_cast<std::size_t>(leg)];
@@ -109,7 +120,12 @@ void LocomotionStability::apply(const RobotState& est, const MotionIntent& inten
         gait.support_liftoff_safe_to_lift.begin(),
         gait.support_liftoff_safe_to_lift.end(),
         [](const bool safe) { return safe; });
-    if (high_activity_command && gait.static_stability_margin_m <= 0.0 && no_leg_safe_to_lift) {
+    const bool sparse_support = support.support_count <= 2;
+    const bool severe_margin_loss = gait.static_stability_margin_m <= -0.50;
+    if (high_activity_command &&
+        gait.static_stability_margin_m <= 0.0 &&
+        no_leg_safe_to_lift &&
+        (sparse_support || severe_margin_loss || emergency_tilt_hold)) {
         // Once the current support polygon is already invalid, continuing to alternate tripod
         // memberships can kick the body into a tip before the outer safety loop reacts. Treat the
         // gait as a pure recovery stance until the support margin recovers instead of preserving

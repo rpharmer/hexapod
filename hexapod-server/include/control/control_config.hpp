@@ -96,6 +96,10 @@ inline constexpr double kDefaultFootTerrainSwingXYNudgeBlend{0.60};
 inline constexpr int kDefaultFusionContactDebounceSamples{2};
 inline constexpr int kDefaultFusionTouchdownWindowMs{120};
 inline constexpr int kDefaultFusionContactHoldWindowMs{250};
+inline constexpr double kDefaultFusionContactRiseTauS{0.018};
+inline constexpr double kDefaultFusionContactDecayTauS{0.040};
+inline constexpr double kDefaultFusionLiftoffGraceS{0.080};
+inline constexpr double kDefaultFusionTouchdownConfirmS{0.040};
 inline constexpr double kDefaultFusionTrustDecayPerMismatch{0.18};
 inline constexpr double kDefaultFusionPredictiveTrustBias{0.80};
 inline constexpr double kDefaultFusionSoftPoseResyncM{0.04};
@@ -167,8 +171,15 @@ inline constexpr double kDefaultGravityFeedforwardStiffnessGainScale{1.0};
 inline constexpr double kDefaultGravityFeedforwardDeltaLpfTauS{0.0};
 
 /** Joint-space gravity feedforward: biases commanded servo angles from IMU + stance/contact gates. */
+enum class GravityFeedforwardMode : std::uint8_t {
+    Off = 0,
+    Bounded = 1,
+    Full = 2,
+};
+
 struct GravityFeedforwardConfig {
     bool enabled{false};
+    GravityFeedforwardMode mode{GravityFeedforwardMode::Bounded};
     /** Skip feedforward when ‖gyro‖ exceeds this (rad/s). */
     double max_gyro_radps{kDefaultGravityFeedforwardMaxGyroRadps};
     /**
@@ -322,6 +333,10 @@ struct FusionConfig {
     int contact_debounce_samples{kDefaultFusionContactDebounceSamples};
     std::chrono::milliseconds touchdown_window{std::chrono::milliseconds{kDefaultFusionTouchdownWindowMs}};
     std::chrono::milliseconds contact_hold_window{std::chrono::milliseconds{kDefaultFusionContactHoldWindowMs}};
+    double contact_rise_tau_s{kDefaultFusionContactRiseTauS};
+    double contact_decay_tau_s{kDefaultFusionContactDecayTauS};
+    double liftoff_grace_s{kDefaultFusionLiftoffGraceS};
+    double touchdown_confirm_s{kDefaultFusionTouchdownConfirmS};
     double trust_decay_per_mismatch{kDefaultFusionTrustDecayPerMismatch};
     double predictive_trust_bias{kDefaultFusionPredictiveTrustBias};
     double soft_pose_resync_m{kDefaultFusionSoftPoseResyncM};
@@ -333,6 +348,27 @@ struct FusionConfig {
     int correction_mode_hold_samples{kDefaultFusionCorrectionHoldSamples};
     double correction_mode_strong_release_factor{kDefaultFusionCorrectionStrongReleaseFactor};
     double correction_mode_soft_release_factor{kDefaultFusionCorrectionSoftReleaseFactor};
+};
+
+enum class ControlMarginSource : std::uint8_t {
+    Nominal = 0,
+    Actual = 1,
+    Conservative = 2,
+};
+
+struct LocomotionRedesignConfig {
+    bool emit_telemetry{true};
+    bool enable_feasibility_recovery{false};
+    bool enable_feasibility_lift_gating{false};
+    bool enable_contact_mode_planning{false};
+    bool enable_height_policy{false};
+    ControlMarginSource control_margin_source{ControlMarginSource::Nominal};
+    double high_demand_planar_mps{0.18};
+    double high_demand_yaw_radps{0.35};
+    double emergency_tilt_rad{0.20};
+    double emergency_body_rate_radps{3.0};
+    double min_liftoff_margin_m{0.008};
+    double support_inset_m{0.002};
 };
 
 struct ControlConfig {
@@ -348,6 +384,7 @@ struct ControlConfig {
     CommandGovernorConfig command_governor{};
     FootTerrainConfig foot_terrain{};
     FusionConfig fusion{};
+    LocomotionRedesignConfig locomotion_redesign{};
     LocalMapConfig local_map{};
     LocalPlannerConfig local_planner{};
     bool control_loop_trace_enabled{false};

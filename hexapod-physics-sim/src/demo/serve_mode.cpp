@@ -409,8 +409,10 @@ void ApplyContactArbitrationToLidarSamples(const World& world,
         return;
     }
 
-    const float radius = std::max(0.0f, terrain_config.lidar_contact_arbitration_radius_m);
-    const float disagreement = std::max(0.0f, terrain_config.lidar_contact_disagreement_m);
+    const float radius =
+        std::max(0.0f, static_cast<float>(terrain_config.lidar_contact_arbitration_radius_m));
+    const float disagreement =
+        std::max(0.0f, static_cast<float>(terrain_config.lidar_contact_disagreement_m));
     if (radius <= 1.0e-5f) {
         return;
     }

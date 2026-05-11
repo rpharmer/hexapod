@@ -302,6 +302,39 @@ bool testInvestigationStanceTiltLevelingToggleParses()
                 "parsed stance tilt leveling toggle should be true");
 }
 
+bool testTuningInvestigationDisableOverridesRuntimeInvestigation()
+{
+  const std::string cfg =
+      "title = \"Hexapod Config File\"\n"
+      "Schema = \"hexapod.server.config\"\n"
+      "SchemaVersion = 1\n"
+      "Runtime.Mode = \"sim\"\n"
+      "Runtime.Investigation.DisableStanceTiltLeveling = true\n"
+      "MotorCalibrations = [\n"
+      "[\"R31\", 1031, 2088], [\"R32\", 1003, 2016], [\"R33\", 958, 1990],\n"
+      "[\"L31\", 941, 2022], [\"L32\", 986, 2039], [\"L33\", 958, 1988],\n"
+      "[\"R21\", 1007, 2048], [\"R22\", 976, 2019], [\"R23\", 1057, 2090],\n"
+      "[\"L21\", 993, 2015], [\"L22\", 1011, 2013], [\"L23\", 956, 2000],\n"
+      "[\"R11\", 1040, 2055], [\"R12\", 983, 2057], [\"R13\", 959, 1995],\n"
+      "[\"L11\", 1031, 1998], [\"L12\", 951, 1978], [\"L13\", 1035, 2027]\n"
+      "]\n"
+      "\n"
+      "[Tuning]\n"
+      "InvestigationDisableStanceTiltLeveling = false\n";
+
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(writeTemp("hexapod_tuning_investigation_override.toml", cfg), parsed),
+              "tuning investigation override config should parse")) {
+    return false;
+  }
+  const control_config::ControlConfig control = control_config::fromParsedToml(parsed);
+  return expect(parsed.investigationDisableStanceTiltLeveling == false,
+                 "Tuning.InvestigationDisableStanceTiltLeveling=false should clear ParsedToml disable flag") &&
+         expect(control.foot_terrain.enable_stance_tilt_leveling == true,
+                "stance tilt leveling should remain enabled when tuning overrides runtime disable");
+}
+
 bool testCalibrationNormalizationStableForShuffledTable()
 {
   const std::string ordered =
@@ -723,6 +756,7 @@ int main()
   testOutOfRangeRuntimeFallsBackWithDiagnostic();
   testTelemetryRuntimeFieldsParseAndFallback();
   testInvestigationStanceTiltLevelingToggleParses();
+  testTuningInvestigationDisableOverridesRuntimeInvestigation();
   testCalibrationNormalizationStableForShuffledTable();
   testSimModeTransportOptional();
   testBaselineConfigParity();

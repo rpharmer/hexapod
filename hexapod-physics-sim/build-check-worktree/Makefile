@@ -855,6 +855,97 @@ test_hexapod_zero_g/fast:
 .PHONY : test_hexapod_zero_g/fast
 
 #=============================================================================
+# Target rules for targets named test_hexapod_freefall_no_support
+
+# Build rule for target.
+test_hexapod_freefall_no_support: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_hexapod_freefall_no_support
+.PHONY : test_hexapod_freefall_no_support
+
+# fast build rule for target.
+test_hexapod_freefall_no_support/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_freefall_no_support.dir/build.make CMakeFiles/test_hexapod_freefall_no_support.dir/build
+.PHONY : test_hexapod_freefall_no_support/fast
+
+#=============================================================================
+# Target rules for targets named test_servo_torque_saturation_matches_inertia
+
+# Build rule for target.
+test_servo_torque_saturation_matches_inertia: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_servo_torque_saturation_matches_inertia
+.PHONY : test_servo_torque_saturation_matches_inertia
+
+# fast build rule for target.
+test_servo_torque_saturation_matches_inertia/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_servo_torque_saturation_matches_inertia.dir/build.make CMakeFiles/test_servo_torque_saturation_matches_inertia.dir/build
+.PHONY : test_servo_torque_saturation_matches_inertia/fast
+
+#=============================================================================
+# Target rules for targets named test_servo_stall_under_overload
+
+# Build rule for target.
+test_servo_stall_under_overload: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_servo_stall_under_overload
+.PHONY : test_servo_stall_under_overload
+
+# fast build rule for target.
+test_servo_stall_under_overload/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_servo_stall_under_overload.dir/build.make CMakeFiles/test_servo_stall_under_overload.dir/build
+.PHONY : test_servo_stall_under_overload/fast
+
+#=============================================================================
+# Target rules for targets named test_servo_chain_vertical_lift_under_gravity
+
+# Build rule for target.
+test_servo_chain_vertical_lift_under_gravity: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_servo_chain_vertical_lift_under_gravity
+.PHONY : test_servo_chain_vertical_lift_under_gravity
+
+# fast build rule for target.
+test_servo_chain_vertical_lift_under_gravity/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_servo_chain_vertical_lift_under_gravity.dir/build.make CMakeFiles/test_servo_chain_vertical_lift_under_gravity.dir/build
+.PHONY : test_servo_chain_vertical_lift_under_gravity/fast
+
+#=============================================================================
+# Target rules for targets named test_hexapod_pose_hold_with_payload
+
+# Build rule for target.
+test_hexapod_pose_hold_with_payload: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_hexapod_pose_hold_with_payload
+.PHONY : test_hexapod_pose_hold_with_payload
+
+# fast build rule for target.
+test_hexapod_pose_hold_with_payload/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_pose_hold_with_payload.dir/build.make CMakeFiles/test_hexapod_pose_hold_with_payload.dir/build
+.PHONY : test_hexapod_pose_hold_with_payload/fast
+
+#=============================================================================
+# Target rules for targets named test_constraint_solver_extreme_mass_ratio_stress
+
+# Build rule for target.
+test_constraint_solver_extreme_mass_ratio_stress: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_constraint_solver_extreme_mass_ratio_stress
+.PHONY : test_constraint_solver_extreme_mass_ratio_stress
+
+# fast build rule for target.
+test_constraint_solver_extreme_mass_ratio_stress/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_constraint_solver_extreme_mass_ratio_stress.dir/build.make CMakeFiles/test_constraint_solver_extreme_mass_ratio_stress.dir/build
+.PHONY : test_constraint_solver_extreme_mass_ratio_stress/fast
+
+#=============================================================================
+# Target rules for targets named test_articulation_impulse_response_decay
+
+# Build rule for target.
+test_articulation_impulse_response_decay: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_articulation_impulse_response_decay
+.PHONY : test_articulation_impulse_response_decay
+
+# fast build rule for target.
+test_articulation_impulse_response_decay/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_articulation_impulse_response_decay.dir/build.make CMakeFiles/test_articulation_impulse_response_decay.dir/build
+.PHONY : test_articulation_impulse_response_decay/fast
+
+#=============================================================================
 # Target rules for targets named test_hexapod_server_alignment_zero_g
 
 # Build rule for target.
@@ -1808,6 +1899,30 @@ tests/test_articulation.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_articulation.dir/build.make CMakeFiles/test_articulation.dir/tests/test_articulation.cpp.s
 .PHONY : tests/test_articulation.cpp.s
 
+tests/test_articulation_impulse_response_decay.o: tests/test_articulation_impulse_response_decay.cpp.o
+.PHONY : tests/test_articulation_impulse_response_decay.o
+
+# target to build an object file
+tests/test_articulation_impulse_response_decay.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_articulation_impulse_response_decay.dir/build.make CMakeFiles/test_articulation_impulse_response_decay.dir/tests/test_articulation_impulse_response_decay.cpp.o
+.PHONY : tests/test_articulation_impulse_response_decay.cpp.o
+
+tests/test_articulation_impulse_response_decay.i: tests/test_articulation_impulse_response_decay.cpp.i
+.PHONY : tests/test_articulation_impulse_response_decay.i
+
+# target to preprocess a source file
+tests/test_articulation_impulse_response_decay.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_articulation_impulse_response_decay.dir/build.make CMakeFiles/test_articulation_impulse_response_decay.dir/tests/test_articulation_impulse_response_decay.cpp.i
+.PHONY : tests/test_articulation_impulse_response_decay.cpp.i
+
+tests/test_articulation_impulse_response_decay.s: tests/test_articulation_impulse_response_decay.cpp.s
+.PHONY : tests/test_articulation_impulse_response_decay.s
+
+# target to generate assembly for a file
+tests/test_articulation_impulse_response_decay.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_articulation_impulse_response_decay.dir/build.make CMakeFiles/test_articulation_impulse_response_decay.dir/tests/test_articulation_impulse_response_decay.cpp.s
+.PHONY : tests/test_articulation_impulse_response_decay.cpp.s
+
 tests/test_block2_solver.o: tests/test_block2_solver.cpp.o
 .PHONY : tests/test_block2_solver.o
 
@@ -1904,6 +2019,30 @@ tests/test_compound_shapes.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_compound_shapes.dir/build.make CMakeFiles/test_compound_shapes.dir/tests/test_compound_shapes.cpp.s
 .PHONY : tests/test_compound_shapes.cpp.s
 
+tests/test_constraint_solver_extreme_mass_ratio_stress.o: tests/test_constraint_solver_extreme_mass_ratio_stress.cpp.o
+.PHONY : tests/test_constraint_solver_extreme_mass_ratio_stress.o
+
+# target to build an object file
+tests/test_constraint_solver_extreme_mass_ratio_stress.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_constraint_solver_extreme_mass_ratio_stress.dir/build.make CMakeFiles/test_constraint_solver_extreme_mass_ratio_stress.dir/tests/test_constraint_solver_extreme_mass_ratio_stress.cpp.o
+.PHONY : tests/test_constraint_solver_extreme_mass_ratio_stress.cpp.o
+
+tests/test_constraint_solver_extreme_mass_ratio_stress.i: tests/test_constraint_solver_extreme_mass_ratio_stress.cpp.i
+.PHONY : tests/test_constraint_solver_extreme_mass_ratio_stress.i
+
+# target to preprocess a source file
+tests/test_constraint_solver_extreme_mass_ratio_stress.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_constraint_solver_extreme_mass_ratio_stress.dir/build.make CMakeFiles/test_constraint_solver_extreme_mass_ratio_stress.dir/tests/test_constraint_solver_extreme_mass_ratio_stress.cpp.i
+.PHONY : tests/test_constraint_solver_extreme_mass_ratio_stress.cpp.i
+
+tests/test_constraint_solver_extreme_mass_ratio_stress.s: tests/test_constraint_solver_extreme_mass_ratio_stress.cpp.s
+.PHONY : tests/test_constraint_solver_extreme_mass_ratio_stress.s
+
+# target to generate assembly for a file
+tests/test_constraint_solver_extreme_mass_ratio_stress.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_constraint_solver_extreme_mass_ratio_stress.dir/build.make CMakeFiles/test_constraint_solver_extreme_mass_ratio_stress.dir/tests/test_constraint_solver_extreme_mass_ratio_stress.cpp.s
+.PHONY : tests/test_constraint_solver_extreme_mass_ratio_stress.cpp.s
+
 tests/test_convex_dispatch_equivalence.o: tests/test_convex_dispatch_equivalence.cpp.o
 .PHONY : tests/test_convex_dispatch_equivalence.o
 
@@ -1975,6 +2114,30 @@ tests/test_gjk_regression.s: tests/test_gjk_regression.cpp.s
 tests/test_gjk_regression.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gjk_regression.dir/build.make CMakeFiles/test_gjk_regression.dir/tests/test_gjk_regression.cpp.s
 .PHONY : tests/test_gjk_regression.cpp.s
+
+tests/test_hexapod_freefall_no_support.o: tests/test_hexapod_freefall_no_support.cpp.o
+.PHONY : tests/test_hexapod_freefall_no_support.o
+
+# target to build an object file
+tests/test_hexapod_freefall_no_support.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_freefall_no_support.dir/build.make CMakeFiles/test_hexapod_freefall_no_support.dir/tests/test_hexapod_freefall_no_support.cpp.o
+.PHONY : tests/test_hexapod_freefall_no_support.cpp.o
+
+tests/test_hexapod_freefall_no_support.i: tests/test_hexapod_freefall_no_support.cpp.i
+.PHONY : tests/test_hexapod_freefall_no_support.i
+
+# target to preprocess a source file
+tests/test_hexapod_freefall_no_support.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_freefall_no_support.dir/build.make CMakeFiles/test_hexapod_freefall_no_support.dir/tests/test_hexapod_freefall_no_support.cpp.i
+.PHONY : tests/test_hexapod_freefall_no_support.cpp.i
+
+tests/test_hexapod_freefall_no_support.s: tests/test_hexapod_freefall_no_support.cpp.s
+.PHONY : tests/test_hexapod_freefall_no_support.s
+
+# target to generate assembly for a file
+tests/test_hexapod_freefall_no_support.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_freefall_no_support.dir/build.make CMakeFiles/test_hexapod_freefall_no_support.dir/tests/test_hexapod_freefall_no_support.cpp.s
+.PHONY : tests/test_hexapod_freefall_no_support.cpp.s
 
 tests/test_hexapod_geometry_alignment.o: tests/test_hexapod_geometry_alignment.cpp.o
 .PHONY : tests/test_hexapod_geometry_alignment.o
@@ -2095,6 +2258,30 @@ tests/test_hexapod_planted_foot_drift.s: tests/test_hexapod_planted_foot_drift.c
 tests/test_hexapod_planted_foot_drift.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_planted_foot_drift.dir/build.make CMakeFiles/test_hexapod_planted_foot_drift.dir/tests/test_hexapod_planted_foot_drift.cpp.s
 .PHONY : tests/test_hexapod_planted_foot_drift.cpp.s
+
+tests/test_hexapod_pose_hold_with_payload.o: tests/test_hexapod_pose_hold_with_payload.cpp.o
+.PHONY : tests/test_hexapod_pose_hold_with_payload.o
+
+# target to build an object file
+tests/test_hexapod_pose_hold_with_payload.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_pose_hold_with_payload.dir/build.make CMakeFiles/test_hexapod_pose_hold_with_payload.dir/tests/test_hexapod_pose_hold_with_payload.cpp.o
+.PHONY : tests/test_hexapod_pose_hold_with_payload.cpp.o
+
+tests/test_hexapod_pose_hold_with_payload.i: tests/test_hexapod_pose_hold_with_payload.cpp.i
+.PHONY : tests/test_hexapod_pose_hold_with_payload.i
+
+# target to preprocess a source file
+tests/test_hexapod_pose_hold_with_payload.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_pose_hold_with_payload.dir/build.make CMakeFiles/test_hexapod_pose_hold_with_payload.dir/tests/test_hexapod_pose_hold_with_payload.cpp.i
+.PHONY : tests/test_hexapod_pose_hold_with_payload.cpp.i
+
+tests/test_hexapod_pose_hold_with_payload.s: tests/test_hexapod_pose_hold_with_payload.cpp.s
+.PHONY : tests/test_hexapod_pose_hold_with_payload.s
+
+# target to generate assembly for a file
+tests/test_hexapod_pose_hold_with_payload.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_hexapod_pose_hold_with_payload.dir/build.make CMakeFiles/test_hexapod_pose_hold_with_payload.dir/tests/test_hexapod_pose_hold_with_payload.cpp.s
+.PHONY : tests/test_hexapod_pose_hold_with_payload.cpp.s
 
 tests/test_hexapod_server_alignment_zero_g.o: tests/test_hexapod_server_alignment_zero_g.cpp.o
 .PHONY : tests/test_hexapod_server_alignment_zero_g.o
@@ -2360,6 +2547,30 @@ tests/test_servo_chain_stability.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_servo_chain_stability.dir/build.make CMakeFiles/test_servo_chain_stability.dir/tests/test_servo_chain_stability.cpp.s
 .PHONY : tests/test_servo_chain_stability.cpp.s
 
+tests/test_servo_chain_vertical_lift_under_gravity.o: tests/test_servo_chain_vertical_lift_under_gravity.cpp.o
+.PHONY : tests/test_servo_chain_vertical_lift_under_gravity.o
+
+# target to build an object file
+tests/test_servo_chain_vertical_lift_under_gravity.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_servo_chain_vertical_lift_under_gravity.dir/build.make CMakeFiles/test_servo_chain_vertical_lift_under_gravity.dir/tests/test_servo_chain_vertical_lift_under_gravity.cpp.o
+.PHONY : tests/test_servo_chain_vertical_lift_under_gravity.cpp.o
+
+tests/test_servo_chain_vertical_lift_under_gravity.i: tests/test_servo_chain_vertical_lift_under_gravity.cpp.i
+.PHONY : tests/test_servo_chain_vertical_lift_under_gravity.i
+
+# target to preprocess a source file
+tests/test_servo_chain_vertical_lift_under_gravity.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_servo_chain_vertical_lift_under_gravity.dir/build.make CMakeFiles/test_servo_chain_vertical_lift_under_gravity.dir/tests/test_servo_chain_vertical_lift_under_gravity.cpp.i
+.PHONY : tests/test_servo_chain_vertical_lift_under_gravity.cpp.i
+
+tests/test_servo_chain_vertical_lift_under_gravity.s: tests/test_servo_chain_vertical_lift_under_gravity.cpp.s
+.PHONY : tests/test_servo_chain_vertical_lift_under_gravity.s
+
+# target to generate assembly for a file
+tests/test_servo_chain_vertical_lift_under_gravity.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_servo_chain_vertical_lift_under_gravity.dir/build.make CMakeFiles/test_servo_chain_vertical_lift_under_gravity.dir/tests/test_servo_chain_vertical_lift_under_gravity.cpp.s
+.PHONY : tests/test_servo_chain_vertical_lift_under_gravity.cpp.s
+
 tests/test_servo_joint_target.o: tests/test_servo_joint_target.cpp.o
 .PHONY : tests/test_servo_joint_target.o
 
@@ -2431,6 +2642,54 @@ tests/test_servo_stability_regression.s: tests/test_servo_stability_regression.c
 tests/test_servo_stability_regression.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_servo_stability_regression.dir/build.make CMakeFiles/test_servo_stability_regression.dir/tests/test_servo_stability_regression.cpp.s
 .PHONY : tests/test_servo_stability_regression.cpp.s
+
+tests/test_servo_stall_under_overload.o: tests/test_servo_stall_under_overload.cpp.o
+.PHONY : tests/test_servo_stall_under_overload.o
+
+# target to build an object file
+tests/test_servo_stall_under_overload.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_servo_stall_under_overload.dir/build.make CMakeFiles/test_servo_stall_under_overload.dir/tests/test_servo_stall_under_overload.cpp.o
+.PHONY : tests/test_servo_stall_under_overload.cpp.o
+
+tests/test_servo_stall_under_overload.i: tests/test_servo_stall_under_overload.cpp.i
+.PHONY : tests/test_servo_stall_under_overload.i
+
+# target to preprocess a source file
+tests/test_servo_stall_under_overload.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_servo_stall_under_overload.dir/build.make CMakeFiles/test_servo_stall_under_overload.dir/tests/test_servo_stall_under_overload.cpp.i
+.PHONY : tests/test_servo_stall_under_overload.cpp.i
+
+tests/test_servo_stall_under_overload.s: tests/test_servo_stall_under_overload.cpp.s
+.PHONY : tests/test_servo_stall_under_overload.s
+
+# target to generate assembly for a file
+tests/test_servo_stall_under_overload.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_servo_stall_under_overload.dir/build.make CMakeFiles/test_servo_stall_under_overload.dir/tests/test_servo_stall_under_overload.cpp.s
+.PHONY : tests/test_servo_stall_under_overload.cpp.s
+
+tests/test_servo_torque_saturation_matches_inertia.o: tests/test_servo_torque_saturation_matches_inertia.cpp.o
+.PHONY : tests/test_servo_torque_saturation_matches_inertia.o
+
+# target to build an object file
+tests/test_servo_torque_saturation_matches_inertia.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_servo_torque_saturation_matches_inertia.dir/build.make CMakeFiles/test_servo_torque_saturation_matches_inertia.dir/tests/test_servo_torque_saturation_matches_inertia.cpp.o
+.PHONY : tests/test_servo_torque_saturation_matches_inertia.cpp.o
+
+tests/test_servo_torque_saturation_matches_inertia.i: tests/test_servo_torque_saturation_matches_inertia.cpp.i
+.PHONY : tests/test_servo_torque_saturation_matches_inertia.i
+
+# target to preprocess a source file
+tests/test_servo_torque_saturation_matches_inertia.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_servo_torque_saturation_matches_inertia.dir/build.make CMakeFiles/test_servo_torque_saturation_matches_inertia.dir/tests/test_servo_torque_saturation_matches_inertia.cpp.i
+.PHONY : tests/test_servo_torque_saturation_matches_inertia.cpp.i
+
+tests/test_servo_torque_saturation_matches_inertia.s: tests/test_servo_torque_saturation_matches_inertia.cpp.s
+.PHONY : tests/test_servo_torque_saturation_matches_inertia.s
+
+# target to generate assembly for a file
+tests/test_servo_torque_saturation_matches_inertia.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_servo_torque_saturation_matches_inertia.dir/build.make CMakeFiles/test_servo_torque_saturation_matches_inertia.dir/tests/test_servo_torque_saturation_matches_inertia.cpp.s
+.PHONY : tests/test_servo_torque_saturation_matches_inertia.cpp.s
 
 tests/test_servo_visual_presets_json.o: tests/test_servo_visual_presets_json.cpp.o
 .PHONY : tests/test_servo_visual_presets_json.o
@@ -2669,18 +2928,22 @@ help:
 	@echo "... regression_scene_suite"
 	@echo "... sweep_hexapod_knobs"
 	@echo "... test_articulation"
+	@echo "... test_articulation_impulse_response_decay"
 	@echo "... test_block2_solver"
 	@echo "... test_block4_solver"
 	@echo "... test_broadphase_dynamic_tree"
 	@echo "... test_compound_shapes"
+	@echo "... test_constraint_solver_extreme_mass_ratio_stress"
 	@echo "... test_convex_dispatch_equivalence"
 	@echo "... test_cylinder_collision"
 	@echo "... test_gjk_regression"
+	@echo "... test_hexapod_freefall_no_support"
 	@echo "... test_hexapod_geometry_alignment"
 	@echo "... test_hexapod_initial_layout_matches_server"
 	@echo "... test_hexapod_live"
 	@echo "... test_hexapod_live_pose_hold"
 	@echo "... test_hexapod_planted_foot_drift"
+	@echo "... test_hexapod_pose_hold_with_payload"
 	@echo "... test_hexapod_server_alignment_zero_g"
 	@echo "... test_hexapod_zero_g"
 	@echo "... test_island_ordering"
@@ -2692,9 +2955,12 @@ help:
 	@echo "... test_serve_ipc_preview"
 	@echo "... test_serve_preview_async"
 	@echo "... test_servo_chain_stability"
+	@echo "... test_servo_chain_vertical_lift_under_gravity"
 	@echo "... test_servo_joint_target"
 	@echo "... test_servo_regression_matrix"
 	@echo "... test_servo_stability_regression"
+	@echo "... test_servo_stall_under_overload"
+	@echo "... test_servo_torque_saturation_matches_inertia"
 	@echo "... test_servo_visual_presets_json"
 	@echo "... test_state_correction_protocol"
 	@echo "... test_terrain_patch"
@@ -2797,6 +3063,9 @@ help:
 	@echo "... tests/test_articulation.o"
 	@echo "... tests/test_articulation.i"
 	@echo "... tests/test_articulation.s"
+	@echo "... tests/test_articulation_impulse_response_decay.o"
+	@echo "... tests/test_articulation_impulse_response_decay.i"
+	@echo "... tests/test_articulation_impulse_response_decay.s"
 	@echo "... tests/test_block2_solver.o"
 	@echo "... tests/test_block2_solver.i"
 	@echo "... tests/test_block2_solver.s"
@@ -2809,6 +3078,9 @@ help:
 	@echo "... tests/test_compound_shapes.o"
 	@echo "... tests/test_compound_shapes.i"
 	@echo "... tests/test_compound_shapes.s"
+	@echo "... tests/test_constraint_solver_extreme_mass_ratio_stress.o"
+	@echo "... tests/test_constraint_solver_extreme_mass_ratio_stress.i"
+	@echo "... tests/test_constraint_solver_extreme_mass_ratio_stress.s"
 	@echo "... tests/test_convex_dispatch_equivalence.o"
 	@echo "... tests/test_convex_dispatch_equivalence.i"
 	@echo "... tests/test_convex_dispatch_equivalence.s"
@@ -2818,6 +3090,9 @@ help:
 	@echo "... tests/test_gjk_regression.o"
 	@echo "... tests/test_gjk_regression.i"
 	@echo "... tests/test_gjk_regression.s"
+	@echo "... tests/test_hexapod_freefall_no_support.o"
+	@echo "... tests/test_hexapod_freefall_no_support.i"
+	@echo "... tests/test_hexapod_freefall_no_support.s"
 	@echo "... tests/test_hexapod_geometry_alignment.o"
 	@echo "... tests/test_hexapod_geometry_alignment.i"
 	@echo "... tests/test_hexapod_geometry_alignment.s"
@@ -2833,6 +3108,9 @@ help:
 	@echo "... tests/test_hexapod_planted_foot_drift.o"
 	@echo "... tests/test_hexapod_planted_foot_drift.i"
 	@echo "... tests/test_hexapod_planted_foot_drift.s"
+	@echo "... tests/test_hexapod_pose_hold_with_payload.o"
+	@echo "... tests/test_hexapod_pose_hold_with_payload.i"
+	@echo "... tests/test_hexapod_pose_hold_with_payload.s"
 	@echo "... tests/test_hexapod_server_alignment_zero_g.o"
 	@echo "... tests/test_hexapod_server_alignment_zero_g.i"
 	@echo "... tests/test_hexapod_server_alignment_zero_g.s"
@@ -2866,6 +3144,9 @@ help:
 	@echo "... tests/test_servo_chain_stability.o"
 	@echo "... tests/test_servo_chain_stability.i"
 	@echo "... tests/test_servo_chain_stability.s"
+	@echo "... tests/test_servo_chain_vertical_lift_under_gravity.o"
+	@echo "... tests/test_servo_chain_vertical_lift_under_gravity.i"
+	@echo "... tests/test_servo_chain_vertical_lift_under_gravity.s"
 	@echo "... tests/test_servo_joint_target.o"
 	@echo "... tests/test_servo_joint_target.i"
 	@echo "... tests/test_servo_joint_target.s"
@@ -2875,6 +3156,12 @@ help:
 	@echo "... tests/test_servo_stability_regression.o"
 	@echo "... tests/test_servo_stability_regression.i"
 	@echo "... tests/test_servo_stability_regression.s"
+	@echo "... tests/test_servo_stall_under_overload.o"
+	@echo "... tests/test_servo_stall_under_overload.i"
+	@echo "... tests/test_servo_stall_under_overload.s"
+	@echo "... tests/test_servo_torque_saturation_matches_inertia.o"
+	@echo "... tests/test_servo_torque_saturation_matches_inertia.i"
+	@echo "... tests/test_servo_torque_saturation_matches_inertia.s"
 	@echo "... tests/test_servo_visual_presets_json.o"
 	@echo "... tests/test_servo_visual_presets_json.i"
 	@echo "... tests/test_servo_visual_presets_json.s"

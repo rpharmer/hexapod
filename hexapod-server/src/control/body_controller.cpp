@@ -187,7 +187,8 @@ LegTargets BodyController::update(const RobotState& est,
                                   const GaitState& gait,
                                   const SafetyState& safety,
                                   const BodyTwist& cmd_twist,
-                                  const LocalMapSnapshot* terrain_snapshot) {
+                                  const LocalMapSnapshot* terrain_snapshot,
+                                  const std::array<LegContactDecision, kNumLegs>* contact_modes) {
     LegTargets out{};
     out.timestamp_us = now_us();
 
@@ -284,16 +285,25 @@ LegTargets BodyController::update(const RobotState& est,
             const Vec3 v_foot = supportFootVelocityAt(anchor, body_mot);
             const std::size_t leg_index = static_cast<std::size_t>(leg);
             const ContactPhase contact_phase = est.foot_contact_fusion[leg_index].phase;
-            const bool planned_stance = ph < duty;
+            const LegContactDecision* contact_decision =
+                contact_modes != nullptr ? &(*contact_modes)[leg_index] : nullptr;
+            const bool planned_stance =
+                contact_decision != nullptr ? contact_decision->planned_stance : ph < duty;
             const bool support_hold =
-                gait.stability_hold_stance[leg_index] &&
-                (est.foot_contacts[leg_index] || contact_phase == ContactPhase::LostCandidate);
-            const bool effective_stance = planned_stance || support_hold;
+                contact_decision != nullptr
+                    ? (contact_decision->mode == LegContactMode::HeldStance ||
+                       contact_decision->mode == LegContactMode::LostCandidate)
+                    : (gait.stability_hold_stance[leg_index] &&
+                       (est.foot_contacts[leg_index] || contact_phase == ContactPhase::LostCandidate));
+            const bool effective_stance =
+                contact_decision != nullptr ? contact_decision->effective_stance : (planned_stance || support_hold);
             const bool recovery_touchdown =
-                gait.stride_phase_rate_hz.value <= 1e-6 &&
-                !effective_stance &&
-                !est.foot_contacts[leg_index] &&
-                contact_phase != ContactPhase::LostCandidate;
+                contact_decision != nullptr
+                    ? contact_decision->mode == LegContactMode::RecoveryTouchdown
+                    : (gait.stride_phase_rate_hz.value <= 1e-6 &&
+                       !effective_stance &&
+                       !est.foot_contacts[leg_index] &&
+                       contact_phase != ContactPhase::LostCandidate);
             if (recovery_touchdown) {
                 // During recovery hold the gait cadence is frozen. Unsupported swing legs still
                 // need to finish their touchdown arc instead of hovering mid-swing, so bias them
@@ -305,16 +315,24 @@ LegTargets BodyController::update(const RobotState& est,
             // phase is a liftoff artifact: sending stance targets creates a deadlock where
             // the server never commands lift. Allow swing kinematics during this grace window
             // so the servo can actually drive the foot off the ground.
-            const double tau_swing_prelim = effective_stance ? 0.0 : clamp01((ph - duty) / swing_span);
+            const double tau_swing_prelim =
+                contact_decision != nullptr ? contact_decision->swing_tau
+                                            : (effective_stance ? 0.0 : clamp01((ph - duty) / swing_span));
             // Grace fires on any contact during early swing regardless of fusion phase.
             // The ConfirmedStance check was too strict: fusion transitions away quickly,
             // leaving 50%+ of early-swing contacts incorrectly locked to stance targets.
-            const bool liftoff_grace = !effective_stance
-                && est.foot_contacts[leg_index]
-                && tau_swing_prelim < 0.45;
-            const bool lost_candidate_grace = effective_stance && contact_phase == ContactPhase::LostCandidate;
+            const bool liftoff_grace =
+                contact_decision != nullptr
+                    ? contact_decision->mode == LegContactMode::ContactGrace
+                    : (!effective_stance && est.foot_contacts[leg_index] && tau_swing_prelim < 0.45);
+            const bool lost_candidate_grace =
+                contact_decision != nullptr
+                    ? contact_decision->mode == LegContactMode::LostCandidate
+                    : (effective_stance && contact_phase == ContactPhase::LostCandidate);
             const bool use_stance_kinematics =
-                effective_stance || (est.foot_contacts[leg_index] && !liftoff_grace) || lost_candidate_grace;
+                contact_decision != nullptr
+                    ? contact_decision->use_stance_kinematics
+                    : (effective_stance || (est.foot_contacts[leg_index] && !liftoff_grace) || lost_candidate_grace);
 
             // Diagnostic: log kinematics selection when in early-swing contact.
             // Enable with HEXAPOD_DIAG_LOG=1.

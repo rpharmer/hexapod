@@ -777,7 +777,7 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    const auto harness = physics_sim_test_utils::loadHarnessSettings();
+    const auto harness = physics_sim_test_utils::loadHarnessSettings(/*prefer_test_harness_config=*/true);
     const int kPort = 22000 + (static_cast<int>(::getpid()) % 6000);
     const int kBusLoopPeriodUs = harness.bus_loop_period_us;
 

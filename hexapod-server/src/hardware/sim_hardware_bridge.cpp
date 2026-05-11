@@ -27,6 +27,13 @@ bool SimHardwareBridge::init() {
     }
 
     state_.timestamp_us = now_us();
+    for (auto& quality : state_.joint_state_quality) {
+        quality.position_valid = true;
+        quality.velocity_valid = false;
+        quality.source = JointStateSource::Simulated;
+        quality.age_us = 0;
+        quality.confidence = 1.0;
+    }
     initialized_ = true;
     return true;
 }
@@ -67,6 +74,13 @@ bool SimHardwareBridge::read(RobotState& out) {
     }
 
     state_.timestamp_us = now_us();
+    for (auto& quality : state_.joint_state_quality) {
+        quality.position_valid = true;
+        quality.velocity_valid = false;
+        quality.source = JointStateSource::Simulated;
+        quality.age_us = 0;
+        quality.confidence = 1.0;
+    }
     out = state_;
     return true;
 }

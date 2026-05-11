@@ -62,6 +62,9 @@ public:
     [[nodiscard]] telemetry::LocomotionDebugSnapshot locomotionDebugSnapshot() const {
         return locomotion_debug_.read();
     }
+    [[nodiscard]] LocomotionFeasibility locomotionFeasibilitySnapshot() const {
+        return locomotion_feasibility_.read();
+    }
     [[nodiscard]] const NavigationManager* navigationManager() const { return navigation_manager_.get(); }
     [[nodiscard]] NavigationManager* navigationManager() { return navigation_manager_.get(); }
 
@@ -75,8 +78,22 @@ private:
                                               TimePointUs now,
                                               const LocalMapSnapshot* terrain_snapshot);
     static void scaleMotionIntent(MotionIntent& intent, double scale);
-    void maybePublishTelemetry(const TimePointUs& now);
-    void maybeWriteReplayRecord(const TimePointUs& now);
+    struct ControlInputSnapshot {
+        TimePointUs now{};
+        RobotState raw{};
+        RobotState estimated{};
+        MotionIntent intent{};
+        SafetyState safety_state{};
+        JointTargets previous_joint_targets{};
+        GaitState previous_gait_state{};
+        const LocalMapSnapshot* terrain_snapshot{nullptr};
+        TimePointUs terrain_timestamp_us{};
+        FreshnessPolicy::Evaluation freshness{};
+        uint64_t loop_counter{0};
+        bool bus_ok{false};
+    };
+    void maybePublishTelemetry(const ControlInputSnapshot& snapshot);
+    void maybeWriteReplayRecord(const ControlInputSnapshot& snapshot);
 
     std::unique_ptr<IHardwareBridge> hw_;
     std::unique_ptr<IEstimator> estimator_;
@@ -116,6 +133,7 @@ private:
     DoubleBuffer<CommandGovernorState> command_governor_state_;
     DoubleBuffer<JointTargets> joint_targets_;
     DoubleBuffer<telemetry::LocomotionDebugSnapshot> locomotion_debug_;
+    DoubleBuffer<LocomotionFeasibility> locomotion_feasibility_;
     DoubleBuffer<ControlStatus> status_;
 
     TimePointUs next_telemetry_publish_at_{};

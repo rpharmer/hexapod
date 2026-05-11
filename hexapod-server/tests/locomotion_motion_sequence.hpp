@@ -78,6 +78,7 @@ inline bool runMotionSequence(RobotRuntime& runtime,
             const ControlStatus status = runtime.getStatus();
             const SafetyState safety = runtime.getSafetyState();
             const CommandGovernorState governor = runtime.commandGovernorSnapshot();
+            const LocomotionFeasibility feasibility = runtime.locomotionFeasibilitySnapshot();
             MotionSample sample{};
             sample.step_index = step_index;
             sample.phase_index = phase_index;
@@ -87,6 +88,7 @@ inline bool runMotionSequence(RobotRuntime& runtime,
             sample.estimated = estimated;
             sample.gait = gait;
             sample.governor = governor;
+            sample.locomotion_feasibility = feasibility;
             sample.safety = safety;
             sample.position = positionFromState(estimated);
             sample.horizontal_speed_mps = horizontalSpeedFromState(estimated);

@@ -15,4 +15,6 @@ private:
                      const FootTarget& foot,
                      const LegGeometry& leg);
     HexapodGeometry hexGeo;
+    JointTargets last_commanded_targets_{};
+    std::array<bool, kNumLegs> have_last_commanded_target_{};
 };

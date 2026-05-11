@@ -10,10 +10,6 @@ constexpr double kMeasuredPoseBlend{0.86};
 constexpr double kPredictivePoseBlend{0.52};
 constexpr double kMeasuredVelocityBlend{0.82};
 constexpr double kPredictiveVelocityBlend{0.48};
-constexpr double kMeasuredRise{0.22};
-constexpr double kPredictiveRise{0.14};
-constexpr double kMeasuredDecay{0.10};
-constexpr double kPredictiveDecay{0.14};
 constexpr double kSoftResidualWeight{0.35};
 constexpr double kSoftOrientationWeight{0.25};
 
@@ -40,6 +36,16 @@ EulerAnglesRad3 blendAngles(const EulerAnglesRad3& from, const EulerAnglesRad3& 
         from_v.y + delta.y * a,
         from_v.z + delta.z * a,
     };
+}
+
+double alphaFromTau(const double dt_s, const double tau_s) {
+    if (!(dt_s > 0.0)) {
+        return 1.0;
+    }
+    if (!(tau_s > 0.0)) {
+        return 1.0;
+    }
+    return std::clamp(1.0 - std::exp(-dt_s / tau_s), 0.0, 1.0);
 }
 
 } // namespace
@@ -144,9 +150,15 @@ RobotState StateFusion::update(const RobotState& source, const FusionSourceMode 
         static_cast<uint64_t>(std::max<int64_t>(0, static_cast<int64_t>(config_.touchdown_window.count()))) * 1000ULL;
     const uint64_t contact_hold_window_us =
         static_cast<uint64_t>(std::max<int64_t>(0, static_cast<int64_t>(config_.contact_hold_window.count()))) * 1000ULL;
+    const uint64_t liftoff_grace_us =
+        static_cast<uint64_t>(std::max(0.0, config_.liftoff_grace_s) * 1'000'000.0);
+    const uint64_t touchdown_confirm_us =
+        static_cast<uint64_t>(std::max(0.0, config_.touchdown_confirm_s) * 1'000'000.0);
     const int debounce_samples = std::max(1, config_.contact_debounce_samples);
-    const double rise = predictive_mode ? kPredictiveRise : kMeasuredRise;
-    const double decay = predictive_mode ? kPredictiveDecay : kMeasuredDecay;
+    const double rise = alphaFromTau(dt_s, predictive_mode ? config_.contact_rise_tau_s * 1.5
+                                                           : config_.contact_rise_tau_s);
+    const double decay = alphaFromTau(dt_s, predictive_mode ? config_.contact_decay_tau_s * 0.85
+                                                            : config_.contact_decay_tau_s);
 
     int mismatch_count = 0;
     double confidence_sum = 0.0;
@@ -173,7 +185,7 @@ RobotState StateFusion::update(const RobotState& source, const FusionSourceMode 
             if (!was_confirmed && tracker.raw_contact_streak == 1) {
                 fc.phase = ContactPhase::ExpectedTouchdown;
                 fc.touchdown_window_start_us = now;
-                fc.touchdown_window_end_us = TimePointUs{now.value + touchdown_window_us};
+                fc.touchdown_window_end_us = TimePointUs{now.value + std::min(touchdown_window_us, touchdown_confirm_us)};
                 phase_changed = true;
             } else if (!was_confirmed && tracker.raw_contact_streak < static_cast<uint32_t>(debounce_samples)) {
                 if (fc.phase != ContactPhase::ContactCandidate) {
@@ -181,7 +193,7 @@ RobotState StateFusion::update(const RobotState& source, const FusionSourceMode 
                 }
                 fc.phase = ContactPhase::ContactCandidate;
                 fc.touchdown_window_start_us = now;
-                fc.touchdown_window_end_us = TimePointUs{now.value + touchdown_window_us};
+                fc.touchdown_window_end_us = TimePointUs{now.value + std::min(touchdown_window_us, touchdown_confirm_us)};
             } else {
                 if (!was_confirmed) {
                     phase_changed = true;
@@ -199,10 +211,15 @@ RobotState StateFusion::update(const RobotState& source, const FusionSourceMode 
             tracker.raw_gap_streak += 1;
 
             if (fc.phase == ContactPhase::ConfirmedStance) {
+                const uint64_t transition_age_us =
+                    fc.last_transition_us.isZero() || now.value <= fc.last_transition_us.value
+                        ? 0
+                        : now.value - fc.last_transition_us.value;
                 const bool within_hold_window =
                     !fc.touchdown_window_end_us.isZero() && now.value <= fc.touchdown_window_end_us.value;
+                const bool within_liftoff_grace = transition_age_us <= liftoff_grace_us;
                 const bool single_missed_sample = tracker.raw_gap_streak < 2;
-                if (within_hold_window && single_missed_sample) {
+                if ((within_hold_window || within_liftoff_grace) && single_missed_sample) {
                     fc.confidence = static_cast<float>(std::max(
                         phaseConfidenceFloor(ContactPhase::ConfirmedStance),
                         static_cast<double>(fc.confidence) - decay * 0.35));

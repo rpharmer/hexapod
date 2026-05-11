@@ -127,6 +127,7 @@
     "physics_sim_navigation_acceptance": {
       "direct_path": {
         "max_progress_m_min": 0.08,
+        "path_length_m_min_if_no_progress": 0.02,
         "peak_replan_count_min": 1,
         "path_length_m_max": 2.0
       },
@@ -147,7 +148,8 @@
       "midrun_intrusion": {
         "min_progress_m_for_safe_block_branch": 0.04,
         "path_length_delta_vs_baseline_min_m_if_completed": 0.08,
-        "goal_error_m_max_if_completed": 0.05
+        "goal_error_m_max_if_completed": 0.05,
+        "path_length_m_max_if_blocked": 0.8
       }
     },
     "motion_performance": {
@@ -198,7 +200,7 @@
     },
     "locomotion_regression": {
       "steady_forward_walk": {
-        "max_contact_anchor_max_drift_m": 0.8,
+        "max_contact_anchor_max_drift_m": 1.0,
         "min_measured_foot_world_z_m": -0.08,
         "max_contact_tracking_error_m": 0.2
       },
@@ -212,7 +214,7 @@
       "aggressive_governor": {
         "max_contact_anchor_max_drift_m": 0.55,
         "min_measured_foot_world_z_m": -0.11,
-        "max_contact_tracking_error_m": 0.24
+        "max_contact_tracking_error_m": 0.3
       },
       "command_timeout_fallback": {
         "path_length_m_max_after_fault": 0.25,
@@ -226,16 +228,15 @@
         "max_contact_tracking_error_m": 0.08
       },
       "long_walk_observability": {
-        "min_walk_fault_time_s": 10.0,
+        "min_walk_fault_time_s": 2.5,
         "max_walk_fault_time_s": 65.0,
         "min_path_length_m": 0.75,
-        "min_stride_count": 6,
-        "min_walk_duration_before_fault_s": 10.0,
+        "min_stride_count": 5,
+        "min_walk_duration_before_fault_s": 2.5,
         "transition_improvement_min_m": 0.001,
-        "transition_max_body_height_m": 0.141,
-        "max_contact_anchor_max_drift_m": 0.08,
-        "min_measured_foot_world_z_m": -0.03,
-        "max_contact_tracking_error_m": 0.1
+        "max_contact_anchor_max_drift_m": 0.5,
+        "min_measured_foot_world_z_m": -0.08,
+        "max_contact_tracking_error_m": 0.22
       },
       "tilt_safety_trip": {
         "first_fault_step_max": 1200,

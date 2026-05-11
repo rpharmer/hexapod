@@ -121,6 +121,11 @@ enum class FaultLifecycle : uint8_t {
     RECOVERING
 };
 
+enum class DegradedMode : uint8_t {
+    None = 0,
+    ContactAndImuLocomotion = 1,
+};
+
 struct SafetyState {
     bool inhibit_motion{true};
     bool torque_cut{false};
@@ -129,6 +134,8 @@ struct SafetyState {
     uint32_t active_fault_trip_count{0};
     TimePointUs active_fault_last_trip_us{};
     std::array<bool, kNumLegs> leg_enabled{true, true, true, true, true, true};
+    bool actuator_state_unobserved{false};
+    DegradedMode degraded_mode{DegradedMode::None};
 };
 
 struct FootTarget {
@@ -144,6 +151,22 @@ struct LegTargets {
 struct JointState {
   AngleRad pos_rad{};
   AngularRateRadPerSec vel_radps{};
+};
+
+enum class JointStateSource : std::uint8_t {
+    None = 0,
+    CommandEcho = 1,
+    ObserverEstimate = 2,
+    Measured = 3,
+    Simulated = 4,
+};
+
+struct JointStateQuality {
+    bool position_valid{false};
+    bool velocity_valid{false};
+    JointStateSource source{JointStateSource::None};
+    uint64_t age_us{0};
+    double confidence{0.0};
 };
 
 struct LegState {
@@ -242,6 +265,7 @@ struct MotionIntent {
 
 struct RobotState {
   std::array<LegState, kNumLegs> leg_states{};
+  std::array<JointStateQuality, kNumLegs> joint_state_quality{};
   /** Fused controller-facing contact estimate; raw bridge snapshots are reconciled before use. */
   std::array<bool, kNumLegs> foot_contacts{};
   std::array<FootContactFusion, kNumLegs> foot_contact_fusion{};
