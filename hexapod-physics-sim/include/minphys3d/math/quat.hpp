@@ -6,6 +6,16 @@
 
 namespace minphys3d {
 
+// Default: Hamilton sandwich q * (0,v) * conj(q) / conj(q) * (0,v) * q (numerically
+// well-behaved relative ordering vs the cross-product shortcut).
+// Define MINPHYS3D_USE_FAST_QUAT_VECTOR_ROTATE to 1 (e.g. -D on the compile line) to use
+// the cheaper cross-product form; changes floating-point results vs the sandwich.
+#if defined(MINPHYS3D_USE_FAST_QUAT_VECTOR_ROTATE) && MINPHYS3D_USE_FAST_QUAT_VECTOR_ROTATE
+#define MINPHYS3D_DETAIL_QUAT_VECTOR_ROTATE_FAST 1
+#else
+#define MINPHYS3D_DETAIL_QUAT_VECTOR_ROTATE_FAST 0
+#endif
+
 struct Quat {
     Real w = 1.0;
     Real x = 0.0;
@@ -35,9 +45,8 @@ inline Quat Normalize(const Quat& q) {
     return {q.w / len, q.x / len, q.y / len, q.z / len};
 }
 
+#if MINPHYS3D_DETAIL_QUAT_VECTOR_ROTATE_FAST
 // Cross-product form: t = 2*(q_vec × v); v' = v + q.w*t + q_vec × t
-// ~30 flops vs ~64 for the quat-multiply sandwich. Changes FP rounding
-// order relative to the old form — baselines must be regenerated if used.
 inline Vec3 Rotate(const Quat& q, const Vec3& v) {
     const Real tx = 2.0 * (q.y * v.z - q.z * v.y);
     const Real ty = 2.0 * (q.z * v.x - q.x * v.z);
@@ -49,8 +58,6 @@ inline Vec3 Rotate(const Quat& q, const Vec3& v) {
     };
 }
 
-// Equivalent to Rotate(Conjugate(q), v) for unit quaternion q.
-// Same cross-product form with q.w sign flipped.
 inline Vec3 RotateInverse(const Quat& q, const Vec3& v) {
     const Real tx = 2.0 * (q.y * v.z - q.z * v.y);
     const Real ty = 2.0 * (q.z * v.x - q.x * v.z);
@@ -61,5 +68,21 @@ inline Vec3 RotateInverse(const Quat& q, const Vec3& v) {
         v.z - q.w * tz + (q.x * ty - q.y * tx),
     };
 }
+#else
+inline Vec3 Rotate(const Quat& q, const Vec3& v) {
+    const Quat p{0.0, v.x, v.y, v.z};
+    const Quat t = q * p * Conjugate(q);
+    return {t.x, t.y, t.z};
+}
+
+inline Vec3 RotateInverse(const Quat& q, const Vec3& v) {
+    const Quat qc = Conjugate(q);
+    const Quat p{0.0, v.x, v.y, v.z};
+    const Quat t = qc * p * q;
+    return {t.x, t.y, t.z};
+}
+#endif
+
+#undef MINPHYS3D_DETAIL_QUAT_VECTOR_ROTATE_FAST
 
 } // namespace minphys3d
