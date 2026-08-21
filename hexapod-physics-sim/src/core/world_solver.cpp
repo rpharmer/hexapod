@@ -952,14 +952,14 @@ void World::PrepareContactSolves() {
             manifoldPreps_.resize(numManifolds);
         }
         for (std::size_t mi = 0; mi < numManifolds; ++mi) {
-            const Manifold& m = manifolds_[mi];
+            Manifold& m = manifolds_[mi];
             ManifoldPrep& prep = manifoldPreps_[mi];
             const std::size_t numContacts = m.contacts.size();
             if (prep.contacts.size() != numContacts) {
                 prep.contacts.resize(numContacts);
             }
             for (std::size_t ci = 0; ci < numContacts; ++ci) {
-                const Contact& c = m.contacts[ci];
+                Contact& c = m.contacts[ci];
                 ContactPrep& cp = prep.contacts[ci];
                 const Body& a = bodies_[c.a];
                 const Body& b = bodies_[c.b];
@@ -969,6 +969,46 @@ void World::PrepareContactSolves() {
                 cp.rb = c.point - b.position;
                 cp.raCrossN = Cross(cp.ra, c.normal);
                 cp.rbCrossN = Cross(cp.rb, c.normal);
+
+                // Cache the basis-independent point-constraint effective-mass
+                // tensor used by friction. For tangent t:
+                //   K(t) = invMassA + invMassB
+                //        + (ra×t)^T invIA (ra×t)
+                //        + (rb×t)^T invIB (rb×t)
+                //        = t^T K t
+                // Positions/orientations are fixed throughout the PGS loop, so K
+                // is valid for every dynamically chosen tangent basis this substep.
+                const Vec3 axes[3] = {
+                    {1.0, 0.0, 0.0},
+                    {0.0, 1.0, 0.0},
+                    {0.0, 0.0, 1.0},
+                };
+                Vec3 raCrossAxis[3]{};
+                Vec3 rbCrossAxis[3]{};
+                Vec3 invIaRaCrossAxis[3]{};
+                Vec3 invIbRbCrossAxis[3]{};
+                for (int axis = 0; axis < 3; ++axis) {
+                    raCrossAxis[axis] = Cross(cp.ra, axes[axis]);
+                    rbCrossAxis[axis] = Cross(cp.rb, axes[axis]);
+                    invIaRaCrossAxis[axis] = invIA * raCrossAxis[axis];
+                    invIbRbCrossAxis[axis] = invIB * rbCrossAxis[axis];
+                }
+                const Real invMassSum = a.invMass + b.invMass;
+                const auto tangentK = [&](int row, int col) {
+                    return (row == col ? invMassSum : 0.0)
+                        + Dot(raCrossAxis[row], invIaRaCrossAxis[col])
+                        + Dot(rbCrossAxis[row], invIbRbCrossAxis[col]);
+                };
+                c.solverRa = cp.ra;
+                c.solverRb = cp.rb;
+                c.solverTangentK00 = tangentK(0, 0);
+                c.solverTangentK01 = tangentK(0, 1);
+                c.solverTangentK02 = tangentK(0, 2);
+                c.solverTangentK11 = tangentK(1, 1);
+                c.solverTangentK12 = tangentK(1, 2);
+                c.solverTangentK22 = tangentK(2, 2);
+                c.solverFrictionGeometryPrepared = true;
+
                 const Real angularTermA = Dot(cp.raCrossN, invIA * cp.raCrossN);
                 const Real angularTermB = Dot(cp.rbCrossN, invIB * cp.rbCrossN);
                 Real sideA = a.invMass + angularTermA;
@@ -2210,6 +2250,8 @@ void World::PrepareServoJointSolves() {
             for (int i = 0; i < 3; ++i) {
                 const Vec3 invIaCrossI = invIA * raCrossAxis[i];
                 const Vec3 invIbCrossI = invIB * rbCrossAxis[i];
+                prep.anchorAngularResponseA[static_cast<std::size_t>(i)] = invIaCrossI;
+                prep.anchorAngularResponseB[static_cast<std::size_t>(i)] = invIbCrossI;
                 for (int kCol = 0; kCol < 3; ++kCol) {
                     K[i][kCol] = (i == kCol ? invMassSum : 0.0)
                         + Dot(invIaCrossI, raCrossAxis[kCol])
@@ -2355,11 +2397,24 @@ void World::PrepareServoJointSolves() {
             }
 
             // Effective masses and pre-inverted denominators for the two angular axis rows.
-            const Vec3 invISumT1 = invIA * prep.t1 + invIB * prep.t1;
-            const Vec3 invISumT2 = invIA * prep.t2 + invIB * prep.t2;
+            prep.invIAT1 = invIA * prep.t1;
+            prep.invIBT1 = invIB * prep.t1;
+            prep.invIAT2 = invIA * prep.t2;
+            prep.invIBT2 = invIB * prep.t2;
+            const Vec3 invISumT1 = prep.invIAT1 + prep.invIBT1;
+            const Vec3 invISumT2 = prep.invIAT2 + prep.invIBT2;
             const Real wT1 = Dot(prep.t1, invISumT1);
             const Real wT2 = Dot(prep.t2, invISumT2);
-            const Real wT12 = Dot(prep.t1, invISumT2); // == Dot(t2, invISumT1) since invIA, invIB symmetric
+            prep.wT12A = Dot(prep.t2, prep.invIAT1);
+            prep.wT12B = Dot(prep.t2, prep.invIBT1);
+            prep.wAxisT1A = Dot(prep.axisA, prep.invIAT1);
+            prep.wAxisT1B = Dot(prep.axisA, prep.invIBT1);
+            prep.wAxisT2A = Dot(prep.axisA, prep.invIAT2);
+            prep.wAxisT2B = Dot(prep.axisA, prep.invIBT2);
+            // Preserve the existing block-matrix evaluation order. The per-body
+            // wT12 values above are only for reproducing the scalar t1 -> t2
+            // velocity update when body writes are deferred.
+            const Real wT12 = Dot(prep.t1, invISumT2);
             prep.t1Active = wT1 > kEpsilon;
             prep.t2Active = wT2 > kEpsilon;
             if (prep.t1Active) {
@@ -2395,7 +2450,11 @@ void World::PrepareServoJointSolves() {
             }
 
             // ---- Hinge servo kinematics ----
-            const Real wHinge = Dot(prep.axisA, invIA * prep.axisA) + Dot(prep.axisA, invIB * prep.axisA);
+            prep.invIAAxis = invIA * prep.axisA;
+            prep.invIBAxis = invIB * prep.axisA;
+            prep.wHingeA = Dot(prep.axisA, prep.invIAAxis);
+            prep.wHingeB = Dot(prep.axisA, prep.invIBAxis);
+            const Real wHinge = prep.wHingeA + prep.wHingeB;
             prep.hingeActive = wHinge > kEpsilon;
             if (prep.hingeActive) {
                 const Real hingeAngle = core_internal::ComputeServoJointAngle(a, b, j);
@@ -2499,8 +2558,6 @@ void World::SolveServoJoint(ServoJoint& j) {
 
         Body& a = bodies_[j.a];
         Body& b = bodies_[j.b];
-        const Mat3& invIA = bodyInvInertiaWorld_[j.a];
-        const Mat3& invIB = bodyInvInertiaWorld_[j.b];
         const Real dampingFactor = jointSolverConfig_.hingeAnchorDampingFactor;
 
         // ---- Anchor 3D row ----
@@ -2526,17 +2583,70 @@ void World::SolveServoJoint(ServoJoint& j) {
                 j.impulseX += lambda.x;
                 j.impulseY += lambda.y;
                 j.impulseZ += lambda.z;
-                ApplyImpulse(a, b, invIA, invIB, prep.ra, prep.rb, lambda);
+                // The response columns were already built while constructing K.
+                // Apply the same update as ApplyImpulse without two Cross() calls
+                // and two inverse-inertia matrix-vector multiplies in the hot loop.
+                if (!a.isSleeping) {
+                    a.velocity -= lambda * a.invMass;
+                    a.angularVelocity -=
+                        lambda.x * prep.anchorAngularResponseA[0]
+                        + lambda.y * prep.anchorAngularResponseA[1]
+                        + lambda.z * prep.anchorAngularResponseA[2];
+                }
+                if (!b.isSleeping) {
+                    b.velocity += lambda * b.invMass;
+                    b.angularVelocity +=
+                        lambda.x * prep.anchorAngularResponseB[0]
+                        + lambda.y * prep.anchorAngularResponseB[1]
+                        + lambda.z * prep.anchorAngularResponseB[2];
+                }
             }
         }
 
+        const bool solveAxisRows = !prep.skipAngular;
+        const bool solveHingeRow = prep.hingeActive && !prep.skipHinge;
+        if (!solveAxisRows && !solveHingeRow) {
+            return;
+        }
+
+        // Work in the orthonormal joint basis during the PGS rows and delay the
+        // body writes until the end. The scalar velocities are updated after
+        // every row with the same impulse response the body update would have
+        // produced, so the t1 -> t2 -> hinge -> speed-clamp Gauss-Seidel order
+        // is retained.
+        const bool aAwake = !a.isSleeping;
+        const bool bAwake = !b.isSleeping;
+        const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
+        Real omegaT1 = 0.0;
+        Real omegaT2 = 0.0;
+        Real omegaAxis = 0.0;
+        if (solveAxisRows) {
+            omegaT1 = Dot(relAngVel, prep.t1);
+            omegaT2 = Dot(relAngVel, prep.t2);
+        }
+        if (solveHingeRow) {
+            omegaAxis = Dot(relAngVel, prep.axisA);
+        }
+
+        Real deltaImpulseT1 = 0.0;
+        Real deltaImpulseT2 = 0.0;
+        Real deltaImpulseAxis = 0.0;
+
+        const Real activeWT12 =
+            (aAwake ? prep.wT12A : 0.0) + (bAwake ? prep.wT12B : 0.0);
+        const Real activeWAxisT1 =
+            (aAwake ? prep.wAxisT1A : 0.0) + (bAwake ? prep.wAxisT1B : 0.0);
+        const Real activeWAxisT2 =
+            (aAwake ? prep.wAxisT2A : 0.0) + (bAwake ? prep.wAxisT2B : 0.0);
+        const Real activeWHinge =
+            (aAwake ? prep.wHingeA : 0.0) + (bAwake ? prep.wHingeB : 0.0);
+
         // ---- Axis-alignment angular rows ----
-        if (!prep.skipAngular) {
-            const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
+        if (solveAxisRows) {
             if (prep.useBlockAxisSolve) {
                 // Coupled 2x2 solve: lambda = invK2 * -(rhs).
-                const Real r1 = Dot(relAngVel, prep.t1) + prep.axisBiasT1;
-                const Real r2 = Dot(relAngVel, prep.t2) + prep.axisBiasT2;
+                const Real r1 = omegaT1 + prep.axisBiasT1;
+                const Real r2 = omegaT2 + prep.axisBiasT2;
                 Real lambda1 = -(prep.invK2aa * r1 + prep.invK2ab * r2);
                 Real lambda2 = -(prep.invK2ab * r1 + prep.invK2bb * r2);
                 const Real old1 = j.angularImpulse1;
@@ -2545,35 +2655,40 @@ void World::SolveServoJoint(ServoJoint& j) {
                 j.angularImpulse2 = std::clamp(old2 + lambda2, -j.maxServoTorque, j.maxServoTorque);
                 lambda1 = j.angularImpulse1 - old1;
                 lambda2 = j.angularImpulse2 - old2;
-                if (lambda1 != 0.0 || lambda2 != 0.0) {
-                    ApplyAngularImpulse(a, b, invIA, invIB, lambda1 * prep.t1 + lambda2 * prep.t2);
+                deltaImpulseT1 += lambda1;
+                deltaImpulseT2 += lambda2;
+                if (solveHingeRow) {
+                    omegaAxis += activeWAxisT1 * lambda1 + activeWAxisT2 * lambda2;
                 }
             } else {
                 if (prep.t1Active) {
-                    const Real velN = Dot(relAngVel, prep.t1);
-                    Real angLambda = -(velN + prep.axisBiasT1) * prep.invDenomT1;
+                    Real angLambda = -(omegaT1 + prep.axisBiasT1) * prep.invDenomT1;
                     const Real oldAxisImpulse = j.angularImpulse1;
                     j.angularImpulse1 = std::clamp(oldAxisImpulse + angLambda, -j.maxServoTorque, j.maxServoTorque);
                     angLambda = j.angularImpulse1 - oldAxisImpulse;
-                    ApplyAngularImpulse(a, b, invIA, invIB, angLambda * prep.t1);
+                    deltaImpulseT1 += angLambda;
+                    if (prep.t2Active) {
+                        omegaT2 += activeWT12 * angLambda;
+                    }
+                    if (solveHingeRow) {
+                        omegaAxis += activeWAxisT1 * angLambda;
+                    }
                 }
                 if (prep.t2Active) {
-                    const Vec3 relAngVel2 = b.angularVelocity - a.angularVelocity;
-                    const Real velN = Dot(relAngVel2, prep.t2);
-                    Real angLambda = -(velN + prep.axisBiasT2) * prep.invDenomT2;
+                    Real angLambda = -(omegaT2 + prep.axisBiasT2) * prep.invDenomT2;
                     const Real oldAxisImpulse = j.angularImpulse2;
                     j.angularImpulse2 = std::clamp(oldAxisImpulse + angLambda, -j.maxServoTorque, j.maxServoTorque);
                     angLambda = j.angularImpulse2 - oldAxisImpulse;
-                    ApplyAngularImpulse(a, b, invIA, invIB, angLambda * prep.t2);
+                    deltaImpulseT2 += angLambda;
+                    if (solveHingeRow) {
+                        omegaAxis += activeWAxisT2 * angLambda;
+                    }
                 }
             }
         }
 
         // ---- Hinge servo row ----
-        if (!prep.hingeActive || prep.skipHinge) {
-            return;
-        }
-        {
+        if (solveHingeRow) {
             // Two formulations live side-by-side, dispatched by prep.useDecoupledPD (set
             // from JointSolverConfig::enableServoStiffnessDampingDecoupling at prepare time):
             //  - LEGACY: single-row Catto soft constraint with bias = ωₙ·err/D and softness
@@ -2586,51 +2701,61 @@ void World::SolveServoJoint(ServoJoint& j) {
             if (prep.useDecoupledPD) {
                 // Position row: pure stiffness.
                 {
-                    const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
-                    const Real omegaAxis = Dot(relAngVel, prep.axisA);
                     Real lambda = -(omegaAxis + prep.servoBiasPos) * prep.invDenomHingePos;
                     const Real oldImpulse = j.servoImpulseSum;
                     j.servoImpulseSum =
                         std::clamp(j.servoImpulseSum + lambda, -j.maxServoTorque, j.maxServoTorque);
                     lambda = j.servoImpulseSum - oldImpulse;
-                    if (lambda != 0.0) {
-                        ApplyAngularImpulse(a, b, invIA, invIB, lambda * prep.axisA);
-                    }
+                    deltaImpulseAxis += lambda;
+                    omegaAxis += activeWHinge * lambda;
                 }
                 // Damping row: drive ω → 0 with implicit-Euler softness.
                 if (prep.dampingRowActive) {
-                    const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
-                    const Real omegaAxis = Dot(relAngVel, prep.axisA);
                     Real lambda = -omegaAxis * prep.invDenomHingeDamp;
                     const Real oldImpulse = j.servoImpulseSum;
                     j.servoImpulseSum =
                         std::clamp(j.servoImpulseSum + lambda, -j.maxServoTorque, j.maxServoTorque);
                     lambda = j.servoImpulseSum - oldImpulse;
-                    if (lambda != 0.0) {
-                        ApplyAngularImpulse(a, b, invIA, invIB, lambda * prep.axisA);
-                    }
+                    deltaImpulseAxis += lambda;
+                    omegaAxis += activeWHinge * lambda;
                 }
             } else {
-                const Vec3 relAngVel = b.angularVelocity - a.angularVelocity;
-                const Real omegaAxis = Dot(relAngVel, prep.axisA);
                 Real servoLambda = -(omegaAxis + prep.servoBias) * prep.invDenomHinge;
                 const Real oldImpulse = j.servoImpulseSum;
                 j.servoImpulseSum =
                     std::clamp(j.servoImpulseSum + servoLambda, -j.maxServoTorque, j.maxServoTorque);
                 servoLambda = j.servoImpulseSum - oldImpulse;
-                ApplyAngularImpulse(a, b, invIA, invIB, servoLambda * prep.axisA);
+                deltaImpulseAxis += servoLambda;
+                omegaAxis += activeWHinge * servoLambda;
             }
 
             if (prep.hasSpeedClamp) {
-                const Real postOmegaAxis = Dot(b.angularVelocity - a.angularVelocity, prep.axisA);
-                const Real clampedOmegaAxis = std::clamp(postOmegaAxis, -prep.maxServoSpeed, prep.maxServoSpeed);
-                if (std::abs(clampedOmegaAxis - postOmegaAxis) > 1e-6) {
-                    Real speedLambda = (clampedOmegaAxis - postOmegaAxis) * prep.invWHingeForSpeed;
+                const Real clampedOmegaAxis = std::clamp(omegaAxis, -prep.maxServoSpeed, prep.maxServoSpeed);
+                if (std::abs(clampedOmegaAxis - omegaAxis) > 1e-6) {
+                    Real speedLambda = (clampedOmegaAxis - omegaAxis) * prep.invWHingeForSpeed;
                     const Real speedImpulse = std::clamp(j.servoImpulseSum + speedLambda, -j.maxServoTorque, j.maxServoTorque);
                     speedLambda = speedImpulse - j.servoImpulseSum;
                     j.servoImpulseSum = speedImpulse;
-                    ApplyAngularImpulse(a, b, invIA, invIB, speedLambda * prep.axisA);
+                    deltaImpulseAxis += speedLambda;
                 }
+            }
+        }
+
+        // Commit all angular rows once. The response vectors are exactly the
+        // inverse-inertia products ApplyAngularImpulse would have recomputed for
+        // each row; only the floating-point addition order changes.
+        if (deltaImpulseT1 != 0.0 || deltaImpulseT2 != 0.0 || deltaImpulseAxis != 0.0) {
+            if (aAwake) {
+                a.angularVelocity -=
+                    deltaImpulseT1 * prep.invIAT1
+                    + deltaImpulseT2 * prep.invIAT2
+                    + deltaImpulseAxis * prep.invIAAxis;
+            }
+            if (bAwake) {
+                b.angularVelocity +=
+                    deltaImpulseT1 * prep.invIBT1
+                    + deltaImpulseT2 * prep.invIBT2
+                    + deltaImpulseAxis * prep.invIBAxis;
             }
         }
     }
@@ -2904,33 +3029,22 @@ void World::PrepareIslandOrders() {
 }
 
 void World::SolveIslands() {
-        std::unordered_map<ManifoldKey, std::unordered_set<PersistentPointKey, PersistentPointKeyHash>, ManifoldKeyHash> warmStartUsedKeys;
+        // The old path built a ConstraintSolverContext full of std::function
+        // callbacks on every PGS iteration, including a persistence hash map that
+        // is only needed while building manifolds. Solve directly from World-owned
+        // arrays so servo joints (the dominant workload) are ordinary direct calls.
+        core_internal::ContactSolver contactSolver;
         core_internal::ContactSolverContext contactContext{
             bodies_,
             contacts_,
             manifolds_,
             previousManifolds_,
             &bodyInvInertiaWorld_,
-            [this, &warmStartUsedKeys](const ManifoldKey& manifoldId, const Contact& contact, Real& normal, std::array<Real, 2>& tangent, std::uint16_t& age) {
-                PersistentPointMatchCandidate match{};
-                std::unordered_set<PersistentPointKey, PersistentPointKeyHash>& usedKeys = warmStartUsedKeys[manifoldId];
-                if (!TryMatchPersistentPoint(persistentPointImpulses_, manifoldId, contact, usedKeys, match)) {
-                    return false;
-                }
-                usedKeys.insert(match.key);
-                normal = match.state.normalImpulseSum;
-                tangent = {match.state.tangentImpulseSum0, match.state.tangentImpulseSum1};
-                age = match.state.persistenceAge;
-                return true;
-            },
-            [this](Manifold& manifold, const Manifold* previous) { ManageManifoldContacts(manifold, previous); },
-            [](Manifold& manifold) { RefreshManifoldBlockCache(manifold); },
-            [this](Manifold& manifold) { SelectBlockSolvePair(manifold); },
-#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
-            [this](const Manifold& manifold) { RecordSelectedPairHistory(manifold); },
-#else
-            [](const Manifold&) {},
-#endif
+            {}, // persistence lookup: build-manifold phase only
+            {}, // manageManifoldContacts: build-manifold phase only
+            {}, // refreshManifoldBlockCache: build-manifold phase only
+            {}, // selectBlockSolvePair: build-manifold phase only
+            {}, // recordSelectedPairHistory: build-manifold phase only
             [this](Manifold& manifold) { SolveManifoldNormalImpulses(manifold); },
             [](const Manifold& manifold, std::uint64_t contactKey) { return FindBlockSlot(manifold, contactKey); },
             [this](Body& a, Body& b, const Mat3& invIA, const Mat3& invIB, const Vec3& ra, const Vec3& rb, const Vec3& impulse) {
@@ -2973,36 +3087,107 @@ void World::SolveIslands() {
             contactSolverConfig_,
         };
 
-        const core_internal::ConstraintSolver constraintSolver;
-        const core_internal::ConstraintSolverContext context{
-            bodies_,
-            manifolds_,
-            islands_,
-            joints_,
-            hingeJoints_,
-            ballSocketJoints_,
-            fixedJoints_,
-            prismaticJoints_,
-            servoJoints_,
-            contactContext,
-            contactSolverConfig_,
-            islandOrders_.empty() ? nullptr : &islandOrders_,
-#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
-            &solverTelemetry_,
-#endif
-            [](core_internal::ContactSolver& solver, const core_internal::ContactSolverContext& context, Manifold& manifold) {
-                solver.SolveContactsInManifold(context, manifold);
-            },
-            [this](DistanceJoint& joint) { SolveDistanceJoint(joint); },
-            [this](HingeJoint& joint) { SolveHingeJoint(joint); },
-            [this](BallSocketJoint& joint) { SolveBallSocketJoint(joint); },
-            [this](FixedJoint& joint) { SolveFixedJoint(joint); },
-            [this](PrismaticJoint& joint) { SolvePrismaticJoint(joint); },
-            [this](ServoJoint& joint) { SolveServoJoint(joint); },
-            &resource_profiler_,
-        };
+        using world_resource_monitoring::Section;
+        using world_resource_monitoring::toIndex;
 
-        constraintSolver.SolveIslands(context);
+        for (std::size_t islandIdx = 0; islandIdx < islands_.size(); ++islandIdx) {
+            const Island& island = islands_[islandIdx];
+
+            IslandOrderResult onDemandOrder;
+            const IslandOrderResult* orderPtr = nullptr;
+            if (islandIdx < islandOrders_.size()) {
+                orderPtr = &islandOrders_[islandIdx];
+            } else {
+                const auto scope =
+                    resource_profiler_.scope(toIndex(Section::SolveIslandsIslandOrder));
+                onDemandOrder = solver_internal::ComputeIslandOrder(
+                    island, bodies_, manifolds_, contactSolverConfig_);
+                orderPtr = &onDemandOrder;
+                (void)scope;
+            }
+            const IslandOrderResult& islandOrder = *orderPtr;
+            const std::vector<std::size_t>& manifoldOrder =
+                islandOrder.manifoldOrder;
+
+#if MINPHYS3D_SOLVER_TELEMETRY_ENABLED
+            if (islandOrder.supportDepthApplied) {
+                ++solverTelemetry_.supportDepthOrderApplied;
+            } else {
+                ++solverTelemetry_.supportDepthOrderBypassed;
+            }
+#endif
+
+            {
+                const auto scope =
+                    resource_profiler_.scope(toIndex(Section::SolveIslandsContactsForward));
+                for (const std::size_t mi : manifoldOrder) {
+                    contactSolver.SolveContactsInManifold(
+                        contactContext, manifolds_[mi]);
+                }
+                (void)scope;
+            }
+
+            if (islandOrder.orderingUsed == IslandSolveOrdering::ShockPropagation
+                && manifoldOrder.size() > 1) {
+                const auto scope =
+                    resource_profiler_.scope(toIndex(Section::SolveIslandsContactsShock));
+                for (auto it = manifoldOrder.rbegin(); it != manifoldOrder.rend(); ++it) {
+                    contactSolver.SolveContactsInManifold(
+                        contactContext, manifolds_[*it]);
+                }
+                (void)scope;
+            }
+
+            {
+                const auto scope =
+                    resource_profiler_.scope(toIndex(Section::SolveIslandsDistanceJoints));
+                for (const std::size_t ji : island.joints) {
+                    SolveDistanceJoint(joints_[ji]);
+                }
+                (void)scope;
+            }
+            {
+                const auto scope =
+                    resource_profiler_.scope(toIndex(Section::SolveIslandsHingeJoints));
+                for (const std::size_t hi : island.hinges) {
+                    SolveHingeJoint(hingeJoints_[hi]);
+                }
+                (void)scope;
+            }
+            {
+                const auto scope =
+                    resource_profiler_.scope(toIndex(Section::SolveIslandsBallSocketJoints));
+                for (const std::size_t bi : island.ballSockets) {
+                    SolveBallSocketJoint(ballSocketJoints_[bi]);
+                }
+                (void)scope;
+            }
+            {
+                const auto scope =
+                    resource_profiler_.scope(toIndex(Section::SolveIslandsFixedJoints));
+                for (const std::size_t fi : island.fixeds) {
+                    SolveFixedJoint(fixedJoints_[fi]);
+                }
+                (void)scope;
+            }
+            {
+                const auto scope =
+                    resource_profiler_.scope(toIndex(Section::SolveIslandsPrismaticJoints));
+                for (const std::size_t pi : island.prismatics) {
+                    SolvePrismaticJoint(prismaticJoints_[pi]);
+                }
+                (void)scope;
+            }
+            {
+                const auto scope =
+                    resource_profiler_.scope(toIndex(Section::SolveIslandsServoJoints));
+                for (const std::size_t si : island.servos) {
+                    // Direct call: no ConstraintSolverContext/std::function hop.
+                    SolveServoJoint(servoJoints_[si]);
+                }
+                (void)scope;
+            }
+        }
     }
 
 void World::UpdateSleeping() {

@@ -1,0 +1,52 @@
+broadphase_metrics (last substep): areaRatio=6 maxDepth=5 avgDepth=4.4 movedProxyRatio=0
+  queryNodeVisits=686 queryNodeVisitsPerProxy=34.3
+  pairCacheQueries=119 pairCacheHits=119 pairCacheHitRate=1
+  pairGenerationMs=0.016902 validProxyCount=20 usedMovedSetOnlyUpdate=0 partialRebuildTriggered=0 fullRebuildTriggered=0
+articulation_config: enableSameAxisTwoDofShortcut=0
+workload: hexapod 120 frames @ 60Hz outer, 2 substeps, 30 solver iters/substep; wall_ms=57.0206
+sections: 44 (full snapshot, sorted by total self time)
+world.step{window_ms=56,total_ms=56,max_ms=0,calls=240} | world.solve_islands{window_ms=30,total_ms=30,max_ms=0,calls=240} | world.solve_islands.contacts_forward{window_ms=15,total_ms=15,max_ms=0,calls=7200} | world.solve_islands.joints_servo{window_ms=11,total_ms=11,max_ms=0,calls=7200} | world.generate_contacts{window_ms=7,total_ms=7,max_ms=0,calls=240} | world.generate_contacts.potential_pairs{window_ms=5,total_ms=5,max_ms=0,calls=240} | world.build_manifolds{window_ms=2,total_ms=2,max_ms=0,calls=240} | world.prepare_articulated_inertias{window_ms=1,total_ms=1,max_ms=0,calls=240} | world.update_broadphase{window_ms=1,total_ms=1,max_ms=0,calls=240} | world.solve_joint_positions{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.generate_contacts.compound{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.solve_joint_positions.servo{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.build_islands{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.update_sleeping{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.warm_start_joints{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.prepare_articulated_inertias.pass_a{window_ms=0,total_ms=0,max_ms=0,calls=1440} | world.generate_contacts.narrowphase{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.warm_start_contacts{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.solve_islands.joints_fixed{window_ms=0,total_ms=0,max_ms=0,calls=7200} | world.prepare_articulated_inertias.pass_b_generic{window_ms=0,total_ms=0,max_ms=0,calls=4320} | world.solve_islands.joints_ball_socket{window_ms=0,total_ms=0,max_ms=0,calls=7200} | world.solve_islands.joints_prismatic{window_ms=0,total_ms=0,max_ms=0,calls=7200} | world.solve_islands.joints_distance{window_ms=0,total_ms=0,max_ms=0,calls=7200} | world.solve_islands.joints_hinge{window_ms=0,total_ms=0,max_ms=0,calls=7200} | world.generate_contacts.articulation_split{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.prepare_articulated_inertias.setup_rigid{window_ms=0,total_ms=0,max_ms=0,calls=1440} | world.generate_contacts.refresh_shapes{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.generate_contacts.emit_seeds{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.clamp_body_velocities{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.resolve_toi{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.integrate_forces{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.integrate_orientation{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.positional_correction{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.prepare_articulated_inertias.pass_c_legacy{window_ms=0,total_ms=0,max_ms=0,calls=237} | world.clear_accumulators{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.generate_contacts.terrain{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.apply_split_stabilization{window_ms=0,total_ms=0,max_ms=0,calls=240} | world.get_servo_joint_angle{window_ms=0,total_ms=0,max_ms=0,calls=18} | world.prepare_articulated_inertias.pass_b_same_axis{window_ms=0,total_ms=0,max_ms=0,calls=0} | world.prepare_articulated_inertias.pass_c_full_forward{window_ms=0,total_ms=0,max_ms=0,calls=0} | world.relaxation_pass{window_ms=0,total_ms=0,max_ms=0,calls=0} | world.solve_islands.contacts_shock{window_ms=0,total_ms=0,max_ms=0,calls=0} | world.solve_islands.island_order{window_ms=0,total_ms=0,max_ms=0,calls=0} | world.solve_servo_joint{window_ms=0,total_ms=0,max_ms=0,calls=0}
+world.step                                total_ms=  56.949  calls=     240  max_ms=   0.721  window_ms=  56.949
+world.solve_islands                       total_ms=  30.553  calls=     240  max_ms=   0.537  window_ms=  30.553
+world.solve_islands.contacts_forward      total_ms=  15.425  calls=    7200  max_ms=   0.134  window_ms=  15.425
+world.solve_islands.joints_servo          total_ms=  11.144  calls=    7200  max_ms=   0.365  window_ms=  11.144
+world.generate_contacts                   total_ms=   7.103  calls=     240  max_ms=   0.190  window_ms=   7.103
+world.generate_contacts.potential_pairs   total_ms=   5.352  calls=     240  max_ms=   0.123  window_ms=   5.352
+world.build_manifolds                     total_ms=   2.648  calls=     240  max_ms=   0.036  window_ms=   2.648
+world.prepare_articulated_inertias        total_ms=   1.667  calls=     240  max_ms=   0.024  window_ms=   1.667
+world.update_broadphase                   total_ms=   1.064  calls=     240  max_ms=   0.034  window_ms=   1.064
+world.solve_joint_positions               total_ms=   0.865  calls=     240  max_ms=   0.017  window_ms=   0.865
+world.generate_contacts.compound          total_ms=   0.774  calls=     240  max_ms=   0.021  window_ms=   0.774
+world.solve_joint_positions.servo         total_ms=   0.741  calls=     240  max_ms=   0.008  window_ms=   0.741
+world.build_islands                       total_ms=   0.737  calls=     240  max_ms=   0.007  window_ms=   0.737
+world.update_sleeping                     total_ms=   0.620  calls=     240  max_ms=   0.014  window_ms=   0.620
+world.warm_start_joints                   total_ms=   0.471  calls=     240  max_ms=   0.017  window_ms=   0.471
+world.prepare_articulated_inertias.pass_a  total_ms=   0.290  calls=    1440  max_ms=   0.004  window_ms=   0.290
+world.generate_contacts.narrowphase       total_ms=   0.275  calls=     240  max_ms=   0.004  window_ms=   0.275
+world.warm_start_contacts                 total_ms=   0.274  calls=     240  max_ms=   0.004  window_ms=   0.274
+world.solve_islands.joints_fixed          total_ms=   0.178  calls=    7200  max_ms=   0.001  window_ms=   0.178
+world.prepare_articulated_inertias.pass_b_generic  total_ms=   0.177  calls=    4320  max_ms=   0.002  window_ms=   0.177
+world.solve_islands.joints_ball_socket    total_ms=   0.176  calls=    7200  max_ms=   0.000  window_ms=   0.176
+world.solve_islands.joints_prismatic      total_ms=   0.176  calls=    7200  max_ms=   0.000  window_ms=   0.176
+world.solve_islands.joints_distance       total_ms=   0.173  calls=    7200  max_ms=   0.001  window_ms=   0.173
+world.solve_islands.joints_hinge          total_ms=   0.172  calls=    7200  max_ms=   0.001  window_ms=   0.172
+world.generate_contacts.articulation_split  total_ms=   0.165  calls=     240  max_ms=   0.002  window_ms=   0.165
+world.prepare_articulated_inertias.setup_rigid  total_ms=   0.148  calls=    1440  max_ms=   0.002  window_ms=   0.148
+world.generate_contacts.refresh_shapes    total_ms=   0.129  calls=     240  max_ms=   0.002  window_ms=   0.129
+world.generate_contacts.emit_seeds        total_ms=   0.116  calls=     240  max_ms=   0.002  window_ms=   0.116
+world.clamp_body_velocities               total_ms=   0.070  calls=     240  max_ms=   0.039  window_ms=   0.070
+world.resolve_toi                         total_ms=   0.051  calls=     240  max_ms=   0.002  window_ms=   0.051
+world.integrate_forces                    total_ms=   0.046  calls=     240  max_ms=   0.001  window_ms=   0.046
+world.integrate_orientation               total_ms=   0.046  calls=     240  max_ms=   0.001  window_ms=   0.046
+world.positional_correction               total_ms=   0.043  calls=     240  max_ms=   0.001  window_ms=   0.043
+world.prepare_articulated_inertias.pass_c_legacy  total_ms=   0.024  calls=     237  max_ms=   0.000  window_ms=   0.024
+world.clear_accumulators                  total_ms=   0.017  calls=     240  max_ms=   0.001  window_ms=   0.017
+world.generate_contacts.terrain           total_ms=   0.014  calls=     240  max_ms=   0.001  window_ms=   0.014
+world.apply_split_stabilization           total_ms=   0.008  calls=     240  max_ms=   0.000  window_ms=   0.008
+world.get_servo_joint_angle               total_ms=   0.005  calls=      18  max_ms=   0.003  window_ms=   0.005
+world.prepare_articulated_inertias.pass_b_same_axis  total_ms=   0.000  calls=       0  max_ms=   0.000  window_ms=   0.000
+world.prepare_articulated_inertias.pass_c_full_forward  total_ms=   0.000  calls=       0  max_ms=   0.000  window_ms=   0.000
+world.relaxation_pass                     total_ms=   0.000  calls=       0  max_ms=   0.000  window_ms=   0.000
+world.solve_islands.contacts_shock        total_ms=   0.000  calls=       0  max_ms=   0.000  window_ms=   0.000
+world.solve_islands.island_order          total_ms=   0.000  calls=       0  max_ms=   0.000  window_ms=   0.000
+world.solve_servo_joint                   total_ms=   0.000  calls=       0  max_ms=   0.000  window_ms=   0.000

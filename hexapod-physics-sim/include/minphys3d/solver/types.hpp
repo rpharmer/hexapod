@@ -244,6 +244,19 @@ struct Contact {
     Vec3 localAnchorB{};
     Real referenceSeparation = 0.0;
     bool anchorsValid = false;
+
+    // Per-substep friction geometry cache. The symmetric K matrix satisfies
+    // tangentMass(t) = t^T K t for any unit tangent t, so the PGS loop can
+    // keep updating the tangent basis without rebuilding r×t and I^-1(r×t).
+    Vec3 solverRa{};
+    Vec3 solverRb{};
+    Real solverTangentK00 = 0.0;
+    Real solverTangentK01 = 0.0;
+    Real solverTangentK02 = 0.0;
+    Real solverTangentK11 = 0.0;
+    Real solverTangentK12 = 0.0;
+    Real solverTangentK22 = 0.0;
+    bool solverFrictionGeometryPrepared = false;
 };
 
 struct Manifold {

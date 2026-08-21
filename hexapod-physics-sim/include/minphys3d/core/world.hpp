@@ -895,6 +895,11 @@ private:
         Vec3 ra{}, rb{};            // world-frame anchor offsets
         Vec3 anchorBias{};          // hingeAnchorBiasFactor * error
         Mat3 invK{};                // 3x3 anchor mass matrix inverse
+        // Maps a world-space anchor impulse onto angular-velocity delta for each
+        // body. These are the three columns of invI * [ra]x / invI * [rb]x and
+        // are already computed while building the anchor mass matrix.
+        std::array<Vec3, 3> anchorAngularResponseA{};
+        std::array<Vec3, 3> anchorAngularResponseB{};
 
         // Axis-alignment block (two coupled angular rows along t1, t2 ⟂ axisA).
         // When useBlockAxisSolve is true the iterate path solves the coupled 2x2 system in
@@ -902,6 +907,17 @@ private:
         // independent scalar rows using invDenomT1/invDenomT2.
         Vec3 axisA{};
         Vec3 t1{}, t2{};
+        // Per-body angular response vectors. Keeping the A/B contributions
+        // separate lets the iterate path preserve ApplyAngularImpulse's sleeping
+        // body semantics while avoiding Mat3*Vec3 in every PGS row.
+        Vec3 invIAT1{}, invIBT1{};
+        Vec3 invIAT2{}, invIBT2{};
+        Vec3 invIAAxis{}, invIBAxis{};
+        // Cross-row velocity response coefficients, also stored per body so the
+        // active response can be selected from the current sleeping mask.
+        Real wT12A = 0.0, wT12B = 0.0;
+        Real wAxisT1A = 0.0, wAxisT1B = 0.0;
+        Real wAxisT2A = 0.0, wAxisT2B = 0.0;
         Real invDenomT1 = 0.0;    // 1 / (wT1 + axisGamma1), per-row fallback
         Real invDenomT2 = 0.0;    // 1 / (wT2 + axisGamma2), per-row fallback
         Real axisBiasT1 = 0.0;    // kAxisAlignOmega * Dot(angularError, t1) * invAxisDenom
@@ -913,6 +929,8 @@ private:
         // side, selected by jointSolverConfig_.enableServoStiffnessDampingDecoupling. The
         // legacy (Catto-coupled) path uses {invDenomHinge, servoBias}; the decoupled path
         // uses {invDenomHingePos, invDenomHingeDamp, servoBiasPos}.
+        Real wHingeA = 0.0;
+        Real wHingeB = 0.0;
         Real invDenomHinge = 0.0; // legacy: 1 / (wHinge + hingeGamma)
         Real invWHingeForSpeed = 0.0; // 1 / max(wHinge, kEpsilon) — used by post-solve speed clamp
         Real servoBias = 0.0;     // legacy: combined PD bias velocity (pre-clamped to ±maxServoSpeed)
@@ -1142,6 +1160,12 @@ private:
     mutable bool servoPositionUseVelocityBiasesCacheValid_ = false;
     std::uint64_t servoPositionSolveSubstepCounter_ = 0;
     std::unordered_map<PersistentPointKey, PersistentPointImpulseState, PersistentPointKeyHash> persistentPointImpulses_;
+    // Double-buffer persistence state so CapturePersistentPointImpulseState()
+    // can swap/reuse hash-table storage instead of copying the full map.
+    std::unordered_map<PersistentPointKey, PersistentPointImpulseState, PersistentPointKeyHash>
+        persistentPointImpulsesPrevious_;
+    std::unordered_set<PersistentPointKey, PersistentPointKeyHash>
+        persistentPointUsedKeysScratch_;
     PersistenceMatchDiagnostics persistenceMatchDiagnostics_{};
     std::unordered_map<NarrowphaseCacheKey, NarrowphaseCache, NarrowphaseCacheKeyHash> narrowphaseCache_;
     std::unordered_map<ConvexSeedKey, EpaPenetrationResult, ConvexSeedKeyHash> convexManifoldSeeds_;

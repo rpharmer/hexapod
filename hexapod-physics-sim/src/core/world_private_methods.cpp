@@ -997,9 +997,17 @@ bool World::TryMatchPersistentPoint(
 
 void World::CapturePersistentPointImpulseState(const std::vector<Manifold>& manifolds) {
 
-        const auto previousState = persistentPointImpulses_;
+        // Reuse the two hash tables by swapping roles. Clearing an unordered_map
+        // retains its bucket allocation, avoiding a full-map copy and repeated
+        // allocation/rehash churn on every substep.
+        persistentPointImpulsesPrevious_.swap(persistentPointImpulses_);
         persistentPointImpulses_.clear();
-        std::unordered_set<PersistentPointKey, PersistentPointKeyHash> usedKeys;
+        const auto& previousState = persistentPointImpulsesPrevious_;
+        persistentPointImpulses_.reserve(previousState.size());
+
+        auto& usedKeys = persistentPointUsedKeysScratch_;
+        usedKeys.clear();
+        usedKeys.reserve(previousState.size());
         std::uint64_t matchedPoints = 0;
         std::uint64_t newPoints = 0;
         for (const Manifold& manifold : manifolds) {

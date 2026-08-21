@@ -1,0 +1,112 @@
+Test project /home/volly/pico/hexapod/hexapod-physics-sim/build-after
+      Start  1: test_unit_math
+      Start  2: test_articulation
+      Start  3: test_regression_step
+      Start  4: test_broadphase_dynamic_tree
+      Start  5: regression_scene_suite
+      Start  6: test_convex_dispatch_equivalence
+      Start  7: test_gjk_regression
+      Start  8: test_block2_solver
+      Start  9: test_block4_solver
+      Start 10: test_island_ordering
+      Start 11: test_joint_creation_refactor
+      Start 12: test_compound_shapes
+ 1/52 Test  #1: test_unit_math .....................................   Passed    0.02 sec
+ 2/52 Test  #6: test_convex_dispatch_equivalence ...................   Passed    0.01 sec
+ 3/52 Test  #7: test_gjk_regression ................................   Passed    0.01 sec
+ 4/52 Test  #8: test_block2_solver .................................   Passed    0.01 sec
+ 5/52 Test  #9: test_block4_solver .................................   Passed    0.01 sec
+ 6/52 Test #10: test_island_ordering ...............................   Passed    0.01 sec
+      Start 13: test_cylinder_collision
+      Start 14: test_terrain_patch
+      Start 15: test_terrain_scroll
+      Start 16: test_minphys_viz_protocol
+      Start 17: test_servo_joint_target
+      Start 18: test_servo_chain_stability
+ 7/52 Test #11: test_joint_creation_refactor .......................   Passed    0.02 sec
+ 8/52 Test #13: test_cylinder_collision ............................   Passed    0.01 sec
+ 9/52 Test #15: test_terrain_scroll ................................   Passed    0.01 sec
+10/52 Test #16: test_minphys_viz_protocol ..........................   Passed    0.01 sec
+      Start 19: test_servo_stability_regression
+      Start 20: test_servo_regression_matrix
+      Start 21: test_hexapod_live
+      Start 22: test_hexapod_live_pose_hold
+11/52 Test #12: test_compound_shapes ...............................   Passed    0.03 sec
+      Start 23: test_hexapod_geometry_alignment
+12/52 Test #23: test_hexapod_geometry_alignment ....................   Passed    0.00 sec
+      Start 24: test_hexapod_initial_layout_matches_server
+13/52 Test  #2: test_articulation ..................................   Passed    0.05 sec
+14/52 Test #14: test_terrain_patch .................................   Passed    0.03 sec
+      Start 25: test_gravity_feedforward_model_consistency
+      Start 26: test_hexapod_planted_foot_drift
+15/52 Test #24: test_hexapod_initial_layout_matches_server .........   Passed    0.01 sec
+16/52 Test #25: test_gravity_feedforward_model_consistency .........   Passed    0.01 sec
+      Start 27: test_hexapod_zero_g
+      Start 28: test_hexapod_freefall_no_support
+17/52 Test #17: test_servo_joint_target ............................   Passed    0.04 sec
+      Start 29: test_servo_torque_saturation_matches_inertia
+18/52 Test #27: test_hexapod_zero_g ................................   Passed    0.04 sec
+      Start 30: test_servo_stall_under_overload
+19/52 Test #18: test_servo_chain_stability .........................   Passed    0.08 sec
+      Start 31: test_servo_chain_vertical_lift_under_gravity
+20/52 Test #28: test_hexapod_freefall_no_support ...................   Passed    0.05 sec
+      Start 32: test_hexapod_pose_hold_with_payload
+21/52 Test #29: test_servo_torque_saturation_matches_inertia .......   Passed    0.05 sec
+      Start 33: test_constraint_solver_extreme_mass_ratio_stress
+22/52 Test #21: test_hexapod_live ..................................   Passed    0.09 sec
+      Start 34: test_articulation_impulse_response_decay
+23/52 Test #34: test_articulation_impulse_response_decay ...........   Passed    0.03 sec
+      Start 35: test_world_step_determinism
+24/52 Test #31: test_servo_chain_vertical_lift_under_gravity .......   Passed    0.06 sec
+      Start 36: test_hexapod_stand_quiescence
+25/52 Test #33: test_constraint_solver_extreme_mass_ratio_stress ...   Passed    0.06 sec
+      Start 37: test_hexapod_substep_convergence
+26/52 Test #26: test_hexapod_planted_foot_drift ....................   Passed    0.12 sec
+27/52 Test #30: test_servo_stall_under_overload ....................   Passed    0.08 sec
+      Start 38: test_zero_gravity_energy_conservation
+      Start 39: test_single_leg_pd_response
+28/52 Test #38: test_zero_gravity_energy_conservation ..............   Passed    0.02 sec
+      Start 40: test_single_leg_pd_oscillation_sweep
+29/52 Test #22: test_hexapod_live_pose_hold ........................   Passed    0.19 sec
+      Start 41: test_servo_classical_pd_invariant
+30/52 Test #39: test_single_leg_pd_response ........................   Passed    0.13 sec
+      Start 42: test_hexapod_server_alignment_zero_g
+31/52 Test #42: test_hexapod_server_alignment_zero_g ...............   Passed    0.01 sec
+      Start 43: hex_diag
+32/52 Test  #3: test_regression_step ...............................   Passed    0.35 sec
+      Start 44: test_servo_visual_presets_json
+33/52 Test #19: test_servo_stability_regression ....................   Passed    0.36 sec
+      Start 45: test_terrain_patch_scene_json
+34/52 Test #45: test_terrain_patch_scene_json ......................   Passed    0.01 sec
+      Start 46: test_process_resource_monitoring
+35/52 Test #46: test_process_resource_monitoring ...................   Passed    0.00 sec
+      Start 47: test_world_resource_monitoring
+36/52 Test #47: test_world_resource_monitoring .....................   Passed    0.01 sec
+      Start 48: test_world_topology_snapshot
+37/52 Test #48: test_world_topology_snapshot .......................   Passed    0.00 sec
+      Start 49: test_serve_ipc
+38/52 Test #41: test_servo_classical_pd_invariant ..................   Passed    0.23 sec
+      Start 50: test_serve_ipc_preview
+39/52 Test #35: test_world_step_determinism ........................   Passed    0.31 sec
+      Start 51: test_serve_preview_async
+40/52 Test #51: test_serve_preview_async ...........................   Passed    0.01 sec
+      Start 52: test_state_correction_protocol
+41/52 Test #20: test_servo_regression_matrix .......................   Passed    0.46 sec
+42/52 Test #52: test_state_correction_protocol .....................   Passed    0.01 sec
+43/52 Test #32: test_hexapod_pose_hold_with_payload ................   Passed    0.47 sec
+44/52 Test #40: test_single_leg_pd_oscillation_sweep ...............   Passed    0.41 sec
+45/52 Test #49: test_serve_ipc .....................................   Passed    0.22 sec
+46/52 Test #50: test_serve_ipc_preview .............................   Passed    0.21 sec
+47/52 Test #36: test_hexapod_stand_quiescence ......................   Passed    0.58 sec
+48/52 Test #44: test_servo_visual_presets_json .....................   Passed    0.51 sec
+49/52 Test #43: hex_diag ...........................................   Passed    0.61 sec
+50/52 Test #37: test_hexapod_substep_convergence ...................   Passed    0.90 sec
+51/52 Test  #5: regression_scene_suite .............................   Passed    5.29 sec
+52/52 Test  #4: test_broadphase_dynamic_tree .......................   Passed   13.79 sec
+
+100% tests passed, 0 tests failed out of 52
+
+Label Time Summary:
+physics-long    =   2.04 sec*proc (5 tests)
+
+Total Test time (real) =  13.80 sec

@@ -2,6 +2,10 @@
 
 #include <glad/glad.h>
 
+#ifndef APIENTRY
+#define APIENTRY
+#endif
+
 #include <iostream>
 #include <string>
 

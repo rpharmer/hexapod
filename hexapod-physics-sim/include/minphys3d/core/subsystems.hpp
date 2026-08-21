@@ -491,8 +491,12 @@ public:
             const Mat3 invIB = (context.bodyInvInertiaWorld != nullptr)
                 ? (*context.bodyInvInertiaWorld)[c.b]
                 : b.InvInertiaWorld();
-            const Vec3 ra = c.point - a.position;
-            const Vec3 rb = c.point - b.position;
+            const Vec3 ra = c.solverFrictionGeometryPrepared
+                ? c.solverRa
+                : (c.point - a.position);
+            const Vec3 rb = c.solverFrictionGeometryPrepared
+                ? c.solverRb
+                : (c.point - b.position);
 
             const Vec3 va2 = a.velocity + Cross(a.angularVelocity, ra);
             const Vec3 vb2 = b.velocity + Cross(b.angularVelocity, rb);
@@ -502,14 +506,38 @@ public:
                 + Dot(rv2, manifold.t1) * Dot(rv2, manifold.t1));
             meanSlipSpeed += slipSpeed;
             ++slipSamples;
-            const Vec3 raCrossT0 = Cross(ra, manifold.t0);
-            const Vec3 rbCrossT0 = Cross(rb, manifold.t0);
-            const Vec3 raCrossT1 = Cross(ra, manifold.t1);
-            const Vec3 rbCrossT1 = Cross(rb, manifold.t1);
-            const Real tangentMass0 = a.invMass + b.invMass + Dot(raCrossT0, invIA * raCrossT0) + Dot(rbCrossT0, invIB * rbCrossT0);
-            const Real tangentMass1 = context.config.enableTwoAxisFrictionSolve
-                ? (a.invMass + b.invMass + Dot(raCrossT1, invIA * raCrossT1) + Dot(rbCrossT1, invIB * rbCrossT1))
-                : std::numeric_limits<float>::infinity();
+
+            Real tangentMass0 = 0.0;
+            Real tangentMass1 = std::numeric_limits<float>::infinity();
+            if (c.solverFrictionGeometryPrepared) {
+                const auto preparedMass = [&](const Vec3& t) {
+                    return c.solverTangentK00 * t.x * t.x
+                        + 2.0 * c.solverTangentK01 * t.x * t.y
+                        + 2.0 * c.solverTangentK02 * t.x * t.z
+                        + c.solverTangentK11 * t.y * t.y
+                        + 2.0 * c.solverTangentK12 * t.y * t.z
+                        + c.solverTangentK22 * t.z * t.z;
+                };
+                tangentMass0 = preparedMass(manifold.t0);
+                if (context.config.enableTwoAxisFrictionSolve) {
+                    tangentMass1 = preparedMass(manifold.t1);
+                }
+            } else {
+                const Vec3 raCrossT0 = Cross(ra, manifold.t0);
+                const Vec3 rbCrossT0 = Cross(rb, manifold.t0);
+                tangentMass0 =
+                    a.invMass + b.invMass
+                    + Dot(raCrossT0, invIA * raCrossT0)
+                    + Dot(rbCrossT0, invIB * rbCrossT0);
+                if (context.config.enableTwoAxisFrictionSolve) {
+                    const Vec3 raCrossT1 = Cross(ra, manifold.t1);
+                    const Vec3 rbCrossT1 = Cross(rb, manifold.t1);
+                    tangentMass1 =
+                        a.invMass + b.invMass
+                        + Dot(raCrossT1, invIA * raCrossT1)
+                        + Dot(rbCrossT1, invIB * rbCrossT1);
+                }
+            }
             if (tangentMass0 <= kEpsilon || tangentMass1 <= kEpsilon) {
                 continue;
             }

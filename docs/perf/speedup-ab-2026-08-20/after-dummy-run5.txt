@@ -1,0 +1,2 @@
+[hexapod-physics-sim] starting demo scene model=hexapod sink=dummy udp=127.0.0.1:9870 solver_iterations=30 realtime_playback=false gravity=(0,-9.81,0) log=hexapod-physics-sim/logs/latest.log
+[hexapod-physics-sim] completed demo scene model=hexapod frames=6000 sink=dummy solver_iterations=30 final_body_height=0.0970991 min_body_height=0.0937759 max_body_height=0.118077 max_abs_roll_deg=3.40848 max_abs_pitch_deg=2.02568 max_joint_speed_rad_s=0.294071 min_contact_manifolds=0 min_contact_points=0 log=hexapod-physics-sim/logs/latest.log

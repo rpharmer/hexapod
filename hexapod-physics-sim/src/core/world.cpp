@@ -548,9 +548,9 @@ void World::Step(Real dt, int solverIterations) {
     (void)step_scope;
 
     AssertBodyInvariants();
-    previousContacts_ = contacts_;
-    previousManifolds_ = manifolds_;
-    CapturePersistentPointImpulseState(previousManifolds_);
+    // previousContacts_/previousManifolds_ and persistent-point state are rolled
+    // forward exactly once at the end of every substep. Re-capturing them here
+    // duplicates the previous substep and artificially increments persistence age.
 
     const int substeps = ComputeSubsteps(dt);
     const Real subDt = dt / static_cast<float>(substeps);
@@ -576,11 +576,6 @@ void World::Step(Real dt, int solverIterations) {
         ++debugFrameIndex_;
 #endif
         currentSubstepDt_ = subDt;
-        if (stepIndex == 0) {
-            previousContacts_ = contacts_;
-            previousManifolds_ = manifolds_;
-            CapturePersistentPointImpulseState(previousManifolds_);
-        }
         // Body orientation is constant from here until IntegrateOrientation() runs at the end of
         // the substep, so refresh the per-body world inverse inertia cache once and let every
         // downstream pass (IntegrateForces, warm-start, contacts, joints, PGS, relaxation) read
