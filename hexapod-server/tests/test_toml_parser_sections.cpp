@@ -497,7 +497,22 @@ bool testPhysicsSimSolverIterationsParseInteger()
   }
 
   return expect(parsed.physicsSimSolverIterations == 16,
-                "Runtime.PhysicsSim.SolverIterations should accept integer TOML scalars");
+                "Runtime.PhysicsSim.SolverIterations should accept integer TOML scalars") &&
+         expect(parsed.investigationSuppressFusionCorrections,
+                "physics-sim should default SuppressFusionCorrections on (no UDP sim corrections)") &&
+         expect(parsed.bodyHeightCollapseMaxContacts == 2,
+                "physics-sim configs should use BodyHeightCollapseMaxContacts=2 (skip tripod false positives)");
+}
+
+bool testSerialRuntimeDefaultsFusionCorrectionsNotSuppressed()
+{
+  ParsedToml parsed{};
+  TomlParser parser(makeTestLogger());
+  if (!expect(parser.parse(configPath("config.txt"), parsed), "config.txt should parse")) {
+    return false;
+  }
+  return expect(!parsed.investigationSuppressFusionCorrections,
+                "serial mode should keep SuppressFusionCorrections off by default");
 }
 
 bool testGeometryDynamicsLoadedFromParsedConfig()
@@ -762,6 +777,7 @@ int main()
   testBaselineConfigParity();
   testRuntimeLoggingOverridesParse();
   testPhysicsSimSolverIterationsParseInteger();
+  testSerialRuntimeDefaultsFusionCorrectionsNotSuppressed();
   testGeometryDynamicsLoadedFromParsedConfig();
   testGeometryCanBeWrittenBackToParsedConfig();
   testSwingTuningKeysParseIntoControlConfig();

@@ -60,7 +60,9 @@ FallbackSpeedMag = 0.01
 # amplifying the closed-loop instability in the WSL sim path.
 FootEstimatorBlend = 0.0
 BodyHeightCollapseMarginM = 0.06
-BodyHeightCollapseMaxContacts = 3
+# Trip margin_drop only when raw_contact_count <= this value. Use 2 so tripod stance (3 feet)
+# does not false-positive BODY_COLLAPSE under lateral acceleration / sim compliance sag.
+BodyHeightCollapseMaxContacts = 2
 InvestigationDisableTerrainStanceBias = true
 InvestigationDisableTerrainSwingClearance = true
 InvestigationDisableTerrainSwingXYNudge = true

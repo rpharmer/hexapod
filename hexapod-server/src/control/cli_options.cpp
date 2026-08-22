@@ -120,6 +120,8 @@ bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error)
       out.investigationDisableStanceTiltLevelingOverride = true;
     } else if (arg == "--investigation-suppress-fusion-corrections") {
       out.investigationSuppressFusionCorrectionsOverride = true;
+    } else if (arg == "--investigation-emit-fusion-corrections") {
+      out.investigationSuppressFusionCorrectionsOverride = false;
     } else if (arg == "--investigation-suppress-fusion-resets") {
       out.investigationSuppressFusionResetsOverride = true;
     } else {

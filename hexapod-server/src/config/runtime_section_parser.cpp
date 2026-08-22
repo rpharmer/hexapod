@@ -238,8 +238,12 @@ bool parseRuntimeSection(const toml::value& root,
       findOrByPathOrDirect<bool>(root, schema[21].key, schema[21].default_bool);
   out.investigationDisableStanceTiltLeveling =
       findOrByPathOrDirect<bool>(root, schema[22].key, schema[22].default_bool);
+  // Physics-sim: default to suppressing UDP fusion corrections so the simulation remains the pose
+  // authority. Serial/sim keep the prior default (corrections enabled when this key is absent).
+  // Opt in for physics-sim with SuppressFusionCorrections = false or --investigation-emit-fusion-corrections.
+  const bool default_suppress_fusion_corrections = (out.runtimeMode == "physics-sim");
   out.investigationSuppressFusionCorrections =
-      findOrByPathOrDirect<bool>(root, schema[23].key, schema[23].default_bool);
+      findOrByPathOrDirect<bool>(root, schema[23].key, default_suppress_fusion_corrections);
   out.investigationSuppressFusionResets =
       findOrByPathOrDirect<bool>(root, schema[24].key, schema[24].default_bool);
   return true;

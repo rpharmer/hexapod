@@ -80,7 +80,7 @@ Note: current runtime computes effective UDP host/port and periods from primary 
 - `Runtime.Investigation.DisableTerrainSwingClearance` (bool)
 - `Runtime.Investigation.DisableTerrainSwingXYNudge` (bool)
 - `Runtime.Investigation.DisableStanceTiltLeveling` (bool)
-- `Runtime.Investigation.SuppressFusionCorrections` (bool)
+- `Runtime.Investigation.SuppressFusionCorrections` (bool): when **true**, the server does **not** send UDP `StateCorrection` packets to `hexapod-physics-sim` from `applyFusionConsistency`. For **`Runtime.Mode = "physics-sim"`** the runtime default is **true** (sim pose stays authoritative unless you opt in). For `serial` and `sim` the default remains **false**. CLI: `--investigation-suppress-fusion-corrections` forces true; `--investigation-emit-fusion-corrections` forces false.
 - `Runtime.Investigation.SuppressFusionResets` (bool)
 
 The same disable flags may also appear under `[Tuning]` as `Tuning.InvestigationDisableTerrainStanceBias`, `Tuning.InvestigationDisableTerrainSwingClearance`, `Tuning.InvestigationDisableTerrainSwingXYNudge`, and `Tuning.InvestigationDisableStanceTiltLeveling` (bool). The tuning section is parsed **after** the runtime section; when a tuning key is present, it **overrides** the corresponding `ParsedToml` field (so tuning wins over `Runtime.Investigation.*` for these four).
@@ -167,7 +167,7 @@ Primary parser: `tuning_section_parser.cpp`.
 - `Tuning.MaxFootContacts` (`0..kNumLegs`)
 - `Tuning.BodyHeightCollapseMarginM` (`0.0..0.25`)
 - `Tuning.BodyHeightCollapseMinSafeM` (`0.0..0.25`)
-- `Tuning.BodyHeightCollapseMaxContacts` (`0..kNumLegs`)
+- `Tuning.BodyHeightCollapseMaxContacts` (`0..kNumLegs`) — for the **margin-drop** `BODY_COLLAPSE` rule (positive `BodyHeightCollapseMarginM`, zero `BodyHeightCollapseMinSafeM`): the rule is **skipped** when `raw_contact_count` is **greater than** this value. Default `2` avoids tripping during normal tripod stance (three feet) when compliance causes a temporary sag; use `3` only if you want margin-drop to apply with three feet down.
 - `Tuning.InvestigationDisableTerrainStanceBias` (bool; optional; same meaning as `Runtime.Investigation.DisableTerrainStanceBias`, parsed after runtime)
 - `Tuning.InvestigationDisableTerrainSwingClearance` (bool; optional; same pattern)
 - `Tuning.InvestigationDisableTerrainSwingXYNudge` (bool; optional; same pattern)

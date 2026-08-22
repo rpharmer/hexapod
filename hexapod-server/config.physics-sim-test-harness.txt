@@ -66,7 +66,7 @@ FallbackSpeedMag = 0.01
 # amplifying the closed-loop instability in the WSL sim path.
 FootEstimatorBlend = 0.0
 BodyHeightCollapseMarginM = 0.06
-BodyHeightCollapseMaxContacts = 3
+BodyHeightCollapseMaxContacts = 2
 InvestigationDisableTerrainStanceBias = false
 InvestigationDisableTerrainSwingClearance = false
 InvestigationDisableTerrainSwingXYNudge = false

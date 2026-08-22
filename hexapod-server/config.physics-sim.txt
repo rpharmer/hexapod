@@ -58,7 +58,8 @@ FallbackSpeedMag = 0.01
 # amplifying the closed-loop instability in the sim path.
 FootEstimatorBlend = 0.0
 BodyHeightCollapseMarginM = 0.06
-BodyHeightCollapseMaxContacts = 3
+# Trip margin_drop only when raw_contact_count <= this value (see safety_supervisor.cpp).
+BodyHeightCollapseMaxContacts = 2
 InvestigationDisableTerrainStanceBias = true
 InvestigationDisableTerrainSwingClearance = true
 InvestigationDisableTerrainSwingXYNudge = true

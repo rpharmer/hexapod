@@ -189,6 +189,72 @@ bool testBodyHeightCollapseStaysQuietWithHealthySupport() {
                   "healthy support should not trip the body-height collapse detector");
 }
 
+bool testBodyHeightMarginDropQuietWithThreeRawContactsWhenMaxIsTwo() {
+    control_config::SafetyConfig cfg{};
+    cfg.body_height_collapse_margin_m = 0.06;
+    cfg.body_height_collapse_min_safe_m = 0.0;
+    cfg.body_height_collapse_max_contacts = 2;
+    SafetySupervisor supervisor(cfg);
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+    MotionIntent intent = intentNow(RobotMode::WALK);
+    intent.twist.body_trans_m.z = 0.14;
+    raw.foot_contacts = {true, false, true, false, true, false};
+    est.has_body_twist_state = true;
+    est.body_twist_state.body_trans_m.z = 0.072;
+
+    const SafetyState state =
+        supervisor.evaluate(raw, est, intent, SafetySupervisor::FreshnessInputs{true, true});
+
+    return expect(state.active_fault == FaultCode::NONE,
+                  "tripod raw support (3 feet) should skip margin-drop collapse when max_contacts=2");
+}
+
+bool testBodyHeightMarginDropTripsWithTwoRawContactsWhenMaxIsTwo() {
+    control_config::SafetyConfig cfg{};
+    cfg.body_height_collapse_margin_m = 0.06;
+    cfg.body_height_collapse_min_safe_m = 0.0;
+    cfg.body_height_collapse_max_contacts = 2;
+    SafetySupervisor supervisor(cfg);
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+    MotionIntent intent = intentNow(RobotMode::WALK);
+    intent.twist.body_trans_m.z = 0.14;
+    raw.foot_contacts = {true, true, false, false, false, false};
+    est.has_body_twist_state = true;
+    est.body_twist_state.body_trans_m.z = 0.072;
+
+    const SafetyState state =
+        supervisor.evaluate(raw, est, intent, SafetySupervisor::FreshnessInputs{true, true});
+
+    return expect(state.active_fault == FaultCode::BODY_COLLAPSE,
+                  "two-foot support with large height sag should still trip margin-drop collapse") &&
+           expect(state.torque_cut, "margin-drop collapse should request torque cut");
+}
+
+// Documents the false-positive we saw in logs: MaxContacts=3 still evaluates margin_drop with
+// exactly three raw contacts (tripod stance), so compliance sag trips BODY_COLLAPSE.
+bool testBodyHeightMarginDropTripsWithThreeContactsWhenMaxIsThree() {
+    control_config::SafetyConfig cfg{};
+    cfg.body_height_collapse_margin_m = 0.06;
+    cfg.body_height_collapse_min_safe_m = 0.0;
+    cfg.body_height_collapse_max_contacts = 3;
+    SafetySupervisor supervisor(cfg);
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+    MotionIntent intent = intentNow(RobotMode::WALK);
+    intent.twist.body_trans_m.z = 0.14;
+    raw.foot_contacts = {true, false, true, false, true, false};
+    est.has_body_twist_state = true;
+    est.body_twist_state.body_trans_m.z = 0.072;
+
+    const SafetyState state =
+        supervisor.evaluate(raw, est, intent, SafetySupervisor::FreshnessInputs{true, true});
+
+    return expect(state.active_fault == FaultCode::BODY_COLLAPSE,
+                  "max_contacts=3 still evaluates margin_drop during tripod stance (3 > 3 is false)");
+}
+
 bool testRapidBodyRateTriggersTipOverEarly() {
     SafetySupervisor supervisor(rapidMotionSafetyConfig());
     RobotState raw = nominalRaw();
@@ -393,6 +459,9 @@ int main() {
         !testMotorFaultTorqueCut() ||
         !testBodyHeightCollapseTriggersTipOverEarly() ||
         !testBodyHeightCollapseStaysQuietWithHealthySupport() ||
+        !testBodyHeightMarginDropQuietWithThreeRawContactsWhenMaxIsTwo() ||
+        !testBodyHeightMarginDropTripsWithTwoRawContactsWhenMaxIsTwo() ||
+        !testBodyHeightMarginDropTripsWithThreeContactsWhenMaxIsThree() ||
         !testRapidBodyRateTriggersTipOverEarly() ||
         !testRapidBodyRateIgnoresTransientRawDropWhenFusedSupportRemains() ||
         !testRapidBodyRateStaysQuietWithHealthySupport() ||

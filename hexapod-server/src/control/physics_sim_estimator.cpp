@@ -9,11 +9,7 @@ void PhysicsSimEstimator::reset() {
 }
 
 RobotState PhysicsSimEstimator::update(const RobotState& raw) {
-    RobotState source = raw;
-    if (!source.has_body_twist_state) {
-        source.has_body_twist_state = true;
-    }
-    RobotState out = fusion_.update(source, state_fusion::FusionSourceMode::Measured);
+    RobotState out = fusion_.update(raw, state_fusion::FusionSourceMode::Measured);
     if (raw.has_body_twist_state) {
         out.has_body_twist_state = true;
     }

@@ -876,6 +876,14 @@ bool RobotRuntime::init() {
     startup_estimate.foot_contacts.fill(true);
     estimated_state_.write(startup_estimate);
 
+    // Parallel bus/estimator threads can run estimatorStep() before the first busStep().
+    // Default-constructed RobotState has bus_ok == true, which would let fusion treat the
+    // all-zero pose as a real measurement and later trip hard_pose_resync_m against sim truth.
+    RobotState raw_seed{};
+    raw_seed.bus_ok = false;
+    raw_seed.valid = false;
+    raw_state_.write(raw_seed);
+
     return true;
 }
 
@@ -918,6 +926,11 @@ void RobotRuntime::estimatorStep() {
     const auto scope = resource_profiler_.scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::EstimatorUpdate));
     const TimePointUs now = now_us();
     RobotState raw = raw_state_.read();
+    if (!raw.bus_ok) {
+        // Do not advance fusion on placeholder reads (pre-first-bus or transport failure).
+        (void)scope;
+        return;
+    }
     if (raw.sample_id == 0) {
         raw.sample_id = raw_sample_seq_.fetch_add(1) + 1;
     }

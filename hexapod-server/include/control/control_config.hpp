@@ -50,7 +50,8 @@ inline constexpr int kDefaultMinFootContacts{0};
 inline constexpr int kDefaultMaxFootContacts{kNumLegs};
 inline constexpr double kDefaultBodyHeightCollapseMarginM{0.0};
 inline constexpr double kDefaultBodyHeightCollapseMinSafeM{0.0};
-inline constexpr int kDefaultBodyHeightCollapseMaxContacts{3};
+/** SafetySupervisor skips margin-drop BODY_COLLAPSE when raw_contact_count exceeds this value. */
+inline constexpr int kDefaultBodyHeightCollapseMaxContacts{2};
 inline constexpr double kDefaultNavBodyFrameIntegralKiFwdPerS{0.0};
 inline constexpr double kDefaultNavBodyFrameIntegralKiLatPerS{0.0};
 inline constexpr double kDefaultNavBodyFrameIntegralAbsCapMetersSeconds{0.0};
