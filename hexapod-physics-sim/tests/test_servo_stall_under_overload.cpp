@@ -13,6 +13,7 @@ using namespace minphys3d::tests;
 struct LiftResult {
     Real final_angle = 0.0;
     Real mean_abs_error_first_window = 0.0;
+    Real max_abs_joint_speed = 0.0;
     bool finite = true;
 };
 
@@ -59,6 +60,9 @@ LiftResult runLiftCase(Real max_servo_speed_radps) {
             result.finite = false;
             break;
         }
+        // The base is static and the hinge axis is world +Z, so this is the actual
+        // relative servo velocity while gravity is loading the position actuator.
+        result.max_abs_joint_speed = std::max(result.max_abs_joint_speed, std::abs(link.angularVelocity.z));
         const ServoJoint& servo = world.GetServoJoint(servo_id);
         const Real err = std::abs(WrapAngle(world.GetServoJointAngle(servo_id) - servo.targetAngle));
         if (step < kWindowSteps) {
@@ -89,6 +93,11 @@ int runCase() {
     }
     if (!std::isfinite(fast.final_angle) || !std::isfinite(slow.final_angle)) {
         std::cerr << "stall_overload final angles non-finite\n";
+        return 1;
+    }
+    if (fast.max_abs_joint_speed > 8.05 || slow.max_abs_joint_speed > 0.105) {
+        std::cerr << "stall_overload servo speed cap violated fast=" << fast.max_abs_joint_speed
+                  << " slow=" << slow.max_abs_joint_speed << "\n";
         return 1;
     }
     // Require a clear separation between capped and uncapped servo settle angles; margin is

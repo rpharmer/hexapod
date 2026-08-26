@@ -112,12 +112,10 @@ constexpr Real kTibiaRenderLength = kTibiaLength;
 constexpr Real kHexapodServoMaxTorque = static_cast<float>(hexapod_dynamics::kServoMaxTorqueNm);
 constexpr Real kHexapodServoPositionGain = static_cast<float>(hexapod_dynamics::kServoOmegaN);
 constexpr Real kHexapodServoDampingGain = static_cast<float>(hexapod_dynamics::kServoZeta);
-// Joint velocity envelope. The original 8 rad/s value was being pinned every stride during
-// fast tripod transitions (max_joint_vel_radps = 7.99954, max_foot_speed_mps ≈ 8 × 0.2 m).
-// Raising to 10 rad/s gives the controller's commanded swing speeds genuine headroom and
-// removes the silent-saturation symptom. Real digital hobby/metal-gear servos in this size
-// class run 8–12 rad/s no-load — 10 keeps the constraint plausible.
-constexpr Real kHexapodServoMaxSpeed = 10.0;
+// Loaded articulated locomotion needs a lower envelope than a servo's no-load datasheet speed.
+// Six rad/s keeps contact impulses from producing the 8+ rad/s / 1 m/s foot spikes that make
+// a nominal 0.04 m/s walk nonphysical, while retaining useful swing authority.
+constexpr Real kHexapodServoMaxSpeed = 6.0;
 
 Quat QuaternionFromBasis(const Vec3& x_axis, const Vec3& y_axis, const Vec3& z_axis) {
     const Real m00 = x_axis.x;

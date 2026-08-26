@@ -6,6 +6,25 @@
 #include <algorithm>
 #include <cmath>
 
+namespace {
+
+UnifiedGaitDescription walkEntryStance(const UnifiedGaitDescription& target) {
+    // Start the gait blend from a stationary, all-stance description.  In particular, do not
+    // start a tripod at phase 0.5: BodyController interprets that as mid-swing and generates a
+    // discontinuous foot target immediately after STAND.
+    UnifiedGaitDescription out = target;
+    out.duty_factor = 0.94;
+    out.phase_offset.fill(0.0);
+    out.step_length_m = 0.0;
+    out.swing_height_m = 0.0;
+    const double hz = std::max(out.step_frequency_hz, 1e-6);
+    out.stance_duration_s = out.duty_factor / hz;
+    out.swing_duration_s = (1.0 - out.duty_factor) / hz;
+    return out;
+}
+
+} // namespace
+
 GaitScheduler::GaitScheduler(control_config::GaitConfig config)
     : config_(config) {}
 
@@ -22,6 +41,7 @@ void GaitScheduler::reset() {
     last_blended_ = UnifiedGaitDescription{};
     transition_start_us_ = TimePointUs{};
     have_last_blended_ = false;
+    was_walking_ = false;
     last_cmd_vx_mps_ = 0.0;
     last_cmd_vy_mps_ = 0.0;
 }
@@ -59,6 +79,7 @@ GaitState GaitScheduler::compute(const MotionIntent& intent,
     UnifiedGaitDescription last_blended = last_blended_;
     TimePointUs transition_start_us = transition_start_us_;
     bool have_last_blended = have_last_blended_;
+    bool was_walking = was_walking_;
     double last_cmd_vx_mps = last_cmd_vx_mps_;
     double last_cmd_vy_mps = last_cmd_vy_mps_;
 
@@ -68,6 +89,7 @@ GaitState GaitScheduler::compute(const MotionIntent& intent,
         !safety.torque_cut;
 
     if (!walking) {
+        was_walking = false;
         last_cmd_vx_mps = cmd_twist.linear_mps.x;
         last_cmd_vy_mps = cmd_twist.linear_mps.y;
         for (int i = 0; i < kNumLegs; ++i) {
@@ -91,6 +113,7 @@ GaitState GaitScheduler::compute(const MotionIntent& intent,
         if (commit_state) {
             last_cmd_vx_mps_ = last_cmd_vx_mps;
             last_cmd_vy_mps_ = last_cmd_vy_mps;
+            was_walking_ = was_walking;
             last_update_us_ = out.timestamp_us;
         }
         return out;
@@ -126,15 +149,24 @@ GaitState GaitScheduler::compute(const MotionIntent& intent,
             intent.gait, cmd.vx_mps, cmd.vy_mps, cmd.yaw_rate_radps, config_, cmd_ax, cmd_ay);
     }
 
-    if (committed_initialized && intent.gait != committed_gait) {
+    const bool walk_entry = !was_walking;
+    if (walk_entry) {
+        // The scheduler is dormant in STAND.  Blend into WALK from a common all-stance phase,
+        // just as we blend when changing gait types, to preserve foot-target continuity.
+        phase_accum = 0.0;
+        transition_from_snap = walkEntryStance(target);
+        transition_start_us = now;
+        have_last_blended = true;
+    } else if (committed_initialized && intent.gait != committed_gait) {
         transition_from_snap = have_last_blended ? last_blended : target;
         transition_start_us = now;
     }
-    if (!committed_initialized) {
+    if (!committed_initialized && !walk_entry) {
         transition_from_snap = target;
     }
     committed_gait = intent.gait;
     committed_initialized = true;
+    was_walking = true;
 
     double alpha = 1.0;
     if (!transition_start_us.isZero()) {
@@ -191,6 +223,7 @@ GaitState GaitScheduler::compute(const MotionIntent& intent,
         last_blended_ = last_blended;
         transition_start_us_ = transition_start_us;
         have_last_blended_ = have_last_blended;
+        was_walking_ = was_walking;
         last_cmd_vx_mps_ = last_cmd_vx_mps;
         last_cmd_vy_mps_ = last_cmd_vy_mps;
     }

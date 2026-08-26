@@ -68,52 +68,6 @@ double terrainBlendScaleForHeightHold(const double height_hold_m) {
     return std::clamp(1.0 - kTerrainBlendSagScale * hold_ratio, kTerrainBlendMinScale, 1.0);
 }
 
-void strideDirectionXY(const double rx,
-                       const double ry,
-                       const GaitType gait,
-                       const PlanarMotionCommand& cmd,
-                       double* out_ux,
-                       double* out_uy) {
-    const double vx = cmd.vx_mps;
-    const double vy = cmd.vy_mps;
-    const double w = cmd.yaw_rate_radps;
-    const double planar = std::hypot(vx, vy);
-    double tx = -ry;
-    double ty = rx;
-    const double tn = std::hypot(tx, ty);
-    if (tn > 1e-6) {
-        tx /= tn;
-        ty /= tn;
-        if (w < 0.0) {
-            tx = -tx;
-            ty = -ty;
-        }
-    }
-
-    if (gait == GaitType::TURN_IN_PLACE) {
-        if (std::abs(w) > 1e-6 && tn > 1e-6) {
-            *out_ux = tx;
-            *out_uy = ty;
-            return;
-        }
-    }
-
-    if (planar > 1e-6) {
-        *out_ux = vx / planar;
-        *out_uy = vy / planar;
-        return;
-    }
-
-    if (std::abs(w) > 1e-6 && tn > 1e-6) {
-        *out_ux = tx;
-        *out_uy = ty;
-        return;
-    }
-
-    *out_ux = 1.0;
-    *out_uy = 0.0;
-}
-
 } // namespace
 
 namespace body_controller_detail {
@@ -392,20 +346,6 @@ LegTargets BodyController::update(const RobotState& est,
                     swing_extra_down_z,
                     &est.foot_contact_fusion[leg_index]);
 
-                double ux = 0.0;
-                double uy = 0.0;
-                if (intent.gait == GaitType::TURN_IN_PLACE) {
-                    strideDirectionXY(anchor.x, anchor.y, intent.gait, cmd, &ux, &uy);
-                } else {
-                    const double vf = std::hypot(v_foot.x, v_foot.y);
-                    if (vf > 1e-6) {
-                        ux = -v_foot.x / vf;
-                        uy = -v_foot.y / vf;
-                    } else {
-                        strideDirectionXY(anchor.x, anchor.y, intent.gait, cmd, &ux, &uy);
-                    }
-                }
-
                 SwingFootInputs sw{};
                 sw.anchor = anchor;
                 sw.stance_end = stance_end;
@@ -415,8 +355,6 @@ LegTargets BodyController::update(const RobotState& est,
                 sw.f_hz = swing_f_hz;
                 sw.step_length_m = step_len;
                 sw.swing_height_m = swing_h;
-                sw.stride_ux = ux;
-                sw.stride_uy = uy;
                 sw.cmd_accel_body_x_mps2 = gait.cmd_accel_body_x_mps2;
                 sw.cmd_accel_body_y_mps2 = gait.cmd_accel_body_y_mps2;
                 sw.stance_lookahead_s = (duty / swing_f_hz) * 0.48;

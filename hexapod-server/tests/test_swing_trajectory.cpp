@@ -44,5 +44,27 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    if (!nearlyEq(swing_trajectory::timeWarp(0.0, 1.0), 0.0) ||
+        !nearlyEq(swing_trajectory::timeWarp(1.0, 1.0), 1.0) ||
+        !nearlyEq(swing_trajectory::timeWarpDeriv(0.0, 1.0), 1.0) ||
+        !nearlyEq(swing_trajectory::timeWarpDeriv(1.0, 1.0), 1.0)) {
+        std::cerr << "FAIL: time warp should preserve endpoint positions and slopes\n";
+        return EXIT_FAILURE;
+    }
+
+    const double m1x = -0.2;
+    swing_trajectory::evalSwingPlanarBezier(
+        0.0, 1.0, 0.0, 0.0, 1.0, 0.0, m0x, m0y, m1x, 0.0, &px, &py, &dpx, &dpy);
+    if (!nearlyEq(dpx, m0x)) {
+        std::cerr << "FAIL: eased Bezier should preserve the liftoff tangent\n";
+        return EXIT_FAILURE;
+    }
+    swing_trajectory::evalSwingPlanarBezier(
+        1.0, 1.0, 0.0, 0.0, 1.0, 0.0, m0x, m0y, m1x, 0.0, &px, &py, &dpx, &dpy);
+    if (!nearlyEq(dpx, m1x)) {
+        std::cerr << "FAIL: eased Bezier should preserve the touchdown tangent\n";
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }

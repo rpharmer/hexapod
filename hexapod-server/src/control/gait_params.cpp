@@ -5,7 +5,11 @@
 
 namespace {
 
-constexpr std::array<double, kNumLegs> kTripodOffsets = {0.0, 0.5, 0.0, 0.5, 0.0, 0.5};
+// Leg order is rear-left, rear-right, middle-left, middle-right, front-left,
+// front-right.  Each tripod must span both sides of the body: {0, 3, 4} and
+// {1, 2, 5}.  Grouping even and odd indices instead produces left-only and
+// right-only support rails, whose support polygons cannot contain the COM.
+constexpr std::array<double, kNumLegs> kTripodOffsets = {0.0, 0.5, 0.5, 0.0, 0.0, 0.5};
 constexpr std::array<double, kNumLegs> kSequentialOffsets = {
     0.0, 1.0 / 6.0, 2.0 / 6.0, 3.0 / 6.0, 4.0 / 6.0, 5.0 / 6.0};
 constexpr double kMinSwingHeightM = 0.014;

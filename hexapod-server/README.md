@@ -168,6 +168,11 @@ Current scenarios in `hexapod-server/scenarios/`:
 - `06_map_aware_navigation.toml`
 - `07_single_leg_probe.toml`
 
+`01_nominal_stand_walk.toml` is the smoke scenario for both bridges. Its walk phases stay at
+0.04 m/s and use modest yaw changes so it is suitable for the articulated physics stack. Keep
+high-speed or abrupt-heading experiments in dedicated stress scenarios; a synthetic `sim` pass
+does not establish physics-sim safety.
+
 Convenience script from repository root:
 
 ```bash

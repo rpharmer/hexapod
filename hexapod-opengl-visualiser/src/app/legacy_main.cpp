@@ -54,6 +54,22 @@ visualiser::render::MeshRenderer g_mesh_renderer;
 visualiser::render::PointRenderer g_point_renderer;
 bool g_modern_renderer_ok = false;
 
+void ConfigureWslWindowPlatform() {
+#if defined(__linux__) && defined(GLFW_PLATFORM) && defined(GLFW_PLATFORM_X11)
+  const bool running_in_wsl = std::getenv("WSL_INTEROP") != nullptr ||
+                              std::getenv("WSL_DISTRO_NAME") != nullptr;
+  const bool x11_available = std::getenv("DISPLAY") != nullptr;
+  if (running_in_wsl && x11_available) {
+    // GLFW 3.4 prefers Wayland when WSLg exposes both backends. Wayland deliberately prevents
+    // clients from activating their own windows, which leaves the visualiser visible but unable
+    // to take keyboard focus reliably. WSLg's XWayland path supports the activation request and
+    // also avoids the noisy Mesa/EGL device-probe fallback seen on the Wayland path.
+    glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+    std::cout << "WSL detected: using GLFW X11 backend for reliable window focus\n";
+  }
+#endif
+}
+
 bool InitModernRenderer() {
   if (g_modern_renderer_ok) {
     return true;
@@ -2428,6 +2444,7 @@ namespace visualiser::app {
 int RunApplication(int argc, char** argv) {
   const Options options = ParseArgs(argc, argv);
 
+  ConfigureWslWindowPlatform();
   if (!glfwInit()) {
     std::cerr << "Failed to initialize GLFW\n";
     return 1;
@@ -2438,6 +2455,9 @@ int RunApplication(int argc, char** argv) {
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
   glfwWindowHint(GLFW_SAMPLES, 4);
+  glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+  glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE);
+  glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_TRUE);
 
   GLFWwindow* window = glfwCreateWindow(
       kDefaultWindowWidth, kDefaultWindowHeight, "Hexapod OpenGL Visualiser", nullptr, nullptr);
@@ -2512,6 +2532,14 @@ int RunApplication(int argc, char** argv) {
   double last_title_update_s = -1.0;
   double last_joint_log_s = -1.0;
   bool overlay_toggle_down = false;
+
+  // Show only after OpenGL, ImGui, and UDP input are ready, then make one explicit activation
+  // request. Window managers remain free to reject focus stealing; requesting attention gives
+  // the user a taskbar cue in that case.
+  glfwShowWindow(window);
+  glfwRestoreWindow(window);
+  glfwFocusWindow(window);
+  glfwRequestWindowAttention(window);
 
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();

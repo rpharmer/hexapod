@@ -8,7 +8,7 @@
 
 namespace swing_trajectory {
 
-/** Smoothstep; `ease01=0` → identity, `ease01=1` → full cubic S on tau. */
+/** Endpoint-slope-preserving S warp; `ease01=0` → identity, `ease01=1` → full shaping. */
 double timeWarp(double tau01, double ease01);
 double timeWarpDeriv(double tau01, double ease01);
 

@@ -128,6 +128,7 @@ double wrapAngleDiff(double start, double end) {
 
 std::string walkDistanceLimitsWalkEnvelopeJsonDynamic(const std::string& label,
                                                       const double min_path_length_m,
+                                                      const double min_net_horizontal_distance_m,
                                                       const double min_peak_horizontal_speed_mps,
                                                       const double min_average_speed_ratio,
                                                       const double max_average_speed_ratio,
@@ -135,6 +136,7 @@ std::string walkDistanceLimitsWalkEnvelopeJsonDynamic(const std::string& label,
     using locomotion_test::formatDouble;
     std::ostringstream o;
     o << "{\"min_path_length_m\":" << formatDouble(min_path_length_m)
+      << ",\"min_net_horizontal_distance_m\":" << formatDouble(min_net_horizontal_distance_m)
       << ",\"min_peak_horizontal_speed_mps\":" << formatDouble(min_peak_horizontal_speed_mps)
       << ",\"min_average_speed_ratio\":" << formatDouble(min_average_speed_ratio)
       << ",\"max_average_speed_ratio\":" << formatDouble(max_average_speed_ratio)
@@ -333,7 +335,7 @@ bool checkWalkCase(const std::string& label,
                 "physics_sim_walk_distance",
                 label,
                 false,
-                walkDistanceLimitsWalkEnvelopeJsonDynamic(label, 0.08, 0.02, 0.20, 0.90, true),
+                walkDistanceLimitsWalkEnvelopeJsonDynamic(label, 0.08, 0.05, 0.02, 0.20, 0.90, true),
                 std::string("{\"exception\":\"") + locomotion_test::jsonEscape(ex.what()) + "\"}");
         }
         return expect(false, label + ": " + ex.what());
@@ -346,6 +348,8 @@ bool checkWalkCase(const std::string& label,
 
     const double kMinPathLengthM =
         test_limits::getDouble(kWalkDistanceSuite, label, "", "min_path_length_m", 0.08);
+    const double kMinNetHorizontalDistanceM =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "min_net_horizontal_distance_m", 0.05);
     const double kMinPeakHorizontalSpeedMps =
         test_limits::getDouble(kWalkDistanceSuite, label, "", "min_peak_horizontal_speed_mps", 0.02);
     const double kMinAverageSpeedRatio =
@@ -355,7 +359,13 @@ bool checkWalkCase(const std::string& label,
     const bool kRequireActiveModeWalk =
         test_limits::getBool(kWalkDistanceSuite, label, "", "require_active_mode_walk", true);
     const std::string limits_walk_json = walkDistanceLimitsWalkEnvelopeJsonDynamic(
-        label, kMinPathLengthM, kMinPeakHorizontalSpeedMps, kMinAverageSpeedRatio, kMaxAverageSpeedRatio, kRequireActiveModeWalk);
+        label,
+        kMinPathLengthM,
+        kMinNetHorizontalDistanceM,
+        kMinPeakHorizontalSpeedMps,
+        kMinAverageSpeedRatio,
+        kMaxAverageSpeedRatio,
+        kRequireActiveModeWalk);
 
     const auto emit = [&](const bool pass) {
         if (!emit_metrics_json) {
@@ -388,6 +398,16 @@ bool checkWalkCase(const std::string& label,
                   << " ratio=" << average_ratio
                   << " peak_speed=" << result.peak_horizontal_speed_mps
                   << " mode=" << static_cast<int>(result.final_status.active_mode) << '\n';
+        emit(false);
+        return false;
+    }
+
+    if (!expect(horizontal_distance >= kMinNetHorizontalDistanceM,
+                label + ": walk should make measurable net horizontal progress")) {
+        std::cerr << label << " path=" << result.walk_path_length_m
+                  << " net_horiz=" << horizontal_distance
+                  << " dx=" << delta.x
+                  << " dy=" << delta.y << '\n';
         emit(false);
         return false;
     }
@@ -832,6 +852,14 @@ int main(int argc, char** argv) {
         0.20,
         0.0,
         0.0};
+    const ScenarioMotionIntent walk_slow_forward_motion{
+        true,
+        RobotMode::WALK,
+        GaitType::TRIPOD,
+        0.06,
+        0.06,
+        0.0,
+        0.0};
     const ScenarioMotionIntent walk_reverse_motion{
         true,
         RobotMode::WALK,
@@ -848,6 +876,18 @@ int main(int argc, char** argv) {
 
     if (!checkWalkCase(
             "forward_walk", runtime, *bridge_ptr, stand_motion, walk_forward_motion, kBusLoopPeriodUs, emit_metrics_json)) {
+        ::kill(pid, SIGTERM);
+        ::waitpid(pid, nullptr, 0);
+        return EXIT_FAILURE;
+    }
+
+    if (!checkWalkCase("slow_forward_walk",
+                       runtime,
+                       *bridge_ptr,
+                       stand_motion,
+                       walk_slow_forward_motion,
+                       kBusLoopPeriodUs,
+                       emit_metrics_json)) {
         ::kill(pid, SIGTERM);
         ::waitpid(pid, nullptr, 0);
         return EXIT_FAILURE;

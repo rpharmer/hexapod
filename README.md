@@ -45,8 +45,11 @@ hexapod/
 ### Simulation path (`sim` / `physics-sim`)
 
 1. Server runs in simulator mode using `config.sim.txt` or `config.physics-sim.txt`.
-2. `hexapod-server` executes control loops against simulated hardware/physics bridge.
-3. Telemetry and/or sim scene packets stream to visualisers for inspection.
+2. `hexapod-server` executes control loops against a synthetic bridge or the articulated physics bridge.
+3. Use `physics-sim` for locomotion validation: it is the first-class check for physically plausible
+   commands, contacts, and servo dynamics. The synthetic `sim` bridge remains useful for fast
+   protocol/runtime tests but is not evidence that a motion is physically safe.
+4. Telemetry and/or sim scene packets stream to visualisers for inspection.
 
 Protocol source of truth:
 
@@ -135,6 +138,15 @@ cd <repo-root>
 scripts/run_sim_stack.sh --scenario scenarios/01_nominal_stand_walk.toml
 ```
 
+Run the same nominal scenario through the articulated physics stack (without an attached controller):
+
+```bash
+cd <repo-root>
+scripts/run_physics_stack.sh \
+  --scenario hexapod-server/scenarios/01_nominal_stand_walk.toml \
+  --controller-optional
+```
+
 For a **serial-connected robot** (or when `hexapod-server` runs on a different machine), run server telemetry with an explicit OpenGL visualiser IP:
 
 ```bash
@@ -212,4 +224,3 @@ done
 - Start with the robot unloaded and low-amplitude commands after calibration changes.
 - Prefer simulator mode (`hexapod-server/config.sim.txt`) for early control-policy validation.
 - Keep one hand on power disconnect / E-stop whenever first exercising new gait or calibration logic on hardware.
-

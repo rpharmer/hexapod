@@ -90,12 +90,14 @@ void runControlLoopStep(RobotRuntime& runtime, const ScenarioMotionIntent& motio
 std::string walkEntryTrackingLimitsJson(const double min_body_height_m,
                                         const double min_static_stability_margin_m,
                                         const double max_stance_contact_mismatch,
-                                        const double max_worst_leg_tracking_error_rad) {
+                                        const double max_worst_leg_tracking_error_rad,
+                                        const double max_measured_joint_speed_radps) {
     std::ostringstream o;
     o << std::setprecision(17) << "{\"min_body_height_m\":" << min_body_height_m
       << ",\"min_static_stability_margin_m\":" << min_static_stability_margin_m
       << ",\"max_stance_contact_mismatch\":" << max_stance_contact_mismatch
-      << ",\"max_worst_leg_tracking_error_rad\":" << max_worst_leg_tracking_error_rad << '}';
+      << ",\"max_worst_leg_tracking_error_rad\":" << max_worst_leg_tracking_error_rad
+      << ",\"max_measured_joint_speed_radps\":" << max_measured_joint_speed_radps << '}';
     return o.str();
 }
 
@@ -128,11 +130,16 @@ int main(int argc, char** argv) {
         kSuite, kCase, "", "max_stance_contact_mismatch", 5.0));
     const double kMaxWorstLegTrackingErrorRad =
         test_limits::getDouble(kSuite, kCase, "", "max_worst_leg_tracking_error_rad", 6.5);
+    const double kMaxMeasuredJointSpeedRadps =
+        // The simulated servo cap is 6 rad/s. Leave solver tolerance so a velocity-clamped walk entry
+        // fails without rejecting normal transient tracking below that physical limit.
+        test_limits::getDouble(kSuite, kCase, "", "max_measured_joint_speed_radps", 6.1);
     const auto limitsJson = [&]() {
         return walkEntryTrackingLimitsJson(kMinBodyHeightM,
                                            kMinStaticStabilityMarginM,
                                            static_cast<double>(kMaxStanceContactMismatch),
-                                           kMaxWorstLegTrackingErrorRad);
+                                           kMaxWorstLegTrackingErrorRad,
+                                           kMaxMeasuredJointSpeedRadps);
     };
 
     const auto harness = physics_sim_test_utils::loadHarnessSettings();
@@ -163,8 +170,8 @@ int main(int argc, char** argv) {
     control_config::ControlConfig cfg = harness.control_cfg;
     cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
     cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
-    cfg.locomotion_cmd.enable_first_order_filter = false;
-    cfg.locomotion_cmd.enable_chassis_accel_limit = false;
+    // Exercise the production command shaping.  Disabling it masks precisely the walk-entry
+    // discontinuity this test is intended to catch.
 
     RobotRuntime runtime(
         std::move(bridge), std::make_unique<PhysicsSimEstimator>(), nullptr, cfg, telemetry::makeNoopTelemetryPublisher(), std::move(replay_logger));
@@ -179,10 +186,12 @@ int main(int argc, char** argv) {
     }
 
     const ScenarioMotionIntent stand_motion{true, RobotMode::STAND, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0};
-    const ScenarioMotionIntent walk_motion{true, RobotMode::WALK, GaitType::TRIPOD, 0.14, 0.08, 0.0, 0.0};
+    const ScenarioMotionIntent walk_motion{true, RobotMode::WALK, GaitType::TRIPOD, 0.14, 0.04, 0.0, 0.0};
 
+    // Match the configured two-second stand settling delay before judging WALK.  A shorter
+    // warmup folds startup servo settling into this transition metric.
     const int kStandWarmupSteps = static_cast<int>(
-        physics_sim_test_utils::scaledLegacyStepCount(140, bus_loop_period_us));
+        physics_sim_test_utils::scaledLegacyStepCount(550, bus_loop_period_us));
     const int kWalkObserveSteps = static_cast<int>(
         physics_sim_test_utils::scaledLegacyStepCount(160, bus_loop_period_us));
 
@@ -226,16 +235,20 @@ int main(int argc, char** argv) {
 
     double min_body_height_m = 1e9;
     double min_margin_m = 1e9;
+    const replay_json::ReplayTelemetryRecord* min_margin_record = nullptr;
     int max_mismatch = 0;
     std::array<double, kNumLegs> max_tracking_error_by_leg{};
     int worst_leg = -1;
     double worst_error = -1.0;
+    double max_measured_joint_speed_radps = 0.0;
     for (std::size_t i = 0; i < kRequiredWalkRecords; ++i) {
         const auto& record = walk_records[i];
         min_body_height_m =
             std::min(min_body_height_m, record.transition_diagnostics.body_height_m);
-        min_margin_m =
-            std::min(min_margin_m, record.gait_state.static_stability_margin_m);
+        if (record.gait_state.static_stability_margin_m < min_margin_m) {
+            min_margin_m = record.gait_state.static_stability_margin_m;
+            min_margin_record = &record;
+        }
         max_mismatch =
             std::max(max_mismatch, record.transition_diagnostics.stance_contact_mismatch_count);
         for (int leg = 0; leg < kNumLegs; ++leg) {
@@ -248,6 +261,16 @@ int main(int argc, char** argv) {
                 worst_leg = leg;
             }
         }
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+                // PhysicsSimBridge reports this velocity from the articulated servo model.
+                // Do not derive it from host-loop timestamps: this test intentionally drives
+                // the sim faster than wall time, which would manufacture a meaningless spike.
+                const double measured =
+                    record.estimated_state.leg_states[leg].joint_state[joint].vel_radps.value;
+                max_measured_joint_speed_radps = std::max(max_measured_joint_speed_radps, std::abs(measured));
+            }
+        }
     }
 
     std::cout << "walk_entry min_height_m=" << min_body_height_m
@@ -255,7 +278,21 @@ int main(int argc, char** argv) {
               << " max_mismatch=" << max_mismatch
               << " worst_leg=" << worst_leg
               << " worst_peak_rad=" << worst_error
+              << " max_measured_joint_speed_radps=" << max_measured_joint_speed_radps
               << '\n';
+    if (min_margin_record != nullptr) {
+        std::cout << "walk_entry min_margin_support=";
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            std::cout << (min_margin_record->locomotion_feasibility.support.effective_support[leg] ? '1' : '0');
+        }
+        std::cout << " planned_stance=";
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            std::cout << (min_margin_record->gait_state.in_stance[leg] ? '1' : '0');
+        }
+        std::cout << " nominal_margin_m=" << min_margin_record->locomotion_feasibility.nominal_margin_m
+                  << " actual_margin_m=" << min_margin_record->locomotion_feasibility.actual_margin_m
+                  << '\n';
+    }
 
     const bool ok = expect(min_body_height_m > kMinBodyHeightM,
                            "walk entry smoke guard should keep body height above a collapse floor") &&
@@ -264,7 +301,9 @@ int main(int argc, char** argv) {
                     expect(max_mismatch <= kMaxStanceContactMismatch,
                            "walk entry smoke guard should keep stance/contact mismatch bounded") &&
                     expect(worst_error < kMaxWorstLegTrackingErrorRad,
-                           "walk entry smoke guard should keep per-leg joint tracking below the coarse peak threshold");
+                           "walk entry smoke guard should keep per-leg joint tracking below the coarse peak threshold") &&
+                    expect(max_measured_joint_speed_radps < kMaxMeasuredJointSpeedRadps,
+                           "walk entry should stay below the simulated servo velocity limit");
     if (emit_metrics_json) {
         std::ostringstream leg_err;
         leg_err << std::setprecision(17) << '[';
@@ -281,6 +320,7 @@ int main(int argc, char** argv) {
                 << ",\"max_stance_contact_mismatch\":" << max_mismatch
                 << ",\"worst_leg_index\":" << worst_leg
                 << ",\"worst_peak_tracking_error_rad\":" << worst_error
+                << ",\"max_measured_joint_speed_radps\":" << max_measured_joint_speed_radps
                 << ",\"max_tracking_error_by_leg_rad\":" << leg_err.str() << '}';
         physics_sim_metrics::emitLine("physics_sim_walk_entry_tracking", "walk_entry_tracking", ok,
                                       limitsJson(), metrics.str());

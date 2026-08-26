@@ -488,6 +488,7 @@ s = \mathrm{clamp}_{[0,1]}\bigl(
 - **Swing height floor**: \(\max(\texttt{swing\_height\_m},\, \texttt{governor.swing\_height\_floor\_m})\).
 
 Adaptive tripod/ripple/wave tables (`gait_params.cpp`) map \((v_x, v_y, \dot\psi, a_x, a_y)\) plus `GaitConfig` into duty, step length, swing height, frequency, phase offsets (`UnifiedGaitDescription`), then **blend** toward that target over `gait_transition_blend_s` after a gait family change.
+For this leg order (rear-left, rear-right, middle-left, middle-right, front-left, front-right), the tripod groups are `{0, 3, 4}` and `{1, 2, 5}` so each support triangle spans both sides of the chassis.
 
 ### 18.7 Locomotion stability (`locomotion_stability.cpp`)
 
@@ -513,7 +514,7 @@ Mutates `GaitState` after the scheduler:
 
 ### 18.10 Swing trajectory (`foot_planners.cpp`, `swing_trajectory.cpp`)
 
-**Planar path**: cubic Bézier in XY from liftoff \(\mathbf{p}_0\) to foothold \(\mathbf{p}_3\) with tangents scaled from liftoff velocity and touchdown velocity (`evalSwingPlanarBezier`); \(\tau\) may be time-warped for ease (`swing_trajectory::timeWarp`).
+**Planar path**: cubic Bézier in XY from liftoff \(\mathbf{p}_0\) to foothold \(\mathbf{p}_3\) with tangents scaled from liftoff velocity and touchdown velocity (`evalSwingPlanarBezier`); \(\tau\) may be time-warped for ease (`swing_trajectory::timeWarp`). The warp preserves unit slope at liftoff and touchdown so those velocity tangents remain continuous with stance.
 
 **Vertical shape** (`swingVerticalShape`):
 
@@ -521,9 +522,14 @@ Mutates `GaitState` after the scheduler:
 
 **Foothold / stride** (`computeSwingFootPlacement`):
 
-- Horizontally scale step length:  
+- Nominal touchdown returns to the same body-frame anchor used by phase zero of the following
+  stance. This makes the nominal swing-to-stance transition continuous; cadence and commanded
+  support velocity determine the required return distance from `stance_end`.
+- Step length is retained as the scale for bounded capture/stability offsets rather than as a
+  second, independent touchdown displacement.
+- Swing clearance is scaled upward at higher velocity but is never reduced below the gait's
+  configured physical clearance floor. Capture bounds use the same velocity scale:
   \(\texttt{vel\_scale} = \mathrm{clamp}(0.40 + 0.92\,v_{\mathrm{planar}}/0.18 + 0.38\,\|\boldsymbol{\omega}\|/0.42,\, 0.48,\, 1.55)\).
-- Stride vector rotated by \(\cos(-\dot\psi\,T_{\mathrm{swing}})\), \(\sin(\cdots)\) for yaw over swing interval \(T_{\mathrm{swing}} = \texttt{swing\_span}/f\).
 - Capture / stability corrections from `foothold_planner.cpp` (twist-integrated delta, stability bias, XY clamp by `kCaptureLimitScale` × step with min/max meters).
 
 **Touchdown tangent cap**: \(\|\mathbf{m}_1\| \leq \max(0.02,\, 2.5 \cdot \|\mathbf{p}_3 - \mathbf{p}_0\|)\) for Bézier control arm aligned with touchdown velocity.

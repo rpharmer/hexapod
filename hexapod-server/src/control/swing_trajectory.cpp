@@ -8,15 +8,19 @@ namespace swing_trajectory {
 double timeWarp(const double tau01, const double ease01) {
     const double k = std::clamp(ease01, 0.0, 1.0);
     const double t = std::clamp(tau01, 0.0, 1.0);
-    const double s = t * t * (3.0 - 2.0 * t);
-    return (1.0 - k) * t + k * s;
+    const double u = t * (1.0 - t);
+    // Symmetric quintic perturbation of identity. It retains useful S-shaped timing through
+    // the middle of swing while keeping dw/dt = 1 at both endpoints, so the Bezier's supplied
+    // liftoff and touchdown velocity tangents remain physically meaningful.
+    return t + 4.0 * k * u * u * (2.0 * t - 1.0);
 }
 
 double timeWarpDeriv(const double tau01, const double ease01) {
     const double k = std::clamp(ease01, 0.0, 1.0);
     const double t = std::clamp(tau01, 0.0, 1.0);
-    const double ds_dt = 6.0 * t * (1.0 - t);
-    return (1.0 - k) + k * ds_dt;
+    const double u = t * (1.0 - t);
+    const double centered = 2.0 * t - 1.0;
+    return 1.0 + 8.0 * k * u * (u - centered * centered);
 }
 
 namespace {

@@ -1,4 +1,5 @@
 #include "control_config.hpp"
+#include "gait_scheduler.hpp"
 #include "gait_params.hpp"
 #include "types.hpp"
 
@@ -12,9 +13,69 @@ bool nearlyEq(double a, double b, double eps = 1e-6) {
     return std::abs(a - b) <= eps;
 }
 
+bool testWalkEntryBeginsInStance() {
+    control_config::GaitConfig cfg{};
+    GaitScheduler scheduler(cfg);
+    RobotState estimated{};
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    BodyTwist stopped{};
+
+    MotionIntent stand{};
+    stand.requested_mode = RobotMode::STAND;
+    stand.timestamp_us = TimePointUs{1'000'000};
+    (void)scheduler.update(estimated, stand, safety, stopped);
+
+    MotionIntent walk = stand;
+    walk.requested_mode = RobotMode::WALK;
+    walk.timestamp_us = TimePointUs{1'004'000};
+    BodyTwist forward{};
+    forward.linear_mps.x = 0.04;
+    const GaitState entry = scheduler.update(estimated, walk, safety, forward);
+
+    if (!(entry.duty_factor > 0.9) || !(entry.step_length_m < 1e-9)) {
+        std::cerr << "FAIL: walk entry should begin from an all-stance, zero-stride gait\n";
+        return false;
+    }
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        if (!entry.in_stance[static_cast<std::size_t>(leg)]) {
+            std::cerr << "FAIL: walk entry should not put a tripod directly into swing\n";
+            return false;
+        }
+    }
+
+    GaitState settled{};
+    for (int i = 1; i <= 125; ++i) {
+        walk.timestamp_us = TimePointUs{static_cast<uint64_t>(1'004'000 + i * 4'000)};
+        settled = scheduler.update(estimated, walk, safety, forward);
+    }
+    const bool has_swing_leg = std::any_of(
+        settled.in_stance.begin(), settled.in_stance.end(), [](const bool stance) { return !stance; });
+    if (!has_swing_leg || !(settled.step_length_m > 0.01)) {
+        std::cerr << "FAIL: walk-entry blend should reach the commanded walking gait\n";
+        return false;
+    }
+    return true;
+}
+
+bool testTripodPhaseGroupsSpanBothSides() {
+    const GaitPresetTemplate tripod = gaitPresetTemplate(GaitType::TRIPOD);
+    constexpr std::array<double, kNumLegs> kExpectedOffsets = {0.0, 0.5, 0.5, 0.0, 0.0, 0.5};
+    if (tripod.phase_offset != kExpectedOffsets) {
+        std::cerr << "FAIL: tripod phase groups must be {rear-left, middle-right, front-left} "
+                     "and {rear-right, middle-left, front-right}\n";
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main() {
+    if (!testWalkEntryBeginsInStance() || !testTripodPhaseGroupsSpanBothSides()) {
+        return EXIT_FAILURE;
+    }
+
     control_config::GaitConfig gait{};
     constexpr double kMinSwingHeightM = 0.014;
     constexpr double kTripodSwingFloorM = 0.021;

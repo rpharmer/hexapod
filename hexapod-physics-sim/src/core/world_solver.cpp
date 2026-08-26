@@ -2732,11 +2732,15 @@ void World::SolveServoJoint(ServoJoint& j) {
             if (prep.hasSpeedClamp) {
                 const Real clampedOmegaAxis = std::clamp(omegaAxis, -prep.maxServoSpeed, prep.maxServoSpeed);
                 if (std::abs(clampedOmegaAxis - omegaAxis) > 1e-6) {
-                    Real speedLambda = (clampedOmegaAxis - omegaAxis) * prep.invWHingeForSpeed;
-                    const Real speedImpulse = std::clamp(j.servoImpulseSum + speedLambda, -j.maxServoTorque, j.maxServoTorque);
-                    speedLambda = speedImpulse - j.servoImpulseSum;
-                    j.servoImpulseSum = speedImpulse;
+                    // This is a kinematic velocity envelope, not actuator torque.  Reusing
+                    // servoImpulseSum here made the speed correction disappear whenever the
+                    // position row had already consumed the torque budget; contact impulses
+                    // could then drive a joint past maxServoSpeed.  Keep the position actuator
+                    // torque-limited above, but apply the independently configured speed limit
+                    // as a hard relative-hinge constraint.
+                    const Real speedLambda = (clampedOmegaAxis - omegaAxis) * prep.invWHingeForSpeed;
                     deltaImpulseAxis += speedLambda;
+                    omegaAxis += activeWHinge * speedLambda;
                 }
             }
         }

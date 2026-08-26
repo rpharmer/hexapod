@@ -7,11 +7,9 @@
 #include "leg_fk.hpp"
 #include "leg_ik.hpp"
 
-#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
-#include <thread>
 
 namespace {
 
@@ -160,7 +158,7 @@ bool gaitSchedulerRespondsToWalkIntent() {
     walk.requested_mode = RobotMode::WALK;
     walk.gait = GaitType::TRIPOD;
     walk.cmd_vx_mps = LinearRateMps{0.35};
-    walk.timestamp_us = now_us();
+    walk.timestamp_us = TimePointUs{1'000'000};
 
     SafetyState safety{};
     safety.inhibit_motion = false;
@@ -168,9 +166,17 @@ bool gaitSchedulerRespondsToWalkIntent() {
 
     const BodyTwist walk_twist =
         rawLocomotionTwistFromIntent(walk, planarMotionCommand(walk));
-    gait.update(est, walk, safety, walk_twist);
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    const GaitState advanced = gait.update(est, walk, safety, walk_twist);
+    const GaitState entry = gait.update(est, walk, safety, walk_twist);
+    if (!expect(std::all_of(entry.in_stance.begin(), entry.in_stance.end(), [](const bool stance) { return stance; }),
+                "walk entry should begin with all legs in stance")) {
+        return false;
+    }
+
+    GaitState advanced{};
+    for (int i = 1; i <= 100; ++i) {
+        walk.timestamp_us = TimePointUs{static_cast<uint64_t>(1'000'000 + i * 4'000)};
+        advanced = gait.update(est, walk, safety, walk_twist);
+    }
 
     const bool leg0_leg1_offset = std::fabs(advanced.phase[0] - advanced.phase[1]) > 0.25;
     const bool stride_active = advanced.stride_phase_rate_hz.value >= 0.5;

@@ -145,6 +145,11 @@ These use `PhysicsSimBridge` + `RobotRuntime` against a live UDP sim process:
 - `test_physics_sim_serve_zero_g_udp`
 - `test_physics_sim_server_initial_layout`
 
+`test_physics_sim_walk_entry_tracking` is the regression guard for STAND→WALK. It runs the
+production command shaper at 0.04 m/s and requires a bounded measured joint-rate peak as well as
+the height, support, contact-mismatch, and tracking checks. It should be run whenever gait timing,
+IK, or servo dynamics change.
+
 ## `hexapod-physics-sim`
 
 - Definitions:
@@ -370,7 +375,7 @@ Legend:
 | ------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | Stand/pose hold                                   | Strong           | `test_hexapod_live_pose_hold`, `test_physics_sim_server_initial_layout`                                                                                        | low drift / settle behavior covered                                                                     |
 | Three-leg static support strength                 | Strong           | `test_physics_sim_tripod_support_baseline`, `single_leg_masked_stand` in `test_motion_performance_suite`                                                      | tracks body creep, joint drift, and support-foot tracking under asymmetric load                         |
-| Straight walking distance/speed                   | Strong           | `test_physics_sim_walk_distance`, `steady_forward_walk` case in `test_locomotion_regression_suite`                                                             | quantitative path/speed metrics available                                                               |
+| Straight walking distance/speed                   | Strong           | `test_physics_sim_walk_distance` (including `slow_forward_walk`), `steady_forward_walk` case in `test_locomotion_regression_suite`                            | quantitative path/speed metrics, including a low-speed net-progress gate                                 |
 | Strafing / diagonal walking (body-frame headings) | Strong           | `test_motion_performance_suite` (`compass_*` cases), oblique clearance in `test_physics_sim_oblique_walk_clearance`, lateral gait checks in `test_gait_params` | compass + other walk cases: FK ground, tracking, stance anchor drift, measured stride span / swing lift |
 | Reverse walking                                   | Strong           | `test_physics_sim_walk_distance`                                                                                                                               | explicit reverse case                                                                                   |
 | Turn-in-place/yaw performance                     | Strong           | `turn_in_place` case in `test_locomotion_regression_suite`, `test_physics_sim_walk_distance`                                                                   | yaw delta and yaw-rate metrics                                                                          |

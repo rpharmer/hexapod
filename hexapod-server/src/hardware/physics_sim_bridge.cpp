@@ -86,26 +86,34 @@ double computeStandingBodyHeightM() {
            kSpawnHeightMargin;
 }
 
-Vec3 computeFootInBodyFrame(const LegState& leg_state, const LegGeometry& leg_geometry) {
+Vec3 computeFootVelocityInBodyFrame(const LegState& leg_state, const LegGeometry& leg_geometry) {
     const double q1 = leg_state.joint_state[COXA].pos_rad.value;
     const double q2 = leg_state.joint_state[FEMUR].pos_rad.value;
     const double q3 = leg_state.joint_state[TIBIA].pos_rad.value;
+    const double dq1 = leg_state.joint_state[COXA].vel_radps.value;
+    const double dq2 = leg_state.joint_state[FEMUR].vel_radps.value;
+    const double dq3 = leg_state.joint_state[TIBIA].vel_radps.value;
+    const double q23 = q2 + q3;
 
-    const double rho = leg_geometry.femurLength.value * std::cos(q2) +
-                       leg_geometry.tibiaLength.value * std::cos(q2 + q3);
-    const double z_leg = leg_geometry.femurLength.value * std::sin(q2) +
-                         leg_geometry.tibiaLength.value * std::sin(q2 + q3);
-    const double r = leg_geometry.coxaLength.value + rho;
-
-    const Vec3 foot_leg_local{r * std::cos(q1), r * std::sin(q1), z_leg};
+    const double r = leg_geometry.coxaLength.value +
+                     leg_geometry.femurLength.value * std::cos(q2) +
+                     leg_geometry.tibiaLength.value * std::cos(q23);
+    const double dr = -leg_geometry.femurLength.value * std::sin(q2) * dq2 -
+                      leg_geometry.tibiaLength.value * std::sin(q23) * (dq2 + dq3);
+    const double dz = leg_geometry.femurLength.value * std::cos(q2) * dq2 +
+                      leg_geometry.tibiaLength.value * std::cos(q23) * (dq2 + dq3);
+    const Vec3 foot_leg_velocity{
+        dr * std::cos(q1) - r * std::sin(q1) * dq1,
+        dr * std::sin(q1) + r * std::cos(q1) * dq1,
+        dz,
+    };
     const double c = std::cos(leg_geometry.mountAngle.value);
     const double s = std::sin(leg_geometry.mountAngle.value);
-    const Vec3 foot_body_relative{
-        c * foot_leg_local.x - s * foot_leg_local.y,
-        s * foot_leg_local.x + c * foot_leg_local.y,
-        foot_leg_local.z
+    return Vec3{
+        c * foot_leg_velocity.x - s * foot_leg_velocity.y,
+        s * foot_leg_velocity.x + c * foot_leg_velocity.y,
+        foot_leg_velocity.z,
     };
-    return leg_geometry.bodyCoxaOffset + foot_body_relative;
 }
 
 struct Mat3d {
@@ -416,9 +424,6 @@ bool PhysicsSimBridge::init() {
 
     pending_targets_ = buildStandingServoTargets();
     last_motion_trace_log_us_ = TimePointUs{};
-    last_motion_trace_sample_us_ = TimePointUs{};
-    last_motion_trace_foot_positions_body_.fill(Vec3{});
-    have_motion_trace_foot_positions_ = false;
     initialized_ = true;
     if (!sendStateCorrection(buildStandingResetCorrection())) {
         if (logger_) {
@@ -624,22 +629,16 @@ bool PhysicsSimBridge::read(RobotState& out) {
     out.body_twist_state.body_trans_m = PositionM3{p_srv.x, p_srv.y, p_srv.z};
 
     const TimePointUs trace_now = out.timestamp_us;
-    const bool have_trace_dt = !last_motion_trace_sample_us_.isZero() &&
-                               trace_now.value > last_motion_trace_sample_us_.value;
-    const double trace_dt_s = have_trace_dt
-                                  ? static_cast<double>(trace_now.value - last_motion_trace_sample_us_.value) * 1.0e-6
-                                  : 0.0;
     const double max_joint_vel_radps = maxAbsJointVelocityRadps(rsp);
 
     double max_foot_speed_mps = 0.0;
-    std::array<Vec3, kNumLegs> current_foot_positions_body{};
     for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
-        current_foot_positions_body[leg] =
-            computeFootInBodyFrame(out.leg_states[leg], geometry.legGeometry[leg]);
-        if (have_motion_trace_foot_positions_ && trace_dt_s > 0.0) {
-            const Vec3 delta = current_foot_positions_body[leg] - last_motion_trace_foot_positions_body_[leg];
-            max_foot_speed_mps = std::max(max_foot_speed_mps, vecNorm(delta) / trace_dt_s);
-        }
+        // Use the FK Jacobian with the articulated-joint velocity reported by the simulator.
+        // Differencing UDP response positions used the host sample interval (which can be far
+        // shorter than the physics step) and manufactured multi-m/s spikes during packet bursts.
+        max_foot_speed_mps = std::max(
+            max_foot_speed_mps,
+            vecNorm(computeFootVelocityInBodyFrame(out.leg_states[leg], geometry.legGeometry[leg])));
     }
 
     const bool motion_trace_ready = max_joint_vel_radps > 0.02 || max_foot_speed_mps > 0.002;
@@ -651,17 +650,12 @@ bool PhysicsSimBridge::read(RobotState& out) {
         LOG_INFO(logger_,
                  "PhysicsSimBridge motion trace max_joint_vel_radps=",
                  max_joint_vel_radps,
-                 " max_foot_speed_mps=",
+                 " max_foot_speed_body_mps=",
                  max_foot_speed_mps,
-                 " sample_dt_us=",
-                 have_trace_dt ? (trace_now.value - last_motion_trace_sample_us_.value) : 0ULL,
                  " log_age_us=",
                  last_motion_trace_log_us_.isZero() ? 0ULL : (trace_now.value - last_motion_trace_log_us_.value));
         last_motion_trace_log_us_ = trace_now;
     }
-    last_motion_trace_foot_positions_body_ = current_foot_positions_body;
-    last_motion_trace_sample_us_ = trace_now;
-    have_motion_trace_foot_positions_ = true;
 
     last_result_.error = BridgeError::None;
     return true;

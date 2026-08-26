@@ -116,26 +116,6 @@ SwingFootPlanDecomposition buildFaultDecomposition(const RobotState& est,
     const Vec3 v_foot = supportFootVelocityAt(anchor, body_mot);
     const Vec3 stance_end = anchor + v_foot * (duty / f_hz);
 
-    double stride_ux = 1.0;
-    double stride_uy = 0.0;
-    const double planar_speed = std::hypot(planar.vx_mps, planar.vy_mps);
-    if (planar_speed > 1e-6) {
-        stride_ux = planar.vx_mps / planar_speed;
-        stride_uy = planar.vy_mps / planar_speed;
-    } else if (std::abs(planar.yaw_rate_radps) > 1e-6) {
-        const double tx = -anchor.y;
-        const double ty = anchor.x;
-        const double tn = std::hypot(tx, ty);
-        if (tn > 1e-6) {
-            stride_ux = tx / tn;
-            stride_uy = ty / tn;
-            if (planar.yaw_rate_radps < 0.0) {
-                stride_ux = -stride_ux;
-                stride_uy = -stride_uy;
-            }
-        }
-    }
-
     SwingFootInputs swing{};
     swing.anchor = anchor;
     swing.stance_end = stance_end;
@@ -145,8 +125,6 @@ SwingFootPlanDecomposition buildFaultDecomposition(const RobotState& est,
     swing.f_hz = f_hz;
     swing.step_length_m = gait_snapshot.step_length_m;
     swing.swing_height_m = gait_snapshot.swing_height_m;
-    swing.stride_ux = stride_ux;
-    swing.stride_uy = stride_uy;
     swing.cmd_accel_body_x_mps2 = gait_snapshot.cmd_accel_body_x_mps2;
     swing.cmd_accel_body_y_mps2 = gait_snapshot.cmd_accel_body_y_mps2;
     swing.stance_lookahead_s = (duty / f_hz) * 0.48;

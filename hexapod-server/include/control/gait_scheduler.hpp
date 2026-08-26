@@ -44,6 +44,9 @@ private:
     UnifiedGaitDescription last_blended_{};
     TimePointUs transition_start_us_{};
     bool have_last_blended_{false};
+    // A gait-type change already has a blend.  Keep STAND -> WALK separate so the first
+    // walking frame is a six-leg stance frame rather than an immediate mid-swing tripod.
+    bool was_walking_{false};
 
     double last_cmd_vx_mps_{0.0};
     double last_cmd_vy_mps_{0.0};

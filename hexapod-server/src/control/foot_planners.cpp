@@ -13,10 +13,6 @@ constexpr double kWRefRadps = 0.42;
 constexpr double kCaptureLimitScale = 0.35;
 constexpr double kCaptureLimitMinM = 0.008;
 constexpr double kCaptureLimitMaxM = 0.032;
-void rotate2d(const double x, const double y, const double c, const double s, double* ox, double* oy) {
-    *ox = x * c - y * s;
-    *oy = x * s + y * c;
-}
 
 // z_rel(tau) = swing_h * 64 * (tau*(1-tau))^3  => dz/dtau = 0 at tau in {0,1} (smooth liftoff/touchdown).
 void swingVerticalShape(const double swing_h, const double tau01, double* z_rel, double* dz_dtau) {
@@ -83,23 +79,21 @@ SwingFootPlanDecomposition computeSwingFootPlacement(const RobotState& est,
     const double swing_span = std::max(in.swing_span, 1e-6);
     const double f_hz = std::max(in.f_hz, 1e-6);
     const double T_swing = swing_span / f_hz;
-    const double wz = nominal_body.angular_radps.z;
     const double v_planar = std::hypot(nominal_body.linear_mps.x, nominal_body.linear_mps.y);
     const double w_norm = vecNorm(nominal_body.angular_radps);
     const double vel_scale =
         std::clamp(0.40 + 0.92 * (v_planar / kVRefMps) + 0.38 * (w_norm / kWRefRadps), 0.48, 1.55);
     const double step_len = std::max(in.step_length_m * vel_scale, 0.0);
 
-    double stride_x = 0.0;
-    double stride_y = 0.0;
-    rotate2d(in.stride_ux * step_len,
-             in.stride_uy * step_len,
-             std::cos(-wz * T_swing),
-             std::sin(-wz * T_swing),
-             &stride_x,
-             &stride_y);
-
-    out.nominal_body = Vec3{in.stance_end.x + stride_x, in.stance_end.y + stride_y, in.stance_end.z};
+    // Stance starts at `anchor` and integrates the world-fixed support velocity until
+    // `stance_end`. Returning to that same anchor is therefore the only nominal touchdown
+    // that is continuous with phase zero of the following stance. The old independent
+    // `stance_end + step_length` construction left a sizeable target jump whenever cadence,
+    // command speed, and the adaptive step-length table did not happen to agree.
+    //
+    // Capture/stability corrections remain explicit offsets from the continuous nominal
+    // endpoint and are bounded below. `step_len` is retained as their scale.
+    out.nominal_body = in.anchor;
 
     Vec3 measured_capture{};
     if (est.valid && est.has_body_twist_state) {
@@ -143,7 +137,10 @@ void planSwingFoot(const RobotState& est, const BodyTwist& nominal_body, const S
         std::clamp(0.40 + 0.92 * (v_planar / kVRefMps) + 0.38 * (w_norm / kWRefRadps), 0.48, 1.55);
 
     const SwingFootPlanDecomposition foothold = computeSwingFootPlacement(est, nominal_body, in);
-    const double swing_h = std::max(in.swing_height_m * vel_scale, 0.0);
+    // `swing_height_m` already includes the gait's physical clearance floor. Low-speed
+    // velocity scaling must not reduce the realized trajectory below that floor; it may only
+    // add clearance for faster motion.
+    const double swing_h = std::max(in.swing_height_m * std::max(vel_scale, 1.0), 0.0);
     const double p0x = in.stance_end.x;
     const double p0y = in.stance_end.y;
     const double p3x = foothold.final_body.x;

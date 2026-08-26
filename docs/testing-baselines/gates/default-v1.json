@@ -5,13 +5,23 @@
     "physics_sim_walk_distance": {
       "forward_walk": {
         "min_path_length_m": 0.08,
+        "min_net_horizontal_distance_m": 0.05,
         "min_peak_horizontal_speed_mps": 0.02,
         "min_average_speed_ratio": 0.2,
         "max_average_speed_ratio": 0.9,
         "require_active_mode_walk": true
       },
+      "slow_forward_walk": {
+        "min_path_length_m": 0.08,
+        "min_net_horizontal_distance_m": 0.05,
+        "min_peak_horizontal_speed_mps": 0.02,
+        "min_average_speed_ratio": 0.2,
+        "max_average_speed_ratio": 1.5,
+        "require_active_mode_walk": true
+      },
       "reverse_walk": {
         "min_path_length_m": 0.08,
+        "min_net_horizontal_distance_m": 0.05,
         "min_peak_horizontal_speed_mps": 0.02,
         "min_average_speed_ratio": 0.2,
         "max_average_speed_ratio": 0.9,

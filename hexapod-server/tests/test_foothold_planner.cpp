@@ -53,6 +53,7 @@ int main() {
     est.body_twist_state.twist_vel_radps = AngularVelocityRadPerSec3{0.0, 0.0, 0.0};
 
     SwingFootInputs inputs{};
+    inputs.anchor = Vec3{0.18, 0.00, -0.11};
     inputs.stance_end = Vec3{0.12, 0.00, -0.11};
     inputs.v_liftoff_body = Vec3{0.0, 0.0, 0.0};
     inputs.tau01 = 0.50;
@@ -60,14 +61,16 @@ int main() {
     inputs.f_hz = 1.0;
     inputs.step_length_m = 0.06;
     inputs.swing_height_m = 0.03;
-    inputs.stride_ux = 1.0;
-    inputs.stride_uy = 0.0;
     inputs.stance_lookahead_s = 0.24;
     inputs.swing_time_ease_01 = 1.0;
     inputs.static_stability_margin_m = 0.03;
 
     const BodyTwist nominal_body{Vec3{0.12, 0.0, 0.0}, Vec3{0.0, 0.0, 0.18}};
     const SwingFootPlanDecomposition steady = computeSwingFootPlacement(est, nominal_body, inputs);
+    if (!expect(nearlyEqVec(steady.nominal_body, inputs.anchor),
+                "nominal swing touchdown should return to the next stance anchor")) {
+        return EXIT_FAILURE;
+    }
     if (!expect(nearlyEqVec(steady.nominal_body, steady.final_body),
                 "with no measured drift and healthy margin, swing foothold should stay nominal")) {
         return EXIT_FAILURE;
@@ -108,6 +111,55 @@ int main() {
     }
     if (!expect(nearlyEqVec(bounded.final_body, bounded.nominal_body + bounded.capture_body),
                 "final foothold should equal nominal plus bounded capture")) {
+        return EXIT_FAILURE;
+    }
+
+    // With no capture correction, swing touchdown and the following phase-zero stance must
+    // meet in both position and velocity. This guards against target snaps that turn intended
+    // propulsion into foot slip in the physics simulation.
+    RobotState no_capture_est{};
+    SwingFootInputs continuity = inputs;
+    continuity.anchor = Vec3{0.18, 0.02, -0.11};
+    continuity.stance_end = Vec3{0.14, 0.02, -0.11};
+    continuity.tau01 = 1.0;
+    continuity.static_stability_margin_m = 0.03;
+    continuity.swing_time_ease_01 = 0.85;
+    const BodyTwist slow_forward{Vec3{0.04, 0.0, 0.0}, Vec3{}};
+    Vec3 swing_touchdown{};
+    Vec3 swing_touchdown_velocity{};
+    planSwingFoot(no_capture_est,
+                  slow_forward,
+                  continuity,
+                  swing_touchdown,
+                  swing_touchdown_velocity);
+
+    StanceFootInputs next_stance{};
+    next_stance.anchor = continuity.anchor;
+    next_stance.v_foot_body = supportFootVelocityAt(continuity.anchor, slow_forward);
+    next_stance.phase = 0.0;
+    next_stance.f_hz = continuity.f_hz;
+    Vec3 stance_start{};
+    Vec3 stance_start_velocity{};
+    planStanceFoot(next_stance, stance_start, stance_start_velocity);
+    if (!expect(nearlyEqVec(swing_touchdown, stance_start, 1e-8),
+                "swing touchdown position should be continuous with the next stance")) {
+        return EXIT_FAILURE;
+    }
+    if (!expect(nearlyEqVec(swing_touchdown_velocity, stance_start_velocity, 1e-8),
+                "swing touchdown velocity should be continuous with the next stance")) {
+        return EXIT_FAILURE;
+    }
+
+    // The low-speed velocity scale is below one. It must not shrink the gait's physical
+    // clearance floor after gait-parameter validation has already accepted it.
+    SwingFootInputs clearance = continuity;
+    clearance.tau01 = 0.5;
+    clearance.swing_height_m = 0.021;
+    Vec3 apex{};
+    Vec3 apex_velocity{};
+    planSwingFoot(no_capture_est, slow_forward, clearance, apex, apex_velocity);
+    if (!expect(apex.z >= clearance.anchor.z + clearance.swing_height_m - 1e-9,
+                "low-speed swing should preserve the configured physical clearance floor")) {
         return EXIT_FAILURE;
     }
 

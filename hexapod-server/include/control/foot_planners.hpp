@@ -25,8 +25,9 @@ struct StanceFootInputs {
 void planStanceFoot(const StanceFootInputs& in, Vec3& pos_body, Vec3& vel_body);
 
 // Swing: planar cubic Bezier + optional time warp (`swing_trajectory`), vertical profile on same
-// warped phase; touchdown XY is assembled as intent-only nominal stride plus one bounded capture
-// correction, then this path decides how to move between liftoff and that foothold.
+// warped phase; nominal touchdown returns to the following stance anchor, with one bounded
+// capture correction layered on top, then this path decides how to move between liftoff and that
+// foothold.
 struct SwingFootInputs {
     Vec3 anchor{};
     Vec3 stance_end{};
@@ -37,8 +38,6 @@ struct SwingFootInputs {
     double f_hz{1.0};
     double step_length_m{0.0};
     double swing_height_m{0.0};
-    double stride_ux{1.0};
-    double stride_uy{0.0};
     /** Reserved feedforward command acceleration fields; swing capture no longer consumes them. */
     double cmd_accel_body_x_mps2{0.0};
     double cmd_accel_body_y_mps2{0.0};
