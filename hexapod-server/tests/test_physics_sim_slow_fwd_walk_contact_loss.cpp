@@ -10,6 +10,7 @@
 #include "robot_runtime.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -179,6 +180,13 @@ int main(int argc, char** argv) {
 
     int min_raw_contact_count = kNumLegs;
     bool saw_any_raw_contact_loss = false;
+    constexpr std::array<int, 3> kTripodA{0, 3, 4};
+    constexpr std::array<int, 3> kTripodB{1, 2, 5};
+    int max_released_swing_legs = 0;
+    int max_released_tripod_a = 0;
+    int max_released_tripod_b = 0;
+    int max_airborne_tripod_a = 0;
+    int max_airborne_tripod_b = 0;
 
     for (int i = 0; i < kWalkObserveSteps; ++i) {
         runControlLoopStep(runtime, walk_motion);
@@ -191,16 +199,52 @@ int main(int argc, char** argv) {
                 std::ostringstream metrics;
                 metrics << "{\"stage\":\"lost_state_during_walk\",\"walk_step\":" << i
                         << ",\"min_raw_contact_count\":" << min_raw_contact_count
-                        << ",\"saw_any_raw_contact_loss\":" << (saw_any_raw_contact_loss ? "true" : "false") << '}';
+                        << ",\"saw_any_raw_contact_loss\":" << (saw_any_raw_contact_loss ? "true" : "false")
+                        << ",\"max_released_swing_legs\":" << max_released_swing_legs
+                        << ",\"max_released_tripod_a\":" << max_released_tripod_a
+                        << ",\"max_released_tripod_b\":" << max_released_tripod_b
+                        << ",\"max_airborne_tripod_a\":" << max_airborne_tripod_a
+                        << ",\"max_airborne_tripod_b\":" << max_airborne_tripod_b << '}';
                 physics_sim_metrics::emitLine("physics_sim_slow_fwd_walk_contact_loss", "slow_fwd_walk_contact_loss", false,
                                               limitsJson(), metrics.str());
             }
             return EXIT_FAILURE;
         }
         const RobotState& state = bridge_ptr->last_state().value();
+        const GaitState gait = runtime.gaitSnapshot();
         const int raw_contact_count = rawFootContactCount(state);
         min_raw_contact_count = std::min(min_raw_contact_count, raw_contact_count);
         saw_any_raw_contact_loss = saw_any_raw_contact_loss || (raw_contact_count < kNumLegs);
+
+        int released_swing_legs = 0;
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            const std::size_t index = static_cast<std::size_t>(leg);
+            released_swing_legs += (!gait.in_stance[index] && !gait.stability_hold_stance[index]) ? 1 : 0;
+        }
+        max_released_swing_legs = std::max(max_released_swing_legs, released_swing_legs);
+
+        const auto releasedCount = [&](const std::array<int, 3>& tripod) {
+            int count = 0;
+            for (const int leg : tripod) {
+                const std::size_t index = static_cast<std::size_t>(leg);
+                count += (!gait.in_stance[index] && !gait.stability_hold_stance[index]) ? 1 : 0;
+            }
+            return count;
+        };
+        max_released_tripod_a = std::max(max_released_tripod_a, releasedCount(kTripodA));
+        max_released_tripod_b = std::max(max_released_tripod_b, releasedCount(kTripodB));
+
+        const auto airborneCount = [&](const std::array<int, 3>& tripod) {
+            int count = 0;
+            for (const int leg : tripod) {
+                const std::size_t index = static_cast<std::size_t>(leg);
+                count += (!gait.in_stance[index] && !gait.stability_hold_stance[index] &&
+                          !state.foot_contacts[index]) ? 1 : 0;
+            }
+            return count;
+        };
+        max_airborne_tripod_a = std::max(max_airborne_tripod_a, airborneCount(kTripodA));
+        max_airborne_tripod_b = std::max(max_airborne_tripod_b, airborneCount(kTripodB));
 
         if (status.active_fault != FaultCode::NONE) {
             std::cerr << "walk step=" << i
@@ -213,7 +257,12 @@ int main(int argc, char** argv) {
                 std::ostringstream metrics;
                 metrics << "{\"stage\":\"fault_during_walk\",\"walk_step\":" << i
                         << ",\"min_raw_contact_count\":" << min_raw_contact_count
-                        << ",\"saw_any_raw_contact_loss\":" << (saw_any_raw_contact_loss ? "true" : "false") << '}';
+                        << ",\"saw_any_raw_contact_loss\":" << (saw_any_raw_contact_loss ? "true" : "false")
+                        << ",\"max_released_swing_legs\":" << max_released_swing_legs
+                        << ",\"max_released_tripod_a\":" << max_released_tripod_a
+                        << ",\"max_released_tripod_b\":" << max_released_tripod_b
+                        << ",\"max_airborne_tripod_a\":" << max_airborne_tripod_a
+                        << ",\"max_airborne_tripod_b\":" << max_airborne_tripod_b << '}';
                 physics_sim_metrics::emitLine("physics_sim_slow_fwd_walk_contact_loss", "slow_fwd_walk_contact_loss", false,
                                               limitsJson(), metrics.str());
             }
@@ -225,14 +274,30 @@ int main(int argc, char** argv) {
     ::waitpid(pid, nullptr, 0);
 
     std::cout << "slow_fwd_walk_min_raw_contact_count=" << min_raw_contact_count
-              << " saw_any_raw_contact_loss=" << (saw_any_raw_contact_loss ? 1 : 0) << '\n';
+              << " saw_any_raw_contact_loss=" << (saw_any_raw_contact_loss ? 1 : 0)
+              << " max_released_swing_legs=" << max_released_swing_legs
+              << " max_released_tripod_a=" << max_released_tripod_a
+              << " max_released_tripod_b=" << max_released_tripod_b
+              << " max_airborne_tripod_a=" << max_airborne_tripod_a
+              << " max_airborne_tripod_b=" << max_airborne_tripod_b << '\n';
 
     const bool ok = expect(!kRequireSawRawContactLoss || saw_any_raw_contact_loss,
-                           "slow forward TRIPOD walk should report at least one raw foot contact loss while swing legs lift");
+                           "slow forward TRIPOD walk should report at least one raw foot contact loss while swing legs lift") &&
+                    expect(max_released_swing_legs == 3,
+                           "TRIPOD gait should release exactly three swing legs together") &&
+                    expect(max_released_tripod_a == 3,
+                           "first alternating tripod should receive simultaneous swing commands") &&
+                    expect(max_released_tripod_b == 3,
+                           "second alternating tripod should receive simultaneous swing commands");
     if (emit_metrics_json) {
         std::ostringstream metrics;
         metrics << "{\"min_raw_contact_count\":" << min_raw_contact_count
-                << ",\"saw_any_raw_contact_loss\":" << (saw_any_raw_contact_loss ? "true" : "false") << '}';
+                << ",\"saw_any_raw_contact_loss\":" << (saw_any_raw_contact_loss ? "true" : "false")
+                << ",\"max_released_swing_legs\":" << max_released_swing_legs
+                << ",\"max_released_tripod_a\":" << max_released_tripod_a
+                << ",\"max_released_tripod_b\":" << max_released_tripod_b
+                << ",\"max_airborne_tripod_a\":" << max_airborne_tripod_a
+                << ",\"max_airborne_tripod_b\":" << max_airborne_tripod_b << '}';
         physics_sim_metrics::emitLine("physics_sim_slow_fwd_walk_contact_loss", "slow_fwd_walk_contact_loss", ok,
                                       limitsJson(), metrics.str());
     }

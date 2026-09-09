@@ -248,12 +248,12 @@ struct HexapodTelemetryState {
 struct AppUiState {
   bool show_scene = true;
   bool show_robot = true;
+  bool overlay_command_robot = false;
   bool show_terrain = true;
   bool follow_active = true;
   bool rotate_scene = false;
   bool show_overlay = true;
   bool show_debug = false;
-  int source_mode = 0;
 };
 
 struct CameraState {
@@ -2124,6 +2124,13 @@ Options ParseArgs(int argc, char** argv) {
   return options;
 }
 
+bool HasMeasuredSceneGeometry(const std::map<std::uint32_t, EntityState>& entities) {
+  return std::any_of(entities.begin(), entities.end(), [](const auto& entry) {
+    const EntityState& entity = entry.second;
+    return entity.has_frame && entity.shape != ShapeType::kPlane;
+  });
+}
+
 void DrawScene(const std::map<std::uint32_t, EntityState>& entities,
                const TerrainPatchState& terrain_patch,
                const HexapodTelemetryState& telemetry,
@@ -2139,6 +2146,14 @@ void DrawScene(const std::map<std::uint32_t, EntityState>& entities,
   g_mesh_renderer.Clear();
   g_point_renderer.Clear();
 
+  // The physics stream contains measured link poses, while the JSON robot is reconstructed
+  // from commanded joint angles. Showing both in the same place makes normal servo lag look
+  // like reversed leg motion, so command geometry is automatic fallback unless explicitly
+  // requested as an overlay.
+  const bool measured_scene_available = HasMeasuredSceneGeometry(entities);
+  const bool draw_command_robot =
+      ui.show_robot && (!ui.show_scene || !measured_scene_available || ui.overlay_command_robot);
+
   glViewport(0, 0, viewport_width, viewport_height);
   glClearColor(0.04f, 0.06f, 0.08f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -2150,7 +2165,7 @@ void DrawScene(const std::map<std::uint32_t, EntityState>& entities,
   if (ui.show_terrain) {
     ExpandTerrainPatchBounds(bounds, terrain_patch);
   }
-  if (ui.show_robot && telemetry.has_geometry && telemetry.has_joints) {
+  if (draw_command_robot && telemetry.has_geometry && telemetry.has_joints) {
     const HexapodGeometryState robot_geometry = telemetry.geometry.valid ? telemetry.geometry : MakeDefaultGeometryState();
     const SceneBounds robot_bounds = ComputeRobotBounds(robot_geometry, telemetry.angles_deg, telemetry.body_pose);
     if (robot_bounds.valid) {
@@ -2263,7 +2278,7 @@ void DrawScene(const std::map<std::uint32_t, EntityState>& entities,
     }
   }
 
-  if (ui.show_robot && telemetry.has_joints) {
+  if (draw_command_robot && telemetry.has_joints) {
     const HexapodGeometryState robot_geometry = telemetry.geometry.valid ? telemetry.geometry : MakeDefaultGeometryState();
     DrawHexapodModel(robot_geometry, telemetry.angles_deg, telemetry.status, telemetry.body_pose);
   }
@@ -2282,6 +2297,7 @@ void DrawUi(AppUiState& ui,
             uint64_t packets_rejected,
             double last_packet_age_s,
             std::size_t entity_count,
+            bool measured_scene_available,
             bool terrain_available) {
   if (!ui.show_overlay) {
     return;
@@ -2304,8 +2320,12 @@ void DrawUi(AppUiState& ui,
 
   ImGui::Separator();
   ImGui::TextUnformatted("View");
-  ImGui::Checkbox("Show scene", &ui.show_scene);
-  ImGui::Checkbox("Show robot", &ui.show_robot);
+  ImGui::Checkbox("Show measured scene", &ui.show_scene);
+  ImGui::Checkbox("Show command robot", &ui.show_robot);
+  ImGui::Checkbox("Overlay command on measured scene", &ui.overlay_command_robot);
+  if (ui.show_scene && measured_scene_available && ui.show_robot && !ui.overlay_command_robot) {
+    ImGui::TextDisabled("Command robot hidden while measured scene is available");
+  }
   ImGui::Checkbox("Show terrain", &ui.show_terrain);
   ImGui::Checkbox("Rotate scene", &ui.rotate_scene);
   ImGui::Checkbox("Follow active", &ui.follow_active);
@@ -2584,6 +2604,7 @@ int RunApplication(int argc, char** argv) {
            rejected_packets,
            packet_age_s,
            entities.size(),
+           HasMeasuredSceneGeometry(entities),
            terrain_patch.valid);
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

@@ -30,7 +30,6 @@ constexpr double kBodyHeightHoldIntegralCapM = 0.020; // cap extra support so th
 constexpr double kBodyHeightHoldIntegralDecay = 0.99;     // per-step decay when body is near commanded
 constexpr double kBodyHeightHoldIntegralDecayFast = 0.93; // fast decay when body is above commanded (~250 ms to clear)
 constexpr double kBodyHeightHoldIntegralFastUnwindGapM = 0.002;
-constexpr double kBodyHeightHoldMinEffectiveMarginM = 0.008;
 constexpr double kBodyHeightHoldMaxEffectiveMarginM = 0.012;
 constexpr double kTerrainBlendMinScale = 0.35;
 constexpr double kTerrainBlendSagScale = 0.65;
@@ -66,6 +65,21 @@ double bodyHeightHoldOffsetM(const RobotState& est, const double commanded_body_
 double terrainBlendScaleForHeightHold(const double height_hold_m) {
     const double hold_ratio = std::clamp(height_hold_m / std::max(kBodyHeightHoldMaxAdjustM, 1e-6), 0.0, 1.0);
     return std::clamp(1.0 - kTerrainBlendSagScale * hold_ratio, kTerrainBlendMinScale, 1.0);
+}
+
+BodyTwist legacyKinematicTwistFromServerBody(const BodyTwist& server_body_twist) {
+    BodyTwist out{};
+    // This is a reflection, not a rotation. Linear velocity is a polar vector, while
+    // angular velocity is axial and therefore gains the determinant sign as well.
+    out.linear_mps = Vec3{
+        -server_body_twist.linear_mps.x,
+        server_body_twist.linear_mps.y,
+        server_body_twist.linear_mps.z};
+    out.angular_radps = Vec3{
+        server_body_twist.angular_radps.x,
+        -server_body_twist.angular_radps.y,
+        -server_body_twist.angular_radps.z};
+    return out;
 }
 
 } // namespace
@@ -146,6 +160,22 @@ LegTargets BodyController::update(const RobotState& est,
     LegTargets out{};
     out.timestamp_us = now_us();
 
+    // MotionIntent and estimator telemetry use the canonical server body frame, while
+    // the calibrated leg geometry/IK still use the legacy mirrored X basis. Convert
+    // only differential motion here; nominal geometry remains untouched.
+    const BodyTwist kinematic_twist = legacyKinematicTwistFromServerBody(cmd_twist);
+    RobotState kinematic_est = est;
+    if (kinematic_est.has_body_twist_state) {
+        BodyTwist measured_server{};
+        measured_server.linear_mps = kinematic_est.body_twist_state.body_trans_mps.raw();
+        measured_server.angular_radps = kinematic_est.body_twist_state.twist_vel_radps.raw();
+        const BodyTwist measured_kinematic = legacyKinematicTwistFromServerBody(measured_server);
+        kinematic_est.body_twist_state.body_trans_mps = measured_kinematic.linear_mps;
+        kinematic_est.body_twist_state.twist_vel_radps = measured_kinematic.angular_radps;
+    }
+
+    // Pose shaping remains in the canonical server frame; the adapter is applied only
+    // to the differential foot motion consumed by the legacy kinematic model.
     const PlanarMotionCommand cmd = planarMotionFromCommandTwist(cmd_twist);
     const bool walking =
         (intent.requested_mode == RobotMode::WALK) &&
@@ -188,20 +218,13 @@ LegTargets BodyController::update(const RobotState& est,
 
     const double body_height_hold_m = bodyHeightHoldOffsetM(est, commanded_body_height_m)
                                       + height_hold_integral_m_;
-    double tilt_squat_m = 0.0;
-    if (walking && est.has_body_twist_state) {
-        const double roll_meas = est.body_twist_state.twist_pos_rad.x;
-        const double pitch_meas = est.body_twist_state.twist_pos_rad.y;
-        if (std::isfinite(roll_meas) && std::isfinite(pitch_meas)) {
-            const double tilt_mag = std::hypot(roll_meas, pitch_meas);
-            const double squat_over = std::max(0.0, tilt_mag - 0.08);
-            tilt_squat_m = std::clamp(0.12 * squat_over, 0.0, 0.06);
-        }
-    }
     const double terrain_blend_scale = terrainBlendScaleForHeightHold(body_height_hold_m);
+    // Protective squat is applied upstream by CommandGovernor and is already reflected in
+    // commanded_body_height_m. Keep this layer responsible only for compensating measured sag;
+    // applying another tilt squat here made the chassis bob down twice for the same disturbance.
     const double effective_body_height_m = std::clamp(
-        commanded_body_height_m + body_height_hold_m - tilt_squat_m,
-        std::max(0.04, commanded_body_height_m - kBodyHeightHoldMinEffectiveMarginM),
+        commanded_body_height_m + body_height_hold_m,
+        std::max(0.04, commanded_body_height_m),
         commanded_body_height_m + kBodyHeightHoldMaxEffectiveMarginM);
     std::array<Vec3, kNumLegs> nominal = nominalStance(effective_body_height_m);
 
@@ -217,7 +240,7 @@ LegTargets BodyController::update(const RobotState& est,
         0.0};
 
     const BodyVelocityCommand body_mot =
-        bodyVelocityForFootPlanning(est, cmd_twist, foot_estimator_blend_ * trust_scale);
+        bodyVelocityForFootPlanning(kinematic_est, kinematic_twist, foot_estimator_blend_ * trust_scale);
     const double duty = std::clamp(gait.duty_factor, 0.06, 0.94);
     const double f_hz = std::max(gait.stride_phase_rate_hz.value, 1e-6);
     const double swing_span = std::max(1.0 - duty, 1e-6);
@@ -362,7 +385,7 @@ LegTargets BodyController::update(const RobotState& est,
                 sw.swing_time_ease_01 = gait.swing_time_ease_01;
                 Vec3 p{};
                 Vec3 v{};
-                planSwingFoot(est, cmd_twist, sw, p, v);
+                planSwingFoot(kinematic_est, kinematic_twist, sw, p, v);
                 target = p;
                 if (terrain_snapshot != nullptr) {
                     applyTerrainSwingXYNudge(*terrain_snapshot, est, foot_terrain_cfg_, tau_for_terrain_xy, &target);

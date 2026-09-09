@@ -237,6 +237,37 @@ bool testStabilityUsesConfirmedSupportWhenPhaseLags() {
     return true;
 }
 
+bool testStabilityAllowsSafeContactBackedTripodLiftoff() {
+    LocomotionStability stability{};
+    MotionIntent intent = walkIntent(0.12, 0.0, 0.0);
+    GaitState gait{};
+    gait.duty_factor = 0.5;
+    gait.stride_phase_rate_hz = FrequencyHz{1.0};
+    gait.phase = {0.55, 0.05, 0.05, 0.55, 0.55, 0.05};
+    gait.in_stance = {false, true, true, false, false, true};
+
+    RobotState est{};
+    est.valid = true;
+    est.foot_contacts.fill(true);
+    for (auto& contact : est.foot_contact_fusion) {
+        contact.phase = ContactPhase::ConfirmedStance;
+        contact.confidence = 1.0f;
+    }
+
+    stability.apply(est, intent, gait);
+
+    constexpr std::array<int, 3> kSwingTripod{0, 3, 4};
+    for (const int leg : kSwingTripod) {
+        if (!expect(gait.support_liftoff_safe_to_lift[static_cast<std::size_t>(leg)],
+                    "five remaining contacts should provide safe liftoff support") ||
+            !expect(!gait.stability_hold_stance[static_cast<std::size_t>(leg)],
+                    "safe contact-backed swing legs should receive liftoff commands")) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool testSupportAssessmentUsesConfirmedSupportWhenPhaseLags() {
     MotionIntent intent = walkIntent(0.12, 0.0, 0.0);
     GaitState gait{};
@@ -479,6 +510,7 @@ int main() {
         !testStabilitySlowGaitIsNotMoreConservativeByDefault() ||
         !testStabilityComOutsideHullNegativeMargin() || !testStabilitySupportDiagnosticsExposeAsymmetry() ||
         !testStabilityUsesConfirmedSupportWhenPhaseLags() ||
+        !testStabilityAllowsSafeContactBackedTripodLiftoff() ||
         !testSupportAssessmentUsesConfirmedSupportWhenPhaseLags() ||
         !testSupportAssessmentTracksUncertainSupportPhases() ||
         !testStabilityFastBodyRateThrottlesStride() || !testStabilityRaisesSwingHeightOnBodySag() ||

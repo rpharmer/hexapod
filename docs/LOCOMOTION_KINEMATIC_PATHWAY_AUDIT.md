@@ -14,7 +14,7 @@ It is intentionally separate from the implementation plan so the plan file remai
 - `CommandGovernor`: command scale, cadence scale, swing floor, body-height squat, recovery entry.
 - `GaitScheduler`: nominal phase timing, gait transitions, duty factor, step length, swing height.
 - `LocomotionStability`: post-gait support assessment, tilt/body-rate gait shaping, lift permission, all-stance hold.
-- `BodyController`: body pose feedback, height hold, height integral, tilt squat, terrain stance bias, contact grace, final leg targets.
+- `BodyController`: body pose feedback, height hold, height integral, canonical-to-legacy differential frame adaptation, terrain stance bias, contact grace, final leg targets.
 - `FootPlanners`: stance velocity, swing touchdown placement, measured capture, stability foothold bias.
 - `SupportAssessment`: nominal/actual support metrics and control-facing static margin.
 - `LegIK` and gravity feedforward: post-planner joint realization and optional stance-biased joint offsets.
@@ -22,7 +22,7 @@ It is intentionally separate from the implementation plan so the plan file remai
 
 ## Conflicts To Remove
 
-- Body height is changed by governor squat, body height hold, height integral, tilt squat, stability swing boost, and terrain stance Z bias.
+- Body height is changed by the governor squat and then compensated by body height hold/integral; terrain stance Z bias remains per-foot rather than changing the commanded chassis height.
 - Support is assessed on preview gait, previous gait, post-stability gait, and final gait within a single control step.
 - Stance is derived independently from gait phase, stability hold flags, raw contacts, fused phases, and gravity-feedforward stance checks.
 - Nominal and actual support margins are both computed, but control still uses nominal by default.

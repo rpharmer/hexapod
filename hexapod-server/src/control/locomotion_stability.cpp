@@ -108,12 +108,14 @@ void LocomotionStability::apply(const RobotState& est,
             feasibility != nullptr
                 ? feasibility->safe_to_lift[static_cast<std::size_t>(leg)]
                 : (lift_clearance_m >= 0.0 && !emergency_tilt_hold);
-        const bool supported_swing_leg =
-            support.effective_support[static_cast<std::size_t>(leg)] &&
-            !gait.in_stance[static_cast<std::size_t>(leg)];
         gait.support_liftoff_clearance_m[static_cast<std::size_t>(leg)] = lift_clearance_m;
         gait.support_liftoff_safe_to_lift[static_cast<std::size_t>(leg)] = can_lift;
-        gait.stability_hold_stance[static_cast<std::size_t>(leg)] = !can_lift || supported_swing_leg;
+        // A raw contact at the start of a planned swing is normal: the leg must first receive
+        // swing kinematics before that contact can disappear. Holding every contact-backed swing
+        // leg here creates a liftoff deadlock and lets only incidental contact flicker start a step.
+        // The clearance test already accounts for removing this leg from the support polygon, so
+        // allow the normal BodyController contact-grace path whenever that removal is safe.
+        gait.stability_hold_stance[static_cast<std::size_t>(leg)] = !can_lift;
     }
 
     const bool no_leg_safe_to_lift = std::none_of(

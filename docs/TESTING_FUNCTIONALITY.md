@@ -272,6 +272,7 @@ These are the highest-value tests for tracking improvements across commits.
 - CTest name: `physics_sim_walk_distance`
 - Purpose:
   - quick numeric checks for forward/reverse/straight/turn behavior
+  - verifies signed projection onto the commanded body heading and commanded yaw direction, so backwards travel cannot pass as forward progress
 - Output:
   - prints useful numeric values (distance deltas, path, yaw delta, avg/peak yaw rate, etc.)
   - exits non-zero if assertions fail

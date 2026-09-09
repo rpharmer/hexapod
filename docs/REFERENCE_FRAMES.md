@@ -101,6 +101,22 @@ From `hexapod-server/src/kinematics/leg_ik.cpp` and `leg_fk.cpp`:
   - `p_world = bodyPose.position + R_bw * p_body`
   - `R_bw = Rz(yaw) * Ry(pitch) * Rx(roll)` (see `BodyPose::rotationBodyToWorld()`)
 
+### 3.4.1 Canonical command -> legacy kinematic differential
+
+The configured mount geometry remains in the calibrated legacy kinematic basis. Its planar X
+direction is mirrored relative to canonical `B_srv`, so `BodyController` explicitly converts
+differential body motion before foot planning:
+
+- polar/linear: `v_kin = (-v_srv.x, v_srv.y, v_srv.z)`
+- axial/angular: `w_kin = (w_srv.x, -w_srv.y, -w_srv.z)`
+
+The angular signs include the determinant of the reflection. This adapter applies to command and
+measured differential twists only; nominal foot locations, coxa offsets, and mount angles remain
+in their calibrated geometry representation. Moving or relabelling those neutral geometry values
+changes the stance itself and is not an equivalent frame correction.
+
+Reference: `hexapod-server/src/control/body_controller.cpp`.
+
 ## 3.5 Navigation world-error projection into body axes
 
 From `hexapod-server/src/control/nav_locomotion_bridge.cpp`:
@@ -154,7 +170,7 @@ From `hexapod-common/include/matrix_lidar_geometry.hpp`:
 
 ## 7) Known ambiguities and caveats
 
-1. `types.hpp` includes legacy frame-of-reference ASCII notes that can appear inconsistent with active server comments (`+X forward, +Y left, +Z up`).
+1. `types.hpp` includes the legacy geometry-frame ASCII notes. They describe the calibrated leg layout, not the canonical command/telemetry frame; the differential adapter in `BodyController` is the explicit boundary between them.
 2. Visualiser has two distinct server->scene mappings (`legacy_main.cpp` and `src/robot/kinematics.cpp`).
 3. `LegFK::footInWorldFrame()` stores world-position output in field `pos_body_m` (name mismatch with payload semantics).
 4. Nav code uses "world frame" terminology; in practice this is the server world estimate frame (`W_srv`).
@@ -165,6 +181,10 @@ Use these tests when frame behavior is changed:
 
 - `hexapod-server/tests/test_physics_sim_bridge_frame_conversion.cpp`
   - validates translation, yaw mapping, and world->body velocity conversion from sim responses.
+- `hexapod-server/tests/test_body_controller_velocity.cpp`
+  - validates the canonical-command to legacy-kinematic differential reflection.
+- `hexapod-server/tests/test_physics_sim_walk_distance.cpp`
+  - validates signed forward/reverse progress and commanded yaw direction, not only distance magnitude.
 - `hexapod-opengl-visualiser/tests/test_body_pose_transform.cpp`
   - validates body pose transform behavior in visualiser path.
 - `hexapod-opengl-visualiser/tests/test_visualiser_frame_math.cpp`

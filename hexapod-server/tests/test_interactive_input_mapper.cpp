@@ -131,17 +131,65 @@ bool testHeadingWalkDoesNotDoubleCountYawOrPose()
 
   const MotionIntent intent = makeControllerMotionIntent(controller, state);
   return expect(intent.cmd_vx_mps.value > 0.0, "heading walk should map left stick up to forward motion") &&
-         expect(intent.cmd_vx_mps.value <= 0.04 + 1e-9,
+         expect(intent.cmd_vx_mps.value <= 0.06 + 1e-9,
                 "heading walk should clamp full-stick forward speed to the interactive limit") &&
          expect(std::abs(intent.cmd_vy_mps.value) < 1e-9,
                 "heading walk should not add sideways motion when the stick is pushed straight up") &&
          expect(intent.cmd_yaw_radps.value > 0.0, "heading walk should command yaw rate from the right stick") &&
-         expect(intent.cmd_yaw_radps.value <= 0.07 + 1e-9,
+         expect(intent.cmd_yaw_radps.value <= 0.45 + 1e-9,
                 "heading walk should clamp yaw rate to the interactive limit") &&
          expect(std::abs(intent.twist.twist_vel_radps.z) < 1e-9,
                 "heading walk should not duplicate yaw into twist velocity") &&
          expect(std::abs(intent.twist.twist_pos_rad.z) < 1e-9,
                 "heading walk should not command an absolute body yaw pose");
+}
+
+bool testHeadingWalkSupportsTurnInPlace()
+{
+  StubController controller{};
+  controller.right_x_ = -1.0f;
+
+  InteractiveControllerState state{};
+  state.input_mode = ControllerInputMode::HeadingWalk;
+  updateControllerDerivedState(controller, state);
+
+  const MotionIntent intent = makeControllerMotionIntent(controller, state);
+  return expect(intent.requested_mode == RobotMode::WALK,
+                "right stick alone should enter WALK for a turn in place") &&
+         expect(std::abs(intent.cmd_vx_mps.value) < 1e-9,
+                "turn in place should not command forward motion") &&
+         expect(std::abs(intent.cmd_vy_mps.value) < 1e-9,
+                "turn in place should not command lateral motion") &&
+         expect(std::abs(intent.cmd_yaw_radps.value + 0.45) < 1e-9,
+                "full left yaw stick should command the negative interactive yaw limit");
+}
+
+bool testHeadingWalkDeadzoneHasHysteresis()
+{
+  StubController controller{};
+  InteractiveControllerState state{};
+  state.input_mode = ControllerInputMode::HeadingWalk;
+
+  controller.left_y_ = -0.13f;
+  MotionIntent intent = makeControllerMotionIntent(controller, state);
+  const bool entered = expect(intent.requested_mode == RobotMode::WALK,
+                              "stick motion beyond the entry deadzone should start walking");
+
+  controller.left_y_ = -0.09f;
+  updateControllerDerivedState(controller, state);
+  intent = makeControllerMotionIntent(controller, state);
+  const bool held = expect(intent.requested_mode == RobotMode::WALK,
+                           "small deadzone crossings should not restart the gait") &&
+                    expect(std::abs(intent.cmd_vx_mps.value) < 1e-9,
+                           "the hysteresis band should hold gait state without adding motion");
+
+  controller.left_y_ = -0.05f;
+  updateControllerDerivedState(controller, state);
+  intent = makeControllerMotionIntent(controller, state);
+  const bool stopped = expect(intent.requested_mode == RobotMode::SAFE_IDLE,
+                              "returning close to stick centre should stop walking");
+
+  return entered && held && stopped;
 }
 
 bool testHeadingWalkIdleDoesNotCommandMotion()
@@ -170,6 +218,8 @@ int main()
   testCalibrationButtonMapping();
   testHeadingModeGaitButtons();
   testHeadingWalkDoesNotDoubleCountYawOrPose();
+  testHeadingWalkSupportsTurnInPlace();
+  testHeadingWalkDeadzoneHasHysteresis();
   testHeadingWalkIdleDoesNotCommandMotion();
 
   if (g_failures != 0) {

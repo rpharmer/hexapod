@@ -101,8 +101,9 @@ InteractiveButtonMappingResult mapInteractiveButtonEvent(const ControllerEvent& 
 void updateControllerDerivedState(const IControlDevice&, InteractiveControllerState& state)
 {
   if (state.input_mode == ControllerInputMode::HeadingWalk) {
-    state.walk_mode = RobotMode::WALK;
+    state.walk_mode = state.heading_walk_active ? RobotMode::WALK : RobotMode::SAFE_IDLE;
   } else {
+    state.heading_walk_active = false;
     state.walk_mode = RobotMode::STAND;
   }
 }
@@ -112,7 +113,7 @@ MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
 {
   MotionIntent cmd = makeMotionIntent(state.walk_mode, state.gait, state.walk_body_height_m);
 
-  constexpr double kMaxCommandSpeedMps = 0.04;
+  constexpr double kMaxCommandSpeedMps = 0.06;
   constexpr double kMaxBodyTranslateXYM = 0.08;
   constexpr double kMaxBodyRollPitchRad = 0.40;
   constexpr double kMaxBodyYawRad = 0.60;
@@ -128,13 +129,23 @@ MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
   const double rt = static_cast<double>(controller.getRightTrigger()) / 1023.0;
 
   if (state.input_mode == ControllerInputMode::HeadingWalk) {
-    constexpr double kWalkDeadzone = 0.12;
-    constexpr double kMaxYawRateRadps = 0.07;
-    const double left_x = static_cast<double>(controller.getLeftX());
-    const double left_y = static_cast<double>(controller.getLeftY());
-    const double right_x = static_cast<double>(controller.getRightX());
+    constexpr double kWalkEnterDeadzone = 0.12;
+    constexpr double kWalkExitDeadzone = 0.06;
+    // Match the turn rate exercised by the physics locomotion regressions.  The previous
+    // 0.25 rad/s cap left the deliberately low-cadence in-place gait with too little
+    // tangential foot travel to overcome contact compliance convincingly.
+    constexpr double kMaxYawRateRadps = 0.45;
     const double left_mag = std::hypot(left_x, left_y);
-    if (left_mag <= kWalkDeadzone) {
+    const double motion_activity = std::max(left_mag, std::abs(right_x));
+
+    if (state.heading_walk_active) {
+      state.heading_walk_active = motion_activity > kWalkExitDeadzone;
+    } else {
+      state.heading_walk_active = motion_activity > kWalkEnterDeadzone;
+    }
+
+    const double body_height_cmd = state.walk_body_height_m + (rt - lt) * kBodyHeightAdjustRangeM;
+    if (!state.heading_walk_active) {
       state.walk_mode = RobotMode::SAFE_IDLE;
       cmd.requested_mode = RobotMode::SAFE_IDLE;
       cmd.speed_mps = LinearRateMps{0.0};
@@ -144,25 +155,26 @@ MotionIntent makeControllerMotionIntent(const IControlDevice& controller,
       cmd.cmd_yaw_radps = AngularRateRadPerSec{0.0};
       cmd.twist.twist_pos_rad = Vec3{};
       cmd.twist.twist_vel_radps = Vec3{};
-      cmd.twist.body_trans_m = Vec3{0.0, 0.0, std::clamp(state.walk_body_height_m, kMinBodyHeightM, kMaxBodyHeightM)};
+      cmd.twist.body_trans_m = Vec3{0.0, 0.0, std::clamp(body_height_cmd, kMinBodyHeightM, kMaxBodyHeightM)};
       cmd.twist.body_trans_mps = Vec3{};
       return cmd;
     }
 
     state.walk_mode = RobotMode::WALK;
-    const double walk_mag = smoothstep01(remapRadialMagnitude(left_mag, kWalkDeadzone));
+    cmd.requested_mode = RobotMode::WALK;
+    const double walk_mag = smoothstep01(remapRadialMagnitude(left_mag, kWalkEnterDeadzone));
     const double walk_dir_x = left_x / std::max(left_mag, 1e-6);
     const double walk_dir_y = left_y / std::max(left_mag, 1e-6);
     const double vx = -walk_dir_y * kMaxCommandSpeedMps * walk_mag;
     const double vy = walk_dir_x * kMaxCommandSpeedMps * walk_mag;
-    const double yaw_mag = smoothstep01(std::clamp(std::abs(right_x), 0.0, 1.0));
+    const double yaw_mag = smoothstep01(
+        remapRadialMagnitude(std::abs(right_x), kWalkEnterDeadzone));
     cmd.speed_mps = LinearRateMps{std::hypot(vx, vy)};
     cmd.heading_rad = AngleRad{std::atan2(vy, vx)};
     cmd.cmd_vx_mps = LinearRateMps{vx};
     cmd.cmd_vy_mps = LinearRateMps{vy};
     cmd.cmd_yaw_radps = AngularRateRadPerSec{std::copysign(yaw_mag * kMaxYawRateRadps, right_x)};
 
-    const double body_height_cmd = state.walk_body_height_m + (rt - lt) * kBodyHeightAdjustRangeM;
     cmd.twist.body_trans_m = Vec3{0.0, 0.0, std::clamp(body_height_cmd, kMinBodyHeightM, kMaxBodyHeightM)};
     cmd.twist.body_trans_mps = Vec3{};
     cmd.twist.twist_pos_rad = Vec3{};

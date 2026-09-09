@@ -193,8 +193,8 @@ GaitState GaitScheduler::compute(const MotionIntent& intent,
     out.step_length_m = blended.step_length_m;
     out.swing_height_m = std::max(blended.swing_height_m, governor_swing_floor_m);
     out.swing_time_ease_01 = blended.swing_time_ease;
-    out.stance_duration_s = blended.stance_duration_s;
-    out.swing_duration_s = blended.swing_duration_s;
+    out.stance_duration_s = governor.freeze_phase ? 0.0 : out.duty_factor / step_hz;
+    out.swing_duration_s = governor.freeze_phase ? 0.0 : (1.0 - out.duty_factor) / step_hz;
     out.phase_offset = blended.phase_offset;
 
     if (!governor.freeze_phase) {

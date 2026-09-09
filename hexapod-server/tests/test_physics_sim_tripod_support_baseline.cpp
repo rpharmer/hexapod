@@ -82,7 +82,9 @@ JointTargets buildTripodRaisedTargets() {
     const BodyTwist cmd_twist = rawLocomotionTwistFromIntent(stand, planarMotionCommand(stand));
     LegTargets foot_targets = body.update(est, stand, gait, safety, cmd_twist, nullptr);
 
-    constexpr std::array<int, 3> kRaisedLegs{{1, 3, 5}};
+    // Internal order is R3, L3, R2, L2, R1, L1. Raise one valid alternating
+    // tripod rather than the odd indices, which are all left-side legs.
+    constexpr std::array<int, 3> kRaisedLegs{{0, 3, 4}};
     for (const int leg : kRaisedLegs) {
         const Vec3 coxa = geometry.legGeometry[leg].bodyCoxaOffset;
         const Vec3 rel = foot_targets.feet[leg].pos_body_m - coxa;
@@ -328,7 +330,7 @@ int main(int argc, char** argv) {
     const int kMetricsSteps = static_cast<int>(
         physics_sim_test_utils::scaledLegacyStepCount(180, bus_loop_period_us));
     constexpr std::array<bool, kNumLegs> kStandSupportLegs{{true, true, true, true, true, true}};
-    constexpr std::array<bool, kNumLegs> kTripodSupportLegs{{true, false, true, false, true, false}};
+    constexpr std::array<bool, kNumLegs> kTripodSupportLegs{{false, true, true, false, false, true}};
 
     (void)holdPose(bridge, stand_targets, kStandSupportLegs, kStandWarmupSteps);
     const HoldMetrics stand_metrics = holdPose(bridge, stand_targets, kStandSupportLegs, kMetricsSteps);

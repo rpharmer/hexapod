@@ -5,8 +5,8 @@
 
 namespace {
 
-// Leg order is rear-left, rear-right, middle-left, middle-right, front-left,
-// front-right.  Each tripod must span both sides of the body: {0, 3, 4} and
+// Internal leg order is rear-right, rear-left, middle-right, middle-left,
+// front-right, front-left. Each tripod must span both sides of the body: {0, 3, 4} and
 // {1, 2, 5}.  Grouping even and odd indices instead produces left-only and
 // right-only support rails, whose support polygons cannot contain the COM.
 constexpr std::array<double, kNumLegs> kTripodOffsets = {0.0, 0.5, 0.5, 0.0, 0.0, 0.5};
@@ -17,6 +17,12 @@ constexpr double kLowSpeedYawSwingBoostM = 0.008;
 constexpr double kSwingHeightFloorFractionOfBase = 0.70;
 constexpr double kTripodLateralStepTrim = 0.20;
 constexpr double kTripodLateralSwingBoostM = 0.004;
+
+void updateDurations(UnifiedGaitDescription& gait) {
+    const double hz = std::max(gait.step_frequency_hz, 1e-6);
+    gait.stance_duration_s = gait.duty_factor / hz;
+    gait.swing_duration_s = (1.0 - gait.duty_factor) / hz;
+}
 
 double swingHeightFloorForPreset(const GaitPresetTemplate& preset) {
     return std::max(kMinSwingHeightM, preset.base_swing_height_m * kSwingHeightFloorFractionOfBase);
@@ -173,9 +179,7 @@ UnifiedGaitDescription buildTargetUnifiedGait(const GaitType gait,
         desc.swing_time_ease = std::clamp(desc.swing_time_ease, emin, emax);
     }
 
-    const double hz = std::max(desc.step_frequency_hz, 1e-6);
-    desc.stance_duration_s = desc.duty_factor / hz;
-    desc.swing_duration_s = (1.0 - desc.duty_factor) / hz;
+    updateDurations(desc);
     return desc;
 }
 
@@ -244,8 +248,6 @@ UnifiedGaitDescription blendUnifiedGait(const UnifiedGaitDescription& from,
             gaitLerpWrapped01(from.phase_offset[static_cast<std::size_t>(i)],
                                to.phase_offset[static_cast<std::size_t>(i)], a);
     }
-    const double hz = std::max(out.step_frequency_hz, 1e-6);
-    out.stance_duration_s = out.duty_factor / hz;
-    out.swing_duration_s = (1.0 - out.duty_factor) / hz;
+    updateDurations(out);
     return out;
 }

@@ -26,7 +26,8 @@ enum class CalibrationAction
 struct InteractiveControllerState
 {
   ControllerInputMode input_mode{ControllerInputMode::HeadingWalk};
-  RobotMode walk_mode{RobotMode::WALK};
+  RobotMode walk_mode{RobotMode::SAFE_IDLE};
+  bool heading_walk_active{false};
   GaitType gait{GaitType::TRIPOD};
   double walk_body_height_m{0.14};
 

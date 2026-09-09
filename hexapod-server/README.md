@@ -112,9 +112,10 @@ Button mappings in controller mode:
 
 ### 1) Heading-walk mode
 
-- Left stick => walk heading + speed (`heading_rad`, `speed_mps`)
+- Left stick => walk heading + speed (`heading_rad`, `speed_mps`), up to `0.06 m/s`.
   - stick axes (`LX`,`LY`) are radial-deadzone filtered and normalized to `[-1, 1]` for downstream consumers.
-- Right stick => yaw rate (`cmd_yaw_radps`) from horizontal stick deflection.
+- Right stick => yaw rate (`cmd_yaw_radps`) from horizontal stick deflection, including turning in place, up to `0.45 rad/s`.
+- Walk activation uses centre hysteresis so small stick fluctuations do not repeatedly restart the gait.
 - Triggers (`LT`/`RT`) => body height down/up (`body_trans_m.z`).
 - `X` => RIPPLE gait.
 - `Y` => TRIPOD gait.

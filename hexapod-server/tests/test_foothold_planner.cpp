@@ -23,6 +23,57 @@ bool nearlyEqVec(const Vec3& a, const Vec3& b, double eps = 1e-9) {
     return nearlyEq(a.x, b.x, eps) && nearlyEq(a.y, b.y, eps) && nearlyEq(a.z, b.z, eps);
 }
 
+bool planarCycleFollowsCommand(const BodyTwist& body, const char* label) {
+    const Vec3 anchor{0.18, 0.02, -0.11};
+    StanceFootInputs stance{};
+    stance.anchor = anchor;
+    stance.v_foot_body = supportFootVelocityAt(anchor, body);
+    stance.phase = 0.5;
+    stance.f_hz = 1.0;
+
+    Vec3 stance_end{};
+    Vec3 stance_velocity{};
+    planStanceFoot(stance, stance_end, stance_velocity);
+    const Vec3 stance_delta = stance_end - anchor;
+    const double stance_along_command =
+        stance_delta.x * body.linear_mps.x + stance_delta.y * body.linear_mps.y;
+    if (!(stance_along_command < -1e-9)) {
+        std::cerr << "FAIL: " << label << " stance foot should sweep opposite the body command\n";
+        return false;
+    }
+
+    SwingFootInputs swing{};
+    swing.anchor = anchor;
+    swing.stance_end = stance_end;
+    swing.v_liftoff_body = stance_velocity;
+    swing.tau01 = 1.0;
+    swing.swing_span = 0.5;
+    swing.f_hz = 1.0;
+    swing.step_length_m = 0.06;
+    swing.swing_height_m = 0.03;
+    swing.static_stability_margin_m = 0.03;
+    swing.swing_time_ease_01 = 1.0;
+
+    RobotState no_capture_est{};
+    Vec3 touchdown{};
+    Vec3 touchdown_velocity{};
+    planSwingFoot(no_capture_est, body, swing, touchdown, touchdown_velocity);
+    const Vec3 swing_delta = touchdown - stance_end;
+    const double swing_along_command =
+        swing_delta.x * body.linear_mps.x + swing_delta.y * body.linear_mps.y;
+    const double planar_cross =
+        swing_delta.x * body.linear_mps.y - swing_delta.y * body.linear_mps.x;
+    if (!(swing_along_command > 1e-9)) {
+        std::cerr << "FAIL: " << label << " swing foot should recover in the body-command direction\n";
+        return false;
+    }
+    if (!(std::abs(planar_cross) < 1e-9)) {
+        std::cerr << "FAIL: " << label << " swing recovery should not leak into the cross axis\n";
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -32,6 +83,17 @@ int main() {
     const Vec3 foot{0.0, 0.1, -0.05};
     const Vec3 d = twistIntegratedFootholdDeltaXY(body, foot, 0.2);
     if (!expect(nearlyEq(d.z, 0.0) && d.x < 0.0, "twist-integrated foothold should oppose forward motion in x")) {
+        return EXIT_FAILURE;
+    }
+
+    const BodyTwist forward{Vec3{0.08, 0.0, 0.0}, Vec3{}};
+    const BodyTwist backward{Vec3{-0.08, 0.0, 0.0}, Vec3{}};
+    const BodyTwist strafe_left{Vec3{0.0, 0.08, 0.0}, Vec3{}};
+    const BodyTwist strafe_right{Vec3{0.0, -0.08, 0.0}, Vec3{}};
+    if (!planarCycleFollowsCommand(forward, "forward") ||
+        !planarCycleFollowsCommand(backward, "backward") ||
+        !planarCycleFollowsCommand(strafe_left, "strafe-left") ||
+        !planarCycleFollowsCommand(strafe_right, "strafe-right")) {
         return EXIT_FAILURE;
     }
 

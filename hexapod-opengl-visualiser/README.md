@@ -58,4 +58,6 @@ In the visualiser:
 
 - `F1` toggles the overlay panel
 - the overlay exposes camera sliders, scene toggles, and telemetry summaries
-
+- when physics scene entities are present, the measured scene is shown by default and the
+  commanded telemetry robot is hidden to avoid servo-lag double images
+- enable `Overlay command on measured scene` when you want to compare commanded and measured legs

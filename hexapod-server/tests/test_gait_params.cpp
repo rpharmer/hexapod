@@ -69,10 +69,42 @@ bool testTripodPhaseGroupsSpanBothSides() {
     return true;
 }
 
+bool testGovernedCadenceUpdatesDurations() {
+    control_config::GaitConfig cfg{};
+    cfg.transition_blend_s = 0.01;
+    GaitScheduler scheduler(cfg);
+    RobotState estimated{};
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+
+    MotionIntent walk{};
+    walk.requested_mode = RobotMode::WALK;
+    walk.gait = GaitType::TRIPOD;
+    walk.timestamp_us = TimePointUs{1'000'000};
+    BodyTwist forward{};
+    forward.linear_mps.x = 0.06;
+    CommandGovernorState governor{};
+    governor.cadence_scale = 0.6;
+
+    (void)scheduler.update(estimated, walk, safety, forward, governor);
+    walk.timestamp_us = TimePointUs{1'020'000};
+    const GaitState gait = scheduler.update(estimated, walk, safety, forward, governor);
+    if (!nearlyEq(gait.stance_duration_s,
+                  gait.duty_factor / gait.stride_phase_rate_hz.value) ||
+        !nearlyEq(gait.swing_duration_s,
+                  (1.0 - gait.duty_factor) / gait.stride_phase_rate_hz.value)) {
+        std::cerr << "FAIL: governor-scaled cadence should update exported stance/swing durations\n";
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main() {
-    if (!testWalkEntryBeginsInStance() || !testTripodPhaseGroupsSpanBothSides()) {
+    if (!testWalkEntryBeginsInStance() ||
+        !testTripodPhaseGroupsSpanBothSides() ||
+        !testGovernedCadenceUpdatesDurations()) {
         return EXIT_FAILURE;
     }
 

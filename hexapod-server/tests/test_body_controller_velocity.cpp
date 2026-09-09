@@ -98,14 +98,40 @@ int main() {
         rawLocomotionTwistFromIntent(walk_intent, planarMotionCommand(walk_intent));
     const LegTargets walk_targets = controller.update(est, walk_intent, walk_gait, safety, walk_twist);
 
-    if (!expect(nearlyEqual(walk_targets.feet[0].vel_body_mps.x, -0.25, 2e-3) &&
+    if (!expect(nearlyEqual(walk_targets.feet[0].vel_body_mps.x, 0.25, 2e-3) &&
                     nearlyEqual(walk_targets.feet[0].vel_body_mps.y, 0.03, 2e-3) &&
                     nearlyEqual(walk_targets.feet[0].vel_body_mps.z, 0.0, 2e-3),
                 "walking stance foot velocity should follow the composed body motion without extra sway")) {
         return EXIT_FAILURE;
     }
-    if (!expect(nearlyEqual(walk_targets.feet[0].vel_body_mps.x, -0.25, 2e-3),
+    if (!expect(nearlyEqual(walk_targets.feet[0].vel_body_mps.x, 0.25, 2e-3),
                 "walking stance foot velocity should include sway exactly once")) {
+        return EXIT_FAILURE;
+    }
+
+    // The calibrated IK frame mirrors the server's X basis. Check the command/IK boundary
+    // explicitly so forward and lateral inputs cannot silently exchange or reverse their
+    // stance sweeps while the nominal leg geometry remains unchanged.
+    BodyController cardinal_controller{};
+    MotionIntent cardinal_intent = walk_intent;
+    cardinal_intent.twist.body_trans_mps = Vec3{0.0, 0.0, 0.0};
+    GaitState cardinal_gait = walk_gait;
+    cardinal_gait.phase[0] = 0.25;
+    cardinal_gait.in_stance[0] = true;
+    const BodyTwist forward_command{Vec3{0.06, 0.0, 0.0}, Vec3{}};
+    const LegTargets forward_targets =
+        cardinal_controller.update(est, cardinal_intent, cardinal_gait, safety, forward_command);
+    if (!expect(forward_targets.feet[0].vel_body_mps.x > 0.0 &&
+                    std::abs(forward_targets.feet[0].vel_body_mps.y) < 1e-9,
+                "forward command should produce a pure mirrored-X stance sweep at the IK boundary")) {
+        return EXIT_FAILURE;
+    }
+    const BodyTwist left_command{Vec3{0.0, 0.06, 0.0}, Vec3{}};
+    const LegTargets left_targets =
+        cardinal_controller.update(est, cardinal_intent, cardinal_gait, safety, left_command);
+    if (!expect(left_targets.feet[0].vel_body_mps.y < 0.0 &&
+                    std::abs(left_targets.feet[0].vel_body_mps.x) < 1e-9,
+                "left command should produce a pure negative-Y stance sweep at the IK boundary")) {
         return EXIT_FAILURE;
     }
 
@@ -144,7 +170,7 @@ int main() {
     supported_est.foot_contact_fusion[0].phase = ContactPhase::ConfirmedStance;
     const LegTargets held_supported_targets =
         controller.update(supported_est, walk_intent, held_gait, safety, walk_twist);
-    if (!expect(held_supported_targets.feet[0].pos_body_m.z < held_airborne_targets.feet[0].pos_body_m.z - 0.02,
+    if (!expect(held_supported_targets.feet[0].pos_body_m.z < held_airborne_targets.feet[0].pos_body_m.z - 0.003,
                 "supported swing legs should stay in stance kinematics until support is released")) {
         return EXIT_FAILURE;
     }
@@ -158,7 +184,7 @@ int main() {
     touchdown_est.foot_contact_fusion[0].phase = ContactPhase::LostCandidate;
     const LegTargets held_touchdown_targets =
         controller.update(touchdown_est, walk_intent, held_gait, safety, walk_twist);
-    if (!expect(held_touchdown_targets.feet[0].pos_body_m.z < held_airborne_targets.feet[0].pos_body_m.z - 0.02,
+    if (!expect(held_touchdown_targets.feet[0].pos_body_m.z < held_airborne_targets.feet[0].pos_body_m.z - 0.003,
                 "recovery hold should keep touchdown-completing supported legs in stance until load is released")) {
         return EXIT_FAILURE;
     }

@@ -126,9 +126,31 @@ double wrapAngleDiff(double start, double end) {
     return std::atan2(std::sin(end - start), std::cos(end - start));
 }
 
+struct DirectionalTravel {
+    double forward_projection_m{0.0};
+    double lateral_projection_m{0.0};
+    double alignment_cosine{0.0};
+};
+
+DirectionalTravel directionalTravelFromStartYaw(const MotionRunResult& result,
+                                                 const Vec3& delta,
+                                                 const double commanded_body_heading_rad) {
+    const double expected_world_heading = result.start_yaw_rad + commanded_body_heading_rad;
+    const double c = std::cos(expected_world_heading);
+    const double s = std::sin(expected_world_heading);
+    DirectionalTravel out{};
+    out.forward_projection_m = delta.x * c + delta.y * s;
+    out.lateral_projection_m = -delta.x * s + delta.y * c;
+    const double distance = std::hypot(delta.x, delta.y);
+    out.alignment_cosine = distance > 1.0e-9 ? out.forward_projection_m / distance : 0.0;
+    return out;
+}
+
 std::string walkDistanceLimitsWalkEnvelopeJsonDynamic(const std::string& label,
                                                       const double min_path_length_m,
                                                       const double min_net_horizontal_distance_m,
+                                                      const double min_command_direction_projection_m,
+                                                      const double min_command_direction_cosine,
                                                       const double min_peak_horizontal_speed_mps,
                                                       const double min_average_speed_ratio,
                                                       const double max_average_speed_ratio,
@@ -137,6 +159,8 @@ std::string walkDistanceLimitsWalkEnvelopeJsonDynamic(const std::string& label,
     std::ostringstream o;
     o << "{\"min_path_length_m\":" << formatDouble(min_path_length_m)
       << ",\"min_net_horizontal_distance_m\":" << formatDouble(min_net_horizontal_distance_m)
+      << ",\"min_command_direction_projection_m\":" << formatDouble(min_command_direction_projection_m)
+      << ",\"min_command_direction_cosine\":" << formatDouble(min_command_direction_cosine)
       << ",\"min_peak_horizontal_speed_mps\":" << formatDouble(min_peak_horizontal_speed_mps)
       << ",\"min_average_speed_ratio\":" << formatDouble(min_average_speed_ratio)
       << ",\"max_average_speed_ratio\":" << formatDouble(max_average_speed_ratio)
@@ -149,6 +173,8 @@ std::string walkDistanceLimitsStraightJsonDynamic(const std::string& label,
                                                   const double min_path_length_m,
                                                   const double max_lateral_deviation_m,
                                                   const double max_lateral_vs_path_ratio,
+                                                  const double min_command_direction_projection_m,
+                                                  const double min_command_direction_cosine,
                                                   const double min_peak_horizontal_speed_mps,
                                                   const double min_average_speed_ratio,
                                                   const double max_average_speed_ratio,
@@ -158,6 +184,8 @@ std::string walkDistanceLimitsStraightJsonDynamic(const std::string& label,
     o << "{\"min_path_length_m\":" << formatDouble(min_path_length_m)
       << ",\"max_lateral_deviation_m\":" << formatDouble(max_lateral_deviation_m)
       << ",\"max_lateral_vs_path_ratio\":" << formatDouble(max_lateral_vs_path_ratio)
+      << ",\"min_command_direction_projection_m\":" << formatDouble(min_command_direction_projection_m)
+      << ",\"min_command_direction_cosine\":" << formatDouble(min_command_direction_cosine)
       << ",\"min_peak_horizontal_speed_mps\":" << formatDouble(min_peak_horizontal_speed_mps)
       << ",\"min_average_speed_ratio\":" << formatDouble(min_average_speed_ratio)
       << ",\"max_average_speed_ratio\":" << formatDouble(max_average_speed_ratio)
@@ -173,6 +201,7 @@ std::string walkDistanceLimitsTurnJsonDynamic(const std::string& label,
                                               const double min_average_yaw_rate_ratio,
                                               const double max_average_yaw_rate_ratio,
                                               const double min_yaw_delta_abs_rad,
+                                              const bool require_commanded_yaw_direction,
                                               const bool require_active_mode_walk) {
     using locomotion_test::formatDouble;
     std::ostringstream o;
@@ -182,6 +211,7 @@ std::string walkDistanceLimitsTurnJsonDynamic(const std::string& label,
       << ",\"min_average_yaw_rate_ratio\":" << formatDouble(min_average_yaw_rate_ratio)
       << ",\"max_average_yaw_rate_ratio\":" << formatDouble(max_average_yaw_rate_ratio)
       << ",\"min_yaw_delta_abs_rad\":" << formatDouble(min_yaw_delta_abs_rad)
+      << ",\"require_commanded_yaw_direction\":" << (require_commanded_yaw_direction ? "true" : "false")
       << ",\"require_active_mode_walk\":" << (require_active_mode_walk ? "true" : "false") << '}';
     (void)label;
     return o.str();
@@ -191,13 +221,17 @@ std::string motionRunResultMetricsJson(const MotionRunResult& result,
                                        const Vec3& delta,
                                        const double horizontal_distance,
                                        const double commanded_speed,
-                                       const double average_ratio) {
+                                       const double average_ratio,
+                                       const DirectionalTravel& direction) {
     std::ostringstream o;
     using locomotion_test::formatDouble;
     o << "{\"walk_path_length_m\":" << formatDouble(result.walk_path_length_m)
       << ",\"net_horizontal_distance_m\":" << formatDouble(horizontal_distance)
       << ",\"delta_x_m\":" << formatDouble(delta.x) << ",\"delta_y_m\":" << formatDouble(delta.y)
       << ",\"delta_z_m\":" << formatDouble(delta.z)
+      << ",\"command_direction_projection_m\":" << formatDouble(direction.forward_projection_m)
+      << ",\"command_lateral_projection_m\":" << formatDouble(direction.lateral_projection_m)
+      << ",\"command_direction_cosine\":" << formatDouble(direction.alignment_cosine)
       << ",\"max_lateral_deviation_m\":" << formatDouble(result.max_lateral_deviation_m)
       << ",\"average_horizontal_speed_mps\":" << formatDouble(result.average_horizontal_speed_mps)
       << ",\"peak_horizontal_speed_mps\":" << formatDouble(result.peak_horizontal_speed_mps)
@@ -220,7 +254,8 @@ std::string motionRunTurnMetricsJson(const MotionRunResult& result,
                                      const double horizontal_distance,
                                      const double yaw_delta,
                                      const double commanded_yaw_rate,
-                                     const double average_ratio) {
+                                     const double average_ratio,
+                                     const bool commanded_yaw_direction_match) {
     std::ostringstream o;
     using locomotion_test::formatDouble;
     o << "{\"walk_path_length_m\":" << formatDouble(result.walk_path_length_m)
@@ -235,6 +270,8 @@ std::string motionRunTurnMetricsJson(const MotionRunResult& result,
       << ",\"faulted_steps\":" << result.faulted_steps
       << ",\"commanded_yaw_rate_radps\":" << formatDouble(commanded_yaw_rate)
       << ",\"average_yaw_rate_ratio\":" << formatDouble(average_ratio)
+      << ",\"commanded_yaw_direction_match\":"
+      << (commanded_yaw_direction_match ? "true" : "false")
       << ",\"final_mode\":" << static_cast<int>(result.final_status.active_mode)
       << ",\"final_fault\":" << static_cast<int>(result.final_status.active_fault) << '}';
     return o.str();
@@ -335,7 +372,8 @@ bool checkWalkCase(const std::string& label,
                 "physics_sim_walk_distance",
                 label,
                 false,
-                walkDistanceLimitsWalkEnvelopeJsonDynamic(label, 0.08, 0.05, 0.02, 0.20, 0.90, true),
+                walkDistanceLimitsWalkEnvelopeJsonDynamic(
+                    label, 0.08, 0.05, 0.04, 0.50, 0.02, 0.20, 0.90, true),
                 std::string("{\"exception\":\"") + locomotion_test::jsonEscape(ex.what()) + "\"}");
         }
         return expect(false, label + ": " + ex.what());
@@ -345,11 +383,17 @@ bool checkWalkCase(const std::string& label,
     const double horizontal_distance = std::hypot(delta.x, delta.y);
     const double commanded_speed = walk_motion.speed_mps;
     const double average_ratio = commanded_speed > 0.0 ? (result.average_horizontal_speed_mps / commanded_speed) : 0.0;
+    const DirectionalTravel direction =
+        directionalTravelFromStartYaw(result, delta, walk_motion.heading_rad);
 
     const double kMinPathLengthM =
         test_limits::getDouble(kWalkDistanceSuite, label, "", "min_path_length_m", 0.08);
     const double kMinNetHorizontalDistanceM =
         test_limits::getDouble(kWalkDistanceSuite, label, "", "min_net_horizontal_distance_m", 0.05);
+    const double kMinCommandDirectionProjectionM =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "min_command_direction_projection_m", 0.04);
+    const double kMinCommandDirectionCosine =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "min_command_direction_cosine", 0.50);
     const double kMinPeakHorizontalSpeedMps =
         test_limits::getDouble(kWalkDistanceSuite, label, "", "min_peak_horizontal_speed_mps", 0.02);
     const double kMinAverageSpeedRatio =
@@ -362,6 +406,8 @@ bool checkWalkCase(const std::string& label,
         label,
         kMinPathLengthM,
         kMinNetHorizontalDistanceM,
+        kMinCommandDirectionProjectionM,
+        kMinCommandDirectionCosine,
         kMinPeakHorizontalSpeedMps,
         kMinAverageSpeedRatio,
         kMaxAverageSpeedRatio,
@@ -376,7 +422,7 @@ bool checkWalkCase(const std::string& label,
                                       pass,
                                       limits_walk_json,
                                       motionRunResultMetricsJson(
-                                          result, delta, horizontal_distance, commanded_speed, average_ratio));
+                                          result, delta, horizontal_distance, commanded_speed, average_ratio, direction));
     };
 
     const RobotState fused_snapshot = runtime.estimatedSnapshot();
@@ -408,6 +454,25 @@ bool checkWalkCase(const std::string& label,
                   << " net_horiz=" << horizontal_distance
                   << " dx=" << delta.x
                   << " dy=" << delta.y << '\n';
+        emit(false);
+        return false;
+    }
+
+    if (!expect(direction.forward_projection_m >= kMinCommandDirectionProjectionM,
+                label + ": walk should progress in the commanded body-frame direction")) {
+        std::cerr << label << " projection=" << direction.forward_projection_m
+                  << " lateral_projection=" << direction.lateral_projection_m
+                  << " alignment_cosine=" << direction.alignment_cosine
+                  << " start_yaw=" << result.start_yaw_rad
+                  << " heading=" << walk_motion.heading_rad << '\n';
+        emit(false);
+        return false;
+    }
+    if (!expect(direction.alignment_cosine >= kMinCommandDirectionCosine,
+                label + ": net travel should align with the commanded body-frame heading")) {
+        std::cerr << label << " projection=" << direction.forward_projection_m
+                  << " lateral_projection=" << direction.lateral_projection_m
+                  << " alignment_cosine=" << direction.alignment_cosine << '\n';
         emit(false);
         return false;
     }
@@ -456,6 +521,8 @@ bool checkWalkCase(const std::string& label,
               << " dz=" << delta.z
               << " horiz=" << horizontal_distance
               << " path=" << result.walk_path_length_m
+              << " direction_projection=" << direction.forward_projection_m
+              << " direction_cosine=" << direction.alignment_cosine
               << " avg_speed=" << result.average_horizontal_speed_mps
               << " ratio=" << average_ratio
               << " peak_speed=" << result.peak_horizontal_speed_mps << '\n';
@@ -479,7 +546,8 @@ bool checkStraightWalkCase(const std::string& label,
                 "physics_sim_walk_distance",
                 label,
                 false,
-                walkDistanceLimitsStraightJsonDynamic(label, 0.08, 0.20, 0.35, 0.02, 0.20, 0.90, true),
+                walkDistanceLimitsStraightJsonDynamic(
+                    label, 0.08, 0.20, 0.35, 0.04, 0.50, 0.02, 0.20, 0.90, true),
                 std::string("{\"exception\":\"") + locomotion_test::jsonEscape(ex.what()) + "\"}");
         }
         return expect(false, label + ": " + ex.what());
@@ -489,6 +557,8 @@ bool checkStraightWalkCase(const std::string& label,
     const double horizontal_distance = std::hypot(delta.x, delta.y);
     const double commanded_speed = walk_motion.speed_mps;
     const double average_ratio = commanded_speed > 0.0 ? (result.average_horizontal_speed_mps / commanded_speed) : 0.0;
+    const DirectionalTravel direction =
+        directionalTravelFromStartYaw(result, delta, walk_motion.heading_rad);
 
     const double kMinPathLengthM =
         test_limits::getDouble(kWalkDistanceSuite, label, "", "min_path_length_m", 0.08);
@@ -496,6 +566,10 @@ bool checkStraightWalkCase(const std::string& label,
         test_limits::getDouble(kWalkDistanceSuite, label, "", "max_lateral_deviation_m", 0.20);
     const double kMaxLateralVsPathRatio =
         test_limits::getDouble(kWalkDistanceSuite, label, "", "max_lateral_vs_path_ratio", 0.35);
+    const double kMinCommandDirectionProjectionM =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "min_command_direction_projection_m", 0.04);
+    const double kMinCommandDirectionCosine =
+        test_limits::getDouble(kWalkDistanceSuite, label, "", "min_command_direction_cosine", 0.50);
     const double kMinPeakHorizontalSpeedMps =
         test_limits::getDouble(kWalkDistanceSuite, label, "", "min_peak_horizontal_speed_mps", 0.02);
     const double kMinAverageSpeedRatio =
@@ -509,6 +583,8 @@ bool checkStraightWalkCase(const std::string& label,
         kMinPathLengthM,
         kMaxLateralDeviationM,
         kMaxLateralVsPathRatio,
+        kMinCommandDirectionProjectionM,
+        kMinCommandDirectionCosine,
         kMinPeakHorizontalSpeedMps,
         kMinAverageSpeedRatio,
         kMaxAverageSpeedRatio,
@@ -523,7 +599,7 @@ bool checkStraightWalkCase(const std::string& label,
                                       pass,
                                       limits_straight_json,
                                       motionRunResultMetricsJson(
-                                          result, delta, horizontal_distance, commanded_speed, average_ratio));
+                                          result, delta, horizontal_distance, commanded_speed, average_ratio, direction));
     };
 
     if (!expect(result.walk_path_length_m >= kMinPathLengthM,
@@ -566,6 +642,17 @@ bool checkStraightWalkCase(const std::string& label,
                   << " avg_speed=" << result.average_horizontal_speed_mps
                   << " command=" << commanded_speed
                   << " ratio=" << average_ratio << '\n';
+        emit(false);
+        return false;
+    }
+
+    if (!expect(direction.forward_projection_m >= kMinCommandDirectionProjectionM,
+                label + ": straight walk should progress in the commanded body-frame direction") ||
+        !expect(direction.alignment_cosine >= kMinCommandDirectionCosine,
+                label + ": straight-walk travel should align with the commanded body-frame heading")) {
+        std::cerr << label << " projection=" << direction.forward_projection_m
+                  << " lateral_projection=" << direction.lateral_projection_m
+                  << " alignment_cosine=" << direction.alignment_cosine << '\n';
         emit(false);
         return false;
     }
@@ -614,6 +701,8 @@ bool checkStraightWalkCase(const std::string& label,
               << " dz=" << delta.z
               << " lateral_deviation=" << result.max_lateral_deviation_m
               << " path=" << result.walk_path_length_m
+              << " direction_projection=" << direction.forward_projection_m
+              << " direction_cosine=" << direction.alignment_cosine
               << " avg_speed=" << result.average_horizontal_speed_mps
               << " ratio=" << average_ratio
               << " peak_speed=" << result.peak_horizontal_speed_mps << '\n';
@@ -637,7 +726,7 @@ bool checkTurnCase(const std::string& label,
                 "physics_sim_walk_distance",
                 label,
                 false,
-                walkDistanceLimitsTurnJsonDynamic(label, 2.25, 0.21, 0.02, 0.05, 2.25, 0.05, true),
+                walkDistanceLimitsTurnJsonDynamic(label, 2.25, 0.21, 0.02, 0.05, 2.25, 0.05, true, true),
                 std::string("{\"exception\":\"") + locomotion_test::jsonEscape(ex.what()) + "\"}");
         }
         return expect(false, label + ": " + ex.what());
@@ -646,7 +735,9 @@ bool checkTurnCase(const std::string& label,
     const Vec3 delta = result.end_position - result.start_position;
     const double horizontal_distance = std::hypot(delta.x, delta.y);
     const double yaw_delta = wrapAngleDiff(result.start_yaw_rad, result.end_yaw_rad);
-    const double commanded_yaw_rate = std::abs(turn_motion.twist.twist_vel_radps.z);
+    const double commanded_yaw_rate_signed = turn_motion.twist.twist_vel_radps.z;
+    const double commanded_yaw_rate = std::abs(commanded_yaw_rate_signed);
+    const bool commanded_yaw_direction_match = yaw_delta * commanded_yaw_rate_signed > 0.0;
     const double average_ratio =
         commanded_yaw_rate > 0.0 ? (result.average_yaw_rate_radps / commanded_yaw_rate) : 0.0;
 
@@ -662,6 +753,8 @@ bool checkTurnCase(const std::string& label,
         test_limits::getDouble(kWalkDistanceSuite, label, "", "max_average_yaw_rate_ratio", 2.25);
     const double kMinYawDeltaRad =
         test_limits::getDouble(kWalkDistanceSuite, label, "", "min_yaw_delta_abs_rad", 0.05);
+    const bool kRequireCommandedYawDirection =
+        test_limits::getBool(kWalkDistanceSuite, label, "", "require_commanded_yaw_direction", true);
     const bool kRequireActiveModeWalkTurn =
         test_limits::getBool(kWalkDistanceSuite, label, "", "require_active_mode_walk", true);
     const std::string limits_turn_json = walkDistanceLimitsTurnJsonDynamic(label,
@@ -671,6 +764,7 @@ bool checkTurnCase(const std::string& label,
                                                                            kMinAverageYawRateRatio,
                                                                            kMaxAverageYawRateRatio,
                                                                            kMinYawDeltaRad,
+                                                                           kRequireCommandedYawDirection,
                                                                            kRequireActiveModeWalkTurn);
 
     const auto emit = [&](const bool pass) {
@@ -682,7 +776,13 @@ bool checkTurnCase(const std::string& label,
                                       pass,
                                       limits_turn_json,
                                       motionRunTurnMetricsJson(
-                                          result, delta, horizontal_distance, yaw_delta, commanded_yaw_rate, average_ratio));
+                                          result,
+                                          delta,
+                                          horizontal_distance,
+                                          yaw_delta,
+                                          commanded_yaw_rate,
+                                          average_ratio,
+                                          commanded_yaw_direction_match));
     };
 
     if (!expect(horizontal_distance <= kMaxNetHorizontalDistanceM,
@@ -725,6 +825,15 @@ bool checkTurnCase(const std::string& label,
                   << " avg_yaw_rate=" << result.average_yaw_rate_radps
                   << " command_yaw_rate=" << commanded_yaw_rate
                   << " ratio=" << average_ratio << '\n';
+        emit(false);
+        return false;
+    }
+
+    if (kRequireCommandedYawDirection &&
+        !expect(commanded_yaw_direction_match,
+                label + ": turn-in-place should rotate in the commanded yaw direction")) {
+        std::cerr << label << " yaw_delta=" << yaw_delta
+                  << " signed_command_yaw_rate=" << commanded_yaw_rate_signed << '\n';
         emit(false);
         return false;
     }
