@@ -59,6 +59,12 @@ int Run() {
         return 1;
     }
 
+    double delassusError = 0.0;
+    if (!model.validateDelassusOracle(world, 1.0e-6, delassusError)) {
+        std::cerr << "rigid Delassus/Cholesky oracle mismatch error=" << delassusError << "\n";
+        return 1;
+    }
+
     ProximalSolverSettings proximalSettings{};
     proximalSettings.maxIterations = 50;
     ProximalStepDiagnostics proximalDiagnostics{};

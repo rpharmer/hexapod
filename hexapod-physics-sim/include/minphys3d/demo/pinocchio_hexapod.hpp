@@ -82,6 +82,13 @@ public:
         const std::vector<double>& tau,
         std::vector<double>& ddq);
 
+    /// Compare the production articulated Delassus operator with the dense
+    /// constraint-Cholesky oracle for a pair of non-degenerate contacts.
+    bool validateDelassusOracle(
+        const World& world,
+        double tolerance,
+        double& maxRelativeError);
+
     /// Advance the complete floating-base tree using minphys3d manifolds and
     /// Pinocchio's articulated Delassus + proximal ADMM contact solver.
     bool stepProximal(
