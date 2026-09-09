@@ -126,6 +126,11 @@ bool parseRuntimeSection(const toml::value& root,
        false, 0.0},
       {"Runtime.PhysicsSim.Port", ValueType::Double, false, true, 1.0, 65535.0, "", false, 9871.0},
       {"Runtime.PhysicsSim.SolverIterations", ValueType::Double, false, true, 1.0, 512.0, "", false, 24.0},
+      {"Runtime.PhysicsSim.SolverMode", ValueType::Double, false, true, 0.0, 1.0, "", false, 0.0},
+      {"Runtime.PhysicsSim.ProximalMu", ValueType::Double, false, true, 1.0e-12, 1.0, "", false, 1.0e-6},
+      {"Runtime.PhysicsSim.AbsoluteTolerance", ValueType::Double, false, true, 1.0e-12, 1.0, "", false, 1.0e-8},
+      {"Runtime.PhysicsSim.RelativeTolerance", ValueType::Double, false, true, 1.0e-12, 1.0, "", false, 1.0e-6},
+      {"Runtime.PhysicsSim.ContactRegularization", ValueType::Double, false, true, 1.0e-14, 1.0, "", false, 1.0e-10},
       {"Runtime.Log.FilePath", ValueType::String, false, false, kNoBoundsMin, kNoBoundsMax, "app.log", false, 0.0},
       {"Runtime.Log.EnableFile", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", true, 0.0},
       {"Runtime.ReplayLog.EnableFile", ValueType::Bool, false, false, kNoBoundsMin, kNoBoundsMax, "", false, 0.0},
@@ -198,30 +203,45 @@ bool parseRuntimeSection(const toml::value& root,
   out.physicsSimSolverIterations = static_cast<int>(config_validation::parseDoubleWithFallback(
       root, schema[9].key, schema[9].default_double, schema[9].min_value, schema[9].max_value, "runtime",
       logger, diagnostics));
+  out.physicsSimSolverMode = static_cast<int>(config_validation::parseDoubleWithFallback(
+      root, schema[10].key, schema[10].default_double, schema[10].min_value, schema[10].max_value, "runtime",
+      logger, diagnostics));
+  out.physicsSimProximalMu = config_validation::parseDoubleWithFallback(
+      root, schema[11].key, schema[11].default_double, schema[11].min_value, schema[11].max_value, "runtime",
+      logger, diagnostics);
+  out.physicsSimAbsoluteTolerance = config_validation::parseDoubleWithFallback(
+      root, schema[12].key, schema[12].default_double, schema[12].min_value, schema[12].max_value, "runtime",
+      logger, diagnostics);
+  out.physicsSimRelativeTolerance = config_validation::parseDoubleWithFallback(
+      root, schema[13].key, schema[13].default_double, schema[13].min_value, schema[13].max_value, "runtime",
+      logger, diagnostics);
+  out.physicsSimContactRegularization = config_validation::parseDoubleWithFallback(
+      root, schema[14].key, schema[14].default_double, schema[14].min_value, schema[14].max_value, "runtime",
+      logger, diagnostics);
 
-  out.logFilePath = findOrByPath<std::string>(root, schema[10].key, schema[10].default_string);
-  out.logToFile = findOrByPath<bool>(root, schema[11].key, schema[11].default_bool);
-  out.replayLogToFile = findOrByPath<bool>(root, schema[12].key, schema[12].default_bool);
-  out.replayLogFilePath = findOrByPath<std::string>(root, schema[13].key, schema[13].default_string);
-  out.telemetryEnabled = findOrByPath<bool>(root, schema[14].key, schema[14].default_bool);
-  out.telemetryHost = findOrByPath<std::string>(root, schema[15].key, schema[15].default_string);
+  out.logFilePath = findOrByPath<std::string>(root, schema[15].key, schema[15].default_string);
+  out.logToFile = findOrByPath<bool>(root, schema[16].key, schema[16].default_bool);
+  out.replayLogToFile = findOrByPath<bool>(root, schema[17].key, schema[17].default_bool);
+  out.replayLogFilePath = findOrByPath<std::string>(root, schema[18].key, schema[18].default_string);
+  out.telemetryEnabled = findOrByPath<bool>(root, schema[19].key, schema[19].default_bool);
+  out.telemetryHost = findOrByPath<std::string>(root, schema[20].key, schema[20].default_string);
   if (out.telemetryHost.empty()) {
-    out.telemetryHost = schema[15].default_string;
-    config_validation::emitDiagnostic(diagnostics, "runtime", schema[15].key, "empty_value",
+    out.telemetryHost = schema[20].default_string;
+    config_validation::emitDiagnostic(diagnostics, "runtime", schema[20].key, "empty_value",
                                       "Runtime.Telemetry.Host was empty, using default 127.0.0.1");
     if (logger) {
       LOG_WARN(logger, "[runtime] Runtime.Telemetry.Host was empty, using default 127.0.0.1");
     }
   }
   out.telemetryPort = config_validation::parseIntWithFallback(
-      root, schema[16].key, static_cast<int>(schema[16].default_double),
-      static_cast<int>(schema[16].min_value), static_cast<int>(schema[16].max_value), "runtime",
+      root, schema[21].key, static_cast<int>(schema[21].default_double),
+      static_cast<int>(schema[21].min_value), static_cast<int>(schema[21].max_value), "runtime",
       logger, diagnostics);
   out.telemetryPublishRateHz = config_validation::parseDoubleWithFallback(
-      root, schema[17].key, schema[17].default_double, schema[17].min_value, schema[17].max_value,
+      root, schema[22].key, schema[22].default_double, schema[22].min_value, schema[22].max_value,
       "runtime", logger, diagnostics);
   out.telemetryGeometryResendIntervalSec = config_validation::parseDoubleWithFallback(
-      root, schema[18].key, schema[18].default_double, schema[18].min_value, schema[18].max_value,
+      root, schema[23].key, schema[23].default_double, schema[23].min_value, schema[23].max_value,
       "runtime", logger, diagnostics);
 
   out.telemetryUdpHost = out.telemetryHost;
@@ -231,21 +251,21 @@ bool parseRuntimeSection(const toml::value& root,
   out.telemetryGeometryRefreshPeriodMs =
       static_cast<int>(std::lround(out.telemetryGeometryResendIntervalSec * 1000.0));
   out.investigationDisableTerrainStanceBias =
-      findOrByPathOrDirect<bool>(root, schema[19].key, schema[19].default_bool);
+      findOrByPathOrDirect<bool>(root, schema[24].key, schema[24].default_bool);
   out.investigationDisableTerrainSwingClearance =
-      findOrByPathOrDirect<bool>(root, schema[20].key, schema[20].default_bool);
+      findOrByPathOrDirect<bool>(root, schema[25].key, schema[25].default_bool);
   out.investigationDisableTerrainSwingXYNudge =
-      findOrByPathOrDirect<bool>(root, schema[21].key, schema[21].default_bool);
+      findOrByPathOrDirect<bool>(root, schema[26].key, schema[26].default_bool);
   out.investigationDisableStanceTiltLeveling =
-      findOrByPathOrDirect<bool>(root, schema[22].key, schema[22].default_bool);
+      findOrByPathOrDirect<bool>(root, schema[27].key, schema[27].default_bool);
   // Physics-sim: default to suppressing UDP fusion corrections so the simulation remains the pose
   // authority. Serial/sim keep the prior default (corrections enabled when this key is absent).
   // Opt in for physics-sim with SuppressFusionCorrections = false or --investigation-emit-fusion-corrections.
   const bool default_suppress_fusion_corrections = (out.runtimeMode == "physics-sim");
   out.investigationSuppressFusionCorrections =
-      findOrByPathOrDirect<bool>(root, schema[23].key, default_suppress_fusion_corrections);
+      findOrByPathOrDirect<bool>(root, schema[28].key, default_suppress_fusion_corrections);
   out.investigationSuppressFusionResets =
-      findOrByPathOrDirect<bool>(root, schema[24].key, schema[24].default_bool);
+      findOrByPathOrDirect<bool>(root, schema[29].key, schema[29].default_bool);
   return true;
 }
 

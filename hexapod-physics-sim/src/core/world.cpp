@@ -823,6 +823,25 @@ const std::vector<Manifold>& World::DebugManifolds() const {
     return manifolds_;
 }
 
+void World::PrepareExternalContacts(Real dt) {
+    currentSubstepDt_ = std::max(dt, 1.0e-9);
+    RefreshBodyWorldInertias();
+    contacts_.clear();
+    manifolds_.clear();
+    UpdateBroadphaseProxies();
+    GenerateContacts();
+    BuildManifolds();
+}
+
+void World::CompleteExternalDynamicsStep() {
+    previousContacts_ = contacts_;
+    previousManifolds_ = manifolds_;
+    CapturePersistentPointImpulseState(previousManifolds_);
+    ClearAccumulators();
+    InvalidateServoAngleSampleCache();
+    AssertBodyInvariants();
+}
+
 std::size_t World::BruteForcePairCount() const {
     std::size_t count = 0;
     for (std::uint32_t i = 0; i < proxies_.size(); ++i) {

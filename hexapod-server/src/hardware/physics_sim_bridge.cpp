@@ -265,6 +265,19 @@ PhysicsSimBridge::PhysicsSimBridge(std::string host,
       port_(port),
       bus_loop_period_us_(bus_loop_period_us),
       physics_solver_iterations_(physics_solver_iterations > 0 ? physics_solver_iterations : 8),
+      solver_settings_{},
+      logger_(std::move(logger)) {}
+
+PhysicsSimBridge::PhysicsSimBridge(std::string host,
+                                   int port,
+                                   int bus_loop_period_us,
+                                   PhysicsSimSolverSettings solver_settings,
+                                   std::shared_ptr<logging::AsyncLogger> logger)
+    : host_(std::move(host)),
+      port_(port),
+      bus_loop_period_us_(bus_loop_period_us),
+      physics_solver_iterations_(solver_settings.iterations > 0 ? solver_settings.iterations : 8),
+      solver_settings_(solver_settings),
       logger_(std::move(logger)) {}
 
 PhysicsSimBridge::~PhysicsSimBridge() {
@@ -330,6 +343,11 @@ bool PhysicsSimBridge::init() {
     physics_sim::ConfigCommand cfg{};
     cfg.gravity = {0.0f, -9.81f, 0.0f};
     cfg.solver_iterations = physics_solver_iterations_;
+    cfg.solver_mode = solver_settings_.mode;
+    cfg.proximal_mu = solver_settings_.proximal_mu;
+    cfg.absolute_tolerance = solver_settings_.absolute_tolerance;
+    cfg.relative_tolerance = solver_settings_.relative_tolerance;
+    cfg.contact_regularization = solver_settings_.contact_regularization;
 
     if (::send(sock_, &cfg, physics_sim::kConfigCommandBytes, 0) !=
         static_cast<ssize_t>(physics_sim::kConfigCommandBytes)) {

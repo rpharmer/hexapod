@@ -61,6 +61,18 @@ enum class ContactPhase : std::uint8_t {
     Search = 5,
 };
 
+enum class PhysicsSolverMode : std::int32_t {
+    LegacyPgs = 0,
+    PinocchioProximal = 1,
+};
+
+enum class SolverStatus : std::uint8_t {
+    Healthy = 0,
+    RecoveredRetry = 1,
+    HeldLastGood = 2,
+    UnsupportedIsland = 3,
+};
+
 inline constexpr std::uint8_t kStateCorrectionPoseValid = 1u << 0;
 inline constexpr std::uint8_t kStateCorrectionTwistValid = 1u << 1;
 inline constexpr std::uint8_t kStateCorrectionContactValid = 1u << 2;
@@ -108,6 +120,12 @@ struct StateResponse {
     /// Capture timestamp for the LiDAR frame. Repeated responses reuse the last frame timestamp.
     std::uint64_t matrix_lidar_timestamp_us{0};
     std::array<std::uint16_t, kMatrixLidarMaxCells> matrix_lidar_ranges_mm{};
+    SolverStatus solver_status{SolverStatus::Healthy};
+    std::uint16_t solver_iterations{0};
+    float solver_primal_residual{0.0f};
+    float solver_dual_residual{0.0f};
+    float solver_complementarity_residual{0.0f};
+    std::uint64_t solver_rollback_count{0};
 };
 
 struct StateCorrection {
@@ -133,8 +151,11 @@ struct ConfigCommand {
     std::uint8_t message_type{static_cast<std::uint8_t>(MessageType::ConfigCommand)};
     std::array<float, 3> gravity{};
     std::int32_t solver_iterations{8};
-    std::int32_t reserved_i32{0};
-    std::array<float, 4> reserved_float{};
+    PhysicsSolverMode solver_mode{PhysicsSolverMode::LegacyPgs};
+    float proximal_mu{1.0e-6f};
+    float absolute_tolerance{1.0e-8f};
+    float relative_tolerance{1.0e-6f};
+    float contact_regularization{1.0e-10f};
 };
 
 struct ConfigAck {

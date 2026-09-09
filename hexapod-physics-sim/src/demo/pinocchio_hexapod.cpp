@@ -1,21 +1,30 @@
 #include "minphys3d/demo/pinocchio_hexapod.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <functional>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #include <Eigen/Cholesky>
 #include <Eigen/Core>
 #include <pinocchio/algorithm/aba.hpp>
 #include <pinocchio/algorithm/crba.hpp>
+#include <pinocchio/algorithm/delassus-operator.hpp>
 #include <pinocchio/algorithm/frames.hpp>
 #include <pinocchio/algorithm/joint-configuration.hpp>
 #include <pinocchio/algorithm/kinematics.hpp>
 #include <pinocchio/algorithm/rnea.hpp>
+#include <pinocchio/algorithm/solvers/admm-solver.hpp>
+#include <pinocchio/constraints.hpp>
 #include <pinocchio/multibody.hpp>
 #include <pinocchio/multibody/joint.hpp>
+
+#include "hexapod_dynamics_constants.hpp"
 
 namespace minphys3d::demo {
 namespace {
@@ -63,6 +72,28 @@ bool IsFinite(const Eigen::VectorXd& value) {
     return value.array().isFinite().all();
 }
 
+std::uint64_t PersistentContactId(const Manifold& manifold, const Contact& contact) {
+    std::uint64_t value = manifold.pairKey();
+    value ^= contact.key + 0x9e3779b97f4a7c15ULL + (value << 6U) + (value >> 2U);
+    return value;
+}
+
+Eigen::Matrix3d ContactFrameRotation(const Vec3& inputNormal) {
+    const Vec3 normal = Normalize(inputNormal);
+    Vec3 tangent0{};
+    Vec3 tangent1{};
+    if (!World::ComputeStableTangentFrame(normal, Vec3{}, tangent0, tangent1)) {
+        tangent0 = std::abs(normal.y) < 0.9 ? Normalize(Cross({0.0, 1.0, 0.0}, normal))
+                                           : Normalize(Cross({1.0, 0.0, 0.0}, normal));
+        tangent1 = Normalize(Cross(normal, tangent0));
+    }
+    Eigen::Matrix3d rotation;
+    rotation.col(0) = ToEigen(tangent0);
+    rotation.col(1) = ToEigen(tangent1);
+    rotation.col(2) = ToEigen(normal);
+    return rotation;
+}
+
 } // namespace
 
 struct PinocchioHexapodModel::Impl {
@@ -77,6 +108,20 @@ struct PinocchioHexapodModel::Impl {
     std::vector<BodyBinding> bodies{};
     std::array<pinocchio::JointIndex, 18> wireJoints{};
     std::array<std::uint32_t, 18> wireServoIds{};
+    std::unordered_map<std::uint32_t, pinocchio::JointIndex> bodyJoints{};
+
+    struct WarmImpulse {
+        Eigen::Vector3d value = Eigen::Vector3d::Zero();
+        double dt = 0.0;
+    };
+    std::unordered_map<std::uint64_t, WarmImpulse> contactWarmStarts{};
+    std::vector<double> lastGoodQ{};
+    std::vector<double> lastGoodV{};
+    std::uint64_t totalWarmStartResets = 0;
+    std::uint64_t totalRetries = 0;
+    std::uint64_t totalRollbacks = 0;
+    std::uint64_t totalHeldStates = 0;
+    std::uint64_t totalUnsupportedIslands = 0;
 
     Impl(
         const World& world,
@@ -94,6 +139,7 @@ struct PinocchioHexapodModel::Impl {
         const pinocchio::FrameIndex chassisFrame = model.addFrame(pinocchio::Frame(
             "chassis_body", root, pinocchio::SE3::Identity(), pinocchio::BODY));
         bodies.push_back({scene.body, root, chassisFrame});
+        bodyJoints.emplace(scene.body, root);
 
         std::unordered_map<std::uint32_t, pinocchio::JointIndex> servoToJoint;
         std::unordered_map<std::uint32_t, pinocchio::SE3> jointRestWorld;
@@ -121,6 +167,7 @@ struct PinocchioHexapodModel::Impl {
             const pinocchio::FrameIndex frameId = model.addFrame(pinocchio::Frame(
                 name + "_body", jointId, jointToBody, pinocchio::BODY));
             bodies.push_back({childBodyId, jointId, frameId});
+            bodyJoints.emplace(childBodyId, jointId);
             servoToJoint.emplace(servoId, jointId);
             jointRestWorld.emplace(jointId, jointWorld);
             return jointId;
@@ -275,6 +322,376 @@ bool PinocchioHexapodModel::computeDenseAcceleration(
     }
     ddqOut.assign(ddq.data(), ddq.data() + ddq.size());
     return true;
+}
+
+void PinocchioHexapodModel::resetWarmStarts() {
+    impl_->totalWarmStartResets += impl_->contactWarmStarts.size();
+    impl_->contactWarmStarts.clear();
+}
+
+bool PinocchioHexapodModel::stepProximal(
+    World& world,
+    double dt,
+    const ProximalSolverSettings& settings,
+    ProximalStepDiagnostics& diagnostics) {
+    diagnostics = {};
+    if (!(dt > 0.0) || !std::isfinite(dt)) {
+        diagnostics.status = ProximalStepStatus::HeldLastGood;
+        return false;
+    }
+
+    std::vector<double> snapshotQ;
+    std::vector<double> snapshotV;
+    if (!readState(world, snapshotQ, snapshotV)) {
+        diagnostics.status = ProximalStepStatus::HeldLastGood;
+        return false;
+    }
+    if (impl_->lastGoodQ.empty()) {
+        impl_->lastGoodQ = snapshotQ;
+        impl_->lastGoodV = snapshotV;
+    }
+
+    auto totalMechanicalEnergy = [&]() {
+        const Vec3 gravity = world.GetGravity();
+        double energy = 0.0;
+        for (const Impl::BodyBinding& binding : impl_->bodies) {
+            const Body& body = world.GetBody(binding.bodyId);
+            Mat3 inertiaWorld{};
+            const Mat3 inverseWorld = body.InvInertiaWorld();
+            if (!InvertMat3(inverseWorld, inertiaWorld)) {
+                continue;
+            }
+            energy += 0.5 * body.mass * Dot(body.velocity, body.velocity);
+            energy += 0.5 * Dot(body.angularVelocity, inertiaWorld * body.angularVelocity);
+            energy -= body.mass * Dot(gravity, body.position);
+        }
+        return energy;
+    };
+
+    bool unsupportedIsland = false;
+    auto advanceOnce = [&](double subDt, ProximalStepDiagnostics& out) -> bool {
+        std::vector<double> qStorage;
+        std::vector<double> vStorage;
+        if (!readState(world, qStorage, vStorage)) {
+            return false;
+        }
+        Eigen::Map<const Eigen::VectorXd> q(qStorage.data(), impl_->model.nq);
+        Eigen::Map<const Eigen::VectorXd> v(vStorage.data(), impl_->model.nv);
+        if (!IsFinite(q) || !IsFinite(v)) {
+            return false;
+        }
+
+        impl_->model.gravity.linear() = ToEigen(world.GetGravity());
+        Eigen::MatrixXd mass = pinocchio::crba(
+            impl_->model, impl_->data, q, pinocchio::Convention::WORLD);
+        mass.triangularView<Eigen::StrictlyLower>() =
+            mass.transpose().triangularView<Eigen::StrictlyLower>();
+        if (!mass.array().isFinite().all()) {
+            return false;
+        }
+
+        Eigen::VectorXd tau = Eigen::VectorXd::Zero(impl_->model.nv);
+        constexpr double stallTorque = hexapod_dynamics::kServoMaxTorqueNm;
+        constexpr double noLoadSpeed = hexapod_dynamics::kServoNoLoadSpeedRadPerSec;
+        constexpr double omegaN = hexapod_dynamics::kServoOmegaN;
+        constexpr double zeta = hexapod_dynamics::kServoZeta;
+        for (std::size_t i = 0; i < impl_->wireJoints.size(); ++i) {
+            const pinocchio::JointIndex joint = impl_->wireJoints[i];
+            const Eigen::Index qi = impl_->model.joints[joint].idx_q();
+            const Eigen::Index vi = impl_->model.joints[joint].idx_v();
+            const ServoJoint& servo = world.GetServoJoint(impl_->wireServoIds[i]);
+            const double error = std::remainder(
+                servo.targetAngle - q[qi], 6.28318530717958647692);
+            const double reflectedInertia = std::max(1.0e-9, mass(vi, vi));
+            const double requested = reflectedInertia * omegaN * omegaN * error
+                - 2.0 * zeta * omegaN * reflectedInertia * v[vi];
+            double available = stallTorque;
+            if (requested * v[vi] > 0.0) {
+                available *= std::max(0.0, 1.0 - std::abs(v[vi]) / noLoadSpeed);
+            }
+            tau[vi] = std::clamp(requested, -available, available);
+            out.peakActuatorImpulse = std::max(out.peakActuatorImpulse, std::abs(tau[vi]) * subDt);
+            out.peakServoTorqueUtilization = std::max(
+                out.peakServoTorqueUtilization, std::abs(tau[vi]) / stallTorque);
+            out.actuatorWork += tau[vi] * v[vi] * subDt;
+        }
+
+        const double energyBefore = totalMechanicalEnergy();
+        const Eigen::VectorXd acceleration = pinocchio::aba(
+            impl_->model, impl_->data, q, v, tau, pinocchio::Convention::WORLD);
+        Eigen::VectorXd vNew = v + subDt * acceleration;
+        if (!IsFinite(acceleration) || !IsFinite(vNew)) {
+            return false;
+        }
+
+        world.PrepareExternalContacts(subDt);
+        std::vector<pinocchio::ConstraintModel> constraintModels;
+        std::vector<pinocchio::ConstraintData> constraintDatas;
+        std::vector<std::uint64_t> contactIds;
+        std::vector<double> contactFrictions;
+        std::vector<double> contactRestitutions;
+        std::vector<double> contactPenetrations;
+        constraintModels.reserve(world.DebugManifolds().size() * 4U);
+        contactIds.reserve(world.DebugManifolds().size() * 4U);
+
+        for (const Manifold& manifold : world.DebugManifolds()) {
+            const auto aIt = impl_->bodyJoints.find(manifold.a);
+            const auto bIt = impl_->bodyJoints.find(manifold.b);
+            const bool aRobot = aIt != impl_->bodyJoints.end();
+            const bool bRobot = bIt != impl_->bodyJoints.end();
+            if (!aRobot && !bRobot) {
+                continue;
+            }
+            if (aRobot != bRobot) {
+                const std::uint32_t externalId = aRobot ? manifold.b : manifold.a;
+                const Body& external = world.GetBody(externalId);
+                if (!external.isStatic && external.invMass > 0.0) {
+                    unsupportedIsland = true;
+                    return false;
+                }
+            }
+
+            const Body& bodyA = world.GetBody(manifold.a);
+            const Body& bodyB = world.GetBody(manifold.b);
+            const double friction = std::max(
+                0.0, 0.5 * (bodyA.dynamicFriction + bodyB.dynamicFriction));
+            for (const Contact& contact : manifold.contacts) {
+                pinocchio::JointIndex joint1 = 0;
+                pinocchio::JointIndex joint2 = 0;
+                Vec3 normal = manifold.normal;
+                if (aRobot && bRobot) {
+                    joint1 = aIt->second;
+                    joint2 = bIt->second;
+                } else {
+                    joint2 = aRobot ? aIt->second : bIt->second;
+                    normal = aRobot ? -1.0 * manifold.normal : manifold.normal;
+                }
+
+                const pinocchio::SE3 contactWorld(
+                    ContactFrameRotation(normal), ToEigen(contact.point));
+                const pinocchio::SE3 placement1 = joint1 == 0
+                    ? contactWorld
+                    : impl_->data.oMi[joint1].inverse() * contactWorld;
+                const pinocchio::SE3 placement2 = joint2 == 0
+                    ? contactWorld
+                    : impl_->data.oMi[joint2].inverse() * contactWorld;
+                pinocchio::PointContactConstraintModel pointModel(
+                    impl_->model, joint1, placement1, joint2, placement2);
+                pointModel.setFriction(friction);
+                constraintModels.emplace_back(pointModel);
+                contactIds.push_back(PersistentContactId(manifold, contact));
+                contactFrictions.push_back(friction);
+                contactRestitutions.push_back(std::max(
+                    0.0, 0.5 * (bodyA.restitution + bodyB.restitution)));
+                contactPenetrations.push_back(contact.penetration);
+            }
+        }
+
+        if (!constraintModels.empty()) {
+            constraintDatas.reserve(constraintModels.size());
+            for (const pinocchio::ConstraintModel& model : constraintModels) {
+                constraintDatas.push_back(model.createData());
+            }
+            for (std::size_t i = 0; i < constraintModels.size(); ++i) {
+                constraintModels[i].calc(impl_->model, impl_->data, constraintDatas[i]);
+            }
+
+            using RigidDelassus = pinocchio::DelassusOperatorRigidBodySystemsTpl<
+                double,
+                0,
+                pinocchio::JointCollectionDefaultTpl,
+                pinocchio::ConstraintModel,
+                std::reference_wrapper>;
+            RigidDelassus delassus(
+                std::cref(impl_->model),
+                std::ref(impl_->data),
+                std::cref(constraintModels),
+                std::cref(constraintDatas),
+                settings.contactRegularization);
+            delassus.compute();
+
+            const Eigen::MatrixXd jacobian = pinocchio::getConstraintsJacobian(
+                impl_->model, impl_->data, constraintModels, constraintDatas);
+            Eigen::VectorXd drift = jacobian * vNew;
+            const ContactSolverConfig& contactSettings = world.GetContactSolverConfig();
+            for (std::size_t i = 0; i < constraintModels.size(); ++i) {
+                const Eigen::Index normalIndex = static_cast<Eigen::Index>(3U * i + 2U);
+                const double correction = std::min(
+                    std::max(0.0, contactSettings.penetrationBiasMaxSpeed),
+                    std::max(0.0, contactSettings.penetrationBiasFactor)
+                        * std::max(0.0, contactPenetrations[i] - contactSettings.penetrationSlop)
+                        / subDt);
+                drift[normalIndex] -= correction;
+                const double incomingNormalSpeed = drift[normalIndex];
+                if (incomingNormalSpeed < -contactSettings.restitutionVelocityCutoff) {
+                    drift[normalIndex] += contactRestitutions[i] * incomingNormalSpeed;
+                }
+            }
+
+            Eigen::VectorXd warm = Eigen::VectorXd::Zero(drift.size());
+            for (std::size_t i = 0; i < contactIds.size(); ++i) {
+                const auto found = impl_->contactWarmStarts.find(contactIds[i]);
+                if (found == impl_->contactWarmStarts.end()) {
+                    continue;
+                }
+                Eigen::Vector3d impulse = found->second.value;
+                if (found->second.dt > 0.0) {
+                    impulse *= subDt / found->second.dt;
+                }
+                impulse[2] = std::max(0.0, impulse[2]);
+                const double tangential = impulse.head<2>().norm();
+                const double limit = contactFrictions[i] * impulse[2];
+                if (tangential > limit && tangential > 0.0) {
+                    impulse.head<2>() *= limit / tangential;
+                }
+                warm.segment<3>(static_cast<Eigen::Index>(3U * i)) = impulse;
+            }
+
+            pinocchio::ADMMConstraintSolver solver(drift.size());
+            pinocchio::ADMMSolverSettings solverSettings;
+            solverSettings.max_iterations = static_cast<std::size_t>(std::max(1, settings.maxIterations));
+            solverSettings.absolute_feasibility_tol = settings.absoluteTolerance;
+            solverSettings.relative_feasibility_tol = settings.relativeTolerance;
+            solverSettings.absolute_complementarity_tol = settings.absoluteTolerance;
+            solverSettings.relative_complementarity_tol = settings.relativeTolerance;
+            solverSettings.admm_update_rule = pinocchio::ADMMUpdateRule::SPECTRAL;
+            solverSettings.admm_proximal_rule = pinocchio::ADMMProximalRule::MANUAL;
+            solverSettings.mu_prox = settings.proximalMu;
+            solverSettings.solve_ncp = true;
+            solverSettings.stat_record = false;
+            pinocchio::ADMMSolverResult result;
+            result.resize(static_cast<std::size_t>(drift.size()));
+            result.setConstraintImpulseGuess(warm);
+            const bool converged = solver.solve(
+                delassus,
+                drift,
+                constraintModels,
+                constraintDatas,
+                solverSettings,
+                result);
+            out.iterations = std::max(out.iterations, static_cast<int>(result.iterations));
+            out.primalResidual = std::max(out.primalResidual, result.primal_feasibility);
+            out.dualResidual = std::max(out.dualResidual, result.dual_feasibility);
+            out.complementarityResidual = std::max(
+                out.complementarityResidual, result.complementarity);
+            if (!converged || !std::isfinite(result.primal_feasibility)
+                || !std::isfinite(result.dual_feasibility)
+                || !std::isfinite(result.complementarity)) {
+                return false;
+            }
+
+            Eigen::VectorXd impulses(drift.size());
+            result.retrieveConstraintImpulses(impulses);
+            if (!IsFinite(impulses)) {
+                return false;
+            }
+            std::unordered_set<std::uint64_t> activeIds;
+            for (std::size_t i = 0; i < contactIds.size(); ++i) {
+                const Eigen::Vector3d impulse = impulses.segment<3>(
+                    static_cast<Eigen::Index>(3U * i));
+                impl_->contactWarmStarts[contactIds[i]] = {impulse, subDt};
+                activeIds.insert(contactIds[i]);
+                out.peakNormalImpulse = std::max(out.peakNormalImpulse, std::abs(impulse[2]));
+                out.peakFrictionImpulse = std::max(
+                    out.peakFrictionImpulse, impulse.head<2>().norm());
+                if (std::abs(impulse[2]) >= out.peakNormalImpulse) {
+                    out.worstContactId = contactIds[i];
+                }
+            }
+            for (auto it = impl_->contactWarmStarts.begin(); it != impl_->contactWarmStarts.end();) {
+                if (activeIds.find(it->first) == activeIds.end()) {
+                    it = impl_->contactWarmStarts.erase(it);
+                    ++impl_->totalWarmStartResets;
+                } else {
+                    ++it;
+                }
+            }
+            vNew += mass.ldlt().solve(jacobian.transpose() * impulses);
+        } else if (!impl_->contactWarmStarts.empty()) {
+            impl_->totalWarmStartResets += impl_->contactWarmStarts.size();
+            impl_->contactWarmStarts.clear();
+        }
+
+        if (!IsFinite(vNew)) {
+            return false;
+        }
+        pinocchio::forwardKinematics(impl_->model, impl_->data, q, vNew);
+        pinocchio::updateFramePlacements(impl_->model, impl_->data);
+        for (const Impl::BodyBinding& binding : impl_->bodies) {
+            const pinocchio::Motion motion = pinocchio::getFrameVelocity(
+                impl_->model, impl_->data, binding.frameId, pinocchio::LOCAL_WORLD_ALIGNED);
+            const double linearSpeed = motion.linear().norm();
+            const double angularSpeed = motion.angular().norm();
+            out.preIntegrationLinearSpeed = std::max(out.preIntegrationLinearSpeed, linearSpeed);
+            out.preIntegrationAngularSpeed = std::max(out.preIntegrationAngularSpeed, angularSpeed);
+            if (!std::isfinite(linearSpeed) || !std::isfinite(angularSpeed)
+                || linearSpeed > settings.maxLinearSpeed
+                || angularSpeed > settings.maxAngularSpeed) {
+                return false;
+            }
+        }
+
+        const Eigen::VectorXd qNew = pinocchio::integrate(impl_->model, q, subDt * vNew);
+        if (!IsFinite(qNew)) {
+            return false;
+        }
+        std::vector<double> qNewStorage(qNew.data(), qNew.data() + qNew.size());
+        std::vector<double> vNewStorage(vNew.data(), vNew.data() + vNew.size());
+        if (!writeState(world, qNewStorage, vNewStorage)) {
+            return false;
+        }
+        const double energyAfter = totalMechanicalEnergy();
+        const double energyDelta = energyAfter - energyBefore;
+        if (!std::isfinite(energyDelta)) {
+            return false;
+        }
+        out.mechanicalEnergyDelta += energyDelta;
+        return true;
+    };
+
+    ProximalStepDiagnostics firstAttempt{};
+    if (advanceOnce(dt, firstAttempt)) {
+        world.CompleteExternalDynamicsStep();
+        diagnostics = firstAttempt;
+        diagnostics.status = ProximalStepStatus::Healthy;
+        readState(world, impl_->lastGoodQ, impl_->lastGoodV);
+    } else if (unsupportedIsland) {
+        ++impl_->totalUnsupportedIslands;
+        ++impl_->totalRollbacks;
+        writeState(world, impl_->lastGoodQ, impl_->lastGoodV);
+        resetWarmStarts();
+        diagnostics = firstAttempt;
+        diagnostics.status = ProximalStepStatus::UnsupportedIsland;
+    } else {
+        ++impl_->totalRetries;
+        ++impl_->totalRollbacks;
+        writeState(world, snapshotQ, snapshotV);
+        resetWarmStarts();
+        ProximalStepDiagnostics retry{};
+        const bool half1 = advanceOnce(0.5 * dt, retry);
+        const bool half2 = half1 && advanceOnce(0.5 * dt, retry);
+        if (half1 && half2) {
+            world.CompleteExternalDynamicsStep();
+            diagnostics = retry;
+            diagnostics.status = ProximalStepStatus::RecoveredRetry;
+            readState(world, impl_->lastGoodQ, impl_->lastGoodV);
+        } else {
+            ++impl_->totalHeldStates;
+            ++impl_->totalRollbacks;
+            writeState(world, impl_->lastGoodQ, impl_->lastGoodV);
+            resetWarmStarts();
+            diagnostics = retry;
+            diagnostics.status = ProximalStepStatus::HeldLastGood;
+        }
+    }
+
+    diagnostics.warmStartResets = impl_->totalWarmStartResets;
+    diagnostics.retries = impl_->totalRetries;
+    diagnostics.rollbackCount = impl_->totalRollbacks;
+    diagnostics.heldStateCount = impl_->totalHeldStates;
+    diagnostics.unsupportedIslandCount = impl_->totalUnsupportedIslands;
+    return diagnostics.status == ProximalStepStatus::Healthy
+        || diagnostics.status == ProximalStepStatus::RecoveredRetry;
 }
 
 } // namespace minphys3d::demo

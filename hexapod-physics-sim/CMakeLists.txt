@@ -99,7 +99,10 @@ if(MINPHYS3D_ENABLE_PINOCCHIO AND (MINPHYS3D_BUILD_DEMO OR MINPHYS3D_BUILD_TESTS
     if(MSVC)
         target_compile_options(hexapod_pinocchio PRIVATE /W4)
     else()
-        target_compile_options(hexapod_pinocchio PRIVATE -Wall -Wextra -pedantic)
+        # Pinocchio's header-only constraint dispatch is a very large template
+        # translation unit. Keep this adapter low-memory even for a release
+        # build; minphys3d_core and the linked Pinocchio binary remain optimized.
+        target_compile_options(hexapod_pinocchio PRIVATE -Wall -Wextra -pedantic -O0 -g0 -fno-var-tracking)
     endif()
 endif()
 

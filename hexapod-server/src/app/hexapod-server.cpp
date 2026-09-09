@@ -97,8 +97,15 @@ std::unique_ptr<IHardwareBridge> makeHardwareBridge(const ParsedToml& config,
   }
 
   if (config.runtimeMode == "physics-sim") {
+    PhysicsSimSolverSettings solver_settings{};
+    solver_settings.mode = static_cast<physics_sim::PhysicsSolverMode>(config.physicsSimSolverMode);
+    solver_settings.iterations = config.physicsSimSolverIterations;
+    solver_settings.proximal_mu = static_cast<float>(config.physicsSimProximalMu);
+    solver_settings.absolute_tolerance = static_cast<float>(config.physicsSimAbsoluteTolerance);
+    solver_settings.relative_tolerance = static_cast<float>(config.physicsSimRelativeTolerance);
+    solver_settings.contact_regularization = static_cast<float>(config.physicsSimContactRegularization);
     return std::make_unique<PhysicsSimBridge>(config.physicsSimHost, config.physicsSimPort,
-                                              config.busLoopPeriodUs, config.physicsSimSolverIterations,
+                                              config.busLoopPeriodUs, solver_settings,
                                               logger);
   }
 

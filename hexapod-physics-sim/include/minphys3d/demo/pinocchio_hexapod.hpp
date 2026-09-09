@@ -11,6 +11,45 @@
 
 namespace minphys3d::demo {
 
+enum class ProximalStepStatus : std::uint8_t {
+    Healthy = 0,
+    RecoveredRetry = 1,
+    HeldLastGood = 2,
+    UnsupportedIsland = 3,
+};
+
+struct ProximalSolverSettings {
+    int maxIterations = 50;
+    double proximalMu = 1.0e-6;
+    double absoluteTolerance = 1.0e-8;
+    double relativeTolerance = 1.0e-6;
+    double contactRegularization = 1.0e-10;
+    double maxLinearSpeed = 2.0;
+    double maxAngularSpeed = 10.0;
+};
+
+struct ProximalStepDiagnostics {
+    ProximalStepStatus status = ProximalStepStatus::Healthy;
+    int iterations = 0;
+    double primalResidual = 0.0;
+    double dualResidual = 0.0;
+    double complementarityResidual = 0.0;
+    double peakNormalImpulse = 0.0;
+    double peakFrictionImpulse = 0.0;
+    double peakActuatorImpulse = 0.0;
+    double peakServoTorqueUtilization = 0.0;
+    double preIntegrationLinearSpeed = 0.0;
+    double preIntegrationAngularSpeed = 0.0;
+    double mechanicalEnergyDelta = 0.0;
+    double actuatorWork = 0.0;
+    std::uint64_t warmStartResets = 0;
+    std::uint64_t retries = 0;
+    std::uint64_t rollbackCount = 0;
+    std::uint64_t heldStateCount = 0;
+    std::uint64_t unsupportedIslandCount = 0;
+    std::uint64_t worstContactId = 0;
+};
+
 /// Whole-tree floating-base model mirroring the built-in minphys3d hexapod.
 /// Pinocchio types are hidden so legacy-only builds do not inherit that dependency.
 class PinocchioHexapodModel {
@@ -42,6 +81,16 @@ public:
         const std::vector<double>& v,
         const std::vector<double>& tau,
         std::vector<double>& ddq);
+
+    /// Advance the complete floating-base tree using minphys3d manifolds and
+    /// Pinocchio's articulated Delassus + proximal ADMM contact solver.
+    bool stepProximal(
+        World& world,
+        double dt,
+        const ProximalSolverSettings& settings,
+        ProximalStepDiagnostics& diagnostics);
+
+    void resetWarmStarts();
 
 private:
     struct Impl;

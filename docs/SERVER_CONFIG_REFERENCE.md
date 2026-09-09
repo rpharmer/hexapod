@@ -48,6 +48,11 @@ Primary parser: `runtime_section_parser.cpp`.
 - `Runtime.PhysicsSim.Host` (string, default `127.0.0.1`)
 - `Runtime.PhysicsSim.Port` (int/double parsed, bounds: `1..65535`, default `9871`)
 - `Runtime.PhysicsSim.SolverIterations` (int/double parsed, bounds: `1..512`, default `24`)
+- `Runtime.PhysicsSim.SolverMode` (`0` = legacy PGS, `1` = Pinocchio proximal, default `0`)
+- `Runtime.PhysicsSim.ProximalMu` (double, default `1e-6`)
+- `Runtime.PhysicsSim.AbsoluteTolerance` (double, default `1e-8`)
+- `Runtime.PhysicsSim.RelativeTolerance` (double, default `1e-6`)
+- `Runtime.PhysicsSim.ContactRegularization` (double, default `1e-10`)
 
 ### Logging and replay
 

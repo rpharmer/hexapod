@@ -59,6 +59,23 @@ int Run() {
         return 1;
     }
 
+    ProximalSolverSettings proximalSettings{};
+    proximalSettings.maxIterations = 50;
+    ProximalStepDiagnostics proximalDiagnostics{};
+    for (int step = 0; step < 8; ++step) {
+        if (!model.stepProximal(world, 1.0 / 240.0, proximalSettings, proximalDiagnostics)) {
+            std::cerr << "proximal standing step failed status="
+                      << static_cast<int>(proximalDiagnostics.status)
+                      << " residual=" << proximalDiagnostics.primalResidual
+                      << " dual=" << proximalDiagnostics.dualResidual
+                      << " comp=" << proximalDiagnostics.complementarityResidual
+                      << " pre_v=" << proximalDiagnostics.preIntegrationLinearSpeed
+                      << " pre_w=" << proximalDiagnostics.preIntegrationAngularSpeed
+                      << " retries=" << proximalDiagnostics.retries << "\n";
+            return 1;
+        }
+    }
+
     std::mt19937 rng(0x50494e4fU);
     std::uniform_real_distribution<double> qDist(-0.45, 0.45);
     std::uniform_real_distribution<double> vDist(-0.2, 0.2);

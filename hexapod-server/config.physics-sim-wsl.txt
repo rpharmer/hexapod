@@ -7,6 +7,11 @@ Runtime.Mode = "physics-sim"
 Runtime.PhysicsSim.Host = "127.0.0.1"
 Runtime.PhysicsSim.Port = 9871
 Runtime.PhysicsSim.SolverIterations = 12.0
+Runtime.PhysicsSim.SolverMode = 0
+Runtime.PhysicsSim.ProximalMu = 0.000001
+Runtime.PhysicsSim.AbsoluteTolerance = 0.00000001
+Runtime.PhysicsSim.RelativeTolerance = 0.000001
+Runtime.PhysicsSim.ContactRegularization = 0.0000000001
 
 Runtime.Log.FilePath = "app-physics-sim.log"
 Runtime.Log.EnableFile = true

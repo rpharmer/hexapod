@@ -10,6 +10,9 @@
 #include "minphys3d/collision/shapes.hpp"
 #include "minphys3d/core/world.hpp"
 #include "minphys3d/demo/hexapod_scene.hpp"
+#if defined(MINPHYS3D_ENABLE_PINOCCHIO)
+#include "minphys3d/demo/pinocchio_hexapod.hpp"
+#endif
 #include "minphys3d/math/vec3.hpp"
 #include "minphys3d/solver/types.hpp"
 #include "physics_sim_protocol.hpp"
@@ -1048,6 +1051,11 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
     int solver_iterations = 8;
+    physics_sim::PhysicsSolverMode solver_mode = physics_sim::PhysicsSolverMode::LegacyPgs;
+#if defined(MINPHYS3D_ENABLE_PINOCCHIO)
+    ProximalSolverSettings proximal_settings{};
+    ProximalStepDiagnostics proximal_diagnostics{};
+#endif
     AssimilationState assimilation_state{};
     TerrainPatchConfig terrain_config{};
     TerrainPatchSeed terrain_seed{};
@@ -1104,6 +1112,10 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     }
 
     const std::array<std::uint32_t, 18> wire_joints = ServoJointIdsInWireOrder(scene);
+#if defined(MINPHYS3D_ENABLE_PINOCCHIO)
+    std::unique_ptr<PinocchioHexapodModel> pinocchio_model;
+    pinocchio_model = std::make_unique<PinocchioHexapodModel>(world, scene, wire_joints);
+#endif
     std::array<float, 18> prev_angles{};
     for (std::size_t i = 0; i < wire_joints.size(); ++i) {
         prev_angles[i] = world.GetServoJointAngle(wire_joints[i]);
@@ -1437,6 +1449,19 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::ApplyConfig));
                 world.SetGravity(Vec3{(*cmd).gravity[0], (*cmd).gravity[1], (*cmd).gravity[2]});
                 solver_iterations = (*cmd).solver_iterations > 0 ? (*cmd).solver_iterations : 8;
+                solver_mode = (*cmd).solver_mode;
+#if defined(MINPHYS3D_ENABLE_PINOCCHIO)
+                proximal_settings.maxIterations = solver_iterations;
+                proximal_settings.proximalMu = std::max(1.0e-12, static_cast<double>((*cmd).proximal_mu));
+                proximal_settings.absoluteTolerance = std::max(1.0e-12, static_cast<double>((*cmd).absolute_tolerance));
+                proximal_settings.relativeTolerance = std::max(1.0e-12, static_cast<double>((*cmd).relative_tolerance));
+                proximal_settings.contactRegularization = std::max(1.0e-14, static_cast<double>((*cmd).contact_regularization));
+#endif
+#if !defined(MINPHYS3D_ENABLE_PINOCCHIO)
+                if (solver_mode == physics_sim::PhysicsSolverMode::PinocchioProximal) {
+                    solver_mode = physics_sim::PhysicsSolverMode::LegacyPgs;
+                }
+#endif
                 configured = true;
                 (void)scope;
             }
@@ -1477,6 +1502,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             rsp = physics_sim::StateResponse{};
             rsp.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateResponse);
             rsp.sequence_id = 0;
+            rsp.solver_status = physics_sim::SolverStatus::Healthy;
 
             const Body& chassis = world.GetBody(scene.body);
             rsp.body_position = {chassis.position.x, chassis.position.y, chassis.position.z};
@@ -1535,7 +1561,20 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         {
             const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PhysicsStep));
             for (int substep_index = 0; substep_index < physics_substeps; ++substep_index) {
-                world.Step(substep_dt, solver_iterations);
+                if (solver_mode == physics_sim::PhysicsSolverMode::PinocchioProximal) {
+#if defined(MINPHYS3D_ENABLE_PINOCCHIO)
+                    proximal_diagnostics = {};
+                    const bool usable = pinocchio_model->stepProximal(
+                        world, substep_dt, proximal_settings, proximal_diagnostics);
+                    if (!usable) {
+                        break;
+                    }
+#else
+                    break;
+#endif
+                } else {
+                    world.Step(substep_dt, solver_iterations);
+                }
             }
             (void)scope;
         }
@@ -1543,6 +1582,21 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         rsp = physics_sim::StateResponse{};
         rsp.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateResponse);
         rsp.sequence_id = step->sequence_id;
+        if (solver_mode == physics_sim::PhysicsSolverMode::PinocchioProximal) {
+#if defined(MINPHYS3D_ENABLE_PINOCCHIO)
+            rsp.solver_status = static_cast<physics_sim::SolverStatus>(proximal_diagnostics.status);
+            rsp.solver_iterations = static_cast<std::uint16_t>(std::max(0, proximal_diagnostics.iterations));
+            rsp.solver_primal_residual = static_cast<float>(proximal_diagnostics.primalResidual);
+            rsp.solver_dual_residual = static_cast<float>(proximal_diagnostics.dualResidual);
+            rsp.solver_complementarity_residual = static_cast<float>(proximal_diagnostics.complementarityResidual);
+            rsp.solver_rollback_count = proximal_diagnostics.rollbackCount;
+#else
+            rsp.solver_status = physics_sim::SolverStatus::UnsupportedIsland;
+#endif
+        } else {
+            rsp.solver_status = physics_sim::SolverStatus::Healthy;
+            rsp.solver_iterations = static_cast<std::uint16_t>(std::max(0, solver_iterations));
+        }
 
         const Body& chassis = world.GetBody(scene.body);
         rsp.body_position = {chassis.position.x, chassis.position.y, chassis.position.z};

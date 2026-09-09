@@ -30,6 +30,15 @@ public:
     [[nodiscard]] virtual std::vector<PhysicsSimObstacleFootprint> latestObstacleFootprints() const = 0;
 };
 
+struct PhysicsSimSolverSettings {
+    physics_sim::PhysicsSolverMode mode{physics_sim::PhysicsSolverMode::LegacyPgs};
+    int iterations{24};
+    float proximal_mu{1.0e-6f};
+    float absolute_tolerance{1.0e-8f};
+    float relative_tolerance{1.0e-6f};
+    float contact_regularization{1.0e-10f};
+};
+
 /// UDP client to hexapod-physics-sim --serve; steps physics in read() after write().
 class PhysicsSimBridge final : public IHardwareBridge, public IPhysicsSimObstacleFootprintProvider {
 public:
@@ -37,6 +46,11 @@ public:
                      int port,
                      int bus_loop_period_us,
                      int physics_solver_iterations = 24,
+                     std::shared_ptr<logging::AsyncLogger> logger = nullptr);
+    PhysicsSimBridge(std::string host,
+                     int port,
+                     int bus_loop_period_us,
+                     PhysicsSimSolverSettings solver_settings,
                      std::shared_ptr<logging::AsyncLogger> logger = nullptr);
     ~PhysicsSimBridge() override;
 
@@ -55,6 +69,7 @@ private:
     int port_{9871};
     int bus_loop_period_us_{2000};
     int physics_solver_iterations_{24};
+    PhysicsSimSolverSettings solver_settings_{};
     std::shared_ptr<logging::AsyncLogger> logger_;
 
     int sock_{-1};

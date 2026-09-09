@@ -461,6 +461,15 @@ public:
 
     const std::vector<Manifold>& DebugManifolds() const;
 
+    /// Refresh broadphase, narrowphase, and persistent manifolds without applying
+    /// minphys3d's velocity/joint solver. Used by an external articulated solver;
+    /// callers must finish the substep with CompleteExternalDynamicsStep().
+    void PrepareExternalContacts(Real dt);
+
+    /// Commit manifold persistence and clear accumulated forces after an external
+    /// solver has written the new body state.
+    void CompleteExternalDynamicsStep();
+
     std::size_t BruteForcePairCount() const;
 
 private:

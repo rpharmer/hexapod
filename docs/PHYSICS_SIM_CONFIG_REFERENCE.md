@@ -42,6 +42,13 @@ From `src/main.cpp`.
 - `--serve-preview-stride N` (positive int, default `1`)
 - `--resource-monitoring full|top-level|off` (default `full`; accepts `toplevel` and `coarse` as top-level aliases)
 
+The server-side `Runtime.PhysicsSim.*` keys are copied into the binary
+`ConfigCommand`. `SolverMode = 0` keeps the legacy PGS path; `SolverMode = 1`
+selects Pinocchio 4.1 whole-body proximal contact dynamics. The remaining keys
+are `SolverIterations`, `ProximalMu`, `AbsoluteTolerance`,
+`RelativeTolerance`, and `ContactRegularization`. The shipped configurations
+keep mode `0` until the locomotion acceptance gates pass.
+
 ## Help
 
 - `-h` / `--help`
