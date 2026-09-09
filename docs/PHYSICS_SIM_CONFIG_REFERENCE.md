@@ -49,6 +49,11 @@ are `SolverIterations`, `ProximalMu`, `AbsoluteTolerance`,
 `RelativeTolerance`, and `ContactRegularization`. The shipped configurations
 keep mode `0` until the locomotion acceptance gates pass.
 
+In proximal mode, `RecoveredRetry` samples remain usable but are logged as
+warnings. `HeldLastGood` and `UnsupportedIsland` responses are rejected by the
+server bridge as invalid sensor reads, so they cannot feed the estimator or gait
+controller as fresh motion state.
+
 ## Help
 
 - `-h` / `--help`
