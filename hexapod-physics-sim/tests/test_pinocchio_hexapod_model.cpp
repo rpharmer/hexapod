@@ -68,7 +68,7 @@ int Run() {
     ProximalSolverSettings proximalSettings{};
     proximalSettings.maxIterations = 50;
     ProximalStepDiagnostics proximalDiagnostics{};
-    for (int step = 0; step < 8; ++step) {
+    for (int step = 0; step < 600; ++step) {
         if (!model.stepProximal(world, 1.0 / 240.0, proximalSettings, proximalDiagnostics)) {
             std::cerr << "proximal standing step failed status="
                       << static_cast<int>(proximalDiagnostics.status)
