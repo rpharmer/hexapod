@@ -112,10 +112,8 @@ constexpr Real kTibiaRenderLength = kTibiaLength;
 constexpr Real kHexapodServoMaxTorque = static_cast<float>(hexapod_dynamics::kServoMaxTorqueNm);
 constexpr Real kHexapodServoPositionGain = static_cast<float>(hexapod_dynamics::kServoOmegaN);
 constexpr Real kHexapodServoDampingGain = static_cast<float>(hexapod_dynamics::kServoZeta);
-// Loaded articulated locomotion needs a lower envelope than a servo's no-load datasheet speed.
-// Six rad/s keeps contact impulses from producing the 8+ rad/s / 1 m/s foot spikes that make
-// a nominal 0.04 m/s walk nonphysical, while retaining useful swing authority.
-constexpr Real kHexapodServoMaxSpeed = 6.0;
+constexpr Real kHexapodServoMaxSpeed =
+    static_cast<float>(hexapod_dynamics::kServoNoLoadSpeedRadPerSec);
 
 Quat QuaternionFromBasis(const Vec3& x_axis, const Vec3& y_axis, const Vec3& z_axis) {
     const Real m00 = x_axis.x;

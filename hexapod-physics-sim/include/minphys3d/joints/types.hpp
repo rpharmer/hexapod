@@ -102,7 +102,8 @@ struct ServoJoint {
     Real servoImpulseSum = 0.0;
     Real targetAngle = 0.0;
     Real maxServoTorque = 0.0;
-    /// Max axis speed (rad/s) the servo bias is allowed to request; 0 disables the clamp.
+    /// Motor no-load axis speed (rad/s). Together with maxServoTorque this defines the
+    /// drive torque-speed envelope; 0 disables speed-dependent torque derating.
     Real maxServoSpeed = 0.0;
     Real positionGain = 40.0;   // omega_n: natural frequency (rad/s)
     Real dampingGain = 1.0;     // zeta: damping ratio
@@ -123,6 +124,10 @@ struct ServoJoint {
     bool anchorEarlyOutActive = false;
     bool angularEarlyOutActive = false;
     bool hingeEarlyOutActive = false;
+    /// Timestep and command used to make actuator warm-start impulses dimensionally stable.
+    Real warmStartDt = 0.0;
+    Real warmStartTargetAngle = 0.0;
+    bool warmStartTargetValid = false;
 
     // Optional axis-sharing optimisation: when set to a valid joint index (< this joint's
     // own index in the servoJoints_ array), PrepareServoJointSolves copies {axisA, t1, t2}

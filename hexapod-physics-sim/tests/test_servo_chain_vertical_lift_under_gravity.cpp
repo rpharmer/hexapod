@@ -68,7 +68,9 @@ VerticalLiftMetrics runVerticalLift(Real max_servo_torque) {
 }
 
 int runCase() {
-    const VerticalLiftMetrics high_torque = runVerticalLift(8.0);
+    // An 8 kg payload at a 1 m arm requires roughly 78.5 N·m before acceleration.
+    // Use a genuinely sufficient motor rather than relying on the former torque-as-impulse bug.
+    const VerticalLiftMetrics high_torque = runVerticalLift(100.0);
 
     if (!high_torque.finite) {
         std::cerr << "vertical_lift encountered non-finite state\n";

@@ -32,10 +32,13 @@ inline constexpr double kFemurLengthM = 0.060;
 /** Tibia rigid link (assembly tibia length minus foot sphere radius). */
 inline constexpr double kTibiaLinkLengthM = 0.104 - 0.018;
 
-// Position-loop servo nominal (Catto-style PD used in sim): ωₙ (rad/s), ζ, τ_max (N·m)
-inline constexpr double kServoOmegaN = 160.0;
-inline constexpr double kServoZeta = 1.24;
-inline constexpr double kServoMaxTorqueNm = 28.0;
+// MG996R nominal at 6 V. Torque is the documented 15 kg·cm stall value and speed is
+// the documented 0.14 s / 60° no-load value. The simulator applies the speed as a
+// torque-speed envelope rather than as a kinematic velocity constraint.
+inline constexpr double kServoOmegaN = 25.0;
+inline constexpr double kServoZeta = 1.0;
+inline constexpr double kServoMaxTorqueNm = 1.471;
+inline constexpr double kServoNoLoadSpeedRadPerSec = 7.479982508547127;
 
 inline constexpr double kServoOmegaNSq() {
     return kServoOmegaN * kServoOmegaN;

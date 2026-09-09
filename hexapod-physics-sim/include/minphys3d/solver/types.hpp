@@ -168,6 +168,9 @@ struct JointSolverConfig {
     /// event can make dampingFactor*relVel arbitrarily large for light-body joints, launching the
     /// limb. 0 = disabled (no cap, legacy behaviour).
     Real hingeAnchorDampingMaxRelVelMs = 0.0;
+    /// Absolute impulse guard (N·m·s) for the two structural angular rows that keep
+    /// servo axes aligned. This is deliberately independent of actuator stall torque.
+    Real servoStructuralAngularImpulseLimit = 1.0;
 
     /// When true, the hinge servo PD constraint is solved as TWO separate PGS rows — one
     /// pure-stiffness row driving toward the target angle and one pure-damping row driving
@@ -177,14 +180,9 @@ struct JointSolverConfig {
     /// correction at large `dt × positionGain`. See test_servo_classical_pd_invariant for
     /// a focused regression that fails on the legacy path and passes on the decoupled path.
     ///
-    /// Currently OPT-IN. The decoupled formulation has different effective dynamics than
-    /// the legacy one for the same `(positionGain, dampingGain)` pair — the hexapod scene
-    /// is tuned to the legacy formulation, and switching the default would silently change
-    /// chassis behaviour. Tests that want classical-PD semantics enable the flag explicitly.
-    /// We will revisit the default once the hexapod servo profile has been re-tuned for the
-    /// decoupled formulation and the diagnostic suite (stand quiescence, substep convergence)
-    /// confirms equivalence or improvement.
-    bool enableServoStiffnessDampingDecoupling = false;
+    /// The physical torque-limited actuator model uses the decoupled formulation by default;
+    /// the former coupled row made damping alter effective position stiffness.
+    bool enableServoStiffnessDampingDecoupling = true;
 };
 
 struct BroadphaseConfig {

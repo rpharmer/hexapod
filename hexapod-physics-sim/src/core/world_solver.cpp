@@ -2219,7 +2219,8 @@ void World::PrepareServoJointSolves() {
             const Real anchorErrorSq = LengthSquared(error);
             const Real anchorSpeedSq = LengthSquared(relVel0);
             const Real anchorImpulseSum = std::abs(j.impulseX) + std::abs(j.impulseY) + std::abs(j.impulseZ);
-            const bool anchorImpulseSmall = anchorImpulseSum <= (j.maxServoTorque * impulseGuard);
+            const bool anchorImpulseSmall = anchorImpulseSum
+                <= (jointSolverConfig_.servoStructuralAngularImpulseLimit * impulseGuard);
             if (jointSolverConfig_.enableServoAnchorEarlyOut) {
                 if (j.anchorEarlyOutActive) {
                     j.anchorEarlyOutActive =
@@ -2382,7 +2383,7 @@ void World::PrepareServoJointSolves() {
             const Real relAngSpeed = Length(relAngVel0);
             const bool angularImpulseSmall =
                 std::max(std::abs(j.angularImpulse1), std::abs(j.angularImpulse2))
-                <= (j.maxServoTorque * impulseGuard);
+                <= (jointSolverConfig_.servoStructuralAngularImpulseLimit * impulseGuard);
             if (jointSolverConfig_.enableServoAngularEarlyOut) {
                 if (j.angularEarlyOutActive) {
                     j.angularEarlyOutActive =
@@ -2466,7 +2467,8 @@ void World::PrepareServoJointSolves() {
                 // code re-evaluated this every iteration; freezing once per substep matches the
                 // prepare/iterate split and avoids re-running the std::abs+compares N times.
                 const Real omegaAxis0 = Dot(relAngVel0, prep.axisA);
-                const bool hingeImpulseSmall = std::abs(j.servoImpulseSum) <= (j.maxServoTorque * impulseGuard);
+                const bool hingeImpulseSmall = std::abs(j.servoImpulseSum)
+                    <= (j.maxServoTorque * dt * impulseGuard);
                 if (jointSolverConfig_.enableServoHingeEarlyOut) {
                     if (j.hingeEarlyOutActive) {
                         j.hingeEarlyOutActive =
@@ -2494,7 +2496,6 @@ void World::PrepareServoJointSolves() {
                 }
                 prep.servoBias = servoBias;
                 prep.invDenomHinge = 1.0 / (wHinge + hingeGamma);
-                prep.invWHingeForSpeed = 1.0 / std::max(wHinge, kEpsilon);
                 prep.useDecoupledPD = jointSolverConfig_.enableServoStiffnessDampingDecoupling;
 
                 // ---- Decoupled (stiffness + damping as separate PGS rows). The math:
@@ -2632,6 +2633,29 @@ void World::SolveServoJoint(ServoJoint& j) {
         Real deltaImpulseT2 = 0.0;
         Real deltaImpulseAxis = 0.0;
 
+        const auto clampActuatorImpulse = [&](Real proposedImpulse, Real axisSpeed) {
+            Real positiveFraction = 1.0;
+            Real negativeFraction = 1.0;
+            if (prep.hasSpeedClamp && prep.maxServoSpeed > kEpsilon) {
+                // Positive drive torque is derated only while already moving positively;
+                // negative drive torque follows the mirrored rule. Opposing torque is braking
+                // and retains the stall-torque budget.
+                positiveFraction = std::clamp(
+                    1.0 - std::max(0.0, axisSpeed) / prep.maxServoSpeed,
+                    0.0,
+                    1.0);
+                negativeFraction = std::clamp(
+                    1.0 - std::max(0.0, -axisSpeed) / prep.maxServoSpeed,
+                    0.0,
+                    1.0);
+            }
+            const Real impulseScale = j.maxServoTorque * currentSubstepDt_;
+            return std::clamp(
+                proposedImpulse,
+                -impulseScale * negativeFraction,
+                impulseScale * positiveFraction);
+        };
+
         const Real activeWT12 =
             (aAwake ? prep.wT12A : 0.0) + (bAwake ? prep.wT12B : 0.0);
         const Real activeWAxisT1 =
@@ -2651,8 +2675,11 @@ void World::SolveServoJoint(ServoJoint& j) {
                 Real lambda2 = -(prep.invK2ab * r1 + prep.invK2bb * r2);
                 const Real old1 = j.angularImpulse1;
                 const Real old2 = j.angularImpulse2;
-                j.angularImpulse1 = std::clamp(old1 + lambda1, -j.maxServoTorque, j.maxServoTorque);
-                j.angularImpulse2 = std::clamp(old2 + lambda2, -j.maxServoTorque, j.maxServoTorque);
+                const Real structuralLimit = std::max(
+                    0.0,
+                    jointSolverConfig_.servoStructuralAngularImpulseLimit);
+                j.angularImpulse1 = std::clamp(old1 + lambda1, -structuralLimit, structuralLimit);
+                j.angularImpulse2 = std::clamp(old2 + lambda2, -structuralLimit, structuralLimit);
                 lambda1 = j.angularImpulse1 - old1;
                 lambda2 = j.angularImpulse2 - old2;
                 deltaImpulseT1 += lambda1;
@@ -2664,7 +2691,10 @@ void World::SolveServoJoint(ServoJoint& j) {
                 if (prep.t1Active) {
                     Real angLambda = -(omegaT1 + prep.axisBiasT1) * prep.invDenomT1;
                     const Real oldAxisImpulse = j.angularImpulse1;
-                    j.angularImpulse1 = std::clamp(oldAxisImpulse + angLambda, -j.maxServoTorque, j.maxServoTorque);
+                    const Real structuralLimit = std::max(
+                        0.0,
+                        jointSolverConfig_.servoStructuralAngularImpulseLimit);
+                    j.angularImpulse1 = std::clamp(oldAxisImpulse + angLambda, -structuralLimit, structuralLimit);
                     angLambda = j.angularImpulse1 - oldAxisImpulse;
                     deltaImpulseT1 += angLambda;
                     if (prep.t2Active) {
@@ -2677,7 +2707,10 @@ void World::SolveServoJoint(ServoJoint& j) {
                 if (prep.t2Active) {
                     Real angLambda = -(omegaT2 + prep.axisBiasT2) * prep.invDenomT2;
                     const Real oldAxisImpulse = j.angularImpulse2;
-                    j.angularImpulse2 = std::clamp(oldAxisImpulse + angLambda, -j.maxServoTorque, j.maxServoTorque);
+                    const Real structuralLimit = std::max(
+                        0.0,
+                        jointSolverConfig_.servoStructuralAngularImpulseLimit);
+                    j.angularImpulse2 = std::clamp(oldAxisImpulse + angLambda, -structuralLimit, structuralLimit);
                     angLambda = j.angularImpulse2 - oldAxisImpulse;
                     deltaImpulseT2 += angLambda;
                     if (solveHingeRow) {
@@ -2703,8 +2736,7 @@ void World::SolveServoJoint(ServoJoint& j) {
                 {
                     Real lambda = -(omegaAxis + prep.servoBiasPos) * prep.invDenomHingePos;
                     const Real oldImpulse = j.servoImpulseSum;
-                    j.servoImpulseSum =
-                        std::clamp(j.servoImpulseSum + lambda, -j.maxServoTorque, j.maxServoTorque);
+                    j.servoImpulseSum = clampActuatorImpulse(j.servoImpulseSum + lambda, omegaAxis);
                     lambda = j.servoImpulseSum - oldImpulse;
                     deltaImpulseAxis += lambda;
                     omegaAxis += activeWHinge * lambda;
@@ -2713,8 +2745,7 @@ void World::SolveServoJoint(ServoJoint& j) {
                 if (prep.dampingRowActive) {
                     Real lambda = -omegaAxis * prep.invDenomHingeDamp;
                     const Real oldImpulse = j.servoImpulseSum;
-                    j.servoImpulseSum =
-                        std::clamp(j.servoImpulseSum + lambda, -j.maxServoTorque, j.maxServoTorque);
+                    j.servoImpulseSum = clampActuatorImpulse(j.servoImpulseSum + lambda, omegaAxis);
                     lambda = j.servoImpulseSum - oldImpulse;
                     deltaImpulseAxis += lambda;
                     omegaAxis += activeWHinge * lambda;
@@ -2722,27 +2753,15 @@ void World::SolveServoJoint(ServoJoint& j) {
             } else {
                 Real servoLambda = -(omegaAxis + prep.servoBias) * prep.invDenomHinge;
                 const Real oldImpulse = j.servoImpulseSum;
-                j.servoImpulseSum =
-                    std::clamp(j.servoImpulseSum + servoLambda, -j.maxServoTorque, j.maxServoTorque);
+                j.servoImpulseSum = clampActuatorImpulse(j.servoImpulseSum + servoLambda, omegaAxis);
                 servoLambda = j.servoImpulseSum - oldImpulse;
                 deltaImpulseAxis += servoLambda;
                 omegaAxis += activeWHinge * servoLambda;
             }
 
-            if (prep.hasSpeedClamp) {
-                const Real clampedOmegaAxis = std::clamp(omegaAxis, -prep.maxServoSpeed, prep.maxServoSpeed);
-                if (std::abs(clampedOmegaAxis - omegaAxis) > 1e-6) {
-                    // This is a kinematic velocity envelope, not actuator torque.  Reusing
-                    // servoImpulseSum here made the speed correction disappear whenever the
-                    // position row had already consumed the torque budget; contact impulses
-                    // could then drive a joint past maxServoSpeed.  Keep the position actuator
-                    // torque-limited above, but apply the independently configured speed limit
-                    // as a hard relative-hinge constraint.
-                    const Real speedLambda = (clampedOmegaAxis - omegaAxis) * prep.invWHingeForSpeed;
-                    deltaImpulseAxis += speedLambda;
-                    omegaAxis += activeWHinge * speedLambda;
-                }
-            }
+            // maxServoSpeed is a no-load motor rating, not a kinematic constraint. The
+            // direction-dependent impulse limit above makes drive torque approach zero at
+            // that speed while retaining stall-limited braking torque.
         }
 
         // Commit all angular rows once. The response vectors are exactly the

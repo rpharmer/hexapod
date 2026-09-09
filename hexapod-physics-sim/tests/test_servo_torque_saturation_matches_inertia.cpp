@@ -41,8 +41,9 @@ AccelSample runSample(Real max_servo_torque) {
         const ServoJoint& servo = world.GetServoJoint(servo_id);
         const Real impulse = std::abs(servo.servoImpulseSum);
         out.peak_impulse = std::max(out.peak_impulse, impulse);
-        out.peak_norm_utilization = std::max(out.peak_norm_utilization, impulse / max_servo_torque);
-        if (impulse > max_servo_torque + 1.0e-3) {
+        const Real impulse_limit = max_servo_torque * kDt;
+        out.peak_norm_utilization = std::max(out.peak_norm_utilization, impulse / impulse_limit);
+        if (impulse > impulse_limit + 1.0e-6) {
             out.respected_limit = false;
         }
     }

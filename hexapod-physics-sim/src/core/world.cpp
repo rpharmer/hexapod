@@ -521,7 +521,8 @@ void World::AccumulateServoAngleIntegrals(Real dt) {
         if (j.integralGain <= 0.0) {
             continue;
         }
-        const Real saturationRatio = std::abs(j.servoImpulseSum) / std::max(j.maxServoTorque, 1e-6);
+        const Real impulseLimit = j.maxServoTorque * std::max(currentSubstepDt_, 1e-6);
+        const Real saturationRatio = std::abs(j.servoImpulseSum) / std::max(impulseLimit, 1e-9);
         if (saturationRatio > 0.95) {
             j.integralAccum *= 0.9;
             continue;
@@ -561,13 +562,31 @@ void World::Step(Real dt, int solverIterations) {
     // give up too much support torque. Keep a strongly damped fraction so each frame retains some
     // convergence history without re-applying the full stale correction.
     constexpr Real kServoWarmStartDecay = 0.5;
+    constexpr Real kTargetDiscontinuityRad = 0.25;
     for (ServoJoint& j : servoJoints_) {
+        const bool targetDiscontinuous = j.warmStartTargetValid
+            && std::abs(std::remainder(j.targetAngle - j.warmStartTargetAngle, 6.28318530717958647692))
+                > kTargetDiscontinuityRad;
+        const Real dtScale = (j.warmStartDt > 0.0) ? (subDt / j.warmStartDt) : 0.0;
         j.impulseX *= kServoWarmStartDecay;
         j.impulseY *= kServoWarmStartDecay;
         j.impulseZ *= kServoWarmStartDecay;
         j.angularImpulse1 *= kServoWarmStartDecay;
         j.angularImpulse2 *= kServoWarmStartDecay;
-        j.servoImpulseSum *= kServoWarmStartDecay;
+        j.servoImpulseSum = targetDiscontinuous
+            ? 0.0
+            : j.servoImpulseSum * dtScale * kServoWarmStartDecay;
+        const Real maxActuatorImpulse = j.maxServoTorque * subDt;
+        j.servoImpulseSum = std::clamp(
+            j.servoImpulseSum,
+            -maxActuatorImpulse,
+            maxActuatorImpulse);
+        const Real structuralLimit = std::max(0.0, jointSolverConfig_.servoStructuralAngularImpulseLimit);
+        j.angularImpulse1 = std::clamp(j.angularImpulse1, -structuralLimit, structuralLimit);
+        j.angularImpulse2 = std::clamp(j.angularImpulse2, -structuralLimit, structuralLimit);
+        j.warmStartDt = subDt;
+        j.warmStartTargetAngle = j.targetAngle;
+        j.warmStartTargetValid = true;
     }
     PrepareServoJointControlSamples();
 

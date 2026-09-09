@@ -932,7 +932,6 @@ private:
         Real wHingeA = 0.0;
         Real wHingeB = 0.0;
         Real invDenomHinge = 0.0; // legacy: 1 / (wHinge + hingeGamma)
-        Real invWHingeForSpeed = 0.0; // 1 / max(wHinge, kEpsilon) — used by post-solve speed clamp
         Real servoBias = 0.0;     // legacy: combined PD bias velocity (pre-clamped to ±maxServoSpeed)
         Real maxServoSpeed = 0.0;
         // Decoupled formulation: separate PGS rows for stiffness and damping. Position row

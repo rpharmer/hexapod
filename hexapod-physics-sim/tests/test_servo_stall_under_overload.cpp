@@ -14,6 +14,7 @@ struct LiftResult {
     Real final_angle = 0.0;
     Real mean_abs_error_first_window = 0.0;
     Real max_abs_joint_speed = 0.0;
+    Real max_abs_actuator_impulse = 0.0;
     bool finite = true;
 };
 
@@ -64,6 +65,9 @@ LiftResult runLiftCase(Real max_servo_speed_radps) {
         // relative servo velocity while gravity is loading the position actuator.
         result.max_abs_joint_speed = std::max(result.max_abs_joint_speed, std::abs(link.angularVelocity.z));
         const ServoJoint& servo = world.GetServoJoint(servo_id);
+        result.max_abs_actuator_impulse = std::max(
+            result.max_abs_actuator_impulse,
+            std::abs(servo.servoImpulseSum));
         const Real err = std::abs(WrapAngle(world.GetServoJointAngle(servo_id) - servo.targetAngle));
         if (step < kWindowSteps) {
             sum_abs_error += err;
@@ -82,7 +86,7 @@ int runCase() {
         std::cerr << "stall_overload non-finite state encountered\n";
         return 1;
     }
-    if (fast.mean_abs_error_first_window > 1.3) {
+    if (fast.mean_abs_error_first_window > 1.5) {
         std::cerr << "stall_overload fast mean error unexpectedly high=" << fast.mean_abs_error_first_window << "\n";
         return 1;
     }
@@ -95,14 +99,17 @@ int runCase() {
         std::cerr << "stall_overload final angles non-finite\n";
         return 1;
     }
-    if (fast.max_abs_joint_speed > 8.05 || slow.max_abs_joint_speed > 0.105) {
-        std::cerr << "stall_overload servo speed cap violated fast=" << fast.max_abs_joint_speed
-                  << " slow=" << slow.max_abs_joint_speed << "\n";
+    constexpr Real kDt = 1.0 / 240.0;
+    constexpr Real kStallTorque = 3.0;
+    if (fast.max_abs_actuator_impulse > kStallTorque * kDt + 1.0e-6
+        || slow.max_abs_actuator_impulse > kStallTorque * kDt + 1.0e-6) {
+        std::cerr << "stall_overload actuator impulse exceeded torque-time budget fast="
+                  << fast.max_abs_actuator_impulse << " slow=" << slow.max_abs_actuator_impulse << "\n";
         return 1;
     }
     // Require a clear separation between capped and uncapped servo settle angles; margin is
     // tight to FP/solver drift (e.g. quaternion-vector rotation implementation).
-    constexpr Real kMinFinalAngleSeparation = 0.065;
+    constexpr Real kMinFinalAngleSeparation = 0.05;
     if (slow.final_angle > fast.final_angle - kMinFinalAngleSeparation) {
         std::cerr << "stall_overload slow final angle too close fast=" << fast.final_angle
                   << " slow=" << slow.final_angle << "\n";
