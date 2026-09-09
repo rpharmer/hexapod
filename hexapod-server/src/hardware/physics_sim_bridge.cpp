@@ -559,6 +559,24 @@ bool PhysicsSimBridge::read(RobotState& out) {
         return false;
     }
 
+    // A held or unsupported solver state is deliberately not a valid sensor
+    // sample.  Publishing the last-good pose as if it were fresh would let the
+    // estimator and gait controller continue issuing motion commands through a
+    // dynamics failure.  The runtime converts this failed read into bus/safety
+    // handling while the simulator remains available for recovery.
+    if (rsp.solver_status == physics_sim::SolverStatus::HeldLastGood
+        || rsp.solver_status == physics_sim::SolverStatus::UnsupportedIsland) {
+        setLastError(BridgeError::Unsupported, BridgeFailurePhase::CommandResponse);
+        if (logger_) {
+            LOG_WARN(logger_,
+                     "PhysicsSim: rejecting solver state status=",
+                     static_cast<int>(rsp.solver_status),
+                     " rollback_count=",
+                     rsp.solver_rollback_count);
+        }
+        return false;
+    }
+
     {
         std::vector<PhysicsSimObstacleFootprint> footprints{};
         const std::size_t obstacle_count =

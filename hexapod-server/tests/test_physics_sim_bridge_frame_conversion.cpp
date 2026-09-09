@@ -86,6 +86,10 @@ public:
     bool ok() const { return ok_.load(); }
     std::uint16_t port() const { return port_; }
 
+    void setSolverStatus(physics_sim::SolverStatus status) {
+        solver_status_.store(status);
+    }
+
     void start() {
         thread_ = std::thread([this]() { run(); });
     }
@@ -151,6 +155,7 @@ private:
                 rsp.body_angular_velocity = {0.0f, 0.2f, 0.0f};
                 rsp.joint_angles.fill(0.0f);
                 rsp.joint_velocities.fill(0.0f);
+                rsp.solver_status = solver_status_.load();
                 // Non-uniform pattern so tests prove `StateResponse::foot_contacts` maps to `RobotState`.
                 rsp.foot_contacts[0] = 1;
                 rsp.foot_contacts[1] = 0;
@@ -188,6 +193,7 @@ private:
     int sock_{-1};
     std::uint16_t port_{0};
     std::atomic<bool> ok_{true};
+    std::atomic<physics_sim::SolverStatus> solver_status_{physics_sim::SolverStatus::Healthy};
     std::thread thread_{};
 };
 
@@ -262,6 +268,15 @@ int main() {
 
     if (!expect(!out.has_matrix_lidar,
                 "stub StateResponse should leave matrix_lidar disabled (matrix_lidar_valid=0)")) {
+        return EXIT_FAILURE;
+    }
+
+    stub.setSolverStatus(physics_sim::SolverStatus::HeldLastGood);
+    if (!expect(bridge.write(cmd), "bridge should continue sending after a held solver sample") ||
+        !expect(!bridge.read(out), "held solver samples must not be published as valid state") ||
+        !expect(bridge.last_bridge_result().has_value() &&
+                    bridge.last_bridge_result()->error == BridgeError::Unsupported,
+                "held solver sample should expose an unsupported bridge result")) {
         return EXIT_FAILURE;
     }
 
