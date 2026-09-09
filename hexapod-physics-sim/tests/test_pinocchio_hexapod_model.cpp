@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <random>
 #include <vector>
@@ -67,18 +68,43 @@ int Run() {
 
     ProximalSolverSettings proximalSettings{};
     proximalSettings.maxIterations = 50;
+    const bool traceContacts = std::getenv("PINOCCHIO_TRACE_CONTACTS") != nullptr;
     ProximalStepDiagnostics proximalDiagnostics{};
-    for (int step = 0; step < 600; ++step) {
+    int standingSteps = 600;
+    if (const char* value = std::getenv("PINOCCHIO_STANDING_STEPS")) {
+        standingSteps = std::max(1, std::atoi(value));
+    }
+    std::uint64_t previousSignature = 0;
+    for (int step = 0; step < standingSteps; ++step) {
         if (!model.stepProximal(world, 1.0 / 240.0, proximalSettings, proximalDiagnostics)) {
             std::cerr << "proximal standing step failed status="
                       << static_cast<int>(proximalDiagnostics.status)
+                      << " step=" << step
                       << " residual=" << proximalDiagnostics.primalResidual
                       << " dual=" << proximalDiagnostics.dualResidual
                       << " comp=" << proximalDiagnostics.complementarityResidual
+                      << " iterations=" << proximalDiagnostics.iterations
+                      << " manifolds=" << proximalDiagnostics.contactManifoldCount
+                      << " constraints=" << proximalDiagnostics.contactConstraintCount
+                      << " duplicates=" << proximalDiagnostics.duplicateContactCount
+                      << " cond=" << proximalDiagnostics.delassusConditionEstimate
+                      << " signature=" << proximalDiagnostics.contactSetSignature
                       << " pre_v=" << proximalDiagnostics.preIntegrationLinearSpeed
                       << " pre_w=" << proximalDiagnostics.preIntegrationAngularSpeed
                       << " retries=" << proximalDiagnostics.retries << "\n";
             return 1;
+        }
+        if (traceContacts && proximalDiagnostics.contactSetSignature != previousSignature) {
+            std::vector<double> stateQ;
+            std::vector<double> stateV;
+            model.readState(world, stateQ, stateV);
+            std::cerr << "contact set step=" << step
+                      << " body_y=" << (stateQ.size() > 1 ? stateQ[1] : 0.0)
+                      << " manifolds=" << proximalDiagnostics.contactManifoldCount
+                      << " constraints=" << proximalDiagnostics.contactConstraintCount
+                      << " signature=" << proximalDiagnostics.contactSetSignature
+                      << " cond=" << proximalDiagnostics.delassusConditionEstimate << "\n";
+            previousSignature = proximalDiagnostics.contactSetSignature;
         }
     }
 

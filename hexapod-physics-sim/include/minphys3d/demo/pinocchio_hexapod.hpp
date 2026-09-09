@@ -26,6 +26,9 @@ struct ProximalSolverSettings {
     double contactRegularization = 1.0e-10;
     double maxLinearSpeed = 2.0;
     double maxAngularSpeed = 10.0;
+    // Suppress restitution for low-speed settling impacts. This is a solver-level
+    // threshold; material restitution values are still preserved per contact.
+    double restitutionVelocityCutoff = 0.2;
 };
 
 struct ProximalStepDiagnostics {
@@ -42,6 +45,11 @@ struct ProximalStepDiagnostics {
     double preIntegrationAngularSpeed = 0.0;
     double mechanicalEnergyDelta = 0.0;
     double actuatorWork = 0.0;
+    std::size_t contactManifoldCount = 0;
+    std::size_t contactConstraintCount = 0;
+    std::size_t duplicateContactCount = 0;
+    double delassusConditionEstimate = 0.0;
+    std::uint64_t contactSetSignature = 0;
     std::uint64_t warmStartResets = 0;
     std::uint64_t retries = 0;
     std::uint64_t rollbackCount = 0;

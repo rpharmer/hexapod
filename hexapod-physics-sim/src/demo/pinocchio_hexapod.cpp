@@ -513,6 +513,7 @@ bool PinocchioHexapodModel::stepProximal(
         std::vector<double> contactFrictions;
         std::vector<double> contactRestitutions;
         std::vector<double> contactPenetrations;
+        std::unordered_set<std::uint64_t> seenContactIds;
         constraintModels.reserve(world.DebugManifolds().size() * 4U);
         contactIds.reserve(world.DebugManifolds().size() * 4U);
 
@@ -524,6 +525,7 @@ bool PinocchioHexapodModel::stepProximal(
             if (!aRobot && !bRobot) {
                 continue;
             }
+            ++out.contactManifoldCount;
             if (aRobot != bRobot) {
                 const std::uint32_t externalId = aRobot ? manifold.b : manifold.a;
                 const Body& external = world.GetBody(externalId);
@@ -538,6 +540,10 @@ bool PinocchioHexapodModel::stepProximal(
             const double friction = std::max(
                 0.0, 0.5 * (bodyA.dynamicFriction + bodyB.dynamicFriction));
             for (const Contact& contact : manifold.contacts) {
+                const std::uint64_t contactId = PersistentContactId(manifold, contact);
+                if (!seenContactIds.insert(contactId).second) {
+                    ++out.duplicateContactCount;
+                }
                 pinocchio::JointIndex joint1 = 0;
                 pinocchio::JointIndex joint2 = 0;
                 Vec3 normal = manifold.normal;
@@ -561,7 +567,7 @@ bool PinocchioHexapodModel::stepProximal(
                     impl_->model, joint1, placement1, joint2, placement2);
                 pointModel.setFriction(friction);
                 constraintModels.emplace_back(pointModel);
-                contactIds.push_back(PersistentContactId(manifold, contact));
+                contactIds.push_back(contactId);
                 contactFrictions.push_back(friction);
                 contactRestitutions.push_back(std::max(
                     0.0, 0.5 * (bodyA.restitution + bodyB.restitution)));
@@ -570,6 +576,12 @@ bool PinocchioHexapodModel::stepProximal(
         }
 
         if (!constraintModels.empty()) {
+            out.contactConstraintCount = constraintModels.size();
+            for (const std::uint64_t contactId : contactIds) {
+                out.contactSetSignature ^= contactId + 0x9e3779b97f4a7c15ULL
+                    + (out.contactSetSignature << 6U)
+                    + (out.contactSetSignature >> 2U);
+            }
             constraintDatas.reserve(constraintModels.size());
             for (const pinocchio::ConstraintModel& model : constraintModels) {
                 constraintDatas.push_back(model.createData());
@@ -605,7 +617,10 @@ bool PinocchioHexapodModel::stepProximal(
                         / subDt);
                 drift[normalIndex] -= correction;
                 const double incomingNormalSpeed = drift[normalIndex];
-                if (incomingNormalSpeed < -contactSettings.restitutionVelocityCutoff) {
+                const double restitutionCutoff = std::max(
+                    contactSettings.restitutionVelocityCutoff,
+                    settings.restitutionVelocityCutoff);
+                if (incomingNormalSpeed < -restitutionCutoff) {
                     drift[normalIndex] += contactRestitutions[i] * incomingNormalSpeed;
                 }
             }
@@ -659,6 +674,24 @@ bool PinocchioHexapodModel::stepProximal(
             if (!converged || !std::isfinite(result.primal_feasibility)
                 || !std::isfinite(result.dual_feasibility)
                 || !std::isfinite(result.complementarity)) {
+                if (jacobian.rows() <= 72) {
+                    const Eigen::MatrixXd delassusDense =
+                        jacobian * mass.ldlt().solve(jacobian.transpose());
+                    if (delassusDense.array().isFinite().all()) {
+                        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigensolver(
+                            0.5 * (delassusDense + delassusDense.transpose()));
+                        if (eigensolver.info() == Eigen::Success) {
+                            const Eigen::VectorXd eigenvalues = eigensolver.eigenvalues();
+                            const double minEigenvalue = eigenvalues.minCoeff();
+                            const double maxEigenvalue = eigenvalues.maxCoeff();
+                            if (minEigenvalue > 0.0 && std::isfinite(minEigenvalue)
+                                && std::isfinite(maxEigenvalue)) {
+                                out.delassusConditionEstimate =
+                                    maxEigenvalue / minEigenvalue;
+                            }
+                        }
+                    }
+                }
                 return false;
             }
 
