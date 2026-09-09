@@ -60,6 +60,10 @@ run_step "Install required apt packages" bash -c '
   sudo apt install -y cmake gcc-arm-none-eabi build-essential python3-venv python3-pip
 ' || failures=$((failures + 1))
 
+run_step "Install Pinocchio 4.1 whole-body dynamics dependency" \
+  "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/setup_pinocchio.sh" \
+  || failures=$((failures + 1))
+
 # Bootstrap Pico SDKs used by hexapod-client firmware build.
 run_step "Prepare pico-sdk repository" bash -c '
   cd /workspace

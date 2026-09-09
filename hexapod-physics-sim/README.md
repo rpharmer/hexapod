@@ -21,6 +21,10 @@ This crate is intentionally lightweight: no rendering inside the simulator. Opti
 - **CMake** 3.16 or newer  
 - **C++17** compiler (GCC, Clang, or MSVC)  
 - **POSIX**-style OS for the **UDP** sink (Linux, macOS, WSL). On native **Windows**, `--sink udp` falls back to a dummy sink (see `src/demo/frame_sink.cpp`).
+- **Pinocchio 4.1.x** for the whole-body solver on Linux. From the repository root,
+  run `scripts/setup_pinocchio.sh`. Supported Ubuntu LTS releases use robotpkg in
+  `/opt/openrobots`; newer WSL releases use the official `pin` wheel in `.deps/`.
+  Dependency paths are scoped to project scripts and do not modify the shell profile.
 
 ## Configure and build
 
@@ -37,6 +41,7 @@ cmake --build build -j
 |--------|---------|---------|
 | `MINPHYS3D_BUILD_DEMO` | `ON` | Build `hexapod-physics-sim` |
 | `MINPHYS3D_BUILD_TESTS` | `ON` | Build tests and register them with CTest |
+| `MINPHYS3D_ENABLE_PINOCCHIO` | `ON` on Linux, `OFF` elsewhere | Build the Pinocchio 4.1 whole-body solver; set `OFF` for legacy-only diagnostics |
 
 Examples:
 

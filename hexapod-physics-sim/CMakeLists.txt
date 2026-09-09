@@ -8,6 +8,28 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(MINPHYS3D_BUILD_DEMO "Build hexapod-physics-sim demo executable" ON)
 option(MINPHYS3D_BUILD_TESTS "Build minphys3d test executables" ON)
+if(UNIX)
+    set(MINPHYS3D_PINOCCHIO_DEFAULT ON)
+else()
+    set(MINPHYS3D_PINOCCHIO_DEFAULT OFF)
+endif()
+option(MINPHYS3D_ENABLE_PINOCCHIO
+    "Build the Pinocchio whole-body articulated solver" ${MINPHYS3D_PINOCCHIO_DEFAULT})
+
+if(MINPHYS3D_ENABLE_PINOCCHIO)
+    file(GLOB MINPHYS3D_LOCAL_PINOCCHIO_PREFIX
+        "${CMAKE_CURRENT_SOURCE_DIR}/../.deps/pinocchio/cmeel.prefix"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../.deps/pinocchio/lib/python*/site-packages/cmeel.prefix")
+    if(MINPHYS3D_LOCAL_PINOCCHIO_PREFIX)
+        list(PREPEND CMAKE_PREFIX_PATH ${MINPHYS3D_LOCAL_PINOCCHIO_PREFIX})
+    endif()
+    find_package(pinocchio 4.1 CONFIG REQUIRED)
+    if(pinocchio_VERSION VERSION_LESS 4.1 OR NOT pinocchio_VERSION VERSION_LESS 4.2)
+        message(FATAL_ERROR
+            "Pinocchio 4.1.x is required (found ${pinocchio_VERSION}). "
+            "Run scripts/setup_pinocchio.sh from the repository root.")
+    endif()
+endif()
 
 if(MINPHYS3D_BUILD_DEMO OR MINPHYS3D_BUILD_TESTS)
     find_package(Threads REQUIRED)
@@ -69,6 +91,18 @@ if(MINPHYS3D_BUILD_DEMO OR MINPHYS3D_BUILD_TESTS)
     endif()
 endif()
 
+if(MINPHYS3D_ENABLE_PINOCCHIO AND (MINPHYS3D_BUILD_DEMO OR MINPHYS3D_BUILD_TESTS))
+    add_library(hexapod_pinocchio STATIC src/demo/pinocchio_hexapod.cpp)
+    target_include_directories(hexapod_pinocchio PUBLIC ${MINPHYS3D_INCLUDE_DIRS})
+    target_compile_definitions(hexapod_pinocchio PUBLIC MINPHYS3D_ENABLE_PINOCCHIO=1)
+    target_link_libraries(hexapod_pinocchio PUBLIC minphys3d_core pinocchio::pinocchio)
+    if(MSVC)
+        target_compile_options(hexapod_pinocchio PRIVATE /W4)
+    else()
+        target_compile_options(hexapod_pinocchio PRIVATE -Wall -Wextra -pedantic)
+    endif()
+endif()
+
 if(MINPHYS3D_BUILD_DEMO)
     add_executable(hexapod-physics-sim
         src/main.cpp
@@ -81,6 +115,10 @@ if(MINPHYS3D_BUILD_DEMO)
         src/demo/scene_json.cpp
     )
     target_link_libraries(hexapod-physics-sim PRIVATE minphys3d_core Threads::Threads)
+    if(MINPHYS3D_ENABLE_PINOCCHIO)
+        target_link_libraries(hexapod-physics-sim PRIVATE hexapod_pinocchio)
+        target_compile_definitions(hexapod-physics-sim PRIVATE MINPHYS3D_ENABLE_PINOCCHIO=1)
+    endif()
     target_include_directories(hexapod-physics-sim PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     if(MSVC)
         target_compile_options(hexapod-physics-sim PRIVATE /W4)
@@ -105,6 +143,16 @@ if(MINPHYS3D_BUILD_TESTS)
     endfunction()
 
     add_minphys3d_test(test_unit_math tests/test_unit_math.cpp)
+    if(MINPHYS3D_ENABLE_PINOCCHIO)
+        add_executable(test_pinocchio_hexapod_model
+            tests/test_pinocchio_hexapod_model.cpp
+            src/demo/scenes.cpp
+            src/demo/frame_sink.cpp)
+        target_link_libraries(test_pinocchio_hexapod_model PRIVATE hexapod_pinocchio)
+        target_include_directories(test_pinocchio_hexapod_model PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+        target_compile_options(test_pinocchio_hexapod_model PRIVATE -Wall -Wextra -pedantic)
+        add_test(NAME test_pinocchio_hexapod_model COMMAND test_pinocchio_hexapod_model)
+    endif()
     add_minphys3d_test(test_articulation tests/test_articulation.cpp)
     add_minphys3d_test(test_regression_step tests/test_regression_step.cpp)
     add_minphys3d_test(test_broadphase_dynamic_tree tests/test_broadphase_dynamic_tree.cpp)

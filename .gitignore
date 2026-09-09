@@ -1,4 +1,5 @@
 # --- CMake / build trees (any subdirectory) ---
+.deps/
 build/
 build-*/
 build-tests/
