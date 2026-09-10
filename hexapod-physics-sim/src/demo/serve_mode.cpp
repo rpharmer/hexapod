@@ -1044,6 +1044,11 @@ void MergeProximalDiagnostics(ProximalStepDiagnostics& aggregate,
         aggregate.maxContactPenetration, current.maxContactPenetration);
     aggregate.mechanicalEnergyDelta += current.mechanicalEnergyDelta;
     aggregate.actuatorWork += current.actuatorWork;
+    aggregate.dynamicsTimeMs += current.dynamicsTimeMs;
+    aggregate.contactSetupTimeMs += current.contactSetupTimeMs;
+    aggregate.admmTimeMs += current.admmTimeMs;
+    aggregate.integrationTimeMs += current.integrationTimeMs;
+    aggregate.totalStepTimeMs += current.totalStepTimeMs;
     aggregate.contactManifoldCount = std::max(
         aggregate.contactManifoldCount, current.contactManifoldCount);
     aggregate.contactConstraintCount = std::max(
@@ -1696,6 +1701,15 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             rsp.solver_mechanical_energy_delta =
                 static_cast<float>(proximal_diagnostics.mechanicalEnergyDelta);
             rsp.solver_actuator_work = static_cast<float>(proximal_diagnostics.actuatorWork);
+            rsp.solver_dynamics_time_ms =
+                static_cast<float>(proximal_diagnostics.dynamicsTimeMs);
+            rsp.solver_contact_setup_time_ms =
+                static_cast<float>(proximal_diagnostics.contactSetupTimeMs);
+            rsp.solver_admm_time_ms = static_cast<float>(proximal_diagnostics.admmTimeMs);
+            rsp.solver_integration_time_ms =
+                static_cast<float>(proximal_diagnostics.integrationTimeMs);
+            rsp.solver_total_step_time_ms =
+                static_cast<float>(proximal_diagnostics.totalStepTimeMs);
             rsp.solver_admm_rho = static_cast<float>(proximal_diagnostics.admmRho);
             rsp.solver_delassus_condition_estimate =
                 static_cast<float>(proximal_diagnostics.delassusConditionEstimate);

@@ -158,6 +158,11 @@ struct StateResponse {
     float solver_max_contact_penetration{0.0f};
     float solver_mechanical_energy_delta{0.0f};
     float solver_actuator_work{0.0f};
+    float solver_dynamics_time_ms{0.0f};
+    float solver_contact_setup_time_ms{0.0f};
+    float solver_admm_time_ms{0.0f};
+    float solver_integration_time_ms{0.0f};
+    float solver_total_step_time_ms{0.0f};
     float solver_admm_rho{0.0f};
     float solver_delassus_condition_estimate{0.0f};
     std::uint32_t solver_contact_manifold_count{0};

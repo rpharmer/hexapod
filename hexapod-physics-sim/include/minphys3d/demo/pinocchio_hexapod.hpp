@@ -70,6 +70,11 @@ struct ProximalStepDiagnostics {
     double maxContactPenetration = 0.0;
     double mechanicalEnergyDelta = 0.0;
     double actuatorWork = 0.0;
+    double dynamicsTimeMs = 0.0;
+    double contactSetupTimeMs = 0.0;
+    double admmTimeMs = 0.0;
+    double integrationTimeMs = 0.0;
+    double totalStepTimeMs = 0.0;
     std::size_t contactManifoldCount = 0;
     std::size_t contactConstraintCount = 0;
     std::size_t robotRobotManifoldCount = 0;

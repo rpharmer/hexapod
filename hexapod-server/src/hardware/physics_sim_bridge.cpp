@@ -581,6 +581,11 @@ bool PhysicsSimBridge::read(RobotState& out) {
         telemetry.max_contact_penetration = rsp.solver_max_contact_penetration;
         telemetry.mechanical_energy_delta = rsp.solver_mechanical_energy_delta;
         telemetry.actuator_work = rsp.solver_actuator_work;
+        telemetry.dynamics_time_ms = rsp.solver_dynamics_time_ms;
+        telemetry.contact_setup_time_ms = rsp.solver_contact_setup_time_ms;
+        telemetry.admm_time_ms = rsp.solver_admm_time_ms;
+        telemetry.integration_time_ms = rsp.solver_integration_time_ms;
+        telemetry.total_step_time_ms = rsp.solver_total_step_time_ms;
         telemetry.admm_rho = rsp.solver_admm_rho;
         telemetry.delassus_condition_estimate = rsp.solver_delassus_condition_estimate;
         telemetry.contact_manifold_count = rsp.solver_contact_manifold_count;

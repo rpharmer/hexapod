@@ -83,6 +83,11 @@ struct ReplayResult {
     double max_step_time_ms{0.0};
     double healthy_p99_step_time_ms{0.0};
     double healthy_max_step_time_ms{0.0};
+    double p99_solver_dynamics_time_ms{0.0};
+    double p99_solver_contact_setup_time_ms{0.0};
+    double p99_solver_admm_time_ms{0.0};
+    double p99_solver_integration_time_ms{0.0};
+    double p99_solver_total_step_time_ms{0.0};
 };
 
 class CommandCapturingBridge final : public IHardwareBridge {
@@ -362,8 +367,18 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
     ReplayResult result{};
     std::vector<double> step_times_ms{};
     std::vector<double> healthy_step_times_ms{};
+    std::vector<double> solver_dynamics_times_ms{};
+    std::vector<double> solver_contact_setup_times_ms{};
+    std::vector<double> solver_admm_times_ms{};
+    std::vector<double> solver_integration_times_ms{};
+    std::vector<double> solver_total_step_times_ms{};
     step_times_ms.reserve(frames.size());
     healthy_step_times_ms.reserve(frames.size());
+    solver_dynamics_times_ms.reserve(frames.size());
+    solver_contact_setup_times_ms.reserve(frames.size());
+    solver_admm_times_ms.reserve(frames.size());
+    solver_integration_times_ms.reserve(frames.size());
+    solver_total_step_times_ms.reserve(frames.size());
     for (const CapturedFrame& frame : frames) {
         PhaseResult& phase = result.phases[static_cast<std::size_t>(frame.phase)];
         ++result.frames;
@@ -399,6 +414,11 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
             continue;
         }
         ++result.telemetry_frames;
+        solver_dynamics_times_ms.push_back(telemetry->dynamics_time_ms);
+        solver_contact_setup_times_ms.push_back(telemetry->contact_setup_time_ms);
+        solver_admm_times_ms.push_back(telemetry->admm_time_ms);
+        solver_integration_times_ms.push_back(telemetry->integration_time_ms);
+        solver_total_step_times_ms.push_back(telemetry->total_step_time_ms);
         result.max_iterations = std::max(result.max_iterations, telemetry->iterations);
         phase.max_iterations = std::max(phase.max_iterations, telemetry->iterations);
         phase.max_ncp_dual_residual =
@@ -452,6 +472,22 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
     assignTimingSummary(healthy_step_times_ms,
                         result.healthy_p99_step_time_ms,
                         result.healthy_max_step_time_ms);
+    double ignoredMaximum = 0.0;
+    assignTimingSummary(solver_dynamics_times_ms,
+                        result.p99_solver_dynamics_time_ms,
+                        ignoredMaximum);
+    assignTimingSummary(solver_contact_setup_times_ms,
+                        result.p99_solver_contact_setup_time_ms,
+                        ignoredMaximum);
+    assignTimingSummary(solver_admm_times_ms,
+                        result.p99_solver_admm_time_ms,
+                        ignoredMaximum);
+    assignTimingSummary(solver_integration_times_ms,
+                        result.p99_solver_integration_time_ms,
+                        ignoredMaximum);
+    assignTimingSummary(solver_total_step_times_ms,
+                        result.p99_solver_total_step_time_ms,
+                        ignoredMaximum);
     return result;
 }
 
@@ -481,6 +517,14 @@ std::string metricsJson(const ReplayResult& result,
         << ",\"max_step_time_ms\":" << result.max_step_time_ms
         << ",\"healthy_p99_step_time_ms\":" << result.healthy_p99_step_time_ms
         << ",\"healthy_max_step_time_ms\":" << result.healthy_max_step_time_ms
+        << ",\"p99_solver_dynamics_time_ms\":" << result.p99_solver_dynamics_time_ms
+        << ",\"p99_solver_contact_setup_time_ms\":"
+        << result.p99_solver_contact_setup_time_ms
+        << ",\"p99_solver_admm_time_ms\":" << result.p99_solver_admm_time_ms
+        << ",\"p99_solver_integration_time_ms\":"
+        << result.p99_solver_integration_time_ms
+        << ",\"p99_solver_total_step_time_ms\":"
+        << result.p99_solver_total_step_time_ms
         << ",\"phases\":[";
     for (std::size_t i = 0; i < result.phases.size(); ++i) {
         if (i != 0) {

@@ -1,6 +1,7 @@
 #include "minphys3d/demo/pinocchio_hexapod.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -492,10 +493,16 @@ bool PinocchioHexapodModel::stepProximal(
     double dt,
     const ProximalSolverSettings& settings,
     ProximalStepDiagnostics& diagnostics) {
+    using StepClock = std::chrono::steady_clock;
+    const auto stepStart = StepClock::now();
+    const auto elapsedMs = [](const StepClock::time_point start) {
+        return std::chrono::duration<double, std::milli>(StepClock::now() - start).count();
+    };
     diagnostics = {};
     if (!(dt > 0.0) || !std::isfinite(dt)) {
         diagnostics.status = ProximalStepStatus::HeldLastGood;
         diagnostics.failureReason = ProximalFailureReason::InvalidDt;
+        diagnostics.totalStepTimeMs = elapsedMs(stepStart);
         return false;
     }
 
@@ -536,6 +543,7 @@ bool PinocchioHexapodModel::stepProximal(
         diagnostics.rollbackCount = impl_->totalRollbacks;
         diagnostics.heldStateCount = impl_->totalHeldStates;
         diagnostics.unsupportedIslandCount = impl_->totalUnsupportedIslands;
+        diagnostics.totalStepTimeMs = elapsedMs(stepStart);
         return false;
     }
     if (impl_->lastGoodQ.empty()) {
@@ -586,6 +594,7 @@ bool PinocchioHexapodModel::stepProximal(
     auto advanceOnce = [&](double subDt,
                            const std::array<double, 18>& activeServoTargets,
                            ProximalStepDiagnostics& out) -> bool {
+        const auto dynamicsStart = StepClock::now();
         std::vector<double> qStorage;
         std::vector<double> vStorage;
         if (!readState(world, qStorage, vStorage)) {
@@ -643,7 +652,9 @@ bool PinocchioHexapodModel::stepProximal(
             out.failureReason = ProximalFailureReason::NonFiniteAcceleration;
             return false;
         }
+        out.dynamicsTimeMs += elapsedMs(dynamicsStart);
 
+        const auto contactSetupStart = StepClock::now();
         world.PrepareExternalContacts(subDt);
         std::vector<pinocchio::ConstraintModel> constraintModels;
         std::vector<pinocchio::ConstraintData> constraintDatas;
@@ -945,6 +956,7 @@ bool PinocchioHexapodModel::stepProximal(
                     }
                 }
             }
+            out.contactSetupTimeMs += elapsedMs(contactSetupStart);
 
             pinocchio::ADMMConstraintSolver solver(drift.size());
             pinocchio::ADMMSolverSettings solverSettings;
@@ -965,6 +977,7 @@ bool PinocchioHexapodModel::stepProximal(
             pinocchio::ADMMSolverResult result;
             result.resize(static_cast<std::size_t>(drift.size()));
             result.setConstraintImpulseGuess(warm);
+            const auto admmStart = StepClock::now();
             const bool converged = solver.solve(
                 delassus,
                 drift,
@@ -972,6 +985,7 @@ bool PinocchioHexapodModel::stepProximal(
                 constraintDatas,
                 solverSettings,
                 result);
+            out.admmTimeMs += elapsedMs(admmStart);
             out.admmRho = result.rho;
             out.iterations = std::max(out.iterations, static_cast<int>(result.iterations));
             out.primalResidual = std::max(out.primalResidual, result.primal_feasibility);
@@ -1072,9 +1086,13 @@ bool PinocchioHexapodModel::stepProximal(
             }
             vNew += inverseMassJacobianTranspose * impulses;
         } else if (!impl_->contactWarmStarts.empty() || impl_->haveLastContactSetSignature) {
+            out.contactSetupTimeMs += elapsedMs(contactSetupStart);
             resetWarmStarts();
+        } else {
+            out.contactSetupTimeMs += elapsedMs(contactSetupStart);
         }
 
+        const auto integrationStart = StepClock::now();
         if (!IsFinite(vNew)) {
             out.failureReason = ProximalFailureReason::NonFiniteVelocity;
             return false;
@@ -1114,6 +1132,7 @@ bool PinocchioHexapodModel::stepProximal(
             return false;
         }
         out.mechanicalEnergyDelta += energyDelta;
+        out.integrationTimeMs += elapsedMs(integrationStart);
         return true;
     };
 
@@ -1148,6 +1167,10 @@ bool PinocchioHexapodModel::stepProximal(
         const bool half1 = advanceOnce(0.5 * dt, halfStepServoTargets, retry);
         const bool half2 = half1
             && advanceOnce(0.5 * dt, commandedServoTargets, retry);
+        retry.dynamicsTimeMs += firstAttempt.dynamicsTimeMs;
+        retry.contactSetupTimeMs += firstAttempt.contactSetupTimeMs;
+        retry.admmTimeMs += firstAttempt.admmTimeMs;
+        retry.integrationTimeMs += firstAttempt.integrationTimeMs;
         if (half1 && half2) {
             world.CompleteExternalDynamicsStep();
             impl_->commandedServoTargets = commandedServoTargets;
@@ -1175,6 +1198,7 @@ bool PinocchioHexapodModel::stepProximal(
     diagnostics.rollbackCount = impl_->totalRollbacks;
     diagnostics.heldStateCount = impl_->totalHeldStates;
     diagnostics.unsupportedIslandCount = impl_->totalUnsupportedIslands;
+    diagnostics.totalStepTimeMs = elapsedMs(stepStart);
     return diagnostics.status == ProximalStepStatus::Healthy
         || diagnostics.status == ProximalStepStatus::RecoveredRetry;
 }

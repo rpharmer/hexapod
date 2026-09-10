@@ -59,6 +59,11 @@ struct PhysicsSimSolverTelemetry {
     float max_contact_penetration{0.0f};
     float mechanical_energy_delta{0.0f};
     float actuator_work{0.0f};
+    float dynamics_time_ms{0.0f};
+    float contact_setup_time_ms{0.0f};
+    float admm_time_ms{0.0f};
+    float integration_time_ms{0.0f};
+    float total_step_time_ms{0.0f};
     float admm_rho{0.0f};
     float delassus_condition_estimate{0.0f};
     std::uint32_t contact_manifold_count{0};
