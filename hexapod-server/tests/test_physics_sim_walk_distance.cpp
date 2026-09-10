@@ -52,8 +52,8 @@ public:
     CapturingPhysicsSimBridge(std::string host,
                               int port,
                               int bus_loop_period_us,
-                              int physics_solver_iterations)
-        : inner_(std::move(host), port, bus_loop_period_us, physics_solver_iterations, nullptr) {}
+                              PhysicsSimSolverSettings solver_settings)
+        : inner_(std::move(host), port, bus_loop_period_us, solver_settings, nullptr) {}
 
     bool init() override {
         return inner_.init();
@@ -909,6 +909,27 @@ int main(int argc, char** argv) {
     const auto harness = physics_sim_test_utils::loadHarnessSettings(/*prefer_test_harness_config=*/true);
     const int kPort = 22000 + (static_cast<int>(::getpid()) % 6000);
     const int kBusLoopPeriodUs = harness.bus_loop_period_us;
+    PhysicsSimSolverSettings solver_settings{};
+    solver_settings.iterations = harness.physics_solver_iterations;
+    if (const char* mode = std::getenv("HEXAPOD_WALK_TEST_SOLVER_MODE")) {
+        if (std::string(mode) == "pinocchio-proximal") {
+            solver_settings.mode = physics_sim::PhysicsSolverMode::PinocchioProximal;
+            solver_settings.iterations = std::max(50, solver_settings.iterations);
+        } else if (std::string(mode) != "legacy-pgs") {
+            std::cerr << "invalid HEXAPOD_WALK_TEST_SOLVER_MODE=" << mode << '\n';
+            return 2;
+        }
+    }
+    double body_height_m = 0.06;
+    if (const char* value = std::getenv("HEXAPOD_WALK_TEST_BODY_HEIGHT_M")) {
+        char* end = nullptr;
+        const double parsed = std::strtod(value, &end);
+        if (end == value || *end != '\0' || !std::isfinite(parsed) || parsed <= 0.0) {
+            std::cerr << "invalid HEXAPOD_WALK_TEST_BODY_HEIGHT_M=" << value << '\n';
+            return 2;
+        }
+        body_height_m = parsed;
+    }
 
     pid_t pid = ::fork();
     if (pid < 0) {
@@ -931,7 +952,7 @@ int main(int argc, char** argv) {
     std::this_thread::sleep_for(std::chrono::milliseconds{250});
 
     auto bridge = std::make_unique<CapturingPhysicsSimBridge>(
-        "127.0.0.1", kPort, kBusLoopPeriodUs, harness.physics_solver_iterations);
+        "127.0.0.1", kPort, kBusLoopPeriodUs, solver_settings);
     CapturingPhysicsSimBridge* bridge_ptr = bridge.get();
 
     control_config::ControlConfig cfg = harness.control_cfg;
@@ -949,7 +970,7 @@ int main(int argc, char** argv) {
         true,
         RobotMode::STAND,
         GaitType::TRIPOD,
-        0.06,
+        body_height_m,
         0.0,
         0.0,
         0.0};
@@ -957,7 +978,7 @@ int main(int argc, char** argv) {
         true,
         RobotMode::WALK,
         GaitType::TRIPOD,
-        0.06,
+        body_height_m,
         0.20,
         0.0,
         0.0};
@@ -965,7 +986,7 @@ int main(int argc, char** argv) {
         true,
         RobotMode::WALK,
         GaitType::TRIPOD,
-        0.06,
+        body_height_m,
         0.06,
         0.0,
         0.0};
@@ -973,11 +994,12 @@ int main(int argc, char** argv) {
         true,
         RobotMode::WALK,
         GaitType::TRIPOD,
-        0.06,
+        body_height_m,
         0.20,
         kPi,
         0.0};
-    MotionIntent turn_in_place_motion = makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.06);
+    MotionIntent turn_in_place_motion =
+        makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, body_height_m);
     turn_in_place_motion.speed_mps = LinearRateMps{0.0};
     turn_in_place_motion.heading_rad = AngleRad{0.0};
     turn_in_place_motion.twist.twist_vel_radps = Vec3{0.0, 0.0, 0.45};
