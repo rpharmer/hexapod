@@ -44,6 +44,13 @@ int Run() {
     }
     const std::vector<double> qInitial = q;
     const std::vector<double> vInitial = v;
+    for (std::size_t i = 7; i < qInitial.size(); ++i) {
+        if (std::abs(qInitial[i]) > 1.0e-12) {
+            std::cerr << "initial articulated coordinate is not zero-relative index="
+                      << i << " value=" << qInitial[i] << "\n";
+            return 1;
+        }
+    }
     if (!model.writeState(world, q, v) || !model.readState(world, q, v)) {
         std::cerr << "initial state round trip failed\n";
         return 1;
@@ -75,6 +82,7 @@ int Run() {
         standingSteps = std::max(1, std::atoi(value));
     }
     std::uint64_t previousSignature = 0;
+    bool observedFlatGroundSupport = false;
     for (int step = 0; step < standingSteps; ++step) {
         if (!model.stepProximal(world, 1.0 / 240.0, proximalSettings, proximalDiagnostics)) {
             std::cerr << "proximal standing step failed status="
@@ -94,6 +102,20 @@ int Run() {
                       << " retries=" << proximalDiagnostics.retries << "\n";
             return 1;
         }
+        if (proximalDiagnostics.contactConstraintCount > 0) {
+            observedFlatGroundSupport = true;
+            if (proximalDiagnostics.contactConstraintCount > scene.legs.size()
+                || proximalDiagnostics.externalManifoldCount > scene.legs.size()
+                || proximalDiagnostics.robotRobotManifoldCount != 0) {
+                std::cerr << "flat-ground contact arbitration failed constraints="
+                          << proximalDiagnostics.contactConstraintCount
+                          << " external_manifolds="
+                          << proximalDiagnostics.externalManifoldCount
+                          << " robot_manifolds="
+                          << proximalDiagnostics.robotRobotManifoldCount << "\n";
+                return 1;
+            }
+        }
         if (traceContacts && proximalDiagnostics.contactSetSignature != previousSignature) {
             std::vector<double> stateQ;
             std::vector<double> stateV;
@@ -106,6 +128,10 @@ int Run() {
                       << " cond=" << proximalDiagnostics.delassusConditionEstimate << "\n";
             previousSignature = proximalDiagnostics.contactSetSignature;
         }
+    }
+    if (!observedFlatGroundSupport) {
+        std::cerr << "standing run never established flat-ground support\n";
+        return 1;
     }
 
     std::mt19937 rng(0x50494e4fU);

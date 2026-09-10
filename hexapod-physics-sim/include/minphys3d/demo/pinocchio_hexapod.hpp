@@ -18,6 +18,23 @@ enum class ProximalStepStatus : std::uint8_t {
     UnsupportedIsland = 3,
 };
 
+enum class ProximalFailureReason : std::uint8_t {
+    None = 0,
+    InvalidDt,
+    ReadState,
+    NonFiniteState,
+    NonFiniteMass,
+    NonFiniteAcceleration,
+    UnsupportedIsland,
+    SolverNotConverged,
+    NonFiniteImpulse,
+    NonFiniteVelocity,
+    SpeedLimit,
+    NonFiniteConfiguration,
+    WriteState,
+    NonFiniteEnergy,
+};
+
 struct ProximalSolverSettings {
     int maxIterations = 50;
     double proximalMu = 1.0e-6;
@@ -33,6 +50,7 @@ struct ProximalSolverSettings {
 
 struct ProximalStepDiagnostics {
     ProximalStepStatus status = ProximalStepStatus::Healthy;
+    ProximalFailureReason failureReason = ProximalFailureReason::None;
     int iterations = 0;
     double primalResidual = 0.0;
     double dualResidual = 0.0;
@@ -47,8 +65,13 @@ struct ProximalStepDiagnostics {
     double actuatorWork = 0.0;
     std::size_t contactManifoldCount = 0;
     std::size_t contactConstraintCount = 0;
+    std::size_t robotRobotManifoldCount = 0;
+    std::size_t externalManifoldCount = 0;
+    std::size_t contactPointCount = 0;
     std::size_t duplicateContactCount = 0;
     double delassusConditionEstimate = 0.0;
+    double delassusMinEigenvalue = 0.0;
+    double delassusMaxEigenvalue = 0.0;
     std::uint64_t contactSetSignature = 0;
     std::uint64_t warmStartResets = 0;
     std::uint64_t retries = 0;

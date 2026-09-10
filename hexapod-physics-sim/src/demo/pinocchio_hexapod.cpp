@@ -73,6 +73,27 @@ bool IsFinite(const Eigen::VectorXd& value) {
     return value.array().isFinite().all();
 }
 
+Eigen::Vector3d ProjectCoulombImpulse(const Eigen::Vector3d& impulse, double friction) {
+    const double mu = std::max(0.0, friction);
+    const double tangentNorm = impulse.head<2>().norm();
+    const double normal = impulse[2];
+    if (normal >= 0.0 && tangentNorm <= mu * normal) {
+        return impulse;
+    }
+    if (mu <= 0.0 || tangentNorm <= -normal / mu) {
+        return Eigen::Vector3d::Zero();
+    }
+
+    const double projectedNormal = (mu * tangentNorm + normal) / (mu * mu + 1.0);
+    Eigen::Vector3d projected{};
+    projected[2] = std::max(0.0, projectedNormal);
+    if (tangentNorm > 0.0) {
+        projected.head<2>() = impulse.head<2>()
+            * (mu * projected[2] / tangentNorm);
+    }
+    return projected;
+}
+
 std::uint64_t PersistentContactId(const Manifold& manifold, const Contact& contact) {
     std::uint64_t value = manifold.pairKey();
     value ^= contact.key + 0x9e3779b97f4a7c15ULL + (value << 6U) + (value >> 2U);
@@ -95,6 +116,42 @@ Eigen::Matrix3d ContactFrameRotation(const Vec3& inputNormal) {
     return rotation;
 }
 
+struct GroundContactChoice {
+    const Manifold* plane = nullptr;
+    const Manifold* terrain = nullptr;
+    bool useTerrain = false;
+};
+
+Vec3 ExternalContactNormal(const Manifold& manifold, bool aRobot) {
+    return Normalize(aRobot ? -1.0 * manifold.normal : manifold.normal);
+}
+
+bool TerrainMatchesPlane(const World& world,
+                         const Manifold& terrain,
+                         const Manifold& plane,
+                         std::uint32_t robotBody) {
+    const bool terrainARobot = terrain.a == robotBody;
+    const bool planeARobot = plane.a == robotBody;
+    const Vec3 terrainNormal = ExternalContactNormal(terrain, terrainARobot);
+    const Vec3 planeNormal = ExternalContactNormal(plane, planeARobot);
+    if (Dot(terrainNormal, planeNormal) < 0.9995) {
+        return false;
+    }
+
+    const std::uint32_t planeBodyId = planeARobot ? plane.b : plane.a;
+    const Body& planeBody = world.GetBody(planeBodyId);
+    constexpr double kEquivalentSurfaceToleranceM = 0.003;
+    for (const Contact& contact : terrain.contacts) {
+        const double terrainSurfaceOffset = Dot(planeNormal, contact.point)
+            + contact.penetration;
+        if (std::abs(terrainSurfaceOffset - planeBody.planeOffset)
+            > kEquivalentSurfaceToleranceM) {
+            return false;
+        }
+    }
+    return !terrain.contacts.empty();
+}
+
 } // namespace
 
 struct PinocchioHexapodModel::Impl {
@@ -109,6 +166,7 @@ struct PinocchioHexapodModel::Impl {
     std::vector<BodyBinding> bodies{};
     std::array<pinocchio::JointIndex, 18> wireJoints{};
     std::array<std::uint32_t, 18> wireServoIds{};
+    std::array<double, 18> wireZeroAngles{};
     std::unordered_map<std::uint32_t, pinocchio::JointIndex> bodyJoints{};
 
     struct WarmImpulse {
@@ -118,6 +176,10 @@ struct PinocchioHexapodModel::Impl {
     std::unordered_map<std::uint64_t, WarmImpulse> contactWarmStarts{};
     std::vector<double> lastGoodQ{};
     std::vector<double> lastGoodV{};
+    std::array<double, 18> lastServoTargets{};
+    bool haveLastServoTargets = false;
+    std::array<double, 18> commandedServoTargets{};
+    bool haveCommandedServoTargets = false;
     std::uint64_t totalWarmStartResets = 0;
     std::uint64_t totalRetries = 0;
     std::uint64_t totalRollbacks = 0;
@@ -187,6 +249,7 @@ struct PinocchioHexapodModel::Impl {
 
         for (std::size_t i = 0; i < wireServoIds.size(); ++i) {
             wireJoints[i] = servoToJoint.at(wireServoIds[i]);
+            wireZeroAngles[i] = world.GetServoJointAngle(wireServoIds[i]);
         }
 
         model.gravity.linear() = Eigen::Vector3d(0.0, -9.80665, 0.0);
@@ -237,7 +300,9 @@ bool PinocchioHexapodModel::readState(
         const ServoJoint& servo = world.GetServoJoint(impl_->wireServoIds[i]);
         const Body& parent = world.GetBody(servo.a);
         const Body& child = world.GetBody(servo.b);
-        q[impl_->model.joints[pinJoint].idx_q()] = world.GetServoJointAngle(impl_->wireServoIds[i]);
+        q[impl_->model.joints[pinJoint].idx_q()] = std::remainder(
+            world.GetServoJointAngle(impl_->wireServoIds[i]) - impl_->wireZeroAngles[i],
+            6.28318530717958647692);
         const Vec3 axisWorld = Normalize(Rotate(parent.orientation, servo.localAxisA));
         v[impl_->model.joints[pinJoint].idx_v()] =
             Dot(child.angularVelocity - parent.angularVelocity, axisWorld);
@@ -419,18 +484,51 @@ bool PinocchioHexapodModel::stepProximal(
     diagnostics = {};
     if (!(dt > 0.0) || !std::isfinite(dt)) {
         diagnostics.status = ProximalStepStatus::HeldLastGood;
+        diagnostics.failureReason = ProximalFailureReason::InvalidDt;
         return false;
     }
+
+    std::array<double, 18> servoTargets{};
+    bool targetJump = !impl_->haveLastServoTargets;
+    for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
+        servoTargets[i] = world.GetServoJoint(impl_->wireServoIds[i]).targetAngle;
+        if (impl_->haveLastServoTargets) {
+            const double delta = std::abs(std::remainder(
+                servoTargets[i] - impl_->lastServoTargets[i],
+                6.28318530717958647692));
+            targetJump = targetJump || delta > 0.25;
+        }
+    }
+    const bool resetCommandedTargets = targetJump && impl_->haveLastServoTargets;
+    impl_->lastServoTargets = servoTargets;
+    impl_->haveLastServoTargets = true;
 
     std::vector<double> snapshotQ;
     std::vector<double> snapshotV;
     if (!readState(world, snapshotQ, snapshotV)) {
         diagnostics.status = ProximalStepStatus::HeldLastGood;
+        diagnostics.failureReason = ProximalFailureReason::ReadState;
         return false;
     }
     if (impl_->lastGoodQ.empty()) {
         impl_->lastGoodQ = snapshotQ;
         impl_->lastGoodV = snapshotV;
+    }
+
+    std::array<double, 18> commandedServoTargets = impl_->commandedServoTargets;
+    if (!impl_->haveCommandedServoTargets || resetCommandedTargets) {
+        for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
+            commandedServoTargets[i] = world.GetServoJointAngle(impl_->wireServoIds[i]);
+        }
+    }
+    for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
+        const ServoJoint& servo = world.GetServoJoint(impl_->wireServoIds[i]);
+        const double delta = std::remainder(
+            servoTargets[i] - commandedServoTargets[i], 6.28318530717958647692);
+        const double maxStep = std::max(0.0, servo.maxServoSpeed) * dt;
+        commandedServoTargets[i] += maxStep > 0.0
+            ? std::clamp(delta, -maxStep, maxStep)
+            : delta;
     }
 
     auto totalMechanicalEnergy = [&]() {
@@ -455,11 +553,13 @@ bool PinocchioHexapodModel::stepProximal(
         std::vector<double> qStorage;
         std::vector<double> vStorage;
         if (!readState(world, qStorage, vStorage)) {
+            out.failureReason = ProximalFailureReason::ReadState;
             return false;
         }
         Eigen::Map<const Eigen::VectorXd> q(qStorage.data(), impl_->model.nq);
         Eigen::Map<const Eigen::VectorXd> v(vStorage.data(), impl_->model.nv);
         if (!IsFinite(q) || !IsFinite(v)) {
+            out.failureReason = ProximalFailureReason::NonFiniteState;
             return false;
         }
 
@@ -469,6 +569,7 @@ bool PinocchioHexapodModel::stepProximal(
         mass.triangularView<Eigen::StrictlyLower>() =
             mass.transpose().triangularView<Eigen::StrictlyLower>();
         if (!mass.array().isFinite().all()) {
+            out.failureReason = ProximalFailureReason::NonFiniteMass;
             return false;
         }
 
@@ -481,9 +582,9 @@ bool PinocchioHexapodModel::stepProximal(
             const pinocchio::JointIndex joint = impl_->wireJoints[i];
             const Eigen::Index qi = impl_->model.joints[joint].idx_q();
             const Eigen::Index vi = impl_->model.joints[joint].idx_v();
-            const ServoJoint& servo = world.GetServoJoint(impl_->wireServoIds[i]);
             const double error = std::remainder(
-                servo.targetAngle - q[qi], 6.28318530717958647692);
+                commandedServoTargets[i] - impl_->wireZeroAngles[i] - q[qi],
+                6.28318530717958647692);
             const double reflectedInertia = std::max(1.0e-9, mass(vi, vi));
             const double requested = reflectedInertia * omegaN * omegaN * error
                 - 2.0 * zeta * omegaN * reflectedInertia * v[vi];
@@ -503,6 +604,7 @@ bool PinocchioHexapodModel::stepProximal(
             impl_->model, impl_->data, q, v, tau, pinocchio::Convention::WORLD);
         Eigen::VectorXd vNew = v + subDt * acceleration;
         if (!IsFinite(acceleration) || !IsFinite(vNew)) {
+            out.failureReason = ProximalFailureReason::NonFiniteAcceleration;
             return false;
         }
 
@@ -514,6 +616,34 @@ bool PinocchioHexapodModel::stepProximal(
         std::vector<double> contactRestitutions;
         std::vector<double> contactPenetrations;
         std::unordered_set<std::uint64_t> seenContactIds;
+        std::unordered_map<std::uint32_t, GroundContactChoice> groundChoices;
+        for (const Manifold& candidate : world.DebugManifolds()) {
+            const bool aRobot = impl_->bodyJoints.find(candidate.a) != impl_->bodyJoints.end();
+            const bool bRobot = impl_->bodyJoints.find(candidate.b) != impl_->bodyJoints.end();
+            if (aRobot == bRobot) {
+                continue;
+            }
+            const std::uint32_t robotBody = aRobot ? candidate.a : candidate.b;
+            const std::uint32_t externalBody = aRobot ? candidate.b : candidate.a;
+            if (world.IsTerrainAttachmentBody(externalBody)) {
+                groundChoices[robotBody].terrain = &candidate;
+            } else if (world.GetBody(externalBody).shape == ShapeType::Plane) {
+                groundChoices[robotBody].plane = &candidate;
+            }
+        }
+        for (auto& [robotBody, choice] : groundChoices) {
+            choice.useTerrain = choice.terrain != nullptr
+                && (choice.plane == nullptr
+                    || !TerrainMatchesPlane(world, *choice.terrain, *choice.plane, robotBody));
+        }
+
+        struct AcceptedContactGeometry {
+            pinocchio::JointIndex joint1 = 0;
+            pinocchio::JointIndex joint2 = 0;
+            Vec3 point{};
+            Vec3 normal{};
+        };
+        std::vector<AcceptedContactGeometry> acceptedContactGeometry;
         constraintModels.reserve(world.DebugManifolds().size() * 4U);
         contactIds.reserve(world.DebugManifolds().size() * 4U);
 
@@ -525,12 +655,46 @@ bool PinocchioHexapodModel::stepProximal(
             if (!aRobot && !bRobot) {
                 continue;
             }
+            if (aRobot != bRobot) {
+                const std::uint32_t robotBody = aRobot ? manifold.a : manifold.b;
+                const std::uint32_t externalBody = aRobot ? manifold.b : manifold.a;
+                const auto choiceIt = groundChoices.find(robotBody);
+                if (choiceIt != groundChoices.end()) {
+                    const bool isTerrain = world.IsTerrainAttachmentBody(externalBody);
+                    const bool isPlane = !isTerrain
+                        && world.GetBody(externalBody).shape == ShapeType::Plane;
+                    if ((isTerrain && !choiceIt->second.useTerrain)
+                        || (isPlane && choiceIt->second.useTerrain)) {
+                        continue;
+                    }
+                }
+            }
+            if (aRobot && bRobot) {
+                const ServoJoint* connectingJoint = nullptr;
+                for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
+                    const ServoJoint& servo = world.GetServoJoint(impl_->wireServoIds[i]);
+                    if ((servo.a == manifold.a && servo.b == manifold.b)
+                        || (servo.a == manifold.b && servo.b == manifold.a)) {
+                        connectingJoint = &servo;
+                        break;
+                    }
+                }
+                if (connectingJoint != nullptr) {
+                    continue;
+                }
+            }
             ++out.contactManifoldCount;
+            if (aRobot && bRobot) {
+                ++out.robotRobotManifoldCount;
+            } else {
+                ++out.externalManifoldCount;
+            }
             if (aRobot != bRobot) {
                 const std::uint32_t externalId = aRobot ? manifold.b : manifold.a;
                 const Body& external = world.GetBody(externalId);
                 if (!external.isStatic && external.invMass > 0.0) {
                     unsupportedIsland = true;
+                    out.failureReason = ProximalFailureReason::UnsupportedIsland;
                     return false;
                 }
             }
@@ -540,6 +704,7 @@ bool PinocchioHexapodModel::stepProximal(
             const double friction = std::max(
                 0.0, 0.5 * (bodyA.dynamicFriction + bodyB.dynamicFriction));
             for (const Contact& contact : manifold.contacts) {
+                ++out.contactPointCount;
                 const std::uint64_t contactId = PersistentContactId(manifold, contact);
                 if (!seenContactIds.insert(contactId).second) {
                     ++out.duplicateContactCount;
@@ -554,6 +719,20 @@ bool PinocchioHexapodModel::stepProximal(
                     joint2 = aRobot ? aIt->second : bIt->second;
                     normal = aRobot ? -1.0 * manifold.normal : manifold.normal;
                 }
+                const bool coincident = std::any_of(
+                    acceptedContactGeometry.begin(),
+                    acceptedContactGeometry.end(),
+                    [&](const AcceptedContactGeometry& accepted) {
+                        return accepted.joint1 == joint1
+                            && accepted.joint2 == joint2
+                            && LengthSquared(accepted.point - contact.point) <= 1.0e-10
+                            && Dot(accepted.normal, normal) >= 0.999999;
+                    });
+                if (coincident) {
+                    ++out.duplicateContactCount;
+                    continue;
+                }
+                acceptedContactGeometry.push_back({joint1, joint2, contact.point, normal});
 
                 const pinocchio::SE3 contactWorld(
                     ContactFrameRotation(normal), ToEigen(contact.point));
@@ -626,6 +805,38 @@ bool PinocchioHexapodModel::stepProximal(
             }
 
             Eigen::VectorXd warm = Eigen::VectorXd::Zero(drift.size());
+            const Eigen::MatrixXd inverseMassJacobianTranspose =
+                mass.ldlt().solve(jacobian.transpose());
+            Eigen::MatrixXd denseDelassus = jacobian * inverseMassJacobianTranspose;
+            denseDelassus.diagonal().array() += settings.contactRegularization;
+            double rhoInitial = 0.0;
+            const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> spectrum(
+                0.5 * (denseDelassus + denseDelassus.transpose()));
+            if (spectrum.info() == Eigen::Success) {
+                const double smallest = spectrum.eigenvalues().minCoeff();
+                const double largest = spectrum.eigenvalues().maxCoeff();
+                out.delassusMinEigenvalue = smallest;
+                out.delassusMaxEigenvalue = largest;
+                if (smallest > 0.0 && std::isfinite(smallest)
+                    && std::isfinite(largest)) {
+                    out.delassusConditionEstimate = largest / smallest;
+                }
+                if (smallest > 0.0 && std::isfinite(smallest) && std::isfinite(largest)) {
+                    rhoInitial = std::sqrt(smallest * largest);
+                }
+            }
+            const Eigen::LDLT<Eigen::MatrixXd> seedFactorization(denseDelassus);
+            if (seedFactorization.info() == Eigen::Success) {
+                const Eigen::VectorXd unconstrainedSeed = seedFactorization.solve(-drift);
+                if (IsFinite(unconstrainedSeed)) {
+                    for (std::size_t i = 0; i < contactIds.size(); ++i) {
+                        warm.segment<3>(static_cast<Eigen::Index>(3U * i)) =
+                            ProjectCoulombImpulse(
+                                unconstrainedSeed.segment<3>(static_cast<Eigen::Index>(3U * i)),
+                                contactFrictions[i]);
+                    }
+                }
+            }
             for (std::size_t i = 0; i < contactIds.size(); ++i) {
                 const auto found = impl_->contactWarmStarts.find(contactIds[i]);
                 if (found == impl_->contactWarmStarts.end()) {
@@ -654,6 +865,10 @@ bool PinocchioHexapodModel::stepProximal(
             solverSettings.admm_update_rule = pinocchio::ADMMUpdateRule::SPECTRAL;
             solverSettings.admm_proximal_rule = pinocchio::ADMMProximalRule::MANUAL;
             solverSettings.mu_prox = settings.proximalMu;
+            if (rhoInitial > 0.0) {
+                solverSettings.rho_init = rhoInitial;
+            }
+            solverSettings.anderson_capacity = 3;
             solverSettings.solve_ncp = true;
             solverSettings.stat_record = false;
             pinocchio::ADMMSolverResult result;
@@ -684,6 +899,8 @@ bool PinocchioHexapodModel::stepProximal(
                             const Eigen::VectorXd eigenvalues = eigensolver.eigenvalues();
                             const double minEigenvalue = eigenvalues.minCoeff();
                             const double maxEigenvalue = eigenvalues.maxCoeff();
+                            out.delassusMinEigenvalue = minEigenvalue;
+                            out.delassusMaxEigenvalue = maxEigenvalue;
                             if (minEigenvalue > 0.0 && std::isfinite(minEigenvalue)
                                 && std::isfinite(maxEigenvalue)) {
                                 out.delassusConditionEstimate =
@@ -692,12 +909,14 @@ bool PinocchioHexapodModel::stepProximal(
                         }
                     }
                 }
+                out.failureReason = ProximalFailureReason::SolverNotConverged;
                 return false;
             }
 
             Eigen::VectorXd impulses(drift.size());
             result.retrieveConstraintImpulses(impulses);
             if (!IsFinite(impulses)) {
+                out.failureReason = ProximalFailureReason::NonFiniteImpulse;
                 return false;
             }
             std::unordered_set<std::uint64_t> activeIds;
@@ -721,13 +940,14 @@ bool PinocchioHexapodModel::stepProximal(
                     ++it;
                 }
             }
-            vNew += mass.ldlt().solve(jacobian.transpose() * impulses);
+            vNew += inverseMassJacobianTranspose * impulses;
         } else if (!impl_->contactWarmStarts.empty()) {
             impl_->totalWarmStartResets += impl_->contactWarmStarts.size();
             impl_->contactWarmStarts.clear();
         }
 
         if (!IsFinite(vNew)) {
+            out.failureReason = ProximalFailureReason::NonFiniteVelocity;
             return false;
         }
         pinocchio::forwardKinematics(impl_->model, impl_->data, q, vNew);
@@ -742,22 +962,26 @@ bool PinocchioHexapodModel::stepProximal(
             if (!std::isfinite(linearSpeed) || !std::isfinite(angularSpeed)
                 || linearSpeed > settings.maxLinearSpeed
                 || angularSpeed > settings.maxAngularSpeed) {
+                out.failureReason = ProximalFailureReason::SpeedLimit;
                 return false;
             }
         }
 
         const Eigen::VectorXd qNew = pinocchio::integrate(impl_->model, q, subDt * vNew);
         if (!IsFinite(qNew)) {
+            out.failureReason = ProximalFailureReason::NonFiniteConfiguration;
             return false;
         }
         std::vector<double> qNewStorage(qNew.data(), qNew.data() + qNew.size());
         std::vector<double> vNewStorage(vNew.data(), vNew.data() + vNew.size());
         if (!writeState(world, qNewStorage, vNewStorage)) {
+            out.failureReason = ProximalFailureReason::WriteState;
             return false;
         }
         const double energyAfter = totalMechanicalEnergy();
         const double energyDelta = energyAfter - energyBefore;
         if (!std::isfinite(energyDelta)) {
+            out.failureReason = ProximalFailureReason::NonFiniteEnergy;
             return false;
         }
         out.mechanicalEnergyDelta += energyDelta;
@@ -767,6 +991,8 @@ bool PinocchioHexapodModel::stepProximal(
     ProximalStepDiagnostics firstAttempt{};
     if (advanceOnce(dt, firstAttempt)) {
         world.CompleteExternalDynamicsStep();
+        impl_->commandedServoTargets = commandedServoTargets;
+        impl_->haveCommandedServoTargets = true;
         diagnostics = firstAttempt;
         diagnostics.status = ProximalStepStatus::Healthy;
         readState(world, impl_->lastGoodQ, impl_->lastGoodV);
@@ -787,6 +1013,8 @@ bool PinocchioHexapodModel::stepProximal(
         const bool half2 = half1 && advanceOnce(0.5 * dt, retry);
         if (half1 && half2) {
             world.CompleteExternalDynamicsStep();
+            impl_->commandedServoTargets = commandedServoTargets;
+            impl_->haveCommandedServoTargets = true;
             diagnostics = retry;
             diagnostics.status = ProximalStepStatus::RecoveredRetry;
             readState(world, impl_->lastGoodQ, impl_->lastGoodV);
