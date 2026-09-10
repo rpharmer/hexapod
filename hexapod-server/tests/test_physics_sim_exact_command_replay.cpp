@@ -79,6 +79,10 @@ struct ReplayResult {
     std::uint64_t read_failures{0};
     std::uint64_t solver_not_converged{0};
     std::uint16_t max_iterations{0};
+    double p99_step_time_ms{0.0};
+    double max_step_time_ms{0.0};
+    double healthy_p99_step_time_ms{0.0};
+    double healthy_max_step_time_ms{0.0};
 };
 
 class CommandCapturingBridge final : public IHardwareBridge {
@@ -356,6 +360,10 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
     }
 
     ReplayResult result{};
+    std::vector<double> step_times_ms{};
+    std::vector<double> healthy_step_times_ms{};
+    step_times_ms.reserve(frames.size());
+    healthy_step_times_ms.reserve(frames.size());
     for (const CapturedFrame& frame : frames) {
         PhaseResult& phase = result.phases[static_cast<std::size_t>(frame.phase)];
         ++result.frames;
@@ -367,7 +375,12 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         }
 
         RobotState state{};
+        const auto step_start = std::chrono::steady_clock::now();
         const bool read_ok = bridge.read(state);
+        const auto step_end = std::chrono::steady_clock::now();
+        const double step_time_ms =
+            std::chrono::duration<double, std::milli>(step_end - step_start).count();
+        step_times_ms.push_back(step_time_ms);
         if (!read_ok) {
             ++result.read_failures;
             ++phase.read_failures;
@@ -402,6 +415,7 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         }
         switch (telemetry->status) {
         case physics_sim::SolverStatus::Healthy:
+            healthy_step_times_ms.push_back(step_time_ms);
             ++result.healthy;
             ++phase.healthy;
             break;
@@ -419,6 +433,25 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
             break;
         }
     }
+    const auto assignTimingSummary = [](std::vector<double>& samples,
+                                        double& p99,
+                                        double& maximum) {
+        if (samples.empty()) {
+            return;
+        }
+        std::sort(samples.begin(), samples.end());
+        const std::size_t p99_index = std::min(
+            samples.size() - 1,
+            static_cast<std::size_t>(
+                std::ceil(0.99 * static_cast<double>(samples.size()))) - 1);
+        p99 = samples[p99_index];
+        maximum = samples.back();
+    };
+    assignTimingSummary(
+        step_times_ms, result.p99_step_time_ms, result.max_step_time_ms);
+    assignTimingSummary(healthy_step_times_ms,
+                        result.healthy_p99_step_time_ms,
+                        result.healthy_max_step_time_ms);
     return result;
 }
 
@@ -444,6 +477,10 @@ std::string metricsJson(const ReplayResult& result,
         << ",\"read_failures\":" << result.read_failures
         << ",\"solver_not_converged\":" << result.solver_not_converged
         << ",\"max_iterations\":" << result.max_iterations
+        << ",\"p99_step_time_ms\":" << result.p99_step_time_ms
+        << ",\"max_step_time_ms\":" << result.max_step_time_ms
+        << ",\"healthy_p99_step_time_ms\":" << result.healthy_p99_step_time_ms
+        << ",\"healthy_max_step_time_ms\":" << result.healthy_max_step_time_ms
         << ",\"phases\":[";
     for (std::size_t i = 0; i < result.phases.size(); ++i) {
         if (i != 0) {

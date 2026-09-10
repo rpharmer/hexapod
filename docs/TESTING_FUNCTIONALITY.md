@@ -301,6 +301,8 @@ These are the highest-value tests for tracking improvements across commits.
   - separate controller/safety feedback from contact-solver failures
   - report healthy, recovered, held, and unsupported samples for stand,
     forward, reverse, strafe, diagonal, turn-in-place, and stand transitions
+  - report p99 and maximum local step round-trip time; this includes loopback
+    transport and is therefore a conservative proxy for the 4 ms physics gate
 - Run from the repository root after building both projects:
   - `source scripts/lib/pinocchio_env.sh`
   - `HEXAPOD_PHYSICS_SIM_EXE=hexapod-physics-sim/build/hexapod-physics-sim hexapod-server/build-tests/test_physics_sim_exact_command_replay --emit-metrics-json`
