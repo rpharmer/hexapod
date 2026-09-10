@@ -207,6 +207,19 @@ int positiveEnvOrDefault(const char* name, const int fallback) {
     return static_cast<int>(parsed);
 }
 
+double positiveDoubleEnvOrDefault(const char* name, const double fallback) {
+    const char* value = std::getenv(name);
+    if (value == nullptr || value[0] == '\0') {
+        return fallback;
+    }
+    char* end = nullptr;
+    const double parsed = std::strtod(value, &end);
+    if (end == value || *end != '\0' || !std::isfinite(parsed) || parsed <= 0.0) {
+        throw std::runtime_error(std::string("invalid ") + name + "=" + value);
+    }
+    return parsed;
+}
+
 bool envEnabled(const char* name) {
     const char* value = std::getenv(name);
     return value != nullptr && value[0] != '\0' && value[0] != '0';
@@ -327,10 +340,14 @@ std::vector<CapturedFrame> captureCommands(const physics_sim_test_utils::Harness
 ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
                             const physics_sim_test_utils::HarnessSettings& harness,
                             const int port,
-                            const int solver_iterations) {
+                            const int solver_iterations,
+                            const double absolute_tolerance,
+                            const double relative_tolerance) {
     PhysicsSimSolverSettings proximal{};
     proximal.mode = physics_sim::PhysicsSolverMode::PinocchioProximal;
     proximal.iterations = solver_iterations;
+    proximal.absolute_tolerance = static_cast<float>(absolute_tolerance);
+    proximal.relative_tolerance = static_cast<float>(relative_tolerance);
     PhysicsSimBridge bridge(
         "127.0.0.1", port, harness.bus_loop_period_us, proximal, nullptr);
     if (!bridge.init()) {
@@ -403,13 +420,19 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
 
 std::string metricsJson(const ReplayResult& result,
                         const std::uint64_t command_hash,
-                        const std::size_t captured_frames) {
+                        const std::size_t captured_frames,
+                        const int solver_iterations,
+                        const double absolute_tolerance,
+                        const double relative_tolerance) {
     std::ostringstream out;
     out << std::setprecision(9)
         << "{\"captured_frames\":" << captured_frames
         << ",\"replayed_frames\":" << result.frames
         << ",\"telemetry_frames\":" << result.telemetry_frames
         << ",\"command_hash\":\"" << std::hex << command_hash << std::dec << "\""
+        << ",\"solver_iteration_limit\":" << solver_iterations
+        << ",\"absolute_tolerance\":" << absolute_tolerance
+        << ",\"relative_tolerance\":" << relative_tolerance
         << ",\"healthy\":" << result.healthy
         << ",\"recovered\":" << result.recovered
         << ",\"held\":" << result.held
@@ -472,6 +495,10 @@ int main(int argc, char** argv) {
             positiveEnvOrDefault("HEXAPOD_EXACT_REPLAY_TRANSITION_FRAMES", 24);
         const int solver_iterations =
             positiveEnvOrDefault("HEXAPOD_EXACT_REPLAY_SOLVER_ITERATIONS", 50);
+        const double absolute_tolerance = positiveDoubleEnvOrDefault(
+            "HEXAPOD_EXACT_REPLAY_ABSOLUTE_TOLERANCE", 1.0e-8);
+        const double relative_tolerance = positiveDoubleEnvOrDefault(
+            "HEXAPOD_EXACT_REPLAY_RELATIVE_TOLERANCE", 1.0e-6);
         const std::optional<ReplayPhase> selected_phase = selectedMotionPhase();
         const int base_port = 23500 + (static_cast<int>(::getpid()) % 4000);
 
@@ -514,7 +541,12 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds{250});
         ReplayResult result{};
         try {
-            result = replayCommands(frames, harness, base_port + 1, solver_iterations);
+            result = replayCommands(frames,
+                                    harness,
+                                    base_port + 1,
+                                    solver_iterations,
+                                    absolute_tolerance,
+                                    relative_tolerance);
         } catch (...) {
             stopSimulator(replay_pid);
             throw;
@@ -530,7 +562,12 @@ int main(int argc, char** argv) {
             || (result.recovered == 0 && result.held == 0 && result.unsupported == 0
                 && result.read_failures == 0);
         const bool passed = accounting_ok && gates_ok;
-        const std::string metrics = metricsJson(result, command_hash, frames.size());
+        const std::string metrics = metricsJson(result,
+                                                command_hash,
+                                                frames.size(),
+                                                solver_iterations,
+                                                absolute_tolerance,
+                                                relative_tolerance);
         if (emit_metrics_json) {
             std::cout << "{\"suite\":\"physics_sim_exact_command_replay\","
                          "\"case\":\"legacy_capture_to_proximal\",\"passed\":"
