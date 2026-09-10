@@ -898,35 +898,12 @@ bool PinocchioHexapodModel::stepProximal(
             Eigen::VectorXd warm = Eigen::VectorXd::Zero(drift.size());
             const Eigen::MatrixXd inverseMassJacobianTranspose =
                 mass.ldlt().solve(jacobian.transpose());
-            Eigen::MatrixXd denseDelassus = jacobian * inverseMassJacobianTranspose;
-            denseDelassus.diagonal().array() += settings.contactRegularization;
-            const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> spectrum(
-                0.5 * (denseDelassus + denseDelassus.transpose()));
-            if (spectrum.info() == Eigen::Success) {
-                const double smallest = spectrum.eigenvalues().minCoeff();
-                const double largest = spectrum.eigenvalues().maxCoeff();
-                out.delassusMinEigenvalue = smallest;
-                out.delassusMaxEigenvalue = largest;
-                if (smallest > 0.0 && std::isfinite(smallest)
-                    && std::isfinite(largest)) {
-                    out.delassusConditionEstimate = largest / smallest;
-                }
-            }
-            const Eigen::LDLT<Eigen::MatrixXd> seedFactorization(denseDelassus);
-            if (seedFactorization.info() == Eigen::Success) {
-                const Eigen::VectorXd unconstrainedSeed = seedFactorization.solve(-drift);
-                if (IsFinite(unconstrainedSeed)) {
-                    for (std::size_t i = 0; i < contactIds.size(); ++i) {
-                        warm.segment<3>(static_cast<Eigen::Index>(3U * i)) =
-                            ProjectCoulombImpulse(
-                                unconstrainedSeed.segment<3>(static_cast<Eigen::Index>(3U * i)),
-                                contactFrictions[i]);
-                    }
-                }
-            }
+            std::vector<bool> haveCachedWarmStart(contactIds.size(), false);
+            bool needsDenseSeed = false;
             for (std::size_t i = 0; i < contactIds.size(); ++i) {
                 const auto found = impl_->contactWarmStarts.find(contactIds[i]);
                 if (found == impl_->contactWarmStarts.end()) {
+                    needsDenseSeed = true;
                     continue;
                 }
                 Eigen::Vector3d impulse = found->second.value;
@@ -940,6 +917,33 @@ bool PinocchioHexapodModel::stepProximal(
                     impulse.head<2>() *= limit / tangential;
                 }
                 warm.segment<3>(static_cast<Eigen::Index>(3U * i)) = impulse;
+                haveCachedWarmStart[i] = true;
+            }
+
+            // A dense solve is useful for initializing genuinely new contacts,
+            // but rebuilding, factorizing, and diagonalizing the dense Delassus
+            // matrix on every settled step defeats the articulated production
+            // path. Persistent contacts use their projected impulse cache.
+            if (needsDenseSeed) {
+                Eigen::MatrixXd denseSeedDelassus =
+                    jacobian * inverseMassJacobianTranspose;
+                denseSeedDelassus.diagonal().array() += settings.contactRegularization;
+                const Eigen::LDLT<Eigen::MatrixXd> seedFactorization(denseSeedDelassus);
+                if (seedFactorization.info() == Eigen::Success) {
+                    const Eigen::VectorXd unconstrainedSeed = seedFactorization.solve(-drift);
+                    if (IsFinite(unconstrainedSeed)) {
+                        for (std::size_t i = 0; i < contactIds.size(); ++i) {
+                            if (haveCachedWarmStart[i]) {
+                                continue;
+                            }
+                            warm.segment<3>(static_cast<Eigen::Index>(3U * i)) =
+                                ProjectCoulombImpulse(
+                                    unconstrainedSeed.segment<3>(
+                                        static_cast<Eigen::Index>(3U * i)),
+                                    contactFrictions[i]);
+                        }
+                    }
+                }
             }
 
             pinocchio::ADMMConstraintSolver solver(drift.size());
@@ -977,7 +981,9 @@ bool PinocchioHexapodModel::stepProximal(
             Eigen::VectorXd impulses(drift.size());
             result.retrieveConstraintImpulses(impulses);
             if (IsFinite(impulses)) {
-                Eigen::VectorXd contactVelocities = denseDelassus * impulses + drift;
+                Eigen::VectorXd contactVelocities(drift.size());
+                delassus.applyOnTheRight(impulses, contactVelocities, false);
+                contactVelocities += drift;
                 Eigen::VectorXd deSaxce = Eigen::VectorXd::Zero(drift.size());
                 Eigen::VectorXd correctedVelocities = Eigen::VectorXd::Zero(drift.size());
                 Eigen::VectorXd projectedDual = Eigen::VectorXd::Zero(drift.size());
@@ -1017,8 +1023,9 @@ bool PinocchioHexapodModel::stepProximal(
                 || !std::isfinite(result.dual_feasibility)
                 || !std::isfinite(result.complementarity)) {
                 if (jacobian.rows() <= 72) {
-                    const Eigen::MatrixXd delassusDense =
-                        jacobian * mass.ldlt().solve(jacobian.transpose());
+                    Eigen::MatrixXd delassusDense =
+                        jacobian * inverseMassJacobianTranspose;
+                    delassusDense.diagonal().array() += settings.contactRegularization;
                     if (delassusDense.array().isFinite().all()) {
                         Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigensolver(
                             0.5 * (delassusDense + delassusDense.transpose()));
