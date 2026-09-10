@@ -63,6 +63,7 @@ struct PhaseResult {
     std::uint16_t max_iterations{0};
     double max_ncp_dual_residual{0.0};
     double max_ncp_complementarity_residual{0.0};
+    double max_contact_penetration{0.0};
     std::optional<Vec3> first_valid_position{};
     std::optional<Vec3> last_valid_position{};
 };
@@ -392,6 +393,9 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         phase.max_ncp_complementarity_residual = std::max(
             phase.max_ncp_complementarity_residual,
             static_cast<double>(telemetry->ncp_complementarity_residual));
+        phase.max_contact_penetration = std::max(
+            phase.max_contact_penetration,
+            static_cast<double>(telemetry->max_contact_penetration));
         if (telemetry->failure_reason == physics_sim::SolverFailureReason::SolverNotConverged) {
             ++result.solver_not_converged;
             ++phase.solver_not_converged;
@@ -464,6 +468,7 @@ std::string metricsJson(const ReplayResult& result,
             << ",\"max_ncp_dual_residual\":" << phase.max_ncp_dual_residual
             << ",\"max_ncp_complementarity_residual\":"
             << phase.max_ncp_complementarity_residual
+            << ",\"max_contact_penetration_m\":" << phase.max_contact_penetration
             << ",\"valid_delta_x_m\":" << dx
             << ",\"valid_delta_y_m\":" << dy << '}';
     }

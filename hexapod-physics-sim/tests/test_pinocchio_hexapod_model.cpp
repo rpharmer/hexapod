@@ -141,6 +141,14 @@ int Run() {
         return 1;
     }
 
+    ProximalStepDiagnostics coarseDtDiagnostics{};
+    ProximalStepDiagnostics fineDtDiagnostics{};
+    if (!model.stepProximal(world, 1.0 / 120.0, proximalSettings, coarseDtDiagnostics)
+        || !model.stepProximal(world, 1.0 / 480.0, proximalSettings, fineDtDiagnostics)) {
+        std::cerr << "timestep-change warm start did not remain usable\n";
+        return 1;
+    }
+
     ProximalStepDiagnostics invalidDtDiagnostics{};
     if (model.stepProximal(
             world,
@@ -177,6 +185,36 @@ int Run() {
         || !model.readState(world, q, v)) {
         std::cerr << "excessive speed did not rollback to a readable last-valid state reason="
                   << static_cast<int>(speedDiagnostics.failureReason) << "\n";
+        return 1;
+    }
+
+    const std::vector<double> beforeExtremeQ = q;
+    std::vector<double> extremeQ = q;
+    std::vector<double> extremeV(model.velocitySize(), 0.0);
+    extremeQ[1] -= 0.25;
+    if (!model.writeState(world, extremeQ, extremeV)) {
+        std::cerr << "failed to inject extreme contact penetration\n";
+        return 1;
+    }
+    ProximalStepDiagnostics penetrationDiagnostics{};
+    if (model.stepProximal(world, 1.0 / 240.0, proximalSettings, penetrationDiagnostics)
+        || penetrationDiagnostics.status != ProximalStepStatus::HeldLastGood
+        || penetrationDiagnostics.failureReason != ProximalFailureReason::ExtremePenetration
+        || penetrationDiagnostics.maxContactPenetration <= 0.05
+        || !model.readState(world, q, v)) {
+        std::cerr << "extreme penetration was not rejected before integration reason="
+                  << static_cast<int>(penetrationDiagnostics.failureReason)
+                  << " penetration=" << penetrationDiagnostics.maxContactPenetration << "\n";
+        return 1;
+    }
+    double penetrationRollbackError = 0.0;
+    for (std::size_t i = 0; i < q.size(); ++i) {
+        penetrationRollbackError =
+            std::max(penetrationRollbackError, std::abs(q[i] - beforeExtremeQ[i]));
+    }
+    if (penetrationRollbackError > 2.0e-8) {
+        std::cerr << "extreme penetration rollback changed last-good pose error="
+                  << penetrationRollbackError << "\n";
         return 1;
     }
 

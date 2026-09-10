@@ -59,12 +59,17 @@ recovery streak. Other safety faults retain the normal operator-reset policy.
 
 Every proximal response also carries the final solver residuals, physical NCP
 and friction-cone residuals, peak contact and actuator impulses, servo torque
-utilisation, pre-integration speed, mechanical energy/work, contact counts,
+utilisation, pre-integration speed, peak contact penetration, mechanical energy/work, contact counts,
 ADMM/Delassus diagnostics, cumulative warm-start/retry/rollback/held counters,
 and the persistent ID of the contact with the largest physical feasibility
 residual. For a multi-substep command, maxima and cumulative counters are
 aggregated across the complete command; energy delta and actuator work are
 summed.
+
+The pre-integration guard rejects any non-finite contact penetration or a
+penetration deeper than `0.05 m`. The complete last-good pose and velocity are
+restored before the response is marked `HeldLastGood`; the invalid pose is
+never published.
 
 ## Help
 

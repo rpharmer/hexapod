@@ -88,6 +88,7 @@ enum class SolverFailureReason : std::uint8_t {
     NonFiniteConfiguration,
     WriteState,
     NonFiniteEnergy,
+    ExtremePenetration,
 };
 
 inline constexpr std::uint8_t kStateCorrectionPoseValid = 1u << 0;
@@ -154,6 +155,7 @@ struct StateResponse {
     float solver_peak_servo_torque_utilization{0.0f};
     float solver_preintegration_linear_speed{0.0f};
     float solver_preintegration_angular_speed{0.0f};
+    float solver_max_contact_penetration{0.0f};
     float solver_mechanical_energy_delta{0.0f};
     float solver_actuator_work{0.0f};
     float solver_admm_rho{0.0f};

@@ -33,6 +33,7 @@ enum class ProximalFailureReason : std::uint8_t {
     NonFiniteConfiguration,
     WriteState,
     NonFiniteEnergy,
+    ExtremePenetration,
 };
 
 struct ProximalSolverSettings {
@@ -43,6 +44,7 @@ struct ProximalSolverSettings {
     double contactRegularization = 1.0e-10;
     double maxLinearSpeed = 2.0;
     double maxAngularSpeed = 10.0;
+    double maxContactPenetration = 0.05;
     // Suppress restitution for low-speed settling impacts. This is a solver-level
     // threshold; material restitution values are still preserved per contact.
     double restitutionVelocityCutoff = 0.2;
@@ -65,6 +67,7 @@ struct ProximalStepDiagnostics {
     double peakServoTorqueUtilization = 0.0;
     double preIntegrationLinearSpeed = 0.0;
     double preIntegrationAngularSpeed = 0.0;
+    double maxContactPenetration = 0.0;
     double mechanicalEnergyDelta = 0.0;
     double actuatorWork = 0.0;
     std::size_t contactManifoldCount = 0;

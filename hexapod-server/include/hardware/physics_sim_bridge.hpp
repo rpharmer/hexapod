@@ -56,6 +56,7 @@ struct PhysicsSimSolverTelemetry {
     float peak_servo_torque_utilization{0.0f};
     float preintegration_linear_speed{0.0f};
     float preintegration_angular_speed{0.0f};
+    float max_contact_penetration{0.0f};
     float mechanical_energy_delta{0.0f};
     float actuator_work{0.0f};
     float admm_rho{0.0f};

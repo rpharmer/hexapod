@@ -1040,6 +1040,8 @@ void MergeProximalDiagnostics(ProximalStepDiagnostics& aggregate,
         aggregate.preIntegrationLinearSpeed, current.preIntegrationLinearSpeed);
     aggregate.preIntegrationAngularSpeed = std::max(
         aggregate.preIntegrationAngularSpeed, current.preIntegrationAngularSpeed);
+    aggregate.maxContactPenetration = std::max(
+        aggregate.maxContactPenetration, current.maxContactPenetration);
     aggregate.mechanicalEnergyDelta += current.mechanicalEnergyDelta;
     aggregate.actuatorWork += current.actuatorWork;
     aggregate.contactManifoldCount = std::max(
@@ -1689,6 +1691,8 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 static_cast<float>(proximal_diagnostics.preIntegrationLinearSpeed);
             rsp.solver_preintegration_angular_speed =
                 static_cast<float>(proximal_diagnostics.preIntegrationAngularSpeed);
+            rsp.solver_max_contact_penetration =
+                static_cast<float>(proximal_diagnostics.maxContactPenetration);
             rsp.solver_mechanical_energy_delta =
                 static_cast<float>(proximal_diagnostics.mechanicalEnergyDelta);
             rsp.solver_actuator_work = static_cast<float>(proximal_diagnostics.actuatorWork);

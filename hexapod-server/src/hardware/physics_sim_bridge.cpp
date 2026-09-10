@@ -578,6 +578,7 @@ bool PhysicsSimBridge::read(RobotState& out) {
         telemetry.peak_servo_torque_utilization = rsp.solver_peak_servo_torque_utilization;
         telemetry.preintegration_linear_speed = rsp.solver_preintegration_linear_speed;
         telemetry.preintegration_angular_speed = rsp.solver_preintegration_angular_speed;
+        telemetry.max_contact_penetration = rsp.solver_max_contact_penetration;
         telemetry.mechanical_energy_delta = rsp.solver_mechanical_energy_delta;
         telemetry.actuator_work = rsp.solver_actuator_work;
         telemetry.admm_rho = rsp.solver_admm_rho;

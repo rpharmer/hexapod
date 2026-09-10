@@ -750,6 +750,14 @@ bool PinocchioHexapodModel::stepProximal(
                 0.0, 0.5 * (bodyA.dynamicFriction + bodyB.dynamicFriction));
             for (const Contact& contact : manifold.contacts) {
                 ++out.contactPointCount;
+                if (!std::isfinite(contact.penetration)
+                    || contact.penetration > settings.maxContactPenetration) {
+                    out.maxContactPenetration = contact.penetration;
+                    out.failureReason = ProximalFailureReason::ExtremePenetration;
+                    return false;
+                }
+                out.maxContactPenetration =
+                    std::max(out.maxContactPenetration, contact.penetration);
                 const std::uint64_t contactId = PersistentContactId(manifold, contact);
                 if (!seenContactIds.insert(contactId).second) {
                     ++out.duplicateContactCount;
