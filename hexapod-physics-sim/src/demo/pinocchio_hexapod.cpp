@@ -177,6 +177,8 @@ struct PinocchioHexapodModel::Impl {
         double dt = 0.0;
     };
     std::unordered_map<std::uint64_t, WarmImpulse> contactWarmStarts{};
+    std::uint64_t lastContactSetSignature = 0;
+    bool haveLastContactSetSignature = false;
     std::vector<double> lastGoodQ{};
     std::vector<double> lastGoodV{};
     std::array<double, 18> lastServoTargets{};
@@ -481,6 +483,8 @@ bool PinocchioHexapodModel::validateDelassusOracle(
 void PinocchioHexapodModel::resetWarmStarts() {
     impl_->totalWarmStartResets += impl_->contactWarmStarts.size();
     impl_->contactWarmStarts.clear();
+    impl_->lastContactSetSignature = 0;
+    impl_->haveLastContactSetSignature = false;
 }
 
 bool PinocchioHexapodModel::stepProximal(
@@ -509,13 +513,15 @@ bool PinocchioHexapodModel::stepProximal(
     const bool resetCommandedTargets = targetJump && impl_->haveLastServoTargets;
     impl_->lastServoTargets = servoTargets;
     impl_->haveLastServoTargets = true;
+    if (resetCommandedTargets) {
+        resetWarmStarts();
+    }
 
     std::vector<double> snapshotQ;
     std::vector<double> snapshotV;
     if (!readState(world, snapshotQ, snapshotV)) {
         ++impl_->totalHeldStates;
         ++impl_->totalRollbacks;
-        std::fill(impl_->lastGoodV.begin(), impl_->lastGoodV.end(), 0.0);
         (void)writeState(world, impl_->lastGoodQ, impl_->lastGoodV);
         resetWarmStarts();
         for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
@@ -536,23 +542,28 @@ bool PinocchioHexapodModel::stepProximal(
         impl_->lastGoodQ = snapshotQ;
         impl_->lastGoodV = snapshotV;
     }
-    const auto lastAcceptedContactWarmStarts = impl_->contactWarmStarts;
-
-    std::array<double, 18> commandedServoTargets = impl_->commandedServoTargets;
+    std::array<double, 18> commandedServoTargetsStart = impl_->commandedServoTargets;
     if (!impl_->haveCommandedServoTargets || resetCommandedTargets) {
         for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
-            commandedServoTargets[i] = world.GetServoJointAngle(impl_->wireServoIds[i]);
+            commandedServoTargetsStart[i] =
+                world.GetServoJointAngle(impl_->wireServoIds[i]);
         }
     }
-    for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
-        const ServoJoint& servo = world.GetServoJoint(impl_->wireServoIds[i]);
-        const double delta = std::remainder(
-            servoTargets[i] - commandedServoTargets[i], 6.28318530717958647692);
-        const double maxStep = std::max(0.0, servo.maxServoSpeed) * dt;
-        commandedServoTargets[i] += maxStep > 0.0
-            ? std::clamp(delta, -maxStep, maxStep)
-            : delta;
-    }
+    const auto advanceCommandedTargets = [&](std::array<double, 18> targets,
+                                             const double targetDt) {
+        for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
+            const ServoJoint& servo = world.GetServoJoint(impl_->wireServoIds[i]);
+            const double delta = std::remainder(
+                servoTargets[i] - targets[i], 6.28318530717958647692);
+            const double maxStep = std::max(0.0, servo.maxServoSpeed) * targetDt;
+            targets[i] += maxStep > 0.0
+                ? std::clamp(delta, -maxStep, maxStep)
+                : delta;
+        }
+        return targets;
+    };
+    const std::array<double, 18> commandedServoTargets =
+        advanceCommandedTargets(commandedServoTargetsStart, dt);
 
     auto totalMechanicalEnergy = [&]() {
         const Vec3 gravity = world.GetGravity();
@@ -572,7 +583,9 @@ bool PinocchioHexapodModel::stepProximal(
     };
 
     bool unsupportedIsland = false;
-    auto advanceOnce = [&](double subDt, ProximalStepDiagnostics& out) -> bool {
+    auto advanceOnce = [&](double subDt,
+                           const std::array<double, 18>& activeServoTargets,
+                           ProximalStepDiagnostics& out) -> bool {
         std::vector<double> qStorage;
         std::vector<double> vStorage;
         if (!readState(world, qStorage, vStorage)) {
@@ -606,7 +619,7 @@ bool PinocchioHexapodModel::stepProximal(
             const Eigen::Index qi = impl_->model.joints[joint].idx_q();
             const Eigen::Index vi = impl_->model.joints[joint].idx_v();
             const double error = std::remainder(
-                commandedServoTargets[i] - impl_->wireZeroAngles[i] - q[qi],
+                activeServoTargets[i] - impl_->wireZeroAngles[i] - q[qi],
                 6.28318530717958647692);
             const double reflectedInertia = std::max(1.0e-9, mass(vi, vi));
             const double requested = reflectedInertia * omegaN * omegaN * error
@@ -666,9 +679,18 @@ bool PinocchioHexapodModel::stepProximal(
             Vec3 point{};
             Vec3 normal{};
         };
+        struct PendingContact {
+            AcceptedContactGeometry geometry{};
+            std::uint64_t id = 0;
+            double friction = 0.0;
+            double restitution = 0.0;
+            double penetration = 0.0;
+        };
         std::vector<AcceptedContactGeometry> acceptedContactGeometry;
+        std::vector<PendingContact> pendingContacts;
         constraintModels.reserve(world.DebugManifolds().size() * 4U);
         contactIds.reserve(world.DebugManifolds().size() * 4U);
+        pendingContacts.reserve(world.DebugManifolds().size() * 4U);
 
         for (const Manifold& manifold : world.DebugManifolds()) {
             const auto aIt = impl_->bodyJoints.find(manifold.a);
@@ -757,24 +779,56 @@ bool PinocchioHexapodModel::stepProximal(
                 }
                 acceptedContactGeometry.push_back({joint1, joint2, contact.point, normal});
 
-                const pinocchio::SE3 contactWorld(
-                    ContactFrameRotation(normal), ToEigen(contact.point));
-                const pinocchio::SE3 placement1 = joint1 == 0
-                    ? contactWorld
-                    : impl_->data.oMi[joint1].inverse() * contactWorld;
-                const pinocchio::SE3 placement2 = joint2 == 0
-                    ? contactWorld
-                    : impl_->data.oMi[joint2].inverse() * contactWorld;
-                pinocchio::PointContactConstraintModel pointModel(
-                    impl_->model, joint1, placement1, joint2, placement2);
-                pointModel.setFriction(friction);
-                constraintModels.emplace_back(pointModel);
-                contactIds.push_back(contactId);
-                contactFrictions.push_back(friction);
-                contactRestitutions.push_back(std::max(
-                    0.0, 0.5 * (bodyA.restitution + bodyB.restitution)));
-                contactPenetrations.push_back(contact.penetration);
+                pendingContacts.push_back({
+                    {joint1, joint2, contact.point, normal},
+                    contactId,
+                    friction,
+                    std::max(0.0, 0.5 * (bodyA.restitution + bodyB.restitution)),
+                    contact.penetration});
             }
+        }
+
+        std::sort(
+            pendingContacts.begin(),
+            pendingContacts.end(),
+            [](const PendingContact& lhs, const PendingContact& rhs) {
+                if (lhs.id != rhs.id) return lhs.id < rhs.id;
+                if (lhs.geometry.joint1 != rhs.geometry.joint1) {
+                    return lhs.geometry.joint1 < rhs.geometry.joint1;
+                }
+                if (lhs.geometry.joint2 != rhs.geometry.joint2) {
+                    return lhs.geometry.joint2 < rhs.geometry.joint2;
+                }
+                if (lhs.geometry.point.x != rhs.geometry.point.x) {
+                    return lhs.geometry.point.x < rhs.geometry.point.x;
+                }
+                if (lhs.geometry.point.y != rhs.geometry.point.y) {
+                    return lhs.geometry.point.y < rhs.geometry.point.y;
+                }
+                return lhs.geometry.point.z < rhs.geometry.point.z;
+            });
+        for (const PendingContact& pending : pendingContacts) {
+            const pinocchio::SE3 contactWorld(
+                ContactFrameRotation(pending.geometry.normal),
+                ToEigen(pending.geometry.point));
+            const pinocchio::SE3 placement1 = pending.geometry.joint1 == 0
+                ? contactWorld
+                : impl_->data.oMi[pending.geometry.joint1].inverse() * contactWorld;
+            const pinocchio::SE3 placement2 = pending.geometry.joint2 == 0
+                ? contactWorld
+                : impl_->data.oMi[pending.geometry.joint2].inverse() * contactWorld;
+            pinocchio::PointContactConstraintModel pointModel(
+                impl_->model,
+                pending.geometry.joint1,
+                placement1,
+                pending.geometry.joint2,
+                placement2);
+            pointModel.setFriction(pending.friction);
+            constraintModels.emplace_back(pointModel);
+            contactIds.push_back(pending.id);
+            contactFrictions.push_back(pending.friction);
+            contactRestitutions.push_back(pending.restitution);
+            contactPenetrations.push_back(pending.penetration);
         }
 
         if (!constraintModels.empty()) {
@@ -784,6 +838,12 @@ bool PinocchioHexapodModel::stepProximal(
                     + (out.contactSetSignature << 6U)
                     + (out.contactSetSignature >> 2U);
             }
+            if (impl_->haveLastContactSetSignature
+                && impl_->lastContactSetSignature != out.contactSetSignature) {
+                resetWarmStarts();
+            }
+            impl_->lastContactSetSignature = out.contactSetSignature;
+            impl_->haveLastContactSetSignature = true;
             constraintDatas.reserve(constraintModels.size());
             for (const pinocchio::ConstraintModel& model : constraintModels) {
                 constraintDatas.push_back(model.createData());
@@ -996,9 +1056,8 @@ bool PinocchioHexapodModel::stepProximal(
                 }
             }
             vNew += inverseMassJacobianTranspose * impulses;
-        } else if (!impl_->contactWarmStarts.empty()) {
-            impl_->totalWarmStartResets += impl_->contactWarmStarts.size();
-            impl_->contactWarmStarts.clear();
+        } else if (!impl_->contactWarmStarts.empty() || impl_->haveLastContactSetSignature) {
+            resetWarmStarts();
         }
 
         if (!IsFinite(vNew)) {
@@ -1044,7 +1103,7 @@ bool PinocchioHexapodModel::stepProximal(
     };
 
     ProximalStepDiagnostics firstAttempt{};
-    if (advanceOnce(dt, firstAttempt)) {
+    if (advanceOnce(dt, commandedServoTargets, firstAttempt)) {
         world.CompleteExternalDynamicsStep();
         impl_->commandedServoTargets = commandedServoTargets;
         impl_->haveCommandedServoTargets = true;
@@ -1054,7 +1113,6 @@ bool PinocchioHexapodModel::stepProximal(
     } else if (unsupportedIsland) {
         ++impl_->totalUnsupportedIslands;
         ++impl_->totalRollbacks;
-        std::fill(impl_->lastGoodV.begin(), impl_->lastGoodV.end(), 0.0);
         writeState(world, impl_->lastGoodQ, impl_->lastGoodV);
         resetWarmStarts();
         for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
@@ -1070,8 +1128,11 @@ bool PinocchioHexapodModel::stepProximal(
         writeState(world, snapshotQ, snapshotV);
         resetWarmStarts();
         ProximalStepDiagnostics retry{};
-        const bool half1 = advanceOnce(0.5 * dt, retry);
-        const bool half2 = half1 && advanceOnce(0.5 * dt, retry);
+        const std::array<double, 18> halfStepServoTargets =
+            advanceCommandedTargets(commandedServoTargetsStart, 0.5 * dt);
+        const bool half1 = advanceOnce(0.5 * dt, halfStepServoTargets, retry);
+        const bool half2 = half1
+            && advanceOnce(0.5 * dt, commandedServoTargets, retry);
         if (half1 && half2) {
             world.CompleteExternalDynamicsStep();
             impl_->commandedServoTargets = commandedServoTargets;
@@ -1082,10 +1143,8 @@ bool PinocchioHexapodModel::stepProximal(
         } else {
             ++impl_->totalHeldStates;
             ++impl_->totalRollbacks;
-            std::fill(impl_->lastGoodV.begin(), impl_->lastGoodV.end(), 0.0);
             writeState(world, impl_->lastGoodQ, impl_->lastGoodV);
             resetWarmStarts();
-            impl_->contactWarmStarts = lastAcceptedContactWarmStarts;
             for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
                 impl_->commandedServoTargets[i] =
                     world.GetServoJointAngle(impl_->wireServoIds[i]);

@@ -428,6 +428,13 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_physics_sim_walk_distance PRIVATE hexapod_server_core)
     hexapod_add_live_physics_sim_test(physics_sim_walk_distance test_physics_sim_walk_distance)
 
+    # Diagnostic executable rather than a default CTest until the proximal
+    # locomotion gates pass.  It records one legacy controller stream and
+    # replays those exact joint targets through Pinocchio.
+    add_executable(test_physics_sim_exact_command_replay
+        tests/test_physics_sim_exact_command_replay.cpp)
+    target_link_libraries(test_physics_sim_exact_command_replay PRIVATE hexapod_server_core)
+
     add_executable(test_physics_sim_walk_entry_tracking tests/test_physics_sim_walk_entry_tracking.cpp)
     target_link_libraries(test_physics_sim_walk_entry_tracking PRIVATE hexapod_server_core)
     hexapod_add_live_physics_sim_test(physics_sim_walk_entry_tracking test_physics_sim_walk_entry_tracking)

@@ -290,6 +290,29 @@ These are the highest-value tests for tracking improvements across commits.
   - usually assertion-style `FAIL: ...` with non-zero exit
   - some tests print intermediate values useful for triage
 
+### 4) `test_physics_sim_exact_command_replay` (proximal diagnostic)
+
+- Location: `hexapod-server/tests/test_physics_sim_exact_command_replay.cpp`
+- This is built as a diagnostic executable but is not a default CTest until the
+  proximal locomotion gates pass.
+- Purpose:
+  - capture the exact `JointTargets` advanced by a deterministic legacy run
+  - replay the identical target stream through `pinocchio-proximal`
+  - separate controller/safety feedback from contact-solver failures
+  - report healthy, recovered, held, and unsupported samples for stand,
+    forward, reverse, strafe, diagonal, turn-in-place, and stand transitions
+- Run from the repository root after building both projects:
+  - `source scripts/lib/pinocchio_env.sh`
+  - `HEXAPOD_PHYSICS_SIM_EXE=hexapod-physics-sim/build/hexapod-physics-sim hexapod-server/build-tests/test_physics_sim_exact_command_replay --emit-metrics-json`
+- Useful diagnostic selectors:
+  - `HEXAPOD_EXACT_REPLAY_MOTION_CASE=forward|reverse|strafe|diagonal|turn_in_place`
+  - `HEXAPOD_EXACT_REPLAY_STAND_FRAMES`, `HEXAPOD_EXACT_REPLAY_MOTION_FRAMES`,
+    and `HEXAPOD_EXACT_REPLAY_TRANSITION_FRAMES`
+  - `HEXAPOD_EXACT_REPLAY_SOLVER_ITERATIONS`
+  - `HEXAPOD_EXACT_REPLAY_ENFORCE_GATES=1` makes any recovered, held,
+    unsupported, or failed-read sample fail the executable. Without it, the
+    executable validates capture/replay accounting and emits diagnostic results.
+
 ## Scenario-driven functional checks
 
 - Scenario definitions:
