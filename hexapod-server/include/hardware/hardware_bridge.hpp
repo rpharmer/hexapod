@@ -27,6 +27,10 @@ public:
     virtual bool read(RobotState& out) = 0;
     virtual bool write(const JointTargets& in) = 0;
     virtual std::optional<struct BridgeCommandResultMetadata> last_bridge_result() const;
+    /** Simulator bridges may opt into sample-counted recovery from a rejected state frame. */
+    [[nodiscard]] virtual bool supportsAutomaticBusTimeoutRecovery() const { return false; }
+    /** True only when the latest accepted read is suitable for advancing that recovery counter. */
+    [[nodiscard]] virtual bool latestSampleHealthyForAutomaticRecovery() const { return false; }
 };
 
 // Typed command/bridge error taxonomy for migration away from bool-only APIs.

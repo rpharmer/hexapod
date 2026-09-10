@@ -1001,6 +1001,79 @@ PreviewFrameSnapshot BuildPreviewFrameSnapshot(int frame_index,
     return snapshot;
 }
 
+#if defined(MINPHYS3D_ENABLE_PINOCCHIO)
+void MergeProximalDiagnostics(ProximalStepDiagnostics& aggregate,
+                              const ProximalStepDiagnostics& current,
+                              bool& haveAggregate) {
+    if (!haveAggregate) {
+        aggregate = current;
+        haveAggregate = true;
+        return;
+    }
+
+    if (static_cast<int>(current.status) > static_cast<int>(aggregate.status)) {
+        aggregate.status = current.status;
+    }
+    if (current.failureReason != ProximalFailureReason::None) {
+        aggregate.failureReason = current.failureReason;
+    }
+    aggregate.iterations = std::max(aggregate.iterations, current.iterations);
+    aggregate.primalResidual = std::max(aggregate.primalResidual, current.primalResidual);
+    aggregate.dualResidual = std::max(aggregate.dualResidual, current.dualResidual);
+    aggregate.complementarityResidual = std::max(
+        aggregate.complementarityResidual, current.complementarityResidual);
+    aggregate.ncpDualResidual = std::max(aggregate.ncpDualResidual, current.ncpDualResidual);
+    aggregate.ncpComplementarityResidual = std::max(
+        aggregate.ncpComplementarityResidual, current.ncpComplementarityResidual);
+    aggregate.coneResidual = std::max(aggregate.coneResidual, current.coneResidual);
+    aggregate.peakNormalImpulse = std::max(
+        aggregate.peakNormalImpulse, current.peakNormalImpulse);
+    aggregate.peakFrictionImpulse = std::max(
+        aggregate.peakFrictionImpulse, current.peakFrictionImpulse);
+    aggregate.peakStructuralImpulse = std::max(
+        aggregate.peakStructuralImpulse, current.peakStructuralImpulse);
+    aggregate.peakActuatorImpulse = std::max(
+        aggregate.peakActuatorImpulse, current.peakActuatorImpulse);
+    aggregate.peakServoTorqueUtilization = std::max(
+        aggregate.peakServoTorqueUtilization, current.peakServoTorqueUtilization);
+    aggregate.preIntegrationLinearSpeed = std::max(
+        aggregate.preIntegrationLinearSpeed, current.preIntegrationLinearSpeed);
+    aggregate.preIntegrationAngularSpeed = std::max(
+        aggregate.preIntegrationAngularSpeed, current.preIntegrationAngularSpeed);
+    aggregate.mechanicalEnergyDelta += current.mechanicalEnergyDelta;
+    aggregate.actuatorWork += current.actuatorWork;
+    aggregate.contactManifoldCount = std::max(
+        aggregate.contactManifoldCount, current.contactManifoldCount);
+    aggregate.contactConstraintCount = std::max(
+        aggregate.contactConstraintCount, current.contactConstraintCount);
+    aggregate.robotRobotManifoldCount = std::max(
+        aggregate.robotRobotManifoldCount, current.robotRobotManifoldCount);
+    aggregate.externalManifoldCount = std::max(
+        aggregate.externalManifoldCount, current.externalManifoldCount);
+    aggregate.contactPointCount = std::max(
+        aggregate.contactPointCount, current.contactPointCount);
+    aggregate.duplicateContactCount = std::max(
+        aggregate.duplicateContactCount, current.duplicateContactCount);
+    aggregate.delassusConditionEstimate = std::max(
+        aggregate.delassusConditionEstimate, current.delassusConditionEstimate);
+    aggregate.delassusMinEigenvalue = std::min(
+        aggregate.delassusMinEigenvalue, current.delassusMinEigenvalue);
+    aggregate.delassusMaxEigenvalue = std::max(
+        aggregate.delassusMaxEigenvalue, current.delassusMaxEigenvalue);
+    aggregate.admmRho = current.admmRho;
+    aggregate.contactSetSignature = current.contactSetSignature;
+    aggregate.warmStartResets = std::max(aggregate.warmStartResets, current.warmStartResets);
+    aggregate.retries = std::max(aggregate.retries, current.retries);
+    aggregate.rollbackCount = std::max(aggregate.rollbackCount, current.rollbackCount);
+    aggregate.heldStateCount = std::max(aggregate.heldStateCount, current.heldStateCount);
+    aggregate.unsupportedIslandCount = std::max(
+        aggregate.unsupportedIslandCount, current.unsupportedIslandCount);
+    if (current.worstContactId != 0) {
+        aggregate.worstContactId = current.worstContactId;
+    }
+}
+#endif
+
 } // namespace
 
 int RunPhysicsServeMode(std::uint16_t listen_port,
@@ -1055,6 +1128,11 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
 #if defined(MINPHYS3D_ENABLE_PINOCCHIO)
     ProximalSolverSettings proximal_settings{};
     ProximalStepDiagnostics proximal_diagnostics{};
+    const bool trace_proximal_failures = [] {
+        const char* value = std::getenv("HEXAPOD_PROXIMAL_TRACE_FAILURES");
+        return value != nullptr && value[0] != '\0' && value[0] != '0';
+    }();
+    std::uint64_t traced_proximal_failures = 0;
 #endif
     AssimilationState assimilation_state{};
     TerrainPatchConfig terrain_config{};
@@ -1560,12 +1638,17 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         const float substep_dt = step->dt_seconds / static_cast<float>(physics_substeps);
         {
             const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PhysicsStep));
+#if defined(MINPHYS3D_ENABLE_PINOCCHIO)
+            bool have_proximal_diagnostics = false;
+#endif
             for (int substep_index = 0; substep_index < physics_substeps; ++substep_index) {
                 if (solver_mode == physics_sim::PhysicsSolverMode::PinocchioProximal) {
 #if defined(MINPHYS3D_ENABLE_PINOCCHIO)
-                    proximal_diagnostics = {};
+                    ProximalStepDiagnostics substep_diagnostics{};
                     const bool usable = pinocchio_model->stepProximal(
-                        world, substep_dt, proximal_settings, proximal_diagnostics);
+                        world, substep_dt, proximal_settings, substep_diagnostics);
+                    MergeProximalDiagnostics(
+                        proximal_diagnostics, substep_diagnostics, have_proximal_diagnostics);
                     if (!usable) {
                         break;
                     }
@@ -1590,6 +1673,64 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             rsp.solver_dual_residual = static_cast<float>(proximal_diagnostics.dualResidual);
             rsp.solver_complementarity_residual = static_cast<float>(proximal_diagnostics.complementarityResidual);
             rsp.solver_rollback_count = proximal_diagnostics.rollbackCount;
+            rsp.solver_failure_reason = static_cast<physics_sim::SolverFailureReason>(
+                proximal_diagnostics.failureReason);
+            rsp.solver_ncp_dual_residual = static_cast<float>(proximal_diagnostics.ncpDualResidual);
+            rsp.solver_ncp_complementarity_residual =
+                static_cast<float>(proximal_diagnostics.ncpComplementarityResidual);
+            rsp.solver_cone_residual = static_cast<float>(proximal_diagnostics.coneResidual);
+            rsp.solver_peak_normal_impulse = static_cast<float>(proximal_diagnostics.peakNormalImpulse);
+            rsp.solver_peak_friction_impulse = static_cast<float>(proximal_diagnostics.peakFrictionImpulse);
+            rsp.solver_peak_structural_impulse = static_cast<float>(proximal_diagnostics.peakStructuralImpulse);
+            rsp.solver_peak_actuator_impulse = static_cast<float>(proximal_diagnostics.peakActuatorImpulse);
+            rsp.solver_peak_servo_torque_utilization =
+                static_cast<float>(proximal_diagnostics.peakServoTorqueUtilization);
+            rsp.solver_preintegration_linear_speed =
+                static_cast<float>(proximal_diagnostics.preIntegrationLinearSpeed);
+            rsp.solver_preintegration_angular_speed =
+                static_cast<float>(proximal_diagnostics.preIntegrationAngularSpeed);
+            rsp.solver_mechanical_energy_delta =
+                static_cast<float>(proximal_diagnostics.mechanicalEnergyDelta);
+            rsp.solver_actuator_work = static_cast<float>(proximal_diagnostics.actuatorWork);
+            rsp.solver_admm_rho = static_cast<float>(proximal_diagnostics.admmRho);
+            rsp.solver_delassus_condition_estimate =
+                static_cast<float>(proximal_diagnostics.delassusConditionEstimate);
+            rsp.solver_contact_manifold_count = static_cast<std::uint32_t>(
+                proximal_diagnostics.contactManifoldCount);
+            rsp.solver_contact_constraint_count = static_cast<std::uint32_t>(
+                proximal_diagnostics.contactConstraintCount);
+            rsp.solver_warm_start_reset_count = proximal_diagnostics.warmStartResets;
+            rsp.solver_retry_count = proximal_diagnostics.retries;
+            rsp.solver_held_state_count = proximal_diagnostics.heldStateCount;
+            rsp.solver_unsupported_island_count = proximal_diagnostics.unsupportedIslandCount;
+            rsp.solver_worst_contact_id = proximal_diagnostics.worstContactId;
+            if (trace_proximal_failures
+                && proximal_diagnostics.status == ProximalStepStatus::HeldLastGood) {
+                ++traced_proximal_failures;
+                if (traced_proximal_failures <= 12 || traced_proximal_failures % 250 == 0) {
+                    std::cerr << "[proximal-failure] seq=" << step->sequence_id
+                              << " reason=" << static_cast<int>(proximal_diagnostics.failureReason)
+                              << " iterations=" << proximal_diagnostics.iterations
+                              << " primal=" << proximal_diagnostics.primalResidual
+                              << " dual=" << proximal_diagnostics.dualResidual
+                              << " comp=" << proximal_diagnostics.complementarityResidual
+                              << " ncp_dual=" << proximal_diagnostics.ncpDualResidual
+                              << " ncp_comp=" << proximal_diagnostics.ncpComplementarityResidual
+                              << " cone=" << proximal_diagnostics.coneResidual
+                              << " constraints=" << proximal_diagnostics.contactConstraintCount
+                              << " manifolds=" << proximal_diagnostics.contactManifoldCount
+                              << " duplicates=" << proximal_diagnostics.duplicateContactCount
+                              << " signature=" << proximal_diagnostics.contactSetSignature
+                              << " rho=" << proximal_diagnostics.admmRho
+                              << " delassus_min=" << proximal_diagnostics.delassusMinEigenvalue
+                              << " delassus_max=" << proximal_diagnostics.delassusMaxEigenvalue
+                              << " delassus_condition=" << proximal_diagnostics.delassusConditionEstimate
+                              << " warm_resets=" << proximal_diagnostics.warmStartResets
+                              << " pre_v=" << proximal_diagnostics.preIntegrationLinearSpeed
+                              << " pre_w=" << proximal_diagnostics.preIntegrationAngularSpeed
+                              << '\n';
+                }
+            }
 #else
             rsp.solver_status = physics_sim::SolverStatus::UnsupportedIsland;
 #endif

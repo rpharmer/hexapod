@@ -52,7 +52,19 @@ keep mode `0` until the locomotion acceptance gates pass.
 In proximal mode, `RecoveredRetry` samples remain usable but are logged as
 warnings. `HeldLastGood` and `UnsupportedIsland` responses are rejected by the
 server bridge as invalid sensor reads, so they cannot feed the estimator or gait
-controller as fresh motion state.
+controller as fresh motion state. A physics-simulator bus fault can clear while
+the controller remains inhibited after 30 distinct consecutive `Healthy`
+responses; a repeated, recovered, held, or unsupported response resets that
+recovery streak. Other safety faults retain the normal operator-reset policy.
+
+Every proximal response also carries the final solver residuals, physical NCP
+and friction-cone residuals, peak contact and actuator impulses, servo torque
+utilisation, pre-integration speed, mechanical energy/work, contact counts,
+ADMM/Delassus diagnostics, cumulative warm-start/retry/rollback/held counters,
+and the persistent ID of the contact with the largest physical feasibility
+residual. For a multi-substep command, maxima and cumulative counters are
+aggregated across the complete command; energy delta and actuator work are
+summed.
 
 ## Help
 
@@ -205,9 +217,14 @@ Seed values:
 
 Definitions in `hexapod-common/include/physics_sim_protocol.hpp`.
 
-- `ConfigCommand`: `gravity[3]`, `solver_iterations`
+- `ConfigCommand`: `gravity[3]`, solver mode, iteration limit, proximal
+  regularisation, absolute/relative tolerances, and contact regularisation
 - `StepCommand`: `sequence_id`, `dt_seconds`, `joint_targets[18]`
 - `StateCorrection`: pose/twist/contact/terrain fields + flags and `correction_strength`
+- `StateResponse`: body/joint/contact/sensor state followed by proximal solver
+  status, failure reason, residual, impulse, energy, speed, contact, and recovery
+  diagnostics. Server and simulator binaries must be rebuilt together after any
+  protocol change.
 
 ## Environment variables
 
@@ -215,6 +232,9 @@ Definitions in `hexapod-common/include/physics_sim_protocol.hpp`.
   - Runtime scene diagnostic emission in JSON-scene runs (`scene_json.cpp`)
 - `MINPHYS_SERVO_JSON_TEST_VERBOSE=1`
   - Verbose output for servo visual preset test (`tests/test_servo_visual_presets_json.cpp`)
+- `HEXAPOD_PROXIMAL_TRACE_FAILURES=1`
+  - Emit bounded diagnostics for the first held proximal samples and then every
+    250th held sample. Intended for test diagnosis, not normal production logs.
 
 ## Notes
 

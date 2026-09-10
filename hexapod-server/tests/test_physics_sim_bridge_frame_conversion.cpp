@@ -156,6 +156,32 @@ private:
                 rsp.joint_angles.fill(0.0f);
                 rsp.joint_velocities.fill(0.0f);
                 rsp.solver_status = solver_status_.load();
+                rsp.solver_iterations = 17;
+                rsp.solver_primal_residual = 1.0e-7f;
+                rsp.solver_dual_residual = 2.0e-7f;
+                rsp.solver_complementarity_residual = 3.0e-9f;
+                rsp.solver_ncp_dual_residual = 4.0e-8f;
+                rsp.solver_ncp_complementarity_residual = 5.0e-9f;
+                rsp.solver_cone_residual = 6.0e-10f;
+                rsp.solver_peak_normal_impulse = 0.011f;
+                rsp.solver_peak_friction_impulse = 0.012f;
+                rsp.solver_peak_structural_impulse = 0.013f;
+                rsp.solver_peak_actuator_impulse = 0.014f;
+                rsp.solver_peak_servo_torque_utilization = 0.75f;
+                rsp.solver_preintegration_linear_speed = 0.21f;
+                rsp.solver_preintegration_angular_speed = 0.31f;
+                rsp.solver_mechanical_energy_delta = -0.41f;
+                rsp.solver_actuator_work = 0.51f;
+                rsp.solver_admm_rho = 4.2f;
+                rsp.solver_delassus_condition_estimate = 23.0f;
+                rsp.solver_contact_manifold_count = 6;
+                rsp.solver_contact_constraint_count = 6;
+                rsp.solver_warm_start_reset_count = 7;
+                rsp.solver_retry_count = 8;
+                rsp.solver_rollback_count = 9;
+                rsp.solver_held_state_count = 10;
+                rsp.solver_unsupported_island_count = 11;
+                rsp.solver_worst_contact_id = 0x123456789abcdef0ULL;
                 // Non-uniform pattern so tests prove `StateResponse::foot_contacts` maps to `RobotState`.
                 rsp.foot_contacts[0] = 1;
                 rsp.foot_contacts[1] = 0;
@@ -226,6 +252,26 @@ int main() {
     if (!expect(bridge.read(out), "bridge read should succeed against the stub sim")) {
         return EXIT_FAILURE;
     }
+    const auto healthy_solver = bridge.latestSolverTelemetry();
+    if (!expect(healthy_solver.has_value(), "healthy response should publish solver telemetry")
+        || !expect(healthy_solver->status == physics_sim::SolverStatus::Healthy,
+                   "healthy response should preserve solver status")
+        || !expect(healthy_solver->iterations == 17,
+                   "solver iteration telemetry should cross the bridge")
+        || !expect(nearlyEqual(healthy_solver->ncp_dual_residual, 4.0e-8, 1.0e-12),
+                   "physical NCP residual telemetry should cross the bridge")
+        || !expect(nearlyEqual(healthy_solver->peak_servo_torque_utilization, 0.75),
+                   "actuator utilization telemetry should cross the bridge")
+        || !expect(nearlyEqual(healthy_solver->preintegration_angular_speed, 0.31),
+                   "pre-integration speed telemetry should cross the bridge")
+        || !expect(healthy_solver->contact_constraint_count == 6,
+                   "contact count telemetry should cross the bridge")
+        || !expect(healthy_solver->rollback_count == 9,
+                   "rollback telemetry should cross the bridge")
+        || !expect(healthy_solver->worst_contact_id == 0x123456789abcdef0ULL,
+                   "worst-contact telemetry should cross the bridge")) {
+        return EXIT_FAILURE;
+    }
 
     constexpr std::array<bool, kNumLegs> kExpectedFootContacts{
         true, false, true, false, true, false};
@@ -277,6 +323,12 @@ int main() {
         !expect(bridge.last_bridge_result().has_value() &&
                     bridge.last_bridge_result()->error == BridgeError::Unsupported,
                 "held solver sample should expose an unsupported bridge result")) {
+        return EXIT_FAILURE;
+    }
+    const auto held_solver = bridge.latestSolverTelemetry();
+    if (!expect(held_solver.has_value(), "held response should retain solver telemetry")
+        || !expect(held_solver->status == physics_sim::SolverStatus::HeldLastGood,
+                   "held response should preserve solver status before rejection")) {
         return EXIT_FAILURE;
     }
 

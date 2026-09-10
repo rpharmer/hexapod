@@ -559,6 +559,40 @@ bool PhysicsSimBridge::read(RobotState& out) {
         return false;
     }
 
+    {
+        const std::lock_guard<std::mutex> lock(solver_telemetry_mutex_);
+        PhysicsSimSolverTelemetry telemetry{};
+        telemetry.status = rsp.solver_status;
+        telemetry.failure_reason = rsp.solver_failure_reason;
+        telemetry.iterations = rsp.solver_iterations;
+        telemetry.primal_residual = rsp.solver_primal_residual;
+        telemetry.dual_residual = rsp.solver_dual_residual;
+        telemetry.complementarity_residual = rsp.solver_complementarity_residual;
+        telemetry.ncp_dual_residual = rsp.solver_ncp_dual_residual;
+        telemetry.ncp_complementarity_residual = rsp.solver_ncp_complementarity_residual;
+        telemetry.cone_residual = rsp.solver_cone_residual;
+        telemetry.peak_normal_impulse = rsp.solver_peak_normal_impulse;
+        telemetry.peak_friction_impulse = rsp.solver_peak_friction_impulse;
+        telemetry.peak_structural_impulse = rsp.solver_peak_structural_impulse;
+        telemetry.peak_actuator_impulse = rsp.solver_peak_actuator_impulse;
+        telemetry.peak_servo_torque_utilization = rsp.solver_peak_servo_torque_utilization;
+        telemetry.preintegration_linear_speed = rsp.solver_preintegration_linear_speed;
+        telemetry.preintegration_angular_speed = rsp.solver_preintegration_angular_speed;
+        telemetry.mechanical_energy_delta = rsp.solver_mechanical_energy_delta;
+        telemetry.actuator_work = rsp.solver_actuator_work;
+        telemetry.admm_rho = rsp.solver_admm_rho;
+        telemetry.delassus_condition_estimate = rsp.solver_delassus_condition_estimate;
+        telemetry.contact_manifold_count = rsp.solver_contact_manifold_count;
+        telemetry.contact_constraint_count = rsp.solver_contact_constraint_count;
+        telemetry.warm_start_reset_count = rsp.solver_warm_start_reset_count;
+        telemetry.retry_count = rsp.solver_retry_count;
+        telemetry.rollback_count = rsp.solver_rollback_count;
+        telemetry.held_state_count = rsp.solver_held_state_count;
+        telemetry.unsupported_island_count = rsp.solver_unsupported_island_count;
+        telemetry.worst_contact_id = rsp.solver_worst_contact_id;
+        latest_solver_telemetry_ = telemetry;
+    }
+
     // A held or unsupported solver state is deliberately not a valid sensor
     // sample.  Publishing the last-good pose as if it were fresh would let the
     // estimator and gait controller continue issuing motion commands through a
@@ -699,6 +733,16 @@ bool PhysicsSimBridge::read(RobotState& out) {
 
 std::optional<BridgeCommandResultMetadata> PhysicsSimBridge::last_bridge_result() const {
     return last_result_;
+}
+
+std::optional<PhysicsSimSolverTelemetry> PhysicsSimBridge::latestSolverTelemetry() const {
+    const std::lock_guard<std::mutex> lock(solver_telemetry_mutex_);
+    return latest_solver_telemetry_;
+}
+
+bool PhysicsSimBridge::latestSampleHealthyForAutomaticRecovery() const {
+    const auto telemetry = latestSolverTelemetry();
+    return telemetry.has_value() && telemetry->status == physics_sim::SolverStatus::Healthy;
 }
 
 std::vector<PhysicsSimObstacleFootprint> PhysicsSimBridge::latestObstacleFootprints() const {

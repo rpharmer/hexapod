@@ -12,6 +12,10 @@ public:
     struct FreshnessInputs {
         bool estimator_valid{true};
         bool intent_valid{true};
+        /** Physics-only opt-in: permit BUS_TIMEOUT to clear after consecutive valid solver frames. */
+        bool automatic_bus_timeout_recovery{false};
+        /** True only when this evaluation observes a fully Healthy physics response. */
+        bool bus_recovery_sample_healthy{false};
     };
 
     explicit SafetySupervisor(control_config::SafetyConfig config = {});
@@ -27,6 +31,7 @@ public:
 
 private:
     static constexpr DurationUs kRecoveryHoldTimeUs{500000};
+    static constexpr uint32_t kAutomaticBusRecoveryHealthySamples{30};
     static constexpr std::size_t kFaultCodeCount =
         static_cast<std::size_t>(FaultCode::BODY_COLLAPSE) + 1;
 
@@ -71,6 +76,8 @@ private:
     control_config::SafetyConfig config_{};
     SafetyState state_{};
     TimePointUs recovery_started_at_us_{};
+    uint32_t automatic_bus_recovery_healthy_samples_{0};
+    uint64_t last_automatic_bus_recovery_sample_id_{0};
     std::array<uint32_t, kFaultCodeCount> trip_counts_{};
     std::array<TimePointUs, kFaultCodeCount> last_trip_timestamps_{};
 };

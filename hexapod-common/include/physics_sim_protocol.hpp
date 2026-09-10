@@ -73,6 +73,23 @@ enum class SolverStatus : std::uint8_t {
     UnsupportedIsland = 3,
 };
 
+enum class SolverFailureReason : std::uint8_t {
+    None = 0,
+    InvalidDt,
+    ReadState,
+    NonFiniteState,
+    NonFiniteMass,
+    NonFiniteAcceleration,
+    UnsupportedIsland,
+    SolverNotConverged,
+    NonFiniteImpulse,
+    NonFiniteVelocity,
+    SpeedLimit,
+    NonFiniteConfiguration,
+    WriteState,
+    NonFiniteEnergy,
+};
+
 inline constexpr std::uint8_t kStateCorrectionPoseValid = 1u << 0;
 inline constexpr std::uint8_t kStateCorrectionTwistValid = 1u << 1;
 inline constexpr std::uint8_t kStateCorrectionContactValid = 1u << 2;
@@ -126,6 +143,28 @@ struct StateResponse {
     float solver_dual_residual{0.0f};
     float solver_complementarity_residual{0.0f};
     std::uint64_t solver_rollback_count{0};
+    SolverFailureReason solver_failure_reason{SolverFailureReason::None};
+    float solver_ncp_dual_residual{0.0f};
+    float solver_ncp_complementarity_residual{0.0f};
+    float solver_cone_residual{0.0f};
+    float solver_peak_normal_impulse{0.0f};
+    float solver_peak_friction_impulse{0.0f};
+    float solver_peak_structural_impulse{0.0f};
+    float solver_peak_actuator_impulse{0.0f};
+    float solver_peak_servo_torque_utilization{0.0f};
+    float solver_preintegration_linear_speed{0.0f};
+    float solver_preintegration_angular_speed{0.0f};
+    float solver_mechanical_energy_delta{0.0f};
+    float solver_actuator_work{0.0f};
+    float solver_admm_rho{0.0f};
+    float solver_delassus_condition_estimate{0.0f};
+    std::uint32_t solver_contact_manifold_count{0};
+    std::uint32_t solver_contact_constraint_count{0};
+    std::uint64_t solver_warm_start_reset_count{0};
+    std::uint64_t solver_retry_count{0};
+    std::uint64_t solver_held_state_count{0};
+    std::uint64_t solver_unsupported_island_count{0};
+    std::uint64_t solver_worst_contact_id{0};
 };
 
 struct StateCorrection {

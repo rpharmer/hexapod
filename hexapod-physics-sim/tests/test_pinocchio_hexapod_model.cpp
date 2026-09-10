@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <random>
 #include <vector>
 
@@ -116,6 +117,12 @@ int Run() {
                 return 1;
             }
         }
+        if (proximalDiagnostics.iterations > proximalSettings.maxIterations) {
+            std::cerr << "configured ADMM iteration cap exceeded iterations="
+                      << proximalDiagnostics.iterations
+                      << " cap=" << proximalSettings.maxIterations << "\n";
+            return 1;
+        }
         if (traceContacts && proximalDiagnostics.contactSetSignature != previousSignature) {
             std::vector<double> stateQ;
             std::vector<double> stateV;
@@ -131,6 +138,45 @@ int Run() {
     }
     if (!observedFlatGroundSupport) {
         std::cerr << "standing run never established flat-ground support\n";
+        return 1;
+    }
+
+    ProximalStepDiagnostics invalidDtDiagnostics{};
+    if (model.stepProximal(
+            world,
+            std::numeric_limits<double>::quiet_NaN(),
+            proximalSettings,
+            invalidDtDiagnostics)
+        || invalidDtDiagnostics.status != ProximalStepStatus::HeldLastGood
+        || invalidDtDiagnostics.failureReason != ProximalFailureReason::InvalidDt) {
+        std::cerr << "invalid timestep was not rejected before integration\n";
+        return 1;
+    }
+
+    world.GetBody(scene.body).velocity.x = std::numeric_limits<double>::quiet_NaN();
+    ProximalStepDiagnostics nonFiniteDiagnostics{};
+    if (model.stepProximal(world, 1.0 / 240.0, proximalSettings, nonFiniteDiagnostics)
+        || nonFiniteDiagnostics.status != ProximalStepStatus::HeldLastGood
+        || nonFiniteDiagnostics.failureReason != ProximalFailureReason::ReadState
+        || !model.readState(world, q, v)) {
+        std::cerr << "non-finite world state was not restored to the last valid pose\n";
+        return 1;
+    }
+
+    q[1] += 1.0;
+    v.assign(model.velocitySize(), 0.0);
+    v[0] = 100.0;
+    if (!model.writeState(world, q, v)) {
+        std::cerr << "failed to inject excessive pre-integration speed\n";
+        return 1;
+    }
+    ProximalStepDiagnostics speedDiagnostics{};
+    if (model.stepProximal(world, 1.0 / 240.0, proximalSettings, speedDiagnostics)
+        || speedDiagnostics.status != ProximalStepStatus::HeldLastGood
+        || speedDiagnostics.failureReason != ProximalFailureReason::SpeedLimit
+        || !model.readState(world, q, v)) {
+        std::cerr << "excessive speed did not rollback to a readable last-valid state reason="
+                  << static_cast<int>(speedDiagnostics.failureReason) << "\n";
         return 1;
     }
 

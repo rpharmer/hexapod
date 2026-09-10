@@ -39,6 +39,37 @@ struct PhysicsSimSolverSettings {
     float contact_regularization{1.0e-10f};
 };
 
+struct PhysicsSimSolverTelemetry {
+    physics_sim::SolverStatus status{physics_sim::SolverStatus::Healthy};
+    physics_sim::SolverFailureReason failure_reason{physics_sim::SolverFailureReason::None};
+    std::uint16_t iterations{0};
+    float primal_residual{0.0f};
+    float dual_residual{0.0f};
+    float complementarity_residual{0.0f};
+    float ncp_dual_residual{0.0f};
+    float ncp_complementarity_residual{0.0f};
+    float cone_residual{0.0f};
+    float peak_normal_impulse{0.0f};
+    float peak_friction_impulse{0.0f};
+    float peak_structural_impulse{0.0f};
+    float peak_actuator_impulse{0.0f};
+    float peak_servo_torque_utilization{0.0f};
+    float preintegration_linear_speed{0.0f};
+    float preintegration_angular_speed{0.0f};
+    float mechanical_energy_delta{0.0f};
+    float actuator_work{0.0f};
+    float admm_rho{0.0f};
+    float delassus_condition_estimate{0.0f};
+    std::uint32_t contact_manifold_count{0};
+    std::uint32_t contact_constraint_count{0};
+    std::uint64_t warm_start_reset_count{0};
+    std::uint64_t retry_count{0};
+    std::uint64_t rollback_count{0};
+    std::uint64_t held_state_count{0};
+    std::uint64_t unsupported_island_count{0};
+    std::uint64_t worst_contact_id{0};
+};
+
 /// UDP client to hexapod-physics-sim --serve; steps physics in read() after write().
 class PhysicsSimBridge final : public IHardwareBridge, public IPhysicsSimObstacleFootprintProvider {
 public:
@@ -59,6 +90,9 @@ public:
     bool write(const JointTargets& in) override;
     bool sendStateCorrection(const physics_sim::StateCorrection& correction);
     std::optional<BridgeCommandResultMetadata> last_bridge_result() const override;
+    [[nodiscard]] bool supportsAutomaticBusTimeoutRecovery() const override { return true; }
+    [[nodiscard]] bool latestSampleHealthyForAutomaticRecovery() const override;
+    [[nodiscard]] std::optional<PhysicsSimSolverTelemetry> latestSolverTelemetry() const;
     [[nodiscard]] std::vector<PhysicsSimObstacleFootprint> latestObstacleFootprints() const override;
 
 private:
@@ -77,6 +111,8 @@ private:
     JointTargets pending_targets_{};
     TimePointUs last_motion_trace_log_us_{};
     BridgeCommandResultMetadata last_result_{};
+    mutable std::mutex solver_telemetry_mutex_{};
+    std::optional<PhysicsSimSolverTelemetry> latest_solver_telemetry_{};
     mutable std::mutex obstacle_mutex_{};
     std::vector<PhysicsSimObstacleFootprint> latest_obstacle_footprints_{};
 };

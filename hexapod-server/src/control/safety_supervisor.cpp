@@ -275,6 +275,8 @@ void SafetySupervisor::clearActiveFault() {
     state_.active_fault_last_trip_us = TimePointUs{};
     state_.torque_cut = false;
     recovery_started_at_us_ = TimePointUs{};
+    automatic_bus_recovery_healthy_samples_ = 0;
+    last_automatic_bus_recovery_sample_id_ = 0;
 }
 
 SafetyState SafetySupervisor::evaluate(const RobotState& raw,
@@ -285,7 +287,27 @@ SafetyState SafetySupervisor::evaluate(const RobotState& raw,
     const FaultDecision fault = evaluateCurrentFault(raw, est, intent, freshness);
 
     if (fault.code != FaultCode::NONE) {
+        automatic_bus_recovery_healthy_samples_ = 0;
+        last_automatic_bus_recovery_sample_id_ = 0;
         trip(fault.code, fault.torque_cut, now);
+    } else if (state_.active_fault == FaultCode::BUS_TIMEOUT &&
+               freshness.automatic_bus_timeout_recovery) {
+        if (!freshness.bus_recovery_sample_healthy || raw.sample_id == 0) {
+            automatic_bus_recovery_healthy_samples_ = 0;
+            last_automatic_bus_recovery_sample_id_ = 0;
+            state_.fault_lifecycle = FaultLifecycle::LATCHED;
+        } else {
+            if (raw.sample_id != last_automatic_bus_recovery_sample_id_) {
+                last_automatic_bus_recovery_sample_id_ = raw.sample_id;
+                ++automatic_bus_recovery_healthy_samples_;
+            }
+            if (automatic_bus_recovery_healthy_samples_ >=
+                kAutomaticBusRecoveryHealthySamples) {
+                clearActiveFault();
+            } else {
+                state_.fault_lifecycle = FaultLifecycle::RECOVERING;
+            }
+        }
     } else if (state_.active_fault != FaultCode::NONE) {
         if (!canAttemptClear(intent, freshness)) {
             state_.fault_lifecycle = FaultLifecycle::LATCHED;

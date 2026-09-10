@@ -1422,9 +1422,14 @@ void RobotRuntime::safetyStep() {
     const FreshnessPolicy::Evaluation freshness = freshness_gate_.evaluate(
         RuntimeFreshnessGate::EvaluationMode::SafetyLenient, now, est, intent);
 
+    const bool automatic_bus_timeout_recovery = hw_->supportsAutomaticBusTimeoutRecovery();
+    const bool bus_recovery_sample_healthy =
+        automatic_bus_timeout_recovery && hw_->latestSampleHealthyForAutomaticRecovery();
     const SafetySupervisor::FreshnessInputs freshness_inputs{
         freshness.estimator.valid,
-        freshness.intent.valid};
+        freshness.intent.valid,
+        automatic_bus_timeout_recovery,
+        bus_recovery_sample_healthy};
     SafetyState s = safety_.evaluate(raw, est, intent, freshness_inputs);
     if (safety_leg_enabled_test_mask_.has_value()) {
         for (int i = 0; i < kNumLegs; ++i) {

@@ -95,6 +95,9 @@ Eigen::Vector3d ProjectCoulombImpulse(const Eigen::Vector3d& impulse, double fri
 }
 
 std::uint64_t PersistentContactId(const Manifold& manifold, const Contact& contact) {
+    if (manifold.contacts.size() == 1U) {
+        return manifold.pairKey();
+    }
     std::uint64_t value = manifold.pairKey();
     value ^= contact.key + 0x9e3779b97f4a7c15ULL + (value << 6U) + (value >> 2U);
     return value;
@@ -261,7 +264,11 @@ PinocchioHexapodModel::PinocchioHexapodModel(
     const World& world,
     const HexapodSceneObjects& scene,
     const std::array<std::uint32_t, 18>& servo_joint_ids)
-    : impl_(std::make_unique<Impl>(world, scene, servo_joint_ids)) {}
+    : impl_(std::make_unique<Impl>(world, scene, servo_joint_ids)) {
+    if (!readState(world, impl_->lastGoodQ, impl_->lastGoodV)) {
+        throw std::runtime_error("failed to capture initial Pinocchio hexapod state");
+    }
+}
 
 PinocchioHexapodModel::~PinocchioHexapodModel() = default;
 PinocchioHexapodModel::PinocchioHexapodModel(PinocchioHexapodModel&&) noexcept = default;
@@ -506,14 +513,30 @@ bool PinocchioHexapodModel::stepProximal(
     std::vector<double> snapshotQ;
     std::vector<double> snapshotV;
     if (!readState(world, snapshotQ, snapshotV)) {
+        ++impl_->totalHeldStates;
+        ++impl_->totalRollbacks;
+        std::fill(impl_->lastGoodV.begin(), impl_->lastGoodV.end(), 0.0);
+        (void)writeState(world, impl_->lastGoodQ, impl_->lastGoodV);
+        resetWarmStarts();
+        for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
+            impl_->commandedServoTargets[i] =
+                world.GetServoJointAngle(impl_->wireServoIds[i]);
+        }
+        impl_->haveCommandedServoTargets = true;
         diagnostics.status = ProximalStepStatus::HeldLastGood;
         diagnostics.failureReason = ProximalFailureReason::ReadState;
+        diagnostics.warmStartResets = impl_->totalWarmStartResets;
+        diagnostics.retries = impl_->totalRetries;
+        diagnostics.rollbackCount = impl_->totalRollbacks;
+        diagnostics.heldStateCount = impl_->totalHeldStates;
+        diagnostics.unsupportedIslandCount = impl_->totalUnsupportedIslands;
         return false;
     }
     if (impl_->lastGoodQ.empty()) {
         impl_->lastGoodQ = snapshotQ;
         impl_->lastGoodV = snapshotV;
     }
+    const auto lastAcceptedContactWarmStarts = impl_->contactWarmStarts;
 
     std::array<double, 18> commandedServoTargets = impl_->commandedServoTargets;
     if (!impl_->haveCommandedServoTargets || resetCommandedTargets) {
@@ -809,7 +832,6 @@ bool PinocchioHexapodModel::stepProximal(
                 mass.ldlt().solve(jacobian.transpose());
             Eigen::MatrixXd denseDelassus = jacobian * inverseMassJacobianTranspose;
             denseDelassus.diagonal().array() += settings.contactRegularization;
-            double rhoInitial = 0.0;
             const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> spectrum(
                 0.5 * (denseDelassus + denseDelassus.transpose()));
             if (spectrum.info() == Eigen::Success) {
@@ -820,9 +842,6 @@ bool PinocchioHexapodModel::stepProximal(
                 if (smallest > 0.0 && std::isfinite(smallest)
                     && std::isfinite(largest)) {
                     out.delassusConditionEstimate = largest / smallest;
-                }
-                if (smallest > 0.0 && std::isfinite(smallest) && std::isfinite(largest)) {
-                    rhoInitial = std::sqrt(smallest * largest);
                 }
             }
             const Eigen::LDLT<Eigen::MatrixXd> seedFactorization(denseDelassus);
@@ -857,7 +876,11 @@ bool PinocchioHexapodModel::stepProximal(
 
             pinocchio::ADMMConstraintSolver solver(drift.size());
             pinocchio::ADMMSolverSettings solverSettings;
-            solverSettings.max_iterations = static_cast<std::size_t>(std::max(1, settings.maxIterations));
+            // Pinocchio numbers iterations from zero and loops while
+            // `iterations <= max_iterations`; subtract one so the public
+            // configuration remains a true maximum solve count.
+            solverSettings.max_iterations = static_cast<std::size_t>(
+                std::max(1, settings.maxIterations) - 1);
             solverSettings.absolute_feasibility_tol = settings.absoluteTolerance;
             solverSettings.relative_feasibility_tol = settings.relativeTolerance;
             solverSettings.absolute_complementarity_tol = settings.absoluteTolerance;
@@ -865,10 +888,6 @@ bool PinocchioHexapodModel::stepProximal(
             solverSettings.admm_update_rule = pinocchio::ADMMUpdateRule::SPECTRAL;
             solverSettings.admm_proximal_rule = pinocchio::ADMMProximalRule::MANUAL;
             solverSettings.mu_prox = settings.proximalMu;
-            if (rhoInitial > 0.0) {
-                solverSettings.rho_init = rhoInitial;
-            }
-            solverSettings.anderson_capacity = 3;
             solverSettings.solve_ncp = true;
             solverSettings.stat_record = false;
             pinocchio::ADMMSolverResult result;
@@ -881,11 +900,51 @@ bool PinocchioHexapodModel::stepProximal(
                 constraintDatas,
                 solverSettings,
                 result);
+            out.admmRho = result.rho;
             out.iterations = std::max(out.iterations, static_cast<int>(result.iterations));
             out.primalResidual = std::max(out.primalResidual, result.primal_feasibility);
             out.dualResidual = std::max(out.dualResidual, result.dual_feasibility);
             out.complementarityResidual = std::max(
                 out.complementarityResidual, result.complementarity);
+            Eigen::VectorXd impulses(drift.size());
+            result.retrieveConstraintImpulses(impulses);
+            if (IsFinite(impulses)) {
+                Eigen::VectorXd contactVelocities = denseDelassus * impulses + drift;
+                Eigen::VectorXd deSaxce = Eigen::VectorXd::Zero(drift.size());
+                Eigen::VectorXd correctedVelocities = Eigen::VectorXd::Zero(drift.size());
+                Eigen::VectorXd projectedDual = Eigen::VectorXd::Zero(drift.size());
+                pinocchio::internal::computeDeSaxeCorrection(
+                    constraintModels, constraintDatas, contactVelocities, deSaxce);
+                correctedVelocities = contactVelocities + deSaxce;
+                pinocchio::internal::computeDualConstraintSetProjection(
+                    constraintModels, constraintDatas, correctedVelocities, projectedDual);
+                out.ncpDualResidual =
+                    (projectedDual - correctedVelocities).lpNorm<Eigen::Infinity>();
+                pinocchio::internal::computeConicComplementarity(
+                    constraintModels,
+                    constraintDatas,
+                    correctedVelocities,
+                    impulses,
+                    out.ncpComplementarityResidual);
+                double worstContactResidual = -1.0;
+                for (std::size_t i = 0; i < contactIds.size(); ++i) {
+                    const Eigen::Index offset = static_cast<Eigen::Index>(3U * i);
+                    const Eigen::Vector3d impulse = impulses.segment<3>(
+                        offset);
+                    const double coneResidual =
+                        (impulse - ProjectCoulombImpulse(impulse, contactFrictions[i])).norm();
+                    const double dualResidual =
+                        (projectedDual - correctedVelocities).segment<3>(offset)
+                            .lpNorm<Eigen::Infinity>();
+                    out.coneResidual = std::max(
+                        out.coneResidual, coneResidual);
+                    const double contactResidual = std::max(coneResidual, dualResidual);
+                    if (contactResidual > worstContactResidual) {
+                        worstContactResidual = contactResidual;
+                        out.worstContactId = contactIds[i];
+                    }
+                }
+            }
             if (!converged || !std::isfinite(result.primal_feasibility)
                 || !std::isfinite(result.dual_feasibility)
                 || !std::isfinite(result.complementarity)) {
@@ -912,9 +971,6 @@ bool PinocchioHexapodModel::stepProximal(
                 out.failureReason = ProximalFailureReason::SolverNotConverged;
                 return false;
             }
-
-            Eigen::VectorXd impulses(drift.size());
-            result.retrieveConstraintImpulses(impulses);
             if (!IsFinite(impulses)) {
                 out.failureReason = ProximalFailureReason::NonFiniteImpulse;
                 return false;
@@ -923,14 +979,13 @@ bool PinocchioHexapodModel::stepProximal(
             for (std::size_t i = 0; i < contactIds.size(); ++i) {
                 const Eigen::Vector3d impulse = impulses.segment<3>(
                     static_cast<Eigen::Index>(3U * i));
-                impl_->contactWarmStarts[contactIds[i]] = {impulse, subDt};
+                impl_->contactWarmStarts[contactIds[i]] = {
+                    impulse,
+                    subDt};
                 activeIds.insert(contactIds[i]);
                 out.peakNormalImpulse = std::max(out.peakNormalImpulse, std::abs(impulse[2]));
                 out.peakFrictionImpulse = std::max(
                     out.peakFrictionImpulse, impulse.head<2>().norm());
-                if (std::abs(impulse[2]) >= out.peakNormalImpulse) {
-                    out.worstContactId = contactIds[i];
-                }
             }
             for (auto it = impl_->contactWarmStarts.begin(); it != impl_->contactWarmStarts.end();) {
                 if (activeIds.find(it->first) == activeIds.end()) {
@@ -999,8 +1054,14 @@ bool PinocchioHexapodModel::stepProximal(
     } else if (unsupportedIsland) {
         ++impl_->totalUnsupportedIslands;
         ++impl_->totalRollbacks;
+        std::fill(impl_->lastGoodV.begin(), impl_->lastGoodV.end(), 0.0);
         writeState(world, impl_->lastGoodQ, impl_->lastGoodV);
         resetWarmStarts();
+        for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
+            impl_->commandedServoTargets[i] =
+                world.GetServoJointAngle(impl_->wireServoIds[i]);
+        }
+        impl_->haveCommandedServoTargets = true;
         diagnostics = firstAttempt;
         diagnostics.status = ProximalStepStatus::UnsupportedIsland;
     } else {
@@ -1021,8 +1082,15 @@ bool PinocchioHexapodModel::stepProximal(
         } else {
             ++impl_->totalHeldStates;
             ++impl_->totalRollbacks;
+            std::fill(impl_->lastGoodV.begin(), impl_->lastGoodV.end(), 0.0);
             writeState(world, impl_->lastGoodQ, impl_->lastGoodV);
             resetWarmStarts();
+            impl_->contactWarmStarts = lastAcceptedContactWarmStarts;
+            for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
+                impl_->commandedServoTargets[i] =
+                    world.GetServoJointAngle(impl_->wireServoIds[i]);
+            }
+            impl_->haveCommandedServoTargets = true;
             diagnostics = retry;
             diagnostics.status = ProximalStepStatus::HeldLastGood;
         }

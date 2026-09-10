@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -61,6 +62,7 @@ public:
 
     bool read(RobotState& out) override {
         const bool ok = inner_.read(out);
+        last_solver_telemetry_ = inner_.latestSolverTelemetry();
         if (ok) {
             last_state_ = out;
         }
@@ -75,28 +77,47 @@ public:
         return inner_.last_bridge_result();
     }
 
+    bool supportsAutomaticBusTimeoutRecovery() const override {
+        return inner_.supportsAutomaticBusTimeoutRecovery();
+    }
+
+    bool latestSampleHealthyForAutomaticRecovery() const override {
+        return inner_.latestSampleHealthyForAutomaticRecovery();
+    }
+
     const std::optional<RobotState>& last_state() const {
         return last_state_;
+    }
+
+    const std::optional<PhysicsSimSolverTelemetry>& last_solver_telemetry() const {
+        return last_solver_telemetry_;
     }
 
 private:
     PhysicsSimBridge inner_;
     std::optional<RobotState> last_state_{};
+    std::optional<PhysicsSimSolverTelemetry> last_solver_telemetry_{};
 };
 
-void runControlLoopStep(RobotRuntime& runtime, const ScenarioMotionIntent& motion) {
-    runtime.setMotionIntent(makeMotionIntent(motion));
+void runControlLoopStep(RobotRuntime& runtime,
+                        const ScenarioMotionIntent& motion,
+                        TimePointUs command_time) {
+    MotionIntent fresh_motion = makeMotionIntent(motion);
+    fresh_motion.timestamp_us = command_time;
+    fresh_motion.sample_id = 0;
+    runtime.setMotionIntent(fresh_motion);
     runtime.busStep();
     runtime.estimatorStep();
     runtime.safetyStep();
     runtime.controlStep();
 }
 
-void runControlLoopStep(RobotRuntime& runtime, const MotionIntent& motion) {
+void runControlLoopStep(RobotRuntime& runtime,
+                        const MotionIntent& motion,
+                        TimePointUs command_time) {
     MotionIntent fresh_motion = motion;
-    // This test reuses some handcrafted MotionIntent instances across many loop iterations.
-    // Clear transport freshness fields so RobotRuntime stamps a fresh command sample each step.
-    fresh_motion.timestamp_us = TimePointUs{};
+    // Drive gait and governor timing from the fixed physics cadence, not solver wall time.
+    fresh_motion.timestamp_us = command_time;
     fresh_motion.sample_id = 0;
     runtime.setMotionIntent(fresh_motion);
     runtime.busStep();
@@ -119,6 +140,26 @@ struct MotionRunResult {
     int walk_mode_steps{0};
     int non_walk_mode_steps{0};
     int faulted_steps{0};
+    int solver_healthy_steps{0};
+    int solver_recovered_steps{0};
+    int solver_held_steps{0};
+    int solver_unsupported_steps{0};
+    int solver_not_converged_steps{0};
+    int max_solver_iterations{0};
+    int p99_solver_iterations{0};
+    double max_solver_primal_residual{0.0};
+    double max_solver_dual_residual{0.0};
+    double max_solver_complementarity_residual{0.0};
+    double max_solver_ncp_dual_residual{0.0};
+    double max_solver_ncp_complementarity_residual{0.0};
+    double peak_solver_normal_impulse{0.0};
+    double peak_solver_friction_impulse{0.0};
+    double peak_solver_actuator_impulse{0.0};
+    double peak_solver_servo_torque_utilization{0.0};
+    double peak_solver_preintegration_linear_speed{0.0};
+    double peak_solver_preintegration_angular_speed{0.0};
+    std::uint64_t solver_rollback_count_start{0};
+    std::uint64_t solver_rollback_count_end{0};
     ControlStatus final_status{};
 };
 
@@ -240,6 +281,37 @@ std::string motionRunResultMetricsJson(const MotionRunResult& result,
       << ",\"walk_mode_steps\":" << result.walk_mode_steps
       << ",\"non_walk_mode_steps\":" << result.non_walk_mode_steps
       << ",\"faulted_steps\":" << result.faulted_steps
+      << ",\"solver_healthy_steps\":" << result.solver_healthy_steps
+      << ",\"solver_recovered_steps\":" << result.solver_recovered_steps
+      << ",\"solver_held_steps\":" << result.solver_held_steps
+      << ",\"solver_unsupported_steps\":" << result.solver_unsupported_steps
+      << ",\"solver_not_converged_steps\":" << result.solver_not_converged_steps
+      << ",\"max_solver_iterations\":" << result.max_solver_iterations
+      << ",\"p99_solver_iterations\":" << result.p99_solver_iterations
+      << ",\"max_solver_primal_residual\":"
+      << formatDouble(result.max_solver_primal_residual, 12)
+      << ",\"max_solver_dual_residual\":"
+      << formatDouble(result.max_solver_dual_residual, 12)
+      << ",\"max_solver_complementarity_residual\":"
+      << formatDouble(result.max_solver_complementarity_residual, 12)
+      << ",\"max_solver_ncp_dual_residual\":"
+      << formatDouble(result.max_solver_ncp_dual_residual, 12)
+      << ",\"max_solver_ncp_complementarity_residual\":"
+      << formatDouble(result.max_solver_ncp_complementarity_residual, 12)
+      << ",\"peak_solver_normal_impulse\":"
+      << formatDouble(result.peak_solver_normal_impulse, 12)
+      << ",\"peak_solver_friction_impulse\":"
+      << formatDouble(result.peak_solver_friction_impulse, 12)
+      << ",\"peak_solver_actuator_impulse\":"
+      << formatDouble(result.peak_solver_actuator_impulse, 12)
+      << ",\"peak_solver_servo_torque_utilization\":"
+      << formatDouble(result.peak_solver_servo_torque_utilization, 12)
+      << ",\"peak_solver_preintegration_linear_speed\":"
+      << formatDouble(result.peak_solver_preintegration_linear_speed, 12)
+      << ",\"peak_solver_preintegration_angular_speed\":"
+      << formatDouble(result.peak_solver_preintegration_angular_speed, 12)
+      << ",\"solver_rollbacks\":"
+      << (result.solver_rollback_count_end - result.solver_rollback_count_start)
       << ",\"commanded_speed_mps\":" << formatDouble(commanded_speed)
       << ",\"average_speed_ratio\":" << formatDouble(average_ratio)
       << ",\"start_yaw_rad\":" << formatDouble(result.start_yaw_rad)
@@ -268,6 +340,37 @@ std::string motionRunTurnMetricsJson(const MotionRunResult& result,
       << ",\"walk_mode_steps\":" << result.walk_mode_steps
       << ",\"non_walk_mode_steps\":" << result.non_walk_mode_steps
       << ",\"faulted_steps\":" << result.faulted_steps
+      << ",\"solver_healthy_steps\":" << result.solver_healthy_steps
+      << ",\"solver_recovered_steps\":" << result.solver_recovered_steps
+      << ",\"solver_held_steps\":" << result.solver_held_steps
+      << ",\"solver_unsupported_steps\":" << result.solver_unsupported_steps
+      << ",\"solver_not_converged_steps\":" << result.solver_not_converged_steps
+      << ",\"max_solver_iterations\":" << result.max_solver_iterations
+      << ",\"p99_solver_iterations\":" << result.p99_solver_iterations
+      << ",\"max_solver_primal_residual\":"
+      << formatDouble(result.max_solver_primal_residual, 12)
+      << ",\"max_solver_dual_residual\":"
+      << formatDouble(result.max_solver_dual_residual, 12)
+      << ",\"max_solver_complementarity_residual\":"
+      << formatDouble(result.max_solver_complementarity_residual, 12)
+      << ",\"max_solver_ncp_dual_residual\":"
+      << formatDouble(result.max_solver_ncp_dual_residual, 12)
+      << ",\"max_solver_ncp_complementarity_residual\":"
+      << formatDouble(result.max_solver_ncp_complementarity_residual, 12)
+      << ",\"peak_solver_normal_impulse\":"
+      << formatDouble(result.peak_solver_normal_impulse, 12)
+      << ",\"peak_solver_friction_impulse\":"
+      << formatDouble(result.peak_solver_friction_impulse, 12)
+      << ",\"peak_solver_actuator_impulse\":"
+      << formatDouble(result.peak_solver_actuator_impulse, 12)
+      << ",\"peak_solver_servo_torque_utilization\":"
+      << formatDouble(result.peak_solver_servo_torque_utilization, 12)
+      << ",\"peak_solver_preintegration_linear_speed\":"
+      << formatDouble(result.peak_solver_preintegration_linear_speed, 12)
+      << ",\"peak_solver_preintegration_angular_speed\":"
+      << formatDouble(result.peak_solver_preintegration_angular_speed, 12)
+      << ",\"solver_rollbacks\":"
+      << (result.solver_rollback_count_end - result.solver_rollback_count_start)
       << ",\"commanded_yaw_rate_radps\":" << formatDouble(commanded_yaw_rate)
       << ",\"average_yaw_rate_ratio\":" << formatDouble(average_ratio)
       << ",\"commanded_yaw_direction_match\":"
@@ -285,11 +388,25 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
                                   const int bus_loop_period_us) {
     const int kStandWarmupSteps = static_cast<int>(
         physics_sim_test_utils::scaledLegacyStepCount(100, bus_loop_period_us));
-    const int kWalkSteps = static_cast<int>(
+    int walk_steps = static_cast<int>(
         physics_sim_test_utils::scaledLegacyStepCount(600, bus_loop_period_us));
+    if (const char* value = std::getenv("HEXAPOD_WALK_TEST_STEP_LIMIT")) {
+        char* end = nullptr;
+        const long parsed = std::strtol(value, &end, 10);
+        if (end != value && *end == '\0' && parsed > 0) {
+            walk_steps = std::min(walk_steps, static_cast<int>(parsed));
+        }
+    }
+    // Keep the synthetic stream ahead of wall time so slow instrumented solver builds do not
+    // trip the runtime freshness gate while preserving an exact per-step command cadence.
+    TimePointUs command_time{now_us().value + 3'600'000'000ULL};
+    const auto advance_command_time = [&]() {
+        command_time.value += static_cast<uint64_t>(bus_loop_period_us);
+        return command_time;
+    };
 
     for (int i = 0; i < kStandWarmupSteps; ++i) {
-        runControlLoopStep(runtime, stand_motion);
+        runControlLoopStep(runtime, stand_motion, advance_command_time());
     }
 
     if (!bridge.last_state().has_value()) {
@@ -297,16 +414,22 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
     }
 
     MotionRunResult result{};
+    if (bridge.last_solver_telemetry().has_value()) {
+        result.solver_rollback_count_start =
+            bridge.last_solver_telemetry()->rollback_count;
+    }
     result.start_position = positionFromState(bridge.last_state().value());
     result.start_yaw_rad = bridge.last_state().value().body_twist_state.twist_pos_rad.z;
     Vec3 previous_position = result.start_position;
     double horizontal_speed_sum = 0.0;
     double yaw_speed_sum = 0.0;
     std::vector<Vec3> walk_samples{};
-    walk_samples.reserve(static_cast<std::size_t>(kWalkSteps));
+    walk_samples.reserve(static_cast<std::size_t>(walk_steps));
+    std::vector<int> solver_iteration_samples{};
+    solver_iteration_samples.reserve(static_cast<std::size_t>(walk_steps));
 
-    for (int i = 0; i < kWalkSteps; ++i) {
-        runControlLoopStep(runtime, motion);
+    for (int i = 0; i < walk_steps; ++i) {
+        runControlLoopStep(runtime, motion, advance_command_time());
 
         if (!bridge.last_state().has_value()) {
             throw std::runtime_error("bridge lost state during walk sequence");
@@ -335,12 +458,76 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
         if (result.final_status.active_fault != FaultCode::NONE) {
             ++result.faulted_steps;
         }
+        if (bridge.last_solver_telemetry().has_value()) {
+            const PhysicsSimSolverTelemetry& solver = bridge.last_solver_telemetry().value();
+            switch (solver.status) {
+                case physics_sim::SolverStatus::Healthy:
+                    ++result.solver_healthy_steps;
+                    break;
+                case physics_sim::SolverStatus::RecoveredRetry:
+                    ++result.solver_recovered_steps;
+                    break;
+                case physics_sim::SolverStatus::HeldLastGood:
+                    ++result.solver_held_steps;
+                    break;
+                case physics_sim::SolverStatus::UnsupportedIsland:
+                    ++result.solver_unsupported_steps;
+                    break;
+            }
+            if (solver.failure_reason == physics_sim::SolverFailureReason::SolverNotConverged) {
+                ++result.solver_not_converged_steps;
+            }
+            result.max_solver_iterations = std::max(
+                result.max_solver_iterations, static_cast<int>(solver.iterations));
+            solver_iteration_samples.push_back(static_cast<int>(solver.iterations));
+            result.max_solver_primal_residual = std::max(
+                result.max_solver_primal_residual,
+                static_cast<double>(solver.primal_residual));
+            result.max_solver_dual_residual = std::max(
+                result.max_solver_dual_residual,
+                static_cast<double>(solver.dual_residual));
+            result.max_solver_complementarity_residual = std::max(
+                result.max_solver_complementarity_residual,
+                static_cast<double>(solver.complementarity_residual));
+            result.max_solver_ncp_dual_residual = std::max(
+                result.max_solver_ncp_dual_residual,
+                static_cast<double>(solver.ncp_dual_residual));
+            result.max_solver_ncp_complementarity_residual = std::max(
+                result.max_solver_ncp_complementarity_residual,
+                static_cast<double>(solver.ncp_complementarity_residual));
+            result.peak_solver_normal_impulse = std::max(
+                result.peak_solver_normal_impulse,
+                static_cast<double>(solver.peak_normal_impulse));
+            result.peak_solver_friction_impulse = std::max(
+                result.peak_solver_friction_impulse,
+                static_cast<double>(solver.peak_friction_impulse));
+            result.peak_solver_actuator_impulse = std::max(
+                result.peak_solver_actuator_impulse,
+                static_cast<double>(solver.peak_actuator_impulse));
+            result.peak_solver_servo_torque_utilization = std::max(
+                result.peak_solver_servo_torque_utilization,
+                static_cast<double>(solver.peak_servo_torque_utilization));
+            result.peak_solver_preintegration_linear_speed = std::max(
+                result.peak_solver_preintegration_linear_speed,
+                static_cast<double>(solver.preintegration_linear_speed));
+            result.peak_solver_preintegration_angular_speed = std::max(
+                result.peak_solver_preintegration_angular_speed,
+                static_cast<double>(solver.preintegration_angular_speed));
+            result.solver_rollback_count_end = solver.rollback_count;
+        }
     }
 
     result.end_position = positionFromState(bridge.last_state().value());
     result.end_yaw_rad = bridge.last_state().value().body_twist_state.twist_pos_rad.z;
-    result.average_horizontal_speed_mps = horizontal_speed_sum / static_cast<double>(kWalkSteps);
-    result.average_yaw_rate_radps = yaw_speed_sum / static_cast<double>(kWalkSteps);
+    result.average_horizontal_speed_mps = horizontal_speed_sum / static_cast<double>(walk_steps);
+    result.average_yaw_rate_radps = yaw_speed_sum / static_cast<double>(walk_steps);
+    if (!solver_iteration_samples.empty()) {
+        std::sort(solver_iteration_samples.begin(), solver_iteration_samples.end());
+        const std::size_t p99Index = std::min(
+            solver_iteration_samples.size() - 1U,
+            (99U * solver_iteration_samples.size() + 99U) / 100U - 1U);
+        result.p99_solver_iterations = solver_iteration_samples[p99Index];
+    }
 
     const Vec3 travel = result.end_position - result.start_position;
     const double travel_len = std::hypot(travel.x, travel.y);
@@ -919,6 +1106,24 @@ int main(int argc, char** argv) {
             std::cerr << "invalid HEXAPOD_WALK_TEST_SOLVER_MODE=" << mode << '\n';
             return 2;
         }
+    }
+    if (const char* value = std::getenv("HEXAPOD_WALK_TEST_SOLVER_ITERATIONS")) {
+        char* end = nullptr;
+        const long parsed = std::strtol(value, &end, 10);
+        if (end == value || *end != '\0' || parsed <= 0) {
+            std::cerr << "invalid HEXAPOD_WALK_TEST_SOLVER_ITERATIONS=" << value << '\n';
+            return 2;
+        }
+        solver_settings.iterations = static_cast<int>(parsed);
+    }
+    if (const char* value = std::getenv("HEXAPOD_WALK_TEST_PROXIMAL_MU")) {
+        char* end = nullptr;
+        const double parsed = std::strtod(value, &end);
+        if (end == value || *end != '\0' || !std::isfinite(parsed) || parsed <= 0.0) {
+            std::cerr << "invalid HEXAPOD_WALK_TEST_PROXIMAL_MU=" << value << '\n';
+            return 2;
+        }
+        solver_settings.proximal_mu = static_cast<float>(parsed);
     }
     double body_height_m = 0.06;
     if (const char* value = std::getenv("HEXAPOD_WALK_TEST_BODY_HEIGHT_M")) {

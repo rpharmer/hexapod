@@ -449,6 +449,116 @@ bool testRecoveryRequiresBothConditionsAndHoldTime() {
                   "lifecycle should return ACTIVE after clear");
 }
 
+bool testPhysicsBusTimeoutRecoversAfterThirtyDistinctHealthySamples() {
+    SafetySupervisor supervisor;
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+    raw.sample_id = 1;
+    raw.bus_ok = false;
+    const SafetyState latched = supervisor.evaluate(
+        raw,
+        est,
+        intentNow(RobotMode::WALK),
+        SafetySupervisor::FreshnessInputs{true, true, true, false});
+    if (!expect(latched.active_fault == FaultCode::BUS_TIMEOUT,
+                "physics held frame should latch BUS_TIMEOUT")) {
+        return false;
+    }
+
+    raw.bus_ok = true;
+    for (uint64_t sample_id = 2; sample_id < 31; ++sample_id) {
+        raw.sample_id = sample_id;
+        const SafetyState recovering = supervisor.evaluate(
+            raw,
+            est,
+            intentNow(RobotMode::WALK),
+            SafetySupervisor::FreshnessInputs{true, true, true, true});
+        if (!expect(recovering.active_fault == FaultCode::BUS_TIMEOUT,
+                    "physics BUS_TIMEOUT must remain latched before 30 healthy samples") ||
+            !expect(recovering.fault_lifecycle == FaultLifecycle::RECOVERING,
+                    "healthy physics samples should enter recovery")) {
+            return false;
+        }
+    }
+
+    // Re-evaluating the same frame must not advance the response counter.
+    const SafetyState duplicate = supervisor.evaluate(
+        raw,
+        est,
+        intentNow(RobotMode::WALK),
+        SafetySupervisor::FreshnessInputs{true, true, true, true});
+    if (!expect(duplicate.active_fault == FaultCode::BUS_TIMEOUT,
+                "duplicate physics sample must not complete recovery")) {
+        return false;
+    }
+
+    raw.sample_id = 31;
+    const SafetyState cleared = supervisor.evaluate(
+        raw,
+        est,
+        intentNow(RobotMode::WALK),
+        SafetySupervisor::FreshnessInputs{true, true, true, true});
+    return expect(cleared.active_fault == FaultCode::NONE,
+                  "30 distinct healthy physics responses should clear BUS_TIMEOUT") &&
+           expect(cleared.fault_lifecycle == FaultLifecycle::ACTIVE,
+                  "automatic physics recovery should return to ACTIVE") &&
+           expect(!cleared.inhibit_motion,
+                  "automatic physics recovery should release gait inhibition");
+}
+
+bool testPhysicsBusTimeoutRecoveryRequiresConsecutiveHealthySamples() {
+    SafetySupervisor supervisor;
+    RobotState raw = nominalRaw();
+    RobotState est = nominalEstimated();
+    raw.sample_id = 1;
+    raw.bus_ok = false;
+    (void)supervisor.evaluate(
+        raw,
+        est,
+        intentNow(RobotMode::WALK),
+        SafetySupervisor::FreshnessInputs{true, true, true, false});
+
+    raw.bus_ok = true;
+    for (uint64_t sample_id = 2; sample_id < 21; ++sample_id) {
+        raw.sample_id = sample_id;
+        (void)supervisor.evaluate(
+            raw,
+            est,
+            intentNow(RobotMode::WALK),
+            SafetySupervisor::FreshnessInputs{true, true, true, true});
+    }
+
+    raw.sample_id = 21;
+    const SafetyState interrupted = supervisor.evaluate(
+        raw,
+        est,
+        intentNow(RobotMode::WALK),
+        SafetySupervisor::FreshnessInputs{true, true, true, false});
+    if (!expect(interrupted.active_fault == FaultCode::BUS_TIMEOUT,
+                "non-healthy physics response should keep BUS_TIMEOUT latched") ||
+        !expect(interrupted.fault_lifecycle == FaultLifecycle::LATCHED,
+                "non-healthy physics response should reset recovery")) {
+        return false;
+    }
+
+    for (uint64_t sample_id = 22; sample_id < 51; ++sample_id) {
+        raw.sample_id = sample_id;
+        (void)supervisor.evaluate(
+            raw,
+            est,
+            intentNow(RobotMode::WALK),
+            SafetySupervisor::FreshnessInputs{true, true, true, true});
+    }
+    raw.sample_id = 51;
+    const SafetyState cleared = supervisor.evaluate(
+        raw,
+        est,
+        intentNow(RobotMode::WALK),
+        SafetySupervisor::FreshnessInputs{true, true, true, true});
+    return expect(cleared.active_fault == FaultCode::NONE,
+                  "recovery should clear only after a new run of 30 healthy samples");
+}
+
 } // namespace
 
 int main() {
@@ -468,7 +578,9 @@ int main() {
         !testAggressiveWalkRequiresObservedActuatorState() ||
         !testLatchedRemainsWhenIntentNotSafeIdle() ||
         !testLatchedRemainsWhenIntentStale() ||
-        !testRecoveryRequiresBothConditionsAndHoldTime()) {
+        !testRecoveryRequiresBothConditionsAndHoldTime() ||
+        !testPhysicsBusTimeoutRecoversAfterThirtyDistinctHealthySamples() ||
+        !testPhysicsBusTimeoutRecoveryRequiresConsecutiveHealthySamples()) {
         return EXIT_FAILURE;
     }
 

@@ -55,8 +55,12 @@ struct ProximalStepDiagnostics {
     double primalResidual = 0.0;
     double dualResidual = 0.0;
     double complementarityResidual = 0.0;
+    double ncpDualResidual = 0.0;
+    double ncpComplementarityResidual = 0.0;
+    double coneResidual = 0.0;
     double peakNormalImpulse = 0.0;
     double peakFrictionImpulse = 0.0;
+    double peakStructuralImpulse = 0.0;
     double peakActuatorImpulse = 0.0;
     double peakServoTorqueUtilization = 0.0;
     double preIntegrationLinearSpeed = 0.0;
@@ -72,6 +76,7 @@ struct ProximalStepDiagnostics {
     double delassusConditionEstimate = 0.0;
     double delassusMinEigenvalue = 0.0;
     double delassusMaxEigenvalue = 0.0;
+    double admmRho = 0.0;
     std::uint64_t contactSetSignature = 0;
     std::uint64_t warmStartResets = 0;
     std::uint64_t retries = 0;
