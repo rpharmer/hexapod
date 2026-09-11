@@ -1566,11 +1566,25 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         }
 
         if (const auto* correction = std::get_if<physics_sim::StateCorrection>(&inbound.payload)) {
+            AssimilationReport correction_report{};
             {
                 const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::ApplyCorrection));
-                (void)ApplyStateCorrection(world, scene, *correction, assimilation_state, terrain_patch, &serve_profiler);
+                correction_report = ApplyStateCorrection(
+                    world, scene, *correction, assimilation_state, terrain_patch, &serve_profiler);
                 (void)scope;
             }
+#if defined(MINPHYS3D_ENABLE_PINOCCHIO)
+            const bool correction_changes_dynamics =
+                (correction->flags & (physics_sim::kStateCorrectionPoseValid
+                                      | physics_sim::kStateCorrectionTwistValid
+                                      | physics_sim::kStateCorrectionTerrainValid)) != 0;
+            if (correction_changes_dynamics
+                && !pinocchio_model->synchronizeAfterExternalCorrection(world)) {
+                std::cerr << "[serve] failed to synchronize proximal state after correction mode="
+                          << static_cast<unsigned>(correction_report.mode) << "\n";
+            }
+#endif
+            (void)correction_report;
             cached_lidar_frame.valid = false;
             lidar_sim_time_us = std::max(lidar_sim_time_us + 1, next_lidar_capture_us);
             logResourceSnapshot();

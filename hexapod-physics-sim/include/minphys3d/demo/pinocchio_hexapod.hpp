@@ -144,6 +144,10 @@ public:
         const ProximalSolverSettings& settings,
         ProximalStepDiagnostics& diagnostics);
 
+    /// Accept an externally corrected minphys3d state as the new rollback
+    /// baseline and discard solver history tied to the previous pose.
+    bool synchronizeAfterExternalCorrection(const World& world);
+
     void resetWarmStarts();
 
 private:

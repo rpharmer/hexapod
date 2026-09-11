@@ -79,6 +79,38 @@ bool CheckSelectedFootSupport(
     return false;
 }
 
+bool CheckExternalCorrectionSynchronization() {
+    World world({0.0, -9.80665, 0.0});
+    const HexapodSceneObjects scene = BuildHexapodScene(world);
+    PinocchioHexapodModel model(world, scene, SceneJointOrder(scene));
+
+    std::vector<double> q;
+    std::vector<double> v;
+    if (!model.readState(world, q, v)) {
+        std::cerr << "failed to read external-correction test state\n";
+        return false;
+    }
+    const double correctedX = q[0] + 0.007;
+    q[0] = correctedX;
+    if (!model.writeState(world, q, v)
+        || !model.synchronizeAfterExternalCorrection(world)) {
+        std::cerr << "failed to synchronize externally corrected state\n";
+        return false;
+    }
+
+    world.GetBody(scene.body).velocity.x = std::numeric_limits<double>::quiet_NaN();
+    ProximalSolverSettings settings{};
+    ProximalStepDiagnostics diagnostics{};
+    if (model.stepProximal(world, 1.0 / 480.0, settings, diagnostics)
+        || diagnostics.status != ProximalStepStatus::HeldLastGood
+        || !model.readState(world, q, v)
+        || std::abs(q[0] - correctedX) > 1.0e-9) {
+        std::cerr << "rollback did not preserve externally corrected pose\n";
+        return false;
+    }
+    return true;
+}
+
 int Run() {
     World world({0.0, -9.80665, 0.0});
     const HexapodSceneObjects scene = BuildHexapodScene(world);
@@ -124,6 +156,10 @@ int Run() {
     double delassusError = 0.0;
     if (!model.validateDelassusOracle(world, 1.0e-8, delassusError)) {
         std::cerr << "rigid Delassus/Cholesky oracle mismatch error=" << delassusError << "\n";
+        return 1;
+    }
+
+    if (!CheckExternalCorrectionSynchronization()) {
         return 1;
     }
 

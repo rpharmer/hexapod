@@ -66,6 +66,9 @@ struct PhaseResult {
     double max_contact_penetration{0.0};
     std::optional<Vec3> first_valid_position{};
     std::optional<Vec3> last_valid_position{};
+    double completed_delta_x_sum{0.0};
+    double completed_delta_y_sum{0.0};
+    std::uint64_t completed_trajectories{0};
 };
 
 struct ReplayResult {
@@ -222,6 +225,19 @@ int positiveEnvOrDefault(const char* name, const int fallback) {
     return static_cast<int>(parsed);
 }
 
+int nonnegativeEnvOrDefault(const char* name, const int fallback) {
+    const char* value = std::getenv(name);
+    if (value == nullptr || value[0] == '\0') {
+        return fallback;
+    }
+    char* end = nullptr;
+    const long parsed = std::strtol(value, &end, 10);
+    if (end == value || *end != '\0' || parsed < 0 || parsed > 1000000) {
+        throw std::runtime_error(std::string("invalid ") + name + "=" + value);
+    }
+    return static_cast<int>(parsed);
+}
+
 double positiveDoubleEnvOrDefault(const char* name, const double fallback) {
     const char* value = std::getenv(name);
     if (value == nullptr || value[0] == '\0') {
@@ -238,6 +254,73 @@ double positiveDoubleEnvOrDefault(const char* name, const double fallback) {
 bool envEnabled(const char* name) {
     const char* value = std::getenv(name);
     return value != nullptr && value[0] != '\0' && value[0] != '0';
+}
+
+std::uint64_t splitMix64(std::uint64_t value) {
+    value += 0x9e3779b97f4a7c15ULL;
+    value = (value ^ (value >> 30U)) * 0xbf58476d1ce4e5b9ULL;
+    value = (value ^ (value >> 27U)) * 0x94d049bb133111ebULL;
+    return value ^ (value >> 31U);
+}
+
+double seededUnitInterval(const std::uint64_t seed, const std::uint64_t channel) {
+    const std::uint64_t bits = splitMix64(seed ^ (channel * 0x9e3779b97f4a7c15ULL));
+    return static_cast<double>(bits >> 11U) * (1.0 / 9007199254740992.0);
+}
+
+std::array<double, 4> multiplyQuaternion(const std::array<double, 4>& lhs,
+                                         const std::array<double, 4>& rhs) {
+    return {
+        lhs[0] * rhs[0] - lhs[1] * rhs[1] - lhs[2] * rhs[2] - lhs[3] * rhs[3],
+        lhs[0] * rhs[1] + lhs[1] * rhs[0] + lhs[2] * rhs[3] - lhs[3] * rhs[2],
+        lhs[0] * rhs[2] - lhs[1] * rhs[3] + lhs[2] * rhs[0] + lhs[3] * rhs[1],
+        lhs[0] * rhs[3] + lhs[1] * rhs[2] - lhs[2] * rhs[1] + lhs[3] * rhs[0],
+    };
+}
+
+physics_sim::StateCorrection makePerturbedStandingCorrection(
+    const std::uint64_t seed,
+    const double body_height_m,
+    const double scale) {
+    const auto symmetric = [seed](const std::uint64_t channel) {
+        return 2.0 * seededUnitInterval(seed, channel) - 1.0;
+    };
+    const double horizontal_x = seed == 0 ? 0.0 : scale * 0.003 * symmetric(1);
+    const double vertical = seed == 0 ? 0.0 : scale * 0.0015 * symmetric(2);
+    const double horizontal_z = seed == 0 ? 0.0 : scale * 0.003 * symmetric(3);
+    constexpr double kDegreesToRadians = 0.01745329251994329577;
+    const double roll = seed == 0 ? 0.0 : scale * 0.75 * kDegreesToRadians * symmetric(4);
+    const double yaw = seed == 0 ? 0.0 : scale * 1.0 * kDegreesToRadians * symmetric(5);
+    const double pitch = seed == 0 ? 0.0 : scale * 0.75 * kDegreesToRadians * symmetric(6);
+    const std::array<double, 4> qx{
+        std::cos(0.5 * roll), std::sin(0.5 * roll), 0.0, 0.0};
+    const std::array<double, 4> qy{
+        std::cos(0.5 * yaw), 0.0, std::sin(0.5 * yaw), 0.0};
+    const std::array<double, 4> qz{
+        std::cos(0.5 * pitch), 0.0, 0.0, std::sin(0.5 * pitch)};
+    const std::array<double, 4> orientation =
+        multiplyQuaternion(qy, multiplyQuaternion(qz, qx));
+
+    physics_sim::StateCorrection correction{};
+    correction.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection);
+    correction.sequence_id = static_cast<std::uint32_t>(seed);
+    correction.timestamp_us = now_us().value;
+    correction.flags = physics_sim::kStateCorrectionPoseValid
+        | physics_sim::kStateCorrectionTwistValid
+        | physics_sim::kStateCorrectionHardReset;
+    correction.correction_strength = 1.0f;
+    correction.body_position = {
+        static_cast<float>(horizontal_x),
+        static_cast<float>(body_height_m + vertical),
+        static_cast<float>(horizontal_z)};
+    correction.body_orientation = {
+        static_cast<float>(orientation[0]),
+        static_cast<float>(orientation[1]),
+        static_cast<float>(orientation[2]),
+        static_cast<float>(orientation[3])};
+    correction.body_linear_velocity = {0.0f, 0.0f, 0.0f};
+    correction.body_angular_velocity = {0.0f, 0.0f, 0.0f};
+    return correction;
 }
 
 std::optional<ReplayPhase> selectedMotionPhase() {
@@ -262,7 +345,9 @@ std::optional<ReplayPhase> selectedMotionPhase() {
 }
 
 #if defined(__linux__)
-pid_t launchSimulator(const char* sim_exe, const int port) {
+pid_t launchSimulator(const char* sim_exe,
+                      const int port,
+                      const std::uint64_t contact_order_seed = 0) {
     const pid_t pid = ::fork();
     if (pid != 0) {
         return pid;
@@ -270,6 +355,10 @@ pid_t launchSimulator(const char* sim_exe, const int port) {
     if (!envEnabled("HEXAPOD_EXACT_REPLAY_CHILD_STDIO")) {
         physics_sim_test_utils::quietChildProcessStdIo();
     }
+    const std::string contact_order_seed_text = std::to_string(contact_order_seed);
+    (void)::setenv("HEXAPOD_PINOCCHIO_CONTACT_ORDER_SEED",
+                   contact_order_seed_text.c_str(),
+                   1);
     const std::string port_text = std::to_string(port);
     ::execl(sim_exe, sim_exe, "--serve", "--serve-port", port_text.c_str(), nullptr);
     std::perror("execl");
@@ -359,7 +448,9 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
                             const int replay_period_us,
                             const int solver_iterations,
                             const double absolute_tolerance,
-                            const double relative_tolerance) {
+                            const double relative_tolerance,
+                            const std::uint64_t perturbation_seed,
+                            const double perturbation_scale) {
     PhysicsSimSolverSettings proximal{};
     proximal.mode = physics_sim::PhysicsSolverMode::PinocchioProximal;
     proximal.iterations = solver_iterations;
@@ -369,6 +460,13 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         "127.0.0.1", port, replay_period_us, proximal, nullptr);
     if (!bridge.init()) {
         throw std::runtime_error("proximal replay bridge failed to initialise");
+    }
+    if (!bridge.sendStateCorrection(
+            makePerturbedStandingCorrection(
+                perturbation_seed,
+                physicsSimStandingBodyHeightM(),
+                perturbation_scale))) {
+        throw std::runtime_error("proximal replay failed to send initial-pose perturbation");
     }
 
     ReplayResult result{};
@@ -518,12 +616,86 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
     assignTimingSummary(solver_total_step_times_ms,
                         result.p99_solver_total_step_time_ms,
                         ignoredMaximum);
+    for (PhaseResult& phase : result.phases) {
+        if (phase.first_valid_position.has_value()
+            && phase.last_valid_position.has_value()) {
+            phase.completed_delta_x_sum =
+                phase.last_valid_position->x - phase.first_valid_position->x;
+            phase.completed_delta_y_sum =
+                phase.last_valid_position->y - phase.first_valid_position->y;
+            phase.completed_trajectories = 1;
+        }
+    }
     return result;
+}
+
+void accumulateReplayResult(ReplayResult& total, const ReplayResult& sample) {
+    total.frames += sample.frames;
+    total.telemetry_frames += sample.telemetry_frames;
+    total.healthy += sample.healthy;
+    total.recovered += sample.recovered;
+    total.held += sample.held;
+    total.unsupported += sample.unsupported;
+    total.read_failures += sample.read_failures;
+    total.solver_not_converged += sample.solver_not_converged;
+    total.max_iterations = std::max(total.max_iterations, sample.max_iterations);
+    total.max_contact_constraints = std::max(
+        total.max_contact_constraints, sample.max_contact_constraints);
+    total.max_warm_start_resets = std::max(
+        total.max_warm_start_resets, sample.max_warm_start_resets);
+    const auto accumulateMaximum = [](double& aggregate, const double value) {
+        aggregate = std::max(aggregate, value);
+    };
+    accumulateMaximum(total.p99_step_time_ms, sample.p99_step_time_ms);
+    accumulateMaximum(total.max_step_time_ms, sample.max_step_time_ms);
+    accumulateMaximum(total.healthy_p99_step_time_ms, sample.healthy_p99_step_time_ms);
+    accumulateMaximum(total.healthy_max_step_time_ms, sample.healthy_max_step_time_ms);
+    accumulateMaximum(total.p99_solver_dynamics_time_ms, sample.p99_solver_dynamics_time_ms);
+    accumulateMaximum(total.p99_solver_contact_setup_time_ms, sample.p99_solver_contact_setup_time_ms);
+    accumulateMaximum(total.p99_solver_collision_time_ms, sample.p99_solver_collision_time_ms);
+    accumulateMaximum(
+        total.p99_solver_constraint_assembly_time_ms,
+        sample.p99_solver_constraint_assembly_time_ms);
+    accumulateMaximum(total.p99_solver_delassus_time_ms, sample.p99_solver_delassus_time_ms);
+    accumulateMaximum(total.p99_solver_admm_time_ms, sample.p99_solver_admm_time_ms);
+    accumulateMaximum(
+        total.p99_solver_integration_time_ms,
+        sample.p99_solver_integration_time_ms);
+    accumulateMaximum(
+        total.p99_solver_total_step_time_ms,
+        sample.p99_solver_total_step_time_ms);
+    for (std::size_t i = 0; i < total.phases.size(); ++i) {
+        PhaseResult& out = total.phases[i];
+        const PhaseResult& in = sample.phases[i];
+        out.frames += in.frames;
+        out.healthy += in.healthy;
+        out.recovered += in.recovered;
+        out.held += in.held;
+        out.unsupported += in.unsupported;
+        out.read_failures += in.read_failures;
+        out.solver_not_converged += in.solver_not_converged;
+        out.max_iterations = std::max(out.max_iterations, in.max_iterations);
+        out.max_ncp_dual_residual = std::max(
+            out.max_ncp_dual_residual, in.max_ncp_dual_residual);
+        out.max_ncp_complementarity_residual = std::max(
+            out.max_ncp_complementarity_residual,
+            in.max_ncp_complementarity_residual);
+        out.max_contact_penetration = std::max(
+            out.max_contact_penetration, in.max_contact_penetration);
+        out.completed_delta_x_sum += in.completed_delta_x_sum;
+        out.completed_delta_y_sum += in.completed_delta_y_sum;
+        out.completed_trajectories += in.completed_trajectories;
+    }
 }
 
 std::string metricsJson(const ReplayResult& result,
                         const std::uint64_t command_hash,
                         const std::size_t captured_frames,
+                        const int perturbation_seed_count,
+                        const int perturbation_seed_offset,
+                        const double perturbation_scale,
+                        const bool fixed_initial_pose,
+                        const bool fixed_contact_order,
                         const int replay_period_us,
                         const int solver_iterations,
                         const double absolute_tolerance,
@@ -534,6 +706,11 @@ std::string metricsJson(const ReplayResult& result,
         << ",\"replayed_frames\":" << result.frames
         << ",\"telemetry_frames\":" << result.telemetry_frames
         << ",\"command_hash\":\"" << std::hex << command_hash << std::dec << "\""
+        << ",\"perturbation_seed_count\":" << perturbation_seed_count
+        << ",\"perturbation_seed_offset\":" << perturbation_seed_offset
+        << ",\"perturbation_scale\":" << perturbation_scale
+        << ",\"fixed_initial_pose\":" << (fixed_initial_pose ? "true" : "false")
+        << ",\"fixed_contact_order\":" << (fixed_contact_order ? "true" : "false")
         << ",\"replay_period_us\":" << replay_period_us
         << ",\"solver_iteration_limit\":" << solver_iterations
         << ",\"absolute_tolerance\":" << absolute_tolerance
@@ -569,12 +746,12 @@ std::string metricsJson(const ReplayResult& result,
             out << ',';
         }
         const PhaseResult& phase = result.phases[i];
-        double dx = 0.0;
-        double dy = 0.0;
-        if (phase.first_valid_position.has_value() && phase.last_valid_position.has_value()) {
-            dx = phase.last_valid_position->x - phase.first_valid_position->x;
-            dy = phase.last_valid_position->y - phase.first_valid_position->y;
-        }
+        const double dx = phase.completed_trajectories == 0 ? 0.0
+            : phase.completed_delta_x_sum
+                / static_cast<double>(phase.completed_trajectories);
+        const double dy = phase.completed_trajectories == 0 ? 0.0
+            : phase.completed_delta_y_sum
+                / static_cast<double>(phase.completed_trajectories);
         out << "{\"name\":\"" << kPhaseNames[i]
             << "\",\"frames\":" << phase.frames
             << ",\"healthy\":" << phase.healthy
@@ -625,6 +802,20 @@ int main(int argc, char** argv) {
             "HEXAPOD_EXACT_REPLAY_ABSOLUTE_TOLERANCE", 1.0e-8);
         const double relative_tolerance = positiveDoubleEnvOrDefault(
             "HEXAPOD_EXACT_REPLAY_RELATIVE_TOLERANCE", 1.0e-6);
+        const int perturbation_seed_count = positiveEnvOrDefault(
+            "HEXAPOD_EXACT_REPLAY_PERTURBATION_SEEDS", 1);
+        const int perturbation_seed_offset = nonnegativeEnvOrDefault(
+            "HEXAPOD_EXACT_REPLAY_PERTURBATION_SEED_OFFSET", 0);
+        const double perturbation_scale = positiveDoubleEnvOrDefault(
+            "HEXAPOD_EXACT_REPLAY_PERTURBATION_SCALE", 0.25);
+        const bool fixed_initial_pose = envEnabled(
+            "HEXAPOD_EXACT_REPLAY_FIXED_INITIAL_POSE");
+        const bool fixed_contact_order = envEnabled(
+            "HEXAPOD_EXACT_REPLAY_FIXED_CONTACT_ORDER");
+        if (perturbation_seed_count > 1000) {
+            throw std::runtime_error(
+                "HEXAPOD_EXACT_REPLAY_PERTURBATION_SEEDS must be at most 1000");
+        }
         const std::optional<ReplayPhase> selected_phase = selectedMotionPhase();
         const int base_port = 23500 + (static_cast<int>(::getpid()) % 4000);
 
@@ -660,37 +851,72 @@ int main(int argc, char** argv) {
         }
         const std::uint64_t command_hash = commandStreamHash(frames);
 
-        pid_t replay_pid = launchSimulator(sim_exe, base_port + 1);
-        if (replay_pid < 0) {
-            throw std::runtime_error("failed to fork proximal replay simulator");
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds{250});
         ReplayResult result{};
-        try {
-            result = replayCommands(frames,
-                                    base_port + 1,
-                                    replay_period_us,
-                                    solver_iterations,
-                                    absolute_tolerance,
-                                    relative_tolerance);
-        } catch (...) {
+        for (int seed = 0; seed < perturbation_seed_count; ++seed) {
+            const std::uint64_t absolute_seed = static_cast<std::uint64_t>(
+                perturbation_seed_offset + seed);
+            const std::uint64_t pose_seed = fixed_initial_pose ? 0 : absolute_seed;
+            const std::uint64_t contact_order_seed = fixed_contact_order ? 0 : absolute_seed;
+            const int replay_port = base_port + 1 + seed;
+            pid_t replay_pid = launchSimulator(
+                sim_exe, replay_port, contact_order_seed);
+            if (replay_pid < 0) {
+                throw std::runtime_error("failed to fork proximal replay simulator");
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{250});
+            ReplayResult seed_result{};
+            try {
+                seed_result = replayCommands(
+                    frames,
+                    replay_port,
+                    replay_period_us,
+                    solver_iterations,
+                    absolute_tolerance,
+                    relative_tolerance,
+                    pose_seed,
+                    perturbation_scale);
+            } catch (...) {
+                stopSimulator(replay_pid);
+                throw;
+            }
             stopSimulator(replay_pid);
-            throw;
+            if (seed_result.recovered != 0 || seed_result.held != 0
+                || seed_result.unsupported != 0 || seed_result.read_failures != 0) {
+                std::cerr << "replay seed " << absolute_seed
+                          << " healthy=" << seed_result.healthy
+                          << " recovered=" << seed_result.recovered
+                          << " held=" << seed_result.held
+                          << " unsupported=" << seed_result.unsupported
+                          << " read_failures=" << seed_result.read_failures
+                          << " max_iterations=" << seed_result.max_iterations << '\n';
+            }
+            accumulateReplayResult(result, seed_result);
         }
-        stopSimulator(replay_pid);
 
-        const bool accounting_ok = result.frames == frames.size()
-            && result.telemetry_frames == frames.size()
+        const std::size_t expected_replayed_frames =
+            frames.size() * static_cast<std::size_t>(perturbation_seed_count);
+        const bool accounting_ok = result.frames == expected_replayed_frames
+            && result.telemetry_frames == expected_replayed_frames
             && result.healthy + result.recovered + result.held + result.unsupported
                 == result.telemetry_frames;
         const bool gates_requested = envEnabled("HEXAPOD_EXACT_REPLAY_ENFORCE_GATES");
+        const bool safety_gates_requested = envEnabled(
+            "HEXAPOD_EXACT_REPLAY_ENFORCE_SAFETY_GATES");
         const bool gates_ok = !gates_requested
             || (result.recovered == 0 && result.held == 0 && result.unsupported == 0
                 && result.read_failures == 0);
-        const bool passed = accounting_ok && gates_ok;
+        const bool safety_gates_ok = !safety_gates_requested
+            || (result.held == 0 && result.unsupported == 0
+                && result.read_failures == 0);
+        const bool passed = accounting_ok && gates_ok && safety_gates_ok;
         const std::string metrics = metricsJson(result,
                                                 command_hash,
                                                 frames.size(),
+                                                perturbation_seed_count,
+                                                perturbation_seed_offset,
+                                                perturbation_scale,
+                                                fixed_initial_pose,
+                                                fixed_contact_order,
                                                 replay_period_us,
                                                 solver_iterations,
                                                 absolute_tolerance,
@@ -702,7 +928,8 @@ int main(int argc, char** argv) {
         } else {
             std::cout << "exact command replay: " << (passed ? "PASS" : "FAIL")
                       << " captured=" << frames.size() << " hash=" << std::hex << command_hash
-                      << std::dec << " healthy=" << result.healthy
+                      << std::dec << " seeds=" << perturbation_seed_count
+                      << " healthy=" << result.healthy
                       << " recovered=" << result.recovered << " held=" << result.held
                       << " unsupported=" << result.unsupported
                       << " max_iterations=" << result.max_iterations << '\n';

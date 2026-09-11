@@ -319,14 +319,30 @@ These are the highest-value tests for tracking improvements across commits.
   - `HEXAPOD_EXACT_REPLAY_PERIOD_US=4166` measures the approximately 240 Hz
     production command cadence while preserving the captured targets; proximal mode
     advances it as two internal substeps capped at `1/480 s`
+  - `HEXAPOD_EXACT_REPLAY_PERTURBATION_SEEDS=100` repeats the same command stream
+    from 100 deterministic initial chassis perturbations (by default up to 0.75 mm
+    horizontal, 0.375 mm vertical, 0.1875 degrees roll/pitch, and 0.25 degrees yaw).
+    `HEXAPOD_EXACT_REPLAY_PERTURBATION_SCALE` scales that envelope; `4` exercises
+    up to 3 mm horizontal and 1 degree yaw. Each seed also
+    permutes contact-constraint ordering, and every replay runs in a fresh simulator
+    process so no state leaks between seeds. Seed zero remains the unperturbed baseline.
+    `HEXAPOD_EXACT_REPLAY_PERTURBATION_SEED_OFFSET` selects a later deterministic
+    range. For diagnosis, `HEXAPOD_EXACT_REPLAY_FIXED_INITIAL_POSE=1` or
+    `HEXAPOD_EXACT_REPLAY_FIXED_CONTACT_ORDER=1` isolates the other perturbation.
+    Multi-seed timing summaries report the worst per-seed p99, rather than a pooled
+    p99, so a single slow initial condition remains visible.
   - `HEXAPOD_EXACT_REPLAY_CHILD_STDIO=1` preserves simulator diagnostics; combine
     it with `HEXAPOD_PROXIMAL_TRACE_FAILURES=1` to inspect held-state failures
   - advanced solver diagnostics can override `HEXAPOD_PINOCCHIO_ANDERSON_CAPACITY`,
+    `HEXAPOD_PINOCCHIO_RETRY_ANDERSON_CAPACITY` (disables the adaptive retry choice),
     `HEXAPOD_PINOCCHIO_RATIO_PRIMAL_DUAL`, `HEXAPOD_PINOCCHIO_ADMM_TAU`, and
     `HEXAPOD_PINOCCHIO_SPECTRAL_POWER` without changing production defaults
   - `HEXAPOD_EXACT_REPLAY_ENFORCE_GATES=1` makes any recovered, held,
     unsupported, or failed-read sample fail the executable. Without it, the
     executable validates capture/replay accounting and emits diagnostic results.
+  - `HEXAPOD_EXACT_REPLAY_ENFORCE_SAFETY_GATES=1` permits the documented usable
+    `RecoveredRetry` outcome but fails on a held state, unsupported island, or
+    failed read. This is the appropriate gate for the 100-seed perturbation campaign.
 
 ## Scenario-driven functional checks
 

@@ -256,6 +256,10 @@ double maxAbsJointVelocityRadps(const physics_sim::StateResponse& rsp) {
 
 } // namespace
 
+double physicsSimStandingBodyHeightM() {
+    return computeStandingBodyHeightM();
+}
+
 PhysicsSimBridge::PhysicsSimBridge(std::string host,
                                    int port,
                                    int bus_loop_period_us,

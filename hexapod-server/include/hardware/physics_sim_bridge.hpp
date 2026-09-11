@@ -79,6 +79,9 @@ struct PhysicsSimSolverTelemetry {
     std::uint64_t worst_contact_id{0};
 };
 
+/// Chassis height used by the bridge's initial assembled standing pose.
+double physicsSimStandingBodyHeightM();
+
 /// UDP client to hexapod-physics-sim --serve; steps physics in read() after write().
 class PhysicsSimBridge final : public IHardwareBridge, public IPhysicsSimObstacleFootprintProvider {
 public:
