@@ -79,6 +79,8 @@ struct ReplayResult {
     std::uint64_t read_failures{0};
     std::uint64_t solver_not_converged{0};
     std::uint16_t max_iterations{0};
+    std::uint32_t max_contact_constraints{0};
+    std::uint64_t max_warm_start_resets{0};
     double p99_step_time_ms{0.0};
     double max_step_time_ms{0.0};
     double healthy_p99_step_time_ms{0.0};
@@ -420,6 +422,10 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         solver_integration_times_ms.push_back(telemetry->integration_time_ms);
         solver_total_step_times_ms.push_back(telemetry->total_step_time_ms);
         result.max_iterations = std::max(result.max_iterations, telemetry->iterations);
+        result.max_contact_constraints = std::max(
+            result.max_contact_constraints, telemetry->contact_constraint_count);
+        result.max_warm_start_resets = std::max(
+            result.max_warm_start_resets, telemetry->warm_start_reset_count);
         phase.max_iterations = std::max(phase.max_iterations, telemetry->iterations);
         phase.max_ncp_dual_residual =
             std::max(phase.max_ncp_dual_residual, static_cast<double>(telemetry->ncp_dual_residual));
@@ -515,6 +521,8 @@ std::string metricsJson(const ReplayResult& result,
         << ",\"read_failures\":" << result.read_failures
         << ",\"solver_not_converged\":" << result.solver_not_converged
         << ",\"max_iterations\":" << result.max_iterations
+        << ",\"max_contact_constraints\":" << result.max_contact_constraints
+        << ",\"max_warm_start_resets\":" << result.max_warm_start_resets
         << ",\"p99_step_time_ms\":" << result.p99_step_time_ms
         << ",\"max_step_time_ms\":" << result.max_step_time_ms
         << ",\"healthy_p99_step_time_ms\":" << result.healthy_p99_step_time_ms

@@ -158,6 +158,15 @@ bool TerrainMatchesPlane(const World& world,
 
 } // namespace
 
+using PinConstraintModels = std::vector<pinocchio::ConstraintModel>;
+using PinConstraintDatas = std::vector<pinocchio::ConstraintData>;
+using RigidDelassus = pinocchio::DelassusOperatorRigidBodySystemsTpl<
+    double,
+    0,
+    pinocchio::JointCollectionDefaultTpl,
+    pinocchio::ConstraintModel,
+    std::reference_wrapper>;
+
 struct PinocchioHexapodModel::Impl {
     struct BodyBinding {
         std::uint32_t bodyId = World::kInvalidBodyId;
@@ -173,6 +182,13 @@ struct PinocchioHexapodModel::Impl {
     std::array<double, 18> wireZeroAngles{};
     std::array<double, 18> wireNominalInertias{};
     std::unordered_map<std::uint32_t, pinocchio::JointIndex> bodyJoints{};
+    PinConstraintModels contactConstraintModels{};
+    PinConstraintDatas contactConstraintDatas{};
+    std::vector<std::uint64_t> contactTopologyIds{};
+    std::unique_ptr<RigidDelassus> contactDelassus{};
+    double contactDelassusRegularization = 0.0;
+    pinocchio::ADMMConstraintSolver contactSolver{72};
+    pinocchio::ADMMSolverResult contactSolverResult{};
 
     struct WarmImpulse {
         Eigen::Vector3d value = Eigen::Vector3d::Zero();
@@ -461,12 +477,6 @@ bool PinocchioHexapodModel::validateDelassusOracle(
         models[i].calc(impl_->model, impl_->data, datas[i]);
     }
 
-    using RigidDelassus = pinocchio::DelassusOperatorRigidBodySystemsTpl<
-        double,
-        0,
-        pinocchio::JointCollectionDefaultTpl,
-        pinocchio::ConstraintModel,
-        std::reference_wrapper>;
     constexpr double regularization = 1.0e-10;
     RigidDelassus rigid(
         std::cref(impl_->model),
@@ -500,6 +510,8 @@ void PinocchioHexapodModel::resetWarmStarts() {
     impl_->contactWarmStarts.clear();
     impl_->lastContactSetSignature = 0;
     impl_->haveLastContactSetSignature = false;
+    impl_->contactSolverResult.reset();
+    impl_->contactSolver.reset();
 }
 
 bool PinocchioHexapodModel::stepProximal(
@@ -664,8 +676,6 @@ bool PinocchioHexapodModel::stepProximal(
 
         const auto contactSetupStart = StepClock::now();
         world.PrepareExternalContacts(subDt);
-        std::vector<pinocchio::ConstraintModel> constraintModels;
-        std::vector<pinocchio::ConstraintData> constraintDatas;
         std::vector<std::uint64_t> contactIds;
         std::vector<double> contactFrictions;
         std::vector<double> contactRestitutions;
@@ -707,7 +717,6 @@ bool PinocchioHexapodModel::stepProximal(
         };
         std::vector<AcceptedContactGeometry> acceptedContactGeometry;
         std::vector<PendingContact> pendingContacts;
-        constraintModels.reserve(world.DebugManifolds().size() * 4U);
         contactIds.reserve(world.DebugManifolds().size() * 4U);
         pendingContacts.reserve(world.DebugManifolds().size() * 4U);
 
@@ -835,67 +844,100 @@ bool PinocchioHexapodModel::stepProximal(
                 return lhs.geometry.point.z < rhs.geometry.point.z;
             });
         for (const PendingContact& pending : pendingContacts) {
-            const pinocchio::SE3 contactWorld(
-                ContactFrameRotation(pending.geometry.normal),
-                ToEigen(pending.geometry.point));
-            const pinocchio::SE3 placement1 = pending.geometry.joint1 == 0
-                ? contactWorld
-                : impl_->data.oMi[pending.geometry.joint1].inverse() * contactWorld;
-            const pinocchio::SE3 placement2 = pending.geometry.joint2 == 0
-                ? contactWorld
-                : impl_->data.oMi[pending.geometry.joint2].inverse() * contactWorld;
-            pinocchio::PointContactConstraintModel pointModel(
-                impl_->model,
-                pending.geometry.joint1,
-                placement1,
-                pending.geometry.joint2,
-                placement2);
-            pointModel.setFriction(pending.friction);
-            constraintModels.emplace_back(pointModel);
             contactIds.push_back(pending.id);
             contactFrictions.push_back(pending.friction);
             contactRestitutions.push_back(pending.restitution);
             contactPenetrations.push_back(pending.penetration);
         }
 
-        if (!constraintModels.empty()) {
-            out.contactConstraintCount = constraintModels.size();
+        if (!pendingContacts.empty()) {
+            out.contactConstraintCount = pendingContacts.size();
             for (const std::uint64_t contactId : contactIds) {
                 out.contactSetSignature ^= contactId + 0x9e3779b97f4a7c15ULL
                     + (out.contactSetSignature << 6U)
                     + (out.contactSetSignature >> 2U);
             }
-            if (impl_->haveLastContactSetSignature
-                && impl_->lastContactSetSignature != out.contactSetSignature) {
-                resetWarmStarts();
-            }
             impl_->lastContactSetSignature = out.contactSetSignature;
             impl_->haveLastContactSetSignature = true;
-            constraintDatas.reserve(constraintModels.size());
-            for (const pinocchio::ConstraintModel& model : constraintModels) {
-                constraintDatas.push_back(model.createData());
+
+            const std::unordered_set<std::uint64_t> currentContactIds(
+                contactIds.begin(), contactIds.end());
+            for (auto it = impl_->contactWarmStarts.begin();
+                 it != impl_->contactWarmStarts.end();) {
+                if (currentContactIds.find(it->first) == currentContactIds.end()) {
+                    it = impl_->contactWarmStarts.erase(it);
+                    ++impl_->totalWarmStartResets;
+                } else {
+                    ++it;
+                }
             }
+
+            const auto makePointModel = [&](const PendingContact& pending) {
+                const pinocchio::SE3 contactWorld(
+                    ContactFrameRotation(pending.geometry.normal),
+                    ToEigen(pending.geometry.point));
+                const pinocchio::SE3 placement1 = pending.geometry.joint1 == 0
+                    ? contactWorld
+                    : impl_->data.oMi[pending.geometry.joint1].inverse() * contactWorld;
+                const pinocchio::SE3 placement2 = pending.geometry.joint2 == 0
+                    ? contactWorld
+                    : impl_->data.oMi[pending.geometry.joint2].inverse() * contactWorld;
+                pinocchio::PointContactConstraintModel pointModel(
+                    impl_->model,
+                    pending.geometry.joint1,
+                    placement1,
+                    pending.geometry.joint2,
+                    placement2);
+                pointModel.setFriction(pending.friction);
+                return pinocchio::ConstraintModel(pointModel);
+            };
+
+            const bool topologyChanged = contactIds != impl_->contactTopologyIds
+                || impl_->contactDelassus == nullptr
+                || impl_->contactDelassusRegularization != settings.contactRegularization;
+            if (topologyChanged) {
+                impl_->contactSolverResult.reset();
+                impl_->contactSolver.reset();
+                impl_->contactConstraintModels.clear();
+                impl_->contactConstraintDatas.clear();
+                impl_->contactConstraintModels.reserve(pendingContacts.size());
+                impl_->contactConstraintDatas.reserve(pendingContacts.size());
+                for (const PendingContact& pending : pendingContacts) {
+                    impl_->contactConstraintModels.push_back(makePointModel(pending));
+                    impl_->contactConstraintDatas.push_back(
+                        impl_->contactConstraintModels.back().createData());
+                }
+                impl_->contactTopologyIds = contactIds;
+                impl_->contactDelassusRegularization = settings.contactRegularization;
+                impl_->contactDelassus = std::make_unique<RigidDelassus>(
+                    std::cref(impl_->model),
+                    std::ref(impl_->data),
+                    std::cref(impl_->contactConstraintModels),
+                    std::cref(impl_->contactConstraintDatas),
+                    settings.contactRegularization);
+            } else {
+                for (std::size_t i = 0; i < pendingContacts.size(); ++i) {
+                    impl_->contactConstraintModels[i] = makePointModel(pendingContacts[i]);
+                }
+            }
+
+            PinConstraintModels& constraintModels = impl_->contactConstraintModels;
+            PinConstraintDatas& constraintDatas = impl_->contactConstraintDatas;
+            RigidDelassus& delassus = *impl_->contactDelassus;
             for (std::size_t i = 0; i < constraintModels.size(); ++i) {
                 constraintModels[i].calc(impl_->model, impl_->data, constraintDatas[i]);
             }
-
-            using RigidDelassus = pinocchio::DelassusOperatorRigidBodySystemsTpl<
-                double,
-                0,
-                pinocchio::JointCollectionDefaultTpl,
-                pinocchio::ConstraintModel,
-                std::reference_wrapper>;
-            RigidDelassus delassus(
-                std::cref(impl_->model),
-                std::ref(impl_->data),
-                std::cref(constraintModels),
-                std::cref(constraintDatas),
-                settings.contactRegularization);
             delassus.compute();
 
-            const Eigen::MatrixXd jacobian = pinocchio::getConstraintsJacobian(
-                impl_->model, impl_->data, constraintModels, constraintDatas);
-            Eigen::VectorXd drift = jacobian * vNew;
+            Eigen::VectorXd drift(static_cast<Eigen::Index>(3U * constraintModels.size()));
+            pinocchio::evalConstraintJacobianMatrixProduct(
+                impl_->model,
+                impl_->data,
+                constraintModels,
+                constraintDatas,
+                vNew,
+                drift,
+                pinocchio::SetTo());
             const ContactSolverConfig& contactSettings = world.GetContactSolverConfig();
             for (std::size_t i = 0; i < constraintModels.size(); ++i) {
                 const Eigen::Index normalIndex = static_cast<Eigen::Index>(3U * i + 2U);
@@ -934,7 +976,6 @@ bool PinocchioHexapodModel::stepProximal(
             }
             out.contactSetupTimeMs += elapsedMs(contactSetupStart);
 
-            pinocchio::ADMMConstraintSolver solver(drift.size());
             pinocchio::ADMMSolverSettings solverSettings;
             // Pinocchio numbers iterations from zero and loops while
             // `iterations <= max_iterations`; subtract one so the public
@@ -948,13 +989,14 @@ bool PinocchioHexapodModel::stepProximal(
             solverSettings.admm_update_rule = pinocchio::ADMMUpdateRule::SPECTRAL;
             solverSettings.admm_proximal_rule = pinocchio::ADMMProximalRule::MANUAL;
             solverSettings.mu_prox = settings.proximalMu;
+            solverSettings.anderson_capacity = 3;
             solverSettings.solve_ncp = true;
             solverSettings.stat_record = false;
-            pinocchio::ADMMSolverResult result;
+            pinocchio::ADMMSolverResult& result = impl_->contactSolverResult;
             result.resize(static_cast<std::size_t>(drift.size()));
             result.setConstraintImpulseGuess(warm);
             const auto admmStart = StepClock::now();
-            const bool converged = solver.solve(
+            const bool converged = impl_->contactSolver.solve(
                 delassus,
                 drift,
                 constraintModels,
@@ -993,15 +1035,13 @@ bool PinocchioHexapodModel::stepProximal(
                 double worstContactResidual = -1.0;
                 for (std::size_t i = 0; i < contactIds.size(); ++i) {
                     const Eigen::Index offset = static_cast<Eigen::Index>(3U * i);
-                    const Eigen::Vector3d impulse = impulses.segment<3>(
-                        offset);
+                    const Eigen::Vector3d impulse = impulses.segment<3>(offset);
                     const double coneResidual =
                         (impulse - ProjectCoulombImpulse(impulse, contactFrictions[i])).norm();
                     const double dualResidual =
                         (projectedDual - correctedVelocities).segment<3>(offset)
                             .lpNorm<Eigen::Infinity>();
-                    out.coneResidual = std::max(
-                        out.coneResidual, coneResidual);
+                    out.coneResidual = std::max(out.coneResidual, coneResidual);
                     const double contactResidual = std::max(coneResidual, dualResidual);
                     if (contactResidual > worstContactResidual) {
                         worstContactResidual = contactResidual;
@@ -1023,9 +1063,7 @@ bool PinocchioHexapodModel::stepProximal(
             for (std::size_t i = 0; i < contactIds.size(); ++i) {
                 const Eigen::Vector3d impulse = impulses.segment<3>(
                     static_cast<Eigen::Index>(3U * i));
-                impl_->contactWarmStarts[contactIds[i]] = {
-                    impulse,
-                    subDt};
+                impl_->contactWarmStarts[contactIds[i]] = {impulse, subDt};
                 activeIds.insert(contactIds[i]);
                 out.peakNormalImpulse = std::max(out.peakNormalImpulse, std::abs(impulse[2]));
                 out.peakFrictionImpulse = std::max(
@@ -1044,11 +1082,16 @@ bool PinocchioHexapodModel::stepProximal(
             // the articulated operator's workspace. Reuse that generalized
             // result instead of rebuilding and factorizing a dense mass matrix.
             vNew += delassus.getInternalData().ddq;
-        } else if (!impl_->contactWarmStarts.empty() || impl_->haveLastContactSetSignature) {
-            out.contactSetupTimeMs += elapsedMs(contactSetupStart);
-            resetWarmStarts();
         } else {
+            impl_->contactConstraintModels.clear();
+            impl_->contactConstraintDatas.clear();
+            impl_->contactTopologyIds.clear();
+            impl_->contactDelassus.reset();
+            impl_->contactDelassusRegularization = 0.0;
             out.contactSetupTimeMs += elapsedMs(contactSetupStart);
+            if (!impl_->contactWarmStarts.empty() || impl_->haveLastContactSetSignature) {
+                resetWarmStarts();
+            }
         }
 
         const auto integrationStart = StepClock::now();
