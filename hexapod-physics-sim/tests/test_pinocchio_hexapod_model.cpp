@@ -26,6 +26,59 @@ std::array<std::uint32_t, 18> SceneJointOrder(const HexapodSceneObjects& scene) 
     return ids;
 }
 
+bool CheckSelectedFootSupport(
+    const std::array<bool, 6>& enabledLegs, const char* label) {
+    World world({0.0, -9.80665, 0.0});
+    const HexapodSceneObjects scene = BuildHexapodScene(world);
+    for (const std::uint32_t bodyId : scene.body_ids) {
+        if (bodyId != scene.plane) {
+            world.GetBody(bodyId).collisionMask = 0;
+        }
+    }
+    std::size_t enabledCount = 0;
+    for (std::size_t leg = 0; leg < enabledLegs.size(); ++leg) {
+        if (enabledLegs[leg]) {
+            world.GetBody(scene.legs[leg].tibia).collisionMask = 0xFFFFFFFFU;
+            ++enabledCount;
+        }
+    }
+
+    PinocchioHexapodModel model(world, scene, SceneJointOrder(scene));
+    ProximalSolverSettings settings{};
+    int consecutiveExpectedSupport = 0;
+    for (int step = 0; step < 240; ++step) {
+        ProximalStepDiagnostics diagnostics{};
+        if (!model.stepProximal(world, 1.0 / 480.0, settings, diagnostics)) {
+            std::cerr << label << " support solve failed step=" << step
+                      << " reason=" << static_cast<int>(diagnostics.failureReason)
+                      << " constraints=" << diagnostics.contactConstraintCount
+                      << " iterations=" << diagnostics.iterations << "\n";
+            return false;
+        }
+        if (diagnostics.contactConstraintCount > enabledCount) {
+            std::cerr << label << " accepted contacts from a masked body constraints="
+                      << diagnostics.contactConstraintCount
+                      << " enabled=" << enabledCount << "\n";
+            return false;
+        }
+        if (diagnostics.contactConstraintCount == enabledCount
+            && diagnostics.peakNormalImpulse > 0.0
+            && diagnostics.coneResidual <= 1.0e-8
+            && std::isfinite(diagnostics.ncpDualResidual)
+            && std::isfinite(diagnostics.ncpComplementarityResidual)) {
+            ++consecutiveExpectedSupport;
+            if (consecutiveExpectedSupport >= 3) {
+                return true;
+            }
+        } else {
+            consecutiveExpectedSupport = 0;
+        }
+    }
+    std::cerr << label << " never established three consecutive selected-contact solves expected="
+              << enabledCount << "\n";
+    return false;
+}
+
 int Run() {
     World world({0.0, -9.80665, 0.0});
     const HexapodSceneObjects scene = BuildHexapodScene(world);
@@ -69,8 +122,17 @@ int Run() {
     }
 
     double delassusError = 0.0;
-    if (!model.validateDelassusOracle(world, 1.0e-6, delassusError)) {
+    if (!model.validateDelassusOracle(world, 1.0e-8, delassusError)) {
         std::cerr << "rigid Delassus/Cholesky oracle mismatch error=" << delassusError << "\n";
+        return 1;
+    }
+
+    if (!CheckSelectedFootSupport(
+            {true, false, false, false, false, false}, "single-foot")
+        || !CheckSelectedFootSupport(
+            {true, false, true, false, true, false}, "tripod")
+        || !CheckSelectedFootSupport(
+            {true, true, true, true, true, true}, "all-six")) {
         return 1;
     }
 

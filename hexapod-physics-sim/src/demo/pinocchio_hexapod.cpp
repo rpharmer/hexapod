@@ -467,7 +467,7 @@ bool PinocchioHexapodModel::validateDelassusOracle(
     const World& world,
     double tolerance,
     double& maxRelativeError) {
-    maxRelativeError = std::numeric_limits<double>::infinity();
+    maxRelativeError = 0.0;
     if (!(tolerance > 0.0) || !std::isfinite(tolerance)) {
         return false;
     }
@@ -483,59 +483,72 @@ bool PinocchioHexapodModel::validateDelassusOracle(
     pinocchio::forwardKinematics(impl_->model, impl_->data, q, v);
     pinocchio::updateFramePlacements(impl_->model, impl_->data);
 
-    // Two distinct universe-to-chassis point contacts avoid the rank-deficient
-    // single-contact rotational nullspace while exercising all three contact
-    // coordinates and the articulated floating-base mass matrix.
     const pinocchio::JointIndex chassis = impl_->bodies.front().jointId;
     const Body& chassisBody = world.GetBody(impl_->bodies.front().bodyId);
     const Eigen::Matrix3d rotation = ContactFrameRotation({0.0, 1.0, 0.0});
-    std::vector<pinocchio::ConstraintModel> models;
-    models.reserve(2);
-    for (const Eigen::Vector3d& offset : {
-             Eigen::Vector3d(0.0, -0.08, 0.11),
-             Eigen::Vector3d(0.12, -0.13, -0.07)}) {
-        const pinocchio::SE3 worldContact(rotation, ToEigen(chassisBody.position) + offset);
-        const pinocchio::SE3 chassisPlacement =
-            impl_->data.oMi[chassis].inverse() * worldContact;
-        models.emplace_back(pinocchio::PointContactConstraintModel(
-            impl_->model, 0, worldContact, chassis, chassisPlacement));
-    }
-
-    std::vector<pinocchio::ConstraintData> datas;
-    datas.reserve(models.size());
-    for (const pinocchio::ConstraintModel& model : models) {
-        datas.push_back(model.createData());
-    }
-    for (std::size_t i = 0; i < models.size(); ++i) {
-        models[i].calc(impl_->model, impl_->data, datas[i]);
-    }
-
     constexpr double regularization = 1.0e-10;
-    RigidDelassus rigid(
-        std::cref(impl_->model),
-        std::ref(impl_->data),
-        std::cref(models),
-        std::cref(datas),
-        regularization);
-    rigid.compute();
+    const auto makeContact = [&](pinocchio::JointIndex joint,
+                                 const Eigen::Vector3d& worldPoint) {
+        const pinocchio::SE3 worldContact(rotation, worldPoint);
+        const pinocchio::SE3 jointPlacement =
+            impl_->data.oMi[joint].inverse() * worldContact;
+        return pinocchio::ConstraintModel(pinocchio::PointContactConstraintModel(
+            impl_->model, 0, worldContact, joint, jointPlacement));
+    };
+    const auto compare = [&](PinConstraintModels models) {
+        PinConstraintDatas datas;
+        datas.reserve(models.size());
+        for (const pinocchio::ConstraintModel& model : models) {
+            datas.push_back(model.createData());
+        }
+        for (std::size_t i = 0; i < models.size(); ++i) {
+            models[i].calc(impl_->model, impl_->data, datas[i]);
+        }
 
-    pinocchio::ConstraintCholeskyDecomposition cholesky(
-        impl_->model,
-        impl_->data,
-        models,
-        datas,
-        regularization);
-    cholesky.compute(impl_->model, impl_->data, models, datas, regularization);
-    const Eigen::MatrixXd production = rigid.matrix(false, true);
-    const Eigen::MatrixXd oracle =
-        cholesky.getDelassusOperatorCholeskyExpression().matrix(false, true);
-    if (production.rows() != oracle.rows() || production.cols() != oracle.cols()
-        || !production.array().isFinite().all() || !oracle.array().isFinite().all()) {
+        RigidDelassus rigid(
+            std::cref(impl_->model),
+            std::ref(impl_->data),
+            std::cref(models),
+            std::cref(datas),
+            regularization);
+        rigid.compute();
+        pinocchio::ConstraintCholeskyDecomposition cholesky(
+            impl_->model, impl_->data, models, datas, regularization);
+        cholesky.compute(impl_->model, impl_->data, models, datas, regularization);
+        const Eigen::MatrixXd production = rigid.matrix(false, true);
+        const Eigen::MatrixXd oracle =
+            cholesky.getDelassusOperatorCholeskyExpression().matrix(false, true);
+        if (production.rows() != oracle.rows() || production.cols() != oracle.cols()
+            || !production.array().isFinite().all() || !oracle.array().isFinite().all()) {
+            return false;
+        }
+        const double scale = std::max(1.0, oracle.cwiseAbs().maxCoeff());
+        const double relativeError =
+            (production - oracle).cwiseAbs().maxCoeff() / scale;
+        maxRelativeError = std::max(maxRelativeError, relativeError);
+        return std::isfinite(relativeError) && relativeError <= tolerance;
+    };
+
+    const Eigen::Vector3d chassisPoint =
+        ToEigen(chassisBody.position) + Eigen::Vector3d(0.0, -0.08, 0.11);
+    const pinocchio::ConstraintModel chassisContact = makeContact(chassis, chassisPoint);
+    if (!compare({chassisContact})
+        || !compare({
+            chassisContact,
+            makeContact(
+                chassis,
+                ToEigen(chassisBody.position) + Eigen::Vector3d(0.12, -0.13, -0.07))})
+        || !compare({chassisContact, chassisContact})) {
         return false;
     }
-    const double scale = std::max(1.0, oracle.cwiseAbs().maxCoeff());
-    maxRelativeError = (production - oracle).cwiseAbs().maxCoeff() / scale;
-    return std::isfinite(maxRelativeError) && maxRelativeError <= tolerance;
+
+    PinConstraintModels allFeet;
+    allFeet.reserve(6);
+    for (std::size_t leg = 0; leg < 6; ++leg) {
+        const pinocchio::JointIndex tibiaJoint = impl_->wireJoints[3U * leg + 2U];
+        allFeet.push_back(makeContact(tibiaJoint, impl_->data.oMi[tibiaJoint].translation()));
+    }
+    return compare(std::move(allFeet));
 }
 
 void PinocchioHexapodModel::resetWarmStarts() {
