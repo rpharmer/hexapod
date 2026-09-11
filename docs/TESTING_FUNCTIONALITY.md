@@ -276,6 +276,8 @@ These are the highest-value tests for tracking improvements across commits.
 - Output:
   - prints useful numeric values (distance deltas, path, yaw delta, avg/peak yaw rate, etc.)
   - exits non-zero if assertions fail
+  - `HEXAPOD_WALK_TEST_CHILD_STDIO=1` exposes simulator diagnostics during
+    failure tracing; child output remains quiet by default
 
 ### 3) `test_physics_sim_walk_stability` and related motion checks
 
@@ -296,11 +298,18 @@ These are the highest-value tests for tracking improvements across commits.
 - This is built as a diagnostic executable but is not a default CTest until the
   proximal locomotion gates pass.
 - Purpose:
-  - capture the exact `JointTargets` advanced by a deterministic legacy run
-  - replay the identical target stream through `pinocchio-proximal`
+  - capture the exact `JointTargets` produced by a physically coupled legacy
+    reference run
+  - replay the identical target stream through `pinocchio-proximal`, or through
+    `legacy-pgs` as a control experiment
   - separate controller/safety feedback from contact-solver failures
   - report healthy, recovered, held, and unsupported samples for stand,
     forward, reverse, strafe, diagonal, turn-in-place, and stand transitions
+  - report segment-correct body-frame progress, lateral drift, horizontal path,
+    yaw change, and body-height error for quantitative behaviour gating
+  - report capture-side motion inhibition, WALK-mode residency, and joint-target
+    variation so a frozen or safety-inhibited command stream cannot masquerade as
+    a contact-solver locomotion result
   - report p99 and maximum local step round-trip time; this includes loopback
     transport and is therefore a conservative proxy for the 4 ms physics gate
   - break solver p99 time into whole-body dynamics, contact setup, ADMM, and
@@ -313,7 +322,12 @@ These are the highest-value tests for tracking improvements across commits.
   - `HEXAPOD_EXACT_REPLAY_MOTION_CASE=forward|reverse|strafe|diagonal|turn_in_place`
   - `HEXAPOD_EXACT_REPLAY_STAND_FRAMES`, `HEXAPOD_EXACT_REPLAY_MOTION_FRAMES`,
     and `HEXAPOD_EXACT_REPLAY_TRANSITION_FRAMES`
+  - `HEXAPOD_EXACT_REPLAY_BODY_HEIGHT_M` (default `0.06`)
+  - `HEXAPOD_EXACT_REPLAY_LEGACY=1` replays through the legacy solver instead
+    of the proximal solver, using the same captured targets
   - `HEXAPOD_EXACT_REPLAY_SOLVER_ITERATIONS`
+  - `HEXAPOD_EXACT_REPLAY_PROXIMAL_MU` and
+    `HEXAPOD_EXACT_REPLAY_CONTACT_REGULARIZATION`
   - `HEXAPOD_EXACT_REPLAY_ABSOLUTE_TOLERANCE` and
     `HEXAPOD_EXACT_REPLAY_RELATIVE_TOLERANCE`
   - `HEXAPOD_EXACT_REPLAY_PERIOD_US=4166` measures the approximately 240 Hz
@@ -336,7 +350,10 @@ These are the highest-value tests for tracking improvements across commits.
   - advanced solver diagnostics can override `HEXAPOD_PINOCCHIO_ANDERSON_CAPACITY`,
     `HEXAPOD_PINOCCHIO_RETRY_ANDERSON_CAPACITY` (disables the adaptive retry choice),
     `HEXAPOD_PINOCCHIO_RATIO_PRIMAL_DUAL`, `HEXAPOD_PINOCCHIO_ADMM_TAU`, and
-    `HEXAPOD_PINOCCHIO_SPECTRAL_POWER` without changing production defaults
+    `HEXAPOD_PINOCCHIO_SPECTRAL_POWER`, while `HEXAPOD_PINOCCHIO_WARMSTART_RHO=0`
+    disables spectral-penalty persistence; `HEXAPOD_PINOCCHIO_SERVO_GAIN_SCALE`
+    isolates constrained-load calibration without changing the motor torque-speed
+    envelope. These overrides do not change production defaults.
   - `HEXAPOD_EXACT_REPLAY_ENFORCE_GATES=1` makes any recovered, held,
     unsupported, or failed-read sample fail the executable. Without it, the
     executable validates capture/replay accounting and emits diagnostic results.

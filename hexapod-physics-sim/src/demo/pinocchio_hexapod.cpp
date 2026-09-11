@@ -222,6 +222,8 @@ struct PinocchioHexapodModel::Impl {
     double ratioPrimalDual = 5.0;
     double admmTau = 0.7;
     double spectralRhoPowerInit = 0.2;
+    double servoGainScale = 1.0;
+    bool warmstartRho = true;
     std::uint64_t contactOrderSeed = 0;
 
     struct WarmContact {
@@ -277,6 +279,11 @@ struct PinocchioHexapodModel::Impl {
             "HEXAPOD_PINOCCHIO_ADMM_TAU", admmTau, 0.01, 1.0);
         spectralRhoPowerInit = BoundedEnvDouble(
             "HEXAPOD_PINOCCHIO_SPECTRAL_POWER", spectralRhoPowerInit, 0.0, 1.0);
+        servoGainScale = BoundedEnvDouble(
+            "HEXAPOD_PINOCCHIO_SERVO_GAIN_SCALE", servoGainScale, 0.01, 100.0);
+        if (const char* value = std::getenv("HEXAPOD_PINOCCHIO_WARMSTART_RHO")) {
+            warmstartRho = value[0] != '\0' && value[0] != '0';
+        }
 
         const Body& chassis = world.GetBody(scene.body);
         const pinocchio::JointIndex root = model.addJoint(
@@ -747,8 +754,9 @@ bool PinocchioHexapodModel::stepProximal(
             // standing inertia. Recomputing CRBA every substep changed the
             // controller gains with pose and duplicated ABA's dynamics work.
             const double reflectedInertia = impl_->wireNominalInertias[i];
-            const double requested = reflectedInertia * omegaN * omegaN * error
-                - 2.0 * zeta * omegaN * reflectedInertia * v[vi];
+            const double requested = impl_->servoGainScale
+                * (reflectedInertia * omegaN * omegaN * error
+                    - 2.0 * zeta * omegaN * reflectedInertia * v[vi]);
             double available = stallTorque;
             if (requested * v[vi] > 0.0) {
                 available *= std::max(0.0, 1.0 - std::abs(v[vi]) / noLoadSpeed);
@@ -1118,7 +1126,7 @@ bool PinocchioHexapodModel::stepProximal(
             solverSettings.ratio_primal_dual = impl_->ratioPrimalDual;
             solverSettings.tau = impl_->admmTau;
             solverSettings.spectral_rho_power_init = impl_->spectralRhoPowerInit;
-            solverSettings.warmstart_rho_with_previous_result = true;
+            solverSettings.warmstart_rho_with_previous_result = impl_->warmstartRho;
             solverSettings.solve_ncp = true;
             solverSettings.stat_record = false;
             pinocchio::ADMMSolverResult& result = impl_->contactSolverResult;

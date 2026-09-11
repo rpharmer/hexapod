@@ -50,6 +50,8 @@ constexpr std::array<const char*, kPhaseCount> kPhaseNames{
 struct CapturedFrame {
     JointTargets targets{};
     ReplayPhase phase{ReplayPhase::Stand};
+    bool inhibit_motion{false};
+    bool walk_mode{false};
 };
 
 struct PhaseResult {
@@ -64,12 +66,42 @@ struct PhaseResult {
     double max_ncp_dual_residual{0.0};
     double max_ncp_complementarity_residual{0.0};
     double max_contact_penetration{0.0};
-    std::optional<Vec3> first_valid_position{};
-    std::optional<Vec3> last_valid_position{};
+    double max_body_height_error{0.0};
     double completed_delta_x_sum{0.0};
     double completed_delta_y_sum{0.0};
+    double completed_body_forward_sum{0.0};
+    double completed_body_lateral_sum{0.0};
+    double completed_yaw_delta_sum{0.0};
+    double completed_horizontal_path_sum{0.0};
+    double completed_horizontal_displacement_sum{0.0};
     std::uint64_t completed_trajectories{0};
 };
+
+struct PhaseCommand {
+    double vx_mps{0.0};
+    double vy_mps{0.0};
+    double yaw_rate_radps{0.0};
+};
+
+PhaseCommand phaseCommand(const ReplayPhase phase) {
+    switch (phase) {
+    case ReplayPhase::Forward:
+        return {0.12, 0.0, 0.0};
+    case ReplayPhase::Reverse:
+        return {-0.12, 0.0, 0.0};
+    case ReplayPhase::Strafe:
+        return {0.0, 0.10, 0.0};
+    case ReplayPhase::Diagonal:
+        return {0.085, 0.085, 0.0};
+    case ReplayPhase::TurnInPlace:
+        return {0.0, 0.0, 0.45};
+    case ReplayPhase::Stand:
+    case ReplayPhase::Transition:
+    case ReplayPhase::Count:
+        return {};
+    }
+    return {};
+}
 
 struct ReplayResult {
     std::array<PhaseResult, kPhaseCount> phases{};
@@ -134,6 +166,13 @@ public:
     }
 
     void setPhase(const ReplayPhase phase) { phase_ = phase; }
+
+    void annotateLastFrame(const SafetyState& safety, const ControlStatus& status) {
+        if (!frames_.empty()) {
+            frames_.back().inhibit_motion = safety.inhibit_motion;
+            frames_.back().walk_mode = status.active_mode == RobotMode::WALK;
+        }
+    }
 
     const std::vector<CapturedFrame>& frames() const { return frames_; }
 
@@ -388,6 +427,7 @@ void runRuntimeFrame(RobotRuntime& runtime,
     runtime.estimatorStep();
     runtime.safetyStep();
     runtime.controlStep();
+    bridge.annotateLastFrame(runtime.getSafetyState(), runtime.getStatus());
 }
 
 std::vector<CapturedFrame> captureCommands(const physics_sim_test_utils::HarnessSettings& harness,
@@ -446,18 +486,24 @@ std::vector<CapturedFrame> captureCommands(const physics_sim_test_utils::Harness
 ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
                             const int port,
                             const int replay_period_us,
+                            const physics_sim::PhysicsSolverMode solver_mode,
                             const int solver_iterations,
+                            const double body_height_m,
+                            const double proximal_mu,
+                            const double contact_regularization,
                             const double absolute_tolerance,
                             const double relative_tolerance,
                             const std::uint64_t perturbation_seed,
                             const double perturbation_scale) {
-    PhysicsSimSolverSettings proximal{};
-    proximal.mode = physics_sim::PhysicsSolverMode::PinocchioProximal;
-    proximal.iterations = solver_iterations;
-    proximal.absolute_tolerance = static_cast<float>(absolute_tolerance);
-    proximal.relative_tolerance = static_cast<float>(relative_tolerance);
+    PhysicsSimSolverSettings solver{};
+    solver.mode = solver_mode;
+    solver.iterations = solver_iterations;
+    solver.proximal_mu = static_cast<float>(proximal_mu);
+    solver.contact_regularization = static_cast<float>(contact_regularization);
+    solver.absolute_tolerance = static_cast<float>(absolute_tolerance);
+    solver.relative_tolerance = static_cast<float>(relative_tolerance);
     PhysicsSimBridge bridge(
-        "127.0.0.1", port, replay_period_us, proximal, nullptr);
+        "127.0.0.1", port, replay_period_us, solver, nullptr);
     if (!bridge.init()) {
         throw std::runtime_error("proximal replay bridge failed to initialise");
     }
@@ -490,7 +536,47 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
     solver_admm_times_ms.reserve(frames.size());
     solver_integration_times_ms.reserve(frames.size());
     solver_total_step_times_ms.reserve(frames.size());
+
+    struct ActivePhaseSegment {
+        ReplayPhase phase{ReplayPhase::Stand};
+        std::optional<Vec3> start_position{};
+        std::optional<Vec3> last_position{};
+        double start_yaw{0.0};
+        double last_raw_yaw{0.0};
+        double accumulated_yaw{0.0};
+        double horizontal_path{0.0};
+    };
+    std::optional<ActivePhaseSegment> active_segment{};
+    const auto finishSegment = [&]() {
+        if (!active_segment.has_value()
+            || !active_segment->start_position.has_value()
+            || !active_segment->last_position.has_value()) {
+            active_segment.reset();
+            return;
+        }
+        PhaseResult& phase = result.phases[static_cast<std::size_t>(active_segment->phase)];
+        const double dx = active_segment->last_position->x
+            - active_segment->start_position->x;
+        const double dy = active_segment->last_position->y
+            - active_segment->start_position->y;
+        const double c = std::cos(active_segment->start_yaw);
+        const double s = std::sin(active_segment->start_yaw);
+        phase.completed_delta_x_sum += dx;
+        phase.completed_delta_y_sum += dy;
+        phase.completed_body_forward_sum += c * dx + s * dy;
+        phase.completed_body_lateral_sum += -s * dx + c * dy;
+        phase.completed_yaw_delta_sum += active_segment->accumulated_yaw;
+        phase.completed_horizontal_path_sum += active_segment->horizontal_path;
+        phase.completed_horizontal_displacement_sum += std::hypot(dx, dy);
+        ++phase.completed_trajectories;
+        active_segment.reset();
+    };
+
     for (const CapturedFrame& frame : frames) {
+        if (!active_segment.has_value() || active_segment->phase != frame.phase) {
+            finishSegment();
+            active_segment = ActivePhaseSegment{frame.phase};
+        }
         PhaseResult& phase = result.phases[static_cast<std::size_t>(frame.phase)];
         ++result.frames;
         ++phase.frames;
@@ -514,10 +600,24 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
             const Vec3 position{state.body_twist_state.body_trans_m.x,
                                 state.body_twist_state.body_trans_m.y,
                                 state.body_twist_state.body_trans_m.z};
-            if (!phase.first_valid_position.has_value()) {
-                phase.first_valid_position = position;
+            const double yaw = state.body_twist_state.twist_pos_rad.z;
+            phase.max_body_height_error = std::max(
+                phase.max_body_height_error,
+                std::abs(position.z - body_height_m));
+            if (!active_segment->start_position.has_value()) {
+                active_segment->start_position = position;
+                active_segment->start_yaw = yaw;
+                active_segment->last_raw_yaw = yaw;
+            } else if (active_segment->last_position.has_value()) {
+                active_segment->horizontal_path += std::hypot(
+                    position.x - active_segment->last_position->x,
+                    position.y - active_segment->last_position->y);
+                active_segment->accumulated_yaw += std::remainder(
+                    yaw - active_segment->last_raw_yaw,
+                    6.28318530717958647692);
+                active_segment->last_raw_yaw = yaw;
             }
-            phase.last_valid_position = position;
+            active_segment->last_position = position;
         }
 
         const auto telemetry = bridge.latestSolverTelemetry();
@@ -616,16 +716,7 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
     assignTimingSummary(solver_total_step_times_ms,
                         result.p99_solver_total_step_time_ms,
                         ignoredMaximum);
-    for (PhaseResult& phase : result.phases) {
-        if (phase.first_valid_position.has_value()
-            && phase.last_valid_position.has_value()) {
-            phase.completed_delta_x_sum =
-                phase.last_valid_position->x - phase.first_valid_position->x;
-            phase.completed_delta_y_sum =
-                phase.last_valid_position->y - phase.first_valid_position->y;
-            phase.completed_trajectories = 1;
-        }
-    }
+    finishSegment();
     return result;
 }
 
@@ -682,15 +773,23 @@ void accumulateReplayResult(ReplayResult& total, const ReplayResult& sample) {
             in.max_ncp_complementarity_residual);
         out.max_contact_penetration = std::max(
             out.max_contact_penetration, in.max_contact_penetration);
+        out.max_body_height_error = std::max(
+            out.max_body_height_error, in.max_body_height_error);
         out.completed_delta_x_sum += in.completed_delta_x_sum;
         out.completed_delta_y_sum += in.completed_delta_y_sum;
+        out.completed_body_forward_sum += in.completed_body_forward_sum;
+        out.completed_body_lateral_sum += in.completed_body_lateral_sum;
+        out.completed_yaw_delta_sum += in.completed_yaw_delta_sum;
+        out.completed_horizontal_path_sum += in.completed_horizontal_path_sum;
+        out.completed_horizontal_displacement_sum +=
+            in.completed_horizontal_displacement_sum;
         out.completed_trajectories += in.completed_trajectories;
     }
 }
 
 std::string metricsJson(const ReplayResult& result,
                         const std::uint64_t command_hash,
-                        const std::size_t captured_frames,
+                        const std::vector<CapturedFrame>& captured_frames,
                         const int perturbation_seed_count,
                         const int perturbation_seed_offset,
                         const double perturbation_scale,
@@ -698,11 +797,65 @@ std::string metricsJson(const ReplayResult& result,
                         const bool fixed_contact_order,
                         const int replay_period_us,
                         const int solver_iterations,
+                        const double body_height_m,
+                        const double proximal_mu,
+                        const double contact_regularization,
                         const double absolute_tolerance,
                         const double relative_tolerance) {
     std::ostringstream out;
+    struct CapturedPhaseMetrics {
+        std::array<double, 18> minimum{};
+        std::array<double, 18> maximum{};
+        std::array<double, 18> previous{};
+        bool initialized{false};
+        std::uint64_t inhibited_frames{0};
+        std::uint64_t walk_mode_frames{0};
+        std::uint64_t moving_target_frames{0};
+        double max_target_step{0.0};
+        double max_target_span{0.0};
+    };
+    std::array<CapturedPhaseMetrics, kPhaseCount> captured_phase_metrics{};
+    for (const CapturedFrame& frame : captured_frames) {
+        CapturedPhaseMetrics& metrics =
+            captured_phase_metrics[static_cast<std::size_t>(frame.phase)];
+        metrics.inhibited_frames += frame.inhibit_motion ? 1U : 0U;
+        metrics.walk_mode_frames += frame.walk_mode ? 1U : 0U;
+        std::array<double, 18> current{};
+        std::size_t joint_index = 0;
+        for (const LegState& leg : frame.targets.leg_states) {
+            for (const JointState& joint : leg.joint_state) {
+                current[joint_index++] = joint.pos_rad.value;
+            }
+        }
+        if (!metrics.initialized) {
+            metrics.minimum = current;
+            metrics.maximum = current;
+            metrics.previous = current;
+            metrics.initialized = true;
+            continue;
+        }
+        double frame_max_step = 0.0;
+        for (std::size_t i = 0; i < current.size(); ++i) {
+            metrics.minimum[i] = std::min(metrics.minimum[i], current[i]);
+            metrics.maximum[i] = std::max(metrics.maximum[i], current[i]);
+            frame_max_step = std::max(
+                frame_max_step, std::abs(current[i] - metrics.previous[i]));
+            metrics.previous[i] = current[i];
+        }
+        metrics.max_target_step = std::max(metrics.max_target_step, frame_max_step);
+        metrics.moving_target_frames += frame_max_step > 1.0e-6 ? 1U : 0U;
+    }
+    for (CapturedPhaseMetrics& metrics : captured_phase_metrics) {
+        if (!metrics.initialized) {
+            continue;
+        }
+        for (std::size_t i = 0; i < metrics.minimum.size(); ++i) {
+            metrics.max_target_span = std::max(
+                metrics.max_target_span, metrics.maximum[i] - metrics.minimum[i]);
+        }
+    }
     out << std::setprecision(9)
-        << "{\"captured_frames\":" << captured_frames
+        << "{\"captured_frames\":" << captured_frames.size()
         << ",\"replayed_frames\":" << result.frames
         << ",\"telemetry_frames\":" << result.telemetry_frames
         << ",\"command_hash\":\"" << std::hex << command_hash << std::dec << "\""
@@ -713,6 +866,9 @@ std::string metricsJson(const ReplayResult& result,
         << ",\"fixed_contact_order\":" << (fixed_contact_order ? "true" : "false")
         << ",\"replay_period_us\":" << replay_period_us
         << ",\"solver_iteration_limit\":" << solver_iterations
+        << ",\"commanded_body_height_m\":" << body_height_m
+        << ",\"proximal_mu\":" << proximal_mu
+        << ",\"contact_regularization\":" << contact_regularization
         << ",\"absolute_tolerance\":" << absolute_tolerance
         << ",\"relative_tolerance\":" << relative_tolerance
         << ",\"healthy\":" << result.healthy
@@ -746,12 +902,45 @@ std::string metricsJson(const ReplayResult& result,
             out << ',';
         }
         const PhaseResult& phase = result.phases[i];
+        const CapturedPhaseMetrics& captured = captured_phase_metrics[i];
         const double dx = phase.completed_trajectories == 0 ? 0.0
             : phase.completed_delta_x_sum
                 / static_cast<double>(phase.completed_trajectories);
         const double dy = phase.completed_trajectories == 0 ? 0.0
             : phase.completed_delta_y_sum
                 / static_cast<double>(phase.completed_trajectories);
+        const double body_forward = phase.completed_trajectories == 0 ? 0.0
+            : phase.completed_body_forward_sum
+                / static_cast<double>(phase.completed_trajectories);
+        const double body_lateral = phase.completed_trajectories == 0 ? 0.0
+            : phase.completed_body_lateral_sum
+                / static_cast<double>(phase.completed_trajectories);
+        const double yaw_delta = phase.completed_trajectories == 0 ? 0.0
+            : phase.completed_yaw_delta_sum
+                / static_cast<double>(phase.completed_trajectories);
+        const double horizontal_path = phase.completed_trajectories == 0 ? 0.0
+            : phase.completed_horizontal_path_sum
+                / static_cast<double>(phase.completed_trajectories);
+        const double horizontal_displacement = phase.completed_trajectories == 0 ? 0.0
+            : phase.completed_horizontal_displacement_sum
+                / static_cast<double>(phase.completed_trajectories);
+        const PhaseCommand command = phaseCommand(static_cast<ReplayPhase>(i));
+        const double frames_per_trajectory = phase.completed_trajectories == 0 ? 0.0
+            : static_cast<double>(phase.frames)
+                / static_cast<double>(phase.completed_trajectories);
+        const double commanded_translation = std::hypot(command.vx_mps, command.vy_mps)
+            * frames_per_trajectory * static_cast<double>(replay_period_us) * 1.0e-6;
+        const double commanded_yaw = command.yaw_rate_radps
+            * frames_per_trajectory * static_cast<double>(replay_period_us) * 1.0e-6;
+        double command_progress = 0.0;
+        double command_lateral = 0.0;
+        const double command_speed = std::hypot(command.vx_mps, command.vy_mps);
+        if (command_speed > 0.0) {
+            const double ux = command.vx_mps / command_speed;
+            const double uy = command.vy_mps / command_speed;
+            command_progress = ux * body_forward + uy * body_lateral;
+            command_lateral = -uy * body_forward + ux * body_lateral;
+        }
         out << "{\"name\":\"" << kPhaseNames[i]
             << "\",\"frames\":" << phase.frames
             << ",\"healthy\":" << phase.healthy
@@ -759,14 +948,30 @@ std::string metricsJson(const ReplayResult& result,
             << ",\"held\":" << phase.held
             << ",\"unsupported\":" << phase.unsupported
             << ",\"read_failures\":" << phase.read_failures
+            << ",\"captured_inhibited_frames\":" << captured.inhibited_frames
+            << ",\"captured_walk_mode_frames\":" << captured.walk_mode_frames
+            << ",\"captured_moving_target_frames\":" << captured.moving_target_frames
+            << ",\"captured_max_target_step_rad\":" << captured.max_target_step
+            << ",\"captured_max_target_span_rad\":" << captured.max_target_span
             << ",\"solver_not_converged\":" << phase.solver_not_converged
             << ",\"max_iterations\":" << phase.max_iterations
             << ",\"max_ncp_dual_residual\":" << phase.max_ncp_dual_residual
             << ",\"max_ncp_complementarity_residual\":"
             << phase.max_ncp_complementarity_residual
             << ",\"max_contact_penetration_m\":" << phase.max_contact_penetration
+            << ",\"max_body_height_error_m\":" << phase.max_body_height_error
             << ",\"valid_delta_x_m\":" << dx
-            << ",\"valid_delta_y_m\":" << dy << '}';
+            << ",\"valid_delta_y_m\":" << dy
+            << ",\"body_forward_delta_m\":" << body_forward
+            << ",\"body_lateral_delta_m\":" << body_lateral
+            << ",\"command_progress_m\":" << command_progress
+            << ",\"command_lateral_m\":" << command_lateral
+            << ",\"commanded_translation_m\":" << commanded_translation
+            << ",\"yaw_delta_rad\":" << yaw_delta
+            << ",\"commanded_yaw_rad\":" << commanded_yaw
+            << ",\"horizontal_path_m\":" << horizontal_path
+            << ",\"horizontal_displacement_m\":" << horizontal_displacement
+            << ",\"completed_trajectories\":" << phase.completed_trajectories << '}';
     }
     out << "]}";
     return out.str();
@@ -798,6 +1003,12 @@ int main(int argc, char** argv) {
             positiveEnvOrDefault("HEXAPOD_EXACT_REPLAY_SOLVER_ITERATIONS", 50);
         const int replay_period_us = positiveEnvOrDefault(
             "HEXAPOD_EXACT_REPLAY_PERIOD_US", harness.bus_loop_period_us);
+        const double body_height_m = positiveDoubleEnvOrDefault(
+            "HEXAPOD_EXACT_REPLAY_BODY_HEIGHT_M", 0.06);
+        const double proximal_mu = positiveDoubleEnvOrDefault(
+            "HEXAPOD_EXACT_REPLAY_PROXIMAL_MU", 1.0e-6);
+        const double contact_regularization = positiveDoubleEnvOrDefault(
+            "HEXAPOD_EXACT_REPLAY_CONTACT_REGULARIZATION", 1.0e-10);
         const double absolute_tolerance = positiveDoubleEnvOrDefault(
             "HEXAPOD_EXACT_REPLAY_ABSOLUTE_TOLERANCE", 1.0e-8);
         const double relative_tolerance = positiveDoubleEnvOrDefault(
@@ -812,6 +1023,10 @@ int main(int argc, char** argv) {
             "HEXAPOD_EXACT_REPLAY_FIXED_INITIAL_POSE");
         const bool fixed_contact_order = envEnabled(
             "HEXAPOD_EXACT_REPLAY_FIXED_CONTACT_ORDER");
+        const physics_sim::PhysicsSolverMode replay_solver_mode =
+            envEnabled("HEXAPOD_EXACT_REPLAY_LEGACY")
+                ? physics_sim::PhysicsSolverMode::LegacyPgs
+                : physics_sim::PhysicsSolverMode::PinocchioProximal;
         if (perturbation_seed_count > 1000) {
             throw std::runtime_error(
                 "HEXAPOD_EXACT_REPLAY_PERTURBATION_SEEDS must be at most 1000");
@@ -832,7 +1047,7 @@ int main(int argc, char** argv) {
                 stand_frames,
                 motion_frames,
                 transition_frames,
-                0.14,
+                body_height_m,
                 selected_phase);
         } catch (...) {
             stopSimulator(capture_pid);
@@ -870,7 +1085,11 @@ int main(int argc, char** argv) {
                     frames,
                     replay_port,
                     replay_period_us,
+                    replay_solver_mode,
                     solver_iterations,
+                    body_height_m,
+                    proximal_mu,
+                    contact_regularization,
                     absolute_tolerance,
                     relative_tolerance,
                     pose_seed,
@@ -911,7 +1130,7 @@ int main(int argc, char** argv) {
         const bool passed = accounting_ok && gates_ok && safety_gates_ok;
         const std::string metrics = metricsJson(result,
                                                 command_hash,
-                                                frames.size(),
+                                                frames,
                                                 perturbation_seed_count,
                                                 perturbation_seed_offset,
                                                 perturbation_scale,
@@ -919,12 +1138,19 @@ int main(int argc, char** argv) {
                                                 fixed_contact_order,
                                                 replay_period_us,
                                                 solver_iterations,
+                                                body_height_m,
+                                                proximal_mu,
+                                                contact_regularization,
                                                 absolute_tolerance,
                                                 relative_tolerance);
         if (emit_metrics_json) {
             std::cout << "{\"suite\":\"physics_sim_exact_command_replay\","
-                         "\"case\":\"legacy_capture_to_proximal\",\"passed\":"
-                      << (passed ? "true" : "false") << ",\"metrics\":" << metrics << "}\n";
+                         "\"case\":\"deterministic_capture_replay\",\"solver_mode\":\""
+                      << (replay_solver_mode == physics_sim::PhysicsSolverMode::LegacyPgs
+                              ? "legacy-pgs"
+                              : "pinocchio-proximal")
+                      << "\",\"passed\":" << (passed ? "true" : "false")
+                      << ",\"metrics\":" << metrics << "}\n";
         } else {
             std::cout << "exact command replay: " << (passed ? "PASS" : "FAIL")
                       << " captured=" << frames.size() << " hash=" << std::hex << command_hash

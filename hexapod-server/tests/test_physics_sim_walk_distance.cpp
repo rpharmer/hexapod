@@ -1142,7 +1142,10 @@ int main(int argc, char** argv) {
         return 2;
     }
     if (pid == 0) {
-        physics_sim_test_utils::quietChildProcessStdIo();
+        if (const char* value = std::getenv("HEXAPOD_WALK_TEST_CHILD_STDIO");
+            value == nullptr || value[0] == '\0' || value[0] == '0') {
+            physics_sim_test_utils::quietChildProcessStdIo();
+        }
         const std::string port_str = std::to_string(kPort);
         ::execl(sim_exe,
                 sim_exe,
