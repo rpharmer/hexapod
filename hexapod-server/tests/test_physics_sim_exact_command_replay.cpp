@@ -267,7 +267,9 @@ pid_t launchSimulator(const char* sim_exe, const int port) {
     if (pid != 0) {
         return pid;
     }
-    physics_sim_test_utils::quietChildProcessStdIo();
+    if (!envEnabled("HEXAPOD_EXACT_REPLAY_CHILD_STDIO")) {
+        physics_sim_test_utils::quietChildProcessStdIo();
+    }
     const std::string port_text = std::to_string(port);
     ::execl(sim_exe, sim_exe, "--serve", "--serve-port", port_text.c_str(), nullptr);
     std::perror("execl");

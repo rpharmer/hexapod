@@ -49,6 +49,11 @@ are `SolverIterations`, `ProximalMu`, `AbsoluteTolerance`,
 `RelativeTolerance`, and `ContactRegularization`. The shipped configurations
 keep mode `0` until the locomotion acceptance gates pass.
 
+Proximal mode limits internal integration substeps to `1/480 s`, independently
+of the command cadence; legacy PGS retains its `1/240 s` maximum. The spectral
+ADMM defaults use a primal/dual ratio of `5`, relaxation `tau = 0.7`, and an
+Anderson history of `3`.
+
 In proximal mode, `RecoveredRetry` samples remain usable but are logged as
 warnings. `HeldLastGood` and `UnsupportedIsland` responses are rejected by the
 server bridge as invalid sensor reads, so they cannot feed the estimator or gait

@@ -316,8 +316,14 @@ These are the highest-value tests for tracking improvements across commits.
   - `HEXAPOD_EXACT_REPLAY_SOLVER_ITERATIONS`
   - `HEXAPOD_EXACT_REPLAY_ABSOLUTE_TOLERANCE` and
     `HEXAPOD_EXACT_REPLAY_RELATIVE_TOLERANCE`
-  - `HEXAPOD_EXACT_REPLAY_PERIOD_US=4166` measures the approximately 240 Hz,
-    single-substep production performance path while preserving the captured targets
+  - `HEXAPOD_EXACT_REPLAY_PERIOD_US=4166` measures the approximately 240 Hz
+    production command cadence while preserving the captured targets; proximal mode
+    advances it as two internal substeps capped at `1/480 s`
+  - `HEXAPOD_EXACT_REPLAY_CHILD_STDIO=1` preserves simulator diagnostics; combine
+    it with `HEXAPOD_PROXIMAL_TRACE_FAILURES=1` to inspect held-state failures
+  - advanced solver diagnostics can override `HEXAPOD_PINOCCHIO_ANDERSON_CAPACITY`,
+    `HEXAPOD_PINOCCHIO_RATIO_PRIMAL_DUAL`, `HEXAPOD_PINOCCHIO_ADMM_TAU`, and
+    `HEXAPOD_PINOCCHIO_SPECTRAL_POWER` without changing production defaults
   - `HEXAPOD_EXACT_REPLAY_ENFORCE_GATES=1` makes any recovered, held,
     unsupported, or failed-read sample fail the executable. Without it, the
     executable validates capture/replay accounting and emits diagnostic results.

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <functional>
 #include <limits>
 #include <stdexcept>
@@ -63,6 +64,20 @@ pinocchio::Inertia BodyInertia(const Body& body) {
         throw std::runtime_error("dynamic body has singular local inertia");
     }
     return {body.mass, Eigen::Vector3d::Zero(), ToEigen(inertia_local)};
+}
+
+double BoundedEnvDouble(
+    const char* name, double fallback, double minimum, double maximum) {
+    const char* value = std::getenv(name);
+    if (value == nullptr) {
+        return fallback;
+    }
+    char* end = nullptr;
+    const double parsed = std::strtod(value, &end);
+    return end != value && *end == '\0' && std::isfinite(parsed)
+            && parsed >= minimum && parsed <= maximum
+        ? parsed
+        : fallback;
 }
 
 Quat FromEigenRotation(const Eigen::Matrix3d& rotation) {
@@ -189,12 +204,17 @@ struct PinocchioHexapodModel::Impl {
     double contactDelassusRegularization = 0.0;
     pinocchio::ADMMConstraintSolver contactSolver{72};
     pinocchio::ADMMSolverResult contactSolverResult{};
+    std::size_t andersonCapacity = 3;
+    double ratioPrimalDual = 5.0;
+    double admmTau = 0.7;
+    double spectralRhoPowerInit = 0.2;
 
-    struct WarmImpulse {
-        Eigen::Vector3d value = Eigen::Vector3d::Zero();
+    struct WarmContact {
+        Eigen::Vector3d impulse = Eigen::Vector3d::Zero();
+        Eigen::Vector3d velocity = Eigen::Vector3d::Zero();
         double dt = 0.0;
     };
-    std::unordered_map<std::uint64_t, WarmImpulse> contactWarmStarts{};
+    std::unordered_map<std::uint64_t, WarmContact> contactWarmStarts{};
     std::uint64_t lastContactSetSignature = 0;
     bool haveLastContactSetSignature = false;
     std::vector<double> lastGoodQ{};
@@ -214,6 +234,19 @@ struct PinocchioHexapodModel::Impl {
         const HexapodSceneObjects& scene,
         const std::array<std::uint32_t, 18>& servoJointIds) {
         wireServoIds = servoJointIds;
+        if (const char* value = std::getenv("HEXAPOD_PINOCCHIO_ANDERSON_CAPACITY")) {
+            char* end = nullptr;
+            const long parsed = std::strtol(value, &end, 10);
+            if (end != value && *end == '\0' && parsed >= 0 && parsed <= 16) {
+                andersonCapacity = static_cast<std::size_t>(parsed);
+            }
+        }
+        ratioPrimalDual = BoundedEnvDouble(
+            "HEXAPOD_PINOCCHIO_RATIO_PRIMAL_DUAL", ratioPrimalDual, 0.01, 1000.0);
+        admmTau = BoundedEnvDouble(
+            "HEXAPOD_PINOCCHIO_ADMM_TAU", admmTau, 0.01, 1.0);
+        spectralRhoPowerInit = BoundedEnvDouble(
+            "HEXAPOD_PINOCCHIO_SPECTRAL_POWER", spectralRhoPowerInit, 0.0, 1.0);
 
         const Body& chassis = world.GetBody(scene.body);
         const pinocchio::JointIndex root = model.addJoint(
@@ -963,12 +996,15 @@ bool PinocchioHexapodModel::stepProximal(
             }
 
             Eigen::VectorXd warm = Eigen::VectorXd::Zero(drift.size());
+            Eigen::VectorXd warmVelocity = Eigen::VectorXd::Zero(drift.size());
+            bool haveCompleteVelocityWarmStart = true;
             for (std::size_t i = 0; i < contactIds.size(); ++i) {
                 const auto found = impl_->contactWarmStarts.find(contactIds[i]);
                 if (found == impl_->contactWarmStarts.end()) {
+                    haveCompleteVelocityWarmStart = false;
                     continue;
                 }
-                Eigen::Vector3d impulse = found->second.value;
+                Eigen::Vector3d impulse = found->second.impulse;
                 if (found->second.dt > 0.0) {
                     impulse *= subDt / found->second.dt;
                 }
@@ -979,6 +1015,8 @@ bool PinocchioHexapodModel::stepProximal(
                     impulse.head<2>() *= limit / tangential;
                 }
                 warm.segment<3>(static_cast<Eigen::Index>(3U * i)) = impulse;
+                warmVelocity.segment<3>(static_cast<Eigen::Index>(3U * i)) =
+                    found->second.velocity;
             }
             out.constraintAssemblyTimeMs += elapsedMs(constraintAssemblyStart);
             out.contactSetupTimeMs += elapsedMs(contactSetupStart);
@@ -996,12 +1034,19 @@ bool PinocchioHexapodModel::stepProximal(
             solverSettings.admm_update_rule = pinocchio::ADMMUpdateRule::SPECTRAL;
             solverSettings.admm_proximal_rule = pinocchio::ADMMProximalRule::MANUAL;
             solverSettings.mu_prox = settings.proximalMu;
-            solverSettings.anderson_capacity = 3;
+            solverSettings.anderson_capacity = impl_->andersonCapacity;
+            solverSettings.ratio_primal_dual = impl_->ratioPrimalDual;
+            solverSettings.tau = impl_->admmTau;
+            solverSettings.spectral_rho_power_init = impl_->spectralRhoPowerInit;
             solverSettings.solve_ncp = true;
             solverSettings.stat_record = false;
             pinocchio::ADMMSolverResult& result = impl_->contactSolverResult;
+            result.reset();
             result.resize(static_cast<std::size_t>(drift.size()));
             result.setConstraintImpulseGuess(warm);
+            if (haveCompleteVelocityWarmStart && IsFinite(warmVelocity)) {
+                result.setConstraintVelocityGuess(warmVelocity);
+            }
             const auto admmStart = StepClock::now();
             const bool converged = impl_->contactSolver.solve(
                 delassus,
@@ -1066,11 +1111,19 @@ bool PinocchioHexapodModel::stepProximal(
                 out.failureReason = ProximalFailureReason::NonFiniteImpulse;
                 return false;
             }
+            Eigen::VectorXd solvedContactVelocities(drift.size());
+            result.retrieveConstraintVelocities(solvedContactVelocities);
+            if (!IsFinite(solvedContactVelocities)) {
+                out.failureReason = ProximalFailureReason::NonFiniteVelocity;
+                return false;
+            }
             std::unordered_set<std::uint64_t> activeIds;
             for (std::size_t i = 0; i < contactIds.size(); ++i) {
+                const Eigen::Index offset = static_cast<Eigen::Index>(3U * i);
                 const Eigen::Vector3d impulse = impulses.segment<3>(
-                    static_cast<Eigen::Index>(3U * i));
-                impl_->contactWarmStarts[contactIds[i]] = {impulse, subDt};
+                    offset);
+                const Eigen::Vector3d velocity = solvedContactVelocities.segment<3>(offset);
+                impl_->contactWarmStarts[contactIds[i]] = {impulse, velocity, subDt};
                 activeIds.insert(contactIds[i]);
                 out.peakNormalImpulse = std::max(out.peakNormalImpulse, std::abs(impulse[2]));
                 out.peakFrictionImpulse = std::max(

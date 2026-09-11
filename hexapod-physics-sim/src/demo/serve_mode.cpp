@@ -59,6 +59,7 @@ constexpr int kSocketRetryCount = 5;
 constexpr int kSocketRetryDelayMs = 25;
 constexpr std::uint64_t kMatrixLidarFramePeriodUs = 15'625; // 64 Hz full-frame cadence
 constexpr float kServeMaxPhysicsSubstepSeconds = 1.0f / 240.0f;
+constexpr float kProximalMaxPhysicsSubstepSeconds = 1.0f / 480.0f;
 constexpr int kServeMaxPhysicsSubsteps = 16;
 
 enum class ServeSection : std::size_t {
@@ -1641,8 +1642,12 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             prev_angles[i] = world.GetServoJointAngle(wire_joints[i]);
         }
 
+        const float max_physics_substep =
+            solver_mode == physics_sim::PhysicsSolverMode::PinocchioProximal
+            ? kProximalMaxPhysicsSubstepSeconds
+            : kServeMaxPhysicsSubstepSeconds;
         const int physics_substeps = std::clamp(
-            static_cast<int>(std::ceil(step->dt_seconds / kServeMaxPhysicsSubstepSeconds)),
+            static_cast<int>(std::ceil(step->dt_seconds / max_physics_substep)),
             1,
             kServeMaxPhysicsSubsteps);
         const float substep_dt = step->dt_seconds / static_cast<float>(physics_substeps);
