@@ -676,6 +676,8 @@ bool PinocchioHexapodModel::stepProximal(
 
         const auto contactSetupStart = StepClock::now();
         world.PrepareExternalContacts(subDt);
+        out.collisionTimeMs += elapsedMs(contactSetupStart);
+        auto constraintAssemblyStart = StepClock::now();
         std::vector<std::uint64_t> contactIds;
         std::vector<double> contactFrictions;
         std::vector<double> contactRestitutions;
@@ -927,7 +929,11 @@ bool PinocchioHexapodModel::stepProximal(
             for (std::size_t i = 0; i < constraintModels.size(); ++i) {
                 constraintModels[i].calc(impl_->model, impl_->data, constraintDatas[i]);
             }
+            out.constraintAssemblyTimeMs += elapsedMs(constraintAssemblyStart);
+            const auto delassusStart = StepClock::now();
             delassus.compute();
+            out.delassusTimeMs += elapsedMs(delassusStart);
+            constraintAssemblyStart = StepClock::now();
 
             Eigen::VectorXd drift(static_cast<Eigen::Index>(3U * constraintModels.size()));
             pinocchio::evalConstraintJacobianMatrixProduct(
@@ -974,6 +980,7 @@ bool PinocchioHexapodModel::stepProximal(
                 }
                 warm.segment<3>(static_cast<Eigen::Index>(3U * i)) = impulse;
             }
+            out.constraintAssemblyTimeMs += elapsedMs(constraintAssemblyStart);
             out.contactSetupTimeMs += elapsedMs(contactSetupStart);
 
             pinocchio::ADMMSolverSettings solverSettings;
@@ -1088,6 +1095,7 @@ bool PinocchioHexapodModel::stepProximal(
             impl_->contactTopologyIds.clear();
             impl_->contactDelassus.reset();
             impl_->contactDelassusRegularization = 0.0;
+            out.constraintAssemblyTimeMs += elapsedMs(constraintAssemblyStart);
             out.contactSetupTimeMs += elapsedMs(contactSetupStart);
             if (!impl_->contactWarmStarts.empty() || impl_->haveLastContactSetSignature) {
                 resetWarmStarts();
@@ -1171,6 +1179,9 @@ bool PinocchioHexapodModel::stepProximal(
             && advanceOnce(0.5 * dt, commandedServoTargets, retry);
         retry.dynamicsTimeMs += firstAttempt.dynamicsTimeMs;
         retry.contactSetupTimeMs += firstAttempt.contactSetupTimeMs;
+        retry.collisionTimeMs += firstAttempt.collisionTimeMs;
+        retry.constraintAssemblyTimeMs += firstAttempt.constraintAssemblyTimeMs;
+        retry.delassusTimeMs += firstAttempt.delassusTimeMs;
         retry.admmTimeMs += firstAttempt.admmTimeMs;
         retry.integrationTimeMs += firstAttempt.integrationTimeMs;
         if (half1 && half2) {

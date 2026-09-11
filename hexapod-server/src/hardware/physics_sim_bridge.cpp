@@ -583,6 +583,9 @@ bool PhysicsSimBridge::read(RobotState& out) {
         telemetry.actuator_work = rsp.solver_actuator_work;
         telemetry.dynamics_time_ms = rsp.solver_dynamics_time_ms;
         telemetry.contact_setup_time_ms = rsp.solver_contact_setup_time_ms;
+        telemetry.collision_time_ms = rsp.solver_collision_time_ms;
+        telemetry.constraint_assembly_time_ms = rsp.solver_constraint_assembly_time_ms;
+        telemetry.delassus_time_ms = rsp.solver_delassus_time_ms;
         telemetry.admm_time_ms = rsp.solver_admm_time_ms;
         telemetry.integration_time_ms = rsp.solver_integration_time_ms;
         telemetry.total_step_time_ms = rsp.solver_total_step_time_ms;

@@ -1046,6 +1046,9 @@ void MergeProximalDiagnostics(ProximalStepDiagnostics& aggregate,
     aggregate.actuatorWork += current.actuatorWork;
     aggregate.dynamicsTimeMs += current.dynamicsTimeMs;
     aggregate.contactSetupTimeMs += current.contactSetupTimeMs;
+    aggregate.collisionTimeMs += current.collisionTimeMs;
+    aggregate.constraintAssemblyTimeMs += current.constraintAssemblyTimeMs;
+    aggregate.delassusTimeMs += current.delassusTimeMs;
     aggregate.admmTimeMs += current.admmTimeMs;
     aggregate.integrationTimeMs += current.integrationTimeMs;
     aggregate.totalStepTimeMs += current.totalStepTimeMs;
@@ -1705,6 +1708,12 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 static_cast<float>(proximal_diagnostics.dynamicsTimeMs);
             rsp.solver_contact_setup_time_ms =
                 static_cast<float>(proximal_diagnostics.contactSetupTimeMs);
+            rsp.solver_collision_time_ms =
+                static_cast<float>(proximal_diagnostics.collisionTimeMs);
+            rsp.solver_constraint_assembly_time_ms =
+                static_cast<float>(proximal_diagnostics.constraintAssemblyTimeMs);
+            rsp.solver_delassus_time_ms =
+                static_cast<float>(proximal_diagnostics.delassusTimeMs);
             rsp.solver_admm_time_ms = static_cast<float>(proximal_diagnostics.admmTimeMs);
             rsp.solver_integration_time_ms =
                 static_cast<float>(proximal_diagnostics.integrationTimeMs);

@@ -53,6 +53,8 @@ cmake -S . -B build -DMINPHYS3D_BUILD_TESTS=OFF
 ```
 
 The static library **`minphys3d_core`** holds all shared engine sources; the demo and each test executable link it once.
+Release and RelWithDebInfo builds also optimize the Pinocchio adapter itself;
+Debug keeps that template-heavy translation unit at `-O0` to limit build memory.
 
 ## Running the demo
 

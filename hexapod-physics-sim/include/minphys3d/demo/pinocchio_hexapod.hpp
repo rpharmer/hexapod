@@ -72,6 +72,9 @@ struct ProximalStepDiagnostics {
     double actuatorWork = 0.0;
     double dynamicsTimeMs = 0.0;
     double contactSetupTimeMs = 0.0;
+    double collisionTimeMs = 0.0;
+    double constraintAssemblyTimeMs = 0.0;
+    double delassusTimeMs = 0.0;
     double admmTimeMs = 0.0;
     double integrationTimeMs = 0.0;
     double totalStepTimeMs = 0.0;

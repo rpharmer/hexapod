@@ -160,6 +160,9 @@ struct StateResponse {
     float solver_actuator_work{0.0f};
     float solver_dynamics_time_ms{0.0f};
     float solver_contact_setup_time_ms{0.0f};
+    float solver_collision_time_ms{0.0f};
+    float solver_constraint_assembly_time_ms{0.0f};
+    float solver_delassus_time_ms{0.0f};
     float solver_admm_time_ms{0.0f};
     float solver_integration_time_ms{0.0f};
     float solver_total_step_time_ms{0.0f};

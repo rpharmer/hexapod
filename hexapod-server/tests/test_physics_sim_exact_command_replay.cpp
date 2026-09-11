@@ -87,6 +87,9 @@ struct ReplayResult {
     double healthy_max_step_time_ms{0.0};
     double p99_solver_dynamics_time_ms{0.0};
     double p99_solver_contact_setup_time_ms{0.0};
+    double p99_solver_collision_time_ms{0.0};
+    double p99_solver_constraint_assembly_time_ms{0.0};
+    double p99_solver_delassus_time_ms{0.0};
     double p99_solver_admm_time_ms{0.0};
     double p99_solver_integration_time_ms{0.0};
     double p99_solver_total_step_time_ms{0.0};
@@ -371,6 +374,9 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
     std::vector<double> healthy_step_times_ms{};
     std::vector<double> solver_dynamics_times_ms{};
     std::vector<double> solver_contact_setup_times_ms{};
+    std::vector<double> solver_collision_times_ms{};
+    std::vector<double> solver_constraint_assembly_times_ms{};
+    std::vector<double> solver_delassus_times_ms{};
     std::vector<double> solver_admm_times_ms{};
     std::vector<double> solver_integration_times_ms{};
     std::vector<double> solver_total_step_times_ms{};
@@ -378,6 +384,9 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
     healthy_step_times_ms.reserve(frames.size());
     solver_dynamics_times_ms.reserve(frames.size());
     solver_contact_setup_times_ms.reserve(frames.size());
+    solver_collision_times_ms.reserve(frames.size());
+    solver_constraint_assembly_times_ms.reserve(frames.size());
+    solver_delassus_times_ms.reserve(frames.size());
     solver_admm_times_ms.reserve(frames.size());
     solver_integration_times_ms.reserve(frames.size());
     solver_total_step_times_ms.reserve(frames.size());
@@ -418,6 +427,10 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         ++result.telemetry_frames;
         solver_dynamics_times_ms.push_back(telemetry->dynamics_time_ms);
         solver_contact_setup_times_ms.push_back(telemetry->contact_setup_time_ms);
+        solver_collision_times_ms.push_back(telemetry->collision_time_ms);
+        solver_constraint_assembly_times_ms.push_back(
+            telemetry->constraint_assembly_time_ms);
+        solver_delassus_times_ms.push_back(telemetry->delassus_time_ms);
         solver_admm_times_ms.push_back(telemetry->admm_time_ms);
         solver_integration_times_ms.push_back(telemetry->integration_time_ms);
         solver_total_step_times_ms.push_back(telemetry->total_step_time_ms);
@@ -485,6 +498,15 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
     assignTimingSummary(solver_contact_setup_times_ms,
                         result.p99_solver_contact_setup_time_ms,
                         ignoredMaximum);
+    assignTimingSummary(solver_collision_times_ms,
+                        result.p99_solver_collision_time_ms,
+                        ignoredMaximum);
+    assignTimingSummary(solver_constraint_assembly_times_ms,
+                        result.p99_solver_constraint_assembly_time_ms,
+                        ignoredMaximum);
+    assignTimingSummary(solver_delassus_times_ms,
+                        result.p99_solver_delassus_time_ms,
+                        ignoredMaximum);
     assignTimingSummary(solver_admm_times_ms,
                         result.p99_solver_admm_time_ms,
                         ignoredMaximum);
@@ -530,6 +552,10 @@ std::string metricsJson(const ReplayResult& result,
         << ",\"p99_solver_dynamics_time_ms\":" << result.p99_solver_dynamics_time_ms
         << ",\"p99_solver_contact_setup_time_ms\":"
         << result.p99_solver_contact_setup_time_ms
+        << ",\"p99_solver_collision_time_ms\":" << result.p99_solver_collision_time_ms
+        << ",\"p99_solver_constraint_assembly_time_ms\":"
+        << result.p99_solver_constraint_assembly_time_ms
+        << ",\"p99_solver_delassus_time_ms\":" << result.p99_solver_delassus_time_ms
         << ",\"p99_solver_admm_time_ms\":" << result.p99_solver_admm_time_ms
         << ",\"p99_solver_integration_time_ms\":"
         << result.p99_solver_integration_time_ms

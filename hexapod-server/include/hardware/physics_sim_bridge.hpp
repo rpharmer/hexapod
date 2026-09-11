@@ -61,6 +61,9 @@ struct PhysicsSimSolverTelemetry {
     float actuator_work{0.0f};
     float dynamics_time_ms{0.0f};
     float contact_setup_time_ms{0.0f};
+    float collision_time_ms{0.0f};
+    float constraint_assembly_time_ms{0.0f};
+    float delassus_time_ms{0.0f};
     float admm_time_ms{0.0f};
     float integration_time_ms{0.0f};
     float total_step_time_ms{0.0f};
