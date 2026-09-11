@@ -171,6 +171,7 @@ struct PinocchioHexapodModel::Impl {
     std::array<pinocchio::JointIndex, 18> wireJoints{};
     std::array<std::uint32_t, 18> wireServoIds{};
     std::array<double, 18> wireZeroAngles{};
+    std::array<double, 18> wireNominalInertias{};
     std::unordered_map<std::uint32_t, pinocchio::JointIndex> bodyJoints{};
 
     struct WarmImpulse {
@@ -270,6 +271,19 @@ PinocchioHexapodModel::PinocchioHexapodModel(
     : impl_(std::make_unique<Impl>(world, scene, servo_joint_ids)) {
     if (!readState(world, impl_->lastGoodQ, impl_->lastGoodV)) {
         throw std::runtime_error("failed to capture initial Pinocchio hexapod state");
+    }
+    const Eigen::Map<const Eigen::VectorXd> initialQ(
+        impl_->lastGoodQ.data(), static_cast<Eigen::Index>(impl_->lastGoodQ.size()));
+    Eigen::MatrixXd nominalMass = pinocchio::crba(
+        impl_->model, impl_->data, initialQ, pinocchio::Convention::WORLD);
+    nominalMass.triangularView<Eigen::StrictlyLower>() =
+        nominalMass.transpose().triangularView<Eigen::StrictlyLower>();
+    if (!nominalMass.array().isFinite().all()) {
+        throw std::runtime_error("failed to compute nominal hexapod joint inertias");
+    }
+    for (std::size_t i = 0; i < impl_->wireJoints.size(); ++i) {
+        const Eigen::Index vi = impl_->model.joints[impl_->wireJoints[i]].idx_v();
+        impl_->wireNominalInertias[i] = std::max(1.0e-9, nominalMass(vi, vi));
     }
 }
 
@@ -609,15 +623,6 @@ bool PinocchioHexapodModel::stepProximal(
         }
 
         impl_->model.gravity.linear() = ToEigen(world.GetGravity());
-        Eigen::MatrixXd mass = pinocchio::crba(
-            impl_->model, impl_->data, q, pinocchio::Convention::WORLD);
-        mass.triangularView<Eigen::StrictlyLower>() =
-            mass.transpose().triangularView<Eigen::StrictlyLower>();
-        if (!mass.array().isFinite().all()) {
-            out.failureReason = ProximalFailureReason::NonFiniteMass;
-            return false;
-        }
-
         Eigen::VectorXd tau = Eigen::VectorXd::Zero(impl_->model.nv);
         constexpr double stallTorque = hexapod_dynamics::kServoMaxTorqueNm;
         constexpr double noLoadSpeed = hexapod_dynamics::kServoNoLoadSpeedRadPerSec;
@@ -630,7 +635,10 @@ bool PinocchioHexapodModel::stepProximal(
             const double error = std::remainder(
                 activeServoTargets[i] - impl_->wireZeroAngles[i] - q[qi],
                 6.28318530717958647692);
-            const double reflectedInertia = std::max(1.0e-9, mass(vi, vi));
+            // The natural-frequency gains are calibrated against the nominal
+            // standing inertia. Recomputing CRBA every substep changed the
+            // controller gains with pose and duplicated ABA's dynamics work.
+            const double reflectedInertia = impl_->wireNominalInertias[i];
             const double requested = reflectedInertia * omegaN * omegaN * error
                 - 2.0 * zeta * omegaN * reflectedInertia * v[vi];
             double available = stallTorque;
@@ -907,14 +915,9 @@ bool PinocchioHexapodModel::stepProximal(
             }
 
             Eigen::VectorXd warm = Eigen::VectorXd::Zero(drift.size());
-            const Eigen::MatrixXd inverseMassJacobianTranspose =
-                mass.ldlt().solve(jacobian.transpose());
-            std::vector<bool> haveCachedWarmStart(contactIds.size(), false);
-            bool needsDenseSeed = false;
             for (std::size_t i = 0; i < contactIds.size(); ++i) {
                 const auto found = impl_->contactWarmStarts.find(contactIds[i]);
                 if (found == impl_->contactWarmStarts.end()) {
-                    needsDenseSeed = true;
                     continue;
                 }
                 Eigen::Vector3d impulse = found->second.value;
@@ -928,33 +931,6 @@ bool PinocchioHexapodModel::stepProximal(
                     impulse.head<2>() *= limit / tangential;
                 }
                 warm.segment<3>(static_cast<Eigen::Index>(3U * i)) = impulse;
-                haveCachedWarmStart[i] = true;
-            }
-
-            // A dense solve is useful for initializing genuinely new contacts,
-            // but rebuilding, factorizing, and diagonalizing the dense Delassus
-            // matrix on every settled step defeats the articulated production
-            // path. Persistent contacts use their projected impulse cache.
-            if (needsDenseSeed) {
-                Eigen::MatrixXd denseSeedDelassus =
-                    jacobian * inverseMassJacobianTranspose;
-                denseSeedDelassus.diagonal().array() += settings.contactRegularization;
-                const Eigen::LDLT<Eigen::MatrixXd> seedFactorization(denseSeedDelassus);
-                if (seedFactorization.info() == Eigen::Success) {
-                    const Eigen::VectorXd unconstrainedSeed = seedFactorization.solve(-drift);
-                    if (IsFinite(unconstrainedSeed)) {
-                        for (std::size_t i = 0; i < contactIds.size(); ++i) {
-                            if (haveCachedWarmStart[i]) {
-                                continue;
-                            }
-                            warm.segment<3>(static_cast<Eigen::Index>(3U * i)) =
-                                ProjectCoulombImpulse(
-                                    unconstrainedSeed.segment<3>(
-                                        static_cast<Eigen::Index>(3U * i)),
-                                    contactFrictions[i]);
-                        }
-                    }
-                }
             }
             out.contactSetupTimeMs += elapsedMs(contactSetupStart);
 
@@ -1036,27 +1012,6 @@ bool PinocchioHexapodModel::stepProximal(
             if (!converged || !std::isfinite(result.primal_feasibility)
                 || !std::isfinite(result.dual_feasibility)
                 || !std::isfinite(result.complementarity)) {
-                if (jacobian.rows() <= 72) {
-                    Eigen::MatrixXd delassusDense =
-                        jacobian * inverseMassJacobianTranspose;
-                    delassusDense.diagonal().array() += settings.contactRegularization;
-                    if (delassusDense.array().isFinite().all()) {
-                        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigensolver(
-                            0.5 * (delassusDense + delassusDense.transpose()));
-                        if (eigensolver.info() == Eigen::Success) {
-                            const Eigen::VectorXd eigenvalues = eigensolver.eigenvalues();
-                            const double minEigenvalue = eigenvalues.minCoeff();
-                            const double maxEigenvalue = eigenvalues.maxCoeff();
-                            out.delassusMinEigenvalue = minEigenvalue;
-                            out.delassusMaxEigenvalue = maxEigenvalue;
-                            if (minEigenvalue > 0.0 && std::isfinite(minEigenvalue)
-                                && std::isfinite(maxEigenvalue)) {
-                                out.delassusConditionEstimate =
-                                    maxEigenvalue / minEigenvalue;
-                            }
-                        }
-                    }
-                }
                 out.failureReason = ProximalFailureReason::SolverNotConverged;
                 return false;
             }
@@ -1084,7 +1039,11 @@ bool PinocchioHexapodModel::stepProximal(
                     ++it;
                 }
             }
-            vNew += inverseMassJacobianTranspose * impulses;
+            // applyOnTheRight above computes both the constraint-space
+            // velocity and the associated generalized M^-1 J^T impulse in
+            // the articulated operator's workspace. Reuse that generalized
+            // result instead of rebuilding and factorizing a dense mass matrix.
+            vNew += delassus.getInternalData().ddq;
         } else if (!impl_->contactWarmStarts.empty() || impl_->haveLastContactSetSignature) {
             out.contactSetupTimeMs += elapsedMs(contactSetupStart);
             resetWarmStarts();

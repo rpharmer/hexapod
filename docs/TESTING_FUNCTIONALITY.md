@@ -315,6 +315,8 @@ These are the highest-value tests for tracking improvements across commits.
   - `HEXAPOD_EXACT_REPLAY_SOLVER_ITERATIONS`
   - `HEXAPOD_EXACT_REPLAY_ABSOLUTE_TOLERANCE` and
     `HEXAPOD_EXACT_REPLAY_RELATIVE_TOLERANCE`
+  - `HEXAPOD_EXACT_REPLAY_PERIOD_US=4166` measures the approximately 240 Hz,
+    single-substep production performance path while preserving the captured targets
   - `HEXAPOD_EXACT_REPLAY_ENFORCE_GATES=1` makes any recovered, held,
     unsupported, or failed-read sample fail the executable. Without it, the
     executable validates capture/replay accounting and emits diagnostic results.

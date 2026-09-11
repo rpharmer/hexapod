@@ -348,8 +348,8 @@ std::vector<CapturedFrame> captureCommands(const physics_sim_test_utils::Harness
 }
 
 ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
-                            const physics_sim_test_utils::HarnessSettings& harness,
                             const int port,
+                            const int replay_period_us,
                             const int solver_iterations,
                             const double absolute_tolerance,
                             const double relative_tolerance) {
@@ -359,7 +359,7 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
     proximal.absolute_tolerance = static_cast<float>(absolute_tolerance);
     proximal.relative_tolerance = static_cast<float>(relative_tolerance);
     PhysicsSimBridge bridge(
-        "127.0.0.1", port, harness.bus_loop_period_us, proximal, nullptr);
+        "127.0.0.1", port, replay_period_us, proximal, nullptr);
     if (!bridge.init()) {
         throw std::runtime_error("proximal replay bridge failed to initialise");
     }
@@ -494,6 +494,7 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
 std::string metricsJson(const ReplayResult& result,
                         const std::uint64_t command_hash,
                         const std::size_t captured_frames,
+                        const int replay_period_us,
                         const int solver_iterations,
                         const double absolute_tolerance,
                         const double relative_tolerance) {
@@ -503,6 +504,7 @@ std::string metricsJson(const ReplayResult& result,
         << ",\"replayed_frames\":" << result.frames
         << ",\"telemetry_frames\":" << result.telemetry_frames
         << ",\"command_hash\":\"" << std::hex << command_hash << std::dec << "\""
+        << ",\"replay_period_us\":" << replay_period_us
         << ",\"solver_iteration_limit\":" << solver_iterations
         << ",\"absolute_tolerance\":" << absolute_tolerance
         << ",\"relative_tolerance\":" << relative_tolerance
@@ -581,6 +583,8 @@ int main(int argc, char** argv) {
             positiveEnvOrDefault("HEXAPOD_EXACT_REPLAY_TRANSITION_FRAMES", 24);
         const int solver_iterations =
             positiveEnvOrDefault("HEXAPOD_EXACT_REPLAY_SOLVER_ITERATIONS", 50);
+        const int replay_period_us = positiveEnvOrDefault(
+            "HEXAPOD_EXACT_REPLAY_PERIOD_US", harness.bus_loop_period_us);
         const double absolute_tolerance = positiveDoubleEnvOrDefault(
             "HEXAPOD_EXACT_REPLAY_ABSOLUTE_TOLERANCE", 1.0e-8);
         const double relative_tolerance = positiveDoubleEnvOrDefault(
@@ -628,8 +632,8 @@ int main(int argc, char** argv) {
         ReplayResult result{};
         try {
             result = replayCommands(frames,
-                                    harness,
                                     base_port + 1,
+                                    replay_period_us,
                                     solver_iterations,
                                     absolute_tolerance,
                                     relative_tolerance);
@@ -651,6 +655,7 @@ int main(int argc, char** argv) {
         const std::string metrics = metricsJson(result,
                                                 command_hash,
                                                 frames.size(),
+                                                replay_period_us,
                                                 solver_iterations,
                                                 absolute_tolerance,
                                                 relative_tolerance);
