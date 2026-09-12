@@ -429,6 +429,11 @@ These are the highest-value tests for tracking improvements across commits.
     default. Unless explicitly overridden, this normalized path recomputes rho each
     frame and uses a `0.5` spectral-power start; the frozen gait replay showed these
     settings avoid the held-state cascade seen with the articulated defaults.
+  - exact-replay phase records include maximum servo tracking error and torque
+    utilisation, peak actuator/contact impulses and pre-integration speeds, plus
+    accumulated actuator work and mechanical-energy change. These distinguish
+    actuator saturation and load-induced tracking loss from contact-solver energy
+    injection when a gait makes poor progress or loses body height.
   - half-substep recovery is restricted to solver non-convergence and speed-limit
     rejection; state validity, penetration, energy, and write failures hold the
     last-good state immediately because they cannot be repaired by a smaller timestep

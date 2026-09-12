@@ -109,6 +109,21 @@ struct PhaseResult {
     double max_ncp_complementarity_residual{0.0};
     double max_contact_penetration{0.0};
     double max_body_height_error{0.0};
+    double max_servo_tracking_error{0.0};
+    double terminal_servo_tracking_error{0.0};
+    double servo_tracking_error_sq_sum{0.0};
+    std::uint64_t servo_tracking_error_samples{0};
+    double max_servo_torque_utilization{0.0};
+    double servo_torque_utilization_sum{0.0};
+    std::uint64_t servo_torque_utilization_samples{0};
+    std::uint64_t servo_saturated_frames{0};
+    double peak_actuator_impulse{0.0};
+    double peak_normal_impulse{0.0};
+    double peak_friction_impulse{0.0};
+    double peak_preintegration_linear_speed{0.0};
+    double peak_preintegration_angular_speed{0.0};
+    double actuator_work_sum{0.0};
+    double mechanical_energy_delta_sum{0.0};
     double completed_delta_x_sum{0.0};
     double completed_delta_y_sum{0.0};
     double completed_body_forward_sum{0.0};
@@ -999,6 +1014,24 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
             phase.max_body_height_error = std::max(
                 phase.max_body_height_error,
                 std::abs(position.z - body_height_m));
+            double frame_max_servo_tracking_error = 0.0;
+            for (std::size_t leg = 0; leg < frame.targets.leg_states.size(); ++leg) {
+                for (std::size_t joint = 0;
+                     joint < frame.targets.leg_states[leg].joint_state.size();
+                     ++joint) {
+                    const double error = std::abs(std::remainder(
+                        frame.targets.leg_states[leg].joint_state[joint].pos_rad.value
+                            - state.leg_states[leg].joint_state[joint].pos_rad.value,
+                        6.28318530717958647692));
+                    phase.max_servo_tracking_error = std::max(
+                        phase.max_servo_tracking_error, error);
+                    frame_max_servo_tracking_error = std::max(
+                        frame_max_servo_tracking_error, error);
+                    phase.servo_tracking_error_sq_sum += error * error;
+                    ++phase.servo_tracking_error_samples;
+                }
+            }
+            phase.terminal_servo_tracking_error = frame_max_servo_tracking_error;
             if (!active_segment->start_position.has_value()) {
                 active_segment->start_position = position;
                 active_segment->start_yaw = yaw;
@@ -1082,6 +1115,31 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         phase.max_contact_penetration = std::max(
             phase.max_contact_penetration,
             static_cast<double>(telemetry->max_contact_penetration));
+        phase.max_servo_torque_utilization = std::max(
+            phase.max_servo_torque_utilization,
+            static_cast<double>(telemetry->peak_servo_torque_utilization));
+        phase.servo_torque_utilization_sum += telemetry->peak_servo_torque_utilization;
+        ++phase.servo_torque_utilization_samples;
+        if (telemetry->peak_servo_torque_utilization >= 0.99f) {
+            ++phase.servo_saturated_frames;
+        }
+        phase.peak_actuator_impulse = std::max(
+            phase.peak_actuator_impulse,
+            static_cast<double>(telemetry->peak_actuator_impulse));
+        phase.peak_normal_impulse = std::max(
+            phase.peak_normal_impulse,
+            static_cast<double>(telemetry->peak_normal_impulse));
+        phase.peak_friction_impulse = std::max(
+            phase.peak_friction_impulse,
+            static_cast<double>(telemetry->peak_friction_impulse));
+        phase.peak_preintegration_linear_speed = std::max(
+            phase.peak_preintegration_linear_speed,
+            static_cast<double>(telemetry->preintegration_linear_speed));
+        phase.peak_preintegration_angular_speed = std::max(
+            phase.peak_preintegration_angular_speed,
+            static_cast<double>(telemetry->preintegration_angular_speed));
+        phase.actuator_work_sum += telemetry->actuator_work;
+        phase.mechanical_energy_delta_sum += telemetry->mechanical_energy_delta;
         if (telemetry->failure_reason == physics_sim::SolverFailureReason::SolverNotConverged) {
             ++result.solver_not_converged;
             ++phase.solver_not_converged;
@@ -1240,6 +1298,31 @@ void accumulateReplayResult(ReplayResult& total, const ReplayResult& sample) {
             out.max_contact_penetration, in.max_contact_penetration);
         out.max_body_height_error = std::max(
             out.max_body_height_error, in.max_body_height_error);
+        out.max_servo_tracking_error = std::max(
+            out.max_servo_tracking_error, in.max_servo_tracking_error);
+        out.terminal_servo_tracking_error = std::max(
+            out.terminal_servo_tracking_error, in.terminal_servo_tracking_error);
+        out.servo_tracking_error_sq_sum += in.servo_tracking_error_sq_sum;
+        out.servo_tracking_error_samples += in.servo_tracking_error_samples;
+        out.max_servo_torque_utilization = std::max(
+            out.max_servo_torque_utilization, in.max_servo_torque_utilization);
+        out.servo_torque_utilization_sum += in.servo_torque_utilization_sum;
+        out.servo_torque_utilization_samples += in.servo_torque_utilization_samples;
+        out.servo_saturated_frames += in.servo_saturated_frames;
+        out.peak_actuator_impulse = std::max(
+            out.peak_actuator_impulse, in.peak_actuator_impulse);
+        out.peak_normal_impulse = std::max(
+            out.peak_normal_impulse, in.peak_normal_impulse);
+        out.peak_friction_impulse = std::max(
+            out.peak_friction_impulse, in.peak_friction_impulse);
+        out.peak_preintegration_linear_speed = std::max(
+            out.peak_preintegration_linear_speed,
+            in.peak_preintegration_linear_speed);
+        out.peak_preintegration_angular_speed = std::max(
+            out.peak_preintegration_angular_speed,
+            in.peak_preintegration_angular_speed);
+        out.actuator_work_sum += in.actuator_work_sum;
+        out.mechanical_energy_delta_sum += in.mechanical_energy_delta_sum;
         out.completed_delta_x_sum += in.completed_delta_x_sum;
         out.completed_delta_y_sum += in.completed_delta_y_sum;
         out.completed_body_forward_sum += in.completed_body_forward_sum;
@@ -1481,6 +1564,15 @@ std::string metricsJson(const ReplayResult& result,
         const double horizontal_displacement = phase.completed_trajectories == 0 ? 0.0
             : phase.completed_horizontal_displacement_sum
                 / static_cast<double>(phase.completed_trajectories);
+        const double rms_servo_tracking_error = phase.servo_tracking_error_samples == 0
+            ? 0.0
+            : std::sqrt(phase.servo_tracking_error_sq_sum
+                / static_cast<double>(phase.servo_tracking_error_samples));
+        const double mean_peak_servo_torque_utilization =
+            phase.servo_torque_utilization_samples == 0
+            ? 0.0
+            : phase.servo_torque_utilization_sum
+                / static_cast<double>(phase.servo_torque_utilization_samples);
         const PhaseCommand command = phaseCommand(static_cast<ReplayPhase>(i));
         const double frames_per_trajectory = phase.completed_trajectories == 0 ? 0.0
             : static_cast<double>(phase.frames)
@@ -1528,6 +1620,26 @@ std::string metricsJson(const ReplayResult& result,
             << phase.max_ncp_complementarity_residual
             << ",\"max_contact_penetration_m\":" << phase.max_contact_penetration
             << ",\"max_body_height_error_m\":" << phase.max_body_height_error
+            << ",\"max_servo_tracking_error_rad\":"
+            << phase.max_servo_tracking_error
+            << ",\"rms_servo_tracking_error_rad\":" << rms_servo_tracking_error
+            << ",\"terminal_servo_tracking_error_rad\":"
+            << phase.terminal_servo_tracking_error
+            << ",\"max_servo_torque_utilization\":"
+            << phase.max_servo_torque_utilization
+            << ",\"mean_peak_servo_torque_utilization\":"
+            << mean_peak_servo_torque_utilization
+            << ",\"servo_saturated_frames\":" << phase.servo_saturated_frames
+            << ",\"peak_actuator_impulse_ns\":" << phase.peak_actuator_impulse
+            << ",\"peak_normal_impulse_ns\":" << phase.peak_normal_impulse
+            << ",\"peak_friction_impulse_ns\":" << phase.peak_friction_impulse
+            << ",\"peak_preintegration_linear_speed_mps\":"
+            << phase.peak_preintegration_linear_speed
+            << ",\"peak_preintegration_angular_speed_radps\":"
+            << phase.peak_preintegration_angular_speed
+            << ",\"actuator_work_j\":" << phase.actuator_work_sum
+            << ",\"mechanical_energy_delta_j\":"
+            << phase.mechanical_energy_delta_sum
             << ",\"valid_delta_x_m\":" << dx
             << ",\"valid_delta_y_m\":" << dy
             << ",\"body_forward_delta_m\":" << body_forward
