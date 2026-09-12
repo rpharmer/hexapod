@@ -14,8 +14,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <map>
 #include <optional>
@@ -236,6 +238,89 @@ std::uint64_t commandStreamHash(const std::vector<CapturedFrame>& frames) {
         }
     }
     return hash;
+}
+
+constexpr const char* kCommandFixtureHeader = "hexapod-exact-command-replay-v1";
+
+void saveCommandFixture(const std::string& path,
+                        const std::vector<CapturedFrame>& frames) {
+    std::ofstream output(path, std::ios::out | std::ios::trunc);
+    if (!output) {
+        throw std::runtime_error("failed to open command fixture for writing: " + path);
+    }
+    output << kCommandFixtureHeader << '\n'
+           << frames.size() << '\n'
+           << std::setprecision(std::numeric_limits<double>::max_digits10);
+    for (const CapturedFrame& frame : frames) {
+        output << static_cast<unsigned>(frame.phase) << ' '
+               << (frame.inhibit_motion ? 1 : 0) << ' '
+               << (frame.walk_mode ? 1 : 0);
+        for (const LegState& leg : frame.targets.leg_states) {
+            for (const JointState& joint : leg.joint_state) {
+                output << ' ' << static_cast<double>(joint.pos_rad.value)
+                       << ' ' << static_cast<double>(joint.vel_radps.value);
+            }
+        }
+        output << '\n';
+    }
+    if (!output) {
+        throw std::runtime_error("failed while writing command fixture: " + path);
+    }
+}
+
+std::vector<CapturedFrame> loadCommandFixture(const std::string& path) {
+    std::ifstream input(path);
+    if (!input) {
+        throw std::runtime_error("failed to open command fixture for reading: " + path);
+    }
+    std::string header;
+    std::getline(input, header);
+    if (header != kCommandFixtureHeader) {
+        throw std::runtime_error("unsupported command fixture header: " + path);
+    }
+    std::size_t frame_count = 0;
+    if (!(input >> frame_count) || frame_count > 1'000'000U) {
+        throw std::runtime_error("invalid command fixture frame count: " + path);
+    }
+    std::vector<CapturedFrame> frames;
+    frames.reserve(frame_count);
+    for (std::size_t frame_index = 0; frame_index < frame_count; ++frame_index) {
+        unsigned phase = 0;
+        int inhibit_motion = 0;
+        int walk_mode = 0;
+        if (!(input >> phase >> inhibit_motion >> walk_mode)
+            || phase >= static_cast<unsigned>(ReplayPhase::Count)
+            || (inhibit_motion != 0 && inhibit_motion != 1)
+            || (walk_mode != 0 && walk_mode != 1)) {
+            throw std::runtime_error(
+                "invalid command fixture metadata at frame "
+                + std::to_string(frame_index) + ": " + path);
+        }
+        CapturedFrame frame{};
+        frame.phase = static_cast<ReplayPhase>(phase);
+        frame.inhibit_motion = inhibit_motion != 0;
+        frame.walk_mode = walk_mode != 0;
+        for (LegState& leg : frame.targets.leg_states) {
+            for (JointState& joint : leg.joint_state) {
+                double position = 0.0;
+                double velocity = 0.0;
+                if (!(input >> position >> velocity)
+                    || !std::isfinite(position) || !std::isfinite(velocity)) {
+                    throw std::runtime_error(
+                        "invalid command fixture target at frame "
+                        + std::to_string(frame_index) + ": " + path);
+                }
+                joint.pos_rad.value = position;
+                joint.vel_radps.value = velocity;
+            }
+        }
+        frames.push_back(frame);
+    }
+    input >> std::ws;
+    if (!input.eof()) {
+        throw std::runtime_error("unexpected trailing command fixture data: " + path);
+    }
+    return frames;
 }
 
 MotionIntent makeReplayIntent(const ReplayPhase phase, const double body_height_m) {
@@ -823,6 +908,8 @@ void accumulateReplayResult(ReplayResult& total, const ReplayResult& sample) {
 std::string metricsJson(const ReplayResult& result,
                         const std::uint64_t command_hash,
                         const std::vector<CapturedFrame>& captured_frames,
+                        const bool command_fixture_loaded,
+                        const bool command_fixture_written,
                         const int perturbation_seed_count,
                         const int perturbation_seed_offset,
                         const double perturbation_scale,
@@ -893,6 +980,10 @@ std::string metricsJson(const ReplayResult& result,
         << ",\"replayed_frames\":" << result.frames
         << ",\"telemetry_frames\":" << result.telemetry_frames
         << ",\"command_hash\":\"" << std::hex << command_hash << std::dec << "\""
+        << ",\"command_fixture_loaded\":"
+        << (command_fixture_loaded ? "true" : "false")
+        << ",\"command_fixture_written\":"
+        << (command_fixture_written ? "true" : "false")
         << ",\"perturbation_seed_count\":" << perturbation_seed_count
         << ",\"perturbation_seed_offset\":" << perturbation_seed_offset
         << ",\"perturbation_scale\":" << perturbation_scale
@@ -1082,6 +1173,14 @@ int main(int argc, char** argv) {
         const bool fixed_contact_order = envEnabled(
             "HEXAPOD_EXACT_REPLAY_FIXED_CONTACT_ORDER");
         const bool dense_admm = envEnabled("HEXAPOD_PINOCCHIO_DENSE_ADMM");
+        const char* command_fixture_input =
+            std::getenv("HEXAPOD_EXACT_REPLAY_COMMANDS_IN");
+        const char* command_fixture_output =
+            std::getenv("HEXAPOD_EXACT_REPLAY_COMMANDS_OUT");
+        const bool command_fixture_loaded = command_fixture_input != nullptr
+            && command_fixture_input[0] != '\0';
+        const bool command_fixture_written = command_fixture_output != nullptr
+            && command_fixture_output[0] != '\0';
         const physics_sim::PhysicsSolverMode replay_solver_mode =
             envEnabled("HEXAPOD_EXACT_REPLAY_LEGACY")
                 ? physics_sim::PhysicsSolverMode::LegacyPgs
@@ -1093,26 +1192,30 @@ int main(int argc, char** argv) {
         const std::optional<ReplayPhase> selected_phase = selectedMotionPhase();
         const int base_port = 23500 + (static_cast<int>(::getpid()) % 4000);
 
-        pid_t capture_pid = launchSimulator(sim_exe, base_port);
-        if (capture_pid < 0) {
-            throw std::runtime_error("failed to fork legacy capture simulator");
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds{250});
         std::vector<CapturedFrame> frames{};
-        try {
-            frames = captureCommands(
-                harness,
-                base_port,
-                stand_frames,
-                motion_frames,
-                transition_frames,
-                body_height_m,
-                selected_phase);
-        } catch (...) {
+        if (command_fixture_loaded) {
+            frames = loadCommandFixture(command_fixture_input);
+        } else {
+            pid_t capture_pid = launchSimulator(sim_exe, base_port);
+            if (capture_pid < 0) {
+                throw std::runtime_error("failed to fork legacy capture simulator");
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{250});
+            try {
+                frames = captureCommands(
+                    harness,
+                    base_port,
+                    stand_frames,
+                    motion_frames,
+                    transition_frames,
+                    body_height_m,
+                    selected_phase);
+            } catch (...) {
+                stopSimulator(capture_pid);
+                throw;
+            }
             stopSimulator(capture_pid);
-            throw;
         }
-        stopSimulator(capture_pid);
 
         const int motion_case_count = selected_phase.has_value() ? 1 : 5;
         const std::size_t expected_frames = static_cast<std::size_t>(
@@ -1122,6 +1225,9 @@ int main(int argc, char** argv) {
                    return targetsAreFinite(frame.targets);
                })) {
             throw std::runtime_error("captured command stream is incomplete or non-finite");
+        }
+        if (command_fixture_written) {
+            saveCommandFixture(command_fixture_output, frames);
         }
         const std::uint64_t command_hash = commandStreamHash(frames);
 
@@ -1190,6 +1296,8 @@ int main(int argc, char** argv) {
         const std::string metrics = metricsJson(result,
                                                 command_hash,
                                                 frames,
+                                                command_fixture_loaded,
+                                                command_fixture_written,
                                                 perturbation_seed_count,
                                                 perturbation_seed_offset,
                                                 perturbation_scale,

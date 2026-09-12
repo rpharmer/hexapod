@@ -331,6 +331,14 @@ These are the highest-value tests for tracking improvements across commits.
   - `HEXAPOD_EXACT_REPLAY_STAND_FRAMES`, `HEXAPOD_EXACT_REPLAY_MOTION_FRAMES`,
     and `HEXAPOD_EXACT_REPLAY_TRANSITION_FRAMES`
   - `HEXAPOD_EXACT_REPLAY_BODY_HEIGHT_M` (default `0.06`)
+  - `HEXAPOD_EXACT_REPLAY_COMMANDS_OUT=/tmp/hexapod-commands.txt` saves the
+    captured phase annotations and every joint position/velocity target at
+    round-trip-safe precision. Set
+    `HEXAPOD_EXACT_REPLAY_COMMANDS_IN=/tmp/hexapod-commands.txt` on later runs
+    to skip command generation and replay that exact fixture. Keep the phase and
+    frame-count selectors identical when loading a fixture. This is the required
+    mode for solver-parameter A/B comparisons because a newly generated legacy
+    reference run can produce a different feedback-dependent command stream.
   - `HEXAPOD_EXACT_REPLAY_LEGACY=1` replays through the legacy solver instead
     of the proximal solver, using the same captured targets
   - `HEXAPOD_EXACT_REPLAY_SOLVER_ITERATIONS`
