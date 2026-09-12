@@ -329,6 +329,9 @@ These are the highest-value tests for tracking improvements across commits.
   - report p50/p90/p99 iterations per motion phase and per active contact count,
     making redundant-contact convergence tails visible without enabling verbose
     simulator logging
+  - classify frames above the 20-iteration acceptance target by whether the
+    persistent contact-ID set changed on that frame. This separates topology and
+    warm-start churn from slow convergence on an unchanged multi-contact system
 - Run from the repository root after building both projects:
   - `source scripts/lib/pinocchio_env.sh`
   - `HEXAPOD_PHYSICS_SIM_EXE=hexapod-physics-sim/build/hexapod-physics-sim hexapod-server/build-tests/test_physics_sim_exact_command_replay --emit-metrics-json`

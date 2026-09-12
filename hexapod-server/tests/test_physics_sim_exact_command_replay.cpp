@@ -100,6 +100,9 @@ struct PhaseResult {
     std::uint64_t unsupported{0};
     std::uint64_t read_failures{0};
     std::uint64_t solver_not_converged{0};
+    std::uint64_t topology_changes{0};
+    std::uint64_t high_iteration_topology_changes{0};
+    std::uint64_t high_iteration_persistent_contacts{0};
     IterationHistogram iteration_histogram{};
     std::uint16_t max_iterations{0};
     double max_ncp_dual_residual{0.0};
@@ -152,6 +155,9 @@ struct ReplayResult {
     std::uint64_t unsupported{0};
     std::uint64_t read_failures{0};
     std::uint64_t solver_not_converged{0};
+    std::uint64_t topology_changes{0};
+    std::uint64_t high_iteration_topology_changes{0};
+    std::uint64_t high_iteration_persistent_contacts{0};
     IterationHistogram iteration_histogram{};
     std::map<std::uint32_t, IterationHistogram> contact_count_iteration_histograms{};
     std::array<std::uint64_t, kFailureReasonNames.size()> failure_reason_histogram{};
@@ -933,6 +939,7 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         double horizontal_path{0.0};
     };
     std::optional<ActivePhaseSegment> active_segment{};
+    std::optional<std::uint64_t> previous_contact_set_signature{};
     const auto finishSegment = [&]() {
         if (!active_segment.has_value()
             || !active_segment->start_position.has_value()
@@ -1011,6 +1018,23 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
             continue;
         }
         ++result.telemetry_frames;
+        const bool topology_changed = previous_contact_set_signature.has_value()
+            && *previous_contact_set_signature != telemetry->contact_set_signature;
+        previous_contact_set_signature = telemetry->contact_set_signature;
+        if (topology_changed) {
+            ++result.topology_changes;
+            ++phase.topology_changes;
+        }
+        constexpr std::uint16_t kIterationAcceptanceTarget = 20;
+        if (telemetry->iterations > kIterationAcceptanceTarget) {
+            if (topology_changed) {
+                ++result.high_iteration_topology_changes;
+                ++phase.high_iteration_topology_changes;
+            } else {
+                ++result.high_iteration_persistent_contacts;
+                ++phase.high_iteration_persistent_contacts;
+            }
+        }
         solver_dynamics_times_ms.push_back(telemetry->dynamics_time_ms);
         solver_contact_setup_times_ms.push_back(telemetry->contact_setup_time_ms);
         solver_collision_times_ms.push_back(telemetry->collision_time_ms);
@@ -1124,6 +1148,11 @@ void accumulateReplayResult(ReplayResult& total, const ReplayResult& sample) {
     total.unsupported += sample.unsupported;
     total.read_failures += sample.read_failures;
     total.solver_not_converged += sample.solver_not_converged;
+    total.topology_changes += sample.topology_changes;
+    total.high_iteration_topology_changes +=
+        sample.high_iteration_topology_changes;
+    total.high_iteration_persistent_contacts +=
+        sample.high_iteration_persistent_contacts;
     for (const auto& [iterations, frames] : sample.iteration_histogram) {
         total.iteration_histogram[iterations] += frames;
     }
@@ -1172,6 +1201,11 @@ void accumulateReplayResult(ReplayResult& total, const ReplayResult& sample) {
         out.unsupported += in.unsupported;
         out.read_failures += in.read_failures;
         out.solver_not_converged += in.solver_not_converged;
+        out.topology_changes += in.topology_changes;
+        out.high_iteration_topology_changes +=
+            in.high_iteration_topology_changes;
+        out.high_iteration_persistent_contacts +=
+            in.high_iteration_persistent_contacts;
         for (const auto& [iterations, frames] : in.iteration_histogram) {
             out.iteration_histogram[iterations] += frames;
         }
@@ -1308,6 +1342,11 @@ std::string metricsJson(const ReplayResult& result,
         << ",\"unsupported\":" << result.unsupported
         << ",\"read_failures\":" << result.read_failures
         << ",\"solver_not_converged\":" << result.solver_not_converged
+        << ",\"topology_changes\":" << result.topology_changes
+        << ",\"high_iteration_topology_changes\":"
+        << result.high_iteration_topology_changes
+        << ",\"high_iteration_persistent_contacts\":"
+        << result.high_iteration_persistent_contacts
         << ",\"max_iterations\":" << result.max_iterations
         << ",\"max_contact_constraints\":" << result.max_contact_constraints
         << ",\"max_warm_start_resets\":" << result.max_warm_start_resets
@@ -1428,6 +1467,11 @@ std::string metricsJson(const ReplayResult& result,
             << ",\"captured_max_target_step_rad\":" << captured.max_target_step
             << ",\"captured_max_target_span_rad\":" << captured.max_target_span
             << ",\"solver_not_converged\":" << phase.solver_not_converged
+            << ",\"topology_changes\":" << phase.topology_changes
+            << ",\"high_iteration_topology_changes\":"
+            << phase.high_iteration_topology_changes
+            << ",\"high_iteration_persistent_contacts\":"
+            << phase.high_iteration_persistent_contacts
             << ",\"p50_iterations\":"
             << iterationPercentile(phase.iteration_histogram, 0.50)
             << ",\"p90_iterations\":"

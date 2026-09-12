@@ -77,6 +77,7 @@ struct PhysicsSimSolverTelemetry {
     std::uint64_t held_state_count{0};
     std::uint64_t unsupported_island_count{0};
     std::uint64_t worst_contact_id{0};
+    std::uint64_t contact_set_signature{0};
 };
 
 /// Chassis height used by the bridge's initial assembled standing pose.

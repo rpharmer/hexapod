@@ -182,6 +182,7 @@ private:
                 rsp.solver_held_state_count = 10;
                 rsp.solver_unsupported_island_count = 11;
                 rsp.solver_worst_contact_id = 0x123456789abcdef0ULL;
+                rsp.solver_contact_set_signature = 0xfedcba9876543210ULL;
                 // Non-uniform pattern so tests prove `StateResponse::foot_contacts` maps to `RobotState`.
                 rsp.foot_contacts[0] = 1;
                 rsp.foot_contacts[1] = 0;
@@ -269,7 +270,9 @@ int main() {
         || !expect(healthy_solver->rollback_count == 9,
                    "rollback telemetry should cross the bridge")
         || !expect(healthy_solver->worst_contact_id == 0x123456789abcdef0ULL,
-                   "worst-contact telemetry should cross the bridge")) {
+                   "worst-contact telemetry should cross the bridge")
+        || !expect(healthy_solver->contact_set_signature == 0xfedcba9876543210ULL,
+                   "contact-set signature telemetry should cross the bridge")) {
         return EXIT_FAILURE;
     }
 

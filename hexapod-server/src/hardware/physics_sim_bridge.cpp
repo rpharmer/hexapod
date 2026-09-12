@@ -603,6 +603,7 @@ bool PhysicsSimBridge::read(RobotState& out) {
         telemetry.held_state_count = rsp.solver_held_state_count;
         telemetry.unsupported_island_count = rsp.solver_unsupported_island_count;
         telemetry.worst_contact_id = rsp.solver_worst_contact_id;
+        telemetry.contact_set_signature = rsp.solver_contact_set_signature;
         latest_solver_telemetry_ = telemetry;
     }
 

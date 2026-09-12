@@ -72,8 +72,9 @@ Every proximal response also carries the final solver residuals, physical NCP
 and friction-cone residuals, peak contact and actuator impulses, servo torque
 utilisation, pre-integration speed, peak contact penetration, mechanical energy/work, contact counts,
 ADMM/Delassus diagnostics, cumulative warm-start/retry/rollback/held counters,
-and the persistent ID of the contact with the largest physical feasibility
-residual. For a multi-substep command, maxima and cumulative counters are
+the persistent ID of the contact with the largest physical feasibility
+residual, and a stable signature of the active contact-ID set. For a
+multi-substep command, maxima and cumulative counters are
 aggregated across the complete command; energy delta and actuator work are
 summed.
 

@@ -1750,6 +1750,8 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             rsp.solver_held_state_count = proximal_diagnostics.heldStateCount;
             rsp.solver_unsupported_island_count = proximal_diagnostics.unsupportedIslandCount;
             rsp.solver_worst_contact_id = proximal_diagnostics.worstContactId;
+            rsp.solver_contact_set_signature =
+                proximal_diagnostics.contactSetSignature;
             if (trace_proximal_failures
                 && proximal_diagnostics.status == ProximalStepStatus::HeldLastGood) {
                 ++traced_proximal_failures;

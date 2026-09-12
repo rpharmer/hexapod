@@ -175,6 +175,7 @@ struct StateResponse {
     std::uint64_t solver_held_state_count{0};
     std::uint64_t solver_unsupported_island_count{0};
     std::uint64_t solver_worst_contact_id{0};
+    std::uint64_t solver_contact_set_signature{0};
 };
 
 struct StateCorrection {
