@@ -1455,6 +1455,10 @@ bool PinocchioHexapodModel::stepProximal(
             impl_->haveCommandedServoTargets = true;
             diagnostics = retry;
             diagnostics.status = ProximalStepStatus::RecoveredRetry;
+            // Retain the reason that made recovery necessary. Consumers can
+            // now distinguish a clean healthy step from a usable step that
+            // recovered solver non-convergence or a speed-limit rejection.
+            diagnostics.failureReason = firstAttempt.failureReason;
             readState(world, impl_->lastGoodQ, impl_->lastGoodV);
         } else {
             ++impl_->totalHeldStates;

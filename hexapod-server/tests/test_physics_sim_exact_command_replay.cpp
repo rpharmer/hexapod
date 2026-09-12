@@ -17,6 +17,7 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <map>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -46,6 +47,24 @@ constexpr std::size_t kPhaseCount = static_cast<std::size_t>(ReplayPhase::Count)
 
 constexpr std::array<const char*, kPhaseCount> kPhaseNames{
     "stand", "transition", "forward", "reverse", "strafe", "diagonal", "turn_in_place"};
+
+constexpr std::array<const char*, 15> kFailureReasonNames{
+    "none",
+    "invalid_dt",
+    "read_state",
+    "non_finite_state",
+    "non_finite_mass",
+    "non_finite_acceleration",
+    "unsupported_island",
+    "solver_not_converged",
+    "non_finite_impulse",
+    "non_finite_velocity",
+    "speed_limit",
+    "non_finite_configuration",
+    "write_state",
+    "non_finite_energy",
+    "extreme_penetration",
+};
 
 struct CapturedFrame {
     JointTargets targets{};
@@ -113,6 +132,8 @@ struct ReplayResult {
     std::uint64_t unsupported{0};
     std::uint64_t read_failures{0};
     std::uint64_t solver_not_converged{0};
+    std::map<std::uint16_t, std::uint64_t> iteration_histogram{};
+    std::array<std::uint64_t, kFailureReasonNames.size()> failure_reason_histogram{};
     std::uint16_t max_iterations{0};
     std::uint32_t max_contact_constraints{0};
     std::uint64_t max_warm_start_resets{0};
@@ -635,6 +656,12 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         solver_integration_times_ms.push_back(telemetry->integration_time_ms);
         solver_total_step_times_ms.push_back(telemetry->total_step_time_ms);
         result.max_iterations = std::max(result.max_iterations, telemetry->iterations);
+        ++result.iteration_histogram[telemetry->iterations];
+        const std::size_t failure_reason = static_cast<std::size_t>(
+            telemetry->failure_reason);
+        if (failure_reason < result.failure_reason_histogram.size()) {
+            ++result.failure_reason_histogram[failure_reason];
+        }
         result.max_contact_constraints = std::max(
             result.max_contact_constraints, telemetry->contact_constraint_count);
         result.max_warm_start_resets = std::max(
@@ -729,6 +756,12 @@ void accumulateReplayResult(ReplayResult& total, const ReplayResult& sample) {
     total.unsupported += sample.unsupported;
     total.read_failures += sample.read_failures;
     total.solver_not_converged += sample.solver_not_converged;
+    for (const auto& [iterations, frames] : sample.iteration_histogram) {
+        total.iteration_histogram[iterations] += frames;
+    }
+    for (std::size_t i = 0; i < total.failure_reason_histogram.size(); ++i) {
+        total.failure_reason_histogram[i] += sample.failure_reason_histogram[i];
+    }
     total.max_iterations = std::max(total.max_iterations, sample.max_iterations);
     total.max_contact_constraints = std::max(
         total.max_contact_constraints, sample.max_contact_constraints);
@@ -898,6 +931,29 @@ std::string metricsJson(const ReplayResult& result,
         << result.p99_solver_integration_time_ms
         << ",\"p99_solver_total_step_time_ms\":"
         << result.p99_solver_total_step_time_ms
+        << ",\"iteration_histogram\":[";
+    bool first_iteration_bin = true;
+    for (const auto& [iterations, frames] : result.iteration_histogram) {
+        if (!first_iteration_bin) {
+            out << ',';
+        }
+        first_iteration_bin = false;
+        out << "{\"iterations\":" << iterations << ",\"frames\":" << frames << '}';
+    }
+    out << "],\"failure_reason_histogram\":[";
+    bool first_failure_reason = true;
+    for (std::size_t i = 1; i < result.failure_reason_histogram.size(); ++i) {
+        if (result.failure_reason_histogram[i] == 0) {
+            continue;
+        }
+        if (!first_failure_reason) {
+            out << ',';
+        }
+        first_failure_reason = false;
+        out << "{\"reason\":\"" << kFailureReasonNames[i]
+            << "\",\"frames\":" << result.failure_reason_histogram[i] << '}';
+    }
+    out << ']'
         << ",\"phases\":[";
     for (std::size_t i = 0; i < result.phases.size(); ++i) {
         if (i != 0) {
