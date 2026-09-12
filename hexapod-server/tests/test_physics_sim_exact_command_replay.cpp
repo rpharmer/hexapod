@@ -160,6 +160,7 @@ struct ReplayResult {
     std::uint64_t high_iteration_persistent_contacts{0};
     IterationHistogram iteration_histogram{};
     std::map<std::uint32_t, IterationHistogram> contact_count_iteration_histograms{};
+    std::map<std::uint32_t, IterationHistogram> topology_age_iteration_histograms{};
     std::array<std::uint64_t, kFailureReasonNames.size()> failure_reason_histogram{};
     std::uint16_t max_iterations{0};
     std::uint32_t max_contact_constraints{0};
@@ -940,6 +941,7 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
     };
     std::optional<ActivePhaseSegment> active_segment{};
     std::optional<std::uint64_t> previous_contact_set_signature{};
+    std::uint32_t contact_topology_age = 0;
     const auto finishSegment = [&]() {
         if (!active_segment.has_value()
             || !active_segment->start_position.has_value()
@@ -1020,6 +1022,10 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         ++result.telemetry_frames;
         const bool topology_changed = previous_contact_set_signature.has_value()
             && *previous_contact_set_signature != telemetry->contact_set_signature;
+        contact_topology_age = !previous_contact_set_signature.has_value()
+                || topology_changed
+            ? 0U
+            : std::min<std::uint32_t>(contact_topology_age + 1U, 16U);
         previous_contact_set_signature = telemetry->contact_set_signature;
         if (topology_changed) {
             ++result.topology_changes;
@@ -1035,6 +1041,15 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
                 ++phase.high_iteration_persistent_contacts;
             }
         }
+        const std::uint32_t topology_age_bucket = contact_topology_age >= 16U
+            ? 16U
+            : contact_topology_age >= 8U
+                ? 8U
+                : contact_topology_age >= 4U
+                    ? 4U
+                    : contact_topology_age >= 2U ? 2U : contact_topology_age;
+        ++result.topology_age_iteration_histograms[topology_age_bucket]
+                                                   [telemetry->iterations];
         solver_dynamics_times_ms.push_back(telemetry->dynamics_time_ms);
         solver_contact_setup_times_ms.push_back(telemetry->contact_setup_time_ms);
         solver_collision_times_ms.push_back(telemetry->collision_time_ms);
@@ -1160,6 +1175,12 @@ void accumulateReplayResult(ReplayResult& total, const ReplayResult& sample) {
          sample.contact_count_iteration_histograms) {
         for (const auto& [iterations, frames] : histogram) {
             total.contact_count_iteration_histograms[contact_count][iterations] += frames;
+        }
+    }
+    for (const auto& [topology_age, histogram] :
+         sample.topology_age_iteration_histograms) {
+        for (const auto& [iterations, frames] : histogram) {
+            total.topology_age_iteration_histograms[topology_age][iterations] += frames;
         }
     }
     for (std::size_t i = 0; i < total.failure_reason_histogram.size(); ++i) {
@@ -1389,6 +1410,26 @@ std::string metricsJson(const ReplayResult& result,
             frame_count += frames;
         }
         out << "{\"contacts\":" << contact_count
+            << ",\"frames\":" << frame_count
+            << ",\"p50_iterations\":" << iterationPercentile(histogram, 0.50)
+            << ",\"p90_iterations\":" << iterationPercentile(histogram, 0.90)
+            << ",\"p99_iterations\":" << iterationPercentile(histogram, 0.99)
+            << ",\"max_iterations\":" << histogram.rbegin()->first << '}';
+    }
+    out << "],\"topology_age_iteration_profiles\":[";
+    bool first_topology_age_profile = true;
+    for (const auto& [minimum_age, histogram] :
+         result.topology_age_iteration_histograms) {
+        if (!first_topology_age_profile) {
+            out << ',';
+        }
+        first_topology_age_profile = false;
+        std::uint64_t frame_count = 0;
+        for (const auto& [iterations, frames] : histogram) {
+            (void)iterations;
+            frame_count += frames;
+        }
+        out << "{\"minimum_age_frames\":" << minimum_age
             << ",\"frames\":" << frame_count
             << ",\"p50_iterations\":" << iterationPercentile(histogram, 0.50)
             << ",\"p90_iterations\":" << iterationPercentile(histogram, 0.90)

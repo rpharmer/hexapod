@@ -332,6 +332,9 @@ These are the highest-value tests for tracking improvements across commits.
   - classify frames above the 20-iteration acceptance target by whether the
     persistent contact-ID set changed on that frame. This separates topology and
     warm-start churn from slow convergence on an unchanged multi-contact system
+  - report iteration percentiles by contact-set age buckets (`0`, `1`, `2-3`,
+    `4-7`, `8-15`, and `16+` frames) to reveal convergence tails that persist
+    beyond the immediate topology-change frame
 - Run from the repository root after building both projects:
   - `source scripts/lib/pinocchio_env.sh`
   - `HEXAPOD_PHYSICS_SIM_EXE=hexapod-physics-sim/build/hexapod-physics-sim hexapod-server/build-tests/test_physics_sim_exact_command_replay --emit-metrics-json`
