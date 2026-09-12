@@ -278,6 +278,9 @@ These are the highest-value tests for tracking improvements across commits.
   - exits non-zero if assertions fail
   - `HEXAPOD_WALK_TEST_CHILD_STDIO=1` exposes simulator diagnostics during
     failure tracing; child output remains quiet by default
+  - proximal sweeps can override `HEXAPOD_WALK_TEST_ABSOLUTE_TOLERANCE` and
+    `HEXAPOD_WALK_TEST_RELATIVE_TOLERANCE`; these are diagnostic controls and
+    do not relax the production defaults
 
 ### 3) `test_physics_sim_walk_stability` and related motion checks
 
@@ -328,6 +331,26 @@ These are the highest-value tests for tracking improvements across commits.
   - `HEXAPOD_EXACT_REPLAY_SOLVER_ITERATIONS`
   - `HEXAPOD_EXACT_REPLAY_PROXIMAL_MU` and
     `HEXAPOD_EXACT_REPLAY_CONTACT_REGULARIZATION`
+
+### 5) `test_physics_sim_proximal_stand_acceptance` (proximal diagnostic)
+
+- Location: `hexapod-server/tests/test_physics_sim_proximal_stand_acceptance.cpp`
+- This is intentionally not a default CTest until the proximal rollout gates pass.
+- Runs the complete controller, estimator, safety, bridge, collision, and
+  Pinocchio contact path in STAND mode for 60 simulated seconds.
+- Enforces zero held/unsupported/non-converged states and rollbacks, body-height
+  error at or below 10 mm, reconstructed stance-foot drift below 3 mm RMS,
+  pre-integration speed limits, and strict ADMM p99 at or below 20 iterations.
+- Run from the repository root:
+  - `source scripts/lib/pinocchio_env.sh`
+  - `hexapod-server/build-tests/test_physics_sim_proximal_stand_acceptance hexapod-physics-sim/build/hexapod-physics-sim`
+- Useful diagnostic overrides:
+  - `HEXAPOD_PROXIMAL_STAND_DURATION_S` and `HEXAPOD_PROXIMAL_STAND_WARMUP_S`
+  - `HEXAPOD_PROXIMAL_STAND_ITERATIONS`
+  - `HEXAPOD_PROXIMAL_STAND_MU`, `HEXAPOD_PROXIMAL_STAND_ABSOLUTE_TOLERANCE`,
+    `HEXAPOD_PROXIMAL_STAND_RELATIVE_TOLERANCE`, and
+    `HEXAPOD_PROXIMAL_STAND_CONTACT_REGULARIZATION`
+  - `HEXAPOD_PROXIMAL_STAND_BODY_HEIGHT_M`
   - `HEXAPOD_EXACT_REPLAY_ABSOLUTE_TOLERANCE` and
     `HEXAPOD_EXACT_REPLAY_RELATIVE_TOLERANCE`
   - `HEXAPOD_EXACT_REPLAY_PERIOD_US=4166` measures the approximately 240 Hz

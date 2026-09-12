@@ -435,6 +435,12 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
         tests/test_physics_sim_exact_command_replay.cpp)
     target_link_libraries(test_physics_sim_exact_command_replay PRIVATE hexapod_server_core)
 
+    # Diagnostic acceptance target until the strict 60-second proximal
+    # stability and performance gates pass; intentionally not a default CTest.
+    add_executable(test_physics_sim_proximal_stand_acceptance
+        tests/test_physics_sim_proximal_stand_acceptance.cpp)
+    target_link_libraries(test_physics_sim_proximal_stand_acceptance PRIVATE hexapod_server_core)
+
     add_executable(test_physics_sim_walk_entry_tracking tests/test_physics_sim_walk_entry_tracking.cpp)
     target_link_libraries(test_physics_sim_walk_entry_tracking PRIVATE hexapod_server_core)
     hexapod_add_live_physics_sim_test(physics_sim_walk_entry_tracking test_physics_sim_walk_entry_tracking)

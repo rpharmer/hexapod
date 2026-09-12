@@ -1125,6 +1125,24 @@ int main(int argc, char** argv) {
         }
         solver_settings.proximal_mu = static_cast<float>(parsed);
     }
+    if (const char* value = std::getenv("HEXAPOD_WALK_TEST_ABSOLUTE_TOLERANCE")) {
+        char* end = nullptr;
+        const double parsed = std::strtod(value, &end);
+        if (end == value || *end != '\0' || !std::isfinite(parsed) || parsed <= 0.0) {
+            std::cerr << "invalid HEXAPOD_WALK_TEST_ABSOLUTE_TOLERANCE=" << value << '\n';
+            return 2;
+        }
+        solver_settings.absolute_tolerance = static_cast<float>(parsed);
+    }
+    if (const char* value = std::getenv("HEXAPOD_WALK_TEST_RELATIVE_TOLERANCE")) {
+        char* end = nullptr;
+        const double parsed = std::strtod(value, &end);
+        if (end == value || *end != '\0' || !std::isfinite(parsed) || parsed <= 0.0) {
+            std::cerr << "invalid HEXAPOD_WALK_TEST_RELATIVE_TOLERANCE=" << value << '\n';
+            return 2;
+        }
+        solver_settings.relative_tolerance = static_cast<float>(parsed);
+    }
     double body_height_m = 0.06;
     if (const char* value = std::getenv("HEXAPOD_WALK_TEST_BODY_HEIGHT_M")) {
         char* end = nullptr;
