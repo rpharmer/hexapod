@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -61,6 +62,7 @@ public:
     }
 
     bool read(RobotState& out) override {
+        applied_targets_ = pending_targets_;
         const bool ok = inner_.read(out);
         last_solver_telemetry_ = inner_.latestSolverTelemetry();
         if (ok) {
@@ -70,7 +72,11 @@ public:
     }
 
     bool write(const JointTargets& in) override {
-        return inner_.write(in);
+        if (!inner_.write(in)) {
+            return false;
+        }
+        pending_targets_ = in;
+        return true;
     }
 
     std::optional<BridgeCommandResultMetadata> last_bridge_result() const override {
@@ -93,10 +99,14 @@ public:
         return last_solver_telemetry_;
     }
 
+    const JointTargets& applied_targets() const { return applied_targets_; }
+
 private:
     PhysicsSimBridge inner_;
     std::optional<RobotState> last_state_{};
     std::optional<PhysicsSimSolverTelemetry> last_solver_telemetry_{};
+    JointTargets pending_targets_{};
+    JointTargets applied_targets_{};
 };
 
 void runControlLoopStep(RobotRuntime& runtime,
@@ -137,6 +147,15 @@ struct MotionRunResult {
     double peak_horizontal_speed_mps{0.0};
     double average_yaw_rate_radps{0.0};
     double peak_yaw_rate_radps{0.0};
+    double minimum_body_height_m{std::numeric_limits<double>::infinity()};
+    double maximum_body_height_m{-std::numeric_limits<double>::infinity()};
+    double maximum_body_height_error_m{0.0};
+    double maximum_servo_tracking_error_rad{0.0};
+    double servo_tracking_error_squared_sum{0.0};
+    std::uint64_t servo_tracking_error_samples{0};
+    std::array<double, 3> maximum_servo_tracking_error_by_joint_rad{};
+    std::array<double, 3> servo_tracking_error_squared_sum_by_joint{};
+    std::array<std::uint64_t, 3> servo_tracking_error_samples_by_joint{};
     int walk_mode_steps{0};
     int non_walk_mode_steps{0};
     int faulted_steps{0};
@@ -278,6 +297,34 @@ std::string motionRunResultMetricsJson(const MotionRunResult& result,
       << ",\"peak_horizontal_speed_mps\":" << formatDouble(result.peak_horizontal_speed_mps)
       << ",\"average_yaw_rate_radps\":" << formatDouble(result.average_yaw_rate_radps)
       << ",\"peak_yaw_rate_radps\":" << formatDouble(result.peak_yaw_rate_radps)
+      << ",\"minimum_body_height_m\":" << formatDouble(result.minimum_body_height_m)
+      << ",\"maximum_body_height_m\":" << formatDouble(result.maximum_body_height_m)
+      << ",\"maximum_body_height_error_m\":"
+      << formatDouble(result.maximum_body_height_error_m)
+      << ",\"maximum_servo_tracking_error_rad\":"
+      << formatDouble(result.maximum_servo_tracking_error_rad)
+      << ",\"servo_tracking_error_rms_rad\":"
+      << formatDouble(result.servo_tracking_error_samples == 0
+              ? 0.0
+              : std::sqrt(result.servo_tracking_error_squared_sum
+                  / static_cast<double>(result.servo_tracking_error_samples)))
+      << ",\"maximum_servo_tracking_error_by_joint_rad\":["
+      << formatDouble(result.maximum_servo_tracking_error_by_joint_rad[0]) << ','
+      << formatDouble(result.maximum_servo_tracking_error_by_joint_rad[1]) << ','
+      << formatDouble(result.maximum_servo_tracking_error_by_joint_rad[2]) << ']'
+      << ",\"servo_tracking_error_rms_by_joint_rad\":["
+      << formatDouble(result.servo_tracking_error_samples_by_joint[0] == 0
+              ? 0.0
+              : std::sqrt(result.servo_tracking_error_squared_sum_by_joint[0]
+                  / static_cast<double>(result.servo_tracking_error_samples_by_joint[0]))) << ','
+      << formatDouble(result.servo_tracking_error_samples_by_joint[1] == 0
+              ? 0.0
+              : std::sqrt(result.servo_tracking_error_squared_sum_by_joint[1]
+                  / static_cast<double>(result.servo_tracking_error_samples_by_joint[1]))) << ','
+      << formatDouble(result.servo_tracking_error_samples_by_joint[2] == 0
+              ? 0.0
+              : std::sqrt(result.servo_tracking_error_squared_sum_by_joint[2]
+                  / static_cast<double>(result.servo_tracking_error_samples_by_joint[2]))) << ']'
       << ",\"walk_mode_steps\":" << result.walk_mode_steps
       << ",\"non_walk_mode_steps\":" << result.non_walk_mode_steps
       << ",\"faulted_steps\":" << result.faulted_steps
@@ -337,6 +384,17 @@ std::string motionRunTurnMetricsJson(const MotionRunResult& result,
       << ",\"yaw_delta_rad\":" << formatDouble(yaw_delta)
       << ",\"average_yaw_rate_radps\":" << formatDouble(result.average_yaw_rate_radps)
       << ",\"peak_yaw_rate_radps\":" << formatDouble(result.peak_yaw_rate_radps)
+      << ",\"minimum_body_height_m\":" << formatDouble(result.minimum_body_height_m)
+      << ",\"maximum_body_height_m\":" << formatDouble(result.maximum_body_height_m)
+      << ",\"maximum_body_height_error_m\":"
+      << formatDouble(result.maximum_body_height_error_m)
+      << ",\"maximum_servo_tracking_error_rad\":"
+      << formatDouble(result.maximum_servo_tracking_error_rad)
+      << ",\"servo_tracking_error_rms_rad\":"
+      << formatDouble(result.servo_tracking_error_samples == 0
+              ? 0.0
+              : std::sqrt(result.servo_tracking_error_squared_sum
+                  / static_cast<double>(result.servo_tracking_error_samples)))
       << ",\"walk_mode_steps\":" << result.walk_mode_steps
       << ",\"non_walk_mode_steps\":" << result.non_walk_mode_steps
       << ",\"faulted_steps\":" << result.faulted_steps
@@ -419,6 +477,10 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
             bridge.last_solver_telemetry()->rollback_count;
     }
     result.start_position = positionFromState(bridge.last_state().value());
+    result.minimum_body_height_m = result.start_position.z;
+    result.maximum_body_height_m = result.start_position.z;
+    result.maximum_body_height_error_m = std::abs(
+        result.start_position.z - stand_motion.body_height_m);
     result.start_yaw_rad = bridge.last_state().value().body_twist_state.twist_pos_rad.z;
     Vec3 previous_position = result.start_position;
     double horizontal_speed_sum = 0.0;
@@ -437,6 +499,33 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
 
         const RobotState& state = bridge.last_state().value();
         const Vec3 current_position = positionFromState(state);
+        result.minimum_body_height_m = std::min(
+            result.minimum_body_height_m, current_position.z);
+        result.maximum_body_height_m = std::max(
+            result.maximum_body_height_m, current_position.z);
+        result.maximum_body_height_error_m = std::max(
+            result.maximum_body_height_error_m,
+            std::abs(current_position.z - stand_motion.body_height_m));
+        const JointTargets& applied_targets = bridge.applied_targets();
+        for (std::size_t leg = 0; leg < state.leg_states.size(); ++leg) {
+            for (std::size_t joint = 0;
+                 joint < state.leg_states[leg].joint_state.size();
+                 ++joint) {
+                const double error = std::remainder(
+                    applied_targets.leg_states[leg].joint_state[joint].pos_rad.value
+                        - state.leg_states[leg].joint_state[joint].pos_rad.value,
+                    6.28318530717958647692);
+                result.maximum_servo_tracking_error_rad = std::max(
+                    result.maximum_servo_tracking_error_rad, std::abs(error));
+                result.servo_tracking_error_squared_sum += error * error;
+                ++result.servo_tracking_error_samples;
+                result.maximum_servo_tracking_error_by_joint_rad[joint] = std::max(
+                    result.maximum_servo_tracking_error_by_joint_rad[joint],
+                    std::abs(error));
+                result.servo_tracking_error_squared_sum_by_joint[joint] += error * error;
+                ++result.servo_tracking_error_samples_by_joint[joint];
+            }
+        }
         walk_samples.push_back(current_position);
         result.walk_path_length_m += std::hypot(current_position.x - previous_position.x,
                                                 current_position.y - previous_position.y);

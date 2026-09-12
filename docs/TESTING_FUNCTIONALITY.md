@@ -275,6 +275,9 @@ These are the highest-value tests for tracking improvements across commits.
   - verifies signed projection onto the commanded body heading and commanded yaw direction, so backwards travel cannot pass as forward progress
 - Output:
   - prints useful numeric values (distance deltas, path, yaw delta, avg/peak yaw rate, etc.)
+  - JSON metrics include the body-height envelope and maximum/RMS applied-target
+    servo tracking error, allowing gait collapse to be separated from contact slip
+    or solver failure
   - exits non-zero if assertions fail
   - `HEXAPOD_WALK_TEST_CHILD_STDIO=1` exposes simulator diagnostics during
     failure tracing; child output remains quiet by default
