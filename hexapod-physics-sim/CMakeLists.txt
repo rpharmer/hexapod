@@ -160,6 +160,14 @@ if(MINPHYS3D_BUILD_TESTS)
         target_include_directories(test_pinocchio_hexapod_model PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
         target_compile_options(test_pinocchio_hexapod_model PRIVATE -Wall -Wextra -pedantic)
         add_test(NAME test_pinocchio_hexapod_model COMMAND test_pinocchio_hexapod_model)
+        add_test(
+            NAME test_pinocchio_hexapod_model_preconditioned
+            COMMAND test_pinocchio_hexapod_model
+        )
+        set_tests_properties(
+            test_pinocchio_hexapod_model_preconditioned
+            PROPERTIES ENVIRONMENT "HEXAPOD_PINOCCHIO_CONTACT_PRECONDITION=1"
+        )
     endif()
     add_minphys3d_test(test_articulation tests/test_articulation.cpp)
     add_minphys3d_test(test_regression_step tests/test_regression_step.cpp)

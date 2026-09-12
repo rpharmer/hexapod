@@ -421,6 +421,12 @@ These are the highest-value tests for tracking improvements across commits.
     and applies the final generalized impulse, while ADMM uses a materialized dense
     contact-space matrix for its repeated products. The exact replay JSON records
     `dense_admm`; the production path remains the articulated operator by default.
+  - `HEXAPOD_PINOCCHIO_CONTACT_PRECONDITION=1` is an A/B conditioning experiment.
+    It scales each three-axis contact block by its effective mass, solves the
+    equivalent dense NCP, converts impulses and velocities back to physical units,
+    and requires the original unscaled physical residual check to pass. Exact replay
+    records `contact_precondition`; this path is opt-in and is not a production
+    default.
   - half-substep recovery is restricted to solver non-convergence and speed-limit
     rejection; state validity, penetration, energy, and write failures hold the
     last-good state immediately because they cannot be repaired by a smaller timestep

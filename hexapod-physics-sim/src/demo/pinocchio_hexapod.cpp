@@ -226,6 +226,7 @@ struct PinocchioHexapodModel::Impl {
     double servoGainScale = 1.0;
     bool warmstartRho = true;
     bool denseAdmm = false;
+    bool contactPrecondition = false;
     std::uint64_t contactOrderSeed = 0;
 
     struct WarmContact {
@@ -288,6 +289,10 @@ struct PinocchioHexapodModel::Impl {
         }
         if (const char* value = std::getenv("HEXAPOD_PINOCCHIO_DENSE_ADMM")) {
             denseAdmm = value[0] != '\0' && value[0] != '0';
+        }
+        if (const char* value = std::getenv(
+                "HEXAPOD_PINOCCHIO_CONTACT_PRECONDITION")) {
+            contactPrecondition = value[0] != '\0' && value[0] != '0';
         }
 
         const Body& chassis = world.GetBody(scene.body);
@@ -1045,7 +1050,27 @@ bool PinocchioHexapodModel::stepProximal(
             out.constraintAssemblyTimeMs += elapsedMs(constraintAssemblyStart);
             const auto delassusStart = StepClock::now();
             delassus.compute();
-            if (impl_->denseAdmm) {
+            Eigen::VectorXd contactScale;
+            double solverFeasibilityToleranceScale = 1.0;
+            if (impl_->contactPrecondition) {
+                contactScale = Eigen::VectorXd::Ones(delassus.rows());
+                Eigen::MatrixXd contactMatrix = delassus.undampedMatrix(true);
+                for (Eigen::Index offset = 0; offset < contactMatrix.rows(); offset += 3) {
+                    const double meanDiagonal = contactMatrix.diagonal()
+                        .segment<3>(offset)
+                        .mean();
+                    const double scale = 1.0 / std::sqrt(std::max(meanDiagonal, 1.0e-12));
+                    contactScale.segment<3>(offset).setConstant(scale);
+                }
+                contactMatrix = contactScale.asDiagonal()
+                    * contactMatrix
+                    * contactScale.asDiagonal();
+                impl_->contactDenseDelassus.rebuild(contactMatrix);
+                constexpr double kPhysicalResidualSafetyFactor = 0.05;
+                solverFeasibilityToleranceScale = kPhysicalResidualSafetyFactor
+                    * std::min(
+                        contactScale.minCoeff(), 1.0 / contactScale.maxCoeff());
+            } else if (impl_->denseAdmm) {
                 // The rigid-body operator remains the source of the
                 // articulated Delassus matrix and final generalized impulse.
                 // Materialising its small contact-space matrix makes repeated
@@ -1081,6 +1106,12 @@ bool PinocchioHexapodModel::stepProximal(
                     drift[normalIndex] += contactRestitutions[i] * incomingNormalSpeed;
                 }
             }
+            Eigen::VectorXd scaledDrift;
+            if (impl_->contactPrecondition) {
+                scaledDrift = contactScale.cwiseProduct(drift);
+            }
+            const Eigen::VectorXd& solverDrift =
+                impl_->contactPrecondition ? scaledDrift : drift;
 
             Eigen::VectorXd warm = Eigen::VectorXd::Zero(drift.size());
             Eigen::VectorXd warmVelocity = Eigen::VectorXd::Zero(drift.size());
@@ -1127,8 +1158,10 @@ bool PinocchioHexapodModel::stepProximal(
             // configuration remains a true maximum solve count.
             solverSettings.max_iterations = static_cast<std::size_t>(
                 std::max(1, settings.maxIterations) - 1);
-            solverSettings.absolute_feasibility_tol = settings.absoluteTolerance;
-            solverSettings.relative_feasibility_tol = settings.relativeTolerance;
+            solverSettings.absolute_feasibility_tol = settings.absoluteTolerance
+                * solverFeasibilityToleranceScale;
+            solverSettings.relative_feasibility_tol = settings.relativeTolerance
+                * solverFeasibilityToleranceScale;
             solverSettings.absolute_complementarity_tol = settings.absoluteTolerance;
             solverSettings.relative_complementarity_tol = settings.relativeTolerance;
             solverSettings.admm_update_rule = pinocchio::ADMMUpdateRule::SPECTRAL;
@@ -1146,22 +1179,32 @@ bool PinocchioHexapodModel::stepProximal(
                 result.resize(static_cast<std::size_t>(drift.size()));
                 result.reset();
             }
-            result.setConstraintImpulseGuess(warm);
-            if (IsFinite(warmVelocity)) {
-                result.setConstraintVelocityGuess(warmVelocity);
+            Eigen::VectorXd scaledWarm;
+            Eigen::VectorXd scaledWarmVelocity;
+            if (impl_->contactPrecondition) {
+                scaledWarm = warm.cwiseQuotient(contactScale);
+                scaledWarmVelocity = warmVelocity.cwiseProduct(contactScale);
+            }
+            const Eigen::VectorXd& solverWarm =
+                impl_->contactPrecondition ? scaledWarm : warm;
+            const Eigen::VectorXd& solverWarmVelocity =
+                impl_->contactPrecondition ? scaledWarmVelocity : warmVelocity;
+            result.setConstraintImpulseGuess(solverWarm);
+            if (IsFinite(solverWarmVelocity)) {
+                result.setConstraintVelocityGuess(solverWarmVelocity);
             }
             const auto admmStart = StepClock::now();
-            const bool converged = impl_->denseAdmm
+            const bool converged = (impl_->denseAdmm || impl_->contactPrecondition)
                 ? impl_->contactSolver.solve(
                     impl_->contactDenseDelassus,
-                    drift,
+                    solverDrift,
                     constraintModels,
                     constraintDatas,
                     solverSettings,
                     result)
                 : impl_->contactSolver.solve(
                     delassus,
-                    drift,
+                    solverDrift,
                     constraintModels,
                     constraintDatas,
                     solverSettings,
@@ -1175,6 +1218,9 @@ bool PinocchioHexapodModel::stepProximal(
                 out.complementarityResidual, result.complementarity);
             Eigen::VectorXd impulses(drift.size());
             result.retrieveConstraintImpulses(impulses);
+            if (impl_->contactPrecondition) {
+                impulses.array() *= contactScale.array();
+            }
             if (IsFinite(impulses)) {
                 Eigen::VectorXd contactVelocities(drift.size());
                 delassus.applyOnTheRight(impulses, contactVelocities, false);
@@ -1214,6 +1260,9 @@ bool PinocchioHexapodModel::stepProximal(
             }
             Eigen::VectorXd solvedContactVelocities(drift.size());
             result.retrieveConstraintVelocities(solvedContactVelocities);
+            if (impl_->contactPrecondition) {
+                solvedContactVelocities.array() /= contactScale.array();
+            }
             const double driftScale = drift.lpNorm<Eigen::Infinity>();
             const double impulseScale = IsFinite(impulses)
                 ? impulses.lpNorm<Eigen::Infinity>()
@@ -1231,7 +1280,10 @@ bool PinocchioHexapodModel::stepProximal(
                 && out.ncpDualResidual <= ncpDualTolerance
                 && out.ncpComplementarityResidual <= ncpComplementarityTolerance
                 && out.coneResidual <= coneTolerance;
-            if ((!converged && !physicallyConverged)
+            const bool accepted = impl_->contactPrecondition
+                ? physicallyConverged
+                : converged || physicallyConverged;
+            if (!accepted
                 || !std::isfinite(result.primal_feasibility)
                 || !std::isfinite(result.dual_feasibility)
                 || !std::isfinite(result.complementarity)) {

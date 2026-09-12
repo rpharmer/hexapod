@@ -1263,6 +1263,7 @@ std::string metricsJson(const ReplayResult& result,
                         const bool fixed_initial_pose,
                         const bool fixed_contact_order,
                         const bool dense_admm,
+                        const bool contact_precondition,
                         const physics_sim::PhysicsSolverMode capture_solver_mode,
                         const int capture_solver_iterations,
                         const bool behavior_gates_requested,
@@ -1341,6 +1342,8 @@ std::string metricsJson(const ReplayResult& result,
         << ",\"fixed_initial_pose\":" << (fixed_initial_pose ? "true" : "false")
         << ",\"fixed_contact_order\":" << (fixed_contact_order ? "true" : "false")
         << ",\"dense_admm\":" << (dense_admm ? "true" : "false")
+        << ",\"contact_precondition\":"
+        << (contact_precondition ? "true" : "false")
         << ",\"capture_solver_mode\":\""
         << (capture_solver_mode == physics_sim::PhysicsSolverMode::LegacyPgs
                 ? "legacy-pgs"
@@ -1589,6 +1592,8 @@ int main(int argc, char** argv) {
         const bool fixed_contact_order = envEnabled(
             "HEXAPOD_EXACT_REPLAY_FIXED_CONTACT_ORDER");
         const bool dense_admm = envEnabled("HEXAPOD_PINOCCHIO_DENSE_ADMM");
+        const bool contact_precondition = envEnabled(
+            "HEXAPOD_PINOCCHIO_CONTACT_PRECONDITION");
         const char* command_fixture_input =
             std::getenv("HEXAPOD_EXACT_REPLAY_COMMANDS_IN");
         const char* command_fixture_output =
@@ -1777,6 +1782,7 @@ int main(int argc, char** argv) {
                                                 fixed_initial_pose,
                                                 fixed_contact_order,
                                                 dense_admm,
+                                                contact_precondition,
                                                 fixture.capture_solver_mode,
                                                 fixture.capture_solver_iterations,
                                                 behavior_gates_requested,
