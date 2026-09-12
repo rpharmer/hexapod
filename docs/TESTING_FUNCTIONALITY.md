@@ -377,6 +377,11 @@ These are the highest-value tests for tracking improvements across commits.
     disables spectral-penalty persistence; `HEXAPOD_PINOCCHIO_SERVO_GAIN_SCALE`
     isolates constrained-load calibration without changing the motor torque-speed
     envelope. These overrides do not change production defaults.
+  - `HEXAPOD_PINOCCHIO_DENSE_ADMM=1` is an A/B performance experiment. The
+    articulated rigid-body operator still computes the whole-body Delassus response
+    and applies the final generalized impulse, while ADMM uses a materialized dense
+    contact-space matrix for its repeated products. The exact replay JSON records
+    `dense_admm`; the production path remains the articulated operator by default.
   - half-substep recovery is restricted to solver non-convergence and speed-limit
     rejection; state validity, penetration, energy, and write failures hold the
     last-good state immediately because they cannot be repaired by a smaller timestep

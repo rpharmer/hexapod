@@ -214,6 +214,7 @@ struct PinocchioHexapodModel::Impl {
     PinConstraintDatas contactConstraintDatas{};
     std::vector<std::uint64_t> contactTopologyIds{};
     std::unique_ptr<RigidDelassus> contactDelassus{};
+    pinocchio::DelassusOperatorDense contactDenseDelassus{};
     double contactDelassusRegularization = 0.0;
     pinocchio::ADMMConstraintSolver contactSolver{72};
     pinocchio::ADMMSolverResult contactSolverResult{};
@@ -224,6 +225,7 @@ struct PinocchioHexapodModel::Impl {
     double spectralRhoPowerInit = 0.2;
     double servoGainScale = 1.0;
     bool warmstartRho = true;
+    bool denseAdmm = false;
     std::uint64_t contactOrderSeed = 0;
 
     struct WarmContact {
@@ -283,6 +285,9 @@ struct PinocchioHexapodModel::Impl {
             "HEXAPOD_PINOCCHIO_SERVO_GAIN_SCALE", servoGainScale, 0.01, 100.0);
         if (const char* value = std::getenv("HEXAPOD_PINOCCHIO_WARMSTART_RHO")) {
             warmstartRho = value[0] != '\0' && value[0] != '0';
+        }
+        if (const char* value = std::getenv("HEXAPOD_PINOCCHIO_DENSE_ADMM")) {
+            denseAdmm = value[0] != '\0' && value[0] != '0';
         }
 
         const Body& chassis = world.GetBody(scene.body);
@@ -1040,6 +1045,13 @@ bool PinocchioHexapodModel::stepProximal(
             out.constraintAssemblyTimeMs += elapsedMs(constraintAssemblyStart);
             const auto delassusStart = StepClock::now();
             delassus.compute();
+            if (impl_->denseAdmm) {
+                // The rigid-body operator remains the source of the
+                // articulated Delassus matrix and final generalized impulse.
+                // Materialising its small contact-space matrix makes repeated
+                // ADMM products dense matrix-vector operations.
+                impl_->contactDenseDelassus.rebuild(delassus, true);
+            }
             out.delassusTimeMs += elapsedMs(delassusStart);
             constraintAssemblyStart = StepClock::now();
 
@@ -1139,13 +1151,21 @@ bool PinocchioHexapodModel::stepProximal(
                 result.setConstraintVelocityGuess(warmVelocity);
             }
             const auto admmStart = StepClock::now();
-            const bool converged = impl_->contactSolver.solve(
-                delassus,
-                drift,
-                constraintModels,
-                constraintDatas,
-                solverSettings,
-                result);
+            const bool converged = impl_->denseAdmm
+                ? impl_->contactSolver.solve(
+                    impl_->contactDenseDelassus,
+                    drift,
+                    constraintModels,
+                    constraintDatas,
+                    solverSettings,
+                    result)
+                : impl_->contactSolver.solve(
+                    delassus,
+                    drift,
+                    constraintModels,
+                    constraintDatas,
+                    solverSettings,
+                    result);
             out.admmTimeMs += elapsedMs(admmStart);
             out.admmRho = result.rho;
             out.iterations = std::max(out.iterations, static_cast<int>(result.iterations));

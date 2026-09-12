@@ -795,6 +795,7 @@ std::string metricsJson(const ReplayResult& result,
                         const double perturbation_scale,
                         const bool fixed_initial_pose,
                         const bool fixed_contact_order,
+                        const bool dense_admm,
                         const int replay_period_us,
                         const int solver_iterations,
                         const double body_height_m,
@@ -864,6 +865,7 @@ std::string metricsJson(const ReplayResult& result,
         << ",\"perturbation_scale\":" << perturbation_scale
         << ",\"fixed_initial_pose\":" << (fixed_initial_pose ? "true" : "false")
         << ",\"fixed_contact_order\":" << (fixed_contact_order ? "true" : "false")
+        << ",\"dense_admm\":" << (dense_admm ? "true" : "false")
         << ",\"replay_period_us\":" << replay_period_us
         << ",\"solver_iteration_limit\":" << solver_iterations
         << ",\"commanded_body_height_m\":" << body_height_m
@@ -1023,6 +1025,7 @@ int main(int argc, char** argv) {
             "HEXAPOD_EXACT_REPLAY_FIXED_INITIAL_POSE");
         const bool fixed_contact_order = envEnabled(
             "HEXAPOD_EXACT_REPLAY_FIXED_CONTACT_ORDER");
+        const bool dense_admm = envEnabled("HEXAPOD_PINOCCHIO_DENSE_ADMM");
         const physics_sim::PhysicsSolverMode replay_solver_mode =
             envEnabled("HEXAPOD_EXACT_REPLAY_LEGACY")
                 ? physics_sim::PhysicsSolverMode::LegacyPgs
@@ -1136,6 +1139,7 @@ int main(int argc, char** argv) {
                                                 perturbation_scale,
                                                 fixed_initial_pose,
                                                 fixed_contact_order,
+                                                dense_admm,
                                                 replay_period_us,
                                                 solver_iterations,
                                                 body_height_m,
