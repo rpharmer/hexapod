@@ -77,6 +77,21 @@ struct CapturedFrame {
     bool walk_mode{false};
 };
 
+struct CommandFixture {
+    int capture_period_us{0};
+    int stand_frames{0};
+    int motion_frames{0};
+    int transition_frames{0};
+    double commanded_body_height_m{0.0};
+    std::array<double, 3> initial_body_position{};
+    std::array<double, 4> initial_body_orientation{1.0, 0.0, 0.0, 0.0};
+    int selected_phase{-1};
+    physics_sim::PhysicsSolverMode capture_solver_mode{
+        physics_sim::PhysicsSolverMode::PinocchioProximal};
+    int capture_solver_iterations{0};
+    std::vector<CapturedFrame> frames{};
+};
+
 struct PhaseResult {
     std::uint64_t frames{0};
     std::uint64_t healthy{0};
@@ -283,11 +298,34 @@ void hashBytes(std::uint64_t& hash, const void* data, const std::size_t size) {
     }
 }
 
-std::uint64_t commandStreamHash(const std::vector<CapturedFrame>& frames) {
+std::uint64_t commandStreamHash(const CommandFixture& fixture) {
     std::uint64_t hash = 1469598103934665603ULL;
-    for (const CapturedFrame& frame : frames) {
+    hashBytes(hash, &fixture.capture_period_us, sizeof(fixture.capture_period_us));
+    hashBytes(hash, &fixture.stand_frames, sizeof(fixture.stand_frames));
+    hashBytes(hash, &fixture.motion_frames, sizeof(fixture.motion_frames));
+    hashBytes(hash, &fixture.transition_frames, sizeof(fixture.transition_frames));
+    hashBytes(hash,
+              &fixture.commanded_body_height_m,
+              sizeof(fixture.commanded_body_height_m));
+    hashBytes(hash,
+              fixture.initial_body_position.data(),
+              sizeof(fixture.initial_body_position));
+    hashBytes(hash,
+              fixture.initial_body_orientation.data(),
+              sizeof(fixture.initial_body_orientation));
+    hashBytes(hash, &fixture.selected_phase, sizeof(fixture.selected_phase));
+    const auto capture_mode = static_cast<std::uint8_t>(fixture.capture_solver_mode);
+    hashBytes(hash, &capture_mode, sizeof(capture_mode));
+    hashBytes(hash,
+              &fixture.capture_solver_iterations,
+              sizeof(fixture.capture_solver_iterations));
+    for (const CapturedFrame& frame : fixture.frames) {
         const auto phase = static_cast<std::uint8_t>(frame.phase);
         hashBytes(hash, &phase, sizeof(phase));
+        const std::uint8_t inhibit_motion = frame.inhibit_motion ? 1U : 0U;
+        const std::uint8_t walk_mode = frame.walk_mode ? 1U : 0U;
+        hashBytes(hash, &inhibit_motion, sizeof(inhibit_motion));
+        hashBytes(hash, &walk_mode, sizeof(walk_mode));
         for (const LegState& leg : frame.targets.leg_states) {
             for (const JointState& joint : leg.joint_state) {
                 hashBytes(hash, &joint.pos_rad.value, sizeof(joint.pos_rad.value));
@@ -322,18 +360,34 @@ std::uint16_t iterationPercentile(const IterationHistogram& histogram,
     return histogram.rbegin()->first;
 }
 
-constexpr const char* kCommandFixtureHeader = "hexapod-exact-command-replay-v1";
+constexpr const char* kCommandFixtureHeader = "hexapod-exact-command-replay-v2";
 
 void saveCommandFixture(const std::string& path,
-                        const std::vector<CapturedFrame>& frames) {
+                        const CommandFixture& fixture) {
     std::ofstream output(path, std::ios::out | std::ios::trunc);
     if (!output) {
         throw std::runtime_error("failed to open command fixture for writing: " + path);
     }
-    output << kCommandFixtureHeader << '\n'
-           << frames.size() << '\n'
-           << std::setprecision(std::numeric_limits<double>::max_digits10);
-    for (const CapturedFrame& frame : frames) {
+    output << std::setprecision(std::numeric_limits<double>::max_digits10)
+           << kCommandFixtureHeader << '\n'
+           << "capture_period_us " << fixture.capture_period_us << '\n'
+           << "stand_frames " << fixture.stand_frames << '\n'
+           << "motion_frames " << fixture.motion_frames << '\n'
+           << "transition_frames " << fixture.transition_frames << '\n'
+           << "commanded_body_height_m " << fixture.commanded_body_height_m << '\n'
+           << "initial_body_position " << fixture.initial_body_position[0] << ' '
+           << fixture.initial_body_position[1] << ' '
+           << fixture.initial_body_position[2] << '\n'
+           << "initial_body_orientation " << fixture.initial_body_orientation[0] << ' '
+           << fixture.initial_body_orientation[1] << ' '
+           << fixture.initial_body_orientation[2] << ' '
+           << fixture.initial_body_orientation[3] << '\n'
+           << "selected_phase " << fixture.selected_phase << '\n'
+           << "capture_solver_mode "
+           << static_cast<unsigned>(fixture.capture_solver_mode) << '\n'
+           << "capture_solver_iterations " << fixture.capture_solver_iterations << '\n'
+           << "frame_count " << fixture.frames.size() << '\n';
+    for (const CapturedFrame& frame : fixture.frames) {
         output << static_cast<unsigned>(frame.phase) << ' '
                << (frame.inhibit_motion ? 1 : 0) << ' '
                << (frame.walk_mode ? 1 : 0);
@@ -350,7 +404,7 @@ void saveCommandFixture(const std::string& path,
     }
 }
 
-std::vector<CapturedFrame> loadCommandFixture(const std::string& path) {
+CommandFixture loadCommandFixture(const std::string& path) {
     std::ifstream input(path);
     if (!input) {
         throw std::runtime_error("failed to open command fixture for reading: " + path);
@@ -360,12 +414,65 @@ std::vector<CapturedFrame> loadCommandFixture(const std::string& path) {
     if (header != kCommandFixtureHeader) {
         throw std::runtime_error("unsupported command fixture header: " + path);
     }
+    const auto expectKey = [&](const char* expected) {
+        std::string key;
+        if (!(input >> key) || key != expected) {
+            throw std::runtime_error(
+                std::string("missing command fixture field ") + expected + ": " + path);
+        }
+    };
+    CommandFixture fixture{};
+    expectKey("capture_period_us");
+    input >> fixture.capture_period_us;
+    expectKey("stand_frames");
+    input >> fixture.stand_frames;
+    expectKey("motion_frames");
+    input >> fixture.motion_frames;
+    expectKey("transition_frames");
+    input >> fixture.transition_frames;
+    expectKey("commanded_body_height_m");
+    input >> fixture.commanded_body_height_m;
+    expectKey("initial_body_position");
+    input >> fixture.initial_body_position[0]
+          >> fixture.initial_body_position[1]
+          >> fixture.initial_body_position[2];
+    expectKey("initial_body_orientation");
+    input >> fixture.initial_body_orientation[0]
+          >> fixture.initial_body_orientation[1]
+          >> fixture.initial_body_orientation[2]
+          >> fixture.initial_body_orientation[3];
+    expectKey("selected_phase");
+    input >> fixture.selected_phase;
+    unsigned capture_solver_mode = 0;
+    expectKey("capture_solver_mode");
+    input >> capture_solver_mode;
+    expectKey("capture_solver_iterations");
+    input >> fixture.capture_solver_iterations;
     std::size_t frame_count = 0;
-    if (!(input >> frame_count) || frame_count > 1'000'000U) {
+    expectKey("frame_count");
+    input >> frame_count;
+    const bool finite_pose = std::all_of(
+        fixture.initial_body_position.begin(),
+        fixture.initial_body_position.end(),
+        [](const double value) { return std::isfinite(value); })
+        && std::all_of(
+            fixture.initial_body_orientation.begin(),
+            fixture.initial_body_orientation.end(),
+            [](const double value) { return std::isfinite(value); });
+    if (!input || fixture.capture_period_us <= 0 || fixture.stand_frames <= 0
+        || fixture.motion_frames <= 0 || fixture.transition_frames <= 0
+        || !std::isfinite(fixture.commanded_body_height_m)
+        || fixture.commanded_body_height_m <= 0.0 || !finite_pose
+        || fixture.selected_phase < -1
+        || fixture.selected_phase >= static_cast<int>(ReplayPhase::Count)
+        || capture_solver_mode > static_cast<unsigned>(
+            physics_sim::PhysicsSolverMode::PinocchioProximal)
+        || fixture.capture_solver_iterations <= 0 || frame_count > 1'000'000U) {
         throw std::runtime_error("invalid command fixture frame count: " + path);
     }
-    std::vector<CapturedFrame> frames;
-    frames.reserve(frame_count);
+    fixture.capture_solver_mode = static_cast<physics_sim::PhysicsSolverMode>(
+        capture_solver_mode);
+    fixture.frames.reserve(frame_count);
     for (std::size_t frame_index = 0; frame_index < frame_count; ++frame_index) {
         unsigned phase = 0;
         int inhibit_motion = 0;
@@ -396,13 +503,79 @@ std::vector<CapturedFrame> loadCommandFixture(const std::string& path) {
                 joint.vel_radps.value = velocity;
             }
         }
-        frames.push_back(frame);
+        fixture.frames.push_back(frame);
     }
     input >> std::ws;
     if (!input.eof()) {
         throw std::runtime_error("unexpected trailing command fixture data: " + path);
     }
-    return frames;
+    return fixture;
+}
+
+void validateCommandFixture(const CommandFixture& fixture) {
+    const bool single_phase = fixture.selected_phase >= 0;
+    if (single_phase
+        && fixture.selected_phase < static_cast<int>(ReplayPhase::Forward)) {
+        throw std::runtime_error("command fixture selected phase is not a motion phase");
+    }
+    const double orientation_norm = std::sqrt(
+        fixture.initial_body_orientation[0] * fixture.initial_body_orientation[0]
+        + fixture.initial_body_orientation[1] * fixture.initial_body_orientation[1]
+        + fixture.initial_body_orientation[2] * fixture.initial_body_orientation[2]
+        + fixture.initial_body_orientation[3] * fixture.initial_body_orientation[3]);
+    if (!std::isfinite(orientation_norm) || std::abs(orientation_norm - 1.0) > 1.0e-9) {
+        throw std::runtime_error("command fixture initial orientation is not normalized");
+    }
+
+    std::array<std::size_t, kPhaseCount> phase_counts{};
+    std::array<std::size_t, kPhaseCount> inhibited_counts{};
+    std::array<std::size_t, kPhaseCount> non_walk_counts{};
+    for (const CapturedFrame& frame : fixture.frames) {
+        if (!targetsAreFinite(frame.targets)) {
+            throw std::runtime_error("command fixture contains non-finite targets");
+        }
+        const std::size_t phase_index = static_cast<std::size_t>(frame.phase);
+        ++phase_counts[phase_index];
+        inhibited_counts[phase_index] += frame.inhibit_motion ? 1U : 0U;
+        non_walk_counts[phase_index] += frame.walk_mode ? 0U : 1U;
+    }
+    const std::size_t motion_case_count = single_phase ? 1U : 5U;
+    const std::size_t expected_frames = static_cast<std::size_t>(fixture.stand_frames)
+        + motion_case_count * static_cast<std::size_t>(
+            fixture.motion_frames + fixture.transition_frames);
+    if (fixture.frames.size() != expected_frames
+        || phase_counts[static_cast<std::size_t>(ReplayPhase::Stand)]
+            != static_cast<std::size_t>(fixture.stand_frames)
+        || phase_counts[static_cast<std::size_t>(ReplayPhase::Transition)]
+            != motion_case_count * static_cast<std::size_t>(fixture.transition_frames)) {
+        throw std::runtime_error("command fixture phase counts do not match its metadata");
+    }
+    constexpr std::array<ReplayPhase, 5> motion_phases{
+        ReplayPhase::Forward,
+        ReplayPhase::Reverse,
+        ReplayPhase::Strafe,
+        ReplayPhase::Diagonal,
+        ReplayPhase::TurnInPlace,
+    };
+    for (const ReplayPhase phase : motion_phases) {
+        const std::size_t phase_index = static_cast<std::size_t>(phase);
+        const bool selected = !single_phase
+            || fixture.selected_phase == static_cast<int>(phase);
+        const std::size_t expected = selected
+            ? static_cast<std::size_t>(fixture.motion_frames)
+            : 0U;
+        if (phase_counts[phase_index] != expected) {
+            throw std::runtime_error(
+                std::string("command fixture frame count mismatch for ")
+                + kPhaseNames[phase_index]);
+        }
+        if (selected && (inhibited_counts[phase_index] != 0
+                         || non_walk_counts[phase_index] != 0)) {
+            throw std::runtime_error(
+                std::string("command fixture contains inhibited or non-WALK frames for ")
+                + kPhaseNames[phase_index]);
+        }
+    }
 }
 
 MotionIntent makeReplayIntent(const ReplayPhase phase, const double body_height_m) {
@@ -483,6 +656,11 @@ bool envEnabled(const char* name) {
     return value != nullptr && value[0] != '\0' && value[0] != '0';
 }
 
+bool envProvided(const char* name) {
+    const char* value = std::getenv(name);
+    return value != nullptr && value[0] != '\0';
+}
+
 std::uint64_t splitMix64(std::uint64_t value) {
     value += 0x9e3779b97f4a7c15ULL;
     value = (value ^ (value >> 30U)) * 0xbf58476d1ce4e5b9ULL;
@@ -507,7 +685,8 @@ std::array<double, 4> multiplyQuaternion(const std::array<double, 4>& lhs,
 
 physics_sim::StateCorrection makePerturbedStandingCorrection(
     const std::uint64_t seed,
-    const double body_height_m,
+    const std::array<double, 3>& base_position,
+    const std::array<double, 4>& base_orientation,
     const double scale) {
     const auto symmetric = [seed](const std::uint64_t channel) {
         return 2.0 * seededUnitInterval(seed, channel) - 1.0;
@@ -525,8 +704,10 @@ physics_sim::StateCorrection makePerturbedStandingCorrection(
         std::cos(0.5 * yaw), 0.0, std::sin(0.5 * yaw), 0.0};
     const std::array<double, 4> qz{
         std::cos(0.5 * pitch), 0.0, 0.0, std::sin(0.5 * pitch)};
-    const std::array<double, 4> orientation =
+    const std::array<double, 4> perturbation =
         multiplyQuaternion(qy, multiplyQuaternion(qz, qx));
+    const std::array<double, 4> orientation =
+        multiplyQuaternion(perturbation, base_orientation);
 
     physics_sim::StateCorrection correction{};
     correction.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection);
@@ -537,9 +718,9 @@ physics_sim::StateCorrection makePerturbedStandingCorrection(
         | physics_sim::kStateCorrectionHardReset;
     correction.correction_strength = 1.0f;
     correction.body_position = {
-        static_cast<float>(horizontal_x),
-        static_cast<float>(body_height_m + vertical),
-        static_cast<float>(horizontal_z)};
+        static_cast<float>(base_position[0] + horizontal_x),
+        static_cast<float>(base_position[1] + vertical),
+        static_cast<float>(base_position[2] + horizontal_z)};
     correction.body_orientation = {
         static_cast<float>(orientation[0]),
         static_cast<float>(orientation[1]),
@@ -691,6 +872,8 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
                             const physics_sim::PhysicsSolverMode solver_mode,
                             const int solver_iterations,
                             const double body_height_m,
+                            const std::array<double, 3>& initial_body_position,
+                            const std::array<double, 4>& initial_body_orientation,
                             const double proximal_mu,
                             const double contact_regularization,
                             const double absolute_tolerance,
@@ -712,7 +895,8 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
     if (!bridge.sendStateCorrection(
             makePerturbedStandingCorrection(
                 perturbation_seed,
-                physicsSimStandingBodyHeightM(),
+                initial_body_position,
+                initial_body_orientation,
                 perturbation_scale))) {
         throw std::runtime_error("proximal replay failed to send initial-pose perturbation");
     }
@@ -1103,14 +1287,11 @@ std::string metricsJson(const ReplayResult& result,
         << ",\"fixed_contact_order\":" << (fixed_contact_order ? "true" : "false")
         << ",\"dense_admm\":" << (dense_admm ? "true" : "false")
         << ",\"capture_solver_mode\":\""
-        << (command_fixture_loaded
-                ? "fixture"
-                : capture_solver_mode == physics_sim::PhysicsSolverMode::LegacyPgs
-                    ? "legacy-pgs"
-                    : "pinocchio-proximal")
+        << (capture_solver_mode == physics_sim::PhysicsSolverMode::LegacyPgs
+                ? "legacy-pgs"
+                : "pinocchio-proximal")
         << "\""
-        << ",\"capture_solver_iteration_limit\":"
-        << (command_fixture_loaded ? 0 : capture_solver_iterations)
+        << ",\"capture_solver_iteration_limit\":" << capture_solver_iterations
         << ",\"behavior_gates_requested\":"
         << (behavior_gates_requested ? "true" : "false")
         << ",\"behavior_gate_failures\":" << behavior_gate_failures
@@ -1294,15 +1475,15 @@ int main(int argc, char** argv) {
 
     try {
         const auto harness = physics_sim_test_utils::loadHarnessSettings(true);
-        const int stand_frames = positiveEnvOrDefault("HEXAPOD_EXACT_REPLAY_STAND_FRAMES", 240);
-        const int motion_frames = positiveEnvOrDefault("HEXAPOD_EXACT_REPLAY_MOTION_FRAMES", 72);
-        const int transition_frames =
+        int stand_frames = positiveEnvOrDefault("HEXAPOD_EXACT_REPLAY_STAND_FRAMES", 240);
+        int motion_frames = positiveEnvOrDefault("HEXAPOD_EXACT_REPLAY_MOTION_FRAMES", 72);
+        int transition_frames =
             positiveEnvOrDefault("HEXAPOD_EXACT_REPLAY_TRANSITION_FRAMES", 24);
         const int solver_iterations =
             positiveEnvOrDefault("HEXAPOD_EXACT_REPLAY_SOLVER_ITERATIONS", 50);
-        const int replay_period_us = positiveEnvOrDefault(
+        int replay_period_us = positiveEnvOrDefault(
             "HEXAPOD_EXACT_REPLAY_PERIOD_US", harness.bus_loop_period_us);
-        const double body_height_m = positiveDoubleEnvOrDefault(
+        double body_height_m = positiveDoubleEnvOrDefault(
             "HEXAPOD_EXACT_REPLAY_BODY_HEIGHT_M", 0.14);
         const double proximal_mu = positiveDoubleEnvOrDefault(
             "HEXAPOD_EXACT_REPLAY_PROXIMAL_MU", 1.0e-6);
@@ -1348,20 +1529,63 @@ int main(int argc, char** argv) {
             throw std::runtime_error(
                 "HEXAPOD_EXACT_REPLAY_PERTURBATION_SEEDS must be at most 1000");
         }
-        const std::optional<ReplayPhase> selected_phase = selectedMotionPhase();
+        std::optional<ReplayPhase> selected_phase = selectedMotionPhase();
         const int base_port = 23500 + (static_cast<int>(::getpid()) % 4000);
 
-        std::vector<CapturedFrame> frames{};
+        CommandFixture fixture{};
         if (command_fixture_loaded) {
-            frames = loadCommandFixture(command_fixture_input);
+            fixture = loadCommandFixture(command_fixture_input);
+            if ((envProvided("HEXAPOD_EXACT_REPLAY_STAND_FRAMES")
+                 && stand_frames != fixture.stand_frames)
+                || (envProvided("HEXAPOD_EXACT_REPLAY_MOTION_FRAMES")
+                    && motion_frames != fixture.motion_frames)
+                || (envProvided("HEXAPOD_EXACT_REPLAY_TRANSITION_FRAMES")
+                    && transition_frames != fixture.transition_frames)
+                || (envProvided("HEXAPOD_EXACT_REPLAY_BODY_HEIGHT_M")
+                    && std::abs(body_height_m - fixture.commanded_body_height_m) > 1.0e-12)) {
+                throw std::runtime_error(
+                    "command fixture metadata conflicts with an explicit replay override");
+            }
+            const int requested_phase = selected_phase.has_value()
+                ? static_cast<int>(*selected_phase)
+                : -1;
+            if (envProvided("HEXAPOD_EXACT_REPLAY_MOTION_CASE")
+                && requested_phase != fixture.selected_phase) {
+                throw std::runtime_error(
+                    "command fixture motion phase conflicts with the replay selection");
+            }
+            stand_frames = fixture.stand_frames;
+            motion_frames = fixture.motion_frames;
+            transition_frames = fixture.transition_frames;
+            body_height_m = fixture.commanded_body_height_m;
+            selected_phase = fixture.selected_phase < 0
+                ? std::nullopt
+                : std::optional<ReplayPhase>{
+                    static_cast<ReplayPhase>(fixture.selected_phase)};
+            if (!envProvided("HEXAPOD_EXACT_REPLAY_PERIOD_US")) {
+                replay_period_us = fixture.capture_period_us;
+            }
         } else {
+            fixture.capture_period_us = harness.bus_loop_period_us;
+            fixture.stand_frames = stand_frames;
+            fixture.motion_frames = motion_frames;
+            fixture.transition_frames = transition_frames;
+            fixture.commanded_body_height_m = body_height_m;
+            fixture.initial_body_position = {
+                0.0, physicsSimStandingBodyHeightM(), 0.0};
+            fixture.initial_body_orientation = {1.0, 0.0, 0.0, 0.0};
+            fixture.selected_phase = selected_phase.has_value()
+                ? static_cast<int>(*selected_phase)
+                : -1;
+            fixture.capture_solver_mode = capture_solver_mode;
+            fixture.capture_solver_iterations = capture_solver_iterations;
             pid_t capture_pid = launchSimulator(sim_exe, base_port);
             if (capture_pid < 0) {
-                throw std::runtime_error("failed to fork legacy capture simulator");
+                throw std::runtime_error("failed to fork reference capture simulator");
             }
             std::this_thread::sleep_for(std::chrono::milliseconds{250});
             try {
-                frames = captureCommands(
+                fixture.frames = captureCommands(
                     harness,
                     base_port,
                     stand_frames,
@@ -1377,20 +1601,12 @@ int main(int argc, char** argv) {
             }
             stopSimulator(capture_pid);
         }
-
-        const int motion_case_count = selected_phase.has_value() ? 1 : 5;
-        const std::size_t expected_frames = static_cast<std::size_t>(
-            stand_frames + motion_case_count * (motion_frames + transition_frames));
-        if (frames.size() != expected_frames
-            || !std::all_of(frames.begin(), frames.end(), [](const CapturedFrame& frame) {
-                   return targetsAreFinite(frame.targets);
-               })) {
-            throw std::runtime_error("captured command stream is incomplete or non-finite");
-        }
+        validateCommandFixture(fixture);
         if (command_fixture_written) {
-            saveCommandFixture(command_fixture_output, frames);
+            saveCommandFixture(command_fixture_output, fixture);
         }
-        const std::uint64_t command_hash = commandStreamHash(frames);
+        const std::vector<CapturedFrame>& frames = fixture.frames;
+        const std::uint64_t command_hash = commandStreamHash(fixture);
 
         ReplayResult result{};
         std::uint64_t behavior_gate_failures = 0;
@@ -1415,6 +1631,8 @@ int main(int argc, char** argv) {
                     replay_solver_mode,
                     solver_iterations,
                     body_height_m,
+                    fixture.initial_body_position,
+                    fixture.initial_body_orientation,
                     proximal_mu,
                     contact_regularization,
                     absolute_tolerance,
@@ -1474,8 +1692,8 @@ int main(int argc, char** argv) {
                                                 fixed_initial_pose,
                                                 fixed_contact_order,
                                                 dense_admm,
-                                                capture_solver_mode,
-                                                capture_solver_iterations,
+                                                fixture.capture_solver_mode,
+                                                fixture.capture_solver_iterations,
                                                 behavior_gates_requested,
                                                 behavior_gate_failures,
                                                 replay_period_us,

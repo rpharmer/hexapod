@@ -336,15 +336,19 @@ These are the highest-value tests for tracking improvements across commits.
   - `HEXAPOD_EXACT_REPLAY_MOTION_CASE=forward|reverse|strafe|diagonal|turn_in_place`
   - `HEXAPOD_EXACT_REPLAY_STAND_FRAMES`, `HEXAPOD_EXACT_REPLAY_MOTION_FRAMES`,
     and `HEXAPOD_EXACT_REPLAY_TRANSITION_FRAMES`
-  - `HEXAPOD_EXACT_REPLAY_BODY_HEIGHT_M` (default `0.06`)
+  - `HEXAPOD_EXACT_REPLAY_BODY_HEIGHT_M` (default `0.14`)
   - `HEXAPOD_EXACT_REPLAY_COMMANDS_OUT=/tmp/hexapod-commands.txt` saves the
-    captured phase annotations and every joint position/velocity target at
-    round-trip-safe precision. Set
+    a version-2 fixture containing capture cadence, phase lengths, commanded
+    height, initial pose, reference-solver settings, phase annotations, and every
+    joint position/velocity target at round-trip-safe precision. Set
     `HEXAPOD_EXACT_REPLAY_COMMANDS_IN=/tmp/hexapod-commands.txt` on later runs
-    to skip command generation and replay that exact fixture. Keep the phase and
-    frame-count selectors identical when loading a fixture. This is the required
-    mode for solver-parameter A/B comparisons because a newly generated legacy
-    reference run can produce a different feedback-dependent command stream.
+    to skip command generation and replay that exact fixture. Metadata is restored
+    automatically; conflicting explicit phase, frame-count, or body-height
+    overrides are rejected. Version-1 fixtures must be regenerated. Captures with
+    inhibited or non-WALK motion frames are rejected before they can be saved.
+    Fixture reload is the required mode for solver-parameter A/B comparisons
+    because a newly generated reference run can produce a different
+    feedback-dependent command stream.
   - Command capture uses a high-cap (500 iteration) proximal reference solve by
     default. This keeps the captured controller in WALK and prevents a legacy
     `BODY_COLLAPSE` fault from silently turning the fixture into inhibited stand
