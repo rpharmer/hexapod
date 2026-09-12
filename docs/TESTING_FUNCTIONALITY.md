@@ -323,6 +323,9 @@ These are the highest-value tests for tracking improvements across commits.
     generation, constraint assembly, and articulated Delassus preparation
   - emit an exact iteration histogram plus non-healthy failure-reason counts;
     recovered samples preserve the reason that triggered their bounded retry
+  - report p50/p90/p99 iterations per motion phase and per active contact count,
+    making redundant-contact convergence tails visible without enabling verbose
+    simulator logging
 - Run from the repository root after building both projects:
   - `source scripts/lib/pinocchio_env.sh`
   - `HEXAPOD_PHYSICS_SIM_EXE=hexapod-physics-sim/build/hexapod-physics-sim hexapod-server/build-tests/test_physics_sim_exact_command_replay --emit-metrics-json`

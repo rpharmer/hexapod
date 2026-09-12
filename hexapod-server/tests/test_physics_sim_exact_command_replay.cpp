@@ -47,6 +47,8 @@ enum class ReplayPhase : std::uint8_t {
 
 constexpr std::size_t kPhaseCount = static_cast<std::size_t>(ReplayPhase::Count);
 
+using IterationHistogram = std::map<std::uint16_t, std::uint64_t>;
+
 constexpr std::array<const char*, kPhaseCount> kPhaseNames{
     "stand", "transition", "forward", "reverse", "strafe", "diagonal", "turn_in_place"};
 
@@ -83,6 +85,7 @@ struct PhaseResult {
     std::uint64_t unsupported{0};
     std::uint64_t read_failures{0};
     std::uint64_t solver_not_converged{0};
+    IterationHistogram iteration_histogram{};
     std::uint16_t max_iterations{0};
     double max_ncp_dual_residual{0.0};
     double max_ncp_complementarity_residual{0.0};
@@ -134,7 +137,8 @@ struct ReplayResult {
     std::uint64_t unsupported{0};
     std::uint64_t read_failures{0};
     std::uint64_t solver_not_converged{0};
-    std::map<std::uint16_t, std::uint64_t> iteration_histogram{};
+    IterationHistogram iteration_histogram{};
+    std::map<std::uint32_t, IterationHistogram> contact_count_iteration_histograms{};
     std::array<std::uint64_t, kFailureReasonNames.size()> failure_reason_histogram{};
     std::uint16_t max_iterations{0};
     std::uint32_t max_contact_constraints{0};
@@ -238,6 +242,30 @@ std::uint64_t commandStreamHash(const std::vector<CapturedFrame>& frames) {
         }
     }
     return hash;
+}
+
+std::uint16_t iterationPercentile(const IterationHistogram& histogram,
+                                  const double percentile) {
+    std::uint64_t sample_count = 0;
+    for (const auto& [iterations, frames] : histogram) {
+        (void)iterations;
+        sample_count += frames;
+    }
+    if (sample_count == 0) {
+        return 0;
+    }
+    const std::uint64_t rank = std::max<std::uint64_t>(
+        1U,
+        static_cast<std::uint64_t>(
+            std::ceil(percentile * static_cast<double>(sample_count))));
+    std::uint64_t cumulative = 0;
+    for (const auto& [iterations, frames] : histogram) {
+        cumulative += frames;
+        if (cumulative >= rank) {
+            return iterations;
+        }
+    }
+    return histogram.rbegin()->first;
 }
 
 constexpr const char* kCommandFixtureHeader = "hexapod-exact-command-replay-v1";
@@ -742,6 +770,8 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         solver_total_step_times_ms.push_back(telemetry->total_step_time_ms);
         result.max_iterations = std::max(result.max_iterations, telemetry->iterations);
         ++result.iteration_histogram[telemetry->iterations];
+        ++result.contact_count_iteration_histograms[telemetry->contact_constraint_count]
+                                                   [telemetry->iterations];
         const std::size_t failure_reason = static_cast<std::size_t>(
             telemetry->failure_reason);
         if (failure_reason < result.failure_reason_histogram.size()) {
@@ -752,6 +782,7 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         result.max_warm_start_resets = std::max(
             result.max_warm_start_resets, telemetry->warm_start_reset_count);
         phase.max_iterations = std::max(phase.max_iterations, telemetry->iterations);
+        ++phase.iteration_histogram[telemetry->iterations];
         phase.max_ncp_dual_residual =
             std::max(phase.max_ncp_dual_residual, static_cast<double>(telemetry->ncp_dual_residual));
         phase.max_ncp_complementarity_residual = std::max(
@@ -844,6 +875,12 @@ void accumulateReplayResult(ReplayResult& total, const ReplayResult& sample) {
     for (const auto& [iterations, frames] : sample.iteration_histogram) {
         total.iteration_histogram[iterations] += frames;
     }
+    for (const auto& [contact_count, histogram] :
+         sample.contact_count_iteration_histograms) {
+        for (const auto& [iterations, frames] : histogram) {
+            total.contact_count_iteration_histograms[contact_count][iterations] += frames;
+        }
+    }
     for (std::size_t i = 0; i < total.failure_reason_histogram.size(); ++i) {
         total.failure_reason_histogram[i] += sample.failure_reason_histogram[i];
     }
@@ -883,6 +920,9 @@ void accumulateReplayResult(ReplayResult& total, const ReplayResult& sample) {
         out.unsupported += in.unsupported;
         out.read_failures += in.read_failures;
         out.solver_not_converged += in.solver_not_converged;
+        for (const auto& [iterations, frames] : in.iteration_histogram) {
+            out.iteration_histogram[iterations] += frames;
+        }
         out.max_iterations = std::max(out.max_iterations, in.max_iterations);
         out.max_ncp_dual_residual = std::max(
             out.max_ncp_dual_residual, in.max_ncp_dual_residual);
@@ -1031,6 +1071,26 @@ std::string metricsJson(const ReplayResult& result,
         first_iteration_bin = false;
         out << "{\"iterations\":" << iterations << ",\"frames\":" << frames << '}';
     }
+    out << "],\"contact_count_iteration_profiles\":[";
+    bool first_contact_profile = true;
+    for (const auto& [contact_count, histogram] :
+         result.contact_count_iteration_histograms) {
+        if (!first_contact_profile) {
+            out << ',';
+        }
+        first_contact_profile = false;
+        std::uint64_t frame_count = 0;
+        for (const auto& [iterations, frames] : histogram) {
+            (void)iterations;
+            frame_count += frames;
+        }
+        out << "{\"contacts\":" << contact_count
+            << ",\"frames\":" << frame_count
+            << ",\"p50_iterations\":" << iterationPercentile(histogram, 0.50)
+            << ",\"p90_iterations\":" << iterationPercentile(histogram, 0.90)
+            << ",\"p99_iterations\":" << iterationPercentile(histogram, 0.99)
+            << ",\"max_iterations\":" << histogram.rbegin()->first << '}';
+    }
     out << "],\"failure_reason_histogram\":[";
     bool first_failure_reason = true;
     for (std::size_t i = 1; i < result.failure_reason_histogram.size(); ++i) {
@@ -1103,6 +1163,12 @@ std::string metricsJson(const ReplayResult& result,
             << ",\"captured_max_target_step_rad\":" << captured.max_target_step
             << ",\"captured_max_target_span_rad\":" << captured.max_target_span
             << ",\"solver_not_converged\":" << phase.solver_not_converged
+            << ",\"p50_iterations\":"
+            << iterationPercentile(phase.iteration_histogram, 0.50)
+            << ",\"p90_iterations\":"
+            << iterationPercentile(phase.iteration_histogram, 0.90)
+            << ",\"p99_iterations\":"
+            << iterationPercentile(phase.iteration_histogram, 0.99)
             << ",\"max_iterations\":" << phase.max_iterations
             << ",\"max_ncp_dual_residual\":" << phase.max_ncp_dual_residual
             << ",\"max_ncp_complementarity_residual\":"
