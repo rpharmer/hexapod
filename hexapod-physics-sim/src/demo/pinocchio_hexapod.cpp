@@ -294,6 +294,14 @@ struct PinocchioHexapodModel::Impl {
                 "HEXAPOD_PINOCCHIO_CONTACT_PRECONDITION")) {
             contactPrecondition = value[0] != '\0' && value[0] != '0';
         }
+        if (contactPrecondition) {
+            if (std::getenv("HEXAPOD_PINOCCHIO_SPECTRAL_POWER") == nullptr) {
+                spectralRhoPowerInit = 0.5;
+            }
+            if (std::getenv("HEXAPOD_PINOCCHIO_WARMSTART_RHO") == nullptr) {
+                warmstartRho = false;
+            }
+        }
 
         const Body& chassis = world.GetBody(scene.body);
         const pinocchio::JointIndex root = model.addJoint(

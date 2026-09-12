@@ -426,7 +426,9 @@ These are the highest-value tests for tracking improvements across commits.
     equivalent dense NCP, converts impulses and velocities back to physical units,
     and requires the original unscaled physical residual check to pass. Exact replay
     records `contact_precondition`; this path is opt-in and is not a production
-    default.
+    default. Unless explicitly overridden, this normalized path recomputes rho each
+    frame and uses a `0.5` spectral-power start; the frozen gait replay showed these
+    settings avoid the held-state cascade seen with the articulated defaults.
   - half-substep recovery is restricted to solver non-convergence and speed-limit
     rejection; state validity, penetration, energy, and write failures hold the
     last-good state immediately because they cannot be repaired by a smaller timestep
