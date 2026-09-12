@@ -345,6 +345,13 @@ These are the highest-value tests for tracking improvements across commits.
     frame-count selectors identical when loading a fixture. This is the required
     mode for solver-parameter A/B comparisons because a newly generated legacy
     reference run can produce a different feedback-dependent command stream.
+  - Command capture uses a high-cap (500 iteration) proximal reference solve by
+    default. This keeps the captured controller in WALK and prevents a legacy
+    `BODY_COLLAPSE` fault from silently turning the fixture into inhibited stand
+    commands. `HEXAPOD_EXACT_REPLAY_CAPTURE_SOLVER_ITERATIONS` changes that
+    offline reference cap. `HEXAPOD_EXACT_REPLAY_CAPTURE_LEGACY=1` retains the
+    legacy capture path for diagnosis, and
+    `HEXAPOD_EXACT_REPLAY_TRACE_CAPTURE=1` prints each phase's final safety state.
   - `HEXAPOD_EXACT_REPLAY_LEGACY=1` replays through the legacy solver instead
     of the proximal solver, using the same captured targets
   - `HEXAPOD_EXACT_REPLAY_SOLVER_ITERATIONS`

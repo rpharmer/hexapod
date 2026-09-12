@@ -624,12 +624,14 @@ std::vector<CapturedFrame> captureCommands(const physics_sim_test_utils::Harness
                                            const int motion_frames,
                                            const int transition_frames,
                                            const double body_height_m,
-                                           const std::optional<ReplayPhase> selected_phase) {
-    PhysicsSimSolverSettings legacy{};
-    legacy.mode = physics_sim::PhysicsSolverMode::LegacyPgs;
-    legacy.iterations = harness.physics_solver_iterations;
+                                           const std::optional<ReplayPhase> selected_phase,
+                                           const physics_sim::PhysicsSolverMode capture_solver_mode,
+                                           const int capture_solver_iterations) {
+    PhysicsSimSolverSettings capture_solver{};
+    capture_solver.mode = capture_solver_mode;
+    capture_solver.iterations = capture_solver_iterations;
     auto bridge = std::make_unique<CommandCapturingBridge>(
-        "127.0.0.1", port, harness.bus_loop_period_us, legacy);
+        "127.0.0.1", port, harness.bus_loop_period_us, capture_solver);
     CommandCapturingBridge* bridge_ptr = bridge.get();
 
     control_config::ControlConfig config = harness.control_cfg;
@@ -650,6 +652,18 @@ std::vector<CapturedFrame> captureCommands(const physics_sim_test_utils::Harness
                             intent,
                             command_time,
                             harness.bus_loop_period_us);
+        }
+        if (envEnabled("HEXAPOD_EXACT_REPLAY_TRACE_CAPTURE")) {
+            const SafetyState safety = runtime.getSafetyState();
+            const ControlStatus status = runtime.getStatus();
+            std::cerr << "capture phase=" << kPhaseNames[static_cast<std::size_t>(phase)]
+                      << " frames=" << frames
+                      << " inhibit=" << (safety.inhibit_motion ? 1 : 0)
+                      << " fault=" << static_cast<unsigned>(safety.active_fault)
+                      << " lifecycle=" << static_cast<unsigned>(safety.fault_lifecycle)
+                      << " mode=" << static_cast<unsigned>(status.active_mode)
+                      << " estimator_valid=" << (status.estimator_valid ? 1 : 0)
+                      << " bus_ok=" << (status.bus_ok ? 1 : 0) << '\n';
         }
     };
 
@@ -1010,6 +1024,8 @@ std::string metricsJson(const ReplayResult& result,
                         const bool fixed_initial_pose,
                         const bool fixed_contact_order,
                         const bool dense_admm,
+                        const physics_sim::PhysicsSolverMode capture_solver_mode,
+                        const int capture_solver_iterations,
                         const bool behavior_gates_requested,
                         const std::uint64_t behavior_gate_failures,
                         const int replay_period_us,
@@ -1086,6 +1102,15 @@ std::string metricsJson(const ReplayResult& result,
         << ",\"fixed_initial_pose\":" << (fixed_initial_pose ? "true" : "false")
         << ",\"fixed_contact_order\":" << (fixed_contact_order ? "true" : "false")
         << ",\"dense_admm\":" << (dense_admm ? "true" : "false")
+        << ",\"capture_solver_mode\":\""
+        << (command_fixture_loaded
+                ? "fixture"
+                : capture_solver_mode == physics_sim::PhysicsSolverMode::LegacyPgs
+                    ? "legacy-pgs"
+                    : "pinocchio-proximal")
+        << "\""
+        << ",\"capture_solver_iteration_limit\":"
+        << (command_fixture_loaded ? 0 : capture_solver_iterations)
         << ",\"behavior_gates_requested\":"
         << (behavior_gates_requested ? "true" : "false")
         << ",\"behavior_gate_failures\":" << behavior_gate_failures
@@ -1310,6 +1335,15 @@ int main(int argc, char** argv) {
             envEnabled("HEXAPOD_EXACT_REPLAY_LEGACY")
                 ? physics_sim::PhysicsSolverMode::LegacyPgs
                 : physics_sim::PhysicsSolverMode::PinocchioProximal;
+        const physics_sim::PhysicsSolverMode capture_solver_mode =
+            envEnabled("HEXAPOD_EXACT_REPLAY_CAPTURE_LEGACY")
+                ? physics_sim::PhysicsSolverMode::LegacyPgs
+                : physics_sim::PhysicsSolverMode::PinocchioProximal;
+        const int capture_solver_iterations =
+            capture_solver_mode == physics_sim::PhysicsSolverMode::LegacyPgs
+                ? harness.physics_solver_iterations
+                : positiveEnvOrDefault(
+                    "HEXAPOD_EXACT_REPLAY_CAPTURE_SOLVER_ITERATIONS", 500);
         if (perturbation_seed_count > 1000) {
             throw std::runtime_error(
                 "HEXAPOD_EXACT_REPLAY_PERTURBATION_SEEDS must be at most 1000");
@@ -1334,7 +1368,9 @@ int main(int argc, char** argv) {
                     motion_frames,
                     transition_frames,
                     body_height_m,
-                    selected_phase);
+                    selected_phase,
+                    capture_solver_mode,
+                    capture_solver_iterations);
             } catch (...) {
                 stopSimulator(capture_pid);
                 throw;
@@ -1438,6 +1474,8 @@ int main(int argc, char** argv) {
                                                 fixed_initial_pose,
                                                 fixed_contact_order,
                                                 dense_admm,
+                                                capture_solver_mode,
+                                                capture_solver_iterations,
                                                 behavior_gates_requested,
                                                 behavior_gate_failures,
                                                 replay_period_us,
