@@ -157,6 +157,60 @@ struct ReplayResult {
     double p99_solver_total_step_time_ms{0.0};
 };
 
+bool passesBehaviorGates(const ReplayResult& result, const int replay_period_us) {
+    constexpr double kMinimumCommandProgressRatio = 0.70;
+    constexpr double kMaximumLateralPathFraction = 0.10;
+    constexpr double kLateralAllowanceM = 0.010;
+    constexpr double kMaximumTurnTranslationM = 0.050;
+    constexpr std::array<ReplayPhase, 4> kTranslationPhases{
+        ReplayPhase::Forward,
+        ReplayPhase::Reverse,
+        ReplayPhase::Strafe,
+        ReplayPhase::Diagonal,
+    };
+    for (const ReplayPhase replay_phase : kTranslationPhases) {
+        const PhaseResult& phase = result.phases[static_cast<std::size_t>(replay_phase)];
+        if (phase.completed_trajectories == 0) {
+            return false;
+        }
+        const double trajectory_count = static_cast<double>(phase.completed_trajectories);
+        const PhaseCommand command = phaseCommand(replay_phase);
+        const double command_speed = std::hypot(command.vx_mps, command.vy_mps);
+        const double frames_per_trajectory =
+            static_cast<double>(phase.frames) / trajectory_count;
+        const double commanded_translation = command_speed * frames_per_trajectory
+            * static_cast<double>(replay_period_us) * 1.0e-6;
+        const double body_forward = phase.completed_body_forward_sum / trajectory_count;
+        const double body_lateral = phase.completed_body_lateral_sum / trajectory_count;
+        const double ux = command.vx_mps / command_speed;
+        const double uy = command.vy_mps / command_speed;
+        const double command_progress = ux * body_forward + uy * body_lateral;
+        const double command_lateral = -uy * body_forward + ux * body_lateral;
+        const double horizontal_path =
+            phase.completed_horizontal_path_sum / trajectory_count;
+        if (command_progress < kMinimumCommandProgressRatio * commanded_translation
+            || std::abs(command_lateral)
+                > kMaximumLateralPathFraction * horizontal_path + kLateralAllowanceM) {
+            return false;
+        }
+    }
+
+    const PhaseResult& turn =
+        result.phases[static_cast<std::size_t>(ReplayPhase::TurnInPlace)];
+    if (turn.completed_trajectories == 0) {
+        return false;
+    }
+    const double trajectory_count = static_cast<double>(turn.completed_trajectories);
+    const double frames_per_trajectory = static_cast<double>(turn.frames) / trajectory_count;
+    const double commanded_yaw = phaseCommand(ReplayPhase::TurnInPlace).yaw_rate_radps
+        * frames_per_trajectory * static_cast<double>(replay_period_us) * 1.0e-6;
+    const double yaw_delta = turn.completed_yaw_delta_sum / trajectory_count;
+    const double horizontal_displacement =
+        turn.completed_horizontal_displacement_sum / trajectory_count;
+    return yaw_delta >= kMinimumCommandProgressRatio * commanded_yaw
+        && horizontal_displacement <= kMaximumTurnTranslationM;
+}
+
 class CommandCapturingBridge final : public IHardwareBridge {
 public:
     CommandCapturingBridge(std::string host,
@@ -956,6 +1010,8 @@ std::string metricsJson(const ReplayResult& result,
                         const bool fixed_initial_pose,
                         const bool fixed_contact_order,
                         const bool dense_admm,
+                        const bool behavior_gates_requested,
+                        const std::uint64_t behavior_gate_failures,
                         const int replay_period_us,
                         const int solver_iterations,
                         const double body_height_m,
@@ -1030,6 +1086,9 @@ std::string metricsJson(const ReplayResult& result,
         << ",\"fixed_initial_pose\":" << (fixed_initial_pose ? "true" : "false")
         << ",\"fixed_contact_order\":" << (fixed_contact_order ? "true" : "false")
         << ",\"dense_admm\":" << (dense_admm ? "true" : "false")
+        << ",\"behavior_gates_requested\":"
+        << (behavior_gates_requested ? "true" : "false")
+        << ",\"behavior_gate_failures\":" << behavior_gate_failures
         << ",\"replay_period_us\":" << replay_period_us
         << ",\"solver_iteration_limit\":" << solver_iterations
         << ",\"commanded_body_height_m\":" << body_height_m
@@ -1219,7 +1278,7 @@ int main(int argc, char** argv) {
         const int replay_period_us = positiveEnvOrDefault(
             "HEXAPOD_EXACT_REPLAY_PERIOD_US", harness.bus_loop_period_us);
         const double body_height_m = positiveDoubleEnvOrDefault(
-            "HEXAPOD_EXACT_REPLAY_BODY_HEIGHT_M", 0.06);
+            "HEXAPOD_EXACT_REPLAY_BODY_HEIGHT_M", 0.14);
         const double proximal_mu = positiveDoubleEnvOrDefault(
             "HEXAPOD_EXACT_REPLAY_PROXIMAL_MU", 1.0e-6);
         const double contact_regularization = positiveDoubleEnvOrDefault(
@@ -1298,6 +1357,7 @@ int main(int argc, char** argv) {
         const std::uint64_t command_hash = commandStreamHash(frames);
 
         ReplayResult result{};
+        std::uint64_t behavior_gate_failures = 0;
         for (int seed = 0; seed < perturbation_seed_count; ++seed) {
             const std::uint64_t absolute_seed = static_cast<std::uint64_t>(
                 perturbation_seed_offset + seed);
@@ -1340,6 +1400,9 @@ int main(int argc, char** argv) {
                           << " read_failures=" << seed_result.read_failures
                           << " max_iterations=" << seed_result.max_iterations << '\n';
             }
+            if (!passesBehaviorGates(seed_result, replay_period_us)) {
+                ++behavior_gate_failures;
+            }
             accumulateReplayResult(result, seed_result);
         }
 
@@ -1352,13 +1415,18 @@ int main(int argc, char** argv) {
         const bool gates_requested = envEnabled("HEXAPOD_EXACT_REPLAY_ENFORCE_GATES");
         const bool safety_gates_requested = envEnabled(
             "HEXAPOD_EXACT_REPLAY_ENFORCE_SAFETY_GATES");
+        const bool behavior_gates_requested = envEnabled(
+            "HEXAPOD_EXACT_REPLAY_ENFORCE_BEHAVIOR_GATES");
         const bool gates_ok = !gates_requested
             || (result.recovered == 0 && result.held == 0 && result.unsupported == 0
                 && result.read_failures == 0);
         const bool safety_gates_ok = !safety_gates_requested
             || (result.held == 0 && result.unsupported == 0
                 && result.read_failures == 0);
-        const bool passed = accounting_ok && gates_ok && safety_gates_ok;
+        const bool behavior_gates_ok = !behavior_gates_requested
+            || behavior_gate_failures == 0;
+        const bool passed = accounting_ok && gates_ok && safety_gates_ok
+            && behavior_gates_ok;
         const std::string metrics = metricsJson(result,
                                                 command_hash,
                                                 frames,
@@ -1370,6 +1438,8 @@ int main(int argc, char** argv) {
                                                 fixed_initial_pose,
                                                 fixed_contact_order,
                                                 dense_admm,
+                                                behavior_gates_requested,
+                                                behavior_gate_failures,
                                                 replay_period_us,
                                                 solver_iterations,
                                                 body_height_m,

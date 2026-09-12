@@ -413,6 +413,14 @@ These are the highest-value tests for tracking improvements across commits.
   - `HEXAPOD_EXACT_REPLAY_ENFORCE_SAFETY_GATES=1` permits the documented usable
     `RecoveredRetry` outcome but fails on a held state, unsupported island, or
     failed read. This is the appropriate gate for the 100-seed perturbation campaign.
+  - `HEXAPOD_EXACT_REPLAY_ENFORCE_BEHAVIOR_GATES=1` evaluates every perturbation
+    seed independently. Translation and yaw must reach at least 70% of their
+    integrated commands, lateral travel must remain below 10% of path length plus
+    10 mm, and turn-in-place translation must remain below 50 mm. The JSON output
+    reports `behavior_gate_failures`; this gate currently documents the remaining
+    locomotion blocker and is not enabled in default CTest.
+  - `HEXAPOD_EXACT_REPLAY_BODY_HEIGHT_M` defaults to the production 0.14 m body
+    height. Lower crouched-height experiments must opt in explicitly.
 
 ## Scenario-driven functional checks
 
