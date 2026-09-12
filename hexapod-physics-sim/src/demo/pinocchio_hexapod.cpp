@@ -218,7 +218,7 @@ struct PinocchioHexapodModel::Impl {
     double contactDelassusRegularization = 0.0;
     pinocchio::ADMMConstraintSolver contactSolver{72};
     pinocchio::ADMMSolverResult contactSolverResult{};
-    std::size_t andersonCapacity = 3;
+    std::size_t andersonCapacity = 5;
     std::optional<std::size_t> retryAndersonCapacityOverride{};
     double ratioPrimalDual = 5.0;
     double admmTau = 0.7;
@@ -1418,23 +1418,11 @@ bool PinocchioHexapodModel::stepProximal(
         writeState(world, snapshotQ, snapshotV);
         clearFailedSolverState(firstAttempt.worstContactId);
         ProximalStepDiagnostics retry{};
-        // Large primal error or a high spectral penalty indicates that the
-        // primary Anderson history is oscillating. A shorter history gives
-        // the bounded retry a distinct numerical path. For other convergence
-        // modes the primary history is more effective. Neither path changes
-        // the contact equations, tolerances, or iteration cap.
-        const double largePrimalResidual = std::max(
-            5.0 * settings.relativeTolerance,
-            10.0 * settings.absoluteTolerance);
-        const double nearDualFeasibility = 10.0 * settings.absoluteTolerance;
-        const bool oscillatoryFailure = firstAttempt.primalResidual > largePrimalResidual
-            || (firstAttempt.admmRho > 3.0
-                && firstAttempt.ncpDualResidual <= nearDualFeasibility);
+        // Keep the better-converged primary history length for the half-step
+        // retry. A shorter adaptive history increased held states on both the
+        // original frozen stream and a genuine, non-inhibited gait stream.
         const std::size_t retryAndersonCapacity =
-            impl_->retryAndersonCapacityOverride.value_or(
-                oscillatoryFailure
-                    ? std::min<std::size_t>(impl_->andersonCapacity, 2U)
-                    : impl_->andersonCapacity);
+            impl_->retryAndersonCapacityOverride.value_or(impl_->andersonCapacity);
         const std::array<double, 18> halfStepServoTargets =
             advanceCommandedTargets(commandedServoTargetsStart, 0.5 * dt);
         const bool half1 = advanceOnce(

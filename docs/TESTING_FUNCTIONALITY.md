@@ -400,7 +400,7 @@ These are the highest-value tests for tracking improvements across commits.
   - `HEXAPOD_EXACT_REPLAY_CHILD_STDIO=1` preserves simulator diagnostics; combine
     it with `HEXAPOD_PROXIMAL_TRACE_FAILURES=1` to inspect held-state failures
   - advanced solver diagnostics can override `HEXAPOD_PINOCCHIO_ANDERSON_CAPACITY`,
-    `HEXAPOD_PINOCCHIO_RETRY_ANDERSON_CAPACITY` (disables the adaptive retry choice),
+    `HEXAPOD_PINOCCHIO_RETRY_ANDERSON_CAPACITY` (overrides the retry history independently),
     `HEXAPOD_PINOCCHIO_RATIO_PRIMAL_DUAL`, `HEXAPOD_PINOCCHIO_ADMM_TAU`, and
     `HEXAPOD_PINOCCHIO_SPECTRAL_POWER`, while `HEXAPOD_PINOCCHIO_WARMSTART_RHO=0`
     disables spectral-penalty persistence; `HEXAPOD_PINOCCHIO_SERVO_GAIN_SCALE`
