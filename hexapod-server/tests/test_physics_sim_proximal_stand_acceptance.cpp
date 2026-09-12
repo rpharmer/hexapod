@@ -4,6 +4,7 @@
 #include "motion_intent_utils.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
+#include "physics_sim_metrics_emit.hpp"
 #include "physics_sim_test_argv.hpp"
 #include "physics_sim_test_utils.hpp"
 #include "robot_runtime.hpp"
@@ -19,6 +20,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -180,7 +182,7 @@ int main(int argc, char** argv) {
         positiveEnvDouble("HEXAPOD_PROXIMAL_STAND_CONTACT_REGULARIZATION", 1.0e-10));
 
     const double commandedHeightM = positiveEnvDouble(
-        "HEXAPOD_PROXIMAL_STAND_BODY_HEIGHT_M", 0.06);
+        "HEXAPOD_PROXIMAL_STAND_BODY_HEIGHT_M", 0.14);
     const double durationS = positiveEnvDouble(
         "HEXAPOD_PROXIMAL_STAND_DURATION_S", 60.0);
     const double warmupS = positiveEnvDouble(
@@ -334,7 +336,44 @@ int main(int argc, char** argv) {
               << " final_mode=" << static_cast<int>(status.active_mode)
               << " final_fault=" << static_cast<int>(status.active_fault)
               << '\n';
-    (void)emitMetricsJson;
+    if (emitMetricsJson) {
+        std::ostringstream limits;
+        limits << "{\"duration_s\":" << durationS
+               << ",\"commanded_body_height_m\":" << commandedHeightM
+               << ",\"max_body_height_error_m\":0.01"
+               << ",\"max_stance_foot_drift_rms_m\":0.003"
+               << ",\"max_p99_iterations\":20"
+               << ",\"max_linear_speed_mps\":2.0"
+               << ",\"max_angular_speed_radps\":10.0"
+               << ",\"require_zero_recovered_steps\":true"
+               << ",\"require_zero_held_steps\":true"
+               << ",\"require_zero_unsupported_steps\":true"
+               << ",\"require_zero_non_converged_steps\":true"
+               << ",\"require_zero_rollbacks\":true}";
+        std::ostringstream metricsJson;
+        metricsJson << "{\"measured_steps\":" << metrics.iterations.size()
+                << ",\"healthy_steps\":" << metrics.healthySteps
+                << ",\"recovered_steps\":" << metrics.recoveredSteps
+                << ",\"held_steps\":" << metrics.heldSteps
+                << ",\"unsupported_steps\":" << metrics.unsupportedSteps
+                << ",\"non_converged_steps\":" << metrics.nonConvergedSteps
+                << ",\"rollbacks\":" << rollbacks
+                << ",\"max_body_height_error_m\":" << metrics.maxBodyHeightErrorM
+                << ",\"stance_foot_drift_rms_m\":" << footDriftRmsM
+                << ",\"p99_iterations\":" << p99Iterations
+                << ",\"max_iterations\":" << metrics.maxIterations
+                << ",\"peak_linear_speed_mps\":" << metrics.peakLinearSpeed
+                << ",\"peak_angular_speed_radps\":" << metrics.peakAngularSpeed
+                << ",\"final_mode\":" << static_cast<int>(status.active_mode)
+                << ",\"final_fault\":" << static_cast<int>(status.active_fault)
+                << '}';
+        physics_sim_metrics::emitLine(
+            "physics_sim_proximal_stand_acceptance",
+            "production_height_stand",
+            passed,
+            limits.str(),
+            metricsJson.str());
+    }
     return passed ? 0 : 1;
 #endif
 }

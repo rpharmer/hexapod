@@ -351,18 +351,21 @@ These are the highest-value tests for tracking improvements across commits.
   - `HEXAPOD_EXACT_REPLAY_PROXIMAL_MU` and
     `HEXAPOD_EXACT_REPLAY_CONTACT_REGULARIZATION`
 
-### 5) `test_physics_sim_proximal_stand_acceptance` (proximal diagnostic)
+### 5) `test_physics_sim_proximal_stand_acceptance` (proximal acceptance gate)
 
 - Location: `hexapod-server/tests/test_physics_sim_proximal_stand_acceptance.cpp`
-- This is intentionally not a default CTest until the proximal rollout gates pass.
+- This is a default live-physics CTest. The broader moving-command replay remains
+  diagnostic-only until its locomotion gates pass.
 - Runs the complete controller, estimator, safety, bridge, collision, and
-  Pinocchio contact path in STAND mode for 60 simulated seconds.
+  Pinocchio contact path in STAND mode for 60 simulated seconds at the 0.14 m
+  production body-height command.
 - Enforces zero held/unsupported/non-converged states and rollbacks, body-height
   error at or below 10 mm, reconstructed stance-foot drift below 3 mm RMS,
   pre-integration speed limits, and strict ADMM p99 at or below 20 iterations.
 - Run from the repository root:
   - `source scripts/lib/pinocchio_env.sh`
   - `hexapod-server/build-tests/test_physics_sim_proximal_stand_acceptance hexapod-physics-sim/build/hexapod-physics-sim`
+  - append `--emit-metrics-json` for a machine-readable limits-and-metrics record
 - Useful diagnostic overrides:
   - `HEXAPOD_PROXIMAL_STAND_DURATION_S` and `HEXAPOD_PROXIMAL_STAND_WARMUP_S`
   - `HEXAPOD_PROXIMAL_STAND_ITERATIONS`
