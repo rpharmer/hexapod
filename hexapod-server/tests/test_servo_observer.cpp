@@ -1,5 +1,6 @@
 #include "servo_observer.hpp"
 
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 
@@ -15,6 +16,17 @@ bool expect(bool ok, const char* msg) {
 } // namespace
 
 int main() {
+    const ServoObserverConfig default_observer_config{};
+    const ServoDirectionDynamics default_servo_dynamics{};
+    if (!expect(std::abs(default_observer_config.positive_rate_limit_radps
+                         - hexapod_dynamics::kServoNoLoadSpeedRadPerSec) < 1.0e-12,
+                "observer default should use the MG996R no-load speed")
+        || !expect(std::abs(default_servo_dynamics.vmax_radps
+                            - hexapod_dynamics::kServoNoLoadSpeedRadPerSec) < 1.0e-12,
+                   "geometry default should use the MG996R no-load speed")) {
+        return EXIT_FAILURE;
+    }
+
     ServoObserverConfig cfg{};
     cfg.positive_rate_limit_radps = 1.0;
     cfg.negative_rate_limit_radps = 1.0;

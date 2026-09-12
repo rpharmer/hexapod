@@ -39,6 +39,9 @@ Published values (model/vendor dependent):
 - Speed:
   - `0.17 s / 60°` at `4.8 V` (no load)
   - `0.14 s / 60°` at `6.0 V` (no load)
+- The 6 V value is `7.48 rad/s`. Both the server-side joint-target limiter and
+  the physics motor torque-speed envelope use this shared value; available
+  driving torque reaches zero at that speed.
 - Operating range: `4.8 V` to `7.2 V`
 - Dimensions: `40 x 19 x 43 mm`
 

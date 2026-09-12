@@ -1,12 +1,13 @@
 #pragma once
 
+#include "hexapod_dynamics_constants.hpp"
 #include "types.hpp"
 
 #include <array>
 
 struct ServoObserverConfig {
-    double positive_rate_limit_radps{8.0};
-    double negative_rate_limit_radps{8.0};
+    double positive_rate_limit_radps{hexapod_dynamics::kServoNoLoadSpeedRadPerSec};
+    double negative_rate_limit_radps{hexapod_dynamics::kServoNoLoadSpeedRadPerSec};
     double lag_tau_s{0.08};
     double deadband_rad{0.002};
     double initial_confidence{0.65};

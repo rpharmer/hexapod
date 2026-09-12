@@ -278,6 +278,9 @@ These are the highest-value tests for tracking improvements across commits.
   - JSON metrics include the body-height envelope and maximum/RMS applied-target
     servo tracking error, allowing gait collapse to be separated from contact slip
     or solver failure
+  - JSON also reports the maximum applied target rate overall and by joint type,
+    plus the number of target samples above the MG996R no-load speed; this exposes
+    gait commands that no torque-limited motor can track under load
   - exits non-zero if assertions fail
   - `HEXAPOD_WALK_TEST_CHILD_STDIO=1` exposes simulator diagnostics during
     failure tracing; child output remains quiet by default

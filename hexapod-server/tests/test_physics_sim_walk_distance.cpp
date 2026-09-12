@@ -1,4 +1,5 @@
 #include "control_config.hpp"
+#include "hexapod_dynamics_constants.hpp"
 #include "motion_intent_utils.hpp"
 #include "physics_sim_test_utils.hpp"
 #include "physics_sim_bridge.hpp"
@@ -156,6 +157,10 @@ struct MotionRunResult {
     std::array<double, 3> maximum_servo_tracking_error_by_joint_rad{};
     std::array<double, 3> servo_tracking_error_squared_sum_by_joint{};
     std::array<std::uint64_t, 3> servo_tracking_error_samples_by_joint{};
+    double maximum_servo_target_rate_radps{0.0};
+    std::array<double, 3> maximum_servo_target_rate_by_joint_radps{};
+    std::uint64_t servo_target_rate_samples{0};
+    std::uint64_t servo_target_rate_above_no_load_samples{0};
     int walk_mode_steps{0};
     int non_walk_mode_steps{0};
     int faulted_steps{0};
@@ -325,6 +330,15 @@ std::string motionRunResultMetricsJson(const MotionRunResult& result,
               ? 0.0
               : std::sqrt(result.servo_tracking_error_squared_sum_by_joint[2]
                   / static_cast<double>(result.servo_tracking_error_samples_by_joint[2]))) << ']'
+      << ",\"maximum_servo_target_rate_radps\":"
+      << formatDouble(result.maximum_servo_target_rate_radps)
+      << ",\"maximum_servo_target_rate_by_joint_radps\":["
+      << formatDouble(result.maximum_servo_target_rate_by_joint_radps[0]) << ','
+      << formatDouble(result.maximum_servo_target_rate_by_joint_radps[1]) << ','
+      << formatDouble(result.maximum_servo_target_rate_by_joint_radps[2]) << ']'
+      << ",\"servo_target_rate_above_no_load_samples\":"
+      << result.servo_target_rate_above_no_load_samples
+      << ",\"servo_target_rate_samples\":" << result.servo_target_rate_samples
       << ",\"walk_mode_steps\":" << result.walk_mode_steps
       << ",\"non_walk_mode_steps\":" << result.non_walk_mode_steps
       << ",\"faulted_steps\":" << result.faulted_steps
@@ -395,6 +409,15 @@ std::string motionRunTurnMetricsJson(const MotionRunResult& result,
               ? 0.0
               : std::sqrt(result.servo_tracking_error_squared_sum
                   / static_cast<double>(result.servo_tracking_error_samples)))
+      << ",\"maximum_servo_target_rate_radps\":"
+      << formatDouble(result.maximum_servo_target_rate_radps)
+      << ",\"maximum_servo_target_rate_by_joint_radps\":["
+      << formatDouble(result.maximum_servo_target_rate_by_joint_radps[0]) << ','
+      << formatDouble(result.maximum_servo_target_rate_by_joint_radps[1]) << ','
+      << formatDouble(result.maximum_servo_target_rate_by_joint_radps[2]) << ']'
+      << ",\"servo_target_rate_above_no_load_samples\":"
+      << result.servo_target_rate_above_no_load_samples
+      << ",\"servo_target_rate_samples\":" << result.servo_target_rate_samples
       << ",\"walk_mode_steps\":" << result.walk_mode_steps
       << ",\"non_walk_mode_steps\":" << result.non_walk_mode_steps
       << ",\"faulted_steps\":" << result.faulted_steps
@@ -489,6 +512,8 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
     walk_samples.reserve(static_cast<std::size_t>(walk_steps));
     std::vector<int> solver_iteration_samples{};
     solver_iteration_samples.reserve(static_cast<std::size_t>(walk_steps));
+    JointTargets previous_applied_targets = bridge.applied_targets();
+    const double command_step_s = static_cast<double>(bus_loop_period_us) * 1.0e-6;
 
     for (int i = 0; i < walk_steps; ++i) {
         runControlLoopStep(runtime, motion, advance_command_time());
@@ -524,8 +549,28 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
                     std::abs(error));
                 result.servo_tracking_error_squared_sum_by_joint[joint] += error * error;
                 ++result.servo_tracking_error_samples_by_joint[joint];
+                const double target_delta = std::remainder(
+                    applied_targets.leg_states[leg].joint_state[joint].pos_rad.value
+                        - previous_applied_targets.leg_states[leg]
+                              .joint_state[joint].pos_rad.value,
+                    6.28318530717958647692);
+                const double target_rate = command_step_s > 0.0
+                    ? std::abs(target_delta) / command_step_s
+                    : 0.0;
+                result.maximum_servo_target_rate_radps = std::max(
+                    result.maximum_servo_target_rate_radps, target_rate);
+                result.maximum_servo_target_rate_by_joint_radps[joint] = std::max(
+                    result.maximum_servo_target_rate_by_joint_radps[joint], target_rate);
+                ++result.servo_target_rate_samples;
+                constexpr double kRateComparisonTolerance = 1.0e-6;
+                if (target_rate
+                    > hexapod_dynamics::kServoNoLoadSpeedRadPerSec
+                        * (1.0 + kRateComparisonTolerance)) {
+                    ++result.servo_target_rate_above_no_load_samples;
+                }
             }
         }
+        previous_applied_targets = applied_targets;
         walk_samples.push_back(current_position);
         result.walk_path_length_m += std::hypot(current_position.x - previous_position.x,
                                                 current_position.y - previous_position.y);

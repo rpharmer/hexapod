@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 
+#include "hexapod_dynamics_constants.hpp"
 #include "protocol_layout.hpp"
 #include "kinematics/math_types.hpp"
 
@@ -341,7 +342,7 @@ struct ServoCalibration {
 
 struct ServoDirectionDynamics {
     double tau_s{0.08};
-    double vmax_radps{8.0};
+    double vmax_radps{hexapod_dynamics::kServoNoLoadSpeedRadPerSec};
 };
 
 struct ServoJointDynamics {
