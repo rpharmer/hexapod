@@ -377,6 +377,9 @@ These are the highest-value tests for tracking improvements across commits.
     disables spectral-penalty persistence; `HEXAPOD_PINOCCHIO_SERVO_GAIN_SCALE`
     isolates constrained-load calibration without changing the motor torque-speed
     envelope. These overrides do not change production defaults.
+  - half-substep recovery is restricted to solver non-convergence and speed-limit
+    rejection; state validity, penetration, energy, and write failures hold the
+    last-good state immediately because they cannot be repaired by a smaller timestep
   - `HEXAPOD_EXACT_REPLAY_ENFORCE_GATES=1` makes any recovered, held,
     unsupported, or failed-read sample fail the executable. Without it, the
     executable validates capture/replay accounting and emits diagnostic results.

@@ -285,6 +285,7 @@ int Run() {
                   << static_cast<int>(speedDiagnostics.failureReason) << "\n";
         return 1;
     }
+    const std::uint64_t retriesBeforeExtremePenetration = speedDiagnostics.retries;
 
     const std::vector<double> beforeExtremeQ = q;
     std::vector<double> extremeQ = q;
@@ -299,10 +300,13 @@ int Run() {
         || penetrationDiagnostics.status != ProximalStepStatus::HeldLastGood
         || penetrationDiagnostics.failureReason != ProximalFailureReason::ExtremePenetration
         || penetrationDiagnostics.maxContactPenetration <= 0.05
+        || penetrationDiagnostics.retries != retriesBeforeExtremePenetration
         || !model.readState(world, q, v)) {
         std::cerr << "extreme penetration was not rejected before integration reason="
                   << static_cast<int>(penetrationDiagnostics.failureReason)
-                  << " penetration=" << penetrationDiagnostics.maxContactPenetration << "\n";
+                  << " penetration=" << penetrationDiagnostics.maxContactPenetration
+                  << " retries_before=" << retriesBeforeExtremePenetration
+                  << " retries_after=" << penetrationDiagnostics.retries << "\n";
         return 1;
     }
     double penetrationRollbackError = 0.0;

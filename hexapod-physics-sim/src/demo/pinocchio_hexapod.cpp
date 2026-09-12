@@ -1354,6 +1354,24 @@ bool PinocchioHexapodModel::stepProximal(
         impl_->haveCommandedServoTargets = true;
         diagnostics = firstAttempt;
         diagnostics.status = ProximalStepStatus::UnsupportedIsland;
+    } else if (firstAttempt.failureReason != ProximalFailureReason::SolverNotConverged
+               && firstAttempt.failureReason != ProximalFailureReason::SpeedLimit) {
+        // Retrying with two half-steps can only help failures that depend on
+        // integration size or iterative convergence. Invalid/non-finite state,
+        // excessive penetration, and state write failures are unchanged by a
+        // smaller dt, so publish a held last-good sample without performing two
+        // redundant collision and contact solves.
+        ++impl_->totalRollbacks;
+        ++impl_->totalHeldStates;
+        writeState(world, impl_->lastGoodQ, impl_->lastGoodV);
+        resetWarmStarts();
+        for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
+            impl_->commandedServoTargets[i] =
+                world.GetServoJointAngle(impl_->wireServoIds[i]);
+        }
+        impl_->haveCommandedServoTargets = true;
+        diagnostics = firstAttempt;
+        diagnostics.status = ProximalStepStatus::HeldLastGood;
     } else {
         ++impl_->totalRetries;
         ++impl_->totalRollbacks;

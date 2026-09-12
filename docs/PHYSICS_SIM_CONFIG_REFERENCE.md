@@ -62,6 +62,12 @@ the controller remains inhibited after 30 distinct consecutive `Healthy`
 responses; a repeated, recovered, held, or unsupported response resets that
 recovery streak. Other safety faults retain the normal operator-reset policy.
 
+Only timestep-sensitive `SolverNotConverged` and `SpeedLimit` failures attempt
+the two-half-substep recovery. Invalid or non-finite state, excessive
+penetration, non-finite energy, and write failures restore the last-good state
+immediately; repeating collision and contact solves at half `dt` cannot repair
+those conditions.
+
 Every proximal response also carries the final solver residuals, physical NCP
 and friction-cone residuals, peak contact and actuator impulses, servo torque
 utilisation, pre-integration speed, peak contact penetration, mechanical energy/work, contact counts,
