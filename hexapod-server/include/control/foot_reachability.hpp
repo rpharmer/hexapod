@@ -7,12 +7,33 @@ namespace foot_reachability {
 /** Femur–tibia plane distance `d = hypot(rho, z)` in the leg frame (same convention as `LegIK`). */
 double femurPlaneDistanceM(const LegGeometry& leg, const Vec3& foot_pos_body_m);
 
+/** True when `d = hypot(rho, z)` lies in the inset femur–tibia annulus. */
+bool footInReachAnnulus(const LegGeometry& leg, const Vec3& foot_pos_body_m, double inset_m = 0.004);
+
 /**
  * If the foot lies outside the femur+tibia annulus (with inset), scale (rho, z) toward the coxa
  * along the same direction in the leg plane — same closure as `LegIK`, applied in body frame
  * before IK for predictable footholds.
  */
 Vec3 clampFootPositionBody(const LegGeometry& leg, const Vec3& foot_pos_body_m, double inset_m = 0.004);
+
+struct StrokeAlongStrokeResult {
+    Vec3 pos_body_m{};
+    bool planar_xy_hit{false};
+    bool z_only_hit{false};
+};
+
+/**
+ * Project `desired` onto the inset annulus without coxa-radial scaling when a reachable
+ * previous foothold is available. Prefer keeping body XY (solve z onto the annulus);
+ * otherwise intersect the segment `last_in_reach → desired`. `last_in_reach_body_m == nullptr`
+ * or an out-of-reach last pose falls back to `clampFootPositionBody`.
+ * `planar_xy_hit` is true when body XY changed; `z_only_hit` is true when only z changed.
+ */
+StrokeAlongStrokeResult clampFootPositionAlongStroke(const LegGeometry& leg,
+                                                     const Vec3* last_in_reach_body_m,
+                                                     const Vec3& desired_body_m,
+                                                     double inset_m = 0.004);
 
 /**
  * After `clampFootPositionBody`, remove the velocity component that pushes back outside the clamp

@@ -23,6 +23,7 @@ struct LocomotionDebugSnapshot {
     std::array<Vec3, kNumLegs> commanded_foot_body_m{};
     std::array<Vec3, kNumLegs> commanded_foot_world_m{};
     std::array<Vec3, kNumLegs> planned_leg_target_body_m{};
+    std::array<Vec3, kNumLegs> pre_slew_fk_body_m{};
     std::array<Vec3, kNumLegs> post_clamp_fk_body_m{};
     std::array<Vec3, kNumLegs> post_clamp_fk_vel_body_mps{};
     std::array<Vec3, kNumLegs> contact_anchor_world_m{};

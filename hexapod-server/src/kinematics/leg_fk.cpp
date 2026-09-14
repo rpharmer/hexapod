@@ -29,7 +29,7 @@ LegFK::LegFK() : hexGeo(defaultHexapodGeometry()) {}
 //   y = r*sin(q1)
 //
 // This is the exact inverse of the IK convention already used
-// in solveOneLeg(), assuming the same axis conventions.
+// in solveOneLeg(), including conversion from calibrated servo space.
 // ------------------------------------------------------------
 
 LegTargets LegFK::solve(const RobotState& raw, const SafetyState& safety)
@@ -51,10 +51,14 @@ LegTargets LegFK::solve(const RobotState& raw, const SafetyState& safety)
 }
                        
                        
-bool LegFK::solveOneLeg(const LegState& est, FootTarget& out,
+bool LegFK::solveOneLeg(const LegState& servo_state, FootTarget& out,
                         const LegGeometry& leg)
 {
-  const std::array<JointState, kJointsPerLeg> joints = est.joint_state;
+  // RobotState and JointTargets use calibrated servo space. Undo the per-leg
+  // horn offsets and left/right signs before applying mechanical kinematics;
+  // LegIK performs the inverse conversion on its output.
+  const LegState mechanical = leg.servo.toJointAngles(servo_state);
+  const std::array<JointState, kJointsPerLeg> joints = mechanical.joint_state;
   const double q1 = joints[0].pos_rad.value;
   const double q2 = joints[1].pos_rad.value;
   const double q3 = joints[2].pos_rad.value;
@@ -88,18 +92,18 @@ bool LegFK::solveOneLeg(const LegState& est, FootTarget& out,
 //
 // Steps:
 //   1) Compute foot in leg-local frame.
-//   2) Rotate by +mountAngle into body orientation.
+//   2) Rotate from the configured +Y-clockwise mount convention into body coordinates.
 //   3) Add the coxa mount position in body frame.
 // ------------------------------------------------------------
-FootTarget LegFK::footInBodyFrame(const LegState& est, const LegGeometry& leg){
+FootTarget LegFK::footInBodyFrame(const LegState& servo_state, const LegGeometry& leg){
 
   FootTarget footLeg{};
 
   // Foot in the leg's own local frame
-  solveOneLeg(est, footLeg, leg);
+  solveOneLeg(servo_state, footLeg, leg);
 
   // Leg frame -> body frame
-  const Mat3 R_body_from_leg = Mat3::rotZ(leg.mountAngle.value);
+  const Mat3 R_body_from_leg = bodyFromLegFrame(leg);
   const Vec3 footRelativeToCoxa = R_body_from_leg * footLeg.pos_body_m;
 
   // Shift from coxa origin to body origin
@@ -118,9 +122,9 @@ FootTarget LegFK::footInBodyFrame(const LegState& est, const LegGeometry& leg){
 //   2) Rotate BODY -> WORLD.
 //   3) Add body world position.
 // ------------------------------------------------------------
-FootTarget LegFK::footInWorldFrame(const LegState& est, const BodyPose& bodyPose,
+FootTarget LegFK::footInWorldFrame(const LegState& servo_state, const BodyPose& bodyPose,
                              const LegGeometry& leg){
-  const Vec3 footBody = footInBodyFrame(est, leg).pos_body_m;
+  const Vec3 footBody = footInBodyFrame(servo_state, leg).pos_body_m;
 
   // BODY -> WORLD
   const Mat3 R_bw = bodyPose.rotationBodyToWorld();

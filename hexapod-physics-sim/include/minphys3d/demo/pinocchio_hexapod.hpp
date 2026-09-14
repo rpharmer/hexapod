@@ -39,7 +39,13 @@ enum class ProximalFailureReason : std::uint8_t {
 struct ProximalSolverSettings {
     int maxIterations = 50;
     double proximalMu = 1.0e-6;
+    // ADMM stop. Keep this tight: 1e-3 lets ADMM exit before stance impulses
+    // can hold the body up (stand height error ~10 cm).
     double absoluteTolerance = 1.0e-8;
+    // NCP accept floor, and the ADMM stop used on sliding contacts (tangential
+    // free speed > 2 cm/s). Standing contacts keep `absoluteTolerance` (1e-8)
+    // so the body does not sag. Do not raise the standing ADMM stop to 1e-3.
+    double ncpAbsoluteTolerance = 1.0e-3;
     double relativeTolerance = 1.0e-6;
     double contactRegularization = 1.0e-10;
     double maxLinearSpeed = 2.0;
@@ -62,6 +68,34 @@ struct ProximalStepDiagnostics {
     double coneResidual = 0.0;
     double peakNormalImpulse = 0.0;
     double peakFrictionImpulse = 0.0;
+    // Signed contact-space friction mapped through the contact frame into
+    // sim-world X/Z (Y-up). Summed over contacts in this substep.
+    double sumFrictionImpulseWorldX = 0.0;
+    double sumFrictionImpulseWorldZ = 0.0;
+    double sumAbsFrictionImpulseWorldX = 0.0;
+    double sumAbsFrictionImpulseWorldZ = 0.0;
+    double sumFrictionImpulseWorldY = 0.0;
+    // Free-flyer linear velocity increment from M^-1 J^T λ, mapped from the
+    // LOCAL v convention into sim-world X/Z.
+    double contactDeltaVx = 0.0;
+    double contactDeltaVz = 0.0;
+    // Per-leg census (scene/server order). Friction is summed over contacts on
+    // that tibia; drift/slip are the last constraint on that tibia this substep.
+    std::array<double, 6> legFrictionImpulseWorldX{};
+    std::array<double, 6> legFrictionImpulseWorldZ{};
+    std::array<double, 6> legPinocchioDriftTx{};
+    std::array<double, 6> legWorldSlipTx{};
+    std::array<double, 6> legWorldSlipTy{};
+    std::array<std::uint8_t, 6> legContactCount{};
+    std::array<double, 6> legTibiaVx{};
+    std::array<double, 6> legSpinVx{};
+    std::array<double, 6> legT0x{};
+    std::array<double, 6> legFootVx{};
+    std::array<double, 6> legFootX{};
+    std::array<double, 6> legFootPosVx{};
+    std::array<double, 6> legFootVz{};
+    std::array<double, 6> legFootZ{};
+    std::array<double, 6> legFootPosVz{};
     double peakStructuralImpulse = 0.0;
     double peakActuatorImpulse = 0.0;
     double peakServoTorqueUtilization = 0.0;
@@ -95,6 +129,8 @@ struct ProximalStepDiagnostics {
     std::uint64_t heldStateCount = 0;
     std::uint64_t unsupportedIslandCount = 0;
     std::uint64_t worstContactId = 0;
+    bool admmConverged = false;
+    bool ncpPhysicallyConverged = false;
 };
 
 /// Whole-tree floating-base model mirroring the built-in minphys3d hexapod.
@@ -115,6 +151,14 @@ public:
     std::size_t configurationSize() const;
     std::size_t velocitySize() const;
     std::size_t jointCount() const;
+
+    /// CRBA diagonals at the initial pose, with other joints instantaneously
+    /// locked. Diagnostic only; production PD uses `servoNominalInertias()`.
+    std::array<double, 18> servoUnconstrainedInertias() const;
+
+    /// Stance-loaded reflected inertias used by PD. Other joints locked, six
+    /// feet at the initial pose; clamped to `[M_ii, 1.5 M_ii]`.
+    std::array<double, 18> servoNominalInertias() const;
 
     bool readState(const World& world, std::vector<double>& q, std::vector<double>& v) const;
     bool writeState(World& world, const std::vector<double>& q, const std::vector<double>& v);

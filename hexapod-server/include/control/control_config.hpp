@@ -30,6 +30,8 @@ inline constexpr DurationUs kDefaultEstimatorMaxAgeUs{300000};
 inline constexpr DurationUs kDefaultIntentMaxAgeUs{300000};
 inline constexpr LinearRateMps kDefaultFallbackSpeedMag{0.01};
 inline constexpr double kDefaultGaitTransitionBlendS{0.35};
+/** STAND→WALK blend. Shorter than gait-type blend so a 0.36 s burst can still reach tripod. */
+inline constexpr double kDefaultGaitWalkEntryBlendS{0.15};
 inline constexpr double kDefaultGaitNominalPlanarSpeedMps{0.32};
 inline constexpr double kDefaultGaitNominalYawRateRadps{0.70};
 inline constexpr double kDefaultGaitTurnNominalRadiusM{0.11};
@@ -144,6 +146,8 @@ struct GaitConfig {
     LinearRateMps fallback_speed_mag{kDefaultFallbackSpeedMag};
     /** Seconds to blend gait timing, duty, offsets, and stride shape when `GaitType` changes. */
     double transition_blend_s{kDefaultGaitTransitionBlendS};
+    /** Seconds to blend from all-stance walk-entry into the commanded walking gait. */
+    double walk_entry_blend_s{kDefaultGaitWalkEntryBlendS};
     /** Planar speed used to normalize `vx` / `vy` for automatic stride and cadence scaling. */
     double nominal_planar_speed_mps{kDefaultGaitNominalPlanarSpeedMps};
     /** Yaw rate used to normalize commanded turn rate for scaling. */

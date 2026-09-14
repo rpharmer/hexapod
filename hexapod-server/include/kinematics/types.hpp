@@ -367,6 +367,23 @@ struct LegGeometry {
     std::array<ServoJointDynamics, kJointsPerLeg> servoDynamics{};
 };
 
+// Geometry configuration stores the physical simulator/CAD mount angle.  In
+// the simulator it is measured from +Z with radial axis (sin(a), 0, cos(a)).
+// The canonical server map is (x,y,z)_server=(-z,x,y)_sim, so that radial axis
+// has server yaw pi-a.  Keep this conversion in one place so FK, IK,
+// reachability and estimation cannot drift into different mount conventions.
+inline double legFrameYawRad(const LegGeometry& leg) {
+    return kPi - leg.mountAngle.value;
+}
+
+inline Mat3 bodyFromLegFrame(const LegGeometry& leg) {
+    return Mat3::rotZ(legFrameYawRad(leg));
+}
+
+inline Mat3 legFromBodyFrame(const LegGeometry& leg) {
+    return bodyFromLegFrame(leg).transpose();
+}
+
 // ============================================================
 // Hexapod geometry
 // ============================================================
@@ -397,12 +414,12 @@ struct HexapodGeometry {
                                 hexapodZ points up (positive from ground to hexapod)
                                 
                                 * legId |      leg mount point (m)   |   
-                                *   0   | ( 0.063,  -0.0835, -0.007) |
-                                *   1   | (-0.063,  -0.0835, -0.007) |
-                                *   2   | ( 0.0815,       0, -0.007) |
-                                *   3   | (-0.0815,       0, -0.007) |
-                                *   4   | ( 0.063,   0.0835, -0.007) |
-                                *   5   | (-0.063,   0.0835, -0.007) |
+                                *   0   | ( 0.0835,   0.063, -0.007) |
+                                *   1   | ( 0.0835,  -0.063, -0.007) |
+                                *   2   | (      0,  0.0815, -0.007) |
+                                *   3   | (      0, -0.0815, -0.007) |
+                                *   4   | (-0.0835,   0.063, -0.007) |
+                                *   5   | (-0.0835,  -0.063, -0.007) |
                                 
                                 centre of body is (0,0,0)
                                 when on flat surface, centre of body is 40mm above ground

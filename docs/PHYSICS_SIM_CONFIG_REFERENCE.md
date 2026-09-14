@@ -45,9 +45,24 @@ From `src/main.cpp`.
 The server-side `Runtime.PhysicsSim.*` keys are copied into the binary
 `ConfigCommand`. `SolverMode = 0` keeps the legacy PGS path; `SolverMode = 1`
 selects Pinocchio 4.1 whole-body proximal contact dynamics. The remaining keys
-are `SolverIterations`, `ProximalMu`, `AbsoluteTolerance`,
-`RelativeTolerance`, and `ContactRegularization`. The shipped configurations
-keep mode `0` until the locomotion acceptance gates pass.
+are `SolverIterations`, `ProximalMu`, `AbsoluteTolerance` (default `1e-8`; this
+is the standing ADMM stop),
+`RelativeTolerance`, and `ContactRegularization`. Sliding contacts (tangential
+free speed above 2 cm/s) use ADMM stop `1e-3` and NCP accept
+`max(AbsoluteTolerance, 1e-3)`. Do not raise the standing ADMM stop to `1e-3`:
+stand then reports Healthy while the body sags ~10 cm. WSL
+`config.physics-sim-wsl.txt` defaults to mode `1` and 24 iterations after the
+proximal stand CTest and exact-replay gates. `config.physics-sim.txt` and
+`config.physics-sim-test-harness.txt` stay on mode `0` so comparison CTests
+remain legacy PGS. `legacy-pgs` (`= 0`) is still a valid explicit setting.
+
+Built-in hexapod serve materials (`BuildHexapodScene`): tibia/foot **2.0 / 2.0**,
+ground plane **2.0 / 2.0**. Pinocchio Coulomb μ is the average of the two
+**dynamic** coefficients (**2.0**). Legacy PGS uses `max` of the static and
+dynamic averages (also **2.0** on this scene). `ProximalMu` is ADMM
+regularization, not ground friction. The hexapod scene also sets
+`penetrationSlop = 0.002` and `penetrationBiasFactor = 0.20` so velocity-level
+contact keeps depth near 2 mm across 120/240/480 Hz.
 
 Proximal mode limits internal integration substeps to `1/480 s`, independently
 of the command cadence; legacy PGS retains its `1/240 s` maximum. The spectral
@@ -62,11 +77,18 @@ the controller remains inhibited after 30 distinct consecutive `Healthy`
 responses; a repeated, recovered, held, or unsupported response resets that
 recovery streak. Other safety faults retain the normal operator-reset policy.
 
-Only timestep-sensitive `SolverNotConverged` and `SpeedLimit` failures attempt
-the two-half-substep recovery. Invalid or non-finite state, excessive
-penetration, non-finite energy, and write failures restore the last-good state
-immediately; repeating collision and contact solves at half `dt` cannot repair
-those conditions.
+Only timestep-sensitive `SolverNotConverged` and `SpeedLimit` failures retry.
+`SolverNotConverged` first repeats the same `dt` from the snapshot (warm-started
+from the failed iterate, minus the worst contact), then falls back to two
+half-substeps if that still fails. If those half-substeps also miss, a last-resort
+pair of half-substeps starts from gravity-based contact guesses at **twice**
+`SolverIterations` (at least 48). That path is not used on healthy first attempts.
+`SpeedLimit` skips the same-`dt` attempt and goes straight to half-substeps,
+because the integrated speed is a function of `dt`. Invalid or non-finite state,
+excessive penetration, non-finite energy, and write failures restore the last-good
+state immediately; repeating collision and contact solves cannot repair those
+conditions. Servo target jumps reset the rate-limited command filter but do
+**not** wipe foot-contact warm starts.
 
 Every proximal response also carries the final solver residuals, physical NCP
 and friction-cone residuals, peak contact and actuator impulses, servo torque
@@ -240,8 +262,17 @@ Definitions in `hexapod-common/include/physics_sim_protocol.hpp`.
 - `StateCorrection`: pose/twist/contact/terrain fields + flags and `correction_strength`
 - `StateResponse`: body/joint/contact/sensor state followed by proximal solver
   status, failure reason, residual, impulse, energy, speed, contact, and recovery
-  diagnostics. Server and simulator binaries must be rebuilt together after any
-  protocol change.
+  diagnostics, including world-mapped friction impulse sums (`*_world_x/y/z`),
+  free-flyer contact Δv, and per-leg arrays
+  (`solver_leg_friction_impulse_world_x`, `solver_leg_friction_impulse_world_z`,
+  `solver_leg_pinocchio_drift_tx`,
+  `solver_leg_world_slip_tx`, `solver_leg_world_slip_ty`,
+  `solver_leg_contact_count`,
+  `solver_leg_tibia_vx`, `solver_leg_spin_vx`, `solver_leg_t0_x`,
+  `solver_leg_foot_vx`, `solver_leg_foot_x`, `solver_leg_foot_pos_vx`,
+  `solver_leg_foot_vz`, `solver_leg_foot_z`, `solver_leg_foot_pos_vz`).
+  Server and simulator binaries must be rebuilt together after any protocol
+  change.
 
 ## Environment variables
 
@@ -252,6 +283,11 @@ Definitions in `hexapod-common/include/physics_sim_protocol.hpp`.
 - `HEXAPOD_PROXIMAL_TRACE_FAILURES=1`
   - Emit bounded diagnostics for the first held proximal samples and then every
     250th held sample. Intended for test diagnosis, not normal production logs.
+- `HEXAPOD_SERVO_TORQUE_SCALE`
+  - Serve-only multiplier on built-in hexapod `maxServoTorque` and on the
+    Pinocchio stall clip (`kServoMaxTorqueNm`). Applied after
+    `RelaxBuiltInHexapodServos`. Default 1. Used by the tripod stroke probe via
+    `HEXAPOD_TRIPOD_STROKE_TORQUE_SCALE`; not a production config key.
 
 ## Notes
 

@@ -35,7 +35,9 @@ CalibrationTouchSample makeTouchSample(const LegGeometry& leg,
     sample.contact = true;
     sample.servo_angles = true_cal.toServoAngles(joint_true);
 
-    const Vec3 foot_body = fk.footInBodyFrame(joint_true, leg).pos_body_m;
+    LegGeometry true_leg = leg;
+    true_leg.servo = true_cal;
+    const Vec3 foot_body = fk.footInBodyFrame(sample.servo_angles, true_leg).pos_body_m;
     sample.body_pose.position = Vec3{0.0, 0.0, -foot_body.z};
     sample.body_pose.roll = AngleRad{0.0};
     sample.body_pose.pitch = AngleRad{0.0};
@@ -63,12 +65,13 @@ BaseClearanceSample makeBaseClearanceSample(const HexapodGeometry& geometry,
     for (int leg = 0; leg < kNumLegs; ++leg) {
         const LegGeometry& leg_geometry = geometry.legGeometry[leg];
         const Vec3 mount = leg_geometry.bodyCoxaOffset;
-        const double q1 = std::atan2(-mount.y, -mount.x) - leg_geometry.mountAngle.value;
+        const double q1 = std::atan2(-mount.y, -mount.x) - legFrameYawRad(leg_geometry);
         const LegState joint = makeJointState(q1, -0.72, 1.05);
         sample.servo_angles[leg] = leg_geometry.servo.toServoAngles(joint);
 
         if (contacts[leg]) {
-            const Vec3 foot_body = fk.footInBodyFrame(joint, leg_geometry).pos_body_m;
+            const Vec3 foot_body = fk.footInBodyFrame(
+                sample.servo_angles[leg], leg_geometry).pos_body_m;
             sample.body_pose.position.z = -foot_body.z;
         }
     }
@@ -86,10 +89,9 @@ double meanContactHeight(const BaseClearanceSample& sample,
         if (!sample.foot_contacts[leg]) {
             continue;
         }
-        const LegState joint =
-            geometry.legGeometry[leg].servo.toJointAngles(sample.servo_angles[leg]);
         const Vec3 foot_body =
-            fk.footInBodyFrame(joint, geometry.legGeometry[leg]).pos_body_m;
+            fk.footInBodyFrame(
+                sample.servo_angles[leg], geometry.legGeometry[leg]).pos_body_m;
         sum += sample.body_pose.position.z + foot_body.z;
         ++count;
     }

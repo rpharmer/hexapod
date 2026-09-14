@@ -3,6 +3,8 @@
 #include "gait_params.hpp"
 #include "types.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -45,15 +47,104 @@ bool testWalkEntryBeginsInStance() {
     }
 
     GaitState settled{};
-    for (int i = 1; i <= 125; ++i) {
+    for (int i = 1; i <= 50; ++i) {
         walk.timestamp_us = TimePointUs{static_cast<uint64_t>(1'004'000 + i * 4'000)};
         settled = scheduler.update(estimated, walk, safety, forward);
     }
     const bool has_swing_leg = std::any_of(
         settled.in_stance.begin(), settled.in_stance.end(), [](const bool stance) { return !stance; });
-    if (!has_swing_leg || !(settled.step_length_m > 0.01)) {
-        std::cerr << "FAIL: walk-entry blend should reach the commanded walking gait\n";
+    if (!has_swing_leg || !(settled.step_length_m > 0.01) || !(settled.duty_factor < 0.55)) {
+        std::cerr << "FAIL: walk-entry blend should reach the commanded walking gait by 0.20 s\n";
         return false;
+    }
+    return true;
+}
+
+bool testWalkEntryCoversBothTripodGroups() {
+    control_config::GaitConfig cfg{};
+    GaitScheduler scheduler(cfg);
+    RobotState estimated{};
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    BodyTwist stopped{};
+
+    MotionIntent stand{};
+    stand.requested_mode = RobotMode::STAND;
+    stand.timestamp_us = TimePointUs{1'000'000};
+    (void)scheduler.update(estimated, stand, safety, stopped);
+
+    MotionIntent walk = stand;
+    walk.requested_mode = RobotMode::WALK;
+    BodyTwist forward{};
+    forward.linear_mps.x = 0.12;
+
+    bool saw_group_a_swing = false;
+    bool saw_group_b_swing = false;
+    GaitState gait{};
+    for (int frame = 0; frame < 72; ++frame) {
+        walk.timestamp_us = TimePointUs{static_cast<uint64_t>(1'005'000 + frame * 5'000)};
+        gait = scheduler.update(estimated, walk, safety, forward);
+        if (frame == 0) {
+            for (int leg = 0; leg < kNumLegs; ++leg) {
+                if (!gait.in_stance[static_cast<std::size_t>(leg)]) {
+                    std::cerr << "FAIL: first-stride coverage must keep the first walking frame all-stance\n";
+                    return false;
+                }
+            }
+        }
+        constexpr std::array<int, 3> kGroupA{0, 3, 4};
+        constexpr std::array<int, 3> kGroupB{1, 2, 5};
+        for (const int leg : kGroupA) {
+            if (!gait.in_stance[static_cast<std::size_t>(leg)]) {
+                saw_group_a_swing = true;
+            }
+        }
+        for (const int leg : kGroupB) {
+            if (!gait.in_stance[static_cast<std::size_t>(leg)]) {
+                saw_group_b_swing = true;
+            }
+        }
+    }
+    if (!saw_group_a_swing || !saw_group_b_swing) {
+        std::cerr << "FAIL: a 0.36 s STAND→WALK burst should swing both tripod groups\n";
+        return false;
+    }
+    if (gait.stride_phase_rate_hz.value > 1.6) {
+        std::cerr << "FAIL: first-stride coverage should keep adaptive cadence, not a 2 Hz floor\n";
+        return false;
+    }
+    return true;
+}
+
+bool testYawWalkEntryKeepsZeroPhaseSeed() {
+    control_config::GaitConfig cfg{};
+    GaitScheduler scheduler(cfg);
+    RobotState estimated{};
+    SafetyState safety{};
+    safety.inhibit_motion = false;
+    BodyTwist stopped{};
+
+    MotionIntent stand{};
+    stand.requested_mode = RobotMode::STAND;
+    stand.timestamp_us = TimePointUs{1'000'000};
+    (void)scheduler.update(estimated, stand, safety, stopped);
+
+    MotionIntent walk = stand;
+    walk.requested_mode = RobotMode::WALK;
+    walk.timestamp_us = TimePointUs{1'005'000};
+    walk.cmd_yaw_radps = AngularRateRadPerSec{0.45};
+    BodyTwist turn{};
+    turn.angular_radps.z = 0.45;
+    const GaitState entry = scheduler.update(estimated, walk, safety, turn);
+    for (int leg = 0; leg < kNumLegs; ++leg) {
+        if (!entry.in_stance[static_cast<std::size_t>(leg)]) {
+            std::cerr << "FAIL: yaw walk-entry should begin all-stance\n";
+            return false;
+        }
+        if (entry.phase[static_cast<std::size_t>(leg)] > 0.12) {
+            std::cerr << "FAIL: yaw-dominant walk-entry should not seed stride phase\n";
+            return false;
+        }
     }
     return true;
 }
@@ -103,6 +194,8 @@ bool testGovernedCadenceUpdatesDurations() {
 
 int main() {
     if (!testWalkEntryBeginsInStance() ||
+        !testWalkEntryCoversBothTripodGroups() ||
+        !testYawWalkEntryKeepsZeroPhaseSeed() ||
         !testTripodPhaseGroupsSpanBothSides() ||
         !testGovernedCadenceUpdatesDurations()) {
         return EXIT_FAILURE;

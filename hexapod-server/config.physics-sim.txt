@@ -62,6 +62,9 @@ FallbackSpeedMag = 0.01
 # Keep the physics-sim walk planner intent-driven; estimator feed-forward was
 # amplifying the closed-loop instability in the sim path.
 FootEstimatorBlend = 0.0
+# Match the simulated 18 mm compound-sphere foot clearance. Hardware keeps the
+# controller default because its contact geometry is different.
+SwingHeightScale = 1.75
 BodyHeightCollapseMarginM = 0.06
 # Trip margin_drop only when raw_contact_count <= this value (see safety_supervisor.cpp).
 BodyHeightCollapseMaxContacts = 2
@@ -100,12 +103,12 @@ BodyToBottomM = 0.040
 CoxaAttachDeg = 0.0
 MountAnglesDeg = [143.0, 217.0, 90.0, 270.0, 37.0, 323.0]
 CoxaOffsetsM = [
-  [0.063, -0.0835, -0.007],
-  [-0.063, -0.0835, -0.007],
-  [0.0815, 0.0, -0.007],
-  [-0.0815, 0.0, -0.007],
-  [0.063, 0.0835, -0.007],
-  [-0.063, 0.0835, -0.007]
+  [0.0835, 0.063, -0.007],
+  [0.0835, -0.063, -0.007],
+  [0.0, 0.0815, -0.007],
+  [0.0, -0.0815, -0.007],
+  [-0.0835, 0.063, -0.007],
+  [-0.0835, -0.063, -0.007]
 ]
 FemurAttachDeg = [35.0, -35.0, 35.0, -35.0, 35.0, -35.0]
 TibiaAttachDeg = [83.0, -83.0, 83.0, -83.0, 83.0, -83.0]

@@ -6,8 +6,8 @@ SchemaVersion = 1
 Runtime.Mode = "physics-sim"
 Runtime.PhysicsSim.Host = "127.0.0.1"
 Runtime.PhysicsSim.Port = 9871
-Runtime.PhysicsSim.SolverIterations = 12.0
-Runtime.PhysicsSim.SolverMode = 0
+Runtime.PhysicsSim.SolverIterations = 24.0
+Runtime.PhysicsSim.SolverMode = 1
 Runtime.PhysicsSim.ProximalMu = 0.000001
 Runtime.PhysicsSim.AbsoluteTolerance = 0.00000001
 Runtime.PhysicsSim.RelativeTolerance = 0.000001
@@ -64,6 +64,10 @@ FallbackSpeedMag = 0.01
 # Keep the physics-sim walk planner intent-driven; estimator feed-forward was
 # amplifying the closed-loop instability in the WSL sim path.
 FootEstimatorBlend = 0.0
+# The simulated 18 mm foot sphere needs more centre clearance than the physical
+# toe.  This is the smallest tested scale that cleared one complete forward
+# tripod cycle without a held state while meeting the 70% progress gate.
+SwingHeightScale = 1.75
 BodyHeightCollapseMarginM = 0.06
 # Trip margin_drop only when raw_contact_count <= this value. Use 2 so tripod stance (3 feet)
 # does not false-positive BODY_COLLAPSE under lateral acceleration / sim compliance sag.
@@ -110,12 +114,12 @@ BodyToBottomM = 0.040
 CoxaAttachDeg = 0.0
 MountAnglesDeg = [143.0, 217.0, 90.0, 270.0, 37.0, 323.0]
 CoxaOffsetsM = [
-  [0.063, -0.0835, -0.007],
-  [-0.063, -0.0835, -0.007],
-  [0.0815, 0.0, -0.007],
-  [-0.0815, 0.0, -0.007],
-  [0.063, 0.0835, -0.007],
-  [-0.063, 0.0835, -0.007]
+  [0.0835, 0.063, -0.007],
+  [0.0835, -0.063, -0.007],
+  [0.0, 0.0815, -0.007],
+  [0.0, -0.0815, -0.007],
+  [-0.0835, 0.063, -0.007],
+  [-0.0835, -0.063, -0.007]
 ]
 FemurAttachDeg = [35.0, -35.0, 35.0, -35.0, 35.0, -35.0]
 TibiaAttachDeg = [83.0, -83.0, 83.0, -83.0, 83.0, -83.0]

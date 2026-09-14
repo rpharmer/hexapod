@@ -18,6 +18,20 @@ BodyController::BodyController(control_config::GaitConfig gait_cfg,
     : foot_estimator_blend_(std::clamp(gait_cfg.foot_estimator_blend, 0.0, 1.0)),
       foot_terrain_cfg_(foot_terrain_cfg) {}
 
+void BodyController::reset() {
+    height_hold_integral_m_ = 0.0;
+    last_intent_timestamp_us_ = TimePointUs{};
+    have_stance_pos_.fill(false);
+    latched_stance_pos_.fill(Vec3{});
+    latched_plant_pos_.fill(Vec3{});
+    latched_stroke_l_m_.fill(0.0);
+    last_planned_stance_.fill(false);
+    last_stroke_clamp_hit_.fill(false);
+    last_workspace_xy_hit_.fill(false);
+    have_last_clamped_stance_.fill(false);
+    last_clamped_stance_body_.fill(Vec3{});
+}
+
 namespace {
 
 constexpr double kNominalReachFraction = 0.55;
@@ -62,24 +76,32 @@ double bodyHeightHoldOffsetM(const RobotState& est, const double commanded_body_
     return std::clamp(kBodyHeightHoldGain * sag_m, 0.0, kBodyHeightHoldMaxAdjustM);
 }
 
+bool clampPlanarStrokeFromPlant(const Vec3& plant, const double stroke_l_m, Vec3& p) {
+    if (!(stroke_l_m > 0.0)) {
+        return false;
+    }
+    const double dx = p.x - plant.x;
+    const double dy = p.y - plant.y;
+    const double r = std::hypot(dx, dy);
+    if (r <= stroke_l_m || r < 1e-12) {
+        return false;
+    }
+    const double scale = stroke_l_m / r;
+    p.x = plant.x + dx * scale;
+    p.y = plant.y + dy * scale;
+    return true;
+}
+
 double terrainBlendScaleForHeightHold(const double height_hold_m) {
     const double hold_ratio = std::clamp(height_hold_m / std::max(kBodyHeightHoldMaxAdjustM, 1e-6), 0.0, 1.0);
     return std::clamp(1.0 - kTerrainBlendSagScale * hold_ratio, kTerrainBlendMinScale, 1.0);
 }
 
 BodyTwist legacyKinematicTwistFromServerBody(const BodyTwist& server_body_twist) {
-    BodyTwist out{};
-    // This is a reflection, not a rotation. Linear velocity is a polar vector, while
-    // angular velocity is axial and therefore gains the determinant sign as well.
-    out.linear_mps = Vec3{
-        -server_body_twist.linear_mps.x,
-        server_body_twist.linear_mps.y,
-        server_body_twist.linear_mps.z};
-    out.angular_radps = Vec3{
-        server_body_twist.angular_radps.x,
-        -server_body_twist.angular_radps.y,
-        -server_body_twist.angular_radps.z};
-    return out;
+    // Geometry, commands and estimator state now share the canonical server
+    // body frame.  Retain this boundary function so older call sites stay
+    // explicit and future hardware-frame adapters have one insertion point.
+    return server_body_twist;
 }
 
 } // namespace
@@ -140,7 +162,7 @@ std::array<Vec3, kNumLegs> computeNominalStance(const HexapodGeometry& geometry,
             std::sqrt(std::max(0.0, femur_tibia_reach * femur_tibia_reach - foot_z_in_leg_frame * foot_z_in_leg_frame));
         const double rho = std::min(desired_rho, max_rho);
         const Vec3 neutral_leg_frame{leg_geo.coxaLength.value + rho, 0.0, foot_z_in_leg_frame};
-        const Mat3 body_from_leg = Mat3::rotZ(leg_geo.mountAngle.value);
+        const Mat3 body_from_leg = bodyFromLegFrame(leg_geo);
         nominal[leg] = leg_geo.bodyCoxaOffset + (body_from_leg * neutral_leg_frame);
     }
     return nominal;
@@ -159,10 +181,10 @@ LegTargets BodyController::update(const RobotState& est,
                                   const std::array<LegContactDecision, kNumLegs>* contact_modes) {
     LegTargets out{};
     out.timestamp_us = now_us();
+    last_stroke_clamp_hit_.fill(false);
+    last_workspace_xy_hit_.fill(false);
 
-    // MotionIntent and estimator telemetry use the canonical server body frame, while
-    // the calibrated leg geometry/IK still use the legacy mirrored X basis. Convert
-    // only differential motion here; nominal geometry remains untouched.
+    // Keep differential motion conversion explicit at the kinematic boundary.
     const BodyTwist kinematic_twist = legacyKinematicTwistFromServerBody(cmd_twist);
     RobotState kinematic_est = est;
     if (kinematic_est.has_body_twist_state) {
@@ -174,8 +196,8 @@ LegTargets BodyController::update(const RobotState& est,
         kinematic_est.body_twist_state.twist_vel_radps = measured_kinematic.angular_radps;
     }
 
-    // Pose shaping remains in the canonical server frame; the adapter is applied only
-    // to the differential foot motion consumed by the legacy kinematic model.
+    // Pose shaping and differential foot motion share the canonical server frame.
+    // Keep the adapter call so a future hardware-frame map has one insertion point.
     const PlanarMotionCommand cmd = planarMotionFromCommandTwist(cmd_twist);
     const bool walking =
         (intent.requested_mode == RobotMode::WALK) &&
@@ -226,6 +248,8 @@ LegTargets BodyController::update(const RobotState& est,
         commanded_body_height_m + body_height_hold_m,
         std::max(0.04, commanded_body_height_m),
         commanded_body_height_m + kBodyHeightHoldMaxEffectiveMarginM);
+    const double swing_height_hold_release_m =
+        std::max(0.0, effective_body_height_m - commanded_body_height_m);
     std::array<Vec3, kNumLegs> nominal = nominalStance(effective_body_height_m);
 
     if (walking && terrain_snapshot != nullptr && terrain_blend_scale > 0.0) {
@@ -246,6 +270,26 @@ LegTargets BodyController::update(const RobotState& est,
     const double swing_span = std::max(1.0 - duty, 1e-6);
     const double step_len = std::max(gait.step_length_m, 0.0);
     const double swing_h = std::max(gait.swing_height_m, 0.0);
+    double dt_s = 0.0;
+    if (!intent.timestamp_us.isZero() && !last_intent_timestamp_us_.isZero() &&
+        intent.timestamp_us.value > last_intent_timestamp_us_.value) {
+        dt_s = std::min(
+            0.05,
+            static_cast<double>(intent.timestamp_us.value - last_intent_timestamp_us_.value) * 1.0e-6);
+    }
+    if (!intent.timestamp_us.isZero()) {
+        last_intent_timestamp_us_ = intent.timestamp_us;
+    }
+    if (!walking) {
+        have_stance_pos_.fill(false);
+        latched_plant_pos_.fill(Vec3{});
+        latched_stroke_l_m_.fill(0.0);
+        last_planned_stance_.fill(false);
+        last_stroke_clamp_hit_.fill(false);
+        last_workspace_xy_hit_.fill(false);
+        have_last_clamped_stance_.fill(false);
+        last_clamped_stance_body_.fill(Vec3{});
+    }
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
         Vec3 target = nominal[leg] - planar_body_offset;
@@ -255,6 +299,7 @@ LegTargets BodyController::update(const RobotState& est,
                                      -intent.twist.body_trans_mps.y,
                                      -intent.twist.body_trans_mps.z};
         bool apply_workspace_clamp = true;
+        bool used_stance_kinematics = false;
 
         if (walking) {
             double ph = clamp01(gait.phase[leg]);
@@ -309,7 +354,7 @@ LegTargets BodyController::update(const RobotState& est,
             const bool use_stance_kinematics =
                 contact_decision != nullptr
                     ? contact_decision->use_stance_kinematics
-                    : (effective_stance || (est.foot_contacts[leg_index] && !liftoff_grace) || lost_candidate_grace);
+                    : (effective_stance || lost_candidate_grace);
 
             // Diagnostic: log kinematics selection when in early-swing contact.
             // Enable with HEXAPOD_DIAG_LOG=1.
@@ -337,22 +382,88 @@ LegTargets BodyController::update(const RobotState& est,
 
             if (use_stance_kinematics) {
                 apply_workspace_clamp = false;
-                StanceFootInputs st{};
-                st.anchor = anchor;
-                st.v_foot_body = v_foot;
-                st.phase = ph;
-                st.f_hz = f_hz;
+                used_stance_kinematics = true;
                 Vec3 p{};
                 Vec3 v{};
-                planStanceFoot(st, p, v);
+                const bool new_plant = !have_stance_pos_[leg_index];
+                const bool replant_planned =
+                    !new_plant && planned_stance && !last_planned_stance_[leg_index] && !support_hold;
+                if (new_plant || replant_planned) {
+                    if (planned_stance) {
+                        StanceFootInputs st{};
+                        st.anchor = anchor;
+                        st.v_foot_body = v_foot;
+                        // New plants start at the stance origin. Using gait φ here jumped
+                        // STAND→WALK feet to a mid-stroke target when first-stride coverage
+                        // seeds Φ away from 0. After this sample the latch integrates v dt.
+                        st.phase = new_plant ? 0.0 : ph;
+                        st.f_hz = f_hz;
+                        planStanceFoot(st, p, v);
+                    } else {
+                        // Hold first plant: keep the swing foothold XY.
+                        // Snapping to stance_end parked the next stance at the back of
+                        // the disk (workspace XY gone, Cartesian collapsed).
+                        const double swing_f_hz = recovery_touchdown ? 1.0 : f_hz;
+                        const Vec3 stance_end = anchor + v_foot * (duty / swing_f_hz);
+                        const Vec3 v_liftoff = supportFootVelocityAt(stance_end, body_mot);
+                        const double tau = clamp01((ph - duty) / swing_span);
+                        double tau_use = tau;
+                        double swing_extra_down_z = 0.0;
+                        contact_foot_response::adjustSwingTauAndVerticalExtension(
+                            true,
+                            est.foot_contacts[leg_index],
+                            est,
+                            tau,
+                            tau_use,
+                            swing_extra_down_z,
+                            &est.foot_contact_fusion[leg_index]);
+                        SwingFootInputs sw{};
+                        sw.anchor = anchor;
+                        sw.stance_end = stance_end;
+                        sw.v_liftoff_body = v_liftoff;
+                        sw.tau01 = tau_use;
+                        sw.swing_span = swing_span;
+                        sw.f_hz = swing_f_hz;
+                        sw.step_length_m = step_len;
+                        sw.swing_height_m = swing_h;
+                        sw.cmd_accel_body_x_mps2 = gait.cmd_accel_body_x_mps2;
+                        sw.cmd_accel_body_y_mps2 = gait.cmd_accel_body_y_mps2;
+                        sw.stance_lookahead_s = (duty / swing_f_hz) * 0.48;
+                        sw.static_stability_margin_m = gait.static_stability_margin_m;
+                        sw.swing_time_ease_01 = gait.swing_time_ease_01;
+                        planSwingFoot(kinematic_est, kinematic_twist, sw, p, v);
+                        v = supportFootVelocityAt(p, body_mot);
+                    }
+                } else {
+                    const Vec3 v_now = supportFootVelocityAt(latched_stance_pos_[leg_index], body_mot);
+                    p = latched_stance_pos_[leg_index] + v_now * dt_s;
+                    v = supportFootVelocityAt(p, body_mot);
+                }
                 target = p;
+                target.z = anchor.z;
                 target_vel = target_vel + v;
                 if (terrain_blend_scale > 0.0 && foot_terrain_cfg_.enable_stance_tilt_leveling &&
                     est.foot_contacts[leg_index]) {
                     target.z += terrain_blend_scale * trust_scale *
                                 contact_foot_response::stanceTiltLevelingDeltaZ(est, intent, anchor.x, anchor.y);
                 }
+                if (new_plant || replant_planned) {
+                    latched_plant_pos_[leg_index] = target;
+                    const double v_xy = std::hypot(v_foot.x, v_foot.y);
+                    latched_stroke_l_m_[leg_index] = v_xy * (duty / f_hz);
+                }
+                last_stroke_clamp_hit_[leg_index] = clampPlanarStrokeFromPlant(
+                    latched_plant_pos_[leg_index], latched_stroke_l_m_[leg_index], target);
+                have_stance_pos_[leg_index] = true;
+                latched_stance_pos_[leg_index] = target;
+                last_planned_stance_[leg_index] = planned_stance;
             } else {
+                have_stance_pos_[leg_index] = false;
+                latched_plant_pos_[leg_index] = Vec3{};
+                latched_stroke_l_m_[leg_index] = 0.0;
+                last_planned_stance_[leg_index] = false;
+                have_last_clamped_stance_[leg_index] = false;
+                last_clamped_stance_body_[leg_index] = Vec3{};
                 const double swing_f_hz = recovery_touchdown ? 1.0 : f_hz;
                 const Vec3 stance_end = anchor + v_foot * (duty / swing_f_hz);
                 const Vec3 v_liftoff = supportFootVelocityAt(stance_end, body_mot);
@@ -387,6 +498,11 @@ LegTargets BodyController::update(const RobotState& est,
                 Vec3 v{};
                 planSwingFoot(kinematic_est, kinematic_twist, sw, p, v);
                 target = p;
+                // Height hold deliberately pushes planted feet below their unloaded nominal
+                // position to counter servo compliance. A swing foot must not inherit that
+                // support preload: doing so consumes most of the clearance arc and leaves the
+                // 18 mm contact sphere dragging through nearly the entire swing.
+                target.z += swing_height_hold_release_m;
                 if (terrain_snapshot != nullptr) {
                     applyTerrainSwingXYNudge(*terrain_snapshot, est, foot_terrain_cfg_, tau_for_terrain_xy, &target);
                     applyTerrainSwingClearance(*terrain_snapshot, est, foot_terrain_cfg_, &target);
@@ -402,14 +518,46 @@ LegTargets BodyController::update(const RobotState& est,
             }
         }
 
-        target = body_rotation * target;
-        target_vel = body_rotation * target_vel;
+        if (used_stance_kinematics) {
+            // Stance lean about the coxa, not the body origin, so pitch/roll do not
+            // translate the untilted plant in body XY before the stroke projector.
+            const Vec3 coxa = geometry_.legGeometry[leg].bodyCoxaOffset;
+            target = coxa + (body_rotation * (target - coxa));
+            target_vel = body_rotation * target_vel;
+        } else {
+            target = body_rotation * target;
+            target_vel = body_rotation * target_vel;
+        }
         target_vel = target_vel + cross(intent.twist.twist_vel_radps, target);
 
         if (apply_workspace_clamp) {
             const Vec3 target_before_reach = target;
             target = foot_reachability::clampFootPositionBody(geometry_.legGeometry[leg], target, kFootReachInsetM);
             foot_reachability::clipVelocityForReachClamp(target_before_reach, target, &target_vel);
+        } else if (used_stance_kinematics) {
+            const Vec3 target_before_reach = target;
+            const std::size_t leg_index = static_cast<std::size_t>(leg);
+            const Vec3* last_in_reach =
+                have_last_clamped_stance_[leg_index] ? &last_clamped_stance_body_[leg_index] : nullptr;
+            const foot_reachability::StrokeAlongStrokeResult projected =
+                foot_reachability::clampFootPositionAlongStroke(
+                    geometry_.legGeometry[leg], last_in_reach, target, kFootReachInsetM);
+            target = projected.pos_body_m;
+            last_workspace_xy_hit_[leg_index] = projected.planar_xy_hit;
+            foot_reachability::clipVelocityForReachClamp(target_before_reach, target, &target_vel);
+            last_clamped_stance_body_[leg_index] = target;
+            have_last_clamped_stance_[leg_index] = true;
+            const double planar_shift =
+                std::hypot(target.x - target_before_reach.x, target.y - target_before_reach.y);
+            if (planar_shift > 1e-9) {
+                const Vec3 coxa = geometry_.legGeometry[leg].bodyCoxaOffset;
+                Vec3 mixed = target_before_reach;
+                mixed.x = target.x;
+                mixed.y = target.y;
+                const Vec3 untilted = coxa + (body_rotation.transpose() * (mixed - coxa));
+                latched_stance_pos_[leg_index].x = untilted.x;
+                latched_stance_pos_[leg_index].y = untilted.y;
+            }
         }
 
         out.feet[leg].pos_body_m = target;

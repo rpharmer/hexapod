@@ -117,9 +117,15 @@ int main() {
         GaitState gait = allStanceContacts();
         est.foot_contacts.fill(true);
         JointTargets jt{};
+        const LegState joint_target =
+            geo.legGeometry[0].servo.toJointAngles(jt.leg_states[0]);
         const LegGravityCompensation want =
-            computeLegGravityCompensation(geo.legGeometry[0], 0.0, 0.0, 0.0, gravityDownFromUprightImu(),
-                                          footReactionPerLeg(6), cfg);
+            computeLegGravityCompensation(
+                geo.legGeometry[0],
+                joint_target.joint_state[COXA].pos_rad.value,
+                joint_target.joint_state[FEMUR].pos_rad.value,
+                joint_target.joint_state[TIBIA].pos_rad.value,
+                gravityDownFromUprightImu(), footReactionPerLeg(6), cfg);
         applyJointAngleGravityFeedforward(cfg, geo, est, gait, jt);
         if (!expect(std::abs(jt.leg_states[0].joint_state[FEMUR].pos_rad.value - want.delta_femur_rad) < 1e-8 &&
                         std::abs(jt.leg_states[0].joint_state[TIBIA].pos_rad.value - want.delta_tibia_rad) < 1e-8,
@@ -152,16 +158,25 @@ int main() {
         gait.in_stance[0] = false;
         est.foot_contacts.fill(true);
         JointTargets jt{};
+        const LegState joint_target =
+            geo.legGeometry[1].servo.toJointAngles(jt.leg_states[1]);
         const LegGravityCompensation want_leg1 =
-            computeLegGravityCompensation(geo.legGeometry[1], 0.0, 0.0, 0.0, gravityDownFromUprightImu(),
-                                          footReactionPerLeg(5), cfg);
+            computeLegGravityCompensation(
+                geo.legGeometry[1],
+                joint_target.joint_state[COXA].pos_rad.value,
+                joint_target.joint_state[FEMUR].pos_rad.value,
+                joint_target.joint_state[TIBIA].pos_rad.value,
+                gravityDownFromUprightImu(), footReactionPerLeg(5), cfg);
         applyJointAngleGravityFeedforward(cfg, geo, est, gait, jt);
         if (!expect(jt.leg_states[0].joint_state[FEMUR].pos_rad.value == 0.0,
                     "swing leg (not in_stance) should not get feedforward")) {
             return 1;
         }
-        if (!expect(std::abs(jt.leg_states[1].joint_state[FEMUR].pos_rad.value - want_leg1.delta_femur_rad) < 1e-8,
-                    "stance leg should still get feedforward")) {
+        const double expected_servo_delta =
+            -want_leg1.delta_femur_rad;
+        if (!expect(std::abs(jt.leg_states[1].joint_state[FEMUR].pos_rad.value
+                             - expected_servo_delta) < 1e-8,
+                    "mirrored stance leg should receive the signed servo-space feedforward")) {
             return 1;
         }
     }
@@ -212,15 +227,16 @@ int main() {
 
     {
         control_config::GravityFeedforwardConfig cfg = sampleConfig();
-        cfg.scale_femur = 50.0;
+        cfg.scale_femur = 5000.0;
         cfg.max_delta_femur_rad = 0.05;
         RobotState est = imuUpright();
         GaitState gait = allStanceContacts();
         est.foot_contacts.fill(true);
         JointTargets jt{};
         applyJointAngleGravityFeedforward(cfg, geo, est, gait, jt);
-        if (!expect(std::abs(jt.leg_states[0].joint_state[FEMUR].pos_rad.value - 0.05) < 1e-8,
-                    "femur delta should clamp to max_delta_femur_rad")) {
+        if (!expect(std::abs(std::abs(jt.leg_states[0].joint_state[FEMUR].pos_rad.value)
+                             - 0.05) < 1e-8,
+                    "femur delta magnitude should clamp to max_delta_femur_rad")) {
             return 1;
         }
     }
@@ -230,8 +246,10 @@ int main() {
         const Vec3 g = gravityDownFromUprightImu();
         const double F = footReactionPerLeg(6);
         const LegGravityCompensation a =
-            computeLegGravityCompensation(geo.legGeometry[0], 0.0, 0.0, 0.0, g, 0.5 * F, cfg);
-        const LegGravityCompensation b = computeLegGravityCompensation(geo.legGeometry[0], 0.0, 0.0, 0.0, g, F, cfg);
+            computeLegGravityCompensation(
+                geo.legGeometry[0], 0.0, 0.0, 0.0, g, 0.01 * F, cfg);
+        const LegGravityCompensation b = computeLegGravityCompensation(
+            geo.legGeometry[0], 0.0, 0.0, 0.0, g, 0.02 * F, cfg);
         if (!expect(std::abs(a.delta_femur_rad * 2.0 - b.delta_femur_rad) < 5e-7 &&
                         std::abs(a.delta_tibia_rad * 2.0 - b.delta_tibia_rad) < 5e-7,
                     "doubling foot reaction should double sag deltas (pre-saturation)")) {
@@ -260,7 +278,7 @@ int main() {
     {
         control_config::GravityFeedforwardConfig cfg = sampleConfig();
         const Vec3 g = gravityDownFromUprightImu();
-        const double F = footReactionPerLeg(6);
+        const double F = 0.01 * footReactionPerLeg(6);
         const LegGeometry& leg = geo.legGeometry[0];
         const LegGravityCompensation ext =
             computeLegGravityCompensation(leg, 0.0, 0.25, -0.05, g, F, cfg);

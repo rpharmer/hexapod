@@ -84,6 +84,13 @@ bool gravityFeedforwardCanUseJointState(const JointStateQuality& quality) {
            (quality.source == JointStateSource::ObserverEstimate && quality.confidence >= 0.45);
 }
 
+double normalizedServoSign(const double sign) {
+    if (!std::isfinite(sign)) {
+        return 1.0;
+    }
+    return sign >= 0.0 ? 1.0 : -1.0;
+}
+
 } // namespace
 
 LegGravityCompensation computeLegGravityCompensation(const LegGeometry& leg,
@@ -110,7 +117,7 @@ LegGravityCompensation computeLegGravityCompensation(const LegGeometry& leg,
 
     const Vec3 e_pitch{-std::sin(q1), std::cos(q1), 0.0};
 
-    const Mat3 r_leg = Mat3::rotZ(-leg.mountAngle.value);
+    const Mat3 r_leg = legFromBodyFrame(leg);
     const Vec3 g_leg = r_leg * g_down_body_unit;
 
     const Vec3 W_dir{
@@ -270,9 +277,11 @@ void applyJointAngleGravityFeedforward(const control_config::GravityFeedforwardC
             continue;
         }
 
-        const double q1 = in_out.leg_states[leg].joint_state[COXA].pos_rad.value;
-        const double q2 = in_out.leg_states[leg].joint_state[FEMUR].pos_rad.value;
-        const double q3 = in_out.leg_states[leg].joint_state[TIBIA].pos_rad.value;
+        const ServoCalibration& calibration = geometry.legGeometry[leg].servo;
+        const LegState joint_target = calibration.toJointAngles(in_out.leg_states[leg]);
+        const double q1 = joint_target.joint_state[COXA].pos_rad.value;
+        const double q2 = joint_target.joint_state[FEMUR].pos_rad.value;
+        const double q3 = joint_target.joint_state[TIBIA].pos_rad.value;
 
         const LegGravityCompensation d =
             computeLegGravityCompensation(geometry.legGeometry[leg], q1, q2, q3, g_down, foot_reaction_n, cfg);
@@ -281,9 +290,15 @@ void applyJointAngleGravityFeedforward(const control_config::GravityFeedforwardC
         const double df = lpfDeltaRad(d.delta_femur_rad, cfg.delta_lpf_tau_s, s.femur_y, s.femur_init);
         const double dt = lpfDeltaRad(d.delta_tibia_rad, cfg.delta_lpf_tau_s, s.tibia_y, s.tibia_init);
 
-        in_out.leg_states[leg].joint_state[COXA].pos_rad.value += d.delta_coxa_rad;
-        in_out.leg_states[leg].joint_state[FEMUR].pos_rad.value += df;
-        in_out.leg_states[leg].joint_state[TIBIA].pos_rad.value += dt;
+        // Compensation is computed in mechanical joint space. Convert only its
+        // delta into servo space so mirrored legs receive the same mechanical
+        // correction while preserving the target's calibrated attachment offset.
+        in_out.leg_states[leg].joint_state[COXA].pos_rad.value +=
+            normalizedServoSign(calibration.coxaSign) * d.delta_coxa_rad;
+        in_out.leg_states[leg].joint_state[FEMUR].pos_rad.value +=
+            normalizedServoSign(calibration.femurSign) * df;
+        in_out.leg_states[leg].joint_state[TIBIA].pos_rad.value +=
+            normalizedServoSign(calibration.tibiaSign) * dt;
     }
 }
 

@@ -1,6 +1,8 @@
 # Physics-sim settings for **automated server tests** (CTest harness).
 # Same baseline as config.physics-sim-wsl.txt except `Tuning.InvestigationDisable*` are **false**
-# so terrain stance bias, swing clearance / XY nudge, and stance tilt leveling stay **enabled**.
+# so terrain stance bias, swing clearance / XY nudge, and stance tilt leveling stay **enabled**,
+# and `SolverMode` stays `0` / `SolverIterations` 12 (legacy PGS). WSL production is
+# proximal mode 1 at 24 iterations.
 # That restores projected horizontal walk speed vs command for test_physics_sim_walk_distance
 # without changing numeric gates in docs/testing-baselines/gates/default-v1.json.
 #
@@ -70,6 +72,8 @@ FallbackSpeedMag = 0.01
 # Keep the physics-sim walk planner intent-driven; estimator feed-forward was
 # amplifying the closed-loop instability in the WSL sim path.
 FootEstimatorBlend = 0.0
+# Match the production WSL simulator's compound-sphere foot clearance.
+SwingHeightScale = 1.75
 BodyHeightCollapseMarginM = 0.06
 BodyHeightCollapseMaxContacts = 2
 InvestigationDisableTerrainStanceBias = false
@@ -114,12 +118,12 @@ BodyToBottomM = 0.040
 CoxaAttachDeg = 0.0
 MountAnglesDeg = [143.0, 217.0, 90.0, 270.0, 37.0, 323.0]
 CoxaOffsetsM = [
-  [0.063, -0.0835, -0.007],
-  [-0.063, -0.0835, -0.007],
-  [0.0815, 0.0, -0.007],
-  [-0.0815, 0.0, -0.007],
-  [0.063, 0.0835, -0.007],
-  [-0.063, 0.0835, -0.007]
+  [0.0835, 0.063, -0.007],
+  [0.0835, -0.063, -0.007],
+  [0.0, 0.0815, -0.007],
+  [0.0, -0.0815, -0.007],
+  [-0.0835, 0.063, -0.007],
+  [-0.0835, -0.063, -0.007]
 ]
 FemurAttachDeg = [35.0, -35.0, 35.0, -35.0, 35.0, -35.0]
 TibiaAttachDeg = [83.0, -83.0, 83.0, -83.0, 83.0, -83.0]

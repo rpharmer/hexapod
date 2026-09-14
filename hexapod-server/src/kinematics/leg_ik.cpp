@@ -81,11 +81,15 @@ JointTargets LegIK::solve(const RobotState& est,
                           const LegTargets& targets,
                           const SafetyState& safety) {
   JointTargets joints{};
+  last_reach_clamp_hit_.fill(false);
 
   for (int legID = 0; legID < kNumLegs; legID++) {
+    bool reach_clamped = false;
     const bool solved = solveOneLeg(joints.leg_states[legID],
                                     targets.feet[legID],
-                                    hexGeo.legGeometry[legID]);
+                                    hexGeo.legGeometry[legID],
+                                    reach_clamped);
+    last_reach_clamp_hit_[static_cast<std::size_t>(legID)] = reach_clamped;
     const bool use_fallback = !solved || !safety.leg_enabled[legID];
     if (use_fallback) {
       (void)apply_source_aware_leg_fallback(
@@ -100,10 +104,11 @@ JointTargets LegIK::solve(const RobotState& est,
 
 bool LegIK::solveOneLeg(LegState& out,
                         const FootTarget& foot,
-                        const LegGeometry& leg) {
+                        const LegGeometry& leg,
+                        bool& reach_clamped) {
   // Transform foot target coordinates so they are relative to Coxa mount
   const Vec3 relativeToCoxa = foot.pos_body_m - leg.bodyCoxaOffset;
-  const Mat3 R_leg = Mat3::rotZ(-leg.mountAngle.value);
+  const Mat3 R_leg = legFromBodyFrame(leg);
   const Vec3 footLeg = R_leg * relativeToCoxa;
 
   const double x = footLeg.x;
@@ -130,6 +135,7 @@ bool LegIK::solveOneLeg(LegState& out,
   // Clamp out-of-reach requests to the closest solvable configuration instead of
   // rejecting the whole leg update and snapping to estimator fallback angles.
   const double clampedD = clamp(d, minReach, maxReach);
+  reach_clamped = std::abs(clampedD - d) > 1e-12;
   const double reachScale = (d > 1e-9) ? (clampedD / d) : 1.0;
   const double rhoSolved = rho * reachScale;
   const double zSolved = z * reachScale;

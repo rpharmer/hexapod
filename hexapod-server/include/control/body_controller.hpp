@@ -20,6 +20,16 @@ public:
                       const LocalMapSnapshot* terrain_snapshot = nullptr,
                       const std::array<LegContactDecision, kNumLegs>* contact_modes = nullptr);
 
+    void reset();
+
+    [[nodiscard]] std::array<bool, kNumLegs> lastStrokeClampHit() const {
+        return last_stroke_clamp_hit_;
+    }
+
+    [[nodiscard]] std::array<bool, kNumLegs> lastWorkspaceXyHit() const {
+        return last_workspace_xy_hit_;
+    }
+
 private:
     std::array<Vec3, kNumLegs> nominalStance(double body_height_m) const;
 
@@ -27,6 +37,16 @@ private:
     double foot_estimator_blend_{control_config::kDefaultFootEstimatorBlend};
     control_config::FootTerrainConfig foot_terrain_cfg_{};
     double height_hold_integral_m_{0.0};
+    TimePointUs last_intent_timestamp_us_{};
+    std::array<bool, kNumLegs> have_stance_pos_{};
+    std::array<Vec3, kNumLegs> latched_stance_pos_{};
+    std::array<Vec3, kNumLegs> latched_plant_pos_{};
+    std::array<double, kNumLegs> latched_stroke_l_m_{};
+    std::array<bool, kNumLegs> last_planned_stance_{};
+    std::array<bool, kNumLegs> last_stroke_clamp_hit_{};
+    std::array<bool, kNumLegs> last_workspace_xy_hit_{};
+    std::array<bool, kNumLegs> have_last_clamped_stance_{};
+    std::array<Vec3, kNumLegs> last_clamped_stance_body_{};
 };
 
 /** Nominal stance placement for a given body height and leg geometry. */

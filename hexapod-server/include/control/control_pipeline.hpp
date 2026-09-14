@@ -19,6 +19,9 @@ struct PipelineStepResult {
     GaitState gait_state{};
     CommandGovernorState command_governor{};
     LocomotionFeasibility locomotion_feasibility{};
+    std::array<bool, kNumLegs> stroke_clamp_hit{};
+    std::array<bool, kNumLegs> workspace_xy_hit{};
+    std::array<bool, kNumLegs> ik_reach_clamp_hit{};
 };
 
 class ControlPipeline {

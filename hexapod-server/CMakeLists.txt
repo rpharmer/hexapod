@@ -428,16 +428,39 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_physics_sim_walk_distance PRIVATE hexapod_server_core)
     hexapod_add_live_physics_sim_test(physics_sim_walk_distance test_physics_sim_walk_distance)
 
-    # Diagnostic executable rather than a default CTest until the proximal
-    # locomotion gates pass.  It records one legacy controller stream and
-    # replays those exact joint targets through Pinocchio.
     add_executable(test_physics_sim_exact_command_replay
         tests/test_physics_sim_exact_command_replay.cpp)
     target_link_libraries(test_physics_sim_exact_command_replay PRIVATE hexapod_server_core)
+    set(_HEXAPOD_EXACT_REPLAY_FIXTURE
+        "${CMAKE_SOURCE_DIR}/tests/fixtures/hexapod-commands-v16.txt")
+    function(hexapod_add_exact_replay_test test_name)
+        add_test(
+            NAME ${test_name}
+            COMMAND ${CMAKE_COMMAND} -E env
+                    HEXAPOD_PHYSICS_SIM_EXE=${_HEXAPOD_PHYSICS_SIM_EXE}
+                    HEXAPOD_EXACT_REPLAY_COMMANDS_IN=${_HEXAPOD_EXACT_REPLAY_FIXTURE}
+                    HEXAPOD_EXACT_REPLAY_SOLVER_ITERATIONS=24
+                    HEXAPOD_EXACT_REPLAY_ENFORCE_SAFETY_GATES=1
+                    HEXAPOD_EXACT_REPLAY_ENFORCE_BEHAVIOR_GATES=1
+                    ${ARGN}
+                    $<TARGET_FILE:test_physics_sim_exact_command_replay>)
+        set_tests_properties(${test_name} PROPERTIES TIMEOUT 1800)
+    endfunction()
+    hexapod_add_exact_replay_test(physics_sim_exact_command_replay)
+    hexapod_add_exact_replay_test(physics_sim_exact_command_replay_120hz
+        HEXAPOD_EXACT_REPLAY_PERIOD_US=8333)
+    hexapod_add_exact_replay_test(physics_sim_exact_command_replay_240hz
+        HEXAPOD_EXACT_REPLAY_PERIOD_US=4167)
+    hexapod_add_exact_replay_test(physics_sim_exact_command_replay_480hz
+        HEXAPOD_EXACT_REPLAY_PERIOD_US=2083)
+
+    # Diagnostic-only: forced 3-stance / 3-swing stroke with extra-stance off.
+    add_executable(test_physics_sim_tripod_stroke_probe
+        tests/test_physics_sim_tripod_stroke_probe.cpp)
+    target_link_libraries(test_physics_sim_tripod_stroke_probe PRIVATE hexapod_server_core)
 
     # Strict 60-second proximal stability and performance gate at production
-    # body height. Keep the exact moving-command replay diagnostic-only until
-    # its locomotion gates pass.
+    # body height.
     add_executable(test_physics_sim_proximal_stand_acceptance
         tests/test_physics_sim_proximal_stand_acceptance.cpp)
     target_link_libraries(test_physics_sim_proximal_stand_acceptance PRIVATE hexapod_server_core)

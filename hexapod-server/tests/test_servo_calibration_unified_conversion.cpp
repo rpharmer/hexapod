@@ -47,11 +47,11 @@ int main() {
 
     const LegState joint_raw_from_servo = calibration.toJointAngles(servo_raw);
     if (!expect(near(joint_raw_from_servo.joint_state[0].pos_rad.value, 0.5),
-                "coxa raw decode should preserve existing conversion semantics") ||
-        !expect(near(joint_raw_from_servo.joint_state[1].pos_rad.value, 0.55),
-                "femur raw decode should preserve existing conversion semantics") ||
+                "coxa raw decode should invert servo calibration") ||
+        !expect(near(joint_raw_from_servo.joint_state[1].pos_rad.value, -0.25),
+                "negative-sign femur decode should invert servo calibration") ||
         !expect(near(joint_raw_from_servo.joint_state[2].pos_rad.value, 1.1),
-                "tibia raw decode should preserve existing conversion semantics")) {
+                "tibia raw decode should invert servo calibration")) {
         return EXIT_FAILURE;
     }
 
@@ -72,6 +72,15 @@ int main() {
                      servo_raw.joint_state[2].pos_rad.value),
                 "raw/state tibia conversion paths should stay equivalent")) {
         return EXIT_FAILURE;
+    }
+
+    const LegState decoded_state = calibration.toJointAngles(servo_state);
+    for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+        if (!expect(near(decoded_state.joint_state[joint].pos_rad.value,
+                         joint_state.joint_state[joint].pos_rad.value),
+                    "servo calibration should round-trip every joint angle")) {
+            return EXIT_FAILURE;
+        }
     }
 
     return EXIT_SUCCESS;

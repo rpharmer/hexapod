@@ -21,6 +21,7 @@
 #include <pinocchio/algorithm/crba.hpp>
 #include <pinocchio/algorithm/delassus-operator.hpp>
 #include <pinocchio/algorithm/frames.hpp>
+#include <pinocchio/algorithm/jacobian.hpp>
 #include <pinocchio/algorithm/joint-configuration.hpp>
 #include <pinocchio/algorithm/kinematics.hpp>
 #include <pinocchio/algorithm/rnea.hpp>
@@ -36,6 +37,15 @@ namespace {
 
 Eigen::Vector3d ToEigen(const Vec3& v) {
     return {v.x, v.y, v.z};
+}
+
+double servoTorqueScaleFromEnv() {
+    const char* value = std::getenv("HEXAPOD_SERVO_TORQUE_SCALE");
+    if (value == nullptr || value[0] == '\0') {
+        return 1.0;
+    }
+    const double parsed = std::atof(value);
+    return parsed > 0.0 ? parsed : 1.0;
 }
 
 Vec3 FromEigen(const Eigen::Vector3d& v) {
@@ -147,6 +157,148 @@ Eigen::Matrix3d ContactFrameRotation(const Vec3& inputNormal) {
     return rotation;
 }
 
+constexpr double kMaxStanceInertiaScale = 1.5;
+constexpr double kStanceContactRegularization = 1.0e-8;
+constexpr double kMinConstrainedInverseInertia = 1.0e-12;
+
+Vec3 TibiaFootWorldPosition(const Body& tibia) {
+    for (const CompoundChild& child : tibia.compoundChildren) {
+        if (child.shape == ShapeType::Sphere) {
+            return tibia.position + Rotate(tibia.orientation, child.localPosition);
+        }
+    }
+    return tibia.position;
+}
+
+bool AssignStanceLoadedServoInertias(
+    pinocchio::Model& model,
+    pinocchio::Data& data,
+    const World& world,
+    const HexapodSceneObjects& scene,
+    const Eigen::Map<const Eigen::VectorXd>& q,
+    const std::array<pinocchio::JointIndex, 18>& wireJoints,
+    const Eigen::MatrixXd& unconstrainedMass,
+    std::array<double, 18>& unconstrainedInertias,
+    std::array<double, 18>& nominalInertias) {
+    const Eigen::Index nv = model.nv;
+    if (unconstrainedMass.rows() != nv || unconstrainedMass.cols() != nv) {
+        return false;
+    }
+
+    for (std::size_t i = 0; i < wireJoints.size(); ++i) {
+        const Eigen::Index vi = model.joints[wireJoints[i]].idx_v();
+        const double inertia = std::max(1.0e-9, unconstrainedMass(vi, vi));
+        unconstrainedInertias[i] = inertia;
+        nominalInertias[i] = inertia;
+    }
+
+    pinocchio::computeJointJacobians(model, data, q);
+    Eigen::MatrixXd contactJacobian = Eigen::MatrixXd::Zero(18, nv);
+    for (std::size_t leg = 0; leg < scene.legs.size(); ++leg) {
+        const pinocchio::JointIndex tibiaJoint = wireJoints[3U * leg + 2U];
+        const Eigen::Vector3d footWorld =
+            ToEigen(TibiaFootWorldPosition(world.GetBody(scene.legs[leg].tibia)));
+        const pinocchio::SE3 worldFoot(Eigen::Matrix3d::Identity(), footWorld);
+        const pinocchio::SE3 jointToFoot = data.oMi[tibiaJoint].inverse() * worldFoot;
+        Eigen::Matrix<double, 6, Eigen::Dynamic> frameJacobian =
+            Eigen::Matrix<double, 6, Eigen::Dynamic>::Zero(6, nv);
+        pinocchio::getFrameJacobian(
+            model,
+            data,
+            tibiaJoint,
+            jointToFoot,
+            pinocchio::LOCAL_WORLD_ALIGNED,
+            frameJacobian);
+        contactJacobian.middleRows<3>(static_cast<Eigen::Index>(3U * leg)) =
+            frameJacobian.topRows<3>();
+    }
+    if (!contactJacobian.array().isFinite().all()) {
+        return false;
+    }
+
+    const pinocchio::JointIndex rootJoint = model.parents[wireJoints[0]];
+    const Eigen::Index vBase = model.joints[rootJoint].idx_v();
+    const int nvBase = model.joints[rootJoint].nv();
+    if (nvBase <= 0 || vBase < 0) {
+        return false;
+    }
+
+    // Other servos are under PD, so treat them as locked and only leave the
+    // free-flyer plus this joint free. Free-joint P otherwise dumps coxa
+    // load into compliant femur/tibia and overstates the planted tibia.
+    const int reducedSize = nvBase + 1;
+    bool increasedAny = false;
+    for (std::size_t i = 0; i < wireJoints.size(); ++i) {
+        const Eigen::Index vi = model.joints[wireJoints[i]].idx_v();
+        if (vi >= vBase && vi < vBase + nvBase) {
+            continue;
+        }
+        Eigen::VectorXi reducedIndex(reducedSize);
+        for (int k = 0; k < nvBase; ++k) {
+            reducedIndex[k] = static_cast<int>(vBase + k);
+        }
+        reducedIndex[nvBase] = static_cast<int>(vi);
+
+        Eigen::MatrixXd reducedMass(reducedSize, reducedSize);
+        Eigen::MatrixXd reducedJacobian(contactJacobian.rows(), reducedSize);
+        for (int col = 0; col < reducedSize; ++col) {
+            const int fullCol = reducedIndex[col];
+            reducedJacobian.col(col) = contactJacobian.col(fullCol);
+            for (int row = 0; row < reducedSize; ++row) {
+                reducedMass(row, col) = unconstrainedMass(reducedIndex[row], fullCol);
+            }
+        }
+
+        const Eigen::LDLT<Eigen::MatrixXd> massLdlt(reducedMass);
+        if (massLdlt.info() != Eigen::Success) {
+            continue;
+        }
+        const Eigen::MatrixXd reducedMinv =
+            massLdlt.solve(Eigen::MatrixXd::Identity(reducedSize, reducedSize));
+        Eigen::MatrixXd delassus =
+            reducedJacobian * reducedMinv * reducedJacobian.transpose();
+        delassus.diagonal().array() += kStanceContactRegularization;
+        const Eigen::LDLT<Eigen::MatrixXd> delassusLdlt(delassus);
+        if (delassusLdlt.info() != Eigen::Success
+            || !reducedMinv.array().isFinite().all()) {
+            continue;
+        }
+
+        const Eigen::VectorXd freeAcceleration = reducedMinv.col(nvBase);
+        const Eigen::VectorXd lambda =
+            delassusLdlt.solve(reducedJacobian * freeAcceleration);
+        const double inverseInertia =
+            (freeAcceleration - reducedMinv * (reducedJacobian.transpose() * lambda))[nvBase];
+        if (!(inverseInertia > kMinConstrainedInverseInertia)
+            || !std::isfinite(inverseInertia)) {
+            continue;
+        }
+        const double unconstrained = unconstrainedInertias[i];
+        const double loaded = std::clamp(
+            1.0 / inverseInertia,
+            unconstrained,
+            kMaxStanceInertiaScale * unconstrained);
+        if (loaded > unconstrained) {
+            increasedAny = true;
+        }
+        nominalInertias[i] = loaded;
+    }
+
+    if (std::getenv("HEXAPOD_PINOCCHIO_DUMP_SERVO_INERTIAS") != nullptr) {
+        std::cerr << "servo inertias unconstrained -> stance-loaded:";
+        for (std::size_t i = 0; i < wireJoints.size(); ++i) {
+            const char* role =
+                (i % 3U == 0U) ? "coxa" : (i % 3U == 1U) ? "femur" : "tibia";
+            std::cerr << " L" << (i / 3U) << role << "="
+                      << unconstrainedInertias[i] << "->" << nominalInertias[i]
+                      << "(x" << (nominalInertias[i] / unconstrainedInertias[i])
+                      << ")";
+        }
+        std::cerr << "\n";
+    }
+    return increasedAny;
+}
+
 struct GroundContactChoice {
     const Manifold* plane = nullptr;
     const Manifold* terrain = nullptr;
@@ -207,9 +359,11 @@ struct PinocchioHexapodModel::Impl {
     std::array<pinocchio::JointIndex, 18> wireJoints{};
     std::array<std::uint32_t, 18> wireServoIds{};
     std::array<double, 18> wireZeroAngles{};
+    std::array<double, 18> wireUnconstrainedInertias{};
     std::array<double, 18> wireNominalInertias{};
     double totalRobotMass = 0.0;
     std::unordered_map<std::uint32_t, pinocchio::JointIndex> bodyJoints{};
+    std::unordered_map<std::uint32_t, std::size_t> tibiaBodyToLeg{};
     PinConstraintModels contactConstraintModels{};
     PinConstraintDatas contactConstraintDatas{};
     std::vector<std::uint64_t> contactTopologyIds{};
@@ -243,6 +397,9 @@ struct PinocchioHexapodModel::Impl {
     bool haveLastServoTargets = false;
     std::array<double, 18> commandedServoTargets{};
     bool haveCommandedServoTargets = false;
+    std::array<double, 6> prevFootX{};
+    std::array<double, 6> prevFootZ{};
+    std::array<bool, 6> havePrevFootX{};
     std::uint64_t totalWarmStartResets = 0;
     std::uint64_t totalRetries = 0;
     std::uint64_t totalRollbacks = 0;
@@ -356,6 +513,7 @@ struct PinocchioHexapodModel::Impl {
                 leg.coxaToFemurJoint, leg.femur, coxa, prefix + "_femur");
             (void)appendJoint(
                 leg.femurToTibiaJoint, leg.tibia, femur, prefix + "_tibia");
+            tibiaBodyToLeg.emplace(leg.tibia, legIndex);
         }
 
         for (const BodyBinding& binding : bodies) {
@@ -389,9 +547,22 @@ PinocchioHexapodModel::PinocchioHexapodModel(
     if (!nominalMass.array().isFinite().all()) {
         throw std::runtime_error("failed to compute nominal hexapod joint inertias");
     }
-    for (std::size_t i = 0; i < impl_->wireJoints.size(); ++i) {
-        const Eigen::Index vi = impl_->model.joints[impl_->wireJoints[i]].idx_v();
-        impl_->wireNominalInertias[i] = std::max(1.0e-9, nominalMass(vi, vi));
+    if (!AssignStanceLoadedServoInertias(
+            impl_->model,
+            impl_->data,
+            world,
+            scene,
+            initialQ,
+            impl_->wireJoints,
+            nominalMass,
+            impl_->wireUnconstrainedInertias,
+            impl_->wireNominalInertias)) {
+        for (std::size_t i = 0; i < impl_->wireJoints.size(); ++i) {
+            const Eigen::Index vi = impl_->model.joints[impl_->wireJoints[i]].idx_v();
+            const double inertia = std::max(1.0e-9, nominalMass(vi, vi));
+            impl_->wireUnconstrainedInertias[i] = inertia;
+            impl_->wireNominalInertias[i] = inertia;
+        }
     }
 }
 
@@ -409,6 +580,14 @@ std::size_t PinocchioHexapodModel::velocitySize() const {
 
 std::size_t PinocchioHexapodModel::jointCount() const {
     return impl_->wireJoints.size();
+}
+
+std::array<double, 18> PinocchioHexapodModel::servoUnconstrainedInertias() const {
+    return impl_->wireUnconstrainedInertias;
+}
+
+std::array<double, 18> PinocchioHexapodModel::servoNominalInertias() const {
+    return impl_->wireNominalInertias;
 }
 
 bool PinocchioHexapodModel::readState(
@@ -666,9 +845,9 @@ bool PinocchioHexapodModel::stepProximal(
     const bool resetCommandedTargets = targetJump && impl_->haveLastServoTargets;
     impl_->lastServoTargets = servoTargets;
     impl_->haveLastServoTargets = true;
-    if (resetCommandedTargets) {
-        resetWarmStarts();
-    }
+    // A discontinuous servo command does not invalidate foot-contact impulses;
+    // wiping them on stand-to-walk target jumps starts a held-state cascade.
+    (void)resetCommandedTargets;
 
     std::vector<double> snapshotQ;
     std::vector<double> snapshotV;
@@ -696,28 +875,12 @@ bool PinocchioHexapodModel::stepProximal(
         impl_->lastGoodQ = snapshotQ;
         impl_->lastGoodV = snapshotV;
     }
-    std::array<double, 18> commandedServoTargetsStart = impl_->commandedServoTargets;
-    if (!impl_->haveCommandedServoTargets || resetCommandedTargets) {
-        for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
-            commandedServoTargetsStart[i] =
-                world.GetServoJointAngle(impl_->wireServoIds[i]);
-        }
-    }
-    const auto advanceCommandedTargets = [&](std::array<double, 18> targets,
-                                             const double targetDt) {
-        for (std::size_t i = 0; i < impl_->wireServoIds.size(); ++i) {
-            const ServoJoint& servo = world.GetServoJoint(impl_->wireServoIds[i]);
-            const double delta = std::remainder(
-                servoTargets[i] - targets[i], 6.28318530717958647692);
-            const double maxStep = std::max(0.0, servo.maxServoSpeed) * targetDt;
-            targets[i] += maxStep > 0.0
-                ? std::clamp(delta, -maxStep, maxStep)
-                : delta;
-        }
-        return targets;
-    };
-    const std::array<double, 18> commandedServoTargets =
-        advanceCommandedTargets(commandedServoTargetsStart, dt);
+    // The server has already applied the configured command slew limit. Do not
+    // rate-limit the target a second time here: an internal target that starts
+    // behind and advances at the same maximum rate can never catch the incoming
+    // command. Joint speed is instead limited physically by the MG996R
+    // torque-speed envelope below.
+    const std::array<double, 18> commandedServoTargets = servoTargets;
 
     auto totalMechanicalEnergy = [&]() {
         const Vec3 gravity = world.GetGravity();
@@ -740,7 +903,8 @@ bool PinocchioHexapodModel::stepProximal(
     auto advanceOnce = [&](double subDt,
                            const std::array<double, 18>& activeServoTargets,
                            const std::size_t andersonCapacity,
-                           ProximalStepDiagnostics& out) -> bool {
+                           ProximalStepDiagnostics& out,
+                           const int iterationOverride = 0) -> bool {
         const auto dynamicsStart = StepClock::now();
         std::vector<double> qStorage;
         std::vector<double> vStorage;
@@ -757,7 +921,8 @@ bool PinocchioHexapodModel::stepProximal(
 
         impl_->model.gravity.linear() = ToEigen(world.GetGravity());
         Eigen::VectorXd tau = Eigen::VectorXd::Zero(impl_->model.nv);
-        constexpr double stallTorque = hexapod_dynamics::kServoMaxTorqueNm;
+        const double stallTorque =
+            hexapod_dynamics::kServoMaxTorqueNm * servoTorqueScaleFromEnv();
         constexpr double noLoadSpeed = hexapod_dynamics::kServoNoLoadSpeedRadPerSec;
         constexpr double omegaN = hexapod_dynamics::kServoOmegaN;
         constexpr double zeta = hexapod_dynamics::kServoZeta;
@@ -768,9 +933,9 @@ bool PinocchioHexapodModel::stepProximal(
             const double error = std::remainder(
                 activeServoTargets[i] - impl_->wireZeroAngles[i] - q[qi],
                 6.28318530717958647692);
-            // The natural-frequency gains are calibrated against the nominal
-            // standing inertia. Recomputing CRBA every substep changed the
-            // controller gains with pose and duplicated ABA's dynamics work.
+            // Stance-loaded reflected inertia at the initial planted pose
+            // (other joints locked, six feet). Unconstrained CRBA diagonals
+            // understate that load; do not recompute this every substep.
             const double reflectedInertia = impl_->wireNominalInertias[i];
             const double requested = impl_->servoGainScale
                 * (reflectedInertia * omegaN * omegaN * error
@@ -838,6 +1003,11 @@ bool PinocchioHexapodModel::stepProximal(
             double friction = 0.0;
             double restitution = 0.0;
             double penetration = 0.0;
+            std::size_t legIndex = 6;
+            Vec3 pointVelocity{};
+            Vec3 tibiaVelocity{};
+            Vec3 spinVelocity{};
+            Vec3 footVelocity{};
         };
         std::vector<AcceptedContactGeometry> acceptedContactGeometry;
         std::vector<PendingContact> pendingContacts;
@@ -939,12 +1109,38 @@ bool PinocchioHexapodModel::stepProximal(
                 }
                 acceptedContactGeometry.push_back({joint1, joint2, contact.point, normal});
 
+                std::size_t legIndex = 6;
+                Vec3 pointVelocity{};
+                Vec3 tibiaVelocity{};
+                Vec3 spinVelocity{};
+                Vec3 footVelocity{};
+                if (aRobot != bRobot) {
+                    const std::uint32_t robotBodyId = aRobot ? manifold.a : manifold.b;
+                    const auto legIt = impl_->tibiaBodyToLeg.find(robotBodyId);
+                    if (legIt != impl_->tibiaBodyToLeg.end()) {
+                        legIndex = legIt->second;
+                    }
+                    const Body& robotBody = aRobot ? bodyA : bodyB;
+                    const Vec3 r = contact.point - robotBody.position;
+                    const Vec3 spin = Cross(robotBody.angularVelocity, r);
+                    const Vec3 footPos = TibiaFootWorldPosition(robotBody);
+                    pointVelocity = robotBody.velocity + spin;
+                    tibiaVelocity = robotBody.velocity;
+                    spinVelocity = spin;
+                    footVelocity = robotBody.velocity
+                        + Cross(robotBody.angularVelocity, footPos - robotBody.position);
+                }
                 pendingContacts.push_back({
                     {joint1, joint2, contact.point, normal},
                     contactId,
                     friction,
                     std::max(0.0, 0.5 * (bodyA.restitution + bodyB.restitution)),
-                    contact.penetration});
+                    contact.penetration,
+                    legIndex,
+                    pointVelocity,
+                    tibiaVelocity,
+                    spinVelocity,
+                    footVelocity});
             }
         }
 
@@ -1023,7 +1219,10 @@ bool PinocchioHexapodModel::stepProximal(
             const bool topologyChanged = contactIds != impl_->contactTopologyIds
                 || impl_->contactDelassus == nullptr
                 || impl_->contactDelassusRegularization != settings.contactRegularization;
-            if (topologyChanged) {
+            const bool sameConstraintCount = impl_->contactDelassus != nullptr
+                && impl_->contactConstraintModels.size() == pendingContacts.size()
+                && impl_->contactDelassusRegularization == settings.contactRegularization;
+            if (topologyChanged && !sameConstraintCount) {
                 impl_->contactSolverResult.reset();
                 impl_->contactSolver.reset();
                 impl_->contactConstraintModels.clear();
@@ -1046,7 +1245,12 @@ bool PinocchioHexapodModel::stepProximal(
             } else {
                 for (std::size_t i = 0; i < pendingContacts.size(); ++i) {
                     impl_->contactConstraintModels[i] = makePointModel(pendingContacts[i]);
+                    if (topologyChanged) {
+                        impl_->contactConstraintDatas[i] =
+                            impl_->contactConstraintModels[i].createData();
+                    }
                 }
+                impl_->contactTopologyIds = contactIds;
             }
 
             PinConstraintModels& constraintModels = impl_->contactConstraintModels;
@@ -1088,6 +1292,27 @@ bool PinocchioHexapodModel::stepProximal(
             out.delassusTimeMs += elapsedMs(delassusStart);
             constraintAssemblyStart = StepClock::now();
 
+            std::array<double, 6> sphereFootX{};
+            std::array<double, 6> sphereFootZ{};
+            std::array<double, 6> sphereFootPosVx{};
+            std::array<double, 6> sphereFootPosVz{};
+            for (const auto& tibiaAndLeg : impl_->tibiaBodyToLeg) {
+                const std::size_t leg = tibiaAndLeg.second;
+                if (leg >= 6) {
+                    continue;
+                }
+                const Vec3 footPos = TibiaFootWorldPosition(world.GetBody(tibiaAndLeg.first));
+                sphereFootX[leg] = footPos.x;
+                sphereFootZ[leg] = footPos.z;
+                if (impl_->havePrevFootX[leg] && subDt > 0.0) {
+                    sphereFootPosVx[leg] = (footPos.x - impl_->prevFootX[leg]) / subDt;
+                    sphereFootPosVz[leg] = (footPos.z - impl_->prevFootZ[leg]) / subDt;
+                }
+                impl_->prevFootX[leg] = footPos.x;
+                impl_->prevFootZ[leg] = footPos.z;
+                impl_->havePrevFootX[leg] = true;
+            }
+
             Eigen::VectorXd drift(static_cast<Eigen::Index>(3U * constraintModels.size()));
             pinocchio::evalConstraintJacobianMatrixProduct(
                 impl_->model,
@@ -1114,6 +1339,29 @@ bool PinocchioHexapodModel::stepProximal(
                     drift[normalIndex] += contactRestitutions[i] * incomingNormalSpeed;
                 }
             }
+            for (std::size_t i = 0; i < pendingContacts.size(); ++i) {
+                const PendingContact& pending = pendingContacts[i];
+                if (pending.legIndex >= 6) {
+                    continue;
+                }
+                const Eigen::Matrix3d rotation =
+                    ContactFrameRotation(pending.geometry.normal);
+                const Eigen::Vector3d worldSlipTx = rotation.transpose()
+                    * ToEigen(pending.pointVelocity);
+                out.legPinocchioDriftTx[pending.legIndex] =
+                    drift[static_cast<Eigen::Index>(3U * i)];
+                out.legWorldSlipTx[pending.legIndex] = worldSlipTx.x();
+                out.legWorldSlipTy[pending.legIndex] = worldSlipTx.y();
+                out.legTibiaVx[pending.legIndex] = pending.tibiaVelocity.x;
+                out.legSpinVx[pending.legIndex] = pending.spinVelocity.x;
+                out.legT0x[pending.legIndex] = rotation.col(0).x();
+                out.legFootVx[pending.legIndex] = pending.footVelocity.x;
+                out.legFootX[pending.legIndex] = sphereFootX[pending.legIndex];
+                out.legFootPosVx[pending.legIndex] = sphereFootPosVx[pending.legIndex];
+                out.legFootVz[pending.legIndex] = pending.footVelocity.z;
+                out.legFootZ[pending.legIndex] = sphereFootZ[pending.legIndex];
+                out.legFootPosVz[pending.legIndex] = sphereFootPosVz[pending.legIndex];
+            }
             Eigen::VectorXd scaledDrift;
             if (impl_->contactPrecondition) {
                 scaledDrift = contactScale.cwiseProduct(drift);
@@ -1131,16 +1379,11 @@ bool PinocchioHexapodModel::stepProximal(
                     [&](const PendingContact& pending) {
                         return Dot(gravity, pending.geometry.normal) < -1.0e-6;
                     }));
+            double existingNormalImpulseSum = 0.0;
+            std::size_t existingNormalImpulseCount = 0;
             for (std::size_t i = 0; i < contactIds.size(); ++i) {
                 const auto found = impl_->contactWarmStarts.find(contactIds[i]);
                 if (found == impl_->contactWarmStarts.end()) {
-                    if (supportingContactCount != 0) {
-                        const double gravityNormalAcceleration = std::max(
-                            0.0, -Dot(gravity, pendingContacts[i].geometry.normal));
-                        warm[static_cast<Eigen::Index>(3U * i + 2U)] =
-                            impl_->totalRobotMass * gravityNormalAcceleration * subDt
-                            / static_cast<double>(supportingContactCount);
-                    }
                     continue;
                 }
                 Eigen::Vector3d impulse = found->second.impulse;
@@ -1156,6 +1399,29 @@ bool PinocchioHexapodModel::stepProximal(
                 warm.segment<3>(static_cast<Eigen::Index>(3U * i)) = impulse;
                 warmVelocity.segment<3>(static_cast<Eigen::Index>(3U * i)) =
                     found->second.velocity;
+                existingNormalImpulseSum += impulse[2];
+                ++existingNormalImpulseCount;
+            }
+            const double newContactNormalGuess = existingNormalImpulseCount != 0
+                ? existingNormalImpulseSum / static_cast<double>(existingNormalImpulseCount)
+                : 0.0;
+            for (std::size_t i = 0; i < contactIds.size(); ++i) {
+                if (impl_->contactWarmStarts.find(contactIds[i])
+                    != impl_->contactWarmStarts.end()) {
+                    continue;
+                }
+                if (existingNormalImpulseCount != 0) {
+                    warm[static_cast<Eigen::Index>(3U * i + 2U)] = newContactNormalGuess;
+                    continue;
+                }
+                if (supportingContactCount == 0) {
+                    continue;
+                }
+                const double gravityNormalAcceleration = std::max(
+                    0.0, -Dot(gravity, pendingContacts[i].geometry.normal));
+                warm[static_cast<Eigen::Index>(3U * i + 2U)] =
+                    impl_->totalRobotMass * gravityNormalAcceleration * subDt
+                    / static_cast<double>(supportingContactCount);
             }
             out.constraintAssemblyTimeMs += elapsedMs(constraintAssemblyStart);
             out.contactSetupTimeMs += elapsedMs(contactSetupStart);
@@ -1164,13 +1430,32 @@ bool PinocchioHexapodModel::stepProximal(
             // Pinocchio numbers iterations from zero and loops while
             // `iterations <= max_iterations`; subtract one so the public
             // configuration remains a true maximum solve count.
+            const int iterationCap = iterationOverride > 0
+                ? iterationOverride
+                : settings.maxIterations;
             solverSettings.max_iterations = static_cast<std::size_t>(
-                std::max(1, settings.maxIterations) - 1);
-            solverSettings.absolute_feasibility_tol = settings.absoluteTolerance
+                std::max(1, iterationCap) - 1);
+            // Standing contacts converge in a few iterations at 1e-8 and hold
+            // height. Sliding (walk) contacts often need the looser ADMM stop:
+            // continuing to 1e-8 hits the cap and the last iterate is worse
+            // than the 1e-3 NCP-feasible one. Use tangential free speed to
+            // pick the stop without a gait-mode signal from the server.
+            constexpr double kSlidingContactSpeed = 2.0e-2;
+            double maxTangentialFreeSpeed = 0.0;
+            for (std::size_t i = 0; i < contactIds.size(); ++i) {
+                maxTangentialFreeSpeed = std::max(
+                    maxTangentialFreeSpeed,
+                    drift.segment<2>(static_cast<Eigen::Index>(3U * i)).norm());
+            }
+            const double admmAbsoluteTolerance =
+                maxTangentialFreeSpeed > kSlidingContactSpeed
+                    ? std::max(settings.absoluteTolerance, settings.ncpAbsoluteTolerance)
+                    : settings.absoluteTolerance;
+            solverSettings.absolute_feasibility_tol = admmAbsoluteTolerance
                 * solverFeasibilityToleranceScale;
             solverSettings.relative_feasibility_tol = settings.relativeTolerance
                 * solverFeasibilityToleranceScale;
-            solverSettings.absolute_complementarity_tol = settings.absoluteTolerance;
+            solverSettings.absolute_complementarity_tol = admmAbsoluteTolerance;
             solverSettings.relative_complementarity_tol = settings.relativeTolerance;
             solverSettings.admm_update_rule = pinocchio::ADMMUpdateRule::SPECTRAL;
             solverSettings.admm_proximal_rule = pinocchio::ADMMProximalRule::MANUAL;
@@ -1275,11 +1560,13 @@ bool PinocchioHexapodModel::stepProximal(
             const double impulseScale = IsFinite(impulses)
                 ? impulses.lpNorm<Eigen::Infinity>()
                 : std::numeric_limits<double>::infinity();
-            const double ncpDualTolerance = settings.absoluteTolerance
+            const double ncpAbsoluteTolerance = std::max(
+                settings.absoluteTolerance, settings.ncpAbsoluteTolerance);
+            const double ncpDualTolerance = ncpAbsoluteTolerance
                 + settings.relativeTolerance * driftScale;
-            const double ncpComplementarityTolerance = settings.absoluteTolerance
+            const double ncpComplementarityTolerance = ncpAbsoluteTolerance
                 + settings.relativeTolerance * impulseScale * driftScale;
-            const double coneTolerance = settings.absoluteTolerance
+            const double coneTolerance = ncpAbsoluteTolerance
                 + settings.relativeTolerance * impulseScale;
             const bool physicallyConverged = IsFinite(impulses)
                 && std::isfinite(out.ncpDualResidual)
@@ -1288,6 +1575,8 @@ bool PinocchioHexapodModel::stepProximal(
                 && out.ncpDualResidual <= ncpDualTolerance
                 && out.ncpComplementarityResidual <= ncpComplementarityTolerance
                 && out.coneResidual <= coneTolerance;
+            out.admmConverged = converged;
+            out.ncpPhysicallyConverged = physicallyConverged;
             const bool accepted = impl_->contactPrecondition
                 ? physicallyConverged
                 : converged || physicallyConverged;
@@ -1333,6 +1622,22 @@ bool PinocchioHexapodModel::stepProximal(
                 out.peakNormalImpulse = std::max(out.peakNormalImpulse, std::abs(impulse[2]));
                 out.peakFrictionImpulse = std::max(
                     out.peakFrictionImpulse, impulse.head<2>().norm());
+                const Eigen::Vector3d worldFriction =
+                    ContactFrameRotation(pendingContacts[i].geometry.normal)
+                    * Eigen::Vector3d(impulse[0], impulse[1], 0.0);
+                out.sumFrictionImpulseWorldX += worldFriction.x();
+                out.sumFrictionImpulseWorldZ += worldFriction.z();
+                out.sumAbsFrictionImpulseWorldX += std::abs(worldFriction.x());
+                out.sumAbsFrictionImpulseWorldZ += std::abs(worldFriction.z());
+                out.sumFrictionImpulseWorldY += worldFriction.y();
+                if (pendingContacts[i].legIndex < 6) {
+                    const std::size_t leg = pendingContacts[i].legIndex;
+                    out.legFrictionImpulseWorldX[leg] += worldFriction.x();
+                    out.legFrictionImpulseWorldZ[leg] += worldFriction.z();
+                    if (out.legContactCount[leg] < 255) {
+                        ++out.legContactCount[leg];
+                    }
+                }
             }
             for (auto it = impl_->contactWarmStarts.begin(); it != impl_->contactWarmStarts.end();) {
                 if (activeIds.find(it->first) == activeIds.end()) {
@@ -1342,11 +1647,43 @@ bool PinocchioHexapodModel::stepProximal(
                     ++it;
                 }
             }
-            // applyOnTheRight above computes both the constraint-space
-            // velocity and the associated generalized M^-1 J^T impulse in
-            // the articulated operator's workspace. Reuse that generalized
-            // result instead of rebuilding and factorizing a dense mass matrix.
-            vNew += delassus.getInternalData().ddq;
+            // Apply the final ADMM iterate, rather than the articulated
+            // Delassus operator's mutable scratch vector (which may contain
+            // the most recent iterative product). A zero-velocity,
+            // zero-gravity ABA evaluates M^-1 J^T lambda in linear time.
+            Eigen::VectorXd generalizedImpulse = Eigen::VectorXd::Zero(impl_->model.nv);
+            pinocchio::evalConstraintJacobianTransposeMatrixProduct(
+                impl_->model,
+                impl_->data,
+                constraintModels,
+                constraintDatas,
+                impulses,
+                generalizedImpulse,
+                pinocchio::SetTo());
+            if (!IsFinite(generalizedImpulse)) {
+                out.failureReason = ProximalFailureReason::NonFiniteImpulse;
+                return false;
+            }
+            const Eigen::Vector3d savedGravity = impl_->model.gravity.linear();
+            impl_->model.gravity.setZero();
+            const Eigen::VectorXd contactDdq = pinocchio::aba(
+                impl_->model,
+                impl_->data,
+                q,
+                Eigen::VectorXd::Zero(impl_->model.nv),
+                generalizedImpulse,
+                pinocchio::Convention::WORLD);
+            impl_->model.gravity.linear() = savedGravity;
+            if (!IsFinite(contactDdq)) {
+                out.failureReason = ProximalFailureReason::NonFiniteVelocity;
+                return false;
+            }
+            vNew += contactDdq;
+            const Eigen::Quaterniond chassisQuat(q[6], q[3], q[4], q[5]);
+            const Eigen::Matrix3d bodyToWorld = chassisQuat.normalized().toRotationMatrix();
+            const Eigen::Vector3d contactDeltaWorld = bodyToWorld * contactDdq.segment<3>(0);
+            out.contactDeltaVx += contactDeltaWorld.x();
+            out.contactDeltaVz += contactDeltaWorld.z();
         } else {
             impl_->contactConstraintModels.clear();
             impl_->contactConstraintDatas.clear();
@@ -1478,26 +1815,71 @@ bool PinocchioHexapodModel::stepProximal(
         writeState(world, snapshotQ, snapshotV);
         clearFailedSolverState(firstAttempt.worstContactId);
         ProximalStepDiagnostics retry{};
-        // Keep the better-converged primary history length for the half-step
-        // retry. A shorter adaptive history increased held states on both the
-        // original frozen stream and a genuine, non-inhibited gait stream.
+        const auto accumulateRetryTimings = [&]() {
+            retry.dynamicsTimeMs += firstAttempt.dynamicsTimeMs;
+            retry.contactSetupTimeMs += firstAttempt.contactSetupTimeMs;
+            retry.collisionTimeMs += firstAttempt.collisionTimeMs;
+            retry.constraintAssemblyTimeMs += firstAttempt.constraintAssemblyTimeMs;
+            retry.delassusTimeMs += firstAttempt.delassusTimeMs;
+            retry.admmTimeMs += firstAttempt.admmTimeMs;
+            retry.integrationTimeMs += firstAttempt.integrationTimeMs;
+        };
+        // Keep the better-converged primary history length for retries. A
+        // shorter adaptive history increased held states on both the original
+        // frozen stream and a genuine, non-inhibited gait stream.
         const std::size_t retryAndersonCapacity =
             impl_->retryAndersonCapacityOverride.value_or(impl_->andersonCapacity);
-        const std::array<double, 18> halfStepServoTargets =
-            advanceCommandedTargets(commandedServoTargetsStart, 0.5 * dt);
-        const bool half1 = advanceOnce(
-            0.5 * dt, halfStepServoTargets, retryAndersonCapacity, retry);
-        const bool half2 = half1
-            && advanceOnce(
+        bool recovered = false;
+        if (firstAttempt.failureReason == ProximalFailureReason::SolverNotConverged
+            && advanceOnce(dt, commandedServoTargets, retryAndersonCapacity, retry)) {
+            recovered = true;
+        } else {
+            writeState(world, snapshotQ, snapshotV);
+            impl_->contactWarmStarts = preRetryWarmStarts;
+            clearFailedSolverState(
+                retry.worstContactId != 0
+                    ? retry.worstContactId
+                    : firstAttempt.worstContactId);
+            const bool half1 = advanceOnce(
                 0.5 * dt, commandedServoTargets, retryAndersonCapacity, retry);
-        retry.dynamicsTimeMs += firstAttempt.dynamicsTimeMs;
-        retry.contactSetupTimeMs += firstAttempt.contactSetupTimeMs;
-        retry.collisionTimeMs += firstAttempt.collisionTimeMs;
-        retry.constraintAssemblyTimeMs += firstAttempt.constraintAssemblyTimeMs;
-        retry.delassusTimeMs += firstAttempt.delassusTimeMs;
-        retry.admmTimeMs += firstAttempt.admmTimeMs;
-        retry.integrationTimeMs += firstAttempt.integrationTimeMs;
-        if (half1 && half2) {
+            recovered = half1
+                && advanceOnce(
+                    0.5 * dt, commandedServoTargets, retryAndersonCapacity, retry);
+            if (!recovered) {
+                // Last resort after same-dt + warm half-steps: cold-start two
+                // half-steps at 2× SolverIterations. Poisoned 24-iter warms can
+                // keep a 5-contact set above the 1e-3 NCP floor even at dt/2.
+                // Healthy-path first attempts stay at the production cap.
+                const ProximalStepDiagnostics failedHalf = retry;
+                writeState(world, snapshotQ, snapshotV);
+                resetWarmStarts();
+                const int coldIterations = std::max(2 * settings.maxIterations, 48);
+                ProximalStepDiagnostics cold{};
+                const bool cold1 = advanceOnce(
+                    0.5 * dt,
+                    commandedServoTargets,
+                    retryAndersonCapacity,
+                    cold,
+                    coldIterations);
+                recovered = cold1
+                    && advanceOnce(
+                        0.5 * dt,
+                        commandedServoTargets,
+                        retryAndersonCapacity,
+                        cold,
+                        coldIterations);
+                cold.dynamicsTimeMs += failedHalf.dynamicsTimeMs;
+                cold.contactSetupTimeMs += failedHalf.contactSetupTimeMs;
+                cold.collisionTimeMs += failedHalf.collisionTimeMs;
+                cold.constraintAssemblyTimeMs += failedHalf.constraintAssemblyTimeMs;
+                cold.delassusTimeMs += failedHalf.delassusTimeMs;
+                cold.admmTimeMs += failedHalf.admmTimeMs;
+                cold.integrationTimeMs += failedHalf.integrationTimeMs;
+                retry = cold;
+            }
+        }
+        accumulateRetryTimings();
+        if (recovered) {
             world.CompleteExternalDynamicsStep();
             impl_->commandedServoTargets = commandedServoTargets;
             impl_->haveCommandedServoTargets = true;

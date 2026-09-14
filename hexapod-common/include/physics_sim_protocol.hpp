@@ -150,6 +150,13 @@ struct StateResponse {
     float solver_cone_residual{0.0f};
     float solver_peak_normal_impulse{0.0f};
     float solver_peak_friction_impulse{0.0f};
+    float solver_sum_friction_impulse_world_x{0.0f};
+    float solver_sum_friction_impulse_world_z{0.0f};
+    float solver_sum_abs_friction_impulse_world_x{0.0f};
+    float solver_sum_abs_friction_impulse_world_z{0.0f};
+    float solver_sum_friction_impulse_world_y{0.0f};
+    float solver_contact_delta_vx{0.0f};
+    float solver_contact_delta_vz{0.0f};
     float solver_peak_structural_impulse{0.0f};
     float solver_peak_actuator_impulse{0.0f};
     float solver_peak_servo_torque_utilization{0.0f};
@@ -176,6 +183,21 @@ struct StateResponse {
     std::uint64_t solver_unsupported_island_count{0};
     std::uint64_t solver_worst_contact_id{0};
     std::uint64_t solver_contact_set_signature{0};
+    std::array<float, 6> solver_leg_friction_impulse_world_x{};
+    std::array<float, 6> solver_leg_friction_impulse_world_z{};
+    std::array<float, 6> solver_leg_pinocchio_drift_tx{};
+    std::array<float, 6> solver_leg_world_slip_tx{};
+    std::array<float, 6> solver_leg_world_slip_ty{};
+    std::array<std::uint8_t, 6> solver_leg_contact_count{};
+    std::array<float, 6> solver_leg_tibia_vx{};
+    std::array<float, 6> solver_leg_spin_vx{};
+    std::array<float, 6> solver_leg_t0_x{};
+    std::array<float, 6> solver_leg_foot_vx{};
+    std::array<float, 6> solver_leg_foot_x{};
+    std::array<float, 6> solver_leg_foot_pos_vx{};
+    std::array<float, 6> solver_leg_foot_vz{};
+    std::array<float, 6> solver_leg_foot_z{};
+    std::array<float, 6> solver_leg_foot_pos_vz{};
 };
 
 struct StateCorrection {

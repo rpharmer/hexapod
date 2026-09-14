@@ -65,6 +65,18 @@ public:
     [[nodiscard]] LocomotionFeasibility locomotionFeasibilitySnapshot() const {
         return locomotion_feasibility_.read();
     }
+    [[nodiscard]] std::array<bool, kNumLegs> strokeClampHitSnapshot() const {
+        return stroke_clamp_hit_.read();
+    }
+    [[nodiscard]] std::array<bool, kNumLegs> workspaceXyHitSnapshot() const {
+        return workspace_xy_hit_.read();
+    }
+    [[nodiscard]] std::array<bool, kNumLegs> ikReachClampHitSnapshot() const {
+        return ik_reach_clamp_hit_.read();
+    }
+    [[nodiscard]] std::array<bool, kNumLegs> slewClampHitSnapshot() const {
+        return slew_clamp_hit_.read();
+    }
     [[nodiscard]] const NavigationManager* navigationManager() const { return navigation_manager_.get(); }
     [[nodiscard]] NavigationManager* navigationManager() { return navigation_manager_.get(); }
 
@@ -134,6 +146,10 @@ private:
     DoubleBuffer<JointTargets> joint_targets_;
     DoubleBuffer<telemetry::LocomotionDebugSnapshot> locomotion_debug_;
     DoubleBuffer<LocomotionFeasibility> locomotion_feasibility_;
+    DoubleBuffer<std::array<bool, kNumLegs>> stroke_clamp_hit_;
+    DoubleBuffer<std::array<bool, kNumLegs>> workspace_xy_hit_;
+    DoubleBuffer<std::array<bool, kNumLegs>> ik_reach_clamp_hit_;
+    DoubleBuffer<std::array<bool, kNumLegs>> slew_clamp_hit_;
     DoubleBuffer<ControlStatus> status_;
 
     TimePointUs next_telemetry_publish_at_{};

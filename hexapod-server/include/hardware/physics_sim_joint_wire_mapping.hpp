@@ -25,7 +25,12 @@ inline double normalizedServoSign(double sign) {
 inline double jointMechanicalFromSimWireAngle(int joint_index, float sim_angle) {
     switch (joint_index) {
         case COXA:
-            return static_cast<double>(physics_sim::kWireZeroCoxaMechanicalRad + sim_angle);
+            // The canonical sim->server map is an improper transform
+            // (x,y,z)_server=(-z,x,y)_sim.  A positive rotation about sim +Y
+            // therefore appears as negative server +Z yaw.  Reverse the coxa
+            // wire angle so positive server mechanical yaw moves the physical
+            // foot in the same direction as FK.
+            return static_cast<double>(physics_sim::kWireZeroCoxaMechanicalRad - sim_angle);
         case FEMUR:
             return static_cast<double>(physics_sim::kWireZeroFemurMechanicalRad + sim_angle);
         case TIBIA:
@@ -38,7 +43,8 @@ inline double jointMechanicalFromSimWireAngle(int joint_index, float sim_angle) 
 inline float simWireAngleFromJointMechanical(int joint_index, double joint_angle) {
     switch (joint_index) {
         case COXA:
-            return static_cast<float>(joint_angle - physics_sim::kWireZeroCoxaMechanicalRad);
+            return static_cast<float>(
+                physics_sim::kWireZeroCoxaMechanicalRad - joint_angle);
         case FEMUR:
             return static_cast<float>(joint_angle - physics_sim::kWireZeroFemurMechanicalRad);
         case TIBIA:

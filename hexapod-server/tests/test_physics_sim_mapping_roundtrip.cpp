@@ -107,13 +107,14 @@ bool servo_targets_match_mechanical_wire_formula(const HexapodGeometry& geo) {
             physics_sim_joint_wire_mapping::simWireTargetsFromServoLeg(cal, leg, servo, sim_c, sim_f, sim_t);
 
             const float expected_c = static_cast<float>(
-                joint.joint_state[COXA].pos_rad.value - physics_sim::kWireZeroCoxaMechanicalRad);
+                physics_sim::kWireZeroCoxaMechanicalRad - joint.joint_state[COXA].pos_rad.value);
             const float expected_f = static_cast<float>(
                 joint.joint_state[FEMUR].pos_rad.value - physics_sim::kWireZeroFemurMechanicalRad);
             const float expected_t = static_cast<float>(
                 joint.joint_state[TIBIA].pos_rad.value - physics_sim::kWireZeroTibiaMechanicalRad);
 
-            if (!expect(near_angle(sim_c, expected_c, kAngleEps), "coxa wire target should match sim zero offset") ||
+            if (!expect(near_angle(sim_c, expected_c, kAngleEps),
+                        "coxa wire target should include reflected-frame sign") ||
                 !expect(near_angle(sim_f, expected_f, kAngleEps), "femur wire target should match sim zero offset") ||
                 !expect(near_angle(sim_t, expected_t, kAngleEps), "tibia wire target should match sim zero offset")) {
                 std::cerr << " leg=" << leg << " k=" << k << " expected=(" << expected_c << "," << expected_f << ","
@@ -135,7 +136,8 @@ int main() {
     if (!expect(servo_round_trip_through_wire(geo), "servo -> sim -> servo")) {
         return EXIT_FAILURE;
     }
-    if (!expect(servo_targets_match_mechanical_wire_formula(geo), "servo -> sim should preserve mechanical joints")) {
+    if (!expect(servo_targets_match_mechanical_wire_formula(geo),
+                "servo -> sim should preserve mechanical joints through the frame map")) {
         return EXIT_FAILURE;
     }
     std::cout << "test_physics_sim_mapping_roundtrip ok\n";

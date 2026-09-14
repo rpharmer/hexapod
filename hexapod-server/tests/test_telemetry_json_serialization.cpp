@@ -162,6 +162,7 @@ bool test_control_step_packet_includes_fusion_diagnostics()
     telemetry_sample.locomotion_debug.measured_foot_world_m[0] = Vec3{0.2, 0.1, 0.0};
     telemetry_sample.locomotion_debug.commanded_foot_world_m[0] = Vec3{0.21, 0.09, 0.01};
     telemetry_sample.locomotion_debug.planned_leg_target_body_m[0] = Vec3{0.12, -0.08, -0.14};
+    telemetry_sample.locomotion_debug.pre_slew_fk_body_m[0] = Vec3{0.119, -0.081, -0.145};
     telemetry_sample.locomotion_debug.post_clamp_fk_body_m[0] = Vec3{0.118, -0.083, -0.151};
     telemetry_sample.locomotion_debug.post_clamp_distortion_m[0] = 0.0116;
     telemetry_sample.locomotion_debug.max_post_clamp_distortion_m = 0.0116;
@@ -289,6 +290,8 @@ bool test_control_step_packet_includes_fusion_diagnostics()
                   "locomotion debug payload should include contact anchor drift") &&
            expect(payload.find("\"max_commanded_tracking_error_m\":0.012") != std::string::npos,
                   "locomotion debug payload should include max commanded tracking error") &&
+           expect(payload.find("\"pre_slew_fk_body_m\":[[0.119,-0.081,-0.145]") != std::string::npos,
+                  "locomotion debug payload should include pre-slew FK feet") &&
            expect(payload.find("\"post_clamp_fk_body_m\":[[0.118,-0.083,-0.151]") != std::string::npos,
                   "locomotion debug payload should include post-clamp FK feet") &&
            expect(payload.find("\"max_post_clamp_distortion_m\":0.0116") != std::string::npos,

@@ -229,8 +229,8 @@ bool testStabilityUsesConfirmedSupportWhenPhaseLags() {
         if ((leg % 2) != 0) {
             continue;
         }
-        if (!expect(gait.stability_hold_stance[static_cast<std::size_t>(leg)],
-                    "supported swing legs should be held until support transfers cleanly")) {
+        if (!expect(!gait.stability_hold_stance[static_cast<std::size_t>(leg)],
+                    "supported legs should not be re-held after the liftoff window")) {
             return false;
         }
     }
@@ -476,7 +476,7 @@ bool testStabilityStrictConfigLatchesNearLiftoff() {
     return true;
 }
 
-bool testStabilityResetClearsLatch() {
+bool testStabilityOnlyHoldsNearLiftoff() {
     LocomotionStabilityConfig cfg{};
     cfg.min_margin_required_m = 50.0;
     cfg.support_inset_m = 0.0;
@@ -487,13 +487,12 @@ bool testStabilityResetClearsLatch() {
     GaitState gait = allStanceWalkGait(0.48, FrequencyHz{1.0});
     stability.apply(RobotState{}, intent, gait);
 
-    stability.reset();
     gait = allStanceWalkGait(0.20, FrequencyHz{1.0});
     stability.apply(RobotState{}, intent, gait);
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
-        if (!expect(gait.stability_hold_stance[static_cast<std::size_t>(leg)],
-                     "reset should not bypass fresh support checks when the margin is still impossible")) {
+        if (!expect(!gait.stability_hold_stance[static_cast<std::size_t>(leg)],
+                     "an impossible liftoff margin should not pin legs far from liftoff")) {
             return false;
         }
     }
@@ -518,7 +517,7 @@ int main() {
         !testStabilityNegativeMarginRecoveryForcesAllStance() ||
         !testStabilityHighTiltForcesHold() ||
         !testStabilityStrictConfigLatchesNearLiftoff() ||
-        !testStabilityResetClearsLatch()) {
+        !testStabilityOnlyHoldsNearLiftoff()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

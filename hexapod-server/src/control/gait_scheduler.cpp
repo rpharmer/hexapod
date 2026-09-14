@@ -23,6 +23,13 @@ UnifiedGaitDescription walkEntryStance(const UnifiedGaitDescription& target) {
     return out;
 }
 
+// Ordered replay bursts are 0.36 s. Starting Φ at 0 with ~0.9 Hz cadence never lets
+// Group A cross duty, so only the 2-left/1-right tripod swings and the body crabs.
+// Seed Φ far enough that both groups appear at the adaptive cadence, without a 2 Hz
+// floor that starved the stance stroke. BodyController plants a new stance spell at
+// φ=0 so this seed does not jump the feet to a mid-stroke target.
+constexpr double kFirstStridePhaseSeed = 0.35;
+
 } // namespace
 
 GaitScheduler::GaitScheduler(control_config::GaitConfig config)
@@ -41,6 +48,7 @@ void GaitScheduler::reset() {
     last_blended_ = UnifiedGaitDescription{};
     transition_start_us_ = TimePointUs{};
     have_last_blended_ = false;
+    walk_entry_blend_ = false;
     was_walking_ = false;
     last_cmd_vx_mps_ = 0.0;
     last_cmd_vy_mps_ = 0.0;
@@ -79,6 +87,7 @@ GaitState GaitScheduler::compute(const MotionIntent& intent,
     UnifiedGaitDescription last_blended = last_blended_;
     TimePointUs transition_start_us = transition_start_us_;
     bool have_last_blended = have_last_blended_;
+    bool walk_entry_blend = walk_entry_blend_;
     bool was_walking = was_walking_;
     double last_cmd_vx_mps = last_cmd_vx_mps_;
     double last_cmd_vy_mps = last_cmd_vy_mps_;
@@ -153,13 +162,23 @@ GaitState GaitScheduler::compute(const MotionIntent& intent,
     if (walk_entry) {
         // The scheduler is dormant in STAND.  Blend into WALK from a common all-stance phase,
         // just as we blend when changing gait types, to preserve foot-target continuity.
-        phase_accum = 0.0;
+        // Planar bursts seed Φ so both tripods appear in 0.36 s. Yaw-dominant in-place
+        // turns keep Φ=0. Use the intent command, not the slewed cmd_twist: loco-cmd
+        // ramps yaw from 0, so the first STAND→WALK frame would otherwise look planar
+        // and eat the counter-yaw stroke.
+        const double intent_planar_mps =
+            std::hypot(intent.cmd_vx_mps.value, intent.cmd_vy_mps.value);
+        const double yaw_equiv_mps = std::abs(intent.cmd_yaw_radps.value) * 0.11;
+        const bool yaw_dominant = yaw_equiv_mps > intent_planar_mps + 1e-6;
+        phase_accum = yaw_dominant ? 0.0 : kFirstStridePhaseSeed;
         transition_from_snap = walkEntryStance(target);
         transition_start_us = now;
         have_last_blended = true;
+        walk_entry_blend = true;
     } else if (committed_initialized && intent.gait != committed_gait) {
         transition_from_snap = have_last_blended ? last_blended : target;
         transition_start_us = now;
+        walk_entry_blend = false;
     }
     if (!committed_initialized && !walk_entry) {
         transition_from_snap = target;
@@ -171,7 +190,10 @@ GaitState GaitScheduler::compute(const MotionIntent& intent,
     double alpha = 1.0;
     if (!transition_start_us.isZero()) {
         const double elapsed_s = static_cast<double>((now - transition_start_us).value) * 1e-6;
-        alpha = std::clamp(elapsed_s / std::max(config_.transition_blend_s, 1e-4), 0.0, 1.0);
+        const double blend_s = walk_entry_blend
+            ? config_.walk_entry_blend_s
+            : config_.transition_blend_s;
+        alpha = std::clamp(elapsed_s / std::max(blend_s, 1e-4), 0.0, 1.0);
     }
 
     const UnifiedGaitDescription blended =
@@ -223,6 +245,7 @@ GaitState GaitScheduler::compute(const MotionIntent& intent,
         last_blended_ = last_blended;
         transition_start_us_ = transition_start_us;
         have_last_blended_ = have_last_blended;
+        walk_entry_blend_ = walk_entry_blend;
         was_walking_ = was_walking;
         last_cmd_vx_mps_ = last_cmd_vx_mps;
         last_cmd_vy_mps_ = last_cmd_vy_mps;

@@ -56,10 +56,12 @@ int main() {
     for (std::size_t leg_index = 0; leg_index < scene.legs.size(); ++leg_index) {
         const Body& tibia = world.GetBody(scene.legs[leg_index].tibia);
         const Vec3 foot_center = FootSphereCenterWorld(tibia);
-        const Vec3 tibia_tip = tibia.position + Rotate(tibia.orientation, Vec3{kTibiaRenderLength * 0.5, 0.0, 0.0});
-        const Real center_tip_error = Length(foot_center - tibia_tip);
-        if (!expect(center_tip_error < 1.0e-5, "foot sphere center should sit at the tibia tip")) {
-            std::cerr << "leg=" << leg_index << " center_tip_error=" << center_tip_error << '\n';
+        const Vec3 shaft_tip =
+            tibia.position + Rotate(tibia.orientation, Vec3{kTibiaRenderLength * 0.5, 0.0, 0.0});
+        const Real centre_to_shaft_tip = Length(foot_center - shaft_tip);
+        if (!expect(std::abs(centre_to_shaft_tip - physics_sim::kHexapodFootRadiusM) < 1.0e-5,
+                    "foot sphere center should sit one radius beyond the rigid tibia shaft")) {
+            std::cerr << "leg=" << leg_index << " centre_to_shaft_tip=" << centre_to_shaft_tip << '\n';
             ok = false;
         }
     }

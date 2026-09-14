@@ -122,6 +122,59 @@ int Run() {
         return 1;
     }
 
+    const std::array<double, 18> unconstrained = model.servoUnconstrainedInertias();
+    const std::array<double, 18> nominal = model.servoNominalInertias();
+    double coxaRatioSum = 0.0;
+    double femurRatioSum = 0.0;
+    double tibiaRatioSum = 0.0;
+    std::size_t increased = 0;
+    for (std::size_t i = 0; i < unconstrained.size(); ++i) {
+        if (!(unconstrained[i] > 0.0) || !std::isfinite(unconstrained[i])
+            || !(nominal[i] > 0.0) || !std::isfinite(nominal[i])) {
+            std::cerr << "non-finite servo inertia index=" << i
+                      << " unconstrained=" << unconstrained[i]
+                      << " nominal=" << nominal[i] << "\n";
+            return 1;
+        }
+        if (nominal[i] + 1.0e-12 < unconstrained[i]) {
+            std::cerr << "stance-loaded inertia dropped below CRBA diagonal index="
+                      << i << " unconstrained=" << unconstrained[i]
+                      << " nominal=" << nominal[i] << "\n";
+            return 1;
+        }
+        const double ratio = nominal[i] / unconstrained[i];
+        if (ratio > 1.5000001) {
+            std::cerr << "stance-loaded inertia exceeded 1.5x cap index=" << i
+                      << " ratio=" << ratio << "\n";
+            return 1;
+        }
+        if (ratio > 1.0000001) {
+            ++increased;
+        }
+        if (i % 3U == 0U) {
+            coxaRatioSum += ratio;
+        } else if (i % 3U == 1U) {
+            femurRatioSum += ratio;
+        } else {
+            tibiaRatioSum += ratio;
+        }
+    }
+    const double coxaMean = coxaRatioSum / 6.0;
+    const double femurMean = femurRatioSum / 6.0;
+    const double tibiaMean = tibiaRatioSum / 6.0;
+    if (increased == 0) {
+        std::cerr << "stance-loaded inertias matched unconstrained CRBA diagonals\n";
+        return 1;
+    }
+    if (coxaMean < 1.2 || femurMean < 1.2) {
+        std::cerr << "proximal stance-load ratio too small coxa=" << coxaMean
+                  << " femur=" << femurMean << " tibia=" << tibiaMean << "\n";
+        return 1;
+    }
+    std::cout << "stance-loaded inertia ratios coxa=" << coxaMean
+              << " femur=" << femurMean << " tibia=" << tibiaMean
+              << " increased=" << increased << "/18\n";
+
     std::vector<double> q;
     std::vector<double> v;
     if (!model.readState(world, q, v)) {
@@ -206,7 +259,8 @@ int Run() {
             if (proximalDiagnostics.contactConstraintCount > scene.legs.size()
                 || proximalDiagnostics.externalManifoldCount > scene.legs.size()
                 || proximalDiagnostics.robotRobotManifoldCount != 0) {
-                std::cerr << "flat-ground contact arbitration failed constraints="
+                std::cerr << "flat-ground contact arbitration failed step=" << step
+                          << " constraints="
                           << proximalDiagnostics.contactConstraintCount
                           << " external_manifolds="
                           << proximalDiagnostics.externalManifoldCount

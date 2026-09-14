@@ -174,7 +174,7 @@ To break a circular dependency (governor wants support metrics that depend on ga
 ### 8.4 `GaitScheduler` (`gait_scheduler.cpp`, `gait_params.cpp`)
 
 - Inputs: `RobotState`, governed intent, `SafetyState`, `BodyTwist cmd_twist`, `CommandGovernorState`.
-- Selects `UnifiedGaitDescription` from gait family (tripod / ripple / wave / etc.), blends across gait transitions (`transition_blend_s` from config).
+- Selects `UnifiedGaitDescription` from gait family (tripod / ripple / wave / etc.). STAND→WALK blends from an all-stance start over `walk_entry_blend_s` (default 0.15 s). Planar bursts seed stride phase at 0.35 so both tripod groups appear in a short window; yaw-dominant in-place turns keep Φ=0. New stance plants start at φ=0, then integrate. Gait-family changes blend over `transition_blend_s` (default 0.35 s).
 - Integrates global stride phase; applies governor cadence freeze / swing floor to `swing_height_m` and stride rate.
 - Emits `GaitState` (phases, duty, step length, swing height, finite differenced `cmd_accel_body_*`).
 
@@ -197,7 +197,7 @@ Central **kinematics** stage from intent + gait → `LegTargets`:
 | Height hold & integrator | `body_controller.cpp` | Sag compensation + leaky integrator (`body_controller_detail::updateBodyHeightHoldIntegralM`). |
 | Nominal stance | `body_controller.cpp` | `computeNominalStance` / reach limits from `HexapodGeometry`. |
 | Terrain stance Z | `foot_terrain.cpp` | `applyTerrainStanceZBias` when `LocalMapSnapshot` present and config enables stance plane bias. |
-| Stance foot track | `foot_planners.cpp` | `planStanceFoot` — anchor + support velocity (`supportFootVelocityAt` uses `bodyVelocityForFootPlanning` with `foot_estimator_blend_` and fusion trust scaling). |
+| Stance foot track | `foot_planners.cpp` / `body_controller.cpp` | New planned plant uses `planStanceFoot` (`p = a + v φ/f`). Extra-stance first plant (stability hold / lost-candidate) latches the swing foothold XY, not stance-end. Late-swing raw contact after grace keeps swing kinematics so the foot can lift. Held extra-stance that becomes planned (no hold) replants with `φ/f`. Continuing stance ignores wrapping `φ`, integrates `v_stance(p) Δt`, and always clamps planar stroke to `\|v\| duty / f`. |
 | Swing foot track | `foot_planners.cpp` | `planSwingFoot` — uses `SwingFootInputs`, swing trajectory shaping, `foothold_planner.cpp` (`computeSwingFootPlacement`, capture limits, stability bias). |
 | Terrain swing aids | `foot_terrain.cpp` | XY nudge + clearance when enabled (`FootTerrainConfig` + investigation toggles via `control_config.cpp`). |
 | Stance tilt leveling | `contact_foot_response.cpp` | `stanceTiltLevelingDeltaZ` when enabled. |
@@ -406,10 +406,11 @@ This section maps **equations and algorithmic choices** to the pathway above. Co
 - Point velocity: \(\mathbf{v}(\mathbf{p}) = \mathbf{v} + \boldsymbol{\omega} \times \mathbf{p}\) (body frame, \(\mathbf{p}\) foot position relative to body origin).
 - **Stance convention** (world-fixed contact): \(\mathbf{v}_{\mathrm{stance}}(\mathbf{p}) = -\mathbf{v}(\mathbf{p})\) so commanded foot motion opposes body motion.
 
-**Stance foot integration** (`foot_planners.cpp` — `planStanceFoot`):
+**Stance foot integration** (`foot_planners.cpp` — `planStanceFoot`, consumed in `BodyController`):
 
-- With stance phase \(\phi \in [0,1]\), stride frequency \(f\):  
+- Closed form with gait phase \(\phi \in [0,1]\) and stride frequency \(f\):  
   \(\mathbf{p} = \mathbf{a} + \mathbf{v}_{\mathrm{stance}}\,(\phi / f)\), \(\dot{\mathbf{p}} = \mathbf{v}_{\mathrm{stance}}\), where \(\mathbf{a}\) is the anchor and \(\mathbf{v}_{\mathrm{stance}} = \texttt{supportFootVelocityAt}(\mathbf{a}, \mathbf{body})\).
+- That closed form equals \(\mathbf{p}+\mathbf{v}\Delta t\) only while \(f\) is constant. Adaptive cadence is not. `BodyController` uses \(\phi/f\) only to **initialize** a new planned plant. Extra-stance first plants (stability hold / lost-candidate) latch the swing foothold XY rather than stance-end, with the same stroke budget \(L = \|\mathbf{v}_{xy}\|\,\mathrm{duty}/f\). Late-swing raw contact after the grace window keeps swing kinematics so a lingering plant cannot re-lock the foot (H1). Held extra-stance that later becomes planned (without a stability hold) **replants** with \(\phi/f\). Held stance across a phase wrap keeps the latch. While the leg stays in stance kinematics it integrates \(\mathbf{p} \leftarrow \mathbf{p} + \mathbf{v}_{\mathrm{stance}}(\mathbf{p})\,\Delta t\) and always clamps to \(L\). Foot \(z\) still tracks the current anchor (height hold). `ControlPipeline::reset` clears the latch.
 
 **Estimator blend for stance velocity** (`bodyVelocityForFootPlanning` in `foot_planners.cpp`):
 
@@ -487,7 +488,7 @@ s = \mathrm{clamp}_{[0,1]}\bigl(
 - **Per leg**: \(p_\ell = \mathrm{wrap}(\Phi + \mathrm{offset}_\ell)\); **stance** if \(p_\ell < \texttt{duty\_factor}\).
 - **Swing height floor**: \(\max(\texttt{swing\_height\_m},\, \texttt{governor.swing\_height\_floor\_m})\).
 
-Adaptive tripod/ripple/wave tables (`gait_params.cpp`) map \((v_x, v_y, \dot\psi, a_x, a_y)\) plus `GaitConfig` into duty, step length, swing height, frequency, phase offsets (`UnifiedGaitDescription`), then **blend** toward that target over `gait_transition_blend_s` after a gait family change.
+Adaptive tripod/ripple/wave tables (`gait_params.cpp`) map \((v_x, v_y, \dot\psi, a_x, a_y)\) plus `GaitConfig` into duty, step length, swing height, frequency, phase offsets (`UnifiedGaitDescription`). STAND→WALK blends from all-stance / zero stride over `walk_entry_blend_s` (default 0.15 s). Planar bursts seed stride phase at 0.35; yaw-dominant turns do not. Gait-family changes blend over `gait_transition_blend_s`.
 For this leg order (rear-left, rear-right, middle-left, middle-right, front-left, front-right), the tripod groups are `{0, 3, 4}` and `{1, 2, 5}` so each support triangle spans both sides of the chassis.
 
 ### 18.7 Locomotion stability (`locomotion_stability.cpp`)
@@ -562,7 +563,7 @@ Use this table to jump from a quantity to its definition; **open the cited funct
 | Planar command | \(v_x, v_y, \dot\psi\) | `planarMotionCommand` — `motion_intent_utils.cpp` |
 | Commanded body twist | \(\mathbf{v}_{\mathrm{cmd}}, \boldsymbol{\omega}_{\mathrm{cmd}}\) | `rawLocomotionTwistFromIntent` — `locomotion_command.cpp` |
 | Foot point velocity | \(\mathbf{v}(\mathbf{p})\), stance \(\mathbf{v}_{\mathrm{stance}}\) | `TwistField::pointVelocity`, `stanceFootVelocity` — `twist_field.hpp` |
-| Stance foot pose | \(\mathbf{p}(\phi)\) | `planStanceFoot` — `foot_planners.cpp` |
+| Stance foot pose | \(\mathbf{p}(\phi)\) init / latched \(\mathbf{p}+\mathbf{v}\Delta t\) | `planStanceFoot` — `foot_planners.cpp`; planned-stroke latch — `BodyController` |
 | Fusion pose/velocity blend | \(\alpha_p, \alpha_v\) | `StateFusion::update` — `state_fusion.cpp` (file-top constants) |
 | COM projection XY | \(\mathrm{COM}_{xy}\) vs body offset | `assessSupportState` — `support_assessment.cpp` (`kComFromBodyXYScale`) |
 | Support margin | hull distance, clearance | `staticStabilityMargin`, `supportPolygonClearance*` — `support_assessment.cpp` |

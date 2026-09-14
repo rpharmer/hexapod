@@ -9,10 +9,11 @@
 
 namespace {
 
-Vec3 computeFootInBodyFrame(const LegState& leg_state, const LegGeometry& leg_geometry) {
-    const double q1 = leg_state.joint_state[COXA].pos_rad.value;
-    const double q2 = leg_state.joint_state[FEMUR].pos_rad.value;
-    const double q3 = leg_state.joint_state[TIBIA].pos_rad.value;
+Vec3 computeFootInBodyFrame(const LegState& servo_state, const LegGeometry& leg_geometry) {
+    const LegState joint_state = leg_geometry.servo.toJointAngles(servo_state);
+    const double q1 = joint_state.joint_state[COXA].pos_rad.value;
+    const double q2 = joint_state.joint_state[FEMUR].pos_rad.value;
+    const double q3 = joint_state.joint_state[TIBIA].pos_rad.value;
 
     const double rho = leg_geometry.femurLength.value * std::cos(q2) +
                        leg_geometry.tibiaLength.value * std::cos(q2 + q3);
@@ -21,7 +22,7 @@ Vec3 computeFootInBodyFrame(const LegState& leg_state, const LegGeometry& leg_ge
     const double r = leg_geometry.coxaLength.value + rho;
 
     const Vec3 foot_leg_local{r * std::cos(q1), r * std::sin(q1), z_leg};
-    const Vec3 foot_body_relative = Mat3::rotZ(leg_geometry.mountAngle.value) * foot_leg_local;
+    const Vec3 foot_body_relative = bodyFromLegFrame(leg_geometry) * foot_leg_local;
     return leg_geometry.bodyCoxaOffset + foot_body_relative;
 }
 

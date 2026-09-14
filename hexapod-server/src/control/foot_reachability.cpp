@@ -1,58 +1,184 @@
 #include "foot_reachability.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace foot_reachability {
+namespace {
+
+struct AnnulusLimits {
+    double d_min{0.0};
+    double d_max{0.0};
+};
+
+struct FemurPlaneCoords {
+    double q1{0.0};
+    double rho{0.0};
+    double z{0.0};
+};
+
+AnnulusLimits annulusLimits(const LegGeometry& leg, const double inset_m) {
+    const double m = std::max(0.0, inset_m);
+    const double min_reach = std::fabs(leg.femurLength.value - leg.tibiaLength.value);
+    const double max_reach = leg.femurLength.value + leg.tibiaLength.value;
+    AnnulusLimits out{};
+    out.d_min = min_reach + m;
+    out.d_max = std::max(out.d_min + 1e-6, max_reach - m);
+    return out;
+}
+
+FemurPlaneCoords toFemurPlane(const LegGeometry& leg, const Vec3& foot_pos_body_m) {
+    const Vec3 relative_to_coxa = foot_pos_body_m - leg.bodyCoxaOffset;
+    const Mat3 r_leg = legFromBodyFrame(leg);
+    const Vec3 foot_leg = r_leg * relative_to_coxa;
+    FemurPlaneCoords out{};
+    out.q1 = std::atan2(foot_leg.y, foot_leg.x);
+    const double r = std::hypot(foot_leg.x, foot_leg.y);
+    out.rho = r - leg.coxaLength.value;
+    out.z = foot_leg.z;
+    return out;
+}
+
+Vec3 fromFemurPlane(const LegGeometry& leg, const double q1, const double rho, const double z) {
+    const double r = rho + leg.coxaLength.value;
+    const Vec3 foot_leg{r * std::cos(q1), r * std::sin(q1), z};
+    const Mat3 r_body = bodyFromLegFrame(leg);
+    return leg.bodyCoxaOffset + (r_body * foot_leg);
+}
+
+bool inAnnulus(const LegGeometry& leg, const Vec3& foot_pos_body_m, const double inset_m) {
+    const AnnulusLimits lim = annulusLimits(leg, inset_m);
+    const double d = femurPlaneDistanceM(leg, foot_pos_body_m);
+    return d + 1e-12 >= lim.d_min && d - 1e-12 <= lim.d_max;
+}
+
+bool projectZKeepingPlanar(const LegGeometry& leg,
+                           const Vec3& desired_body_m,
+                           const double inset_m,
+                           Vec3* out_body_m) {
+    if (!out_body_m) {
+        return false;
+    }
+    const AnnulusLimits lim = annulusLimits(leg, inset_m);
+    const FemurPlaneCoords f = toFemurPlane(leg, desired_body_m);
+    const double d = std::hypot(f.rho, f.z);
+    if (d + 1e-12 >= lim.d_min && d - 1e-12 <= lim.d_max) {
+        *out_body_m = desired_body_m;
+        return true;
+    }
+    if (std::abs(f.rho) > lim.d_max) {
+        return false;
+    }
+
+    double z_new = f.z;
+    if (d > lim.d_max) {
+        const double z_lim2 = lim.d_max * lim.d_max - f.rho * f.rho;
+        if (z_lim2 < 0.0) {
+            return false;
+        }
+        const double z_lim = std::sqrt(z_lim2);
+        z_new = std::clamp(f.z, -z_lim, z_lim);
+    } else {
+        const double z_need2 = lim.d_min * lim.d_min - f.rho * f.rho;
+        if (z_need2 <= 0.0) {
+            *out_body_m = desired_body_m;
+            return true;
+        }
+        const double z_need = std::sqrt(z_need2);
+        z_new = (f.z >= 0.0) ? z_need : -z_need;
+        if (std::hypot(f.rho, z_new) > lim.d_max + 1e-12) {
+            return false;
+        }
+    }
+    *out_body_m = fromFemurPlane(leg, f.q1, f.rho, z_new);
+    return inAnnulus(leg, *out_body_m, inset_m);
+}
+
+Vec3 intersectSegmentWithAnnulus(const LegGeometry& leg,
+                                 const Vec3& last_in_reach_body_m,
+                                 const Vec3& desired_body_m,
+                                 const double inset_m) {
+    double lo = 0.0;
+    double hi = 1.0;
+    for (int i = 0; i < 40; ++i) {
+        const double mid = 0.5 * (lo + hi);
+        const Vec3 p = last_in_reach_body_m + (desired_body_m - last_in_reach_body_m) * mid;
+        if (inAnnulus(leg, p, inset_m)) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    return last_in_reach_body_m + (desired_body_m - last_in_reach_body_m) * lo;
+}
+
+} // namespace
 
 double femurPlaneDistanceM(const LegGeometry& leg, const Vec3& foot_pos_body_m) {
-    const Vec3 relative_to_coxa = foot_pos_body_m - leg.bodyCoxaOffset;
-    const Mat3 r_leg = Mat3::rotZ(-leg.mountAngle.value);
-    const Vec3 foot_leg = r_leg * relative_to_coxa;
-    const double r = std::hypot(foot_leg.x, foot_leg.y);
-    const double rho = r - leg.coxaLength.value;
-    return std::hypot(rho, foot_leg.z);
+    const FemurPlaneCoords f = toFemurPlane(leg, foot_pos_body_m);
+    return std::hypot(f.rho, f.z);
+}
+
+bool footInReachAnnulus(const LegGeometry& leg, const Vec3& foot_pos_body_m, const double inset_m) {
+    return inAnnulus(leg, foot_pos_body_m, inset_m);
 }
 
 Vec3 clampFootPositionBody(const LegGeometry& leg, const Vec3& foot_pos_body_m, const double inset_m) {
-    const double m = std::max(0.0, inset_m);
-    const Vec3 relative_to_coxa = foot_pos_body_m - leg.bodyCoxaOffset;
-    const Mat3 r_leg = Mat3::rotZ(-leg.mountAngle.value);
-    const Vec3 foot_leg = r_leg * relative_to_coxa;
-
-    const double x = foot_leg.x;
-    const double y = foot_leg.y;
-    const double z = foot_leg.z;
-    const double q1 = std::atan2(y, x);
-    const double r = std::hypot(x, y);
-    const double rho = r - leg.coxaLength.value;
-    const double d = std::hypot(rho, z);
-
-    const double min_reach = std::fabs(leg.femurLength.value - leg.tibiaLength.value);
-    const double max_reach = leg.femurLength.value + leg.tibiaLength.value;
-    const double d_min = min_reach + m;
-    const double d_max = std::max(d_min + 1e-6, max_reach - m);
+    const AnnulusLimits lim = annulusLimits(leg, inset_m);
+    const FemurPlaneCoords f = toFemurPlane(leg, foot_pos_body_m);
+    const double d = std::hypot(f.rho, f.z);
 
     if (d <= 1e-12) {
         return foot_pos_body_m;
     }
 
     double scale = 1.0;
-    if (d > d_max) {
-        scale = d_max / d;
-    } else if (d < d_min) {
-        scale = d_min / d;
+    if (d > lim.d_max) {
+        scale = lim.d_max / d;
+    } else if (d < lim.d_min) {
+        scale = lim.d_min / d;
     }
 
     if (std::abs(scale - 1.0) < 1e-12) {
         return foot_pos_body_m;
     }
 
-    const double rho_s = rho * scale;
-    const double z_s = z * scale;
-    const double r_s = rho_s + leg.coxaLength.value;
-    const Vec3 foot_leg_s{r_s * std::cos(q1), r_s * std::sin(q1), z_s};
-    const Mat3 r_body = Mat3::rotZ(leg.mountAngle.value);
-    return leg.bodyCoxaOffset + (r_body * foot_leg_s);
+    return fromFemurPlane(leg, f.q1, f.rho * scale, f.z * scale);
+}
+
+StrokeAlongStrokeResult classifyAlongStroke(const Vec3& desired_body_m, const Vec3& out_body_m) {
+    StrokeAlongStrokeResult out{};
+    out.pos_body_m = out_body_m;
+    const double xy = std::hypot(out_body_m.x - desired_body_m.x, out_body_m.y - desired_body_m.y);
+    const double dz = std::abs(out_body_m.z - desired_body_m.z);
+    if (xy > 1e-9) {
+        out.planar_xy_hit = true;
+    } else if (dz > 1e-9) {
+        out.z_only_hit = true;
+    }
+    return out;
+}
+
+StrokeAlongStrokeResult clampFootPositionAlongStroke(const LegGeometry& leg,
+                                                     const Vec3* last_in_reach_body_m,
+                                                     const Vec3& desired_body_m,
+                                                     const double inset_m) {
+    if (inAnnulus(leg, desired_body_m, inset_m)) {
+        return classifyAlongStroke(desired_body_m, desired_body_m);
+    }
+
+    Vec3 z_projected{};
+    if (projectZKeepingPlanar(leg, desired_body_m, inset_m, &z_projected)) {
+        return classifyAlongStroke(desired_body_m, z_projected);
+    }
+
+    if (last_in_reach_body_m != nullptr && inAnnulus(leg, *last_in_reach_body_m, inset_m)) {
+        return classifyAlongStroke(
+            desired_body_m,
+            intersectSegmentWithAnnulus(leg, *last_in_reach_body_m, desired_body_m, inset_m));
+    }
+
+    return classifyAlongStroke(desired_body_m, clampFootPositionBody(leg, desired_body_m, inset_m));
 }
 
 void clipVelocityForReachClamp(const Vec3& foot_before_body,

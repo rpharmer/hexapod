@@ -27,6 +27,7 @@ void ControlPipeline::reset() {
     gait_.reset();
     loco_cmd_.reset();
     locomotion_stability_.reset();
+    body_.reset();
     resetJointAngleGravityFeedforwardState();
     last_gait_state_ = GaitState{};
     have_last_gait_state_ = false;
@@ -233,6 +234,9 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     result.gait_state = gait_state;
     result.command_governor = governor;
     result.locomotion_feasibility = locomotion_feasibility;
+    result.stroke_clamp_hit = body_.lastStrokeClampHit();
+    result.workspace_xy_hit = body_.lastWorkspaceXyHit();
+    result.ik_reach_clamp_hit = ik_.lastReachClampHit();
     last_gait_state_ = gait_state;
     have_last_gait_state_ = true;
     return result;

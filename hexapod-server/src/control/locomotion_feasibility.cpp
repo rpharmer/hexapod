@@ -123,7 +123,9 @@ std::array<LegContactDecision, kNumLegs> computeLegContactDecisions(const RobotS
             out.use_stance_kinematics = true;
         } else {
             out.mode = LegContactMode::PlannedSwing;
-            out.use_stance_kinematics = out.raw_contact;
+            // Keep swing kinematics after the grace window so a lingering
+            // late-swing contact cannot re-plant the foot (H1 extra contact).
+            out.use_stance_kinematics = false;
         }
     }
 

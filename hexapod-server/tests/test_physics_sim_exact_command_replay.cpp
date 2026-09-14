@@ -1,4 +1,6 @@
 #include "control_config.hpp"
+#include "geometry_config.hpp"
+#include "leg_fk.hpp"
 #include "motion_intent_utils.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
@@ -6,6 +8,7 @@
 #include "physics_sim_test_utils.hpp"
 #include "robot_runtime.hpp"
 #include "scenario_driver.hpp"
+#include "stance_progress_metrics.hpp"
 
 #include <algorithm>
 #include <array>
@@ -51,6 +54,31 @@ using IterationHistogram = std::map<std::uint16_t, std::uint64_t>;
 
 constexpr std::array<const char*, kPhaseCount> kPhaseNames{
     "stand", "transition", "forward", "reverse", "strafe", "diagonal", "turn_in_place"};
+constexpr std::array<const char*, kNumLegs> kLegNames{
+    "R3", "L3", "R2", "L2", "R1", "L1"};
+
+// The behaviour requirement explicitly applies after the acceleration transient. Preserve
+// the complete phase metrics for transition diagnosis, and derive the excluded frame count
+// from dt so the 120/240/480 Hz equivalence runs measure the same physical interval.
+constexpr double kAccelerationTransientDurationS = 0.120;
+constexpr double kMinimumCommandProgressRatio = 0.70;
+constexpr double kMaximumLateralPathFraction = 0.10;
+constexpr double kLateralAllowanceM = 0.010;
+constexpr double kMaximumTurnTranslationM = 0.050;
+
+// PERIOD_US on a frozen fixture changes physics dt, not the captured gait.
+// Scoring commanded metres at a slower replay dt inflates the 70% bar while
+// the servo targets are still the capture stream. Cap at capture_period_us
+// so 120 Hz does not fail for extra wall-clock; 240/480 keep replay dt.
+int commandScorePeriodUs(const int replay_period_us, const int capture_period_us) {
+    if (replay_period_us <= 0) {
+        return capture_period_us;
+    }
+    if (capture_period_us <= 0) {
+        return replay_period_us;
+    }
+    return std::min(replay_period_us, capture_period_us);
+}
 
 constexpr std::array<const char*, 15> kFailureReasonNames{
     "none",
@@ -75,6 +103,24 @@ struct CapturedFrame {
     ReplayPhase phase{ReplayPhase::Stand};
     bool inhibit_motion{false};
     bool walk_mode{false};
+    std::array<bool, kNumLegs> planned_stance{};
+    std::array<bool, kNumLegs> hold_stance{};
+    std::array<bool, kNumLegs> safe_to_lift{};
+    std::array<double, kNumLegs> liftoff_clearance_m{};
+    std::array<double, kNumLegs> gait_phase{};
+    double duty_factor{0.0};
+    double stride_phase_rate_hz{0.0};
+    double command_scale{1.0};
+    double cadence_scale{1.0};
+    std::array<bool, kNumLegs> stroke_clamp_hit{};
+    std::array<bool, kNumLegs> workspace_xy_hit{};
+    std::array<Vec3, kNumLegs> planned_target_body{};
+    std::array<Vec3, kNumLegs> pre_slew_fk_body{};
+    std::array<Vec3, kNumLegs> post_clamp_fk_body{};
+    std::array<bool, kNumLegs> ik_reach_clamp_hit{};
+    std::array<bool, kNumLegs> slew_clamp_hit{};
+    std::array<double, kNumLegs> post_clamp_distortion_m{};
+    double static_stability_margin_m{0.0};
 };
 
 struct CommandFixture {
@@ -124,6 +170,56 @@ struct PhaseResult {
     double peak_preintegration_angular_speed{0.0};
     double actuator_work_sum{0.0};
     double mechanical_energy_delta_sum{0.0};
+    double max_foot_tracking_error{0.0};
+    double foot_tracking_error_sq_sum{0.0};
+    std::uint64_t foot_tracking_error_samples{0};
+    double max_contact_foot_world_step{0.0};
+    double contact_foot_world_step_sq_sum{0.0};
+    std::uint64_t contact_foot_world_step_samples{0};
+    double contact_target_opposition_sum{0.0};
+    double contact_target_counter_yaw_sum{0.0};
+    std::uint64_t contact_target_motion_samples{0};
+    double midstance_contact_world_step_sum{0.0};
+    std::uint64_t midstance_contact_world_step_samples{0};
+    double midstance_tripod_contact_world_step_sum{0.0};
+    std::uint64_t midstance_tripod_contact_world_step_samples{0};
+    double midstance_overlap_contact_world_step_sum{0.0};
+    std::uint64_t midstance_overlap_contact_world_step_samples{0};
+    double n_raw_contact_sum{0.0};
+    double n_planned_sum{0.0};
+    double n_hold_sum{0.0};
+    double n_late_swing_extra_sum{0.0};
+    double n_l_parked_contacted_sum{0.0};
+    std::uint64_t census_frames{0};
+    std::uint64_t mixed_parked_stroking_frames{0};
+    std::uint64_t n_contact_ge_5_frames{0};
+    std::uint64_t clean_tripod_frames{0};
+    std::array<std::uint64_t, 7> n_raw_contact_histogram{};
+    double abs_pitch_sum{0.0};
+    double abs_roll_sum{0.0};
+    std::uint64_t attitude_samples{0};
+    double peak_normal_impulse_sum{0.0};
+    double peak_friction_impulse_sum{0.0};
+    double friction_to_normal_ratio_sum{0.0};
+    std::uint64_t friction_impulse_samples{0};
+    std::uint64_t friction_ratio_samples{0};
+    double contact_commanded_world_step_sum{0.0};
+    double contact_uncommanded_slip_step_sum{0.0};
+    double contact_cmd_body_step_sum{0.0};
+    std::uint64_t contact_slip_samples{0};
+    double midstance_commanded_world_step_sum{0.0};
+    double midstance_uncommanded_slip_step_sum{0.0};
+    double midstance_cmd_body_step_sum{0.0};
+    std::uint64_t midstance_slip_samples{0};
+    double clean_tripod_body_step_sum{0.0};
+    std::uint64_t clean_tripod_body_samples{0};
+    double clean_tripod_cartesian_opposition_sum{0.0};
+    double clean_tripod_cartesian_counter_yaw_sum{0.0};
+    std::uint64_t clean_tripod_cartesian_samples{0};
+    double clean_tripod_commanded_world_step_sum{0.0};
+    double clean_tripod_uncommanded_slip_step_sum{0.0};
+    double clean_tripod_contact_world_step_sum{0.0};
+    std::uint64_t clean_tripod_slip_samples{0};
     double completed_delta_x_sum{0.0};
     double completed_delta_y_sum{0.0};
     double completed_body_forward_sum{0.0};
@@ -131,6 +227,17 @@ struct PhaseResult {
     double completed_yaw_delta_sum{0.0};
     double completed_horizontal_path_sum{0.0};
     double completed_horizontal_displacement_sum{0.0};
+    double completed_start_body_forward_velocity_sum{0.0};
+    double completed_start_body_lateral_velocity_sum{0.0};
+    double completed_end_body_forward_velocity_sum{0.0};
+    double completed_end_body_lateral_velocity_sum{0.0};
+    double evaluated_body_forward_sum{0.0};
+    double evaluated_body_lateral_sum{0.0};
+    double evaluated_yaw_delta_sum{0.0};
+    double evaluated_horizontal_path_sum{0.0};
+    double evaluated_horizontal_displacement_sum{0.0};
+    std::uint64_t evaluated_frames{0};
+    std::uint64_t evaluated_trajectories{0};
     std::uint64_t completed_trajectories{0};
 };
 
@@ -194,37 +301,42 @@ struct ReplayResult {
     double p99_solver_total_step_time_ms{0.0};
 };
 
-bool passesBehaviorGates(const ReplayResult& result, const int replay_period_us) {
-    constexpr double kMinimumCommandProgressRatio = 0.70;
-    constexpr double kMaximumLateralPathFraction = 0.10;
-    constexpr double kLateralAllowanceM = 0.010;
-    constexpr double kMaximumTurnTranslationM = 0.050;
+bool passesBehaviorGates(const ReplayResult& result,
+                         const int replay_period_us,
+                         const int capture_period_us) {
     constexpr std::array<ReplayPhase, 4> kTranslationPhases{
         ReplayPhase::Forward,
         ReplayPhase::Reverse,
         ReplayPhase::Strafe,
         ReplayPhase::Diagonal,
     };
+    bool evaluated_motion = false;
     for (const ReplayPhase replay_phase : kTranslationPhases) {
         const PhaseResult& phase = result.phases[static_cast<std::size_t>(replay_phase)];
         if (phase.completed_trajectories == 0) {
+            continue;
+        }
+        evaluated_motion = true;
+        if (phase.evaluated_trajectories == 0 || phase.evaluated_frames == 0) {
             return false;
         }
-        const double trajectory_count = static_cast<double>(phase.completed_trajectories);
+        const double trajectory_count = static_cast<double>(phase.evaluated_trajectories);
         const PhaseCommand command = phaseCommand(replay_phase);
         const double command_speed = std::hypot(command.vx_mps, command.vy_mps);
         const double frames_per_trajectory =
-            static_cast<double>(phase.frames) / trajectory_count;
+            static_cast<double>(phase.evaluated_frames) / trajectory_count;
         const double commanded_translation = command_speed * frames_per_trajectory
-            * static_cast<double>(replay_period_us) * 1.0e-6;
-        const double body_forward = phase.completed_body_forward_sum / trajectory_count;
-        const double body_lateral = phase.completed_body_lateral_sum / trajectory_count;
+            * static_cast<double>(
+                  commandScorePeriodUs(replay_period_us, capture_period_us))
+            * 1.0e-6;
+        const double body_forward = phase.evaluated_body_forward_sum / trajectory_count;
+        const double body_lateral = phase.evaluated_body_lateral_sum / trajectory_count;
         const double ux = command.vx_mps / command_speed;
         const double uy = command.vy_mps / command_speed;
         const double command_progress = ux * body_forward + uy * body_lateral;
         const double command_lateral = -uy * body_forward + ux * body_lateral;
         const double horizontal_path =
-            phase.completed_horizontal_path_sum / trajectory_count;
+            phase.evaluated_horizontal_path_sum / trajectory_count;
         if (command_progress < kMinimumCommandProgressRatio * commanded_translation
             || std::abs(command_lateral)
                 > kMaximumLateralPathFraction * horizontal_path + kLateralAllowanceM) {
@@ -235,16 +347,24 @@ bool passesBehaviorGates(const ReplayResult& result, const int replay_period_us)
     const PhaseResult& turn =
         result.phases[static_cast<std::size_t>(ReplayPhase::TurnInPlace)];
     if (turn.completed_trajectories == 0) {
+        return evaluated_motion;
+    }
+    evaluated_motion = true;
+    if (turn.evaluated_trajectories == 0 || turn.evaluated_frames == 0) {
         return false;
     }
-    const double trajectory_count = static_cast<double>(turn.completed_trajectories);
-    const double frames_per_trajectory = static_cast<double>(turn.frames) / trajectory_count;
+    const double trajectory_count = static_cast<double>(turn.evaluated_trajectories);
+    const double frames_per_trajectory =
+        static_cast<double>(turn.evaluated_frames) / trajectory_count;
     const double commanded_yaw = phaseCommand(ReplayPhase::TurnInPlace).yaw_rate_radps
-        * frames_per_trajectory * static_cast<double>(replay_period_us) * 1.0e-6;
-    const double yaw_delta = turn.completed_yaw_delta_sum / trajectory_count;
+        * frames_per_trajectory
+        * static_cast<double>(commandScorePeriodUs(replay_period_us, capture_period_us))
+        * 1.0e-6;
+    const double yaw_delta = turn.evaluated_yaw_delta_sum / trajectory_count;
     const double horizontal_displacement =
-        turn.completed_horizontal_displacement_sum / trajectory_count;
-    return yaw_delta >= kMinimumCommandProgressRatio * commanded_yaw
+        turn.evaluated_horizontal_displacement_sum / trajectory_count;
+    return evaluated_motion
+        && yaw_delta >= kMinimumCommandProgressRatio * commanded_yaw
         && horizontal_displacement <= kMaximumTurnTranslationM;
 }
 
@@ -285,10 +405,36 @@ public:
 
     void setPhase(const ReplayPhase phase) { phase_ = phase; }
 
-    void annotateLastFrame(const SafetyState& safety, const ControlStatus& status) {
+    void annotateLastFrame(const SafetyState& safety,
+                           const ControlStatus& status,
+                           const GaitState& gait,
+                           const CommandGovernorState& governor,
+                           const telemetry::LocomotionDebugSnapshot& locomotion,
+                           const std::array<bool, kNumLegs>& stroke_clamp_hit,
+                           const std::array<bool, kNumLegs>& workspace_xy_hit,
+                           const std::array<bool, kNumLegs>& ik_reach_clamp_hit,
+                           const std::array<bool, kNumLegs>& slew_clamp_hit) {
         if (!frames_.empty()) {
             frames_.back().inhibit_motion = safety.inhibit_motion;
             frames_.back().walk_mode = status.active_mode == RobotMode::WALK;
+            frames_.back().planned_stance = gait.in_stance;
+            frames_.back().hold_stance = gait.stability_hold_stance;
+            frames_.back().safe_to_lift = gait.support_liftoff_safe_to_lift;
+            frames_.back().liftoff_clearance_m = gait.support_liftoff_clearance_m;
+            frames_.back().gait_phase = gait.phase;
+            frames_.back().duty_factor = gait.duty_factor;
+            frames_.back().stride_phase_rate_hz = gait.stride_phase_rate_hz.value;
+            frames_.back().command_scale = governor.command_scale;
+            frames_.back().cadence_scale = governor.cadence_scale;
+            frames_.back().stroke_clamp_hit = stroke_clamp_hit;
+            frames_.back().workspace_xy_hit = workspace_xy_hit;
+            frames_.back().planned_target_body = locomotion.planned_leg_target_body_m;
+            frames_.back().pre_slew_fk_body = locomotion.pre_slew_fk_body_m;
+            frames_.back().post_clamp_fk_body = locomotion.post_clamp_fk_body_m;
+            frames_.back().ik_reach_clamp_hit = ik_reach_clamp_hit;
+            frames_.back().slew_clamp_hit = slew_clamp_hit;
+            frames_.back().post_clamp_distortion_m = locomotion.post_clamp_distortion_m;
+            frames_.back().static_stability_margin_m = gait.static_stability_margin_m;
         }
     }
 
@@ -348,6 +494,61 @@ std::uint64_t commandStreamHash(const CommandFixture& fixture) {
         const std::uint8_t walk_mode = frame.walk_mode ? 1U : 0U;
         hashBytes(hash, &inhibit_motion, sizeof(inhibit_motion));
         hashBytes(hash, &walk_mode, sizeof(walk_mode));
+        for (const bool planned_stance : frame.planned_stance) {
+            const std::uint8_t value = planned_stance ? 1U : 0U;
+            hashBytes(hash, &value, sizeof(value));
+        }
+        for (const bool hold_stance : frame.hold_stance) {
+            const std::uint8_t value = hold_stance ? 1U : 0U;
+            hashBytes(hash, &value, sizeof(value));
+        }
+        for (const bool safe_to_lift : frame.safe_to_lift) {
+            const std::uint8_t value = safe_to_lift ? 1U : 0U;
+            hashBytes(hash, &value, sizeof(value));
+        }
+        hashBytes(
+            hash, frame.liftoff_clearance_m.data(), sizeof(frame.liftoff_clearance_m));
+        hashBytes(hash, frame.gait_phase.data(), sizeof(frame.gait_phase));
+        hashBytes(hash, &frame.duty_factor, sizeof(frame.duty_factor));
+        hashBytes(hash, &frame.stride_phase_rate_hz, sizeof(frame.stride_phase_rate_hz));
+        hashBytes(hash, &frame.command_scale, sizeof(frame.command_scale));
+        hashBytes(hash, &frame.cadence_scale, sizeof(frame.cadence_scale));
+        for (const bool clamp_hit : frame.stroke_clamp_hit) {
+            const std::uint8_t value = clamp_hit ? 1U : 0U;
+            hashBytes(hash, &value, sizeof(value));
+        }
+        for (const bool workspace_hit : frame.workspace_xy_hit) {
+            const std::uint8_t value = workspace_hit ? 1U : 0U;
+            hashBytes(hash, &value, sizeof(value));
+        }
+        for (const Vec3& planned : frame.planned_target_body) {
+            hashBytes(hash, &planned.x, sizeof(planned.x));
+            hashBytes(hash, &planned.y, sizeof(planned.y));
+            hashBytes(hash, &planned.z, sizeof(planned.z));
+        }
+        for (const Vec3& pre_slew : frame.pre_slew_fk_body) {
+            hashBytes(hash, &pre_slew.x, sizeof(pre_slew.x));
+            hashBytes(hash, &pre_slew.y, sizeof(pre_slew.y));
+            hashBytes(hash, &pre_slew.z, sizeof(pre_slew.z));
+        }
+        for (const Vec3& post_clamp : frame.post_clamp_fk_body) {
+            hashBytes(hash, &post_clamp.x, sizeof(post_clamp.x));
+            hashBytes(hash, &post_clamp.y, sizeof(post_clamp.y));
+            hashBytes(hash, &post_clamp.z, sizeof(post_clamp.z));
+        }
+        for (const bool reach_hit : frame.ik_reach_clamp_hit) {
+            const std::uint8_t value = reach_hit ? 1U : 0U;
+            hashBytes(hash, &value, sizeof(value));
+        }
+        for (const bool slew_hit : frame.slew_clamp_hit) {
+            const std::uint8_t value = slew_hit ? 1U : 0U;
+            hashBytes(hash, &value, sizeof(value));
+        }
+        hashBytes(hash,
+                  frame.post_clamp_distortion_m.data(),
+                  sizeof(frame.post_clamp_distortion_m));
+        hashBytes(hash, &frame.static_stability_margin_m,
+                  sizeof(frame.static_stability_margin_m));
         for (const LegState& leg : frame.targets.leg_states) {
             for (const JointState& joint : leg.joint_state) {
                 hashBytes(hash, &joint.pos_rad.value, sizeof(joint.pos_rad.value));
@@ -382,7 +583,7 @@ std::uint16_t iterationPercentile(const IterationHistogram& histogram,
     return histogram.rbegin()->first;
 }
 
-constexpr const char* kCommandFixtureHeader = "hexapod-exact-command-replay-v2";
+constexpr const char* kCommandFixtureHeader = "hexapod-exact-command-replay-v8";
 
 void saveCommandFixture(const std::string& path,
                         const CommandFixture& fixture) {
@@ -413,6 +614,50 @@ void saveCommandFixture(const std::string& path,
         output << static_cast<unsigned>(frame.phase) << ' '
                << (frame.inhibit_motion ? 1 : 0) << ' '
                << (frame.walk_mode ? 1 : 0);
+        for (const bool planned_stance : frame.planned_stance) {
+            output << ' ' << (planned_stance ? 1 : 0);
+        }
+        for (const bool hold_stance : frame.hold_stance) {
+            output << ' ' << (hold_stance ? 1 : 0);
+        }
+        for (const bool safe_to_lift : frame.safe_to_lift) {
+            output << ' ' << (safe_to_lift ? 1 : 0);
+        }
+        for (const double clearance_m : frame.liftoff_clearance_m) {
+            output << ' ' << clearance_m;
+        }
+        output << ' ' << frame.static_stability_margin_m
+               << ' ' << frame.duty_factor
+               << ' ' << frame.stride_phase_rate_hz
+               << ' ' << frame.command_scale
+               << ' ' << frame.cadence_scale;
+        for (const bool clamp_hit : frame.stroke_clamp_hit) {
+            output << ' ' << (clamp_hit ? 1 : 0);
+        }
+        for (const bool workspace_hit : frame.workspace_xy_hit) {
+            output << ' ' << (workspace_hit ? 1 : 0);
+        }
+        for (const Vec3& planned : frame.planned_target_body) {
+            output << ' ' << planned.x << ' ' << planned.y << ' ' << planned.z;
+        }
+        for (const Vec3& pre_slew : frame.pre_slew_fk_body) {
+            output << ' ' << pre_slew.x << ' ' << pre_slew.y << ' ' << pre_slew.z;
+        }
+        for (const Vec3& post_clamp : frame.post_clamp_fk_body) {
+            output << ' ' << post_clamp.x << ' ' << post_clamp.y << ' ' << post_clamp.z;
+        }
+        for (const bool reach_hit : frame.ik_reach_clamp_hit) {
+            output << ' ' << (reach_hit ? 1 : 0);
+        }
+        for (const bool slew_hit : frame.slew_clamp_hit) {
+            output << ' ' << (slew_hit ? 1 : 0);
+        }
+        for (const double distortion_m : frame.post_clamp_distortion_m) {
+            output << ' ' << distortion_m;
+        }
+        for (const double phase01 : frame.gait_phase) {
+            output << ' ' << phase01;
+        }
         for (const LegState& leg : frame.targets.leg_states) {
             for (const JointState& joint : leg.joint_state) {
                 output << ' ' << static_cast<double>(joint.pos_rad.value)
@@ -511,6 +756,158 @@ CommandFixture loadCommandFixture(const std::string& path) {
         frame.phase = static_cast<ReplayPhase>(phase);
         frame.inhibit_motion = inhibit_motion != 0;
         frame.walk_mode = walk_mode != 0;
+        for (bool& planned_stance : frame.planned_stance) {
+            int value = 0;
+            if (!(input >> value) || (value != 0 && value != 1)) {
+                throw std::runtime_error(
+                    "invalid planned-stance metadata at frame "
+                    + std::to_string(frame_index) + ": " + path);
+            }
+            planned_stance = value != 0;
+        }
+        for (bool& hold_stance : frame.hold_stance) {
+            int value = 0;
+            if (!(input >> value) || (value != 0 && value != 1)) {
+                throw std::runtime_error(
+                    "invalid held-stance metadata at frame "
+                    + std::to_string(frame_index) + ": " + path);
+            }
+            hold_stance = value != 0;
+        }
+        for (bool& safe_to_lift : frame.safe_to_lift) {
+            int value = 0;
+            if (!(input >> value) || (value != 0 && value != 1)) {
+                throw std::runtime_error(
+                    "invalid safe-to-lift metadata at frame "
+                    + std::to_string(frame_index) + ": " + path);
+            }
+            safe_to_lift = value != 0;
+        }
+        for (double& clearance_m : frame.liftoff_clearance_m) {
+            if (!(input >> clearance_m) || !std::isfinite(clearance_m)) {
+                throw std::runtime_error(
+                    "invalid liftoff-clearance metadata at frame "
+                    + std::to_string(frame_index) + ": " + path);
+            }
+        }
+        if (!(input >> frame.static_stability_margin_m)
+            || !std::isfinite(frame.static_stability_margin_m)) {
+            throw std::runtime_error(
+                "invalid static-margin metadata at frame "
+                + std::to_string(frame_index) + ": " + path);
+        }
+        if (!(input >> frame.duty_factor)
+            || !std::isfinite(frame.duty_factor)
+            || frame.duty_factor < 0.0
+            || frame.duty_factor > 1.0) {
+            throw std::runtime_error(
+                "invalid duty-factor metadata at frame "
+                + std::to_string(frame_index) + ": " + path);
+        }
+        if (!(input >> frame.stride_phase_rate_hz)
+            || !std::isfinite(frame.stride_phase_rate_hz)
+            || frame.stride_phase_rate_hz < 0.0) {
+            throw std::runtime_error(
+                "invalid stride-phase-rate metadata at frame "
+                + std::to_string(frame_index) + ": " + path);
+        }
+        if (!(input >> frame.command_scale)
+            || !std::isfinite(frame.command_scale)
+            || frame.command_scale < 0.0) {
+            throw std::runtime_error(
+                "invalid command-scale metadata at frame "
+                + std::to_string(frame_index) + ": " + path);
+        }
+        if (!(input >> frame.cadence_scale)
+            || !std::isfinite(frame.cadence_scale)
+            || frame.cadence_scale < 0.0) {
+            throw std::runtime_error(
+                "invalid cadence-scale metadata at frame "
+                + std::to_string(frame_index) + ": " + path);
+        }
+        for (bool& clamp_hit : frame.stroke_clamp_hit) {
+            int value = 0;
+            if (!(input >> value) || (value != 0 && value != 1)) {
+                throw std::runtime_error(
+                    "invalid stroke-clamp-hit metadata at frame "
+                    + std::to_string(frame_index) + ": " + path);
+            }
+            clamp_hit = value != 0;
+        }
+        for (bool& workspace_hit : frame.workspace_xy_hit) {
+            int value = 0;
+            if (!(input >> value) || (value != 0 && value != 1)) {
+                throw std::runtime_error(
+                    "invalid workspace-xy-hit metadata at frame "
+                    + std::to_string(frame_index) + ": " + path);
+            }
+            workspace_hit = value != 0;
+        }
+        for (Vec3& planned : frame.planned_target_body) {
+            if (!(input >> planned.x >> planned.y >> planned.z)
+                || !std::isfinite(planned.x)
+                || !std::isfinite(planned.y)
+                || !std::isfinite(planned.z)) {
+                throw std::runtime_error(
+                    "invalid planned-target metadata at frame "
+                    + std::to_string(frame_index) + ": " + path);
+            }
+        }
+        for (Vec3& pre_slew : frame.pre_slew_fk_body) {
+            if (!(input >> pre_slew.x >> pre_slew.y >> pre_slew.z)
+                || !std::isfinite(pre_slew.x)
+                || !std::isfinite(pre_slew.y)
+                || !std::isfinite(pre_slew.z)) {
+                throw std::runtime_error(
+                    "invalid pre-slew FK metadata at frame "
+                    + std::to_string(frame_index) + ": " + path);
+            }
+        }
+        for (Vec3& post_clamp : frame.post_clamp_fk_body) {
+            if (!(input >> post_clamp.x >> post_clamp.y >> post_clamp.z)
+                || !std::isfinite(post_clamp.x)
+                || !std::isfinite(post_clamp.y)
+                || !std::isfinite(post_clamp.z)) {
+                throw std::runtime_error(
+                    "invalid post-clamp FK metadata at frame "
+                    + std::to_string(frame_index) + ": " + path);
+            }
+        }
+        for (bool& reach_hit : frame.ik_reach_clamp_hit) {
+            int value = 0;
+            if (!(input >> value) || (value != 0 && value != 1)) {
+                throw std::runtime_error(
+                    "invalid IK reach-clamp metadata at frame "
+                    + std::to_string(frame_index) + ": " + path);
+            }
+            reach_hit = value != 0;
+        }
+        for (bool& slew_hit : frame.slew_clamp_hit) {
+            int value = 0;
+            if (!(input >> value) || (value != 0 && value != 1)) {
+                throw std::runtime_error(
+                    "invalid slew-clamp metadata at frame "
+                    + std::to_string(frame_index) + ": " + path);
+            }
+            slew_hit = value != 0;
+        }
+        for (double& distortion_m : frame.post_clamp_distortion_m) {
+            if (!(input >> distortion_m) || !std::isfinite(distortion_m)) {
+                throw std::runtime_error(
+                    "invalid post-clamp distortion metadata at frame "
+                    + std::to_string(frame_index) + ": " + path);
+            }
+        }
+        for (double& phase01 : frame.gait_phase) {
+            if (!(input >> phase01)
+                || !std::isfinite(phase01)
+                || phase01 < 0.0
+                || phase01 > 1.0) {
+                throw std::runtime_error(
+                    "invalid gait-phase metadata at frame "
+                    + std::to_string(frame_index) + ": " + path);
+            }
+        }
         for (LegState& leg : frame.targets.leg_states) {
             for (JointState& joint : leg.joint_state) {
                 double position = 0.0;
@@ -818,7 +1215,16 @@ void runRuntimeFrame(RobotRuntime& runtime,
     runtime.estimatorStep();
     runtime.safetyStep();
     runtime.controlStep();
-    bridge.annotateLastFrame(runtime.getSafetyState(), runtime.getStatus());
+    bridge.annotateLastFrame(
+        runtime.getSafetyState(),
+        runtime.getStatus(),
+        runtime.gaitSnapshot(),
+        runtime.commandGovernorSnapshot(),
+        runtime.locomotionDebugSnapshot(),
+        runtime.strokeClampHitSnapshot(),
+        runtime.workspaceXyHitSnapshot(),
+        runtime.ikReachClampHitSnapshot(),
+        runtime.slewClampHitSnapshot());
 }
 
 std::vector<CapturedFrame> captureCommands(const physics_sim_test_utils::HarnessSettings& harness,
@@ -859,6 +1265,12 @@ std::vector<CapturedFrame> captureCommands(const physics_sim_test_utils::Harness
         if (envEnabled("HEXAPOD_EXACT_REPLAY_TRACE_CAPTURE")) {
             const SafetyState safety = runtime.getSafetyState();
             const ControlStatus status = runtime.getStatus();
+            const RobotState estimated = runtime.estimatedSnapshot();
+            const GaitState gait = runtime.gaitSnapshot();
+            const std::size_t held_legs = static_cast<std::size_t>(std::count(
+                gait.stability_hold_stance.begin(),
+                gait.stability_hold_stance.end(),
+                true));
             std::cerr << "capture phase=" << kPhaseNames[static_cast<std::size_t>(phase)]
                       << " frames=" << frames
                       << " inhibit=" << (safety.inhibit_motion ? 1 : 0)
@@ -866,7 +1278,12 @@ std::vector<CapturedFrame> captureCommands(const physics_sim_test_utils::Harness
                       << " lifecycle=" << static_cast<unsigned>(safety.fault_lifecycle)
                       << " mode=" << static_cast<unsigned>(status.active_mode)
                       << " estimator_valid=" << (status.estimator_valid ? 1 : 0)
-                      << " bus_ok=" << (status.bus_ok ? 1 : 0) << '\n';
+                      << " bus_ok=" << (status.bus_ok ? 1 : 0)
+                      << " body_roll_rad=" << estimated.body_twist_state.twist_pos_rad.x
+                      << " body_pitch_rad=" << estimated.body_twist_state.twist_pos_rad.y
+                      << " planar_body_rate_radps="
+                      << std::hypot(estimated.imu.gyro_radps.x, estimated.imu.gyro_radps.y)
+                      << " held_legs=" << held_legs << '\n';
         }
     };
 
@@ -953,8 +1370,35 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         double last_raw_yaw{0.0};
         double accumulated_yaw{0.0};
         double horizontal_path{0.0};
+        Vec3 start_velocity{};
+        Vec3 last_velocity{};
+        std::uint64_t valid_frames{0};
+        std::optional<Vec3> evaluation_start_position{};
+        std::optional<Vec3> evaluation_last_position{};
+        double evaluation_start_yaw{0.0};
+        double evaluation_last_raw_yaw{0.0};
+        double evaluation_accumulated_yaw{0.0};
+        double evaluation_horizontal_path{0.0};
+        std::array<std::uint64_t, kNumLegs> swing_frames{};
+        std::array<std::uint64_t, kNumLegs> swing_contact_frames{};
+        std::array<double, kNumLegs> swing_target_world_z_sum{};
+        std::array<double, kNumLegs> swing_measured_world_z_sum{};
     };
     std::optional<ActivePhaseSegment> active_segment{};
+    const std::uint64_t acceleration_transient_frames =
+        std::max<std::uint64_t>(1, static_cast<std::uint64_t>(std::ceil(
+            kAccelerationTransientDurationS
+            / (static_cast<double>(replay_period_us) * 1.0e-6))));
+    const HexapodGeometry geometry = defaultHexapodGeometry();
+    LegFK leg_fk{};
+    std::array<Vec3, kNumLegs> previous_contact_foot_world{};
+    std::array<Vec3, kNumLegs> previous_contact_target_body{};
+    std::array<Vec3, kNumLegs> previous_cartesian_body{};
+    std::array<bool, kNumLegs> have_previous_contact_foot{};
+    std::array<bool, kNumLegs> have_previous_raw_contact{};
+    std::array<bool, kNumLegs> have_previous_cartesian{};
+    std::array<bool, kNumLegs> previous_planned_stance{};
+    std::optional<Vec3> previous_body_position{};
     std::optional<std::uint64_t> previous_contact_set_signature{};
     std::uint32_t contact_topology_age = 0;
     const auto finishSegment = [&]() {
@@ -978,6 +1422,64 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         phase.completed_yaw_delta_sum += active_segment->accumulated_yaw;
         phase.completed_horizontal_path_sum += active_segment->horizontal_path;
         phase.completed_horizontal_displacement_sum += std::hypot(dx, dy);
+        phase.completed_start_body_forward_velocity_sum +=
+            active_segment->start_velocity.x;
+        phase.completed_start_body_lateral_velocity_sum +=
+            active_segment->start_velocity.y;
+        phase.completed_end_body_forward_velocity_sum +=
+            active_segment->last_velocity.x;
+        phase.completed_end_body_lateral_velocity_sum +=
+            active_segment->last_velocity.y;
+        if (active_segment->evaluation_start_position.has_value()
+            && active_segment->evaluation_last_position.has_value()) {
+            const double eval_dx = active_segment->evaluation_last_position->x
+                - active_segment->evaluation_start_position->x;
+            const double eval_dy = active_segment->evaluation_last_position->y
+                - active_segment->evaluation_start_position->y;
+            const double eval_c = std::cos(active_segment->evaluation_start_yaw);
+            const double eval_s = std::sin(active_segment->evaluation_start_yaw);
+            phase.evaluated_body_forward_sum += eval_c * eval_dx + eval_s * eval_dy;
+            phase.evaluated_body_lateral_sum += -eval_s * eval_dx + eval_c * eval_dy;
+            phase.evaluated_yaw_delta_sum += active_segment->evaluation_accumulated_yaw;
+            phase.evaluated_horizontal_path_sum += active_segment->evaluation_horizontal_path;
+            phase.evaluated_horizontal_displacement_sum += std::hypot(eval_dx, eval_dy);
+            phase.evaluated_frames += active_segment->valid_frames > acceleration_transient_frames
+                ? active_segment->valid_frames - acceleration_transient_frames
+                : 0;
+            ++phase.evaluated_trajectories;
+        }
+        if (const char* trace = std::getenv("HEXAPOD_EXACT_REPLAY_TRACE_SEGMENTS");
+            trace != nullptr && trace[0] != '\0' && trace[0] != '0') {
+            std::cerr << "segment " << kPhaseNames[static_cast<std::size_t>(active_segment->phase)]
+                      << " delta_body=(" << (c * dx + s * dy) << ','
+                      << (-s * dx + c * dy) << ") start_v_body=("
+                      << active_segment->start_velocity.x
+                      << ','
+                      << active_segment->start_velocity.y
+                      << ") end_v_body=("
+                      << active_segment->last_velocity.x
+                      << ','
+                      << active_segment->last_velocity.y
+                      << ")\n";
+        }
+        if (const char* trace = std::getenv("HEXAPOD_EXACT_REPLAY_TRACE_LEGS");
+            trace != nullptr && trace[0] != '\0' && trace[0] != '0') {
+            for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+                const double samples = static_cast<double>(
+                    std::max<std::uint64_t>(active_segment->swing_frames[leg], 1));
+                std::cerr << "segment_leg "
+                          << kPhaseNames[static_cast<std::size_t>(active_segment->phase)]
+                          << ' ' << kLegNames[leg]
+                          << " swing_frames=" << active_segment->swing_frames[leg]
+                          << " contact_fraction="
+                          << static_cast<double>(active_segment->swing_contact_frames[leg]) / samples
+                          << " target_world_z_mean="
+                          << active_segment->swing_target_world_z_sum[leg] / samples
+                          << " measured_world_z_mean="
+                          << active_segment->swing_measured_world_z_sum[leg] / samples
+                          << '\n';
+            }
+        }
         ++phase.completed_trajectories;
         active_segment.reset();
     };
@@ -986,6 +1488,11 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         if (!active_segment.has_value() || active_segment->phase != frame.phase) {
             finishSegment();
             active_segment = ActivePhaseSegment{frame.phase};
+            have_previous_contact_foot.fill(false);
+            have_previous_raw_contact.fill(false);
+            have_previous_cartesian.fill(false);
+            previous_planned_stance.fill(false);
+            previous_body_position.reset();
         }
         PhaseResult& phase = result.phases[static_cast<std::size_t>(frame.phase)];
         ++result.frames;
@@ -1032,10 +1539,215 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
                 }
             }
             phase.terminal_servo_tracking_error = frame_max_servo_tracking_error;
+            BodyPose body_pose{};
+            body_pose.position = state.body_twist_state.body_trans_m;
+            body_pose.roll = AngleRad{state.body_twist_state.twist_pos_rad.x};
+            body_pose.pitch = AngleRad{state.body_twist_state.twist_pos_rad.y};
+            body_pose.yaw = AngleRad{state.body_twist_state.twist_pos_rad.z};
+            const PhaseCommand command = phaseCommand(frame.phase);
+            const double command_speed = std::hypot(command.vx_mps, command.vy_mps);
+            const std::size_t n_planned = plannedStanceCount(frame.planned_stance);
+            const std::size_t n_hold = plannedStanceCount(frame.hold_stance);
+            std::size_t n_raw_contact = 0;
+            std::size_t n_late_swing_extra = 0;
+            std::size_t n_l_parked_contacted = 0;
+            std::size_t n_stroking_contacted = 0;
+            for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+                if (!state.foot_contacts[leg]) {
+                    continue;
+                }
+                ++n_raw_contact;
+                const bool late_swing_extra =
+                    !frame.planned_stance[leg] && !frame.hold_stance[leg];
+                if (late_swing_extra) {
+                    ++n_late_swing_extra;
+                }
+                if (frame.stroke_clamp_hit[leg]) {
+                    ++n_l_parked_contacted;
+                } else {
+                    ++n_stroking_contacted;
+                }
+            }
+            ++phase.census_frames;
+            phase.n_raw_contact_sum += static_cast<double>(n_raw_contact);
+            phase.n_planned_sum += static_cast<double>(n_planned);
+            phase.n_hold_sum += static_cast<double>(n_hold);
+            phase.n_late_swing_extra_sum += static_cast<double>(n_late_swing_extra);
+            phase.n_l_parked_contacted_sum += static_cast<double>(n_l_parked_contacted);
+            phase.n_raw_contact_histogram[std::min(n_raw_contact, phase.n_raw_contact_histogram.size() - 1)] += 1;
+            if (n_l_parked_contacted > 0 && n_stroking_contacted > 0) {
+                ++phase.mixed_parked_stroking_frames;
+            }
+            if (n_raw_contact >= 5) {
+                ++phase.n_contact_ge_5_frames;
+            }
+            const bool clean_tripod = isCleanTripodFrame(
+                frame.planned_stance, state.foot_contacts, n_l_parked_contacted);
+            if (clean_tripod) {
+                ++phase.clean_tripod_frames;
+            }
+            phase.abs_pitch_sum += std::abs(state.body_twist_state.twist_pos_rad.y);
+            phase.abs_roll_sum += std::abs(state.body_twist_state.twist_pos_rad.x);
+            ++phase.attitude_samples;
+            const Vec3 body_step = previous_body_position.has_value()
+                ? Vec3{position.x - previous_body_position->x,
+                       position.y - previous_body_position->y,
+                       0.0}
+                : Vec3{};
+            const double planar_body_step = std::hypot(body_step.x, body_step.y);
+            if (clean_tripod && previous_body_position.has_value()) {
+                phase.clean_tripod_body_step_sum += planar_body_step;
+                ++phase.clean_tripod_body_samples;
+            }
+            const Mat3 R_body_to_world = body_pose.rotationBodyToWorld();
+            for (std::size_t leg = 0; leg < frame.targets.leg_states.size(); ++leg) {
+                const Vec3 target_body = leg_fk.footInBodyFrame(
+                    frame.targets.leg_states[leg], geometry.legGeometry[leg])
+                    .pos_body_m.raw();
+                const Vec3 measured_body = leg_fk.footInBodyFrame(
+                    state.leg_states[leg], geometry.legGeometry[leg])
+                    .pos_body_m.raw();
+                const Vec3 measured_world = leg_fk.footInWorldFrame(
+                    state.leg_states[leg], body_pose, geometry.legGeometry[leg])
+                    .pos_body_m.raw();
+                const double foot_tracking_error = vecNorm(target_body - measured_body);
+                phase.max_foot_tracking_error = std::max(
+                    phase.max_foot_tracking_error, foot_tracking_error);
+                phase.foot_tracking_error_sq_sum += foot_tracking_error * foot_tracking_error;
+                ++phase.foot_tracking_error_samples;
+                const bool commanded_stance =
+                    frame.planned_stance[leg] || frame.hold_stance[leg];
+                if (!commanded_stance) {
+                    const Vec3 target_world = body_pose.position.raw()
+                        + (R_body_to_world * target_body);
+                    ++active_segment->swing_frames[leg];
+                    active_segment->swing_contact_frames[leg] +=
+                        state.foot_contacts[leg] ? 1U : 0U;
+                    active_segment->swing_target_world_z_sum[leg] += target_world.z;
+                    active_segment->swing_measured_world_z_sum[leg] += measured_world.z;
+                }
+                const bool onset_stance = isOnsetPlannedStance(
+                    frame.planned_stance[leg],
+                    previous_planned_stance[leg],
+                    frame.gait_phase[leg],
+                    frame.duty_factor);
+                const bool mid_stance = isMidPlannedStance(
+                    frame.planned_stance[leg],
+                    frame.gait_phase[leg],
+                    frame.duty_factor)
+                    && !onset_stance;
+                const Vec3 cartesian_body{
+                    -frame.planned_target_body[leg].x,
+                    frame.planned_target_body[leg].y,
+                    frame.planned_target_body[leg].z};
+                if (state.foot_contacts[leg] && have_previous_raw_contact[leg]) {
+                    const Vec3 measured_delta{
+                        measured_world.x - previous_contact_foot_world[leg].x,
+                        measured_world.y - previous_contact_foot_world[leg].y,
+                        0.0};
+                    const Vec3 target_step = target_body - previous_contact_target_body[leg];
+                    const Vec3 commanded_delta = body_step + (R_body_to_world * target_step);
+                    const double planar_world_step =
+                        std::hypot(measured_delta.x, measured_delta.y);
+                    const double planar_commanded_world =
+                        std::hypot(commanded_delta.x, commanded_delta.y);
+                    const double planar_uncommanded = std::hypot(
+                        measured_delta.x - commanded_delta.x,
+                        measured_delta.y - commanded_delta.y);
+                    const double planar_cmd_body = std::hypot(target_step.x, target_step.y);
+                    phase.contact_commanded_world_step_sum += planar_commanded_world;
+                    phase.contact_uncommanded_slip_step_sum += planar_uncommanded;
+                    phase.contact_cmd_body_step_sum += planar_cmd_body;
+                    ++phase.contact_slip_samples;
+                    if (mid_stance) {
+                        phase.midstance_commanded_world_step_sum += planar_commanded_world;
+                        phase.midstance_uncommanded_slip_step_sum += planar_uncommanded;
+                        phase.midstance_cmd_body_step_sum += planar_cmd_body;
+                        ++phase.midstance_slip_samples;
+                    }
+                    if (clean_tripod) {
+                        phase.clean_tripod_commanded_world_step_sum += planar_commanded_world;
+                        phase.clean_tripod_uncommanded_slip_step_sum += planar_uncommanded;
+                        phase.clean_tripod_contact_world_step_sum += planar_world_step;
+                        ++phase.clean_tripod_slip_samples;
+                    }
+                }
+                if (clean_tripod && have_previous_cartesian[leg] && frame.planned_stance[leg]) {
+                    const Vec3 cartesian_step =
+                        cartesian_body - previous_cartesian_body[leg];
+                    if (command_speed > 0.0) {
+                        phase.clean_tripod_cartesian_opposition_sum -=
+                            (command.vx_mps * cartesian_step.x
+                                + command.vy_mps * cartesian_step.y) / command_speed;
+                    }
+                    if (std::abs(command.yaw_rate_radps) > 0.0) {
+                        const double cross =
+                            previous_cartesian_body[leg].x * cartesian_body.y
+                            - previous_cartesian_body[leg].y * cartesian_body.x;
+                        const double dot =
+                            previous_cartesian_body[leg].x * cartesian_body.x
+                            + previous_cartesian_body[leg].y * cartesian_body.y;
+                        phase.clean_tripod_cartesian_counter_yaw_sum -=
+                            std::atan2(cross, dot);
+                    }
+                    ++phase.clean_tripod_cartesian_samples;
+                }
+                if (state.foot_contacts[leg] && commanded_stance
+                    && have_previous_contact_foot[leg]) {
+                    const double world_step = vecNorm(
+                        measured_world - previous_contact_foot_world[leg]);
+                    phase.max_contact_foot_world_step = std::max(
+                        phase.max_contact_foot_world_step, world_step);
+                    phase.contact_foot_world_step_sq_sum += world_step * world_step;
+                    ++phase.contact_foot_world_step_samples;
+                    const Vec3 target_step = target_body - previous_contact_target_body[leg];
+                    if (command_speed > 0.0) {
+                        phase.contact_target_opposition_sum -=
+                            (command.vx_mps * target_step.x
+                                + command.vy_mps * target_step.y) / command_speed;
+                    }
+                    if (std::abs(command.yaw_rate_radps) > 0.0) {
+                        const double cross = previous_contact_target_body[leg].x * target_body.y
+                            - previous_contact_target_body[leg].y * target_body.x;
+                        const double dot = previous_contact_target_body[leg].x * target_body.x
+                            + previous_contact_target_body[leg].y * target_body.y;
+                        phase.contact_target_counter_yaw_sum -= std::atan2(cross, dot);
+                    }
+                    ++phase.contact_target_motion_samples;
+                    if (mid_stance) {
+                        const double planar_world_step = std::hypot(
+                            measured_world.x - previous_contact_foot_world[leg].x,
+                            measured_world.y - previous_contact_foot_world[leg].y);
+                        phase.midstance_contact_world_step_sum += planar_world_step;
+                        ++phase.midstance_contact_world_step_samples;
+                        if (isTripodStanceFrame(n_planned)) {
+                            phase.midstance_tripod_contact_world_step_sum +=
+                                planar_world_step;
+                            ++phase.midstance_tripod_contact_world_step_samples;
+                        }
+                        if (isOverlapStanceFrame(n_planned)) {
+                            phase.midstance_overlap_contact_world_step_sum +=
+                                planar_world_step;
+                            ++phase.midstance_overlap_contact_world_step_samples;
+                        }
+                    }
+                }
+                have_previous_contact_foot[leg] =
+                    state.foot_contacts[leg] && commanded_stance;
+                have_previous_raw_contact[leg] = state.foot_contacts[leg];
+                have_previous_cartesian[leg] = true;
+                previous_contact_foot_world[leg] = measured_world;
+                previous_contact_target_body[leg] = target_body;
+                previous_cartesian_body[leg] = cartesian_body;
+            }
+            previous_planned_stance = frame.planned_stance;
+            previous_body_position = position;
             if (!active_segment->start_position.has_value()) {
                 active_segment->start_position = position;
                 active_segment->start_yaw = yaw;
                 active_segment->last_raw_yaw = yaw;
+                active_segment->start_velocity =
+                    state.body_twist_state.body_trans_mps.raw();
             } else if (active_segment->last_position.has_value()) {
                 active_segment->horizontal_path += std::hypot(
                     position.x - active_segment->last_position->x,
@@ -1046,6 +1758,25 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
                 active_segment->last_raw_yaw = yaw;
             }
             active_segment->last_position = position;
+            active_segment->last_velocity = state.body_twist_state.body_trans_mps.raw();
+            if (frame.phase != ReplayPhase::Stand && frame.phase != ReplayPhase::Transition) {
+                if (active_segment->valid_frames == acceleration_transient_frames) {
+                    active_segment->evaluation_start_position = position;
+                    active_segment->evaluation_last_position = position;
+                    active_segment->evaluation_start_yaw = yaw;
+                    active_segment->evaluation_last_raw_yaw = yaw;
+                } else if (active_segment->evaluation_last_position.has_value()) {
+                    active_segment->evaluation_horizontal_path += std::hypot(
+                        position.x - active_segment->evaluation_last_position->x,
+                        position.y - active_segment->evaluation_last_position->y);
+                    active_segment->evaluation_accumulated_yaw += std::remainder(
+                        yaw - active_segment->evaluation_last_raw_yaw,
+                        6.28318530717958647692);
+                    active_segment->evaluation_last_position = position;
+                    active_segment->evaluation_last_raw_yaw = yaw;
+                }
+            }
+            ++active_segment->valid_frames;
         }
 
         const auto telemetry = bridge.latestSolverTelemetry();
@@ -1132,6 +1863,15 @@ ReplayResult replayCommands(const std::vector<CapturedFrame>& frames,
         phase.peak_friction_impulse = std::max(
             phase.peak_friction_impulse,
             static_cast<double>(telemetry->peak_friction_impulse));
+        phase.peak_normal_impulse_sum += telemetry->peak_normal_impulse;
+        phase.peak_friction_impulse_sum += telemetry->peak_friction_impulse;
+        ++phase.friction_impulse_samples;
+        if (telemetry->peak_normal_impulse > 1.0e-12f) {
+            phase.friction_to_normal_ratio_sum +=
+                static_cast<double>(telemetry->peak_friction_impulse)
+                / static_cast<double>(telemetry->peak_normal_impulse);
+            ++phase.friction_ratio_samples;
+        }
         phase.peak_preintegration_linear_speed = std::max(
             phase.peak_preintegration_linear_speed,
             static_cast<double>(telemetry->preintegration_linear_speed));
@@ -1323,6 +2063,70 @@ void accumulateReplayResult(ReplayResult& total, const ReplayResult& sample) {
             in.peak_preintegration_angular_speed);
         out.actuator_work_sum += in.actuator_work_sum;
         out.mechanical_energy_delta_sum += in.mechanical_energy_delta_sum;
+        out.max_foot_tracking_error = std::max(
+            out.max_foot_tracking_error, in.max_foot_tracking_error);
+        out.foot_tracking_error_sq_sum += in.foot_tracking_error_sq_sum;
+        out.foot_tracking_error_samples += in.foot_tracking_error_samples;
+        out.max_contact_foot_world_step = std::max(
+            out.max_contact_foot_world_step, in.max_contact_foot_world_step);
+        out.contact_foot_world_step_sq_sum += in.contact_foot_world_step_sq_sum;
+        out.contact_foot_world_step_samples += in.contact_foot_world_step_samples;
+        out.contact_target_opposition_sum += in.contact_target_opposition_sum;
+        out.contact_target_counter_yaw_sum += in.contact_target_counter_yaw_sum;
+        out.contact_target_motion_samples += in.contact_target_motion_samples;
+        out.midstance_contact_world_step_sum += in.midstance_contact_world_step_sum;
+        out.midstance_contact_world_step_samples +=
+            in.midstance_contact_world_step_samples;
+        out.midstance_tripod_contact_world_step_sum +=
+            in.midstance_tripod_contact_world_step_sum;
+        out.midstance_tripod_contact_world_step_samples +=
+            in.midstance_tripod_contact_world_step_samples;
+        out.midstance_overlap_contact_world_step_sum +=
+            in.midstance_overlap_contact_world_step_sum;
+        out.midstance_overlap_contact_world_step_samples +=
+            in.midstance_overlap_contact_world_step_samples;
+        out.n_raw_contact_sum += in.n_raw_contact_sum;
+        out.n_planned_sum += in.n_planned_sum;
+        out.n_hold_sum += in.n_hold_sum;
+        out.n_late_swing_extra_sum += in.n_late_swing_extra_sum;
+        out.n_l_parked_contacted_sum += in.n_l_parked_contacted_sum;
+        out.census_frames += in.census_frames;
+        out.mixed_parked_stroking_frames += in.mixed_parked_stroking_frames;
+        out.n_contact_ge_5_frames += in.n_contact_ge_5_frames;
+        out.clean_tripod_frames += in.clean_tripod_frames;
+        for (std::size_t bin = 0; bin < out.n_raw_contact_histogram.size(); ++bin) {
+            out.n_raw_contact_histogram[bin] += in.n_raw_contact_histogram[bin];
+        }
+        out.abs_pitch_sum += in.abs_pitch_sum;
+        out.abs_roll_sum += in.abs_roll_sum;
+        out.attitude_samples += in.attitude_samples;
+        out.peak_normal_impulse_sum += in.peak_normal_impulse_sum;
+        out.peak_friction_impulse_sum += in.peak_friction_impulse_sum;
+        out.friction_to_normal_ratio_sum += in.friction_to_normal_ratio_sum;
+        out.friction_impulse_samples += in.friction_impulse_samples;
+        out.friction_ratio_samples += in.friction_ratio_samples;
+        out.contact_commanded_world_step_sum += in.contact_commanded_world_step_sum;
+        out.contact_uncommanded_slip_step_sum += in.contact_uncommanded_slip_step_sum;
+        out.contact_cmd_body_step_sum += in.contact_cmd_body_step_sum;
+        out.contact_slip_samples += in.contact_slip_samples;
+        out.midstance_commanded_world_step_sum += in.midstance_commanded_world_step_sum;
+        out.midstance_uncommanded_slip_step_sum += in.midstance_uncommanded_slip_step_sum;
+        out.midstance_cmd_body_step_sum += in.midstance_cmd_body_step_sum;
+        out.midstance_slip_samples += in.midstance_slip_samples;
+        out.clean_tripod_body_step_sum += in.clean_tripod_body_step_sum;
+        out.clean_tripod_body_samples += in.clean_tripod_body_samples;
+        out.clean_tripod_cartesian_opposition_sum +=
+            in.clean_tripod_cartesian_opposition_sum;
+        out.clean_tripod_cartesian_counter_yaw_sum +=
+            in.clean_tripod_cartesian_counter_yaw_sum;
+        out.clean_tripod_cartesian_samples += in.clean_tripod_cartesian_samples;
+        out.clean_tripod_commanded_world_step_sum +=
+            in.clean_tripod_commanded_world_step_sum;
+        out.clean_tripod_uncommanded_slip_step_sum +=
+            in.clean_tripod_uncommanded_slip_step_sum;
+        out.clean_tripod_contact_world_step_sum +=
+            in.clean_tripod_contact_world_step_sum;
+        out.clean_tripod_slip_samples += in.clean_tripod_slip_samples;
         out.completed_delta_x_sum += in.completed_delta_x_sum;
         out.completed_delta_y_sum += in.completed_delta_y_sum;
         out.completed_body_forward_sum += in.completed_body_forward_sum;
@@ -1331,6 +2135,22 @@ void accumulateReplayResult(ReplayResult& total, const ReplayResult& sample) {
         out.completed_horizontal_path_sum += in.completed_horizontal_path_sum;
         out.completed_horizontal_displacement_sum +=
             in.completed_horizontal_displacement_sum;
+        out.completed_start_body_forward_velocity_sum +=
+            in.completed_start_body_forward_velocity_sum;
+        out.completed_start_body_lateral_velocity_sum +=
+            in.completed_start_body_lateral_velocity_sum;
+        out.completed_end_body_forward_velocity_sum +=
+            in.completed_end_body_forward_velocity_sum;
+        out.completed_end_body_lateral_velocity_sum +=
+            in.completed_end_body_lateral_velocity_sum;
+        out.evaluated_body_forward_sum += in.evaluated_body_forward_sum;
+        out.evaluated_body_lateral_sum += in.evaluated_body_lateral_sum;
+        out.evaluated_yaw_delta_sum += in.evaluated_yaw_delta_sum;
+        out.evaluated_horizontal_path_sum += in.evaluated_horizontal_path_sum;
+        out.evaluated_horizontal_displacement_sum +=
+            in.evaluated_horizontal_displacement_sum;
+        out.evaluated_frames += in.evaluated_frames;
+        out.evaluated_trajectories += in.evaluated_trajectories;
         out.completed_trajectories += in.completed_trajectories;
     }
 }
@@ -1352,6 +2172,7 @@ std::string metricsJson(const ReplayResult& result,
                         const bool behavior_gates_requested,
                         const std::uint64_t behavior_gate_failures,
                         const int replay_period_us,
+                        const int capture_period_us,
                         const int solver_iterations,
                         const double body_height_m,
                         const double proximal_mu,
@@ -1369,13 +2190,374 @@ std::string metricsJson(const ReplayResult& result,
         std::uint64_t moving_target_frames{0};
         double max_target_step{0.0};
         double max_target_span{0.0};
+        std::array<Vec3, kNumLegs> previous_target_body{};
+        std::array<bool, kNumLegs> have_previous_target{};
+        std::array<bool, kNumLegs> previous_planned{};
+        double stance_target_opposition_sum{0.0};
+        double stance_target_counter_yaw_sum{0.0};
+        std::uint64_t stance_target_motion_samples{0};
+        double midstance_opposition_sum{0.0};
+        double midstance_counter_yaw_sum{0.0};
+        std::uint64_t midstance_motion_samples{0};
+        double midstance_tripod_opposition_sum{0.0};
+        double midstance_tripod_counter_yaw_sum{0.0};
+        std::uint64_t midstance_tripod_motion_samples{0};
+        double midstance_overlap_opposition_sum{0.0};
+        double midstance_overlap_counter_yaw_sum{0.0};
+        std::uint64_t midstance_overlap_motion_samples{0};
+        double midstance_high_duty_opposition_sum{0.0};
+        double midstance_high_duty_counter_yaw_sum{0.0};
+        std::uint64_t midstance_high_duty_motion_samples{0};
+        std::array<Vec3, kNumLegs> previous_cartesian_body{};
+        std::array<bool, kNumLegs> have_previous_cartesian{};
+        double midstance_cartesian_opposition_sum{0.0};
+        std::uint64_t midstance_cartesian_motion_samples{0};
+        double midstance_tripod_cartesian_opposition_sum{0.0};
+        std::uint64_t midstance_tripod_cartesian_motion_samples{0};
+        double midstance_cartesian_counter_yaw_sum{0.0};
+        std::uint64_t midstance_cartesian_yaw_samples{0};
+        double midstance_tripod_cartesian_counter_yaw_sum{0.0};
+        std::uint64_t midstance_tripod_cartesian_yaw_samples{0};
+        std::array<Vec3, kNumLegs> previous_ik_body{};
+        std::array<bool, kNumLegs> have_previous_ik{};
+        double midstance_ik_opposition_sum{0.0};
+        std::uint64_t midstance_ik_motion_samples{0};
+        double midstance_tripod_ik_opposition_sum{0.0};
+        std::uint64_t midstance_tripod_ik_motion_samples{0};
+        double midstance_ik_counter_yaw_sum{0.0};
+        std::uint64_t midstance_ik_yaw_samples{0};
+        double midstance_tripod_ik_counter_yaw_sum{0.0};
+        std::uint64_t midstance_tripod_ik_yaw_samples{0};
+        std::array<Vec3, kNumLegs> previous_aligned_fk_body{};
+        std::array<bool, kNumLegs> have_previous_aligned_fk{};
+        double midstance_aligned_fk_opposition_sum{0.0};
+        std::uint64_t midstance_aligned_fk_motion_samples{0};
+        double midstance_tripod_aligned_fk_opposition_sum{0.0};
+        std::uint64_t midstance_tripod_aligned_fk_motion_samples{0};
+        double midstance_aligned_fk_counter_yaw_sum{0.0};
+        std::uint64_t midstance_aligned_fk_yaw_samples{0};
+        double midstance_tripod_aligned_fk_counter_yaw_sum{0.0};
+        std::uint64_t midstance_tripod_aligned_fk_yaw_samples{0};
+        double midstance_stride_hz_sum{0.0};
+        double midstance_command_scale_sum{0.0};
+        double midstance_cadence_scale_sum{0.0};
+        double midstance_governed_command_speed_sum{0.0};
+        std::uint64_t midstance_stroke_clamp_hit_samples{0};
+        std::uint64_t midstance_stroke_clamp_samples{0};
+        std::uint64_t midstance_workspace_xy_hit_samples{0};
+        double midstance_tripod_cartesian_plant_hit_opposition_sum{0.0};
+        std::uint64_t midstance_tripod_cartesian_plant_hit_samples{0};
+        double midstance_tripod_cartesian_plant_miss_opposition_sum{0.0};
+        std::uint64_t midstance_tripod_cartesian_plant_miss_samples{0};
+        double midstance_tripod_cartesian_workspace_xy_hit_opposition_sum{0.0};
+        std::uint64_t midstance_tripod_cartesian_workspace_xy_hit_samples{0};
+        double midstance_tripod_cartesian_workspace_xy_miss_opposition_sum{0.0};
+        std::uint64_t midstance_tripod_cartesian_workspace_xy_miss_samples{0};
+        double midstance_tripod_cartesian_neither_hit_opposition_sum{0.0};
+        std::uint64_t midstance_tripod_cartesian_neither_hit_samples{0};
+        std::uint64_t midstance_ik_reach_hit_samples{0};
+        std::uint64_t midstance_slew_hit_samples{0};
+        double midstance_post_clamp_distortion_sum{0.0};
+        double duty_factor_sum{0.0};
+        std::uint64_t annotated_frames{0};
+        std::uint64_t high_duty_frames{0};
+        std::uint64_t tripod_frames{0};
+        std::uint64_t overlap_frames{0};
+        std::uint64_t planned_stance_samples{0};
+        std::uint64_t held_stance_samples{0};
+        std::uint64_t held_swing_samples{0};
+        std::uint64_t reverse_target_steps{0};
+        std::uint64_t reverse_planned_stance_steps{0};
+        std::uint64_t reverse_held_swing_steps{0};
+        std::uint64_t reverse_held_stance_steps{0};
+        std::uint64_t reverse_unclassified_steps{0};
+        std::uint64_t onset_reverse_steps{0};
+        std::uint64_t midstance_reverse_steps{0};
+        std::uint64_t midstance_reverse_f_increase_steps{0};
+        std::uint64_t midstance_reverse_phase_drop_steps{0};
+        std::uint64_t midstance_reverse_other_steps{0};
+        double previous_stride_phase_rate_hz{0.0};
+        bool have_previous_stride{false};
+        std::array<double, kNumLegs> previous_gait_phase{};
+        std::uint64_t safe_to_lift_samples{0};
+        double minimum_liftoff_clearance_m{std::numeric_limits<double>::infinity()};
+        double maximum_liftoff_clearance_m{-std::numeric_limits<double>::infinity()};
+        double minimum_static_margin_m{std::numeric_limits<double>::infinity()};
+        double maximum_static_margin_m{-std::numeric_limits<double>::infinity()};
     };
     std::array<CapturedPhaseMetrics, kPhaseCount> captured_phase_metrics{};
+    const HexapodGeometry captured_geometry = defaultHexapodGeometry();
+    LegFK captured_leg_fk{};
     for (const CapturedFrame& frame : captured_frames) {
         CapturedPhaseMetrics& metrics =
             captured_phase_metrics[static_cast<std::size_t>(frame.phase)];
         metrics.inhibited_frames += frame.inhibit_motion ? 1U : 0U;
         metrics.walk_mode_frames += frame.walk_mode ? 1U : 0U;
+        const PhaseCommand command = phaseCommand(frame.phase);
+        const double command_speed = std::hypot(command.vx_mps, command.vy_mps);
+        metrics.minimum_static_margin_m = std::min(
+            metrics.minimum_static_margin_m, frame.static_stability_margin_m);
+        metrics.maximum_static_margin_m = std::max(
+            metrics.maximum_static_margin_m, frame.static_stability_margin_m);
+        ++metrics.annotated_frames;
+        metrics.duty_factor_sum += frame.duty_factor;
+        if (isHighDuty(frame.duty_factor)) {
+            ++metrics.high_duty_frames;
+        }
+        const std::size_t n_planned = plannedStanceCount(frame.planned_stance);
+        if (isTripodStanceFrame(n_planned)) {
+            ++metrics.tripod_frames;
+        }
+        if (isOverlapStanceFrame(n_planned)) {
+            ++metrics.overlap_frames;
+        }
+        const bool high_duty = isHighDuty(frame.duty_factor);
+        for (std::size_t leg = 0; leg < frame.targets.leg_states.size(); ++leg) {
+            metrics.planned_stance_samples += frame.planned_stance[leg] ? 1U : 0U;
+            metrics.held_stance_samples += frame.hold_stance[leg] ? 1U : 0U;
+            metrics.held_swing_samples +=
+                frame.hold_stance[leg] && !frame.planned_stance[leg] ? 1U : 0U;
+            metrics.safe_to_lift_samples += frame.safe_to_lift[leg] ? 1U : 0U;
+            metrics.minimum_liftoff_clearance_m = std::min(
+                metrics.minimum_liftoff_clearance_m,
+                frame.liftoff_clearance_m[leg]);
+            metrics.maximum_liftoff_clearance_m = std::max(
+                metrics.maximum_liftoff_clearance_m,
+                frame.liftoff_clearance_m[leg]);
+            const bool planned = frame.planned_stance[leg];
+            const bool held = frame.hold_stance[leg];
+            const bool stance = planned || held;
+            const bool onset = isOnsetPlannedStance(
+                planned,
+                metrics.previous_planned[leg],
+                frame.gait_phase[leg],
+                frame.duty_factor);
+            const bool mid_stance = isMidPlannedStance(
+                planned, frame.gait_phase[leg], frame.duty_factor)
+                && !onset;
+            const Vec3 legacy_target = captured_leg_fk.footInBodyFrame(
+                frame.targets.leg_states[leg], captured_geometry.legGeometry[leg])
+                .pos_body_m.raw();
+            const Vec3 target_body{-legacy_target.x, legacy_target.y, legacy_target.z};
+            if (metrics.have_previous_target[leg]) {
+                const Vec3 target_step = target_body - metrics.previous_target_body[leg];
+                const double planar_step = std::hypot(target_step.x, target_step.y);
+                double opposition_step = 0.0;
+                double counter_yaw_step = 0.0;
+                if (command_speed > 0.0) {
+                    opposition_step = -(command.vx_mps * target_step.x
+                        + command.vy_mps * target_step.y) / command_speed;
+                }
+                if (std::abs(command.yaw_rate_radps) > 0.0) {
+                    const Vec3& previous = metrics.previous_target_body[leg];
+                    counter_yaw_step = -std::atan2(
+                        previous.x * target_body.y - previous.y * target_body.x,
+                        previous.x * target_body.x + previous.y * target_body.y);
+                }
+                if (stance) {
+                    metrics.stance_target_opposition_sum += opposition_step;
+                    metrics.stance_target_counter_yaw_sum += counter_yaw_step;
+                    ++metrics.stance_target_motion_samples;
+                }
+                if (mid_stance) {
+                    metrics.midstance_opposition_sum += opposition_step;
+                    metrics.midstance_counter_yaw_sum += counter_yaw_step;
+                    ++metrics.midstance_motion_samples;
+                    if (isTripodStanceFrame(n_planned)) {
+                        metrics.midstance_tripod_opposition_sum += opposition_step;
+                        metrics.midstance_tripod_counter_yaw_sum += counter_yaw_step;
+                        ++metrics.midstance_tripod_motion_samples;
+                    }
+                    if (isOverlapStanceFrame(n_planned)) {
+                        metrics.midstance_overlap_opposition_sum += opposition_step;
+                        metrics.midstance_overlap_counter_yaw_sum += counter_yaw_step;
+                        ++metrics.midstance_overlap_motion_samples;
+                    }
+                    if (high_duty) {
+                        metrics.midstance_high_duty_opposition_sum += opposition_step;
+                        metrics.midstance_high_duty_counter_yaw_sum += counter_yaw_step;
+                        ++metrics.midstance_high_duty_motion_samples;
+                    }
+                }
+                if (planar_step > 0.005) {
+                    bool reverse = false;
+                    if (command_speed > 0.0) {
+                        reverse = (command.vx_mps * target_step.x
+                            + command.vy_mps * target_step.y) / command_speed > 0.0;
+                    } else if (std::abs(command.yaw_rate_radps) > 0.0) {
+                        reverse = counter_yaw_step * command.yaw_rate_radps < 0.0;
+                    }
+                    if (reverse) {
+                        ++metrics.reverse_target_steps;
+                        if (planned) {
+                            ++metrics.reverse_planned_stance_steps;
+                        } else if (held) {
+                            ++metrics.reverse_held_swing_steps;
+                        } else {
+                            ++metrics.reverse_unclassified_steps;
+                        }
+                        if (held && planned) {
+                            ++metrics.reverse_held_stance_steps;
+                        }
+                        if (onset) {
+                            ++metrics.onset_reverse_steps;
+                        } else if (mid_stance) {
+                            ++metrics.midstance_reverse_steps;
+                            const bool f_increase = metrics.have_previous_stride
+                                && metrics.previous_stride_phase_rate_hz > 1e-9
+                                && (frame.stride_phase_rate_hz
+                                        - metrics.previous_stride_phase_rate_hz)
+                                        / metrics.previous_stride_phase_rate_hz
+                                    > 0.05;
+                            const bool phase_drop = metrics.previous_planned[leg]
+                                && frame.gait_phase[leg] < metrics.previous_gait_phase[leg];
+                            if (f_increase) {
+                                ++metrics.midstance_reverse_f_increase_steps;
+                            } else if (phase_drop) {
+                                ++metrics.midstance_reverse_phase_drop_steps;
+                            } else {
+                                ++metrics.midstance_reverse_other_steps;
+                            }
+                        }
+                    }
+                }
+            }
+            metrics.have_previous_target[leg] = true;
+            metrics.previous_target_body[leg] = target_body;
+            metrics.previous_planned[leg] = planned;
+            metrics.previous_gait_phase[leg] = frame.gait_phase[leg];
+            const Vec3 cartesian_body{
+                -frame.planned_target_body[leg].x,
+                frame.planned_target_body[leg].y,
+                frame.planned_target_body[leg].z};
+            const Vec3 ik_body{
+                -frame.pre_slew_fk_body[leg].x,
+                frame.pre_slew_fk_body[leg].y,
+                frame.pre_slew_fk_body[leg].z};
+            const Vec3 aligned_fk_body{
+                -frame.post_clamp_fk_body[leg].x,
+                frame.post_clamp_fk_body[leg].y,
+                frame.post_clamp_fk_body[leg].z};
+            const auto oppositionStep = [&](const Vec3& step) {
+                if (command_speed <= 0.0) {
+                    return 0.0;
+                }
+                return -(command.vx_mps * step.x + command.vy_mps * step.y) / command_speed;
+            };
+            const auto counterYawStep = [&](const Vec3& previous, const Vec3& current) {
+                if (std::abs(command.yaw_rate_radps) <= 0.0) {
+                    return 0.0;
+                }
+                return -std::atan2(
+                    previous.x * current.y - previous.y * current.x,
+                    previous.x * current.x + previous.y * current.y);
+            };
+            if (mid_stance) {
+                metrics.midstance_stride_hz_sum += frame.stride_phase_rate_hz;
+                metrics.midstance_command_scale_sum += frame.command_scale;
+                metrics.midstance_cadence_scale_sum += frame.cadence_scale;
+                metrics.midstance_governed_command_speed_sum +=
+                    command_speed * frame.command_scale;
+                ++metrics.midstance_stroke_clamp_samples;
+                if (frame.stroke_clamp_hit[leg]) {
+                    ++metrics.midstance_stroke_clamp_hit_samples;
+                }
+                if (frame.workspace_xy_hit[leg]) {
+                    ++metrics.midstance_workspace_xy_hit_samples;
+                }
+                if (frame.ik_reach_clamp_hit[leg]) {
+                    ++metrics.midstance_ik_reach_hit_samples;
+                }
+                if (frame.slew_clamp_hit[leg]) {
+                    ++metrics.midstance_slew_hit_samples;
+                }
+                metrics.midstance_post_clamp_distortion_sum +=
+                    frame.post_clamp_distortion_m[leg];
+            }
+            if (metrics.have_previous_cartesian[leg] && mid_stance) {
+                const Vec3 cartesian_step =
+                    cartesian_body - metrics.previous_cartesian_body[leg];
+                const double cartesian_opposition_step = oppositionStep(cartesian_step);
+                const double cartesian_yaw_step =
+                    counterYawStep(metrics.previous_cartesian_body[leg], cartesian_body);
+                metrics.midstance_cartesian_opposition_sum += cartesian_opposition_step;
+                ++metrics.midstance_cartesian_motion_samples;
+                metrics.midstance_cartesian_counter_yaw_sum += cartesian_yaw_step;
+                ++metrics.midstance_cartesian_yaw_samples;
+                if (isTripodStanceFrame(n_planned)) {
+                    metrics.midstance_tripod_cartesian_opposition_sum +=
+                        cartesian_opposition_step;
+                    ++metrics.midstance_tripod_cartesian_motion_samples;
+                    metrics.midstance_tripod_cartesian_counter_yaw_sum += cartesian_yaw_step;
+                    ++metrics.midstance_tripod_cartesian_yaw_samples;
+                    if (frame.stroke_clamp_hit[leg]) {
+                        metrics.midstance_tripod_cartesian_plant_hit_opposition_sum +=
+                            cartesian_opposition_step;
+                        ++metrics.midstance_tripod_cartesian_plant_hit_samples;
+                    } else {
+                        metrics.midstance_tripod_cartesian_plant_miss_opposition_sum +=
+                            cartesian_opposition_step;
+                        ++metrics.midstance_tripod_cartesian_plant_miss_samples;
+                    }
+                    if (frame.workspace_xy_hit[leg]) {
+                        metrics.midstance_tripod_cartesian_workspace_xy_hit_opposition_sum +=
+                            cartesian_opposition_step;
+                        ++metrics.midstance_tripod_cartesian_workspace_xy_hit_samples;
+                    } else {
+                        metrics.midstance_tripod_cartesian_workspace_xy_miss_opposition_sum +=
+                            cartesian_opposition_step;
+                        ++metrics.midstance_tripod_cartesian_workspace_xy_miss_samples;
+                    }
+                    if (!frame.stroke_clamp_hit[leg] && !frame.workspace_xy_hit[leg]) {
+                        metrics.midstance_tripod_cartesian_neither_hit_opposition_sum +=
+                            cartesian_opposition_step;
+                        ++metrics.midstance_tripod_cartesian_neither_hit_samples;
+                    }
+                }
+            }
+            if (metrics.have_previous_ik[leg] && mid_stance) {
+                const Vec3 ik_step = ik_body - metrics.previous_ik_body[leg];
+                const double ik_opposition_step = oppositionStep(ik_step);
+                const double ik_yaw_step =
+                    counterYawStep(metrics.previous_ik_body[leg], ik_body);
+                metrics.midstance_ik_opposition_sum += ik_opposition_step;
+                ++metrics.midstance_ik_motion_samples;
+                metrics.midstance_ik_counter_yaw_sum += ik_yaw_step;
+                ++metrics.midstance_ik_yaw_samples;
+                if (isTripodStanceFrame(n_planned)) {
+                    metrics.midstance_tripod_ik_opposition_sum += ik_opposition_step;
+                    ++metrics.midstance_tripod_ik_motion_samples;
+                    metrics.midstance_tripod_ik_counter_yaw_sum += ik_yaw_step;
+                    ++metrics.midstance_tripod_ik_yaw_samples;
+                }
+            }
+            if (metrics.have_previous_aligned_fk[leg] && mid_stance) {
+                const Vec3 aligned_step =
+                    aligned_fk_body - metrics.previous_aligned_fk_body[leg];
+                const double aligned_opposition_step = oppositionStep(aligned_step);
+                const double aligned_yaw_step =
+                    counterYawStep(metrics.previous_aligned_fk_body[leg], aligned_fk_body);
+                metrics.midstance_aligned_fk_opposition_sum += aligned_opposition_step;
+                ++metrics.midstance_aligned_fk_motion_samples;
+                metrics.midstance_aligned_fk_counter_yaw_sum += aligned_yaw_step;
+                ++metrics.midstance_aligned_fk_yaw_samples;
+                if (isTripodStanceFrame(n_planned)) {
+                    metrics.midstance_tripod_aligned_fk_opposition_sum +=
+                        aligned_opposition_step;
+                    ++metrics.midstance_tripod_aligned_fk_motion_samples;
+                    metrics.midstance_tripod_aligned_fk_counter_yaw_sum += aligned_yaw_step;
+                    ++metrics.midstance_tripod_aligned_fk_yaw_samples;
+                }
+            }
+            metrics.have_previous_cartesian[leg] = true;
+            metrics.previous_cartesian_body[leg] = cartesian_body;
+            metrics.have_previous_ik[leg] = true;
+            metrics.previous_ik_body[leg] = ik_body;
+            metrics.have_previous_aligned_fk[leg] = true;
+            metrics.previous_aligned_fk_body[leg] = aligned_fk_body;
+        }
+        metrics.previous_stride_phase_rate_hz = frame.stride_phase_rate_hz;
+        metrics.have_previous_stride = true;
         std::array<double, 18> current{};
         std::size_t joint_index = 0;
         for (const LegState& leg : frame.targets.leg_states) {
@@ -1437,6 +2619,14 @@ std::string metricsJson(const ReplayResult& result,
         << (behavior_gates_requested ? "true" : "false")
         << ",\"behavior_gate_failures\":" << behavior_gate_failures
         << ",\"replay_period_us\":" << replay_period_us
+        << ",\"capture_period_us\":" << capture_period_us
+        << ",\"command_score_period_us\":"
+        << commandScorePeriodUs(replay_period_us, capture_period_us)
+        << ",\"acceleration_transient_frames\":"
+        << std::max<std::uint64_t>(1, static_cast<std::uint64_t>(std::ceil(
+            kAccelerationTransientDurationS
+            / (static_cast<double>(replay_period_us) * 1.0e-6))))
+        << ",\"acceleration_transient_s\":" << kAccelerationTransientDurationS
         << ",\"solver_iteration_limit\":" << solver_iterations
         << ",\"commanded_body_height_m\":" << body_height_m
         << ",\"proximal_mu\":" << proximal_mu
@@ -1564,6 +2754,34 @@ std::string metricsJson(const ReplayResult& result,
         const double horizontal_displacement = phase.completed_trajectories == 0 ? 0.0
             : phase.completed_horizontal_displacement_sum
                 / static_cast<double>(phase.completed_trajectories);
+        const double start_body_forward_velocity = phase.completed_trajectories == 0 ? 0.0
+            : phase.completed_start_body_forward_velocity_sum
+                / static_cast<double>(phase.completed_trajectories);
+        const double start_body_lateral_velocity = phase.completed_trajectories == 0 ? 0.0
+            : phase.completed_start_body_lateral_velocity_sum
+                / static_cast<double>(phase.completed_trajectories);
+        const double end_body_forward_velocity = phase.completed_trajectories == 0 ? 0.0
+            : phase.completed_end_body_forward_velocity_sum
+                / static_cast<double>(phase.completed_trajectories);
+        const double end_body_lateral_velocity = phase.completed_trajectories == 0 ? 0.0
+            : phase.completed_end_body_lateral_velocity_sum
+                / static_cast<double>(phase.completed_trajectories);
+        const double evaluated_body_forward = phase.evaluated_trajectories == 0 ? 0.0
+            : phase.evaluated_body_forward_sum
+                / static_cast<double>(phase.evaluated_trajectories);
+        const double evaluated_body_lateral = phase.evaluated_trajectories == 0 ? 0.0
+            : phase.evaluated_body_lateral_sum
+                / static_cast<double>(phase.evaluated_trajectories);
+        const double evaluated_yaw_delta = phase.evaluated_trajectories == 0 ? 0.0
+            : phase.evaluated_yaw_delta_sum
+                / static_cast<double>(phase.evaluated_trajectories);
+        const double evaluated_horizontal_path = phase.evaluated_trajectories == 0 ? 0.0
+            : phase.evaluated_horizontal_path_sum
+                / static_cast<double>(phase.evaluated_trajectories);
+        const double evaluated_horizontal_displacement =
+            phase.evaluated_trajectories == 0 ? 0.0
+            : phase.evaluated_horizontal_displacement_sum
+                / static_cast<double>(phase.evaluated_trajectories);
         const double rms_servo_tracking_error = phase.servo_tracking_error_samples == 0
             ? 0.0
             : std::sqrt(phase.servo_tracking_error_sq_sum
@@ -1573,6 +2791,98 @@ std::string metricsJson(const ReplayResult& result,
             ? 0.0
             : phase.servo_torque_utilization_sum
                 / static_cast<double>(phase.servo_torque_utilization_samples);
+        const double rms_foot_tracking_error = phase.foot_tracking_error_samples == 0
+            ? 0.0
+            : std::sqrt(phase.foot_tracking_error_sq_sum
+                / static_cast<double>(phase.foot_tracking_error_samples));
+        const double rms_contact_foot_world_speed =
+            phase.contact_foot_world_step_samples == 0
+            ? 0.0
+            : std::sqrt(phase.contact_foot_world_step_sq_sum
+                / static_cast<double>(phase.contact_foot_world_step_samples))
+                / (static_cast<double>(replay_period_us) * 1.0e-6);
+        const double mean_contact_target_opposition_speed =
+            phase.contact_target_motion_samples == 0
+            ? 0.0
+            : phase.contact_target_opposition_sum
+                / static_cast<double>(phase.contact_target_motion_samples)
+                / (static_cast<double>(replay_period_us) * 1.0e-6);
+        const double mean_contact_target_counter_yaw_rate =
+            phase.contact_target_motion_samples == 0
+            ? 0.0
+            : phase.contact_target_counter_yaw_sum
+                / static_cast<double>(phase.contact_target_motion_samples)
+                / (static_cast<double>(replay_period_us) * 1.0e-6);
+        const double dt_s = static_cast<double>(replay_period_us) * 1.0e-6;
+        const auto meanRate = [dt_s](const double sum, const std::uint64_t samples) {
+            return samples == 0 ? 0.0 : sum / static_cast<double>(samples) / dt_s;
+        };
+        const auto meanValue = [](const double sum, const std::uint64_t samples) {
+            return samples == 0 ? 0.0 : sum / static_cast<double>(samples);
+        };
+        const double mean_midstance_contact_world_speed =
+            meanRate(phase.midstance_contact_world_step_sum,
+                     phase.midstance_contact_world_step_samples);
+        const double mean_midstance_tripod_contact_world_speed =
+            meanRate(phase.midstance_tripod_contact_world_step_sum,
+                     phase.midstance_tripod_contact_world_step_samples);
+        const double mean_midstance_overlap_contact_world_speed =
+            meanRate(phase.midstance_overlap_contact_world_step_sum,
+                     phase.midstance_overlap_contact_world_step_samples);
+        const double mean_n_raw_contact =
+            meanValue(phase.n_raw_contact_sum, phase.census_frames);
+        const double mean_n_planned = meanValue(phase.n_planned_sum, phase.census_frames);
+        const double mean_n_hold = meanValue(phase.n_hold_sum, phase.census_frames);
+        const double mean_n_late_swing_extra =
+            meanValue(phase.n_late_swing_extra_sum, phase.census_frames);
+        const double mean_n_l_parked_contacted =
+            meanValue(phase.n_l_parked_contacted_sum, phase.census_frames);
+        const double fraction_mixed_parked_stroking =
+            meanValue(static_cast<double>(phase.mixed_parked_stroking_frames),
+                      phase.census_frames);
+        const double fraction_n_contact_ge_5 =
+            meanValue(static_cast<double>(phase.n_contact_ge_5_frames),
+                      phase.census_frames);
+        const double clean_tripod_frame_fraction =
+            meanValue(static_cast<double>(phase.clean_tripod_frames),
+                      phase.census_frames);
+        const double mean_abs_body_pitch =
+            meanValue(phase.abs_pitch_sum, phase.attitude_samples);
+        const double mean_abs_body_roll =
+            meanValue(phase.abs_roll_sum, phase.attitude_samples);
+        const double mean_peak_normal_impulse =
+            meanValue(phase.peak_normal_impulse_sum, phase.friction_impulse_samples);
+        const double mean_peak_friction_impulse =
+            meanValue(phase.peak_friction_impulse_sum, phase.friction_impulse_samples);
+        const double mean_friction_to_normal_ratio =
+            meanValue(phase.friction_to_normal_ratio_sum, phase.friction_ratio_samples);
+        const double mean_contact_commanded_world_speed =
+            meanRate(phase.contact_commanded_world_step_sum, phase.contact_slip_samples);
+        const double mean_contact_uncommanded_slip_speed =
+            meanRate(phase.contact_uncommanded_slip_step_sum, phase.contact_slip_samples);
+        const double mean_midstance_commanded_world_speed =
+            meanRate(phase.midstance_commanded_world_step_sum,
+                     phase.midstance_slip_samples);
+        const double mean_midstance_uncommanded_slip_speed =
+            meanRate(phase.midstance_uncommanded_slip_step_sum,
+                     phase.midstance_slip_samples);
+        const double mean_clean_tripod_body_speed =
+            meanRate(phase.clean_tripod_body_step_sum, phase.clean_tripod_body_samples);
+        const double mean_clean_tripod_cartesian_opposition_speed =
+            meanRate(phase.clean_tripod_cartesian_opposition_sum,
+                     phase.clean_tripod_cartesian_samples);
+        const double mean_clean_tripod_cartesian_counter_yaw_rate =
+            meanRate(phase.clean_tripod_cartesian_counter_yaw_sum,
+                     phase.clean_tripod_cartesian_samples);
+        const double mean_clean_tripod_commanded_world_speed =
+            meanRate(phase.clean_tripod_commanded_world_step_sum,
+                     phase.clean_tripod_slip_samples);
+        const double mean_clean_tripod_uncommanded_slip_speed =
+            meanRate(phase.clean_tripod_uncommanded_slip_step_sum,
+                     phase.clean_tripod_slip_samples);
+        const double mean_clean_tripod_contact_world_speed =
+            meanRate(phase.clean_tripod_contact_world_step_sum,
+                     phase.clean_tripod_slip_samples);
         const PhaseCommand command = phaseCommand(static_cast<ReplayPhase>(i));
         const double frames_per_trajectory = phase.completed_trajectories == 0 ? 0.0
             : static_cast<double>(phase.frames)
@@ -1590,6 +2900,41 @@ std::string metricsJson(const ReplayResult& result,
             command_progress = ux * body_forward + uy * body_lateral;
             command_lateral = -uy * body_forward + ux * body_lateral;
         }
+        double evaluated_command_progress = 0.0;
+        double evaluated_command_lateral = 0.0;
+        if (command_speed > 0.0) {
+            const double ux = command.vx_mps / command_speed;
+            const double uy = command.vy_mps / command_speed;
+            evaluated_command_progress =
+                ux * evaluated_body_forward + uy * evaluated_body_lateral;
+            evaluated_command_lateral =
+                -uy * evaluated_body_forward + ux * evaluated_body_lateral;
+        }
+        const double score_period_us = static_cast<double>(
+            commandScorePeriodUs(replay_period_us, capture_period_us));
+        const double evaluated_commanded_translation = command_speed
+            * static_cast<double>(phase.evaluated_frames)
+            / static_cast<double>(std::max<std::uint64_t>(phase.evaluated_trajectories, 1))
+            * score_period_us * 1.0e-6;
+        const double evaluated_commanded_yaw = command.yaw_rate_radps
+            * static_cast<double>(phase.evaluated_frames)
+            / static_cast<double>(std::max<std::uint64_t>(phase.evaluated_trajectories, 1))
+            * score_period_us * 1.0e-6;
+        bool behavior_gate_passed = false;
+        if (phase.evaluated_trajectories > 0) {
+            if (command_speed > 0.0) {
+                behavior_gate_passed =
+                    evaluated_command_progress
+                        >= kMinimumCommandProgressRatio * evaluated_commanded_translation
+                    && std::abs(evaluated_command_lateral)
+                        <= kMaximumLateralPathFraction * evaluated_horizontal_path
+                            + kLateralAllowanceM;
+            } else if (static_cast<ReplayPhase>(i) == ReplayPhase::TurnInPlace) {
+                behavior_gate_passed =
+                    evaluated_yaw_delta >= kMinimumCommandProgressRatio * evaluated_commanded_yaw
+                    && evaluated_horizontal_displacement <= kMaximumTurnTranslationM;
+            }
+        }
         out << "{\"name\":\"" << kPhaseNames[i]
             << "\",\"frames\":" << phase.frames
             << ",\"healthy\":" << phase.healthy
@@ -1602,6 +2947,166 @@ std::string metricsJson(const ReplayResult& result,
             << ",\"captured_moving_target_frames\":" << captured.moving_target_frames
             << ",\"captured_max_target_step_rad\":" << captured.max_target_step
             << ",\"captured_max_target_span_rad\":" << captured.max_target_span
+            << ",\"captured_planned_stance_samples\":"
+            << captured.planned_stance_samples
+            << ",\"captured_held_stance_samples\":"
+            << captured.held_stance_samples
+            << ",\"captured_held_swing_samples\":"
+            << captured.held_swing_samples
+            << ",\"captured_reverse_target_steps\":"
+            << captured.reverse_target_steps
+            << ",\"captured_reverse_planned_stance_steps\":"
+            << captured.reverse_planned_stance_steps
+            << ",\"captured_reverse_held_swing_steps\":"
+            << captured.reverse_held_swing_steps
+            << ",\"captured_reverse_held_stance_steps\":"
+            << captured.reverse_held_stance_steps
+            << ",\"captured_reverse_unclassified_steps\":"
+            << captured.reverse_unclassified_steps
+            << ",\"captured_onset_reverse_steps\":"
+            << captured.onset_reverse_steps
+            << ",\"captured_midstance_reverse_steps\":"
+            << captured.midstance_reverse_steps
+            << ",\"captured_midstance_reverse_f_increase_steps\":"
+            << captured.midstance_reverse_f_increase_steps
+            << ",\"captured_midstance_reverse_phase_drop_steps\":"
+            << captured.midstance_reverse_phase_drop_steps
+            << ",\"captured_midstance_reverse_other_steps\":"
+            << captured.midstance_reverse_other_steps
+            << ",\"captured_mean_duty_factor\":"
+            << (captured.annotated_frames == 0
+                    ? 0.0
+                    : captured.duty_factor_sum
+                        / static_cast<double>(captured.annotated_frames))
+            << ",\"captured_high_duty_frames\":" << captured.high_duty_frames
+            << ",\"captured_tripod_frames\":" << captured.tripod_frames
+            << ",\"captured_overlap_frames\":" << captured.overlap_frames
+            << ",\"captured_safe_to_lift_samples\":"
+            << captured.safe_to_lift_samples
+            << ",\"captured_min_liftoff_clearance_m\":"
+            << (std::isfinite(captured.minimum_liftoff_clearance_m)
+                    ? captured.minimum_liftoff_clearance_m
+                    : 0.0)
+            << ",\"captured_max_liftoff_clearance_m\":"
+            << (std::isfinite(captured.maximum_liftoff_clearance_m)
+                    ? captured.maximum_liftoff_clearance_m
+                    : 0.0)
+            << ",\"captured_min_static_margin_m\":"
+            << (std::isfinite(captured.minimum_static_margin_m)
+                    ? captured.minimum_static_margin_m
+                    : 0.0)
+            << ",\"captured_max_static_margin_m\":"
+            << (std::isfinite(captured.maximum_static_margin_m)
+                    ? captured.maximum_static_margin_m
+                    : 0.0)
+            << ",\"captured_mean_stance_target_opposition_speed_mps\":"
+            << meanRate(captured.stance_target_opposition_sum,
+                        captured.stance_target_motion_samples)
+            << ",\"captured_mean_stance_target_counter_yaw_rate_radps\":"
+            << meanRate(captured.stance_target_counter_yaw_sum,
+                        captured.stance_target_motion_samples)
+            << ",\"captured_mean_midstance_opposition_speed_mps\":"
+            << meanRate(captured.midstance_opposition_sum,
+                        captured.midstance_motion_samples)
+            << ",\"captured_mean_midstance_counter_yaw_rate_radps\":"
+            << meanRate(captured.midstance_counter_yaw_sum,
+                        captured.midstance_motion_samples)
+            << ",\"captured_mean_midstance_tripod_opposition_speed_mps\":"
+            << meanRate(captured.midstance_tripod_opposition_sum,
+                        captured.midstance_tripod_motion_samples)
+            << ",\"captured_mean_midstance_tripod_counter_yaw_rate_radps\":"
+            << meanRate(captured.midstance_tripod_counter_yaw_sum,
+                        captured.midstance_tripod_motion_samples)
+            << ",\"captured_mean_midstance_overlap_opposition_speed_mps\":"
+            << meanRate(captured.midstance_overlap_opposition_sum,
+                        captured.midstance_overlap_motion_samples)
+            << ",\"captured_mean_midstance_overlap_counter_yaw_rate_radps\":"
+            << meanRate(captured.midstance_overlap_counter_yaw_sum,
+                        captured.midstance_overlap_motion_samples)
+            << ",\"captured_mean_midstance_high_duty_opposition_speed_mps\":"
+            << meanRate(captured.midstance_high_duty_opposition_sum,
+                        captured.midstance_high_duty_motion_samples)
+            << ",\"captured_mean_midstance_high_duty_counter_yaw_rate_radps\":"
+            << meanRate(captured.midstance_high_duty_counter_yaw_sum,
+                        captured.midstance_high_duty_motion_samples)
+            << ",\"captured_mean_midstance_stride_hz\":"
+            << meanValue(captured.midstance_stride_hz_sum,
+                         captured.midstance_stroke_clamp_samples)
+            << ",\"captured_mean_midstance_command_scale\":"
+            << meanValue(captured.midstance_command_scale_sum,
+                         captured.midstance_stroke_clamp_samples)
+            << ",\"captured_mean_midstance_cadence_scale\":"
+            << meanValue(captured.midstance_cadence_scale_sum,
+                         captured.midstance_stroke_clamp_samples)
+            << ",\"captured_midstance_stroke_clamp_hit_fraction\":"
+            << meanValue(static_cast<double>(captured.midstance_stroke_clamp_hit_samples),
+                         captured.midstance_stroke_clamp_samples)
+            << ",\"captured_midstance_workspace_xy_hit_fraction\":"
+            << meanValue(static_cast<double>(captured.midstance_workspace_xy_hit_samples),
+                         captured.midstance_stroke_clamp_samples)
+            << ",\"captured_mean_midstance_tripod_cartesian_opposition_speed_mps_plant_hit\":"
+            << meanRate(captured.midstance_tripod_cartesian_plant_hit_opposition_sum,
+                        captured.midstance_tripod_cartesian_plant_hit_samples)
+            << ",\"captured_mean_midstance_tripod_cartesian_opposition_speed_mps_plant_miss\":"
+            << meanRate(captured.midstance_tripod_cartesian_plant_miss_opposition_sum,
+                        captured.midstance_tripod_cartesian_plant_miss_samples)
+            << ",\"captured_mean_midstance_tripod_cartesian_opposition_speed_mps_workspace_xy_hit\":"
+            << meanRate(captured.midstance_tripod_cartesian_workspace_xy_hit_opposition_sum,
+                        captured.midstance_tripod_cartesian_workspace_xy_hit_samples)
+            << ",\"captured_mean_midstance_tripod_cartesian_opposition_speed_mps_workspace_xy_miss\":"
+            << meanRate(captured.midstance_tripod_cartesian_workspace_xy_miss_opposition_sum,
+                        captured.midstance_tripod_cartesian_workspace_xy_miss_samples)
+            << ",\"captured_mean_midstance_tripod_cartesian_opposition_speed_mps_neither_hit\":"
+            << meanRate(captured.midstance_tripod_cartesian_neither_hit_opposition_sum,
+                        captured.midstance_tripod_cartesian_neither_hit_samples)
+            << ",\"captured_mean_midstance_cartesian_opposition_speed_mps\":"
+            << meanRate(captured.midstance_cartesian_opposition_sum,
+                        captured.midstance_cartesian_motion_samples)
+            << ",\"captured_mean_midstance_tripod_cartesian_opposition_speed_mps\":"
+            << meanRate(captured.midstance_tripod_cartesian_opposition_sum,
+                        captured.midstance_tripod_cartesian_motion_samples)
+            << ",\"captured_mean_midstance_cartesian_counter_yaw_rate_radps\":"
+            << meanRate(captured.midstance_cartesian_counter_yaw_sum,
+                        captured.midstance_cartesian_yaw_samples)
+            << ",\"captured_mean_midstance_tripod_cartesian_counter_yaw_rate_radps\":"
+            << meanRate(captured.midstance_tripod_cartesian_counter_yaw_sum,
+                        captured.midstance_tripod_cartesian_yaw_samples)
+            << ",\"captured_mean_midstance_ik_opposition_speed_mps\":"
+            << meanRate(captured.midstance_ik_opposition_sum,
+                        captured.midstance_ik_motion_samples)
+            << ",\"captured_mean_midstance_tripod_ik_opposition_speed_mps\":"
+            << meanRate(captured.midstance_tripod_ik_opposition_sum,
+                        captured.midstance_tripod_ik_motion_samples)
+            << ",\"captured_mean_midstance_ik_counter_yaw_rate_radps\":"
+            << meanRate(captured.midstance_ik_counter_yaw_sum,
+                        captured.midstance_ik_yaw_samples)
+            << ",\"captured_mean_midstance_tripod_ik_counter_yaw_rate_radps\":"
+            << meanRate(captured.midstance_tripod_ik_counter_yaw_sum,
+                        captured.midstance_tripod_ik_yaw_samples)
+            << ",\"captured_mean_midstance_aligned_fk_opposition_speed_mps\":"
+            << meanRate(captured.midstance_aligned_fk_opposition_sum,
+                        captured.midstance_aligned_fk_motion_samples)
+            << ",\"captured_mean_midstance_tripod_aligned_fk_opposition_speed_mps\":"
+            << meanRate(captured.midstance_tripod_aligned_fk_opposition_sum,
+                        captured.midstance_tripod_aligned_fk_motion_samples)
+            << ",\"captured_mean_midstance_aligned_fk_counter_yaw_rate_radps\":"
+            << meanRate(captured.midstance_aligned_fk_counter_yaw_sum,
+                        captured.midstance_aligned_fk_yaw_samples)
+            << ",\"captured_mean_midstance_tripod_aligned_fk_counter_yaw_rate_radps\":"
+            << meanRate(captured.midstance_tripod_aligned_fk_counter_yaw_sum,
+                        captured.midstance_tripod_aligned_fk_yaw_samples)
+            << ",\"captured_midstance_ik_reach_hit_fraction\":"
+            << meanValue(static_cast<double>(captured.midstance_ik_reach_hit_samples),
+                         captured.midstance_stroke_clamp_samples)
+            << ",\"captured_midstance_slew_hit_fraction\":"
+            << meanValue(static_cast<double>(captured.midstance_slew_hit_samples),
+                         captured.midstance_stroke_clamp_samples)
+            << ",\"captured_mean_midstance_post_clamp_distortion_m\":"
+            << meanValue(captured.midstance_post_clamp_distortion_sum,
+                         captured.midstance_stroke_clamp_samples)
+            << ",\"captured_mean_midstance_governed_command_speed_mps\":"
+            << meanValue(captured.midstance_governed_command_speed_sum,
+                         captured.midstance_stroke_clamp_samples)
             << ",\"solver_not_converged\":" << phase.solver_not_converged
             << ",\"topology_changes\":" << phase.topology_changes
             << ",\"high_iteration_topology_changes\":"
@@ -1640,6 +3145,64 @@ std::string metricsJson(const ReplayResult& result,
             << ",\"actuator_work_j\":" << phase.actuator_work_sum
             << ",\"mechanical_energy_delta_j\":"
             << phase.mechanical_energy_delta_sum
+            << ",\"max_foot_tracking_error_m\":" << phase.max_foot_tracking_error
+            << ",\"rms_foot_tracking_error_m\":" << rms_foot_tracking_error
+            << ",\"max_contact_foot_world_step_m\":"
+            << phase.max_contact_foot_world_step
+            << ",\"rms_contact_foot_world_speed_mps\":"
+            << rms_contact_foot_world_speed
+            << ",\"mean_midstance_contact_world_speed_mps\":"
+            << mean_midstance_contact_world_speed
+            << ",\"mean_midstance_tripod_contact_world_speed_mps\":"
+            << mean_midstance_tripod_contact_world_speed
+            << ",\"mean_midstance_overlap_contact_world_speed_mps\":"
+            << mean_midstance_overlap_contact_world_speed
+            << ",\"mean_n_raw_contact\":" << mean_n_raw_contact
+            << ",\"mean_n_planned\":" << mean_n_planned
+            << ",\"mean_n_hold\":" << mean_n_hold
+            << ",\"mean_n_late_swing_extra\":" << mean_n_late_swing_extra
+            << ",\"mean_n_L_parked_contacted\":" << mean_n_l_parked_contacted
+            << ",\"n_raw_contact_histogram\":[";
+        for (std::size_t bin = 0; bin < phase.n_raw_contact_histogram.size(); ++bin) {
+            if (bin != 0) {
+                out << ',';
+            }
+            out << phase.n_raw_contact_histogram[bin];
+        }
+        out << "]"
+            << ",\"fraction_mixed_parked_stroking\":" << fraction_mixed_parked_stroking
+            << ",\"fraction_n_contact_ge_5\":" << fraction_n_contact_ge_5
+            << ",\"clean_tripod_frames\":" << phase.clean_tripod_frames
+            << ",\"clean_tripod_frame_fraction\":" << clean_tripod_frame_fraction
+            << ",\"mean_abs_body_pitch_rad\":" << mean_abs_body_pitch
+            << ",\"mean_abs_body_roll_rad\":" << mean_abs_body_roll
+            << ",\"mean_peak_normal_impulse_ns\":" << mean_peak_normal_impulse
+            << ",\"mean_peak_friction_impulse_ns\":" << mean_peak_friction_impulse
+            << ",\"mean_friction_to_normal_impulse_ratio\":"
+            << mean_friction_to_normal_ratio
+            << ",\"mean_contact_commanded_world_speed_mps\":"
+            << mean_contact_commanded_world_speed
+            << ",\"mean_contact_uncommanded_slip_speed_mps\":"
+            << mean_contact_uncommanded_slip_speed
+            << ",\"mean_midstance_commanded_world_speed_mps\":"
+            << mean_midstance_commanded_world_speed
+            << ",\"mean_midstance_uncommanded_slip_speed_mps\":"
+            << mean_midstance_uncommanded_slip_speed
+            << ",\"mean_clean_tripod_body_speed_mps\":" << mean_clean_tripod_body_speed
+            << ",\"mean_clean_tripod_cartesian_opposition_speed_mps\":"
+            << mean_clean_tripod_cartesian_opposition_speed
+            << ",\"mean_clean_tripod_cartesian_counter_yaw_rate_radps\":"
+            << mean_clean_tripod_cartesian_counter_yaw_rate
+            << ",\"mean_clean_tripod_commanded_world_speed_mps\":"
+            << mean_clean_tripod_commanded_world_speed
+            << ",\"mean_clean_tripod_uncommanded_slip_speed_mps\":"
+            << mean_clean_tripod_uncommanded_slip_speed
+            << ",\"mean_clean_tripod_contact_world_speed_mps\":"
+            << mean_clean_tripod_contact_world_speed
+            << ",\"mean_contact_target_opposition_speed_mps\":"
+            << mean_contact_target_opposition_speed
+            << ",\"mean_contact_target_counter_yaw_rate_radps\":"
+            << mean_contact_target_counter_yaw_rate
             << ",\"valid_delta_x_m\":" << dx
             << ",\"valid_delta_y_m\":" << dy
             << ",\"body_forward_delta_m\":" << body_forward
@@ -1651,6 +3214,22 @@ std::string metricsJson(const ReplayResult& result,
             << ",\"commanded_yaw_rad\":" << commanded_yaw
             << ",\"horizontal_path_m\":" << horizontal_path
             << ",\"horizontal_displacement_m\":" << horizontal_displacement
+            << ",\"start_body_forward_velocity_mps\":" << start_body_forward_velocity
+            << ",\"start_body_lateral_velocity_mps\":" << start_body_lateral_velocity
+            << ",\"end_body_forward_velocity_mps\":" << end_body_forward_velocity
+            << ",\"end_body_lateral_velocity_mps\":" << end_body_lateral_velocity
+            << ",\"evaluated_command_progress_m\":" << evaluated_command_progress
+            << ",\"evaluated_command_lateral_m\":" << evaluated_command_lateral
+            << ",\"evaluated_commanded_translation_m\":"
+            << evaluated_commanded_translation
+            << ",\"evaluated_yaw_delta_rad\":" << evaluated_yaw_delta
+            << ",\"evaluated_commanded_yaw_rad\":" << evaluated_commanded_yaw
+            << ",\"evaluated_horizontal_path_m\":" << evaluated_horizontal_path
+            << ",\"evaluated_horizontal_displacement_m\":"
+            << evaluated_horizontal_displacement
+            << ",\"evaluated_frames\":" << phase.evaluated_frames
+            << ",\"behavior_gate_passed\":"
+            << (behavior_gate_passed ? "true" : "false")
             << ",\"completed_trajectories\":" << phase.completed_trajectories << '}';
     }
     out << "]}";
@@ -1674,7 +3253,16 @@ int main(int argc, char** argv) {
     }
 
     try {
-        const auto harness = physics_sim_test_utils::loadHarnessSettings(true);
+        auto harness = physics_sim_test_utils::loadHarnessSettings(true);
+        if (const char* blend = std::getenv("HEXAPOD_FOOT_ESTIMATOR_BLEND")) {
+            harness.control_cfg.gait.foot_estimator_blend =
+                std::clamp(std::atof(blend), 0.0, 1.0);
+        }
+        if (const char* swing_scale =
+                std::getenv("HEXAPOD_EXACT_REPLAY_SWING_HEIGHT_SCALE")) {
+            harness.control_cfg.gait.swing_height_scale =
+                std::clamp(std::atof(swing_scale), 0.25, 3.0);
+        }
         int stand_frames = positiveEnvOrDefault("HEXAPOD_EXACT_REPLAY_STAND_FRAMES", 240);
         int motion_frames = positiveEnvOrDefault("HEXAPOD_EXACT_REPLAY_MOTION_FRAMES", 72);
         int transition_frames =
@@ -1856,7 +3444,8 @@ int main(int argc, char** argv) {
                           << " read_failures=" << seed_result.read_failures
                           << " max_iterations=" << seed_result.max_iterations << '\n';
             }
-            if (!passesBehaviorGates(seed_result, replay_period_us)) {
+            if (!passesBehaviorGates(
+                    seed_result, replay_period_us, fixture.capture_period_us)) {
                 ++behavior_gate_failures;
             }
             accumulateReplayResult(result, seed_result);
@@ -1900,6 +3489,7 @@ int main(int argc, char** argv) {
                                                 behavior_gates_requested,
                                                 behavior_gate_failures,
                                                 replay_period_us,
+                                                fixture.capture_period_us,
                                                 solver_iterations,
                                                 body_height_m,
                                                 proximal_mu,

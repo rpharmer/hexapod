@@ -189,7 +189,7 @@ std::array<Vec3, kNumLegs> nominalStancePositions(const HexapodGeometry& geometr
             std::max(0.0, femur_tibia_reach * femur_tibia_reach - foot_z_in_leg_frame * foot_z_in_leg_frame));
         const double rho = std::min(desired_rho, max_rho);
         const Vec3 neutral_leg_frame{leg_geo.coxaLength.value + rho, 0.0, foot_z_in_leg_frame};
-        const Mat3 body_from_leg = Mat3::rotZ(leg_geo.mountAngle.value);
+        const Mat3 body_from_leg = bodyFromLegFrame(leg_geo);
         nominal[static_cast<std::size_t>(leg)] = leg_geo.bodyCoxaOffset + (body_from_leg * neutral_leg_frame);
     }
     return nominal;

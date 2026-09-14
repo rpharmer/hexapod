@@ -100,6 +100,7 @@ constexpr Real kFootMass = static_cast<float>(hexapod_dynamics::kFootMassKg);
 constexpr Real kCoxaLength = 0.043;
 constexpr Real kFemurLength = 0.060;
 constexpr Real kTibiaLength = static_cast<float>(hexapod_dynamics::kTibiaLinkLengthM);
+constexpr Real kTibiaKinematicReach = kTibiaLength + physics_sim::kHexapodFootRadiusM;
 constexpr Real kBodyToBottom = 0.040;
 constexpr Real kHipMountOutboard = 0.010;
 constexpr Real kCoxaRenderLength = kCoxaLength;
@@ -280,7 +281,7 @@ Real ComputeStandingBodyHeight() {
         kHexapodLegSpecs.front().mountOffsetBody
         + leg_axis * kCoxaLength
         + femur_direction * kFemurLength
-        + tibia_direction * kTibiaLength;
+        + tibia_direction * kTibiaKinematicReach;
     // Extra clearance so the first contact frames do not start with feet intersecting the plane when
     // identical servos ramp holding torque (slightly conservative over analytic foot height).
     constexpr Real kSpawnHeightMargin = 0.002;
@@ -291,13 +292,19 @@ Real ComputeStandingBodyHeight() {
 HexapodSceneObjects BuildHexapodScene(World& world) {
     HexapodSceneObjects scene{};
 
+    ContactSolverConfig contact_config = world.GetContactSolverConfig();
+    contact_config.penetrationSlop = 0.002;
+    contact_config.penetrationBiasFactor = 0.20;
+    world.SetContactSolverConfig(contact_config);
+
     Body plane;
     plane.shape = ShapeType::Plane;
     plane.planeNormal = {0.0, 1.0, 0.0};
     plane.planeOffset = 0.0;
     plane.restitution = 0.05;
-    plane.staticFriction = 0.9;
-    plane.dynamicFriction = 0.65;
+    plane.staticFriction = 2.0;
+    // Match static so Pinocchio (dynamic-only average) can hold a 3-leg stroke.
+    plane.dynamicFriction = 2.0;
     plane.collisionMask = ~std::uint32_t(0x0002);
     scene.plane = world.CreateBody(plane);
     scene.body_ids.push_back(scene.plane);
@@ -326,8 +333,10 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
         const Vec3 femur_center = femur_anchor + femur_direction * kFemurHalfLength;
         const Vec3 tibia_anchor = femur_anchor + femur_direction * kFemurLength;
         const Vec3 tibia_center = tibia_anchor + tibia_direction * kTibiaHalfLength;
-        const Vec3 tibia_tip = tibia_anchor + tibia_direction * kTibiaLength;
-        const Vec3 foot_center = tibia_tip;
+        // The configured 104 mm tibia reach ends at the centre of the rounded
+        // foot. The rigid shaft is one foot radius shorter, so its distal end
+        // meets the proximal surface of the sphere rather than its centre.
+        const Vec3 foot_center = tibia_anchor + tibia_direction * kTibiaKinematicReach;
 
         Body coxa = MakeBoxLinkBody(
             coxa_center,
@@ -352,8 +361,8 @@ HexapodSceneObjects BuildHexapodScene(World& world) {
         tibia.orientation = tibia_orientation;
         tibia.mass = kTibiaMass + kFootMass;
         tibia.restitution = 0.0;
-        tibia.staticFriction = 0.60;
-        tibia.dynamicFriction = 0.45;
+        tibia.staticFriction = 2.0;
+        tibia.dynamicFriction = 2.0;
         tibia.linearDamping = 2.0;
         tibia.angularDamping = 10.0;
         tibia.compoundChildren = {

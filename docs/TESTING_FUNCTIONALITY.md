@@ -301,11 +301,18 @@ These are the highest-value tests for tracking improvements across commits.
   - usually assertion-style `FAIL: ...` with non-zero exit
   - some tests print intermediate values useful for triage
 
-### 4) `test_physics_sim_exact_command_replay` (proximal diagnostic)
+### 4) `test_physics_sim_exact_command_replay` (proximal acceptance gate)
 
 - Location: `hexapod-server/tests/test_physics_sim_exact_command_replay.cpp`
-- This is built as a diagnostic executable but is not a default CTest until the
-  proximal locomotion gates pass.
+- Fixture: `hexapod-server/tests/fixtures/hexapod-commands-v16.txt` (hash
+  `ddc6008e0cc1ac97`, 720 frames, capture 5000 µs). Do not recapture for CTest.
+- Default live-physics CTests (cap 24, both enforce flags, seed 0):
+  - `physics_sim_exact_command_replay` (fixture capture period)
+  - `physics_sim_exact_command_replay_120hz` (`PERIOD_US=8333`)
+  - `physics_sim_exact_command_replay_240hz` (`PERIOD_US=4167`)
+  - `physics_sim_exact_command_replay_480hz` (`PERIOD_US=2083`)
+- 100-seed perturbation remains a diagnostic override
+  (`HEXAPOD_EXACT_REPLAY_PERTURBATION_SEEDS`), not a default CTest.
 - Purpose:
   - capture the exact `JointTargets` produced by a physically coupled legacy
     reference run
@@ -319,6 +326,70 @@ These are the highest-value tests for tracking improvements across commits.
   - report capture-side motion inhibition, WALK-mode residency, and joint-target
     variation so a frozen or safety-inhibited command stream cannot masquerade as
     a contact-solver locomotion result
+  - count reverse stance-target steps (`|Δp_xy| > 5 mm` against the command)
+    split by planned stance, held swing, held stance, and unclassified
+    (late-swing contact is invisible to the planned/hold flags)
+  - split those reverse steps into onset (new plant or `φ/duty ≤ 0.05`) vs
+    continuing mid-stance (`0.05 < φ/duty < 0.95` and already planned)
+  - report capture-side mid-stance commanded stroke (opposition / counter-yaw)
+    overall and split by tripod (`n_planned == 3`), overlap (`n_planned ≥ 4`),
+    and high-duty walk-entry (`duty > 0.70`), plus mean duty and frame counts
+  - report replay-side mid-stance planar contact world speed (plant slip) overall
+    and split by tripod vs overlap; onset world steps are excluded
+  - JSON keys (diagnostic, not behaviour gates):
+    `captured_onset_reverse_steps`, `captured_midstance_reverse_steps`,
+    `captured_midstance_reverse_f_increase_steps` (`Δf/f > 5%`),
+    `captured_midstance_reverse_phase_drop_steps` (`Δφ < 0` while still planned),
+    `captured_midstance_reverse_other_steps`,
+    `captured_mean_duty_factor`, `captured_high_duty_frames`,
+    `captured_tripod_frames`, `captured_overlap_frames`,
+    `captured_mean_midstance_opposition_speed_mps`,
+    `captured_mean_midstance_counter_yaw_rate_radps`, and the same means with
+    `_tripod_`, `_overlap_`, and `_high_duty_` infixes;
+    `captured_mean_midstance_stride_hz`,
+    `captured_mean_midstance_command_scale`,
+    `captured_mean_midstance_cadence_scale`,
+    `captured_midstance_stroke_clamp_hit_fraction`,
+    `captured_midstance_workspace_xy_hit_fraction`,
+    `captured_mean_midstance_tripod_cartesian_opposition_speed_mps_plant_hit` /
+    `_plant_miss` / `_workspace_xy_hit` / `_workspace_xy_miss` / `_neither_hit`,
+    `captured_mean_midstance_cartesian_opposition_speed_mps` (BodyController
+    targets, same `-x` conversion as FK) plus `_tripod_` split,
+    `captured_mean_midstance_cartesian_counter_yaw_rate_radps` plus `_tripod_`,
+    `captured_mean_midstance_ik_opposition_speed_mps` (pre-slew FK of pipeline
+    joints) plus `_tripod_` and matching counter-yaw keys,
+    `captured_mean_midstance_aligned_fk_opposition_speed_mps` (post-slew FK from
+    the same control step as Cartesian) plus `_tripod_` and matching counter-yaw,
+    `captured_midstance_ik_reach_hit_fraction`,
+    `captured_midstance_slew_hit_fraction`,
+    `captured_mean_midstance_post_clamp_distortion_m`,
+    `captured_mean_midstance_governed_command_speed_mps` (`|v| * command_scale`);
+    `mean_midstance_contact_world_speed_mps`,
+    `mean_midstance_tripod_contact_world_speed_mps`,
+    `mean_midstance_overlap_contact_world_speed_mps`;
+    contact census and commanded vs uncommanded slip (replay-side live
+    `foot_contacts` plus capture planned/hold/`L` flags, no fixture recapture):
+    `mean_n_raw_contact`, `mean_n_planned`, `mean_n_hold`,
+    `mean_n_late_swing_extra` (`contact && !planned && !hold`),
+    `mean_n_L_parked_contacted`, `n_raw_contact_histogram` (counts for `n=0..6`),
+    `fraction_mixed_parked_stroking`, `fraction_n_contact_ge_5`,
+    `clean_tripod_frames` / `clean_tripod_frame_fraction` (the three planned feet
+    are the only contacts and none of those contacted stance feet are on plant
+    `L`). Slip uses planar `v_body + R v_cmd_body` as `commanded_world` and
+    `v_foot_world - commanded_world` as uncommanded slip:
+    `mean_contact_commanded_world_speed_mps`,
+    `mean_contact_uncommanded_slip_speed_mps`,
+    `mean_midstance_commanded_world_speed_mps`,
+    `mean_midstance_uncommanded_slip_speed_mps`,
+    `mean_clean_tripod_body_speed_mps`,
+    `mean_clean_tripod_cartesian_opposition_speed_mps`,
+    `mean_clean_tripod_cartesian_counter_yaw_rate_radps`,
+    `mean_clean_tripod_commanded_world_speed_mps`,
+    `mean_clean_tripod_uncommanded_slip_speed_mps`,
+    `mean_clean_tripod_contact_world_speed_mps`. Attitude and friction proxies:
+    `mean_abs_body_pitch_rad`, `mean_abs_body_roll_rad`,
+    `mean_peak_normal_impulse_ns`, `mean_peak_friction_impulse_ns`,
+    `mean_friction_to_normal_impulse_ratio`
   - report p99 and maximum local step round-trip time; this includes loopback
     transport and is therefore a conservative proxy for the 4 ms physics gate
   - break solver p99 time into whole-body dynamics, contact setup, ADMM, and
@@ -337,20 +408,27 @@ These are the highest-value tests for tracking improvements across commits.
     beyond the immediate topology-change frame
 - Run from the repository root after building both projects:
   - `source scripts/lib/pinocchio_env.sh`
-  - `HEXAPOD_PHYSICS_SIM_EXE=hexapod-physics-sim/build/hexapod-physics-sim hexapod-server/build-tests/test_physics_sim_exact_command_replay --emit-metrics-json`
+  - CTest: `cd hexapod-server && ctest --preset tests -R 'physics_sim_exact_command_replay' --output-on-failure`
+  - Manual: `HEXAPOD_PHYSICS_SIM_EXE=hexapod-physics-sim/build/hexapod-physics-sim hexapod-server/build-tests/test_physics_sim_exact_command_replay --emit-metrics-json`
 - Useful diagnostic selectors:
   - `HEXAPOD_EXACT_REPLAY_MOTION_CASE=forward|reverse|strafe|diagonal|turn_in_place`
   - `HEXAPOD_EXACT_REPLAY_STAND_FRAMES`, `HEXAPOD_EXACT_REPLAY_MOTION_FRAMES`,
     and `HEXAPOD_EXACT_REPLAY_TRANSITION_FRAMES`
   - `HEXAPOD_EXACT_REPLAY_BODY_HEIGHT_M` (default `0.14`)
   - `HEXAPOD_EXACT_REPLAY_COMMANDS_OUT=/tmp/hexapod-commands.txt` saves the
-    a version-2 fixture containing capture cadence, phase lengths, commanded
-    height, initial pose, reference-solver settings, phase annotations, and every
-    joint position/velocity target at round-trip-safe precision. Set
-    `HEXAPOD_EXACT_REPLAY_COMMANDS_IN=/tmp/hexapod-commands.txt` on later runs
-    to skip command generation and replay that exact fixture. Metadata is restored
+    a version-8 fixture containing capture cadence, phase lengths, commanded
+    height, initial pose, reference-solver settings, phase annotations, gait
+    `φ` / `duty_factor` / stride rate, governor `command_scale` / `cadence_scale`,
+    per-leg stroke-clamp / workspace-XY / IK-reach / servo-slew hits, BodyController Cartesian
+    targets, pre-slew and post-slew FK feet, post-clamp distortion, and every joint
+    position/velocity target at
+    round-trip-safe precision. Set
+    `HEXAPOD_EXACT_REPLAY_COMMANDS_IN` on later runs to skip command generation
+    and replay that exact fixture. Default CTests load
+    `hexapod-server/tests/fixtures/hexapod-commands-v16.txt`. Metadata is restored
     automatically; conflicting explicit phase, frame-count, or body-height
-    overrides are rejected. Version-1 fixtures must be regenerated. Captures with
+    overrides are rejected. Version-1 through version-7 fixtures must be
+    regenerated. Captures with
     inhibited or non-WALK motion frames are rejected before they can be saved.
     Fixture reload is the required mode for solver-parameter A/B comparisons
     because a newly generated reference run can produce a different
@@ -362,17 +440,130 @@ These are the highest-value tests for tracking improvements across commits.
     offline reference cap. `HEXAPOD_EXACT_REPLAY_CAPTURE_LEGACY=1` retains the
     legacy capture path for diagnosis, and
     `HEXAPOD_EXACT_REPLAY_TRACE_CAPTURE=1` prints each phase's final safety state.
+  - `HEXAPOD_EXACT_REPLAY_TRACE_SEGMENTS=1` prints each replay segment's
+    body-frame displacement and start/end body velocity, which separates a
+    phase's own tracking from incoming command-transition momentum.
   - `HEXAPOD_EXACT_REPLAY_LEGACY=1` replays through the legacy solver instead
     of the proximal solver, using the same captured targets
+  - `HEXAPOD_DISABLE_STABILITY_HOLDS=1` skips per-leg liftoff/tilt holds and the
+    all-stance freeze in `LocomotionStability` (test-only A/B; not a production
+    config key)
+  - `HEXAPOD_FOOT_ESTIMATOR_BLEND=0..1` overrides `Tuning.FootEstimatorBlend` for
+    capture and replay (harness default is already `0`)
   - `HEXAPOD_EXACT_REPLAY_SOLVER_ITERATIONS`
+  - `HEXAPOD_EXACT_REPLAY_PERIOD_US` sets the replay timestep. Behaviour gates
+    score commanded metres and yaw with `min(replay_period_us, capture_period_us)`
+    so a slower `PERIOD_US` than the fixture capture (for example 8333 µs on a
+    5000 µs capture) does not inflate the 70% bar. Faster replay (4167 / 2083 µs)
+    still uses the replay dt. JSON reports `replay_period_us`, `capture_period_us`,
+    and `command_score_period_us`.
   - `HEXAPOD_EXACT_REPLAY_PROXIMAL_MU` and
     `HEXAPOD_EXACT_REPLAY_CONTACT_REGULARIZATION`
+
+### 4b) `test_physics_sim_tripod_stroke_probe` (diagnostic, not CTest)
+
+- Location: `hexapod-server/tests/test_physics_sim_tripod_stroke_probe.cpp`
+- Forced 3-stance / 3-swing stroke with extra-stance off. After stand warmup
+  the probe captures measured foot world poses, plants support feet at those
+  XY with Z at the 18 mm sphere radius, and ramps the other three feet to a
+  reachable world `+Z` (radius + 40 mm). Support feet then integrate
+  world-fixed `v_stance` at 0.12 m/s; raised feet stay at the captured world
+  XY. No plant-`L` clamp and no gait scheduler. Use this only when
+  exact-replay `clean_tripod_frames` is empty, to ask whether the plant can
+  collect a legal tripod.
+- Run from the repository root after building tests:
+  - `source scripts/lib/pinocchio_env.sh`
+  - `HEXAPOD_PHYSICS_SIM_EXE=hexapod-physics-sim/build/hexapod-physics-sim hexapod-server/build-tests/test_physics_sim_tripod_stroke_probe`
+- Useful overrides: `HEXAPOD_EXACT_REPLAY_PERIOD_US`,
+  `HEXAPOD_EXACT_REPLAY_SOLVER_ITERATIONS`, `HEXAPOD_EXACT_REPLAY_LEGACY=1`,
+  `HEXAPOD_TRIPOD_STROKE_FRAMES`, `HEXAPOD_TRIPOD_STROKE_VX_MPS`
+- JSON splits raised vs support feet after raise-warmup and during stroke:
+  commanded Cartesian world Z, post-IK FK world Z, measured FK world Z,
+  clearance vs the 18 mm foot sphere (`measured_z - radius`), contact
+  fraction, and IK reach-hit fraction. Prefixes:
+  `raise_warmup_raised_`, `raise_warmup_support_`, `stroke_raised_`,
+  `stroke_support_`. `named_unload_cause` is `unloaded`, `reach_ik`,
+  `shaft_contact_bit`, or `true_plant`. Stroke-frame plant telemetry (from
+  `PhysicsSimBridge::latestSolverTelemetry` plus joint tracking):
+  `mean_peak_normal_impulse_ns`, `mean_peak_friction_impulse_ns`,
+  `mean_friction_to_normal_impulse_ratio`, `mean_servo_torque_utilization`,
+  `max_servo_tracking_error_rad` (support legs only), `mean_cone_residual`,
+  `mean_max_contact_penetration`. Chassis coupling (probe-side): `mean_body_vx_mps`,
+  `mean_support_foot_world_vx_mps`, `expected_com_delta_v_from_friction_mps`
+  (upper bound: `n_support × peak_friction_impulse / mass` summed over stroke
+  frames), `friction_com_coupling_ratio` (`last body vx / expected Δv`),
+  `named_coupling` (`decoupled` if `|ratio| < 0.10` and expected Δv > 0.05 m/s).
+  World-axis mapping (proximal): `mean_sum_friction_impulse_world_x_ns` /
+  `_z_ns` (signed net), `mean_sum_abs_friction_impulse_world_x_ns` / `_z_ns`,
+  `mean_sum_friction_impulse_world_y_ns` (tangent leak into vertical),
+  `mean_contact_delta_vx_mps` (free-flyer `M⁻¹ Jᵀ λ` in world X),
+  `friction_axis_x_fraction`, `friction_horizontal_capture`,
+  `friction_x_cancellation`, `jacobian_com_ratio`, `named_mapping`
+  (`tangent_not_world`, `tangent_not_stroke`, `opposing_tangents`,
+  `jacobian_decoupled`, `write_or_servo_absorb`, `applied`, or `unknown`).
+  Per-leg census (scene/server order): `mean_leg_friction_impulse_world_x_ns`,
+  `mean_leg_pinocchio_drift_tx_mps`, `mean_leg_world_slip_tx_mps`,
+  `mean_leg_contact_count`, `mean_contacts_per_planted_tibia`,
+  `drift_slip_agree_legs` / `drift_slip_disagree_legs`, `named_tangent_census`
+  (`jacobian_parity`, `dual_tibia_contact`, `same_j_opposite_lambda`, or
+  `unknown`). Contact-point split (last constraint per tibia):
+  `mean_leg_tibia_vx_mps`, `mean_leg_spin_vx_mps`, `mean_leg_t0_x`,
+  `mean_leg_foot_vx_mps`, `named_slip_split` (`t0_flip`, `spin_offset`,
+  `tibia_linear_opposite`, `sphere_vs_contact`, or `unknown`). Signs need
+  `|value| > 1e-4` to count. `t0_flip` / `spin_offset` / `sphere_vs_contact`
+  name a stand-preserving Pinocchio lever; `tibia_linear_opposite` does not.
+  FK vs physics sphere (support `{1,2,5}`): `mean_leg_cmd_foot_vx_mps`,
+  `mean_leg_fk_foot_vx_mps`, `mean_leg_foot_x_m`, `mean_leg_foot_pos_vx_mps`,
+  `named_fk_physics` (`qv_stale`, `fk_vs_sphere`, `ik_physics_axis`,
+  `true_ik_split`, or `unknown`). `qv_stale` names a sphere position-rate
+  tangent overwrite; `ik_physics_axis` names one hinge/zero mapping.
+  `fk_vs_sphere` / `true_ik_split` do not name a Pinocchio lever. `ik_physics_axis`
+  needs command-scale physics position-rate and instantaneous `foot_vx`.
+  Stroke axis is sim Z (server X = −sim Z). Fields: `mean_leg_foot_vz_mps`,
+  `mean_leg_foot_z_m`, `mean_leg_foot_pos_vz_mps`,
+  `mean_leg_expected_sim_vz_mps` (−FK X), `mean_leg_friction_impulse_world_z_ns`,
+  `mean_leg_world_slip_ty_mps`, `named_stroke_axis`
+  (`sphere_follows_stroke`, `sphere_opposite_stroke`, `sphere_split_stroke`,
+  `sphere_tiny_stroke`, `axis_mix`, or `unknown`), `named_stroke_friction`
+  (`aligned_z`, `opposing_z`, or `unknown`). FK vs C-mapped sphere
+  (`x_srv = -z_sim`, `y_srv = x_sim`): `mean_leg_fk_minus_mapped_x_m`,
+  `mean_leg_fk_minus_mapped_y_m`, `stroke_fk_dx_m`, `stroke_mapped_dx_m`,
+  `named_fk_sphere_pos` (`match`, `opposite_stroke`, `constant_offset`,
+  `diverge`, or `unknown`). `sphere_opposite_stroke` / `opposite_stroke`
+  name one stand-preserving coxa-axis trial; a global flip is not the lever
+  if support then splits. Frame C (first telemetry frame + stroke Δ):
+  `rest_fk_minus_bridge_*`, `rest_fk_minus_align_*`, `stroke_align_dx_m`,
+  `named_rest_c` (`rest_bridge_match`, `rest_align_match`, or
+  `rest_both_offset`), `named_stroke_c` (`stroke_bridge_follows`,
+  `stroke_align_follows`, `stroke_bridge_opposite`, `stroke_align_opposite`,
+  `stroke_90`, or `unknown`), `named_frame_c` (`align_c_match`,
+  `bridge_c_match`, `align_rest_stroke_90`, `both_opposite`, or `unknown`).
+  Rest match needs `|residual| < 0.025 m`. `align_c_match` /
+  `align_rest_stroke_90` name one foot_body→bridge-C composition;
+  `both_opposite` / `bridge_c_match` do not. Per-joint tracking:
+  `max_coxa/femur/tibia_tracking_error_rad`, `named_tracking`
+  (`tracking_coxa`, `tracking_femur`, `tracking_tibia`, or `tracking_mixed`).
+  Body-frame rest (FK `footInBodyFrame` vs chassis-relative sphere, both Cs):
+  `rest_body_minus_bridge_*`, `rest_body_minus_align_*`, `named_body_c`
+  (`body_align_match`, `body_bridge_match`, or `body_both_offset`).
+  `body_align_match` plus `stroke_90` is treated as `align_rest_stroke_90`.
+  Per-leg rest vs hip (`footInBodyFrame` / plant XY vs align-C sphere):
+  `rest_leg_class`, `plant_leg_class`, `plant_minus_align_*`,
+  `named_rest_offset` (`match`, `translation`, `swap_90`, `left_right`,
+  `per_leg_split`, or `unknown`). `left_right` names one side mapping;
+  `per_leg_split` / `unknown` do not. Geometry, commands and TwistField+IK share
+  the canonical server frame; `legacyKinematicTwistFromServerBody` is identity.
+  `HEXAPOD_TRIPOD_STROKE_TORQUE_SCALE` sets child env `HEXAPOD_SERVO_TORQUE_SCALE`
+  (serve-only max-torque scale, default 1). `named_h4_cause` is a single-run label:
+  `coulomb_skate`, `light_normal`, `servo_cone`, or `unknown`.
+  `proximal_mu_mix` is named only after a PGS vs proximal A/B, not by one run.
+  PGS does not fill impulse/cone fields; compare body progress and slip instead.
 
 ### 5) `test_physics_sim_proximal_stand_acceptance` (proximal acceptance gate)
 
 - Location: `hexapod-server/tests/test_physics_sim_proximal_stand_acceptance.cpp`
-- This is a default live-physics CTest. The broader moving-command replay remains
-  diagnostic-only until its locomotion gates pass.
+- This is a default live-physics CTest. Exact-replay locomotion CTests share the
+  same physics-sim child and cap-24 production settings.
 - Runs the complete controller, estimator, safety, bridge, collision, and
   Pinocchio contact path in STAND mode for 60 simulated seconds at the 0.14 m
   production body-height command.
@@ -394,7 +585,10 @@ These are the highest-value tests for tracking improvements across commits.
     `HEXAPOD_EXACT_REPLAY_RELATIVE_TOLERANCE`
   - `HEXAPOD_EXACT_REPLAY_PERIOD_US=4166` measures the approximately 240 Hz
     production command cadence while preserving the captured targets; proximal mode
-    advances it as two internal substeps capped at `1/480 s`
+    advances it as two internal substeps capped at `1/480 s`. When `PERIOD_US` is
+    slower than the fixture `capture_period_us`, commanded metres and yaw for the
+    70% behaviour gate use the capture period so extra wall-clock does not inflate
+    the bar. Faster cadences keep the replay dt.
   - `HEXAPOD_EXACT_REPLAY_PERTURBATION_SEEDS=100` repeats the same command stream
     from 100 deterministic initial chassis perturbations (by default up to 0.75 mm
     horizontal, 0.375 mm vertical, 0.1875 degrees roll/pitch, and 0.25 degrees yaw).
@@ -415,7 +609,17 @@ These are the highest-value tests for tracking improvements across commits.
     `HEXAPOD_PINOCCHIO_SPECTRAL_POWER`, while `HEXAPOD_PINOCCHIO_WARMSTART_RHO=0`
     disables spectral-penalty persistence; `HEXAPOD_PINOCCHIO_SERVO_GAIN_SCALE`
     isolates constrained-load calibration without changing the motor torque-speed
-    envelope. These overrides do not change production defaults.
+    envelope. Production PD already uses stance-loaded reflected inertia
+    (`1 / P_ii` from six planted feet at the initial pose, other joints locked,
+    clamped to `[M_ii, 1.5 M_ii]`) on every servo. A contact-aware swing/stance
+    split of that table recovered tracking but lost closed-loop turn yaw, so
+    production keeps the clamped value on swing as well. Isolated
+    turn-in-place at cap 500 (2026-09-13): a global scale `1.5` on the older
+    unconstrained `M_ii` cut foot-tracking RMS from 9.9 cm to 5.2 cm with zero
+    speed-limit recoveries; scale `2.0` improved yaw further (0.21 → 0.35 rad of
+    1.08 commanded) but recovered on the 10 rad/s guard. Do not change the
+    production default (`1.0`) from those diagnostics; they motivated the
+    per-joint stance-loaded `I` replacement, not a shipped global scale.
   - `HEXAPOD_PINOCCHIO_DENSE_ADMM=1` is an A/B performance experiment. The
     articulated rigid-body operator still computes the whole-body Delassus response
     and applies the final generalized impulse, while ADMM uses a materialized dense
@@ -434,9 +638,14 @@ These are the highest-value tests for tracking improvements across commits.
     accumulated actuator work and mechanical-energy change. These distinguish
     actuator saturation and load-induced tracking loss from contact-solver energy
     injection when a gait makes poor progress or loses body height.
-  - half-substep recovery is restricted to solver non-convergence and speed-limit
-    rejection; state validity, penetration, energy, and write failures hold the
-    last-good state immediately because they cannot be repaired by a smaller timestep
+  - recovery is restricted to solver non-convergence and speed-limit rejection.
+    Non-convergence retries the same `dt` once before two half-substeps;
+    if those still miss, a last-resort pair of half-substeps starts from a
+    cold contact warm-start at twice `SolverIterations`. Speed-limit goes
+    straight to half-substeps. State validity, penetration,
+    energy, and write failures hold the last-good state immediately because they
+    cannot be repaired by another contact solve. Servo target jumps do not wipe
+    foot-contact warm starts.
   - `HEXAPOD_EXACT_REPLAY_ENFORCE_GATES=1` makes any recovered, held,
     unsupported, or failed-read sample fail the executable. Without it, the
     executable validates capture/replay accounting and emits diagnostic results.
@@ -444,11 +653,20 @@ These are the highest-value tests for tracking improvements across commits.
     `RecoveredRetry` outcome but fails on a held state, unsupported island, or
     failed read. This is the appropriate gate for the 100-seed perturbation campaign.
   - `HEXAPOD_EXACT_REPLAY_ENFORCE_BEHAVIOR_GATES=1` evaluates every perturbation
-    seed independently. Translation and yaw must reach at least 70% of their
-    integrated commands, lateral travel must remain below 10% of path length plus
-    10 mm, and turn-in-place translation must remain below 50 mm. The JSON output
-    reports `behavior_gate_failures`; this gate currently documents the remaining
-    locomotion blocker and is not enabled in default CTest.
+    seed independently. In accordance with the acceptance requirement, it excludes
+    the first 120 ms acceleration transient from each motion phase; the excluded
+    frame count is derived from the replay timestep. Translation and yaw must then
+    reach at least 70% of their integrated commands, scored at
+    `min(replay_period_us, capture_period_us)`, lateral travel must remain below
+    10% of path length plus 10 mm, and turn-in-place translation must remain below
+    50 mm. Full-phase displacement and phase-boundary velocity remain in the JSON for
+    transition diagnosis. Each phase also reports its evaluated-window values and
+    `behavior_gate_passed`. A fixture selected with
+    `HEXAPOD_EXACT_REPLAY_MOTION_CASE` evaluates that motion alone rather than failing
+    because the other motion phases are absent. The top-level JSON reports
+    `behavior_gate_failures`; default exact-replay CTests enable this gate.
+    100-seed perturbation remains a diagnostic override, not a default CTest.
+  - A 10-minute randomized gait soak is post-default, not a switch or CTest gate.
   - `HEXAPOD_EXACT_REPLAY_BODY_HEIGHT_M` defaults to the production 0.14 m body
     height. Lower crouched-height experiments must opt in explicitly.
 

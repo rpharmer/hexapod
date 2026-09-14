@@ -51,6 +51,13 @@ struct PhysicsSimSolverTelemetry {
     float cone_residual{0.0f};
     float peak_normal_impulse{0.0f};
     float peak_friction_impulse{0.0f};
+    float sum_friction_impulse_world_x{0.0f};
+    float sum_friction_impulse_world_z{0.0f};
+    float sum_abs_friction_impulse_world_x{0.0f};
+    float sum_abs_friction_impulse_world_z{0.0f};
+    float sum_friction_impulse_world_y{0.0f};
+    float contact_delta_vx{0.0f};
+    float contact_delta_vz{0.0f};
     float peak_structural_impulse{0.0f};
     float peak_actuator_impulse{0.0f};
     float peak_servo_torque_utilization{0.0f};
@@ -78,6 +85,21 @@ struct PhysicsSimSolverTelemetry {
     std::uint64_t unsupported_island_count{0};
     std::uint64_t worst_contact_id{0};
     std::uint64_t contact_set_signature{0};
+    std::array<float, 6> leg_friction_impulse_world_x{};
+    std::array<float, 6> leg_friction_impulse_world_z{};
+    std::array<float, 6> leg_pinocchio_drift_tx{};
+    std::array<float, 6> leg_world_slip_tx{};
+    std::array<float, 6> leg_world_slip_ty{};
+    std::array<std::uint8_t, 6> leg_contact_count{};
+    std::array<float, 6> leg_tibia_vx{};
+    std::array<float, 6> leg_spin_vx{};
+    std::array<float, 6> leg_t0_x{};
+    std::array<float, 6> leg_foot_vx{};
+    std::array<float, 6> leg_foot_x{};
+    std::array<float, 6> leg_foot_pos_vx{};
+    std::array<float, 6> leg_foot_vz{};
+    std::array<float, 6> leg_foot_z{};
+    std::array<float, 6> leg_foot_pos_vz{};
 };
 
 /// Chassis height used by the bridge's initial assembled standing pose.

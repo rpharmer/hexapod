@@ -31,7 +31,7 @@ Vec3 computeFootInBodyFromServoAngles(const LegState& servo_angles,
         z_leg,
     };
 
-    const Mat3 body_from_leg = Mat3::rotZ(model_leg.mountAngle.value);
+    const Mat3 body_from_leg = bodyFromLegFrame(model_leg);
     return model_leg.bodyCoxaOffset + (body_from_leg * foot_leg);
 }
 

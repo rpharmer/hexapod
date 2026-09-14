@@ -28,7 +28,7 @@ struct ParsedToml
   std::string physicsSimHost{"127.0.0.1"};
   int physicsSimPort{9871};
   int physicsSimSolverIterations{24};
-  int physicsSimSolverMode{0};
+  int physicsSimSolverMode{1};
   double physicsSimProximalMu{1.0e-6};
   double physicsSimAbsoluteTolerance{1.0e-8};
   double physicsSimRelativeTolerance{1.0e-6};

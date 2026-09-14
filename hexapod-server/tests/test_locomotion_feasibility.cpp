@@ -91,6 +91,23 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    gait = nominalGait();
+    gait.duty_factor = 0.5;
+    gait.in_stance[0] = false;
+    gait.phase[0] = 0.80; // swing_tau = 0.60, past the 0.45 contact-grace window
+    gait.stability_hold_stance[0] = false;
+    est.foot_contacts[0] = true;
+    est.foot_contact_fusion[0].phase = ContactPhase::ConfirmedStance;
+    const auto late_swing_contact = computeLegContactDecisions(est, gait, safety);
+    if (!expect(late_swing_contact[0].mode == LegContactMode::PlannedSwing,
+                "late-swing raw contact without a hold should stay planned swing") ||
+        !expect(!late_swing_contact[0].use_stance_kinematics,
+                "late-swing raw contact must keep swing kinematics so the foot can lift") ||
+        !expect(late_swing_contact[0].swing_tau > 0.45,
+                "late-swing contact fixture should sit past the grace window")) {
+        return EXIT_FAILURE;
+    }
+
     gait.stability_hold_stance[1] = true;
     gait.in_stance[1] = false;
     gait.phase[1] = 0.80;

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 namespace {
 
@@ -16,6 +17,11 @@ double planarBodyRateRadps(const RobotState& est) {
         return 0.0;
     }
     return std::hypot(est.imu.gyro_radps.x, est.imu.gyro_radps.y);
+}
+
+bool disableStabilityHolds() {
+    const char* value = std::getenv("HEXAPOD_DISABLE_STABILITY_HOLDS");
+    return value != nullptr && value[0] != '\0' && value[0] != '0';
 }
 
 } // namespace
@@ -43,6 +49,14 @@ void LocomotionStability::apply(const RobotState& est,
     const HexapodGeometry geo = geometry_config::activeHexapodGeometry();
     const SupportAssessment support =
         feasibility != nullptr ? feasibility->support : assessSupportState(est, intent, gait, geo);
+    SupportAssessment liftoff_support = support;
+    if (feasibility == nullptr) {
+        // The default controller is explicitly configured around the nominal support
+        // margin. Keep the exclusion test in that same frame; feeding measured FK
+        // points into only this half of the decision silently enables the untuned
+        // actual-margin controller and can deadlock a compliant gait.
+        liftoff_support.foot_xy_body_m = support.nominal_foot_xy_body_m;
+    }
     gait.static_stability_margin_m =
         feasibility != nullptr ? feasibility->control_margin_m : support.static_margin_m;
 
@@ -99,23 +113,36 @@ void LocomotionStability::apply(const RobotState& est,
     gait.swing_height_m =
         std::clamp(gait.swing_height_m + swing_height_boost_m, swing_height_floor_m, 0.06);
 
+    const double duty = std::clamp(gait.duty_factor, 0.06, 0.94);
+    const double gate_span = std::clamp(config_.liftoff_gate_phase_span, 0.0, 0.5);
     for (int leg = 0; leg < kNumLegs; ++leg) {
+        const std::size_t leg_index = static_cast<std::size_t>(leg);
         const double lift_clearance_m =
             feasibility != nullptr
-                ? feasibility->lift_clearance_m[static_cast<std::size_t>(leg)]
-                : supportPolygonClearanceExcludingLeg(support, leg, margin_need, config_.support_inset_m);
+                ? feasibility->lift_clearance_m[leg_index]
+                : supportPolygonClearanceExcludingLeg(
+                    liftoff_support, leg, margin_need, config_.support_inset_m);
         const bool can_lift =
             feasibility != nullptr
-                ? feasibility->safe_to_lift[static_cast<std::size_t>(leg)]
+                ? feasibility->safe_to_lift[leg_index]
                 : (lift_clearance_m >= 0.0 && !emergency_tilt_hold);
-        gait.support_liftoff_clearance_m[static_cast<std::size_t>(leg)] = lift_clearance_m;
-        gait.support_liftoff_safe_to_lift[static_cast<std::size_t>(leg)] = can_lift;
+        gait.support_liftoff_clearance_m[leg_index] = lift_clearance_m;
+        gait.support_liftoff_safe_to_lift[leg_index] = can_lift;
         // A raw contact at the start of a planned swing is normal: the leg must first receive
         // swing kinematics before that contact can disappear. Holding every contact-backed swing
         // leg here creates a liftoff deadlock and lets only incidental contact flicker start a step.
         // The clearance test already accounts for removing this leg from the support polygon, so
         // allow the normal BodyController contact-grace path whenever that removal is safe.
-        gait.stability_hold_stance[static_cast<std::size_t>(leg)] = !can_lift;
+        // The support gate is intentionally local to the stance-to-swing boundary. Applying it
+        // throughout the cycle makes one transient blocked decision overwrite the remainder of
+        // swing and prevents the contact-grace path from ever commanding liftoff.
+        const double phase = clamp01(gait.phase[leg_index]);
+        const bool in_liftoff_window =
+            phase >= std::max(0.0, duty - gate_span) &&
+            phase <= std::min(1.0, duty + gate_span);
+        gait.stability_hold_stance[leg_index] =
+            !disableStabilityHolds() &&
+            (emergency_tilt_hold || (in_liftoff_window && !can_lift));
     }
 
     const bool no_leg_safe_to_lift = std::none_of(
@@ -124,7 +151,8 @@ void LocomotionStability::apply(const RobotState& est,
         [](const bool safe) { return safe; });
     const bool sparse_support = support.support_count <= 2;
     const bool severe_margin_loss = gait.static_stability_margin_m <= -0.50;
-    if (high_activity_command &&
+    if (!disableStabilityHolds() &&
+        high_activity_command &&
         gait.static_stability_margin_m <= 0.0 &&
         no_leg_safe_to_lift &&
         (sparse_support || severe_margin_loss || emergency_tilt_hold)) {

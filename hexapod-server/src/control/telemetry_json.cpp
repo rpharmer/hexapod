@@ -191,6 +191,8 @@ void appendLocomotionDebugJson(std::ostringstream& payload,
     appendVec3ArrayJson(payload, debug.commanded_foot_world_m);
     payload << ",\"planned_leg_target_body_m\":";
     appendVec3ArrayJson(payload, debug.planned_leg_target_body_m);
+    payload << ",\"pre_slew_fk_body_m\":";
+    appendVec3ArrayJson(payload, debug.pre_slew_fk_body_m);
     payload << ",\"post_clamp_fk_body_m\":";
     appendVec3ArrayJson(payload, debug.post_clamp_fk_body_m);
     payload << ",\"post_clamp_fk_vel_body_mps\":";

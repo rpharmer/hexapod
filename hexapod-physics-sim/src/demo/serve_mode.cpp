@@ -61,6 +61,7 @@ constexpr std::uint64_t kMatrixLidarFramePeriodUs = 15'625; // 64 Hz full-frame 
 constexpr float kServeMaxPhysicsSubstepSeconds = 1.0f / 240.0f;
 constexpr float kProximalMaxPhysicsSubstepSeconds = 1.0f / 480.0f;
 constexpr int kServeMaxPhysicsSubsteps = 16;
+constexpr float kSubstepRatioRoundingTolerance = 1.0e-3f;
 
 enum class ServeSection : std::size_t {
     PollWait = 0,
@@ -1031,6 +1032,31 @@ void MergeProximalDiagnostics(ProximalStepDiagnostics& aggregate,
         aggregate.peakNormalImpulse, current.peakNormalImpulse);
     aggregate.peakFrictionImpulse = std::max(
         aggregate.peakFrictionImpulse, current.peakFrictionImpulse);
+    aggregate.sumFrictionImpulseWorldX += current.sumFrictionImpulseWorldX;
+    aggregate.sumFrictionImpulseWorldZ += current.sumFrictionImpulseWorldZ;
+    aggregate.sumAbsFrictionImpulseWorldX += current.sumAbsFrictionImpulseWorldX;
+    aggregate.sumAbsFrictionImpulseWorldZ += current.sumAbsFrictionImpulseWorldZ;
+    aggregate.sumFrictionImpulseWorldY += current.sumFrictionImpulseWorldY;
+    aggregate.contactDeltaVx += current.contactDeltaVx;
+    aggregate.contactDeltaVz += current.contactDeltaVz;
+    for (std::size_t leg = 0; leg < 6; ++leg) {
+        aggregate.legFrictionImpulseWorldX[leg] += current.legFrictionImpulseWorldX[leg];
+        aggregate.legFrictionImpulseWorldZ[leg] += current.legFrictionImpulseWorldZ[leg];
+        aggregate.legPinocchioDriftTx[leg] = current.legPinocchioDriftTx[leg];
+        aggregate.legWorldSlipTx[leg] = current.legWorldSlipTx[leg];
+        aggregate.legWorldSlipTy[leg] = current.legWorldSlipTy[leg];
+        aggregate.legTibiaVx[leg] = current.legTibiaVx[leg];
+        aggregate.legSpinVx[leg] = current.legSpinVx[leg];
+        aggregate.legT0x[leg] = current.legT0x[leg];
+        aggregate.legFootVx[leg] = current.legFootVx[leg];
+        aggregate.legFootX[leg] = current.legFootX[leg];
+        aggregate.legFootPosVx[leg] = current.legFootPosVx[leg];
+        aggregate.legFootVz[leg] = current.legFootVz[leg];
+        aggregate.legFootZ[leg] = current.legFootZ[leg];
+        aggregate.legFootPosVz[leg] = current.legFootPosVz[leg];
+        aggregate.legContactCount[leg] = std::max(
+            aggregate.legContactCount[leg], current.legContactCount[leg]);
+    }
     aggregate.peakStructuralImpulse = std::max(
         aggregate.peakStructuralImpulse, current.peakStructuralImpulse);
     aggregate.peakActuatorImpulse = std::max(
@@ -1134,6 +1160,15 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     world.SetResourceMonitoringMode(resource_monitoring_mode);
     HexapodSceneObjects scene = BuildHexapodScene(world);
     RelaxBuiltInHexapodServos(world, scene);
+    if (const char* torque_scale_env = std::getenv("HEXAPOD_SERVO_TORQUE_SCALE");
+        torque_scale_env != nullptr && torque_scale_env[0] != '\0') {
+        const double torque_scale = std::atof(torque_scale_env);
+        if (torque_scale > 0.0 && std::abs(torque_scale - 1.0) > 1.0e-12) {
+            for (const std::uint32_t joint_id : HexapodServoJointIds(scene)) {
+                world.GetServoJointMutable(joint_id).maxServoTorque *= static_cast<Real>(torque_scale);
+            }
+        }
+    }
     int solver_iterations = 8;
     physics_sim::PhysicsSolverMode solver_mode = physics_sim::PhysicsSolverMode::LegacyPgs;
 #if defined(MINPHYS3D_ENABLE_PINOCCHIO)
@@ -1661,7 +1696,8 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             ? kProximalMaxPhysicsSubstepSeconds
             : kServeMaxPhysicsSubstepSeconds;
         const int physics_substeps = std::clamp(
-            static_cast<int>(std::ceil(step->dt_seconds / max_physics_substep)),
+            static_cast<int>(std::ceil(
+                step->dt_seconds / max_physics_substep - kSubstepRatioRoundingTolerance)),
             1,
             kServeMaxPhysicsSubsteps);
         const float substep_dt = step->dt_seconds / static_cast<float>(physics_substeps);
@@ -1710,6 +1746,49 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             rsp.solver_cone_residual = static_cast<float>(proximal_diagnostics.coneResidual);
             rsp.solver_peak_normal_impulse = static_cast<float>(proximal_diagnostics.peakNormalImpulse);
             rsp.solver_peak_friction_impulse = static_cast<float>(proximal_diagnostics.peakFrictionImpulse);
+            rsp.solver_sum_friction_impulse_world_x =
+                static_cast<float>(proximal_diagnostics.sumFrictionImpulseWorldX);
+            rsp.solver_sum_friction_impulse_world_z =
+                static_cast<float>(proximal_diagnostics.sumFrictionImpulseWorldZ);
+            rsp.solver_sum_abs_friction_impulse_world_x =
+                static_cast<float>(proximal_diagnostics.sumAbsFrictionImpulseWorldX);
+            rsp.solver_sum_abs_friction_impulse_world_z =
+                static_cast<float>(proximal_diagnostics.sumAbsFrictionImpulseWorldZ);
+            rsp.solver_sum_friction_impulse_world_y =
+                static_cast<float>(proximal_diagnostics.sumFrictionImpulseWorldY);
+            rsp.solver_contact_delta_vx = static_cast<float>(proximal_diagnostics.contactDeltaVx);
+            rsp.solver_contact_delta_vz = static_cast<float>(proximal_diagnostics.contactDeltaVz);
+            for (std::size_t leg = 0; leg < 6; ++leg) {
+                rsp.solver_leg_friction_impulse_world_x[leg] =
+                    static_cast<float>(proximal_diagnostics.legFrictionImpulseWorldX[leg]);
+                rsp.solver_leg_friction_impulse_world_z[leg] =
+                    static_cast<float>(proximal_diagnostics.legFrictionImpulseWorldZ[leg]);
+                rsp.solver_leg_pinocchio_drift_tx[leg] =
+                    static_cast<float>(proximal_diagnostics.legPinocchioDriftTx[leg]);
+                rsp.solver_leg_world_slip_tx[leg] =
+                    static_cast<float>(proximal_diagnostics.legWorldSlipTx[leg]);
+                rsp.solver_leg_world_slip_ty[leg] =
+                    static_cast<float>(proximal_diagnostics.legWorldSlipTy[leg]);
+                rsp.solver_leg_contact_count[leg] = proximal_diagnostics.legContactCount[leg];
+                rsp.solver_leg_tibia_vx[leg] =
+                    static_cast<float>(proximal_diagnostics.legTibiaVx[leg]);
+                rsp.solver_leg_spin_vx[leg] =
+                    static_cast<float>(proximal_diagnostics.legSpinVx[leg]);
+                rsp.solver_leg_t0_x[leg] =
+                    static_cast<float>(proximal_diagnostics.legT0x[leg]);
+                rsp.solver_leg_foot_vx[leg] =
+                    static_cast<float>(proximal_diagnostics.legFootVx[leg]);
+                rsp.solver_leg_foot_x[leg] =
+                    static_cast<float>(proximal_diagnostics.legFootX[leg]);
+                rsp.solver_leg_foot_pos_vx[leg] =
+                    static_cast<float>(proximal_diagnostics.legFootPosVx[leg]);
+                rsp.solver_leg_foot_vz[leg] =
+                    static_cast<float>(proximal_diagnostics.legFootVz[leg]);
+                rsp.solver_leg_foot_z[leg] =
+                    static_cast<float>(proximal_diagnostics.legFootZ[leg]);
+                rsp.solver_leg_foot_pos_vz[leg] =
+                    static_cast<float>(proximal_diagnostics.legFootPosVz[leg]);
+            }
             rsp.solver_peak_structural_impulse = static_cast<float>(proximal_diagnostics.peakStructuralImpulse);
             rsp.solver_peak_actuator_impulse = static_cast<float>(proximal_diagnostics.peakActuatorImpulse);
             rsp.solver_peak_servo_torque_utilization =

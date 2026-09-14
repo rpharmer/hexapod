@@ -5,13 +5,14 @@
 class LegFK {
 public:
   LegFK();
+  /** Input leg angles are in calibrated servo space, matching RobotState/JointTargets. */
   LegTargets solve(const RobotState& raw, const SafetyState& safety);
-  FootTarget footInBodyFrame(const LegState& est, const LegGeometry& leg);
-  FootTarget footInWorldFrame(const LegState& est, const BodyPose& bodyPose,
+  FootTarget footInBodyFrame(const LegState& servo_state, const LegGeometry& leg);
+  FootTarget footInWorldFrame(const LegState& servo_state, const BodyPose& bodyPose,
                              const LegGeometry& leg);
 
 private:
-  bool solveOneLeg(const LegState& est, FootTarget& out,
+  bool solveOneLeg(const LegState& servo_state, FootTarget& out,
                    const LegGeometry& leg);
   uint64_t seq_tx_{0};
 

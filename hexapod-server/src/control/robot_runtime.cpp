@@ -15,6 +15,7 @@
 #include "plane_estimation.hpp"
 #include "replay_json.hpp"
 #include "physics_sim_bridge.hpp"
+#include "servo_dynamics_clamp.hpp"
 
 namespace {
 
@@ -275,6 +276,7 @@ telemetry::LocomotionDebugSnapshot buildLocomotionDebugSnapshot(
     const GaitState* gait_state,
     const LegTargets* planned_leg_targets,
     const JointTargets& joint_targets,
+    const JointTargets* pre_slew_joint_targets,
     const HexapodGeometry& geometry,
     std::array<bool, kNumLegs>& contact_anchor_valid,
     std::array<Vec3, kNumLegs>& contact_anchor_world,
@@ -325,6 +327,13 @@ telemetry::LocomotionDebugSnapshot buildLocomotionDebugSnapshot(
         snapshot.commanded_foot_body_m[leg_index] = commanded_body.pos_body_m.raw();
         snapshot.commanded_foot_world_m[leg_index] = commanded_world.pos_body_m.raw();
         snapshot.post_clamp_fk_body_m[leg_index] = commanded_body.pos_body_m.raw();
+        if (pre_slew_joint_targets != nullptr) {
+            snapshot.pre_slew_fk_body_m[leg_index] =
+                fk.footInBodyFrame(pre_slew_joint_targets->leg_states[leg_index], leg_geometry)
+                    .pos_body_m.raw();
+        } else {
+            snapshot.pre_slew_fk_body_m[leg_index] = snapshot.post_clamp_fk_body_m[leg_index];
+        }
         if (planned_leg_targets != nullptr) {
             snapshot.planned_leg_target_body_m[leg_index] =
                 planned_leg_targets->feet[leg_index].pos_body_m.raw();
@@ -685,38 +694,6 @@ bool maybeSendPhysicsSimCorrection(IHardwareBridge* bridge,
     return physics_sim_bridge->sendStateCorrection(packet);
 }
 
-JointTargets clampJointTargetsToServoDynamics(const JointTargets& previous,
-                                              const JointTargets& requested,
-                                              const HexapodGeometry& geometry,
-                                              const double dt_s) {
-    if (dt_s <= 0.0) {
-        return requested;
-    }
-
-    JointTargets limited = requested;
-    for (int leg = 0; leg < kNumLegs; ++leg) {
-        const LegGeometry& leg_geometry = geometry.legGeometry[leg];
-        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
-            const AngleRad prev = previous.leg_states[leg].joint_state[joint].pos_rad;
-            const AngleRad req = requested.leg_states[leg].joint_state[joint].pos_rad;
-            const double error = req.value - prev.value;
-            const ServoJointDynamics& dynamics = leg_geometry.servoDynamics[joint];
-            const ServoDirectionDynamics& direction =
-                (error >= 0.0) ? dynamics.positive_direction : dynamics.negative_direction;
-            const double max_delta = std::max(direction.vmax_radps, 0.0) * dt_s;
-            double limited_error = error;
-            if (max_delta > 0.0) {
-                limited_error = std::clamp(error, -max_delta, max_delta);
-            }
-
-            limited.leg_states[leg].joint_state[joint].pos_rad = AngleRad{prev.value + limited_error};
-            limited.leg_states[leg].joint_state[joint].vel_radps =
-                AngularRateRadPerSec{limited_error / dt_s};
-        }
-    }
-    return limited;
-}
-
 replay_json::ReplayTransitionDiagnostics buildReplayTransitionDiagnostics(const RobotState& estimated,
                                                                          const GaitState& gait_state,
                                                                          const JointTargets& joint_targets) {
@@ -806,6 +783,10 @@ bool RobotRuntime::init() {
     joint_targets_.write(JointTargets{});
     locomotion_debug_.write(telemetry::LocomotionDebugSnapshot{});
     locomotion_feasibility_.write(LocomotionFeasibility{});
+    stroke_clamp_hit_.write(std::array<bool, kNumLegs>{});
+    workspace_xy_hit_.write(std::array<bool, kNumLegs>{});
+    ik_reach_clamp_hit_.write(std::array<bool, kNumLegs>{});
+    slew_clamp_hit_.write(std::array<bool, kNumLegs>{});
     control_loop_counter_.store(0);
     control_dt_sum_us_.store(0);
     control_jitter_max_us_.store(0);
@@ -1163,12 +1144,17 @@ void RobotRuntime::controlStep() {
             command_governor_state_.write(CommandGovernorState{});
             joint_targets_.write(decision.joint_targets);
             locomotion_feasibility_.write(LocomotionFeasibility{});
+            stroke_clamp_hit_.write(std::array<bool, kNumLegs>{});
+            workspace_xy_hit_.write(std::array<bool, kNumLegs>{});
+            ik_reach_clamp_hit_.write(std::array<bool, kNumLegs>{});
+            slew_clamp_hit_.write(std::array<bool, kNumLegs>{});
             locomotion_debug_.write(buildLocomotionDebugSnapshot(
                 raw,
                 est,
                 &previous_gait_state,
                 nullptr,
                 decision.joint_targets,
+                nullptr,
                 geometry_config::activeHexapodGeometry(),
                 contact_anchor_valid_,
                 contact_anchor_world_,
@@ -1192,20 +1178,27 @@ void RobotRuntime::controlStep() {
         terrain_ptr);
 
     JointTargets joint_targets = result.joint_targets;
+    std::array<bool, kNumLegs> slew_hits{};
     if (intent.requested_mode == RobotMode::WALK) {
         const double control_dt_s =
             std::max(static_cast<double>(config_.loop_timing.control_loop_period.count()) * 1.0e-6, 1.0e-6);
-        joint_targets = clampJointTargetsToServoDynamics(
+        const ServoDynamicsClampResult slew = clampJointTargetsToServoDynamics(
             previous_joint_targets,
-            joint_targets,
+            result.joint_targets,
             geometry_config::activeHexapodGeometry(),
             control_dt_s);
+        joint_targets = slew.targets;
+        slew_hits = slew.leg_limited;
     }
 
     leg_targets_.write(result.leg_targets);
     gait_state_.write(result.gait_state);
     command_governor_state_.write(result.command_governor);
     locomotion_feasibility_.write(result.locomotion_feasibility);
+    stroke_clamp_hit_.write(result.stroke_clamp_hit);
+    workspace_xy_hit_.write(result.workspace_xy_hit);
+    ik_reach_clamp_hit_.write(result.ik_reach_clamp_hit);
+    slew_clamp_hit_.write(slew_hits);
     joint_targets_.write(joint_targets);
     locomotion_debug_.write(buildLocomotionDebugSnapshot(
         raw,
@@ -1213,6 +1206,7 @@ void RobotRuntime::controlStep() {
         &result.gait_state,
         &result.leg_targets,
         joint_targets,
+        &result.joint_targets,
         geometry_config::activeHexapodGeometry(),
         contact_anchor_valid_,
         contact_anchor_world_,

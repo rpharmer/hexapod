@@ -45,7 +45,8 @@ double computeStandingBodyHeightM() {
         legPitchDirection(leg_axis, physics_sim::kAssemblyFemurPitchRad + physics_sim::kAssemblyTibiaPitchRad);
     const Vec3 foot_center_relative =
         kFrontMountOffsetBody + leg_axis * kCoxaLengthM + femur_direction * kFemurLengthM +
-        tibia_direction * physics_sim::kHexapodTibiaLinkLengthM;
+        tibia_direction *
+            (physics_sim::kHexapodTibiaLinkLengthM + physics_sim::kHexapodFootRadiusM);
     return std::max(0.04, static_cast<double>(physics_sim::kHexapodFootRadiusM) -
                                 static_cast<double>(foot_center_relative.y) + 0.001) +
            0.002;

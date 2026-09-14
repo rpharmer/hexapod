@@ -1,6 +1,8 @@
 #include "foot_planners.hpp"
 #include "foothold_planner.hpp"
+#include "stance_progress_metrics.hpp"
 
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -95,6 +97,85 @@ int main() {
         !planarCycleFollowsCommand(strafe_left, "strafe-left") ||
         !planarCycleFollowsCommand(strafe_right, "strafe-right")) {
         return EXIT_FAILURE;
+    }
+
+    // φ/f is a world-fixed support sweep only on the planned-stance interval. Sample the
+    // closed form so a later wrap or late-swing contact cannot hide behind the mean.
+    {
+        const Vec3 anchor{0.18, 0.02, -0.11};
+        const double duty = 0.5;
+        const double f_hz = 1.0;
+        const Vec3 v_foot = supportFootVelocityAt(anchor, forward);
+        Vec3 previous = anchor;
+        for (int sample = 0; sample <= 20; ++sample) {
+            const double phi = duty * static_cast<double>(sample) / 20.0;
+            StanceFootInputs st{};
+            st.anchor = anchor;
+            st.v_foot_body = v_foot;
+            st.phase = phi;
+            st.f_hz = f_hz;
+            Vec3 pos{};
+            Vec3 vel{};
+            planStanceFoot(st, pos, vel);
+            const Vec3 delta = pos - previous;
+            const double along_command = delta.x * forward.linear_mps.x + delta.y * forward.linear_mps.y;
+            if (sample > 0 && along_command > 1e-12) {
+                std::cerr << "FAIL: planned-stance φ=" << phi
+                          << " must keep sweeping opposite the body command\n";
+                return EXIT_FAILURE;
+            }
+            previous = pos;
+        }
+        StanceFootInputs stance_end_in{};
+        stance_end_in.anchor = anchor;
+        stance_end_in.v_foot_body = v_foot;
+        stance_end_in.phase = duty;
+        stance_end_in.f_hz = f_hz;
+        Vec3 stance_end{};
+        Vec3 stance_end_vel{};
+        planStanceFoot(stance_end_in, stance_end, stance_end_vel);
+        const Vec3 integral = stance_end - anchor;
+        const Vec3 expected = v_foot * (duty / f_hz);
+        if (!expect(nearlyEqVec(integral, expected, 1e-9),
+                    "planned-stance integral must equal v_foot * duty / f")) {
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        constexpr double duty = 0.5;
+        if (!expect(isOnsetPlannedStance(true, true, 0.01, duty),
+                    "φ=0.01 at duty 0.5 is onset")
+            || !expect(!isMidPlannedStance(true, 0.01, duty),
+                       "φ=0.01 at duty 0.5 is not mid-stance")
+            || !expect(isMidPlannedStance(true, 0.25, duty),
+                       "φ=0.25 at duty 0.5 is mid-stance")
+            || !expect(!isOnsetPlannedStance(true, true, 0.25, duty),
+                       "continuing planned φ=0.25 is not onset")
+            || !expect(isOnsetPlannedStance(true, false, 0.25, duty),
+                       "first planned frame is onset even at mid φ")
+            || !expect(!isMidPlannedStance(true, 0.49, duty),
+                       "φ=0.49 at duty 0.5 is near-liftoff, not mid-stance")
+            || !expect(!isMidPlannedStance(false, 0.25, duty),
+                       "unplanned contact is not mid-stance")) {
+            return EXIT_FAILURE;
+        }
+        const std::array<bool, 6> tripod{true, true, true, false, false, false};
+        const std::array<bool, 6> overlap{true, true, true, true, false, false};
+        if (!expect(isTripodStanceFrame(plannedStanceCount(tripod)),
+                    "three planned stance feet is a tripod frame")
+            || !expect(isOverlapStanceFrame(plannedStanceCount(overlap)),
+                       "four planned stance feet is an overlap frame")
+            || !expect(isCleanTripodFrame(tripod, tripod, 0),
+                       "matched 3-contact planned set with no L park is clean")
+            || !expect(!isCleanTripodFrame(tripod, overlap, 0),
+                       "an extra contact is not a clean tripod")
+            || !expect(!isCleanTripodFrame(tripod, tripod, 1),
+                       "L-parked contacted stance is not a clean tripod")
+            || !expect(!isHighDuty(0.5) && isHighDuty(0.71),
+                       "walk-entry duty > 0.70 is high-duty")) {
+            return EXIT_FAILURE;
+        }
     }
 
     const Vec3 c = clampFootholdExtraXY(Vec3{0.3, 0.4, 0.0}, 0.5);

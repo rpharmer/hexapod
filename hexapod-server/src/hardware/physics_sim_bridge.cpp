@@ -78,7 +78,8 @@ double computeStandingBodyHeightM() {
         kHexapodLegSpecs.front().mountOffsetBody
         + leg_axis * 0.043f
         + femur_direction * 0.060f
-        + tibia_direction * physics_sim::kHexapodTibiaLinkLengthM;
+        + tibia_direction *
+              (physics_sim::kHexapodTibiaLinkLengthM + physics_sim::kHexapodFootRadiusM);
     constexpr double kSpawnHeightMargin = 0.002;
     return std::max(0.04,
                     static_cast<double>(physics_sim::kHexapodFootRadiusM) -
@@ -107,13 +108,7 @@ Vec3 computeFootVelocityInBodyFrame(const LegState& leg_state, const LegGeometry
         dr * std::sin(q1) + r * std::cos(q1) * dq1,
         dz,
     };
-    const double c = std::cos(leg_geometry.mountAngle.value);
-    const double s = std::sin(leg_geometry.mountAngle.value);
-    return Vec3{
-        c * foot_leg_velocity.x - s * foot_leg_velocity.y,
-        s * foot_leg_velocity.x + c * foot_leg_velocity.y,
-        foot_leg_velocity.z,
-    };
+    return bodyFromLegFrame(leg_geometry) * foot_leg_velocity;
 }
 
 struct Mat3d {
@@ -577,6 +572,28 @@ bool PhysicsSimBridge::read(RobotState& out) {
         telemetry.cone_residual = rsp.solver_cone_residual;
         telemetry.peak_normal_impulse = rsp.solver_peak_normal_impulse;
         telemetry.peak_friction_impulse = rsp.solver_peak_friction_impulse;
+        telemetry.sum_friction_impulse_world_x = rsp.solver_sum_friction_impulse_world_x;
+        telemetry.sum_friction_impulse_world_z = rsp.solver_sum_friction_impulse_world_z;
+        telemetry.sum_abs_friction_impulse_world_x = rsp.solver_sum_abs_friction_impulse_world_x;
+        telemetry.sum_abs_friction_impulse_world_z = rsp.solver_sum_abs_friction_impulse_world_z;
+        telemetry.sum_friction_impulse_world_y = rsp.solver_sum_friction_impulse_world_y;
+        telemetry.contact_delta_vx = rsp.solver_contact_delta_vx;
+        telemetry.contact_delta_vz = rsp.solver_contact_delta_vz;
+        telemetry.leg_friction_impulse_world_x = rsp.solver_leg_friction_impulse_world_x;
+        telemetry.leg_friction_impulse_world_z = rsp.solver_leg_friction_impulse_world_z;
+        telemetry.leg_pinocchio_drift_tx = rsp.solver_leg_pinocchio_drift_tx;
+        telemetry.leg_world_slip_tx = rsp.solver_leg_world_slip_tx;
+        telemetry.leg_world_slip_ty = rsp.solver_leg_world_slip_ty;
+        telemetry.leg_contact_count = rsp.solver_leg_contact_count;
+        telemetry.leg_tibia_vx = rsp.solver_leg_tibia_vx;
+        telemetry.leg_spin_vx = rsp.solver_leg_spin_vx;
+        telemetry.leg_t0_x = rsp.solver_leg_t0_x;
+        telemetry.leg_foot_vx = rsp.solver_leg_foot_vx;
+        telemetry.leg_foot_x = rsp.solver_leg_foot_x;
+        telemetry.leg_foot_pos_vx = rsp.solver_leg_foot_pos_vx;
+        telemetry.leg_foot_vz = rsp.solver_leg_foot_vz;
+        telemetry.leg_foot_z = rsp.solver_leg_foot_z;
+        telemetry.leg_foot_pos_vz = rsp.solver_leg_foot_pos_vz;
         telemetry.peak_structural_impulse = rsp.solver_peak_structural_impulse;
         telemetry.peak_actuator_impulse = rsp.solver_peak_actuator_impulse;
         telemetry.peak_servo_torque_utilization = rsp.solver_peak_servo_torque_utilization;
