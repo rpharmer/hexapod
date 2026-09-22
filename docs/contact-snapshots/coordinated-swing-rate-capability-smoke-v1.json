@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "kind": "coordinated_swing_rate_capability_smoke",
+  "reports": [
+    {
+      "head": "055940da3a5bb7bc3983e5b120fa1258e25b32fe",
+      "tracked_diff_sha256": "cd5caa297ee277111f4460ee2db36d22d17f3e42c4a4a43f6f1238f859600458",
+      "governor_source_sha256": {
+        "hexapod-server/include/control/leg_link_angular_velocity.hpp": "dab1fb866a70359454b2a1f197f08f06d2a19ef52a59c4d4d6e5abbf732cb3dd",
+        "hexapod-server/include/control/swing_link_rate_governor.hpp": "ed731123ea06a95ca56a75df968967d1eb1b4961f6cda3b4c42f2866349c6219",
+        "hexapod-server/src/control/robot_runtime.cpp": "e0697689e536eec3aaa358b31f611f3b0c0a10887dfa149574f0a46311efdd55"
+      },
+      "fixture_sha256": "e910401383c06e87835af8cdccc0fa2056cd097b779f3921a0437a6ca8b8a73b",
+      "server_binary_sha256": "b6e497a3a41fd1bee2a123244ffa922ffc31227b164cf91c3c7343550b490f63",
+      "sim_binary_sha256": "9e37cdfef07de5fb3aaf6b134f0655d50a83aa49cbb84751ef0d153655a01cb3",
+      "baseline": true,
+      "mode": 1,
+      "iterations": 24,
+      "budget": 10,
+      "runs": [
+        {
+          "exit_code": 0,
+          "screen_passed": true,
+          "activation_evidence_valid": true,
+          "governor_counts": {
+            "inactive": 0,
+            "unavailable": 0,
+            "infeasible": 0,
+            "unchanged": 0,
+            "limited": 0
+          },
+          "minimum_scale": 1,
+          "metric_parse_errors": [],
+          "metrics": {
+            "stride_count": 2,
+            "solver_held_steps": 0,
+            "solver_speed_limit_steps": 0,
+            "first_fault": "NONE",
+            "peak_solver_normal_impulse": 0.112061686814,
+            "max_solver_contact_penetration": 0.000747811806,
+            "max_solver_mechanical_energy_delta_abs": 0.058083433658,
+            "sum_solver_actuator_work": 2.111633410789
+          }
+        }
+      ]
+    },
+    {
+      "head": "055940da3a5bb7bc3983e5b120fa1258e25b32fe",
+      "tracked_diff_sha256": "cd5caa297ee277111f4460ee2db36d22d17f3e42c4a4a43f6f1238f859600458",
+      "governor_source_sha256": {
+        "hexapod-server/include/control/leg_link_angular_velocity.hpp": "dab1fb866a70359454b2a1f197f08f06d2a19ef52a59c4d4d6e5abbf732cb3dd",
+        "hexapod-server/include/control/swing_link_rate_governor.hpp": "ed731123ea06a95ca56a75df968967d1eb1b4961f6cda3b4c42f2866349c6219",
+        "hexapod-server/src/control/robot_runtime.cpp": "e0697689e536eec3aaa358b31f611f3b0c0a10887dfa149574f0a46311efdd55"
+      },
+      "fixture_sha256": "e910401383c06e87835af8cdccc0fa2056cd097b779f3921a0437a6ca8b8a73b",
+      "server_binary_sha256": "b6e497a3a41fd1bee2a123244ffa922ffc31227b164cf91c3c7343550b490f63",
+      "sim_binary_sha256": "9e37cdfef07de5fb3aaf6b134f0655d50a83aa49cbb84751ef0d153655a01cb3",
+      "baseline": false,
+      "mode": 1,
+      "iterations": 24,
+      "budget": 10,
+      "runs": [
+        {
+          "exit_code": 0,
+          "screen_passed": true,
+          "activation_evidence_valid": true,
+          "governor_counts": {
+            "inactive": 0,
+            "unavailable": 0,
+            "infeasible": 0,
+            "unchanged": 1273,
+            "limited": 356
+          },
+          "minimum_scale": 0.569919944,
+          "metric_parse_errors": [],
+          "metrics": {
+            "stride_count": 2,
+            "solver_held_steps": 0,
+            "solver_speed_limit_steps": 0,
+            "first_fault": "NONE",
+            "peak_solver_normal_impulse": 0.113253779709,
+            "max_solver_contact_penetration": 0.002065258566,
+            "max_solver_mechanical_energy_delta_abs": 0.040604732931,
+            "sum_solver_actuator_work": 1.338805800002
+          }
+        }
+      ]
+    }
+  ]
+}

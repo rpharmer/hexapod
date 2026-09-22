@@ -241,7 +241,8 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
     }
 
     auto bridge = std::make_unique<PhysicsSimBridge>(
-        "127.0.0.1", port, bus_loop_period_us, harness.physics_solver_iterations, nullptr);
+        "127.0.0.1", port, bus_loop_period_us,
+        physics_sim_test_utils::productionProximalSolverSettings(), nullptr);
     PhysicsSimBridge* bridge_ptr = bridge.get();
 
     control_config::ControlConfig cfg = harness.control_cfg;
@@ -295,8 +296,8 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
         *bridge_ptr, std::max(0.02, cfg.local_map.resolution_m * 0.5)));
     runtime.setNavigationManager(std::move(navigation_manager));
 
-    MotionIntent stand_fallback = makeMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.06);
-    MotionIntent walk_base = makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.06);
+    MotionIntent stand_fallback = makeMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.14);
+    MotionIntent walk_base = makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.14);
 
     const int kWarmupSteps = static_cast<int>(
         physics_sim_test_utils::scaledLegacyStepCount(140, bus_loop_period_us));

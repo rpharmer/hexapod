@@ -23,6 +23,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <vector>
 
 #if defined(__linux__)
 #include <csignal>
@@ -45,8 +46,8 @@ public:
     CapturingPhysicsSimBridge(std::string host,
                               int port,
                               int bus_loop_period_us,
-                              int physics_solver_iterations)
-        : inner_(std::move(host), port, bus_loop_period_us, physics_solver_iterations, nullptr) {}
+                              PhysicsSimSolverSettings solver_settings)
+        : inner_(std::move(host), port, bus_loop_period_us, solver_settings, nullptr) {}
 
     bool init() override { return inner_.init(); }
 
@@ -171,7 +172,8 @@ int main(int argc, char** argv) {
     std::this_thread::sleep_for(std::chrono::milliseconds{250});
 
     auto bridge = std::make_unique<CapturingPhysicsSimBridge>(
-        "127.0.0.1", port, bus_loop_period_us, harness.physics_solver_iterations);
+        "127.0.0.1", port, bus_loop_period_us,
+        physics_sim_test_utils::productionProximalSolverSettings());
     CapturingPhysicsSimBridge* bridge_ptr = bridge.get();
 
     control_config::ControlConfig cfg = harness.control_cfg;
@@ -214,8 +216,19 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
+    const double stand_end_body_z_m = bridge_ptr->last_state().value().body_twist_state.body_trans_m.z;
+    const double stand_end_governed_body_height_m = runtime.commandGovernorSnapshot().governed_body_height_m;
+    const int kTransientSteps = std::max(
+        1, static_cast<int>(std::llround(0.120 / std::max(1.0e-6, static_cast<double>(bus_loop_period_us) * 1.0e-6))));
+
     double min_foot_tip_world_z_m = std::numeric_limits<double>::infinity();
     double min_body_height_m = std::numeric_limits<double>::infinity();
+    double min_body_height_first_120ms_m = std::numeric_limits<double>::infinity();
+    double min_body_height_after_120ms_m = std::numeric_limits<double>::infinity();
+    double min_governed_body_height_m = std::numeric_limits<double>::infinity();
+    double max_governed_body_height_m = -std::numeric_limits<double>::infinity();
+    std::vector<double> walk_body_heights_m;
+    walk_body_heights_m.reserve(static_cast<std::size_t>(kWalkObserveSteps));
     bool saw_any_raw_contact_loss = false;
 
     for (int i = 0; i < kWalkObserveSteps; ++i) {
@@ -237,7 +250,17 @@ int main(int argc, char** argv) {
             return EXIT_FAILURE;
         }
         const RobotState& state = bridge_ptr->last_state().value();
-        min_body_height_m = std::min(min_body_height_m, state.body_twist_state.body_trans_m.z);
+        const double body_z_m = state.body_twist_state.body_trans_m.z;
+        const double governed_body_height_m = runtime.commandGovernorSnapshot().governed_body_height_m;
+        walk_body_heights_m.push_back(body_z_m);
+        min_body_height_m = std::min(min_body_height_m, body_z_m);
+        if (i < kTransientSteps) {
+            min_body_height_first_120ms_m = std::min(min_body_height_first_120ms_m, body_z_m);
+        } else {
+            min_body_height_after_120ms_m = std::min(min_body_height_after_120ms_m, body_z_m);
+        }
+        min_governed_body_height_m = std::min(min_governed_body_height_m, governed_body_height_m);
+        max_governed_body_height_m = std::max(max_governed_body_height_m, governed_body_height_m);
         min_foot_tip_world_z_m = std::min(min_foot_tip_world_z_m, minFootTipWorldZ(state));
         saw_any_raw_contact_loss = saw_any_raw_contact_loss || (rawFootContactCount(state) < kNumLegs);
 
@@ -268,11 +291,31 @@ int main(int argc, char** argv) {
     ::waitpid(pid, nullptr, 0);
 
     const double max_body_undershoot_m = kCommandedBodyHeightM - min_body_height_m;
+    auto median_of = [](std::vector<double> values) -> double {
+        if (values.empty()) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+        std::sort(values.begin(), values.end());
+        const std::size_t mid = values.size() / 2;
+        if (values.size() % 2 == 0) {
+            return 0.5 * (values[mid - 1] + values[mid]);
+        }
+        return values[mid];
+    };
+    const double median_body_height_m = median_of(walk_body_heights_m);
+    const bool has_post_transient = std::isfinite(min_body_height_after_120ms_m);
 
     std::cout << "wave_walk_min_body_height_m=" << min_body_height_m
               << " max_body_undershoot_m=" << max_body_undershoot_m
               << " min_foot_tip_world_z_m=" << min_foot_tip_world_z_m
-              << " saw_any_raw_contact_loss=" << (saw_any_raw_contact_loss ? 1 : 0) << '\n';
+              << " saw_any_raw_contact_loss=" << (saw_any_raw_contact_loss ? 1 : 0)
+              << " stand_end_body_z_m=" << stand_end_body_z_m
+              << " stand_end_governed_body_height_m=" << stand_end_governed_body_height_m
+              << " median_body_height_m=" << median_body_height_m
+              << " min_body_height_first_120ms_m=" << min_body_height_first_120ms_m
+              << " min_body_height_after_120ms_m=" << min_body_height_after_120ms_m
+              << " min_governed_body_height_m=" << min_governed_body_height_m
+              << " max_governed_body_height_m=" << max_governed_body_height_m << '\n';
 
     bool ok = true;
     ok = expect(min_foot_tip_world_z_m >= kMinFootTipWorldZ,
@@ -289,7 +332,15 @@ int main(int argc, char** argv) {
         metrics << std::setprecision(17) << "{\"min_body_height_m\":" << min_body_height_m
                 << ",\"max_body_undershoot_m\":" << max_body_undershoot_m
                 << ",\"min_foot_tip_world_z_m\":" << min_foot_tip_world_z_m
-                << ",\"saw_any_raw_contact_loss\":" << (saw_any_raw_contact_loss ? "true" : "false") << '}';
+                << ",\"saw_any_raw_contact_loss\":" << (saw_any_raw_contact_loss ? "true" : "false")
+                << ",\"stand_end_body_z_m\":" << stand_end_body_z_m
+                << ",\"stand_end_governed_body_height_m\":" << stand_end_governed_body_height_m
+                << ",\"median_body_height_m\":" << median_body_height_m
+                << ",\"min_body_height_first_120ms_m\":" << min_body_height_first_120ms_m
+                << ",\"min_body_height_after_120ms_m\":" << min_body_height_after_120ms_m
+                << ",\"has_post_transient\":" << (has_post_transient ? "true" : "false")
+                << ",\"min_governed_body_height_m\":" << min_governed_body_height_m
+                << ",\"max_governed_body_height_m\":" << max_governed_body_height_m << '}';
         physics_sim_metrics::emitLine("physics_sim_wave_slow_walk_foot_clearance", "wave_slow_walk_foot_clearance", ok,
                                       limitsJson(), metrics.str());
     }

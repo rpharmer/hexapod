@@ -6,6 +6,36 @@
 #include "motion_intent_utils.hpp"
 #include "support_assessment.hpp"
 
+#include <cmath>
+#include <cstdlib>
+#include <string>
+
+void InPlaceTurnHold::apply(const RobotState& estimated, const MotionIntent& intent,
+                           BodyTwist& command, bool enabled) {
+    const auto planar = planarMotionCommand(intent);
+    const Vec3 position = estimated.body_twist_state.body_trans_m;
+    const double yaw = estimated.body_twist_state.twist_pos_rad.z;
+    // Do not anchor an intentional arc/translation, even if yaw dominates.
+    if (!enabled || intent.requested_mode != RobotMode::WALK
+        || !estimated.bus_ok || !estimated.has_body_twist_state
+        || !std::isfinite(planar.vx_mps) || !std::isfinite(planar.vy_mps)
+        || !std::isfinite(planar.yaw_rate_radps)
+        || std::hypot(planar.vx_mps, planar.vy_mps) > 1e-6
+        || std::abs(planar.yaw_rate_radps) * .11 <= 1e-6
+        || !std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(yaw)) {
+        reset();
+        return;
+    }
+    if (!valid_) { origin_ = position; valid_ = true; return; }
+    const double dx = position.x-origin_.x, dy = position.y-origin_.y;
+    const double c = std::cos(yaw), s = std::sin(yaw);
+    double vx = -.20*(c*dx+s*dy), vy = -.20*(-s*dx+c*dy);
+    const double speed = std::hypot(vx, vy);
+    if (speed > .03) { vx *= .03/speed; vy *= .03/speed; }
+    command.linear_mps.x += vx;
+    command.linear_mps.y += vy;
+}
+
 ControlPipeline::ControlPipeline(control_config::GaitConfig gait_config,
                                  control_config::LocomotionCommandConfig loco_config,
                                  control_config::SafetyConfig safety_config,
@@ -13,14 +43,16 @@ ControlPipeline::ControlPipeline(control_config::GaitConfig gait_config,
                                  control_config::FootTerrainConfig foot_terrain_config,
                                  control_config::GravityFeedforwardConfig gravity_feedforward_config,
                                  control_config::LocomotionRedesignConfig locomotion_redesign_config,
-                                 runtime_resource_monitoring::Profiler* profiler)
+                                 runtime_resource_monitoring::Profiler* profiler,
+                                 bool absolute_position_feedback)
     : profiler_(profiler),
       command_governor_(governor_config, safety_config),
       gait_(gait_config),
       loco_cmd_(loco_config),
       body_(gait_config, foot_terrain_config),
       gravity_feedforward_(gravity_feedforward_config),
-      locomotion_redesign_(locomotion_redesign_config) {}
+      locomotion_redesign_(locomotion_redesign_config),
+      absolute_position_feedback_(absolute_position_feedback) {}
 
 void ControlPipeline::reset() {
     command_governor_.reset();
@@ -31,6 +63,33 @@ void ControlPipeline::reset() {
     resetJointAngleGravityFeedforwardState();
     last_gait_state_ = GaitState{};
     have_last_gait_state_ = false;
+    turn_hold_.reset();
+}
+
+namespace {
+
+bool inPlaceTurnHoldEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("HEXAPOD_TURN_INPLACE_HOLD");
+        return value == nullptr || std::string{value} != "0";
+    }();
+    return enabled;
+}
+
+} // namespace
+
+void ControlPipeline::applyInPlaceTurnTranslationHold(const RobotState& estimated,
+                                                      const MotionIntent& intent,
+                                                      BodyTwist& cmd_twist) {
+    turn_hold_.apply(estimated, intent, cmd_twist,
+                     absolute_position_feedback_ && inPlaceTurnHoldEnabled());
+}
+
+void ControlPipeline::debugRestoreGaitHistory(const GaitState& gait) {
+    last_gait_state_ = gait;
+    have_last_gait_state_ = true;
+    gait_.debugRestore(gait);
+    command_governor_.reset();
 }
 
 const control_config::CommandGovernorConfig& ControlPipeline::commandGovernorConfig() const {
@@ -42,7 +101,8 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
                                             const SafetyState& safety_state,
                                             bool bus_ok,
                                             uint64_t loop_counter,
-                                            const LocalMapSnapshot* terrain_snapshot) {
+                                            const LocalMapSnapshot* terrain_snapshot,
+                                            double control_dt_s) {
     const auto pipeline_scope =
         profiler_ ? profiler_->scope(runtime_resource_monitoring::toIndex(runtime_resource_monitoring::Section::ControlPipeline))
                   : runtime_resource_monitoring::Profiler::Scope{};
@@ -80,6 +140,11 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
                       : runtime_resource_monitoring::Profiler::Scope{};
         cmd_twist = recovery_hold_stage ? loco_cmd_.snapTo(BodyTwist{}, command_clock)
                                         : loco_cmd_.update(governed_intent, planar, command_clock);
+        if (!recovery_hold_stage) {
+            applyInPlaceTurnTranslationHold(estimated, governed_intent, cmd_twist);
+        } else {
+            turn_hold_.reset();
+        }
         (void)loco_scope;
     }
 
@@ -217,7 +282,8 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
         estimated,
         gait_state,
         joint_targets,
-        locomotion_redesign_.enable_contact_mode_planning ? &locomotion_feasibility.contact : nullptr);
+        locomotion_redesign_.enable_contact_mode_planning ? &locomotion_feasibility.contact : nullptr,
+        control_dt_s);
     (void)pipeline_scope;
 
     ControlStatus status{};
@@ -237,6 +303,9 @@ PipelineStepResult ControlPipeline::runStep(const RobotState& estimated,
     result.stroke_clamp_hit = body_.lastStrokeClampHit();
     result.workspace_xy_hit = body_.lastWorkspaceXyHit();
     result.ik_reach_clamp_hit = ik_.lastReachClampHit();
+    result.latched_stroke_length_m = body_.latchedStrokeLengthM();
+    result.latched_plant_position_m = body_.latchedPlantPositionM();
+    result.r2_swing_decomp = body_.lastR2SwingDecomp();
     last_gait_state_ = gait_state;
     have_last_gait_state_ = true;
     return result;

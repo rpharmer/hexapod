@@ -48,7 +48,7 @@ Primary parser: `runtime_section_parser.cpp`.
 - `Runtime.PhysicsSim.Host` (string, default `127.0.0.1`)
 - `Runtime.PhysicsSim.Port` (int/double parsed, bounds: `1..65535`, default `9871`)
 - `Runtime.PhysicsSim.SolverIterations` (int/double parsed, bounds: `1..512`, default `24`)
-- `Runtime.PhysicsSim.SolverMode` (`0` = legacy PGS, `1` = Pinocchio proximal, default `1`)
+- `Runtime.PhysicsSim.SolverMode` (bounds `0..2`, default `1`; `0` = legacy PGS, `1` = Pinocchio proximal, `2` = opt-in compliant contact; WSL stays `1`)
 - `Runtime.PhysicsSim.ProximalMu` (double, default `1e-6`)
 - `Runtime.PhysicsSim.AbsoluteTolerance` (double, default `1e-8`)
 - `Runtime.PhysicsSim.RelativeTolerance` (double, default `1e-6`)
@@ -278,20 +278,35 @@ Primary parser: `tuning_section_parser.cpp`.
 Small biases on commanded servo angles after IK from IMU gravity direction (quasi-static gates) and per-leg stance/contact context. Uses FK-consistent static torques and a nominal position-loop stiffness map (see `joint_angle_gravity_feedforward`). **Default off**; set `Tuning.GravityFeedforwardEnabled = true` and tune scales for your platform. Does not command torques directly.
 
 - `Tuning.GravityFeedforwardEnabled` (`bool`, default `false`)
-- `Tuning.GravityFeedforwardMaxGyroRadps` (`0.0..5.0`, default `0.35`) — skip when ‖gyro‖ exceeds this
+- `Tuning.GravityFeedforwardMaxGyroRadps` (`0.0..5.0`, default `0.35`) — reject new compensation input when ‖gyro‖ exceeds this; with LPF enabled, the prior bounded correction decays to zero
 - `Tuning.GravityFeedforwardAccelNormMarginMps2` (`0.0..20.0`, default `1.5`) — require |‖accel‖ − g| ≤ margin; `0` disables the check
 - `Tuning.GravityFeedforwardScaleCoxa` (`0.0..4.0`, default `0`) — multiplier on modeled coxa Δq (model keeps coxa at 0 today)
 - `Tuning.GravityFeedforwardScaleFemur` (`0.0..4.0`, default `1`)
 - `Tuning.GravityFeedforwardScaleTibia` (`0.0..4.0`, default `1`)
-- `Tuning.GravityFeedforwardStiffnessGainScale` (`0.05..20.0`, default `1`) — scales ωₙ² in the sag denominator; **&lt; 1** increases predicted Δq (softer modeled actuator / better match to a soft sim)
-- `Tuning.GravityFeedforwardDeltaLpfTauS` (`0.0..0.5`, default `0`) — first-order low-pass time constant on femur/tibia Δq per leg; `0` disables
+- `Tuning.GravityFeedforwardStiffnessGainScale` (`0.05..20.0`, default `1`) — scales ωₙ² only in the analytical fallback denominator; **&lt; 1** increases predicted Δq. Not applied to explicit actuator stiffness reported by the bridge.
+- `Tuning.GravityFeedforwardDeltaLpfTauS` (`0.0..0.5`, default `0`) — first-order low-pass time constant on femur/tibia Δq per leg; `0` disables. Uses configured control-loop elapsed time, starts from zero, and filters gate/contact rejection toward zero instead of bypassing the filter. Explicit disable or invalid joint feedback clears state immediately.
 - `Tuning.GravityFeedforwardIncludeFootReaction` (`bool`, default `true`) — equal-share `m_body·g / N_stance` support along world +Z, mapped to each leg frame
-- `Tuning.GravityFeedforwardIncludeSelfWeight` (`bool`, default `false`) — add femur/tibia (and coxa) link-weight torques; leave off until tuned to avoid double-counting with the reaction model
+- `Tuning.GravityFeedforwardIncludeSelfWeight` (`bool`, default `false`) — compensate descendant-link weight on both stance and swing legs, using measured joint posture. Valid feedback is required even in Full mode. Foot-reaction compensation remains stance/contact-only. Coxa yaw compensation is not modeled.
 - `Tuning.GravityFeedforwardMaxDeltaCoxaRad` (`0.0..0.5`, default `0.08`)
 - `Tuning.GravityFeedforwardMaxDeltaFemurRad` (`0.0..0.5`, default `0.12`)
 - `Tuning.GravityFeedforwardMaxDeltaTibiaRad` (`0.0..0.5`, default `0.12`)
 
 **Deprecated:** `Tuning.GravityFeedforwardGainCoxaRad`, `Tuning.GravityFeedforwardGainFemurRad`, `Tuning.GravityFeedforwardGainTibiaRad` — if any of these keys are present under `[Tuning]`, the parser logs a one-time warning; they are **not** applied (use `Scale*` keys instead).
+
+The September 2026 virtual-work audit corrected the holding-torque sign, removed
+the proximal coxa weight from the femur moment, and aligned the tibia model with
+the simulator's combined tibia+foot body (mass at the rigid shaft centre). A foot
+point mass is not added a second time. Hardware mass/COM and servo stiffness
+still need calibration. The physics bridge now supplies sampled nominal
+per-joint stiffness in Nm/rad; the angle conversion uses `holding torque / Kp`
+when that calibration is available, instead of the distal point-mass proxy.
+Temporary numerical-retry gain reductions are excluded. These are previous
+accepted-state gains, not a prediction of the next contact configuration.
+Absent calibration (including legacy PGS) retains the analytical fallback.
+Existing angle clamps and compensation scale/IMU gates remain unchanged.
+Existing enabled
+reaction-feedforward configurations can therefore behave differently after this
+correctness fix and must be requalified; default feedforward remains disabled.
 
 **Harness tuning (physics sim):** [`scripts/sweep_gravity_feedforward_stand.sh`](scripts/sweep_gravity_feedforward_stand.sh) runs `test_gravity_feedforward_stand_quiescence` over a small scale grid with `HEXAPOD_FF_CSV=1`. Optional env overrides: `HEXAPOD_FF_SCALE_FEMUR`, `HEXAPOD_FF_SCALE_TIBIA` (harness defaults `0.30`), `HEXAPOD_FF_STIFFNESS_GAIN_SCALE` (default `0.62`), `HEXAPOD_FF_DELTA_LPF_TAU_S` (default `0.08`), `HEXAPOD_FF_USE_CODE_DEFAULTS`.
 

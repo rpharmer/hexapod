@@ -302,6 +302,12 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_test(NAME servo_calibration_unified_conversion COMMAND test_servo_calibration_unified_conversion)
 
     add_executable(test_motion_intent_through_ik_fk tests/test_motion_intent_through_ik_fk.cpp)
+    add_executable(test_swing_link_rate_governor tests/test_swing_link_rate_governor.cpp)
+    add_executable(test_in_place_turn_hold tests/test_in_place_turn_hold.cpp)
+    target_link_libraries(test_in_place_turn_hold PRIVATE hexapod_server_core)
+    add_test(NAME in_place_turn_hold COMMAND test_in_place_turn_hold)
+    target_link_libraries(test_swing_link_rate_governor PRIVATE hexapod_server_core)
+    add_test(NAME swing_link_rate_governor COMMAND test_swing_link_rate_governor)
     target_link_libraries(test_motion_intent_through_ik_fk PRIVATE hexapod_server_core)
     add_test(NAME motion_intent_through_ik_fk_chain COMMAND test_motion_intent_through_ik_fk)
 
@@ -385,6 +391,57 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     target_link_libraries(test_physics_sim_ik_wire_roundtrip PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_ik_wire_roundtrip COMMAND test_physics_sim_ik_wire_roundtrip)
 
+    add_executable(test_p0_tibia_command_attribution tests/test_p0_tibia_command_attribution.cpp)
+    target_link_libraries(test_p0_tibia_command_attribution PRIVATE hexapod_server_core)
+    target_compile_definitions(test_p0_tibia_command_attribution PRIVATE
+        HEXAPOD_P3_SEQ_HISTORY_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p3-seq-first-trip-history.json")
+    add_test(NAME p0_tibia_command_attribution COMMAND test_p0_tibia_command_attribution)
+
+    add_executable(test_p0_swing_planner_replay tests/test_p0_swing_planner_replay.cpp)
+    target_link_libraries(test_p0_swing_planner_replay PRIVATE hexapod_server_core)
+    target_compile_definitions(test_p0_swing_planner_replay PRIVATE
+        HEXAPOD_P3_SEQ_HISTORY_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p3-seq-first-trip-history.json"
+        HEXAPOD_P0_SWING_PLANNER_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p0-r2-swing-planner-v1.json")
+    add_test(NAME p0_swing_planner_replay COMMAND test_p0_swing_planner_replay)
+
+    add_executable(test_p0_commanded_foot_replay tests/test_p0_commanded_foot_replay.cpp)
+    target_link_libraries(test_p0_commanded_foot_replay PRIVATE hexapod_server_core)
+    target_compile_definitions(test_p0_commanded_foot_replay PRIVATE
+        HEXAPOD_P3_SEQ_HISTORY_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p3-seq-first-trip-history.json"
+        HEXAPOD_P0_COMMANDED_FOOT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p0-r2-commanded-foot-v1.json"
+        HEXAPOD_P0_NOMINAL_DEPARTURE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p0-r2-nominal-departure-v1.json"
+        HEXAPOD_P0_DEPARTURE_THROUGH_HOLD_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p0-r2-departure-through-hold-v1.json")
+    add_test(NAME p0_commanded_foot_replay COMMAND test_p0_commanded_foot_replay)
+
+    add_executable(test_p0_swing_decomp_replay tests/test_p0_swing_decomp_replay.cpp)
+    target_link_libraries(test_p0_swing_decomp_replay PRIVATE hexapod_server_core)
+    target_compile_definitions(test_p0_swing_decomp_replay PRIVATE
+        HEXAPOD_P3_SEQ_HISTORY_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p3-seq-first-trip-history.json"
+        HEXAPOD_P0_SWING_DECOMP_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p0-r2-swing-decomp-v2.json"
+        HEXAPOD_P0_SWING_DECOMP_V3_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p0-r2-swing-decomp-v3.json")
+    add_test(NAME p0_swing_decomp_replay COMMAND test_p0_swing_decomp_replay)
+
+    add_executable(test_p0_tip_over_replay tests/test_p0_tip_over_replay.cpp)
+    target_link_libraries(test_p0_tip_over_replay PRIVATE hexapod_server_core)
+    target_compile_definitions(test_p0_tip_over_replay PRIVATE
+        HEXAPOD_P0_TIP_OVER_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p0-seq-tip-over-forward-v1.json")
+    add_test(NAME p0_tip_over_replay COMMAND test_p0_tip_over_replay)
+
+    add_executable(test_p0_turn_traj_replay tests/test_p0_turn_traj_replay.cpp)
+    target_link_libraries(test_p0_turn_traj_replay PRIVATE hexapod_server_core)
+    target_compile_definitions(test_p0_turn_traj_replay PRIVATE
+        HEXAPOD_P0_TURN_TRAJ_ISOLATED_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p0-turn-traj-isolated-v1.json"
+        HEXAPOD_P0_TURN_TRAJ_SEQUENTIAL_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p0-turn-traj-sequential-v1.json")
+    add_test(NAME p0_turn_traj_replay COMMAND test_p0_turn_traj_replay)
+
+    add_executable(test_p0_turn_entry_replay tests/test_p0_turn_entry_replay.cpp)
+    target_link_libraries(test_p0_turn_entry_replay PRIVATE hexapod_server_core)
+    target_compile_definitions(test_p0_turn_entry_replay PRIVATE
+        HEXAPOD_P0_TURN_ENTRY_ISOLATED_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p0-turn-entry-isolated-v1.json"
+        HEXAPOD_P0_TURN_ENTRY_SEQUENTIAL_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p0-turn-entry-sequential-v1.json"
+        HEXAPOD_P0_TURN_ENTRY_SEQUENTIAL_FAIL_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p0-turn-entry-sequential-fail-v1.json")
+    add_test(NAME p0_turn_entry_replay COMMAND test_p0_turn_entry_replay)
+
     add_executable(test_physics_sim_bridge_frame_conversion tests/test_physics_sim_bridge_frame_conversion.cpp)
     target_link_libraries(test_physics_sim_bridge_frame_conversion PRIVATE hexapod_server_core)
     add_test(NAME physics_sim_bridge_frame_conversion COMMAND test_physics_sim_bridge_frame_conversion)
@@ -425,6 +482,9 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     endfunction()
 
     add_executable(test_physics_sim_walk_distance tests/test_physics_sim_walk_distance.cpp)
+    add_executable(test_swing_clearance_census tests/test_swing_clearance_census.cpp)
+    target_link_libraries(test_swing_clearance_census PRIVATE hexapod_server_core)
+    add_test(NAME swing_clearance_census COMMAND test_swing_clearance_census)
     target_link_libraries(test_physics_sim_walk_distance PRIVATE hexapod_server_core)
     hexapod_add_live_physics_sim_test(physics_sim_walk_distance test_physics_sim_walk_distance)
 

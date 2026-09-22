@@ -1186,6 +1186,9 @@ pid_t launchSimulator(const char* sim_exe,
     (void)::setenv("HEXAPOD_PINOCCHIO_CONTACT_ORDER_SEED",
                    contact_order_seed_text.c_str(),
                    1);
+    // v16 was captured on spawn six-foot inertias. Live CRBA is a closed-loop
+    // height lever; do not retune the frozen plant.
+    (void)::setenv("HEXAPOD_PINOCCHIO_DISABLE_CONTACT_INERTIA", "1", 1);
     const std::string port_text = std::to_string(port);
     ::execl(sim_exe, sim_exe, "--serve", "--serve-port", port_text.c_str(), nullptr);
     std::perror("execl");

@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "kind": "turn_plant_state_hunt",
+  "date_utc": "2026-09-16T19:59:02Z",
+  "head": "055940da3a5bb7bc3983e5b120fa1258e25b32fe",
+  "screen": "sequential",
+  "solver_mode": 1,
+  "solver_iterations": 24,
+  "body_height_m": 0.14,
+  "governor_enabled": false,
+  "sim_binary_sha256": "a8182c21fc63713d85ae1ca59acc121f551f45ed719f444b69f7e39ad9ea42e4",
+  "server_binary_sha256": "e747802c3fa411a92231ae0b22441bd48c98b4cd7101f14d89220db763f68ba7",
+  "gate_max_net_horizontal_distance_m": 0.21,
+  "not_overwritten": [
+    "docs/contact-snapshots/turn-sequential-census-v1.json",
+    "docs/contact-snapshots/turn-sequential-hunt-isolated-v1.json",
+    "docs/contact-snapshots/turn-sequential-hunt-after-reverse-v1.json",
+    "docs/contact-snapshots/turn-sequential-hunt-after-reverse-straight-v1.json",
+    "docs/contact-snapshots/turn-sequential-hunt-sequential-v1.json"
+  ],
+  "runs": [
+    {
+      "run": 1,
+      "exit_code": 1,
+      "screen_passed": false,
+      "cases": [
+        "forward_walk",
+        "slow_forward_walk",
+        "reverse_walk",
+        "straight_walk"
+      ],
+      "ccp_accept1": 0,
+      "ccp_accept0": 0,
+      "failure_expectations": [
+        "FAIL: straight_walk: runtime should remain in WALK mode while the straight command is active"
+      ],
+      "abort_before_turn": true,
+      "abort_case": "straight_walk",
+      "abort_held": 1604,
+      "abort_held_reason": "speed_limit=1604",
+      "abort_speed_limit_frame": "none=1,tibia=1603",
+      "first_failed_failure_reason": 10,
+      "first_failed_ncp_dual": 0.003461,
+      "first_failed_contacts": 4
+    },
+    {
+      "run": 2,
+      "exit_code": 1,
+      "screen_passed": false,
+      "cases": [
+        "forward_walk",
+        "slow_forward_walk",
+        "reverse_walk",
+        "straight_walk"
+      ],
+      "ccp_accept1": 0,
+      "ccp_accept0": 1,
+      "failure_expectations": [
+        "FAIL: straight_walk: runtime should remain in WALK mode while the straight command is active"
+      ],
+      "abort_before_turn": true,
+      "abort_case": "straight_walk",
+      "abort_held": 611,
+      "abort_held_reason": "solver_not_converged=1,speed_limit=610",
+      "abort_speed_limit_frame": "femur=610",
+      "first_failed_failure_reason": 10,
+      "first_failed_ncp_dual": 0.000264,
+      "first_failed_contacts": 4
+    },
+    {
+      "run": 3,
+      "exit_code": 1,
+      "screen_passed": false,
+      "cases": [
+        "forward_walk",
+        "slow_forward_walk",
+        "reverse_walk",
+        "straight_walk"
+      ],
+      "ccp_accept1": 0,
+      "ccp_accept0": 0,
+      "failure_expectations": [
+        "FAIL: straight_walk: runtime should remain in WALK mode while the straight command is active"
+      ],
+      "abort_before_turn": true,
+      "abort_case": "straight_walk",
+      "abort_held": 4,
+      "abort_held_reason": "speed_limit=4",
+      "abort_speed_limit_frame": "none=2,tibia=3",
+      "first_failed_failure_reason": 10,
+      "first_failed_ncp_dual": 0.008318,
+      "first_failed_contacts": 4
+    },
+    {
+      "run": 4,
+      "exit_code": 1,
+      "screen_passed": false,
+      "cases": [
+        "forward_walk",
+        "slow_forward_walk",
+        "reverse_walk",
+        "straight_walk"
+      ],
+      "ccp_accept1": 0,
+      "ccp_accept0": 0,
+      "failure_expectations": [
+        "FAIL: straight_walk: runtime should remain in WALK mode while the straight command is active"
+      ],
+      "abort_before_turn": true,
+      "abort_case": "straight_walk",
+      "abort_held": 430,
+      "abort_held_reason": "speed_limit=430",
+      "abort_speed_limit_frame": "none=2,tibia=428",
+      "first_failed_failure_reason": 10,
+      "first_failed_ncp_dual": 0.001405,
+      "first_failed_contacts": 5
+    },
+    {
+      "run": 5,
+      "exit_code": 0,
+      "screen_passed": true,
+      "cases": [
+        "forward_walk",
+        "slow_forward_walk",
+        "reverse_walk",
+        "straight_walk",
+        "turn_in_place"
+      ],
+      "ccp_accept1": 0,
+      "ccp_accept0": 0,
+      "failure_expectations": [],
+      "abort_before_turn": false,
+      "turn": {
+        "net_horizontal_distance_m": 0.185283,
+        "walk_path_length_m": 0.459506,
+        "yaw_delta_rad": 2.213369,
+        "equivalent_turn_radius_m": 0.103601,
+        "path_per_rad_m": 0.207605,
+        "held_count": 0,
+        "intent_cmd_yaw_radps": 0.45,
+        "raw_wz_radps": 0.45,
+        "raw_vx_mps": 0,
+        "raw_vy_mps": 0,
+        "intent_planar_mps": 0,
+        "yaw_dominant": true,
+        "first_walk_requested_planar_speed_mps": 0,
+        "first_walk_governed_planar_speed_mps": 0,
+        "first_walk_requested_yaw_rate_radps": 0.45,
+        "first_walk_gait_phase_leg0": 0.001957,
+        "stand_end_body_vx_mps": -1.1e-05,
+        "stand_end_body_vy_mps": -0.000288,
+        "stand_end_body_wz_radps": 0.001042,
+        "start_x_m": 0.879108,
+        "start_y_m": -0.413406,
+        "minimum_body_height_m": 0.149811,
+        "maximum_body_height_error_m": 0.019918,
+        "mean_loaded_stance_world_slip_mps": [
+          0.003603,
+          0.003549,
+          0.000838,
+          -0.000521,
+          0.00385,
+          -0.0092
+        ],
+        "mean_loaded_stance_commanded_sweep_mps": [
+          -0.033543,
+          0.063874,
+          -0.072574,
+          0.063307,
+          -0.051634,
+          0.035517
+        ],
+        "mean_loaded_stance_measured_sweep_mps": [
+          -0.020133,
+          0.052251,
+          -0.05313,
+          0.04791,
+          -0.043428,
+          0.042312
+        ],
+        "solver_held_steps": 0,
+        "solver_held_failure_reason": "none",
+        "solver_speed_limit_frame": "none",
+        "peak_solver_normal_impulse": 0.080526016653,
+        "peak_solver_friction_impulse": 0.030853144825,
+        "first_failed_failure_reason": -1,
+        "first_failed_speed_limit_frame": 0,
+        "first_failed_ncp_dual": 0,
+        "first_failed_contact_constraint_count": 0,
+        "passed": true,
+        "mean_abs_loaded_stance_world_slip_mps": 0.0035935,
+        "mean_abs_loaded_stance_commanded_sweep_mps": 0.053408166666666666,
+        "stand_end_speed_mps": 0.00028820999288713085
+      }
+    }
+  ],
+  "scored_turns": 1,
+  "abort_before_turn": 4,
+  "nets_m": [
+    0.185283
+  ],
+  "radii_m": [
+    0.103601
+  ],
+  "pass_under_0_21": 1
+}

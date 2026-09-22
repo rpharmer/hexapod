@@ -2,6 +2,7 @@
 
 #include "control_config.hpp"
 #include "hexapod-server.hpp"
+#include "physics_sim_bridge.hpp"
 #include "toml_parser.hpp"
 
 #include <cmath>
@@ -16,6 +17,22 @@
 #endif
 
 namespace physics_sim_test_utils {
+
+// Opt-in experiment, never a production default. Keep reaction forces off and
+// all existing angle/gyro/quality/speed limits. No simulator oracle is queried.
+inline void applySelfWeightOnlyScreen(control_config::ControlConfig& config) {
+    const char* value = std::getenv("HEXAPOD_WALK_TEST_SELF_WEIGHT");
+    if (value == nullptr || std::string{value} != "1") return;
+    auto& ff = config.gravity_feedforward;
+    ff.enabled = true;
+    ff.mode = control_config::GravityFeedforwardMode::Bounded;
+    ff.include_foot_reaction = false;
+    ff.include_self_weight = true;
+    ff.scale_coxa = 0.0;
+    ff.scale_femur = ff.scale_tibia = 1.0;
+    ff.stiffness_gain_scale = 1.0;
+    ff.delta_lpf_tau_s = .08;
+}
 
 struct HarnessSettings {
     std::filesystem::path config_path{};
@@ -62,6 +79,15 @@ inline HarnessSettings loadHarnessSettings(bool prefer_test_harness_config = fal
     settings.bus_loop_period_us =
         static_cast<int>(settings.control_cfg.loop_timing.bus_loop_period.count());
     settings.physics_solver_iterations = settings.parsed.physicsSimSolverIterations;
+    return settings;
+}
+
+/** Production WSL physics-sim solver: pinocchio-proximal at cap 24. Does not change the
+ *  iterations-only PhysicsSimBridge ctor, which remains LegacyPgs. */
+inline PhysicsSimSolverSettings productionProximalSolverSettings() {
+    PhysicsSimSolverSettings settings{};
+    settings.mode = physics_sim::PhysicsSolverMode::PinocchioProximal;
+    settings.iterations = 24;
     return settings;
 }
 

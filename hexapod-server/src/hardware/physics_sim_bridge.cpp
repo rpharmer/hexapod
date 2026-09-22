@@ -533,6 +533,13 @@ bool PhysicsSimBridge::read(RobotState& out) {
             step.joint_targets[static_cast<std::size_t>(base + 0)],
             step.joint_targets[static_cast<std::size_t>(base + 1)],
             step.joint_targets[static_cast<std::size_t>(base + 2)]);
+        physics_sim_joint_wire_mapping::simWireVelocitiesFromServoLeg(
+            cal,
+            leg,
+            pending_targets_.leg_states[static_cast<std::size_t>(leg)],
+            step.joint_target_velocities[static_cast<std::size_t>(base + 0)],
+            step.joint_target_velocities[static_cast<std::size_t>(base + 1)],
+            step.joint_target_velocities[static_cast<std::size_t>(base + 2)]);
     }
 
     if (::send(sock_, &step, physics_sim::kStepCommandBytes, 0) !=
@@ -570,6 +577,7 @@ bool PhysicsSimBridge::read(RobotState& out) {
         telemetry.ncp_dual_residual = rsp.solver_ncp_dual_residual;
         telemetry.ncp_complementarity_residual = rsp.solver_ncp_complementarity_residual;
         telemetry.cone_residual = rsp.solver_cone_residual;
+        telemetry.compliant_projected_residual = rsp.solver_compliant_projected_residual;
         telemetry.peak_normal_impulse = rsp.solver_peak_normal_impulse;
         telemetry.peak_friction_impulse = rsp.solver_peak_friction_impulse;
         telemetry.sum_friction_impulse_world_x = rsp.solver_sum_friction_impulse_world_x;
@@ -599,6 +607,12 @@ bool PhysicsSimBridge::read(RobotState& out) {
         telemetry.peak_servo_torque_utilization = rsp.solver_peak_servo_torque_utilization;
         telemetry.preintegration_linear_speed = rsp.solver_preintegration_linear_speed;
         telemetry.preintegration_angular_speed = rsp.solver_preintegration_angular_speed;
+        telemetry.chassis_preintegration_angular_speed =
+            rsp.solver_chassis_preintegration_angular_speed;
+        telemetry.max_link_preintegration_angular_speed =
+            rsp.solver_max_link_preintegration_angular_speed;
+        telemetry.speed_limit_frame = rsp.solver_speed_limit_frame;
+        telemetry.speed_limit_support = rsp.solver_speed_limit_support;
         telemetry.max_contact_penetration = rsp.solver_max_contact_penetration;
         telemetry.mechanical_energy_delta = rsp.solver_mechanical_energy_delta;
         telemetry.actuator_work = rsp.solver_actuator_work;
@@ -668,6 +682,13 @@ bool PhysicsSimBridge::read(RobotState& out) {
     for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
         const ServoCalibration& cal = geometry.legGeometry[leg].servo;
         const int base = static_cast<int>(leg) * 3;
+        bool stiffnessValid = true;
+        for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+            const double stiffness = rsp.actuator_stiffness_nm_per_rad[base + joint];
+            out.joint_stiffness_nm_per_rad[leg][joint] = stiffness;
+            stiffnessValid = stiffnessValid && std::isfinite(stiffness) && stiffness > 0.0;
+        }
+        out.joint_stiffness_valid[leg] = stiffnessValid;
         const float sim_c = rsp.joint_angles[static_cast<std::size_t>(base + 0)];
         const float sim_f = rsp.joint_angles[static_cast<std::size_t>(base + 1)];
         const float sim_t = rsp.joint_angles[static_cast<std::size_t>(base + 2)];

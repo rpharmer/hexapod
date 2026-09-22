@@ -1,0 +1,85 @@
+{
+  "capture": {
+    "case": "slow_forward_walk",
+    "experiment": null,
+    "later_hold_case": "straight_walk",
+    "note": "First full-gain SpeedLimit of sequential walk-distance. slow_forward_walk recovered (held=0); sequential later failed stay-WALK on straight_walk.",
+    "plant": "rigid",
+    "sequential_run": 1,
+    "solver_mode": 1
+  },
+  "chassis_w": 0.5313683628837059,
+  "classification": {
+    "class": "commanded",
+    "contact_dv_norm": 0.2755008380395176,
+    "contact_dv_over_vin": 0.03174209092988111,
+    "femur_aba_frac": 0.028030665139689673,
+    "reason": "Winner-leg vin already high (femur 7.07, coxa 4.83 rad/s). ABA added ~3% on femur. Contact dv reduced femur rate; did not dominate vnew. WORLD_ALIGNED tibia \u03c9=10.15 is composed serial-link from those joint rates, not an NCP reject (accepted, dual 8.4e-4, 5 contacts).",
+    "vaba_norm": 8.890098831387636,
+    "vin_norm": 8.6793538159822
+  },
+  "dt": 0.0016666665906086564,
+  "joints": [
+    {
+      "contact_dv": -0.025097790767470762,
+      "err": 0.47441731662595316,
+      "offset": 0,
+      "tau": 0.06369806597735916,
+      "vaba": 4.910379690826367,
+      "vin": 4.828607047687404,
+      "vnew": 4.885281900058896,
+      "wire": 0
+    },
+    {
+      "contact_dv": -0.19180097434396348,
+      "err": 0.6858867660228986,
+      "offset": 1,
+      "tau": 0.08053026319128252,
+      "vaba": 7.268679503238414,
+      "vin": 7.0704889938771815,
+      "vnew": 7.076878528894451,
+      "wire": 1
+    },
+    {
+      "contact_dv": 0.19617135086391957,
+      "err": 0.1734199607634156,
+      "offset": 2,
+      "tau": 0.013571886761673053,
+      "vaba": 1.445104426317189,
+      "vin": 1.4226461364267458,
+      "vnew": 1.6412757771811086,
+      "wire": 2
+    }
+  ],
+  "kind": "speed_limit",
+  "max_angular_speed": 10,
+  "max_linear": 0.8180448956197326,
+  "max_linear_speed": 2,
+  "max_link_w": 10.147553446137355,
+  "ncp": {
+    "accepted": true,
+    "admm_converged": true,
+    "compliant_projected_residual": 0,
+    "cone": 2.168404344971009e-19,
+    "contact_constraint_count": 5,
+    "iterations": 22,
+    "max_contact_penetration": 0.0012306478243757565,
+    "ncp_complementarity": 1.1657345091384364e-05,
+    "ncp_dual": 0.0008410316195038257,
+    "ncp_physically_converged": true,
+    "peak_normal_impulse": 0.01083989501202994
+  },
+  "pd_gain": 1,
+  "peak_pd_abs_error": 0.6858867660228986,
+  "pre_w": 10.147553446137355,
+  "schema_version": 1,
+  "winner": {
+    "class": 4,
+    "frame": "leg_0_tibia_body",
+    "support": 1,
+    "winner_severity": 1.0147553446137354,
+    "winner_v": 0.8180448956197326,
+    "winner_w": 10.147553446137355
+  },
+  "winner_leg": 0
+}

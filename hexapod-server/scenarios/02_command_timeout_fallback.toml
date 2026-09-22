@@ -7,10 +7,13 @@ refresh_motion_intent = false
 at_ms = 0
 mode = "STAND"
 gait = "TRIPOD"
-body_height_m = 0.20
+# Keep this freshness test at the production physics height. A 0.20 m pose
+# exercises a separate high-pose stability envelope and can pre-empt the
+# intended COMMAND_TIMEOUT with a solver SpeedLimit hold.
+body_height_m = 0.14
 
 [[events]]
 at_ms = 500
 mode = "WALK"
 gait = "TRIPOD"
-body_height_m = 0.20
+body_height_m = 0.14

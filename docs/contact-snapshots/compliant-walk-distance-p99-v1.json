@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "name": "compliant-walk-distance-p99-v1",
+  "environment": "HEXAPOD_PINOCCHIO_COMPLIANT_CONTACT_EXPERIMENT=1",
+  "screen": "sequential_walk_distance",
+  "runs": 3,
+  "passed": 3,
+  "held": 0,
+  "aggregates": {
+    "p99_projected_residual": 0.000999847078,
+    "max_penetration_m": 0.000930202485,
+    "peak_normal_impulse_ns": 0.104909807444,
+    "max_mechanical_energy_delta_abs": 0.04494170472
+  },
+  "cases": [
+    {
+      "run": "compliant-seq-telem-r1.log",
+      "name": "forward_walk",
+      "passed": true,
+      "held": 0,
+      "peak_solver_normal_impulse": 0.082743898034,
+      "max_solver_contact_penetration": 0.000516671629,
+      "p99_solver_compliant_projected_residual": 0.000999783399,
+      "max_solver_mechanical_energy_delta_abs": 0.03103954345,
+      "sum_solver_actuator_work": 2.905872498997
+    },
+    {
+      "run": "compliant-seq-telem-r1.log",
+      "name": "slow_forward_walk",
+      "passed": true,
+      "held": 0,
+      "peak_solver_normal_impulse": 0.029903128743,
+      "max_solver_contact_penetration": 0.000417211297,
+      "p99_solver_compliant_projected_residual": 0.000999809825,
+      "max_solver_mechanical_energy_delta_abs": 0.016674850136,
+      "sum_solver_actuator_work": 0.707143499991
+    },
+    {
+      "run": "compliant-seq-telem-r1.log",
+      "name": "reverse_walk",
+      "passed": true,
+      "held": 0,
+      "peak_solver_normal_impulse": 0.093572735786,
+      "max_solver_contact_penetration": 0.000572540914,
+      "p99_solver_compliant_projected_residual": 0.000999790616,
+      "max_solver_mechanical_energy_delta_abs": 0.036069452763,
+      "sum_solver_actuator_work": 2.829911162928
+    },
+    {
+      "run": "compliant-seq-telem-r1.log",
+      "name": "straight_walk",
+      "passed": true,
+      "held": 0,
+      "peak_solver_normal_impulse": 0.073769301176,
+      "max_solver_contact_penetration": 0.000713902584,
+      "p99_solver_compliant_projected_residual": 0.000999774784,
+      "max_solver_mechanical_energy_delta_abs": 0.039077177644,
+      "sum_solver_actuator_work": 3.065221234229
+    },
+    {
+      "run": "compliant-seq-telem-r1.log",
+      "name": "turn_in_place",
+      "passed": true,
+      "held": 0,
+      "peak_solver_normal_impulse": 0.058312531561,
+      "max_solver_contact_penetration": 0.000418741751,
+      "p99_solver_compliant_projected_residual": 0.000999747193,
+      "max_solver_mechanical_energy_delta_abs": 0.022787911817,
+      "sum_solver_actuator_work": 0.682533169354
+    },
+    {
+      "run": "compliant-seq-telem-r2.log",
+      "name": "forward_walk",
+      "passed": true,
+      "held": 0,
+      "peak_solver_normal_impulse": 0.087681777775,
+      "max_solver_contact_penetration": 0.000737938157,
+      "p99_solver_compliant_projected_residual": 0.000999697833,
+      "max_solver_mechanical_energy_delta_abs": 0.034033555537,
+      "sum_solver_actuator_work": 2.856581396509
+    },
+    {
+      "run": "compliant-seq-telem-r2.log",
+      "name": "slow_forward_walk",
+      "passed": true,
+      "held": 0,
+      "peak_solver_normal_impulse": 0.040002547204,
+      "max_solver_contact_penetration": 0.00032732237,
+      "p99_solver_compliant_projected_residual": 0.000999790151,
+      "max_solver_mechanical_energy_delta_abs": 0.007939012721,
+      "sum_solver_actuator_work": 0.584990863644
+    },
+    {
+      "run": "compliant-seq-telem-r2.log",
+      "name": "reverse_walk",
+      "passed": true,
+      "held": 0,
+      "peak_solver_normal_impulse": 0.090442538261,
+      "max_solver_contact_penetration": 0.000878397608,
+      "p99_solver_compliant_projected_residual": 0.000999815762,
+      "max_solver_mechanical_energy_delta_abs": 0.037620555609,
+      "sum_solver_actuator_work": 2.918921696522
+    },
+    {
+      "run": "compliant-seq-telem-r2.log",
+      "name": "straight_walk",
+      "passed": true,
+      "held": 0,
+      "peak_solver_normal_impulse": 0.087245233357,
+      "max_solver_contact_penetration": 0.000480469665,
+      "p99_solver_compliant_projected_residual": 0.000999847078,
+      "max_solver_mechanical_energy_delta_abs": 0.033596888185,
+      "sum_solver_actuator_work": 3.098498993527
+    },
+    {
+      "run": "compliant-seq-telem-r2.log",
+      "name": "turn_in_place",
+      "passed": true,
+      "held": 0,
+      "peak_solver_normal_impulse": 0.067288398743,
+      "max_solver_contact_penetration": 0.000378248777,
+      "p99_solver_compliant_projected_residual": 0.00099971646,
+      "max_solver_mechanical_energy_delta_abs": 0.022416058928,
+      "sum_solver_actuator_work": 0.751189321149
+    },
+    {
+      "run": "compliant-seq-telem-r3.log",
+      "name": "forward_walk",
+      "passed": true,
+      "held": 0,
+      "peak_solver_normal_impulse": 0.092992082238,
+      "max_solver_contact_penetration": 0.000817816646,
+      "p99_solver_compliant_projected_residual": 0.000999771175,
+      "max_solver_mechanical_energy_delta_abs": 0.038086213171,
+      "sum_solver_actuator_work": 3.010369880219
+    },
+    {
+      "run": "compliant-seq-telem-r3.log",
+      "name": "slow_forward_walk",
+      "passed": true,
+      "held": 0,
+      "peak_solver_normal_impulse": 0.042916391045,
+      "max_solver_contact_penetration": 0.000441016571,
+      "p99_solver_compliant_projected_residual": 0.000999752432,
+      "max_solver_mechanical_energy_delta_abs": 0.01202081237,
+      "sum_solver_actuator_work": 0.698893151435
+    },
+    {
+      "run": "compliant-seq-telem-r3.log",
+      "name": "reverse_walk",
+      "passed": true,
+      "held": 0,
+      "peak_solver_normal_impulse": 0.081745162606,
+      "max_solver_contact_penetration": 0.000471058331,
+      "p99_solver_compliant_projected_residual": 0.000999792013,
+      "max_solver_mechanical_energy_delta_abs": 0.02966022864,
+      "sum_solver_actuator_work": 2.629501807301
+    },
+    {
+      "run": "compliant-seq-telem-r3.log",
+      "name": "straight_walk",
+      "passed": true,
+      "held": 0,
+      "peak_solver_normal_impulse": 0.104909807444,
+      "max_solver_contact_penetration": 0.000930202485,
+      "p99_solver_compliant_projected_residual": 0.000999825308,
+      "max_solver_mechanical_energy_delta_abs": 0.04494170472,
+      "sum_solver_actuator_work": 2.99454339411
+    },
+    {
+      "run": "compliant-seq-telem-r3.log",
+      "name": "turn_in_place",
+      "passed": true,
+      "held": 0,
+      "peak_solver_normal_impulse": 0.054222494364,
+      "max_solver_contact_penetration": 0.000361497718,
+      "p99_solver_compliant_projected_residual": 0.000999703072,
+      "max_solver_mechanical_energy_delta_abs": 0.019019516185,
+      "sum_solver_actuator_work": 0.898736511686
+    }
+  ]
+}

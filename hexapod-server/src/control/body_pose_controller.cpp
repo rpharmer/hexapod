@@ -8,7 +8,11 @@ namespace {
 constexpr double kDefaultBodyHeightM = 0.14;
 constexpr double kLeanVxRefMps = 0.20;
 constexpr double kLeanYawRefRadps = 0.45;
-constexpr double kLeanPitchPerVx = 0.22;
+// Positive forward velocity naturally pitches the simulated chassis negative.
+// Counter that load transfer rather than reinforcing it. The foot/body pose
+// rotation is applied in the inverse kinematic convention, so the coefficient
+// sign is opposite the old pre-alignment setting.
+constexpr double kLeanPitchPerVx = -0.22;
 constexpr double kLeanRollPerYaw = 0.18;
 constexpr double kLeanRollPerVy = 0.14;
 constexpr double kMarginSoftM = 0.022;

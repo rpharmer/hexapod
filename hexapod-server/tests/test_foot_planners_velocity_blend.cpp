@@ -87,5 +87,28 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    SwingFootInputs medial{};
+    medial.anchor = Vec3{0.0, 0.20, -0.14};
+    medial.stance_end = Vec3{-0.04, 0.05, -0.14};
+    medial.v_liftoff_body = Vec3{};
+    medial.tau01 = 0.0;
+    medial.swing_span = 0.5;
+    medial.f_hz = 1.0;
+    medial.step_length_m = 0.06;
+    medial.swing_height_m = 0.03;
+    medial.static_stability_margin_m = 1.0;
+    Vec3 medial_pos{};
+    Vec3 medial_vel{};
+    planSwingFoot(RobotState{}, BodyTwist{}, medial, medial_pos, medial_vel);
+    if (!expect(medial_pos.y + 1e-9 >= 0.16, "early-swing Y must not tuck more than 40 mm inside +Y anchor")) {
+        return EXIT_FAILURE;
+    }
+    medial.anchor.y = -0.20;
+    medial.stance_end.y = -0.05;
+    planSwingFoot(RobotState{}, BodyTwist{}, medial, medial_pos, medial_vel);
+    if (!expect(medial_pos.y - 1e-9 <= -0.16, "early-swing Y must not tuck more than 40 mm inside -Y anchor")) {
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }

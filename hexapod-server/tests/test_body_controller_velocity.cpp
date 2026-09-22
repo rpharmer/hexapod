@@ -78,6 +78,71 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    {
+        BodyController untilt_controller{};
+        RobotState untilt_est{};
+        untilt_est.has_body_twist_state = true;
+        untilt_est.body_twist_state.body_trans_m.z = 0.14;
+        untilt_est.body_twist_state.twist_pos_rad.x = 0.08;
+        MotionIntent untilt_intent{};
+        untilt_intent.requested_mode = RobotMode::STAND;
+        untilt_intent.twist.body_trans_m.z = 0.14;
+        GaitState untilt_gait{};
+        const BodyTwist untilt_twist =
+            rawLocomotionTwistFromIntent(untilt_intent, planarMotionCommand(untilt_intent));
+        RobotState level_est = untilt_est;
+        level_est.body_twist_state.twist_pos_rad.x = 0.0;
+        const LegTargets level_targets =
+            untilt_controller.update(level_est, untilt_intent, untilt_gait, safety, untilt_twist);
+        BodyController tilted_controller{};
+        const LegTargets tilted_targets =
+            tilted_controller.update(untilt_est, untilt_intent, untilt_gait, safety, untilt_twist);
+        double peak_dz = 0.0;
+        int opposite_sign_pairs = 0;
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            const double dz =
+                tilted_targets.feet[leg].pos_body_m.z - level_targets.feet[leg].pos_body_m.z;
+            peak_dz = std::max(peak_dz, std::abs(dz));
+            const double y = level_targets.feet[leg].pos_body_m.y;
+            if (std::abs(y) > 0.05 && dz * y < 0.0) {
+                ++opposite_sign_pairs;
+            }
+        }
+        if (!expect(peak_dz > 0.012,
+                    "STAND should untilt prefix roll by more than terrain-leveling's 14 mm cap")) {
+            return EXIT_FAILURE;
+        }
+        if (!expect(opposite_sign_pairs >= 2,
+                    "STAND untilt should drop the high-side feet and raise the low-side feet")) {
+            return EXIT_FAILURE;
+        }
+        if (!expect(standTargetsRemainReachable(tilted_targets),
+                    "STAND untilt targets should stay within leg reach")) {
+            return EXIT_FAILURE;
+        }
+        for (int i = 0; i < 320; ++i) {
+            (void)tilted_controller.update(untilt_est, untilt_intent, untilt_gait, safety, untilt_twist);
+        }
+        const LegTargets settled_targets =
+            tilted_controller.update(untilt_est, untilt_intent, untilt_gait, safety, untilt_twist);
+        double mean_dz = 0.0;
+        std::array<double, kNumLegs> settled_dz{};
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            settled_dz[static_cast<std::size_t>(leg)] =
+                settled_targets.feet[leg].pos_body_m.z - level_targets.feet[leg].pos_body_m.z;
+            mean_dz += settled_dz[static_cast<std::size_t>(leg)];
+        }
+        mean_dz /= static_cast<double>(kNumLegs);
+        double residual_dz = 0.0;
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            residual_dz = std::max(residual_dz, std::abs(settled_dz[static_cast<std::size_t>(leg)] - mean_dz));
+        }
+        if (!expect(residual_dz < 0.003,
+                    "STAND untilt should fade back to identity before WALK")) {
+            return EXIT_FAILURE;
+        }
+    }
+
     MotionIntent walk_intent{};
     walk_intent.requested_mode = RobotMode::WALK;
     walk_intent.speed_mps = LinearRateMps{0.2};

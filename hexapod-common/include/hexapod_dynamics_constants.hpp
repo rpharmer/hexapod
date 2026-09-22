@@ -31,6 +31,10 @@ inline constexpr double kCoxaLengthM = 0.043;
 inline constexpr double kFemurLengthM = 0.060;
 /** Tibia rigid link (assembly tibia length minus foot sphere radius). */
 inline constexpr double kTibiaLinkLengthM = 0.104 - 0.018;
+/** The current rigid compound body places tibia+foot mass at the shaft centre.
+ * This mirrors the existing plant; it is not the physical weighted COM of a
+ * separately modelled foot. Do not also add a point foot mass in feedforward. */
+inline constexpr double kTibiaBodyComFrac = 0.5 * kTibiaLinkLengthM / 0.104;
 
 // MG996R nominal at 6 V. Torque is the documented 15 kg·cm stall value and speed is
 // the documented 0.14 s / 60° no-load value. The simulator applies the speed as a

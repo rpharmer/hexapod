@@ -16,6 +16,81 @@ This crate is intentionally lightweight: no rendering inside the simulator. Opti
 | `tests/` | `CTest`-registered executables (math, GJK, cylinders, servos, scenes, …) |
 | `assets/scenes/examples/` | Example **minphys** JSON scenes (`schema_version` 1 or 2) |
 
+## SpeedLimit retry damping
+
+Explicit-actuator SpeedLimit retries reduce proportional position demand to
+the existing 0.5 scale while retaining full damping. Healthy steps, NCP
+retries, implicit-actuator experiments and the torque-speed envelope are
+unchanged. `HEXAPOD_PINOCCHIO_RETRY_KEEP_DAMPING=0` restores the historical
+half-damping retry for diagnostics. Accepted history records proportional and
+damping scales separately. `test_servo_pd_request` exercises the braking law.
+
+Contact-frame warm-start transport is a separate, **default-off** experiment
+(`HEXAPOD_PINOCCHIO_TRANSPORT_WARM_START=1`), despite its passing mathematical
+unit test `test_contact_warm_start`: it regressed the moving-balance probe.
+See [walking campaign §3.24](../docs/SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md)
+for live evidence and rejected alternatives. Mode 1 and existing safety and
+contact-recovery policies are otherwise unchanged.
+
+## Slow-liftoff actuator balance probe
+
+From the repository root, in a clean shell without `HEXAPOD_*` experiment
+overrides:
+
+```bash
+source scripts/lib/pinocchio_env.sh
+cmake --build hexapod-physics-sim/build --target test_pinocchio_liftoff_probe -j1
+hexapod-physics-sim/build/test_pinocchio_liftoff_probe
+hexapod-physics-sim/build/test_pinocchio_liftoff_probe --gravity-bias
+hexapod-physics-sim/build/test_pinocchio_liftoff_probe --gravity-bias-from-lift
+hexapod-physics-sim/build/test_pinocchio_liftoff_probe --server-self-weight
+hexapod-physics-sim/build/test_pinocchio_liftoff_probe --server-actuator-stiffness
+hexapod-physics-sim/build/test_pinocchio_liftoff_probe --moving-balance
+hexapod-physics-sim/build/test_pinocchio_liftoff_probe --moving-gravity
+hexapod-physics-sim/build/test_pinocchio_liftoff_probe --moving-lead
+ctest --test-dir hexapod-physics-sim/build -R '^test_pinocchio_liftoff_' --output-on-failure
+```
+
+The constructed-pose probe lifts one leg over one second, comparing free and
+pedestal-supported chassis for legs 2 and 5. JSON reports physical-sphere height,
+actual PD torque/stiffness, an independent potential-energy gravity check and
+settled joint balance. `--gravity-bias` adds selected-leg self-weight compensation
+after liftoff; `--gravity-bias-from-lift` applies it from lift onset. Both are
+test-local target offsets, not simulator modes or default controller changes.
+The normal torque envelope and safety guards remain active. The default probe
+uses explicit damping; do not enable the implicit-damping experiment for these
+explicit motor-law reconstruction tests.
+
+`--server-self-weight` instead uses the server's analytical stiffness proxy and
+existing angle clamps, on the same post-liftoff 250 ms ramp. It isolates the
+angle conversion (no live IMU gating/LPF), not the entire walking controller.
+`--server-actuator-stiffness` uses the same helper, ramp and angle limits with
+the explicit sampled actuator gains instead of the point-mass proxy. The
+`test_pinocchio_liftoff_actuator_stiffness` CTest also verifies reported gains
+against healthy-step torque reconstruction. It does not relax gait gates.
+JSON includes full 3D command error and proxy/actual stiffness. No acceptance
+claim follows from a small vertical error alone. The separate
+`test_pinocchio_server_gravity` target independently checks server holding
+torques against the actual Pinocchio model's potential-energy gradient.
+See [campaign §3.21](../docs/SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md#321-gravity-model-corrections-rejected-walking-screen-and-stiffness-contract).
+
+Save the three outputs as `baseline.jsonl`, `gravity-bias.jsonl` and
+`gravity-onset.jsonl` in a fresh directory. Then retain a report (never overwrites):
+`python3 tools/report_liftoff_balance.py RUN_DIR NEW_REPORT.json`.
+See [campaign §3.20](../docs/SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md#320-supported-leg-torque-balance-finite-pd-self-weight-sag).
+
+The three `--moving-*` modes use a 250 ms lift and audit the first 400 ms,
+separating loaded/unloaded gravity, damping, inertia, Coriolis, inferred contact
+and saturation contributions. `--moving-gravity` adds oracle gravity from lift
+onset; `--moving-lead` also adds `Kd/Kp` times reference rate. These oracle
+offsets are **not** capped by the server's gravity-angle bound. Full physical
+torque/speed guards remain active. Contact torque is inferred from balance,
+not independently measured, and absolute contributions can cancel in sign.
+Save outputs as `baseline.jsonl`, `gravity.jsonl`, `lead.jsonl` in a new folder;
+use `python3 tools/report_liftoff_balance.py RUN_DIR NEW_REPORT.json --moving`.
+Better isolated lifting did not qualify either live lead candidate; see
+[campaign §3.23](../docs/SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md#323-moving-damping-balance-rejected-velocity-lead-final-target-rate-repair).
+
 ## Requirements
 
 - **CMake** 3.16 or newer  

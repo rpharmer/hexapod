@@ -124,6 +124,9 @@ BodyPose bodyPoseFromState(const RobotState& state) {
 
 struct Metrics {
     double maxBodyHeightErrorM{0.0};
+    double minBodyHeightM{std::numeric_limits<double>::infinity()};
+    double maxBodyHeightM{-std::numeric_limits<double>::infinity()};
+    double finalBodyHeightM{std::numeric_limits<double>::quiet_NaN()};
     double stanceFootDriftSquaredSum{0.0};
     std::uint64_t stanceFootDriftSamples{0};
     std::uint64_t healthySteps{0};
@@ -252,6 +255,11 @@ int main(int argc, char** argv) {
         metrics.maxBodyHeightErrorM = std::max(
             metrics.maxBodyHeightErrorM,
             std::abs(state.body_twist_state.body_trans_m.z - commandedHeightM));
+        metrics.minBodyHeightM = std::min(
+            metrics.minBodyHeightM, state.body_twist_state.body_trans_m.z);
+        metrics.maxBodyHeightM = std::max(
+            metrics.maxBodyHeightM, state.body_twist_state.body_trans_m.z);
+        metrics.finalBodyHeightM = state.body_twist_state.body_trans_m.z;
         const BodyPose pose = bodyPoseFromState(state);
         for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
             if (!state.foot_contacts[leg]) {
@@ -328,6 +336,9 @@ int main(int argc, char** argv) {
               << " non_converged=" << metrics.nonConvergedSteps
               << " rollbacks=" << rollbacks
               << " max_height_error_m=" << metrics.maxBodyHeightErrorM
+              << " min_height_m=" << metrics.minBodyHeightM
+              << " max_height_m=" << metrics.maxBodyHeightM
+              << " final_height_m=" << metrics.finalBodyHeightM
               << " stance_foot_drift_rms_m=" << footDriftRmsM
               << " p99_iterations=" << p99Iterations
               << " max_iterations=" << metrics.maxIterations
@@ -359,6 +370,9 @@ int main(int argc, char** argv) {
                 << ",\"non_converged_steps\":" << metrics.nonConvergedSteps
                 << ",\"rollbacks\":" << rollbacks
                 << ",\"max_body_height_error_m\":" << metrics.maxBodyHeightErrorM
+                << ",\"min_body_height_m\":" << metrics.minBodyHeightM
+                << ",\"max_body_height_m\":" << metrics.maxBodyHeightM
+                << ",\"final_body_height_m\":" << metrics.finalBodyHeightM
                 << ",\"stance_foot_drift_rms_m\":" << footDriftRmsM
                 << ",\"p99_iterations\":" << p99Iterations
                 << ",\"max_iterations\":" << metrics.maxIterations

@@ -130,5 +130,25 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    {
+        // Explicit cmd_yaw is the scenario/replay path. Filling only twist.z lets
+        // planarMotionCommand copy yaw and rawLocomotionTwistFromIntent add it again.
+        ScenarioMotionIntent turn{};
+        turn.enabled = true;
+        turn.mode = RobotMode::WALK;
+        turn.gait = GaitType::TRIPOD;
+        turn.yaw_rate_radps = 0.45;
+        const MotionIntent turn_intent = makeMotionIntent(turn);
+        const PlanarMotionCommand turn_planar = planarMotionCommand(turn_intent);
+        const BodyTwist turn_raw = rawLocomotionTwistFromIntent(turn_intent, turn_planar);
+        if (!nearlyEq(turn_intent.cmd_yaw_radps.value, 0.45) ||
+            !nearlyEq(turn_intent.twist.twist_vel_radps.z, 0.0) ||
+            !nearlyEq(turn_planar.yaw_rate_radps, 0.45) ||
+            !nearlyEq(turn_raw.angular_radps.z, 0.45)) {
+            std::cerr << "FAIL: scenario turn should command 0.45 rad/s once via cmd_yaw, not twice\n";
+            return EXIT_FAILURE;
+        }
+    }
+
     return EXIT_SUCCESS;
 }

@@ -1,6 +1,9 @@
 #include "control_config.hpp"
 #include "motion_intent_utils.hpp"
 #include "physics_sim_test_utils.hpp"
+#include "velocity_lead_experiment.hpp"
+#include "stored_motion_experiment.hpp"
+#include "physics_sim_link_speed_audit.hpp"
 #include "physics_sim_bridge.hpp"
 #include "physics_sim_estimator.hpp"
 #include "replay_logger.hpp"
@@ -67,6 +70,84 @@ std::string gaitName(const GaitType gait) {
     return "UNKNOWN";
 }
 
+const char* solverStatusName(const physics_sim::SolverStatus status) {
+    switch (status) {
+    case physics_sim::SolverStatus::Healthy:
+        return "Healthy";
+    case physics_sim::SolverStatus::RecoveredRetry:
+        return "RecoveredRetry";
+    case physics_sim::SolverStatus::HeldLastGood:
+        return "HeldLastGood";
+    case physics_sim::SolverStatus::UnsupportedIsland:
+        return "UnsupportedIsland";
+    }
+    return "unknown";
+}
+
+const char* solverFailureReasonName(const physics_sim::SolverFailureReason reason) {
+    switch (reason) {
+    case physics_sim::SolverFailureReason::None:
+        return "none";
+    case physics_sim::SolverFailureReason::InvalidDt:
+        return "invalid_dt";
+    case physics_sim::SolverFailureReason::ReadState:
+        return "read_state";
+    case physics_sim::SolverFailureReason::NonFiniteState:
+        return "non_finite_state";
+    case physics_sim::SolverFailureReason::NonFiniteMass:
+        return "non_finite_mass";
+    case physics_sim::SolverFailureReason::NonFiniteAcceleration:
+        return "non_finite_acceleration";
+    case physics_sim::SolverFailureReason::UnsupportedIsland:
+        return "unsupported_island";
+    case physics_sim::SolverFailureReason::SolverNotConverged:
+        return "solver_not_converged";
+    case physics_sim::SolverFailureReason::NonFiniteImpulse:
+        return "non_finite_impulse";
+    case physics_sim::SolverFailureReason::NonFiniteVelocity:
+        return "non_finite_velocity";
+    case physics_sim::SolverFailureReason::SpeedLimit:
+        return "speed_limit";
+    case physics_sim::SolverFailureReason::NonFiniteConfiguration:
+        return "non_finite_configuration";
+    case physics_sim::SolverFailureReason::WriteState:
+        return "write_state";
+    case physics_sim::SolverFailureReason::NonFiniteEnergy:
+        return "non_finite_energy";
+    case physics_sim::SolverFailureReason::ExtremePenetration:
+        return "extreme_penetration";
+    }
+    return "unknown";
+}
+
+const char* speedLimitFrameName(const std::uint8_t frame) {
+    switch (static_cast<physics_sim::SolverSpeedLimitFrame>(frame)) {
+    case physics_sim::SolverSpeedLimitFrame::None:
+        return "none";
+    case physics_sim::SolverSpeedLimitFrame::Chassis:
+        return "chassis";
+    case physics_sim::SolverSpeedLimitFrame::Coxa:
+        return "coxa";
+    case physics_sim::SolverSpeedLimitFrame::Femur:
+        return "femur";
+    case physics_sim::SolverSpeedLimitFrame::Tibia:
+        return "tibia";
+    }
+    return "unknown";
+}
+
+const char* speedLimitSupportName(const std::uint8_t support) {
+    switch (static_cast<physics_sim::SolverSpeedLimitSupport>(support)) {
+    case physics_sim::SolverSpeedLimitSupport::Unknown:
+        return "unknown";
+    case physics_sim::SolverSpeedLimitSupport::Swing:
+        return "swing";
+    case physics_sim::SolverSpeedLimitSupport::Stance:
+        return "stance";
+    }
+    return "unknown";
+}
+
 struct PhysicsSimProcess {
     PhysicsSimProcess(std::string exe_path, int port)
         : exe_path_(std::move(exe_path)), port_(port) {}
@@ -85,7 +166,13 @@ struct PhysicsSimProcess {
             return false;
         }
         if (pid_ == 0) {
-            physics_sim_test_utils::quietChildProcessStdIo();
+            if (const char* value = std::getenv("HEXAPOD_LOCOMOTION_CHILD_STDIO");
+                value == nullptr || value[0] == '\0' || value[0] == '0') {
+                physics_sim_test_utils::quietChildProcessStdIo();
+            } else {
+                // Preserve the parent's machine-readable metrics on stdout.
+                ::dup2(STDERR_FILENO, STDOUT_FILENO);
+            }
             const std::string port_str = std::to_string(port_);
             ::execl(exe_path_.c_str(), exe_path_.c_str(), "--serve", "--serve-port", port_str.c_str(), nullptr);
             std::perror("execl");
@@ -119,20 +206,38 @@ public:
     CapturingPhysicsSimBridge(std::string host,
                               int port,
                               int bus_loop_period_us,
-                              int physics_solver_iterations)
-        : inner_(std::move(host), port, bus_loop_period_us, physics_solver_iterations, nullptr) {}
+                              PhysicsSimSolverSettings solver_settings)
+        : inner_(std::move(host), port, bus_loop_period_us, solver_settings, nullptr),
+          velocity_lead_(bus_loop_period_us * 1e-6), stored_motion_(bus_loop_period_us * 1e-6) {}
 
     bool init() override { return inner_.init(); }
+    bool usesPhysicsSimBodyAngularConvention() const override {
+        return inner_.usesPhysicsSimBodyAngularConvention();
+    }
+    bool supportsAbsoluteBodyPositionFeedback() const override { return inner_.supportsAbsoluteBodyPositionFeedback(); }
 
     bool read(RobotState& out) override {
         const bool ok = inner_.read(out);
+        last_solver_telemetry_ = inner_.latestSolverTelemetry();
+        if (ok) auditPublishedPhysicsSimLinkSpeed(out, last_solver_telemetry_);
+        if (last_solver_telemetry_.has_value()) {
+            accumulateSolverTelemetry(*last_solver_telemetry_, ok);
+        }
+        if (!ok && !first_failed_solver_telemetry_.has_value()) {
+            first_failed_solver_telemetry_ = last_solver_telemetry_;
+        }
         if (ok) {
             last_state_ = out;
         }
         return ok;
     }
 
-    bool write(const JointTargets& in) override { return inner_.write(in); }
+    bool write(const JointTargets& in) override {
+        const auto led = velocity_lead_.apply(in, physics_sim_test_utils::VelocityLeadExperiment::enabledFromEnv(),
+                                               physics_sim_test_utils::VelocityLeadExperiment::filteredFromEnv());
+        return inner_.write(stored_motion_.apply(led, last_state_ ? &*last_state_ : nullptr,
+            geometry_config::activeHexapodGeometry(), physics_sim_test_utils::StoredMotionExperiment::enabledFromEnv()));
+    }
 
     std::optional<BridgeCommandResultMetadata> last_bridge_result() const override {
         return inner_.last_bridge_result();
@@ -140,9 +245,94 @@ public:
 
     const std::optional<RobotState>& last_state() const { return last_state_; }
 
+    const std::optional<PhysicsSimSolverTelemetry>& last_solver_telemetry() const {
+        return last_solver_telemetry_;
+    }
+
+    const std::optional<PhysicsSimSolverTelemetry>& first_failed_solver_telemetry() const {
+        return first_failed_solver_telemetry_;
+    }
+
+    void applySolverHealthToMetrics(LocomotionMetrics& metrics) const {
+        metrics.solver_held_steps = solver_held_steps_;
+        metrics.solver_held_solver_not_converged_steps = solver_held_solver_not_converged_steps_;
+        metrics.solver_held_non_finite_impulse_steps = solver_held_non_finite_impulse_steps_;
+        metrics.solver_held_non_finite_velocity_steps = solver_held_non_finite_velocity_steps_;
+        metrics.solver_speed_limit_steps = solver_speed_limit_steps_;
+        metrics.peak_solver_normal_impulse = peak_solver_normal_impulse_;
+        metrics.max_solver_contact_penetration = max_solver_contact_penetration_;
+        metrics.max_solver_mechanical_energy_delta_abs = max_solver_mechanical_energy_delta_abs_;
+        metrics.sum_solver_actuator_work = sum_solver_actuator_work_;
+        metrics.max_solver_compliant_projected_residual = max_solver_compliant_projected_residual_;
+        if (!compliant_projected_residual_samples_.empty()) {
+            std::vector<double> samples = compliant_projected_residual_samples_;
+            std::sort(samples.begin(), samples.end());
+            const std::size_t p99Index = std::min(
+                samples.size() - 1U,
+                (99U * samples.size() + 99U) / 100U - 1U);
+            metrics.p99_solver_compliant_projected_residual = samples[p99Index];
+        }
+        if (!contact_penetration_samples_.empty()) {
+            std::vector<double> samples = contact_penetration_samples_;
+            std::sort(samples.begin(), samples.end());
+            const std::size_t p99Index = std::min(
+                samples.size() - 1U,
+                (99U * samples.size() + 99U) / 100U - 1U);
+            metrics.p99_solver_contact_penetration = samples[p99Index];
+        }
+    }
+
 private:
+    void accumulateSolverTelemetry(const PhysicsSimSolverTelemetry& solver, const bool read_ok) {
+        peak_solver_normal_impulse_ = std::max(
+            peak_solver_normal_impulse_, static_cast<double>(solver.peak_normal_impulse));
+        max_solver_contact_penetration_ = std::max(
+            max_solver_contact_penetration_, static_cast<double>(solver.max_contact_penetration));
+        contact_penetration_samples_.push_back(
+            static_cast<double>(solver.max_contact_penetration));
+        max_solver_mechanical_energy_delta_abs_ = std::max(
+            max_solver_mechanical_energy_delta_abs_,
+            std::abs(static_cast<double>(solver.mechanical_energy_delta)));
+        sum_solver_actuator_work_ += static_cast<double>(solver.actuator_work);
+        max_solver_compliant_projected_residual_ = std::max(
+            max_solver_compliant_projected_residual_,
+            static_cast<double>(solver.compliant_projected_residual));
+        compliant_projected_residual_samples_.push_back(
+            static_cast<double>(solver.compliant_projected_residual));
+        if (solver.failure_reason == physics_sim::SolverFailureReason::SpeedLimit) {
+            ++solver_speed_limit_steps_;
+        }
+        if (!read_ok
+            || solver.status == physics_sim::SolverStatus::HeldLastGood) {
+            ++solver_held_steps_;
+            if (solver.failure_reason == physics_sim::SolverFailureReason::SolverNotConverged) {
+                ++solver_held_solver_not_converged_steps_;
+            } else if (solver.failure_reason == physics_sim::SolverFailureReason::NonFiniteImpulse) {
+                ++solver_held_non_finite_impulse_steps_;
+            } else if (solver.failure_reason == physics_sim::SolverFailureReason::NonFiniteVelocity) {
+                ++solver_held_non_finite_velocity_steps_;
+            }
+        }
+    }
+
     PhysicsSimBridge inner_;
+    physics_sim_test_utils::VelocityLeadExperiment velocity_lead_;
+    physics_sim_test_utils::StoredMotionExperiment stored_motion_;
     std::optional<RobotState> last_state_{};
+    std::optional<PhysicsSimSolverTelemetry> last_solver_telemetry_{};
+    std::optional<PhysicsSimSolverTelemetry> first_failed_solver_telemetry_{};
+    int solver_held_steps_{0};
+    int solver_held_solver_not_converged_steps_{0};
+    int solver_held_non_finite_impulse_steps_{0};
+    int solver_held_non_finite_velocity_steps_{0};
+    int solver_speed_limit_steps_{0};
+    double peak_solver_normal_impulse_{0.0};
+    double max_solver_contact_penetration_{0.0};
+    double max_solver_mechanical_energy_delta_abs_{0.0};
+    double sum_solver_actuator_work_{0.0};
+    double max_solver_compliant_projected_residual_{0.0};
+    std::vector<double> compliant_projected_residual_samples_{};
+    std::vector<double> contact_penetration_samples_{};
 };
 
 class CollectingReplayLogger final : public replay::IReplayLogger {
@@ -172,6 +362,8 @@ public:
 struct CaseResult {
     std::string name{};
     std::string description{};
+    int solver_mode{1};
+    bool compliant_experiment_override{false};
     bool passed{false};
     std::string failure_reason{};
     std::filesystem::path replay_path{};
@@ -431,6 +623,22 @@ std::string locomotionRegressionLimitsAppliedJson(const std::string& case_name, 
           << ",\"max_contact_tracking_error_m\":" << formatDouble(max_track_err)
           << ",\"transition_window_samples\":" << trans_win
           << ",\"baseline_tail_samples\":" << base_tail;
+    } else if (case_name == "long_walk_contact_health") {
+        constexpr const char* kSuite = "locomotion_regression";
+        constexpr const char* kCase = "long_walk_contact_health";
+        const std::size_t walk_min =
+            samplesForDuration(test_limits::getDouble(kSuite, kCase, "", "min_walk_duration_s", 10.0),
+                               m.sample_period_s);
+        const std::size_t stride_min = test_limits::getSizeT(kSuite, kCase, "", "min_stride_count", 6);
+        const double path_min = test_limits::getDouble(kSuite, kCase, "", "min_path_length_m", 0.75);
+        const double max_impulse = test_limits::getDouble(kSuite, kCase, "", "max_peak_normal_impulse_ns", 1.0);
+        o << ",\"expect_fault\":false"
+          << ",\"walk_sample_count_min\":" << walk_min
+          << ",\"stride_count_min\":" << stride_min
+          << ",\"path_length_m_min\":" << formatDouble(path_min)
+          << ",\"max_peak_normal_impulse_ns\":" << formatDouble(max_impulse)
+          << ",\"fail_on_solver_not_converged_hold\":true"
+          << ",\"speed_limit_counted_not_failed\":true";
     } else if (case_name == "tilt_safety_trip") {
         const std::size_t first_fault_step_max =
             locomotionLimitSizeT(case_name.c_str(), "first_fault_step_max", 1200);
@@ -460,6 +668,9 @@ std::string caseResultSummaryJson(const CaseResult& result) {
     out << '{'
         << "\"suite\":\"locomotion_regression\","
         << "\"name\":\"" << jsonEscape(result.name) << "\","
+        << "\"solver_mode\":" << result.solver_mode << ','
+        << "\"compliant_experiment_override\":"
+        << (result.compliant_experiment_override ? "true" : "false") << ','
         << "\"description\":\"" << jsonEscape(result.description) << "\","
         << "\"passed\":" << (result.passed ? "true" : "false") << ','
         << "\"failure_reason\":\"" << jsonEscape(result.failure_reason) << "\","
@@ -492,12 +703,34 @@ std::string motionTimelineString(const std::vector<MotionPhase>& phases) {
     return out.str();
 }
 
+void applyFirstFailedSolverTelemetry(LocomotionMetrics& metrics,
+                                     const std::optional<PhysicsSimSolverTelemetry>& telemetry) {
+    if (!telemetry.has_value()) {
+        return;
+    }
+    metrics.first_read_fail = true;
+    metrics.first_failed_solver_status = static_cast<int>(telemetry->status);
+    metrics.first_failed_failure_reason = static_cast<int>(telemetry->failure_reason);
+    metrics.first_failed_speed_limit_frame = static_cast<int>(telemetry->speed_limit_frame);
+    metrics.first_failed_speed_limit_support = static_cast<int>(telemetry->speed_limit_support);
+    metrics.first_failed_chassis_w = telemetry->chassis_preintegration_angular_speed;
+    metrics.first_failed_max_link_w = telemetry->max_link_preintegration_angular_speed;
+    metrics.first_failed_retry_count = telemetry->retry_count;
+    metrics.first_failed_held_state_count = telemetry->held_state_count;
+}
+
 CaseResult runCase(const std::string& sim_exe,
                    const std::filesystem::path& artifact_root,
-                   const CaseSpec& spec) {
+                   const CaseSpec& spec,
+                   const PhysicsSimSolverSettings& solver_settings) {
     CaseResult result{};
     result.name = spec.name;
     result.description = spec.description;
+    result.solver_mode = static_cast<int>(solver_settings.mode);
+    const char* compliant_override =
+        std::getenv("HEXAPOD_PINOCCHIO_COMPLIANT_CONTACT_EXPERIMENT");
+    result.compliant_experiment_override = compliant_override != nullptr
+        && compliant_override[0] != '\0';
 
     const std::filesystem::path case_dir = artifact_root / spec.name;
     std::filesystem::create_directories(case_dir);
@@ -519,7 +752,8 @@ CaseResult runCase(const std::string& sim_exe,
         "127.0.0.1",
         port,
         harness.bus_loop_period_us,
-        harness.physics_solver_iterations);
+        solver_settings);
+    CapturingPhysicsSimBridge* bridge_ptr = bridge.get();
     control_config::ControlConfig cfg = harness.control_cfg;
     cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
     cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
@@ -530,7 +764,20 @@ CaseResult runCase(const std::string& sim_exe,
     if (spec.configure) {
         spec.configure(cfg);
     }
+    const char* gravity_ff = std::getenv("HEXAPOD_WALK_TEST_GRAVITY_FF");
+    if (gravity_ff != nullptr && gravity_ff[0] != '\0' && std::string{gravity_ff} != "0") {
+        cfg.gravity_feedforward.enabled = true;
+        cfg.gravity_feedforward.mode = control_config::GravityFeedforwardMode::Bounded;
+        cfg.gravity_feedforward.scale_coxa = 0.0;
+        cfg.gravity_feedforward.scale_femur = 0.30;
+        cfg.gravity_feedforward.scale_tibia = 0.30;
+        cfg.gravity_feedforward.stiffness_gain_scale = 0.62;
+        cfg.gravity_feedforward.delta_lpf_tau_s = 0.08;
+        cfg.gravity_feedforward.include_foot_reaction = true;
+        cfg.gravity_feedforward.include_self_weight = false;
+    }
 
+    physics_sim_test_utils::applySelfWeightOnlyScreen(cfg);
     std::vector<MotionPhase> scaled_phases = spec.phases;
     scalePhasesForHarness(scaled_phases, harness.bus_loop_period_us);
     std::vector<MotionSample> samples{};
@@ -553,6 +800,8 @@ CaseResult runCase(const std::string& sim_exe,
         if (!runMotionSequence(runtime, scaled_phases, samples, metrics)) {
             throw std::runtime_error(spec.name + ": motion runner failed unexpectedly");
         }
+        applyFirstFailedSolverTelemetry(metrics, bridge_ptr->first_failed_solver_telemetry());
+        bridge_ptr->applySolverHealthToMetrics(metrics);
         replay_logger_ptr->flush();
     }
 
@@ -863,6 +1112,52 @@ bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
     return true;
 }
 
+bool caseLongWalkContactHealth(const CaseResult& result, std::string& reason) {
+    constexpr const char* kSuite = "locomotion_regression";
+    constexpr const char* kCase = "long_walk_contact_health";
+    const auto& m = result.metrics;
+    const double min_walk_duration_s =
+        test_limits::getDouble(kSuite, kCase, "", "min_walk_duration_s", 10.0);
+    const std::size_t min_stride = test_limits::getSizeT(kSuite, kCase, "", "min_stride_count", 6);
+    const double min_path_m = test_limits::getDouble(kSuite, kCase, "", "min_path_length_m", 0.75);
+    const double max_impulse_ns =
+        test_limits::getDouble(kSuite, kCase, "", "max_peak_normal_impulse_ns", 1.0);
+    if (m.solver_held_solver_not_converged_steps > 0
+        || m.solver_held_non_finite_impulse_steps > 0
+        || m.solver_held_non_finite_velocity_steps > 0) {
+        reason =
+            "contact-health walk should not hold on solver non-convergence or non-finite impulse/velocity";
+        return false;
+    }
+    if (m.first_read_fail
+        && (m.first_failed_failure_reason
+                == static_cast<int>(physics_sim::SolverFailureReason::SolverNotConverged)
+            || m.first_failed_failure_reason
+                == static_cast<int>(physics_sim::SolverFailureReason::NonFiniteImpulse)
+            || m.first_failed_failure_reason
+                == static_cast<int>(physics_sim::SolverFailureReason::NonFiniteVelocity))) {
+        reason = "contact-health walk should not bus-timeout from a contact-solver hold";
+        return false;
+    }
+    if (!(m.peak_solver_normal_impulse <= max_impulse_ns)) {
+        reason = "contact-health walk should keep peak normal impulse inside the live 1 N·s cap";
+        return false;
+    }
+    if (!(m.walk_sample_count >= samplesForDuration(min_walk_duration_s, m.sample_period_s))) {
+        reason = "contact-health walk should sustain a long walking window";
+        return false;
+    }
+    if (!(m.stride_count >= min_stride)) {
+        reason = "contact-health walk should accumulate strides";
+        return false;
+    }
+    if (!(m.path_length_m >= min_path_m)) {
+        reason = "contact-health walk should accumulate path length";
+        return false;
+    }
+    return true;
+}
+
 bool caseTimeoutFallback(const CaseResult& result, std::string& reason) {
     constexpr const char* kCase = "command_timeout_fallback";
     const auto& m = result.metrics;
@@ -950,7 +1245,7 @@ bool caseSparseSupportWalk(const CaseResult& result, std::string& reason) {
         reason = "low-support walk should avoid deep measured foot penetration";
         return false;
     }
-    if (!(m.max_contact_tracking_error_m <=
+    if (!(m.max_walk_contact_tracking_error_m <=
           locomotionLimitDouble(kCase, "max_contact_tracking_error_m", 0.08))) {
         reason = "low-support walk should keep stance tracking error bounded";
         return false;
@@ -1074,6 +1369,11 @@ std::vector<CaseSpec> buildCaseCatalog() {
         "../scenarios/05_long_walk_observability.toml",
         "hexapod-server/scenarios/05_long_walk_observability.toml",
     });
+    const std::filesystem::path long_walk_contact_health_scenario = resolveExistingPath({
+        "scenarios/05_long_walk_contact_health.toml",
+        "../scenarios/05_long_walk_contact_health.toml",
+        "hexapod-server/scenarios/05_long_walk_contact_health.toml",
+    });
     const std::filesystem::path timeout_scenario = resolveExistingPath({
         "scenarios/02_command_timeout_fallback.toml",
         "../scenarios/02_command_timeout_fallback.toml",
@@ -1086,6 +1386,9 @@ std::vector<CaseSpec> buildCaseCatalog() {
     const std::vector<MotionPhase> long_walk = buildPhasesFromScenario(
         long_walk_scenario,
         "long_walk_observability");
+    const std::vector<MotionPhase> long_walk_contact_health = buildPhasesFromScenario(
+        long_walk_contact_health_scenario,
+        "long_walk_contact_health");
     const std::vector<MotionPhase> timeout_fallback = buildPhasesFromScenario(
         timeout_scenario,
         "command_timeout_fallback");
@@ -1096,9 +1399,9 @@ std::vector<CaseSpec> buildCaseCatalog() {
         "steady_forward_walk",
         "Sustained forward walk should accumulate displacement over many strides without tipping.",
         {
-            makePhase("stand_settle", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.10, 0.0, 0.0, 0.0}, 100),
-            makePhase("steady_walk", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::TRIPOD, 0.10, 0.08, 0.0, 0.0}, 700),
-            makePhase("stand_exit", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.10, 0.0, 0.0, 0.0}, 80),
+            makePhase("stand_settle", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0}, 100),
+            makePhase("steady_walk", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::TRIPOD, 0.14, 0.08, 0.0, 0.0}, 700),
+            makePhase("stand_exit", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0}, 80),
         },
         false,
         false,
@@ -1109,9 +1412,9 @@ std::vector<CaseSpec> buildCaseCatalog() {
         "turn_in_place",
         "A turn-in-place command should rotate the body while keeping translation bounded.",
         {
-            makePhase("stand_settle", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.10, 0.0, 0.0, 0.0}, 100),
-            makePhase("turn", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::TRIPOD, 0.10, 0.0, 0.0, 0.0, 0.45}, 700),
-            makePhase("stand_exit", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.10, 0.0, 0.0, 0.0}, 60),
+            makePhase("stand_settle", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0}, 100),
+            makePhase("turn", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0, 0.45}, 700),
+            makePhase("stand_exit", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0}, 60),
         },
         false,
         false,
@@ -1122,11 +1425,11 @@ std::vector<CaseSpec> buildCaseCatalog() {
         "gait_transition_stability",
         "Mixed gait changes should preserve motion without an abrupt safety stop.",
         {
-            makePhase("settle", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.10, 0.0, 0.0, 0.0}, 100),
-            makePhase("tripod_walk", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::TRIPOD, 0.10, 0.06, 0.0, 0.0}, 260),
-            makePhase("ripple_walk", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::RIPPLE, 0.10, 0.05, 0.12, 0.18}, 240),
-            makePhase("wave_walk", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::WAVE, 0.10, 0.04, -0.18, -0.12}, 240),
-            makePhase("recover", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.10, 0.0, 0.0, 0.0}, 100),
+            makePhase("settle", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0}, 100),
+            makePhase("tripod_walk", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::TRIPOD, 0.14, 0.06, 0.0, 0.0}, 260),
+            makePhase("ripple_walk", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::RIPPLE, 0.14, 0.05, 0.12, 0.18}, 240),
+            makePhase("wave_walk", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::WAVE, 0.14, 0.04, -0.18, -0.12}, 240),
+            makePhase("recover", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0}, 100),
         },
         false,
         false,
@@ -1137,9 +1440,9 @@ std::vector<CaseSpec> buildCaseCatalog() {
         "aggressive_governor",
         "Aggressive commands should be softened continuously instead of being hard-stopped.",
         {
-            makePhase("settle", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.10, 0.0, 0.0, 0.0}, 100),
-            makePhase("aggressive_walk", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::TRIPOD, 0.10, 0.28, 0.24, 0.0}, 140),
-            makePhase("recover", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.10, 0.0, 0.0, 0.0}, 80),
+            makePhase("settle", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0}, 100),
+            makePhase("aggressive_walk", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::TRIPOD, 0.14, 0.28, 0.24, 0.0}, 140),
+            makePhase("recover", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0}, 80),
         },
         false,
         false,
@@ -1172,6 +1475,15 @@ std::vector<CaseSpec> buildCaseCatalog() {
         false,
         false,
         caseSparseSupportWalk,
+    });
+
+    cases.push_back(CaseSpec{
+        "long_walk_contact_health",
+        "A moderate long walk should stay free of contact-solver holds without requiring a late safety trip.",
+        long_walk_contact_health,
+        false,
+        false,
+        caseLongWalkContactHealth,
     });
 
     cases.push_back(CaseSpec{
@@ -1249,6 +1561,8 @@ int main(int argc, char** argv) {
     std::optional<std::filesystem::path> requested_artifact_dir{};
     const char* sim_exe = nullptr;
     CaseProfile requested_profile = CaseProfile::Canonical;
+    PhysicsSimSolverSettings solver_settings =
+        physics_sim_test_utils::productionProximalSolverSettings();
     bool emit_metrics_json = false;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -1294,6 +1608,22 @@ int main(int argc, char** argv) {
                 requested_profile = CaseProfile::All;
             } else {
                 std::cerr << "Unknown profile '" << profile << "'\n";
+                return EXIT_FAILURE;
+            }
+            continue;
+        }
+        if (arg == "--solver-mode") {
+            if (i + 1 >= argc) {
+                std::cerr << "Missing value for --solver-mode\n";
+                return EXIT_FAILURE;
+            }
+            const std::string mode = argv[++i];
+            if (mode == "pinocchio-proximal") {
+                solver_settings.mode = physics_sim::PhysicsSolverMode::PinocchioProximal;
+            } else if (mode == "pinocchio-compliant") {
+                solver_settings.mode = physics_sim::PhysicsSolverMode::PinocchioProximalCompliant;
+            } else {
+                std::cerr << "Unknown solver mode '" << mode << "'\n";
                 return EXIT_FAILURE;
             }
             continue;
@@ -1368,10 +1698,12 @@ int main(int argc, char** argv) {
     bool all_passed = true;
     for (const CaseSpec& spec : cases) {
         try {
-            CaseResult result = runCase(sim_exe, artifact_root, spec);
+            CaseResult result = runCase(sim_exe, artifact_root, spec, solver_settings);
             all_passed = all_passed && result.passed;
             std::cout << spec.name
                       << " passed=" << (result.passed ? 1 : 0)
+                      << " solver_mode=" << result.solver_mode
+                      << " compliant_override=" << (result.compliant_experiment_override ? 1 : 0)
                       << " samples=" << result.metrics.sample_count
                       << " stride_count=" << result.metrics.stride_count
                       << " path_m=" << formatDouble(result.metrics.path_length_m)
@@ -1383,9 +1715,48 @@ int main(int argc, char** argv) {
                       << " min_cadence=" << formatDouble(result.metrics.min_cadence_scale)
                       << " fault=" << faultName(result.metrics.final_fault)
                       << '\n';
+            {
+                const auto& m = result.metrics;
+                std::cout << spec.name << " recover_census"
+                          << " first_fault=" << faultName(m.first_fault)
+                          << " first_fault_step=" << m.first_fault_step
+                          << " first_read_fail=" << (m.first_read_fail ? 1 : 0)
+                          << " solver_status="
+                          << (m.first_failed_solver_status < 0
+                                  ? "none"
+                                  : solverStatusName(static_cast<physics_sim::SolverStatus>(
+                                        m.first_failed_solver_status)))
+                          << " failure_reason="
+                          << (m.first_failed_failure_reason < 0
+                                  ? "none"
+                                  : solverFailureReasonName(
+                                        static_cast<physics_sim::SolverFailureReason>(
+                                            m.first_failed_failure_reason)))
+                          << " speed_limit_frame="
+                          << speedLimitFrameName(static_cast<std::uint8_t>(
+                                 std::max(0, m.first_failed_speed_limit_frame)))
+                          << " speed_limit_support="
+                          << speedLimitSupportName(static_cast<std::uint8_t>(
+                                 std::max(0, m.first_failed_speed_limit_support)))
+                          << " chassis_w=" << formatDouble(m.first_failed_chassis_w)
+                          << " max_link_w=" << formatDouble(m.first_failed_max_link_w)
+                          << " retry_count=" << m.first_failed_retry_count
+                          << " held_state_count=" << m.first_failed_held_state_count
+                          << " solver_held_steps=" << m.solver_held_steps
+                          << " ncp_holds=" << m.solver_held_solver_not_converged_steps
+                          << " speed_limit_steps=" << m.solver_speed_limit_steps
+                          << " peak_impulse=" << formatDouble(m.peak_solver_normal_impulse)
+                          << " max_pen=" << formatDouble(m.max_solver_contact_penetration)
+                          << " p99_proj=" << formatDouble(m.p99_solver_compliant_projected_residual)
+                          << '\n';
+            }
             if (emit_metrics_json) {
                 std::cout << "{\"suite\":\"locomotion_regression\",\"name\":\"" << jsonEscape(spec.name) << "\",\"passed\":"
-                          << (result.passed ? "true" : "false") << ",\"limits_applied\":"
+                          << (result.passed ? "true" : "false")
+                          << ",\"solver_mode\":" << result.solver_mode
+                          << ",\"compliant_experiment_override\":"
+                          << (result.compliant_experiment_override ? "true" : "false")
+                          << ",\"limits_applied\":"
                           << locomotionRegressionLimitsAppliedJson(spec.name, result.metrics) << ",\"metrics\":"
                           << metricsToJson(result.metrics) << "}\n";
             }

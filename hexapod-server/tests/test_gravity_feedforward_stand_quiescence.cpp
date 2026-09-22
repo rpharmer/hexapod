@@ -56,6 +56,7 @@ struct MeasureWindow {
     bool active{false};
     double sum_sq_femur_tibia_tracking{0.0};
     int n_femur_tibia_tracking{0};
+    bool dump_pending{false};
 };
 
 class StandQuiescenceBridge final : public IHardwareBridge {
@@ -79,6 +80,18 @@ public:
                     if (!out.foot_contacts[static_cast<std::size_t>(leg)]) {
                         continue;
                     }
+                    // UNRESOLVED (2026-09-19): on leg 0 the femur term carries a
+                    // *constant* ~1.496 rad bias — successive samples move cmd by
+                    // -0.0699 and meas by -0.0694, so the loop tracks the shape and
+                    // sits at a fixed offset. That is not tracking error, and it
+                    // makes `rms_femur_tibia_tracking_rad` (0.944) dominate
+                    // `primaryScore` with a quantity feedforward cannot change,
+                    // which is why the 12%-improvement assertion cannot pass.
+                    // 1.496 rad is close to the 83 deg *tibia* attach offset, not the
+                    // 35 deg femur one, and applying `jointMechanicalFromServoLeg`
+                    // to the command makes it worse (2.11 rad), so this is a
+                    // convention/index mismatch to audit, not a servo-space
+                    // conversion. Dump with HEXAPOD_FF_TRACK_DUMP=1.
                     for (const int j : {FEMUR, TIBIA}) {
                         const double cmd =
                             last_cmd_.leg_states[static_cast<std::size_t>(leg)]
@@ -91,6 +104,13 @@ public:
                         const double e = std::abs(shortestAngleDeltaRad(cmd, meas));
                         measure_->sum_sq_femur_tibia_tracking += e * e;
                         ++measure_->n_femur_tibia_tracking;
+                        if (measure_->dump_pending && leg == 0) {
+                            std::cerr << "[ff-track] leg=" << leg << " joint=" << j
+                                      << " cmd=" << cmd << " meas=" << meas << " err=" << e << '\n';
+                            if (j == TIBIA) {
+                                measure_->dump_pending = false;
+                            }
+                        }
                     }
                 }
             }
@@ -225,6 +245,7 @@ StandMetrics measureStandQuiescence(const std::string& sim_exe,
     }
 
     measure.active = true;
+    measure.dump_pending = envFlag("HEXAPOD_FF_TRACK_DUMP");
     double sum_sq_vel = 0.0;
     int n_vel = 0;
     for (int i = 0; i < measure_steps; ++i) {

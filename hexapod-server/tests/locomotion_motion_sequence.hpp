@@ -57,6 +57,13 @@ inline bool runMotionSequence(RobotRuntime& runtime,
                               LocomotionMetrics& metrics) {
     std::size_t step_index = 0;
     double stride_cycles_accum{0.0};
+    // Refreshed scenario streams represent fixed-cadence simulation input. Keep
+    // gait, filtering, and governor clocks on that cadence instead of solver wall
+    // time so faster contact solvers do not silently shorten the commanded walk.
+    TimePointUs command_time{now_us().value + 3'600'000'000ULL};
+    const std::uint64_t command_period_us = static_cast<std::uint64_t>(std::max<long long>(
+        1, std::llround(metrics.sample_period_s * 1.0e6)));
+
     for (std::size_t phase_index = 0; phase_index < phases.size(); ++phase_index) {
         const MotionPhase& phase = phases[phase_index];
         if (phase.steps == 0) {
@@ -64,7 +71,13 @@ inline bool runMotionSequence(RobotRuntime& runtime,
         }
 
         for (std::size_t step_in_phase = 0; step_in_phase < phase.steps; ++step_in_phase) {
-            if (phase.refresh_each_step || step_in_phase == 0) {
+            if (phase.refresh_each_step) {
+                MotionIntent intent = makeMotionIntent(phase.motion);
+                command_time.value += command_period_us;
+                intent.timestamp_us = command_time;
+                runtime.setMotionIntent(intent);
+            } else if (step_in_phase == 0) {
+                // Timeout scenarios deliberately measure real command age.
                 runtime.setMotionIntent(makeMotionIntent(phase.motion));
             }
             runtime.setSafetyLegEnabledTestMask(phase.safety_leg_enabled_mask);

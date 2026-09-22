@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <iomanip>
 #include <limits>
 #include <sstream>
@@ -191,6 +192,28 @@ struct LocomotionMetrics {
     double min_measured_foot_world_z_m{std::numeric_limits<double>::infinity()};
     double max_commanded_tracking_error_m{0.0};
     double max_contact_tracking_error_m{0.0};
+    double max_walk_contact_tracking_error_m{0.0};
+    bool first_read_fail{false};
+    int first_failed_solver_status{-1};
+    int first_failed_failure_reason{-1};
+    int first_failed_speed_limit_frame{0};
+    int first_failed_speed_limit_support{0};
+    double first_failed_chassis_w{0.0};
+    double first_failed_max_link_w{0.0};
+    std::uint64_t first_failed_retry_count{0};
+    std::uint64_t first_failed_held_state_count{0};
+    int solver_held_steps{0};
+    int solver_held_solver_not_converged_steps{0};
+    int solver_held_non_finite_impulse_steps{0};
+    int solver_held_non_finite_velocity_steps{0};
+    int solver_speed_limit_steps{0};
+    double peak_solver_normal_impulse{0.0};
+    double max_solver_contact_penetration{0.0};
+    double p99_solver_contact_penetration{0.0};
+    double max_solver_mechanical_energy_delta_abs{0.0};
+    double sum_solver_actuator_work{0.0};
+    double max_solver_compliant_projected_residual{0.0};
+    double p99_solver_compliant_projected_residual{0.0};
     std::vector<ModeSegment> mode_segments{};
     std::vector<GaitTransitionSegment> gait_segments{};
 };
@@ -252,6 +275,38 @@ inline std::string metricsToJson(const LocomotionMetrics& metrics) {
         << "\"min_measured_foot_world_z_m\":" << formatDouble(metrics.min_measured_foot_world_z_m) << ','
         << "\"max_commanded_tracking_error_m\":" << formatDouble(metrics.max_commanded_tracking_error_m) << ','
         << "\"max_contact_tracking_error_m\":" << formatDouble(metrics.max_contact_tracking_error_m) << ','
+        << "\"max_walk_contact_tracking_error_m\":" << formatDouble(metrics.max_walk_contact_tracking_error_m) << ','
+        << "\"first_read_fail\":" << (metrics.first_read_fail ? "true" : "false") << ','
+        << "\"first_failed_solver_status\":" << metrics.first_failed_solver_status << ','
+        << "\"first_failed_failure_reason\":" << metrics.first_failed_failure_reason << ','
+        << "\"first_failed_speed_limit_frame\":" << metrics.first_failed_speed_limit_frame << ','
+        << "\"first_failed_speed_limit_support\":" << metrics.first_failed_speed_limit_support << ','
+        << "\"first_failed_chassis_w\":" << formatDouble(metrics.first_failed_chassis_w) << ','
+        << "\"first_failed_max_link_w\":" << formatDouble(metrics.first_failed_max_link_w) << ','
+        << "\"first_failed_retry_count\":" << metrics.first_failed_retry_count << ','
+        << "\"first_failed_held_state_count\":" << metrics.first_failed_held_state_count << ','
+        << "\"solver_held_steps\":" << metrics.solver_held_steps << ','
+        << "\"solver_held_solver_not_converged_steps\":"
+        << metrics.solver_held_solver_not_converged_steps << ','
+        << "\"solver_held_non_finite_impulse_steps\":"
+        << metrics.solver_held_non_finite_impulse_steps << ','
+        << "\"solver_held_non_finite_velocity_steps\":"
+        << metrics.solver_held_non_finite_velocity_steps << ','
+        << "\"solver_speed_limit_steps\":" << metrics.solver_speed_limit_steps << ','
+        << "\"peak_solver_normal_impulse\":"
+        << formatDouble(metrics.peak_solver_normal_impulse, 12) << ','
+        << "\"max_solver_contact_penetration\":"
+        << formatDouble(metrics.max_solver_contact_penetration, 12) << ','
+        << "\"p99_solver_contact_penetration\":"
+        << formatDouble(metrics.p99_solver_contact_penetration, 12) << ','
+        << "\"max_solver_mechanical_energy_delta_abs\":"
+        << formatDouble(metrics.max_solver_mechanical_energy_delta_abs, 12) << ','
+        << "\"sum_solver_actuator_work\":"
+        << formatDouble(metrics.sum_solver_actuator_work, 12) << ','
+        << "\"max_solver_compliant_projected_residual\":"
+        << formatDouble(metrics.max_solver_compliant_projected_residual, 12) << ','
+        << "\"p99_solver_compliant_projected_residual\":"
+        << formatDouble(metrics.p99_solver_compliant_projected_residual, 12) << ','
         << "\"mode_segments\":[";
     for (std::size_t i = 0; i < metrics.mode_segments.size(); ++i) {
         if (i > 0) {
@@ -335,6 +390,11 @@ inline void appendSample(LocomotionMetrics& metrics,
                 metrics.max_contact_tracking_error_m = std::max(
                     metrics.max_contact_tracking_error_m,
                     sample.locomotion_debug.commanded_tracking_error_m[leg_index]);
+                if (sample.status.active_mode == RobotMode::WALK) {
+                    metrics.max_walk_contact_tracking_error_m = std::max(
+                        metrics.max_walk_contact_tracking_error_m,
+                        sample.locomotion_debug.commanded_tracking_error_m[leg_index]);
+                }
             }
         }
     }

@@ -131,4 +131,24 @@ inline void simWireTargetsFromServoLeg(
         out_sim_t);
 }
 
+/// Derivative of `simWireTargetsFromServoLeg`: coxa wire rate flips sign; femur/tibia do not.
+inline void simWireVelocitiesFromServoLeg(
+    const ServoCalibration& cal,
+    int leg_index,
+    const LegState& servo_leg,
+    float& out_sim_c,
+    float& out_sim_f,
+    float& out_sim_t) {
+    (void)leg_index;
+    const double coxa_joint_vel =
+        normalizedServoSign(cal.coxaSign) * servo_leg.joint_state[COXA].vel_radps.value;
+    const double femur_joint_vel =
+        normalizedServoSign(cal.femurSign) * servo_leg.joint_state[FEMUR].vel_radps.value;
+    const double tibia_joint_vel =
+        normalizedServoSign(cal.tibiaSign) * servo_leg.joint_state[TIBIA].vel_radps.value;
+    out_sim_c = static_cast<float>(-coxa_joint_vel);
+    out_sim_f = static_cast<float>(femur_joint_vel);
+    out_sim_t = static_cast<float>(tibia_joint_vel);
+}
+
 } // namespace physics_sim_joint_wire_mapping

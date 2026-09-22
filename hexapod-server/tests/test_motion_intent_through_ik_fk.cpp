@@ -9,6 +9,7 @@
 #include "leg_ik.hpp"
 #include "physics_sim_protocol.hpp"
 #include "servo_dynamics_clamp.hpp"
+#include "swing_link_rate_governor.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -656,9 +657,77 @@ bool servoSlewDoesNotBiteStanceStepAndHitsLargeJump() {
     const ServoDynamicsClampResult large = clampJointTargetsToServoDynamics(
         first_joints, jumped, geometry, 0.005);
 
-    return expect(!stance.leg_limited[0],
+    return expect(servoDynamicsClampApplies(RobotMode::WALK),
+                  "walking targets must stay inside the actuator slew envelope") &&
+           expect(servoDynamicsClampApplies(RobotMode::STAND),
+                  "stand recovery targets must not bypass the actuator slew envelope") &&
+           expect(!servoDynamicsClampApplies(RobotMode::SAFE_IDLE),
+                  "safe-idle output must not be converted into an active positioning request") &&
+           expect(!servoDynamicsClampApplies(RobotMode::FAULT),
+                  "fault output must not be converted into an active positioning request") &&
+           expect(!stance.leg_limited[0],
                   "8 rad/s slew must not bite a 0.12 m/s 5 ms stance step") &&
            expect(large.leg_limited[0], "8 rad/s slew must hit a 1 rad joint jump");
+}
+
+bool measuredRateClampTracksLivePose() {
+    JointTargets requested{};
+    requested.leg_states[1].joint_state[2].pos_rad = AngleRad{3.0};
+    RobotState est{};
+    est.joint_state_quality[1].position_valid = true;
+    est.leg_states[1].joint_state[2].pos_rad = AngleRad{0.0};
+    const ServoDynamicsClampResult clipped =
+        clampJointTargetsTowardMeasured(requested, est);
+    if (!expect(clipped.leg_limited[1],
+                "far swing-tibia target should clip toward the live angle")) {
+        return false;
+    }
+    if (!expect(std::abs(clipped.targets.leg_states[1].joint_state[2].pos_rad.value - 1.5) < 1e-12,
+                "live-angle clip should cap remainder error at 1.5 rad")) {
+        return false;
+    }
+    requested.leg_states[1].joint_state[2].pos_rad = AngleRad{0.40};
+    const ServoDynamicsClampResult small =
+        clampJointTargetsTowardMeasured(requested, est);
+    if (!expect(!small.leg_limited[1] &&
+                    std::abs(small.targets.leg_states[1].joint_state[2].pos_rad.value - 0.40) < 1e-12,
+                "healthy walking PD error must not hit the tracking cap")) {
+        return false;
+    }
+    RobotState invalid{};
+    requested.leg_states[1].joint_state[2].pos_rad = AngleRad{3.0};
+    const ServoDynamicsClampResult skipped =
+        clampJointTargetsTowardMeasured(requested, invalid);
+    return expect(!skipped.leg_limited[1] &&
+                      std::abs(skipped.targets.leg_states[1].joint_state[2].pos_rad.value - 3.0) < 1e-12,
+                  "missing joint quality must not invent a live-angle clip");
+}
+
+bool nearCapTibiaRemainderLeavesHealthyLiveAngleClip() {
+    const HexapodGeometry geometry = geometry_config::buildDefaultHexapodGeometry();
+    JointTargets requested{};
+    requested.leg_states[1].joint_state[TIBIA].pos_rad = AngleRad{3.0};
+    RobotState est{};
+    est.bus_ok = true;
+    est.has_body_twist_state = true;
+    est.joint_state_quality[1].position_valid = true;
+    est.joint_state_quality[1].velocity_valid = true;
+    est.joint_state_quality[1].source = JointStateSource::Simulated;
+    est.leg_states[1].joint_state[TIBIA].pos_rad = AngleRad{0.0};
+    est.leg_states[1].joint_state[FEMUR].vel_radps = AngularRateRadPerSec{7.0};
+    const auto tibia =
+        clampNearCapTibiaTowardMeasured(requested, geometry, est, RobotMode::WALK, true);
+    if (!expect(tibia.legs[1].status == SwingLinkRateStatus::Unchanged
+                    && std::abs(tibia.targets.leg_states[1].joint_state[TIBIA].pos_rad.value - 3.0)
+                           < 1e-12,
+                "1.5 remainder still 1.5 when measured link rate is not near-cap")) {
+        return false;
+    }
+    const ServoDynamicsClampResult clipped = clampJointTargetsTowardMeasured(tibia.targets, est);
+    return expect(clipped.leg_limited[1]
+                      && std::abs(clipped.targets.leg_states[1].joint_state[TIBIA].pos_rad.value - 1.5)
+                             < 1e-12,
+                  "global 1.5 remainder still binds when tibia near-cap is idle");
 }
 
 } // namespace
@@ -698,6 +767,12 @@ int main() {
         return EXIT_FAILURE;
     }
     if (!servoSlewDoesNotBiteStanceStepAndHitsLargeJump()) {
+        return EXIT_FAILURE;
+    }
+    if (!measuredRateClampTracksLivePose()) {
+        return EXIT_FAILURE;
+    }
+    if (!nearCapTibiaRemainderLeavesHealthyLiveAngleClip()) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

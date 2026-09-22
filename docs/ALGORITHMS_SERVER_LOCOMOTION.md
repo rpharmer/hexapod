@@ -137,7 +137,7 @@ Rough order:
 4. **`resolveEffectiveIntent`:** merges operator / scenario intent with `NavigationManager` + `NavLocomotionBridge` output (`navigation_manager.cpp`, `nav_locomotion_bridge.cpp`, `nav_to_locomotion.cpp`, `nav_primitives.cpp`).
 5. **`RuntimeFreshnessGate`:** strict mode for control; on reject → safe idle joint targets, empty leg/gait buffers, early return.
 6. **`ControlPipeline::runStep`** — Section 8.
-7. **Walk-only servo dynamics clamp:** `clampJointTargetsToServoDynamics` limits joint step using `ServoDirectionDynamics` from geometry (`robot_runtime.cpp`).
+7. **Walk/STAND servo dynamics clamp:** `clampJointTargetsToServoDynamics` limits joint step using `ServoDirectionDynamics` from geometry, then (WALK, physics-sim convention only) `snapSwingTargetsNearMeasuredLinkCap` snaps a planned swing leg to the live angle when measured link ω is already within the captured ABA overshoot of 10 rad/s, then `clampJointTargetsTowardMeasured` caps remainder tracking error at 1.5 rad on joints with valid measured position (`robot_runtime.cpp`). The near-cap snap is not the always-on swing-link-rate governor. A tibia-only 0.25 rad remainder for `sl-abort-near-cap-v1` (wire 17) was screened and reverted (isolated reverse `held=613`).
 8. **Publish:** `leg_targets_`, `gait_state_`, `command_governor_state_`, `joint_targets_`, `locomotion_debug_`, `status_`.
 9. **Telemetry / replay** (`telemetry_publisher.cpp`, `replay_json.cpp`).
 
@@ -148,7 +148,10 @@ Rough order:
 ## 8) Stage E — `ControlPipeline::runStep` (kinematics core)
 
 **File:** `control_pipeline.cpp`  
-**Constructor wiring (`RobotRuntime` ctor):** the pipeline receives `config_.gait`, `config_.locomotion_cmd`, `config_.safety`, `config_.foot_terrain`, `config_.gravity_feedforward`, and the profiler pointer.
+**Constructor wiring (`RobotRuntime` ctor):** the pipeline receives gait,
+locomotion command, safety, command-governor, terrain, gravity-feedforward and
+redesign configuration, the profiler, and the bridge's explicit absolute-position
+feedback capability (default false; physics bridge true).
 
 ### 8.1 Preview pass (support assessment)
 
@@ -164,12 +167,22 @@ To break a circular dependency (governor wants support metrics that depend on ga
 - Uses `SupportAssessment`, IMU body rates, fusion trust, contact mismatch, tilt, command acceleration.
 - Interacts with recovery stages (`RecoveryStage`) and optional `latchRecoveryHold` / `finalizeRecovery`.
 
-**Configuration caveat:** `ControlPipeline` constructs `CommandGovernor` with `CommandGovernorConfig{}` defaults plus `SafetyConfig` (`command_governor_({}, safety_config)` in `control_pipeline.cpp`). Parsed tuning for governor limits in `ControlConfig` is **not** wired into this constructor path today; governor behavior is therefore mostly **default** `CommandGovernorConfig` unless changed in code.
+The configured `CommandGovernorConfig` and `SafetyConfig` are passed to
+`CommandGovernor`; they are not replaced with default settings in this path.
 
 ### 8.3 `LocomotionCommandProcessor` (`locomotion_command.cpp`)
 
 - Converts governed intent + `PlanarMotionCommand` into a **smoothed or slew-limited** `BodyTwist` (`cmd_twist`) using `LocomotionCommandConfig` (accel limits, clamps, optional legacy smoothing).
 - `rawLocomotionTwistFromIntent` defines how planar commands add to `twist.body_trans_mps` and yaw rate.
+
+For true zero-planar WALK turns, `InPlaceTurnHold` adds a bounded translation
+correction when the bridge explicitly supplies reliable absolute position.
+Current opt-in capability is physics-sim only, not serial or simple-sim bridges.
+It captures entry world XY, transforms position error into body axes, and uses
+0.20/s gain with a 0.03 m/s correction limit. It leaves yaw and intentional arc
+commands unchanged and resets on invalid feedback, mode/turn exit or recovery.
+`HEXAPOD_TURN_INPLACE_HOLD=0` disables it for diagnostics; an environment flag
+cannot override the capability requirement.
 
 ### 8.4 `GaitScheduler` (`gait_scheduler.cpp`, `gait_params.cpp`)
 
@@ -509,6 +522,7 @@ Mutates `GaitState` after the scheduler:
 ### 18.9 Body controller — measured tilt and height (`body_controller.cpp`)
 
 - **Tilt feedback** (during walk, when pose valid): adds \(\Delta\phi, \Delta\theta\) proportional to \(-0.24 \cdot (\phi_{\mathrm{meas}} - \phi_{\mathrm{set}})\) (pitch analogous), clamped to \(\pm 0.24\,\mathrm{rad}\), scaled by fusion trust clamp \([0.2, 1]\).
+- **STAND untilt**: when STAND command roll/pitch are ~0 and measured body twist is valid, map nominal feet through measured roll/pitch for ~0.4 s (airborne feet reach the floor), then cosine-fade to identity over ~1.2 s so the chassis can untilt onto that plane. Isolated untilted STAND is unchanged. Do not lengthen STAND.
 - **Height hold**: proportional sag term + leaky integrator on height error (`updateBodyHeightHoldIntegralM` — decay, cap, fast-unwind rules).
 - **Tilt squat**: reduces effective body height when \(\|\mathrm{RP}\| > 0.08\) up to \(0.06\,\mathrm{m}\) additional squat.
 - **Terrain blend**: scales terrain stance bias / tilt leveling by a factor derived from height-hold magnitude (min scale **0.35**).
@@ -553,6 +567,8 @@ Per leg (after coxa mount transform to leg frame \((x,y,z)\)):
 ### 18.13 Walk joint slew (`robot_runtime.cpp` — `clampJointTargetsToServoDynamics`)
 
 - Per joint, limits position step using configured `ServoDirectionDynamics` \(v_{\max}\) rad/s × control \(\Delta t\) so commanded servos do not jump faster than the dynamics model.
+- **Near-cap swing snap** (WALK, physics-sim convention): if a planned swing leg's measured link ω is already within the captured femur ABA overshoot (0.214 rad/s) of 10 rad/s, snap that leg's targets to the live angle. Cuts PD torque on the after-1.5 dump (incoming 9.996, PD 0.71) without shaping healthy 7–8 rad/s walking. Not `HEXAPOD_SWING_LINK_RATE_EXPERIMENT`. Gait `in_stance` remains the skip; measured-unload, coupling disagreement, and a tibia-only 0.25 rad remainder on `sl-abort-near-cap-v1` (wire 17 necessary, femur-16 not) were screened and reverted.
+- **Live-angle clip** (WALK/STAND): after slew and the near-cap snap, each joint with valid measured position is capped so \(|q_{\mathrm{cmd}} - q_{\mathrm{meas}}| \le 1.5\,\mathrm{rad}\) (remainder). Successive-command slew does not bound PD error once the plant lags. A \(10\,\mathrm{rad/s}\times\Delta t\) clip starves walking PD and is not used. This does not raise the 10 rad/s guard.
 
 ### 18.14 Quick reference index (symbols → meaning → code)
 
@@ -581,6 +597,8 @@ Use this table to jump from a quantity to its definition; **open the cited funct
 | Leg IK | \(q_1,\rho,d,D,q_2,q_3\) | `LegIK::solveOneLeg` — `leg_ik.cpp` |
 | Gravity FF delta | \(\Delta q\) sag model | `applyJointAngleGravityFeedforward` — `joint_angle_gravity_feedforward.cpp` |
 | Joint slew clamp | per-joint \(\Delta q_{\max}\) | `clampJointTargetsToServoDynamics` — `robot_runtime.cpp` |
+| Near-cap swing snap | measured link \(\omega \ge 9.786\) | `snapSwingTargetsNearMeasuredLinkCap` — `swing_link_rate_governor.hpp` |
+| Live-angle target clip | \(1.5\,\mathrm{rad}\) remainder vs \(q_{\mathrm{meas}}\) | `clampJointTargetsTowardMeasured` — `servo_dynamics_clamp.hpp` |
 
 ### 18.15 Safety supervisor — fault arbitration
 

@@ -8,6 +8,27 @@ This document describes the current testing surface in the monorepo:
 - what outputs/artifacts are produced
 - which tests provide quantitative motion/performance data (not just pass/fail)
 
+## Retry damping and turn-feedback regression checks
+
+The 2026-09-22 default-path walking screen passed reverse ×5, isolated turn ×5
+and sequential ×5 with zero held samples, plus canonical aggressive governor
+with two strides. See §3.24 of
+[`SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md`](SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md)
+for artifacts, scope and broader qualification status. This does not replace
+100-seed, soak, or performance qualification.
+
+- Physics `test_servo_pd_request` verifies that SpeedLimit recovery reduces
+  proportional demand while preserving braking damping and torque signs.
+- Physics `test_contact_warm_start` tests contact-frame vector transport;
+  runtime transport remains experimental and off after a balance regression.
+- Server `in_place_turn_hold` checks bounded world/body position correction,
+  pure-turn-only activation, intentional-arc passthrough, invalid feedback and
+  origin resets. Only bridges explicitly supplying reliable absolute position
+  may enable this feedback; ordinary hardware does not.
+- Gait batch reports require both passing case metrics and process exit zero.
+  `.exit` sidecars are saved by the runner; use `--progress-log` when reporting
+  older batches. Never edit the runner during a batch.
+
 ## Motion Performance Quick Index
 
 Use this section as the fast path for before/after motion benchmarking.
@@ -65,6 +86,11 @@ Use this section as the fast path for before/after motion benchmarking.
     - server tests preset (`hexapod-server`, excludes `locomotion-stress` label by default)
     - firmware host tests (`hexapod-client` host-test preset)
     - server scenario smoke run (`scenarios/01_nominal_stand_walk.toml`)
+  - Live-physics CTests in the server preset default to **pinocchio-proximal** at
+    production **0.14 m / cap 24** (`productionProximalSolverSettings` in
+    `hexapod-server/tests/physics_sim_test_utils.hpp`). The iterations-only
+    `PhysicsSimBridge` ctor stays `LegacyPgs`. Walk-distance A/B:
+    `HEXAPOD_WALK_TEST_SOLVER_MODE=legacy-pgs` or `pinocchio-compliant`.
   - Returns:
     - exit `0` on success
     - non-zero on first failing stage
@@ -107,6 +133,13 @@ Use this section as the fast path for before/after motion benchmarking.
   - `test_motion_intent_through_ik_fk`
   - `test_physics_sim_mapping_roundtrip`
   - `test_physics_sim_ik_wire_roundtrip`
+  - `test_p0_tibia_command_attribution`
+  - `test_p0_swing_planner_replay`
+  - `test_p0_commanded_foot_replay`
+  - `test_p0_swing_decomp_replay`
+  - `test_p0_tip_over_replay`
+  - `test_p0_turn_traj_replay`
+  - `test_p0_turn_entry_replay`
   - `test_physics_sim_bridge_frame_conversion`
 - Hardware/transport/protocol:
   - `test_hardware_bridge_transport`
@@ -128,7 +161,9 @@ Use this section as the fast path for before/after motion benchmarking.
 
 ### Physics-sim integration tests inside `hexapod-server/tests`
 
-These use `PhysicsSimBridge` + `RobotRuntime` against a live UDP sim process:
+These use `PhysicsSimBridge` + `RobotRuntime` against a live UDP sim process.
+Default CTest wiring is pinocchio-proximal at 0.14 m / cap 24 except where a
+test still uses the iterations-only ctor (PGS comparison / mapping tests):
 
 - `test_physics_sim_walk_distance`
 - `test_physics_sim_walk_stability`
@@ -174,6 +209,8 @@ Representative tests include:
 - `test_servo_torque_saturation_matches_inertia`, `test_servo_stall_under_overload`, `test_servo_chain_vertical_lift_under_gravity`
 - `test_hexapod_live`, `test_hexapod_live_pose_hold`, `test_hexapod_planted_foot_drift`, `test_hexapod_zero_g`
 - `test_serve_ipc`, `test_serve_ipc_preview`, `test_state_correction_protocol`
+- `test_pinocchio_p0_p1`, `test_p5_turn_entry_identity` (Pinocchio stand-cutpoint
+  restore+redump; skip `missing_fixture`)
 
 ### Zero-g no-terrain robustness procedure (self-collision ON)
 
@@ -246,12 +283,209 @@ These are the highest-value tests for tracking improvements across commits.
   - Optional selectors:
     - `--case <case_name>`
     - `--profile canonical|stress|all`
+    - `--solver-mode pinocchio-proximal|pinocchio-compliant` (default rigid mode 1, cap 24)
     - `--artifact-dir <dir>`
     - `--emit-metrics-json` (prints one JSON object per case to stdout)
 - What it returns:
   - process exit `0` only when all selected cases pass
   - per-case summary line on stdout (`passed`, `stride_count`, `path_m`, `disp_m`, `roll_max`, `pitch_max`, etc.)
   - failure reason to stderr for failed cases
+- Solver comparisons must use the explicit selector; this suite does not read
+  `HEXAPOD_WALK_TEST_SOLVER_MODE` (that variable belongs to the walk-distance test).
+  The selected protocol `solver_mode` and `compliant_experiment_override` are
+  recorded in stdout and summary JSON.
+  Unset `HEXAPOD_PINOCCHIO_COMPLIANT_CONTACT_EXPERIMENT` for protocol-mode A/B runs.
+
+  Coordinated swing-rate experiment (simulator-only, disabled by default):
+  `HEXAPOD_SWING_LINK_RATE_EXPERIMENT=1` scales the three outgoing swing joint
+  increments together after the existing motor slew clamp. The measured link-rate
+  map includes chassis angular rate and preserves opposing pitch cancellation.
+  `HEXAPOD_SWING_LINK_RATE_BUDGET_RADPS=10|9|8` selects the bounded command screen
+  (default 10; other values use 10). Physical speed guards remain unchanged.
+  `HEXAPOD_SWING_LINK_RATE_TRACE=1` writes per-swing-leg projection diagnostics to
+  stderr. Stance, STAND/recovery, and non-simulated inputs remain baseline.
+  See `docs/PLAN_COORDINATED_SWING_RATE_GOVERNOR.md`; this is not a validated fix.
+
+  From repository root, after loading `scripts/lib/pinocchio_env.sh`, run the
+  bounded A/B screens with `python3 tools/run_swing_link_rate_screen.py --screen
+  aggressive --runs 3 --output-dir /tmp/hexapod-link-rate-screen`. Other screens:
+  `straight`, `turn`, `reverse`, `slow`, `sequential`, `turn-after-reverse`,
+  `turn-after-reverse-straight`; `--baseline` disables the governor and
+  `--budget 10|9|8` selects its command bound. Prefix screens run reverse then
+  turn, or reverse then straight then turn, in one process. Reports include
+  binary/fixture hashes, tree state, individual JSON metrics, activation counts
+  and log paths.
+  `--capture-speed-limit` additionally writes a separate schema-2 diagnostic
+  snapshot for the first full-gain speed failure in each run and enables the
+  test-wrapper received-pose link-speed audit. Existing snapshots are never
+  overwritten. Snapshot files contain full q/v, torque, mass/nonlinear terms,
+  per-link angular Jacobians and incoming/free/post-contact angular vectors.
+  From repository root, replay with `python3 tools/audit_speed_limit_kinematics.py
+  docs/contact-snapshots/speed-limit-governed-kinematics-v1.json --report
+  /tmp/hexapod-speed-audit.json`. Requires NumPy. The audit rejects invalid
+  dimensions/non-finite state, mappings, mass matrices, and algebra mismatches.
+  It also reports `classification` (`v1_incoming_over_cap`, `aba_over_cap`,
+  `v2_contact_amplified`). `HEXAPOD_PINOCCHIO_PREFAILURE_BUFFER_PATH` writes the
+  preceding accepted-state ring on that first trip; log
+  `[proximal-prefailure-buffer]`. `HEXAPOD_PINOCCHIO_STAND_CUTPOINT_PATH` writes
+  a stand-end physics cutpoint; log `[proximal-stand-cutpoint]`. New dumps include
+  the warm-start `frame` 3×3; `restoreDiagnosticCutpoint` loads schema-1
+  `stand_cutpoint` and treats a missing frame as `have_frame=false`.
+  `HEXAPOD_PINOCCHIO_COMMAND_STREAM_PATH` writes accepted substep `{dt, targets,
+  q, v}` after that cutpoint; log `[proximal-command-stream]`. Existing files are
+  never overwritten. Production
+  proximal logs `[proximal-warm-start-restore]` when a rejected attempt's warm
+  starts are discarded, and `[proximal-warm-start-transport]` when a stored
+  contact frame rotates (log only; apply-time world transport is not shipped).
+  Host test `test_pinocchio_p0_p1` covers accepted-state speed, warm-start
+  rollback, stored-frame rotate, material-point Jv, armature energy, dump/restore
+  identity, D7 held-retry World `targetAngle` stability, in-process command-stream
+  replay, frozen isolated-turn cutpoint restore, and p3-seq history attribution
+  (`restoreAcceptedHistorySample`, accumulating and per-step-reseed replays).
+  The same host test then mutates only wire 8 (`leg_2` tibia) on that restore:
+  `zero_error` (target = live femur–tibia angle) and `rate_limit_10` (clip
+  toward the dumped target at 10 rad/s × `subDt`). Recorded control stays
+  `reproduced_vin`; both interventions classify `command_causal_under_cap`.
+  This is not a runtime governor and does not enable
+  `HEXAPOD_SWING_LINK_RATE_EXPERIMENT`.
+  Host `test_p0_tibia_command_attribution` maps the same frozen history
+  through servo/mechanical FK/IK for R2: vin-landing classifies
+  `cartesian_command_far` (unloaded, planar ~70 mm, `Δz` 5 mm; IK consistent).
+  It then scores commanded vs live feet against `computeNominalStance` and the
+  femur-plane annulus: `medial_cmd_near_nominal_live` (cmd 94 mm from nominal,
+  live 24 mm, both in annulus, clamp does not move cmd XY).
+  It does not change gait, slew, or the plant.
+  `HEXAPOD_SWING_PLANNER_DUMP_PATH` writes a never-overwrite R2 walking
+  `planSwingFoot` dump (`SwingFootInputs`, kinematic/est twists,
+  `planned_pre_rot`, `target_clamped`); log `[swing-planner-dump]`. Host
+  `test_p0_swing_planner_replay` replays that dump (`peak_xy_err=0`) and
+  classifies vs vin-landing cmd XY:
+  `planner_misses_medial_cmd` (new fixture
+  `p0-r2-swing-planner-v1.json` sha256 `f1550c2a…cdc669412`, 256 samples,
+  clamped Y `[0.188:0.224]`, nearest `dxy` 65 mm). Not a governor and not
+  `HEXAPOD_SWING_LINK_RATE_EXPERIMENT`.
+  `HEXAPOD_R2_COMMANDED_FOOT_DUMP_PATH` writes a never-overwrite trailing
+  ring of R2 `planned` / `pre_slew_fk` / `post_slew_fk` on WALK ticks
+  (cap 256); log `[r2-commanded-foot-dump]`. Host
+  `test_p0_commanded_foot_replay` classifies frozen history
+  `held_medial_from_ring_start` (all 8 samples already 81–94 mm from
+  nominal, Y `[0.126:0.140]`) and the new fixture
+  `p0-r2-commanded-foot-v1.json` sha256 `ffaa4142…9f23dda2` as
+  `command_misses_medial_cmd` (nearest 56 mm; last-256 of a sequential
+  turn window, not a SpeedLimit recapture).
+  The same env event-latches the first R2 40 mm medial-of-nominal foot
+  (128 post-event samples). Host `test_p0_commanded_foot_replay` classifies
+  `p0-r2-nominal-departure-v1.json` sha256 `2e083b4b…455b7344`
+  `planned_departs_first` / `departure_misses_medial_cmd` (latch loop
+  1667, swing planned Y 0.171, `latch_dxy` 45 mm). Not a governor.
+  The dump continues until `bus_ok` false / FAULT / 1024 post-event
+  after a **deep latch** (`decomp_valid` walking swing and planned Y ≤ 0.15).
+  A 40 mm sag-nominal `departed` log no longer starts `post_cap`.
+  If 2048 samples pass with no deep latch, freeze `no_deep_tuck`.
+  Fixture `p0-r2-departure-through-hold-v1.json` sha256 `089bedae…da4f8bee`
+  classifies `planned_tucks_to_vin` (late-swing planned Y 0.131 vs vin
+  0.126; post-slew Y ~0.20).
+  Schema 3 of the same dump adds R2 walking-swing decomp when valid
+  (`planned_pre_rot`, `after_terrain`, `origin_rot` / `coxa_rot`, foothold
+  split, `clamp_dxy`, terrain XY, roll/pitch/yaw). Host
+  `test_p0_swing_decomp_replay` requires a vin-tuck sample (planned Y ≤ 0.15
+  or `dxy_to_vin` < 40 mm), prints dump-nominal and planner-anchor
+  millimetre budgets (winner on the **anchor** denominator), and three
+  offline counterfactuals. Fixture `p0-r2-swing-decomp-v1.json` sha256
+  `799d0566…ef62905` is the healthy Y 0.18 seed (`mixed`, not a vin tuck).
+  Fixture `p0-r2-swing-decomp-v2.json` sha256 `782740df…53a0e2` classifies
+  `untilted` (planned Y 0.150, `dxy` 23 mm vs vin). Production
+  `planSwingFoot` now floors swing Y so it cannot tuck more than 40 mm
+  inside hip-signed `anchor.y`. That floor does not bind on v2 (11 mm
+  vs anchor). Post-floor fixture `p0-r2-swing-decomp-v3.json` sha256
+  `1ab8d8a6…ff454b5a` (`freeze_reason=no_deep_tuck`, `walk_seen` 2048)
+  classifies `not_vin_tuck` / **`floor_working`** (`min_planned_y` 0.171,
+  `floor_bound=0`). Unlatched dumps freeze `no_deep_tuck` after 2048 WALK
+  ticks even while the trailing ring stays at 256. Isolated
+  `forward_walk` / reverse `solver_held=0`; turn net 0.174 m vs 0.21.
+  Sequential stays scored-not-green. Swing Cartesian is closed; no second
+  swing term.
+  `HEXAPOD_TIP_OVER_DUMP_PATH` writes a never-overwrite first-tick JSON when
+  `active_fault==TIP_OVER` (`kind=tip_over_dump`, pose/gyro/support, config
+  `MaxTiltRad` / `RapidBodyRateRadps` / max contacts, `rule=angle|rate|both|unknown`);
+  log `[tip-over-dump]`. Do not point this env at frozen cutpoint or first-trip
+  files. Host `test_p0_tip_over_replay` prints the rule vs 0.60 / 2.50 / 2
+  contacts and skips `missing_fixture`. Intended fixture
+  `p0-seq-tip-over-forward-v1.json` was not captured: isolated `forward_walk`
+  ×5 passed with no TIP_OVER; sequential until freeze or 5 did not trip
+  TIP_OVER. Do not loosen harness 0.60 / 2.50. Sequential stays scored-not-green.
+  `HEXAPOD_TURN_TRAJ_DUMP_PATH` writes a never-overwrite scored-turn XY dump
+  from walk-distance `checkTurnCase` (`kind=turn_traj_dump`, `{x,y,yaw,vx,vy,wz,support}`);
+  log `[turn-traj-dump]`. Do not point this env at frozen turn-census or
+  first-trip files. Host `test_p0_turn_traj_replay` circle-fits the path and
+  prints `orbit|translation|entry|late|unknown` (skip `missing_fixture`).
+  Isolated fixture `p0-turn-traj-isolated-v1.json` sha256 `9329a791…6618b3d`
+  (`orbit`, net 0.186 m). Sequential fixture `p0-turn-traj-sequential-v1.json`
+  sha256 `eb90d576…5d9f46` (`orbit`, net 0.216 m, larger fit R). Do not loosen
+  0.21 m. Sequential stays scored-not-green.
+  `HEXAPOD_TURN_ENTRY_DUMP_PATH` writes a never-overwrite stand-end + first WALK
+  dump from walk-distance `checkTurnCase` (`kind=turn_entry_dump`, pose, fused
+  support, stance width, body-frame centroid, per-foot world/body XY); log
+  `[turn-entry-dump]`. Do not point this env at frozen turn-census, turn-traj, or
+  first-trip files. Host `test_p0_turn_entry_replay` compares isolated vs
+  sequential and prints `entry_pose|entry_stance|entry_match|unknown` (skip
+  `missing_fixture`). Isolated fixture `p0-turn-entry-isolated-v1.json` sha256
+  `4dfd9329…79c10149` (6-support, untilted). Sequential fixture
+  `p0-turn-entry-sequential-v1.json` sha256 `32506a54…4bb1c923` (3-support, tilt
+  0.078 rad; scored turn passed 0.200 m). Host **`entry_stance`**.
+  `HEXAPOD_TURN_ENTRY_DUMP_MIN_NET_M` skips the write unless scored net ≥ the
+  value (fail census uses 0.21). Intended fail fixture
+  `p0-turn-entry-sequential-fail-v1.json` was not captured: sequential ×5 had
+  3 scored passes under 0.21 (dump skipped) and 2 abort-before-turn SpeedLimit.
+  Host prints `vs_isolated=missing_fixture` / `vs_pass=missing_fixture`. Do not
+  loosen 0.21 m. Sequential stays scored-not-green. P5 file-IPC cutpoint dump
+  (`HEXAPOD_PINOCCHIO_CUTPOINT_DUMP_REQUEST` / `_PATH`) and restore
+  (`HEXAPOD_PINOCCHIO_CUTPOINT_RESTORE_REQUEST` / `_PATH`, optional
+  `HEXAPOD_PINOCCHIO_CUTPOINT_RESTORE_CLEAR_WARMS=1`) are polled at the start of
+  `stepProximal`. Walk-distance `checkTurnCase` arms them at stand-end and
+  rebases `start_xy` after restore. Controller companion:
+  `HEXAPOD_TURN_ENTRY_CONTROLLER_DUMP_PATH` /
+  `HEXAPOD_TURN_ENTRY_CONTROLLER_RESTORE_PATH` plus test-only
+  `RobotRuntime::debugRestoreTurnEntryController`. Host
+  `test_p5_turn_entry_identity` restore+redump (skip `missing_fixture`).
+  Isolated cutpoint `p5-turn-entry-cutpoint-isolated-v1.json` sha256
+  `d4cf9a80…132d5c1`; sequential `p5-turn-entry-cutpoint-sequential-v1.json`
+  sha256 `ee3f1e06…2f26774`; sequential traj `p5-turn-traj-sequential-v1.json`
+  sha256 `6b385b53…b49766d` (net 0.223 m, fit R 0.128 m). Pose/solver/controller
+  restore branches did not isolate ΔR; `xy-only` / `yaw-only` isolated plants
+  at sequential XZ walk with isolated-scale nets, while full sequential
+  free-flyer + isolated joints still SpeedLimit-holds. No production latch. Do not recapture
+  frozen `p0-*` hashes. Do not loosen 0.21 m. Sequential stays scored-not-green.
+  `HEXAPOD_PINOCCHIO_IMPLICIT_DAMPING=1` (default off) switches free motion and
+  contact impulse response to dense `H = M + h D`; production logs
+  `[proximal-implicit-damping]`.   Host test `test_pinocchio_p3_implicit_damping`
+  covers unsaturated LDLT, saturated envelope, P0 sequential ABA-over fixture
+  replay vs 10 rad/s, the later `p3-seq-first-trip-buffer.json` miss
+  (`legal_miss` at `speed_free` 10.004), and oracle `G_H` vs `J M⁻¹ Jᵀ`.
+  New SpeedLimit snapshots record `implicit_damping`; frozen P0/v16 dumps are
+  not recaptured.
+  `HEXAPOD_PHYSICS_TRACE_PUBLISHED_LINK_SPEED=1` observes only successful reads in
+  the two physics test decorators; it never changes sample validity or bus status.
+  Its `1e-5` rounding allowance is diagnostic only, not a physical guard change.
+  The pitch-reversal unit model is an isolated critically damped ramp response;
+  it is not a substitute for coupled dynamics or a production controller.
+  The test-local coupled predictor can be evaluated with `python3
+  tools/predict_speed_limit_response.py
+  docs/contact-snapshots/speed-limit-governed-kinematics-v1.json --report
+  /tmp/hexapod-coupled-predictor.json`. It first verifies the captured PD law,
+  torque-speed envelope and full inverse-mass free response, then probes common
+  scales 1/0.75/0.5/0.25/0 on the captured winner leg. All other references remain
+  unchanged. It never activates a runtime governor. The fixed-contact comparison
+  reuses the captured velocity delta rather than re-solving candidate contact;
+  all physical-gate results remain false.   Frozen-pose one-step predictions are
+  not integrated-state safety guarantees. The production proximal path now
+  validates the proposed integrated pose before writing bodies; the predictor
+  still does not activate a runtime governor and is not a command-path candidate
+  until it re-solves contact and passes locomotion gates. Load
+  `scripts/lib/pinocchio_env.sh`
+  first so the Python interpreter and NumPy match the configured test environment.
+  When child stdio is enabled, the regression and walk-distance harnesses direct
+  simulator output to stderr, keeping parent JSON stdout independently parseable.
 - Artifacts (default under `/tmp/hexapod_locomotion_regression/<timestamp>/<pid>/`):
   - `manifest.json` (bundle index)
   - per-case:
@@ -265,6 +499,13 @@ These are the highest-value tests for tracking improvements across commits.
   - stability/safety: `max_abs_roll_rad`, `max_abs_pitch_rad`, `max_body_rate_radps`, `fault` info
   - gait/governor: `stride_count`, command/cadence scales, governed speed limits
   - foot/contact diagnostics: tracking errors, anchor drift, measured foot min-Z
+  - solver health: held-by-reason counts, peak normal impulse, max/p99
+    penetration, actuator work, max |energy delta|, max/p99 compliant
+    projected residual (zero on rigid)
+
+Canonical cases now include `long_walk_contact_health` (moderate soak, no
+required safety trip). `long_walk_observability` remains `--profile stress`
+and still expects a late `TIP_OVER`/`BODY_COLLAPSE`.
 
 ### 2) `test_physics_sim_walk_distance` (server)
 
@@ -272,6 +513,11 @@ These are the highest-value tests for tracking improvements across commits.
 - CTest name: `physics_sim_walk_distance`
 - Purpose:
   - quick numeric checks for forward/reverse/straight/turn behavior
+  - default CTest: pinocchio-proximal, cap 24, body height **0.14 m**
+  - `HEXAPOD_WALK_TEST_SOLVER_MODE=legacy-pgs`, `pinocchio-proximal`, or
+    `pinocchio-compliant` (`SolverMode = 2` on the ConfigCommand, no experiment
+    env required) and `HEXAPOD_WALK_TEST_BODY_HEIGHT_M`
+    remain A/B overrides (proximal no longer bumps iterations to 50)
   - verifies signed projection onto the commanded body heading and commanded yaw direction, so backwards travel cannot pass as forward progress
 - Output:
   - prints useful numeric values (distance deltas, path, yaw delta, avg/peak yaw rate, etc.)
@@ -282,21 +528,107 @@ These are the highest-value tests for tracking improvements across commits.
     plus the number of target samples above the MG996R no-load speed; this exposes
     gait commands that no torque-limited motor can track under load
   - exits non-zero if assertions fail
+  - stay-WALK census prints first-failed NCP residuals (`ncp_dual`,
+    `ncp_comp`, contacts, worst contact, rho) and RecoveredRetry NCP streak
+    before the first hold
+  - JSON also reports peak normal impulse, max/p99 contact penetration,
+    max |mechanical energy delta|, actuator work, and max/p99 compliant
+    projected residual
   - `HEXAPOD_WALK_TEST_CHILD_STDIO=1` exposes simulator diagnostics during
     failure tracing; child output remains quiet by default
+  - `HEXAPOD_PROXIMAL_TRACE_FAILURES=1` prints `[proximal-held]` first-attempt
+    vs last-retry/cold residuals when a step publishes `HeldLastGood`, plus
+    non-integrating `[proximal-held-omit]` / `[proximal-held-quarter]` /
+    `[proximal-held-iters]` / `[proximal-held-graze]` probes after last-resort
+    NCP reject
+  - `[proximal-ncp-ccp-recovery]` is always logged when last-resort cone-QP
+    recovery runs after a rigid NCP miss (`accept=0|1`). Disable with
+    `HEXAPOD_PINOCCHIO_DISABLE_NCP_CCP_RECOVERY=1`
+  - `HEXAPOD_WALK_TEST_CASE=<name>` runs one case
+    (`forward_walk`, `slow_forward_walk`, `reverse_walk`, `straight_walk`,
+    `turn_in_place`) instead of the sequential five-case suite.
+    `turn_after_reverse` and `turn_after_reverse_straight` keep the shared plant
+    and score turn after those prefixes only.
+  - Turn JSON metrics additionally report command construction (`raw_wz`,
+    intent/planar/raw linear, `yaw_dominant`), first WALK-frame governor planar
+    request, stand-end body velocity, start/end XY, equivalent turn radius,
+    path-per-radian, `held_count`, and loaded-stance world slip. These fields
+    do not change the 0.21 m net gate. Frozen command census:
+    `docs/contact-snapshots/turn-sequential-census-v1.json`. CCP-plant
+    prefix recensus (no production lever):
+    `docs/contact-snapshots/turn-plant-state-census-v1.json`. Commanded
+    swing-tibia SpeedLimit hunt:
+    `docs/contact-snapshots/speed-limit-commanded-tibia-census-v1.json`.
   - proximal sweeps can override `HEXAPOD_WALK_TEST_ABSOLUTE_TOLERANCE` and
     `HEXAPOD_WALK_TEST_RELATIVE_TOLERANCE`; these are diagnostic controls and
     do not relax the production defaults
+  - **gait-execution census**, always on, stdout line `<case> support_census …`
+    and JSON fields. Scores whether the commanded gait is actually executed,
+    which the distance gates do not:
+    - `planned_swing_samples` / `planned_swing_contact_samples` — per-leg drag,
+      a planned-swing foot still reporting raw contact
+    - `planned_stance_samples` / `planned_stance_no_contact_samples` — per-leg
+      stance loss
+    - `max_liftoff_delay_samples` — longest run of contact after planned liftoff
+    - `max_loaded_swing_joint_error_rad` — PD error stored on a still-grounded
+      swing leg, the quantity that discharges into a SpeedLimit trip
+    - `max_planned_swing_measured_foot_clearance_m`
+    - `mean_planned_stance_joint_error_rad` — `[coxa, femur, tibia]` mean
+      absolute PD error on planned-stance legs (stdout also prints
+      `femur_stance_err`, `coxa_stance_err`, `height_p2p`)
+    - `raw_contact_count_sum`, `planned_stance_count_sum`,
+      `support_census_samples` — realised versus planned support count
+    Counted only while the active mode is WALK. Baseline values and the
+    interpretation are in
+    [`SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md`](SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md)
+    §3.15. A/B helpers: `tools/run_loaded_swing_screen.sh`,
+    `tools/run_loaded_swing_batch.sh`, `tools/summarize_loaded_swing_ab.py`.
+    In-place turn translation hold (opt-in, default off, leftover §4.2.1):
+    `HEXAPOD_TURN_INPLACE_HOLD=1` regulates body drift during yaw-dominant WALK.
+    Isolated turn net 0.184 → 0.075 m with more yaw; sequential turn-net
+    failures 3/8 → 0/8. Screen with `tools/run_gait_feasibility_screen.sh`
+    using the `turnhold` arm.
+    Command-feasibility screens (opt-in, default off, leftover §3.17):
+    `HEXAPOD_WALK_SLEW_FRACTION` caps the WALK reference slew to a fraction of
+    servo no-load speed; `HEXAPOD_WALK_LOAD_PHASE=1` holds the stride
+    integrator while a scheduled swing is still loaded. Helpers:
+    `tools/run_gait_feasibility_screen.sh`,
+    `tools/run_gait_feasibility_batch.sh`,
+    `tools/summarize_gait_feasibility.py`.
+    Gravity-FF screen (opt-in, default off, leftover §3.16 **rejected**):
+    `HEXAPOD_WALK_TEST_GRAVITY_FF=1` copies the locomotion-regression Bounded
+    scales (femur/tibia 0.30) onto walk-distance and `aggressive_governor`.
+    Helpers: `tools/run_gravity_ff_screen.sh`, `tools/run_gravity_ff_batch.sh`,
+    `tools/summarize_gravity_ff_ab.py`.
 
 ### 3) `test_physics_sim_walk_stability` and related motion checks
 
 - Locations:
   - `hexapod-server/tests/test_physics_sim_walk_stability.cpp`
   - `test_physics_sim_turn_foot_clearance.cpp`
+  - `test_physics_sim_slow_fwd_walk_foot_clearance.cpp`
+  - `test_physics_sim_wave_slow_walk_foot_clearance.cpp`
   - `test_physics_sim_*contact_loss*.cpp`
   - `test_physics_sim_tripod_support_baseline.cpp`
 - Purpose:
   - targeted acceptance checks around stability, clearance, and contact behavior under specific motion envelopes
+  - slow-fwd and WAVE clearance keep the **10 mm** body undershoot gate as min
+    body *z* over **every** walk frame (including STAND→WALK). That is a pose
+    envelope, not the exact-replay 120 ms post-transient score. Stdout/JSON also
+    report `stand_end_body_z_m`, walk median, min in the first 120 ms vs the rest,
+    and `governed_body_height_m` for classification; those fields do not change
+    the gate.
+  - `test_physics_sim_tripod_support_baseline` is an open-loop plant hold. It
+    records body-frame commanded-vs-measured support-foot error separately from
+    world-foot drift, plus per-leg Cartesian error, per-joint max/mean/terminal
+    error, contact-count histograms, servo torque utilisation, actuator impulse,
+    and body/joint speed. The proximal plant compensates its six-foot
+    reflected-inertia estimate only after a static three-leg command has
+    remained unchanged for 250 ms; it ramps to 1.85× over 100 ms. Override with
+    `HEXAPOD_PINOCCHIO_STATIC_REDUCED_SUPPORT_GAIN_SCALE=1..2` for diagnostic A/B.
+    This does not change stall torque and does not apply to moving gait commands.
+    `HEXAPOD_WALK_TEST_SOLVER_MODE=pinocchio-compliant` selects protocol
+    `SolverMode = 2` (same override as walk-distance).
 - Output:
   - usually assertion-style `FAIL: ...` with non-zero exit
   - some tests print intermediate values useful for triage
@@ -641,7 +973,10 @@ These are the highest-value tests for tracking improvements across commits.
   - recovery is restricted to solver non-convergence and speed-limit rejection.
     Non-convergence retries the same `dt` once before two half-substeps;
     if those still miss, a last-resort pair of half-substeps starts from a
-    cold contact warm-start at twice `SolverIterations`. Speed-limit goes
+    cold contact warm-start at twice `SolverIterations`. If that pair still
+    misses the NCP floor, two further cold `dt/2` half-steps run the logged
+    cone-QP recovery (`RecoveredRetry` when residual/impulse/speed guards
+    pass). Speed-limit goes
     straight to half-substeps. State validity, penetration,
     energy, and write failures hold the last-good state immediately because they
     cannot be repaired by another contact solve. Servo target jumps do not wipe
@@ -765,6 +1100,7 @@ Legend:
 | Contact-loss during swing                         | Strong           | `test_physics_sim_turn_raw_contact_loss`, `test_physics_sim_slow_fwd_walk_contact_loss`                                                                        | explicitly expects loss events                                                                          |
 | Foot clearance envelope                           | Strong           | `test_physics_sim_turn_foot_clearance`, `test_physics_sim_*_foot_clearance`                                                                                    | clearance checks in targeted profiles                                                                   |
 | Low-support/sparse-support locomotion             | Strong           | `low_support_walk` case in `test_locomotion_regression_suite`                                                                                                  | support margin + faults tracked                                                                         |
+| Long-horizon contact-solver health                | Strong           | `long_walk_contact_health` (`canonical`)                                                                                                                       | fail on NCP/non-finite holds and impulse cap; SpeedLimit counted not failed                             |
 | Long-horizon observability/late faults            | Strong           | `long_walk_observability` (`stress`)                                                                                                                           | delayed instability envelopes                                                                           |
 | Navigation + locomotion coupling                  | Partial          | `test_physics_sim_navigation_acceptance`, `test_physics_sim_nav_waypoints`, `test_navigation_runtime`                                                          | coverage exists but fewer rich motion metrics                                                           |
 | Per-leg single-foot placement primitive           | Partial          | `single_leg_masked_stand` in `test_motion_performance_suite` + `scenarios/07_single_leg_probe.toml`                                                            | IK mask via `safety.legs_enabled`; not a full placement primitive                                       |
@@ -990,6 +1326,90 @@ Working plan to close taxonomy/coverage gaps. **Concrete execution items subsume
 **Motion performance gates:** Tier 1–2 use **hard** fail only on severe faults (`TIP_OVER`, `ESTIMATOR_INVALID`, etc.); tilt/body-rate bands start as **warnings** on stderr until baselines exist under [docs/testing-baselines/](docs/testing-baselines/).
 
 **HIL note:** Out of scope for automated CI here; when adding robot runs, mirror scalar fields from `LocomotionMetrics` / `metrics.json` where possible (see Metrics Glossary).
+
+## Event-resolved swing clearance diagnostics
+
+The walk-distance JSON now includes `swing_event_schema=1` and `swing_events`.
+This is test-only instrumentation, not a new gate. Each event records planned
+swing entry, first **raw contact loss** (`liftoff_ms`, −1 if unobserved), later
+recontacts, completion/censoring and simultaneous vertical-motion budgets.
+Contact loss has no dwell requirement; neither it nor the FK point height
+guarantees collision-sphere-bottom clearance. Recontact includes normal landing.
+The old `max_liftoff_delay_samples` remains for compatibility but measures the
+maximum consecutive swing/contact run, including after recontact. A median of
+those maxima is not median liftoff latency.
+
+For each measured and post-clamp-commanded apex the budget is
+`Δfoot_z = Δbody_z + [(R−R0) foot_body0]_z + [R(foot_body−foot_body0)]_z`.
+Terms share one instant and the same fused pose. Interaction belongs to the
+joint term. The baseline is the last observed stance sample; missing entry,
+invalid bus/mode samples and end-of-run swings are explicitly censored.
+
+`swing_clearance_census` tests closure, first contact loss, recontact and censored
+events. `python3 tools/test_swing_clearance_report.py` tests report aggregation.
+`tools/report_swing_clearance.py RUN_DIR --output NEW.json` saves per-case and
+per-leg results plus binary/log hashes without overwriting an existing report.
+Use `tools/summarize_gait_feasibility.py RUN_DIR` for the process-level scorecard;
+only complete processes can count as complete/held-zero.
+
+The manual physics target `test_pinocchio_liftoff_probe` compares a one-second
+30 mm physical-sphere lift with a free chassis and a static chassis-only
+pedestal, legs 2 and 5 separately. It uses a constructed reachable geometric
+pose, not BodyController gait commands. It reports initial/final vertical
+tracking error, actual sphere clearance, body/rotation/joint contributions,
+speed, torque utilisation and recovery status. Build it explicitly with
+Pinocchio enabled; run after sourcing `scripts/lib/pinocchio_env.sh`. It is an
+exploratory probe, not a newly relaxed locomotion acceptance test. The follow-up
+`test_pinocchio_liftoff_{balance,gravity_bias,gravity_onset}` CTests audit actual
+accepted torque, independent physical-potential gravity, supported equilibrium
+and a test-local selected-leg `g/Kp` target offset. The compensated supported
+vertical error must be under 10 µm; existing locomotion gates are unchanged.
+Retries are excluded from the full-substep torque balance. See physics-sim
+README for the two explicit compensation options and report capture commands.
+
+`test_pinocchio_server_gravity` validates 3,000 server pitch holding-torque
+values against independently differentiated actual-body gravitational
+potential. `joint_angle_gravity_feedforward` covers holding sign, mirrored
+angles, self-weight on airborne legs, stance-only reaction, measured posture
+and invalid feedback. The diagnostic probe's `--server-self-weight` option
+compares the analytical angle/stiffness proxy with exact-Kp compensation;
+it reports full 3D error and is not a newly relaxed acceptance test.
+
+The live opt-in `HEXAPOD_WALK_TEST_SELF_WEIGHT=1` screen uses Bounded self-weight
+only, femur/tibia scale 1, reaction off, 80 ms LPF and existing clamps/gates.
+It is implemented only in the walking/regression test harness. The 2026-09-21
+candidate was **rejected** (sequential 0/5 vs baseline 4/5), not enabled by
+default. See [§3.21](SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md#321-gravity-model-corrections-rejected-walking-screen-and-stiffness-contract)
+for scorecards, artifacts and the stiffness-contract follow-up.
+
+The §3.22 follow-up supplies explicit sampled actuator stiffness through the
+response, bridge and estimators. `physics_sim_bridge_frame_conversion` checks
+gain ordering, estimator propagation, malformed gains and tail revision/length
+rejection. `joint_angle_gravity_feedforward` now tests `delta = torque/Kp`,
+unchanged angle limits, IMU-gate filter decay and equivalent filter evolution
+over elapsed time at 120/240/480 Hz. The runtime supplies its configured control
+period (the old filter hard-coded 4 ms). Gate/input rejection is filtered to
+zero when LPF is enabled; invalid joint feedback or explicit disable clears it.
+No gate threshold is relaxed. The passive `ff_default_*` walk metrics count
+eligibility under default IMU gates, not actual applied correction or FF enable.
+The corrected walking candidate is still **not qualified**: the latest repeated
+screen remains sequential 2/5 in both arms. Stand/WAVE/tripod/frozen replay checks
+refer to the default FF-off path, not qualification of the FF-on candidate.
+
+The §3.23 moving-lift CTests (`liftoff_moving_balance`, `liftoff_moving_gravity`,
+`liftoff_moving_lead`, each prefixed `test_pinocchio_`) shorten the same lift to
+250 ms and partition moving error. They retain motor-law and gravity checks;
+inferred contact closure is not independent contact validation. Test-local lead
+offsets are not constrained by the server gravity-angle cap. Raw and filtered
+live velocity-lead arms are both rejected, despite better isolated lifting.
+`swing_link_rate_governor` now regresses final target-speed refresh after
+position-only safety changes, preserving every angle at 120/200/240/480 Hz.
+The FF test also covers cadence-neutral filtered test lead. No velocity
+feedforward is added to the production motor. See
+[§3.23](SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md#323-moving-damping-balance-rejected-velocity-lead-final-target-rate-repair).
+
+Current results and interpretation:
+[Sequential leftovers §3.19](SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md#319-event-resolved-clearance-slow-liftoff-and-height-hold-ab).
 
 ## Roadmap
 

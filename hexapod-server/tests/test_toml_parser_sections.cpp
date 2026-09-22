@@ -504,6 +504,42 @@ bool testPhysicsSimSolverIterationsParseInteger()
                 "physics-sim configs should use BodyHeightCollapseMaxContacts=2 (skip tripod false positives)");
 }
 
+bool testPhysicsSimSolverModeTwoAcceptedAndThreeFallsBack()
+{
+  std::string cfg = readText(configPath("config.physics-sim-wsl.txt"));
+  if (!expect(replaceOnce(cfg, "Runtime.PhysicsSim.SolverMode = 1",
+                          "Runtime.PhysicsSim.SolverMode = 2"),
+              "WSL config missing Runtime.PhysicsSim.SolverMode entry")) {
+    return false;
+  }
+
+  ParsedToml parsed_mode_two{};
+  TomlParser parser_two(makeTestLogger());
+  if (!expect(parser_two.parse(writeTemp("hexapod_solver_mode_two.toml", cfg), parsed_mode_two),
+              "SolverMode = 2 should parse as opt-in compliant contact")) {
+    return false;
+  }
+  if (!expect(parsed_mode_two.physicsSimSolverMode == 2,
+              "Runtime.PhysicsSim.SolverMode = 2 should be accepted")) {
+    return false;
+  }
+
+  if (!expect(replaceOnce(cfg, "Runtime.PhysicsSim.SolverMode = 2",
+                          "Runtime.PhysicsSim.SolverMode = 3"),
+              "temp SolverMode = 2 config should still contain the key")) {
+    return false;
+  }
+
+  ParsedToml parsed_mode_three{};
+  TomlParser parser_three(makeTestLogger());
+  if (!expect(parser_three.parse(writeTemp("hexapod_solver_mode_three.toml", cfg), parsed_mode_three),
+              "SolverMode = 3 should parse with fallback")) {
+    return false;
+  }
+  return expect(parsed_mode_three.physicsSimSolverMode == 1,
+                "Runtime.PhysicsSim.SolverMode = 3 should fall back to default 1");
+}
+
 bool testSerialRuntimeDefaultsFusionCorrectionsNotSuppressed()
 {
   ParsedToml parsed{};
@@ -777,6 +813,7 @@ int main()
   testBaselineConfigParity();
   testRuntimeLoggingOverridesParse();
   testPhysicsSimSolverIterationsParseInteger();
+  testPhysicsSimSolverModeTwoAcceptedAndThreeFallsBack();
   testSerialRuntimeDefaultsFusionCorrectionsNotSuppressed();
   testGeometryDynamicsLoadedFromParsedConfig();
   testGeometryCanBeWrittenBackToParsedConfig();

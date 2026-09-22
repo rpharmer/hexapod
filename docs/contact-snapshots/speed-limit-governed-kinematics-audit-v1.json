@@ -1,0 +1,2016 @@
+{
+  "schema_version": 1,
+  "fixture_sha256": "d24c77aeaf7f7611bbd42d1c4f6c6599b0babf908329c80744fc7519d9e687ce",
+  "mass_symmetry_error": 0.0,
+  "dense_acceleration_error": 5.343281372915953e-12,
+  "jacobian_velocity_error": 8.881784197001252e-16,
+  "winner": {
+    "name": "leg_0_femur_body",
+    "angular_in": [
+      3.5113591192669613,
+      6.313522503578548,
+      6.917096452229476
+    ],
+    "angular_free": [
+      3.602287793717727,
+      6.332830170070351,
+      7.062806285766025
+    ],
+    "angular_after": [
+      3.5458788184806607,
+      6.313033162909555,
+      6.924640091805319
+    ],
+    "speed_in": 10.00182146396833,
+    "speed_free": 10.1471398897412,
+    "speed_after": 10.018896381956607,
+    "speed_requested_at_current_configuration": 10.123605898705463,
+    "angular_free_delta": [
+      0.0909286744507658,
+      0.019307666491803488,
+      0.1457098335365492
+    ],
+    "angular_contact_delta": [
+      -0.05640897523706645,
+      -0.01979700716079602,
+      -0.13816619396070617
+    ],
+    "angular_motor_acceleration": [
+      55.08443331345565,
+      31.99017222018587,
+      81.50324829263752
+    ],
+    "angular_gravity_acceleration": [
+      3.196587476756998e-14,
+      -9.535387171628001e-15,
+      2.176256286187377e-14
+    ],
+    "angular_coriolis_acceleration": [
+      -0.527226153288788,
+      -20.405571796442363,
+      5.922655818955915
+    ],
+    "joints": [
+      {
+        "wire": 0,
+        "target_rate": 6.206942081451416,
+        "error": 0.4710730908769631,
+        "vin": 5.828905332170776,
+        "free": 5.851894650991476,
+        "after": 5.833925539375225,
+        "tau": 0.004962075116639375,
+        "available_tau": 0.32469788848762393,
+        "braking": false,
+        "diagonal_motor_acceleration": 2.975415189563126,
+        "own_motor_coupled_acceleration": 6.332840468752264,
+        "other_motors_acceleration": 23.28126867608773,
+        "gravity_acceleration": -1.1546319456101628e-14,
+        "coriolis_acceleration": -15.820517222951652,
+        "free_acceleration": 13.793591921888153,
+        "contact_dv": -0.017969111616251254
+      },
+      {
+        "wire": 1,
+        "target_rate": 6.42868709564209,
+        "error": 0.5831200566860919,
+        "vin": 6.611359148653886,
+        "free": 6.832723481118424,
+        "after": 6.607242719084272,
+        "tau": 0.05388519105198197,
+        "available_tau": 0.1708219184928468,
+        "braking": false,
+        "diagonal_motor_acceleration": 33.88207799611316,
+        "own_motor_coupled_acceleration": 127.72160552705986,
+        "other_motors_acceleration": -4.4893922597440366,
+        "gravity_acceleration": 5.684341886080802e-14,
+        "coriolis_acceleration": 9.586392272558513,
+        "free_acceleration": 132.81860553987414,
+        "contact_dv": -0.22548076203415146
+      },
+      {
+        "wire": 2,
+        "target_rate": -6.42868709564209,
+        "error": -0.06959611629799695,
+        "vin": -0.22838886447528745,
+        "free": -0.393365305194074,
+        "after": -0.15180988508759607,
+        "tau": -0.015777438916185382,
+        "available_tau": 1.426085453841736,
+        "braking": false,
+        "diagonal_motor_acceleration": -32.078129462483716,
+        "own_motor_coupled_acceleration": -93.77400790697067,
+        "other_motors_acceleration": -54.90372729678333,
+        "gravity_acceleration": -1.4210854715202004e-14,
+        "coriolis_acceleration": 49.691866255281056,
+        "free_acceleration": -98.98586894847286,
+        "contact_dv": 0.2415554201064779
+      }
+    ]
+  },
+  "incoming_over_cap_links": [
+    "leg_0_femur_body"
+  ],
+  "links": [
+    {
+      "name": "chassis_body",
+      "angular_in": [
+        1.1461728935996134,
+        0.7960862302254238,
+        0.46341546760535346
+      ],
+      "angular_free": [
+        1.151302124261268,
+        0.8023449019124741,
+        0.4041890777762537
+      ],
+      "angular_after": [
+        1.1824971512684126,
+        0.7904072884311203,
+        0.47441729770797203
+      ],
+      "speed_in": 1.4704487354521836,
+      "speed_free": 1.4603502092125247,
+      "speed_after": 1.4993715239150975,
+      "speed_requested_at_current_configuration": 1.4704487354521836,
+      "angular_free_delta": [
+        0.005129230661654605,
+        0.006258671687050299,
+        -0.05922638982909978
+      ],
+      "angular_contact_delta": [
+        0.031195027007144605,
+        -0.011937613481353804,
+        0.07022821993171835
+      ],
+      "angular_motor_acceleration": [
+        7.965708388307066,
+        7.957484996592145,
+        -33.67239823667356
+      ],
+      "angular_gravity_acceleration": [
+        9.264086734727318e-15,
+        4.513975717833802e-15,
+        -2.973244644271526e-14
+      ],
+      "angular_coriolis_acceleration": [
+        -4.888169850871614,
+        -4.20228181299413,
+        -1.8634372824575365
+      ]
+    },
+    {
+      "name": "leg_0_coxa_body",
+      "angular_in": [
+        0.9224886737927627,
+        6.6084566415256045,
+        0.8408448557834327
+      ],
+      "angular_free": [
+        0.9267356894326846,
+        6.637639417975842,
+        0.7831070549848047
+      ],
+      "angular_after": [
+        0.9586202810293105,
+        6.607783666057891,
+        0.8521717509927438
+      ],
+      "speed_in": 6.725303309717508,
+      "speed_free": 6.747618301349145,
+      "speed_after": 6.731118370212502,
+      "speed_requested_at_current_configuration": 7.097134733322853,
+      "angular_free_delta": [
+        0.004247015639921914,
+        0.029182776450237036,
+        -0.057737800798628
+      ],
+      "angular_contact_delta": [
+        0.03188459159662593,
+        -0.029855751917950535,
+        0.06906469600793907
+      ],
+      "angular_motor_acceleration": [
+        6.82926706324758,
+        37.487587467201124,
+        -31.754845204153597
+      ],
+      "angular_gravity_acceleration": [
+        9.707176699651641e-15,
+        -6.999590164882519e-15,
+        -3.048008601475856e-14
+      ],
+      "angular_coriolis_acceleration": [
+        -4.281057563007629,
+        -19.977920798008096,
+        -2.8878368559355403
+      ],
+      "joints": [
+        {
+          "wire": 0,
+          "target_rate": 6.206942081451416,
+          "error": 0.4710730908769631,
+          "vin": 5.828905332170776,
+          "free": 5.851894650991476,
+          "after": 5.833925539375225,
+          "tau": 0.004962075116639375,
+          "available_tau": 0.32469788848762393,
+          "braking": false,
+          "diagonal_motor_acceleration": 2.975415189563126,
+          "own_motor_coupled_acceleration": 6.332840468752264,
+          "other_motors_acceleration": 23.28126867608773,
+          "gravity_acceleration": -1.1546319456101628e-14,
+          "coriolis_acceleration": -15.820517222951652,
+          "free_acceleration": 13.793591921888153,
+          "contact_dv": -0.017969111616251254
+        },
+        {
+          "wire": 1,
+          "target_rate": 6.42868709564209,
+          "error": 0.5831200566860919,
+          "vin": 6.611359148653886,
+          "free": 6.832723481118424,
+          "after": 6.607242719084272,
+          "tau": 0.05388519105198197,
+          "available_tau": 0.1708219184928468,
+          "braking": false,
+          "diagonal_motor_acceleration": 33.88207799611316,
+          "own_motor_coupled_acceleration": 127.72160552705986,
+          "other_motors_acceleration": -4.4893922597440366,
+          "gravity_acceleration": 5.684341886080802e-14,
+          "coriolis_acceleration": 9.586392272558513,
+          "free_acceleration": 132.81860553987414,
+          "contact_dv": -0.22548076203415146
+        },
+        {
+          "wire": 2,
+          "target_rate": -6.42868709564209,
+          "error": -0.06959611629799695,
+          "vin": -0.22838886447528745,
+          "free": -0.393365305194074,
+          "after": -0.15180988508759607,
+          "tau": -0.015777438916185382,
+          "available_tau": 1.426085453841736,
+          "braking": false,
+          "diagonal_motor_acceleration": -32.078129462483716,
+          "own_motor_coupled_acceleration": -93.77400790697067,
+          "other_motors_acceleration": -54.90372729678333,
+          "gravity_acceleration": -1.4210854715202004e-14,
+          "coriolis_acceleration": 49.691866255281056,
+          "free_acceleration": -98.98586894847286,
+          "contact_dv": 0.2415554201064779
+        }
+      ]
+    },
+    {
+      "name": "leg_0_femur_body",
+      "angular_in": [
+        3.5113591192669613,
+        6.313522503578548,
+        6.917096452229476
+      ],
+      "angular_free": [
+        3.602287793717727,
+        6.332830170070351,
+        7.062806285766025
+      ],
+      "angular_after": [
+        3.5458788184806607,
+        6.313033162909555,
+        6.924640091805319
+      ],
+      "speed_in": 10.00182146396833,
+      "speed_free": 10.1471398897412,
+      "speed_after": 10.018896381956607,
+      "speed_requested_at_current_configuration": 10.123605898705463,
+      "angular_free_delta": [
+        0.0909286744507658,
+        0.019307666491803488,
+        0.1457098335365492
+      ],
+      "angular_contact_delta": [
+        -0.05640897523706645,
+        -0.01979700716079602,
+        -0.13816619396070617
+      ],
+      "angular_motor_acceleration": [
+        55.08443331345565,
+        31.99017222018587,
+        81.50324829263752
+      ],
+      "angular_gravity_acceleration": [
+        3.196587476756998e-14,
+        -9.535387171628001e-15,
+        2.176256286187377e-14
+      ],
+      "angular_coriolis_acceleration": [
+        -0.527226153288788,
+        -20.405571796442363,
+        5.922655818955915
+      ],
+      "joints": [
+        {
+          "wire": 0,
+          "target_rate": 6.206942081451416,
+          "error": 0.4710730908769631,
+          "vin": 5.828905332170776,
+          "free": 5.851894650991476,
+          "after": 5.833925539375225,
+          "tau": 0.004962075116639375,
+          "available_tau": 0.32469788848762393,
+          "braking": false,
+          "diagonal_motor_acceleration": 2.975415189563126,
+          "own_motor_coupled_acceleration": 6.332840468752264,
+          "other_motors_acceleration": 23.28126867608773,
+          "gravity_acceleration": -1.1546319456101628e-14,
+          "coriolis_acceleration": -15.820517222951652,
+          "free_acceleration": 13.793591921888153,
+          "contact_dv": -0.017969111616251254
+        },
+        {
+          "wire": 1,
+          "target_rate": 6.42868709564209,
+          "error": 0.5831200566860919,
+          "vin": 6.611359148653886,
+          "free": 6.832723481118424,
+          "after": 6.607242719084272,
+          "tau": 0.05388519105198197,
+          "available_tau": 0.1708219184928468,
+          "braking": false,
+          "diagonal_motor_acceleration": 33.88207799611316,
+          "own_motor_coupled_acceleration": 127.72160552705986,
+          "other_motors_acceleration": -4.4893922597440366,
+          "gravity_acceleration": 5.684341886080802e-14,
+          "coriolis_acceleration": 9.586392272558513,
+          "free_acceleration": 132.81860553987414,
+          "contact_dv": -0.22548076203415146
+        },
+        {
+          "wire": 2,
+          "target_rate": -6.42868709564209,
+          "error": -0.06959611629799695,
+          "vin": -0.22838886447528745,
+          "free": -0.393365305194074,
+          "after": -0.15180988508759607,
+          "tau": -0.015777438916185382,
+          "available_tau": 1.426085453841736,
+          "braking": false,
+          "diagonal_motor_acceleration": -32.078129462483716,
+          "own_motor_coupled_acceleration": -93.77400790697067,
+          "other_motors_acceleration": -54.90372729678333,
+          "gravity_acceleration": -1.4210854715202004e-14,
+          "coriolis_acceleration": 49.691866255281056,
+          "free_acceleration": -98.98586894847286,
+          "contact_dv": 0.2415554201064779
+        }
+      ]
+    },
+    {
+      "name": "leg_0_tibia_body",
+      "angular_in": [
+        3.4219268001293948,
+        6.323710979404194,
+        6.707192834656224
+      ],
+      "angular_free": [
+        3.448254138913295,
+        6.350378280009185,
+        6.701279024891288
+      ],
+      "angular_after": [
+        3.486433231575261,
+        6.319805434175331,
+        6.785117334702098
+      ],
+      "speed_in": 9.832870348872945,
+      "speed_free": 9.85519667359272,
+      "speed_after": 9.906208893907863,
+      "speed_requested_at_current_configuration": 7.097134733322853,
+      "angular_free_delta": [
+        0.026327338783900256,
+        0.02666730060499045,
+        -0.005913809764936495
+      ],
+      "angular_contact_delta": [
+        0.03817909266196606,
+        -0.03057284583385389,
+        0.08383830981080997
+      ],
+      "angular_motor_acceleration": [
+        -3.1346689792109004,
+        38.62271761339266,
+        -55.140867625907134
+      ],
+      "angular_gravity_acceleration": [
+        2.64012002505904e-14,
+        -8.901437919941632e-15,
+        8.701900642715687e-15
+      ],
+      "angular_coriolis_acceleration": [
+        18.931072970416633,
+        -22.622336520223215,
+        51.59258160501939
+      ],
+      "joints": [
+        {
+          "wire": 0,
+          "target_rate": 6.206942081451416,
+          "error": 0.4710730908769631,
+          "vin": 5.828905332170776,
+          "free": 5.851894650991476,
+          "after": 5.833925539375225,
+          "tau": 0.004962075116639375,
+          "available_tau": 0.32469788848762393,
+          "braking": false,
+          "diagonal_motor_acceleration": 2.975415189563126,
+          "own_motor_coupled_acceleration": 6.332840468752264,
+          "other_motors_acceleration": 23.28126867608773,
+          "gravity_acceleration": -1.1546319456101628e-14,
+          "coriolis_acceleration": -15.820517222951652,
+          "free_acceleration": 13.793591921888153,
+          "contact_dv": -0.017969111616251254
+        },
+        {
+          "wire": 1,
+          "target_rate": 6.42868709564209,
+          "error": 0.5831200566860919,
+          "vin": 6.611359148653886,
+          "free": 6.832723481118424,
+          "after": 6.607242719084272,
+          "tau": 0.05388519105198197,
+          "available_tau": 0.1708219184928468,
+          "braking": false,
+          "diagonal_motor_acceleration": 33.88207799611316,
+          "own_motor_coupled_acceleration": 127.72160552705986,
+          "other_motors_acceleration": -4.4893922597440366,
+          "gravity_acceleration": 5.684341886080802e-14,
+          "coriolis_acceleration": 9.586392272558513,
+          "free_acceleration": 132.81860553987414,
+          "contact_dv": -0.22548076203415146
+        },
+        {
+          "wire": 2,
+          "target_rate": -6.42868709564209,
+          "error": -0.06959611629799695,
+          "vin": -0.22838886447528745,
+          "free": -0.393365305194074,
+          "after": -0.15180988508759607,
+          "tau": -0.015777438916185382,
+          "available_tau": 1.426085453841736,
+          "braking": false,
+          "diagonal_motor_acceleration": -32.078129462483716,
+          "own_motor_coupled_acceleration": -93.77400790697067,
+          "other_motors_acceleration": -54.90372729678333,
+          "gravity_acceleration": -1.4210854715202004e-14,
+          "coriolis_acceleration": 49.691866255281056,
+          "free_acceleration": -98.98586894847286,
+          "contact_dv": 0.2415554201064779
+        }
+      ]
+    },
+    {
+      "name": "leg_1_coxa_body",
+      "angular_in": [
+        1.1322217114581852,
+        1.1586037039726411,
+        0.48695573407809334
+      ],
+      "angular_free": [
+        1.125928777709865,
+        1.4616640477082168,
+        0.4470023199137444
+      ],
+      "angular_after": [
+        1.166847719526193,
+        1.1970532918491605,
+        0.5008230739084603
+      ],
+      "speed_in": 1.6915715869297285,
+      "speed_free": 1.8984173605522756,
+      "speed_after": 1.7450770571666765,
+      "speed_requested_at_current_configuration": 1.98851169954961,
+      "angular_free_delta": [
+        -0.006292933748320184,
+        0.30306034373557567,
+        -0.039953414164348944
+      ],
+      "angular_contact_delta": [
+        0.04091894181632805,
+        -0.26461075585905625,
+        0.053820753994715864
+      ],
+      "angular_motor_acceleration": [
+        1.332127546116555,
+        180.32918399891483,
+        -22.479349568065093
+      ],
+      "angular_gravity_acceleration": [
+        9.264086734727318e-15,
+        4.513975717833802e-15,
+        -2.973244644271526e-14
+      ],
+      "angular_coriolis_acceleration": [
+        -5.107887967414934,
+        1.5070305404912814,
+        -1.4927000245043698
+      ],
+      "joints": [
+        {
+          "wire": 3,
+          "target_rate": 0.7693836092948914,
+          "error": 0.19835996112770288,
+          "vin": 0.3635487565661796,
+          "free": 0.6611947643700523,
+          "after": 0.40780282223946107,
+          "tau": 0.27474915387960697,
+          "available_tau": 1.3995051508746479,
+          "braking": false,
+          "diagonal_motor_acceleration": 105.79753787650533,
+          "own_motor_coupled_acceleration": 289.0688100653444,
+          "other_motors_acceleration": -116.20675132996126,
+          "gravity_acceleration": -0.0,
+          "coriolis_acceleration": 5.725554096751956,
+          "free_acceleration": 178.58761283213474,
+          "contact_dv": -0.25339194213059124
+        },
+        {
+          "wire": 4,
+          "target_rate": -0.4224280118942261,
+          "error": -0.17431683384045238,
+          "vin": 0.3975534873762627,
+          "free": -0.6000049385902398,
+          "after": 0.34582494949491704,
+          "tau": -0.1954221295703131,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -128.82569551909586,
+          "own_motor_coupled_acceleration": -496.65478875700546,
+          "other_motors_acceleration": -115.31014219973235,
+          "gravity_acceleration": -8.526512829121202e-14,
+          "coriolis_acceleration": 13.429848062801101,
+          "free_acceleration": -598.535082893934,
+          "contact_dv": 0.9458298880851569
+        },
+        {
+          "wire": 5,
+          "target_rate": -0.29693812131881714,
+          "error": 0.12776866553082375,
+          "vin": -1.6785911726144631,
+          "free": -0.10988763542047719,
+          "after": -1.607444520863929,
+          "tau": 0.07492784694703393,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": 163.784974587488,
+          "own_motor_coupled_acceleration": 474.56875369774843,
+          "other_motors_acceleration": 470.37033977875376,
+          "gravity_acceleration": 2.842170943040401e-14,
+          "coriolis_acceleration": -3.716928207614309,
+          "free_acceleration": 941.2221652688826,
+          "contact_dv": -1.4975568854434518
+        }
+      ]
+    },
+    {
+      "name": "leg_1_femur_body",
+      "angular_in": [
+        1.3883071431949958,
+        1.1881118147356982,
+        0.18430362624404112
+      ],
+      "angular_free": [
+        0.7394335547471336,
+        1.417129129141284,
+        0.9037779869406808
+      ],
+      "angular_after": [
+        1.3896120375585705,
+        1.2227218905116255,
+        0.2375512042614412
+      ],
+      "speed_in": 1.8365658808786327,
+      "speed_free": 1.836254775412515,
+      "speed_after": 1.8661460315607852,
+      "speed_requested_at_current_configuration": 1.938296764431764,
+      "angular_free_delta": [
+        -0.6488735884478622,
+        0.22901731440558581,
+        0.7194743606966396
+      ],
+      "angular_contact_delta": [
+        0.650178482811437,
+        -0.19440723862965847,
+        -0.6662267826792396
+      ],
+      "angular_motor_acceleration": [
+        -392.8671651984122,
+        134.90654392863127,
+        443.4012983339954
+      ],
+      "angular_gravity_acceleration": [
+        -4.5659735804612635e-14,
+        -1.81476476548659e-15,
+        3.5178745689911e-14
+      ],
+      "angular_coriolis_acceleration": [
+        3.542994362959859,
+        2.503850985416963,
+        -11.716662216165187
+      ],
+      "joints": [
+        {
+          "wire": 3,
+          "target_rate": 0.7693836092948914,
+          "error": 0.19835996112770288,
+          "vin": 0.3635487565661796,
+          "free": 0.6611947643700523,
+          "after": 0.40780282223946107,
+          "tau": 0.27474915387960697,
+          "available_tau": 1.3995051508746479,
+          "braking": false,
+          "diagonal_motor_acceleration": 105.79753787650533,
+          "own_motor_coupled_acceleration": 289.0688100653444,
+          "other_motors_acceleration": -116.20675132996126,
+          "gravity_acceleration": -0.0,
+          "coriolis_acceleration": 5.725554096751956,
+          "free_acceleration": 178.58761283213474,
+          "contact_dv": -0.25339194213059124
+        },
+        {
+          "wire": 4,
+          "target_rate": -0.4224280118942261,
+          "error": -0.17431683384045238,
+          "vin": 0.3975534873762627,
+          "free": -0.6000049385902398,
+          "after": 0.34582494949491704,
+          "tau": -0.1954221295703131,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -128.82569551909586,
+          "own_motor_coupled_acceleration": -496.65478875700546,
+          "other_motors_acceleration": -115.31014219973235,
+          "gravity_acceleration": -8.526512829121202e-14,
+          "coriolis_acceleration": 13.429848062801101,
+          "free_acceleration": -598.535082893934,
+          "contact_dv": 0.9458298880851569
+        },
+        {
+          "wire": 5,
+          "target_rate": -0.29693812131881714,
+          "error": 0.12776866553082375,
+          "vin": -1.6785911726144631,
+          "free": -0.10988763542047719,
+          "after": -1.607444520863929,
+          "tau": 0.07492784694703393,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": 163.784974587488,
+          "own_motor_coupled_acceleration": 474.56875369774843,
+          "other_motors_acceleration": 470.37033977875376,
+          "gravity_acceleration": 2.842170943040401e-14,
+          "coriolis_acceleration": -3.716928207614309,
+          "free_acceleration": 941.2221652688826,
+          "contact_dv": -1.4975568854434518
+        }
+      ]
+    },
+    {
+      "name": "leg_1_tibia_body",
+      "angular_in": [
+        0.30703692724105464,
+        1.0635196382859466,
+        1.4621924455227886
+      ],
+      "angular_free": [
+        0.6686490604520134,
+        1.408972801450945,
+        0.9874339616483827
+      ],
+      "angular_after": [
+        0.35417117943622156,
+        1.10341052116567,
+        1.4612770371713764
+      ],
+      "speed_in": 1.833944503918647,
+      "speed_free": 1.8458932119406324,
+      "speed_after": 1.8650154374499681,
+      "speed_requested_at_current_configuration": 1.9575480451993985,
+      "angular_free_delta": [
+        0.3616121332109588,
+        0.3454531631649984,
+        -0.4747584838744059
+      ],
+      "angular_contact_delta": [
+        -0.3144778810157919,
+        -0.3055622802852751,
+        0.47384307552299365
+      ],
+      "angular_motor_acceleration": [
+        215.81856741822747,
+        205.04394259332284,
+        -275.9680884192143
+      ],
+      "angular_gravity_acceleration": [
+        -2.7351794958165984e-14,
+        2.9481539562020675e-16,
+        1.3541681645702245e-14
+      ],
+      "angular_coriolis_acceleration": [
+        1.1487224096094284,
+        2.2279647644898946,
+        -8.887014904739074
+      ],
+      "joints": [
+        {
+          "wire": 3,
+          "target_rate": 0.7693836092948914,
+          "error": 0.19835996112770288,
+          "vin": 0.3635487565661796,
+          "free": 0.6611947643700523,
+          "after": 0.40780282223946107,
+          "tau": 0.27474915387960697,
+          "available_tau": 1.3995051508746479,
+          "braking": false,
+          "diagonal_motor_acceleration": 105.79753787650533,
+          "own_motor_coupled_acceleration": 289.0688100653444,
+          "other_motors_acceleration": -116.20675132996126,
+          "gravity_acceleration": -0.0,
+          "coriolis_acceleration": 5.725554096751956,
+          "free_acceleration": 178.58761283213474,
+          "contact_dv": -0.25339194213059124
+        },
+        {
+          "wire": 4,
+          "target_rate": -0.4224280118942261,
+          "error": -0.17431683384045238,
+          "vin": 0.3975534873762627,
+          "free": -0.6000049385902398,
+          "after": 0.34582494949491704,
+          "tau": -0.1954221295703131,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -128.82569551909586,
+          "own_motor_coupled_acceleration": -496.65478875700546,
+          "other_motors_acceleration": -115.31014219973235,
+          "gravity_acceleration": -8.526512829121202e-14,
+          "coriolis_acceleration": 13.429848062801101,
+          "free_acceleration": -598.535082893934,
+          "contact_dv": 0.9458298880851569
+        },
+        {
+          "wire": 5,
+          "target_rate": -0.29693812131881714,
+          "error": 0.12776866553082375,
+          "vin": -1.6785911726144631,
+          "free": -0.10988763542047719,
+          "after": -1.607444520863929,
+          "tau": 0.07492784694703393,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": 163.784974587488,
+          "own_motor_coupled_acceleration": 474.56875369774843,
+          "other_motors_acceleration": 470.37033977875376,
+          "gravity_acceleration": 2.842170943040401e-14,
+          "coriolis_acceleration": -3.716928207614309,
+          "free_acceleration": 941.2221652688826,
+          "contact_dv": -1.4975568854434518
+        }
+      ]
+    },
+    {
+      "name": "leg_2_coxa_body",
+      "angular_in": [
+        1.2695129927672903,
+        -2.4088709346030606,
+        0.25529985620068074
+      ],
+      "angular_free": [
+        1.264700347416589,
+        -2.1442754610757615,
+        0.21284870507159281
+      ],
+      "angular_after": [
+        1.305168611757486,
+        -2.397175491763875,
+        0.2674299012824134
+      ],
+      "speed_in": 2.7348675351754195,
+      "speed_free": 2.4985373307153056,
+      "speed_after": 2.7425233263420496,
+      "speed_requested_at_current_configuration": 1.2645004892181033,
+      "angular_free_delta": [
+        -0.004812645350701361,
+        0.26459547352729906,
+        -0.04245115112908793
+      ],
+      "angular_contact_delta": [
+        0.04046826434089712,
+        -0.2529000306881133,
+        0.05458119621082058
+      ],
+      "angular_motor_acceleration": [
+        2.4611863453238643,
+        150.99091434897107,
+        -24.384445833549805
+      ],
+      "angular_gravity_acceleration": [
+        9.195919047815883e-15,
+        6.2852935459440056e-15,
+        -2.961742497009321e-14
+      ],
+      "angular_coriolis_acceleration": [
+        -5.3487736875194,
+        7.766377012267089,
+        -1.0862460062532346
+      ],
+      "joints": [
+        {
+          "wire": 6,
+          "target_rate": -0.5679339170455933,
+          "error": -0.17689424719318464,
+          "vin": -3.214074566054508,
+          "free": -2.95500285259058,
+          "after": -3.1966507551018473,
+          "tau": 0.19578842084476927,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": 50.144823806984974,
+          "own_motor_coupled_acceleration": 185.25115453035662,
+          "other_motors_acceleration": -41.81082639678618,
+          "gravity_acceleration": 1.7763568394002505e-15,
+          "coriolis_acceleration": 12.002707038399546,
+          "free_acceleration": 155.44303517196957,
+          "contact_dv": -0.24164790251126744
+        },
+        {
+          "wire": 7,
+          "target_rate": 0.6431163549423218,
+          "error": 0.0004973543008394143,
+          "vin": 0.8363484563517307,
+          "free": 0.1678678853955129,
+          "after": 0.8198938145452919,
+          "tau": -0.10397335395896115,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -41.50657637956189,
+          "own_motor_coupled_acceleration": -246.43592344787473,
+          "other_motors_acceleration": -165.68382974763537,
+          "gravity_acceleration": 1.4210854715202004e-14,
+          "coriolis_acceleration": 11.03139231819112,
+          "free_acceleration": -401.08836087732027,
+          "contact_dv": 0.652025929149779
+        },
+        {
+          "wire": 8,
+          "target_rate": -8.881784197001252e-14,
+          "error": 0.1542071223333219,
+          "vin": -0.6313574888179425,
+          "free": 0.8578789744474786,
+          "after": -0.632189781944736,
+          "tau": 0.08385090815038625,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": 127.94732589922332,
+          "own_motor_coupled_acceleration": 634.2848757450099,
+          "other_motors_acceleration": 264.2277155889144,
+          "gravity_acceleration": 5.684341886080802e-14,
+          "coriolis_acceleration": -4.970672598062162,
+          "free_acceleration": 893.5419187358649,
+          "contact_dv": -1.4900687563922146
+        }
+      ]
+    },
+    {
+      "name": "leg_2_femur_body",
+      "angular_in": [
+        1.1016596961551428,
+        -2.4683937713848674,
+        1.0724663283223674
+      ],
+      "angular_free": [
+        1.2310096318482722,
+        -2.1562226018487483,
+        0.3768664738011005
+      ],
+      "angular_after": [
+        1.140617725583006,
+        -2.455527253318473,
+        1.0685191253469357
+      ],
+      "speed_in": 2.908058789317972,
+      "speed_free": 2.511316181109396,
+      "speed_after": 2.910731181152958,
+      "speed_requested_at_current_configuration": 1.4920445947886136,
+      "angular_free_delta": [
+        0.12934993569312936,
+        0.3121711695361191,
+        -0.6955998545212669
+      ],
+      "angular_contact_delta": [
+        -0.09039190626526628,
+        -0.2993046514697246,
+        0.6916526515458352
+      ],
+      "angular_motor_acceleration": [
+        85.17271483263035,
+        180.32143635533728,
+        -427.0520687038965
+      ],
+      "angular_gravity_acceleration": [
+        6.343831746754649e-15,
+        5.273908423727432e-15,
+        -1.5732501855496453e-14
+      ],
+      "angular_coriolis_acceleration": [
+        -7.562749875037556,
+        6.981273913857564,
+        9.69213694499768
+      ],
+      "joints": [
+        {
+          "wire": 6,
+          "target_rate": -0.5679339170455933,
+          "error": -0.17689424719318464,
+          "vin": -3.214074566054508,
+          "free": -2.95500285259058,
+          "after": -3.1966507551018473,
+          "tau": 0.19578842084476927,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": 50.144823806984974,
+          "own_motor_coupled_acceleration": 185.25115453035662,
+          "other_motors_acceleration": -41.81082639678618,
+          "gravity_acceleration": 1.7763568394002505e-15,
+          "coriolis_acceleration": 12.002707038399546,
+          "free_acceleration": 155.44303517196957,
+          "contact_dv": -0.24164790251126744
+        },
+        {
+          "wire": 7,
+          "target_rate": 0.6431163549423218,
+          "error": 0.0004973543008394143,
+          "vin": 0.8363484563517307,
+          "free": 0.1678678853955129,
+          "after": 0.8198938145452919,
+          "tau": -0.10397335395896115,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -41.50657637956189,
+          "own_motor_coupled_acceleration": -246.43592344787473,
+          "other_motors_acceleration": -165.68382974763537,
+          "gravity_acceleration": 1.4210854715202004e-14,
+          "coriolis_acceleration": 11.03139231819112,
+          "free_acceleration": -401.08836087732027,
+          "contact_dv": 0.652025929149779
+        },
+        {
+          "wire": 8,
+          "target_rate": -8.881784197001252e-14,
+          "error": 0.1542071223333219,
+          "vin": -0.6313574888179425,
+          "free": 0.8578789744474786,
+          "after": -0.632189781944736,
+          "tau": 0.08385090815038625,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": 127.94732589922332,
+          "own_motor_coupled_acceleration": 634.2848757450099,
+          "other_motors_acceleration": 264.2277155889144,
+          "gravity_acceleration": 5.684341886080802e-14,
+          "coriolis_acceleration": -4.970672598062162,
+          "free_acceleration": 893.5419187358649,
+          "contact_dv": -1.4900687563922146
+        }
+      ]
+    },
+    {
+      "name": "leg_2_tibia_body",
+      "angular_in": [
+        1.2283717562229504,
+        -2.4234601214540574,
+        0.45558927442607755
+      ],
+      "angular_free": [
+        1.0588352075856913,
+        -2.2172777634704084,
+        1.215069653029299
+      ],
+      "angular_after": [
+        1.2674968250516985,
+        -2.410534369168284,
+        0.45082886729748717
+      ],
+      "speed_in": 2.754926082263633,
+      "speed_free": 2.7411397153220975,
+      "speed_after": 2.760520026017998,
+      "speed_requested_at_current_configuration": 1.4920445947885652,
+      "angular_free_delta": [
+        -0.1695365486372591,
+        0.20618235798364903,
+        0.7594803786032215
+      ],
+      "angular_contact_delta": [
+        0.2086616174660072,
+        -0.19325660569787573,
+        -0.7642407857318119
+      ],
+      "angular_motor_acceleration": [
+        -95.15678701258506,
+        116.37438424542665,
+        450.85277925874726
+      ],
+      "angular_gravity_acceleration": [
+        -5.0645174574902865e-15,
+        1.228367934861136e-15,
+        3.9807190602890567e-14
+      ],
+      "angular_coriolis_acceleration": [
+        -6.565146811831191,
+        7.3350361902188705,
+        4.835468698428744
+      ],
+      "joints": [
+        {
+          "wire": 6,
+          "target_rate": -0.5679339170455933,
+          "error": -0.17689424719318464,
+          "vin": -3.214074566054508,
+          "free": -2.95500285259058,
+          "after": -3.1966507551018473,
+          "tau": 0.19578842084476927,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": 50.144823806984974,
+          "own_motor_coupled_acceleration": 185.25115453035662,
+          "other_motors_acceleration": -41.81082639678618,
+          "gravity_acceleration": 1.7763568394002505e-15,
+          "coriolis_acceleration": 12.002707038399546,
+          "free_acceleration": 155.44303517196957,
+          "contact_dv": -0.24164790251126744
+        },
+        {
+          "wire": 7,
+          "target_rate": 0.6431163549423218,
+          "error": 0.0004973543008394143,
+          "vin": 0.8363484563517307,
+          "free": 0.1678678853955129,
+          "after": 0.8198938145452919,
+          "tau": -0.10397335395896115,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -41.50657637956189,
+          "own_motor_coupled_acceleration": -246.43592344787473,
+          "other_motors_acceleration": -165.68382974763537,
+          "gravity_acceleration": 1.4210854715202004e-14,
+          "coriolis_acceleration": 11.03139231819112,
+          "free_acceleration": -401.08836087732027,
+          "contact_dv": 0.652025929149779
+        },
+        {
+          "wire": 8,
+          "target_rate": -8.881784197001252e-14,
+          "error": 0.1542071223333219,
+          "vin": -0.6313574888179425,
+          "free": 0.8578789744474786,
+          "after": -0.632189781944736,
+          "tau": 0.08385090815038625,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": 127.94732589922332,
+          "own_motor_coupled_acceleration": 634.2848757450099,
+          "other_motors_acceleration": 264.2277155889144,
+          "gravity_acceleration": 5.684341886080802e-14,
+          "coriolis_acceleration": -4.970672598062162,
+          "free_acceleration": 893.5419187358649,
+          "contact_dv": -1.4900687563922146
+        }
+      ]
+    },
+    {
+      "name": "leg_3_coxa_body",
+      "angular_in": [
+        1.1796141926645414,
+        -0.07287635179429786,
+        0.4069889165645393
+      ],
+      "angular_free": [
+        1.2060316412047014,
+        -0.619785926902578,
+        0.3118422501230618
+      ],
+      "angular_after": [
+        1.2148490284757303,
+        -0.050246978518071805,
+        0.41982896227995675
+      ],
+      "speed_in": 1.2499762335311986,
+      "speed_free": 1.3913635411836864,
+      "speed_after": 1.286327826958465,
+      "speed_requested_at_current_configuration": 4.173859483915194,
+      "angular_free_delta": [
+        0.026417448540160038,
+        -0.5469095751082802,
+        -0.09514666644147746
+      ],
+      "angular_contact_delta": [
+        0.008817387271028876,
+        0.5695389483845062,
+        0.10798671215689493
+      ],
+      "angular_motor_acceleration": [
+        20.7447360298372,
+        -324.1018896564518,
+        -55.234851718721835
+      ],
+      "angular_gravity_acceleration": [
+        8.99141598708158e-15,
+        1.1599247030274614e-14,
+        -2.927236055222707e-14
+      ],
+      "angular_coriolis_acceleration": [
+        -4.894266182408303,
+        -4.043870383381776,
+        -1.8531507513646857
+      ],
+      "joints": [
+        {
+          "wire": 9,
+          "target_rate": -4.76319694519043,
+          "error": -0.26324314205866106,
+          "vin": -0.8714345902567175,
+          "free": -1.4261764795664864,
+          "after": -0.8430457442295302,
+          "tau": -0.5181827513263495,
+          "available_tau": 1.2996252299650608,
+          "braking": false,
+          "diagonal_motor_acceleration": -120.95523427382727,
+          "own_motor_coupled_acceleration": -425.99915415425255,
+          "other_motors_acceleration": 92.99514330363365,
+          "gravity_acceleration": 7.105427357601002e-15,
+          "coriolis_acceleration": 0.15886207543639586,
+          "free_acceleration": -332.8451487751852,
+          "contact_dv": 0.5831307353369563
+        },
+        {
+          "wire": 10,
+          "target_rate": 7.479982376098633,
+          "error": 0.3240767615853625,
+          "vin": 5.379239702115028,
+          "free": 5.015815681838326,
+          "after": 5.347215165996624,
+          "tau": -0.16178684587873504,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -66.41400911489984,
+          "own_motor_coupled_acceleration": -384.78035958566346,
+          "other_motors_acceleration": 170.20925440298873,
+          "gravity_acceleration": -8.526512829121202e-14,
+          "coriolis_acceleration": -3.483316934220751,
+          "free_acceleration": -218.05442211689265,
+          "contact_dv": 0.3313994841582977
+        },
+        {
+          "wire": 11,
+          "target_rate": -7.479982376098633,
+          "error": -0.5900100985482412,
+          "vin": -4.860088465284639,
+          "free": -5.0502609237678096,
+          "after": -4.819499547717864,
+          "tau": -0.08030971659881728,
+          "available_tau": 0.5152236831082744,
+          "braking": false,
+          "diagonal_motor_acceleration": -125.7518883284188,
+          "own_motor_coupled_acceleration": -573.2409385652259,
+          "other_motors_acceleration": 447.5936835156038,
+          "gravity_acceleration": 8.526512829121202e-14,
+          "coriolis_acceleration": 11.543774752632329,
+          "free_acceleration": -114.1034802969928,
+          "contact_dv": 0.23076137604994518
+        }
+      ]
+    },
+    {
+      "name": "leg_3_femur_body",
+      "angular_in": [
+        -2.49047243943488,
+        0.04115262297296085,
+        -3.524128135700533
+      ],
+      "angular_free": [
+        -2.216102173682108,
+        -0.5134608044885904,
+        -3.353686644255917
+      ],
+      "angular_after": [
+        -2.433388266465295,
+        0.06310314101625447,
+        -3.487884745461086
+      ],
+      "speed_in": 4.315509891866591,
+      "speed_free": 4.052402367707968,
+      "speed_after": 4.253316407157741,
+      "speed_requested_at_current_configuration": 7.540469041050223,
+      "angular_free_delta": [
+        0.274370265752772,
+        -0.5546134274615513,
+        0.1704414914446164
+      ],
+      "angular_contact_delta": [
+        -0.217286092783187,
+        0.5765639455048449,
+        -0.13419810120516917
+      ],
+      "angular_motor_acceleration": [
+        167.13987518976415,
+        -328.65036202310205,
+        101.57246255197767
+      ],
+      "angular_gravity_acceleration": [
+        6.716514031522043e-14,
+        9.791799193617905e-15,
+        3.303889872431392e-14
+      ],
+      "angular_coriolis_acceleration": [
+        -2.517708225598416,
+        -4.1177096396325155,
+        0.692436981633139
+      ],
+      "joints": [
+        {
+          "wire": 9,
+          "target_rate": -4.76319694519043,
+          "error": -0.26324314205866106,
+          "vin": -0.8714345902567175,
+          "free": -1.4261764795664864,
+          "after": -0.8430457442295302,
+          "tau": -0.5181827513263495,
+          "available_tau": 1.2996252299650608,
+          "braking": false,
+          "diagonal_motor_acceleration": -120.95523427382727,
+          "own_motor_coupled_acceleration": -425.99915415425255,
+          "other_motors_acceleration": 92.99514330363365,
+          "gravity_acceleration": 7.105427357601002e-15,
+          "coriolis_acceleration": 0.15886207543639586,
+          "free_acceleration": -332.8451487751852,
+          "contact_dv": 0.5831307353369563
+        },
+        {
+          "wire": 10,
+          "target_rate": 7.479982376098633,
+          "error": 0.3240767615853625,
+          "vin": 5.379239702115028,
+          "free": 5.015815681838326,
+          "after": 5.347215165996624,
+          "tau": -0.16178684587873504,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -66.41400911489984,
+          "own_motor_coupled_acceleration": -384.78035958566346,
+          "other_motors_acceleration": 170.20925440298873,
+          "gravity_acceleration": -8.526512829121202e-14,
+          "coriolis_acceleration": -3.483316934220751,
+          "free_acceleration": -218.05442211689265,
+          "contact_dv": 0.3313994841582977
+        },
+        {
+          "wire": 11,
+          "target_rate": -7.479982376098633,
+          "error": -0.5900100985482412,
+          "vin": -4.860088465284639,
+          "free": -5.0502609237678096,
+          "after": -4.819499547717864,
+          "tau": -0.08030971659881728,
+          "available_tau": 0.5152236831082744,
+          "braking": false,
+          "diagonal_motor_acceleration": -125.7518883284188,
+          "own_motor_coupled_acceleration": -573.2409385652259,
+          "other_motors_acceleration": 447.5936835156038,
+          "gravity_acceleration": 8.526512829121202e-14,
+          "coriolis_acceleration": 11.543774752632329,
+          "free_acceleration": -114.1034802969928,
+          "contact_dv": 0.23076137604994518
+        }
+      ]
+    },
+    {
+      "name": "leg_3_tibia_body",
+      "angular_in": [
+        0.8254135769939013,
+        -0.06187139820175813,
+        0.027596215583762795
+      ],
+      "angular_free": [
+        1.229532550059,
+        -0.6205160961904954,
+        0.33701463235863116
+      ],
+      "angular_after": [
+        0.8548052038003857,
+        -0.03906047740392049,
+        0.034177461205078696
+      ],
+      "speed_in": 0.8281891052868621,
+      "speed_free": 1.4178749520708456,
+      "speed_after": 0.8563794463867438,
+      "speed_requested_at_current_configuration": 4.173859483915194,
+      "angular_free_delta": [
+        0.4041189730650987,
+        -0.5586446979887373,
+        0.30941841677486837
+      ],
+      "angular_contact_delta": [
+        -0.37472734625861426,
+        0.5814556187865749,
+        -0.30283717115355246
+      ],
+      "angular_motor_acceleration": [
+        252.8650587944831,
+        -331.31382906845334,
+        193.394744927991
+      ],
+      "angular_gravity_acceleration": [
+        8.991415987081575e-15,
+        1.1599247030274616e-14,
+        -2.927236055222707e-14
+      ],
+      "angular_coriolis_acceleration": [
+        -10.393663890289256,
+        -3.873005020972508,
+        -7.7436863909202955
+      ],
+      "joints": [
+        {
+          "wire": 9,
+          "target_rate": -4.76319694519043,
+          "error": -0.26324314205866106,
+          "vin": -0.8714345902567175,
+          "free": -1.4261764795664864,
+          "after": -0.8430457442295302,
+          "tau": -0.5181827513263495,
+          "available_tau": 1.2996252299650608,
+          "braking": false,
+          "diagonal_motor_acceleration": -120.95523427382727,
+          "own_motor_coupled_acceleration": -425.99915415425255,
+          "other_motors_acceleration": 92.99514330363365,
+          "gravity_acceleration": 7.105427357601002e-15,
+          "coriolis_acceleration": 0.15886207543639586,
+          "free_acceleration": -332.8451487751852,
+          "contact_dv": 0.5831307353369563
+        },
+        {
+          "wire": 10,
+          "target_rate": 7.479982376098633,
+          "error": 0.3240767615853625,
+          "vin": 5.379239702115028,
+          "free": 5.015815681838326,
+          "after": 5.347215165996624,
+          "tau": -0.16178684587873504,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -66.41400911489984,
+          "own_motor_coupled_acceleration": -384.78035958566346,
+          "other_motors_acceleration": 170.20925440298873,
+          "gravity_acceleration": -8.526512829121202e-14,
+          "coriolis_acceleration": -3.483316934220751,
+          "free_acceleration": -218.05442211689265,
+          "contact_dv": 0.3313994841582977
+        },
+        {
+          "wire": 11,
+          "target_rate": -7.479982376098633,
+          "error": -0.5900100985482412,
+          "vin": -4.860088465284639,
+          "free": -5.0502609237678096,
+          "after": -4.819499547717864,
+          "tau": -0.08030971659881728,
+          "available_tau": 0.5152236831082744,
+          "braking": false,
+          "diagonal_motor_acceleration": -125.7518883284188,
+          "own_motor_coupled_acceleration": -573.2409385652259,
+          "other_motors_acceleration": 447.5936835156038,
+          "gravity_acceleration": 8.526512829121202e-14,
+          "coriolis_acceleration": 11.543774752632329,
+          "free_acceleration": -114.1034802969928,
+          "contact_dv": 0.23076137604994518
+        }
+      ]
+    },
+    {
+      "name": "leg_4_coxa_body",
+      "angular_in": [
+        1.0859706219071055,
+        2.3604250243555525,
+        0.5649966457119454
+      ],
+      "angular_free": [
+        1.0913074738437536,
+        2.361288716653489,
+        0.5054199300044213
+      ],
+      "angular_after": [
+        1.1225761304231865,
+        2.347437859816237,
+        0.5755239124532964
+      ],
+      "speed_in": 2.6589771899952366,
+      "speed_free": 2.6499218312071,
+      "speed_after": 2.6649332914915678,
+      "speed_requested_at_current_configuration": 2.983269193970229,
+      "angular_free_delta": [
+        0.005336851936648124,
+        0.0008636922979365913,
+        -0.0595767157075241
+      ],
+      "angular_contact_delta": [
+        0.031268656579432896,
+        -0.013850856837251957,
+        0.07010398244887506
+      ],
+      "angular_motor_acceleration": [
+        8.301227447507925,
+        -0.7608816982524793,
+        -34.23853005118248
+      ],
+      "angular_gravity_acceleration": [
+        9.264086734727318e-15,
+        4.513975717833802e-15,
+        -2.973244644271526e-14
+      ],
+      "angular_coriolis_acceleration": [
+        -5.099116139391611,
+        1.2790971006634595,
+        -1.5075010045954331
+      ],
+      "joints": [
+        {
+          "wire": 12,
+          "target_rate": 1.9304710626602173,
+          "error": 0.12310228747801297,
+          "vin": 1.5687889953983507,
+          "free": 1.563378668474413,
+          "after": 1.561459982360181,
+          "tau": -0.003108830494318704,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -1.5005200961594205,
+          "own_motor_coupled_acceleration": -2.687574873814277,
+          "other_motors_acceleration": -6.055593664894225,
+          "gravity_acceleration": -0.0,
+          "coriolis_acceleration": 5.496972236206833,
+          "free_acceleration": -3.2461963025021072,
+          "contact_dv": -0.001918686114232182
+        },
+        {
+          "wire": 13,
+          "target_rate": 7.479982376098633,
+          "error": 0.25373259957122785,
+          "vin": 2.709434695556376,
+          "free": 2.8267524196639373,
+          "after": 2.692579561258574,
+          "tau": 0.02601334300093827,
+          "available_tau": 0.9381674121417743,
+          "braking": false,
+          "diagonal_motor_acceleration": 23.111139954198595,
+          "own_motor_coupled_acceleration": 65.69363574200504,
+          "other_motors_acceleration": 12.261485143735882,
+          "gravity_acceleration": 1.7053025658242404e-13,
+          "coriolis_acceleration": -7.564483208940936,
+          "free_acceleration": 70.39063767679993,
+          "contact_dv": -0.1341728584053632
+        },
+        {
+          "wire": 14,
+          "target_rate": -7.479982376098633,
+          "error": -0.2038186171761981,
+          "vin": -2.1071634272254305,
+          "free": -2.312277425411881,
+          "after": -2.2258431717463085,
+          "tau": -0.006243150872243006,
+          "available_tau": 1.0566090040442266,
+          "braking": false,
+          "diagonal_motor_acceleration": -22.02846437385227,
+          "own_motor_coupled_acceleration": -49.32115229180781,
+          "other_motors_acceleration": -78.70797449305144,
+          "gravity_acceleration": -1.7053025658242404e-13,
+          "coriolis_acceleration": 4.960722256786099,
+          "free_acceleration": -123.0684045280732,
+          "contact_dv": 0.08643425366557267
+        }
+      ]
+    },
+    {
+      "name": "leg_4_femur_body",
+      "angular_in": [
+        -1.1805830566913267,
+        2.1775354803734146,
+        2.038197991834936
+      ],
+      "angular_free": [
+        -1.2733873113024359,
+        2.1704801092968977,
+        2.0424104604036746
+      ],
+      "angular_after": [
+        -1.1298775343573788,
+        2.165686054208284,
+        2.039560613797312
+      ],
+      "speed_in": 3.2077543821109,
+      "speed_free": 3.2409781915659153,
+      "speed_after": 3.182236136019925,
+      "speed_requested_at_current_configuration": 7.312435613743029,
+      "angular_free_delta": [
+        -0.0928042546111092,
+        -0.007055371076516881,
+        0.004212468568738359
+      ],
+      "angular_contact_delta": [
+        0.14350977694505707,
+        -0.004794055088613636,
+        -0.0028498466063626715
+      ],
+      "angular_motor_acceleration": [
+        -56.91144082567176,
+        -6.022930100174899,
+        8.148019886486773
+      ],
+      "angular_gravity_acceleration": [
+        -1.333914941519925e-13,
+        -6.996986665820205e-15,
+        6.29899963472696e-14
+      ],
+      "angular_coriolis_acceleration": [
+        1.2288855179431868,
+        1.789707261082792,
+        -5.620538629902786
+      ],
+      "joints": [
+        {
+          "wire": 12,
+          "target_rate": 1.9304710626602173,
+          "error": 0.12310228747801297,
+          "vin": 1.5687889953983507,
+          "free": 1.563378668474413,
+          "after": 1.561459982360181,
+          "tau": -0.003108830494318704,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -1.5005200961594205,
+          "own_motor_coupled_acceleration": -2.687574873814277,
+          "other_motors_acceleration": -6.055593664894225,
+          "gravity_acceleration": -0.0,
+          "coriolis_acceleration": 5.496972236206833,
+          "free_acceleration": -3.2461963025021072,
+          "contact_dv": -0.001918686114232182
+        },
+        {
+          "wire": 13,
+          "target_rate": 7.479982376098633,
+          "error": 0.25373259957122785,
+          "vin": 2.709434695556376,
+          "free": 2.8267524196639373,
+          "after": 2.692579561258574,
+          "tau": 0.02601334300093827,
+          "available_tau": 0.9381674121417743,
+          "braking": false,
+          "diagonal_motor_acceleration": 23.111139954198595,
+          "own_motor_coupled_acceleration": 65.69363574200504,
+          "other_motors_acceleration": 12.261485143735882,
+          "gravity_acceleration": 1.7053025658242404e-13,
+          "coriolis_acceleration": -7.564483208940936,
+          "free_acceleration": 70.39063767679993,
+          "contact_dv": -0.1341728584053632
+        },
+        {
+          "wire": 14,
+          "target_rate": -7.479982376098633,
+          "error": -0.2038186171761981,
+          "vin": -2.1071634272254305,
+          "free": -2.312277425411881,
+          "after": -2.2258431717463085,
+          "tau": -0.006243150872243006,
+          "available_tau": 1.0566090040442266,
+          "braking": false,
+          "diagonal_motor_acceleration": -22.02846437385227,
+          "own_motor_coupled_acceleration": -49.32115229180781,
+          "other_motors_acceleration": -78.70797449305144,
+          "gravity_acceleration": -1.7053025658242404e-13,
+          "coriolis_acceleration": 4.960722256786099,
+          "free_acceleration": -123.0684045280732,
+          "contact_dv": 0.08643425366557267
+        }
+      ]
+    },
+    {
+      "name": "leg_4_tibia_body",
+      "angular_in": [
+        0.5821459085864797,
+        2.3197711131174477,
+        0.8924696956036876
+      ],
+      "angular_free": [
+        0.6609279586329424,
+        2.32656114147211,
+        0.7851554982105078
+      ],
+      "angular_after": [
+        0.7321319236224968,
+        2.3159326880629685,
+        0.8293025617197844
+      ],
+      "speed_in": 2.55278946129701,
+      "speed_free": 2.5428687869964715,
+      "speed_after": 2.5665743916942563,
+      "speed_requested_at_current_configuration": 2.983269193970229,
+      "angular_free_delta": [
+        0.07878205004646266,
+        0.0067900283546622475,
+        -0.10731419739317982
+      ],
+      "angular_contact_delta": [
+        0.07120396498955439,
+        -0.010628453409141425,
+        0.04414706350927666
+      ],
+      "angular_motor_acceleration": [
+        50.19019508306123,
+        2.619163637133634,
+        -61.46527702439319
+      ],
+      "angular_gravity_acceleration": [
+        9.264086734727338e-15,
+        4.5139757178338006e-15,
+        -2.973244644271523e-14
+      ],
+      "angular_coriolis_acceleration": [
+        -2.920962898061825,
+        1.454853561580968,
+        -2.923244349872593
+      ],
+      "joints": [
+        {
+          "wire": 12,
+          "target_rate": 1.9304710626602173,
+          "error": 0.12310228747801297,
+          "vin": 1.5687889953983507,
+          "free": 1.563378668474413,
+          "after": 1.561459982360181,
+          "tau": -0.003108830494318704,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -1.5005200961594205,
+          "own_motor_coupled_acceleration": -2.687574873814277,
+          "other_motors_acceleration": -6.055593664894225,
+          "gravity_acceleration": -0.0,
+          "coriolis_acceleration": 5.496972236206833,
+          "free_acceleration": -3.2461963025021072,
+          "contact_dv": -0.001918686114232182
+        },
+        {
+          "wire": 13,
+          "target_rate": 7.479982376098633,
+          "error": 0.25373259957122785,
+          "vin": 2.709434695556376,
+          "free": 2.8267524196639373,
+          "after": 2.692579561258574,
+          "tau": 0.02601334300093827,
+          "available_tau": 0.9381674121417743,
+          "braking": false,
+          "diagonal_motor_acceleration": 23.111139954198595,
+          "own_motor_coupled_acceleration": 65.69363574200504,
+          "other_motors_acceleration": 12.261485143735882,
+          "gravity_acceleration": 1.7053025658242404e-13,
+          "coriolis_acceleration": -7.564483208940936,
+          "free_acceleration": 70.39063767679993,
+          "contact_dv": -0.1341728584053632
+        },
+        {
+          "wire": 14,
+          "target_rate": -7.479982376098633,
+          "error": -0.2038186171761981,
+          "vin": -2.1071634272254305,
+          "free": -2.312277425411881,
+          "after": -2.2258431717463085,
+          "tau": -0.006243150872243006,
+          "available_tau": 1.0566090040442266,
+          "braking": false,
+          "diagonal_motor_acceleration": -22.02846437385227,
+          "own_motor_coupled_acceleration": -49.32115229180781,
+          "other_motors_acceleration": -78.70797449305144,
+          "gravity_acceleration": -1.7053025658242404e-13,
+          "coriolis_acceleration": 4.960722256786099,
+          "free_acceleration": -123.0684045280732,
+          "contact_dv": 0.08643425366557267
+        }
+      ]
+    },
+    {
+      "name": "leg_5_coxa_body",
+      "angular_in": [
+        1.117827452549582,
+        1.5326344006628387,
+        0.511243617853901
+      ],
+      "angular_free": [
+        1.1254270745971047,
+        1.474700659456614,
+        0.4478488592854518
+      ],
+      "angular_after": [
+        1.155731507586351,
+        1.4859048765549212,
+        0.5195798063902389
+      ],
+      "speed_in": 1.964656829210886,
+      "speed_free": 1.9083754179933388,
+      "speed_after": 1.9528419790157199,
+      "speed_requested_at_current_configuration": 1.6629686619347397,
+      "angular_free_delta": [
+        0.007599622047522736,
+        -0.05793374120622463,
+        -0.06339475856844923
+      ],
+      "angular_contact_delta": [
+        0.030304432989246344,
+        0.011204217098307101,
+        0.07173094710478711
+      ],
+      "angular_motor_acceleration": [
+        9.49503896386708,
+        -31.781732164803056,
+        -36.25288560388285
+      ],
+      "angular_gravity_acceleration": [
+        9.025499830537298e-15,
+        1.0713588116219514e-14,
+        -2.93298712885381e-14
+      ],
+      "angular_coriolis_acceleration": [
+        -4.935265527269198,
+        -2.9785141452084365,
+        -1.7839712729915036
+      ],
+      "joints": [
+        {
+          "wire": 15,
+          "target_rate": 0.32079121470451355,
+          "error": 0.0422178219361109,
+          "vin": 0.7386434886731363,
+          "free": 0.6742684624237651,
+          "after": 0.6974761264432032,
+          "tau": -0.021115884350064965,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -10.546035723587508,
+          "own_motor_coupled_acceleration": -17.407268532602604,
+          "other_motors_acceleration": -22.444997998451772,
+          "gravity_acceleration": 6.217248937900877e-15,
+          "coriolis_acceleration": 1.227249018786912,
+          "free_acceleration": -38.6250175122679,
+          "contact_dv": 0.02320766401943808
+        },
+        {
+          "wire": 16,
+          "target_rate": 2.3871402740478516,
+          "error": 0.26796950629195493,
+          "vin": 3.392787093605951,
+          "free": 3.30172444358541,
+          "after": 3.325829808114984,
+          "tau": -0.0022797085046114274,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -2.158413247825739,
+          "own_motor_coupled_acceleration": -5.797083596905924,
+          "other_motors_acceleration": -40.333621699948544,
+          "gravity_acceleration": -2.842170943040401e-14,
+          "coriolis_acceleration": -8.506887208846862,
+          "free_acceleration": -54.637592505700766,
+          "contact_dv": 0.024105364529574125
+        },
+        {
+          "wire": 17,
+          "target_rate": 0,
+          "error": 0.015731980288050784,
+          "vin": 0.6238035661491721,
+          "free": 0.5961309253925989,
+          "after": 0.6347887422017703,
+          "tau": -0.005731964934409786,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -21.357690627426866,
+          "own_motor_coupled_acceleration": -44.93484982428386,
+          "other_motors_acceleration": 21.35482354210104,
+          "gravity_acceleration": -0.0,
+          "coriolis_acceleration": 6.976441070537897,
+          "free_acceleration": -16.603585211645292,
+          "contact_dv": 0.03865781680917135
+        }
+      ]
+    },
+    {
+      "name": "leg_5_femur_body",
+      "angular_in": [
+        -2.1504743852627572,
+        1.465828022166452,
+        -0.39691070123718797
+      ],
+      "angular_free": [
+        -2.0551533064285437,
+        1.4096873689720337,
+        -0.4359305324546432
+      ],
+      "angular_after": [
+        -2.048069784454203,
+        1.4204169343865996,
+        -0.37065191799166985
+      ],
+      "speed_in": 2.632627960232179,
+      "speed_free": 2.5300017826653125,
+      "speed_after": 2.5198327233761795,
+      "speed_requested_at_current_configuration": 1.5891742837719678,
+      "angular_free_delta": [
+        0.09532107883421359,
+        -0.05614065319441819,
+        -0.039019831217455225
+      ],
+      "angular_contact_delta": [
+        0.007083521974340812,
+        0.010729565414565823,
+        0.06527861446297334
+      ],
+      "angular_motor_acceleration": [
+        53.93315569256731,
+        -30.873385936955472,
+        -23.904984570832575
+      ],
+      "angular_gravity_acceleration": [
+        3.640438409363168e-14,
+        1.1273231685160308e-14,
+        -2.172217370450245e-14
+      ],
+      "angular_coriolis_acceleration": [
+        3.2594942179367914,
+        -2.8110075168758364,
+        0.49308477196181055
+      ],
+      "joints": [
+        {
+          "wire": 15,
+          "target_rate": 0.32079121470451355,
+          "error": 0.0422178219361109,
+          "vin": 0.7386434886731363,
+          "free": 0.6742684624237651,
+          "after": 0.6974761264432032,
+          "tau": -0.021115884350064965,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -10.546035723587508,
+          "own_motor_coupled_acceleration": -17.407268532602604,
+          "other_motors_acceleration": -22.444997998451772,
+          "gravity_acceleration": 6.217248937900877e-15,
+          "coriolis_acceleration": 1.227249018786912,
+          "free_acceleration": -38.6250175122679,
+          "contact_dv": 0.02320766401943808
+        },
+        {
+          "wire": 16,
+          "target_rate": 2.3871402740478516,
+          "error": 0.26796950629195493,
+          "vin": 3.392787093605951,
+          "free": 3.30172444358541,
+          "after": 3.325829808114984,
+          "tau": -0.0022797085046114274,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -2.158413247825739,
+          "own_motor_coupled_acceleration": -5.797083596905924,
+          "other_motors_acceleration": -40.333621699948544,
+          "gravity_acceleration": -2.842170943040401e-14,
+          "coriolis_acceleration": -8.506887208846862,
+          "free_acceleration": -54.637592505700766,
+          "contact_dv": 0.024105364529574125
+        },
+        {
+          "wire": 17,
+          "target_rate": 0,
+          "error": 0.015731980288050784,
+          "vin": 0.6238035661491721,
+          "free": 0.5961309253925989,
+          "after": 0.6347887422017703,
+          "tau": -0.005731964934409786,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -21.357690627426866,
+          "own_motor_coupled_acceleration": -44.93484982428386,
+          "other_motors_acceleration": 21.35482354210104,
+          "gravity_acceleration": -0.0,
+          "coriolis_acceleration": 6.976441070537897,
+          "free_acceleration": -16.603585211645292,
+          "contact_dv": 0.03865781680917135
+        }
+      ]
+    },
+    {
+      "name": "leg_5_tibia_body",
+      "angular_in": [
+        -2.7513898820003844,
+        1.4535448885663222,
+        -0.5638854884056607
+      ],
+      "angular_free": [
+        -2.6294115033868013,
+        1.3979491292486412,
+        -0.5954981267959856
+      ],
+      "angular_after": [
+        -2.659567398516274,
+        1.4079174948972488,
+        -0.5405671298914627
+      ],
+      "speed_in": 3.162420887529973,
+      "speed_free": 3.0368873276971278,
+      "speed_after": 3.057407928557696,
+      "speed_requested_at_current_configuration": 1.5891742837719678,
+      "angular_free_delta": [
+        0.12197837861358307,
+        -0.055595759317681015,
+        -0.03161263839032491
+      ],
+      "angular_contact_delta": [
+        -0.03015589512947292,
+        0.009968365648607591,
+        0.054930996904522855
+      ],
+      "angular_motor_acceleration": [
+        76.64800372383965,
+        -30.409078535017088,
+        -17.593270301227168
+      ],
+      "angular_gravity_acceleration": [
+        3.640438409363168e-14,
+        1.1273231685160308e-14,
+        -2.172217370450245e-14
+      ],
+      "angular_coriolis_acceleration": [
+        -3.46097321581391,
+        -2.948378577852356,
+        -1.3743135985500583
+      ],
+      "joints": [
+        {
+          "wire": 15,
+          "target_rate": 0.32079121470451355,
+          "error": 0.0422178219361109,
+          "vin": 0.7386434886731363,
+          "free": 0.6742684624237651,
+          "after": 0.6974761264432032,
+          "tau": -0.021115884350064965,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -10.546035723587508,
+          "own_motor_coupled_acceleration": -17.407268532602604,
+          "other_motors_acceleration": -22.444997998451772,
+          "gravity_acceleration": 6.217248937900877e-15,
+          "coriolis_acceleration": 1.227249018786912,
+          "free_acceleration": -38.6250175122679,
+          "contact_dv": 0.02320766401943808
+        },
+        {
+          "wire": 16,
+          "target_rate": 2.3871402740478516,
+          "error": 0.26796950629195493,
+          "vin": 3.392787093605951,
+          "free": 3.30172444358541,
+          "after": 3.325829808114984,
+          "tau": -0.0022797085046114274,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -2.158413247825739,
+          "own_motor_coupled_acceleration": -5.797083596905924,
+          "other_motors_acceleration": -40.333621699948544,
+          "gravity_acceleration": -2.842170943040401e-14,
+          "coriolis_acceleration": -8.506887208846862,
+          "free_acceleration": -54.637592505700766,
+          "contact_dv": 0.024105364529574125
+        },
+        {
+          "wire": 17,
+          "target_rate": 0,
+          "error": 0.015731980288050784,
+          "vin": 0.6238035661491721,
+          "free": 0.5961309253925989,
+          "after": 0.6347887422017703,
+          "tau": -0.005731964934409786,
+          "available_tau": 1.471,
+          "braking": true,
+          "diagonal_motor_acceleration": -21.357690627426866,
+          "own_motor_coupled_acceleration": -44.93484982428386,
+          "other_motors_acceleration": 21.35482354210104,
+          "gravity_acceleration": -0.0,
+          "coriolis_acceleration": 6.976441070537897,
+          "free_acceleration": -16.603585211645292,
+          "contact_dv": 0.03865781680917135
+        }
+      ]
+    }
+  ]
+}

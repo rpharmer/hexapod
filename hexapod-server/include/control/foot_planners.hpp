@@ -1,6 +1,7 @@
 #pragma once
 
 #include "motion_intent_utils.hpp"
+#include "swing_trajectory.hpp"
 #include "twist_field.hpp"
 #include "types.hpp"
 
@@ -66,6 +67,16 @@ struct SwingFootPlanDecomposition {
 SwingFootPlanDecomposition computeSwingFootPlacement(const RobotState& est,
                                                      const BodyTwist& nominal_body,
                                                      const SwingFootInputs& in);
+
+using SwingPlanCommit = swing_trajectory::SwingPlanCommit;
+
+/** Resolve all live inputs into a swing plan. Call once per swing to commit it. */
+SwingPlanCommit resolveSwingPlan(const RobotState& est,
+                                 const BodyTwist& nominal_body,
+                                 const SwingFootInputs& in);
+
+/** Evaluate a committed plan at swing phase `tau01`. No live inputs are read. */
+void evalSwingPlan(const SwingPlanCommit& plan, double tau01, Vec3& pos_body, Vec3& vel_body);
 
 void planSwingFoot(const RobotState& est,
                    const BodyTwist& nominal_body,

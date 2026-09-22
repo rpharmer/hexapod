@@ -152,6 +152,53 @@ if(MINPHYS3D_BUILD_TESTS)
 
     add_minphys3d_test(test_unit_math tests/test_unit_math.cpp)
     if(MINPHYS3D_ENABLE_PINOCCHIO)
+        add_executable(test_servo_pd_request tests/test_servo_pd_request.cpp)
+        target_include_directories(test_servo_pd_request PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+        add_test(NAME test_servo_pd_request COMMAND test_servo_pd_request)
+        add_executable(test_contact_warm_start tests/test_contact_warm_start.cpp)
+        target_link_libraries(test_contact_warm_start PRIVATE Eigen3::Eigen)
+        target_include_directories(test_contact_warm_start PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+        add_test(NAME test_contact_warm_start COMMAND test_contact_warm_start)
+        add_executable(test_pinocchio_link_angular_velocity
+            tests/test_pinocchio_link_angular_velocity.cpp
+            src/demo/scenes.cpp src/demo/frame_sink.cpp
+            ../hexapod-server/src/kinematics/types.cpp)
+        add_executable(test_pinocchio_liftoff_probe tests/test_pinocchio_liftoff_probe.cpp
+            src/demo/scenes.cpp src/demo/frame_sink.cpp
+            ../hexapod-server/src/control/joint_angle_gravity_feedforward.cpp
+            ../hexapod-server/src/kinematics/types.cpp)
+        add_executable(test_pinocchio_server_gravity tests/test_pinocchio_server_gravity.cpp
+            src/demo/scenes.cpp src/demo/frame_sink.cpp
+            ../hexapod-server/src/control/joint_angle_gravity_feedforward.cpp
+            ../hexapod-server/src/kinematics/types.cpp)
+        target_link_libraries(test_pinocchio_server_gravity PRIVATE hexapod_pinocchio)
+        target_include_directories(test_pinocchio_server_gravity PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-server/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-server/include/control
+            ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-server/include/kinematics)
+        target_compile_features(test_pinocchio_server_gravity PRIVATE cxx_std_20)
+        add_test(NAME test_pinocchio_server_gravity COMMAND test_pinocchio_server_gravity)
+        target_link_libraries(test_pinocchio_liftoff_probe PRIVATE hexapod_pinocchio)
+        target_include_directories(test_pinocchio_liftoff_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-server/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-server/include/control
+            ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-server/include/kinematics)
+        target_compile_features(test_pinocchio_liftoff_probe PRIVATE cxx_std_20)
+        target_compile_options(test_pinocchio_liftoff_probe PRIVATE -Wall -Wextra -pedantic)
+        add_test(NAME test_pinocchio_liftoff_balance COMMAND test_pinocchio_liftoff_probe)
+        add_test(NAME test_pinocchio_liftoff_gravity_bias COMMAND test_pinocchio_liftoff_probe --gravity-bias)
+        add_test(NAME test_pinocchio_liftoff_gravity_onset COMMAND test_pinocchio_liftoff_probe --gravity-bias-from-lift)
+        add_test(NAME test_pinocchio_liftoff_actuator_stiffness COMMAND test_pinocchio_liftoff_probe --server-actuator-stiffness)
+        add_test(NAME test_pinocchio_liftoff_moving_balance COMMAND test_pinocchio_liftoff_probe --moving-balance)
+        add_test(NAME test_pinocchio_liftoff_moving_gravity COMMAND test_pinocchio_liftoff_probe --moving-gravity)
+        add_test(NAME test_pinocchio_liftoff_moving_lead COMMAND test_pinocchio_liftoff_probe --moving-lead)
+        target_link_libraries(test_pinocchio_link_angular_velocity PRIVATE hexapod_pinocchio)
+        target_include_directories(test_pinocchio_link_angular_velocity PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-server/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/../hexapod-server/include/kinematics)
+        target_compile_options(test_pinocchio_link_angular_velocity PRIVATE -Wall -Wextra -pedantic)
+        add_test(NAME test_pinocchio_link_angular_velocity COMMAND test_pinocchio_link_angular_velocity)
         add_executable(test_pinocchio_hexapod_model
             tests/test_pinocchio_hexapod_model.cpp
             src/demo/scenes.cpp
@@ -160,6 +207,43 @@ if(MINPHYS3D_BUILD_TESTS)
         target_include_directories(test_pinocchio_hexapod_model PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
         target_compile_options(test_pinocchio_hexapod_model PRIVATE -Wall -Wextra -pedantic)
         add_test(NAME test_pinocchio_hexapod_model COMMAND test_pinocchio_hexapod_model)
+        add_executable(test_pinocchio_p0_p1
+            tests/test_pinocchio_p0_p1.cpp
+            src/demo/scenes.cpp
+            src/demo/frame_sink.cpp)
+        target_link_libraries(test_pinocchio_p0_p1 PRIVATE hexapod_pinocchio)
+        target_include_directories(test_pinocchio_p0_p1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+        target_compile_options(test_pinocchio_p0_p1 PRIVATE -Wall -Wextra -pedantic)
+        target_compile_definitions(test_pinocchio_p0_p1 PRIVATE
+            HEXAPOD_P0_STAND_CUTPOINT_ISOLATED_TURN="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p0-stand-cutpoint-isolated-turn-v1.json"
+            HEXAPOD_P0_COMMAND_STREAM_ISOLATED_TURN="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p0-command-stream-isolated-turn-v1.json"
+            HEXAPOD_P3_SEQ_HISTORY_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p3-seq-first-trip-history.json"
+            HEXAPOD_NEAR_CAP_HISTORY_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/sl-abort-near-cap-history-v1.json"
+            HEXAPOD_DEFAULT_STRAIGHT_HISTORY_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/sl-abort-default-straight-history-v1.json")
+        add_executable(test_p5_turn_entry_identity
+            tests/test_p5_turn_entry_identity.cpp
+            src/demo/scenes.cpp
+            src/demo/frame_sink.cpp)
+        target_link_libraries(test_p5_turn_entry_identity PRIVATE hexapod_pinocchio)
+        target_include_directories(test_p5_turn_entry_identity PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+        target_compile_options(test_p5_turn_entry_identity PRIVATE -Wall -Wextra -pedantic)
+        target_compile_definitions(test_p5_turn_entry_identity PRIVATE
+            HEXAPOD_P5_TURN_ENTRY_CUTPOINT_ISOLATED="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p5-turn-entry-cutpoint-isolated-v1.json"
+            HEXAPOD_P5_TURN_ENTRY_CUTPOINT_SEQUENTIAL="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p5-turn-entry-cutpoint-sequential-v1.json")
+        add_test(NAME test_p5_turn_entry_identity COMMAND test_p5_turn_entry_identity)
+
+        add_executable(test_pinocchio_p3_implicit_damping
+            tests/test_pinocchio_p3_implicit_damping.cpp
+            src/demo/scenes.cpp
+            src/demo/frame_sink.cpp)
+        target_link_libraries(test_pinocchio_p3_implicit_damping PRIVATE hexapod_pinocchio)
+        target_include_directories(test_pinocchio_p3_implicit_damping PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+        target_compile_options(test_pinocchio_p3_implicit_damping PRIVATE -Wall -Wextra -pedantic)
+        target_compile_definitions(test_pinocchio_p3_implicit_damping PRIVATE
+            HEXAPOD_P3_ABA_OVER_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p0-first-trip-buffer-sequential.json"
+            HEXAPOD_P3_SEQ_ABA_OVER_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/p3-seq-first-trip-buffer.json"
+            HEXAPOD_P3_NEAR_CAP_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/sl-abort-near-cap-v1.json")
+        add_test(NAME test_pinocchio_p3_implicit_damping COMMAND test_pinocchio_p3_implicit_damping)
         add_test(
             NAME test_pinocchio_hexapod_model_preconditioned
             COMMAND test_pinocchio_hexapod_model
@@ -168,6 +252,70 @@ if(MINPHYS3D_BUILD_TESTS)
             test_pinocchio_hexapod_model_preconditioned
             PROPERTIES ENVIRONMENT "HEXAPOD_PINOCCHIO_CONTACT_PRECONDITION=1"
         )
+        find_package(Python3 COMPONENTS Interpreter QUIET)
+        if(Python3_Interpreter_FOUND)
+            add_test(
+                NAME test_pinocchio_coupled_speed_predictor
+                COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../tools/test_coupled_speed_predictor.py"
+            )
+            add_test(
+                NAME test_pinocchio_speed_limit_kinematics_audit
+                COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../tools/audit_speed_limit_kinematics.py"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/speed-limit-governed-kinematics-v1.json"
+            )
+            add_test(
+                NAME test_pinocchio_near_cap_tibia_knockout
+                COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../tools/test_near_cap_tibia_knockout.py"
+            )
+            add_test(
+                NAME test_pinocchio_pitch_reversal_response
+                COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../tools/test_speed_limit_kinematics.py"
+            )
+        endif()
+        if(Python3_Interpreter_FOUND
+           AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../tools/contact_snapshot_audit.py"
+           AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/reverse-failure-v1.json"
+           AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/turn-failure-v2.json"
+           AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/reverse-failure-v3.json"
+           AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/forward-failure-v1.json")
+            add_test(
+                NAME test_pinocchio_contact_snapshot_audit
+                COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../tools/contact_snapshot_audit.py"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/reverse-failure-v1.json"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/turn-failure-v2.json"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/reverse-failure-v3.json"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/forward-failure-v1.json"
+            )
+            add_test(
+                NAME test_pinocchio_contact_basis_census
+                COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../tools/contact_basis_census.py"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/reverse-failure-v1.json"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/turn-failure-v2.json"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/reverse-failure-v3.json"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/forward-failure-v1.json"
+            )
+            add_test(
+                NAME test_pinocchio_compliant_contact_sweep
+                COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../tools/compliant_contact_sweep.py"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/reverse-failure-v1.json"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/turn-failure-v2.json"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/reverse-failure-v3.json"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/forward-failure-v1.json"
+            )
+            add_test(
+                NAME test_pinocchio_contact_snapshot_negative_cases
+                COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../tools/contact_snapshot_negative_tests.py"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../docs/contact-snapshots/reverse-failure-v1.json"
+            )
+        endif()
     endif()
     add_minphys3d_test(test_articulation tests/test_articulation.cpp)
     add_minphys3d_test(test_regression_step tests/test_regression_step.cpp)

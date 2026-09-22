@@ -89,7 +89,9 @@ Current code matches the intended policy:
   with the **same** Anderson capacity as the primary attempt (default 5).
   `SolverNotConverged` tries same-`dt` first. If warm half-steps still miss,
   a last-resort pair of half-steps starts from a full warm-start reset at
-  `max(2 * SolverIterations, 48)`.
+  `max(2 * SolverIterations, 48)`. If that still misses the NCP floor, two
+  further cold `dt/2` half-steps run logged cone-QP recovery unless
+  `HEXAPOD_PINOCCHIO_DISABLE_NCP_CCP_RECOVERY` is set.
 - Everything else (`ExtremePenetration`, `ReadState`, `NonFinite*`, `WriteState`,
   `InvalidDt`, …) → immediate `HeldLastGood`.
 

@@ -32,6 +32,8 @@ struct LocomotionDebugSnapshot {
     std::array<double, kNumLegs> commanded_tracking_error_m{};
     std::array<double, kNumLegs> post_clamp_distortion_m{};
     std::array<double, kNumLegs> post_clamp_distortion_mps{};
+    std::array<double, kNumLegs> latched_stroke_length_m{};
+    std::array<double, kNumLegs> latched_stroke_used_m{};
     std::array<bool, kNumLegs> contact_anchor_valid{};
     double min_measured_foot_world_z_m{0.0};
     double min_commanded_foot_world_z_m{0.0};

@@ -45,8 +45,8 @@ public:
     CapturingPhysicsSimBridge(std::string host,
                               int port,
                               int bus_loop_period_us,
-                              int physics_solver_iterations)
-        : inner_(std::move(host), port, bus_loop_period_us, physics_solver_iterations, nullptr) {}
+                              PhysicsSimSolverSettings solver_settings)
+        : inner_(std::move(host), port, bus_loop_period_us, solver_settings, nullptr) {}
 
     bool init() override { return inner_.init(); }
 
@@ -145,7 +145,8 @@ int main(int argc, char** argv) {
     std::this_thread::sleep_for(std::chrono::milliseconds{250});
 
     auto bridge = std::make_unique<CapturingPhysicsSimBridge>(
-        "127.0.0.1", port, bus_loop_period_us, harness.physics_solver_iterations);
+        "127.0.0.1", port, bus_loop_period_us,
+        physics_sim_test_utils::productionProximalSolverSettings());
     CapturingPhysicsSimBridge* bridge_ptr = bridge.get();
 
     control_config::ControlConfig cfg = harness.control_cfg;

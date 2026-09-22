@@ -204,7 +204,8 @@ struct GravityFeedforwardConfig {
     double delta_lpf_tau_s{kDefaultGravityFeedforwardDeltaLpfTauS};
     /** Model share of body weight as upward reaction at each stance foot (world +Z), rotated to leg frame. */
     bool include_foot_reaction{true};
-    /** Add link self-weight torques about pitch axes (optional; can overlap reaction model if mis-tuned). */
+    /** Add descendant-link self-weight torques on stance AND swing legs. Uses
+     * measured posture and requires valid joint feedback even in Full mode. */
     bool include_self_weight{false};
     double max_delta_coxa_rad{kDefaultGravityFeedforwardMaxDeltaCoxaRad};
     double max_delta_femur_rad{kDefaultGravityFeedforwardMaxDeltaFemurRad};

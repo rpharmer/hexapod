@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-21",
+  "revision": "055940da3a5bb7bc3983e5b120fa1258e25b32fe",
+  "tree_state": "dirty campaign plus gravity helper corrections and probe extension",
+  "solver": "pinocchio-proximal",
+  "implicit_damping": false,
+  "source_logs": {
+    "server": {"path": "/tmp/hexapod-server-stiffness-20260921/server-v2.jsonl", "sha256": "0e5cd4506413c20f9fde9844ebcb6be1bfa78f9a8e13f068cb1e3438a7c7f004"},
+    "oracle": {"path": "/tmp/hexapod-server-stiffness-20260921/oracle-v2.jsonl", "sha256": "1e5e75bb7e3f41ba20f830885c137cfb86574098aa08f39d8fc0fbd512ce2587"}
+  },
+  "comparison": "constructed 30 mm single-leg lift; correction begins at 1.5 s with 250 ms ramp; server IMU gating and LPF intentionally bypassed",
+  "frame": "sim world, Y-up; error = commanded sphere minus measured sphere",
+  "server_parameters": {"self_weight": true, "foot_reaction": false, "pitch_scales": [1, 1], "pitch_clamps_rad": [0.12, 0.12], "stiffness_gain_scale": 1},
+  "results": [
+    {"leg": 2, "pedestal": false, "server_error_norm_m": 0.00337099398, "oracle_error_norm_m": 0.00004868176196, "server_vertical_error_m": 0.00001531720847, "held_both": 0},
+    {"leg": 5, "pedestal": false, "server_error_norm_m": 0.003432125838, "oracle_error_norm_m": 0.00004482435286, "server_vertical_error_m": -0.0000338052999, "held_both": 0},
+    {"leg": 2, "pedestal": true, "server_error_norm_m": 0.004479480681, "oracle_error_norm_m": 4.615305802e-9, "server_vertical_error_m": -0.001229712966, "proxy_pitch_stiffness_nm_per_rad": [0.2988260116, 0.072804375], "actual_pitch_stiffness_nm_per_rad": [0.5237164705, 0.1564455291], "server_bias_rad": [0, 0.12, 0.12], "oracle_bias_rad": [-8.890612523e-8, 0.126191176, 0.06094380866], "held_both": 0},
+    {"leg": 5, "pedestal": true, "server_error_norm_m": 0.004625903777, "oracle_error_norm_m": 3.994834537e-9, "server_vertical_error_m": -0.001373352722, "proxy_pitch_stiffness_nm_per_rad": [0.2987900116, 0.072804375], "actual_pitch_stiffness_nm_per_rad": [0.530061312, 0.1564455291], "server_bias_rad": [0, 0.12, 0.12], "oracle_bias_rad": [-9.304797351e-5, 0.1246765107, 0.06091820219], "held_both": 0}
+  ],
+  "decision": "follow-up: conversion mismatch isolated, not proof of live walking failure cause; no default change",
+  "limitations": ["Not a gait test", "Server helper is pitch-only; oracle also compensates coxa", "Same post-liftoff start cannot demonstrate earlier first contact loss", "Actual stiffness is contact dependent; point-mass proxy is not calibrated actuator stiffness"]
+}

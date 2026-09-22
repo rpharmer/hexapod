@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "fixture": "docs/contact-snapshots/reverse-failure-v1.json",
+  "runtime_selection_enabled": false,
+  "contact_count": 5,
+  "all_contact_wrench_rank": 4,
+  "all_contact_articulated_jacobian_rank": 15,
+  "candidates": [
+    {
+      "name": "all",
+      "indices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "ids": [
+        7,
+        10,
+        13,
+        16,
+        19
+      ],
+      "legs": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "wrench_rank": 4,
+      "articulated_jacobian_rank": 15,
+      "wrench_error_relative": 0.0,
+      "impulse_norm": 0.017083488648071115
+    },
+    {
+      "name": "persistent_non_negligible_impulse",
+      "indices": [
+        0,
+        1,
+        2,
+        4
+      ],
+      "ids": [
+        7,
+        10,
+        13,
+        19
+      ],
+      "legs": [
+        1,
+        2,
+        3,
+        5
+      ],
+      "wrench_rank": 4,
+      "articulated_jacobian_rank": 12,
+      "wrench_error_relative": 0.0,
+      "impulse_norm": 0.017083488648071115
+    },
+    {
+      "name": "chassis_wrench_basis",
+      "indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "ids": [
+        7,
+        10,
+        13,
+        16
+      ],
+      "legs": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "wrench_rank": 4,
+      "articulated_jacobian_rank": 12,
+      "wrench_error_relative": 0.0008272055660744702,
+      "impulse_norm": 0.017064955659099584
+    },
+    {
+      "name": "articulated_jacobian_basis",
+      "indices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "ids": [
+        7,
+        10,
+        13,
+        16,
+        19
+      ],
+      "legs": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "wrench_rank": 4,
+      "articulated_jacobian_rank": 15,
+      "wrench_error_relative": 0.0,
+      "impulse_norm": 0.017083488648071115
+    }
+  ],
+  "determinism": {
+    "wrench_basis_ids": [
+      7,
+      10,
+      13,
+      16
+    ],
+    "stable": true
+  },
+  "notes": [
+    "Diagnostic only; no runtime contact pruning.",
+    "Candidate wrench errors reuse frozen impulses and are not a rigid re-solve."
+  ]
+}

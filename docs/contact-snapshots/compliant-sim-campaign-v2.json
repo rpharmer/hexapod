@@ -1,0 +1,209 @@
+{
+  "schema_version": 2,
+  "solver_mode": "test-only-compliant-contact-experiment",
+  "environment": "HEXAPOD_PINOCCHIO_COMPLIANT_CONTACT_EXPERIMENT=1",
+  "production_default_unchanged": true,
+  "parameters": {
+    "iterations": 256,
+    "normal_compliance": 1e-05,
+    "tangential_regularization": 1e-06,
+    "live_projected_tolerance": 0.001,
+    "max_impulse_ns": 1.0,
+    "initialization": "projected-admm-impulse"
+  },
+  "decision": "keep-opt-in",
+  "changes": [
+    "Reject unconverged compliant iterates instead of always-accepting a 20-iteration PGD result.",
+    "Warm-start from compliant contact velocity, never from mixed rigid ADMM velocity.",
+    "Initialize PGD from the rigid ADMM impulse rather than unconstrained LDLT.",
+    "Live accept uses 1e-3 projected residual or production NCP floor, plus a 1.0 N·s peak-impulse cap.",
+    "Do not warm-start from unconverged compliant impulses."
+  ],
+  "campaigns": [
+    {
+      "name": "kkt_1e-5_reverse_rejected",
+      "passed": false,
+      "held": 1732,
+      "held_reason": "solver_not_converged",
+      "reason": "frozen 1e-5 projected-KKT gate rejected physically good walking steps (ncp_dual ~1e-6)"
+    },
+    {
+      "name": "walk_distance_sequence",
+      "runs": 3,
+      "passed": 3,
+      "held": 0,
+      "speed_limit_faults": 0,
+      "peak_normal_impulse_ns": 0.10491,
+      "p99_projected_residual": 0.000999847078,
+      "max_penetration_m": 0.000930202485,
+      "max_mechanical_energy_delta_abs": 0.04494170472,
+      "artifact": "compliant-walk-distance-p99-v1.json"
+    },
+    {
+      "name": "long_walk_contact_health",
+      "runs": 3,
+      "passed": 3,
+      "held": 0,
+      "fault": "NONE",
+      "peak_normal_impulse_ns": 0.05725,
+      "max_penetration_m": 0.000484476477,
+      "p99_projected_residual": 0.000999789685
+    },
+    {
+      "name": "canonical_isolated_gait_transition",
+      "runs": 3,
+      "passed": 3
+    },
+    {
+      "name": "canonical_isolated_tilt_safety",
+      "runs": 3,
+      "passed": 2,
+      "failed_path_m": 0.09113,
+      "path_gate_m": 0.1,
+      "decision": "keep-0.10-path-gate"
+    },
+    {
+      "name": "long_walk_observability",
+      "runs": 3,
+      "results": [
+        {
+          "passed": false,
+          "held": 0,
+          "fault": "NONE",
+          "reason": "completed 12000 samples without the expected safety trip"
+        },
+        {
+          "passed": true,
+          "held": 0,
+          "fault": "TIP_OVER",
+          "first_fault_step": 3980
+        },
+        {
+          "passed": false,
+          "held": 1,
+          "fault": "BUS_TIMEOUT",
+          "failure_reason": "speed_limit",
+          "speed_limit_frame": "tibia",
+          "speed_limit_support": "swing",
+          "max_link_w": 10.159585
+        }
+      ]
+    },
+    {
+      "name": "rigid_production_sequential_same_rebuild",
+      "compliant_experiment": false,
+      "passed": false,
+      "reverse_held": 0,
+      "reverse_recovered_ncp": 108,
+      "turn_net_horizontal_m": 0.216341,
+      "turn_gate_m": 0.21
+    },
+    {
+      "name": "rigid_flake_census_v1",
+      "compliant_experiment": false,
+      "artifact": "rigid-flake-census-v1.json",
+      "sequential_walk_distance": "1/5",
+      "isolated_reverse": "3/5",
+      "canonical_turn_in_place": "2/5 vs 0.20 m",
+      "canonical_tilt_safety_trip": "4/5",
+      "class_a_mix": [
+        "sequential_ncp_hold",
+        "sequential_speed_limit_hold",
+        "isolated_reverse_ncp_hold",
+        "turn_translation_flake",
+        "tilt_path_before_rate_flake"
+      ]
+    },
+    {
+      "name": "census_ncp_fixtures",
+      "compliant_experiment": false,
+      "artifacts": [
+        "reverse-failure-v3.json",
+        "forward-failure-v1.json"
+      ],
+      "reverse_failure_v3_checksum": "3775b172bd8cb780e1735a09695c0b436ba702ae5911093ee5acbd8f42c27984",
+      "forward_failure_v1_checksum": "3112f0f916ac729169c1f4f1d8819877c41bdcb9463e2846c55df29ea98241f6",
+      "contact_count": 6,
+      "ncp_dual": [0.04866972364099642, 0.04973195379646276],
+      "chassis_wrench_basis_relative_error": [0.584137, 0.49112],
+      "wrench_gate_1e-6_passed": false,
+      "runtime_pruning": "off"
+    },
+    {
+      "name": "solver_mode_2_sequential_walk_distance",
+      "solver_mode": 2,
+      "environment": "HEXAPOD_WALK_TEST_SOLVER_MODE=pinocchio-compliant; HEXAPOD_PINOCCHIO_COMPLIANT_CONTACT_EXPERIMENT unset",
+      "runs": 3,
+      "passed": 2,
+      "held_ncp": 0,
+      "recovered_ncp": 0,
+      "p99_projected_residual": 0.000999862212,
+      "peak_normal_impulse_ns": 0.100641638041,
+      "max_penetration_m": 0.000740600459,
+      "max_mechanical_energy_delta_abs": 0.047507796437,
+      "failed_run": {
+        "run": 2,
+        "case": "straight_walk",
+        "reason": "stay-WALK after femur SpeedLimit",
+        "held": 656,
+        "failure_reason": "speed_limit",
+        "speed_limit_frame": "femur",
+        "max_link_w": 10.5283203125,
+        "peak_normal_impulse_ns": 0.100641638041,
+        "max_penetration_m": 0.000737090537
+      },
+      "decision": "keep-opt-in-not-promote"
+    },
+    {
+      "name": "speed_limit_initiating_trip_census",
+      "artifact": "speed-limit-census-v1.json",
+      "levers_applied": false,
+      "rigid": {
+        "captured": true,
+        "artifact": "speed-limit-rigid-v1.json",
+        "case": "slow_forward_walk",
+        "frame": "tibia",
+        "support": "swing",
+        "winner_w": 10.147553446137355,
+        "chassis_w": 0.5313683628837059,
+        "ncp_accepted": true,
+        "ncp_dual": 0.0008410316195038257,
+        "class": "commanded"
+      },
+      "mode_2": {
+        "captured": false,
+        "artifact": "speed-limit-mode2-v1.json",
+        "hunt_sequential": 28,
+        "hunt_isolated_straight": 8,
+        "prior_telemetry": "mode2-seq-r2 straight_walk femur stance held 656 max_link_w 10.53 unclassified"
+      },
+      "decision": "no-production-lever"
+    },
+    {
+      "name": "speed_limit_rate_census_v1",
+      "artifact": "speed-limit-rate-census-v1.json",
+      "levers_applied": false,
+      "rigid_v2": {
+        "captured": true,
+        "artifact": "speed-limit-rigid-v2.json",
+        "case": "forward_walk",
+        "frame": "femur",
+        "support": "swing",
+        "winner_w": 11.393689742074701,
+        "class": "slew_path",
+        "trip_mechanism": "contact_amplified",
+        "composed_vin_abs_sum": 22.430945214113692,
+        "held_speed_limit_steps": 1281
+      },
+      "mode_2": {
+        "captured": false,
+        "budget_sequential": 5,
+        "sequential_passed": 4
+      },
+      "decision": "no-production-lever-no-L1"
+    }
+  ],
+  "next": "keep rigid SolverMode=1; slew-capped per-joint targets with large PD error, contact then amplifies link ω above 10; do not raise the 10 rad/s cap; do not revive L1 without aggressive_governor remesure; do not enable pruning; promotion still requires sequential walk-distance green without mode 2 / experiment",
+  "tilt_safety_trip": "rigid census 4/5 isolated pass; one path-before-rate flake 0.053 m vs 0.10 m",
+  "solver_mode_2": "wired as non-default protocol/config value; sequential remesure 2/3 (SpeedLimit flake, not NCP); initiating vin/vaba snapshot not reproduced in 28+8 hunt or rate-census budget 5"
+}

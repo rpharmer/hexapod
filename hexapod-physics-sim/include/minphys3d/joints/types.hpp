@@ -101,6 +101,9 @@ struct ServoJoint {
     Real angularImpulse2 = 0.0;
     Real servoImpulseSum = 0.0;
     Real targetAngle = 0.0;
+    /// Finite-difference velocity of the incoming position target. This is
+    /// command metadata, not a constraint or an imposed joint velocity.
+    Real targetVelocity = 0.0;
     Real maxServoTorque = 0.0;
     /// Motor no-load axis speed (rad/s). Together with maxServoTorque this defines the
     /// drive torque-speed envelope; 0 disables speed-dependent torque derating.

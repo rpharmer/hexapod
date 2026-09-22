@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <string>
 
 namespace {
 
@@ -30,6 +32,31 @@ UnifiedGaitDescription walkEntryStance(const UnifiedGaitDescription& target) {
 // φ=0 so this seed does not jump the feet to a mid-stroke target.
 constexpr double kFirstStridePhaseSeed = 0.35;
 
+/**
+ * Load-aware phase hold. Leftover §3.15 measured planned-swing feet still in
+ * contact for 30-64% of their swing and realised support of 4.2-4.5 feet
+ * against 3.0 planned: cadence keeps advancing while the plant has not
+ * executed the previous liftoff, so the next stance is scheduled onto a leg
+ * that never left the ground. Slowing the stride integrator while a scheduled
+ * swing is still loaded makes cadence a function of what the plant achieved.
+ *
+ * Early swing legitimately still touches, so the grace fraction ignores the
+ * first quarter of swing. The hold reuses the governor's existing 0.25 cadence
+ * floor rather than freezing, and it is budgeted to one swing duration so a
+ * permanently loaded foot cannot deadlock the gait.
+ */
+constexpr double kLoadPhaseGraceFraction = 0.25;
+constexpr double kLoadPhaseHoldScale = 0.25;
+constexpr double kLoadPhaseMaxHoldFraction = 1.0;
+
+bool loadAwarePhaseEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("HEXAPOD_WALK_LOAD_PHASE");
+        return value != nullptr && value[0] != '\0' && std::string{value} != "0";
+    }();
+    return enabled;
+}
+
 } // namespace
 
 GaitScheduler::GaitScheduler(control_config::GaitConfig config)
@@ -54,23 +81,34 @@ void GaitScheduler::reset() {
     last_cmd_vy_mps_ = 0.0;
 }
 
-GaitState GaitScheduler::preview(const RobotState&,
+void GaitScheduler::debugRestore(const GaitState& gait) {
+    phase_accum_ = gait.phase.empty() ? 0.0 : gait.phase[0];
+    last_update_us_ = gait.timestamp_us;
+    committed_gait_ = GaitType::TRIPOD;
+    committed_initialized_ = true;
+    have_last_blended_ = false;
+    walk_entry_blend_ = false;
+    was_walking_ = true;
+}
+
+GaitState GaitScheduler::preview(const RobotState& est,
                                  const MotionIntent& intent,
                                  const SafetyState& safety,
                                  const BodyTwist& cmd_twist,
                                  const CommandGovernorState& governor) {
-    return compute(intent, safety, cmd_twist, governor, false);
+    return compute(est, intent, safety, cmd_twist, governor, false);
 }
 
-GaitState GaitScheduler::update(const RobotState&,
+GaitState GaitScheduler::update(const RobotState& est,
                                 const MotionIntent& intent,
                                 const SafetyState& safety,
                                 const BodyTwist& cmd_twist,
                                 const CommandGovernorState& governor) {
-    return compute(intent, safety, cmd_twist, governor, true);
+    return compute(est, intent, safety, cmd_twist, governor, true);
 }
 
-GaitState GaitScheduler::compute(const MotionIntent& intent,
+GaitState GaitScheduler::compute(const RobotState& est,
+                                 const MotionIntent& intent,
                                  const SafetyState& safety,
                                  const BodyTwist& cmd_twist,
                                  const CommandGovernorState& governor,
@@ -80,6 +118,7 @@ GaitState GaitScheduler::compute(const MotionIntent& intent,
     out.timestamp_us = now;
 
     double phase_accum = phase_accum_;
+    double drag_hold_s = drag_hold_s_;
     TimePointUs last_update_us = last_update_us_;
     GaitType committed_gait = committed_gait_;
     bool committed_initialized = committed_initialized_;
@@ -99,6 +138,7 @@ GaitState GaitScheduler::compute(const MotionIntent& intent,
 
     if (!walking) {
         was_walking = false;
+        drag_hold_s = 0.0;
         last_cmd_vx_mps = cmd_twist.linear_mps.x;
         last_cmd_vy_mps = cmd_twist.linear_mps.y;
         for (int i = 0; i < kNumLegs; ++i) {
@@ -123,6 +163,7 @@ GaitState GaitScheduler::compute(const MotionIntent& intent,
             last_cmd_vx_mps_ = last_cmd_vx_mps;
             last_cmd_vy_mps_ = last_cmd_vy_mps;
             was_walking_ = was_walking;
+            drag_hold_s_ = drag_hold_s;
             last_update_us_ = out.timestamp_us;
         }
         return out;
@@ -219,8 +260,36 @@ GaitState GaitScheduler::compute(const MotionIntent& intent,
     out.swing_duration_s = governor.freeze_phase ? 0.0 : (1.0 - out.duty_factor) / step_hz;
     out.phase_offset = blended.phase_offset;
 
+    // Hold the stride integrator while a scheduled swing is still carrying load,
+    // so the next stance is not scheduled onto a foot that never lifted.
+    double load_phase_scale = 1.0;
+    if (loadAwarePhaseEnabled() && !governor.freeze_phase) {
+        const double duty = std::clamp(blended.duty_factor, 0.0, 1.0);
+        const double swing_span = std::max(1.0 - duty, 1e-6);
+        bool loaded_swing = false;
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            const std::size_t leg_index = static_cast<std::size_t>(leg);
+            const double p = wrap01(phase_accum + blended.phase_offset[leg_index]);
+            if (p < duty) {
+                continue;
+            }
+            const double swing_progress = (p - duty) / swing_span;
+            if (swing_progress > kLoadPhaseGraceFraction && est.foot_contacts[leg_index]) {
+                loaded_swing = true;
+                break;
+            }
+        }
+        const double budget_s = kLoadPhaseMaxHoldFraction * out.swing_duration_s;
+        if (!loaded_swing) {
+            drag_hold_s = 0.0;
+        } else if (drag_hold_s < budget_s) {
+            load_phase_scale = kLoadPhaseHoldScale;
+            drag_hold_s += dt.value;
+        }
+    }
+
     if (!governor.freeze_phase) {
-        phase_accum = wrap01(phase_accum + dt.value * step_hz);
+        phase_accum = wrap01(phase_accum + dt.value * step_hz * load_phase_scale);
     }
 
     for (int leg = 0; leg < kNumLegs; ++leg) {
@@ -238,6 +307,7 @@ GaitState GaitScheduler::compute(const MotionIntent& intent,
 
     if (commit_state) {
         phase_accum_ = phase_accum;
+        drag_hold_s_ = drag_hold_s;
         last_update_us_ = last_update_us;
         committed_gait_ = committed_gait;
         committed_initialized_ = committed_initialized;

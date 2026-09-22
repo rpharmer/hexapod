@@ -77,6 +77,11 @@ public:
     [[nodiscard]] std::array<bool, kNumLegs> slewClampHitSnapshot() const {
         return slew_clamp_hit_.read();
     }
+    /// Test-only P5: restore gait history, governor snapshot, and contact anchors.
+    void debugRestoreTurnEntryController(const GaitState& gait,
+                                         const CommandGovernorState& governor,
+                                         const std::array<bool, kNumLegs>& anchor_valid,
+                                         const std::array<Vec3, kNumLegs>& anchor_world);
     [[nodiscard]] const NavigationManager* navigationManager() const { return navigation_manager_.get(); }
     [[nodiscard]] NavigationManager* navigationManager() { return navigation_manager_.get(); }
 

@@ -1,0 +1,232 @@
+{
+  "campaigns": [
+    {
+      "healthy": 12000,
+      "held": 0,
+      "max_height_error_m": 0.00613535,
+      "name": "proximal_stand_acceptance",
+      "p99_iterations": 1,
+      "passed": true,
+      "stance_drift_rms_m": 1.449e-06
+    },
+    {
+      "cases": [
+        "forward",
+        "slow-forward",
+        "reverse",
+        "straight",
+        "turn-in-place"
+      ],
+      "held": 0,
+      "max_peak_speed_mps": 0.358189,
+      "name": "walk_distance_sequence",
+      "passed": true,
+      "speed_limit_faults": 0
+    },
+    {
+      "max_body_undershoot_m": -0.00510527,
+      "min_foot_tip_world_z_m": 0.0168462,
+      "name": "wave_slow_walk_foot_clearance",
+      "passed": true
+    },
+    {
+      "max_body_undershoot_m": -0.00613533,
+      "max_tracking_error_m": 0.0516379,
+      "min_foot_tip_world_z_m": 0.0174681,
+      "name": "slow_fwd_walk_foot_clearance",
+      "passed": true
+    },
+    {
+      "max_joint_error_rad": 0.102458,
+      "max_tracking_error_m": 0.0140691,
+      "min_body_height_m": 0.15086235,
+      "name": "tripod_support_baseline",
+      "passed": true
+    },
+    {
+      "fault": "NONE",
+      "healthy": 1280,
+      "held": 0,
+      "name": "aggressive_governor",
+      "passed": true
+    },
+    {
+      "healthy": 720,
+      "held": 0,
+      "max_iterations": 27,
+      "name": "exact_replay_seed0_200hz",
+      "p99_step_time_ms": 2.6465,
+      "passed": true
+    },
+    {
+      "healthy": 72000,
+      "held": 0,
+      "max_iterations": 50,
+      "max_step_time_ms": 8.4431,
+      "name": "exact_replay_100_seeds_200hz",
+      "non_converged": 0,
+      "p99_step_time_ms": 3.2502,
+      "passed": true,
+      "unsupported": 0
+    },
+    {
+      "healthy": 720,
+      "held": 0,
+      "max_iterations": 41,
+      "name": "exact_replay_seed0_120hz",
+      "p99_step_time_ms": 2.5589,
+      "passed": true
+    },
+    {
+      "healthy": 720,
+      "held": 0,
+      "max_iterations": 21,
+      "name": "exact_replay_seed0_480hz",
+      "p99_step_time_ms": 1.2185,
+      "passed": true
+    },
+    {
+      "baseline_result": {
+        "fault": "BUS_TIMEOUT",
+        "path_length_m": 2.077481,
+        "first_fault_step": 4103,
+        "failure_reason": "SpeedLimit"
+      },
+      "default_result": {
+        "fault": "BUS_TIMEOUT",
+        "path_length_m": 3.409334,
+        "first_fault_step": 3451,
+        "failure_reason": "SpeedLimit"
+      },
+      "name": "long_walk_observability_stress",
+      "passed": false,
+      "reason": "with deterministic 5 ms command timestamps both solvers exceed the path gate, then HeldLastGood/SpeedLimit becomes BUS_TIMEOUT before the expected TIP_OVER or BODY_COLLAPSE",
+      "additional_variants": [
+        {
+          "normal_compliance": 3e-05,
+          "tangential_regularization": 1e-06,
+          "path_length_m": 0.503317,
+          "fault": "NONE",
+          "passed": false
+        },
+        {
+          "normal_compliance": 3e-05,
+          "tangential_regularization": 3e-07,
+          "path_length_m": 0.50965,
+          "fault": "NONE",
+          "passed": false
+        }
+      ],
+      "interpretation": "The earlier safe-stall measurements used wall-clock command timestamps and are superseded. The remaining failure is the existing speed-limit/recovery class, not rigid NCP convergence."
+    },
+    {
+      "name": "turn_parameter_check",
+      "default_tangential_regularization": 1e-06,
+      "default_yaw_delta_rad": "0.20-0.23 across repeats",
+      "lower_tangential_regularization": [
+        {
+          "value": 1e-07,
+          "yaw_delta_rad": 0.238132,
+          "passed": false
+        },
+        {
+          "value": 1e-08,
+          "yaw_delta_rad": 0.19231,
+          "passed": false
+        }
+      ],
+      "gate_yaw_delta_min_rad": 0.25,
+      "decision": "reject-lower-regularization",
+      "reason": "clock-confounded historical sweep; deterministic timing passes the unchanged turn gate at the default parameter, so this sweep cannot justify retuning contact"
+    },
+    {
+      "name": "deterministic_command_clock_audit",
+      "passed": true,
+      "change": "continuously refreshed regression phases now advance MotionIntent timestamps by the configured fixed sample period; stale-command phases retain wall time",
+      "compliant_turn": {
+        "yaw_delta_rad": 2.616542,
+        "net_displacement_m": 0.187589,
+        "fault": "NONE",
+        "passed": true
+      },
+      "rigid_turn": {
+        "yaw_delta_rad": 2.394367,
+        "net_displacement_m": 0.188908,
+        "fault": "NONE",
+        "passed": true
+      }
+    },
+    {
+      "name": "canonical_profile_after_clock_fix",
+      "passed": true,
+      "passing_cases": [
+        "steady_forward_walk",
+        "turn_in_place",
+        "gait_transition_stability",
+        "aggressive_governor",
+        "command_timeout_fallback",
+        "low_support_walk",
+        "tilt_safety_trip"
+      ],
+      "command_timeout_height_m": 0.14,
+      "command_timeout_first_fault": "COMMAND_TIMEOUT",
+      "command_timeout_held_samples": 0,
+      "low_support_all_phase_tracking_m": 0.090663,
+      "low_support_walk_tracking_m": 0.056435,
+      "low_support_tracking_gate_m": 0.08
+    },
+    {
+      "name": "rigid_canonical_repeatability",
+      "passed": false,
+      "passing_cases": 6,
+      "total_cases": 7,
+      "turn_translation_gate_m": 0.2,
+      "turn_translation_samples_m": [
+        0.207316,
+        0.190901,
+        0.193149,
+        0.199388
+      ],
+      "decision": "follow-up-rigid-turn-variability",
+      "reason": "one of four deterministic-clock rigid turn runs exceeded the unchanged translation gate; do not loosen the gate"
+    },
+    {
+      "name": "speed_limit_trace_correction",
+      "passed": true,
+      "change": "winner is ranked by max(linear/max_linear, angular/max_angular) and trace includes winning linear and angular speeds",
+      "guard_behavior_changed": false,
+      "example_linear_violation_mps": 2.36082,
+      "linear_limit_mps": 2.0
+    },
+    {
+      "name": "coordinated_leg_rate_prototype",
+      "kept": false,
+      "rule": "sum(abs(per-leg joint target rates)) <= one motor no-load speed",
+      "stress_result": {
+        "held_samples": 0,
+        "fault": "NONE",
+        "path_length_m": 2.392615,
+        "stride_count": 17
+      },
+      "regression": {
+        "case": "aggressive_governor",
+        "observed_stride_count": 1,
+        "required_stride_count": 2
+      },
+      "decision": "reject-and-revert",
+      "reason": "blanket coordinated rate limiting removes the speed hold but suppresses established gait cadence"
+    }
+  ],
+  "decision": "keep-opt-in",
+  "environment": "HEXAPOD_PINOCCHIO_COMPLIANT_CONTACT_EXPERIMENT=1",
+  "next": "resolve deterministic long-walk SpeedLimit recovery and rigid turn translation variability; collect explicit compliant residual/energy telemetry before considering protocol mode",
+  "parameters": {
+    "iterations": 20,
+    "normal_compliance": 1e-05,
+    "tangential_regularization": 1e-06
+  },
+  "production_default_unchanged": true,
+  "schema_version": 1,
+  "solver_mode": "test-only-compliant-contact-experiment",
+  "tilt_safety_trip": "tracked-separately"
+}

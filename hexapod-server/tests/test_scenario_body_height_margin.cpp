@@ -80,8 +80,10 @@ ScenarioStats summarizeScenario(const ScenarioDefinition& scenario) {
 
 int main() {
     const double standing_height_m = computeStandingBodyHeightM();
-    const double min_safe_body_height_m =
-        standing_height_m + control_config::kDefaultGovernorBodyHeightSquatMaxM - 0.001;
+    // Production command pose is 0.14 m (same as the proximal stand CTest). Governor squat is
+    // supervisor headroom, not a scenario command floor.
+    constexpr double kProductionBodyHeightM = 0.14;
+    const double min_safe_body_height_m = kProductionBodyHeightM;
 
     const std::array<const char*, 2> scenario_paths{
         "../scenarios/01_nominal_stand_walk.toml",

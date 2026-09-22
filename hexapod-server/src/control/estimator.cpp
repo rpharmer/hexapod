@@ -159,6 +159,8 @@ RobotState SimpleEstimator::update(const RobotState& raw) {
     est.sample_id = raw.sample_id;
     est.timestamp_us = raw.timestamp_us;
     est.joint_state_quality = raw.joint_state_quality;
+    est.joint_stiffness_nm_per_rad = raw.joint_stiffness_nm_per_rad;
+    est.joint_stiffness_valid = raw.joint_stiffness_valid;
     est.body_twist_state.body_trans_mps = Vec3{};
 
     const HexapodGeometry& geometry = geometry_config::activeHexapodGeometry();

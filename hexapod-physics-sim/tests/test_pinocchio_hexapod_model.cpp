@@ -4,10 +4,13 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <random>
+#include <string>
 #include <vector>
 
 namespace {
@@ -55,6 +58,14 @@ bool CheckSelectedFootSupport(
                       << " iterations=" << diagnostics.iterations << "\n";
             return false;
         }
+        for (const auto bodyId : scene.body_ids) {
+            const auto& body = world.GetBody(bodyId);
+            if (Length(body.velocity) > settings.maxLinearSpeed
+                || Length(body.angularVelocity) > settings.maxAngularSpeed) {
+                std::cerr << label << " accepted an over-limit published body\n";
+                return false;
+            }
+        }
         if (diagnostics.contactConstraintCount > enabledCount) {
             std::cerr << label << " accepted contacts from a masked body constraints="
                       << diagnostics.contactConstraintCount
@@ -98,6 +109,43 @@ bool CheckExternalCorrectionSynchronization() {
         return false;
     }
 
+    // Neither a dangerous correction nor an off-axis distal speed can replace
+    // the corrected rollback baseline. Test the real raw world as well as q/v.
+    for (const bool distal : {false, true}) {
+        if (distal) world.GetBody(scene.legs[2].tibia).velocity.x = 100.0;
+        else world.GetBody(scene.body).velocity.x = 100.0;
+        if (model.synchronizeAfterExternalCorrection(world)
+            || !model.readState(world, q, v) || std::abs(q[0] - correctedX) > 1e-9) {
+            std::cerr << "unsafe external correction became rollback baseline\n";
+            return false;
+        }
+        ProximalStepDiagnostics restoredDiagnostics{};
+        if (!model.validateDynamicState(q, v, {}, restoredDiagnostics)) return false;
+    }
+    world.GetBody(scene.legs[2].tibia).position.x = std::numeric_limits<double>::quiet_NaN();
+    if (model.synchronizeAfterExternalCorrection(world)
+        || !std::isfinite(world.GetBody(scene.legs[2].tibia).position.x)) {
+        std::cerr << "non-finite distal correction was not restored\n";
+        return false;
+    }
+    if (!model.readState(world, q, v)) return false;
+    const auto safeQ = q, safeV = v;
+    for (int injection = 0; injection < 5; ++injection) {
+        auto candidateQ = safeQ, candidateV = safeV;
+        if (injection == 0) candidateV[0] = std::numeric_limits<double>::quiet_NaN();
+        if (injection == 1) std::fill(candidateQ.begin() + 3, candidateQ.begin() + 7, 0.0);
+        if (injection == 2) candidateV[0] = 2.1;
+        if (injection == 3) candidateV[3] = 10.1;
+        if (injection == 4) candidateV.pop_back();
+        ProximalStepDiagnostics candidateDiagnostics{};
+        if (model.writeValidatedState(world, candidateQ, candidateV, {}, candidateDiagnostics)
+            || !model.readState(world, q, v)) {
+            std::cerr << "invalid candidate write was accepted injection=" << injection << '\n';
+            return false;
+        }
+        for (std::size_t i = 0; i < q.size(); ++i) if (std::abs(q[i] - safeQ[i]) > 1e-9) return false;
+        for (std::size_t i = 0; i < v.size(); ++i) if (std::abs(v[i] - safeV[i]) > 1e-9) return false;
+    }
     world.GetBody(scene.body).velocity.x = std::numeric_limits<double>::quiet_NaN();
     ProximalSolverSettings settings{};
     ProximalStepDiagnostics diagnostics{};
@@ -330,14 +378,44 @@ int Run() {
         std::cerr << "failed to inject excessive pre-integration speed\n";
         return 1;
     }
+    const char* speedLimitSnapshotPath = "/tmp/hexapod-speed-limit-unit.json";
+    std::remove(speedLimitSnapshotPath);
+    ::setenv("HEXAPOD_PINOCCHIO_SPEED_LIMIT_SNAPSHOT_PATH", speedLimitSnapshotPath, 1);
     ProximalStepDiagnostics speedDiagnostics{};
     if (model.stepProximal(world, 1.0 / 240.0, proximalSettings, speedDiagnostics)
         || speedDiagnostics.status != ProximalStepStatus::HeldLastGood
         || speedDiagnostics.failureReason != ProximalFailureReason::SpeedLimit
         || !model.readState(world, q, v)) {
+        ::unsetenv("HEXAPOD_PINOCCHIO_SPEED_LIMIT_SNAPSHOT_PATH");
         std::cerr << "excessive speed did not rollback to a readable last-valid state reason="
                   << static_cast<int>(speedDiagnostics.failureReason) << "\n";
         return 1;
+    }
+    ::unsetenv("HEXAPOD_PINOCCHIO_SPEED_LIMIT_SNAPSHOT_PATH");
+    {
+        std::ifstream snapshot(speedLimitSnapshotPath);
+        std::string contents;
+        std::getline(snapshot, contents);
+        if (!snapshot || contents.find("\"kind\":\"speed_limit\"") == std::string::npos
+            || contents.find("\"schema_version\":2") == std::string::npos
+            || contents.find("\"kinematics\":{") == std::string::npos
+            || contents.find("\"angular_jacobian\"") == std::string::npos
+            || contents.find("\"nonlinear_force\"") == std::string::npos
+            || contents.find("\"gravity_force\"") == std::string::npos
+            || contents.find("\"ncp\":{\"accepted\":true") == std::string::npos
+            || contents.find("\"target_angle\"") == std::string::npos
+            || contents.find("\"raw_server_target\"") == std::string::npos
+            || contents.find("\"target_rate_radps\"") == std::string::npos
+            || contents.find("\"requested_tau\"") == std::string::npos
+            || contents.find("\"available_tau\"") == std::string::npos
+            || contents.find("\"tau_saturated\"") == std::string::npos
+            || contents.find("\"recovery_slew_active\"") == std::string::npos
+            || contents.find("\"composed_vin_abs_sum\"") == std::string::npos
+            || contents.find("\"no_load_speed\"") == std::string::npos) {
+            std::cerr << "speed-limit snapshot was missing or incomplete path="
+                      << speedLimitSnapshotPath << "\n";
+            return 1;
+        }
     }
     const std::uint64_t retriesBeforeExtremePenetration = speedDiagnostics.retries;
 

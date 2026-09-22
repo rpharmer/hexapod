@@ -1,0 +1,75 @@
+{
+  "decision": "no-production-lever",
+  "kind": "speed_limit_rate_census",
+  "levers_not_applied": [
+    "maxAngularSpeed 10",
+    "no L1 sum(|qdot|) cap",
+    "no gait retune",
+    "no vNew clamp",
+    "retry gain 0.5",
+    "no pruning",
+    "no mode-2 promotion"
+  ],
+  "mode_2": {
+    "budget_sequential": 5,
+    "captured": false,
+    "note": "Did not spend another 28-run screen. Hunt file speed-limit-mode2-v1.json unchanged.",
+    "sequential_failed_not_speed_limit": [
+      "r4 straight_walk average speed band"
+    ],
+    "sequential_passed": 4
+  },
+  "next": "Slew-capped per-joint targets with large PD error; contact then amplifies WORLD_ALIGNED \u03c9 above 10. Do not raise the 10 rad/s cap. Do not revive L1 without aggressive_governor remesure.",
+  "production_default_unchanged": true,
+  "rigid_v2": {
+    "artifact": "speed-limit-rigid-v2.json",
+    "case": "forward_walk",
+    "chassis_w": 2.0510929792913486,
+    "class": "slew_path",
+    "composed_vin_abs_sum": 22.43094521411369,
+    "contact_constraint_count": 3,
+    "frame": "femur",
+    "frame_name": "leg_0_femur_body",
+    "held_speed_limit_steps": 1281,
+    "joints": [
+      {
+        "contact_dv": -3.2436784372515843,
+        "err": 0.509067479995003,
+        "name": "coxa",
+        "target_rate_radps": 4.4793925285339355,
+        "tau_saturated": false,
+        "vin": 6.672153855738856,
+        "vnew": 3.3414867107119868
+      },
+      {
+        "contact_dv": 4.8897525828549115,
+        "err": 0.7805348113633843,
+        "name": "femur",
+        "target_rate_radps": 7.479982376098633,
+        "tau_saturated": true,
+        "vin": 7.5321543694908835,
+        "vnew": 12.38562611608791
+      },
+      {
+        "contact_dv": -9.694084931015293,
+        "err": -0.6973403665977284,
+        "name": "tibia",
+        "target_rate_radps": -7.479982376098633,
+        "tau_saturated": true,
+        "vin": -8.226636988883953,
+        "vnew": -17.834553715432445
+      }
+    ],
+    "ncp_accepted": true,
+    "ncp_dual": 0.003965987634079644,
+    "ncp_physically_converged": false,
+    "no_load_speed": 7.479982508547127,
+    "recovery_slew_active": false,
+    "support": "swing",
+    "trip_mechanism": "contact_amplified",
+    "winner_w": 11.3936897420747
+  },
+  "schema_version": 1,
+  "solver_mode_wsl": 1,
+  "v1_left_in_place": "speed-limit-rigid-v1.json"
+}

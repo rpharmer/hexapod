@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "date_utc": "2026-09-16",
+  "captured": "docs/contact-snapshots/speed-limit-lambda-scale-hunt-sequential-r3.json",
+  "audit": "docs/contact-snapshots/speed-limit-lambda-scale-hunt-sequential-r3-audit.json",
+  "incoming_over_cap_links": [],
+  "winner_frame": "leg_1_tibia_body",
+  "speed_in": 9.685653212835119,
+  "speed_free": 10.357527714710251,
+  "speed_after": 10.411134778308504,
+  "class": "aba_over_cap",
+  "notes": "speed_in 9.69 < 10 so not commanded-tibia v1; speed_free 10.36 already over cap so lambda-scale must no-op. Frozen v2 (femur speed_in 2.90 -> after 11.21, large contact_dv) remains the implement class. Prior sequential reverse femur CCP accept=0 reason=10 is that class.",
+  "proceed": true
+}

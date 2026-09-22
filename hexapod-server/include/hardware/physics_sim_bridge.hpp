@@ -49,6 +49,7 @@ struct PhysicsSimSolverTelemetry {
     float ncp_dual_residual{0.0f};
     float ncp_complementarity_residual{0.0f};
     float cone_residual{0.0f};
+    float compliant_projected_residual{0.0f};
     float peak_normal_impulse{0.0f};
     float peak_friction_impulse{0.0f};
     float sum_friction_impulse_world_x{0.0f};
@@ -63,6 +64,10 @@ struct PhysicsSimSolverTelemetry {
     float peak_servo_torque_utilization{0.0f};
     float preintegration_linear_speed{0.0f};
     float preintegration_angular_speed{0.0f};
+    float chassis_preintegration_angular_speed{0.0f};
+    float max_link_preintegration_angular_speed{0.0f};
+    std::uint8_t speed_limit_frame{0};
+    std::uint8_t speed_limit_support{0};
     float max_contact_penetration{0.0f};
     float mechanical_energy_delta{0.0f};
     float actuator_work{0.0f};
@@ -126,6 +131,8 @@ public:
     bool sendStateCorrection(const physics_sim::StateCorrection& correction);
     std::optional<BridgeCommandResultMetadata> last_bridge_result() const override;
     [[nodiscard]] bool supportsAutomaticBusTimeoutRecovery() const override { return true; }
+    [[nodiscard]] bool usesPhysicsSimBodyAngularConvention() const override { return true; }
+    [[nodiscard]] bool supportsAbsoluteBodyPositionFeedback() const override { return true; }
     [[nodiscard]] bool latestSampleHealthyForAutomaticRecovery() const override;
     [[nodiscard]] std::optional<PhysicsSimSolverTelemetry> latestSolverTelemetry() const;
     [[nodiscard]] std::vector<PhysicsSimObstacleFootprint> latestObstacleFootprints() const override;

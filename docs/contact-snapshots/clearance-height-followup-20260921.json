@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-21",
+  "purpose": "Rebuilt-binary follow-up screens; one run per arm, not promotion qualification",
+  "tree": "Same dirty campaign as clearance-height-hold-20260921.json; no production source edits in this batch",
+  "solver_mode": 1,
+  "max_iterations": 24,
+  "implicit_damping": false,
+  "body_height_m": 0.14,
+  "raw_log_directory": "/tmp/hexapod-clearance-followup-20260921",
+  "excluded_logs": ["-.stdout", "-.stderr"],
+  "exclusion_reason": "Shell argument forwarding mistake produced unlabelled default runs; excluded, never counted in scorecard",
+  "binary_sha256": {
+    "test_locomotion_regression_suite": "6148368efb5ea941b050b0f7a200f199305a094da2779b28f2a35fc1a67fa5ef",
+    "test_physics_sim_slow_fwd_walk_foot_clearance": "b29875d3305f169fcfc80e71a5af37d68b3c9c66d84db7b87916f758c469d8f9",
+    "test_physics_sim_wave_slow_walk_foot_clearance": "390a88bb2b91c1e7a095391d4c1fb86277694fc951b385f7a7be11288084404e"
+  },
+  "results": [
+    {"log": "governor-baseline.stdout", "passed": true, "stride_count": 2, "path_m": 0.301058, "fault": "NONE"},
+    {"log": "governor-hh0.stdout", "passed": true, "stride_count": 2, "path_m": 0.400945, "fault": "NONE"},
+    {"log": "slow-baseline.stdout", "passed": true, "min_body_height_m": 0.14397625625133514, "undershoot_m": -0.0039762562513351307},
+    {"log": "slow-hh0.stdout", "passed": true, "min_body_height_m": 0.14220532774925232, "undershoot_m": -0.002205327749252306},
+    {"log": "wave-baseline.stdout", "passed": true, "min_body_height_m": 0.13953863084316254, "undershoot_m": 0.0004613691568374767},
+    {"log": "wave-hh0.stdout", "passed": true, "min_body_height_m": 0.13448984920978546, "undershoot_m": 0.0055101507902145519}
+  ],
+  "decision": "Keep height hold default 1.0. hh0 remains experimental: sequential still has a turn miss and WAVE height margin decreased in this single-run screen. No full verification or reliability claim."
+}

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "kind": "speed_limit_hunt",
+  "captured": false,
+  "plant": "pinocchio-compliant",
+  "solver_mode": 2,
+  "experiment": null,
+  "hexapod_walk_test_solver_mode": "pinocchio-compliant",
+  "hunt": {
+    "sequential_walk_distance": 28,
+    "isolated_straight_walk": 8,
+    "traced_sequential_speed_limit_lines": 0,
+    "failures_not_speed_limit": [
+      "turn_in_place net drift",
+      "straight_walk average speed band",
+      "reverse_walk average speed band"
+    ]
+  },
+  "prior_telemetry_only": {
+    "source": "mode2-seq-r2 straight_walk stay-WALK",
+    "frame": "femur",
+    "support": "stance",
+    "held": 656,
+    "max_link_w": 10.5283203125,
+    "chassis_w": 2.363107442856,
+    "ncp_recovered": 0,
+    "class": "unclassified-no-vin-vaba-snapshot"
+  },
+  "note": "No initiating full-gain SpeedLimit snapshot landed. Do not treat this file as a kinematics fixture."
+}

@@ -2,6 +2,8 @@
 #include "math_types.hpp"
 #include "physics_sim_protocol.hpp"
 #include "types.hpp"
+#include "estimator.hpp"
+#include "physics_sim_estimator.hpp"
 
 #include <atomic>
 #include <array>
@@ -155,6 +157,8 @@ private:
                 rsp.body_angular_velocity = {0.0f, 0.2f, 0.0f};
                 rsp.joint_angles.fill(0.0f);
                 rsp.joint_velocities.fill(0.0f);
+                for (std::size_t i = 0; i < 18; ++i)
+                    rsp.actuator_stiffness_nm_per_rad[i] = static_cast<float>(0.25 + i * 0.03125);
                 rsp.solver_status = solver_status_.load();
                 rsp.solver_iterations = 17;
                 rsp.solver_primal_residual = 1.0e-7f;
@@ -163,6 +167,7 @@ private:
                 rsp.solver_ncp_dual_residual = 4.0e-8f;
                 rsp.solver_ncp_complementarity_residual = 5.0e-9f;
                 rsp.solver_cone_residual = 6.0e-10f;
+                rsp.solver_compliant_projected_residual = 7.0e-4f;
                 rsp.solver_peak_normal_impulse = 0.011f;
                 rsp.solver_peak_friction_impulse = 0.012f;
                 rsp.solver_peak_structural_impulse = 0.013f;
@@ -254,6 +259,31 @@ int main() {
         return EXIT_FAILURE;
     }
     const auto healthy_solver = bridge.latestSolverTelemetry();
+    SimpleEstimator simpleEstimator;
+    PhysicsSimEstimator physicsEstimator;
+    const auto simpleEstimate = simpleEstimator.update(out);
+    const auto physicsEstimate = physicsEstimator.update(out);
+    for (std::size_t leg = 0; leg < kNumLegs; ++leg)
+        for (std::size_t joint = 0; joint < kJointsPerLeg; ++joint)
+            if (!expect(out.joint_stiffness_valid[leg]
+                     && nearlyEqual(out.joint_stiffness_nm_per_rad[leg][joint], 0.25 + (3*leg+joint)*0.03125)
+                     && simpleEstimate.joint_stiffness_valid[leg] && physicsEstimate.joint_stiffness_valid[leg]
+                     && simpleEstimate.joint_stiffness_nm_per_rad[leg][joint] == out.joint_stiffness_nm_per_rad[leg][joint]
+                     && physicsEstimate.joint_stiffness_nm_per_rad[leg][joint] == out.joint_stiffness_nm_per_rad[leg][joint],
+                        "actuator stiffness must preserve positive gain and wire order")) return EXIT_FAILURE;
+    physics_sim::StateResponse decoded{}, packet{};
+    packet.actuator_stiffness_nm_per_rad.fill(1);
+    packet.actuator_stiffness_nm_per_rad[2] = -1;
+    if (!expect(!physics_sim::tryDecodeStateResponse(&packet, sizeof(packet), decoded),
+                "invalid gain must not silently select analytical fallback")) return EXIT_FAILURE;
+    packet.actuator_stiffness_nm_per_rad.fill(0);
+    if (!expect(physics_sim::tryDecodeStateResponse(&packet, sizeof(packet), decoded),
+                "legacy plant may explicitly report unavailable gains")) return EXIT_FAILURE;
+    packet.actuator_stiffness_revision = 2;
+    if (!expect(!physics_sim::tryDecodeStateResponse(&packet, sizeof(packet), decoded),
+                "unknown actuator contract must be rejected")
+        || !expect(!physics_sim::tryDecodeStateResponse(&packet, sizeof(packet)-1, decoded),
+                   "truncated or old packets must be rejected")) return EXIT_FAILURE;
     if (!expect(healthy_solver.has_value(), "healthy response should publish solver telemetry")
         || !expect(healthy_solver->status == physics_sim::SolverStatus::Healthy,
                    "healthy response should preserve solver status")
@@ -261,6 +291,8 @@ int main() {
                    "solver iteration telemetry should cross the bridge")
         || !expect(nearlyEqual(healthy_solver->ncp_dual_residual, 4.0e-8, 1.0e-12),
                    "physical NCP residual telemetry should cross the bridge")
+        || !expect(nearlyEqual(healthy_solver->compliant_projected_residual, 7.0e-4),
+                   "compliant projected residual telemetry should cross the bridge")
         || !expect(nearlyEqual(healthy_solver->peak_servo_torque_utilization, 0.75),
                    "actuator utilization telemetry should cross the bridge")
         || !expect(nearlyEqual(healthy_solver->preintegration_angular_speed, 0.31),

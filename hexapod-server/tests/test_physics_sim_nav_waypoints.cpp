@@ -68,8 +68,8 @@ public:
     CapturingPhysicsSimBridge(std::string host,
                               int port,
                               int bus_loop_period_us,
-                              int physics_solver_iterations)
-        : inner_(std::move(host), port, bus_loop_period_us, physics_solver_iterations, nullptr) {}
+                              PhysicsSimSolverSettings solver_settings)
+        : inner_(std::move(host), port, bus_loop_period_us, solver_settings, nullptr) {}
 
     bool init() override {
         return inner_.init();
@@ -251,7 +251,8 @@ int main(int argc, char** argv) {
     std::this_thread::sleep_for(std::chrono::milliseconds{250});
 
     auto bridge = std::make_unique<CapturingPhysicsSimBridge>(
-        "127.0.0.1", kPort, kBusLoopPeriodUs, harness.physics_solver_iterations);
+        "127.0.0.1", kPort, kBusLoopPeriodUs,
+        physics_sim_test_utils::productionProximalSolverSettings());
     CapturingPhysicsSimBridge* bridge_ptr = bridge.get();
 
     control_config::ControlConfig cfg = harness.control_cfg;
@@ -273,7 +274,7 @@ int main(int argc, char** argv) {
     }
 
     const ScenarioMotionIntent stand_motion{
-        true, RobotMode::STAND, GaitType::TRIPOD, 0.06, 0.0, 0.0, 0.0};
+        true, RobotMode::STAND, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0};
 
     const int kStandWarmupSteps = static_cast<int>(
         physics_sim_test_utils::scaledLegacyStepCount(120, kBusLoopPeriodUs));
@@ -292,8 +293,8 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    MotionIntent stand_fallback = makeMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.06);
-    MotionIntent walk_base = makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.06);
+    MotionIntent stand_fallback = makeMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.14);
+    MotionIntent walk_base = makeMotionIntent(RobotMode::WALK, GaitType::TRIPOD, 0.14);
 
     const double dt_s = static_cast<double>(kBusLoopPeriodUs) * 1e-6;
 

@@ -1,0 +1,637 @@
+{
+  "schema_version": 1,
+  "kind": "turn_plant_state_census",
+  "date_utc": "2026-09-16T19:59:02Z",
+  "head": "055940da3a5bb7bc3983e5b120fa1258e25b32fe",
+  "gate_max_net_horizontal_distance_m": 0.21,
+  "gate_unchanged": true,
+  "command_bug_remaining": false,
+  "solver_mode": 1,
+  "solver_iterations": 24,
+  "body_height_m": 0.14,
+  "governor_enabled": false,
+  "ncp_ccp_recovery": true,
+  "lambda_scale": false,
+  "sim_binary_sha256": "a8182c21fc63713d85ae1ca59acc121f551f45ed719f444b69f7e39ad9ea42e4",
+  "server_binary_sha256": "e747802c3fa411a92231ae0b22441bd48c98b4cd7101f14d89220db763f68ba7",
+  "not_overwritten": [
+    "docs/contact-snapshots/turn-sequential-census-v1.json",
+    "docs/contact-snapshots/turn-sequential-hunt-isolated-v1.json",
+    "docs/contact-snapshots/turn-sequential-hunt-after-reverse-v1.json",
+    "docs/contact-snapshots/turn-sequential-hunt-after-reverse-straight-v1.json",
+    "docs/contact-snapshots/turn-sequential-hunt-sequential-v1.json"
+  ],
+  "hunt_reports_sha256": {
+    "docs/contact-snapshots/turn-plant-state-hunt-isolated-v1.json": "a0c263d9c00fdb489679d1172c34584912b42c64c8c1c5810fb51d457cb88219",
+    "docs/contact-snapshots/turn-plant-state-hunt-after-reverse-v1.json": "3a0103009894b6eac3c785194e3bcadf58ae6dff32b74b7c8b7519b72bc63f1d",
+    "docs/contact-snapshots/turn-plant-state-hunt-after-reverse-straight-v1.json": "b0610f62ea394c93947ce0716198668e67e942ac8ae2321e7689f212dfd2e479",
+    "docs/contact-snapshots/turn-plant-state-hunt-sequential-v1.json": "ef446ff0e78e9f2593a8e05c648446509fe9a31a206d293a2733a6f9f0e1069e"
+  },
+  "screens": {
+    "isolated": {
+      "runs": 5,
+      "passed_screen": 5,
+      "scored_turns": 5,
+      "abort_before_turn": 0,
+      "nets_m": [
+        0.195593,
+        0.183244,
+        0.170041,
+        0.18323,
+        0.169012
+      ],
+      "radii_m": [
+        0.110349,
+        0.104403,
+        0.096077,
+        0.103256,
+        0.095124
+      ],
+      "path_per_rad_m": [
+        0.215934,
+        0.20799,
+        0.214336,
+        0.212449,
+        0.204901
+      ],
+      "yaw_delta_rad": [
+        2.178371,
+        2.141587,
+        2.172648,
+        2.18273,
+        2.187616
+      ],
+      "stand_end_speed_mps": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_abs_slip_mps": [
+        0.003468,
+        0.004371000000000001,
+        0.004683166666666666,
+        0.0036710000000000002,
+        0.004804333333333333
+      ],
+      "zmin_m": [
+        0.146309,
+        0.146331,
+        0.146394,
+        0.146394,
+        0.146395
+      ],
+      "cmd_yaw_radps": [
+        0.45,
+        0.45,
+        0.45,
+        0.45,
+        0.45
+      ],
+      "raw_wz_radps": [
+        0.45,
+        0.45,
+        0.45,
+        0.45,
+        0.45
+      ],
+      "yaw_dominant": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "first_walk_planar": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "phase0": [
+        0.002005,
+        0.002005,
+        0.002005,
+        0.002005,
+        0.002005
+      ],
+      "aborts": [],
+      "turns": [
+        {
+          "run": 1,
+          "passed": true,
+          "net_horizontal_distance_m": 0.195593,
+          "equivalent_turn_radius_m": 0.110349,
+          "path_per_rad_m": 0.215934,
+          "yaw_delta_rad": 2.178371,
+          "stand_end_speed_mps": 0.0,
+          "mean_abs_slip_mps": 0.003468,
+          "held_count": 0,
+          "yaw_dominant": true,
+          "intent_cmd_yaw_radps": 0.45,
+          "raw_wz_radps": 0.45,
+          "first_walk_gait_phase_leg0": 0.002005
+        },
+        {
+          "run": 2,
+          "passed": true,
+          "net_horizontal_distance_m": 0.183244,
+          "equivalent_turn_radius_m": 0.104403,
+          "path_per_rad_m": 0.20799,
+          "yaw_delta_rad": 2.141587,
+          "stand_end_speed_mps": 0.0,
+          "mean_abs_slip_mps": 0.004371000000000001,
+          "held_count": 0,
+          "yaw_dominant": true,
+          "intent_cmd_yaw_radps": 0.45,
+          "raw_wz_radps": 0.45,
+          "first_walk_gait_phase_leg0": 0.002005
+        },
+        {
+          "run": 3,
+          "passed": true,
+          "net_horizontal_distance_m": 0.170041,
+          "equivalent_turn_radius_m": 0.096077,
+          "path_per_rad_m": 0.214336,
+          "yaw_delta_rad": 2.172648,
+          "stand_end_speed_mps": 0.0,
+          "mean_abs_slip_mps": 0.004683166666666666,
+          "held_count": 0,
+          "yaw_dominant": true,
+          "intent_cmd_yaw_radps": 0.45,
+          "raw_wz_radps": 0.45,
+          "first_walk_gait_phase_leg0": 0.002005
+        },
+        {
+          "run": 4,
+          "passed": true,
+          "net_horizontal_distance_m": 0.18323,
+          "equivalent_turn_radius_m": 0.103256,
+          "path_per_rad_m": 0.212449,
+          "yaw_delta_rad": 2.18273,
+          "stand_end_speed_mps": 0.0,
+          "mean_abs_slip_mps": 0.0036710000000000002,
+          "held_count": 0,
+          "yaw_dominant": true,
+          "intent_cmd_yaw_radps": 0.45,
+          "raw_wz_radps": 0.45,
+          "first_walk_gait_phase_leg0": 0.002005
+        },
+        {
+          "run": 5,
+          "passed": true,
+          "net_horizontal_distance_m": 0.169012,
+          "equivalent_turn_radius_m": 0.095124,
+          "path_per_rad_m": 0.204901,
+          "yaw_delta_rad": 2.187616,
+          "stand_end_speed_mps": 0.0,
+          "mean_abs_slip_mps": 0.004804333333333333,
+          "held_count": 0,
+          "yaw_dominant": true,
+          "intent_cmd_yaw_radps": 0.45,
+          "raw_wz_radps": 0.45,
+          "first_walk_gait_phase_leg0": 0.002005
+        }
+      ]
+    },
+    "after_reverse": {
+      "runs": 5,
+      "passed_screen": 4,
+      "scored_turns": 4,
+      "abort_before_turn": 1,
+      "nets_m": [
+        0.156376,
+        0.197541,
+        0.158984,
+        0.149884
+      ],
+      "radii_m": [
+        0.087829,
+        0.117989,
+        0.092973,
+        0.084177
+      ],
+      "path_per_rad_m": [
+        0.199763,
+        0.273013,
+        0.26759,
+        0.210226
+      ],
+      "yaw_delta_rad": [
+        2.195698,
+        1.983997,
+        2.051114,
+        2.195986
+      ],
+      "stand_end_speed_mps": [
+        0.006087360183199282,
+        0.002102289228436468,
+        0.001254139545664676,
+        0.001494590244849738
+      ],
+      "mean_abs_slip_mps": [
+        0.004446833333333333,
+        0.008620166666666667,
+        0.008957666666666668,
+        0.004216833333333334
+      ],
+      "zmin_m": [
+        0.147003,
+        0.14439,
+        0.147972,
+        0.146547
+      ],
+      "cmd_yaw_radps": [
+        0.45,
+        0.45,
+        0.45,
+        0.45
+      ],
+      "raw_wz_radps": [
+        0.45,
+        0.45,
+        0.45,
+        0.45
+      ],
+      "yaw_dominant": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "first_walk_planar": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "phase0": [
+        0.002005,
+        0.002005,
+        0.002005,
+        0.002005
+      ],
+      "aborts": [
+        {
+          "run": 2,
+          "case": "reverse_walk",
+          "held": 8,
+          "reason": "solver_not_converged=2,speed_limit=6",
+          "speed_limit_frame": "tibia=6",
+          "ncp_dual": 0.004447
+        }
+      ],
+      "turns": [
+        {
+          "run": 1,
+          "passed": true,
+          "net_horizontal_distance_m": 0.156376,
+          "equivalent_turn_radius_m": 0.087829,
+          "path_per_rad_m": 0.199763,
+          "yaw_delta_rad": 2.195698,
+          "stand_end_speed_mps": 0.006087360183199282,
+          "mean_abs_slip_mps": 0.004446833333333333,
+          "held_count": 0,
+          "yaw_dominant": true,
+          "intent_cmd_yaw_radps": 0.45,
+          "raw_wz_radps": 0.45,
+          "first_walk_gait_phase_leg0": 0.002005
+        },
+        {
+          "run": 3,
+          "passed": true,
+          "net_horizontal_distance_m": 0.197541,
+          "equivalent_turn_radius_m": 0.117989,
+          "path_per_rad_m": 0.273013,
+          "yaw_delta_rad": 1.983997,
+          "stand_end_speed_mps": 0.002102289228436468,
+          "mean_abs_slip_mps": 0.008620166666666667,
+          "held_count": 0,
+          "yaw_dominant": true,
+          "intent_cmd_yaw_radps": 0.45,
+          "raw_wz_radps": 0.45,
+          "first_walk_gait_phase_leg0": 0.002005
+        },
+        {
+          "run": 4,
+          "passed": true,
+          "net_horizontal_distance_m": 0.158984,
+          "equivalent_turn_radius_m": 0.092973,
+          "path_per_rad_m": 0.26759,
+          "yaw_delta_rad": 2.051114,
+          "stand_end_speed_mps": 0.001254139545664676,
+          "mean_abs_slip_mps": 0.008957666666666668,
+          "held_count": 0,
+          "yaw_dominant": true,
+          "intent_cmd_yaw_radps": 0.45,
+          "raw_wz_radps": 0.45,
+          "first_walk_gait_phase_leg0": 0.002005
+        },
+        {
+          "run": 5,
+          "passed": true,
+          "net_horizontal_distance_m": 0.149884,
+          "equivalent_turn_radius_m": 0.084177,
+          "path_per_rad_m": 0.210226,
+          "yaw_delta_rad": 2.195986,
+          "stand_end_speed_mps": 0.001494590244849738,
+          "mean_abs_slip_mps": 0.004216833333333334,
+          "held_count": 0,
+          "yaw_dominant": true,
+          "intent_cmd_yaw_radps": 0.45,
+          "raw_wz_radps": 0.45,
+          "first_walk_gait_phase_leg0": 0.002005
+        }
+      ]
+    },
+    "after_reverse_straight": {
+      "runs": 5,
+      "passed_screen": 3,
+      "scored_turns": 5,
+      "abort_before_turn": 0,
+      "nets_m": [
+        0.20998,
+        0.194401,
+        0.264213,
+        0.20666,
+        0.234655
+      ],
+      "radii_m": [
+        0.121531,
+        0.111641,
+        0.15264,
+        0.114189,
+        0.133579
+      ],
+      "path_per_rad_m": [
+        0.222731,
+        0.230921,
+        0.241596,
+        0.188327,
+        0.202471
+      ],
+      "yaw_delta_rad": [
+        2.085895,
+        2.113046,
+        2.092208,
+        2.262325,
+        2.144737
+      ],
+      "stand_end_speed_mps": [
+        0.0029812173687941645,
+        0.0012148748906780484,
+        0.0022811860949953204,
+        0.0008503934383566232,
+        0.0006815342984766064
+      ],
+      "mean_abs_slip_mps": [
+        0.005168666666666666,
+        0.005685333333333334,
+        0.003957833333333333,
+        0.004045,
+        0.005003
+      ],
+      "zmin_m": [
+        0.145689,
+        0.144936,
+        0.141333,
+        0.147475,
+        0.141789
+      ],
+      "cmd_yaw_radps": [
+        0.45,
+        0.45,
+        0.45,
+        0.45,
+        0.45
+      ],
+      "raw_wz_radps": [
+        0.45,
+        0.45,
+        0.45,
+        0.45,
+        0.45
+      ],
+      "yaw_dominant": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "first_walk_planar": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "phase0": [
+        0.002005,
+        0.002005,
+        0.002005,
+        0.002005,
+        0.002005
+      ],
+      "aborts": [],
+      "turns": [
+        {
+          "run": 1,
+          "passed": true,
+          "net_horizontal_distance_m": 0.20998,
+          "equivalent_turn_radius_m": 0.121531,
+          "path_per_rad_m": 0.222731,
+          "yaw_delta_rad": 2.085895,
+          "stand_end_speed_mps": 0.0029812173687941645,
+          "mean_abs_slip_mps": 0.005168666666666666,
+          "held_count": 0,
+          "yaw_dominant": true,
+          "intent_cmd_yaw_radps": 0.45,
+          "raw_wz_radps": 0.45,
+          "first_walk_gait_phase_leg0": 0.002005
+        },
+        {
+          "run": 2,
+          "passed": true,
+          "net_horizontal_distance_m": 0.194401,
+          "equivalent_turn_radius_m": 0.111641,
+          "path_per_rad_m": 0.230921,
+          "yaw_delta_rad": 2.113046,
+          "stand_end_speed_mps": 0.0012148748906780484,
+          "mean_abs_slip_mps": 0.005685333333333334,
+          "held_count": 0,
+          "yaw_dominant": true,
+          "intent_cmd_yaw_radps": 0.45,
+          "raw_wz_radps": 0.45,
+          "first_walk_gait_phase_leg0": 0.002005
+        },
+        {
+          "run": 3,
+          "passed": false,
+          "net_horizontal_distance_m": 0.264213,
+          "equivalent_turn_radius_m": 0.15264,
+          "path_per_rad_m": 0.241596,
+          "yaw_delta_rad": 2.092208,
+          "stand_end_speed_mps": 0.0022811860949953204,
+          "mean_abs_slip_mps": 0.003957833333333333,
+          "held_count": 0,
+          "yaw_dominant": true,
+          "intent_cmd_yaw_radps": 0.45,
+          "raw_wz_radps": 0.45,
+          "first_walk_gait_phase_leg0": 0.002005
+        },
+        {
+          "run": 4,
+          "passed": true,
+          "net_horizontal_distance_m": 0.20666,
+          "equivalent_turn_radius_m": 0.114189,
+          "path_per_rad_m": 0.188327,
+          "yaw_delta_rad": 2.262325,
+          "stand_end_speed_mps": 0.0008503934383566232,
+          "mean_abs_slip_mps": 0.004045,
+          "held_count": 0,
+          "yaw_dominant": true,
+          "intent_cmd_yaw_radps": 0.45,
+          "raw_wz_radps": 0.45,
+          "first_walk_gait_phase_leg0": 0.002005
+        },
+        {
+          "run": 5,
+          "passed": false,
+          "net_horizontal_distance_m": 0.234655,
+          "equivalent_turn_radius_m": 0.133579,
+          "path_per_rad_m": 0.202471,
+          "yaw_delta_rad": 2.144737,
+          "stand_end_speed_mps": 0.0006815342984766064,
+          "mean_abs_slip_mps": 0.005003,
+          "held_count": 0,
+          "yaw_dominant": true,
+          "intent_cmd_yaw_radps": 0.45,
+          "raw_wz_radps": 0.45,
+          "first_walk_gait_phase_leg0": 0.002005
+        }
+      ]
+    },
+    "sequential": {
+      "runs": 5,
+      "passed_screen": 1,
+      "scored_turns": 1,
+      "abort_before_turn": 4,
+      "nets_m": [
+        0.185283
+      ],
+      "radii_m": [
+        0.103601
+      ],
+      "path_per_rad_m": [
+        0.207605
+      ],
+      "yaw_delta_rad": [
+        2.213369
+      ],
+      "stand_end_speed_mps": [
+        0.00028820999288713085
+      ],
+      "mean_abs_slip_mps": [
+        0.0035935
+      ],
+      "zmin_m": [
+        0.149811
+      ],
+      "cmd_yaw_radps": [
+        0.45
+      ],
+      "raw_wz_radps": [
+        0.45
+      ],
+      "yaw_dominant": [
+        true
+      ],
+      "first_walk_planar": [
+        0
+      ],
+      "phase0": [
+        0.001957
+      ],
+      "aborts": [
+        {
+          "run": 1,
+          "case": "straight_walk",
+          "held": 1604,
+          "reason": "speed_limit=1604",
+          "speed_limit_frame": "none=1,tibia=1603",
+          "ncp_dual": 0.003461
+        },
+        {
+          "run": 2,
+          "case": "straight_walk",
+          "held": 611,
+          "reason": "solver_not_converged=1,speed_limit=610",
+          "speed_limit_frame": "femur=610",
+          "ncp_dual": 0.000264
+        },
+        {
+          "run": 3,
+          "case": "straight_walk",
+          "held": 4,
+          "reason": "speed_limit=4",
+          "speed_limit_frame": "none=2,tibia=3",
+          "ncp_dual": 0.008318
+        },
+        {
+          "run": 4,
+          "case": "straight_walk",
+          "held": 430,
+          "reason": "speed_limit=430",
+          "speed_limit_frame": "none=2,tibia=428",
+          "ncp_dual": 0.001405
+        }
+      ],
+      "turns": [
+        {
+          "run": 5,
+          "passed": true,
+          "net_horizontal_distance_m": 0.185283,
+          "equivalent_turn_radius_m": 0.103601,
+          "path_per_rad_m": 0.207605,
+          "yaw_delta_rad": 2.213369,
+          "stand_end_speed_mps": 0.00028820999288713085,
+          "mean_abs_slip_mps": 0.0035935,
+          "held_count": 0,
+          "yaw_dominant": true,
+          "intent_cmd_yaw_radps": 0.45,
+          "raw_wz_radps": 0.45,
+          "first_walk_gait_phase_leg0": 0.001957
+        }
+      ]
+    }
+  },
+  "classification": {
+    "picked": 3,
+    "label": "prefix-grown radius after reverse+straight",
+    "rejected": {
+      "1_command": "every scored turn cmd_yaw=raw_wz=0.45, raw planar 0, yaw_dominant true, first-walk planar 0, phase0~0.002",
+      "2_residual_v": "stand_end_speed <= 0.006 m/s; fail 0.264 m had 0.0023 m/s",
+      "4_stance_slip": "isolated abs_slip 0.0035-0.0048; reverse+straight fails 0.0040 and 0.0050; after-reverse passes had 0.0086-0.0090",
+      "5_stand_latch": "STAND does not call resetWarmStarts, but after-reverse (same carry) stays under 0.21. Walking warm-starts are not sufficient. reverse+straight plant pose/foot placement remains unnamed as a clearable latch.",
+      "6_unnamed": "not picked: radius does split vs isolated once straight follows reverse"
+    },
+    "prefix_that_grows_r": "straight after reverse, not reverse alone",
+    "production_lever": false,
+    "reason": "Class 3 names a prefix, not a rejected-list-legal latch. Warm-start/CRBA clear on STAND is a guess that after-reverse already falsifies. Do not loosen 0.21, lengthen STAND, or respawn."
+  },
+  "sequential_note": "This sequential x5 plurality was straight_walk SpeedLimit stay-WALK (4/5 abort before turn: tibia/femur held 4-1604). One scored sequential turn passed at 0.185 m. Do not mix abort-before-turn into radius stats.",
+  "levers_not_applied": [
+    "0.21 m turn net gate unchanged",
+    "no gait or walk_entry_blend_s retune",
+    "no anti-windup / L1",
+    "no mode-2 promotion",
+    "no lambda-scale",
+    "no warm-start clear on STAND",
+    "no CRBA/reduced-support reset on yaw",
+    "STAND warmup not lengthened",
+    "sim not respawned between sequential cases"
+  ]
+}

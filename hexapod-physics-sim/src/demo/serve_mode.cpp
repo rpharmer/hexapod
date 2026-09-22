@@ -880,6 +880,7 @@ using ServeInboundPayload = std::variant<
 struct ServeInboundMessage {
     ServePeerAddress peer{};
     ServeInboundPayload payload{};
+    bool step_joint_target_velocities_present{false};
 };
 
 struct ServeOutboundPacket {
@@ -1028,6 +1029,9 @@ void MergeProximalDiagnostics(ProximalStepDiagnostics& aggregate,
     aggregate.ncpComplementarityResidual = std::max(
         aggregate.ncpComplementarityResidual, current.ncpComplementarityResidual);
     aggregate.coneResidual = std::max(aggregate.coneResidual, current.coneResidual);
+    aggregate.compliantProjectedResidual = std::max(
+        aggregate.compliantProjectedResidual, current.compliantProjectedResidual);
+    aggregate.ncpCcpRecovery = aggregate.ncpCcpRecovery || current.ncpCcpRecovery;
     aggregate.peakNormalImpulse = std::max(
         aggregate.peakNormalImpulse, current.peakNormalImpulse);
     aggregate.peakFrictionImpulse = std::max(
@@ -1241,8 +1245,10 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
     pinocchio_model = std::make_unique<PinocchioHexapodModel>(world, scene, wire_joints);
 #endif
     std::array<float, 18> prev_angles{};
+    std::array<float, 18> previous_joint_targets{};
     for (std::size_t i = 0; i < wire_joints.size(); ++i) {
         prev_angles[i] = world.GetServoJointAngle(wire_joints[i]);
+        previous_joint_targets[i] = world.GetServoJoint(wire_joints[i]).targetAngle;
     }
 
     bool configured = false;
@@ -1545,12 +1551,14 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                     }
                     if (mtype == static_cast<std::uint8_t>(physics_sim::MessageType::StepCommand)) {
                         physics_sim::StepCommand step{};
+                        bool velocities_present = false;
                         const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::DecodeStep));
-                        if (!physics_sim::tryDecodeStepCommand(bytes, static_cast<std::size_t>(n), step)) {
+                        if (!physics_sim::tryDecodeStepCommand(
+                                bytes, static_cast<std::size_t>(n), step, &velocities_present)) {
                             continue;
                         }
                         (void)scope;
-                        inbound_queue.push(ServeInboundMessage{peer, step});
+                        inbound_queue.push(ServeInboundMessage{peer, step, velocities_present});
                     }
                 }
             }
@@ -1580,9 +1588,11 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 proximal_settings.absoluteTolerance = std::max(1.0e-12, static_cast<double>((*cmd).absolute_tolerance));
                 proximal_settings.relativeTolerance = std::max(1.0e-12, static_cast<double>((*cmd).relative_tolerance));
                 proximal_settings.contactRegularization = std::max(1.0e-14, static_cast<double>((*cmd).contact_regularization));
+                proximal_settings.compliantContact =
+                    solver_mode == physics_sim::PhysicsSolverMode::PinocchioProximalCompliant;
 #endif
 #if !defined(MINPHYS3D_ENABLE_PINOCCHIO)
-                if (solver_mode == physics_sim::PhysicsSolverMode::PinocchioProximal) {
+                if (physics_sim::usesPinocchioProximal(solver_mode)) {
                     solver_mode = physics_sim::PhysicsSolverMode::LegacyPgs;
                 }
 #endif
@@ -1614,7 +1624,8 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                                       | physics_sim::kStateCorrectionTwistValid
                                       | physics_sim::kStateCorrectionTerrainValid)) != 0;
             if (correction_changes_dynamics
-                && !pinocchio_model->synchronizeAfterExternalCorrection(world)) {
+                && physics_sim::usesPinocchioProximal(solver_mode)
+                && !pinocchio_model->synchronizeAfterExternalCorrection(world, proximal_settings)) {
                 std::cerr << "[serve] failed to synchronize proximal state after correction mode="
                           << static_cast<unsigned>(correction_report.mode) << "\n";
             }
@@ -1682,7 +1693,14 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::ApplyJointTargets));
             for (std::size_t i = 0; i < wire_joints.size(); ++i) {
                 ServoJoint& sj = world.GetServoJointMutable(wire_joints[i]);
+                if (inbound.step_joint_target_velocities_present) {
+                    sj.targetVelocity = static_cast<double>(step->joint_target_velocities[i]);
+                } else {
+                    sj.targetVelocity = WrapAngleRad(step->joint_targets[i] - previous_joint_targets[i])
+                        / step->dt_seconds;
+                }
                 sj.targetAngle = step->joint_targets[i];
+                previous_joint_targets[i] = step->joint_targets[i];
             }
             (void)scope;
         }
@@ -1692,7 +1710,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         }
 
         const float max_physics_substep =
-            solver_mode == physics_sim::PhysicsSolverMode::PinocchioProximal
+            physics_sim::usesPinocchioProximal(solver_mode)
             ? kProximalMaxPhysicsSubstepSeconds
             : kServeMaxPhysicsSubstepSeconds;
         const int physics_substeps = std::clamp(
@@ -1705,9 +1723,12 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             const auto scope = serve_profiler.scope(static_cast<std::size_t>(ServeSection::PhysicsStep));
 #if defined(MINPHYS3D_ENABLE_PINOCCHIO)
             bool have_proximal_diagnostics = false;
+            if (physics_sim::usesPinocchioProximal(solver_mode)) {
+                pinocchio_model->setCommandInterval(static_cast<double>(step->dt_seconds));
+            }
 #endif
             for (int substep_index = 0; substep_index < physics_substeps; ++substep_index) {
-                if (solver_mode == physics_sim::PhysicsSolverMode::PinocchioProximal) {
+                if (physics_sim::usesPinocchioProximal(solver_mode)) {
 #if defined(MINPHYS3D_ENABLE_PINOCCHIO)
                     ProximalStepDiagnostics substep_diagnostics{};
                     const bool usable = pinocchio_model->stepProximal(
@@ -1730,7 +1751,7 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         rsp = physics_sim::StateResponse{};
         rsp.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateResponse);
         rsp.sequence_id = step->sequence_id;
-        if (solver_mode == physics_sim::PhysicsSolverMode::PinocchioProximal) {
+        if (physics_sim::usesPinocchioProximal(solver_mode)) {
 #if defined(MINPHYS3D_ENABLE_PINOCCHIO)
             rsp.solver_status = static_cast<physics_sim::SolverStatus>(proximal_diagnostics.status);
             rsp.solver_iterations = static_cast<std::uint16_t>(std::max(0, proximal_diagnostics.iterations));
@@ -1744,6 +1765,8 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             rsp.solver_ncp_complementarity_residual =
                 static_cast<float>(proximal_diagnostics.ncpComplementarityResidual);
             rsp.solver_cone_residual = static_cast<float>(proximal_diagnostics.coneResidual);
+            rsp.solver_compliant_projected_residual =
+                static_cast<float>(proximal_diagnostics.compliantProjectedResidual);
             rsp.solver_peak_normal_impulse = static_cast<float>(proximal_diagnostics.peakNormalImpulse);
             rsp.solver_peak_friction_impulse = static_cast<float>(proximal_diagnostics.peakFrictionImpulse);
             rsp.solver_sum_friction_impulse_world_x =
@@ -1797,6 +1820,14 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                 static_cast<float>(proximal_diagnostics.preIntegrationLinearSpeed);
             rsp.solver_preintegration_angular_speed =
                 static_cast<float>(proximal_diagnostics.preIntegrationAngularSpeed);
+            rsp.solver_chassis_preintegration_angular_speed =
+                static_cast<float>(proximal_diagnostics.chassisPreIntegrationAngularSpeed);
+            rsp.solver_max_link_preintegration_angular_speed =
+                static_cast<float>(proximal_diagnostics.maxLinkPreIntegrationAngularSpeed);
+            rsp.solver_speed_limit_frame =
+                static_cast<std::uint8_t>(proximal_diagnostics.speedLimitFrame);
+            rsp.solver_speed_limit_support =
+                static_cast<std::uint8_t>(proximal_diagnostics.speedLimitSupport);
             rsp.solver_max_contact_penetration =
                 static_cast<float>(proximal_diagnostics.maxContactPenetration);
             rsp.solver_mechanical_energy_delta =
@@ -1855,6 +1886,10 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
                               << " warm_resets=" << proximal_diagnostics.warmStartResets
                               << " pre_v=" << proximal_diagnostics.preIntegrationLinearSpeed
                               << " pre_w=" << proximal_diagnostics.preIntegrationAngularSpeed
+                              << " chassis_w=" << proximal_diagnostics.chassisPreIntegrationAngularSpeed
+                              << " max_link_w=" << proximal_diagnostics.maxLinkPreIntegrationAngularSpeed
+                              << " speed_frame=" << static_cast<int>(proximal_diagnostics.speedLimitFrame)
+                              << " speed_support=" << static_cast<int>(proximal_diagnostics.speedLimitSupport)
                               << '\n';
                 }
             }
@@ -1882,6 +1917,13 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
         };
 
         const float inv_dt = 1.0f / step->dt_seconds;
+#ifdef MINPHYS3D_ENABLE_PINOCCHIO
+        if (solver_mode != physics_sim::PhysicsSolverMode::LegacyPgs && pinocchio_model) {
+            const auto stiffness = pinocchio_model->servoStiffnessNmPerRad();
+            for (std::size_t i = 0; i < stiffness.size(); ++i)
+                rsp.actuator_stiffness_nm_per_rad[i] = static_cast<float>(stiffness[i]);
+        }
+#endif
         for (std::size_t i = 0; i < wire_joints.size(); ++i) {
             const float ang_after = world.GetServoJointAngle(wire_joints[i]);
             rsp.joint_angles[i] = ang_after;

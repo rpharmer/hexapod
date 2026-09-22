@@ -26,6 +26,11 @@ public:
     virtual bool init() = 0;
     virtual bool read(RobotState& out) = 0;
     virtual bool write(const JointTargets& in) = 0;
+    /** Body angular vectors use PhysicsSimBridge's C=(-z,x,y), det(C)=-1 convention.
+     * Decorators must forward this capability; simulated provenance alone is not sufficient. */
+    [[nodiscard]] virtual bool usesPhysicsSimBodyAngularConvention() const { return false; }
+    /// True only when body XY feedback is an absolute, drift-bounded source.
+    [[nodiscard]] virtual bool supportsAbsoluteBodyPositionFeedback() const { return false; }
     virtual std::optional<struct BridgeCommandResultMetadata> last_bridge_result() const;
     /** Simulator bridges may opt into sample-counted recovery from a rejected state frame. */
     [[nodiscard]] virtual bool supportsAutomaticBusTimeoutRecovery() const { return false; }

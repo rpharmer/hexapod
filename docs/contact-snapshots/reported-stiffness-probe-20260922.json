@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "reported_date": "2026-09-22",
+  "revision": "055940da3a5bb7bc3983e5b120fa1258e25b32fe",
+  "tree_state": "dirty campaign plus explicit actuator stiffness contract",
+  "solver": "pinocchio-proximal",
+  "implicit_damping": false,
+  "source": "/tmp/hexapod-reported-stiffness-20260921/reported.jsonl",
+  "source_sha256": "52bd032199a833ad6bcff2d9f2727a8d9aa5d94d38468e84794ba83ca2bbfd53",
+  "reference_artifact": "selfweight-stiffness-probe-20260921.json",
+  "method": "same post-liftoff ramp, corrected server holding torque, reported nominal Kp, unchanged 0.12 rad pitch angle caps",
+  "results": [
+    {"leg": 2, "pedestal": false, "error_norm_m": 0.002750647279, "target_bias_rad": [0, 0.12, 0.05736912174], "held": 0},
+    {"leg": 2, "pedestal": true, "error_norm_m": 0.0007757742686, "target_bias_rad": [0, 0.12, 0.05998667081], "held": 0},
+    {"leg": 5, "pedestal": false, "error_norm_m": 0.002750141637, "target_bias_rad": [0, 0.12, 0.05697045773], "held": 0},
+    {"leg": 5, "pedestal": true, "error_norm_m": 0.0005863603583, "target_bias_rad": [0, 0.12, 0.06019509052], "held": 0}
+  ],
+  "decision": "keep explicit torque-to-angle conversion; unchanged femur cap still limits compensation; not full walking qualification",
+  "notes": ["Selected leg only; controller IMU gates and LPF bypassed by probe", "No gain, torque envelope or contact equation changes", "Healthy-step reported gains checked against independently reconstructed PD stiffness", "Same post-liftoff correction schedule cannot establish earlier contact loss"]
+}

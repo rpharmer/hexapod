@@ -4,9 +4,17 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <deque>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
 #include <limits>
 #include <optional>
 #include <sstream>
+#include <string>
+#include <vector>
 
 #include "geometry_config.hpp"
 #include "foot_terrain.hpp"
@@ -16,6 +24,7 @@
 #include "replay_json.hpp"
 #include "physics_sim_bridge.hpp"
 #include "servo_dynamics_clamp.hpp"
+#include "swing_link_rate_governor.hpp"
 
 namespace {
 
@@ -277,6 +286,8 @@ telemetry::LocomotionDebugSnapshot buildLocomotionDebugSnapshot(
     const LegTargets* planned_leg_targets,
     const JointTargets& joint_targets,
     const JointTargets* pre_slew_joint_targets,
+    const std::array<double, kNumLegs>* latched_stroke_length_m,
+    const std::array<Vec3, kNumLegs>* latched_plant_position_m,
     const HexapodGeometry& geometry,
     std::array<bool, kNumLegs>& contact_anchor_valid,
     std::array<Vec3, kNumLegs>& contact_anchor_world,
@@ -360,6 +371,13 @@ telemetry::LocomotionDebugSnapshot buildLocomotionDebugSnapshot(
         snapshot.commanded_tracking_error_m[leg_index] = tracking_error_m;
         snapshot.max_commanded_tracking_error_m =
             std::max(snapshot.max_commanded_tracking_error_m, tracking_error_m);
+
+        if (latched_stroke_length_m != nullptr && latched_plant_position_m != nullptr) {
+            snapshot.latched_stroke_length_m[leg_index] = (*latched_stroke_length_m)[leg_index];
+            const Vec3 stroke_delta =
+                snapshot.post_clamp_fk_body_m[leg_index] - (*latched_plant_position_m)[leg_index];
+            snapshot.latched_stroke_used_m[leg_index] = std::hypot(stroke_delta.x, stroke_delta.y);
+        }
 
         if (!anchor_support_active) {
             contact_anchor_valid[leg_index] = false;
@@ -726,6 +744,509 @@ replay_json::ReplayTransitionDiagnostics buildReplayTransitionDiagnostics(const 
     return diagnostics;
 }
 
+constexpr int kR2CommandedFootDumpLeg = 2;
+constexpr std::size_t kR2CommandedFootDumpCap = 256;
+constexpr std::size_t kR2CommandedFootDumpPostEventMax = 1024;
+constexpr std::size_t kR2CommandedFootDumpMaxSamples = 2048;
+constexpr double kR2MedialDxyM = 0.040;
+constexpr double kR2MedialDyM = 0.040;
+constexpr double kR2DeepTuckYM = 0.15;
+
+struct R2CommandedFootDumpSample {
+    std::uint64_t loop{0};
+    int mode{0};
+    bool in_stance{false};
+    bool hold_stance{false};
+    bool slew_hit{false};
+    bool ik_reach{false};
+    bool departed{false};
+    bool latched{false};
+    const char* source{"swing"};
+    const char* trigger_stage{"none"};
+    double phase{0.0};
+    double duty_factor{0.0};
+    int active_mode{0};
+    int active_fault{0};
+    bool bus_ok{true};
+    Vec3 planned{};
+    Vec3 pre_slew_fk{};
+    Vec3 post_slew_fk{};
+    Vec3 nominal{};
+    R2SwingDecompSnapshot decomp{};
+};
+
+struct R2CommandedFootDumpState {
+    bool decided{false};
+    bool active{false};
+    bool written{false};
+    bool logged{false};
+    bool departed_seen{false};
+    bool latched{false};
+    std::size_t post_count{0};
+    std::size_t walk_seen{0};
+    std::uint64_t latch_loop{0};
+    const char* latch_stage{"none"};
+    const char* latch_source{"none"};
+    const char* freeze_reason{"none"};
+    std::string path;
+    std::deque<R2CommandedFootDumpSample> samples;
+};
+
+R2CommandedFootDumpState& r2CommandedFootDumpState() {
+    static R2CommandedFootDumpState state;
+    return state;
+}
+
+void writeJsonVec3(std::ostream& out, const Vec3& v) {
+    out << '[' << v.x << ',' << v.y << ',' << v.z << ']';
+}
+
+void writeR2SwingDecomp(std::ostream& out, const R2SwingDecompSnapshot& d) {
+    out << ",\"decomp_valid\":" << (d.valid ? "true" : "false");
+    if (!d.valid) {
+        return;
+    }
+    out << ",\"tau01\":" << d.tau01
+        << ",\"swing_span\":" << d.swing_span
+        << ",\"f_hz\":" << d.f_hz
+        << ",\"step_length_m\":" << d.step_length_m
+        << ",\"swing_height_m\":" << d.swing_height_m
+        << ",\"stance_lookahead_s\":" << d.stance_lookahead_s
+        << ",\"static_stability_margin_m\":" << d.static_stability_margin_m
+        << ",\"swing_time_ease_01\":" << d.swing_time_ease_01
+        << ",\"cmd_accel_body_x_mps2\":" << d.cmd_accel_body_x_mps2
+        << ",\"cmd_accel_body_y_mps2\":" << d.cmd_accel_body_y_mps2
+        << ",\"anchor\":";
+    writeJsonVec3(out, d.anchor);
+    out << ",\"stance_end\":";
+    writeJsonVec3(out, d.stance_end);
+    out << ",\"v_liftoff_body\":";
+    writeJsonVec3(out, d.v_liftoff_body);
+    out << ",\"twist_linear_mps\":";
+    writeJsonVec3(out, d.kinematic_twist.linear_mps);
+    out << ",\"twist_angular_radps\":";
+    writeJsonVec3(out, d.kinematic_twist.angular_radps);
+    out << ",\"est_valid\":" << (d.est_valid ? "true" : "false")
+        << ",\"est_has_body_twist\":" << (d.est_has_body_twist ? "true" : "false")
+        << ",\"est_linear_mps\":";
+    writeJsonVec3(out, d.est_linear_mps);
+    out << ",\"est_angular_radps\":";
+    writeJsonVec3(out, d.est_angular_radps);
+    out << ",\"planned_pre_rot\":";
+    writeJsonVec3(out, d.planned_pre_rot);
+    out << ",\"after_terrain\":";
+    writeJsonVec3(out, d.after_terrain);
+    out << ",\"origin_rot\":";
+    writeJsonVec3(out, d.origin_rot);
+    out << ",\"coxa_rot\":";
+    writeJsonVec3(out, d.coxa_rot);
+    out << ",\"coxa\":";
+    writeJsonVec3(out, d.coxa);
+    out << ",\"target_clamped\":";
+    writeJsonVec3(out, d.target_clamped);
+    out << ",\"foothold_nominal\":";
+    writeJsonVec3(out, d.foothold_nominal);
+    out << ",\"capture_body\":";
+    writeJsonVec3(out, d.capture_body);
+    out << ",\"foothold_final\":";
+    writeJsonVec3(out, d.foothold_final);
+    out << ",\"terrain_xy_delta\":";
+    writeJsonVec3(out, d.terrain_xy_delta);
+    out << ",\"capture_limit_m\":" << d.capture_limit_m
+        << ",\"clamp_dxy\":" << d.clamp_dxy
+        << ",\"roll_rad\":" << d.roll_rad
+        << ",\"pitch_rad\":" << d.pitch_rad
+        << ",\"yaw_rad\":" << d.yaw_rad;
+}
+
+double r2PlanarXy(const Vec3& a, const Vec3& b) {
+    return std::hypot(a.x - b.x, a.y - b.y);
+}
+
+bool r2MedialOfNominal(const Vec3& foot, const Vec3& nominal) {
+    return r2PlanarXy(foot, nominal) > kR2MedialDxyM && (nominal.y - foot.y) > kR2MedialDyM;
+}
+
+bool r2DeepTuck(const R2CommandedFootDumpSample& sample) {
+    return sample.decomp.valid && sample.planned.y <= kR2DeepTuckYM;
+}
+
+const char* r2MedialTriggerStage(const R2CommandedFootDumpSample& sample) {
+    if (r2MedialOfNominal(sample.planned, sample.nominal)) {
+        return "planned";
+    }
+    if (r2MedialOfNominal(sample.pre_slew_fk, sample.nominal)) {
+        return "pre_slew";
+    }
+    if (r2MedialOfNominal(sample.post_slew_fk, sample.nominal)) {
+        return "post_slew";
+    }
+    return "none";
+}
+
+const char* r2CommandedFootSource(const bool hold_stance, const bool in_stance, const double f_hz) {
+    if (hold_stance) {
+        return "hold";
+    }
+    if (!in_stance && f_hz <= 1.0e-6) {
+        return "recovery_swing";
+    }
+    if (!in_stance) {
+        return "swing";
+    }
+    return "stance";
+}
+
+void writeR2CommandedFootDumpFile(const R2CommandedFootDumpState& state) {
+    if (state.path.empty()) {
+        return;
+    }
+    std::ofstream out(state.path, std::ios::out | std::ios::trunc);
+    if (!out) {
+        std::cerr << "[r2-commanded-foot-dump] failed to write path=" << state.path << '\n';
+        return;
+    }
+    out << std::setprecision(17);
+    out << "{\"schema_version\":3,\"kind\":\""
+        << (state.latched ? "r2_nominal_departure_dump" : "r2_commanded_foot_dump")
+        << "\",\"leg\":" << kR2CommandedFootDumpLeg
+        << ",\"ring_cap\":" << kR2CommandedFootDumpCap
+        << ",\"post_event_max\":" << kR2CommandedFootDumpPostEventMax
+        << ",\"latched\":" << (state.latched ? "true" : "false")
+        << ",\"latch_loop\":" << state.latch_loop
+        << ",\"latch_stage\":\"" << state.latch_stage << '"'
+        << ",\"latch_source\":\"" << state.latch_source << '"'
+        << ",\"deep_tuck_y\":" << kR2DeepTuckYM
+        << ",\"walk_seen\":" << state.walk_seen
+        << ",\"freeze_reason\":\"" << state.freeze_reason << '"'
+        << ",\"samples\":[";
+    for (std::size_t i = 0; i < state.samples.size(); ++i) {
+        const R2CommandedFootDumpSample& s = state.samples[i];
+        if (i != 0) {
+            out << ',';
+        }
+        out << "{\"loop\":" << s.loop
+            << ",\"mode\":" << s.mode
+            << ",\"in_stance\":" << (s.in_stance ? "true" : "false")
+            << ",\"hold_stance\":" << (s.hold_stance ? "true" : "false")
+            << ",\"slew_hit\":" << (s.slew_hit ? "true" : "false")
+            << ",\"ik_reach\":" << (s.ik_reach ? "true" : "false")
+            << ",\"departed\":" << (s.departed ? "true" : "false")
+            << ",\"latched\":" << (s.latched ? "true" : "false")
+            << ",\"source\":\"" << s.source << '"'
+            << ",\"trigger_stage\":\"" << s.trigger_stage << '"'
+            << ",\"phase\":" << s.phase
+            << ",\"duty_factor\":" << s.duty_factor
+            << ",\"active_mode\":" << s.active_mode
+            << ",\"active_fault\":" << s.active_fault
+            << ",\"bus_ok\":" << (s.bus_ok ? "true" : "false")
+            << ",\"planned\":";
+        writeJsonVec3(out, s.planned);
+        out << ",\"pre_slew_fk\":";
+        writeJsonVec3(out, s.pre_slew_fk);
+        out << ",\"post_slew_fk\":";
+        writeJsonVec3(out, s.post_slew_fk);
+        out << ",\"nominal\":";
+        writeJsonVec3(out, s.nominal);
+        writeR2SwingDecomp(out, s.decomp);
+        out << '}';
+    }
+    out << "]}\n";
+}
+
+void maybeRecordR2CommandedFootDump(
+    std::uint64_t loop,
+    RobotMode mode,
+    const PipelineStepResult& result,
+    const std::array<bool, kNumLegs>& slew_hits,
+    const telemetry::LocomotionDebugSnapshot& loc_debug,
+    const RobotState& est) {
+    if (mode != RobotMode::WALK) {
+        return;
+    }
+    R2CommandedFootDumpState& state = r2CommandedFootDumpState();
+    if (state.written) {
+        return;
+    }
+    if (!state.decided) {
+        state.decided = true;
+        const char* path = std::getenv("HEXAPOD_R2_COMMANDED_FOOT_DUMP_PATH");
+        if (path == nullptr || path[0] == '\0') {
+            return;
+        }
+        std::ifstream exists(path);
+        if (exists.good()) {
+            state.written = true;
+            std::cerr << "[r2-commanded-foot-dump] skip existing path=" << path << '\n';
+            return;
+        }
+        state.active = true;
+        state.path = path;
+    }
+    if (!state.active) {
+        return;
+    }
+    const std::size_t leg = static_cast<std::size_t>(kR2CommandedFootDumpLeg);
+    R2CommandedFootDumpSample sample;
+    sample.loop = loop;
+    sample.mode = static_cast<int>(mode);
+    sample.in_stance = result.gait_state.in_stance[leg];
+    sample.hold_stance = result.gait_state.stability_hold_stance[leg];
+    sample.slew_hit = slew_hits[leg];
+    sample.ik_reach = result.ik_reach_clamp_hit[leg];
+    sample.source = r2CommandedFootSource(
+        sample.hold_stance, sample.in_stance, result.gait_state.stride_phase_rate_hz.value);
+    sample.phase = result.gait_state.phase[leg];
+    sample.duty_factor = result.gait_state.duty_factor;
+    sample.active_mode = static_cast<int>(result.status.active_mode);
+    sample.active_fault = static_cast<int>(result.status.active_fault);
+    sample.bus_ok = result.status.bus_ok;
+    sample.planned = Vec3{result.leg_targets.feet[leg].pos_body_m.x,
+                          result.leg_targets.feet[leg].pos_body_m.y,
+                          result.leg_targets.feet[leg].pos_body_m.z};
+    if (loc_debug.valid) {
+        sample.pre_slew_fk = loc_debug.pre_slew_fk_body_m[leg];
+        sample.post_slew_fk = loc_debug.post_clamp_fk_body_m[leg];
+    } else {
+        sample.pre_slew_fk = sample.planned;
+        sample.post_slew_fk = sample.planned;
+    }
+    double body_height_m = std::max(0.04, -sample.planned.z);
+    if (est.has_body_twist_state) {
+        body_height_m = std::max(0.04, est.body_twist_state.body_trans_m.z);
+    }
+    sample.nominal = computeNominalStance(geometry_config::activeHexapodGeometry(), body_height_m)[leg];
+    sample.decomp = result.r2_swing_decomp;
+    sample.departed = r2MedialOfNominal(sample.planned, sample.nominal)
+        || r2MedialOfNominal(sample.pre_slew_fk, sample.nominal)
+        || r2MedialOfNominal(sample.post_slew_fk, sample.nominal);
+    sample.trigger_stage = sample.departed ? r2MedialTriggerStage(sample) : "none";
+    if (!state.departed_seen && sample.departed) {
+        state.departed_seen = true;
+        std::cerr << "[r2-commanded-foot-dump] departed path=" << state.path
+                  << " loop=" << loop
+                  << " source=" << sample.source
+                  << " stage=" << sample.trigger_stage
+                  << " planned_y=" << sample.planned.y
+                  << " post_slew_y=" << sample.post_slew_fk.y
+                  << " nominal_y=" << sample.nominal.y << '\n';
+    }
+    if (!state.latched && r2DeepTuck(sample)) {
+        state.latched = true;
+        sample.latched = true;
+        state.latch_loop = loop;
+        state.latch_stage = "deep_planned";
+        state.latch_source = sample.source;
+        std::cerr << "[r2-commanded-foot-dump] deep-latched path=" << state.path
+                  << " loop=" << loop
+                  << " source=" << sample.source
+                  << " planned_y=" << sample.planned.y
+                  << " post_slew_y=" << sample.post_slew_fk.y
+                  << " nominal_y=" << sample.nominal.y
+                  << " untilted_y=" << sample.decomp.after_terrain.y
+                  << " origin_rot_y=" << sample.decomp.origin_rot.y
+                  << " coxa_rot_y=" << sample.decomp.coxa_rot.y << '\n';
+    }
+    state.samples.push_back(sample);
+    ++state.walk_seen;
+    if (!state.latched && state.samples.size() > kR2CommandedFootDumpCap) {
+        state.samples.pop_front();
+    }
+    if (state.latched && !sample.latched) {
+        ++state.post_count;
+    }
+    writeR2CommandedFootDumpFile(state);
+    if (!state.logged) {
+        state.logged = true;
+        std::cerr << "[r2-commanded-foot-dump] path=" << state.path << '\n';
+    }
+    const bool trip = !sample.bus_ok
+        || result.status.active_mode == RobotMode::FAULT
+        || result.status.active_fault != FaultCode::NONE;
+    if (trip) {
+        state.freeze_reason = !sample.bus_ok ? "bus_not_ok" : "fault";
+        state.written = true;
+        state.active = false;
+        writeR2CommandedFootDumpFile(state);
+        std::cerr << "[r2-commanded-foot-dump] freeze path=" << state.path
+                  << " reason=" << state.freeze_reason
+                  << " loop=" << loop
+                  << " planned_y=" << sample.planned.y
+                  << " post_slew_y=" << sample.post_slew_fk.y
+                  << " source=" << sample.source
+                  << " deep_latched=" << (state.latched ? 1 : 0)
+                  << " samples=" << state.samples.size() << '\n';
+    } else if (state.latched && state.post_count >= kR2CommandedFootDumpPostEventMax) {
+        state.freeze_reason = "post_cap";
+        state.written = true;
+        state.active = false;
+        writeR2CommandedFootDumpFile(state);
+        std::cerr << "[r2-commanded-foot-dump] freeze path=" << state.path
+                  << " reason=" << state.freeze_reason
+                  << " loop=" << loop
+                  << " samples=" << state.samples.size() << '\n';
+    } else if (state.latched && state.samples.size() >= kR2CommandedFootDumpMaxSamples) {
+        state.freeze_reason = "max_samples";
+        state.written = true;
+        state.active = false;
+        writeR2CommandedFootDumpFile(state);
+        std::cerr << "[r2-commanded-foot-dump] freeze path=" << state.path
+                  << " reason=" << state.freeze_reason
+                  << " loop=" << loop
+                  << " samples=" << state.samples.size() << '\n';
+    } else if (!state.latched && state.walk_seen >= kR2CommandedFootDumpMaxSamples) {
+        state.freeze_reason = "no_deep_tuck";
+        state.written = true;
+        state.active = false;
+        writeR2CommandedFootDumpFile(state);
+        std::cerr << "[r2-commanded-foot-dump] freeze path=" << state.path
+                  << " reason=" << state.freeze_reason
+                  << " loop=" << loop
+                  << " samples=" << state.samples.size() << '\n';
+    }
+}
+
+struct TipOverDumpState {
+    bool decided{false};
+    bool written{false};
+    std::string path;
+};
+
+TipOverDumpState& tipOverDumpState() {
+    static TipOverDumpState state;
+    return state;
+}
+
+const char* classifyTipOverRule(bool angle, bool rate) {
+    if (angle && rate) {
+        return "both";
+    }
+    if (angle) {
+        return "angle";
+    }
+    if (rate) {
+        return "rate";
+    }
+    return "unknown";
+}
+
+void maybeRecordTipOverDump(std::uint64_t loop,
+                            const SafetyState& safety,
+                            const RobotState& raw,
+                            const RobotState& est,
+                            const MotionIntent& intent,
+                            const CommandGovernorState& gov,
+                            const control_config::SafetyConfig& safety_cfg) {
+    if (safety.active_fault != FaultCode::TIP_OVER) {
+        return;
+    }
+    TipOverDumpState& state = tipOverDumpState();
+    if (state.written) {
+        return;
+    }
+    if (!state.decided) {
+        state.decided = true;
+        const char* path = std::getenv("HEXAPOD_TIP_OVER_DUMP_PATH");
+        if (path == nullptr || path[0] == '\0') {
+            state.written = true;
+            return;
+        }
+        std::ifstream exists(path);
+        if (exists.good()) {
+            state.written = true;
+            std::cerr << "[tip-over-dump] skip existing path=" << path << '\n';
+            return;
+        }
+        state.path = path;
+    }
+    if (state.path.empty()) {
+        state.written = true;
+        return;
+    }
+
+    const double roll = est.has_body_twist_state ? est.body_twist_state.twist_pos_rad.x : 0.0;
+    const double pitch = est.has_body_twist_state ? est.body_twist_state.twist_pos_rad.y : 0.0;
+    const double yaw = est.has_body_twist_state ? est.body_twist_state.twist_pos_rad.z : 0.0;
+    const double height = est.has_body_twist_state ? est.body_twist_state.body_trans_m.z : 0.0;
+    const double planar_speed = est.has_body_twist_state
+        ? std::hypot(est.body_twist_state.body_trans_mps.x, est.body_twist_state.body_trans_mps.y)
+        : 0.0;
+    const double gyro_x = (est.has_imu && est.imu.valid) ? est.imu.gyro_radps.x : 0.0;
+    const double gyro_y = (est.has_imu && est.imu.valid) ? est.imu.gyro_radps.y : 0.0;
+    const double gyro_hypot = std::hypot(gyro_x, gyro_y);
+    int raw_contacts = 0;
+    int fused_contacts = 0;
+    for (bool c : raw.foot_contacts) {
+        if (c) {
+            ++raw_contacts;
+        }
+    }
+    for (bool c : est.foot_contacts) {
+        if (c) {
+            ++fused_contacts;
+        }
+    }
+    const int support = std::max(raw_contacts, fused_contacts);
+    const double max_tilt = safety_cfg.max_tilt_rad.value;
+    const double rapid_rate = safety_cfg.rapid_body_rate_radps;
+    const int rapid_contacts = safety_cfg.rapid_body_rate_max_contacts;
+    const double yaw_cmd = std::abs(gov.requested_yaw_rate_radps);
+    const bool angle = std::abs(roll) > max_tilt || std::abs(pitch) > max_tilt;
+    const bool rate_gate = intent.requested_mode == RobotMode::WALK
+        && (planar_speed >= 0.18 || yaw_cmd >= 0.35)
+        && est.has_body_twist_state && est.has_imu && est.imu.valid
+        && support <= rapid_contacts
+        && rapid_rate > 0.0
+        && std::isfinite(gyro_hypot) && gyro_hypot > rapid_rate;
+    const char* rule = classifyTipOverRule(angle, rate_gate);
+
+    std::ofstream out(state.path, std::ios::out | std::ios::trunc);
+    if (!out) {
+        std::cerr << "[tip-over-dump] failed to write path=" << state.path << '\n';
+        state.written = true;
+        return;
+    }
+    out << std::setprecision(17);
+    out << "{\"schema_version\":1,\"kind\":\"tip_over_dump\""
+        << ",\"loop\":" << loop
+        << ",\"requested_mode\":" << static_cast<int>(intent.requested_mode)
+        << ",\"bus_ok\":" << (raw.bus_ok ? "true" : "false")
+        << ",\"active_fault\":" << static_cast<int>(safety.active_fault)
+        << ",\"torque_cut\":" << (safety.torque_cut ? "true" : "false")
+        << ",\"roll_rad\":" << roll
+        << ",\"pitch_rad\":" << pitch
+        << ",\"yaw_rad\":" << yaw
+        << ",\"tilt_mag_rad\":" << std::hypot(roll, pitch)
+        << ",\"height_m\":" << height
+        << ",\"gyro_x_radps\":" << gyro_x
+        << ",\"gyro_y_radps\":" << gyro_y
+        << ",\"gyro_hypot_radps\":" << gyro_hypot
+        << ",\"imu_valid\":" << ((est.has_imu && est.imu.valid) ? "true" : "false")
+        << ",\"planar_speed_mps\":" << planar_speed
+        << ",\"yaw_cmd_radps\":" << yaw_cmd
+        << ",\"raw_contacts\":" << raw_contacts
+        << ",\"fused_contacts\":" << fused_contacts
+        << ",\"support_count\":" << support
+        << ",\"gov_support_count\":" << gov.current_support_count
+        << ",\"gov_confirmed_support_count\":" << gov.confirmed_support_count
+        << ",\"gov_body_rate_radps\":" << gov.body_rate_radps
+        << ",\"gov_body_tilt_rad\":" << gov.body_tilt_rad
+        << ",\"max_tilt_rad\":" << max_tilt
+        << ",\"rapid_body_rate_radps\":" << rapid_rate
+        << ",\"rapid_body_rate_max_contacts\":" << rapid_contacts
+        << ",\"rule\":\"" << rule << "\"}\n";
+    state.written = true;
+    std::cerr << "[tip-over-dump] path=" << state.path
+              << " loop=" << loop
+              << " rule=" << rule
+              << " roll=" << roll
+              << " pitch=" << pitch
+              << " gyro_hypot=" << gyro_hypot
+              << " support=" << support
+              << " max_tilt=" << max_tilt
+              << " rapid_rate=" << rapid_rate << '\n';
+}
+
 } // namespace
 
 RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
@@ -747,7 +1268,8 @@ RobotRuntime::RobotRuntime(std::unique_ptr<IHardwareBridge> hw,
                 config_.foot_terrain,
                 config_.gravity_feedforward,
                 config_.locomotion_redesign,
-                &resource_profiler_),
+                &resource_profiler_,
+                hw_ && hw_->supportsAbsoluteBodyPositionFeedback()),
       safety_(config_.safety),
       freshness_policy_(config_.freshness),
       freshness_gate_(freshness_policy_),
@@ -1155,6 +1677,8 @@ void RobotRuntime::controlStep() {
                 nullptr,
                 decision.joint_targets,
                 nullptr,
+                nullptr,
+                nullptr,
                 geometry_config::activeHexapodGeometry(),
                 contact_anchor_valid_,
                 contact_anchor_world_,
@@ -1175,20 +1699,206 @@ void RobotRuntime::controlStep() {
         safety_state,
         bus_ok,
         loop_counter,
-        terrain_ptr);
+        terrain_ptr,
+        static_cast<double>(config_.loop_timing.control_loop_period.count()) * 1.0e-6);
 
     JointTargets joint_targets = result.joint_targets;
     std::array<bool, kNumLegs> slew_hits{};
-    if (intent.requested_mode == RobotMode::WALK) {
+    // Keep actuator-feasible target motion while entering STAND as well as while
+    // walking.  A WALK -> STAND transition can otherwise replace a displaced
+    // swing-leg target with the static stand target in one control sample.  The
+    // resulting position step is mechanically impossible and can drive a distal
+    // link past the physics speed guard before the servo torque-speed envelope
+    // has a chance to settle it.
+    if (servoDynamicsClampApplies(intent.requested_mode)) {
         const double control_dt_s =
             std::max(static_cast<double>(config_.loop_timing.control_loop_period.count()) * 1.0e-6, 1.0e-6);
+        // Walking only: STAND entry/recovery keeps the full envelope so the
+        // untilt latch and WALK -> STAND transition screens are unchanged.
+        const double slew_scale =
+            (intent.requested_mode == RobotMode::WALK) ? walkSlewNoLoadFraction() : 1.0;
         const ServoDynamicsClampResult slew = clampJointTargetsToServoDynamics(
             previous_joint_targets,
             result.joint_targets,
             geometry_config::activeHexapodGeometry(),
-            control_dt_s);
+            control_dt_s,
+            slew_scale);
         joint_targets = slew.targets;
         slew_hits = slew.leg_limited;
+        // Test-only coordinated rate experiment. An exact "1" opts in;
+        // simulated joint provenance is additionally required by the helper.
+        const char* experiment = std::getenv("HEXAPOD_SWING_LINK_RATE_EXPERIMENT");
+        if (experiment && std::string{experiment} == "1" && intent.requested_mode == RobotMode::WALK
+            && hw_->usesPhysicsSimBodyAngularConvention()) {
+            double budget = 10.0;
+            if (const char* setting = std::getenv("HEXAPOD_SWING_LINK_RATE_BUDGET_RADPS")) {
+                // Deliberately bounded screen, not an arbitrary guard override.
+                if (std::string{setting} == "9") budget = 9.0;
+                else if (std::string{setting} == "8") budget = 8.0;
+            }
+            const auto governed = governSwingLinkRates(previous_joint_targets, slew.targets,
+                geometry_config::activeHexapodGeometry(), raw, intent.requested_mode,
+                result.gait_state.in_stance, control_dt_s, true, budget);
+            joint_targets = governed.targets;
+            const char* trace = std::getenv("HEXAPOD_SWING_LINK_RATE_TRACE");
+            for (int leg = 0; leg < kNumLegs; ++leg) {
+                const auto& d = governed.legs[leg];
+                if (d.status == SwingLinkRateStatus::Limited) slew_hits[leg] = true;
+                if (!trace || std::string{trace} != "1" || d.status == SwingLinkRateStatus::Inactive) continue;
+                double max_error = 0.0;
+                for (int joint = 0; joint < kJointsPerLeg; ++joint) {
+                    max_error = std::max(max_error, std::abs(joint_targets.leg_states[leg].joint_state[joint].pos_rad.value
+                        - raw.leg_states[leg].joint_state[joint].pos_rad.value));
+                }
+                std::fprintf(stderr, "[swing-link-rate] step=%llu leg=%d status=%d budget=%.9g scale=%.9g limiting_link=%d "
+                    "requested_rates=%.9g,%.9g,%.9g predicted_before=%.9g,%.9g,%.9g predicted_after=%.9g,%.9g,%.9g "
+                    "body_w=%.9g max_pd_error=%.9g\n",
+                    static_cast<unsigned long long>(loop_counter), leg, static_cast<int>(d.status), budget, d.scale, d.limiting_link,
+                    d.requested_rates[0], d.requested_rates[1], d.requested_rates[2],
+                    vecNorm(d.predicted_before[0]), vecNorm(d.predicted_before[1]), vecNorm(d.predicted_before[2]),
+                    vecNorm(d.predicted_after[0]), vecNorm(d.predicted_after[1]), vecNorm(d.predicted_after[2]),
+                    vecNorm(raw.body_twist_state.twist_vel_radps.raw()), max_error);
+            }
+        }
+        // Near-cap swing snap: dump incoming 9.996 already on the guard with
+        // 0.71 rad PD still driving ABA-over. Not the always-on governor.
+        if (intent.requested_mode == RobotMode::WALK && hw_->usesPhysicsSimBodyAngularConvention()) {
+            const auto& geometry = geometry_config::activeHexapodGeometry();
+            const auto near_cap = snapSwingTargetsNearMeasuredLinkCap(
+                joint_targets,
+                geometry,
+                raw,
+                intent.requested_mode,
+                result.gait_state.in_stance,
+                nearCapSnapEnabled());
+            joint_targets = near_cap.targets;
+            const char* snap_trace = std::getenv("HEXAPOD_NEAR_CAP_SNAP_TRACE");
+            const bool log_snap =
+                snap_trace != nullptr && snap_trace[0] != '\0' && std::string{snap_trace} != "0";
+            for (int leg = 0; leg < kNumLegs; ++leg) {
+                const std::size_t leg_index = static_cast<std::size_t>(leg);
+                if (near_cap.legs[leg_index].status == SwingLinkRateStatus::Limited) {
+                    slew_hits[leg_index] = true;
+                }
+                if (!log_snap) {
+                    continue;
+                }
+                const bool in_stance = result.gait_state.in_stance[leg_index];
+                double peak = 0.0;
+                const bool peak_ok = raw.bus_ok && raw.has_body_twist_state
+                    && raw.joint_state_quality[leg_index].position_valid
+                    && raw.joint_state_quality[leg_index].velocity_valid
+                    && raw.joint_state_quality[leg_index].source == JointStateSource::Simulated;
+                if (peak_ok) {
+                    peak = measuredSwingLinkPeakRadps(
+                        geometry.legGeometry[leg_index],
+                        raw.leg_states[leg_index],
+                        raw.body_twist_state.twist_vel_radps.raw());
+                }
+                const char* status_name = "inactive";
+                if (in_stance) {
+                    if (!std::isfinite(peak) || peak < kSwingLinkNearCapRadps) {
+                        continue;
+                    }
+                    status_name = "skipped_stance";
+                } else if (near_cap.legs[leg_index].status == SwingLinkRateStatus::Limited) {
+                    status_name = "fired";
+                } else if (near_cap.legs[leg_index].status == SwingLinkRateStatus::Unchanged) {
+                    status_name = "unchanged";
+                } else if (near_cap.legs[leg_index].status == SwingLinkRateStatus::Unavailable) {
+                    status_name = "unavailable";
+                } else {
+                    continue;
+                }
+                std::fprintf(stderr,
+                    "[near-cap-snap] step=%llu leg=%d peak=%.9g in_stance=%d status=%s\n",
+                    static_cast<unsigned long long>(loop_counter),
+                    leg,
+                    peak,
+                    in_stance ? 1 : 0,
+                    status_name);
+            }
+        }
+        const ServoDynamicsClampResult measured = clampJointTargetsTowardMeasured(joint_targets, est);
+        joint_targets = measured.targets;
+        for (int leg = 0; leg < kNumLegs; ++leg) {
+            if (measured.leg_limited[static_cast<std::size_t>(leg)]) {
+                slew_hits[static_cast<std::size_t>(leg)] = true;
+            }
+        }
+        // Contact-aware liftoff screen, default off. A planned-swing leg still
+        // on the ground cannot work off its PD error, so bound what it can store
+        // before the contact releases. Uses the raw manifold, not gait stance and
+        // not the fused phase, because the question is whether the foot is still
+        // physically touching.
+        const char* liftoff = std::getenv("HEXAPOD_LOADED_SWING_HOLD");
+        if (liftoff != nullptr && liftoff[0] != '\0' && std::string{liftoff} != "0"
+            && intent.requested_mode == RobotMode::WALK) {
+            double max_error_rad = kLoadedSwingTrackingErrorRad;
+            if (const char* setting = std::getenv("HEXAPOD_LOADED_SWING_HOLD_ERROR_RAD")) {
+                // Bounded screen alternatives only; the default is derived from
+                // the servo model in the helper's comment.
+                const std::string value{setting};
+                if (value == "0.25") max_error_rad = 0.25;
+                else if (value == "0.5") max_error_rad = 0.5;
+                else if (value == "0.75") max_error_rad = 0.75;
+            }
+            const auto held = clampLoadedSwingTargetsTowardMeasured(
+                joint_targets,
+                est,
+                intent.requested_mode,
+                result.gait_state.in_stance,
+                raw.foot_contacts,
+                true,
+                max_error_rad);
+            joint_targets = held.targets;
+            const char* hold_trace = std::getenv("HEXAPOD_LOADED_SWING_HOLD_TRACE");
+            const bool log_hold =
+                hold_trace != nullptr && hold_trace[0] != '\0' && std::string{hold_trace} != "0";
+            for (int leg = 0; leg < kNumLegs; ++leg) {
+                const std::size_t leg_index = static_cast<std::size_t>(leg);
+                if (held.legs[leg_index].status != SwingLinkRateStatus::Limited) {
+                    continue;
+                }
+                slew_hits[leg_index] = true;
+                if (!log_hold) {
+                    continue;
+                }
+                std::fprintf(stderr,
+                    "[loaded-swing-hold] step=%llu leg=%d joint=%d scale=%.9g max_error=%.9g\n",
+                    static_cast<unsigned long long>(loop_counter),
+                    leg,
+                    held.legs[leg_index].limiting_link,
+                    held.legs[leg_index].scale,
+                    max_error_rad);
+            }
+        }
+        // The near-cap snap and the remainder cap both run after the first slew
+        // clamp and can step a target further than the servo can move in one
+        // sample. Re-applying the envelope last makes actuator feasibility a
+        // property of the emitted command rather than of one pipeline stage.
+        if (finalSlewClampEnabled()) {
+            const ServoDynamicsClampResult final_slew = clampJointTargetsToServoDynamics(
+                previous_joint_targets,
+                joint_targets,
+                geometry_config::activeHexapodGeometry(),
+                control_dt_s,
+                slew_scale);
+            joint_targets = final_slew.targets;
+            for (int leg = 0; leg < kNumLegs; ++leg) {
+                if (final_slew.leg_limited[static_cast<std::size_t>(leg)]) {
+                    slew_hits[static_cast<std::size_t>(leg)] = true;
+                }
+            }
+        }
+    }
+
+    // Snap/remainder interventions above may change only the angle. Publish
+    // the derivative of the final command, never the pre-intervention slew.
+    if (servoDynamicsClampApplies(intent.requested_mode)) {
+        const double dt_s = std::max(
+            static_cast<double>(config_.loop_timing.control_loop_period.count()) * 1.0e-6, 1.0e-6);
+        (void)refreshJointTargetVelocities(previous_joint_targets, joint_targets, dt_s);
     }
 
     leg_targets_.write(result.leg_targets);
@@ -1200,17 +1910,21 @@ void RobotRuntime::controlStep() {
     ik_reach_clamp_hit_.write(result.ik_reach_clamp_hit);
     slew_clamp_hit_.write(slew_hits);
     joint_targets_.write(joint_targets);
-    locomotion_debug_.write(buildLocomotionDebugSnapshot(
+    const telemetry::LocomotionDebugSnapshot loc_debug = buildLocomotionDebugSnapshot(
         raw,
         est,
         &result.gait_state,
         &result.leg_targets,
         joint_targets,
         &result.joint_targets,
+        &result.latched_stroke_length_m,
+        &result.latched_plant_position_m,
         geometry_config::activeHexapodGeometry(),
         contact_anchor_valid_,
         contact_anchor_world_,
-        contact_anchor_max_drift_m_));
+        contact_anchor_max_drift_m_);
+    maybeRecordR2CommandedFootDump(loop_counter, intent.requested_mode, result, slew_hits, loc_debug, est);
+    locomotion_debug_.write(loc_debug);
     status_.write(result.status);
     traceControlLoop(result.status, true, &result.command_governor);
 
@@ -1425,6 +2139,13 @@ void RobotRuntime::safetyStep() {
         automatic_bus_timeout_recovery,
         bus_recovery_sample_healthy};
     SafetyState s = safety_.evaluate(raw, est, intent, freshness_inputs);
+    maybeRecordTipOverDump(control_loop_counter_.load(),
+                           s,
+                           raw,
+                           est,
+                           intent,
+                           command_governor_state_.read(),
+                           config_.safety);
     if (safety_leg_enabled_test_mask_.has_value()) {
         for (int i = 0; i < kNumLegs; ++i) {
             const std::size_t li = static_cast<std::size_t>(i);
@@ -1906,6 +2627,18 @@ ControlStatus RobotRuntime::getStatus() const {
 
 SafetyState RobotRuntime::getSafetyState() const {
     return safety_state_.read();
+}
+
+void RobotRuntime::debugRestoreTurnEntryController(const GaitState& gait,
+                                                   const CommandGovernorState& governor,
+                                                   const std::array<bool, kNumLegs>& anchor_valid,
+                                                   const std::array<Vec3, kNumLegs>& anchor_world) {
+    pipeline_.debugRestoreGaitHistory(gait);
+    gait_state_.write(gait);
+    command_governor_state_.write(governor);
+    contact_anchor_valid_ = anchor_valid;
+    contact_anchor_world_ = anchor_world;
+    contact_anchor_max_drift_m_ = {};
 }
 
 MotionIntent RobotRuntime::resolveEffectiveIntent(const RobotState& est, const TimePointUs now) {

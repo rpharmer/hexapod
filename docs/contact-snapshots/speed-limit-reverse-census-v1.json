@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "kind": "speed_limit_reverse_census",
+  "date_utc": "2026-09-16T15:05:26Z",
+  "head": "055940da3a5bb7bc3983e5b120fa1258e25b32fe",
+  "dirty_status": " M docs/PHYSICS_SIM_CONFIG_REFERENCE.md\n M docs/PLAN_PINOCCHIO_DEFAULT_SWITCH.md\n M docs/SERVER_CONFIG_REFERENCE.md\n M docs/TESTING_FUNCTIONALITY.md\n M hexapod-common/include/physics_sim_protocol.hpp\n M hexapod-physics-sim/CMakeLists.txt\n M hexapod-physics-sim/include/minphys3d/demo/pinocchio_hexapod.hpp\n M hexapod-physics-sim/include/minphys3d/joints/types.hpp\n M hexapod-physics-sim/src/demo/pinocchio_hexapod.cpp\n M hexapod-physics-sim/src/demo/serve_mode.cpp\n M hexapod-physics-sim/tests/test_pinocchio_hexapod_model.cpp\n M hexapod-server/CMakeLists.txt\n M hexapod-server/README.md\n M hexapod-server/include/control/body_controller.hpp\n M hexapod-server/include/control/control_pipeline.hpp\n M hexapod-server/include/control/locomotion_debug.hpp\n M hexapod-server/include/control/servo_dynamics_clamp.hpp\n M hexapod-server/include/hardware/hardware_bridge.hpp\n M hexapod-server/include/hardware/physics_sim_bridge.hpp\n M hexapod-server/include/hardware/physics_sim_joint_wire_mapping.hpp\n M hexapod-server/scenarios/02_command_timeout_fallback.toml\n M hexapod-server/src/config/runtime_section_parser.cpp\n M hexapod-server/src/control/body_controller.cpp\n M hexapod-server/src/control/body_pose_controller.cpp\n M hexapod-server/src/control/control_pipeline.cpp\n M hexapod-server/src/control/robot_runtime.cpp\n M hexapod-server/src/hardware/physics_sim_bridge.cpp\n M hexapod-server/tests/locomotion_metrics.hpp\n M hexapod-server/tests/locomotion_motion_sequence.hpp\n M hexapod-server/tests/physics_sim_test_utils.hpp\n M hexapod-server/tests/test_locomotion_command.cpp\n M hexapod-server/tests/test_locomotion_pose_and_stability.cpp\n M hexapod-server/tests/test_locomotion_regression_suite.cpp\n M hexapod-server/tests/test_motion_intent_through_ik_fk.cpp\n M hexapod-server/tests/test_motion_performance_suite.cpp\n M hexapod-server/tests/test_physics_sim_bridge_frame_conversion.cpp\n M hexapod-server/tests/test_physics_sim_exact_command_replay.cpp\n M hexapod-server/tests/test_physics_sim_nav_waypoints.cpp\n M hexapod-server/tests/test_physics_sim_navigation_acceptance.cpp\n M hexapod-server/tests/test_physics_sim_oblique_walk_clearance.cpp\n M hexapod-server/tests/test_physics_sim_proximal_stand_acceptance.cpp\n M hexapod-server/tests/test_physics_sim_slow_fwd_walk_contact_loss.cpp\n M hexapod-server/tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp\n M hexapod-server/tests/test_physics_sim_tripod_support_baseline.cpp\n M hexapod-server/tests/test_physics_sim_turn_foot_clearance.cpp\n M hexapod-server/tests/test_physics_sim_turn_raw_contact_loss.cpp\n M hexapod-server/tests/test_physics_sim_walk_distance.cpp\n M hexapod-server/tests/test_physics_sim_walk_entry_tracking.cpp\n M hexapod-server/tests/test_physics_sim_walk_stability.cpp\n M hexapod-server/tests/test_physics_sim_wave_slow_walk_foot_clearance.cpp\n M hexapod-server/tests/test_scenario_body_height_margin.cpp\n M hexapod-server/tests/test_toml_parser_sections.cpp\n?? docs/PLAN_CONTACT_NCP_COMPLIANCE_AND_PRUNING.md\n?? docs/PLAN_COORDINATED_SWING_RATE_GOVERNOR.md\n?? docs/contact-snapshots/\n?? hexapod-physics-sim/tests/test_pinocchio_link_angular_velocity.cpp\n?? hexapod-server/include/control/leg_link_angular_velocity.hpp\n?? hexapod-server/include/control/swing_link_rate_governor.hpp\n?? hexapod-server/scenarios/05_long_walk_contact_health.toml\n?? hexapod-server/tests/physics_sim_link_speed_audit.hpp\n?? hexapod-server/tests/test_swing_link_rate_governor.cpp\n?? tools/\n",
+  "decision": "no-production-lever",
+  "captured": false,
+  "schema2_artifacts": {
+    "speed-limit-reverse-v1.json": null,
+    "speed-limit-straight-v1.json": null
+  },
+  "not_overwritten": [
+    "docs/contact-snapshots/speed-limit-rigid-v1.json",
+    "docs/contact-snapshots/speed-limit-rigid-v2.json",
+    "docs/contact-snapshots/speed-limit-governed-kinematics-v1.json",
+    "docs/contact-snapshots/reverse-failure-v3.json",
+    "docs/contact-snapshots/forward-failure-v1.json"
+  ],
+  "v16_untouched": "ddc6008e0cc1ac97",
+  "solver_mode": 1,
+  "solver_iterations": 24,
+  "body_height_m": 0.14,
+  "max_angular_speed_radps": 10,
+  "governor_enabled": false,
+  "predictor_command_path": false,
+  "mode_2_promoted": false,
+  "sim_binary_sha256": "f02a6edbc0dc3487bd2352865201af2dd66924ab6ed9b5fa030e748e6f5f3812",
+  "runner_sha256": "e301a62b864597e905becb61daebefb22e65015972a0b5d454a6185616c5dd57",
+  "existing_fixture_sha256": {
+    "speed-limit-rigid-v1.json": "d4a0c132d8eb2e3249c85264c1471202f2202bc3c393cbb11b2f3e1565011e57",
+    "speed-limit-rigid-v2.json": "e910401383c06e87835af8cdccc0fa2056cd097b779f3921a0437a6ca8b8a73b",
+    "speed-limit-governed-kinematics-v1.json": "d24c77aeaf7f7611bbd42d1c4f6c6599b0babf908329c80744fc7519d9e687ce",
+    "reverse-failure-v3.json": "b5546acbfde41eb44adf1660904b0a48c19223b6c2468d034c5d9dbf32e2fa36"
+  },
+  "hunt_reports_sha256": {
+    "speed-limit-reverse-hunt-isolated-v1.json": "0011d6ca3d94a9ce3f18f4e68470b3da546c20cebbc97d324a8da3dd4f3eb8f9",
+    "speed-limit-reverse-hunt-sequential-v1.json": "431951c4640ca4cfa54dcd18c406ad215f1cb294420f206b1b59e8ba90bcba84",
+    "speed-limit-reverse-hunt-straight-v1.json": "44d6360019b11eb470579a7e10f11a7cdd550d06f9225be5908c05204156b187"
+  },
+  "isolated_reverse": {
+    "runs": 5,
+    "passed": "5/5",
+    "speed_limit_snapshots": 0,
+    "held_steps": 0,
+    "peak_preintegration_angular_speed": [
+      8.330593109131,
+      8.090734481812,
+      7.861712932587,
+      7.816389560699,
+      9.071847915649
+    ],
+    "recovered_ncp_only": true,
+    "notes": "Isolated reverse did not produce an initiating SpeedLimit or NCP hold in this budget."
+  },
+  "isolated_straight": {
+    "runs": 3,
+    "passed": "3/3",
+    "speed_limit_snapshots": 0,
+    "notes": "Optional capture window; no initiating SpeedLimit this screen."
+  },
+  "sequential": {
+    "runs": 5,
+    "passed": "1/5",
+    "speed_limit_snapshots": 0,
+    "failures": [
+      {
+        "run": 2,
+        "case": "turn_in_place",
+        "class": "turn_drift",
+        "net_horizontal_distance_m": 0.230724,
+        "held": 0
+      },
+      {
+        "run": 3,
+        "case": "turn_in_place",
+        "class": "turn_drift",
+        "net_horizontal_distance_m": 0.210051,
+        "held": 0
+      },
+      {
+        "run": 4,
+        "case": "reverse_walk",
+        "class": "ncp_hold",
+        "held": 1,
+        "contacts": 5,
+        "ncp_dual": 0.007279,
+        "ncp_comp": 0.002408,
+        "iterations": 48,
+        "worst_contact": 7,
+        "max_link_w": 2.768093,
+        "retry_count": 171
+      },
+      {
+        "run": 5,
+        "case": "turn_in_place",
+        "class": "turn_drift",
+        "net_horizontal_distance_m": 0.21386,
+        "held": 0
+      }
+    ],
+    "notes": "Cap of 5 sequential runs; stop without a schema-2 SpeedLimit snapshot."
+  },
+  "ncp_class_confirmation": {
+    "recapture": false,
+    "reason": "Sequential run 4 reverse hold is 5-contact last-resort NCP (dual 0.007279, comp 0.002408, 48 iters, link w 2.77). Same Class A family as isolated reverse NCP after cold retries; reverse-failure-v3 remains the frozen first-reject fixture.",
+    "existing_fixture": "docs/contact-snapshots/reverse-failure-v3.json"
+  },
+  "prior_remesure_telemetry_not_a_fixture": {
+    "source": "/tmp/hexapod-integrated-guard-baseline/sequential-baseline-4.log",
+    "case": "sequential reverse_walk after forward and slow",
+    "pd_gain": 1.0,
+    "frame": "leg_4_tibia_body",
+    "class_code": 4,
+    "support": "swing",
+    "winner_w": 10.1513,
+    "chassis_w": 0.646205,
+    "ncp_dual": 0.000666169,
+    "contacts": 4,
+    "held_speed_limit_steps": 1255,
+    "joints": [
+      {
+        "name": "coxa",
+        "vin": -7.0651,
+        "vaba": -7.16906,
+        "vnew": -7.1266,
+        "contact_dv": 0.0424551,
+        "err": -0.588972
+      },
+      {
+        "name": "femur",
+        "vin": 4.78138,
+        "vaba": 5.08362,
+        "vnew": 4.92659,
+        "contact_dv": -0.157034,
+        "err": 0.503242
+      },
+      {
+        "name": "tibia",
+        "vin": 1.49261,
+        "vaba": 1.52202,
+        "vnew": 1.69643,
+        "contact_dv": 0.174411,
+        "err": 0.187138
+      }
+    ],
+    "composed_vin_abs_sum": 13.33909,
+    "classification": "commanded",
+    "trip_mechanism": "composed_serial_link",
+    "contact_amplified": false,
+    "recovery_slew_in_trace": false,
+    "compared_to": {
+      "speed-limit-rigid-v1.json": "same commanded swing-tibia family; incoming joint rates already large; contact increment small",
+      "speed-limit-rigid-v2.json": "not contact-amplified; v2 femur/tibia contact_dv were +4.89/-9.69",
+      "speed-limit-governed-kinematics-v1.json": "different winner (femur vs tibia); this telemetry is not a full ABA/Jacobian freeze"
+    },
+    "new_unused_lever": false
+  },
+  "phase_2_experiment": false,
+  "levers_not_applied": [
+    "maxAngularSpeed 10",
+    "no vNew clamp",
+    "retry gain 0.5",
+    "no pruning",
+    "no mode-2 promotion",
+    "swing-rate governor remains opt-in",
+    "coupled predictor remains test-local"
+  ]
+}

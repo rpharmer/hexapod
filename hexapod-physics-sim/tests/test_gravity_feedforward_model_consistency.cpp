@@ -23,7 +23,7 @@ int main() {
     LegGeometry leg{};
     leg.coxaLength = LengthM{hexapod_dynamics::kCoxaLengthM};
     leg.femurLength = LengthM{hexapod_dynamics::kFemurLengthM};
-    leg.tibiaLength = LengthM{hexapod_dynamics::kTibiaLinkLengthM};
+    leg.tibiaLength = LengthM{0.104}; // kinematic reach to sphere centre, not shaft length
     leg.mountAngle = AngleRad{0.35};
 
     control_config::GravityFeedforwardConfig cfg{};
@@ -34,11 +34,16 @@ int main() {
     cfg.include_self_weight = false;
 
     const Vec3 g_down{0.0, 0.0, -1.0};
-    const double F = hexapod_dynamics::kBodyMassKg * hexapod_dynamics::kStandardGravityMps2 / 6.0;
+    // A linear scaling test must stay strictly below the existing angle clamp.
+    // Full body-share load saturates with the corrected compound inertia proxy.
+    const double F = .01 * hexapod_dynamics::kBodyMassKg * hexapod_dynamics::kStandardGravityMps2 / 6.0;
 
     const LegGravityCompensation half =
         computeLegGravityCompensation(leg, 0.0, 0.5, -0.2, g_down, 0.5 * F, cfg);
     const LegGravityCompensation full = computeLegGravityCompensation(leg, 0.0, 0.5, -0.2, g_down, F, cfg);
+    if (!ok(std::abs(full.delta_femur_rad) < cfg.max_delta_femur_rad
+            && std::abs(full.delta_tibia_rad) < cfg.max_delta_tibia_rad,
+            "linear-test fixture must not saturate")) return 1;
     if (!ok(std::abs(half.delta_femur_rad * 2.0 - full.delta_femur_rad) < 5e-7 &&
                 std::abs(half.delta_tibia_rad * 2.0 - full.delta_tibia_rad) < 5e-7,
             "foot reaction scaling should double sag (unsaturated)")) {

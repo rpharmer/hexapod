@@ -56,7 +56,7 @@ bool testBodyPoseFullMarginLeanForward() {
     PlanarMotionCommand cmd{0.2, 0.0, 0.0};
     constexpr double kSoftMargin = 0.022;
     constexpr double kHardMargin = 0.004;
-    constexpr double kLeanPitchPerVx = 0.22;
+    constexpr double kLeanPitchPerVx = -0.22;
     constexpr double kLeanVxRefMps = 0.20;
     const BodyPoseSetpoint pose =
         computeBodyPoseSetpoint(intent, cmd, kSoftMargin, 1.0);
@@ -65,7 +65,7 @@ bool testBodyPoseFullMarginLeanForward() {
     const double expected_pitch =
         0.2 - kLeanPitchPerVx * std::clamp(cmd.vx_mps / kLeanVxRefMps, -1.2, 1.2) * margin_scale;
     return expect(nearlyEqual(pose.pitch_rad, expected_pitch, 1e-9),
-                  "full margin should apply full forward lean into +vx");
+                  "full margin should apply counter-pitch for +vx load transfer");
 }
 
 bool testBodyPoseDefaultHeight() {

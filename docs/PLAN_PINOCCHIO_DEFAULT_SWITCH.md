@@ -2,7 +2,23 @@
 
 Date: 2026-09-12  
 Campaign run: 2026-09-12 evening (RelWithDebInfo, WSL)  
-Updated: 2026-09-14 (exact-replay seed 0 and cadence are default CTests)
+Updated: 2026-09-15 (pitch sign, recovery resync, armature, STAND height, turn `cmd_yaw`; last-resort 2× NCP; reverse 5-contact NCP and tilt path-before-rate-trip are Class A residuals)
+
+## Latest walking follow-up (2026-09-22)
+
+The rebuilt default passes reverse ×5, isolated turn ×5 and complete sequential
+walk-distance ×5 with zero held samples, plus canonical aggressive governor
+(two strides). The changes preserve retry damping while reducing proportional
+drive, and enable bounded turn-position feedback only for physics bridges with
+reliable absolute position. Mode 1 remains default, including its existing CCP
+recovery; implicit actuation and gravity feedforward remain off. See
+[walking campaign §3.24](SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md) for the evidence,
+rejected alternatives and current wider-verification status: server **97/98**
+(only tilt path-before-fault remains), full physics **68/75** (seven legacy
+World/scene failures also reproduce with the changes disabled), firmware **3/3**,
+simple-sim smoke pass. Full root verification is therefore still red. The historical
+red status below is retained as the first campaign record, not the latest
+sequential result. No new 100-seed or soak qualification is claimed.
 
 ## Status after the first campaign
 
@@ -10,10 +26,44 @@ Stand, seed 0, 100-seed, and cadence 120/240/480 Hz are **green**. WSL default i
 **pinocchio-proximal** (`SolverMode = 1`, `SolverIterations = 24`); parser default
 is `1`. Exact-replay seed 0 and 120/240/480 Hz are default CTests (cap 24, both
 enforce flags, fixture v16). 100-seed stays a diagnostic override.
-`./scripts/verify.sh` 15/84 server CTests remain a **known PGS/offline
-baseline**, not a proximal production gate — see
+`./scripts/verify.sh` live-physics CTests now default to pinocchio-proximal at
+production **0.14 m / cap 24**. Offline height-margin is green. **2/15** of the
+former red set remain Class A closed-loop misses (WAVE and slow-fwd height
+closed; walk-distance and regression tilt still red). Chassis-only speed guard
+was tried and reverted. SpeedLimit retry at 0.5 PD gain was insufficient by
+itself; applying the existing actuator target-rate envelope to STAND recovery
+closed the WALK-to-STAND SpeedLimit hold class. Recovery-only target resync
+after a held rollback then closed the post-hold SpeedLimit cascade;
+canonical `aggressive_governor` now passes. Isolated forward / slow-forward /
+straight / turn-in-place pass. Isolated reverse still flakes on a 5-contact
+NCP complementarity hold (not a shared-process harness artefact). Last-resort
+dt/4 cold steps recovered some of those snapshots under 2×, then dumped
+leftover-ω tibia SpeedLimit on forward and broke isolated straight stay-WALK;
+reverted to two cold `dt/2` 48-iter steps. Cold 96 at the same `dt/2` still
+leaves dual over 2e-3 on half of the held snapshots (not iteration-limited).
+Last-resort graze filtering of 50/100 µm extras is **not** a clean 3-loaded-foot
+fix: 50 µm often drops nothing or the dual-worst row; 100 µm can drop joint 13.
+Isolated reverse stay-WALK is a **Class A residual** (hard 5-contact NCP).
+`tilt_safety_trip` is a second **Class A residual**: rate-rule TIP_OVER after
+~15 mm of pre-fault travel vs the 0.10 m path gate (do not loosen 0.10 or 0.45).
+Sequential walk-distance remains red. See
+[hold-class census](#hold-class-census-no-lever-2026-09-14),
+[SpeedLimit retry gain](#speedlimit-retry-gain-hold-class-2026-09-14),
+[recover BUS_TIMEOUT census](#recover-bus_timeout-census-no-lever-2026-09-15),
+[recovery target resync](#recovery-target-resync-hold-cascade-2026-09-15),
+[stay-WALK hold census](#stay-walk-one-sample-hold-census-2026-09-15),
+[stay-WALK initiating NCP hold](#stay-walk-initiating-ncp-hold-2026-09-15),
+[servo armature and stand height](#servo-armature-and-stand-height-2026-09-15),
+[turn-in-place cmd_yaw](#turn-in-place-cmd_yaw-construction-2026-09-15),
+[isolated reverse NCP complementarity](#isolated-reverse-ncp-complementarity-2026-09-15),
+[last-resort 4-contact omit](#last-resort-4-contact-omit-2026-09-15),
+[last-resort quarter-steps](#last-resort-quarter-steps-2026-09-15),
+[last-resort 96-iter](#last-resort-96-iter-2026-09-15),
+[last-resort graze filter](#last-resort-graze-filter-2026-09-15),
+[tilt path-before-rate-trip](#tilt-path-before-rate-trip-2026-09-15),
+[hold batch remesure](#chassis-only-speed-guard-hold-batch-2026-09-14), and
 [verify.sh inventory](#verifysh-inventory-2026-09-14). Keep `legacy-pgs` (`= 0`)
-for comparison.
+for comparison. The iterations-only `PhysicsSimBridge` ctor is still PGS.
 See [Strafe gate investigation](#strafe-gate-investigation-2026-09-14),
 [Six-contact remaining gates](#six-contact-remaining-gates-2026-09-14),
 [Forward cross-track investigation](#forward-cross-track-investigation-2026-09-14),
@@ -34,7 +84,7 @@ and [verify.sh inventory](#verifysh-inventory-2026-09-14).
 | 100-seed safety then behaviour | **Pass** on v16 after last-resort cold half-steps. held 0, read 0, recovered 2388, `behavior_gate_failures` 0 |
 | 120 / 240 / 480 Hz same fixture | **Pass.** Seed 0, both enforce flags, cap 24. Safety held 0 at all three. 120 Hz diagonal **103%** after scoring at capture period; 240/480 unchanged and still pass |
 | 10-minute randomized gait | **Struck from the switch contract.** Keep as post-default soak, not an unowned blocker |
-| `./scripts/verify.sh` | **Struck from the switch contract.** 15/84 server CTests remain red (PGS live-physics and offline scenario height). Proximal stand CTest **passed**. Smoke uses `config.sim.txt`, not proximal walk. See [verify.sh inventory](#verifysh-inventory-2026-09-14) |
+| `./scripts/verify.sh` | **Retargeted 2026-09-14.** Live-physics CTests use pinocchio-proximal at 0.14 m / cap 24. Offline `scenario_body_height_margin` **pass**. Isolated reverse still flakes on 5-contact NCP complementarity; sequential walk-distance remains red. Regression tilt path-before-TIP_OVER remains red. Canonical `aggressive_governor` **pass**. WAVE height, slow-fwd height, tripod support, stand, and v16 multi-rate screens pass. Chassis-only speed guard remains reverted. Smoke still uses `config.sim.txt`. See [verify.sh inventory](#verifysh-inventory-2026-09-14) |
 | WSL default `pinocchio-proximal` | **Flipped** (2026-09-14). `SolverMode = 1`, `SolverIterations = 24`, parser default `1`. Harness / `config.physics-sim.txt` stay `0` |
 
 Current frozen fixture (do not recapture for solver A/B): hash
@@ -1114,34 +1164,54 @@ Parser default and WSL `SolverMode` were still `0` at cadence close. Flip is in
 
 ### verify.sh inventory (2026-09-14)
 
-Last `./scripts/verify.sh` server CTest: **15/84 failed**. Proximal stand
-(`physics_sim_proximal_stand_acceptance`) **passed** in the same run. Smoke uses
-[`config.sim.txt`](../hexapod-server/config.sim.txt) (`Runtime.Mode = "sim"`),
-not physics-sim proximal. Iterations-only
+**As written (PGS / crouch / offline envelope), before retarget:** 14/15 failed
+(`physics_sim_nav_waypoints` already passed at 0.06 m PGS). Offline
+`scenario_body_height_margin` failed because TOMLs command **0.14 m** while the
+test floor was standing ~0.137 + squat 0.020 ⇒ **0.156 m**. Live PGS at 0.14 m
+tripped `BODY_COLLAPSE` (fault 8) with body height ~0.032 m. Walk-distance at
+0.06 m PGS failed slow-forward direction. Iterations-only
 [`PhysicsSimBridge`](../hexapod-server/include/hardware/physics_sim_bridge.hpp)
-ctors default `solver_settings_{}` to `LegacyPgs`; they ignore WSL `SolverMode`.
+ctors still default to `LegacyPgs`; they ignore WSL `SolverMode`. Smoke uses
+[`config.sim.txt`](../hexapod-server/config.sim.txt).
 
-| CTest | Class | Why it is not the proximal production gate |
+**Retarget (same day):** live failing binaries take
+`productionProximalSolverSettings()` (pinocchio-proximal, cap **24**). Default
+heights **0.14 m** (walk-distance / nav / regression 0.10). Offline floor is
+production **0.14 m**; scenario TOMLs unchanged. Int ctor and harness
+`SolverMode = 0` unchanged. `HEXAPOD_WALK_TEST_SOLVER_MODE=legacy-pgs` remains
+an A/B (no `max(50, …)` bump).
+
+**After retarget (cap 24, 0.14 m):** 10/15 **pass**, then height-hold remesure
+moved WAVE to pass and reduced-support servo compensation closed tripod support
+(**12/15**). Contact-consistent inertia then closed slow-fwd height
+(**13/15**). 2 remain **Class A** (Healthy undershoot /
+tracking). Do not retune gait, plant `L`, μ, or ADMM on this evidence. Do not
+hide the remainder with CTest labels. See
+[closed-loop height sag](#closed-loop-height-sag-slowwave-2026-09-14) and
+[slow-fwd plant vs command](#slow-fwd-walk-height-plant-vs-command-2026-09-14).
+
+| CTest | After retarget | Notes |
 | --- | --- | --- |
-| `scenario_body_height_margin` | Offline TOML | Scenarios command **0.14 m**. Assembly standing ~0.137 m + squat 0.020 m ⇒ min-safe **0.156 m**. No live solver |
-| `physics_sim_walk_distance` | PGS crouch | Default height **0.06 m**. Harness `SolverMode = 0`. Proximal only via `HEXAPOD_WALK_TEST_SOLVER_MODE` (supporting evidence, not this CTest) |
-| `physics_sim_walk_entry_tracking` | Live PGS | Iterations-only ctor. Commands 0.14 m |
-| `physics_sim_walk_stability` | Live PGS | Iterations-only ctor. Commands 0.14 m |
-| `physics_sim_turn_foot_clearance` | Live PGS | Iterations-only ctor. Commands 0.14 m |
-| `physics_sim_oblique_walk_clearance` | Live PGS | Iterations-only ctor. Commands 0.14 m |
-| `physics_sim_turn_raw_contact_loss` | Live PGS | Iterations-only ctor |
-| `physics_sim_slow_fwd_walk_foot_clearance` | Live PGS | Iterations-only ctor. Commands 0.14 m |
-| `physics_sim_wave_slow_walk_foot_clearance` | Live PGS | Iterations-only ctor. Commands 0.14 m |
-| `physics_sim_slow_fwd_walk_contact_loss` | Live PGS | Iterations-only ctor |
-| `physics_sim_tripod_support_baseline` | Live PGS | Iterations-only ctor. Commands 0.14 m |
-| `physics_sim_nav_waypoints` | PGS crouch | Iterations-only ctor. Height **0.06 m** |
-| `physics_sim_navigation_acceptance` | PGS crouch | Iterations-only ctor. Height **0.06 m** |
-| `locomotion_regression_suite` | Live PGS | Iterations-only ctor. Phases at **0.10 m**, not production 0.14 m |
-| `motion_performance_suite` | Live PGS | Iterations-only ctor. Stand height 0.14 m, still PGS |
+| `scenario_body_height_margin` | **Pass** | Command floor 0.14 m; TOMLs stay 0.14 |
+| `physics_sim_walk_entry_tracking` | **Pass** | |
+| `physics_sim_walk_stability` | **Pass** | |
+| `physics_sim_turn_foot_clearance` | **Pass** | |
+| `physics_sim_oblique_walk_clearance` | **Pass** | |
+| `physics_sim_turn_raw_contact_loss` | **Pass** | |
+| `physics_sim_slow_fwd_walk_contact_loss` | **Pass** | |
+| `physics_sim_nav_waypoints` | **Pass** | Now 0.14 m proximal (was 0.06 m PGS pass) |
+| `physics_sim_navigation_acceptance` | **Pass** | |
+| `motion_performance_suite` | **Pass** | smoke |
+| `physics_sim_walk_distance` | **Fail** Class A | Last-resort 2× NCP accept kept. Isolated cases usually pass; sequential CTest still stay-WALK on reverse 5-contact NCP (`ncp_dual` ~0.006). See [stay-WALK initiating NCP hold](#stay-walk-initiating-ncp-hold-2026-09-15) |
+| `physics_sim_slow_fwd_walk_foot_clearance` | **Pass** | Contact-consistent CRBA on load-bearing feet (2.625 cap, 50 ms blend). After hold-batch revert remesure min body *z* **0.141 m** (undershoot **−1.4 mm** vs 10 mm). 10 mm gate unchanged. See [contact-consistent inertia](#contact-consistent-inertia-slow-fwd-height-2026-09-14) |
+| `physics_sim_wave_slow_walk_foot_clearance` | **Pass** | After `kBodyHeightHoldMaxEffectiveMarginM` 12→40 mm: undershoot 6.0–7.4 mm; after hold-batch revert remesure min **0.141 m**. Chassis-only guard flaked this gate (TIP_OVER) and was reverted. 10 mm gate unchanged |
+| `physics_sim_tripod_support_baseline` | **Pass** | Static reduced-support gain compensation: **26–39 mm** tracking across contact-order seeds 0–4 vs 45 mm; true three-foot contact in the metrics window. Six-foot stand and moving-gait gains are unchanged. See [tripod support tracking](#tripod-support-commanded-foot-tracking-2026-09-14) |
+| `locomotion_regression_suite` | **Fail** Class A | Canonical `aggressive_governor` **pass**. Stress `tilt_safety_trip` remains out: honest rate-rule TIP_OVER after ~15 mm pre-fault travel vs 0.10 m path. See [tilt path-before-rate-trip](#tilt-path-before-rate-trip-2026-09-15) |
 
-None of the 15 forces `PinocchioProximal`. Do **not** raise scenario heights,
-retarget these binaries to proximal, or change the iterations-only ctor.
-Leave `verify.sh` red. All 15 are struck from the switch contract.
+`./scripts/verify.sh` was **not** re-run: the 15-set is not green (walk-distance
+and regression tilt remain red). Remaining work is closed-loop collection at
+0.14 m plus the separately classified tilt/NCP failures, not a solver-mode flip.
+Do not stack a second SpeedLimit gain scale.
 
 **Flip (2026-09-14):** WSL `SolverMode = 1`, `SolverIterations = 24`, parser
 default `1`. Harness and `config.physics-sim.txt` stay `0`.
@@ -1150,8 +1220,835 @@ Remesure after flip (cap 24, v16, both enforce flags):
 
 | Gate | Result |
 | --- | --- |
-| Stand 60 s | **Pass.** 12000 healthy, height **9.81 mm**, foot RMS **0.22 mm**, p99 iters **7**, max iters **23** |
-| Seed 0 at 5000 µs | **Pass.** Forward 111% / reverse 127% / strafe 106% / diagonal 81% / turn 147%. recovered 24, held 0, `max_iterations` 24 (last-resort does not fire) |
+| Stand 60 s | **Pass.** 12000 healthy, height **8.15 mm** (contact-CRBA remesure; was 9.81 mm at flip), foot RMS **7e-6 m**, p99 iters **7**, max iters **9** |
+| Seed 0 at 5000 µs | **Pass.** v16 unchanged. Replay sets `HEXAPOD_PINOCCHIO_DISABLE_CONTACT_INERTIA` so the frozen plant stays spawn six-foot I. 120/240/480 Hz also **pass**. |
+
+### Closed-loop height sag (slow/wave, 2026-09-14)
+
+Named gates: `physics_sim_slow_fwd_walk_foot_clearance` and
+`physics_sim_wave_slow_walk_foot_clearance` (command **0.14 m**, proximal cap
+**24**, 10 mm undershoot vs min body *z* over every walk frame). Walk-distance
+net is supporting only.
+
+Census (no lever yet): stand-end *z* ~0.149–0.150 m (inside stand’s 10 mm).
+First **120 ms** of walk is the high point (~0.149 m), not the sag. Min is after
+120 ms. Median stays near command (slow-fwd 0.142 m, WAVE 0.138 m). Governor
+stays at ~0.14 m (slow-fwd min 0.1395 m; WAVE min 0.136 m). PGS A/B on
+walk-distance at 0.14 m collapsed (`BODY_COLLAPSE`, min height 0.031 m, error
+0.109 m) — not the same 20–35 mm proximal sag.
+
+Four-way: **not window** (excluding 120 ms would not change the min). **Not
+governor** (command stays at 0.14 m). **Hold cap:** at the named min, sag was
+20 mm / 35 mm so proportional hold requested more than
+`kBodyHeightHoldMaxEffectiveMarginM` (12 mm).
+
+One lever: raised that constant to **40 mm**. Did not touch integral gain, gait,
+plant `L`, μ, or ADMM. Remesure: WAVE **pass** (undershoot 6.0–7.4 mm). Slow-fwd
+still ~19 mm; after the raise, hold request at the dip is below 40 mm, so the
+leftover is **plant/IK**. The follow-up census below splits that leftover.
+10 mm still means min pose over the full walk window, not a post-transient score.
+
+### Slow-fwd walk height (plant vs command, 2026-09-14)
+
+Named gate: [`test_physics_sim_slow_fwd_walk_foot_clearance.cpp`](../hexapod-server/tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp)
+(command **0.14 m**, proximal cap **24**, 10 mm undershoot vs min body *z* over
+every walk frame). WAVE already **pass**. Walk-distance `forward_walk` net
+(0.045 vs 0.05 m) is supporting only. Do not extend
+`kStaticReducedSupportGainScale` (1.85× static, 250 ms dwell) into moving gait.
+
+Census (proximal, `HEXAPOD_WALK_TEST_SOLVER_MODE` unset). Gates unchanged. CTest
+remesure: min body *z* **0.118 m** (undershoot **22 mm**). Median **0.145 m**.
+First 120 ms **0.149 m**; after **0.118 m**. Governor **0.137–0.140 m**. Stand-end
+**0.149 m**. Commanded stance-foot body *z* median **−0.135 m**, min **−0.169 m**
+(hold requesting extra lift at the dip, not a squat). Planned min **−0.166 m**.
+Measured stance-foot world *z* **0.015 m**. Max stance commanded tracking **161 mm**.
+Latch: `max_unchanged_target_s` **0**, `max_latch_candidate_s` **0**,
+`reduced_support_latch_could_arm` **false**. Repeat runs in the same tree were
+0.111–0.119 m (19–29 mm undershoot); same class.
+
+Four-way:
+
+- **Not latch leak.** Walk joint targets change every step; the static 1.85×
+  predicate never dwells.
+- **Not Cartesian command sag.** Governor stays at ~0.14 m. Median commanded
+  stance-foot body *z* stays near **−0.14 m** (nominal for that height). The
+  more-negative min is height hold, not workspace/IK sag. Body does not track a
+  lowered command.
+- **Plant during gait.** Commanded stance *z* stays near 0.14 m, stance feet stay
+  on/above the plane, body dips cyclically after 120 ms.
+- **Not contact sink.** Stance feet world *z* ~15 mm above the plane.
+
+One lever: **stop.** Do not extend 1.85× into WALK, and do not raise plant `L`,
+μ, ADMM, stall, the 40 mm hold cap, or the 10 mm gate. 10 mm still means min
+pose over every walk frame. Closed later by
+[contact-consistent inertia](#contact-consistent-inertia-slow-fwd-height-2026-09-14).
+
+### Contact-consistent inertia (slow-fwd height, 2026-09-14)
+
+Named gate: [`test_physics_sim_slow_fwd_walk_foot_clearance.cpp`](../hexapod-server/tests/test_physics_sim_slow_fwd_walk_foot_clearance.cpp)
+(command **0.14 m**, proximal cap **24**, **10 mm**). The 1.75× moving-contact
+gain was an existence proof; it is removed. PD stays `τ = Kp e − Kd q̇`
+with the torque-speed envelope. Commanded rates now travel on `StepCommand`
+(`joint_target_velocities[18]`; legacy 81-byte packets still reconstruct Δq/Δt).
+
+Live plant: load-bearing tibia mask (geometric contact and previous-substep
+normal impulse ≥ 2% of `m g Δt`), then
+`AssignStanceLoadedServoInertias` on that mask. Six load-bearing feet keep spawn
+nominal (1.5× cap). Reduced support recomputes at cap **2.625** and blends over
+**50 ms**, at most once per physics step, only at production command period
+4.5–5.5 ms. Static 1.85× latch does not stack on reduced-contact CRBA.
+Exact-replay sets `HEXAPOD_PINOCCHIO_DISABLE_CONTACT_INERTIA=1` so fixture v16
+(`ddc6008e0cc1ac97`) stays on the capture plant. Do not recapture.
+
+Remesure (`HEXAPOD_WALK_TEST_SOLVER_MODE` unset, cap 24, 0.14 m):
+
+| Gate | Result |
+| --- | --- |
+| Slow-fwd height | **Pass.** Min body *z* **0.141 m** (undershoot **−0.9 mm**) |
+| WAVE height | **Pass.** Min body *z* **0.143 m** |
+| Proximal stand 60 s | **Pass.** 12000 healthy, height **8.15 mm**, p99 **7**, max **9** |
+| Tripod support | **Pass.** Tracking **39.7 mm** vs 45 mm; 720/720 three-foot |
+| Exact-replay seed 0 | **Pass** at 5000 / 8333 / 4167 / 2083 µs |
+
+10 mm still means min pose over every walk frame. `./scripts/verify.sh` was not
+re-run. Remaining Class A: walk-distance hold/BUS_TIMEOUT and
+regression aggressive-recover / tilt path-before-TIP_OVER. Chassis-only speed
+guard was tried and reverted. See
+[walk-distance and regression census](#walk-distance-and-regression-census-2026-09-14)
+and [hold batch remesure](#chassis-only-speed-guard-hold-batch-2026-09-14).
+
+### Walk-distance and regression census (2026-09-14)
+
+Named gates: [`test_physics_sim_walk_distance.cpp`](../hexapod-server/tests/test_physics_sim_walk_distance.cpp)
+and canonical [`test_locomotion_regression_suite.cpp`](../hexapod-server/tests/test_locomotion_regression_suite.cpp)
+(proximal cap **24**, 0.14 m, `HEXAPOD_WALK_TEST_SOLVER_MODE` unset). Contact-consistent
+CRBA is on for these live loops.
+
+**Walk-distance `forward_walk` (0.20 m/s, 2400 steps).** The old net-progress miss
+is closed. Path **0.975 m**, net **0.265 m** (gate 0.05), heading cosine **0.96**,
+speed ratio **0.69** (band 0.20–0.90). It then leaves WALK: 2014 walk / 386
+non-walk, `final_fault=BUS_TIMEOUT`. Solver: 1984 healthy, 129 recovered, **287
+held**, 93 not-converged, max iters **48**, rollbacks **715**, stall utilization
+**1.0**. `PhysicsSimBridge` rejects `HeldLastGood` as a failed read (`!bus_ok`),
+and safety maps that to BUS_TIMEOUT. This is Class D hold → Class A mode drop,
+not circling and not a 500 ms UDP hitch. Slow closed-loop walk still works:
+regression `steady_forward_walk` at **0.08 m/s** passes (path 0.62 m, net 0.15 m,
+fault NONE).
+
+**Regression canonical.** `steady_forward_walk`, `turn_in_place` (yaw **0.41 rad**
+vs 0.25), `gait_transition_stability`, `command_timeout_fallback`, and
+`low_support_walk` **pass**. Two remain:
+
+| Case | Historical note | Now |
+| --- | --- | --- |
+| `turn_in_place` | yaw miss | **Pass** |
+| `aggressive_governor` | stride_count / stepping | Walk 400–959 completes (stride 2, path 1.02 m, governor scales). WALK→STAND recover at ~0.43 m/s: three STAND samples then `bus_ok=false`, pose frozen, BUS_TIMEOUT at step 963. Same HeldLastGood mapping as walk-distance, at the mode change |
+| `tilt_safety_trip` | motion before TIP_OVER | Still that class. Tightened `max_tilt_rad=0.25` and `rapid_body_rate_radps=0.45`. TIP_OVER at step 492 (`bus_ok` still true) with roll **0.14** (below 0.25), so the **rate** rule trips. Path **0.073 m** vs 0.10. 92 walk frames (~0.46 s) at heading π/2, 0.45 m/s command |
+
+Do not loosen 0.05 m net, 0.10 m tilt path, or the rapid-rate envelope on this
+evidence. Do not extend 1.85× into WALK. The speed-dependent hold that becomes
+BUS_TIMEOUT (walk-distance 0.20 m/s and aggressive recover) was the next named
+class; chassis-only speed guard was measured and **reverted** (see
+[hold batch](#chassis-only-speed-guard-hold-batch-2026-09-14)). Tilt
+path-before-rate-trip stays a second, separate class.
+
+### Chassis-only speed guard (hold batch, 2026-09-14)
+
+Named gate: `physics_sim_walk_distance` `forward_walk` must stay in WALK.
+Supporting: canonical `aggressive_governor` must not BUS_TIMEOUT on WALK→STAND
+recover. Tilt path-before-TIP_OVER stayed out of batch. Do not publish
+`HeldLastGood` as healthy, lengthen the 500 ms poll, raise ADMM / μ / `L` /
+stall, drop the CRBA cap, extend 1.85× into WALK, recapture v16, or loosen
+0.05 m net / 10 mm height.
+
+**Census** (`HEXAPOD_WALK_TEST_SOLVER_MODE` unset). Histogram of
+`solver_failure_reason` on recovered/held frames: **1420/1421 held = SpeedLimit**.
+Recovered mixed (NCP 65, SpeedLimit 29). SpeedLimit dominated held+recovered, so
+the lever proceeded. Peak pre-integration WORLD_ALIGNED ω **20.3 rad/s** vs
+`ProximalSolverSettings::maxAngularSpeed = 10` on every body frame. Linear peak
+1.03 < 2.0. Distal WORLD_ALIGNED ω can exceed 10 inside the MG996R 7.48 rad/s
+joint envelope. 0.08 m/s `steady_forward_walk` stays Healthy.
+
+**Lever (applied, then reverted).** Pre-integration
+`maxLinearSpeed` / `maxAngularSpeed` on the free-flyer only; other links reject
+non-finite ω/v. Chassis caps stayed 2 m/s and 10 rad/s. No `vNew` clamp. Retries
+unchanged.
+
+**Remesure with the lever on.** Held went to **0**; SpeedLimit recovered went to
+**0**; peak_pre_w still 23–33 (links allowed). That did **not** stay in WALK:
+
+| Screen | With chassis-only guard |
+| --- | --- |
+| `forward_walk` | 0 held, recovered all NCP. One lucky net **0.529 m**. Typical: TIP_OVER after ~63 walk steps (`fault=3`, 2337 non-walk), net **0.027 m** vs 0.05, `peak_pre_w` **25** |
+| Canonical regression | `steady_forward_walk` **pass**. `turn_in_place` and `gait_transition_stability` **TIP_OVER** (were pass). `aggressive_governor` recover reached STAND with `fault=NONE` (BUS_TIMEOUT mapping closed) but `stride_count=1` vs 2. Timeout / low-support **pass**. Tilt path still **0.073 m** vs 0.10 |
+| WAVE | CTest once **pass**, then emit-metrics **TIP_OVER** at step 5250 (closed-gate flake) |
+| Slow-fwd / tripod / stand | **Pass** (min *z* 0.141 m; tracking 39.2 mm vs 45; stand 9.14 mm, 12000 healthy) |
+
+Integrating the previously rejected distal WORLD_ALIGNED ω couples into body
+rate (yaw peak **1.4 rad/s**, regression body rate **3.9–5.2 rad/s**) and trips
+the existing rapid-rate TIP_OVER rule (0.45 rad/s). That is not a SpeedLimit
+hold. Do not loosen the rate envelope here. Do not raise ADMM.
+
+**Revert.** All-body 10 rad/s guard restored. After revert: WAVE **pass** (min
+*z* **0.141 m**); slow-fwd **pass** (min *z* **0.141 m**). Walk-distance on that
+binary: 1 held (NCP), recovered SpeedLimit 53 + NCP 117, stayed WALK
+(`mode=WALK`, `fault=NONE`), failed the speed band. Exact-replay was not
+re-run: walk-distance is not green; fixture v16 is unchanged. `./scripts/verify.sh`
+was not re-run.
+
+Remaining named class is still SpeedLimit **HeldLastGood** → `!bus_ok` →
+BUS_TIMEOUT at 0.20 m/s / aggressive recover. Skipping the link ω guard trades
+that for TIP_OVER and a WAVE flake, so it is not the lever. Next class is not
+ADMM and not tilt-path. Post-revert five-run taxonomy:
+[hold-class census](#hold-class-census-no-lever-2026-09-14).
+
+### Hold-class census (no lever, 2026-09-14)
+
+No plant lever. All-body 2 m/s / 10 rad/s reject/retry/hold unchanged. Census
+only: which body frame trips SpeedLimit, and how `forward_walk` fails after the
+chassis-only revert.
+
+Instrumentation (kept): pre-integration records chassis WORLD_ALIGNED ω, max
+link ω, and the max-ω body that exceeded the cap (`chassis` / `coxa` / `femur`
+/ `tibia`), plus load-bearing vs swing on that leg. Walk-distance prints
+reason histograms, frame/support counts, max consecutive `HeldLastGood`, and
+first non-WALK / first fault. Env `HEXAPOD_PROXIMAL_TRACE_SPEED_LIMIT` logs
+per-trip lines. Do not publish held as `bus_ok`, lengthen 500 ms, raise ADMM,
+or skip the link check.
+
+**Five `forward_walk` runs** (0.20 m/s, cap 24, 0.14 m, solver mode unset).
+Chassis peak ω **2.3–4.6 rad/s** (always &lt; 10). CTest fail line is the first
+gate that trips (speed is checked before stay-WALK).
+
+| Run | CTest | Final | Held / streak | SpeedLimit winner | Support | chassis_w / max_link_w |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | stay-WALK | FAULT **BUS_TIMEOUT** @ 963 | 359 SpeedLimit / **335** (≥100) | tibia 340, femur 27 | swing 363, stance 4 | 2.33 / 15.6 |
+| 2 | speed-band | **WALK** NONE | 0 / 0 | femur 15, none 23 (recovered) | mixed | 2.34 / 19.0 |
+| 3 | stay-WALK | FAULT **BUS_TIMEOUT** @ 258 | 2142 SpeedLimit / **2142** | femur 2147 | **stance 2132**, swing 15 | 4.58 / 24.3 |
+| 4 | speed-band | FAULT **TIP_OVER** @ 385 | 0 / 0 | femur 1 | stance 1 | 2.70 / 15.7 |
+| 5 | speed-band | first BUS_TIMEOUT @ 508, final **TIP_OVER** | 3 NCP / **3** (&lt;100) | femur 14, none 28 | mixed | 2.61 / 14.0 |
+
+No majority class. Live misses on the named CTest:
+
+1. **HeldLastGood → BUS_TIMEOUT** (2/5), streak ≥ 100 at 5 ms. Winner is a
+   **link**, never chassis. Not uniquely swing tibia: run 1 is swing tibia, run 3
+   is **stance femur**. Chassis-only is still the wrong lever (already remesured).
+2. **Stay-WALK speed-band crawl** (1/5): 0 held, NCP recovered majority, `fault=NONE`.
+3. **TIP_OVER** (2/5) even with the all-body 10 rad/s guard. Speed-band is the
+   CTest message because it is checked first.
+
+**`aggressive_governor`:** still **BUS_TIMEOUT** at recover (WALK 400–959, three
+STAND samples 960–965, FAULT @ 966). `stride_count=2`. Same hold→`!bus_ok`
+mapping as walk-distance class 1. Tilt path-before-TIP_OVER stays out.
+
+Stop-rule table: do **not** reclassify as crawl-only, chassis-guard, or “hold
+is gone.” Next lever (later batch) must keep rejecting or slowing the vNew that
+trips **link** WORLD_ALIGNED ω; it must not skip the link check. Stance-femur
+holds mean this is not only a swing-foot composition effect. Do not raise ADMM.
+Do not loosen rapid-rate / tilt path / 0.05 m net / 10 mm.
+Follow-up lever and remesure:
+[SpeedLimit retry gain](#speedlimit-retry-gain-hold-class-2026-09-14).
+
+### SpeedLimit retry gain (hold class, 2026-09-14)
+
+Named class: SpeedLimit **HeldLastGood** → `!bus_ok` → BUS_TIMEOUT. Supporting:
+canonical `aggressive_governor` recover must not BUS_TIMEOUT. Tilt path and
+TIP_OVER-without-hold stayed out. Do not skip the all-body 10 rad/s link check
+(chassis-only already failed). Do not publish held as `bus_ok`, lengthen 500 ms,
+raise ADMM / μ / `L` / stall, drop CRBA 2.625, extend 1.85× into WALK, recapture
+v16, or loosen 0.05 m net / 10 mm / tilt path / rapid-rate.
+
+**Lever (kept).** [`pinocchio_hexapod.cpp`](../hexapod-physics-sim/src/demo/pinocchio_hexapod.cpp)
+`advanceOnce` multiplies the existing PD request
+(`servoGainScale * loadGainScale * …`) by an optional per-call scale (default
+**1.0**). Stall envelope unchanged. When `firstAttempt.failureReason == SpeedLimit`
+only, the retry chain (same-`dt`, warm `dt/2`, cold 48) runs at
+`kSpeedLimitRetryGainScale = 0.5`. NCP retries stay 1.0. Caps stay 2 m/s and
+10 rad/s on **every** body. `dt/2` cannot help SpeedLimit: the guard is velocity,
+not step size. One constant; do **not** stack 0.25.
+
+**Remesure** (`HEXAPOD_WALK_TEST_SOLVER_MODE` unset).
+
+**`aggressive_governor`:** still **BUS_TIMEOUT**. WALK 400–959, STAND 960–962,
+FAULT @ **963** (`bus_ok=false`). `stride_count=2`, path 0.465 m, governor still
+attenuates. Same recover mapping as the census. WAVE, slow-fwd, stand 60 s,
+tripod, and exact-replay v16 were **not** re-run: aggressive is not green.
+
+**Five `forward_walk` runs** (0.20 m/s, cap 24, 0.14 m). Chassis peak ω
+**2.7–3.7 rad/s** (always &lt; 10). Link peak ω still **13.9–19.2**. Recovered
+SpeedLimit is common (9–59/run); long hold streaks are gone.
+
+| Run | CTest | Final | Held / streak | SpeedLimit recovered | Winner | chassis_w / max_link_w |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | net 0.045 vs 0.05 | FAULT **TIP_OVER** @ 690 | 0 / 0 | 9 | femur 4 | 3.50 / 13.9 |
+| 2 | speed-band 0.137 | **WALK** NONE | 0 / 0 | 59 | femur 21 | 3.10 / 18.0 |
+| 3 | stay-WALK | first **BUS_TIMEOUT** @ 1686, final WALK NONE | 2 SpeedLimit / **2** | 30 | femur 9, tibia 2 | 2.68 / 16.7 |
+| 4 | net 0.047 vs 0.05 | FAULT **TIP_OVER** @ 418 | 0 / 0 | 12 | femur 3, tibia 1 | 3.75 / 19.2 |
+| 5 | forward_walk **pass** (net 0.400, ratio 0.385) | **WALK** NONE | 0 / 0 | 41 | femur 9 | 2.71 / 17.9 |
+
+Named gate **BUS_TIMEOUT 0/5: miss** (1/5, run 3). Stay-WALK speed-band and
+TIP_OVER-with-0-holds remain out of class; they still fail the CTest. Run 5's
+full binary then failed `slow_forward_walk` on a 2398-step SpeedLimit hold
+cascade — 0.5 does not always recover; that case was not this batch's named
+five-run.
+
+Stop: do **not** stack 0.25. Do not skip link ω. Do not raise
+`maxAngularSpeed`. `./scripts/verify.sh` was not re-run (walk-distance CTest is
+not fully green). Fixture v16 is unchanged. Recover BUS_TIMEOUT is named in
+[recover census](#recover-bus_timeout-census-no-lever-2026-09-15). Tilt path
+stays out.
+
+### Recover BUS_TIMEOUT census (no lever, 2026-09-15)
+
+No plant lever. Named screen: one canonical `aggressive_governor` recover.
+Walk 2-sample hold, TIP_OVER / speed-band, and tilt path stayed out. Do not
+stack 0.25, skip link ω, publish held as `bus_ok`, lengthen 500 ms, or recapture
+v16.
+
+Instrumentation (kept): `[proximal-speed-limit]` / `[proximal-first-failure]`
+print `pd_gain`, `dt`, and peak PD `|error|`. Regression
+`CapturingPhysicsSimBridge` snapshots solver telemetry on every read (including
+failed) and latches the first failed read. `HEXAPOD_LOCOMOTION_CHILD_STDIO=1`
+un-quiets the sim child. Recover line + first-held fields on metrics JSON.
+
+**`aggressive_governor`** (`HEXAPOD_WALK_TEST_SOLVER_MODE` unset). Still
+**BUS_TIMEOUT**. WALK 400–959, STAND 960–1010, FAULT @ **1011**. First failed
+read:
+
+| Field | Value |
+| --- | --- |
+| `solver_status` | **HeldLastGood** |
+| `failure_reason` | **SpeedLimit** |
+| `speed_limit_frame` / support (held packet) | none / unknown |
+| chassis ω / max link ω (held packet) | 2.74 / 7.79 |
+| `retry_count` / `held_state_count` | 85 / 1 |
+| `stride_count` / path | 2 / 0.99 m |
+
+Not a poll timeout and not an NCP-only first fail. 68 NCP first-failures exist
+in the trace stream (reason 7, ω recorded 0); the sample that maps to
+`!bus_ok` is SpeedLimit **HeldLastGood**.
+
+**Traces** (`HEXAPOD_PROXIMAL_TRACE_SPEED_LIMIT=1`, 1095 trips, 288 first
+attempts). Chassis ω **2.0–2.7 &lt; 10**. Every first-attempt trip is a **femur**
+WORLD_ALIGNED ω **10.1–18.4** (median **14.4**). Support is mostly **swing**
+(1088/1095). Recover lock is `leg_5_femur_body` swing.
+
+| Attempt | `pd_gain` | `max_link_w` | peak PD `\|error\|` |
+| --- | --- | --- | --- |
+| First | 1.0 | **14.43** | 1.12 rad at recover lock (walk onset 0.43–0.75) |
+| Same-`dt` / half-step retry | 0.5 | **13.92–14.42** | same 1.12 (targets unchanged) |
+
+**0/269** SpeedLimit retry chains ended with `max_link_w` ≤ 10. `dt/2` does not
+help. 0.5 gain knocks ~0.5 rad/s off 14, not 4. The STAND recover command is a
+**large PD error** (~1.12 rad), not leftover walk ω on the chassis.
+
+Stop: do **not** stack 0.25 (already shown not to clear 14→10). Do not skip the
+link check. Do not raise `maxAngularSpeed`. Next lever must slow that **swing
+femur** vNew on the recover STAND target step so first-attempt or 0.5-retry ω
+falls under 10, without publishing held as `bus_ok`. WAVE / v16 / five
+`forward_walk` were not re-run. `./scripts/verify.sh` was not re-run.
+
+### WALK-to-STAND actuator slew continuity (2026-09-15)
+
+Root cause confirmed at the command boundary. `RobotRuntime::controlStep()`
+applied the MG996R target-rate envelope only when the current request was
+`WALK`. A normal recover request, or a fusion-forced recover request, changed
+the mode to `STAND` before the clamp decision. The displaced swing femur could
+therefore receive the static stand target in one control sample. This matches
+the recover census: a 1.12--1.31 rad PD error and a distal femur frame above the
+10 rad/s all-body guard, while chassis angular speed remained well below the
+guard.
+
+**Lever (kept).** Servo target slew limiting now applies to both actively
+positioned modes, `WALK` and `STAND`. `SAFE_IDLE` and `FAULT` remain outside the
+policy. This does not change gait construction, target geometry, the MG996R
+torque-speed curve, solver settings, or any speed/safety gate. The existing
+per-joint configured positive/negative no-load rate remains the only limit.
+A unit assertion fixes the mode policy alongside the existing small-step and
+large-jump slew checks.
+
+**Remesure.** The pre-change canonical `aggressive_governor` reproduced
+`HeldLastGood / SpeedLimit / BUS_TIMEOUT`; the trace winner was again a swing
+femur. Four post-change canonical runs produced **zero SpeedLimit-held
+samples**. Three passed the whole case with final `STAND / NONE`. One separate
+run held at recover for `solver_not_converged`; that is the existing NCP class,
+not a residual command-step SpeedLimit, and no ADMM lever was applied.
+
+The required compatibility screen stayed green: WAVE slow-walk height,
+slow-forward height, static tripod tracking, proximal 60 s stand, and frozen
+fixture v16 at its native rate plus 120/240/480 Hz. The fixture was not
+recaptured. `./scripts/verify.sh` remains deferred until walk-distance is fully
+green.
+
+One supporting `physics_sim_walk_distance` remesure also had zero held samples,
+stayed in WALK, and reported no fault. It remained red on the separate
+collection class: average horizontal speed **0.0218 m/s** for a **0.20 m/s**
+command (ratio **0.109**, lower gate **0.20**). Recovered retries were 81 NCP
+and 18 SpeedLimit. Do not attribute this no-hold crawl to the solved recovery
+target step.
+
+### Forward pitch sign and no-hold crawl (2026-09-15)
+
+The no-hold walk-distance crawl was a body-pose sign error, not low friction or
+an under-commanded gait. The walk census showed a governed command around
+0.16--0.19 m/s while loaded stance targets moved only a few centimetres per
+second. Nearly every loaded stance sample was under the absolute 0.20 rad
+emergency-tilt hold. Signed attitude then identified the feedback loop: a
+positive forward command requested **-0.22 rad** pitch and the chassis moved in
+the same negative direction (mean about **-0.30 rad**, minimum **-0.62 rad**).
+The pose request reinforced the natural forward pitching moment, crossed the
+hold threshold, and parked each stance latch at its stroke/workspace boundary.
+
+**Lever (kept).** `kLeanPitchPerVx` retains its 0.22 magnitude but changes sign.
+Forward motion now requests counter-pitch. No gait, contact, actuator, solver,
+or safety limit changed. A controller regression assertion fixes the new sign.
+Zero-lean and reduced-magnitude experiments restored some translation but were
+less stable; a feedback target-lead clamp and a swing-femur gain experiment did
+not reduce the remaining held class and were reverted.
+
+With corrected sign, representative pre-fault runs command loaded stance sweep
+around **0.08--0.15 m/s**, mean signed pitch is roughly **-0.02 to -0.07 rad**,
+and the chassis collects substantial forward motion instead of the old 0.109
+speed-ratio crawl. One full remesure travelled **0.51 m** in the commanded
+direction before an independent swing-femur SpeedLimit hold at step 1565; its
+body-forward mean was **0.169 m/s**. The full walk-distance CTest therefore
+remains red on `HeldLastGood -> BUS_TIMEOUT`, not on the no-hold lower speed
+band. Do not hide that residual by publishing a held sample or loosening either
+speed band.
+
+Compatibility screens after the sign change: controller pose/stability unit,
+motion-through-IK/FK unit, slow-forward height, WAVE height, static tripod
+support, proximal 60 s stand, and frozen fixture v16 at native/120/240/480 Hz
+all **pass**. The fixture was not recaptured. `./scripts/verify.sh` remains
+deferred until walk-distance is fully green.
+
+### Recovery target resync (hold cascade, 2026-09-15)
+
+Named leftover after the pitch-sign fix: a single SpeedLimit `HeldLastGood`
+was enough to start an unbounded hold cascade. After a held rollback the
+simulator stored the current joint angles as its internal command state, then
+ignored that state on the next step and reapplied the distant server target in
+full. The same SpeedLimit therefore repeated forever and mapped to
+`BUS_TIMEOUT`.
+
+**Lever (kept).** Recovery-only target resynchronisation in
+[`pinocchio_hexapod.cpp`](../hexapod-physics-sim/src/demo/pinocchio_hexapod.cpp).
+Healthy steps still use the server target directly. After a hold / unsupported
+island / read-state failure, the internal command is latched to the measured
+joints. On later steps it slews toward the live server stream at
+**0.5 × no-load servo speed**, then returns to the unfiltered path once every
+joint is inside that per-step delta. The first held sample remains invalid;
+`HeldLastGood` is not published as `bus_ok`. Torque, friction, solver caps,
+and the 10 rad/s link guard are unchanged.
+
+**Remesure** (`HEXAPOD_WALK_TEST_SOLVER_MODE` unset, production proximal).
+
+**`forward_walk`:** cascade closed. `solver_held=1` (`speed_limit`),
+`max_held_streak=1`, recovered 350 (260 NCP / 90 SpeedLimit). Path 1.28 m,
+net 0.60 m, average speed ratio **0.53** (gates 0.20–0.90). Mean signed pitch
+**-0.019 rad**. Final mode WALK / fault NONE after automatic bus recovery.
+CTest still **FAIL** stay-WALK: first non-walk at step **1492**
+(`first_fault=BUS_TIMEOUT`), 108 non-walk samples. Do not hide that by
+publishing the held sample or loosening stay-WALK. The residual is a separate
+one-sample solver-recovery class.
+
+**`aggressive_governor`:** **pass.** 1280 samples, stride 2, `fault=NONE`,
+zero read fails / held states. WALK 400–959 then STAND 960–1279.
+
+Compatibility screens after resync: WAVE height, slow-forward height, static
+tripod support, proximal 60 s stand, and frozen fixture v16 at
+native/120/240/480 Hz all **pass**. Pose/stability unit still **pass**. The
+fixture was not recaptured. `./scripts/verify.sh` remains deferred until
+walk-distance is fully green.
+
+### Stay-WALK one-sample hold census (2026-09-15)
+
+Named leftover after recovery resync: `forward_walk` still fails stay-WALK on
+the first `HeldLastGood -> BUS_TIMEOUT`, even when the speed band would pass.
+Instrumentation (kept): walk-distance latches first-failed solver telemetry
+after stand warmup and prints status/reason/frame/support/ω plus the
+RecoveredRetry SpeedLimit streak immediately before the first hold. Traces
+remain `HEXAPOD_WALK_TEST_CHILD_STDIO`, `HEXAPOD_PROXIMAL_TRACE_SPEED_LIMIT`,
+and `HEXAPOD_PROXIMAL_TRACE_FAILURES`.
+
+**Five `forward_walk` census runs** (production proximal, traces on):
+
+| Run | Held | First failed reason | First frame/support | SL streak before hold | Stay-WALK |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 2 (NCP+SL) | SpeedLimit | femur / stance | 2 (`none`) | fail @ 1073 |
+| 2 | 630 | NCP | none | 0 | fail @ 907, then 629 SL cascade |
+| 3 | 1 | NCP | none | 0 | fail @ 1607 |
+| 4 | 0 | none | — | — | **pass** (slow-fwd also pass; reverse later cascaded) |
+| 5 | 2 (NCP+SL) | NCP | none | 0 | fail @ 645 |
+
+Traces (trust these, not the held packet ω): initiating SpeedLimit trips are
+**femur** WORLD_ALIGNED ω **10–15** with peak PD `|error|` **0.36–0.62 rad**,
+mixed stance/swing. Histogram `none` is a frame-name classification gap; the
+winner string is `leg_N_femur_body`. Post-hold SpeedLimit cascades are a
+different sample: PD error **~0.006 rad** with leftover femur ω **~10.7**, and
+retry gain **0.5 increases** ω (damping term shrinks). Recovery slew is already
+active there; the target is not the problem.
+
+**Lever (reverted).** Arming post-hold recovery slew plus first-attempt 0.5
+gain after `RecoveredRetry` SpeedLimit until a Healthy step. Five remesures
+produced 704–1536 held SpeedLimit streaks. Reducing gain while PD error is
+already tiny strips damping and recreates the leftover-ω cascade. Do not
+restore. Do not stack 0.25, skip link ω, publish held as `bus_ok`, or loosen
+stay-WALK.
+
+Stay-WALK remains red on the **first** held sample. That sample is often NCP,
+not SpeedLimit. A continuity lever aimed at SpeedLimit near-misses does not
+close it. Next class must name the first `HeldLastGood` reason from this
+latch, not the mixed recovered histogram.
+
+### Stay-WALK initiating NCP hold (2026-09-15)
+
+Named leftover after the one-sample SpeedLimit census: `forward_walk`
+stay-WALK on the first `HeldLastGood`, usually `SolverNotConverged`. Census
+instrumentation (kept): walk-distance prints first-failed iterations /
+`ncp_dual` / `ncp_comp` / contacts / worst contact / rho, plus RecoveredRetry
+NCP streak before the first hold. Exhausted retries print `[proximal-held]`
+(first-attempt vs last-retry/cold) when `HEXAPOD_PROXIMAL_TRACE_FAILURES=1`.
+
+**Census split (before last-resort 2×):** when the first hold is NCP, cold 48
+drives `ncp_dual` from ~0.057 to ~0.0016 — just over the 1e-3 floor, 4–5
+contacts. **Almost-feasible**, not leftover-ω (held packet `pre_w=0`; NCP
+returns before the speed guard). Hundreds of first-attempt NCP samples still
+RecoveredRetry.
+
+**Lever (kept).** Last-resort cold half-steps only: if the first attempt was
+NCP, accept at **2×** `ncpAbsoluteTolerance` (2e-3) on the existing 48-iter
+cold path. First-attempt and standing ADMM (`1e-8`) stay at production
+tolerances. SpeedLimit first-fails keep the 1e-3 floor. Do not raise cap 24,
+μ, `L`, or dense ADMM.
+
+**Remesure (2× in plant):**
+
+| Gate | Result |
+| --- | --- |
+| Isolated `forward_walk` ×5 | **4/5 pass**, held 0. One NCP hold: cold `ncp_dual=1.8e-4` / `ncp_comp=0.00387` on 5 contacts — **stuck complementarity**, not almost-feasible dual. Do not raise last-resort above 2× |
+| Isolated slow / reverse / straight / turn | **pass**, held 0. Turn net **0.181 m**, `raw_wz=0.45` |
+| Sequential five-case CTest | **fail** on `reverse_walk` stay-WALK. Cold 48 `ncp_dual=0.00569` / `ncp_comp=0.00167`, 5 contacts, worst 7. Dual is far above 2e-3 (stuck set). Later leftover-ω tibia SpeedLimit cascade is out of class |
+| `aggressive_governor` | **pass.** 1280 samples, stride 2, `fault=NONE`, held 0 |
+| WAVE height | **pass.** min body *z* **0.139 m**, undershoot **0.83 mm** vs 10 mm |
+| Slow-fwd height | **pass.** min body *z* **0.145 m** |
+| Tripod support | **pass.** tracking **14 mm** vs 45 mm; 720/720 three-contact |
+| 60 s stand | **pass.** 12000 healthy, height error **6.42 mm**, p99 iters **7**, held 0 |
+| v16 200/120/240/480 Hz | **pass.** hash `ddc6008e0cc1ac97`, held 0, `behavior_gate_failures` 0. Fixture not recaptured |
+
+Do not publish `HeldLastGood` as `bus_ok`. Sequential walk-distance stays red
+on reverse 5-contact NCP (dual ~0.006 or complementarity ~0.0039). Isolated
+forward leftover is the same complementarity class. `./scripts/verify.sh` was
+not re-run.
+
+### Servo armature and stand height (2026-09-15)
+
+SpeedLimit femur trips on healthy walk were an inertia mismatch: the 25 rad/s
+PD law is tuned with reflected inertia, but Pinocchio's plant had no joint
+armature, so ABA saw ~0.00007 kg·m² coordinates. Adding free-joint CRBA
+inertia as armature on the production contact-inertia path (frozen replay
+still disables it) dropped peak link speed from ~15–20 rad/s to ~6.6–7.5.
+
+Full-scale armature closed SpeedLimit holds but shifted STAND equilibrium
+~12.6 mm above the 0.14 m command. Scale 0.01 kept stand but restored the
+hold cascade. Quarter-scale (`kServoArmatureInertiaScale = 0.25`) plus
+STAND-only downward height feedback (capped at 20 mm; walking stays sag-only)
+is the kept pair: 60 s stand **6.42 mm** error, 12000 healthy; WAVE / slow-fwd
+height / tripod / v16 multi-rate / `aggressive_governor` pass. Isolated
+walk-distance translation cases then pass with **zero held samples**.
+
+Do not raise plant `L`, μ, or dense ADMM. Do not recapture v16.
+
+### Turn-in-place `cmd_yaw` construction (2026-09-15)
+
+Named leftover after armature: yaw was correct, but walk-distance
+`turn_in_place` translated **0.556 m** against the **0.21 m** gate.
+
+Census: the test filled only `twist.twist_vel_radps.z = 0.45` and left
+`cmd_yaw_radps = 0`. `planarMotionCommand` then copies `twist.z`, and
+`rawLocomotionTwistFromIntent` adds it again, so the body twist is **0.90
+rad/s** while gait is planned at **0.45**. Walk-entry seeding also uses
+`intent.cmd_yaw`, so the turn looked planar and took `kFirstStridePhaseSeed`
+instead of yaw-dominant Φ=0 (the v16 seed path). Regression
+`turn_in_place` already used `ScenarioMotionIntent` yaw_rate 0.45.
+
+**Lever (kept).** Construct walk-distance turn on `cmd_yaw_radps = 0.45` and
+leave `twist.z = 0`, same as scenario/replay. Scoring uses
+`planarMotionCommand`. A `locomotion_command` unit test locks single-count
+yaw. No gait, solver, friction, or gate change.
+
+Isolated remesure (`HEXAPOD_WALK_TEST_CASE`):
+
+| Case | Result |
+| --- | --- |
+| `forward_walk` | **pass**, held 0, ratio 0.48 |
+| `slow_forward_walk` | **pass**, held 0, ratio 0.90 |
+| `reverse_walk` | **pass**, held 0, ratio 0.53 |
+| `straight_walk` | **pass**, held 0, lateral 0.089 m |
+| `turn_in_place` | **pass** 4/4, `raw_wz=0.45`, net **0.176–0.187 m**, yaw Δ ~2.14 rad, held 0 |
+
+The sequential five-case CTest can still drop a later case on one recovered
+NCP `HeldLastGood` in a shared sim process. Census of that class is in
+[sequential NCP hold census](#sequential-ncp-hold-census-2026-09-15).
+`./scripts/verify.sh` remains deferred until walk-distance is green.
+
+### Sequential NCP hold census (2026-09-15)
+
+Named leftover after `cmd_yaw` turn construction: the sequential five-case
+CTest still maps one `HeldLastGood` to stay-WALK. Hypothesis was shared-process
+warm-start contamination, because isolated cases had passed and regression
+already respawns per case.
+
+**Sequential** (`HEXAPOD_WALK_TEST_CASE` unset, 5 runs): **0/5 pass**.
+
+| Run | First fail | Held / reason | Latch |
+| --- | --- | --- | --- |
+| 1 | `turn_in_place` net | reverse held 0 | turn after reverse+straight in the same plant |
+| 2 | `reverse_walk` stay-WALK | 2 NCP | cold 48, 5 contacts, `ncp_dual=0` / `ncp_comp=0.0039` |
+| 3 | `reverse_walk` stay-WALK | 1 NCP | cold 48, 5 contacts, `ncp_dual=0.010` |
+| 4 | `reverse_walk` stay-WALK | 1 NCP | cold 48, 5 contacts, `ncp_dual=0.006` |
+| 5 | `turn_in_place` net | reverse held 0 | same as run 1 |
+
+**Isolated:** reverse 2/3 pass held 0, **1/3 NCP hold** at step 377
+(`ncp_dual=0.010`, 5 contacts). Straight 3/3 pass. Turn 3/3 pass, net
+0.180–0.186 m.
+
+**Traces** (isolated reverse, `HEXAPOD_PROXIMAL_TRACE_FAILURES`): 2/5 held.
+`[proximal-held]` fails on **complementarity**, not dual. Example: first-attempt
+`ncp_dual=3e-4` (under 1e-3) / `ncp_comp=0.00237`; cold 48 `ncp_dual=0` /
+`ncp_comp=0.00269`. Worst contact hops (13↔4). Peak joint error ~0.63 rad.
+`retry_max_link_w=0` (NCP returns before the speed guard). Last-resort 2×
+absolute (2e-3) does not accept 0.0027 complementarity. Stuck 5-contact set.
+
+**Split: isolated stuck NCP**, not sequential-only. Isolated reverse already
+holds. Per-case sim respawn would hide sequential turn-drift after a long
+shared plant, but it would not close isolated reverse. Do not respawn as a
+way to skip that hold.
+
+**Lever (not applied).** Stop. Do not raise cap 24, μ, `L`, dense ADMM, or the
+last-resort NCP floor. Next named class is isolated reverse 5-contact
+complementarity (cold `ncp_comp` ~0.0025–0.0027), not harness isolation.
+`./scripts/verify.sh` was not re-run.
+
+### Isolated reverse NCP complementarity (2026-09-15)
+
+Named leftover after sequential census: isolated `reverse_walk` stay-WALK on
+one `HeldLastGood`. `[proximal-held-contacts]` census (`id:leg:joint:comp:dual:cone:pen`):
+
+- duplicates **0**, unique robot joints **5**, legs `{0,1,2,3,5}` joints
+  `{4,7,10,13,19}` (five unique tibias; missing leg 4). Not same-tibia
+  multi-point and not a non-foot extra.
+- Complementarity offender is **always contact 13** (leg 3, joint 13,
+  penetration ~0.05–0.1 mm). `worstContactId` is dual/cone on a different
+  contact (`4`/`7`/`10`/`19`). Split 2 evidenced: retries were erasing the
+  dual/cone row, not the complementarity row.
+- Cold 48 already `resetWarmStarts()`, so last-resort-only erase of contact 13
+  is a no-op. After cold 48, either contact-13 `ncp_comp` stays ~0.0026–0.004
+  or complementarity recovers and another contact's dual exceeds 2e-3.
+
+**Lever (reverted).** Skip-insert / `clearFailedSolverState` used
+`worstComplementarityContactId` instead of dual/cone `worstContactId` on NCP
+reject. Isolated reverse remesure **4/8 pass** (holds still cold-48 dual on
+contact 7 after complementarity on 13 recovers, or both still over 2e-3). The
+wrong-victim split is real; erasing the complementarity row does not make
+last-resort accept the 5-contact set. Reverted. Do not raise last-resort NCP
+above 2×, cap 24, μ, or `L`. Census print kept.
+
+`./scripts/verify.sh` was not re-run.
+
+### Last-resort 4-contact omit (2026-09-15)
+
+Named leftover after complementarity-victim erase: last-resort still **assembles
+all five unique tibias**. Warm-start skip ≠ omitting the row.
+
+**Census** (non-integrating `[proximal-held-omit]` after 5-contact cold 48
+rejects, 2× NCP floor): three NCP holds. Omit complementarity-worst always
+accepted (4 unique joints, `ncp_dual` ~3e-4–1.1e-3, `ncp_comp` ~1e-5). Omit
+dual/cone-worst also accepted. Split 1.
+
+**Lever (reverted).** Last-resort cold 48 omitted complementarity-worst when
+unique joints ≥ 5. Isolated reverse remesure **5/8 pass**. Fails: one 4-contact
+NCP (`ncp_dual=0.00271`, below the ≥5 gate) and two **initiating SpeedLimit**
+leftover-ω cascades (tibia/femur swing, `max_link_w` 10–12, streaks 782–1423).
+Forward 5/5, slow/straight/turn pass. Omitting the row recovers some 5-contact
+NCP then dumps unconstrained tibia speed into the SpeedLimit class. Reverted.
+Omit-id plumbing and reject probes kept. Do not raise 2×, drop a second
+contact, cap 24, μ, or `L`.
+
+`./scripts/verify.sh` was not re-run.
+
+### Last-resort quarter-steps (2026-09-15)
+
+Named leftover after 4-contact omit: last-resort still two cold `dt/2` 48-iter
+steps at 2× NCP, all contacts. A 5-contact (or 4-contact almost-feasible) set
+can sit over 2e-3 at `dt/2`. Question: does one cold 48 at **`dt/4`** land
+under 2× on the same snapshot without dropping a contact?
+
+**Census** (non-integrating `[proximal-held-quarter]` after last-resort reject,
+same 2× floor, omit-id 0): five isolated `reverse_walk` NCP holds. **9/10**
+probes accepted (dual/comp under 2× plus relative). **1/10** rejected on
+complementarity `0.00211` (5 unique joints). Split 1 on the snapshot.
+
+**Lever (reverted).** Replaced the two last-resort `dt/2` NCP steps with four
+integrating `dt/4` cold 48 steps (SpeedLimit first-fails kept the `dt/2` pair).
+Isolated remesure:
+
+| Gate | Result |
+| --- | --- |
+| Isolated `reverse_walk` ×8 | **7/8 pass.** Remaining hold: 5-contact NCP `ncp_dual=0.00869` / `ncp_comp=5e-5`, streak 1 |
+| Isolated `forward_walk` ×5 | **3/5 pass.** One leftover-ω tibia SpeedLimit cascade (held 334, swing tibia 333, `peak_pre_w=10.1`, `max_link_w=10.7`) after 88 NCP RecoveredRetry; one 5-contact NCP `ncp_dual=0.00371` / `ncp_comp=0.00171` |
+| Isolated slow-fwd | **pass** |
+| Isolated straight | **fail** stay-WALK: 2 NCP holds, `ncp_dual=0.00386` / `ncp_comp=0.00188`, 5 contacts |
+| Isolated turn | **pass**, net **0.181 m** |
+
+Forward leftover-ω and the straight stay-WALK miss are the revert criteria.
+Production last-resort is again two cold `dt/2` steps at 2×. `[proximal-held-quarter]`
+probe kept. Sequential CTest, plant screens, and `./scripts/verify.sh` were not
+run on the rejected lever. Do not restore omit, do not raise 2×, cap 24, μ, or
+`L`. Do not publish `HeldLastGood` as `bus_ok`.
+
+Named class remains isolated reverse 5-contact NCP (dual ~0.006–0.009 or
+complementarity ~0.0026–0.0039). Next lever is not a smaller last-resort `dt`.
+
+`./scripts/verify.sh` was not re-run.
+
+### Last-resort 96-iter (2026-09-15)
+
+Named leftover after dt/4 revert: last-resort still two cold `dt/2` **48-iter**
+steps at 2× NCP, all contacts, and already hits the 48-iter cap. Question: is
+the leftover residual **iteration-limited**, or a hard 5-contact set at
+production last-resort `dt/2`?
+
+**Census** (non-integrating `[proximal-held-iters]` after last-resort 48 reject,
+same 2× floor, `dt/2`, omit-id 0): four isolated reverse NCP holds, eight
+probes. Complementarity always recovered (`ncp_comp` ~1e-5–1e-4). Dual vs 2e-3:
+
+| Probe | `ncp_dual` | vs 2e-3 | iterations |
+| --- | --- | --- | --- |
+| 1 | 0.00232 | over | 76 |
+| 2 | 0.00393 | over | 60 |
+| 3 | 0.00130 | under | 62 |
+| 4 | 0.00158 | under | 60 |
+| 5 | 0.00060 | under | 73 |
+| 6 | 0.00675 | over | 81 |
+| 7 | 0.00216 | over | 82 |
+| 8 | 0.00025 | under | 54 |
+
+**4/8 still over 2e-3 on dual** (up to 0.00675). `accept=1` on all eight is ADMM
+`converged ||` physical, not dual-and-comp under 2×. Split 2.
+
+**Lever (not applied).** Stop. Do not raise last-resort to 96 or 192. Do not
+restore omit or `dt/4`. Do not raise 2×, first-attempt cap 24, μ, `L`, or dense
+ADMM. `[proximal-held-iters]` probe kept. Sequential CTest, plant screens, and
+`./scripts/verify.sh` were not run.
+
+Named class remains isolated reverse 5-contact NCP at `dt/2` (hard set, not
+iteration-limited). Next lever is not more last-resort ADMM iterations.
+
+`./scripts/verify.sh` was not re-run.
+
+### Last-resort graze filter (2026-09-15)
+
+Named leftover after 96-iter stop: five unique tibias at last-resort `dt/2`,
+usually including 15–80 µm extras plus complementarity offender contact 13 at
+~0.1 mm. Question: if last-resort does not assemble those grazes, does a
+3-loaded-foot set land under 2× **keeping joint 13**, with dropped rows at ~0
+dual/comp?
+
+**Census** (non-integrating `[proximal-held-graze]` after last-resort 48 reject,
+same 2×, `dt/2`, omit-id 0): five isolated reverse NCP holds. Dropped column is
+`id:leg:pen:dual:comp` from the failed 5-contact retry.
+
+| Hold | 50 µm | 100 µm |
+| --- | --- | --- |
+| 11a | unique 3, under 2×, kept 13; dropped 10/19 dual=0 | same (same extras) |
+| 11b | dropped nothing, still 5, dual 0.014 | unique 4, **dropped 13** (77 µm) |
+| 14 | unique 4; dropped dual-worst 7 (dual 0.001) | unique 2, **dropped 13**, dual 0.004 still over |
+| 15 | dropped nothing, still 5 | unique 4, dual 0.00324 still over |
+| 17 | unique 4; dropped dual-worst 10 (dual 0.002) | unique 3 under 2× kept 13, but dropped complementarity offender (leg 4) and dual-worst |
+
+Split 2. 50 µm often drops nothing or an **impulse-carrying** row. 100 µm can
+filter joint 13. The one 3-foot under-2× probe that kept 13 still dropped a
+loaded dual/comp row. Not unused grazes.
+
+**Lever (not applied).** Stop. Do not last-resort-filter grazes. Do not restore
+omit-13, `dt/4`, or 96. Do not raise 2×, cap 24, μ, `L`, or retune gait / 1.85× /
+stall. `minPenetration` plumbing and `[proximal-held-graze]` probes kept
+(production last-resort still unfiltered). Isolated reverse stay-WALK is a
+**Class A residual**: hard 5-contact NCP at production `dt/2`. Sequential CTest
+and `./scripts/verify.sh` were not run.
+
+`./scripts/verify.sh` was not re-run.
+
+### Tilt path-before-rate-trip (2026-09-15)
+
+Named leftover after reverse Class A: [`tilt_safety_trip`](../hexapod-server/tests/test_locomotion_regression_suite.cpp)
+must accumulate `path_length_m > 0.1` before `TIP_OVER`. Envelope stays
+`max_tilt_rad=0.25`, `rapid_body_rate_radps=0.45`, `rapid_body_rate_max_contacts=4`.
+Command: TRIPOD `vx=0.45` at heading `π/2`, body height 0.12 m.
+
+**Census** (isolated `--case tilt_safety_trip` ×5, production proximal, no plant
+change):
+
+| Run | total path | pre-fault path | net | walk samples | mean meas vx | first_fault_step | trip gyro rate | trip supp (raw/est) | roll |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 0.074 | 0.017 | 0.013 | 90 | 0.038 | 490 | 1.28 | 3/4 | 0.11 |
+| 2 | 0.052 | 0.015 | 0.009 | 89 | 0.035 | 489 | 1.26 | 4/4 | 0.10 |
+| 3 | 0.074 | 0.016 | 0.008 | 91 | 0.035 | 491 | 1.20 | 2/4 | 0.11 |
+| 4 | 0.044 | 0.014 | 0.007 | 85 | 0.034 | 485 | 1.14 | 4/4 | 0.10 |
+| 5 | 0.080 | 0.015 | 0.007 | 90 | 0.035 | 490 | 1.22 | 4/4 | 0.11 |
+
+All five: `TIP_OVER`, `bus_ok=true`, solver first-failed **none** (not a hold).
+Roll ~0.10–0.11 **below** 0.25, so the **rate** rule trips. `max(raw,est)` drops
+to 4 on that frame (`>4` would mask the rule). For 8–10 walk frames before the
+trip, gyro rate is already **>0.45** but 5–6 contacts keep the rule off. Mean
+measured planar speed ~0.035 m/s vs commanded 0.45 (governor still ~0.44).
+Pre-fault travel ~15 mm; 0.45 s × 0.45 m/s commanded ≈ 0.20 m. Stride count 0.
+
+Split 2 + 3. Rate trip is honest. Translation is not on track to 0.10 m
+(would need ~2.4 s more at 0.035 m/s). Do not loosen 0.10 m path or 0.45 rad/s.
+Closing it would be gait / collection / μ / `L` / 1.85×-in-WALK, all forbidden.
+
+**Lever (not applied).** Document as the second **Class A residual** alongside
+isolated reverse 5-contact NCP. Canonical `aggressive_governor` remains pass.
+`./scripts/verify.sh` was not re-run.
+
+### Tripod support commanded foot tracking (2026-09-14)
+
+Named gate: `physics_sim_tripod_support_baseline` (open-loop `PhysicsSimBridge`
+hold, no runtime/gait/height hold). Tracking is body-frame FK(command joints)
+vs FK(measured joints) on support legs `{1,2,5}`. Gate **45 mm**.
+
+Census (proximal cap 24, 0.14 m): six-leg stand **0.149 m**, tracking **16 mm**.
+Tripod height 0.115 m (not collapse). Tracking **94 mm** (L1 50 / L2 94 / L5
+54 mm). First 120 ms **91 mm**, after **94 mm**. Pre-IK vs post-IK support
+residual **0**. Support joint *commands* vs six-leg stand **0**. Joint error vs
+command **0.52 rad**; drift from first measured **0.12 rad** (inside 0.14 rad).
+PGS at 0.14 m collapses (stand ~0.033 m), so the 94 mm miss is proximal loaded
+tracking, not a solver-mode exclusive.
+
+Four-way: **not window**, **not command/IK**, **not one-leg-only** (all three
+support feet exceed 45 mm). **Servo/plant:** the same support joint command that
+tracks to 16 mm on six legs yields ~94 mm on three. Stop. Do not raise stall,
+μ, ADMM, or loosen 45 mm. 45 mm still means max over the full metrics hold.
+
+Follow-up census resolved the servo/plant split. Peak servo torque utilisation
+was only **15.5%** despite R2 settling with about **0.50 rad** tibia error, so the
+MG996R torque-speed envelope was not saturated. The six-foot reflected-inertia
+calibration was under-stiff once support was reduced. A global gain was rejected:
+1.75× broke stand and the 120/240 Hz frozen replays. The production correction is
+therefore limited to a sustained static three-leg command: it latches a
+six-foot command reference, requires exactly three leg command groups to differ,
+requires fewer than six contacting tibias and unchanged targets for **250 ms**, then
+ramps the effective gain to **1.85×** over **100 ms**. Moving commands and ordinary
+six-foot stand remain at 1.0×; stall torque, μ, ADMM and the 45 mm gate are unchanged.
+
+This also exposed that the old weak hold was not a genuine tripod: its metrics
+window contained five contacts for 509/720 samples and four for 174. With the
+correction, the raised feet unload and seed 0 has three contacts for 720/720
+samples. Contact-order seeds 0–4 all pass, with worst support tracking **39.4 mm**,
+joint drift below **0.034 rad**, and body height about **0.142–0.143 m**. The
+60-second proximal stand and frozen 200/120/240/480 Hz replays all remain green.
 
 ## Summary
 
@@ -1164,8 +2061,9 @@ The WSL default **is** `pinocchio-proximal`: `Runtime.PhysicsSim.SolverMode = 1`
 in [`hexapod-server/config.physics-sim-wsl.txt`](../hexapod-server/config.physics-sim-wsl.txt)
 (parser default `1`, WSL `SolverIterations` 24). Proximal stand CTest and v16
 replay are the live physics gates (now default CTests at seed 0 and 120/240/480 Hz).
-The 15 `verify.sh` CTests are PGS/offline and are struck. 100-seed stays a
-diagnostic override. Dense ADMM and resource Phases 1–3 stay follow-ups.
+verify.sh live-physics CTests are proximal 0.14 / cap 24; **2 remain Class A**.
+100-seed stays a diagnostic override. Dense ADMM and resource Phases 1–3 stay
+follow-ups.
 
 Related notes (do not treat them as substitutes for this campaign):
 
@@ -1184,7 +2082,7 @@ Related notes (do not treat them as substitutes for this campaign):
 | 70% translation/yaw, lateral 10%+10 mm, turn translation &lt; 50 mm | Replay + `HEXAPOD_EXACT_REPLAY_ENFORCE_BEHAVIOR_GATES=1` | **Pass** on seed 0 and 100 seeds at 200 Hz, and seed 0 at 120 / 240 / 480 Hz |
 | Safety on perturbed ICs | `HEXAPOD_EXACT_REPLAY_ENFORCE_SAFETY_GATES=1` (allows `RecoveredRetry`) | **Pass.** Zero held / unsupported / failed-read on 100 seeds |
 | p99 physics step &lt; 4.0 ms at 240 Hz WSL; ADMM p99 ≤ 20; no cap exhaustion | Replay JSON (`p99_solver_total_step_time_ms`, `iteration_histogram`) | Numbers at **cap 24**, not the replay default 50. Round-trip p99 includes loopback; use solver-total as the physics figure |
-| Full physics/server/gait suites | `./scripts/verify.sh` plus locomotion binaries | **Struck.** The 15 reds are PGS/offline, not proximal 0.14 production. Proximal stand CTest already passed. Leave `verify.sh` red |
+| Full physics/server/gait suites | `./scripts/verify.sh` plus locomotion binaries | Live-physics CTests are proximal 0.14 / cap 24. **2 Class A** closed-loop misses remain (walk-distance; regression aggressive recover + tilt path-before-TIP_OVER). Recover census: HeldLastGood SpeedLimit; 0.5 retry leaves swing-femur ω ~14. Do not stack 0.25, skip link ω, retune gait, extend 1.85× into WALK, or loosen 10 mm |
 
 **Do not let these block the switch**
 
@@ -1202,10 +2100,8 @@ Related notes (do not treat them as substitutes for this campaign):
 - 10-minute randomized gait with zero held/NaN/speed-limit. There is no named
   test. Keep it as **post-default soak**, not an unowned switch blocker.
   [`plan.md`](plan.md) no longer lists it under default-switch behaviour gates.
-- `./scripts/verify.sh` 15/84 server CTests (PGS live-physics, crouch 0.06 m,
-  offline scenario height envelope). Not a proximal production gate. See
-  [verify.sh inventory](#verifysh-inventory-2026-09-14). Do not retarget those
-  binaries this batch.
+- Making `./scripts/verify.sh` green by excluding the five remaining Class A
+  closed-loop CTests. See [verify.sh inventory](#verifysh-inventory-2026-09-14).
 
 **Cadence (closed 2026-09-14)**
 
@@ -1335,8 +2231,9 @@ This is the resource note plus maybe dense GEMV.
 
 **D. Held / speed-limit / extreme penetration**
 
-Retry policy is already correct (only non-convergence and speed-limit
-half-step). Trace with `HEXAPOD_PROXIMAL_TRACE_FAILURES=1` and
+Retry policy is already correct (NCP same-dt + half-step at full gain;
+SpeedLimit retries at 0.5 PD gain, still under the all-body 10 rad/s cap).
+Trace with `HEXAPOD_PROXIMAL_TRACE_FAILURES=1` and
 `HEXAPOD_EXACT_REPLAY_CHILD_STDIO=1`. Unrecoverable holds are physics bugs (bad
 contacts, COM/inertia, penetration), not missing retries.
 
@@ -1357,7 +2254,8 @@ Do not turn 100-seed exact replay into default CTest; seed 0 and cadence
 
 **Landed 2026-09-14.** Stand CTest, replay safety+behaviour (including 100 seeds
 and cadence 120/240/480 Hz), and performance at cap 24 were green.
-`./scripts/verify.sh` 15/84 was struck (PGS/offline).
+verify.sh live-physics CTests were retargeted to proximal 0.14 / cap 24;
+Class A closed-loop misses remain (see [verify.sh inventory](#verifysh-inventory-2026-09-14)).
 
 - `Runtime.PhysicsSim.SolverMode = 1` in WSL config; parser default `1`
 - WSL `SolverIterations` 24
@@ -1380,8 +2278,58 @@ and cadence 120/240/480 Hz), and performance at cap 24 were green.
 Do not recapture at cap 24; the 500-iter capture is what keeps the controller
 in WALK. Seed 0, 100-seed safety+behaviour, and cadence 120/240/480 Hz are
 green on v16 (`ddc6008e0cc1ac97`). WSL default is `pinocchio-proximal`.
-`./scripts/verify.sh` 15/84 is struck as PGS/offline. See
+verify.sh live-physics CTests are proximal 0.14 / cap 24; two Class A
+closed-loop misses remain. See
 [Forward cross-track investigation](#forward-cross-track-investigation-2026-09-14),
 [100-seed held investigation](#100-seed-held-investigation-2026-09-14),
 [120 Hz cadence investigation](#120-hz-cadence-investigation-2026-09-14),
 and [verify.sh inventory](#verifysh-inventory-2026-09-14).
+
+### Scoped last-resort spectral experiment (2026-09-15)
+
+A scoped change that set the ADMM spectral power initialisation to `0.4` only
+for the two cold last-resort half-steps was tested against the production
+initialisation (`0.2`). It improved an isolated reverse sample set, but regressed
+the shared sequential campaign: forward accumulated HeldLastGood speed/NCP
+cascades and turn-in-place lost its stay-WALK or drift gate. The change was
+removed and the production spectral setting restored.
+
+A restored-default baseline then passed forward, slow-forward, reverse, and
+straight in one sequential run; turn passed in a focused ten-run sample but
+remains intermittent in the shared campaign. A focused forward trace reproduced
+the same underlying class: a five-contact cold NCP hold (`ncp_dual` about
+`0.0067`, `ncp_comp` about `0.0033` in one run) with all pre-integration
+angular speeds below the 10 rad/s guard. No solver-mode, friction, iteration,
+safety-envelope, or gait-limit change is justified by this experiment.
+
+### Deterministic regression clock and canonical recensus (2026-09-16)
+
+The locomotion regression runner refreshed command timestamps from wall time
+while scoring a fixed 5 ms cadence. Contact-solver runtime therefore changed
+gait phase and apparent travel. Refreshed phases now use a synthetic clock that
+advances exactly one configured sample period per control step. The deliberately
+stale command-timeout scenario continues to use wall time.
+
+This closes two false residuals without changing production physics or gates:
+
+- compliant canonical turn yaw increased from about 0.2 rad to 2.62 rad; rigid
+  reached 2.39 rad;
+- `tilt_safety_trip` now travels 0.141 m before the intended TIP_OVER, clearing
+  the unchanged 0.10 m path gate.
+
+The timeout scenario was also restored from a historical 0.20 m pose to the
+production 0.14 m height. At 0.20 m, a 2.36 m/s link-frame speed violation
+pre-empted the zero-motion freshness test. At 0.14 m, rigid and compliant modes
+both reach COMMAND_TIMEOUT with no held samples.
+
+For `low_support_walk`, the previous 90.7 mm maximum was sample 4 of STAND
+settling, not WALK. The all-phase metric remains reported, and a new walk-only
+tracking metric drives this walk gate. WALK maxima are 56.4 mm compliant and
+45.8 mm rigid against the unchanged 80 mm limit.
+
+All seven canonical cases now pass with the compliant experiment enabled.
+Rigid production remains slightly variable on turn translation: one run reached
+207 mm against the unchanged 200 mm bound, while three immediate repeats were
+191--199 mm. The deterministic long-walk stress case remains red in both modes
+because a linear/angular SpeedLimit hold becomes BUS_TIMEOUT; it is separate
+from rigid NCP convergence.

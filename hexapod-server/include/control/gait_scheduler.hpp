@@ -16,6 +16,8 @@ public:
     explicit GaitScheduler(control_config::GaitConfig config = {});
 
     void reset();
+    /// Test-only: seed the stride integrator and last committed gait from a dump.
+    void debugRestore(const GaitState& gait);
     GaitState preview(const RobotState& est,
                       const MotionIntent& intent,
                       const SafetyState& safety,
@@ -30,13 +32,16 @@ public:
 private:
     control_config::GaitConfig config_{};
     double wrap01(double x) const;
-    GaitState compute(const MotionIntent& intent,
+    GaitState compute(const RobotState& est,
+                      const MotionIntent& intent,
                       const SafetyState& safety,
                       const BodyTwist& cmd_twist,
                       const CommandGovernorState& governor,
                       bool commit_state);
     double phase_accum_{0.0};
     TimePointUs last_update_us_{};
+    /// Spent load-aware phase-hold budget, refilled once no planned swing drags.
+    double drag_hold_s_{0.0};
 
     GaitType committed_gait_{GaitType::TRIPOD};
     bool committed_initialized_{false};

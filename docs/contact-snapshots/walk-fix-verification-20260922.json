@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "kind": "walking_fix_verification_summary",
+  "date": "2026-09-22",
+  "revision": "055940da3a5bb7bc3983e5b120fa1258e25b32fe",
+  "tree_state": "Dirty campaign preserved; revision alone does not identify the tested source tree.",
+  "walking_process_report": "walk-fix-default-screen-20260922.json",
+  "settings": {
+    "solver_mode": 1,
+    "solver_iterations": 24,
+    "body_height_m": 0.14,
+    "existing_ncp_ccp_recovery_unchanged": true,
+    "implicit_actuation_enabled": false,
+    "gravity_feedforward_default_enabled": false,
+    "retry_proportional_scale": 0.5,
+    "retry_damping_scale": 1.0,
+    "pure_turn_hold_requires_absolute_position_capability": true,
+    "runtime_contact_frame_transport_enabled": false
+  },
+  "default_walking_screen": {
+    "reverse": {"passed": 5, "runs": 5, "complete_held_zero": 5},
+    "isolated_turn": {"passed": 5, "runs": 5, "complete_held_zero": 5},
+    "sequential": {"passed": 5, "runs": 5, "complete_held_zero": 5},
+    "aggressive_governor": {"passed": true, "stride_count": 2},
+    "qualification": "Repeated screen only, not a reliability guarantee; prior combined opt-in reverse screen includes one held-free TIP_OVER."
+  },
+  "root_verify": {
+    "exit_code": 1,
+    "server_tests_passed": 97,
+    "server_tests_total": 98,
+    "failed_test": "locomotion_regression_suite",
+    "failed_case": "tilt_safety_trip",
+    "tilt_case": {
+      "path_m": 0.064822,
+      "required_path_m": 0.1,
+      "first_fault": "TIP_OVER",
+      "first_fault_step": 443,
+      "peak_body_rate_radps": 0.881247,
+      "peak_roll_rad": 0.170315,
+      "solver_held_steps": 0,
+      "first_read_fail": false
+    },
+    "log": "/tmp/hexapod-walk-fix-verify-20260922.log",
+    "canonical_bundle": "/tmp/hexapod_locomotion_regression/1790068348471/124028"
+  },
+  "full_physics_suite": {
+    "passed": 68,
+    "total": 75,
+    "all_pinocchio_tests_passed": true,
+    "failed": [
+      "test_hexapod_live",
+      "test_hexapod_initial_layout_matches_server",
+      "test_servo_chain_vertical_lift_under_gravity",
+      "test_hexapod_pose_hold_with_payload",
+      "test_hexapod_stand_quiescence",
+      "test_hexapod_substep_convergence",
+      "test_single_leg_pd_response"
+    ],
+    "comparison": "Same seven failures with new retry damping and turn feedback disabled; these tests exercise legacy World or scene paths, not the changed production paths.",
+    "log": "/tmp/hexapod-walk-fix-physics-all-20260922.log",
+    "comparison_log": "/tmp/hexapod-walk-fix-physics-legacy-comparison-20260922.log"
+  },
+  "firmware_host_tests": {"passed": 3, "total": 3},
+  "simple_sim_smoke": {"exit_code": 0, "teardown_ok": true, "log": "/tmp/hexapod-walk-fix-smoke-20260922.log"},
+  "normal_server_application_rebuilt": true,
+  "v16_fixture_sha256": "d47248a183592342ab17b894fdf62514e757596c251bc0e5150fe7be2dccc135",
+  "v16_fixture_changed": false,
+  "not_run": ["100-seed campaign", "ten-minute randomized soak", "stress-labelled suites"],
+  "decision": "Keep the targeted walking fixes. Do not claim whole-repository or full locomotion qualification; retain tilt, legacy physics, and longer reliability follow-ups without relaxing gates."
+}

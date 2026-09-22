@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "kind": "integrated_state_guard_and_predictor_screen",
+  "date_utc": "2026-09-16T14:50:41Z",
+  "head": "055940da3a5bb7bc3983e5b120fa1258e25b32fe",
+  "solver_mode": 1,
+  "solver_iterations": 24,
+  "body_height_m": 0.14,
+  "max_linear_speed_mps": 2,
+  "max_angular_speed_radps": 10,
+  "sim_binary_sha256": "f02a6edbc0dc3487bd2352865201af2dd66924ab6ed9b5fa030e748e6f5f3812",
+  "source_sha256": {
+    "hexapod-physics-sim/src/demo/pinocchio_hexapod.cpp": "a56a068f95250780a261c10e362cf5ace3fc16883c6e1a26b8f8563320d16c29",
+    "hexapod-physics-sim/include/minphys3d/demo/pinocchio_hexapod.hpp": "31f9ca19e8db554089a325c094ce022f5d07085283033062dfb63ceab1bd1277",
+    "hexapod-physics-sim/tests/test_pinocchio_hexapod_model.cpp": "2c058eb0e10d54b63220eec372c039b8feb463cbdf20f86ea5cf95f89578490a",
+    "hexapod-physics-sim/tests/test_pinocchio_link_angular_velocity.cpp": "72819a048e89579b8f7af07d4f470f95d2e0725468a7218e0f1c91cb3e38776c",
+    "tools/predict_speed_limit_response.py": "8dce6c6f90d48862edef405454adaa2986af4dd47c42ba9e6b17232821f5d52b",
+    "tools/test_coupled_speed_predictor.py": "6a8a3470637650cec78e951e4a0c39bedf5251a189cccfe630e5107eaf5f893c"
+  },
+  "fixture_sha256": {
+    "docs/contact-snapshots/speed-limit-governed-kinematics-v1.json": "d24c77aeaf7f7611bbd42d1c4f6c6599b0babf908329c80744fc7519d9e687ce",
+    "docs/contact-snapshots/coupled-speed-predictor-v1.json": "f3817c0f8c1214b6bea4f2fe3049573fd41e5e62621fdde4a21f93ca9e04dc0f"
+  },
+  "copied_reports_sha256": {
+    "integrated-state-guard-aggressive-baseline-v1.json": "38e8d5725db03ce56629558569026278cefb7bbd5d99e44c226f5aaf351b1cd1",
+    "integrated-state-guard-aggressive-governed-v1.json": "942d0e3be22515815d50943ad0058ec8832b940354e63dd74736b220e51f4bdf",
+    "integrated-state-guard-straight-baseline-v1.json": "a6300ca498cde203ff134c18336f27817ca21f712e5b009076c8ff2c02d9b599",
+    "integrated-state-guard-turn-baseline-v1.json": "a8c8dd8033b1841712aa6519059e835d612accbaf5b8556a90b5612c0c4cc8fd",
+    "integrated-state-guard-sequential-baseline-v1.json": "a0090fa355cbd6cf8290f69d6cdb24ecd7df942d2a996accc7ca4f1d083b95b6"
+  },
+  "integrated_speed_limit_trace_lines": 0,
+  "screens": [
+    {
+      "screen": "aggressive",
+      "baseline": true,
+      "passed": "3/3",
+      "notes": "two strides, zero holds, governor inactive"
+    },
+    {
+      "screen": "turn",
+      "baseline": true,
+      "passed": "5/5",
+      "notes": "existing 0.21 m net gate; zero holds"
+    },
+    {
+      "screen": "straight",
+      "baseline": true,
+      "passed": "0/3",
+      "failures": [
+        "run1 stay-WALK, speed_limit=708",
+        "run2 stay-WALK, 0 held, recovered NCP=64, peak link w=9.545",
+        "run3 stay-WALK, solver_not_converged=1"
+      ]
+    },
+    {
+      "screen": "sequential",
+      "baseline": true,
+      "passed": "2/5",
+      "failures": [
+        "run2 reverse_walk NCP held=1",
+        "run4 reverse_walk speed_limit=1255",
+        "run5 reverse_walk NCP=1 plus speed_limit=1507"
+      ],
+      "notes": "passing runs 1 and 3 completed all five cases; live SpeedLimit traces are old-pose [proximal-speed-limit] only"
+    },
+    {
+      "screen": "aggressive",
+      "baseline": false,
+      "budget_radps": 10,
+      "passed": "2/3",
+      "failures": [
+        "run2 BUS_TIMEOUT from HeldLastGood solver_not_converged, 1 NCP hold, 0 SpeedLimit, two strides"
+      ],
+      "notes": "opt-in governor still not production-ready; not a guard regression class"
+    }
+  ],
+  "predictor": {
+    "runtime_activation": false,
+    "name": "clipped_position_PD_full_inverse_mass_one_step",
+    "baseline_torque_error": 4.440892098500626e-16,
+    "baseline_free_velocity_error": 9.325873406851315e-15,
+    "physical_gates_passed": false,
+    "contact_resolved": false,
+    "decision": "test-local only; not a production command governor"
+  },
+  "guard_decision": "keep",
+  "governor_decision": "explicit opt-in retained; not production-ready",
+  "predictor_decision": "test-local; do not change commands",
+  "mode_2_promoted": false,
+  "caps_changed": false,
+  "verify_as_production_green": false
+}

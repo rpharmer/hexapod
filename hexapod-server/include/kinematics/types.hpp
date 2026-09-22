@@ -267,6 +267,11 @@ struct MotionIntent {
 struct RobotState {
   std::array<LegState, kNumLegs> leg_states{};
   std::array<JointStateQuality, kNumLegs> joint_state_quality{};
+  // Optional actuator calibration, Nm/rad, in the same leg/joint order as
+  // leg_states. Positive stiffness is unchanged by mirrored servo signs.
+  // Sampled nominal gains; never include temporary numerical-retry scaling.
+  std::array<std::array<double, kJointsPerLeg>, kNumLegs> joint_stiffness_nm_per_rad{};
+  std::array<bool, kNumLegs> joint_stiffness_valid{};
   /** Fused controller-facing contact estimate; raw bridge snapshots are reconciled before use. */
   std::array<bool, kNumLegs> foot_contacts{};
   std::array<FootContactFusion, kNumLegs> foot_contact_fusion{};

@@ -60,6 +60,10 @@ cmake --build build-tests -j
 
 ## Run
 
+For the simulator-only swing-rate screen and offline coupled response predictor,
+see [Testing functionality](../docs/TESTING_FUNCTIONALITY.md). The predictor is
+diagnostic only and does not change runtime commands or solver selection.
+
 Run from `hexapod-server/`:
 
 ```bash
@@ -166,8 +170,27 @@ Current scenarios in `hexapod-server/scenarios/`:
 - `03_power_fault_triggers.toml`
 - `04_contact_loss_edge_cases.toml`
 - `05_long_walk_observability.toml`
+- `05_long_walk_contact_health.toml`
 - `06_map_aware_navigation.toml`
 - `07_single_leg_probe.toml`
+
+For live-physics regression A/B runs, from `hexapod-server/` use
+`./build-tests/test_locomotion_regression_suite --profile canonical --case long_walk_contact_health --solver-mode pinocchio-compliant`.
+
+The unvalidated simulator-only coordinated swing-rate experiment is opt-in with
+`HEXAPOD_SWING_LINK_RATE_EXPERIMENT=1`. It retains the production solver and speed
+guards, and does not change stance or STAND recovery. The bounded command budget
+is `HEXAPOD_SWING_LINK_RATE_BUDGET_RADPS=10|9|8` (default 10); optional per-step
+diagnostics use `HEXAPOD_SWING_LINK_RATE_TRACE=1`. See
+[`PLAN_COORDINATED_SWING_RATE_GOVERNOR.md`](../docs/PLAN_COORDINATED_SWING_RATE_GOVERNOR.md).
+From repository root after loading `scripts/lib/pinocchio_env.sh`, use
+`python3 tools/run_swing_link_rate_screen.py --screen aggressive --runs 3 --output-dir /tmp/hexapod-link-rate-screen`
+for machine-readable results. Add `--baseline` for the unchanged path; other
+screens are `straight`, `turn`, and `sequential`.
+The regression harness defaults to rigid mode 1; its explicit selector and
+reported `solver_mode` make the opt-in mode auditable. This does not change WSL
+production configuration. Unset the compliant experiment environment override
+when comparing protocol modes.
 
 `01_nominal_stand_walk.toml` is the smoke scenario for both bridges. Its walk phases stay at
 0.04 m/s and use modest yaw changes so it is suitable for the articulated physics stack. Keep
@@ -357,6 +380,61 @@ see `../docs/ALGORITHMS_SERVER_LOCOMOTION.md` and `../docs/ALGORITHMS_SERVER_CON
 - `SimpleHardwareBridge::read()` requests `GET_FULL_HARDWARE_STATE` and decodes joints, contacts, voltage, and current.
 
 ## Troubleshooting
+
+### Self-weight-only physics experiment
+
+From the repository root, after rebuilding the simulator and both
+`test_physics_sim_walk_distance` and `test_locomotion_regression_suite` together:
+
+```bash
+tools/run_gait_feasibility_batch.sh /tmp/selfweight-new 5 baseline selfweight
+python3 tools/summarize_gait_feasibility.py /tmp/selfweight-new
+```
+
+The `selfweight` arm sets test-only `HEXAPOD_WALK_TEST_SELF_WEIGHT=1`: Bounded
+feedforward, link self-weight on, foot-reaction off, femur/tibia scale 1,
+stiffness scale 1 and an 80 ms filter. Existing maximum angle offsets and
+IMU/feedback thresholds are retained. The correction goes through normal target
+limits and uses per-joint nominal stiffness reported in the physics response,
+not a private simulator oracle or direct torques. Rejected IMU inputs decay
+through the configured filter; disabling FF clears it immediately. It is
+not a production preset. True measured clearance and unchanged behavioural
+gates, not error to the deliberately biased servo target, decide acceptance.
+Do not combine this experiment with other tuning arms when attributing results.
+See [leftovers §3.22](../docs/SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md#322-explicit-actuator-stiffness-and-gatefilter-continuity)
+for the conversion fix, repeated screens and remaining held states.
+
+The same screen runner accepts `velocitylead` and `velocityleadfiltered` for
+**rejected, test-only** counterfactuals, not production presets. Both act in the
+walk-distance/regression bridge after normal target processing. The former adds
+`0.08 s * reference rate` to the motor target; the latter smooths that offset
+with the existing 80 ms motor timescale. Neither preserves the reference slew
+bound on the final biased motor target, and neither enables gravity FF. Do not
+use lower foot dragging alone as an acceptance result: both failed safety/live
+walking screens. `tools/report_gait_screen.py RUN_DIR NEW_REPORT.json
+--experiment-note "..."` retains a non-overwriting scorecard with binary/log
+hashes. See [§3.23](../docs/SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md#323-moving-damping-balance-rejected-velocity-lead-final-target-rate-repair).
+
+Runtime target-speed metadata in STAND/WALK describes the final emitted angle
+difference after all safety adjustments. This repair changes no target angle
+and does not enable motor velocity feedforward or an additional slew clamp.
+
+In physics-sim, a pure turn-in-place now holds its entry XY using the existing
+bounded correction (0.20/s, at most 0.03 m/s). This requires the bridge's explicit
+absolute-position capability; hardware and the simple simulator remain excluded.
+Intentional translating turns are not anchored. `HEXAPOD_TURN_INPLACE_HOLD=0`
+disables it for comparison. Normal launches need no experiment flags.
+The explicit simulator's speed-limit retries now retain motor damping while
+reducing position drive; no speed/torque or test limit was raised.
+
+`storedmotion` remains a rejected test-only screen: it bounds the PD error's
+equivalent velocity request, not the contact-driven physical velocity. The
+`capture` arm retains the first speed-limit state and preceding accepted history
+without overwriting. `legacyrecovery` disables both the retry damping fix and
+turn hold for old/new comparisons. Batch outputs include `.exit` status files;
+machine reports require a successful process exit as well as passing metrics.
+For historical runs without sidecars, pass `--progress-log` to the report tool;
+unknown process status is not a qualified pass.
 
 - **Cannot open serial device**: verify `SerialDevice` path and Linux permissions (`dialout`/udev).
 - **ACK timeout / handshake failures**: confirm firmware is running and protocol versions match.

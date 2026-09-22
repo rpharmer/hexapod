@@ -12,6 +12,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <string>
+#include <vector>
 
 BodyController::BodyController(control_config::GaitConfig gait_cfg,
                                control_config::FootTerrainConfig foot_terrain_cfg)
@@ -30,23 +35,230 @@ void BodyController::reset() {
     last_workspace_xy_hit_.fill(false);
     have_last_clamped_stance_.fill(false);
     last_clamped_stance_body_.fill(Vec3{});
+    committed_swing_plan_.fill(SwingPlanCommit{});
+    last_emitted_target_.fill(Vec3{});
+    have_last_emitted_target_.fill(false);
+    last_r2_swing_decomp_ = {};
+    stand_untilt_ticks_ = 0;
 }
 
 namespace {
+
+/**
+ * Opt-in screen, **default off and rejected** (leftover §3.15). Commits one swing
+ * plan per swing instead of re-resolving it every control sample, and bounds the
+ * emitted Cartesian step to the leg's actuator envelope.
+ *
+ * It does what it claims: swing commanded foot speed p99 falls 8.70 -> 0.735 m/s
+ * and no sample steps more than 3.7 mm. It still regressed every screen (isolated
+ * reverse 4/5 -> 1/5, sequential 3/5 -> 0/5), and drag stayed at 76-82%. Making
+ * the commanded path feasible therefore does not free the dragging legs — with
+ * `peak_solver_servo_torque_utilization` at 1.0 the binding constraint is servo
+ * torque, not command quality.
+ */
+bool swingPlanCommitEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("HEXAPOD_SWING_PLAN_COMMIT");
+        return value != nullptr && value[0] != '\0' && std::string{value} != "0";
+    }();
+    return enabled;
+}
+
+} // namespace
+
+const SwingPlanCommit& BodyController::commitSwingPlan(const std::size_t leg_index,
+                                                      const RobotState& est,
+                                                      const BodyTwist& nominal_body,
+                                                      const SwingFootInputs& in) {
+    SwingPlanCommit& plan = committed_swing_plan_[leg_index];
+    if (!plan.valid || !swingPlanCommitEnabled()) {
+        plan = resolveSwingPlan(est, nominal_body, in);
+    }
+    return plan;
+}
+
+namespace {
+
+/**
+ * Cartesian output rate bound. A joint driven at `fraction · no-load speed` still
+ * has torque left to accelerate the link, unlike the existing per-joint clamp at
+ * 100% of no-load; `fraction · ω_noload · r` is the foot speed that buys. The
+ * planner's own commanded speed wins when it is larger, so a legitimately fast
+ * swing is never throttled — only steps that the trajectory itself did not ask
+ * for are.
+ */
+constexpr double kFootEnvelopeNoLoadFraction = 0.5;
+constexpr double kPlannerSpeedMargin = 1.5;
+constexpr double kMinFootLeverArmM = 0.05;
 
 constexpr double kNominalReachFraction = 0.55;
 constexpr double kReachMarginM = 0.005;
 constexpr double kFootReachInsetM = 0.004;
 constexpr double kBodyHeightHoldGain = 1.0;
 constexpr double kBodyHeightHoldMaxAdjustM = 0.120;
+constexpr double kStaticBodyHeightPullDownMaxM = 0.020;
 constexpr double kBodyHeightHoldIntegralGain = 0.02;  // leaky extra-support term for persistent compliance sag
 constexpr double kBodyHeightHoldIntegralCapM = 0.020; // cap extra support so the chassis does not chase large transients
 constexpr double kBodyHeightHoldIntegralDecay = 0.99;     // per-step decay when body is near commanded
 constexpr double kBodyHeightHoldIntegralDecayFast = 0.93; // fast decay when body is above commanded (~250 ms to clear)
 constexpr double kBodyHeightHoldIntegralFastUnwindGapM = 0.002;
-constexpr double kBodyHeightHoldMaxEffectiveMarginM = 0.012;
+// Walk cyclic sag at production 0.14 m requests more than 12 mm of hold
+// (slow-fwd min ~20 mm, WAVE min ~35 mm) while the governor stays at command.
+constexpr double kBodyHeightHoldMaxEffectiveMarginM = 0.040;
 constexpr double kTerrainBlendMinScale = 0.35;
 constexpr double kTerrainBlendSagScale = 0.65;
+constexpr int kR2SwingDumpLeg = 2;
+constexpr std::size_t kSwingPlannerDumpMaxSamples = 256;
+
+void writeJsonVec3(std::ostream& out, const Vec3& v) {
+    out << '[' << v.x << ',' << v.y << ',' << v.z << ']';
+}
+
+struct SwingPlannerDumpSample {
+    double phase{0.0};
+    double duty_factor{0.0};
+    bool in_stance{false};
+    SwingFootInputs sw{};
+    Vec3 twist_linear_mps{};
+    Vec3 twist_angular_radps{};
+    bool est_valid{false};
+    bool est_has_body_twist{false};
+    Vec3 est_linear_mps{};
+    Vec3 est_angular_radps{};
+    Vec3 planned_pre_rot{};
+    Vec3 target_clamped{};
+};
+
+struct SwingPlannerDumpState {
+    bool decided{false};
+    bool active{false};
+    bool written{false};
+    std::string path{};
+    std::vector<SwingPlannerDumpSample> samples{};
+};
+
+SwingPlannerDumpState& swingPlannerDumpState() {
+    static SwingPlannerDumpState state;
+    return state;
+}
+
+void writeSwingPlannerDumpFile(SwingPlannerDumpState& state) {
+    if (!state.active || state.path.empty() || state.samples.empty()) {
+        return;
+    }
+    std::ofstream out(state.path, std::ios::out | std::ios::trunc);
+    if (!out) {
+        std::cerr << "[swing-planner-dump] failed path=" << state.path << '\n';
+        state.written = true;
+        state.active = false;
+        return;
+    }
+    out << std::setprecision(17);
+    out << "{\"schema_version\":1,\"kind\":\"swing_planner_dump\",\"leg\":" << kR2SwingDumpLeg
+        << ",\"samples\":[";
+    for (std::size_t i = 0; i < state.samples.size(); ++i) {
+        const SwingPlannerDumpSample& s = state.samples[i];
+        if (i != 0) {
+            out << ',';
+        }
+        out << "{\"phase\":" << s.phase
+            << ",\"duty_factor\":" << s.duty_factor
+            << ",\"in_stance\":" << (s.in_stance ? "true" : "false")
+            << ",\"tau01\":" << s.sw.tau01
+            << ",\"swing_span\":" << s.sw.swing_span
+            << ",\"f_hz\":" << s.sw.f_hz
+            << ",\"step_length_m\":" << s.sw.step_length_m
+            << ",\"swing_height_m\":" << s.sw.swing_height_m
+            << ",\"stance_lookahead_s\":" << s.sw.stance_lookahead_s
+            << ",\"static_stability_margin_m\":" << s.sw.static_stability_margin_m
+            << ",\"swing_time_ease_01\":" << s.sw.swing_time_ease_01
+            << ",\"cmd_accel_body_x_mps2\":" << s.sw.cmd_accel_body_x_mps2
+            << ",\"cmd_accel_body_y_mps2\":" << s.sw.cmd_accel_body_y_mps2
+            << ",\"anchor\":";
+        writeJsonVec3(out, s.sw.anchor);
+        out << ",\"stance_end\":";
+        writeJsonVec3(out, s.sw.stance_end);
+        out << ",\"v_liftoff_body\":";
+        writeJsonVec3(out, s.sw.v_liftoff_body);
+        out << ",\"twist_linear_mps\":";
+        writeJsonVec3(out, s.twist_linear_mps);
+        out << ",\"twist_angular_radps\":";
+        writeJsonVec3(out, s.twist_angular_radps);
+        out << ",\"est_valid\":" << (s.est_valid ? "true" : "false")
+            << ",\"est_has_body_twist\":" << (s.est_has_body_twist ? "true" : "false")
+            << ",\"est_linear_mps\":";
+        writeJsonVec3(out, s.est_linear_mps);
+        out << ",\"est_angular_radps\":";
+        writeJsonVec3(out, s.est_angular_radps);
+        out << ",\"planned_pre_rot\":";
+        writeJsonVec3(out, s.planned_pre_rot);
+        out << ",\"target_clamped\":";
+        writeJsonVec3(out, s.target_clamped);
+        out << '}';
+    }
+    out << "]}\n";
+    if (state.samples.size() == 1) {
+        std::cerr << "[swing-planner-dump] path=" << state.path << '\n';
+    }
+}
+
+void maybeRecordR2SwingPlannerDump(
+    int leg,
+    bool swinging,
+    const GaitState& gait,
+    const SwingFootInputs& sw,
+    const BodyTwist& kinematic_twist,
+    const RobotState& kinematic_est,
+    const Vec3& planned_pre_rot,
+    const Vec3& target_clamped) {
+    if (leg != kR2SwingDumpLeg || !swinging) {
+        return;
+    }
+    SwingPlannerDumpState& state = swingPlannerDumpState();
+    if (state.written) {
+        return;
+    }
+    if (!state.decided) {
+        state.decided = true;
+        const char* path = std::getenv("HEXAPOD_SWING_PLANNER_DUMP_PATH");
+        if (path == nullptr || path[0] == '\0') {
+            return;
+        }
+        std::ifstream exists(path);
+        if (exists.good()) {
+            state.written = true;
+            std::cerr << "[swing-planner-dump] skip existing path=" << path << '\n';
+            return;
+        }
+        state.active = true;
+        state.path = path;
+        state.samples.reserve(kSwingPlannerDumpMaxSamples);
+    }
+    if (!state.active) {
+        return;
+    }
+    SwingPlannerDumpSample sample;
+    sample.phase = gait.phase[static_cast<std::size_t>(kR2SwingDumpLeg)];
+    sample.duty_factor = gait.duty_factor;
+    sample.in_stance = gait.in_stance[static_cast<std::size_t>(kR2SwingDumpLeg)];
+    sample.sw = sw;
+    sample.twist_linear_mps = kinematic_twist.linear_mps;
+    sample.twist_angular_radps = kinematic_twist.angular_radps;
+    sample.est_valid = kinematic_est.valid;
+    sample.est_has_body_twist = kinematic_est.has_body_twist_state;
+    if (kinematic_est.has_body_twist_state) {
+        sample.est_linear_mps = kinematic_est.body_twist_state.body_trans_mps.raw();
+        sample.est_angular_radps = kinematic_est.body_twist_state.twist_vel_radps.raw();
+    }
+    sample.planned_pre_rot = planned_pre_rot;
+    sample.target_clamped = target_clamped;
+    state.samples.push_back(sample);
+    writeSwingPlannerDumpFile(state);
+    if (state.samples.size() >= kSwingPlannerDumpMaxSamples) {
+        state.written = true;
+        state.active = false;
+    }
+}
 
 double fusionTrustScale(const RobotState& est) {
     if (!est.has_fusion_diagnostics) {
@@ -55,7 +267,9 @@ double fusionTrustScale(const RobotState& est) {
     return std::clamp(est.fusion.model_trust, 0.20, 1.0);
 }
 
-double bodyHeightHoldOffsetM(const RobotState& est, const double commanded_body_height_m) {
+double bodyHeightHoldOffsetM(const RobotState& est,
+                             const double commanded_body_height_m,
+                             const bool correct_static_overshoot) {
     if (!est.has_body_twist_state) {
         return 0.0;
     }
@@ -64,16 +278,25 @@ double bodyHeightHoldOffsetM(const RobotState& est, const double commanded_body_
         return 0.0;
     }
 
-    // Only correct sag, not overshoot. The goal is to keep the body from settling lower than the
-    // requested stance without adding a new downward oscillation.
-    const double sag_m = std::max(0.0, commanded_body_height_m - measured_body_height_m);
-    if (sag_m <= 0.0) {
-        return 0.0;
+    const double height_error_m = commanded_body_height_m - measured_body_height_m;
+    if (height_error_m < 0.0) {
+        // A stationary stance can settle above its requested height because the
+        // compliant joint equilibrium and spherical feet do not reproduce the
+        // unloaded IK pose exactly. Close that steady-state error in STAND only;
+        // applying downward feedback during a moving gait would deepen its
+        // cyclic support dips.
+        return correct_static_overshoot
+            ? std::clamp(
+                  kBodyHeightHoldGain * height_error_m,
+                  -kStaticBodyHeightPullDownMaxM,
+                  0.0)
+            : 0.0;
     }
 
     // Height hold should follow the measured body height directly. Fusion trust is useful for
     // resync decisions, but it should not dilute the stance correction that keeps the chassis up.
-    return std::clamp(kBodyHeightHoldGain * sag_m, 0.0, kBodyHeightHoldMaxAdjustM);
+    return std::clamp(
+        kBodyHeightHoldGain * height_error_m, 0.0, kBodyHeightHoldMaxAdjustM);
 }
 
 bool clampPlanarStrokeFromPlant(const Vec3& plant, const double stroke_l_m, Vec3& p) {
@@ -90,6 +313,24 @@ bool clampPlanarStrokeFromPlant(const Vec3& plant, const double stroke_l_m, Vec3
     p.x = plant.x + dx * scale;
     p.y = plant.y + dy * scale;
     return true;
+}
+
+/// Screen scale on the body-height hold; unset or invalid keeps production 1.0.
+double heightHoldScale() {
+    static const double scale = [] {
+        const char* value = std::getenv("HEXAPOD_HEIGHT_HOLD_SCALE");
+        if (value == nullptr || value[0] == '\0') {
+            return 1.0;
+        }
+        char* end = nullptr;
+        const double parsed = std::strtod(value, &end);
+        if (end == value || *end != '\0' || !std::isfinite(parsed) || parsed < 0.0
+            || parsed > 1.0) {
+            return 1.0;
+        }
+        return parsed;
+    }();
+    return scale;
 }
 
 double terrainBlendScaleForHeightHold(const double height_hold_m) {
@@ -183,6 +424,7 @@ LegTargets BodyController::update(const RobotState& est,
     out.timestamp_us = now_us();
     last_stroke_clamp_hit_.fill(false);
     last_workspace_xy_hit_.fill(false);
+    last_r2_swing_decomp_ = {};
 
     // Keep differential motion conversion explicit at the kinematic boundary.
     const BodyTwist kinematic_twist = legacyKinematicTwistFromServerBody(cmd_twist);
@@ -206,6 +448,33 @@ LegTargets BodyController::update(const RobotState& est,
     const double trust_scale = fusionTrustScale(est);
     BodyPoseSetpoint pose =
         computeBodyPoseSetpoint(intent, cmd, gait.static_stability_margin_m, gait.stride_phase_rate_hz.value);
+    if (!walking && intent.requested_mode == RobotMode::STAND && est.has_body_twist_state
+        && std::abs(pose.roll_rad) + std::abs(pose.pitch_rad) < 1.0e-6) {
+        const double roll_meas = est.body_twist_state.twist_pos_rad.x;
+        const double pitch_meas = est.body_twist_state.twist_pos_rad.y;
+        if (std::isfinite(roll_meas) && std::isfinite(pitch_meas)) {
+            // Identity STAND freezes a prefix 3-support (body-frame hexagon is tilted in
+            // world). Command a heading-level hexagon (pose = +meas) so airborne feet
+            // reach the floor, then fade to identity so the chassis can untilt onto that
+            // plane — the live analog of the P5 yaw-only plant. Holding pose=+meas into
+            // WALK is the mixed-q SpeedLimit plant. Same 2 s settle; no STAND lengthen.
+            ++stand_untilt_ticks_;
+            constexpr int kHoldTicks = 80;
+            constexpr int kFadeTicks = 240;
+            double fade = 0.0;
+            if (stand_untilt_ticks_ <= kHoldTicks) {
+                fade = 1.0;
+            } else if (stand_untilt_ticks_ < kHoldTicks + kFadeTicks) {
+                const double u = static_cast<double>(stand_untilt_ticks_ - kHoldTicks) /
+                                 static_cast<double>(kFadeTicks);
+                fade = 0.5 * (1.0 + std::cos(3.141592653589793 * u));
+            }
+            pose.roll_rad = fade * roll_meas;
+            pose.pitch_rad = fade * pitch_meas;
+        }
+    } else {
+        stand_untilt_ticks_ = 0;
+    }
     if (walking && est.has_body_twist_state) {
         const double roll_meas = est.body_twist_state.twist_pos_rad.x;
         const double pitch_meas = est.body_twist_state.twist_pos_rad.y;
@@ -238,15 +507,30 @@ LegTargets BodyController::update(const RobotState& est,
         has_measured_body_height,
         measured_body_height_m);
 
-    const double body_height_hold_m = bodyHeightHoldOffsetM(est, commanded_body_height_m)
-                                      + height_hold_integral_m_;
+    const bool correct_static_overshoot =
+        intent.requested_mode == RobotMode::STAND && !safety.torque_cut;
+    // Screen only (default 1.0 = production). Body heave is 27-40 mm against a
+    // 24-31 mm commanded swing height, so a swing foot barely clears the ground
+    // (measured 20th-percentile lift 0.2-1.2 mm) and drags; heave correlates with
+    // drag at r = +0.66 over 112 cases, and aborting cases carry 40 mm heave
+    // versus 27 mm on clean ones. This gate asks whether the unity-gain height
+    // hold is driving that heave.
+    const double body_height_hold_m = (bodyHeightHoldOffsetM(
+                                           est,
+                                           commanded_body_height_m,
+                                           correct_static_overshoot)
+                                       + height_hold_integral_m_)
+                                      * heightHoldScale();
     const double terrain_blend_scale = terrainBlendScaleForHeightHold(body_height_hold_m);
     // Protective squat is applied upstream by CommandGovernor and is already reflected in
     // commanded_body_height_m. Keep this layer responsible only for compensating measured sag;
     // applying another tilt squat here made the chassis bob down twice for the same disturbance.
+    const double min_effective_body_height_m = correct_static_overshoot
+        ? std::max(0.04, commanded_body_height_m - kStaticBodyHeightPullDownMaxM)
+        : std::max(0.04, commanded_body_height_m);
     const double effective_body_height_m = std::clamp(
         commanded_body_height_m + body_height_hold_m,
-        std::max(0.04, commanded_body_height_m),
+        min_effective_body_height_m,
         commanded_body_height_m + kBodyHeightHoldMaxEffectiveMarginM);
     const double swing_height_hold_release_m =
         std::max(0.0, effective_body_height_m - commanded_body_height_m);
@@ -300,6 +584,12 @@ LegTargets BodyController::update(const RobotState& est,
                                      -intent.twist.body_trans_mps.z};
         bool apply_workspace_clamp = true;
         bool used_stance_kinematics = false;
+        bool r2_swing_this_leg = false;
+        SwingFootInputs r2_sw{};
+        Vec3 r2_planned_pre_rot{};
+        Vec3 r2_untilted{};
+        Vec3 r2_terrain_xy_delta{};
+        SwingFootPlanDecomposition r2_foothold{};
 
         if (walking) {
             double ph = clamp01(gait.phase[leg]);
@@ -311,6 +601,11 @@ LegTargets BodyController::update(const RobotState& est,
                 contact_modes != nullptr ? &(*contact_modes)[leg_index] : nullptr;
             const bool planned_stance =
                 contact_decision != nullptr ? contact_decision->planned_stance : ph < duty;
+            if (planned_stance) {
+                // Swing planning is only reachable with `planned_stance` false, so
+                // dropping the commit here yields exactly one commit per swing.
+                committed_swing_plan_[leg_index] = SwingPlanCommit{};
+            }
             const bool support_hold =
                 contact_decision != nullptr
                     ? (contact_decision->mode == LegContactMode::HeldStance ||
@@ -431,7 +726,8 @@ LegTargets BodyController::update(const RobotState& est,
                         sw.stance_lookahead_s = (duty / swing_f_hz) * 0.48;
                         sw.static_stability_margin_m = gait.static_stability_margin_m;
                         sw.swing_time_ease_01 = gait.swing_time_ease_01;
-                        planSwingFoot(kinematic_est, kinematic_twist, sw, p, v);
+                        evalSwingPlan(commitSwingPlan(leg_index, kinematic_est, kinematic_twist, sw),
+                                      sw.tau01, p, v);
                         v = supportFootVelocityAt(p, body_mot);
                     }
                 } else {
@@ -496,18 +792,30 @@ LegTargets BodyController::update(const RobotState& est,
                 sw.swing_time_ease_01 = gait.swing_time_ease_01;
                 Vec3 p{};
                 Vec3 v{};
-                planSwingFoot(kinematic_est, kinematic_twist, sw, p, v);
+                evalSwingPlan(commitSwingPlan(leg_index, kinematic_est, kinematic_twist, sw),
+                              sw.tau01, p, v);
+                if (leg == kR2SwingDumpLeg) {
+                    r2_swing_this_leg = true;
+                    r2_sw = sw;
+                    r2_planned_pre_rot = p;
+                    r2_foothold = computeSwingFootPlacement(kinematic_est, kinematic_twist, sw);
+                }
                 target = p;
                 // Height hold deliberately pushes planted feet below their unloaded nominal
                 // position to counter servo compliance. A swing foot must not inherit that
                 // support preload: doing so consumes most of the clearance arc and leaves the
                 // 18 mm contact sphere dragging through nearly the entire swing.
                 target.z += swing_height_hold_release_m;
+                const Vec3 before_terrain = target;
                 if (terrain_snapshot != nullptr) {
                     applyTerrainSwingXYNudge(*terrain_snapshot, est, foot_terrain_cfg_, tau_for_terrain_xy, &target);
                     applyTerrainSwingClearance(*terrain_snapshot, est, foot_terrain_cfg_, &target);
                 }
                 target.z -= swing_extra_down_z;
+                if (r2_swing_this_leg) {
+                    r2_terrain_xy_delta = Vec3{target.x - before_terrain.x, target.y - before_terrain.y, 0.0};
+                    r2_untilted = target;
+                }
                 target_vel = target_vel + v;
             }
         } else if (intent.requested_mode == RobotMode::STAND &&
@@ -560,8 +868,84 @@ LegTargets BodyController::update(const RobotState& est,
             }
         }
 
+        // Part of the rejected `HEXAPOD_SWING_PLAN_COMMIT` screen, default off.
+        // Even with the swing plan committed, the contact-reactive tau advance and
+        // the stance/swing branch switch step this target 65-107 mm inside one 5 ms
+        // sample when a swinging foot touches down early. Bounding the emitted step
+        // to the leg's Cartesian actuator envelope removes those steps entirely and
+        // still regressed every screen; see leftover §3.15.
+        const std::size_t emit_index = static_cast<std::size_t>(leg);
+        if (intent.requested_mode == RobotMode::WALK && swingPlanCommitEnabled()
+            && have_last_emitted_target_[emit_index] && dt_s > 0.0) {
+            const Vec3 step = target - last_emitted_target_[emit_index];
+            const double step_mag = vecNorm(step);
+            const Vec3 coxa = geometry_.legGeometry[leg].bodyCoxaOffset;
+            const double radius = std::max(vecNorm(target - coxa), kMinFootLeverArmM);
+            const double envelope_mps =
+                kFootEnvelopeNoLoadFraction * hexapod_dynamics::kServoNoLoadSpeedRadPerSec * radius;
+            const double allowed =
+                std::max(kPlannerSpeedMargin * vecNorm(target_vel), envelope_mps) * dt_s;
+            if (step_mag > allowed && step_mag > 1e-12) {
+                const double scale = allowed / step_mag;
+                target = last_emitted_target_[emit_index] + step * scale;
+                target_vel = target_vel * scale;
+            }
+        }
+        last_emitted_target_[emit_index] = target;
+        have_last_emitted_target_[emit_index] = true;
+
         out.feet[leg].pos_body_m = target;
         out.feet[leg].vel_body_mps = target_vel;
+        maybeRecordR2SwingPlannerDump(
+            leg,
+            r2_swing_this_leg,
+            gait,
+            r2_sw,
+            kinematic_twist,
+            kinematic_est,
+            r2_planned_pre_rot,
+            target);
+        if (r2_swing_this_leg) {
+            const Vec3 coxa = geometry_.legGeometry[leg].bodyCoxaOffset;
+            last_r2_swing_decomp_.valid = true;
+            last_r2_swing_decomp_.anchor = r2_sw.anchor;
+            last_r2_swing_decomp_.stance_end = r2_sw.stance_end;
+            last_r2_swing_decomp_.v_liftoff_body = r2_sw.v_liftoff_body;
+            last_r2_swing_decomp_.tau01 = r2_sw.tau01;
+            last_r2_swing_decomp_.swing_span = r2_sw.swing_span;
+            last_r2_swing_decomp_.f_hz = r2_sw.f_hz;
+            last_r2_swing_decomp_.step_length_m = r2_sw.step_length_m;
+            last_r2_swing_decomp_.swing_height_m = r2_sw.swing_height_m;
+            last_r2_swing_decomp_.cmd_accel_body_x_mps2 = r2_sw.cmd_accel_body_x_mps2;
+            last_r2_swing_decomp_.cmd_accel_body_y_mps2 = r2_sw.cmd_accel_body_y_mps2;
+            last_r2_swing_decomp_.stance_lookahead_s = r2_sw.stance_lookahead_s;
+            last_r2_swing_decomp_.static_stability_margin_m = r2_sw.static_stability_margin_m;
+            last_r2_swing_decomp_.swing_time_ease_01 = r2_sw.swing_time_ease_01;
+            last_r2_swing_decomp_.kinematic_twist = kinematic_twist;
+            last_r2_swing_decomp_.est_valid = kinematic_est.valid;
+            last_r2_swing_decomp_.est_has_body_twist = kinematic_est.has_body_twist_state;
+            if (kinematic_est.has_body_twist_state) {
+                last_r2_swing_decomp_.est_linear_mps = kinematic_est.body_twist_state.body_trans_mps.raw();
+                last_r2_swing_decomp_.est_angular_radps = kinematic_est.body_twist_state.twist_vel_radps.raw();
+            }
+            last_r2_swing_decomp_.planned_pre_rot = r2_planned_pre_rot;
+            last_r2_swing_decomp_.after_terrain = r2_untilted;
+            last_r2_swing_decomp_.origin_rot = body_rotation * r2_untilted;
+            last_r2_swing_decomp_.coxa_rot = coxa + (body_rotation * (r2_untilted - coxa));
+            last_r2_swing_decomp_.coxa = coxa;
+            last_r2_swing_decomp_.target_clamped = target;
+            last_r2_swing_decomp_.foothold_nominal = r2_foothold.nominal_body;
+            last_r2_swing_decomp_.capture_body = r2_foothold.capture_body;
+            last_r2_swing_decomp_.foothold_final = r2_foothold.final_body;
+            last_r2_swing_decomp_.terrain_xy_delta = r2_terrain_xy_delta;
+            last_r2_swing_decomp_.capture_limit_m = r2_foothold.capture_limit_m;
+            last_r2_swing_decomp_.clamp_dxy = std::hypot(
+                last_r2_swing_decomp_.origin_rot.x - target.x,
+                last_r2_swing_decomp_.origin_rot.y - target.y);
+            last_r2_swing_decomp_.roll_rad = pose.roll_rad;
+            last_r2_swing_decomp_.pitch_rad = pose.pitch_rad;
+            last_r2_swing_decomp_.yaw_rad = pose.yaw_rad;
+        }
     }
 
     return out;

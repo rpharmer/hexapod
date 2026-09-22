@@ -95,8 +95,8 @@ public:
     CapturingPhysicsSimBridge(std::string host,
                               int port,
                               int bus_loop_period_us,
-                              int physics_solver_iterations)
-        : inner_(std::move(host), port, bus_loop_period_us, physics_solver_iterations, nullptr) {}
+                              PhysicsSimSolverSettings solver_settings)
+        : inner_(std::move(host), port, bus_loop_period_us, solver_settings, nullptr) {}
 
     bool init() override { return inner_.init(); }
 
@@ -218,6 +218,16 @@ double g_stand_settle_max_body_rate_radps = 0.5;
 double g_stand_settle_max_contact_anchor_max_drift_m = 0.08;
 double g_stand_settle_max_commanded_tracking_error_m = 0.06;
 double g_stand_settle_min_measured_foot_world_z_m = 0.005;
+/**
+ * The robot spawns with a stance that differs from the commanded nominal, so the
+ * first samples carry a large commanded-vs-measured foot error that the
+ * controller then closes (measured: 0.0996 m at the first sample down to
+ * 0.0070 m by the end of an 0.8 s stand). These gates assert a property of
+ * *settled* standing, so skip the settling transient, exactly as the stride
+ * gates already skip early walk transients via
+ * `g_stride_kinematics_walk_warmup_samples`.
+ */
+double g_stand_settle_warmup_s = 0.3;
 double g_single_leg_masked_stand_path_length_m_max = 0.02;
 double g_single_leg_masked_stand_net_displacement_m_max = 0.005;
 double g_single_leg_masked_stand_max_abs_tilt_rad = 0.02;
@@ -282,6 +292,8 @@ void refreshMotionPerformanceLimitsFromManifest() {
         test_limits::getDouble(kSuite, "stand_settle", "", "max_contact_anchor_max_drift_m", 0.08);
     g_stand_settle_max_commanded_tracking_error_m =
         test_limits::getDouble(kSuite, "stand_settle", "", "max_commanded_tracking_error_m", 0.06);
+    g_stand_settle_warmup_s =
+        test_limits::getDouble(kSuite, "stand_settle", "", "settle_warmup_s", 0.3);
     g_stand_settle_min_measured_foot_world_z_m =
         test_limits::getDouble(kSuite, "stand_settle", "", "min_measured_foot_world_z_m", 0.005);
     g_single_leg_masked_stand_path_length_m_max =
@@ -556,6 +568,86 @@ std::string walkLimitsAppliedToJson(const bool lateral_style,
     return o.str();
 }
 
+/**
+ * A bare max is not diagnosable: name the offending leg and split the error into
+ * body-frame-ish world components so a height/stance-depth offset is
+ * distinguishable from planar slip.
+ */
+/**
+ * Peak commanded-vs-measured foot error over settled standing only. Returns the
+ * whole-window peak if the warmup would consume every sample.
+ */
+double settledMaxCommandedTrackingErrorM(const std::vector<MotionSample>& samples,
+                                         const double sample_period_s) {
+    const std::size_t warmup = (sample_period_s > 0.0)
+        ? static_cast<std::size_t>(g_stand_settle_warmup_s / sample_period_s)
+        : 0;
+    const std::size_t start = (warmup < samples.size()) ? warmup : 0;
+    double peak = 0.0;
+    for (std::size_t i = start; i < samples.size(); ++i) {
+        if (samples[i].locomotion_debug.valid) {
+            peak = std::max(peak, samples[i].locomotion_debug.max_commanded_tracking_error_m);
+        }
+    }
+    return peak;
+}
+
+std::string worstCommandedTrackingDetail(const std::vector<MotionSample>& samples) {
+    const MotionSample* worst_sample = nullptr;
+    std::size_t worst_leg = 0;
+    double worst = -1.0;
+    for (const MotionSample& sample : samples) {
+        if (!sample.locomotion_debug.valid) {
+            continue;
+        }
+        for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+            const double error = sample.locomotion_debug.commanded_tracking_error_m[leg];
+            if (error > worst) {
+                worst = error;
+                worst_leg = leg;
+                worst_sample = &sample;
+            }
+        }
+    }
+    if (worst_sample == nullptr) {
+        return " (no locomotion debug samples)";
+    }
+    // Distinguish a spawn stance the controller never converges out of from an
+    // error that develops while standing.
+    double first_err = -1.0;
+    double last_err = -1.0;
+    for (const MotionSample& sample : samples) {
+        if (!sample.locomotion_debug.valid) {
+            continue;
+        }
+        const double error = sample.locomotion_debug.max_commanded_tracking_error_m;
+        if (first_err < 0.0) {
+            first_err = error;
+        }
+        last_err = error;
+    }
+    const Vec3 commanded = worst_sample->locomotion_debug.commanded_foot_world_m[worst_leg];
+    const Vec3 measured = worst_sample->locomotion_debug.measured_foot_world_m[worst_leg];
+    const Vec3 body = worst_sample->estimated.body_twist_state.body_trans_m;
+    std::ostringstream o;
+    o << " first_err=" << formatDouble(first_err) << " last_err=" << formatDouble(last_err)
+      << " body=(" << formatDouble(body.x) << ',' << formatDouble(body.y) << ','
+      << formatDouble(body.z) << ")"
+      << " cmd_rel=(" << formatDouble(commanded.x - body.x) << ','
+      << formatDouble(commanded.y - body.y) << ',' << formatDouble(commanded.z - body.z) << ")"
+      << " meas_rel=(" << formatDouble(measured.x - body.x) << ','
+      << formatDouble(measured.y - body.y) << ',' << formatDouble(measured.z - body.z) << ")"
+      << " worst leg=" << worst_leg
+      << " cmd=(" << formatDouble(commanded.x) << ',' << formatDouble(commanded.y) << ','
+      << formatDouble(commanded.z) << ")"
+      << " meas=(" << formatDouble(measured.x) << ',' << formatDouble(measured.y) << ','
+      << formatDouble(measured.z) << ")"
+      << " d=(" << formatDouble(commanded.x - measured.x) << ','
+      << formatDouble(commanded.y - measured.y) << ','
+      << formatDouble(commanded.z - measured.z) << ")";
+    return o.str();
+}
+
 std::string standLimitsAppliedToJson(const std::string& case_name) {
     const bool is_single_leg = case_name == "single_leg_masked_stand";
     const double path_max =
@@ -729,7 +821,7 @@ bool runCase(const std::string& sim_exe,
         "127.0.0.1",
         port,
         harness.bus_loop_period_us,
-        harness.physics_solver_iterations);
+        physics_sim_test_utils::productionProximalSolverSettings());
     control_config::ControlConfig cfg = harness.control_cfg;
     cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
     cfg.freshness.intent.max_allowed_age_us = DurationUs{10'000'000};
@@ -886,9 +978,13 @@ bool runCase(const std::string& sim_exe,
             fail_reason = std::string("stance anchor drift too large while standing (max_drift_m=") +
                           formatDouble(metrics.max_contact_anchor_max_drift_m) + " limit=" + formatDouble(max_anchor) + ")";
             case_ok = false;
-        } else if (!(metrics.max_commanded_tracking_error_m <= max_track)) {
+        } else if (const double settled_track =
+                       settledMaxCommandedTrackingErrorM(samples, metrics.sample_period_s);
+                   !(settled_track <= max_track)) {
             fail_reason = std::string("commanded vs measured foot tracking too large while standing (max_err_m=") +
-                          formatDouble(metrics.max_commanded_tracking_error_m) + " limit=" + formatDouble(max_track) + ")";
+                          formatDouble(settled_track) + " limit=" + formatDouble(max_track) +
+                          " after " + formatDouble(g_stand_settle_warmup_s) + " s settle)" +
+                          worstCommandedTrackingDetail(samples);
             case_ok = false;
         } else if (!(metrics.min_measured_foot_world_z_m >= min_foot_z)) {
             fail_reason = std::string("measured foot tip too low while standing (min_world_z_m=") +

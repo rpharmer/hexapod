@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cmath>
 #include <type_traits>
 
 // Binary UDP protocol between hexapod-server (client) and hexapod-physics-sim --serve (host).
@@ -64,7 +65,13 @@ enum class ContactPhase : std::uint8_t {
 enum class PhysicsSolverMode : std::int32_t {
     LegacyPgs = 0,
     PinocchioProximal = 1,
+    PinocchioProximalCompliant = 2,
 };
+
+inline bool usesPinocchioProximal(PhysicsSolverMode mode) {
+    return mode == PhysicsSolverMode::PinocchioProximal
+        || mode == PhysicsSolverMode::PinocchioProximalCompliant;
+}
 
 enum class SolverStatus : std::uint8_t {
     Healthy = 0,
@@ -91,6 +98,20 @@ enum class SolverFailureReason : std::uint8_t {
     ExtremePenetration,
 };
 
+enum class SolverSpeedLimitFrame : std::uint8_t {
+    None = 0,
+    Chassis = 1,
+    Coxa = 2,
+    Femur = 3,
+    Tibia = 4,
+};
+
+enum class SolverSpeedLimitSupport : std::uint8_t {
+    Unknown = 0,
+    Swing = 1,
+    Stance = 2,
+};
+
 inline constexpr std::uint8_t kStateCorrectionPoseValid = 1u << 0;
 inline constexpr std::uint8_t kStateCorrectionTwistValid = 1u << 1;
 inline constexpr std::uint8_t kStateCorrectionContactValid = 1u << 2;
@@ -107,6 +128,9 @@ struct StepCommand {
     std::uint32_t sequence_id{0};
     float dt_seconds{0.0f};
     std::array<float, 18> joint_targets{}; // radians, sim servo order (6 legs × 3 joints)
+    /// Commanded joint rates (rad/s), same wire order as joint_targets. Optional trailer:
+    /// legacy packets omit this field; serve then reconstructs Δq/dt.
+    std::array<float, 18> joint_target_velocities{};
 };
 
 struct ObstacleFootprint {
@@ -198,6 +222,18 @@ struct StateResponse {
     std::array<float, 6> solver_leg_foot_vz{};
     std::array<float, 6> solver_leg_foot_z{};
     std::array<float, 6> solver_leg_foot_pos_vz{};
+    std::uint8_t solver_speed_limit_frame{0};
+    std::uint8_t solver_speed_limit_support{0};
+    float solver_chassis_preintegration_angular_speed{0.0f};
+    float solver_max_link_preintegration_angular_speed{0.0f};
+    /// Projected-gradient residual of the test-only compliant contact experiment.
+    /// Zero on the production rigid proximal path.
+    float solver_compliant_projected_residual{0.0f};
+    // Tail revision 1: sampled nominal actuator stiffness (Nm/rad, wire order).
+    // Zero means unavailable (legacy PGS / no accepted proximal step).
+    // Excludes temporary retry gain, which must not double the next command bias.
+    std::uint32_t actuator_stiffness_revision{1};
+    std::array<float, 18> actuator_stiffness_nm_per_rad{};
 };
 
 struct StateCorrection {
@@ -245,17 +281,30 @@ static_assert(std::is_trivially_copyable_v<StateCorrection>);
 static_assert(std::is_trivially_copyable_v<ConfigCommand>);
 static_assert(std::is_trivially_copyable_v<ConfigAck>);
 
+inline constexpr std::size_t kStepCommandLegacyBytes =
+    offsetof(StepCommand, joint_target_velocities);
 inline constexpr std::size_t kStepCommandBytes = sizeof(StepCommand);
 inline constexpr std::size_t kStateResponseBytes = sizeof(StateResponse);
 inline constexpr std::size_t kStateCorrectionBytes = sizeof(StateCorrection);
 inline constexpr std::size_t kConfigCommandBytes = sizeof(ConfigCommand);
 inline constexpr std::size_t kConfigAckBytes = sizeof(ConfigAck);
 
-inline bool tryDecodeStepCommand(const void* data, std::size_t len, StepCommand& out) {
-    if (len < kStepCommandBytes) {
+static_assert(kStepCommandLegacyBytes == 81U, "legacy StepCommand is positions only");
+static_assert(kStepCommandBytes == kStepCommandLegacyBytes + 18U * sizeof(float));
+
+inline bool tryDecodeStepCommand(const void* data,
+                                 std::size_t len,
+                                 StepCommand& out,
+                                 bool* joint_target_velocities_present = nullptr) {
+    if (len < kStepCommandLegacyBytes) {
         return false;
     }
-    std::memcpy(&out, data, kStepCommandBytes);
+    out = StepCommand{};
+    const std::size_t copy_n = len < kStepCommandBytes ? len : kStepCommandBytes;
+    std::memcpy(&out, data, copy_n);
+    if (joint_target_velocities_present != nullptr) {
+        *joint_target_velocities_present = len >= kStepCommandBytes;
+    }
     return out.message_type == static_cast<std::uint8_t>(MessageType::StepCommand);
 }
 
@@ -264,7 +313,15 @@ inline bool tryDecodeStateResponse(const void* data, std::size_t len, StateRespo
         return false;
     }
     std::memcpy(&out, data, kStateResponseBytes);
-    return out.message_type == static_cast<std::uint8_t>(MessageType::StateResponse);
+    bool allZero = true, allPositive = true;
+    for (float stiffness : out.actuator_stiffness_nm_per_rad) {
+        if (!std::isfinite(stiffness)) return false;
+        allZero = allZero && stiffness == 0.0f;
+        allPositive = allPositive && stiffness > 0.0f;
+    }
+    if (!allZero && !allPositive) return false;
+    return out.message_type == static_cast<std::uint8_t>(MessageType::StateResponse)
+        && out.actuator_stiffness_revision == 1;
 }
 
 inline bool tryDecodeStateCorrection(const void* data, std::size_t len, StateCorrection& out) {
