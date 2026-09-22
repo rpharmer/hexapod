@@ -181,6 +181,31 @@ StrokeAlongStrokeResult clampFootPositionAlongStroke(const LegGeometry& leg,
     return classifyAlongStroke(desired_body_m, clampFootPositionBody(leg, desired_body_m, inset_m));
 }
 
+StrokeAlongStrokeResult clampPlantedFootPosition(const LegGeometry& leg,
+                                                const Vec3* last_in_reach_body_m,
+                                                const Vec3& desired_body_m,
+                                                const double inset_m) {
+    if (inAnnulus(leg, desired_body_m, inset_m))
+        return classifyAlongStroke(desired_body_m, desired_body_m);
+    const auto lim = annulusLimits(leg, inset_m);
+    const auto f = toFemurPlane(leg, desired_body_m);
+    if (std::abs(f.z) <= lim.d_max) {
+        if (last_in_reach_body_m) {
+            Vec3 start = *last_in_reach_body_m;
+            start.z = desired_body_m.z;
+            if (inAnnulus(leg, start, inset_m)) {
+                return classifyAlongStroke(desired_body_m,
+                    intersectSegmentWithAnnulus(leg, start, desired_body_m, inset_m));
+            }
+        }
+        const double rho_max = std::sqrt(std::max(0.0, lim.d_max * lim.d_max - f.z * f.z));
+        const double rho_min = std::sqrt(std::max(0.0, lim.d_min * lim.d_min - f.z * f.z));
+        const double rho = std::copysign(std::clamp(std::abs(f.rho), rho_min, rho_max), f.rho);
+        return classifyAlongStroke(desired_body_m, fromFemurPlane(leg, f.q1, rho, f.z));
+    }
+    return clampFootPositionAlongStroke(leg, last_in_reach_body_m, desired_body_m, inset_m);
+}
+
 void clipVelocityForReachClamp(const Vec3& foot_before_body,
                                const Vec3& foot_after_body,
                                Vec3* vel_body_mps) {

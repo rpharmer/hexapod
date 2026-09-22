@@ -1,0 +1,671 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-22",
+  "base_commit": "02a9bef",
+  "dirty_tree": true,
+  "baseline_audit": {
+    "schema_version": 1,
+    "source": "/tmp/hexapod_locomotion_regression/1790068348471/124028/tilt_safety_trip/replay.ndjson",
+    "source_sha256": "52fed0c9d1e1898f4d9caaf31215a9cb6d875f031267db8d839b45ccaf18c366",
+    "sample_count": 2800,
+    "first_walk_step": 400,
+    "first_fault_step": 443,
+    "sample_period_s": 0.005,
+    "whole_run_planar_path_m": 0.06482190634841793,
+    "strictly_prefault_planar_path_m": 0.0249786698685279,
+    "at_or_after_fault_planar_path_m": 0.03984323647989003,
+    "whole_run_pose_difference_path_m": 0.06600915616792796,
+    "strictly_prefault_pose_difference_path_m": 0.024803048436942022,
+    "prefault_walk_peak_roll_rad": 0.122758,
+    "prefault_walk_peak_planar_body_rate_radps": 0.8812463880464986,
+    "fault_window": [
+      {
+        "step": 440,
+        "status": {
+          "active_mode": 3,
+          "estimator_valid": true,
+          "bus_ok": true,
+          "active_fault": 0,
+          "loop_counter": 441
+        },
+        "pose": {
+          "twist_pos_rad": [
+            0.116493,
+            0.00014,
+            -0.000098
+          ],
+          "twist_vel_radps": [
+            -0.746753,
+            -0.002879,
+            0.002369
+          ],
+          "body_trans_m": [
+            -0.000015,
+            0.022634,
+            0.12649
+          ],
+          "body_trans_mps": [
+            -0.000642,
+            0.213906,
+            -0.007082
+          ]
+        },
+        "gyro_radps": [
+          -0.749664,
+          -0.003177,
+          0.00204
+        ],
+        "contacts": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "planned_stance": [
+          false,
+          true,
+          true,
+          false,
+          false,
+          true
+        ]
+      },
+      {
+        "step": 441,
+        "status": {
+          "active_mode": 3,
+          "estimator_valid": true,
+          "bus_ok": true,
+          "active_fault": 0,
+          "loop_counter": 442
+        },
+        "pose": {
+          "twist_pos_rad": [
+            0.119774,
+            0.000153,
+            -0.000106
+          ],
+          "twist_vel_radps": [
+            -0.638992,
+            -0.002421,
+            0.001939
+          ],
+          "body_trans_m": [
+            -0.000018,
+            0.023712,
+            0.126565
+          ],
+          "body_trans_mps": [
+            -0.000608,
+            0.217799,
+            -0.0117
+          ]
+        },
+        "gyro_radps": [
+          -0.615337,
+          -0.002459,
+          0.001649
+        ],
+        "contacts": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "planned_stance": [
+          false,
+          true,
+          true,
+          false,
+          false,
+          true
+        ]
+      },
+      {
+        "step": 442,
+        "status": {
+          "active_mode": 3,
+          "estimator_valid": true,
+          "bus_ok": true,
+          "active_fault": 0,
+          "loop_counter": 443
+        },
+        "pose": {
+          "twist_pos_rad": [
+            0.122758,
+            0.000166,
+            -0.000113
+          ],
+          "twist_vel_radps": [
+            -0.584441,
+            -0.002425,
+            0.001591
+          ],
+          "body_trans_m": [
+            -0.000021,
+            0.024803,
+            0.126614
+          ],
+          "body_trans_mps": [
+            -0.000538,
+            0.217701,
+            -0.019429
+          ]
+        },
+        "gyro_radps": [
+          -0.572466,
+          -0.002529,
+          0.001301
+        ],
+        "contacts": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "planned_stance": [
+          false,
+          true,
+          true,
+          false,
+          false,
+          true
+        ]
+      },
+      {
+        "step": 443,
+        "status": {
+          "active_mode": 4,
+          "estimator_valid": true,
+          "bus_ok": true,
+          "active_fault": 3,
+          "loop_counter": 444
+        },
+        "pose": {
+          "twist_pos_rad": [
+            0.125278,
+            0.000127,
+            -0.00011
+          ],
+          "twist_vel_radps": [
+            -0.478923,
+            0.00701,
+            -0.001833
+          ],
+          "body_trans_m": [
+            -0.000024,
+            0.025905,
+            0.126601
+          ],
+          "body_trans_mps": [
+            -0.000731,
+            0.215621,
+            -0.032638
+          ]
+        },
+        "gyro_radps": [
+          -0.455759,
+          0.009383,
+          -0.00137
+        ],
+        "contacts": [
+          true,
+          true,
+          false,
+          false,
+          true,
+          true
+        ],
+        "planned_stance": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      {
+        "step": 444,
+        "status": {
+          "active_mode": 4,
+          "estimator_valid": true,
+          "bus_ok": true,
+          "active_fault": 3,
+          "loop_counter": 445
+        },
+        "pose": {
+          "twist_pos_rad": [
+            0.127483,
+            0.000118,
+            -0.000108
+          ],
+          "twist_vel_radps": [
+            -0.419854,
+            0.002268,
+            -0.000467
+          ],
+          "body_trans_m": [
+            -0.000027,
+            0.026983,
+            0.126542
+          ],
+          "body_trans_mps": [
+            -0.000647,
+            0.212886,
+            -0.040315
+          ]
+        },
+        "gyro_radps": [
+          -0.406888,
+          0.001282,
+          0.000038
+        ],
+        "contacts": [
+          true,
+          true,
+          false,
+          false,
+          true,
+          true
+        ],
+        "planned_stance": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    ],
+    "note": "Legacy path_length_m integrates speed over the whole case, including after the fault. The corrected tilt gate uses strictly_prefault_planar_path_m. Pose-difference path is reported separately."
+  },
+  "sign_only_audit": {
+    "schema_version": 1,
+    "source": "/tmp/hexapod_locomotion_regression/1790081186380/131695/tilt_safety_trip/replay.ndjson",
+    "source_sha256": "b9285476898e0ae207bf8d79d01ccff7a4c8b5e3e998334bbbdadb44b1a16533",
+    "sample_count": 2800,
+    "first_walk_step": 400,
+    "first_fault_step": 466,
+    "sample_period_s": 0.005,
+    "whole_run_planar_path_m": 0.11152870977907778,
+    "strictly_prefault_planar_path_m": 0.027986862756046497,
+    "at_or_after_fault_planar_path_m": 0.08354184702303129,
+    "whole_run_pose_difference_path_m": 0.10710174660354436,
+    "strictly_prefault_pose_difference_path_m": 0.027512927530907446,
+    "prefault_walk_peak_roll_rad": 0.112097,
+    "prefault_walk_peak_planar_body_rate_radps": 0.6991914611106174,
+    "fault_window": [
+      {
+        "step": 463,
+        "status": {
+          "active_mode": 3,
+          "estimator_valid": true,
+          "bus_ok": true,
+          "active_fault": 0,
+          "loop_counter": 464
+        },
+        "pose": {
+          "twist_pos_rad": [
+            -0.106174,
+            0.00091,
+            -0.00031
+          ],
+          "twist_vel_radps": [
+            -0.338505,
+            -0.026848,
+            -0.010692
+          ],
+          "body_trans_m": [
+            0.000005,
+            0.024976,
+            0.1246
+          ],
+          "body_trans_mps": [
+            0.00315,
+            0.201422,
+            -0.017522
+          ]
+        },
+        "gyro_radps": [
+          -0.35055,
+          -0.02829,
+          -0.006641
+        ],
+        "contacts": [
+          false,
+          true,
+          true,
+          false,
+          false,
+          true
+        ],
+        "planned_stance": [
+          false,
+          true,
+          true,
+          false,
+          false,
+          true
+        ]
+      },
+      {
+        "step": 464,
+        "status": {
+          "active_mode": 3,
+          "estimator_valid": true,
+          "bus_ok": true,
+          "active_fault": 0,
+          "loop_counter": 465
+        },
+        "pose": {
+          "twist_pos_rad": [
+            -0.104378,
+            0.000948,
+            -0.000272
+          ],
+          "twist_vel_radps": [
+            -0.374652,
+            -0.009852,
+            -0.008009
+          ],
+          "body_trans_m": [
+            0.000018,
+            0.025988,
+            0.1244
+          ],
+          "body_trans_mps": [
+            0.002755,
+            0.206872,
+            -0.018928
+          ]
+        },
+        "gyro_radps": [
+          -0.382595,
+          -0.006757,
+          -0.006377
+        ],
+        "contacts": [
+          false,
+          true,
+          true,
+          false,
+          false,
+          true
+        ],
+        "planned_stance": [
+          false,
+          true,
+          true,
+          false,
+          false,
+          true
+        ]
+      },
+      {
+        "step": 465,
+        "status": {
+          "active_mode": 3,
+          "estimator_valid": true,
+          "bus_ok": true,
+          "active_fault": 0,
+          "loop_counter": 466
+        },
+        "pose": {
+          "twist_pos_rad": [
+            -0.10229,
+            0.001094,
+            -0.000243
+          ],
+          "twist_vel_radps": [
+            -0.429711,
+            -0.02623,
+            -0.011682
+          ],
+          "body_trans_m": [
+            0.000037,
+            0.027031,
+            0.124181
+          ],
+          "body_trans_mps": [
+            0.003198,
+            0.211945,
+            -0.022507
+          ]
+        },
+        "gyro_radps": [
+          -0.441814,
+          -0.030836,
+          -0.008896
+        ],
+        "contacts": [
+          false,
+          true,
+          true,
+          false,
+          false,
+          true
+        ],
+        "planned_stance": [
+          false,
+          true,
+          true,
+          false,
+          false,
+          true
+        ]
+      },
+      {
+        "step": 466,
+        "status": {
+          "active_mode": 4,
+          "estimator_valid": true,
+          "bus_ok": true,
+          "active_fault": 3,
+          "loop_counter": 467
+        },
+        "pose": {
+          "twist_pos_rad": [
+            -0.099948,
+            0.001237,
+            -0.00021
+          ],
+          "twist_vel_radps": [
+            -0.513552,
+            -0.069794,
+            -0.009912
+          ],
+          "body_trans_m": [
+            0.000057,
+            0.028082,
+            0.123948
+          ],
+          "body_trans_mps": [
+            0.006458,
+            0.214541,
+            -0.028181
+          ]
+        },
+        "gyro_radps": [
+          -0.531974,
+          -0.079802,
+          -0.00092
+        ],
+        "contacts": [
+          false,
+          true,
+          true,
+          false,
+          false,
+          true
+        ],
+        "planned_stance": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      {
+        "step": 467,
+        "status": {
+          "active_mode": 4,
+          "estimator_valid": true,
+          "bus_ok": true,
+          "active_fault": 3,
+          "loop_counter": 468
+        },
+        "pose": {
+          "twist_pos_rad": [
+            -0.097464,
+            0.001315,
+            -0.000149
+          ],
+          "twist_vel_radps": [
+            -0.519759,
+            -0.027214,
+            -0.00957
+          ],
+          "body_trans_m": [
+            0.000075,
+            0.029168,
+            0.123702
+          ],
+          "body_trans_mps": [
+            0.004968,
+            0.220966,
+            -0.0285
+          ]
+        },
+        "gyro_radps": [
+          -0.521134,
+          -0.018631,
+          -0.007023
+        ],
+        "contacts": [
+          false,
+          false,
+          true,
+          false,
+          false,
+          true
+        ],
+        "planned_stance": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    ],
+    "note": "Legacy path_length_m integrates speed over the whole case, including after the fault. The corrected tilt gate uses strictly_prefault_planar_path_m. Pose-difference path is reported separately."
+  },
+  "repeat_results": [
+    {
+      "name": "tilt_safety_immediate",
+      "passed": true,
+      "prefault_path_m": 0.02511,
+      "first_fault": "TIP_OVER",
+      "first_fault_step": 466,
+      "held": 0,
+      "read_fail": false
+    },
+    {
+      "name": "tilt_safety_immediate",
+      "passed": true,
+      "prefault_path_m": 0.026049,
+      "first_fault": "TIP_OVER",
+      "first_fault_step": 465,
+      "held": 0,
+      "read_fail": false
+    },
+    {
+      "name": "tilt_safety_immediate",
+      "passed": true,
+      "prefault_path_m": 0.026462,
+      "first_fault": "TIP_OVER",
+      "first_fault_step": 467,
+      "held": 0,
+      "read_fail": false
+    },
+    {
+      "name": "tilt_safety_immediate",
+      "passed": true,
+      "prefault_path_m": 0.025138,
+      "first_fault": "TIP_OVER",
+      "first_fault_step": 465,
+      "held": 0,
+      "read_fail": false
+    },
+    {
+      "name": "tilt_safety_immediate",
+      "passed": true,
+      "prefault_path_m": 0.026049,
+      "first_fault": "TIP_OVER",
+      "first_fault_step": 465,
+      "held": 0,
+      "read_fail": false
+    },
+    {
+      "name": "tilt_safety_trip",
+      "passed": true,
+      "prefault_path_m": 0.221262,
+      "first_fault": "TIP_OVER",
+      "first_fault_step": 1047,
+      "held": 0,
+      "read_fail": false
+    },
+    {
+      "name": "tilt_safety_trip",
+      "passed": true,
+      "prefault_path_m": 0.212494,
+      "first_fault": "TIP_OVER",
+      "first_fault_step": 1047,
+      "held": 0,
+      "read_fail": false
+    },
+    {
+      "name": "tilt_safety_trip",
+      "passed": true,
+      "prefault_path_m": 0.217842,
+      "first_fault": "TIP_OVER",
+      "first_fault_step": 1047,
+      "held": 0,
+      "read_fail": false
+    },
+    {
+      "name": "tilt_safety_trip",
+      "passed": true,
+      "prefault_path_m": 0.220315,
+      "first_fault": "TIP_OVER",
+      "first_fault_step": 1047,
+      "held": 0,
+      "read_fail": false
+    },
+    {
+      "name": "tilt_safety_trip",
+      "passed": true,
+      "prefault_path_m": 0.220938,
+      "first_fault": "TIP_OVER",
+      "first_fault_step": 1046,
+      "held": 0,
+      "read_fail": false
+    }
+  ],
+  "logs": [
+    "/tmp/hexapod-tilt-prefault-repeat-{1..5}.log",
+    "/tmp/hexapod-tilt-final-repeat-{1..5}.log"
+  ],
+  "decision": "Keep lateral lean sign fix. Replace misleading whole-run path with strictly pre-fault scoring after a healthy prefix; retain original unsafe-only command as independent prompt-fault check. Safety thresholds unchanged."
+}

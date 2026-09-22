@@ -4,20 +4,43 @@ Working list of tests that were **red** on a full local sweep (**2026-05-09**). 
 
 ## Latest walking follow-up (2026-09-22)
 
+**Support/clearance correction (§3.26):** full rebuilt server suite **102/102**
+with the measured-contact candidate enabled, including optional stress and long
+motion tests. Walk-entry **10/10**, sequential walk-distance and full long motion
+**5/5 each**. Fixed planted-foot reach priority, returning-contact debounce grace,
+and contact-relative swing height; all existing gates remain unchanged. The
+clearance correction is now default-on. Final flag-free root server sweep is
+**99/100**, failing only `physics_feedforward_stand_quiescence` (its constructor
+selects legacy PGS; off/on primary scores 0.270295/0.272149). Root verification
+is therefore still red. Optional default stress and all 11 full-motion cases
+pass separately; walking lift p20 is now 5.319–15.505 mm. Legacy physics remains
+outside this batch. See
+[`SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md` §3.26](SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md).
+
+**Preceding §3.25 results (superseded above):**
+
 The historical table below is not the current suite inventory. Default-path
 reverse ×5, isolated turn ×5 and sequential walk-distance ×5 all pass with
 zero held samples after preserving retry damping and adding physics-only
 pure-turn position feedback. Canonical aggressive governor passes with two
-strides. Root verification now reaches **97/98 server CTests passed**, failing
-only `locomotion_regression_suite` / `tilt_safety_trip`: path 0.064822 m versus
-0.10 m before TIP_OVER, with zero held samples or read failures. Other canonical
-cases pass. Firmware **3/3** and the nominal simple-sim smoke pass when run
-separately after the script stops. See
-[`SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md` §3.24](SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md)
+strides. After correcting lateral lean and separating honest pre-fault travel
+from the immediate unsafe-input safety test, both tilt cases pass 5/5. The full
+server sweep is **100/101**: all 99 default tests and locomotion stress pass;
+`motion_performance_suite_long` fails measured swing-lift floors (about
+0.09–0.47 mm at the 20th percentile vs 1.20–1.56 mm). This optional long test
+was not in the preceding sweep, so its introduction is not dated. The prior
+reported 64.8 mm tilt path included post-fault drift; true pre-fault travel was
+25.0 mm, not 64.8 mm. Frozen v16 100-seed safety+behaviour passes unchanged,
+with no held/read failures. A later root sweep is **98/99**, exposing a
+`physics_sim_walk_entry_tracking` flake: −99.26 mm stability margin on two
+effective supports (`100100`) versus three planned (`100110`), not a height
+collapse. Focused repeats **4/5**. Keep this default-gate failure open alongside
+the optional long swing-lift failure; root verification is still red. See
+[`SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md` §3.25](SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md)
 for exact scope and artifacts.
 
-The separate **full physics CTest sweep is 68/75**, not all green. The seven
-failures below reproduce with both new walking changes disabled and do not
+The separate **full physics CTest sweep is 69/75**, not all green. The six
+failures below do not
 execute the changed Pinocchio retry or server turn-feedback paths. These are
 the current-tree legacy minphys3d/scene checks; this comparison does not date
 their introduction to a particular historical commit.
@@ -25,14 +48,21 @@ their introduction to a particular historical commit.
 | Failing physics CTest | Current measurement |
 | --- | --- |
 | `test_hexapod_live` | Peak angular speed 1.730 vs 0.1 rad/s |
-| `test_hexapod_initial_layout_matches_server` | Hard-coded contact layout differs by up to 16.78 mm |
 | `test_servo_chain_vertical_lift_under_gravity` | Final angle 0.320 vs 0.50 rad floor |
 | `test_hexapod_pose_hold_with_payload` | Height 0.01495 vs 0.020 m floor |
 | `test_hexapod_stand_quiescence` | Body drift 41.7 mm; joint drift 1.238 rad; other velocity/height limits also fail |
 | `test_hexapod_substep_convergence` | Base/refined position difference 77.0 vs 50 mm |
 | `test_single_leg_pd_response` | Post-settle peak error 0.005291 vs 0.005 rad |
 
-Logs: `/tmp/hexapod-walk-fix-physics-all-20260922.log` and
+Layout is now green: its expected sphere centres had been compared with points
+offset by another sphere radius. Maximum error is now 0.000381 mm, without
+changing expected coordinates or tolerance. The legacy torque-speed projection
+is now iteration-consistent, but has not closed the six integration failures.
+An isolated fixed-joint angular correction was rejected and reverted after
+causing a loaded-arm runaway. See the campaign record before retrying it.
+
+Logs: `/tmp/hexapod-server-final-tests.log` and
+`/tmp/hexapod-physics-kept-tests.log`. Older disabled-walking-change comparison:
 `/tmp/hexapod-walk-fix-physics-legacy-comparison-20260922.log`.
 Do not conflate these direct `World` tests with the production Pinocchio
 stand, cadence-replay or locomotion checks, and do not loosen their limits.

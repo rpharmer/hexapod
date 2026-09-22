@@ -36,6 +36,28 @@ Run from `hexapod-opengl-visualiser/`:
 ./build/hexapod-opengl-visualiser --udp-port 9870
 ```
 
+Prefer the repo launcher (builds on demand and raises focus under WSLg):
+
+```bash
+# from repo root
+./scripts/run_visualiser.sh -- --udp-port 9870
+```
+
+Under WSL/WSLg the launchers prefer the **X11** GLFW backend and try to raise
+the window via `scripts/raise_wslg_window.ps1`.
+
+If the window title starts with **`[WARN:COPY MODE]`**, this is a WSLg
+shared-memory failure (not a hexapod focus bug). Alt+Tab cannot show a usable
+surface either. Diagnose with:
+
+```bash
+./scripts/check_wslg_gui.sh
+```
+
+Typical symptom in the system distro: `ls /mnt/shared_memory` → `Function not
+implemented` while `weston.log` has `enable_copy_warning_title = 1`. See that
+script’s workaround notes (WSL update, or external X server / `guiApplications=false`).
+
 The renderer listens on UDP port `9870` by default.
 
 For simulator scene packets:

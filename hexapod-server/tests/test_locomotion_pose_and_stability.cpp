@@ -75,6 +75,27 @@ bool testBodyPoseDefaultHeight() {
     return expect(nearlyEqual(pose.body_height_m, 0.14), "zero height setpoint should fall back to default");
 }
 
+bool testTranslationLeanPointsIntoMotion() {
+    MotionIntent intent = walkIntent(0.14);
+    intent.twist.twist_pos_rad = {};
+    // Test the geometric invariant, not a copy of the controller coefficient.
+    // In canonical Z-up coordinates R*ez must lean toward translation. Positive
+    // pitch tilts ez toward +X; negative roll tilts it toward +Y.
+    for (const PlanarMotionCommand cmd : {PlanarMotionCommand{.2, 0, 0},
+                                          PlanarMotionCommand{-.2, 0, 0},
+                                          PlanarMotionCommand{0, .2, 0},
+                                          PlanarMotionCommand{0, -.2, 0}}) {
+        const auto pose = computeBodyPoseSetpoint(intent, cmd, .022, 1.0);
+        const Vec3 up = (Mat3::rotY(pose.pitch_rad) * Mat3::rotX(pose.roll_rad))
+            * Vec3{0, 0, 1};
+        if (!expect(up.x * cmd.vx_mps + up.y * cmd.vy_mps > 0,
+                    "translation lean must point into, not away from, commanded motion")) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool testBodyPoseYawLeanRoll() {
     MotionIntent intent = walkIntent(0.12);
     PlanarMotionCommand cmd{0.0, 0.0, 0.45};
@@ -503,7 +524,7 @@ bool testStabilityOnlyHoldsNearLiftoff() {
 
 int main() {
     if (!testBodyPoseZeroMarginNoLean() || !testBodyPoseFullMarginLeanForward() ||
-        !testBodyPoseDefaultHeight() || !testBodyPoseYawLeanRoll() ||
+        !testBodyPoseDefaultHeight() || !testTranslationLeanPointsIntoMotion() || !testBodyPoseYawLeanRoll() ||
         !testBodyPoseSlowStrideBoostsLean() ||
         !testStabilityStandClears() || !testStabilityWalkCenteredPositiveMargin() ||
         !testStabilitySlowGaitIsNotMoreConservativeByDefault() ||

@@ -35,6 +35,14 @@ StrokeAlongStrokeResult clampFootPositionAlongStroke(const LegGeometry& leg,
                                                      const Vec3& desired_body_m,
                                                      double inset_m = 0.004);
 
+/** Planted-foot variant: preserve requested height whenever the horizontal
+ * reach slice exists, shortening XY instead of manufacturing a stance lift.
+ * An unreachable height falls back to the general stroke projector. */
+StrokeAlongStrokeResult clampPlantedFootPosition(const LegGeometry& leg,
+                                                const Vec3* last_in_reach_body_m,
+                                                const Vec3& desired_body_m,
+                                                double inset_m = 0.004);
+
 /**
  * After `clampFootPositionBody`, remove the velocity component that pushes back outside the clamp
  * (unit direction from clamped foot toward the pre-clamp command), to avoid boundary spikes.

@@ -144,13 +144,33 @@ echo "blacklist mt76x2u" | sudo tee /etc/modprobe.d/blacklist-mt76x2u.conf
 
 ---
 
-## 3. Attach the dongle with usbipd (Windows)
+## 3. Daily attach (usbipd → WSL)
 
-Install [usbipd-win](https://github.com/dorssel/usbipd-win), then:
+Install [usbipd-win](https://github.com/dorssel/usbipd-win) once.
+
+### Helper scripts (preferred)
+
+From an **elevated** PowerShell at the repo root:
 
 ```powershell
+# CRITICAL: turn the Xbox pad OFF first (hold Xbox button until it powers down).
+.\scripts\attach_xbox_wsl.ps1
+# If Windows still owns the adapter:
+.\scripts\attach_xbox_wsl.ps1 -Force
+```
+
+Then in WSL, power the pad **ON** and locate the evdev node:
+
+```bash
+./scripts/find_xbox_evdev.sh
+```
+
+### Manual equivalent
+
+```powershell
+# Pad must be OFF or attach returns: Device busy
 usbipd list
-usbipd bind --busid 1-1
+usbipd bind --force --busid 1-1   # admin; bus id from list (045e:02e6)
 usbipd attach --wsl --busid 1-1
 ```
 
@@ -162,24 +182,42 @@ In WSL, good `dmesg` should bind `xone-dongle` **without**:
 - `module_layout`
 - `mt76x2u` claiming the device
 
+After attach, turn the pad **ON**. A previously paired pad should reconnect and create `/dev/input/eventN` (and usually `js0`) as `Microsoft Xbox Controller`.
+
 ---
 
 ## 4. Pair the controller
 
-The Gen1 stick has a **small pair button on the dongle**. There is no useful sysfs pairing file until the driver is bound.
+Pairing is stored on the **dongle + pad**. Once paired, moving the dongle between Windows and WSL keeps working as long as you attach with the pad **off**, then power it on under the new host.
+
+### Prefer: pair under Windows first
+
+If xone pairing keeps timing out (both LEDs blink until the window closes):
+
+1. `usbipd unbind --busid <id>` (admin) so Windows owns the adapter again.
+2. Pair with the official **Xbox Wireless** path (dongle pair button + pad top pair button) until the logo is solid.
+3. Confirm the pad works on Windows.
+4. **Turn the pad OFF**, then run `.\scripts\attach_xbox_wsl.ps1 -Force`.
+5. Turn the pad **ON** under WSL; check `./scripts/find_xbox_evdev.sh`.
+
+Pads previously used over **USB or Bluetooth** often will not join the wireless dongle until this Xbox Wireless re-pair (see [xone wireless pairing](https://github.com/medusalix/xone#wireless-pairing)).
+
+### Alternate: pair under xone in WSL
+
+With the dongle already Attached and `xone-dongle` probed:
 
 1. Press the **dongle** pair button (~30s pairing window).
-2. Power on the pad, hold the **controller pair button** until it blinks.
+2. Power on the pad, hold the **controller pair button** (top) until it blinks fast.
 3. Confirm:
 
 ```bash
+./scripts/find_xbox_evdev.sh
+# or:
 ls -l /dev/input
 cat /proc/bus/input/devices
 ```
 
 You need `/dev/input/eventN` for the **pad**, not just the adapter.
-
-Note: a pad previously paired only to Windows often must be **re-paired** for Linux/xone.
 
 ---
 
@@ -200,11 +238,13 @@ cd ~/pico/hexapod/hexapod-server
 
 | Symptom | Cause | Fix |
 |--------|--------|-----|
+| `Device busy` / attach fails while pad works on Windows | Windows still has a live wireless session | **Turn pad OFF**, then `attach_xbox_wsl.ps1 -Force` |
 | USBIP Attached, but `mt76x2u` in dmesg | Wrong driver | Blacklist `mt76x2u`, reattach |
 | `xow_dongle.bin ... error -2` | Firmware not visible to WSL kernel | Embed via `CONFIG_EXTRA_FIRMWARE="xow_dongle.bin"` |
 | `No rule to make target ... xone_dongle.bin` | Wrong EXTRA_FIRMWARE name | Use **`xow_dongle.bin`** |
 | `disagrees about version of symbol module_layout` | xone built for old kernel | Reinstall xone after kernel change |
-| Dongle up, no `/dev/input/eventN` | Pad not paired / not on | Pair dongle + pad again |
+| Dongle up, pairing LEDs blink until timeout | Pad not in Xbox Wireless sync / was USB-BT only | Pair under **Windows** first, then re-attach with pad off |
+| Dongle up, no `/dev/input/eventN` | Pad off, unpaired, or not reconnected yet | Power pad on; re-pair if needed |
 | Adapter “dead” / won’t pair | Probe never succeeded | Fix firmware/modules first |
 
 ---
@@ -215,8 +255,8 @@ cd ~/pico/hexapod/hexapod-server
 2. Install firmware file under `/usr/lib/firmware/xow_dongle.bin`, then build kernel so the blob is embedded.
 3. Point `.wslconfig` at new `vmlinux`, `wsl --shutdown`.
 4. Install/rebuild **xone** for `uname -r`; blacklist `mt76x2u`.
-5. `usbipd attach --wsl` the `045e:02e6` adapter.
-6. Pair pad; find `/dev/input/eventN`.
+5. Pair pad to the dongle under **Windows** once.
+6. Pad **OFF** → `.\scripts\attach_xbox_wsl.ps1` → pad **ON** → `./scripts/find_xbox_evdev.sh`.
 7. Launch server with `--controller-device /dev/input/eventN`.
 
 ---

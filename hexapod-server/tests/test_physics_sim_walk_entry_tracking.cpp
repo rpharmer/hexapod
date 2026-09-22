@@ -1,5 +1,6 @@
 #include "control_config.hpp"
 #include "motion_intent_utils.hpp"
+#include "motion_trace.hpp"
 #include "physics_sim_metrics_emit.hpp"
 #include "physics_sim_test_argv.hpp"
 #include "physics_sim_test_utils.hpp"
@@ -16,6 +17,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <iomanip>
+#include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -79,8 +82,12 @@ public:
     std::vector<replay_json::ReplayTelemetryRecord> records{};
 };
 
-void runControlLoopStep(RobotRuntime& runtime, const ScenarioMotionIntent& motion) {
-    runtime.setMotionIntent(makeMotionIntent(motion));
+void runControlLoopStep(RobotRuntime& runtime, const ScenarioMotionIntent& motion,
+                        TimePointUs& command_time, int period_us) {
+    auto intent = makeMotionIntent(motion);
+    command_time.value += static_cast<std::uint64_t>(period_us);
+    intent.timestamp_us = command_time;
+    runtime.setMotionIntent(intent);
     runtime.busStep();
     runtime.estimatorStep();
     runtime.safetyStep();
@@ -196,15 +203,27 @@ int main(int argc, char** argv) {
     const int kWalkObserveSteps = static_cast<int>(
         physics_sim_test_utils::scaledLegacyStepCount(160, bus_loop_period_us));
 
+    // Advance command shaping on the same simulated clock as the bus. Host
+    // runtime varies with CPU/logging load and is not simulated elapsed time.
+    TimePointUs command_time{now_us().value + 3'600'000'000ULL};
     for (int i = 0; i < kStandWarmupSteps; ++i) {
-        runControlLoopStep(runtime, stand_motion);
+        runControlLoopStep(runtime, stand_motion, command_time, bus_loop_period_us);
     }
     for (int i = 0; i < kWalkObserveSteps; ++i) {
-        runControlLoopStep(runtime, walk_motion);
+        runControlLoopStep(runtime, walk_motion, command_time, bus_loop_period_us);
     }
 
     ::kill(pid, SIGTERM);
     ::waitpid(pid, nullptr, 0);
+
+    if (const char* directory = std::getenv("HEXAPOD_MOTION_TRACE_DIR")) {
+        const auto path = std::filesystem::path(directory) / "walk_entry.ndjson";
+        if (std::filesystem::exists(path)) throw std::runtime_error("refusing to overwrite motion trace");
+        std::ofstream out(path);
+        if (!out) throw std::runtime_error("cannot open motion trace");
+        for (const auto& record : replay_ptr->records)
+            writeMotionTrace(out, record);
+    }
 
     if (!expect(bridge_ptr->last_state().has_value(), "bridge should produce live sim state during walk entry")) {
         if (emit_metrics_json) {

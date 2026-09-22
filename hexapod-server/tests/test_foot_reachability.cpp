@@ -19,6 +19,22 @@ int main() {
     const LegGeometry& leg0 = geo.legGeometry[0];
 
     constexpr double inset = 0.004;
+    for (const auto& leg : geo.legGeometry) {
+        for (int direction = 0; direction < 16; ++direction) {
+            const double angle = direction * 2.0 * 3.141592653589793 / 16;
+            const Vec3 requested = leg.bodyCoxaOffset + Vec3{.3 * std::cos(angle), .3 * std::sin(angle), -.13};
+            const auto planted = foot_reachability::clampPlantedFootPosition(leg, nullptr, requested, inset);
+            const auto repeated = foot_reachability::clampPlantedFootPosition(leg, &planted.pos_body_m, requested, inset);
+            if (!nearlyEq(planted.pos_body_m.z, requested.z, 1e-9)
+                || !nearlyEq(repeated.pos_body_m.z, requested.z, 1e-9)
+                || !planted.planar_xy_hit
+                || !foot_reachability::footInReachAnnulus(leg, planted.pos_body_m, inset)
+                || !foot_reachability::footInReachAnnulus(leg, repeated.pos_body_m, inset)) {
+                std::cerr << "FAIL: a reachable support height must survive planar reach limiting\n";
+                return EXIT_FAILURE;
+            }
+        }
+    }
     const Vec3 coxa = leg0.bodyCoxaOffset;
     const Vec3 far = coxa + Vec3{0.35, 0.0, -0.12};
     const double d0 = foot_reachability::femurPlaneDistanceM(leg0, far);

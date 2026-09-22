@@ -5,6 +5,7 @@
 #include "contact_foot_response.hpp"
 #include "foot_planners.hpp"
 #include "foot_reachability.hpp"
+#include "leg_fk.hpp"
 #include "motion_intent_utils.hpp"
 
 #include <algorithm>
@@ -38,6 +39,7 @@ void BodyController::reset() {
     committed_swing_plan_.fill(SwingPlanCommit{});
     last_emitted_target_.fill(Vec3{});
     have_last_emitted_target_.fill(false);
+    have_support_foot_world_z_.fill(false);
     last_r2_swing_decomp_ = {};
     stand_untilt_ticks_ = 0;
 }
@@ -542,6 +544,21 @@ LegTargets BodyController::update(const RobotState& est,
 
     const Mat3 body_rotation =
         (Mat3::rotZ(pose.yaw_rad) * Mat3::rotY(pose.pitch_rad) * Mat3::rotX(pose.roll_rad)).transpose();
+    const Mat3 measured_rotation = Mat3::rotZ(est.body_twist_state.twist_pos_rad.z)
+        * Mat3::rotY(est.body_twist_state.twist_pos_rad.y) * Mat3::rotX(est.body_twist_state.twist_pos_rad.x);
+    const bool measured_pose_valid = est.valid && est.has_body_twist_state
+        && std::isfinite(est.body_twist_state.body_trans_m.z)
+        && std::isfinite(est.body_twist_state.twist_pos_rad.x)
+        && std::isfinite(est.body_twist_state.twist_pos_rad.y)
+        && std::isfinite(est.body_twist_state.twist_pos_rad.z)
+        && std::isfinite(measured_rotation.m[2][2]) && measured_rotation.m[2][2] > 1e-6;
+    if (!measured_pose_valid) have_support_foot_world_z_.fill(false);
+    // Default-on after the support/clearance campaign (leftover §3.26).
+    // Keep an explicit diagnostic opt-out for same-binary comparisons.
+    static const bool contact_height_enabled = [] {
+        const char* value = std::getenv("HEXAPOD_SWING_CONTACT_HEIGHT");
+        return value == nullptr || std::string{value} != "0";
+    }();
     const Vec3 planar_body_offset = Vec3{
         intent.twist.body_trans_m.x,
         intent.twist.body_trans_m.y,
@@ -584,6 +601,20 @@ LegTargets BodyController::update(const RobotState& est,
                                      -intent.twist.body_trans_mps.z};
         bool apply_workspace_clamp = true;
         bool used_stance_kinematics = false;
+        double swing_lift_m = 0.0;
+        double swing_lift_fraction = 0.0;
+        if (contact_height_enabled && measured_pose_valid &&
+            (!walking || gait.in_stance[leg]) && est.foot_contacts[leg]) {
+            LegFK fk;
+            const Vec3 measured_foot = fk.footInBodyFrame(est.leg_states[leg], geometry_.legGeometry[leg]).pos_body_m.raw();
+            const double z = est.body_twist_state.body_trans_m.z + (measured_rotation * measured_foot).z;
+            if (std::isfinite(z)) {
+                support_foot_world_z_[leg] = z;
+                have_support_foot_world_z_[leg] = true;
+            } else {
+                have_support_foot_world_z_[leg] = false;
+            }
+        }
         bool r2_swing_this_leg = false;
         SwingFootInputs r2_sw{};
         Vec3 r2_planned_pre_rot{};
@@ -806,6 +837,10 @@ LegTargets BodyController::update(const RobotState& est,
                 // support preload: doing so consumes most of the clearance arc and leaves the
                 // 18 mm contact sphere dragging through nearly the entire swing.
                 target.z += swing_height_hold_release_m;
+                swing_lift_m = std::max(0.0, p.z - sw.anchor.z);
+                const double resolved_height = committed_swing_plan_[leg_index].swing_height_m;
+                swing_lift_fraction = resolved_height > 1e-9
+                    ? std::clamp(swing_lift_m / resolved_height, 0.0, 1.0) : 0.0;
                 const Vec3 before_terrain = target;
                 if (terrain_snapshot != nullptr) {
                     applyTerrainSwingXYNudge(*terrain_snapshot, est, foot_terrain_cfg_, tau_for_terrain_xy, &target);
@@ -838,6 +873,17 @@ LegTargets BodyController::update(const RobotState& est,
         }
         target_vel = target_vel + cross(intent.twist.twist_vel_radps, target);
 
+        if (contact_height_enabled && walking && !used_stance_kinematics &&
+            measured_pose_valid && have_support_foot_world_z_[leg]) {
+            // A loaded stance target can lie below the observed contact point.
+            // Do not spend the swing clearance merely releasing that preload.
+            // Use the existing smooth lift profile (zero at either endpoint),
+            // not a new gain or a discontinuous target jump at liftoff.
+            const double world_z = est.body_twist_state.body_trans_m.z + (measured_rotation * target).z;
+            const double missing_clearance = support_foot_world_z_[leg] + swing_lift_m - world_z;
+            target.z += swing_lift_fraction * std::max(0.0, missing_clearance) / measured_rotation.m[2][2];
+        }
+
         if (apply_workspace_clamp) {
             const Vec3 target_before_reach = target;
             target = foot_reachability::clampFootPositionBody(geometry_.legGeometry[leg], target, kFootReachInsetM);
@@ -848,7 +894,7 @@ LegTargets BodyController::update(const RobotState& est,
             const Vec3* last_in_reach =
                 have_last_clamped_stance_[leg_index] ? &last_clamped_stance_body_[leg_index] : nullptr;
             const foot_reachability::StrokeAlongStrokeResult projected =
-                foot_reachability::clampFootPositionAlongStroke(
+                foot_reachability::clampPlantedFootPosition(
                     geometry_.legGeometry[leg], last_in_reach, target, kFootReachInsetM);
             target = projected.pos_body_m;
             last_workspace_xy_hit_[leg_index] = projected.planar_xy_hit;

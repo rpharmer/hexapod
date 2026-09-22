@@ -100,6 +100,10 @@ Examples:
 
 Controller-driven loop (optional):
 
+For the Xbox Wireless Adapter under WSL2, see `docs/WSL_XBOX_CONTROLLER.md`
+(`scripts/attach_xbox_wsl.ps1` then `scripts/find_xbox_evdev.sh`). Power the pad
+**off** before attaching the dongle or usbipd reports Device busy.
+
 Run from `hexapod-server/`:
 
 ```bash
@@ -441,6 +445,36 @@ unknown process status is not a qualified pass.
 - **Unexpected joint behavior**: re-check calibration ordering and pulse bounds.
 
 ## Safety checklist
+
+Walking clearance diagnostics (repo-root commands): create an empty output
+directory, then set `HEXAPOD_MOTION_TRACE_DIR=/absolute/output/directory` when
+running `test_physics_sim_walk_entry_tracking` or
+`test_motion_performance_suite --profile full`. Each writes its collected
+trace after simulation and refuses to overwrite existing files. Inspect with:
+
+```bash
+python3 tools/analyze_walk_support.py /absolute/output/directory/walk_entry.ndjson
+python3 tools/analyze_walk_support.py /absolute/output/directory/walk_entry.ndjson --window 2500 2600 --leg 4
+```
+
+These are diagnostic traces, **not executable replay fixtures**: motion-suite
+traces do not record bus joint commands. Measured-contact swing clearance is
+enabled by default; `HEXAPOD_SWING_CONTACT_HEIGHT=0` disables only that correction
+for diagnostic comparisons. Normal launches need no experiment flags.
+See [walking campaign §3.26](../docs/SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md).
+
+Tilt regression reporting distinguishes pre-fault walking from post-fault
+drift. `tilt_safety_trip` checks normal travel followed by an unsafe command;
+`tilt_safety_immediate` checks the original immediately unsafe command without
+a distance quota. Neither changes the runtime safety thresholds. To inspect
+an existing replay (from repo root):
+
+```bash
+python3 tools/audit_tilt_trip.py /absolute/path/to/tilt_safety_trip/replay.ndjson
+```
+
+The audit also needs the recording's sibling `metrics.json`. See
+[testing reference](../docs/TESTING_FUNCTIONALITY.md) for metric semantics.
 
 - Keep robot mechanically unloaded during initial bring-up after calibration edits.
 - Validate E-stop path and relay defaults before enabling walking gaits.

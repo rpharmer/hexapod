@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "base_commit": "02a9bef",
+  "date": "2026-09-22",
+  "note": "Pre-restart observations are transcribed from captured tool output; WSL restart cleared their raw /tmp traces. Post-restart qualification uses exit-status checked tests. Gates and frozen v16 are unchanged.",
+  "pre_restart_observations": {
+    "slow_tripod_lift_p20_before_m": 0.000424,
+    "slow_tripod_lift_p20_after_stance_projection_m": 0.005993,
+    "slow_tripod_lift_floor_m": 0.001290,
+    "returning_contact_margin_before_m": -0.099257,
+    "returning_contact_margin_after_m": 0.099257
+  },
+  "post_restart_observations": {
+    "entry_with_return_grace_only": {"passed": 9, "runs": 10, "remaining_failure": "planned/contact mismatch 6 vs 5; margin positive"},
+    "entry_with_contact_height": {"passed": 10, "runs": 10},
+    "first_contact_height_screen": {
+      "physics_sim_walk_distance": "pass",
+      "locomotion_regression_suite": "pass",
+      "motion_performance_suite_long": "pass"
+    },
+    "contact_height_repeats": {
+      "physics_sim_walk_distance": {"passed": 5, "runs": 5},
+      "motion_performance_suite_long": {"passed": 5, "runs": 5}
+    },
+    "full_server_with_candidate_enabled": {"passed": 102, "total": 102, "exit_code": 0, "wall_seconds": 200.79},
+    "focused_invalid_feedback_test": "pass after adding non-finite pose/FK reference clearing"
+  },
+  "solver_changed": false,
+  "gate_limits_changed": false,
+  "fixture_v16_sha256": "d47248a183592342ab17b894fdf62514e757596c251bc0e5150fe7be2dccc135",
+  "default_contact_height": "enabled; explicit 0 opt-out retained",
+  "root_verification": {
+    "exit_code": 1,
+    "server_passed": 99,
+    "server_total": 100,
+    "failed_test": "physics_feedforward_stand_quiescence",
+    "failed_test_solver": "legacy-pgs via iterations-only bridge constructor",
+    "primary_off": 0.270295,
+    "primary_on": 0.272149,
+    "decision": "out of scope per user; retained red, no changes to gate or labels"
+  },
+  "optional_default_stress": "pass, exit 0",
+  "optional_default_full_motion": {"passed": 11, "total": 11, "exit_code": 0, "held_samples": 0},
+  "normal_application_rebuild": "pass",
+  "firmware_existing_host_tests": "3/3 pass",
+  "normal_application_simple_sim_smoke": "pass, exit 0; explicit config path, no config.txt overwrite",
+  "soak_and_dedicated_performance_qualification": "not run"
+}

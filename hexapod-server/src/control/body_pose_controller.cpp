@@ -14,7 +14,10 @@ constexpr double kLeanYawRefRadps = 0.45;
 // sign is opposite the old pre-alignment setting.
 constexpr double kLeanPitchPerVx = -0.22;
 constexpr double kLeanRollPerYaw = 0.18;
-constexpr double kLeanRollPerVy = 0.14;
+// R_x(roll)*ez has y=-sin(roll): +Y translation needs negative roll,
+// just as +X translation needs positive pitch. Positive roll leaned away
+// from lateral acceleration and reinforced its initial load transfer.
+constexpr double kLeanRollPerVy = -0.14;
 constexpr double kMarginSoftM = 0.022;
 constexpr double kMarginHardM = 0.004;
 constexpr double kSlowStrideHz = 0.78;

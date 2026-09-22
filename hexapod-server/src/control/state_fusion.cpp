@@ -182,7 +182,18 @@ RobotState StateFusion::update(const RobotState& source, const FusionSourceMode 
             tracker.raw_gap_streak = 0;
 
             const bool was_confirmed = (fc.phase == ContactPhase::ConfirmedStance);
-            if (!was_confirmed && tracker.raw_contact_streak == 1) {
+            const bool reacquiring_held_contact =
+                fc.phase == ContactPhase::LostCandidate &&
+                !fc.touchdown_window_end_us.isZero() &&
+                now.value <= fc.touchdown_window_end_us.value;
+            if (reacquiring_held_contact &&
+                tracker.raw_contact_streak < static_cast<uint32_t>(debounce_samples)) {
+                // Still validate the returning raw contact, but preserve the
+                // existing, unexpired loss grace. Switching to ExpectedTouchdown
+                // here removes support precisely when contact returns and can
+                // also send an early swinging foot to the touchdown endpoint.
+                // Do not renew the grace deadline or mark it confirmed early.
+            } else if (!was_confirmed && tracker.raw_contact_streak == 1) {
                 fc.phase = ContactPhase::ExpectedTouchdown;
                 fc.touchdown_window_start_us = now;
                 fc.touchdown_window_end_us = TimePointUs{now.value + std::min(touchdown_window_us, touchdown_confirm_us)};

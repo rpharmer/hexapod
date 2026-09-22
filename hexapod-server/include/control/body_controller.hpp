@@ -115,6 +115,8 @@ private:
     std::array<swing_trajectory::SwingPlanCommit, kNumLegs> committed_swing_plan_{};
     std::array<Vec3, kNumLegs> last_emitted_target_{};
     std::array<bool, kNumLegs> have_last_emitted_target_{};
+    std::array<double, kNumLegs> support_foot_world_z_{};
+    std::array<bool, kNumLegs> have_support_foot_world_z_{};
     R2SwingDecompSnapshot last_r2_swing_decomp_{};
     int stand_untilt_ticks_{0};
 };

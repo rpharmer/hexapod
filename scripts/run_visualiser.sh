@@ -73,5 +73,22 @@ if [[ ! -x "$VIS_BIN" ]]; then
   exit 1
 fi
 
+prefer_wsl_x11_backend
+warn_if_wslg_copy_mode
+
 echo "Launching hexapod-opengl-visualiser"
+# Best-effort: under WSLg, nudge the Windows host to focus the GLFW window by title while
+# the visualiser is still starting (covers background launches from run_physics_stack.sh).
+(
+  # Hold focus briefly so a foreground terminal does not immediately reclaim it.
+  raise_wslg_window "Hexapod OpenGL Visualiser" 48 250 6
+) &
+RAISE_PID=$!
+
+set +e
 run_in_dir "$VIS_DIR" "$VIS_BIN" "${VISUALISER_ARGS[@]}"
+vis_status=$?
+set -e
+kill "$RAISE_PID" >/dev/null 2>&1 || true
+wait "$RAISE_PID" >/dev/null 2>&1 || true
+exit "$vis_status"

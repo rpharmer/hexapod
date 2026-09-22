@@ -8,6 +8,7 @@
 #include "leg_fk.hpp"
 #include "locomotion_metrics.hpp"
 #include "locomotion_motion_sequence.hpp"
+#include "motion_trace.hpp"
 #include "motion_intent_utils.hpp"
 #include "physics_sim_estimator.hpp"
 #include "physics_sim_bridge.hpp"
@@ -868,6 +869,26 @@ bool runCase(const std::string& sim_exe,
     }
 
     out_metrics = metrics;
+
+    // Save only after simulation, so diagnostic I/O cannot perturb the loop.
+    if (const char* directory = std::getenv("HEXAPOD_MOTION_TRACE_DIR")) {
+        const auto path = std::filesystem::path(directory) / (spec.name + ".ndjson");
+        if (std::filesystem::exists(path)) throw std::runtime_error("refusing to overwrite motion trace");
+        std::ofstream out(path);
+        if (!out) throw std::runtime_error("cannot open motion trace");
+        for (const auto& s : samples) {
+            replay_json::ReplayTelemetryRecord r{};
+            r.sample_id = s.step_index;
+            r.timestamp_us = TimePointUs{static_cast<std::uint64_t>(s.step_index * metrics.sample_period_s * 1e6)};
+            r.status = s.status;
+            r.estimated_state = s.estimated;
+            r.gait_state = s.gait;
+            r.governor = s.governor;
+            r.locomotion_debug = s.locomotion_debug;
+            r.locomotion_feasibility = s.locomotion_feasibility;
+            writeMotionTrace(out, r);
+        }
+    }
 
     if (metrics.saw_fault && isSevereFault(metrics.first_fault)) {
         fail_reason = std::string("severe fault: ") + faultName(metrics.first_fault);

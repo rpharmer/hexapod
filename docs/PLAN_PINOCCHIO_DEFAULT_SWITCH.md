@@ -6,19 +6,38 @@ Updated: 2026-09-15 (pitch sign, recovery resync, armature, STAND height, turn `
 
 ## Latest walking follow-up (2026-09-22)
 
+**Support/clearance correction (§3.26):** planted-foot reach limiting no longer
+raises a reachable support target to retain XY; returning contact preserves its
+original unexpired debounce grace; swing apexes reference the measured contact
+height. Full rebuilt server suite **102/102** with the candidate enabled,
+walk-entry **10/10**, sequential and full long motion **5/5 each**. No solver,
+actuator, frozen fixture or gate changes. Clearance is now default-on; final
+flag-free root server sweep is **99/100**, with only the legacy-PGS feedforward
+off/on comparison red. Optional default stress and all full long-motion cases
+pass; production walking gates pass, but `verify.sh` is **not** green. Legacy
+physics remains out of this batch. See
+[walking campaign §3.26](SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md).
+
+**Preceding §3.25 results (superseded above):**
+
 The rebuilt default passes reverse ×5, isolated turn ×5 and complete sequential
 walk-distance ×5 with zero held samples, plus canonical aggressive governor
 (two strides). The changes preserve retry damping while reducing proportional
 drive, and enable bounded turn-position feedback only for physics bridges with
 reliable absolute position. Mode 1 remains default, including its existing CCP
 recovery; implicit actuation and gravity feedforward remain off. See
-[walking campaign §3.24](SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md) for the evidence,
-rejected alternatives and current wider-verification status: server **97/98**
-(only tilt path-before-fault remains), full physics **68/75** (seven legacy
-World/scene failures also reproduce with the changes disabled), firmware **3/3**,
-simple-sim smoke pass. Full root verification is therefore still red. The historical
-red status below is retained as the first campaign record, not the latest
-sequential result. No new 100-seed or soak qualification is claimed.
+[walking campaign §3.25](SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md) for the latest
+evidence: lateral lean sign corrected; tilt travel now excludes post-fault
+drift, with normal-walking and immediate-unsafe scenarios tested separately.
+Both pass 5/5, without changing safety thresholds. Server **100/101** including
+optional labels: all 99 default tests and locomotion stress pass, but long
+motion performance fails swing-lift floors. Full physics **69/75**: layout
+comparison repaired; six legacy integration failures remain. Frozen v16
+**100/100 seeds** again passes safety+behaviour, with no held/read failures.
+The later root sweep is **98/99**: intermittent walk-entry support-margin
+failure, reproduced in 1/5 focused repeats. Root verification is still red.
+No ten-minute soak or dedicated performance qualification is claimed. Historical
+red status below is retained as the first campaign record, not current results.
 
 ## Status after the first campaign
 

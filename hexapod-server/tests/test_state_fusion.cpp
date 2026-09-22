@@ -43,6 +43,32 @@ int main() {
     config.soft_pose_resync_m = 0.03;
     config.hard_pose_resync_m = 0.12;
 
+    // Returning contact must not remove the support grace which was still
+    // available one sample earlier. It is not a newly arriving foot, but also
+    // must not be confirmed before the usual debounce count.
+    {
+        state_fusion::StateFusion bounce{config};
+        (void)bounce.update(makeSample(1, 1'000'000, true, .14), state_fusion::FusionSourceMode::Measured);
+        (void)bounce.update(makeSample(2, 1'005'000, false, .14), state_fusion::FusionSourceMode::Measured);
+        const auto lost = bounce.update(makeSample(3, 1'010'000, false, .14), state_fusion::FusionSourceMode::Measured);
+        const auto returned = bounce.update(makeSample(4, 1'015'000, true, .14), state_fusion::FusionSourceMode::Measured);
+        if (!expect(lost.foot_contact_fusion[0].phase == ContactPhase::LostCandidate, "fixture must enter loss grace")
+            || !expect(returned.foot_contact_fusion[0].phase == ContactPhase::LostCandidate, "returning contact must preserve unexpired grace")
+            || !expect(!returned.foot_contacts[0], "reacquisition must still debounce")
+            || !expect(returned.foot_contact_fusion[0].touchdown_window_end_us.value == lost.foot_contact_fusion[0].touchdown_window_end_us.value,
+                       "reacquisition must not extend the loss grace")) return EXIT_FAILURE;
+        const auto confirmed = bounce.update(makeSample(5, 1'020'000, true, .14), state_fusion::FusionSourceMode::Measured);
+        if (!expect(confirmed.foot_contacts[0], "second returning sample confirms contact")) return EXIT_FAILURE;
+
+        state_fusion::StateFusion expired{config};
+        (void)expired.update(makeSample(1, 1'000'000, true, .14), state_fusion::FusionSourceMode::Measured);
+        (void)expired.update(makeSample(2, 1'005'000, false, .14), state_fusion::FusionSourceMode::Measured);
+        (void)expired.update(makeSample(3, 1'010'000, false, .14), state_fusion::FusionSourceMode::Measured);
+        const auto late = expired.update(makeSample(4, 1'060'000, true, .14), state_fusion::FusionSourceMode::Measured);
+        if (!expect(late.foot_contact_fusion[0].phase == ContactPhase::ExpectedTouchdown && !late.foot_contacts[0],
+                    "expired loss must restart touchdown validation")) return EXIT_FAILURE;
+    }
+
     state_fusion::StateFusion fusion{config};
 
     RobotState first = makeSample(1, 1'000'000, true, 0.08);

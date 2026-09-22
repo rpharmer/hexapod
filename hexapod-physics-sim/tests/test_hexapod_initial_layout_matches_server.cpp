@@ -19,12 +19,13 @@ bool expect(bool condition, const char* message) {
     return condition;
 }
 
-minphys3d::Vec3 footContactPointWorld(const Body& tibia) {
+minphys3d::Vec3 footCentreWorld(const Body& tibia) {
     for (const CompoundChild& child : tibia.compoundChildren) {
         if (child.shape == ShapeType::Sphere) {
-            const minphys3d::Vec3 center_world = tibia.position + Rotate(tibia.orientation, child.localPosition);
-            const minphys3d::Vec3 foot_axis_world = Rotate(tibia.orientation, minphys3d::Vec3{1.0, 0.0, 0.0});
-            return center_world + foot_axis_world * child.radius;
+            // Server FK's 104 mm tibia reaches the sphere CENTRE. The rigid
+            // shaft is shortened by the 18 mm radius; adding that radius again
+            // compares an axial surface point with a kinematic centre.
+            return tibia.position + Rotate(tibia.orientation, child.localPosition);
         }
     }
     return tibia.position;
@@ -34,7 +35,7 @@ double maxAbsComponent(const ::Vec3& v) {
     return std::max({std::abs(v.x), std::abs(v.y), std::abs(v.z)});
 }
 
-const std::array<::Vec3, 6> kExpectedFootContactPositionsBody{{
+const std::array<::Vec3, 6> kExpectedFootCentrePositionsBody{{
     {0.152965, -0.115852, -0.202887},
     {-0.152965, -0.115852, -0.202887},
     {0.230989, -0.115852, 0.0},
@@ -56,14 +57,14 @@ int main() {
         const LegLinkIds& sim_leg = scene.legs[leg];
         const ::Vec3 actual_foot_contact =
             Rotate(Conjugate(chassis.orientation),
-                   footContactPointWorld(world.GetBody(sim_leg.tibia)) - chassis.position);
-        const ::Vec3 expected_foot_contact = kExpectedFootContactPositionsBody[leg];
+                   footCentreWorld(world.GetBody(sim_leg.tibia)) - chassis.position);
+        const ::Vec3 expected_foot_contact = kExpectedFootCentrePositionsBody[leg];
         const ::Vec3 err_foot = actual_foot_contact - expected_foot_contact;
 
         constexpr double kFootEps = 1.0e-4;
         max_foot_error_m = std::max(max_foot_error_m, maxAbsComponent(err_foot));
 
-        if (!expect(maxAbsComponent(err_foot) <= kFootEps, "initial foot contact point should match the expected layout")) {
+        if (!expect(maxAbsComponent(err_foot) <= kFootEps, "initial foot sphere centre should match server FK layout")) {
             std::cerr << "leg=" << leg
                       << " actual_foot=(" << actual_foot_contact.x << "," << actual_foot_contact.y << ","
                       << actual_foot_contact.z << ")"

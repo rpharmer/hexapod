@@ -54,12 +54,14 @@ visualiser::render::MeshRenderer g_mesh_renderer;
 visualiser::render::PointRenderer g_point_renderer;
 bool g_modern_renderer_ok = false;
 
+bool RunningInWsl() {
+  return std::getenv("WSL_INTEROP") != nullptr || std::getenv("WSL_DISTRO_NAME") != nullptr;
+}
+
 void ConfigureWslWindowPlatform() {
 #if defined(__linux__) && defined(GLFW_PLATFORM) && defined(GLFW_PLATFORM_X11)
-  const bool running_in_wsl = std::getenv("WSL_INTEROP") != nullptr ||
-                              std::getenv("WSL_DISTRO_NAME") != nullptr;
   const bool x11_available = std::getenv("DISPLAY") != nullptr;
-  if (running_in_wsl && x11_available) {
+  if (RunningInWsl() && x11_available) {
     // GLFW 3.4 prefers Wayland when WSLg exposes both backends. Wayland deliberately prevents
     // clients from activating their own windows, which leaves the visualiser visible but unable
     // to take keyboard focus reliably. WSLg's XWayland path supports the activation request and
@@ -68,6 +70,36 @@ void ConfigureWslWindowPlatform() {
     std::cout << "WSL detected: using GLFW X11 backend for reliable window focus\n";
   }
 #endif
+}
+
+// One-shot focus often loses to the launching terminal under WSLg/Windows focus-stealing rules.
+// Keep requesting activation for a short window after show until the WM grants focus.
+void RequestWindowFocus(GLFWwindow* window) {
+  if (window == nullptr) {
+    return;
+  }
+  glfwShowWindow(window);
+  glfwRestoreWindow(window);
+  // Nudge onto a known on-screen position in case a previous WSLg session left it off-screen.
+  glfwSetWindowPos(window, 80, 80);
+  glfwFocusWindow(window);
+  glfwRequestWindowAttention(window);
+}
+
+void PollStartupWindowFocus(GLFWwindow* window, double shown_at_s, bool& focus_settled) {
+  if (focus_settled || window == nullptr) {
+    return;
+  }
+  if (glfwGetWindowAttrib(window, GLFW_FOCUSED)) {
+    focus_settled = true;
+    return;
+  }
+  constexpr double kFocusRetrySeconds = 2.5;
+  if ((glfwGetTime() - shown_at_s) > kFocusRetrySeconds) {
+    focus_settled = true;
+    return;
+  }
+  RequestWindowFocus(window);
 }
 
 bool InitModernRenderer() {
@@ -2475,6 +2507,8 @@ int RunApplication(int argc, char** argv) {
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
   glfwWindowHint(GLFW_SAMPLES, 4);
+  // Keep the window hidden until GL/ImGui/UDP are ready, but ask to focus on first show.
+  // Under WSLg the host may still prefix the title with "[WARN:COPY MODE]".
   glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
   glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE);
   glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_TRUE);
@@ -2552,17 +2586,17 @@ int RunApplication(int argc, char** argv) {
   double last_title_update_s = -1.0;
   double last_joint_log_s = -1.0;
   bool overlay_toggle_down = false;
+  bool startup_focus_settled = false;
+  const double window_shown_at_s = glfwGetTime();
 
-  // Show only after OpenGL, ImGui, and UDP input are ready, then make one explicit activation
-  // request. Window managers remain free to reject focus stealing; requesting attention gives
-  // the user a taskbar cue in that case.
-  glfwShowWindow(window);
-  glfwRestoreWindow(window);
-  glfwFocusWindow(window);
-  glfwRequestWindowAttention(window);
+  // Show only after OpenGL, ImGui, and UDP input are ready. Retry activation for a short period:
+  // background launches from run_physics_stack.sh often lose the first focus request to the
+  // terminal / Cursor window under WSLg.
+  RequestWindowFocus(window);
 
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
+    PollStartupWindowFocus(window, window_shown_at_s, startup_focus_settled);
 
     const bool overlay_toggle_now = glfwGetKey(window, GLFW_KEY_F1) == GLFW_PRESS;
     if (overlay_toggle_now && !overlay_toggle_down) {

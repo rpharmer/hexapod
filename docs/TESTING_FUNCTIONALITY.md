@@ -8,6 +8,49 @@ This document describes the current testing surface in the monorepo:
 - what outputs/artifacts are produced
 - which tests provide quantitative motion/performance data (not just pass/fail)
 
+## Planted reach, contact reacquisition and swing clearance
+
+`foot_reachability` covers preserving a feasible planted height while limiting
+horizontal reach. `state_fusion` covers a short contact gap and debounced return
+without renewing support grace; expired contacts still require fresh confirmation.
+`swing_contact_height` checks measured-contact-relative apexes for all six legs,
+unchanged planar targets, a moving/tilted chassis, zero endpoint correction and
+reset/invalid-state reference clearing. This is controller geometry, not a
+permission to increase actuator or safety limits.
+
+Walk-entry advances intent time by the simulated bus period rather than host
+execution time. Optional `HEXAPOD_MOTION_TRACE_DIR` records post-run diagnostic
+traces for that test and the motion-performance suite. Analyze complete swing
+events and the worst support window using `tools/analyze_walk_support.py`.
+These `trace_only` files are not frozen command replay fixtures. The existing
+walk-entry support/mismatch and long-suite measured lift gates are unchanged.
+See [campaign §3.26](SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md).
+
+## Tilt safety and pre-fault distance
+
+The lateral body-lean sign is covered by `locomotion_pose_and_stability` for
+±X/±Y translation. `locomotion_prefault_metrics` ensures post-fault motion,
+including subsequent recovery, cannot satisfy a pre-fault travel requirement.
+
+Canonical `tilt_safety_trip` now performs STAND, 3 s of normal forward walking,
+then the original unsafe strafe. It requires over 0.10 m **before** the first
+fault and rejects any fault before the unsafe phase. New
+`tilt_safety_immediate` preserves the original STAND→unsafe input and must trip
+without waiting for distance. Safety rate/tilt thresholds are unchanged. JSON
+reports `prefault_path_length_m`; legacy `metrics.path_length_m` still includes
+the whole case and must not be described as pre-fault travel.
+
+From repo root, audit an existing bundle with
+`python3 tools/audit_tilt_trip.py /absolute/path/to/tilt_safety_trip/replay.ndjson`.
+It reads the sibling `metrics.json` for timestep, reports both integrated-speed
+and pose-difference paths, and does not modify the recording.
+
+Historical §3.25 initial full sweep: 100/101 server tests; long motion performance failed swing
+lift. Later root sweep: 98/99, with intermittent walk-entry support-margin
+failure (focused repeats 4/5). Frozen v16 100-seed safety+behaviour passes. See campaign §3.25 for
+the then-kept changes and scope. Support/clearance correction results supersede
+these walking failures in §3.26; no test thresholds were changed.
+
 ## Retry damping and turn-feedback regression checks
 
 The 2026-09-22 default-path walking screen passed reverse ×5, isolated turn ×5

@@ -639,20 +639,22 @@ std::string locomotionRegressionLimitsAppliedJson(const std::string& case_name, 
           << ",\"max_peak_normal_impulse_ns\":" << formatDouble(max_impulse)
           << ",\"fail_on_solver_not_converged_hold\":true"
           << ",\"speed_limit_counted_not_failed\":true";
-    } else if (case_name == "tilt_safety_trip") {
+    } else if (case_name == "tilt_safety_trip" || case_name == "tilt_safety_immediate") {
+        // Both scenarios intentionally enforce the same tilt-safety envelope.
+        constexpr const char* tilt_limits_case = "tilt_safety_trip";
         const std::size_t first_fault_step_max =
-            locomotionLimitSizeT(case_name.c_str(), "first_fault_step_max", 1200);
+            locomotionLimitSizeT(tilt_limits_case, "first_fault_step_max", 1200);
         const double max_roll =
-            locomotionLimitDouble(case_name.c_str(), "max_abs_roll_rad_max", 0.24);
+            locomotionLimitDouble(tilt_limits_case, "max_abs_roll_rad_max", 0.24);
         const double max_pitch =
-            locomotionLimitDouble(case_name.c_str(), "max_abs_pitch_rad_max", 0.16);
+            locomotionLimitDouble(tilt_limits_case, "max_abs_pitch_rad_max", 0.16);
         const double max_track_err =
-            locomotionLimitDouble(case_name.c_str(), "max_contact_tracking_error_m", 0.16);
+            locomotionLimitDouble(tilt_limits_case, "max_contact_tracking_error_m", 0.16);
         o << ",\"expect_fault\":true"
           << ",\"expected_fault\":\"TIP_OVER\""
           << ",\"first_fault_step_min\":40"
           << ",\"first_fault_step_max\":" << first_fault_step_max
-          << ",\"path_length_m_min\":0.1"
+          << ",\"prefault_path_length_m_min\":" << (case_name == "tilt_safety_trip" ? "0.1" : "null")
           << ",\"configured_max_tilt_rad\":0.25"
           << ",\"configured_rapid_body_rate_radps\":0.45"
           << ",\"max_abs_roll_rad_max\":" << formatDouble(max_roll)
@@ -674,6 +676,7 @@ std::string caseResultSummaryJson(const CaseResult& result) {
         << "\"description\":\"" << jsonEscape(result.description) << "\","
         << "\"passed\":" << (result.passed ? "true" : "false") << ','
         << "\"failure_reason\":\"" << jsonEscape(result.failure_reason) << "\","
+        << "\"prefault_path_length_m\":" << formatDouble(pathBeforeFirstFaultM(result.samples, result.metrics.sample_period_s)) << ','
         << "\"replay_path\":\"" << jsonEscape(result.replay_path.string()) << "\","
         << "\"geometry_path\":\"" << jsonEscape(result.geometry_path.string()) << "\","
         << "\"summary_path\":\"" << jsonEscape(result.summary_path.string()) << "\","
@@ -1294,7 +1297,7 @@ bool caseAggressiveGovernor(const CaseResult& result, std::string& reason) {
     return true;
 }
 
-bool caseTiltSafetyTrip(const CaseResult& result, std::string& reason) {
+bool checkTiltSafetyTrip(const CaseResult& result, std::string& reason, bool require_travel) {
     constexpr const char* kCase = "tilt_safety_trip";
     const auto& m = result.metrics;
     if (!m.saw_fault) {
@@ -1309,7 +1312,14 @@ bool caseTiltSafetyTrip(const CaseResult& result, std::string& reason) {
         reason = "tilt safety case should fault after motion begins";
         return false;
     }
-    if (!(m.path_length_m > 0.1)) {
+    if (result.samples[m.first_fault_step].phase_label != "unsafe_walk") {
+        reason = "tilt safety case must remain healthy until the unsafe command";
+        return false;
+    }
+    const double prefault_path_m = pathBeforeFirstFaultM(result.samples, m.sample_period_s);
+    std::cout << "tilt_path_census prefault_path_m=" << prefault_path_m
+              << " whole_run_path_m=" << m.path_length_m << '\n';
+    if (require_travel && !(prefault_path_m > 0.1)) {
         reason = "tilt safety case should accumulate motion before the fault";
         return false;
     }
@@ -1356,6 +1366,14 @@ bool caseTiltSafetyTrip(const CaseResult& result, std::string& reason) {
         return false;
     }
     return true;
+}
+
+bool caseTiltSafetyTrip(const CaseResult& result, std::string& reason) {
+    return checkTiltSafetyTrip(result, reason, true);
+}
+
+bool caseTiltSafetyImmediate(const CaseResult& result, std::string& reason) {
+    return checkTiltSafetyTrip(result, reason, false);
 }
 
 std::vector<CaseSpec> buildCaseCatalog() {
@@ -1510,6 +1528,11 @@ std::vector<CaseSpec> buildCaseCatalog() {
         "A deliberately tightened tilt envelope should still trigger safety before the robot falls flat.",
         {
             makePhase("settle", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.12, 0.0, 0.0, 0.0}, 100),
+            // Establish the required healthy travel before requesting a deliberately
+            // unsafe manoeuvre. Safety must never wait for a distance quota. The
+            // original case started unsafe and counted drift AFTER the fault toward
+            // its supposedly pre-fault path gate.
+            makePhase("safe_walk", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::TRIPOD, 0.12, 0.08, 0.0, 0.0}, 150),
             makePhase("unsafe_walk", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::TRIPOD, 0.12, 0.45, 1.57, 0.0}, 600),
         },
         false,
@@ -1522,6 +1545,24 @@ std::vector<CaseSpec> buildCaseCatalog() {
         },
     });
 
+    // Preserve the original immediate-unsafe input as an independent safety
+    // regression: it must trip even when no minimum travel has been earned.
+    cases.push_back(CaseSpec{
+        "tilt_safety_immediate",
+        "An unsafe command from stand must trip without waiting for a travel quota.",
+        {
+            makePhase("settle", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.12, 0.0, 0.0, 0.0}, 100),
+            makePhase("unsafe_walk", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::TRIPOD, 0.12, 0.45, 1.57, 0.0}, 600),
+        },
+        false,
+        true,
+        caseTiltSafetyImmediate,
+        [](control_config::ControlConfig& cfg) {
+            cfg.safety.max_tilt_rad = AngleRad{0.25};
+            cfg.safety.rapid_body_rate_radps = 0.45;
+            cfg.safety.rapid_body_rate_max_contacts = 4;
+        },
+    });
     return cases;
 }
 
@@ -1756,6 +1797,8 @@ int main(int argc, char** argv) {
                           << ",\"solver_mode\":" << result.solver_mode
                           << ",\"compliant_experiment_override\":"
                           << (result.compliant_experiment_override ? "true" : "false")
+                          << ",\"prefault_path_length_m\":"
+                          << formatDouble(pathBeforeFirstFaultM(result.samples, result.metrics.sample_period_s))
                           << ",\"limits_applied\":"
                           << locomotionRegressionLimitsAppliedJson(spec.name, result.metrics) << ",\"metrics\":"
                           << metricsToJson(result.metrics) << "}\n";

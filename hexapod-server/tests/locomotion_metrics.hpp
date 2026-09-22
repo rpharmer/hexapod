@@ -131,6 +131,16 @@ struct MotionSample {
     double sample_period_s{0.0};
 };
 
+// Safety travel is earned before the first fault, never by coasting after it.
+inline double pathBeforeFirstFaultM(const std::vector<MotionSample>& samples, double period_s) {
+    double path_m = 0.0;
+    for (const auto& sample : samples) {
+        if (sample.status.active_fault != FaultCode::NONE) break;
+        path_m += sample.horizontal_speed_mps * period_s;
+    }
+    return path_m;
+}
+
 struct ModeSegment {
     RobotMode mode{RobotMode::SAFE_IDLE};
     std::size_t start_step{0};

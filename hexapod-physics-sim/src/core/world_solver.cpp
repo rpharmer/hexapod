@@ -2,6 +2,7 @@
 #include "minphys3d/core/sleep_system.hpp"
 #include "minphys3d/core/subsystems.hpp"
 #include "minphys3d/core/world.hpp"
+#include "minphys3d/joints/servo_motor.hpp"
 #include "minphys3d/solver/block2_solver.hpp"
 #include "minphys3d/solver/block4_solver.hpp"
 #include "minphys3d/solver/island_ordering.hpp"
@@ -2634,26 +2635,12 @@ void World::SolveServoJoint(ServoJoint& j) {
         Real deltaImpulseAxis = 0.0;
 
         const auto clampActuatorImpulse = [&](Real proposedImpulse, Real axisSpeed) {
-            Real positiveFraction = 1.0;
-            Real negativeFraction = 1.0;
-            if (prep.hasSpeedClamp && prep.maxServoSpeed > kEpsilon) {
-                // Positive drive torque is derated only while already moving positively;
-                // negative drive torque follows the mirrored rule. Opposing torque is braking
-                // and retains the stall-torque budget.
-                positiveFraction = std::clamp(
-                    1.0 - std::max(0.0, axisSpeed) / prep.maxServoSpeed,
-                    0.0,
-                    1.0);
-                negativeFraction = std::clamp(
-                    1.0 - std::max(0.0, -axisSpeed) / prep.maxServoSpeed,
-                    0.0,
-                    1.0);
-            }
             const Real impulseScale = j.maxServoTorque * currentSubstepDt_;
-            return std::clamp(
-                proposedImpulse,
-                -impulseScale * negativeFraction,
-                impulseScale * positiveFraction);
+            const Real inverseInertia = (aAwake ? prep.wHingeA : 0.0)
+                + (bAwake ? prep.wHingeB : 0.0);
+            return ClampServoMotorImpulse(proposedImpulse, j.servoImpulseSum,
+                axisSpeed, inverseInertia, impulseScale,
+                prep.hasSpeedClamp ? prep.maxServoSpeed : 0.0);
         };
 
         const Real activeWT12 =

@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "solver_validation_helpers.hpp"
+#include "minphys3d/joints/servo_motor.hpp"
 
 namespace {
 
@@ -51,6 +52,35 @@ AccelSample runSample(Real max_servo_torque) {
 }
 
 int runCase() {
+    // A PGS row must converge to one motor envelope, not alternate between
+    // full drive and no drive as its own impulse changes the sampled speed.
+    for (Real sign : {-1.0, 1.0}) {
+        constexpr Real stallImpulse = 100.0 / 240.0;
+        constexpr Real inverseInertia = 100.0;
+        constexpr Real noLoadSpeed = 7.48;
+        const Real first = ClampServoMotorImpulse(sign * 10.0, 0, 0,
+                                                  inverseInertia, stallImpulse, noLoadSpeed);
+        const Real speed = inverseInertia * first;
+        const Real repeated = ClampServoMotorImpulse(sign * 10.0, first, speed,
+                                                     inverseInertia, stallImpulse, noLoadSpeed);
+        const Real available = stallImpulse * std::max(0.0, 1.0 - std::abs(speed) / noLoadSpeed);
+        if (std::abs(first - repeated) > 1e-12 || std::abs(first) > available + 1e-12) {
+            std::cerr << "motor envelope depends on its own iteration: first=" << first
+                      << " repeated=" << repeated << " speed=" << speed << '\n';
+            return 1;
+        }
+    }
+    for (const Real dt : {1.0 / 120.0, 1.0 / 240.0, 1.0 / 480.0}) {
+        const Real limit = 1.471 * dt;
+        // Above no-load speed, assisting torque is zero, while opposing
+        // torque retains the same stall-torque budget at every cadence.
+        if (ClampServoMotorImpulse(10, 0, 10, 1, limit, 7.48) != 0
+            || std::abs(ClampServoMotorImpulse(-10, 0, 10, 1, limit, 7.48) + limit) > 1e-12
+            || std::abs(ClampServoMotorImpulse(10, 0, 10, 1, limit, 0) - limit) > 1e-12) {
+            std::cerr << "motor envelope changed braking or torque-times-dt budget\n";
+            return 1;
+        }
+    }
     const AccelSample low = runSample(1.0);
     const AccelSample high = runSample(5.0);
     if (!low.respected_limit || !high.respected_limit) {

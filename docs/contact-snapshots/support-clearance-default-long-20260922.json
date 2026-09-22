@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-22",
+  "base_commit": "02a9bef",
+  "dirty_tree": true,
+  "solver_mode": 1,
+  "contact_height": "default, environment unset",
+  "process_exit": 0,
+  "cases": [
+    {
+      "name": "stand_settle",
+      "passed": true,
+      "stride_kinematics": {
+        "skipped": true,
+        "skip_reason": "no_walk_samples"
+      },
+      "held": 0
+    },
+    {
+      "name": "slow_tripod_forward",
+      "passed": true,
+      "stride_kinematics": {
+        "skipped": false,
+        "touchdown_events": 24,
+        "planned_touchdown_events": 27,
+        "fused_touchdown_events": 79,
+        "planned_liftoff_events": 27,
+        "fused_liftoff_events": 81,
+        "median_touchdown_span_m": 0.051584,
+        "median_commanded_step_length_m": 0.026411,
+        "median_commanded_swing_height_m": 0.025779,
+        "swing_lift_percentile_value_m": 0.010983,
+        "gate_touchdown_span_min_m": 0.00581,
+        "gate_touchdown_span_max_m": 0.14527,
+        "gate_swing_lift_floor_m": 0.001289,
+        "gate_swing_lift_percentile": 0.2
+      },
+      "held": 0
+    },
+    {
+      "name": "gait_compare_wave",
+      "passed": true,
+      "stride_kinematics": {
+        "skipped": false,
+        "touchdown_events": 24,
+        "planned_touchdown_events": 25,
+        "fused_touchdown_events": 70,
+        "planned_liftoff_events": 25,
+        "fused_liftoff_events": 71,
+        "median_touchdown_span_m": 0.034418,
+        "median_commanded_step_length_m": 0.020013,
+        "median_commanded_swing_height_m": 0.024079,
+        "swing_lift_percentile_value_m": 0.005319,
+        "gate_touchdown_span_min_m": 0.004403,
+        "gate_touchdown_span_max_m": 0.127037,
+        "gate_swing_lift_floor_m": 0.001204,
+        "gate_swing_lift_percentile": 0.2
+      },
+      "held": 0
+    },
+    {
+      "name": "gait_compare_ripple",
+      "passed": true,
+      "stride_kinematics": {
+        "skipped": false,
+        "touchdown_events": 27,
+        "planned_touchdown_events": 30,
+        "fused_touchdown_events": 132,
+        "planned_liftoff_events": 30,
+        "fused_liftoff_events": 132,
+        "median_touchdown_span_m": 0.04243,
+        "median_commanded_step_length_m": 0.02421,
+        "median_commanded_swing_height_m": 0.024079,
+        "swing_lift_percentile_value_m": 0.010437,
+        "gate_touchdown_span_min_m": 0.005326,
+        "gate_touchdown_span_max_m": 0.138998,
+        "gate_swing_lift_floor_m": 0.001204,
+        "gate_swing_lift_percentile": 0.2
+      },
+      "held": 0
+    },
+    {
+      "name": "compass_forward",
+      "passed": true,
+      "stride_kinematics": {
+        "skipped": false,
+        "touchdown_events": 24,
+        "planned_touchdown_events": 27,
+        "fused_touchdown_events": 92,
+        "planned_liftoff_events": 27,
+        "fused_liftoff_events": 94,
+        "median_touchdown_span_m": 0.042144,
+        "median_commanded_step_length_m": 0.025009,
+        "median_commanded_swing_height_m": 0.024645,
+        "swing_lift_percentile_value_m": 0.010278,
+        "gate_touchdown_span_min_m": 0.005502,
+        "gate_touchdown_span_max_m": 0.141275,
+        "gate_swing_lift_floor_m": 0.001232,
+        "gate_swing_lift_percentile": 0.2
+      },
+      "held": 0
+    },
+    {
+      "name": "compass_backward",
+      "passed": true,
+      "stride_kinematics": {
+        "skipped": false,
+        "touchdown_events": 24,
+        "planned_touchdown_events": 27,
+        "fused_touchdown_events": 100,
+        "planned_liftoff_events": 27,
+        "fused_liftoff_events": 102,
+        "median_touchdown_span_m": 0.043047,
+        "median_commanded_step_length_m": 0.025009,
+        "median_commanded_swing_height_m": 0.02464,
+        "swing_lift_percentile_value_m": 0.01047,
+        "gate_touchdown_span_min_m": 0.005502,
+        "gate_touchdown_span_max_m": 0.141275,
+        "gate_swing_lift_floor_m": 0.001232,
+        "gate_swing_lift_percentile": 0.2
+      },
+      "held": 0
+    },
+    {
+      "name": "compass_strafe_left",
+      "passed": true,
+      "stride_kinematics": {
+        "skipped": false,
+        "touchdown_events": 24,
+        "planned_touchdown_events": 27,
+        "fused_touchdown_events": 61,
+        "planned_liftoff_events": 27,
+        "fused_liftoff_events": 64,
+        "median_touchdown_span_m": 0.034781,
+        "median_commanded_step_length_m": 0.018407,
+        "median_commanded_swing_height_m": 0.031176,
+        "swing_lift_percentile_value_m": 0.015505,
+        "gate_touchdown_span_min_m": 0.004049,
+        "gate_touchdown_span_max_m": 0.122459,
+        "gate_swing_lift_floor_m": 0.001559,
+        "gate_swing_lift_percentile": 0.2
+      },
+      "held": 0
+    },
+    {
+      "name": "compass_strafe_right",
+      "passed": true,
+      "stride_kinematics": {
+        "skipped": false,
+        "touchdown_events": 24,
+        "planned_touchdown_events": 27,
+        "fused_touchdown_events": 73,
+        "planned_liftoff_events": 27,
+        "fused_liftoff_events": 76,
+        "median_touchdown_span_m": 0.033735,
+        "median_commanded_step_length_m": 0.018407,
+        "median_commanded_swing_height_m": 0.031165,
+        "swing_lift_percentile_value_m": 0.015178,
+        "gate_touchdown_span_min_m": 0.004049,
+        "gate_touchdown_span_max_m": 0.122459,
+        "gate_swing_lift_floor_m": 0.001558,
+        "gate_swing_lift_percentile": 0.2
+      },
+      "held": 0
+    },
+    {
+      "name": "compass_diag_fwd_left",
+      "passed": true,
+      "stride_kinematics": {
+        "skipped": false,
+        "touchdown_events": 24,
+        "planned_touchdown_events": 27,
+        "fused_touchdown_events": 67,
+        "planned_liftoff_events": 27,
+        "fused_liftoff_events": 69,
+        "median_touchdown_span_m": 0.041063,
+        "median_commanded_step_length_m": 0.020257,
+        "median_commanded_swing_height_m": 0.028693,
+        "swing_lift_percentile_value_m": 0.01328,
+        "gate_touchdown_span_min_m": 0.004457,
+        "gate_touchdown_span_max_m": 0.127734,
+        "gate_swing_lift_floor_m": 0.001435,
+        "gate_swing_lift_percentile": 0.2
+      },
+      "held": 0
+    },
+    {
+      "name": "compass_diag_fwd_right",
+      "passed": true,
+      "stride_kinematics": {
+        "skipped": false,
+        "touchdown_events": 24,
+        "planned_touchdown_events": 27,
+        "fused_touchdown_events": 83,
+        "planned_liftoff_events": 27,
+        "fused_liftoff_events": 85,
+        "median_touchdown_span_m": 0.040079,
+        "median_commanded_step_length_m": 0.020257,
+        "median_commanded_swing_height_m": 0.028693,
+        "swing_lift_percentile_value_m": 0.013366,
+        "gate_touchdown_span_min_m": 0.004457,
+        "gate_touchdown_span_max_m": 0.127734,
+        "gate_swing_lift_floor_m": 0.001435,
+        "gate_swing_lift_percentile": 0.2
+      },
+      "held": 0
+    },
+    {
+      "name": "single_leg_masked_stand",
+      "passed": true,
+      "stride_kinematics": {
+        "skipped": true,
+        "skip_reason": "no_walk_samples"
+      },
+      "held": 0
+    }
+  ]
+}

@@ -217,6 +217,7 @@ done
 - `docs/FIRMWARE.md` — wire protocol framing, constants, and payload definitions.
 - `docs/HARDWARE.md` — mechanical/electrical build reference and dimensions.
 - `docs/EXTENDING_IO_AND_HARDWARE.md` — how to add new control input devices and hardware bridge backends.
+- `docs/WSL_XBOX_CONTROLLER.md` — Xbox Wireless Adapter (`045e:02e6`) into WSL2 via usbipd + xone; daily attach helpers `scripts/attach_xbox_wsl.ps1` / `scripts/find_xbox_evdev.sh`.
 
 ## Safety notes
 

@@ -341,6 +341,9 @@ render_server_config "$SERVER_CONFIG_PATH" "$TMP_SERVER_CONFIG"
 
 trap cleanup EXIT INT TERM
 
+prefer_wsl_x11_backend
+warn_if_wslg_copy_mode
+
 VIS_CMD=("$VIS_SCRIPT" --skip-build -- --udp-port "$UDP_PORT")
 launch_in_dir VIS_PID "$ROOT_DIR" "${VIS_CMD[@]}"
 
@@ -391,5 +394,14 @@ SERVER_CMD+=("${SERVER_ARGS[@]}")
 if [[ -n "$SCENARIO_FILE_PATH" ]]; then
   echo "Running scenario: $SCENARIO_FILE_PATH"
 fi
+
+# Raise AFTER the rest of the stack is ready, and keep re-raising for several seconds.
+# An early raise often "succeeds" then loses focus again when Windows Terminal /
+# hexapod-server becomes the foreground console.
+echo "Raising visualiser window (WSLg); log: /tmp/hexapod-wslg-raise.log"
+(
+  raise_wslg_window "Hexapod OpenGL Visualiser" 60 200 12
+) &
+
 echo "Starting hexapod-server in physics-sim mode"
 run_in_dir "$SERVER_DIR" "${SERVER_CMD[@]}"

@@ -1,7 +1,25 @@
 # Sequential walk-distance leftovers
 
 Date: 2026-09-16  
-Reviewed: 2026-09-22 retry damping and physics-only turn hold (§3.24).
+Reviewed: 2026-09-22 support reacquisition and measured-contact clearance (§3.26).
+Current: full server **102/102** with the contact-height candidate enabled;
+walk-entry **10/10**, sequential and full long motion **5/5** each. The correction
+is now default-on, with an explicit diagnostic opt-out. Final default root
+server sweep is **99/100**: only legacy-PGS feedforward quiescence fails its
+off/on comparison. Optional default stress and full long motion pass separately.
+See §3.26. Legacy physics remains out of this batch;
+no soak or dedicated performance qualification is claimed.
+
+Preceding §3.25 checkpoint: reverse/turn/sequential each **5/5**, aggressive two strides, both
+tilt scenarios **5/5**, frozen v16 **100/100 seeds** with zero held/read failures.
+Initial full server sweep **100/101**; the additional long motion test fails
+measured swing lift. A later root sweep is **98/99**, exposing intermittent
+walk-entry support-margin failure (focused repeats **4/5**). Physics **69/75**:
+layout comparison repaired, six legacy tests still red. No ten-minute soak
+or dedicated performance qualification is claimed. See §3.25; the paragraph
+below records the preceding checkpoint and its corrected metric interpretation.
+
+**Checkpoint 02a9bef status (historical):**
 Latest: the rebuilt default path passes reverse **5/5**, isolated turn **5/5**,
 and complete sequential walk-distance **5/5**, with zero held samples in all
 15 processes. `aggressive_governor` passes with two strides. SpeedLimit retry
@@ -1795,6 +1813,220 @@ trip from the saved canonical bundle and distinguish commanded acceleration,
 support loss and body roll impulse before touching controller or safety policy.
 Retain the 0.45 rad/s rule and 0.10 m path gate. Also retain the intermediate
 held-free reverse TIP_OVER as a reliability follow-up.
+
+### 3.25 Lateral lean, pre-fault scoring and wider qualification (2026-09-22)
+
+**Base:** checkpoint `02a9bef`; following changes are uncommitted. Mode 1,
+cap 24, retry damping and physics-only turn hold remain the defaults. No
+stall/friction/ADMM/gait/safety threshold or frozen v16 input was changed.
+
+**Production correction: lateral lean sign.** In the server's Z-up frame,
+`Rx(roll) * ez` has horizontal Y component `-sin(roll)`. Positive-Y translation
+therefore requires negative roll. The existing `+0.14 * vy` term tilted away
+from lateral motion; it is now `-0.14 * vy`, retaining its magnitude, smoothing,
+limits and yaw contribution. `locomotion_pose_and_stability` now tests that
+the tilted up vector points into each of ±X/±Y translational commands. The
+old source fails the lateral cases. This is not a new gain or a safety override.
+
+**Correction to previous interpretation:** the old tilt case's `path_length_m`
+was integrated horizontal speed over the **entire** run, including FAULT.
+The reported checkpoint 64.8 mm was not pre-fault travel: only **25.0 mm**
+preceded TIP_OVER, with 39.8 mm afterwards. A sign-only run appeared to pass
+at 111.5 mm, but only 28.0 mm preceded the fault; 83.5 mm was post-fault drift.
+Sign-only repeats of the old test were 3/5. Neither a larger whole-run path
+nor this inconsistent old gate is evidence of better safe walking.
+`tools/audit_tilt_trip.py` separately reports integrated-speed and pose-difference
+paths, pre-/post-fault splits and a first-fault window.
+
+The safety test now separates two requirements instead of making an unsafe
+command wait for a travel quota:
+
+- `tilt_safety_trip`: same 2 s STAND and original unsafe strafe, with a new
+  3 s normal forward WALK at 0.08 m/s before the unsafe phase. The unchanged
+  **0.10 m gate is now strictly pre-fault**, and any fault before `unsafe_walk`
+  fails. The original first-fault ceiling of 1,200 samples, rate rule 0.45 rad/s,
+  tilt limits and tracking bounds remain. Five repeats achieved 0.212–0.221 m
+  before TIP_OVER at samples 1,046–1,047, with no held/read failures.
+- `tilt_safety_immediate`: preserves the original STAND→unsafe strafe input
+  as a separate canonical case. It must trip TIP_OVER promptly, without
+  waiting to travel 100 mm. Five repeats trip at samples 465–467, with no
+  held/read failures. This is explicitly a scenario/metric repair, not a claim
+  that the original unsafe command now walks safely for 100 mm.
+
+`locomotion_prefault_metrics` proves fault and subsequent recovery samples
+cannot contribute to the pre-fault metric. JSON output and case summaries now
+include the measured pre-fault path and the applicable limit.
+[`Tilt audits and repeats`](contact-snapshots/tilt-prefault-audit-20260922.json).
+
+**Legacy actuator row:** the old PGS torque-speed projection used the velocity
+already containing its own accumulated impulse to replace that total impulse.
+A light-link row can alternate full drive → over-speed → zero drive on
+successive iterations. `ClampServoMotorImpulse` solves the same motor envelope
+at `v_new = v_without_row + W*p`, making its bound idempotent when re-applied.
+The regression reproduces the old ±41.67 rad/s alternating example and checks
+both signs against the final-speed envelope. Braking/stall limits and torque×dt
+units are unchanged. This change is legacy-only; Pinocchio's actuator path is
+untouched. It **does not close** the six remaining legacy integration failures.
+
+**Layout check repaired:** expected positions describe sphere centres, but the
+test added an extra 18 mm radius along the tibia before comparing. Comparing
+centre with centre gives maximum error `3.813e-7 m` against the unchanged
+`1e-4 m` tolerance. No geometry or expected coordinate was changed.
+
+**Rejected fixed-joint experiment:** a direct test showed the angular velocity
+row initially accelerates away from a world-X orientation error (+0.162 rad/s),
+hidden by later position projection. Correcting the velocity error sign/frame
+passed that local test but made the existing 8 kg loaded-arm integration run
+away (kilometres of spurious lift). Both the experimental correction and its
+temporary test were removed. The original loaded-arm miss is restored; do not
+promote an isolated sign correction without resolving the coupled angular,
+anchor and split-position response and checking energy. This remains a separate
+legacy solver investigation, not a Pinocchio walking lever.
+
+**Qualification on the kept tree:**
+
+| Screen | Result |
+| --- | --- |
+| Reverse / isolated turn / full sequential | 5/5 each; complete, zero held |
+| Aggressive governor | Pass, two strides |
+| Tilt pre-fault / immediate unsafe | 5/5 each |
+| Initial full server CTest, including opt-in labels | 100/101; long motion fails swing lift |
+| Later root default verification | 98/99; walk-entry margin fails, so root script stops before firmware/smoke |
+| Focused walk-entry repeats after root failure | 4/5; one two-support stability-margin miss |
+| Frozen v16 100-seed replay | 72,000 frames; held/unsupported/read failures 0; behaviour failures 0; recovered 2,388 |
+| v16 seed 0 at 200/120/240/480 Hz, stand 60 s, WAVE, slow-fwd, tripod, navigation | Pass in full server sweep |
+| Full physics CTest | 69/75; layout now green, six legacy failures remain |
+
+[`Walking scorecard`](contact-snapshots/lean-fix-screen-20260922.json),
+[`100-seed replay`](contact-snapshots/lean-fix-100seed-20260922.json).
+Jobs overlapped: timing observations are not a dedicated p99 performance run.
+The 100-seed frozen-input result is not a continuous ten-minute randomized soak,
+and does not exercise the live controller's new lean decisions. No fixture was
+recaptured. Five live repeats are a screen, not proof of absence of rare faults.
+
+**Newly measured remaining walking-quality issue:**
+`motion_performance_suite_long` fails low swing lift across its moving cases,
+despite no faults. Measured 20th-percentile lift is about 0.09–0.47 mm versus
+the existing 1.20–1.56 mm case floors. The smoke profile passes. This label was
+already excluded from root verification; it was not relabelled to hide the red.
+Do not call it newly introduced or pre-existing without a same-test baseline.
+The next walking batch should retain full swing-event histories and split
+planned lift, measured joint tracking, body motion and contact unloading over
+the scored complete swing windows. Compare supported-leg torque/angle balance
+with those events before enabling previously rejected velocity lead or stronger
+gains. Keep the percentile and lift gates unchanged.
+
+**Final root sweep is not green:** `physics_sim_walk_entry_tracking` had passed
+the full sweep, but failed root verification with margin **−99.26 mm**,
+effective support `100100` versus planned `100110`, and body height 0.1464 m.
+Five immediate repeats are **4/5**, reproducing the same margin class. This
+test commands straight forward motion (`vy = 0`); do not attribute it to the
+lateral lean change without a controlled comparison. It is a transient support
+loss, not a height collapse, and may share the contact-unloading issue with
+low swing lift. Preserve separate gate identities until time-aligned traces
+show a common cause. Do not relax its stability margin or substitute planned
+contacts for measured support. Root log:
+`/tmp/hexapod-lean-root-verify-20260922.log`; focused repeats:
+`/tmp/hexapod-entry-repeat-{1..5}.log`.
+
+Logs: `/tmp/hexapod-lean-final-screen-20260922`,
+`/tmp/hexapod-tilt-prefault-repeat-{1..5}.log`,
+`/tmp/hexapod-tilt-final-repeat-{1..5}.log`,
+`/tmp/hexapod-server-final-tests.log`, `/tmp/hexapod-physics-kept-tests.log`,
+`/tmp/hexapod-lean-100seed-20260922.log`.
+
+### 3.26 Planted-foot reach and measured-contact swing clearance (2026-09-22)
+
+Scope: walk-entry support loss and low swing lift in longer live Pinocchio
+tests. Dirty tree based on `02a9bef`; unrelated GUI/WSL work preserved. No
+legacy-physics work, solver changes, torque/gait gain changes or relaxed gates.
+
+Three distinct defects were isolated:
+
+1. **Planted-foot reach priority.** The generic stroke projector preserved XY
+   by shortening Z at the reach boundary. A planted foot could be commanded
+   upward by about 30 mm; its subsequent swing started with a downward step.
+   Stance now preserves a reachable requested height and limits planar travel.
+   Impossible heights still use the existing fallback. All-six-leg directional
+   tests cover reach, height preservation and repeated projection. On the
+   recorded slow-tripod screen, measured lift p20 increased from 0.424 to
+   5.993 mm (unchanged 1.290 mm floor), without increasing swing height.
+2. **Returning-contact debounce.** A short contact gap enters `LostCandidate`,
+   with bounded existing support grace. Returning raw contact changed it to
+   `ExpectedTouchdown` for one sample, removing support precisely when evidence
+   improved: margin +99.26 to −99.26 mm. Reacquisition now keeps the original
+   unexpired grace until debounce completes. It neither confirms contact early
+   nor renews the deadline. Expired/new contacts retain normal debounce.
+3. **Swing clearance referenced below the planted point.** In WAVE the stance
+   command lay about 15–18 mm below measured contact. Much of the nominal
+   25 mm lift only took up this difference. The contact-height candidate caches
+   measured FK world Z during confirmed planned support and freezes it through
+   swing. The existing smooth lift profile blends missing clearance, so apex
+   height is referenced to that contact; endpoint correction is zero. Invalid
+   pose/reset clears the reference. Reach limits remain active. This does not
+   claim the entire offset is servo deflection: FK contact-point geometry and
+   loaded target offset both contribute.
+
+The walk-entry test also advances intent time on its fixed 5 ms logical clock,
+as other live test helpers do. This removes host-speed-dependent shaping, but
+**clock alone was not sufficient** (8/10). Reach + returning-contact fixes
+alone were 9/10: the residual was mismatch 6 vs 5, with positive margin, not
+the previous lost-support-margin class.
+
+Contact-height candidate (`HEXAPOD_SWING_CONTACT_HEIGHT=1`) qualification:
+
+| Screen | Result |
+|---|---|
+| Walk entry | 10/10 |
+| Sequential walk-distance | 5/5, plus first-screen pass |
+| Full long motion performance (including WAVE) | 5/5, plus first-screen pass |
+| Canonical locomotion regression, including aggressive governor | first-screen pass |
+| Focused reach/contact-fusion/clearance unit tests | pass |
+| Complete rebuilt server suite, candidate enabled | 102/102, including optional stress and long labels |
+| Default root server sweep | 99/100; only legacy-PGS feedforward quiescence red |
+| Optional default stress / long motion, flags unset | pass / all 11 cases pass, zero held samples |
+
+The clearance unit covers all six apexes, unchanged XY, moving/tilted chassis,
+zero endpoint correction, invalid estimates and reset. Runtime refreshes joint
+velocity metadata from final emitted positions; the correction is applied
+before reach limiting and IK. Measured-contact height was screened opt-in, then
+enabled by default after the full suite. `HEXAPOD_SWING_CONTACT_HEIGHT=0` retains
+a same-binary diagnostic opt-out. Non-finite pose/FK references are also cleared
+and unit-tested; the final root rebuild includes these validation guards.
+
+Diagnostic traces are written only after simulation via
+`HEXAPOD_MOTION_TRACE_DIR` in walk-entry and motion-performance tests. They are
+marked `trace_only`: MotionSample traces do **not** contain executable bus
+joint commands and must not become frozen fixtures. Analyze with
+`tools/analyze_walk_support.py`; non-WALK interruptions break swing histories.
+The early WSL restart cleared pre-restart `/tmp` traces; their numbers above
+are transcribed observations, not retained exact-replay evidence. Durable
+summary: `contact-snapshots/support-clearance-cause-audit-20260922.json`.
+Post-restart logs: `/tmp/hexapod-swing-ground-screen.log`,
+`/tmp/hexapod-clearance-repeat-{1..5}.log`,
+`/tmp/hexapod-entry-ground-{1..10}.log`.
+
+**Final default result:** the rebuilt normal application includes these fixes.
+`verify.sh` stops on `physics_feedforward_stand_quiescence`, so it is **not
+green**. Its iterations-only bridge constructor explicitly selects legacy PGS,
+not production Pinocchio. Primary score off/on was 0.270295/0.272149; the
+comparison had passed the previous full sweep. No change/relabel/retry-to-green
+was made to that separate legacy issue. Default standing, entry, height, contact
+loss, tripod, navigation, sequential walking and v16 cadence tests passed.
+Optional stress and long tests also pass with the experiment flag unset.
+
+Final full-profile measured swing-lift p20 is **5.319–15.505 mm** across nine
+walking cases; slow tripod is **10.983 mm**, WAVE **5.319 mm**, against unchanged
+floors **1.204–1.559 mm**. This is a percentile, not a guarantee that every
+swing achieves nominal height. Median touchdown spans are 33.7–51.6 mm at the
+tested slow commands; stride-length tuning remains separate. Durable report:
+`contact-snapshots/support-clearance-default-long-20260922.json`. Final logs:
+`/tmp/hexapod-clearance-root-verify.log`,
+`/tmp/hexapod-clearance-default-{stress,long}.log`.
+
+Short-looking strides are not addressed by enlarging the requested stroke:
+the supported reachable workspace and measured lift must remain valid first.
+Frozen v16 and its hash are untouched; legacy failures stay out of this batch.
 
 ## 4. Fail classes, observed mechanisms, and unresolved causes
 
