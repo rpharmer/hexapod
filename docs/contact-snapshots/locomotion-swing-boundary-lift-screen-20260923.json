@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-23",
+  "tree_revision": "24cf1c0 plus preserved uncommitted work; test-only candidate fully reverted",
+  "candidate_test_binary_sha256": "212bb36191eec304e448ddfdbb10bf6fd4846109262f1657802162b24024523e",
+  "final_default_off_test_binary_sha256": "58f368a77e67345d8bdb0bc64252c06721752794a928652234a787b22e02d2bb",
+  "physics_binary_sha256": "2990cc8db19e0b18871fbdc2239d4abde76bb6a5b5be02a60b8bd0c473bcb3a7",
+  "solver_mode": "pinocchio-proximal",
+  "candidate": "last reachable stance XY as swing start plus C1 16u^2 vertical arc instead of 64u^3; same apex, duration, and endpoints",
+  "forward_one_run": {
+    "default_mean_body_forward_mps": 0.088659,
+    "candidate_mean_body_forward_mps": 0.101602,
+    "default_net_x_m": 1.069176,
+    "candidate_net_x_m": 1.226785,
+    "default_held_steps": 0,
+    "candidate_held_steps": 0,
+    "default_early_swing_raw_contact_fraction": {"R1": 0.2058, "L1": 0.2966},
+    "candidate_early_swing_raw_contact_fraction": {"R1": 0.7867, "L1": 0.7854},
+    "default_early_swing_commanded_body_z_m": {"R1": -0.13559, "L1": -0.13644},
+    "candidate_early_swing_commanded_body_z_m": {"R1": -0.15898, "L1": -0.15907},
+    "default_early_swing_measured_clearance_from_last_stance_m": {"R1": 0.00261, "L1": 0.00257},
+    "candidate_early_swing_measured_clearance_from_last_stance_m": {"R1": -0.00019, "L1": -0.00018},
+    "default_early_contact_forced_touchdown_samples": 0,
+    "candidate_early_contact_forced_touchdown_samples": 0
+  },
+  "reverse_one_run": {
+    "default_mean_body_forward_mps": -0.0890503,
+    "candidate_mean_body_forward_mps": -0.100782,
+    "default_held_steps": 0,
+    "candidate_held_steps": 0
+  },
+  "turn_one_run": {
+    "commanded_yaw_radps": 0.45,
+    "default_yaw_delta_rad": 2.80338,
+    "candidate_yaw_delta_rad": -3.03285,
+    "default_gate_passed": true,
+    "candidate_gate_passed": false,
+    "default_held_steps": 0,
+    "candidate_held_steps": 0
+  },
+  "interpretation": "The smooth early-lift profile does not replace the ~23 mm of early commanded Z clearance incidentally supplied by projecting the old, unreachable swing start. The rear pair remains loaded through early swing. The yaw reversal independently disqualifies a global swing-start change. Early raw/fused contact is not being forced to touchdown tau=1 by the contact-response rule.",
+  "decision": "reject; candidate removed from source and production defaults unchanged"
+}

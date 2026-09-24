@@ -49,6 +49,7 @@ public:
     /** Sim/scenario tests: AND-mask `SafetyState::leg_enabled` after supervisor evaluate; nullopt disables. */
     void setSafetyLegEnabledTestMask(std::optional<std::array<bool, kNumLegs>> mask);
     void setNavigationManager(std::unique_ptr<NavigationManager> navigation_manager);
+    void setCommandAuthorityTelemetry(const telemetry::ControlStepTelemetry::CommandAuthorityTelemetry& authority);
     ControlStatus getStatus() const;
     SafetyState getSafetyState() const;
 
@@ -58,6 +59,8 @@ public:
     [[nodiscard]] GaitState gaitSnapshot() const { return gait_state_.read(); }
     /** Latest command-governor snapshot from the control pipeline. */
     [[nodiscard]] CommandGovernorState commandGovernorSnapshot() const { return command_governor_state_.read(); }
+    /** Effective post-navigation intent, for diagnostics and live-command validation. */
+    [[nodiscard]] MotionIntent effectiveMotionIntentSnapshot() const { return effective_motion_intent_.read(); }
     /** Latest measured-vs-commanded locomotion diagnostics snapshot. */
     [[nodiscard]] telemetry::LocomotionDebugSnapshot locomotionDebugSnapshot() const {
         return locomotion_debug_.read();
@@ -167,6 +170,8 @@ private:
     RecoveryStage last_logged_recovery_stage_{RecoveryStage::None};
     std::uint8_t last_fusion_correction_mode_{0};
     telemetry::FusionCorrectionTelemetry last_fusion_correction_{};
+    telemetry::ControlStepTelemetry::CommandAuthorityTelemetry last_command_authority_{};
+    TimePointUs next_local_map_publish_at_{};
     std::atomic<uint64_t> fusion_hard_reset_request_count_{0};
     std::atomic<uint64_t> fusion_resync_request_count_{0};
     std::atomic<uint64_t> fusion_emit_soft_count_{0};

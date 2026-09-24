@@ -29,10 +29,12 @@
 #include <cstdlib>
 #include <deque>
 #include <iostream>
+#include <iomanip>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -1046,6 +1048,7 @@ void MergeProximalDiagnostics(ProximalStepDiagnostics& aggregate,
     for (std::size_t leg = 0; leg < 6; ++leg) {
         aggregate.legFrictionImpulseWorldX[leg] += current.legFrictionImpulseWorldX[leg];
         aggregate.legFrictionImpulseWorldZ[leg] += current.legFrictionImpulseWorldZ[leg];
+        aggregate.legNormalImpulse[leg] += current.legNormalImpulse[leg];
         aggregate.legPinocchioDriftTx[leg] = current.legPinocchioDriftTx[leg];
         aggregate.legWorldSlipTx[leg] = current.legWorldSlipTx[leg];
         aggregate.legWorldSlipTy[leg] = current.legWorldSlipTy[leg];
@@ -1941,6 +1944,58 @@ int RunPhysicsServeMode(std::uint16_t listen_port,
             refreshMatrixLidarFrame(rsp, world.GetBody(scene.body), step->dt_seconds, true);
             (void)scope;
         }
+
+        // Test-only ground-clearance census. The centre and radius come from the
+        // actual compound collision sphere, not the server's reconstructed FK.
+        // Impulses are summed across this command's physics substeps.
+#if defined(MINPHYS3D_ENABLE_PINOCCHIO)
+        static const bool traceFootPhysics = [] {
+            const char* value = std::getenv("HEXAPOD_FOOT_PHYSICS_TRACE");
+            return value != nullptr && value[0] == '1' && value[1] == '\0';
+        }();
+        if (traceFootPhysics && physics_sim::usesPinocchioProximal(solver_mode)) {
+            const Body& plane = world.GetBody(scene.plane);
+            const Vec3 planeNormal = Normalize(plane.planeNormal);
+            std::ostringstream line;
+            line << std::setprecision(12)
+                 << "{\"kind\":\"foot_physics_trace\",\"schema_version\":1"
+                 << ",\"sequence_id\":" << step->sequence_id
+                 << ",\"dt_s\":" << step->dt_seconds
+                 << ",\"legs\":[";
+            for (std::size_t leg = 0; leg < scene.legs.size(); ++leg) {
+                if (leg != 0) line << ',';
+                const Body& tibia = world.GetBody(scene.legs[leg].tibia);
+                const CompoundChild* sphere = nullptr;
+                for (const CompoundChild& child : tibia.compoundChildren) {
+                    if (child.shape == ShapeType::Sphere) {
+                        sphere = &child;
+                        break;
+                    }
+                }
+                line << "{\"leg\":" << leg << ",\"sphere_center_sim_m\":";
+                if (sphere == nullptr) {
+                    line << "null,\"sphere_radius_m\":null,\"plane_clearance_m\":null";
+                } else {
+                    const Vec3 center = tibia.position
+                        + Rotate(tibia.orientation, sphere->localPosition);
+                    const double clearance =
+                        Dot(center - plane.position, planeNormal) - sphere->radius;
+                    line << '[' << center.x << ',' << center.y << ',' << center.z << ']'
+                         << ",\"sphere_radius_m\":" << sphere->radius
+                         << ",\"plane_clearance_m\":" << clearance;
+                }
+                line << ",\"manifold_contact\":"
+                     << (rsp.foot_contacts[leg] != 0 ? "true" : "false")
+                     << ",\"solver_contact_count\":"
+                     << static_cast<unsigned>(proximal_diagnostics.legContactCount[leg])
+                     << ",\"normal_impulse_ns\":"
+                     << proximal_diagnostics.legNormalImpulse[leg]
+                     << '}';
+            }
+            line << "]}";
+            std::cerr << line.str() << '\n';
+        }
+#endif
 
         outbound_queue.push(PackServeOutboundPacket(inbound.peer, rsp, physics_sim::kStateResponseBytes));
         (void)WakeIoThread(wake_pipe[1]);

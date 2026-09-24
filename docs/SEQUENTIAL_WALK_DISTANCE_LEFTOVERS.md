@@ -10,6 +10,9 @@ off/on comparison. Optional default stress and full long motion pass separately.
 See §3.26. Legacy physics remains out of this batch;
 no soak or dedicated performance qualification is claimed.
 
+Further forward-progress, stroke, swing-contact, and servo-capacity work is tracked in
+[the locomotion progress and actuator-capacity campaign](LOCOMOTION_PROGRESS_CAPACITY_CAMPAIGN.md).
+
 Preceding §3.25 checkpoint: reverse/turn/sequential each **5/5**, aggressive two strides, both
 tilt scenarios **5/5**, frozen v16 **100/100 seeds** with zero held/read failures.
 Initial full server sweep **100/101**; the additional long motion test fails

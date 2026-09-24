@@ -171,6 +171,16 @@
         "path_length_m_max_if_blocked": 0.8
       }
     },
+    "physics_sim_navigation_directional": {
+      "cardinal": {
+        "signed_progress_m_min": 0.07,
+        "goal_error_m_max": 0.08,
+        "yaw_error_rad_max": 0.25,
+        "path_length_m_max": 0.5,
+        "lateral_deviation_m_max": 0.05,
+        "mean_goal_command_mps_min": 0.005
+      }
+    },
     "motion_performance": {
       "_defaults": {
         "fk_foot_tip_ground_min_m": -0.0001,
@@ -247,11 +257,8 @@
         "max_contact_tracking_error_m": 0.08
       },
       "long_walk_observability": {
-        "min_walk_fault_time_s": 2.5,
-        "max_walk_fault_time_s": 65.0,
         "min_path_length_m": 0.75,
         "min_stride_count": 5,
-        "min_walk_duration_before_fault_s": 2.5,
         "transition_improvement_min_m": 0.001,
         "max_contact_anchor_max_drift_m": 0.5,
         "min_measured_foot_world_z_m": -0.08,

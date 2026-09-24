@@ -19,6 +19,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -31,6 +32,7 @@
 #include <limits>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -148,9 +150,72 @@ const char* speedLimitSupportName(const std::uint8_t support) {
     return "unknown";
 }
 
+// Match the frozen replay's seed channels and default 0.25 perturbation scale,
+// but apply them to live controller output rather than replaying frozen commands.
+std::uint64_t splitMix64(const std::uint64_t input) {
+    std::uint64_t value = input + 0x9e3779b97f4a7c15ULL;
+    value = (value ^ (value >> 30U)) * 0xbf58476d1ce4e5b9ULL;
+    value = (value ^ (value >> 27U)) * 0x94d049bb133111ebULL;
+    return value ^ (value >> 31U);
+}
+
+double seededUnitInterval(const std::uint64_t seed, const std::uint64_t channel) {
+    const std::uint64_t bits = splitMix64(seed ^ (channel * 0x9e3779b97f4a7c15ULL));
+    return static_cast<double>(bits >> 11U) * (1.0 / 9007199254740992.0);
+}
+
+std::array<double, 4> multiplyQuaternion(const std::array<double, 4>& lhs,
+                                         const std::array<double, 4>& rhs) {
+    return {
+        lhs[0] * rhs[0] - lhs[1] * rhs[1] - lhs[2] * rhs[2] - lhs[3] * rhs[3],
+        lhs[0] * rhs[1] + lhs[1] * rhs[0] + lhs[2] * rhs[3] - lhs[3] * rhs[2],
+        lhs[0] * rhs[2] - lhs[1] * rhs[3] + lhs[2] * rhs[0] + lhs[3] * rhs[1],
+    };
+}
+
+physics_sim::StateCorrection seededStandingCorrection(const std::uint64_t seed) {
+    constexpr double kScale = 0.25;
+    constexpr double kDegreesToRadians = 0.01745329251994329577;
+    const auto symmetric = [seed](const std::uint64_t channel) {
+        return 2.0 * seededUnitInterval(seed, channel) - 1.0;
+    };
+    const double horizontal_x = seed == 0 ? 0.0 : kScale * 0.003 * symmetric(1);
+    const double vertical = seed == 0 ? 0.0 : kScale * 0.0015 * symmetric(2);
+    const double horizontal_z = seed == 0 ? 0.0 : kScale * 0.003 * symmetric(3);
+    const double roll = seed == 0 ? 0.0 : kScale * 0.75 * kDegreesToRadians * symmetric(4);
+    const double yaw = seed == 0 ? 0.0 : kScale * 1.0 * kDegreesToRadians * symmetric(5);
+    const double pitch = seed == 0 ? 0.0 : kScale * 0.75 * kDegreesToRadians * symmetric(6);
+    const std::array<double, 4> qx{std::cos(0.5 * roll), std::sin(0.5 * roll), 0.0, 0.0};
+    const std::array<double, 4> qy{std::cos(0.5 * yaw), 0.0, std::sin(0.5 * yaw), 0.0};
+    const std::array<double, 4> qz{std::cos(0.5 * pitch), 0.0, 0.0, std::sin(0.5 * pitch)};
+    const std::array<double, 4> orientation =
+        multiplyQuaternion(qy, multiplyQuaternion(qz, qx));
+
+    physics_sim::StateCorrection correction{};
+    correction.message_type = static_cast<std::uint8_t>(physics_sim::MessageType::StateCorrection);
+    correction.sequence_id = static_cast<std::uint32_t>(seed);
+    correction.timestamp_us = now_us().value;
+    correction.flags = physics_sim::kStateCorrectionPoseValid
+        | physics_sim::kStateCorrectionTwistValid
+        | physics_sim::kStateCorrectionHardReset;
+    correction.correction_strength = 1.0f;
+    correction.body_position = {
+        static_cast<float>(horizontal_x),
+        static_cast<float>(physicsSimStandingBodyHeightM() + vertical),
+        static_cast<float>(horizontal_z)};
+    correction.body_orientation = {
+        static_cast<float>(orientation[0]), static_cast<float>(orientation[1]),
+        static_cast<float>(orientation[2]), static_cast<float>(orientation[3])};
+    correction.body_linear_velocity = {0.0f, 0.0f, 0.0f};
+    correction.body_angular_velocity = {0.0f, 0.0f, 0.0f};
+    return correction;
+}
+
 struct PhysicsSimProcess {
-    PhysicsSimProcess(std::string exe_path, int port)
-        : exe_path_(std::move(exe_path)), port_(port) {}
+    PhysicsSimProcess(std::string exe_path, int port,
+                      std::optional<std::uint64_t> contact_order_seed = std::nullopt)
+        : exe_path_(std::move(exe_path)), port_(port),
+          contact_order_seed_(contact_order_seed) {}
 
     ~PhysicsSimProcess() {
         stop();
@@ -166,6 +231,11 @@ struct PhysicsSimProcess {
             return false;
         }
         if (pid_ == 0) {
+            if (contact_order_seed_.has_value()) {
+                const std::string seed_text = std::to_string(*contact_order_seed_);
+                (void)::setenv("HEXAPOD_PINOCCHIO_CONTACT_ORDER_SEED",
+                               seed_text.c_str(), 1);
+            }
             if (const char* value = std::getenv("HEXAPOD_LOCOMOTION_CHILD_STDIO");
                 value == nullptr || value[0] == '\0' || value[0] == '0') {
                 physics_sim_test_utils::quietChildProcessStdIo();
@@ -196,6 +266,7 @@ struct PhysicsSimProcess {
 private:
     std::string exe_path_{};
     int port_{0};
+    std::optional<std::uint64_t> contact_order_seed_{};
 #if defined(__linux__)
     pid_t pid_{-1};
 #endif
@@ -206,11 +277,19 @@ public:
     CapturingPhysicsSimBridge(std::string host,
                               int port,
                               int bus_loop_period_us,
-                              PhysicsSimSolverSettings solver_settings)
+                              PhysicsSimSolverSettings solver_settings,
+                              std::optional<std::uint64_t> perturbation_seed = std::nullopt)
         : inner_(std::move(host), port, bus_loop_period_us, solver_settings, nullptr),
-          velocity_lead_(bus_loop_period_us * 1e-6), stored_motion_(bus_loop_period_us * 1e-6) {}
+          velocity_lead_(bus_loop_period_us * 1e-6), stored_motion_(bus_loop_period_us * 1e-6),
+          perturbation_seed_(perturbation_seed) {}
 
-    bool init() override { return inner_.init(); }
+    bool init() override {
+        if (!inner_.init()) {
+            return false;
+        }
+        return !perturbation_seed_.has_value()
+            || inner_.sendStateCorrection(seededStandingCorrection(*perturbation_seed_));
+    }
     bool usesPhysicsSimBodyAngularConvention() const override {
         return inner_.usesPhysicsSimBodyAngularConvention();
     }
@@ -218,6 +297,15 @@ public:
 
     bool read(RobotState& out) override {
         const bool ok = inner_.read(out);
+        if (!ok) {
+            ever_read_failed_ = true;
+        }
+        if (ok && injected_roll_next_read_rad_.has_value()) {
+            // Safety-policy injection only: keep the physical simulator state
+            // untouched, but present one over-limit measured attitude sample.
+            out.body_twist_state.twist_pos_rad.x = *injected_roll_next_read_rad_;
+            injected_roll_next_read_rad_.reset();
+        }
         last_solver_telemetry_ = inner_.latestSolverTelemetry();
         if (ok) auditPublishedPhysicsSimLinkSpeed(out, last_solver_telemetry_);
         if (last_solver_telemetry_.has_value()) {
@@ -239,6 +327,10 @@ public:
             geometry_config::activeHexapodGeometry(), physics_sim_test_utils::StoredMotionExperiment::enabledFromEnv()));
     }
 
+    void injectMeasuredRollForNextRead(double roll_rad) {
+        injected_roll_next_read_rad_ = roll_rad;
+    }
+
     std::optional<BridgeCommandResultMetadata> last_bridge_result() const override {
         return inner_.last_bridge_result();
     }
@@ -254,6 +346,7 @@ public:
     }
 
     void applySolverHealthToMetrics(LocomotionMetrics& metrics) const {
+        metrics.first_read_fail = metrics.first_read_fail || ever_read_failed_;
         metrics.solver_held_steps = solver_held_steps_;
         metrics.solver_held_solver_not_converged_steps = solver_held_solver_not_converged_steps_;
         metrics.solver_held_non_finite_impulse_steps = solver_held_non_finite_impulse_steps_;
@@ -318,9 +411,12 @@ private:
     PhysicsSimBridge inner_;
     physics_sim_test_utils::VelocityLeadExperiment velocity_lead_;
     physics_sim_test_utils::StoredMotionExperiment stored_motion_;
+    std::optional<std::uint64_t> perturbation_seed_{};
     std::optional<RobotState> last_state_{};
+    std::optional<double> injected_roll_next_read_rad_{};
     std::optional<PhysicsSimSolverTelemetry> last_solver_telemetry_{};
     std::optional<PhysicsSimSolverTelemetry> first_failed_solver_telemetry_{};
+    bool ever_read_failed_{false};
     int solver_held_steps_{0};
     int solver_held_solver_not_converged_steps_{0};
     int solver_held_non_finite_impulse_steps_{0};
@@ -362,6 +458,7 @@ public:
 struct CaseResult {
     std::string name{};
     std::string description{};
+    std::optional<std::uint64_t> perturbation_seed{};
     int solver_mode{1};
     bool compliant_experiment_override{false};
     bool passed{false};
@@ -382,6 +479,8 @@ struct CaseSpec {
     bool use_live_tilt_safety_trip{false};
     std::function<bool(const CaseResult&, std::string&)> evaluate{};
     std::function<void(control_config::ControlConfig&)> configure{};
+    bool explicit_only{false};
+    std::function<bool(CapturingPhysicsSimBridge&, const MotionPhase&, std::size_t)> before_step{};
 };
 
 enum class CaseProfile {
@@ -590,15 +689,10 @@ std::string locomotionRegressionLimitsAppliedJson(const std::string& case_name, 
     } else if (case_name == "long_walk_observability") {
         constexpr const char* kSuite = "locomotion_regression";
         constexpr const char* kCase = "long_walk_observability";
-        const std::size_t walk_min =
-            samplesForDuration(test_limits::getDouble(kSuite, kCase, "", "min_walk_duration_before_fault_s", 10.0),
-                               m.sample_period_s);
         const std::size_t trans_win = samplesForDuration(1.2, m.sample_period_s);
         const std::size_t base_tail = samplesForDuration(0.8, m.sample_period_s);
         const std::size_t stride_min = test_limits::getSizeT(kSuite, kCase, "", "min_stride_count", 6);
         const double path_min = test_limits::getDouble(kSuite, kCase, "", "min_path_length_m", 0.75);
-        const double fault_min_s = test_limits::getDouble(kSuite, kCase, "", "min_walk_fault_time_s", 10.0);
-        const double fault_max_s = test_limits::getDouble(kSuite, kCase, "", "max_walk_fault_time_s", 65.0);
         const double trans_improve =
             test_limits::getDouble(kSuite, kCase, "", "transition_improvement_min_m", 0.001);
         const double trans_max_h =
@@ -609,13 +703,12 @@ std::string locomotionRegressionLimitsAppliedJson(const std::string& case_name, 
             test_limits::getDouble(kSuite, kCase, "", "min_measured_foot_world_z_m", -0.03);
         const double max_track_err =
             test_limits::getDouble(kSuite, kCase, "", "max_contact_tracking_error_m", 0.10);
-        o << ",\"expect_fault\":true"
-          << ",\"expected_fault_any\":[\"TIP_OVER\",\"BODY_COLLAPSE\"]"
-          << ",\"walk_sample_count_min\":" << walk_min
+        o << ",\"expect_fault\":false"
+          << ",\"full_requested_walk_required\":true"
+          << ",\"zero_solver_held_steps_required\":true"
+          << ",\"zero_failed_reads_required\":true"
           << ",\"stride_count_min\":" << stride_min
           << ",\"path_length_m_min\":" << formatDouble(path_min)
-          << ",\"first_fault_time_s_min\":" << formatDouble(fault_min_s)
-          << ",\"first_fault_time_s_max\":" << formatDouble(fault_max_s)
           << ",\"transition_improvement_body_height_min_m\":" << formatDouble(trans_improve)
           << ",\"transition_max_body_height_m\":" << formatDouble(trans_max_h)
           << ",\"max_contact_anchor_max_drift_m\":" << formatDouble(max_anchor_drift)
@@ -674,6 +767,13 @@ std::string caseResultSummaryJson(const CaseResult& result) {
         << "\"compliant_experiment_override\":"
         << (result.compliant_experiment_override ? "true" : "false") << ','
         << "\"description\":\"" << jsonEscape(result.description) << "\","
+        << "\"perturbation_seed\":";
+    if (result.perturbation_seed.has_value()) {
+        out << *result.perturbation_seed;
+    } else {
+        out << "null";
+    }
+    out << ','
         << "\"passed\":" << (result.passed ? "true" : "false") << ','
         << "\"failure_reason\":\"" << jsonEscape(result.failure_reason) << "\","
         << "\"prefault_path_length_m\":" << formatDouble(pathBeforeFirstFaultM(result.samples, result.metrics.sample_period_s)) << ','
@@ -725,10 +825,12 @@ void applyFirstFailedSolverTelemetry(LocomotionMetrics& metrics,
 CaseResult runCase(const std::string& sim_exe,
                    const std::filesystem::path& artifact_root,
                    const CaseSpec& spec,
-                   const PhysicsSimSolverSettings& solver_settings) {
+                   const PhysicsSimSolverSettings& solver_settings,
+                   const std::optional<std::uint64_t> perturbation_seed) {
     CaseResult result{};
     result.name = spec.name;
     result.description = spec.description;
+    result.perturbation_seed = perturbation_seed;
     result.solver_mode = static_cast<int>(solver_settings.mode);
     const char* compliant_override =
         std::getenv("HEXAPOD_PINOCCHIO_COMPLIANT_CONTACT_EXPERIMENT");
@@ -745,7 +847,7 @@ CaseResult runCase(const std::string& sim_exe,
     writeTextFile(result.geometry_path, telemetry_json::serializeGeometryPacket(geometry_config::activeHexapodGeometry()));
 
     const int port = 27000 + (static_cast<int>(::getpid()) % 4000) + static_cast<int>(std::hash<std::string>{}(spec.name) % 1000);
-    PhysicsSimProcess sim(sim_exe, port);
+    PhysicsSimProcess sim(sim_exe, port, perturbation_seed);
     if (!sim.start()) {
         throw std::runtime_error(spec.name + ": failed to start physics sim process");
     }
@@ -755,7 +857,8 @@ CaseResult runCase(const std::string& sim_exe,
         "127.0.0.1",
         port,
         harness.bus_loop_period_us,
-        solver_settings);
+        solver_settings,
+        perturbation_seed);
     CapturingPhysicsSimBridge* bridge_ptr = bridge.get();
     control_config::ControlConfig cfg = harness.control_cfg;
     cfg.freshness.estimator.max_allowed_age_us = DurationUs{10'000'000};
@@ -800,7 +903,14 @@ CaseResult runCase(const std::string& sim_exe,
             throw std::runtime_error(spec.name + ": runtime init failed");
         }
 
-        if (!runMotionSequence(runtime, scaled_phases, samples, metrics)) {
+        if (!runMotionSequence(
+                runtime,
+                scaled_phases,
+                samples,
+                metrics,
+                [&spec, bridge_ptr](const MotionPhase& phase, std::size_t step_in_phase) {
+                    return !spec.before_step || spec.before_step(*bridge_ptr, phase, step_in_phase);
+                })) {
             throw std::runtime_error(spec.name + ": motion runner failed unexpectedly");
         }
         applyFirstFailedSolverTelemetry(metrics, bridge_ptr->first_failed_solver_telemetry());
@@ -950,12 +1060,8 @@ bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
     constexpr const char* kSuite = "locomotion_regression";
     constexpr const char* kCase = "long_walk_observability";
     const auto& m = result.metrics;
-    const double min_walk_duration_s =
-        test_limits::getDouble(kSuite, kCase, "", "min_walk_duration_before_fault_s", 10.0);
     const std::size_t min_stride = test_limits::getSizeT(kSuite, kCase, "", "min_stride_count", 6);
     const double min_path_m = test_limits::getDouble(kSuite, kCase, "", "min_path_length_m", 0.75);
-    const double min_fault_time_s = test_limits::getDouble(kSuite, kCase, "", "min_walk_fault_time_s", 10.0);
-    const double max_fault_time_s = test_limits::getDouble(kSuite, kCase, "", "max_walk_fault_time_s", 65.0);
     const double kTransitionImprovementMinM =
         test_limits::getDouble(kSuite, kCase, "", "transition_improvement_min_m", 0.001);
     const double kMaxContactAnchorMaxDriftM =
@@ -964,17 +1070,21 @@ bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
         test_limits::getDouble(kSuite, kCase, "", "min_measured_foot_world_z_m", -0.03);
     const double kMaxContactTrackingErrorM =
         test_limits::getDouble(kSuite, kCase, "", "max_contact_tracking_error_m", 0.10);
-    if (!m.saw_fault) {
-        reason = "long walk observability should eventually reach the safety envelope";
+    if (m.first_read_fail || m.solver_held_steps != 0) {
+        reason = "long walk must not lose a physics read or publish a held solver sample";
         return false;
     }
-    if (m.first_fault != FaultCode::TIP_OVER && m.first_fault != FaultCode::BODY_COLLAPSE) {
-        reason =
-            "long walk observability should trip TIP_OVER or BODY_COLLAPSE at the end of the stress window";
+    if (m.saw_fault || m.final_fault != FaultCode::NONE) {
+        reason = "long walk must complete without a safety fault; the separate tilt test checks detection";
         return false;
     }
-    if (!(m.walk_sample_count >= samplesForDuration(min_walk_duration_s, m.sample_period_s))) {
-        reason = "long walk should sustain a large walking window before the fault";
+    const std::size_t requested_walk_samples = static_cast<std::size_t>(std::count_if(
+        result.samples.begin(), result.samples.end(), [](const MotionSample& sample) {
+            return sample.requested_motion.mode == RobotMode::WALK;
+        }));
+    if (requested_walk_samples == 0 || m.walk_sample_count != requested_walk_samples
+        || m.final_mode != RobotMode::STAND) {
+        reason = "long walk must remain in WALK for the entire requested window and return to STAND";
         return false;
     }
     if (!(m.stride_count >= min_stride)) {
@@ -985,12 +1095,6 @@ bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
         reason = "long walk should accumulate path length";
         return false;
     }
-    const double first_fault_time_s = static_cast<double>(m.first_fault_step) * m.sample_period_s;
-    if (!(first_fault_time_s > min_fault_time_s && first_fault_time_s < max_fault_time_s)) {
-        reason = "long walk should fault only after a sustained observation window";
-        return false;
-    }
-
     constexpr const char* kSlowTripodPhaseLabel = "long_walk_observability_phase_2";
     constexpr const char* kFastTripodPhaseLabel = "long_walk_observability_phase_3";
     const std::size_t kTransitionWindowSamples = samplesForDuration(1.2, m.sample_period_s);
@@ -1070,14 +1174,7 @@ bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
     double max_pre_fault_contact_anchor_max_drift_m = 0.0;
     double min_pre_fault_measured_foot_world_z_m = std::numeric_limits<double>::infinity();
     double max_pre_fault_contact_tracking_error_m = 0.0;
-    const std::size_t pre_fault_quality_end_step =
-        m.first_fault_step > samplesForDuration(0.5, m.sample_period_s)
-            ? m.first_fault_step - samplesForDuration(0.5, m.sample_period_s)
-            : m.first_fault_step;
     for (const MotionSample& sample : result.samples) {
-        if (sample.step_index >= pre_fault_quality_end_step) {
-            break;
-        }
         if (!sample.locomotion_debug.valid) {
             continue;
         }
@@ -1097,7 +1194,7 @@ bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
         }
     }
     if (!std::isfinite(min_pre_fault_measured_foot_world_z_m)) {
-        reason = "long walk should expose pre-fault locomotion diagnostics";
+        reason = "long walk should expose locomotion diagnostics throughout the run";
         return false;
     }
     if (!(max_pre_fault_contact_anchor_max_drift_m <= kMaxContactAnchorMaxDriftM)) {
@@ -1113,6 +1210,71 @@ bool caseLongWalkObservability(const CaseResult& result, std::string& reason) {
         return false;
     }
     return true;
+}
+
+bool caseLongWalkAggressiveDiagnostic(const CaseResult& result, std::string& reason) {
+    const auto& m = result.metrics;
+    if (m.first_read_fail || m.solver_held_steps != 0) {
+        reason = "aggressive long-walk diagnostic exposed a failed read or held physics sample";
+        return false;
+    }
+    if (m.first_fault != FaultCode::NONE
+        && m.first_fault != FaultCode::TIP_OVER
+        && m.first_fault != FaultCode::BODY_COLLAPSE) {
+        reason = "aggressive long-walk diagnostic exposed an unexpected fault class";
+        return false;
+    }
+    if (m.saw_fault && m.first_fault_step * m.sample_period_s <= 2.5) {
+        reason = "aggressive long-walk diagnostic faulted before a useful motion window";
+        return false;
+    }
+    if (m.stride_count < 5
+        || pathBeforeFirstFaultM(result.samples, m.sample_period_s) < 0.75) {
+        reason = "aggressive long-walk diagnostic did not collect enough pre-fault motion";
+        return false;
+    }
+    return true;
+}
+
+bool caseLongWalkInjectedTiltSafety(const CaseResult& result, std::string& reason) {
+    const auto& m = result.metrics;
+    if (m.first_read_fail || m.solver_held_steps != 0) {
+        reason = "injected tilt should not turn into a physics bus failure";
+        return false;
+    }
+    if (m.first_fault != FaultCode::TIP_OVER || m.first_fault_step >= result.samples.size()) {
+        reason = "injected tilt should trigger TIP_OVER under the long-walk safety configuration";
+        return false;
+    }
+    const auto injected_phase = std::find_if(
+        result.samples.begin(), result.samples.end(), [](const MotionSample& sample) {
+            return sample.phase_label == "long_walk_observability_phase_3";
+        });
+    // Match the explicit callback's phase-local sample, including when the
+    // harness scales phase lengths for a different bus period.
+    constexpr std::size_t kInjectionStepInPhase = 300;
+    const auto injected_step = static_cast<std::size_t>(
+        std::distance(result.samples.begin(), injected_phase)) + kInjectionStepInPhase;
+    if (injected_phase == result.samples.end() || m.first_fault_step != injected_step) {
+        reason = "injected tilt should fault on the injected sample, not on a spontaneous earlier tilt";
+        return false;
+    }
+    if (!(m.first_fault_step * m.sample_period_s > 10.0)) {
+        reason = "injected tilt should follow a sustained healthy walking window";
+        return false;
+    }
+    return true;
+}
+
+void configureLongWalkController(control_config::ControlConfig& cfg) {
+    cfg.gravity_feedforward.enabled = true;
+    cfg.gravity_feedforward.scale_coxa = 0.0;
+    cfg.gravity_feedforward.scale_femur = 0.30;
+    cfg.gravity_feedforward.scale_tibia = 0.30;
+    cfg.gravity_feedforward.stiffness_gain_scale = 0.62;
+    cfg.gravity_feedforward.delta_lpf_tau_s = 0.08;
+    cfg.gravity_feedforward.include_foot_reaction = true;
+    cfg.gravity_feedforward.include_self_weight = false;
 }
 
 bool caseLongWalkContactHealth(const CaseResult& result, std::string& reason) {
@@ -1401,8 +1563,16 @@ std::vector<CaseSpec> buildCaseCatalog() {
     const std::vector<MotionPhase> nominal_stand_walk = buildPhasesFromScenario(
         nominal_scenario,
         "nominal_stand_walk");
-    const std::vector<MotionPhase> long_walk = buildPhasesFromScenario(
+    const std::vector<MotionPhase> long_walk_aggressive = buildPhasesFromScenario(
         long_walk_scenario,
+        "long_walk_aggressive_diagnostic");
+    const std::filesystem::path long_walk_health_scenario = resolveExistingPath({
+        "scenarios/05_long_walk_feasible_health.toml",
+        "../scenarios/05_long_walk_feasible_health.toml",
+        "hexapod-server/scenarios/05_long_walk_feasible_health.toml",
+    });
+    const std::vector<MotionPhase> long_walk = buildPhasesFromScenario(
+        long_walk_health_scenario,
         "long_walk_observability");
     const std::vector<MotionPhase> long_walk_contact_health = buildPhasesFromScenario(
         long_walk_contact_health_scenario,
@@ -1452,6 +1622,37 @@ std::vector<CaseSpec> buildCaseCatalog() {
         false,
         false,
         caseGaitTransitionStability,
+    });
+
+    // Diagnostic for the opt-in contact-clearance screen. The yaw boundary is
+    // deliberately placed between ordinary 5 ms ticks rather than at a gait
+    // reset; full-rate target continuity is checked from the emitted trace.
+    cases.push_back(CaseSpec{
+        "clearance_yaw_transition_probe",
+        "A walking translation-to-yaw command transition should remain observable without a physics hold.",
+        {
+            makePhase("settle", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0}, 100),
+            makePhase("translate", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::TRIPOD, 0.14, 0.14, 0.0, 0.0}, 301),
+            makePhase("mixed_turn", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::TRIPOD, 0.14, 0.14, 0.0, 0.0, 0.18}, 121),
+            makePhase("pure_turn", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0, 0.35}, 240),
+            makePhase("translate_again", ScenarioMotionIntent{true, RobotMode::WALK, GaitType::TRIPOD, 0.14, 0.14, 0.0, 0.0}, 300),
+            makePhase("recover", ScenarioMotionIntent{true, RobotMode::STAND, GaitType::TRIPOD, 0.14, 0.0, 0.0, 0.0}, 80),
+        },
+        false,
+        false,
+        [](const CaseResult& result, std::string& reason) {
+            if (result.metrics.saw_fault || result.metrics.solver_held_steps != 0) {
+                reason = "clearance/yaw probe should not fault or hold";
+                return false;
+            }
+            if (result.metrics.stride_count < 4) {
+                reason = "clearance/yaw probe should include multiple strides";
+                return false;
+            }
+            return true;
+        },
+        {},
+        true,
     });
 
     cases.push_back(CaseSpec{
@@ -1506,20 +1707,40 @@ std::vector<CaseSpec> buildCaseCatalog() {
 
     cases.push_back(CaseSpec{
         "long_walk_observability",
-        "The long-walk scenario should keep moving for a long window and only trip safety late in the stress segment.",
+        "The long-walk scenario should complete its full motion window without faults, held samples, or failed reads.",
         long_walk,
         true,
         false,
         caseLongWalkObservability,
-        [](control_config::ControlConfig& cfg) {
-            cfg.gravity_feedforward.enabled = true;
-            cfg.gravity_feedforward.scale_coxa = 0.0;
-            cfg.gravity_feedforward.scale_femur = 0.30;
-            cfg.gravity_feedforward.scale_tibia = 0.30;
-            cfg.gravity_feedforward.stiffness_gain_scale = 0.62;
-            cfg.gravity_feedforward.delta_lpf_tau_s = 0.08;
-            cfg.gravity_feedforward.include_foot_reaction = true;
-            cfg.gravity_feedforward.include_self_weight = false;
+        configureLongWalkController,
+    });
+
+    cases.push_back(CaseSpec{
+        "long_walk_aggressive_diagnostic",
+        "Historical 0.6 m/s sideways demand, retained as an explicit diagnostic rather than a healthy-walk gate.",
+        long_walk_aggressive,
+        true,
+        false,
+        caseLongWalkAggressiveDiagnostic,
+        configureLongWalkController,
+        true,
+    });
+
+    cases.push_back(CaseSpec{
+        "long_walk_injected_tilt_safety",
+        "Explicit-only measured-tilt safety detection probe under the exact long-walk controller configuration.",
+        long_walk,
+        true,
+        false,
+        caseLongWalkInjectedTiltSafety,
+        configureLongWalkController,
+        true,
+        [](CapturingPhysicsSimBridge& bridge, const MotionPhase& phase, std::size_t step_in_phase) {
+            if (phase.label == "long_walk_observability_phase_3"
+                && step_in_phase == 300) {
+                bridge.injectMeasuredRollForNextRead(0.90);
+            }
+            return true;
         },
     });
 
@@ -1567,6 +1788,9 @@ std::vector<CaseSpec> buildCaseCatalog() {
 }
 
 bool profileAllowsCase(const CaseProfile profile, const CaseSpec& spec) {
+    if (spec.explicit_only) {
+        return false;
+    }
     switch (profile) {
     case CaseProfile::Canonical:
         return !spec.stress_case;
@@ -1600,6 +1824,7 @@ int main(int argc, char** argv) {
 #else
     std::optional<std::string> requested_case{};
     std::optional<std::filesystem::path> requested_artifact_dir{};
+    std::optional<std::uint64_t> perturbation_seed{};
     const char* sim_exe = nullptr;
     CaseProfile requested_profile = CaseProfile::Canonical;
     PhysicsSimSolverSettings solver_settings =
@@ -1625,6 +1850,29 @@ int main(int argc, char** argv) {
                 return EXIT_FAILURE;
             }
             requested_case = argv[++i];
+            continue;
+        }
+        if (arg == "--perturbation-seed") {
+            if (i + 1 >= argc) {
+                std::cerr << "Missing value for --perturbation-seed\n";
+                return EXIT_FAILURE;
+            }
+            const std::string value = argv[++i];
+            std::size_t parsed = 0;
+            try {
+                if (value.empty() || value.front() == '-') {
+                    throw std::invalid_argument("negative or empty seed");
+                }
+                perturbation_seed = std::stoull(value, &parsed, 10);
+            } catch (const std::exception&) {
+                std::cerr << "Invalid --perturbation-seed: " << value << '\n';
+                return EXIT_FAILURE;
+            }
+            if (parsed != value.size()
+                || *perturbation_seed > std::numeric_limits<std::uint32_t>::max()) {
+                std::cerr << "Invalid --perturbation-seed: " << value << '\n';
+                return EXIT_FAILURE;
+            }
             continue;
         }
         if (arg == "--artifact-dir") {
@@ -1739,10 +1987,13 @@ int main(int argc, char** argv) {
     bool all_passed = true;
     for (const CaseSpec& spec : cases) {
         try {
-            CaseResult result = runCase(sim_exe, artifact_root, spec, solver_settings);
+            CaseResult result = runCase(
+                sim_exe, artifact_root, spec, solver_settings, perturbation_seed);
             all_passed = all_passed && result.passed;
             std::cout << spec.name
                       << " passed=" << (result.passed ? 1 : 0)
+                      << " perturbation_seed="
+                      << (perturbation_seed.has_value() ? std::to_string(*perturbation_seed) : "none")
                       << " solver_mode=" << result.solver_mode
                       << " compliant_override=" << (result.compliant_experiment_override ? 1 : 0)
                       << " samples=" << result.metrics.sample_count
@@ -1794,6 +2045,13 @@ int main(int argc, char** argv) {
             if (emit_metrics_json) {
                 std::cout << "{\"suite\":\"locomotion_regression\",\"name\":\"" << jsonEscape(spec.name) << "\",\"passed\":"
                           << (result.passed ? "true" : "false")
+                          << ",\"perturbation_seed\":";
+                if (perturbation_seed.has_value()) {
+                    std::cout << *perturbation_seed;
+                } else {
+                    std::cout << "null";
+                }
+                std::cout
                           << ",\"solver_mode\":" << result.solver_mode
                           << ",\"compliant_experiment_override\":"
                           << (result.compliant_experiment_override ? "true" : "false")

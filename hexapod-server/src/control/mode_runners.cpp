@@ -2,6 +2,7 @@
 
 #include <thread>
 
+#include "command_channel.hpp"
 #include "evdev_gamepad_controller.hpp"
 #include "geometry_config.hpp"
 #include "geometry_profile_service.hpp"
@@ -70,6 +71,51 @@ int InteractiveRunner::run(RobotControl& robot,
   InteractiveControllerState state{};
   auto last_probe_log_at = std::chrono::steady_clock::time_point{};
   const auto refresh_period = interactiveRefreshPeriod(control_cfg, controller != nullptr);
+
+  command_channel::CommandChannelConfig command_config{};
+  if (options.commandEnabledOverride.has_value()) {
+    command_config.enabled = options.commandEnabledOverride.value();
+  }
+  if (options.commandHostOverride.has_value()) {
+    command_config.bind_host = options.commandHostOverride.value();
+  }
+  if (options.commandPortOverride.has_value()) {
+    command_config.udp_port = options.commandPortOverride.value();
+  }
+  if (options.commandScenariosDirOverride.has_value()) {
+    command_config.scenarios_dir = options.commandScenariosDirOverride.value();
+  }
+
+  std::unique_ptr<command_channel::CommandIngress> command_ingress;
+  std::unique_ptr<command_channel::UdpCommandListener> command_listener;
+  if (command_config.enabled) {
+    command_ingress =
+        std::make_unique<command_channel::CommandIngress>(command_config, logger);
+    command_listener =
+        std::make_unique<command_channel::UdpCommandListener>(command_config, *command_ingress, logger);
+    if (!command_listener->start()) {
+      LOG_WARN(logger, "Command channel requested but failed to start; continuing without it");
+      command_listener.reset();
+      command_ingress.reset();
+    }
+  }
+
+  const auto publishCommandAuthority = [&]() {
+    telemetry::ControlStepTelemetry::CommandAuthorityTelemetry authority{};
+    if (command_ingress) {
+      const command_channel::AuthoritySnapshot snap = command_ingress->authority(robot);
+      authority.has_data = true;
+      authority.level = static_cast<int>(snap.level);
+      authority.scenario_name = snap.scenario_name;
+      authority.nav_active = snap.nav_active;
+    } else {
+      authority.has_data = true;
+      authority.nav_active = robot.navigationManager() != nullptr && robot.navigationManager()->active();
+      authority.level = authority.nav_active ? 1 : 0;
+    }
+    robot.setCommandAuthorityTelemetry(authority);
+  };
+
   if (logger) {
     LOG_INFO(logger,
              "Interactive command refresh period ms=",
@@ -153,9 +199,14 @@ int InteractiveRunner::run(RobotControl& robot,
       return;
     }
 
+    const bool gamepad_allowed =
+        allow_motion_update && (command_ingress == nullptr || command_ingress->allowGamepadMotion());
+
     updateControllerDerivedState(*controller, state);
-    if (allow_motion_update) {
+    if (gamepad_allowed) {
       robot.setMotionIntent(makeControllerMotionIntent(*controller, state));
+    } else if (allow_motion_update && command_ingress != nullptr && !command_ingress->allowGamepadMotion()) {
+      // Scenario owns intent; do not overwrite with gamepad or idle.
     } else {
       robot.setMotionIntent(makeMotionIntent(RobotMode::SAFE_IDLE, state.gait, state.walk_body_height_m));
     }
@@ -171,7 +222,7 @@ int InteractiveRunner::run(RobotControl& robot,
       executeCalibrationAction(event_result.calibration_action, logger);
     }
 
-    if (allow_motion_update && saw_events) {
+    if (gamepad_allowed && saw_events) {
       updateControllerDerivedState(*controller, state);
       robot.setMotionIntent(makeControllerMotionIntent(*controller, state));
     }
@@ -179,28 +230,45 @@ int InteractiveRunner::run(RobotControl& robot,
 
   const auto settle_deadline = std::chrono::steady_clock::now() + control_cfg.loop_timing.stand_settling_delay;
   while (!exit_flag.load() && std::chrono::steady_clock::now() < settle_deadline) {
+    if (command_ingress) {
+      command_ingress->poll(robot);
+    }
     process_controller_events(false);
     if (controller == nullptr) {
-      robot.setMotionIntent(makeMotionIntent(RobotMode::SAFE_IDLE, GaitType::TRIPOD, state.walk_body_height_m));
+      if (command_ingress == nullptr || command_ingress->allowGamepadMotion()) {
+        robot.setMotionIntent(makeMotionIntent(RobotMode::SAFE_IDLE, GaitType::TRIPOD, state.walk_body_height_m));
+      }
     }
-    else {
+    else if (command_ingress == nullptr || command_ingress->allowGamepadMotion()) {
       robot.setMotionIntent(makeMotionIntent(RobotMode::SAFE_IDLE, state.gait, state.walk_body_height_m));
     }
+    publishCommandAuthority();
     maybeLogControllerProbe();
     std::this_thread::sleep_for(refresh_period);
   }
 
   while (!exit_flag.load()) {
+    if (command_ingress) {
+      command_ingress->poll(robot);
+    }
     if (controller != nullptr) {
       process_controller_events(true);
       maybeLogControllerProbe();
-    } else {
+    } else if (command_ingress == nullptr || command_ingress->allowGamepadMotion()) {
       // With no controller attached, keep the robot in a neutral hold instead of
       // forcing a walk cycle that can fight the estimator/fusion stack.
       robot.setMotionIntent(makeMotionIntent(RobotMode::SAFE_IDLE, state.gait, state.walk_body_height_m));
     }
+    publishCommandAuthority();
 
     std::this_thread::sleep_for(refresh_period);
+  }
+
+  if (command_listener) {
+    command_listener->stop();
+  }
+  if (command_ingress) {
+    command_ingress->stopScenario(robot);
   }
 
   if (controller != nullptr) {

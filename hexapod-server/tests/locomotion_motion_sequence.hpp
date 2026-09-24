@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -54,7 +55,8 @@ inline double bodyRateFromState(const RobotState& state) {
 inline bool runMotionSequence(RobotRuntime& runtime,
                               const std::vector<MotionPhase>& phases,
                               std::vector<MotionSample>& samples,
-                              LocomotionMetrics& metrics) {
+                              LocomotionMetrics& metrics,
+                              const std::function<bool(const MotionPhase&, std::size_t)>& before_step = {}) {
     std::size_t step_index = 0;
     double stride_cycles_accum{0.0};
     // Refreshed scenario streams represent fixed-cadence simulation input. Keep
@@ -71,6 +73,9 @@ inline bool runMotionSequence(RobotRuntime& runtime,
         }
 
         for (std::size_t step_in_phase = 0; step_in_phase < phase.steps; ++step_in_phase) {
+            if (before_step && !before_step(phase, step_in_phase)) {
+                return false;
+            }
             if (phase.refresh_each_step) {
                 MotionIntent intent = makeMotionIntent(phase.motion);
                 command_time.value += command_period_us;

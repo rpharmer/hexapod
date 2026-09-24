@@ -992,6 +992,7 @@ struct PinocchioHexapodModel::Impl {
     std::uint64_t totalRollbacks = 0;
     std::uint64_t totalHeldStates = 0;
     std::uint64_t totalUnsupportedIslands = 0;
+    std::uint64_t capacityTraceStep = 0;
     // A deliberately requested failing snapshot is captured at most once per
     // model instance. This is diagnostic-only and never changes the solver.
     bool contactSnapshotCaptured = false;
@@ -2225,6 +2226,23 @@ bool PinocchioHexapodModel::stepProximal(
         impl_->finishCommandStream("invalid_dt");
         return false;
     }
+    const std::uint64_t capacityTraceStep = ++impl_->capacityTraceStep;
+    static const bool traceServoCapacity = [] {
+        const char* value = std::getenv("HEXAPOD_PROXIMAL_TRACE_SERVO_CAPACITY");
+        return value != nullptr && value[0] != '\0' && value[0] != '0';
+    }();
+    struct ServoCapacityTrace {
+        double dt{0.0};
+        double stallTorque{0.0};
+        std::array<double, 18> error{};
+        std::array<double, 18> rate{};
+        std::array<double, 18> target{};
+        std::array<double, 18> requested{};
+        std::array<double, 18> available{};
+        std::array<double, 18> applied{};
+        std::array<bool, 6> loadBearing{};
+    };
+    std::optional<ServoCapacityTrace> servoCapacityTrace{};
     maybePollCutpointFileIpc(world);
 
     std::array<double, 18> servoTargets{};
@@ -3939,6 +3957,7 @@ bool PinocchioHexapodModel::stepProximal(
                     const std::size_t leg = pendingContacts[i].legIndex;
                     out.legFrictionImpulseWorldX[leg] += worldFriction.x();
                     out.legFrictionImpulseWorldZ[leg] += worldFriction.z();
+                    out.legNormalImpulse[leg] += std::max(0.0, impulse[2]);
                     impl_->lastLegNormalImpulse[leg] += std::max(0.0, impulse[2]);
                     if (out.legContactCount[leg] < 255) {
                         ++out.legContactCount[leg];
@@ -4422,6 +4441,22 @@ bool PinocchioHexapodModel::stepProximal(
         }
         out.mechanicalEnergyDelta += energyDelta;
         out.integrationTimeMs += elapsedMs(integrationStart);
+        if (traceServoCapacity && !impl_->implicitDamping) {
+            servoCapacityTrace.emplace();
+            servoCapacityTrace->dt = subDt;
+            servoCapacityTrace->stallTorque = stallTorque;
+            servoCapacityTrace->loadBearing = loadBearingLegs;
+            for (std::size_t wire = 0; wire < impl_->wireJoints.size(); ++wire) {
+                const pinocchio::JointIndex joint = impl_->wireJoints[wire];
+                const Eigen::Index vi = impl_->model.joints[joint].idx_v();
+                servoCapacityTrace->error[wire] = servoErrors[wire];
+                servoCapacityTrace->rate[wire] = v[vi];
+                servoCapacityTrace->target[wire] = activeServoTargets[wire];
+                servoCapacityTrace->requested[wire] = requestedTau[wire];
+                servoCapacityTrace->available[wire] = availableTau[wire];
+                servoCapacityTrace->applied[wire] = tau[vi];
+            }
+        }
         return true;
     };
 
@@ -4936,6 +4971,15 @@ bool PinocchioHexapodModel::stepProximal(
                 std::cerr << "[proximal-held]"
                           << " first_reason="
                           << static_cast<unsigned>(firstAttempt.failureReason)
+                          << " first_speed_frame="
+                          << static_cast<unsigned>(firstAttempt.speedLimitFrame)
+                          << " first_speed_leg=" << firstAttempt.speedLimitLegIndex
+                          << " first_speed_support="
+                          << static_cast<unsigned>(firstAttempt.speedLimitSupport)
+                          << " first_chassis_w="
+                          << firstAttempt.chassisPreIntegrationAngularSpeed
+                          << " first_max_link_w="
+                          << firstAttempt.maxLinkPreIntegrationAngularSpeed
                           << " first_iters=" << firstAttempt.iterations
                           << " first_ncp_dual=" << firstAttempt.ncpDualResidual
                           << " first_ncp_comp=" << firstAttempt.ncpComplementarityResidual
@@ -4954,6 +4998,28 @@ bool PinocchioHexapodModel::stepProximal(
                           << " retry_peak_joint_err=" << retry.peakPdAbsError
                           << " retry_max_link_w=" << retry.maxLinkPreIntegrationAngularSpeed
                           << '\n';
+                if (firstAttempt.failureReason == ProximalFailureReason::SpeedLimit
+                    && firstAttempt.speedLimitLegIndex >= 0
+                    && firstAttempt.speedLimitLegIndex < 6) {
+                    const std::size_t leg =
+                        static_cast<std::size_t>(firstAttempt.speedLimitLegIndex);
+                    std::cerr << "[proximal-held-winner-joints] leg=" << leg;
+                    for (std::size_t offset = 0; offset < 3; ++offset) {
+                        const std::size_t wire = 3U * leg + offset;
+                        const pinocchio::JointIndex joint = impl_->wireJoints[wire];
+                        const Eigen::Index qi = impl_->model.joints[joint].idx_q();
+                        const Eigen::Index vi = impl_->model.joints[joint].idx_v();
+                        const double angle = snapshotQ[static_cast<std::size_t>(qi)];
+                        const double velocity = snapshotV[static_cast<std::size_t>(vi)];
+                        const double target = commandedServoTargets[wire] - impl_->wireZeroAngles[wire];
+                        std::cerr << " j" << offset << "_q=" << angle
+                                  << " j" << offset << "_v=" << velocity
+                                  << " j" << offset << "_target=" << target
+                                  << " j" << offset << "_error="
+                                  << std::remainder(target - angle, 6.28318530717958647692);
+                    }
+                    std::cerr << '\n';
+                }
                 printHeldContacts("first", firstAttempt);
                 printHeldContacts("retry", retry);
             }
@@ -4966,6 +5032,44 @@ bool PinocchioHexapodModel::stepProximal(
     diagnostics.heldStateCount = impl_->totalHeldStates;
     diagnostics.unsupportedIslandCount = impl_->totalUnsupportedIslands;
     diagnostics.totalStepTimeMs = elapsedMs(stepStart);
+    if (traceServoCapacity) {
+        if (diagnostics.status == ProximalStepStatus::Healthy && servoCapacityTrace.has_value()) {
+            std::cerr << std::setprecision(12)
+                      << "{\"kind\":\"proximal_servo_capacity\",\"schema_version\":1"
+                      << ",\"step\":" << capacityTraceStep
+                      << ",\"dt_s\":" << servoCapacityTrace->dt
+                      << ",\"stall_torque_nm\":" << servoCapacityTrace->stallTorque
+                      << ",\"no_load_speed_radps\":" << hexapod_dynamics::kServoNoLoadSpeedRadPerSec
+                      << ",\"peak_actuator_impulse_nms\":" << diagnostics.peakActuatorImpulse
+                      << ",\"joints\":[";
+            for (std::size_t wire = 0; wire < servoCapacityTrace->error.size(); ++wire) {
+                const double requested = servoCapacityTrace->requested[wire];
+                const double available = servoCapacityTrace->available[wire];
+                std::cerr << (wire == 0 ? "" : ",")
+                          << "{\"wire\":" << wire
+                          << ",\"leg\":" << (wire / 3U)
+                          << ",\"joint\":" << (wire % 3U)
+                          << ",\"load_bearing\":"
+                          << (servoCapacityTrace->loadBearing[wire / 3U] ? "true" : "false")
+                          << ",\"error_rad\":" << servoCapacityTrace->error[wire]
+                          << ",\"rate_radps\":" << servoCapacityTrace->rate[wire]
+                          << ",\"target_rad\":" << servoCapacityTrace->target[wire]
+                          << ",\"requested_torque_nm\":" << requested
+                          << ",\"available_torque_nm\":" << available
+                          << ",\"applied_torque_nm\":" << servoCapacityTrace->applied[wire]
+                          << ",\"saturated\":"
+                          << (std::abs(requested) > available + 1.0e-12 ? "true" : "false")
+                          << '}';
+            }
+            std::cerr << "]}\n";
+        } else {
+            std::cerr << "{\"kind\":\"proximal_servo_capacity_skip\",\"schema_version\":1"
+                      << ",\"step\":" << capacityTraceStep
+                      << ",\"status\":" << static_cast<unsigned>(diagnostics.status)
+                      << ",\"implicit_damping\":" << (impl_->implicitDamping ? "true" : "false")
+                      << "}\n";
+        }
+    }
     if (diagnostics.status == ProximalStepStatus::Healthy
         || diagnostics.status == ProximalStepStatus::RecoveredRetry) {
         impl_->recordCommandStreamAccepted(dt, servoTargets);

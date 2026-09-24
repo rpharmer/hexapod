@@ -47,26 +47,31 @@ Vec3 TransformBodyPoint(const Vec3& point, const HexapodBodyPoseState& pose) {
 
 RobotKinematics ComputeRobotLeg(const HexapodLegLayout& layout, const std::array<float, 3>& angles_deg) {
   RobotKinematics out{};
-  const float coxa = (angles_deg[0] + layout.coxa_attach_deg) * visualiser::math::kPi / 180.0f;
-  const float femur = (angles_deg[1] + layout.femur_attach_deg) * visualiser::math::kPi / 180.0f;
-  const float tibia = (angles_deg[2] + layout.tibia_attach_deg) * visualiser::math::kPi / 180.0f;
-  const float mount = layout.mount_angle_rad;
+  // Telemetry angles are calibrated servo angles. Match the server's
+  // ServoCalibration::toJointAngles and legFrameYawRad before drawing links.
+  const float coxa = (angles_deg[0] - layout.coxa_attach_deg) * layout.coxa_sign
+                      * visualiser::math::kPi / 180.0f;
+  const float femur = (angles_deg[1] - layout.femur_attach_deg) * layout.femur_sign
+                       * visualiser::math::kPi / 180.0f;
+  const float tibia = (angles_deg[2] - layout.tibia_attach_deg) * layout.tibia_sign
+                       * visualiser::math::kPi / 180.0f;
+  const float yaw = visualiser::math::kPi - layout.mount_angle_rad + coxa;
 
   out.coxa = layout.body_coxa_offset;
-  const float hip_x = layout.coxa_mm * 0.001f * std::cos(mount + coxa);
-  const float hip_y = layout.coxa_mm * 0.001f * std::sin(mount + coxa);
+  const float hip_x = layout.coxa_mm * 0.001f * std::cos(yaw);
+  const float hip_y = layout.coxa_mm * 0.001f * std::sin(yaw);
   out.femur = {out.coxa.x + hip_x, out.coxa.y + hip_y, out.coxa.z};
 
   const float femur_pitch = femur;
-  const float knee_x = layout.femur_mm * 0.001f * std::cos(femur_pitch) * std::cos(mount + coxa);
-  const float knee_y = layout.femur_mm * 0.001f * std::cos(femur_pitch) * std::sin(mount + coxa);
-  const float knee_z = -layout.femur_mm * 0.001f * std::sin(femur_pitch);
+  const float knee_x = layout.femur_mm * 0.001f * std::cos(femur_pitch) * std::cos(yaw);
+  const float knee_y = layout.femur_mm * 0.001f * std::cos(femur_pitch) * std::sin(yaw);
+  const float knee_z = layout.femur_mm * 0.001f * std::sin(femur_pitch);
   out.tibia = {out.femur.x + knee_x, out.femur.y + knee_y, out.femur.z + knee_z};
 
   const float ankle_pitch = femur + tibia;
-  const float foot_x = layout.tibia_mm * 0.001f * std::cos(ankle_pitch) * std::cos(mount + coxa);
-  const float foot_y = layout.tibia_mm * 0.001f * std::cos(ankle_pitch) * std::sin(mount + coxa);
-  const float foot_z = -layout.tibia_mm * 0.001f * std::sin(ankle_pitch);
+  const float foot_x = layout.tibia_mm * 0.001f * std::cos(ankle_pitch) * std::cos(yaw);
+  const float foot_y = layout.tibia_mm * 0.001f * std::cos(ankle_pitch) * std::sin(yaw);
+  const float foot_z = layout.tibia_mm * 0.001f * std::sin(ankle_pitch);
   out.foot = {out.tibia.x + foot_x, out.tibia.y + foot_y, out.tibia.z + foot_z};
 
   return out;

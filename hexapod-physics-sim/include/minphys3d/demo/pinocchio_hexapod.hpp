@@ -109,6 +109,7 @@ struct ProximalStepDiagnostics {
     // that tibia; drift/slip are the last constraint on that tibia this substep.
     std::array<double, 6> legFrictionImpulseWorldX{};
     std::array<double, 6> legFrictionImpulseWorldZ{};
+    std::array<double, 6> legNormalImpulse{};
     std::array<double, 6> legPinocchioDriftTx{};
     std::array<double, 6> legWorldSlipTx{};
     std::array<double, 6> legWorldSlipTy{};

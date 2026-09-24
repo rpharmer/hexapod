@@ -247,6 +247,8 @@ void appendLegGeometryJson(std::ostringstream& payload, const HexapodGeometry& g
 void appendGovernorJson(std::ostringstream& payload, const CommandGovernorState& g)
 {
     payload << "\"governor\":{"
+            << "\"requested_planar_speed_mps\":" << g.requested_planar_speed_mps << ','
+            << "\"governed_planar_speed_mps\":" << g.governed_planar_speed_mps << ','
             << "\"severity\":" << g.severity << ','
             << "\"body_height_delta_m\":" << g.body_height_delta_m << ','
             << "\"command_scale\":" << g.command_scale << ','
@@ -603,8 +605,82 @@ std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& te
                 << "\"replan_count\":" << nav.replan_count << ','
                 << "\"active_segment_waypoint_count\":" << nav.active_segment_waypoint_count << ','
                 << "\"active_segment_length_m\":" << nav.active_segment_length_m << ','
-                << "\"nearest_obstacle_distance_m\":" << nav.nearest_obstacle_distance_m
-                << "}";
+                << "\"nearest_obstacle_distance_m\":" << nav.nearest_obstacle_distance_m << ','
+                << "\"active_waypoint_index\":" << nav.bridge.active_waypoint_index << ','
+                << "\"distance_to_active_waypoint_m\":" << nav.bridge.distance_to_active_waypoint_m << ','
+                << "\"has_goal\":" << (nav.has_goal ? "true" : "false");
+        if (nav.has_goal) {
+            payload << ",\"goal\":{\"x_m\":" << nav.goal.x_m
+                    << ",\"y_m\":" << nav.goal.y_m
+                    << ",\"yaw_rad\":" << nav.goal.yaw_rad << '}';
+        }
+        payload << ",\"active_segment\":[";
+        constexpr std::size_t kMaxSegmentPoses = 64;
+        const std::size_t count = std::min(nav.active_segment.size(), kMaxSegmentPoses);
+        for (std::size_t i = 0; i < count; ++i) {
+            if (i > 0) {
+                payload << ',';
+            }
+            const NavPose2d& pose = nav.active_segment[i];
+            payload << "{\"x_m\":" << pose.x_m << ",\"y_m\":" << pose.y_m
+                    << ",\"yaw_rad\":" << pose.yaw_rad << '}';
+        }
+        payload << "]}";
+    }
+    if (telemetry.local_map.has_value()) {
+        const LocalMapSnapshot& map = telemetry.local_map.value();
+        const LocalOccupancyGrid& grid = !map.inflated.empty() ? map.inflated : map.raw;
+        payload << ",\"local_map\":{"
+                << "\"fresh\":" << (map.fresh ? "true" : "false") << ','
+                << "\"has_observations\":" << (map.has_observations ? "true" : "false") << ','
+                << "\"nearest_obstacle_distance_m\":" << map.nearest_obstacle_distance_m << ','
+                << "\"width_cells\":" << grid.width_cells << ','
+                << "\"height_cells\":" << grid.height_cells << ','
+                << "\"resolution_m\":" << grid.resolution_m << ','
+                << "\"center_pose\":{\"x_m\":" << grid.center_pose.x_m
+                << ",\"y_m\":" << grid.center_pose.y_m
+                << ",\"yaw_rad\":" << grid.center_pose.yaw_rad << '}'
+                << ",\"cells\":[";
+        // Downsample by 2 for UDP size while preserving occupancy intent.
+        const int step = (grid.width_cells > 24 || grid.height_cells > 24) ? 2 : 1;
+        bool first = true;
+        for (int y = 0; y < grid.height_cells; y += step) {
+            for (int x = 0; x < grid.width_cells; x += step) {
+                if (!first) {
+                    payload << ',';
+                }
+                first = false;
+                int state = static_cast<int>(LocalMapCellState::Unknown);
+                for (int dy = 0; dy < step && (y + dy) < grid.height_cells; ++dy) {
+                    for (int dx = 0; dx < step && (x + dx) < grid.width_cells; ++dx) {
+                        const auto cell = grid.stateAtCell(x + dx, y + dy);
+                        if (cell == LocalMapCellState::Occupied) {
+                            state = static_cast<int>(LocalMapCellState::Occupied);
+                        } else if (state != static_cast<int>(LocalMapCellState::Occupied) &&
+                                   cell == LocalMapCellState::Free) {
+                            state = static_cast<int>(LocalMapCellState::Free);
+                        }
+                    }
+                }
+                payload << state;
+            }
+        }
+        payload << "],\"cell_step\":" << step << '}';
+    }
+    if (telemetry.command_authority.has_data) {
+        const char* level = "idle";
+        if (telemetry.command_authority.level == 1) {
+            level = "nav";
+        } else if (telemetry.command_authority.level == 2) {
+            level = "scenario";
+        }
+        payload << ",\"command\":{"
+                << "\"authority\":\"" << level << "\","
+                << "\"nav_active\":" << (telemetry.command_authority.nav_active ? "true" : "false");
+        if (!telemetry.command_authority.scenario_name.empty()) {
+            payload << ",\"scenario\":\"" << telemetry.command_authority.scenario_name << "\"";
+        }
+        payload << "}";
     }
     if (telemetry.process_resources.has_value()) {
         payload << ",\"process_resource\":";
@@ -620,6 +696,10 @@ std::string serializeControlStepPacket(const telemetry::ControlStepTelemetry& te
     appendFusionJson(payload, fusion);
     payload << ',';
     appendGovernorJson(payload, telemetry.governor);
+    if (telemetry.physics_peak_servo_torque_utilization.has_value()) {
+        payload << ",\"physics_sim\":{\"peak_servo_torque_utilization\":"
+                << *telemetry.physics_peak_servo_torque_utilization << '}';
+    }
     payload << ',';
     appendGovernorConfigJson(payload, telemetry.governor_config);
     payload << ',';

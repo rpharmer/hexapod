@@ -156,6 +156,30 @@ int main() {
     }
 
     const auto nominal = computeNominalStance(geo, 0.14);
+    for (int leg_index = 0; leg_index < kNumLegs; ++leg_index) {
+        const LegGeometry& leg = geo.legGeometry[leg_index];
+        const Vec3 start = leg.bodyCoxaOffset
+            + (nominal[static_cast<std::size_t>(leg_index)] - leg.bodyCoxaOffset) * 0.80;
+        const Vec3 outward{start.x - leg.bodyCoxaOffset.x,
+                           start.y - leg.bodyCoxaOffset.y, 0.0};
+        const auto remaining = foot_reachability::planarTravelToReachBoundaryM(
+            leg, start, outward, 0.25, inset);
+        if (!remaining || *remaining < 0.0 || *remaining >= 0.25
+            || !foot_reachability::footInReachAnnulus(
+                leg, start + outward * (*remaining / std::hypot(outward.x, outward.y)), inset)
+            || foot_reachability::footInReachAnnulus(
+                leg, start + outward * ((*remaining + 2e-5) / std::hypot(outward.x, outward.y)), inset)) {
+            std::cerr << "FAIL: directional reach should find the first fixed-height annulus boundary\n";
+            return EXIT_FAILURE;
+        }
+        if (foot_reachability::planarTravelToReachBoundaryM(
+                leg, start, Vec3{}, 0.25, inset).has_value()
+            || foot_reachability::planarTravelToReachBoundaryM(
+                leg, start + outward * 10.0, outward, 0.25, inset).has_value()) {
+            std::cerr << "FAIL: directional reach should reject invalid direction and start\n";
+            return EXIT_FAILURE;
+        }
+    }
     constexpr double lean_pitch_rad = 0.13;
     const Mat3 body_rotation =
         (Mat3::rotZ(0.0) * Mat3::rotY(lean_pitch_rad) * Mat3::rotX(0.0)).transpose();

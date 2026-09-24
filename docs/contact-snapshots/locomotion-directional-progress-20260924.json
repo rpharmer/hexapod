@@ -1,0 +1,807 @@
+{
+  "schema_version": 1,
+  "campaign": "locomotion_progress_capacity",
+  "batch": "A10",
+  "date": "2026-09-24",
+  "tree": {
+    "head": "24cf1c0c36a00cf6320d92afe1e37bd43935adfb",
+    "dirty": true,
+    "simulator_sha256": "386db54c80feb2926530645002634fbaef6feb0f793f61465aaf4231489bd317",
+    "motion_suite_sha256": "41ea8f6e2e608c5c43de2ea8f3d181a421c49498cd716e9a4280dd964d902eeb",
+    "exact_replay_sha256": "6c127d65c9707de3fd7e2d4aab2b28d091af6c460aea80ad38a3ee5f95cd6e08"
+  },
+  "comparison": {
+    "solver_mode": "pinocchio-proximal",
+    "case_profile": "full",
+    "repetitions_per_direction_per_mode": 5,
+    "screen_env": "HEXAPOD_SWING_CONTACT_CLEARANCE_SCREEN",
+    "off_value": "unset",
+    "on_value": "1",
+    "metric": "Sum of world-body displacement projected on instantaneous body yaw plus requested body-frame heading over consecutive valid WALK samples in the same phase.",
+    "governor_scaled_distance_definition": "Sum of requested speed times sample period times reported governor command scale over the same intervals.",
+    "contact_proxy_definition": "Fraction of planned-swing leg samples reporting raw foot contact; not measured toe drag distance."
+  },
+  "summary": {
+    "all_60_passed": true,
+    "held_samples": 0,
+    "all_30_pairs_positive": true,
+    "minimum_measured_foot_world_z_m": 0.016707,
+    "maximum_contact_tracking_error_m": 0.094019,
+    "directions": [
+      {
+        "name": "compass_forward",
+        "passed": true,
+        "median_progress_off": 0.185298,
+        "median_progress_on": 0.207258,
+        "median_gain_percent": 11.851180260985018,
+        "min_pair_gain_percent": 10.557932587146968,
+        "median_efficiency_off": 0.490473,
+        "median_efficiency_on": 0.549604,
+        "median_drag_off": 0.333965,
+        "median_drag_on": 0.304696,
+        "median_abs_lateral_off": 0.18359,
+        "median_abs_lateral_on": 0.149044,
+        "governed_off": 0.37782,
+        "governed_on": 0.377247
+      },
+      {
+        "name": "compass_backward",
+        "passed": true,
+        "median_progress_off": 0.185858,
+        "median_progress_on": 0.207361,
+        "median_gain_percent": 11.569585382388702,
+        "min_pair_gain_percent": 10.027849139699052,
+        "median_efficiency_off": 0.491413,
+        "median_efficiency_on": 0.54934,
+        "median_drag_off": 0.337755,
+        "median_drag_on": 0.302801,
+        "median_abs_lateral_off": 0.18331,
+        "median_abs_lateral_on": 0.144861,
+        "governed_off": 0.378211,
+        "governed_on": 0.377396
+      },
+      {
+        "name": "compass_strafe_left",
+        "passed": true,
+        "median_progress_off": 0.148359,
+        "median_progress_on": 0.167326,
+        "median_gain_percent": 12.78452941850512,
+        "min_pair_gain_percent": 8.83388981088511,
+        "median_efficiency_off": 0.391497,
+        "median_efficiency_on": 0.442642,
+        "median_drag_off": 0.312487,
+        "median_drag_on": 0.276479,
+        "median_abs_lateral_off": 0.014596,
+        "median_abs_lateral_on": 0.014486,
+        "governed_off": 0.378952,
+        "governed_on": 0.378246
+      },
+      {
+        "name": "compass_strafe_right",
+        "passed": true,
+        "median_progress_off": 0.144196,
+        "median_progress_on": 0.16614,
+        "median_gain_percent": 15.218175261449707,
+        "min_pair_gain_percent": 8.29214022091056,
+        "median_efficiency_off": 0.380489,
+        "median_efficiency_on": 0.438809,
+        "median_drag_off": 0.312066,
+        "median_drag_on": 0.303853,
+        "median_abs_lateral_off": 0.014507,
+        "median_abs_lateral_on": 0.014731,
+        "governed_off": 0.378974,
+        "governed_on": 0.378551
+      },
+      {
+        "name": "compass_diag_fwd_left",
+        "passed": true,
+        "median_progress_off": 0.173696,
+        "median_progress_on": 0.199563,
+        "median_gain_percent": 14.892110353721444,
+        "min_pair_gain_percent": 11.932939962308176,
+        "median_efficiency_off": 0.458489,
+        "median_efficiency_on": 0.527029,
+        "median_drag_off": 0.339861,
+        "median_drag_on": 0.294378,
+        "median_abs_lateral_off": 0.125464,
+        "median_abs_lateral_on": 0.123141,
+        "governed_off": 0.378901,
+        "governed_on": 0.378146
+      },
+      {
+        "name": "compass_diag_fwd_right",
+        "passed": true,
+        "median_progress_off": 0.172067,
+        "median_progress_on": 0.198485,
+        "median_gain_percent": 15.353321671209464,
+        "min_pair_gain_percent": 15.03425991038374,
+        "median_efficiency_off": 0.453997,
+        "median_efficiency_on": 0.524896,
+        "median_drag_off": 0.336281,
+        "median_drag_on": 0.291219,
+        "median_abs_lateral_off": 0.134935,
+        "median_abs_lateral_on": 0.125384,
+        "governed_off": 0.379005,
+        "governed_on": 0.378267
+      }
+    ]
+  },
+  "paired_runs": [
+    {
+      "name": "compass_forward",
+      "pairs": [
+        {
+          "rep": 0,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.187442,
+            "governor_scaled_distance_m": 0.377926,
+            "planned_swing_raw_contact_fraction": 0.340703,
+            "absolute_lateral_travel_m": 0.18359,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.207232,
+            "governor_scaled_distance_m": 0.377247,
+            "planned_swing_raw_contact_fraction": 0.305538,
+            "absolute_lateral_travel_m": 0.142268,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 10.557932587146968
+        },
+        {
+          "rep": 1,
+          "run_order": "on_then_off",
+          "off": {
+            "progress_m": 0.184856,
+            "governor_scaled_distance_m": 0.37782,
+            "planned_swing_raw_contact_fraction": 0.333965,
+            "absolute_lateral_travel_m": 0.183981,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.206781,
+            "governor_scaled_distance_m": 0.377135,
+            "planned_swing_raw_contact_fraction": 0.304696,
+            "absolute_lateral_travel_m": 0.142471,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 11.860583373003841
+        },
+        {
+          "rep": 2,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.185298,
+            "governor_scaled_distance_m": 0.377794,
+            "planned_swing_raw_contact_fraction": 0.333754,
+            "absolute_lateral_travel_m": 0.185901,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.207258,
+            "governor_scaled_distance_m": 0.377104,
+            "planned_swing_raw_contact_fraction": 0.301958,
+            "absolute_lateral_travel_m": 0.149044,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 11.851180260985018
+        },
+        {
+          "rep": 3,
+          "run_order": "on_then_off",
+          "off": {
+            "progress_m": 0.187097,
+            "governor_scaled_distance_m": 0.377812,
+            "planned_swing_raw_contact_fraction": 0.337755,
+            "absolute_lateral_travel_m": 0.181718,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.212582,
+            "governor_scaled_distance_m": 0.37737,
+            "planned_swing_raw_contact_fraction": 0.303222,
+            "absolute_lateral_travel_m": 0.157696,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 13.621276663976435
+        },
+        {
+          "rep": 4,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.184137,
+            "governor_scaled_distance_m": 0.377843,
+            "planned_swing_raw_contact_fraction": 0.329754,
+            "absolute_lateral_travel_m": 0.175018,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.210792,
+            "governor_scaled_distance_m": 0.377585,
+            "planned_swing_raw_contact_fraction": 0.308275,
+            "absolute_lateral_travel_m": 0.156845,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 14.475634989165687
+        }
+      ]
+    },
+    {
+      "name": "compass_backward",
+      "pairs": [
+        {
+          "rep": 0,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.186259,
+            "governor_scaled_distance_m": 0.377625,
+            "planned_swing_raw_contact_fraction": 0.32849,
+            "absolute_lateral_travel_m": 0.184947,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.208089,
+            "governor_scaled_distance_m": 0.377189,
+            "planned_swing_raw_contact_fraction": 0.302801,
+            "absolute_lateral_travel_m": 0.147982,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 11.720239022006984
+        },
+        {
+          "rep": 1,
+          "run_order": "on_then_off",
+          "off": {
+            "progress_m": 0.185432,
+            "governor_scaled_distance_m": 0.378297,
+            "planned_swing_raw_contact_fraction": 0.343441,
+            "absolute_lateral_travel_m": 0.179131,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.208434,
+            "governor_scaled_distance_m": 0.377716,
+            "planned_swing_raw_contact_fraction": 0.309539,
+            "absolute_lateral_travel_m": 0.147482,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 12.40454721946589
+        },
+        {
+          "rep": 2,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.185284,
+            "governor_scaled_distance_m": 0.378333,
+            "planned_swing_raw_contact_fraction": 0.349547,
+            "absolute_lateral_travel_m": 0.18331,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.203864,
+            "governor_scaled_distance_m": 0.377396,
+            "planned_swing_raw_contact_fraction": 0.299642,
+            "absolute_lateral_travel_m": 0.136529,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 10.027849139699052
+        },
+        {
+          "rep": 3,
+          "run_order": "on_then_off",
+          "off": {
+            "progress_m": 0.18809,
+            "governor_scaled_distance_m": 0.378157,
+            "planned_swing_raw_contact_fraction": 0.333123,
+            "absolute_lateral_travel_m": 0.184241,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.207361,
+            "governor_scaled_distance_m": 0.377472,
+            "planned_swing_raw_contact_fraction": 0.305959,
+            "absolute_lateral_travel_m": 0.144861,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 10.245627093412724
+        },
+        {
+          "rep": 4,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.185858,
+            "governor_scaled_distance_m": 0.378211,
+            "planned_swing_raw_contact_fraction": 0.337755,
+            "absolute_lateral_travel_m": 0.180077,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.204989,
+            "governor_scaled_distance_m": 0.377104,
+            "planned_swing_raw_contact_fraction": 0.301537,
+            "absolute_lateral_travel_m": 0.137838,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 10.293342229013547
+        }
+      ]
+    },
+    {
+      "name": "compass_strafe_left",
+      "pairs": [
+        {
+          "rep": 0,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.151263,
+            "governor_scaled_distance_m": 0.379462,
+            "planned_swing_raw_contact_fraction": 0.327016,
+            "absolute_lateral_travel_m": 0.017579,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.167326,
+            "governor_scaled_distance_m": 0.378017,
+            "planned_swing_raw_contact_fraction": 0.275426,
+            "absolute_lateral_travel_m": 0.011544,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 10.619252560110537
+        },
+        {
+          "rep": 1,
+          "run_order": "on_then_off",
+          "off": {
+            "progress_m": 0.14468,
+            "governor_scaled_distance_m": 0.378664,
+            "planned_swing_raw_contact_fraction": 0.312487,
+            "absolute_lateral_travel_m": 0.013634,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.171594,
+            "governor_scaled_distance_m": 0.378498,
+            "planned_swing_raw_contact_fraction": 0.276479,
+            "absolute_lateral_travel_m": 0.015185,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 18.602432955487956
+        },
+        {
+          "rep": 2,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.152447,
+            "governor_scaled_distance_m": 0.379136,
+            "planned_swing_raw_contact_fraction": 0.316698,
+            "absolute_lateral_travel_m": 0.012421,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.165914,
+            "governor_scaled_distance_m": 0.378246,
+            "planned_swing_raw_contact_fraction": 0.28406,
+            "absolute_lateral_travel_m": 0.014486,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 8.83388981088511
+        },
+        {
+          "rep": 3,
+          "run_order": "on_then_off",
+          "off": {
+            "progress_m": 0.148359,
+            "governor_scaled_distance_m": 0.378952,
+            "planned_swing_raw_contact_fraction": 0.304696,
+            "absolute_lateral_travel_m": 0.014596,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.16158,
+            "governor_scaled_distance_m": 0.37804,
+            "planned_swing_raw_contact_fraction": 0.275637,
+            "absolute_lateral_travel_m": 0.014852,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 8.911491719410346
+        },
+        {
+          "rep": 4,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.142726,
+            "governor_scaled_distance_m": 0.378775,
+            "planned_swing_raw_contact_fraction": 0.292904,
+            "absolute_lateral_travel_m": 0.016661,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.178195,
+            "governor_scaled_distance_m": 0.378365,
+            "planned_swing_raw_contact_fraction": 0.28027,
+            "absolute_lateral_travel_m": 0.010827,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 24.851113322029626
+        }
+      ]
+    },
+    {
+      "name": "compass_strafe_right",
+      "pairs": [
+        {
+          "rep": 0,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.144196,
+            "governor_scaled_distance_m": 0.378974,
+            "planned_swing_raw_contact_fraction": 0.298168,
+            "absolute_lateral_travel_m": 0.009921,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.162006,
+            "governor_scaled_distance_m": 0.378342,
+            "planned_swing_raw_contact_fraction": 0.288271,
+            "absolute_lateral_travel_m": 0.012854,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 12.35124413992068
+        },
+        {
+          "rep": 1,
+          "run_order": "on_then_off",
+          "off": {
+            "progress_m": 0.150106,
+            "governor_scaled_distance_m": 0.378672,
+            "planned_swing_raw_contact_fraction": 0.312066,
+            "absolute_lateral_travel_m": 0.017848,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.162553,
+            "governor_scaled_distance_m": 0.378893,
+            "planned_swing_raw_contact_fraction": 0.320067,
+            "absolute_lateral_travel_m": 0.017646,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 8.29214022091056
+        },
+        {
+          "rep": 2,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.139555,
+            "governor_scaled_distance_m": 0.378638,
+            "planned_swing_raw_contact_fraction": 0.302801,
+            "absolute_lateral_travel_m": 0.011814,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.166194,
+            "governor_scaled_distance_m": 0.378551,
+            "planned_swing_raw_contact_fraction": 0.305538,
+            "absolute_lateral_travel_m": 0.020027,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 19.088531403389332
+        },
+        {
+          "rep": 3,
+          "run_order": "on_then_off",
+          "off": {
+            "progress_m": 0.143817,
+            "governor_scaled_distance_m": 0.379212,
+            "planned_swing_raw_contact_fraction": 0.314171,
+            "absolute_lateral_travel_m": 0.015029,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.18105,
+            "governor_scaled_distance_m": 0.378171,
+            "planned_swing_raw_contact_fraction": 0.26195,
+            "absolute_lateral_travel_m": 0.00794,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 25.889150795802983
+        },
+        {
+          "rep": 4,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.144874,
+            "governor_scaled_distance_m": 0.379071,
+            "planned_swing_raw_contact_fraction": 0.312697,
+            "absolute_lateral_travel_m": 0.014507,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.16614,
+            "governor_scaled_distance_m": 0.378616,
+            "planned_swing_raw_contact_fraction": 0.303853,
+            "absolute_lateral_travel_m": 0.014731,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 14.67896240871378
+        }
+      ]
+    },
+    {
+      "name": "compass_diag_fwd_left",
+      "pairs": [
+        {
+          "rep": 0,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.170187,
+            "governor_scaled_distance_m": 0.378728,
+            "planned_swing_raw_contact_fraction": 0.332912,
+            "absolute_lateral_travel_m": 0.125464,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.198881,
+            "governor_scaled_distance_m": 0.378224,
+            "planned_swing_raw_contact_fraction": 0.298589,
+            "absolute_lateral_travel_m": 0.121762,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 16.86027722446486
+        },
+        {
+          "rep": 1,
+          "run_order": "on_then_off",
+          "off": {
+            "progress_m": 0.175501,
+            "governor_scaled_distance_m": 0.379209,
+            "planned_swing_raw_contact_fraction": 0.339861,
+            "absolute_lateral_travel_m": 0.123309,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.202812,
+            "governor_scaled_distance_m": 0.378002,
+            "planned_swing_raw_contact_fraction": 0.298379,
+            "absolute_lateral_travel_m": 0.125146,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 15.561734690970418
+        },
+        {
+          "rep": 2,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.173484,
+            "governor_scaled_distance_m": 0.378901,
+            "planned_swing_raw_contact_fraction": 0.33565,
+            "absolute_lateral_travel_m": 0.122915,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.205179,
+            "governor_scaled_distance_m": 0.377996,
+            "planned_swing_raw_contact_fraction": 0.292483,
+            "absolute_lateral_travel_m": 0.123141,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 18.269696340872944
+        },
+        {
+          "rep": 3,
+          "run_order": "on_then_off",
+          "off": {
+            "progress_m": 0.173696,
+            "governor_scaled_distance_m": 0.378844,
+            "planned_swing_raw_contact_fraction": 0.342598,
+            "absolute_lateral_travel_m": 0.125932,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.196554,
+            "governor_scaled_distance_m": 0.378146,
+            "planned_swing_raw_contact_fraction": 0.28427,
+            "absolute_lateral_travel_m": 0.123215,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 13.159773397199714
+        },
+        {
+          "rep": 4,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.178288,
+            "governor_scaled_distance_m": 0.379156,
+            "planned_swing_raw_contact_fraction": 0.341967,
+            "absolute_lateral_travel_m": 0.13088,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.199563,
+            "governor_scaled_distance_m": 0.378656,
+            "planned_swing_raw_contact_fraction": 0.294378,
+            "absolute_lateral_travel_m": 0.121864,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 11.932939962308176
+        }
+      ]
+    },
+    {
+      "name": "compass_diag_fwd_right",
+      "pairs": [
+        {
+          "rep": 0,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.175122,
+            "governor_scaled_distance_m": 0.379145,
+            "planned_swing_raw_contact_fraction": 0.339861,
+            "absolute_lateral_travel_m": 0.134935,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.211892,
+            "governor_scaled_distance_m": 0.378374,
+            "planned_swing_raw_contact_fraction": 0.292483,
+            "absolute_lateral_travel_m": 0.122953,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 20.996790808693365
+        },
+        {
+          "rep": 1,
+          "run_order": "on_then_off",
+          "off": {
+            "progress_m": 0.172067,
+            "governor_scaled_distance_m": 0.379005,
+            "planned_swing_raw_contact_fraction": 0.333333,
+            "absolute_lateral_travel_m": 0.136508,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.197936,
+            "governor_scaled_distance_m": 0.377632,
+            "planned_swing_raw_contact_fraction": 0.275848,
+            "absolute_lateral_travel_m": 0.125384,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 15.03425991038374
+        },
+        {
+          "rep": 2,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.171601,
+            "governor_scaled_distance_m": 0.379168,
+            "planned_swing_raw_contact_fraction": 0.340072,
+            "absolute_lateral_travel_m": 0.132463,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.198485,
+            "governor_scaled_distance_m": 0.378141,
+            "planned_swing_raw_contact_fraction": 0.291219,
+            "absolute_lateral_travel_m": 0.125506,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 15.666575369607404
+        },
+        {
+          "rep": 3,
+          "run_order": "on_then_off",
+          "off": {
+            "progress_m": 0.168357,
+            "governor_scaled_distance_m": 0.37872,
+            "planned_swing_raw_contact_fraction": 0.328911,
+            "absolute_lateral_travel_m": 0.130314,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.195965,
+            "governor_scaled_distance_m": 0.378267,
+            "planned_swing_raw_contact_fraction": 0.305959,
+            "absolute_lateral_travel_m": 0.1234,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 16.398486549415825
+        },
+        {
+          "rep": 4,
+          "run_order": "off_then_on",
+          "off": {
+            "progress_m": 0.172959,
+            "governor_scaled_distance_m": 0.378715,
+            "planned_swing_raw_contact_fraction": 0.336281,
+            "absolute_lateral_travel_m": 0.13576,
+            "held": 0,
+            "passed": true
+          },
+          "on": {
+            "progress_m": 0.210718,
+            "governor_scaled_distance_m": 0.378433,
+            "planned_swing_raw_contact_fraction": 0.290587,
+            "absolute_lateral_travel_m": 0.12678,
+            "held": 0,
+            "passed": true
+          },
+          "paired_progress_gain_percent": 21.831185425447643
+        }
+      ]
+    }
+  ],
+  "frozen_240hz_physics_timing": {
+    "fixture_version": "v16",
+    "fixture_checksum": "ddc6008e0cc1ac97",
+    "period_us": 4167,
+    "frames": 720,
+    "healthy": 704,
+    "recovered_retry": 16,
+    "held": 0,
+    "unsupported": 0,
+    "read_failures": 0,
+    "behaviour_failures": 0,
+    "physics_step_p99_ms": 0.820100009,
+    "limit_ms": 4,
+    "scope": "Exact-command replay measures simulator step time only; it does not exercise the clearance-screen controller path."
+  },
+  "decision": "Keep clearance screen opt-in. Useful-direction median selection target met in all six directions; user skipped ten-minute soak, so default-promotion endurance gate remains unverified. No production plant, solver, gait, or safety gate changed."
+}

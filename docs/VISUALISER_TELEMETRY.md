@@ -21,6 +21,8 @@ Current control-step and replay telemetry in `hexapod-server` now include explic
 
 Use the active sources of truth for those fields instead:
 
+- `docs/VISUALISER.md` — current OpenGL visualiser overview
+- `docs/VISUALISER_COMMAND_CHANNEL.md` — reverse command channel
 - `docs/ALGORITHMS_SERVER_CONFIG_TELEMETRY.md`
 - `docs/ALGORITHMS_SERVER_LOCOMOTION.md`
 - `hexapod-server/src/control/telemetry_json.cpp`

@@ -44,6 +44,15 @@ const char* FaultCodeName(int fault) {
   }
 }
 
+std::optional<int> ParseFaultCodeName(std::string_view name) {
+  for (int fault = 0; fault <= 8; ++fault) {
+    if (name == FaultCodeName(fault)) {
+      return fault;
+    }
+  }
+  return std::nullopt;
+}
+
 const char* NavigationLifecycleName(int value) {
   switch (value) {
     case 0:

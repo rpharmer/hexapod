@@ -40,6 +40,16 @@ int main() {
     AStarLocalPlanner planner(cfg);
 
     const LocalMapSnapshot empty = makeSnapshot({});
+    const LocalMapSnapshot occupied_start = makeSnapshot({
+        LocalMapObservationSample{0.0, 0.0, LocalMapCellState::Occupied},
+    });
+    const LocalPlanResult occupied_near_goal = planner.plan(
+        LocalPlanRequest{NavPose2d{}, NavPose2d{0.0, 0.0, 0.0}, occupied_start});
+    if (!expect(occupied_near_goal.status == LocalPlanStatus::Blocked &&
+                    occupied_near_goal.block_reason == PlannerBlockReason::StartOccupied,
+                "within-cell goal must not bypass occupied-start validation")) {
+        return EXIT_FAILURE;
+    }
     const LocalPlanResult straight = planner.plan(LocalPlanRequest{NavPose2d{}, NavPose2d{0.4, 0.0, 0.0}, empty});
     if (!expect(straight.status == LocalPlanStatus::Ready, "planner should find straight path on empty map")) {
         return EXIT_FAILURE;

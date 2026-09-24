@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-23",
+  "tree_revision": "24cf1c0 plus uncommitted work; opt-in screen applied only for the paired comparison and then reverted",
+  "candidate_test_binary_sha256": "d0e11dbfefc7a225e12e9de08cc3e1005b6522efc1f66f71f7369e498f1ea587",
+  "final_default_off_test_binary_sha256": "e490ceef6eeeaf6569157337c634e42dc60b1cfe73cf83280244f6942174e410",
+  "physics_binary_sha256": "2990cc8db19e0b18871fbdc2239d4abde76bb6a5b5be02a60b8bd0c473bcb3a7",
+  "solver_mode": "pinocchio-proximal",
+  "body_command_height_m": 0.14,
+  "trace_kind": "foothold_reach_trace",
+  "trace_samples_per_forward_case": 14400,
+  "leg_order": ["R3", "L3", "R2", "L2", "R1", "L1"],
+  "baseline": {
+    "forward_mean_body_forward_mps": 0.0885798,
+    "reverse_mean_body_forward_mps": -0.0890503,
+    "forward_rear_stance_to_swing_emitted_jump_mean_m": {"R1": 0.0567684, "L1": 0.0577927},
+    "forward_rear_stance_to_swing_emitted_jump_max_m": {"R1": 0.0589872, "L1": 0.0827219},
+    "forward_rear_planned_swing_contact_fraction": {"R1": 0.272508, "L1": 0.305531},
+    "reverse_front_planned_swing_contact_fraction": {"R3": 0.268645, "L3": 0.294014},
+    "forward_rear_late_swing_mean": {
+      "R1": {"plan_p3_x_m": -0.204612, "pre_reach_x_m": -0.171474, "emitted_x_m": -0.163264, "emitted_z_m": -0.154032},
+      "L1": {"plan_p3_x_m": -0.200702, "pre_reach_x_m": -0.166954, "emitted_x_m": -0.160002, "emitted_z_m": -0.155304}
+    },
+    "forward_rear_stance_entry_mean": {
+      "R1": {"pre_reach_x_m": -0.156550, "emitted_x_m": -0.147356, "emitted_z_m": -0.158886, "xy_reach_projection_m": 0.013451},
+      "L1": {"pre_reach_x_m": -0.157618, "emitted_x_m": -0.148972, "emitted_z_m": -0.158138, "xy_reach_projection_m": 0.012612}
+    },
+    "forward_mean_commanded_pose_pitch_rad": 0.19827,
+    "forward_mean_measured_body_pitch_rad": 0.05629,
+    "forward_solver_held_steps": 0,
+    "reverse_solver_held_steps": 0
+  },
+  "test_only_actual_stance_endpoint_as_swing_start": {
+    "setting": "HEXAPOD_SWING_START_FROM_LAST_TARGET=1; fully reverted after screen",
+    "forward_mean_body_forward_mps": 0.095158,
+    "reverse_mean_body_forward_mps": -0.0948073,
+    "forward_rear_stance_to_swing_emitted_jump_mean_m": {"R1": 0.0074292, "L1": 0.0074107},
+    "forward_rear_stance_to_swing_emitted_jump_max_m": {"R1": 0.0090517, "L1": 0.0092001},
+    "forward_rear_planned_swing_contact_fraction": {"R1": 0.403752, "L1": 0.416595},
+    "reverse_front_planned_swing_contact_fraction": {"R3": 0.397394, "L3": 0.417316},
+    "forward_solver_held_steps": 0,
+    "reverse_solver_held_steps": 0
+  },
+  "decision": "reject as a standalone production lever: transition continuity improved, but limiting-pair swing contact increased and one-run forward/reverse body progress gains of about 7.4/6.5 percent did not meet the campaign's 10 percent selection target. A coupled continuity-plus-early-lift candidate requires a separate test and full gates."
+}

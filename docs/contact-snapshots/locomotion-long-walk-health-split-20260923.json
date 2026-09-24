@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-23",
+  "tree_revision": "24cf1c0 plus dirty worktree; production default unchanged",
+  "experiment": "A8 long-walk health/safety split and first aggressive-input hold classification",
+  "solver_mode": "pinocchio-proximal",
+  "binaries_sha256": {
+    "physics_sim_after_trace_only_change": "386db54c80feb2926530645002634fbaef6feb0f793f61465aaf4231489bd317",
+    "locomotion_regression_test": "71eb6cf1b2b4a873304db52ee56b227ab6d72d7a4712983acfbea6149b594623",
+    "physics_sim_first_captured_hold_before_trace_only_change": "94c475991a2aa5736ddbd0e03b58b15202c44bb60244d2039a6b60afa0365c73"
+  },
+  "health_scenario": {
+    "file": "hexapod-server/scenarios/05_long_walk_feasible_health.toml",
+    "difference_from_historical_stress_input": "One requested-motion value: phase-3 sideways speed 0.6 to 0.10 m/s",
+    "duration_s": 60,
+    "requested_walk_samples_at_5ms": 10800,
+    "unchanged_acceptance_limits": [
+      "minimum path length",
+      "minimum stride count",
+      "transition body-height/governor check",
+      "maximum contact-anchor drift",
+      "minimum measured foot height",
+      "maximum commanded contact tracking error"
+    ],
+    "new_hard_requirements": [
+      "complete every requested WALK sample and return to STAND",
+      "zero faults",
+      "zero failed reads",
+      "zero held solver samples"
+    ]
+  },
+  "five_matched_health_pairs": {
+    "screen_off": {
+      "passed": 5,
+      "runs": 5,
+      "median_path_m": 2.895551,
+      "worst_contact_penetration_m": 0.00138,
+      "faults": 0,
+      "failed_reads": 0,
+      "held_samples": 0
+    },
+    "screen_on": {
+      "passed": 5,
+      "runs": 5,
+      "median_path_m": 3.02226,
+      "worst_contact_penetration_m": 0.00144,
+      "faults": 0,
+      "failed_reads": 0,
+      "held_samples": 0
+    },
+    "strides_per_run": 31,
+    "walk_samples_per_run": 10800
+  },
+  "registered_stress_ctest_default_off_passed": true,
+  "independent_measured_tilt_safety": {
+    "screen_off_ctest_passed": true,
+    "screen_on_ctest_passed": true,
+    "requires_fault_on_exact_injected_sample": true,
+    "requires_zero_failed_reads_and_holds": true,
+    "physical_push_response_tested": false
+  },
+  "historical_aggressive_input": {
+    "file": "hexapod-server/scenarios/05_long_walk_observability.toml",
+    "case": "long_walk_aggressive_diagnostic",
+    "default_profile": "explicit-only",
+    "explicit_diagnostic_smoke_passed": true,
+    "initial_three_pairs_before_scenario_split": {
+      "screen_off_complete_no_fault": 3,
+      "screen_on_complete_no_fault": 2,
+      "screen_on_no_hold_tip_over": 1
+    },
+    "eight_later_screen_off_trace_runs": {
+      "complete_no_fault": 4,
+      "tip_over_without_hold": 4,
+      "held": 0
+    },
+    "captured_first_hold_on_earlier_binary": {
+      "failure_reason": "SpeedLimit",
+      "speed_frame": "femur",
+      "support": "swing",
+      "first_attempt_max_link_angular_speed_radps": 10.4726,
+      "retry_max_link_angular_speed_radps": 10.8461,
+      "speed_guard_radps": 10,
+      "first_attempt_chassis_angular_speed_radps": 6.19211,
+      "peak_joint_target_error_rad": 1.49303,
+      "substep_dt_s": 0.00166667,
+      "first_attempt_iterations": 6,
+      "first_attempt_ncp_dual_residual": 0,
+      "unique_contact_joints": 2,
+      "contact_ids": [7, 19],
+      "joint_ids": [7, 19],
+      "duplicate_contacts": 0,
+      "winning_leg_index": null,
+      "note": "Trace-only winner-leg joint detail was added afterward; no further hold was captured in the bounded eight-run repeat."
+    }
+  },
+  "decision": "The test contract split is retained. The clearance screen stays opt-in; no plant, solver, safety threshold, or gait parameter was changed. The intermittent aggressive-input SpeedLimit hold and no-hold tilt remain separately tracked."
+}

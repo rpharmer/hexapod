@@ -34,6 +34,9 @@ struct NavigationMonitorSnapshot {
     double blocked_elapsed_s{0.0};
     TimePointUs last_plan_timestamp{};
     NavLocomotionBridge::MonitorSnapshot bridge{};
+    bool has_goal{false};
+    NavPose2d goal{};
+    std::vector<NavPose2d> active_segment{};
 };
 
 class NavigationManager {
@@ -74,10 +77,11 @@ private:
     [[nodiscard]] std::vector<LocalMapObservation> collectObservations(const NavPose2d& pose,
                                                                        const RobotState& est,
                                                                        TimePointUs now) const;
-    [[nodiscard]] bool activeSegmentBlocked(const LocalMapSnapshot& snapshot) const;
+    [[nodiscard]] bool activeSegmentBlocked(const LocalMapSnapshot& snapshot,
+                                            const NavPose2d& current_pose) const;
     [[nodiscard]] bool terminalGoalReached(const NavPose2d& pose) const;
     void planOrBlock(const NavPose2d& pose, const LocalMapSnapshot& snapshot, TimePointUs now);
-    void startBridgeFromPlan(const LocalPlanResult& plan);
+    void startBridgeFromPlan(const LocalPlanResult& plan, const NavPose2d& current_pose);
     void refreshMonitorFromBridge();
     [[nodiscard]] bool shouldRefreshTerrainSnapshot(const RobotState& est, TimePointUs now) const;
     LocalMapSnapshot refreshTerrainSnapshotLocked(const NavPose2d& pose, const RobotState& est, TimePointUs now);

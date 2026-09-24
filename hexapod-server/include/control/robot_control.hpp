@@ -29,6 +29,7 @@ public:
     bool setSimFaultToggles(const SimHardwareFaultToggles& toggles);
     void setSafetyLegEnabledTestMask(std::optional<std::array<bool, kNumLegs>> mask);
     void setNavigationManager(std::unique_ptr<NavigationManager> navigation_manager);
+    void setCommandAuthorityTelemetry(const telemetry::ControlStepTelemetry::CommandAuthorityTelemetry& authority);
     ControlStatus getStatus() const;
     SafetyState getSafetyState() const;
 

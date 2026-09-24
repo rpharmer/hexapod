@@ -1,9 +1,9 @@
 #include "scenario_driver.hpp"
 
 #include "local_map.hpp"
-#include "navigation_manager.hpp"
 #include "logger.hpp"
 #include "motion_intent_utils.hpp"
+#include "scenario_session.hpp"
 
 #include <algorithm>
 #include <array>
@@ -46,38 +46,6 @@ std::optional<GaitType> parseGait(const std::string& gait) {
         return {GaitType::TURN_IN_PLACE};
     }
     return std::nullopt;
-}
-
-const char* modeName(RobotMode mode) {
-    switch (mode) {
-    case RobotMode::SAFE_IDLE:
-        return "SAFE_IDLE";
-    case RobotMode::HOMING:
-        return "HOMING";
-    case RobotMode::STAND:
-        return "STAND";
-    case RobotMode::WALK:
-        return "WALK";
-    case RobotMode::FAULT:
-        return "FAULT";
-    }
-    return "UNKNOWN";
-}
-
-const char* gaitName(GaitType gait) {
-    switch (gait) {
-    case GaitType::TRIPOD:
-        return "TRIPOD";
-    case GaitType::RIPPLE:
-        return "RIPPLE";
-    case GaitType::WAVE:
-        return "WAVE";
-    case GaitType::CRAWL:
-        return "CRAWL";
-    case GaitType::TURN_IN_PLACE:
-        return "TURN_IN_PLACE";
-    }
-    return "UNKNOWN";
 }
 
 std::optional<ScenarioNavigationCommand::Action> parseNavigationAction(const std::string& action) {
@@ -148,13 +116,6 @@ bool parseMapObservationSamples(const toml::value& parent,
         out.push_back(std::move(sample));
     }
     return true;
-}
-
-std::optional<std::array<bool, kNumLegs>> buildContacts(const ScenarioSensorOverrides& sensors) {
-    if (sensors.clear_contacts) {
-        return std::nullopt;
-    }
-    return sensors.contacts;
 }
 
 bool containsOnlyKeys(const toml::value& table, const std::set<std::string>& allowed,
@@ -405,120 +366,22 @@ bool ScenarioDriver::loadFromToml(const std::string& path, ScenarioDefinition& o
 
 bool ScenarioDriver::run(RobotControl& robot, const ScenarioDefinition& scenario,
                          std::shared_ptr<logging::AsyncLogger> logger) {
-    SimHardwareFaultToggles toggles{};
-    MotionIntent current_intent{};
-    current_intent.requested_mode = RobotMode::SAFE_IDLE;
-    current_intent.gait = GaitType::TRIPOD;
-
-    const bool scenario_uses_navigation =
-        !scenario.initial_map_obstacles.empty() ||
-        std::any_of(scenario.events.begin(), scenario.events.end(), [](const ScenarioEvent& event) {
-            return event.has_navigation_command || event.has_map_observation_override;
-        });
-
-    std::shared_ptr<SyntheticLocalMapObservationSource> map_source{};
-    if (scenario_uses_navigation) {
-        if (robot.navigationManager() == nullptr) {
-            if (logger) {
-                LOG_ERROR(logger, "Scenario navigation requested but NavigationManager is not installed");
-            }
-            return false;
+    ScenarioSession session;
+    std::string error;
+    if (!session.start(robot, scenario, logger, error)) {
+        if (logger) {
+            LOG_ERROR(logger, "Failed to start scenario session: ", error);
         }
-        map_source = std::make_shared<SyntheticLocalMapObservationSource>();
-        map_source->setStaticSamples(scenario.initial_map_obstacles);
-        robot.navigationManager()->addObservationSource(map_source);
+        return false;
     }
 
-    std::size_t event_idx = 0;
-    const auto start = std::chrono::steady_clock::now();
-
-    for (uint64_t elapsed_ms = 0; elapsed_ms <= scenario.duration_ms; elapsed_ms += scenario.tick_ms) {
-        while (event_idx < scenario.events.size() && scenario.events[event_idx].at_ms <= elapsed_ms) {
-            const ScenarioEvent& event = scenario.events[event_idx];
-
-            if (event.motion.enabled) {
-                current_intent = makeMotionIntent(event.motion);
-                robot.setMotionIntent(current_intent);
-                if (logger) {
-                    LOG_DEBUG(logger,
-                              "Scenario event @", event.at_ms, "ms mode update",
-                              " mode=", modeName(event.motion.mode),
-                              " gait=", gaitName(event.motion.gait),
-                              " body_height_m=", event.motion.body_height_m);
-                }
-            }
-
-            if (event.has_sensor_overrides) {
-                toggles.forced_contacts = buildContacts(event.sensors);
-            }
-
-            if (event.has_fault_overrides) {
-                toggles.drop_bus = event.faults.bus_down;
-                toggles.low_voltage = event.faults.low_voltage;
-                toggles.low_voltage_value = event.faults.low_voltage_value_v;
-                toggles.high_current = event.faults.high_current;
-                toggles.high_current_value = event.faults.high_current_value_a;
-            }
-
-            if (event.has_safety_overrides && event.safety.has_legs_enabled) {
-                robot.setSafetyLegEnabledTestMask(
-                    std::optional<std::array<bool, kNumLegs>>{event.safety.legs_enabled});
-            }
-
-            if (event.has_map_observation_override && map_source != nullptr) {
-                map_source->setStaticSamples(event.map_observation.samples);
-            }
-
-            if (event.has_navigation_command && robot.navigationManager() != nullptr) {
-                if (event.navigation.action == ScenarioNavigationCommand::Action::NavigateToPose) {
-                    MotionIntent walk_base = makeMotionIntent(RobotMode::WALK,
-                                                              event.navigation.gait,
-                                                              event.navigation.body_height_m);
-                    robot.navigationManager()->startNavigateToPose(
-                        walk_base,
-                        NavPose2d{
-                            event.navigation.goal_x_m,
-                            event.navigation.goal_y_m,
-                            event.navigation.goal_yaw_rad,
-                        });
-                    if (logger) {
-                        LOG_INFO(logger,
-                                 "Scenario navigation start @",
-                                 event.at_ms,
-                                 "ms goal=(",
-                                 event.navigation.goal_x_m,
-                                 ",",
-                                 event.navigation.goal_y_m,
-                                 ",",
-                                 event.navigation.goal_yaw_rad,
-                                 ")");
-                    }
-                } else if (event.navigation.action == ScenarioNavigationCommand::Action::Cancel) {
-                    robot.navigationManager()->cancel();
-                    if (logger) {
-                        LOG_INFO(logger, "Scenario navigation cancel @", event.at_ms, "ms");
-                    }
-                }
-            }
-
-            ++event_idx;
+    const uint64_t tick_ms = std::max<uint64_t>(1, scenario.tick_ms);
+    while (session.active()) {
+        const auto now = std::chrono::steady_clock::now();
+        if (!session.tick(robot, now)) {
+            break;
         }
-
-        if (!robot.setSimFaultToggles(toggles)) {
-            if (logger) {
-                LOG_ERROR(logger, "Scenario driver requires sim runtime (SimHardwareBridge)");
-            }
-            return false;
-        }
-
-        if (scenario.refresh_motion_intent) {
-            current_intent.timestamp_us = now_us();
-            robot.setMotionIntent(current_intent);
-        }
-
-        const auto target_time = start + std::chrono::milliseconds(elapsed_ms + scenario.tick_ms);
-        std::this_thread::sleep_until(target_time);
+        std::this_thread::sleep_for(std::chrono::milliseconds(tick_ms));
     }
-
-    return true;
+    return !session.failed();
 }

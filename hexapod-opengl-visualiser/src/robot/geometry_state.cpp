@@ -17,9 +17,9 @@ HexapodGeometryState MakeDefaultGeometryState() {
         kDefaultLegs[i].body_coxa_offset[0],
         kDefaultLegs[i].body_coxa_offset[1],
         kDefaultLegs[i].body_coxa_offset[2]};
-    geometry.legs[i].coxa_sign = geometry.legs[i].coxa_attach_deg < 0.0f ? -1.0f : 1.0f;
-    geometry.legs[i].femur_sign = geometry.legs[i].femur_attach_deg < 0.0f ? -1.0f : 1.0f;
-    geometry.legs[i].tibia_sign = geometry.legs[i].tibia_attach_deg < 0.0f ? -1.0f : 1.0f;
+    geometry.legs[i].coxa_sign = i < 3 ? -1.0f : 1.0f;
+    geometry.legs[i].femur_sign = i < 3 ? -1.0f : 1.0f;
+    geometry.legs[i].tibia_sign = i < 3 ? -1.0f : 1.0f;
   }
   return geometry;
 }

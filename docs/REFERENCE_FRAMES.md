@@ -146,10 +146,13 @@ flowchart LR
   simWorld[S_sim_world] -->|"StateResponse (sim frame)"| simBridge[PhysicsSimBridge]
   simBridge -->|"RobotState in W_srv/B_srv"| serverRuntime[RobotRuntime_ControlPipeline]
   serverRuntime -->|"Telemetry JSON (server conventions)"| visualiser[OpenGLVisualiser]
+  visualiser -->|"Command JSON UDP 9872"| serverRuntime
   serverRuntime -->|"StateCorrection (server->sim)"| simWorld
   simWorld -->|"MPV1 binary scene packets"| visualiser
   lidarSensor[LiDARSensorFrame] -->|"Geometry mapping"| serverRuntime
 ```
+
+Command channel protocol: [`VISUALISER_COMMAND_CHANNEL.md`](VISUALISER_COMMAND_CHANNEL.md).
 
 ## 5) LiDAR reference mapping
 

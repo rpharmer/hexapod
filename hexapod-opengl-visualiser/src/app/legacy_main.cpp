@@ -6,12 +6,18 @@
 
 #include "visualiser/gl/debug.hpp"
 #include "visualiser/gl/loader.hpp"
+#include "visualiser/net/udp_command_client.hpp"
 #include "visualiser/render/camera.hpp"
 #include "visualiser/render/line_renderer.hpp"
 #include "visualiser/render/mesh_renderer.hpp"
 #include "visualiser/render/point_renderer.hpp"
 #include "visualiser/render/primitive_draw.hpp"
 #include "visualiser/render/shader_sources.hpp"
+#include "visualiser/robot/enum_names.hpp"
+#include "visualiser/robot/kinematics.hpp"
+#include "visualiser/scene/visibility.hpp"
+#include "visualiser/scene/ground_pick.hpp"
+#include "visualiser/scene/ground_reference.hpp"
 
 #include <algorithm>
 #include <array>
@@ -24,6 +30,7 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <optional>
 #include <sstream>
@@ -126,12 +133,12 @@ constexpr std::array<float, 6> kDefaultCoxaAttachDeg = {0.0f, 0.0f, 0.0f, 0.0f, 
 constexpr std::array<float, 6> kDefaultFemurAttachDeg = {-35.0f, -35.0f, -35.0f, 35.0f, 35.0f, 35.0f};
 constexpr std::array<float, 6> kDefaultTibiaAttachDeg = {-83.0f, -83.0f, -83.0f, 83.0f, 83.0f, 83.0f};
 constexpr std::array<std::array<float, 3>, 6> kDefaultBodyCoxaOffsets = {{
-    {{-0.063f, 0.0835f, -0.007f}},  // LF = L1
-    {{-0.0815f, 0.0f, -0.007f}},    // LM = L2
-    {{-0.063f, -0.0835f, -0.007f}}, // LR = L3
-    {{0.063f, 0.0835f, -0.007f}},   // RF = R1
-    {{0.0815f, 0.0f, -0.007f}},     // RM = R2
-    {{0.063f, -0.0835f, -0.007f}},  // RR = R3
+    {{-0.0835f, -0.063f, -0.007f}}, // LF = L1
+    {{0.0f, -0.0815f, -0.007f}},    // LM = L2
+    {{0.0835f, -0.063f, -0.007f}},  // LR = L3
+    {{-0.0835f, 0.063f, -0.007f}},  // RF = R1
+    {{0.0f, 0.0815f, -0.007f}},     // RM = R2
+    {{0.0835f, 0.063f, -0.007f}},   // RR = R3
 }};
 
 struct Vec3 {
@@ -213,9 +220,9 @@ struct HexapodLegLayout {
   std::string key;
   Vec3 body_coxa_offset{0.0f, 0.0f, 0.0f};
   float mount_angle_rad = 0.0f;
-  float coxa_mm = 35.0f;
-  float femur_mm = 70.0f;
-  float tibia_mm = 110.0f;
+  float coxa_mm = 43.0f;
+  float femur_mm = 60.0f;
+  float tibia_mm = 104.0f;
   float coxa_attach_deg = 0.0f;
   float femur_attach_deg = 0.0f;
   float tibia_attach_deg = 0.0f;
@@ -226,9 +233,9 @@ struct HexapodLegLayout {
 
 struct HexapodGeometryState {
   bool valid = false;
-  float coxa_mm = 35.0f;
-  float femur_mm = 70.0f;
-  float tibia_mm = 110.0f;
+  float coxa_mm = 43.0f;
+  float femur_mm = 60.0f;
+  float tibia_mm = 104.0f;
   float body_radius_mm = 60.0f;
   std::array<HexapodLegLayout, 6> legs{};
 };
@@ -238,7 +245,7 @@ struct HexapodStatusState {
   uint64_t timestamp_ms = 0;
   int loop_counter = 0;
   int active_mode = 0;
-  int active_fault = 0;
+  int active_fault = -1;
   bool bus_ok = true;
   bool estimator_valid = true;
   float voltage = 0.0f;
@@ -259,6 +266,50 @@ struct HexapodStatusState {
   std::optional<double> fusion_max_body_orientation_error_rad{};
   std::optional<double> fusion_contact_mismatch_ratio{};
   std::optional<double> fusion_terrain_residual_m{};
+  std::optional<double> requested_planar_speed_mps{};
+  std::optional<double> governed_planar_speed_mps{};
+  std::optional<double> physics_peak_servo_torque_utilization{};
+  std::optional<std::string> command_authority{};
+  std::optional<std::string> command_scenario{};
+  std::optional<bool> command_nav_active{};
+  std::optional<float> nav_goal_x_m{};
+  std::optional<float> nav_goal_y_m{};
+  std::optional<float> nav_goal_yaw_rad{};
+  std::vector<std::array<float, 3>> nav_active_segment{};
+  std::optional<int> nav_active_waypoint_index{};
+  std::optional<double> nav_distance_to_active_waypoint_m{};
+};
+
+struct LocalMapOverlayState {
+  bool valid = false;
+  bool fresh = false;
+  int width_cells = 0;
+  int height_cells = 0;
+  int cell_step = 1;
+  float resolution_m = 0.05f;
+  float center_x_m = 0.0f;
+  float center_y_m = 0.0f;
+  float center_yaw_rad = 0.0f;
+  std::vector<std::uint8_t> cells{};
+};
+
+struct LocomotionOverlayState {
+  bool valid = false;
+  bool has_commanded_feet = false;
+  bool has_measured_feet = false;
+  bool has_planned_targets = false;
+  bool has_planned_stance = false;
+  bool has_raw_contact = false;
+  bool has_fused_support = false;
+  bool has_tracking_error = false;
+  std::optional<float> max_post_clamp_distortion_m{};
+  std::array<Vec3, 6> commanded_foot_world_m{};
+  std::array<Vec3, 6> measured_foot_world_m{};
+  std::array<Vec3, 6> planned_leg_target_body_m{};
+  std::array<bool, 6> planned_stance{};
+  std::array<bool, 6> raw_contact{};
+  std::array<bool, 6> fused_support{};
+  std::array<float, 6> commanded_tracking_error_m{};
 };
 
 struct HexapodBodyPoseState {
@@ -275,6 +326,8 @@ struct HexapodTelemetryState {
   HexapodStatusState status{};
   HexapodBodyPoseState body_pose{};
   std::array<std::array<float, 3>, 6> angles_deg{};
+  LocalMapOverlayState local_map{};
+  LocomotionOverlayState locomotion{};
 };
 
 struct AppUiState {
@@ -282,6 +335,11 @@ struct AppUiState {
   bool show_robot = true;
   bool overlay_command_robot = false;
   bool show_terrain = true;
+  bool show_nav_path = true;
+  bool show_local_map = true;
+  bool show_feet = true;
+  bool click_goal_mode = false;
+  bool waypoint_edit_mode = false;
   bool follow_active = true;
   bool rotate_scene = false;
   bool show_overlay = true;
@@ -300,6 +358,91 @@ struct CameraState {
 struct Options {
   int udp_port = kDefaultUdpPort;
   bool log_joint_positions = false;
+  std::string command_host = "127.0.0.1";
+  int command_port = 9872;
+};
+
+struct CommandUiState {
+  struct HistoryEntry {
+    std::string ref{};
+    std::string type{};
+    std::string state{};
+    std::string reason{};
+  };
+  std::vector<std::string> scenarios{};
+  int selected_index = 0;
+  std::string last_result{};
+  std::vector<HistoryEntry> history{};
+  double last_server_reply_time_s = std::numeric_limits<double>::quiet_NaN();
+  std::vector<visualiser::net::NavPose2d> draft_waypoints{};
+  std::size_t draft_revision = 0;
+  std::string pending_waypoints_ref{};
+  std::size_t pending_waypoints_revision = 0;
+  float motion_speed_mps = 0.05f;
+  float motion_heading_rad = 0.0f;
+  float motion_yaw_rate = 0.0f;
+  float motion_body_height_m = 0.14f;
+};
+
+void ShowCommandSubmission(CommandUiState& ui,
+                           const visualiser::net::CommandClientResult& submitted) {
+  ui.last_result = submitted.ok
+      ? (submitted.request_type + " pending (" + submitted.ref + ")")
+      : (submitted.request_type + " send failed: " + submitted.reason);
+  ui.history.insert(ui.history.begin(), CommandUiState::HistoryEntry{
+      submitted.ref, submitted.request_type,
+      submitted.ok ? "pending" : "send failed", submitted.reason});
+  if (ui.history.size() > 8) {
+    ui.history.resize(8);
+  }
+}
+
+void ApplyCommandReply(AppUiState& ui,
+                       CommandUiState& command_ui,
+                       const visualiser::net::CommandClientResult& reply) {
+  const bool local_timeout = reply.raw.empty();
+  if (!local_timeout) {
+    command_ui.last_server_reply_time_s = glfwGetTime();
+  }
+  if (reply.request_type == "scenario.list" && reply.ok) {
+    command_ui.scenarios = reply.scenarios;
+    if (command_ui.selected_index >= static_cast<int>(reply.scenarios.size())) {
+      command_ui.selected_index = 0;
+    }
+  }
+  if (reply.request_type == "nav.waypoints" &&
+      reply.ref == command_ui.pending_waypoints_ref) {
+    if (reply.ok && command_ui.draft_revision == command_ui.pending_waypoints_revision) {
+      command_ui.draft_waypoints.clear();
+      ++command_ui.draft_revision;
+      ui.waypoint_edit_mode = false;
+    }
+    command_ui.pending_waypoints_ref.clear();
+  }
+  const bool navigation_request = reply.request_type == "nav.goto" ||
+                                  reply.request_type == "nav.waypoints";
+  const std::string state = local_timeout ? "timed out" :
+      (reply.ok ? (navigation_request ? "accepted (not completed)" : "applied") : "rejected");
+  command_ui.last_result = reply.request_type + " " + state +
+      " (" + reply.ref + "): " + reply.reason;
+  const auto history = std::find_if(command_ui.history.begin(), command_ui.history.end(),
+      [&](const CommandUiState::HistoryEntry& entry) { return entry.ref == reply.ref; });
+  if (history != command_ui.history.end()) {
+    history->state = state;
+    history->reason = reply.reason;
+  }
+  if (reply.request_type == "scenario.list" && reply.ok) {
+    command_ui.last_result = "listed " + std::to_string(reply.scenarios.size()) +
+        " scenarios (" + reply.ref + ")";
+  }
+}
+
+struct ScenePickContext {
+  bool valid = false;
+  visualiser::render::Mat4 inv_view_proj{};
+  float ground_y = 0.0f;
+  int viewport_width = 1;
+  int viewport_height = 1;
 };
 
 struct SceneBounds {
@@ -359,10 +502,6 @@ Vec3 Cross(const Vec3& a, const Vec3& b) {
 
 float Dot(const Vec3& a, const Vec3& b) {
   return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
-float WrapDegrees(float deg) {
-  return std::atan2(std::sin(deg * kPi / 180.0f), std::cos(deg * kPi / 180.0f)) * 180.0f / kPi;
 }
 
 Quat NormalizeQuat(const Quat& quat) {
@@ -900,9 +1039,9 @@ HexapodGeometryState MakeDefaultGeometryState() {
         kDefaultBodyCoxaOffsets[i][2],
     };
     state.legs[i].mount_angle_rad = kDefaultMountAnglesDeg[i] * kPi / 180.0f;
-    state.legs[i].coxa_mm = 35.0f;
-    state.legs[i].femur_mm = 70.0f;
-    state.legs[i].tibia_mm = 110.0f;
+    state.legs[i].coxa_mm = 43.0f;
+    state.legs[i].femur_mm = 60.0f;
+    state.legs[i].tibia_mm = 104.0f;
     state.legs[i].coxa_attach_deg = kDefaultCoxaAttachDeg[i];
     state.legs[i].femur_attach_deg = kDefaultFemurAttachDeg[i];
     state.legs[i].tibia_attach_deg = kDefaultTibiaAttachDeg[i];
@@ -1067,7 +1206,238 @@ bool ParseNavigationSummary(std::string_view payload, HexapodStatusState& status
   if (const auto obstacle_distance = ExtractDoubleField(*nav_payload, "nearest_obstacle_distance_m")) {
     status.nav_nearest_obstacle_distance_m = *obstacle_distance;
   }
+  if (const auto idx = ExtractIntField(*nav_payload, "active_waypoint_index")) {
+    status.nav_active_waypoint_index = *idx;
+  }
+  if (const auto dist = ExtractDoubleField(*nav_payload, "distance_to_active_waypoint_m")) {
+    status.nav_distance_to_active_waypoint_m = *dist;
+  }
+  if (const auto has_goal = ExtractBoolField(*nav_payload, "has_goal"); has_goal && *has_goal) {
+    if (const auto goal = ExtractObjectField(*nav_payload, "goal")) {
+      if (const auto x = ExtractDoubleField(*goal, "x_m")) {
+        status.nav_goal_x_m = static_cast<float>(*x);
+      }
+      if (const auto y = ExtractDoubleField(*goal, "y_m")) {
+        status.nav_goal_y_m = static_cast<float>(*y);
+      }
+      if (const auto yaw = ExtractDoubleField(*goal, "yaw_rad")) {
+        status.nav_goal_yaw_rad = static_cast<float>(*yaw);
+      }
+    }
+  } else {
+    status.nav_goal_x_m.reset();
+    status.nav_goal_y_m.reset();
+    status.nav_goal_yaw_rad.reset();
+  }
+  status.nav_active_segment.clear();
+  if (const auto segment = ExtractArrayField(*nav_payload, "active_segment")) {
+    std::size_t i = 0;
+    while (i < segment->size()) {
+      i = SkipWhitespace(*segment, i);
+      if (i >= segment->size() || (*segment)[i] != '{') {
+        break;
+      }
+      int depth = 0;
+      std::size_t j = i;
+      for (; j < segment->size(); ++j) {
+        if ((*segment)[j] == '{') {
+          ++depth;
+        } else if ((*segment)[j] == '}') {
+          --depth;
+          if (depth == 0) {
+            break;
+          }
+        }
+      }
+      if (j >= segment->size()) {
+        break;
+      }
+      const std::string_view object = segment->substr(i, j - i + 1);
+      std::array<float, 3> pose{0.0f, 0.0f, 0.0f};
+      if (const auto x = ExtractDoubleField(object, "x_m")) {
+        pose[0] = static_cast<float>(*x);
+      }
+      if (const auto y = ExtractDoubleField(object, "y_m")) {
+        pose[1] = static_cast<float>(*y);
+      }
+      if (const auto yaw = ExtractDoubleField(object, "yaw_rad")) {
+        pose[2] = static_cast<float>(*yaw);
+      }
+      status.nav_active_segment.push_back(pose);
+      i = j + 1;
+    }
+  }
   return true;
+}
+
+bool ParseCommandSummary(std::string_view payload, HexapodStatusState& status) {
+  const auto command_payload = ExtractObjectField(payload, "command");
+  if (!command_payload.has_value()) {
+    return false;
+  }
+  if (const auto authority = ExtractStringField(*command_payload, "authority")) {
+    status.command_authority = authority;
+  }
+  if (const auto scenario = ExtractStringField(*command_payload, "scenario")) {
+    status.command_scenario = scenario;
+  }
+  if (const auto nav_active = ExtractBoolField(*command_payload, "nav_active")) {
+    status.command_nav_active = nav_active;
+  }
+  return status.command_authority.has_value() || status.command_scenario.has_value() ||
+         status.command_nav_active.has_value();
+}
+
+bool ParseLocalMapOverlay(std::string_view payload, LocalMapOverlayState& map) {
+  const auto map_payload = ExtractObjectField(payload, "local_map");
+  if (!map_payload.has_value()) {
+    return false;
+  }
+  LocalMapOverlayState next{};
+  if (const auto fresh = ExtractBoolField(*map_payload, "fresh")) {
+    next.fresh = *fresh;
+  }
+  if (const auto w = ExtractIntField(*map_payload, "width_cells")) {
+    next.width_cells = *w;
+  }
+  if (const auto h = ExtractIntField(*map_payload, "height_cells")) {
+    next.height_cells = *h;
+  }
+  if (const auto step = ExtractIntField(*map_payload, "cell_step")) {
+    next.cell_step = std::max(1, *step);
+  }
+  if (const auto res = ExtractDoubleField(*map_payload, "resolution_m")) {
+    next.resolution_m = static_cast<float>(*res);
+  }
+  if (const auto center = ExtractObjectField(*map_payload, "center_pose")) {
+    if (const auto x = ExtractDoubleField(*center, "x_m")) {
+      next.center_x_m = static_cast<float>(*x);
+    }
+    if (const auto y = ExtractDoubleField(*center, "y_m")) {
+      next.center_y_m = static_cast<float>(*y);
+    }
+    if (const auto yaw = ExtractDoubleField(*center, "yaw_rad")) {
+      next.center_yaw_rad = static_cast<float>(*yaw);
+    }
+  }
+  if (const auto cells = ExtractArrayField(*map_payload, "cells")) {
+    std::size_t i = 0;
+    while (i < cells->size()) {
+      i = SkipWhitespace(*cells, i);
+      if (i >= cells->size()) {
+        break;
+      }
+      const std::string token(cells->substr(i));
+      char* end = nullptr;
+      const long value = std::strtol(token.c_str(), &end, 10);
+      if (end == token.c_str()) {
+        ++i;
+        continue;
+      }
+      next.cells.push_back(static_cast<std::uint8_t>(std::clamp(value, 0L, 255L)));
+      i += static_cast<std::size_t>(end - token.c_str());
+    }
+  }
+  const int out_w = (next.width_cells + next.cell_step - 1) / next.cell_step;
+  const int out_h = (next.height_cells + next.cell_step - 1) / next.cell_step;
+  next.valid = out_w > 0 && out_h > 0 &&
+               next.cells.size() >= static_cast<std::size_t>(out_w * out_h);
+  if (next.valid) {
+    map = std::move(next);
+  }
+  return next.valid;
+}
+
+bool ParseLocomotionOverlay(std::string_view payload, LocomotionOverlayState& loco) {
+  loco = LocomotionOverlayState{};
+  const auto debug = ExtractObjectField(payload, "locomotion_debug");
+  if (!debug.has_value() || ExtractBoolField(*debug, "valid") != true) {
+    return false;
+  }
+  LocomotionOverlayState next{};
+  auto parse_vec3_array = [&](std::string_view key, std::array<Vec3, 6>& out) {
+    const auto arr = ExtractArrayField(*debug, key);
+    if (!arr) {
+      return false;
+    }
+    std::size_t leg = 0;
+    std::size_t i = 0;
+    while (i < arr->size() && leg < out.size()) {
+      i = SkipWhitespace(*arr, i);
+      if (i >= arr->size() || (*arr)[i] != '[') {
+        break;
+      }
+      const auto close = arr->find(']', i);
+      if (close == std::string_view::npos) {
+        break;
+      }
+      std::string triple(arr->substr(i + 1, close - i - 1));
+      std::replace(triple.begin(), triple.end(), ',', ' ');
+      std::istringstream in(triple);
+      float x = 0.0f;
+      float y = 0.0f;
+      float z = 0.0f;
+      std::string extra;
+      if (!(in >> x >> y >> z) || (in >> extra) ||
+          !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+        return false;
+      }
+      out[leg++] = Vec3{x, y, z};
+      i = close + 1;
+      while (i < arr->size() && ((*arr)[i] == ',' || (*arr)[i] == ' ')) {
+        ++i;
+      }
+    }
+    return leg == out.size() && SkipWhitespace(*arr, i) == arr->size();
+  };
+  auto parse_bool_array = [&](std::string_view key, std::array<bool, 6>& out) {
+    const auto values = ExtractArrayField(*debug, key);
+    if (!values) {
+      return false;
+    }
+    std::size_t leg = 0;
+    std::size_t i = 0;
+    while (i < values->size() && leg < out.size()) {
+      i = SkipWhitespace(*values, i);
+      if (values->substr(i, 4) == "true") {
+        out[leg++] = true;
+        i += 4;
+      } else if (values->substr(i, 5) == "false") {
+        out[leg++] = false;
+        i += 5;
+      } else {
+        return false;
+      }
+      i = SkipWhitespace(*values, i);
+      if (i < values->size() && (*values)[i] == ',') {
+        ++i;
+      }
+    }
+    return leg == out.size() && SkipWhitespace(*values, i) == values->size();
+  };
+  next.has_commanded_feet = parse_vec3_array("commanded_foot_world_m", next.commanded_foot_world_m);
+  next.has_measured_feet = parse_vec3_array("measured_foot_world_m", next.measured_foot_world_m);
+  next.has_planned_targets = parse_vec3_array("planned_leg_target_body_m", next.planned_leg_target_body_m);
+  next.has_planned_stance = parse_bool_array("planned_stance", next.planned_stance);
+  next.has_raw_contact = parse_bool_array("raw_contact", next.raw_contact);
+  next.has_fused_support = parse_bool_array("fused_support", next.fused_support);
+  if (const auto values = ExtractFloatArrayField(*debug, "commanded_tracking_error_m");
+      values && values->size() == next.commanded_tracking_error_m.size() &&
+      std::all_of(values->begin(), values->end(), [](float value) { return std::isfinite(value); })) {
+    std::copy(values->begin(), values->end(), next.commanded_tracking_error_m.begin());
+    next.has_tracking_error = true;
+  }
+  if (const auto distortion = ExtractFloatField(*debug, "max_post_clamp_distortion_m");
+      distortion && std::isfinite(*distortion)) {
+    next.max_post_clamp_distortion_m = *distortion;
+  }
+  next.valid = next.has_commanded_feet || next.has_measured_feet ||
+               next.has_planned_targets || next.has_planned_stance ||
+               next.has_raw_contact || next.has_fused_support || next.has_tracking_error;
+  if (next.valid) {
+    loco = next;
+  }
+  return next.valid;
 }
 
 bool ParseFusionSummary(std::string_view payload, HexapodStatusState& status) {
@@ -1150,8 +1520,13 @@ bool ParseHexapodTelemetryPacket(std::string_view payload, HexapodTelemetryState
   if (const auto active_mode = ExtractIntField(payload, "mode")) {
     telemetry.status.active_mode = *active_mode;
   }
+  telemetry.status.active_fault = -1;
   if (const auto active_fault = ExtractIntField(payload, "active_fault")) {
     telemetry.status.active_fault = *active_fault;
+  } else if (const auto active_fault_name = ExtractStringField(payload, "active_fault")) {
+    if (const auto fault = visualiser::robot::ParseFaultCodeName(*active_fault_name)) {
+      telemetry.status.active_fault = *fault;
+    }
   }
   if (const auto bus_ok = ExtractBoolField(payload, "bus_ok")) {
     telemetry.status.bus_ok = *bus_ok;
@@ -1168,7 +1543,29 @@ bool ParseHexapodTelemetryPacket(std::string_view payload, HexapodTelemetryState
 
   telemetry.status.valid = true;
   ParseNavigationSummary(payload, telemetry.status);
+  ParseCommandSummary(payload, telemetry.status);
+  ParseLocalMapOverlay(payload, telemetry.local_map);
+  ParseLocomotionOverlay(payload, telemetry.locomotion);
   ParseFusionSummary(payload, telemetry.status);
+  telemetry.status.requested_planar_speed_mps.reset();
+  telemetry.status.governed_planar_speed_mps.reset();
+  telemetry.status.physics_peak_servo_torque_utilization.reset();
+  if (const auto governor = ExtractObjectField(payload, "governor")) {
+    if (const auto speed = ExtractDoubleField(*governor, "requested_planar_speed_mps");
+        speed && std::isfinite(*speed)) {
+      telemetry.status.requested_planar_speed_mps = *speed;
+    }
+    if (const auto speed = ExtractDoubleField(*governor, "governed_planar_speed_mps");
+        speed && std::isfinite(*speed)) {
+      telemetry.status.governed_planar_speed_mps = *speed;
+    }
+  }
+  if (const auto physics = ExtractObjectField(payload, "physics_sim")) {
+    if (const auto utilization = ExtractDoubleField(*physics, "peak_servo_torque_utilization");
+        utilization && std::isfinite(*utilization)) {
+      telemetry.status.physics_peak_servo_torque_utilization = *utilization;
+    }
+  }
   telemetry.status.valid = telemetry.status.valid || telemetry.status.nav_lifecycle.has_value() ||
                           telemetry.status.fusion_model_trust.has_value();
   return true;
@@ -1186,31 +1583,6 @@ const char* RobotModeName(int mode) {
       return "WALK";
     case 4:
       return "FAULT";
-    default:
-      return "UNKNOWN";
-  }
-}
-
-const char* FaultCodeName(int fault) {
-  switch (fault) {
-    case 0:
-      return "NONE";
-    case 1:
-      return "BUS_TIMEOUT";
-    case 2:
-      return "ESTOP";
-    case 3:
-      return "TIP_OVER";
-    case 4:
-      return "ESTIMATOR_INVALID";
-    case 5:
-      return "MOTOR_FAULT";
-    case 6:
-      return "JOINT_LIMIT";
-    case 7:
-      return "COMMAND_TIMEOUT";
-    case 8:
-      return "BODY_COLLAPSE";
     default:
       return "UNKNOWN";
   }
@@ -1301,52 +1673,46 @@ Vec3 ServerToSceneVec(const Vec3& value) {
   return Vec3{value.y, value.z, -value.x};
 }
 
+bool PickGroundServerXY(const ScenePickContext& pick,
+                        float mouse_x,
+                        float mouse_y,
+                        int window_width,
+                        int window_height,
+                        float& out_x_m,
+                        float& out_y_m) {
+  if (!pick.valid || pick.viewport_width <= 0 || pick.viewport_height <= 0) {
+    return false;
+  }
+  visualiser::math::Vec3 scene;
+  if (!visualiser::scene::PickHorizontalGround(pick.inv_view_proj, mouse_x, mouse_y,
+                                               window_width, window_height, pick.ground_y, scene)) {
+    return false;
+  }
+  const Vec3 server = SceneToServerVec({scene.x, scene.y, scene.z});
+  out_x_m = server.x;
+  out_y_m = server.y;
+  return true;
+}
+
 RobotKinematics ComputeRobotLeg(const HexapodLegLayout& layout, const std::array<float, 3>& angles_deg) {
-  // Server telemetry may include multi-turn servo targets; wrap to principal angles so model
-  // rotation axes remain stable in the visualiser.
-  const float coxa_deg = WrapDegrees(angles_deg[0]);
-  const float femur_deg = WrapDegrees(angles_deg[1]);
-  const float tibia_deg = WrapDegrees(angles_deg[2]);
-  const float coxa_rad = (coxa_deg - layout.coxa_attach_deg) * kPi / 180.0f;
-  const float femur_rad = (femur_deg - layout.femur_attach_deg) * kPi / 180.0f * layout.femur_sign;
-  const float tibia_rad = (tibia_deg - layout.tibia_attach_deg) * kPi / 180.0f * layout.tibia_sign;
-  // Telemetry mount angles are in the server hexapod convention (0 along +Y/forward).
-  // Convert to renderer kinematics convention (0 along +X) before applying coxa rotation.
-  const float base_yaw = (0.5f * kPi) - layout.mount_angle_rad;
-  const float yaw = base_yaw + coxa_rad * layout.coxa_sign;
-
-  const float body_radius = std::sqrt(layout.body_coxa_offset.x * layout.body_coxa_offset.x
-                                      + layout.body_coxa_offset.y * layout.body_coxa_offset.y);
-  const Vec3 anchor{
-      layout.body_coxa_offset.x != 0.0f || layout.body_coxa_offset.y != 0.0f ? layout.body_coxa_offset.x
-                                                                              : body_radius * std::cos(layout.mount_angle_rad),
-      layout.body_coxa_offset.x != 0.0f || layout.body_coxa_offset.y != 0.0f ? layout.body_coxa_offset.y
-                                                                              : body_radius * std::sin(layout.mount_angle_rad),
-      layout.body_coxa_offset.z,
-  };
-
-  const Vec3 shoulder{
-      anchor.x + layout.coxa_mm * 0.001f * std::cos(yaw),
-      anchor.y + layout.coxa_mm * 0.001f * std::sin(yaw),
-      anchor.z,
-  };
-
-  const float femur_proj = layout.femur_mm * 0.001f * std::cos(femur_rad);
-  const Vec3 knee{
-      shoulder.x + femur_proj * std::cos(yaw),
-      shoulder.y + femur_proj * std::sin(yaw),
-      shoulder.z + layout.femur_mm * 0.001f * std::sin(femur_rad),
-  };
-
-  const float tibia_total = femur_rad + tibia_rad;
-  const float tibia_proj = layout.tibia_mm * 0.001f * std::cos(tibia_total);
-  const Vec3 foot{
-      knee.x + tibia_proj * std::cos(yaw),
-      knee.y + tibia_proj * std::sin(yaw),
-      knee.z + layout.tibia_mm * 0.001f * std::sin(tibia_total),
-  };
-
-  return {anchor, shoulder, knee, foot};
+  visualiser::robot::HexapodLegLayout model_layout;
+  model_layout.body_coxa_offset = {layout.body_coxa_offset.x, layout.body_coxa_offset.y,
+                                   layout.body_coxa_offset.z};
+  model_layout.mount_angle_rad = layout.mount_angle_rad;
+  model_layout.coxa_mm = layout.coxa_mm;
+  model_layout.femur_mm = layout.femur_mm;
+  model_layout.tibia_mm = layout.tibia_mm;
+  model_layout.coxa_attach_deg = layout.coxa_attach_deg;
+  model_layout.femur_attach_deg = layout.femur_attach_deg;
+  model_layout.tibia_attach_deg = layout.tibia_attach_deg;
+  model_layout.coxa_sign = layout.coxa_sign;
+  model_layout.femur_sign = layout.femur_sign;
+  model_layout.tibia_sign = layout.tibia_sign;
+  const auto leg = visualiser::robot::ComputeRobotLeg(model_layout, angles_deg);
+  return {{leg.coxa.x, leg.coxa.y, leg.coxa.z},
+          {leg.femur.x, leg.femur.y, leg.femur.z},
+          {leg.tibia.x, leg.tibia.y, leg.tibia.z},
+          {leg.foot.x, leg.foot.y, leg.foot.z}};
 }
 
 RobotKinematics ComputeRobotLegScene(const HexapodLegLayout& layout,
@@ -1477,8 +1843,8 @@ void DrawTerrainPatch(const TerrainPatchState& terrain) {
     RV prev{};
     for (int row = 0; row < terrain.rows; ++row) {
       const std::size_t index = static_cast<std::size_t>(row * terrain.cols + col);
-      const float x = terrain.center.x + (static_cast<float>(col) * terrain.cell_size_m) - half_span_x;
-      const float z = terrain.center.z + (static_cast<float>(row) * terrain.cell_size_m) - half_span_z;
+      const float x = origin_x + (static_cast<float>(col) * terrain.cell_size_m);
+      const float z = origin_z + (static_cast<float>(row) * terrain.cell_size_m);
       const RV cur{x, terrain.heights[index], z};
       if (row > 0) {
         g_line_renderer.AddSegment(prev, cur, col_main);
@@ -1522,6 +1888,28 @@ void DrawTerrainPatch(const TerrainPatchState& terrain) {
                       normal_base.z + up.z * arrow_scale};
   g_line_renderer.AddSegment(normal_base, normal_tip, RV{0.95f, 0.88f, 0.24f});
   g_point_renderer.AddPoint(normal_base, RV{0.95f, 0.88f, 0.24f});
+}
+
+void DrawGroundReference(const TerrainPatchState& terrain, const HexapodBodyPoseState& pose) {
+  if (!terrain.valid || terrain.rows <= 0 || terrain.cols <= 0 || terrain.cell_size_m <= 0.0f ||
+      terrain.heights.size() < static_cast<std::size_t>(terrain.rows * terrain.cols)) {
+    return;
+  }
+  const Vec3 center = pose.valid ? ServerToSceneVec(pose.position) : terrain.center;
+  const float half_patch_x = 0.5f * static_cast<float>(terrain.cols - 1) * terrain.cell_size_m;
+  const float half_patch_z = 0.5f * static_cast<float>(terrain.rows - 1) * terrain.cell_size_m;
+  const float origin_x = terrain.has_grid_origin_xz ? terrain.grid_origin_x : terrain.center.x - half_patch_x;
+  const float origin_z = terrain.has_grid_origin_xz ? terrain.grid_origin_z : terrain.center.z - half_patch_z;
+  const visualiser::scene::GroundGridExclusion patch{
+      true, origin_x, origin_x + 2.0f * half_patch_x,
+      origin_z, origin_z + 2.0f * half_patch_z};
+  const auto lines = visualiser::scene::BuildGroundReferenceGrid(
+      center.x, center.z, terrain.plane_height_m, 1.0f, 0.10f, patch);
+  const visualiser::render::Vec3 color{0.16f, 0.40f, 0.33f};
+  for (const auto& line : lines) {
+    g_line_renderer.AddSegment({line.a.x, line.a.y, line.a.z},
+                               {line.b.x, line.b.y, line.b.z}, color);
+  }
 }
 
 void DrawHexapodModel(const HexapodGeometryState& geometry,
@@ -2137,13 +2525,36 @@ Options ParseArgs(int argc, char** argv) {
       }
       continue;
     }
+    if (arg == "--command-host") {
+      if (i + 1 >= argc) {
+        std::cerr << "Missing value for --command-host\n";
+        std::exit(1);
+      }
+      options.command_host = argv[++i];
+      continue;
+    }
+    if (arg == "--command-port") {
+      if (i + 1 >= argc) {
+        std::cerr << "Missing value for --command-port\n";
+        std::exit(1);
+      }
+      const std::string value = argv[++i];
+      if (!ParseUdpPort(value.c_str(), options.command_port)) {
+        std::cerr << "Invalid command UDP port: " << value << "\n";
+        std::exit(1);
+      }
+      continue;
+    }
     if (arg == "--log-joint-positions") {
       options.log_joint_positions = true;
       continue;
     }
 
     if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: hexapod-opengl-visualiser [--udp-port <port>] [--log-joint-positions]\n"
+      std::cout << "Usage: hexapod-opengl-visualiser [--udp-port <port>] "
+                   "[--command-host <host>] [--command-port <port>] [--log-joint-positions]\n"
+                << "  --udp-port              Telemetry/MPV1 listen port (default 9870).\n"
+                << "  --command-host/port     Server command channel (default 127.0.0.1:9872).\n"
                 << "  --log-joint-positions   Print per-joint (x,y,z) once per second to stdout.\n"
                 << "Press F1 while running to toggle the overlay panel.\n";
       std::exit(0);
@@ -2157,26 +2568,159 @@ Options ParseArgs(int argc, char** argv) {
 }
 
 bool HasMeasuredSceneGeometry(const std::map<std::uint32_t, EntityState>& entities) {
-  return std::any_of(entities.begin(), entities.end(), [](const auto& entry) {
-    const EntityState& entity = entry.second;
-    return entity.has_frame && entity.shape != ShapeType::kPlane;
-  });
+  return visualiser::scene::HasDrawableMeasuredGeometry(entities);
+}
+
+bool ScenarioAuthorityActive(const HexapodStatusState& status) {
+  return status.command_authority.has_value() && *status.command_authority == "scenario";
+}
+
+bool NavAuthorityActive(const HexapodStatusState& status) {
+  return status.command_authority.has_value() && *status.command_authority == "nav";
+}
+
+void DrawNavPathOverlay(const HexapodStatusState& status, const AppUiState& ui) {
+  using RV = visualiser::render::Vec3;
+  if (!ui.show_nav_path) {
+    return;
+  }
+  const RV path_color{0.25f, 0.95f, 0.55f};
+  const RV goal_color{1.0f, 0.35f, 0.2f};
+  if (status.nav_active_segment.size() >= 2) {
+    for (std::size_t i = 1; i < status.nav_active_segment.size(); ++i) {
+      const auto& a = status.nav_active_segment[i - 1];
+      const auto& b = status.nav_active_segment[i];
+      const Vec3 sa = ServerToSceneVec(Vec3{a[0], a[1], 0.02f});
+      const Vec3 sb = ServerToSceneVec(Vec3{b[0], b[1], 0.02f});
+      g_line_renderer.AddSegment(RV{sa.x, sa.y, sa.z}, RV{sb.x, sb.y, sb.z}, path_color);
+    }
+  }
+  for (const auto& pose : status.nav_active_segment) {
+    const Vec3 p = ServerToSceneVec(Vec3{pose[0], pose[1], 0.02f});
+    g_point_renderer.AddPoint(RV{p.x, p.y, p.z}, path_color);
+  }
+  if (status.nav_goal_x_m.has_value() && status.nav_goal_y_m.has_value()) {
+    const float yaw = status.nav_goal_yaw_rad.value_or(0.0f);
+    const Vec3 goal = ServerToSceneVec(Vec3{*status.nav_goal_x_m, *status.nav_goal_y_m, 0.04f});
+    g_point_renderer.AddPoint(RV{goal.x, goal.y, goal.z}, goal_color);
+    const float tip_x = *status.nav_goal_x_m + 0.12f * std::cos(yaw);
+    const float tip_y = *status.nav_goal_y_m + 0.12f * std::sin(yaw);
+    const Vec3 tip = ServerToSceneVec(Vec3{tip_x, tip_y, 0.04f});
+    g_line_renderer.AddSegment(RV{goal.x, goal.y, goal.z}, RV{tip.x, tip.y, tip.z}, goal_color);
+  }
+}
+
+void DrawLocalMapOverlay(const LocalMapOverlayState& map, const AppUiState& ui) {
+  using RV = visualiser::render::Vec3;
+  if (!ui.show_local_map || !map.valid) {
+    return;
+  }
+  const int out_w = (map.width_cells + map.cell_step - 1) / map.cell_step;
+  const int out_h = (map.height_cells + map.cell_step - 1) / map.cell_step;
+  if (out_w <= 0 || out_h <= 0) {
+    return;
+  }
+  const float half_w = 0.5f * static_cast<float>(map.width_cells - 1);
+  const float half_h = 0.5f * static_cast<float>(map.height_cells - 1);
+  const float cell_m = map.resolution_m * static_cast<float>(map.cell_step);
+  const float half_cell = 0.45f * cell_m;
+  const RV occ{0.95f, 0.28f, 0.18f};
+  const RV free_c{0.35f, 0.55f, 0.95f};
+  for (int oy = 0; oy < out_h; ++oy) {
+    for (int ox = 0; ox < out_w; ++ox) {
+      const std::size_t idx = static_cast<std::size_t>(oy * out_w + ox);
+      if (idx >= map.cells.size()) {
+        continue;
+      }
+      const std::uint8_t state = map.cells[idx];
+      if (state == 0) {
+        continue;
+      }
+      const int cell_x = ox * map.cell_step;
+      const int cell_y = oy * map.cell_step;
+      const float local_x = (static_cast<float>(cell_x) - half_w) * map.resolution_m;
+      const float local_y = (static_cast<float>(cell_y) - half_h) * map.resolution_m;
+      const float wx = map.center_x_m + local_x;
+      const float wy = map.center_y_m + local_y;
+      const Vec3 c00 = ServerToSceneVec(Vec3{wx - half_cell, wy - half_cell, 0.015f});
+      const Vec3 c10 = ServerToSceneVec(Vec3{wx + half_cell, wy - half_cell, 0.015f});
+      const Vec3 c11 = ServerToSceneVec(Vec3{wx + half_cell, wy + half_cell, 0.015f});
+      const Vec3 c01 = ServerToSceneVec(Vec3{wx - half_cell, wy + half_cell, 0.015f});
+      const RV color = (state == 2) ? occ : free_c;
+      g_line_renderer.AddSegment(RV{c00.x, c00.y, c00.z}, RV{c10.x, c10.y, c10.z}, color);
+      g_line_renderer.AddSegment(RV{c10.x, c10.y, c10.z}, RV{c11.x, c11.y, c11.z}, color);
+      g_line_renderer.AddSegment(RV{c11.x, c11.y, c11.z}, RV{c01.x, c01.y, c01.z}, color);
+      g_line_renderer.AddSegment(RV{c01.x, c01.y, c01.z}, RV{c00.x, c00.y, c00.z}, color);
+    }
+  }
+}
+
+void DrawFeetOverlay(const HexapodTelemetryState& telemetry, const AppUiState& ui,
+                     bool telemetry_fresh) {
+  using RV = visualiser::render::Vec3;
+  if (!ui.show_feet || !telemetry_fresh || !telemetry.locomotion.valid) {
+    return;
+  }
+  const RV commanded{0.98f, 0.82f, 0.2f};
+  const RV planned_stance{0.2f, 0.95f, 0.85f};
+  const RV planned_swing{0.75f, 0.45f, 0.95f};
+  for (std::size_t i = 0; i < 6; ++i) {
+    if (telemetry.locomotion.has_commanded_feet) {
+      const Vec3 cmd = ServerToSceneVec(telemetry.locomotion.commanded_foot_world_m[i]);
+      g_point_renderer.AddPoint(RV{cmd.x, cmd.y, cmd.z}, commanded);
+    }
+    if (telemetry.locomotion.has_planned_targets && telemetry.body_pose.valid) {
+      const Vec3 plan =
+          TransformBodyPoint(telemetry.locomotion.planned_leg_target_body_m[i], telemetry.body_pose);
+      const RV plan_c = !telemetry.locomotion.has_planned_stance
+          ? RV{0.6f, 0.6f, 0.6f}
+          : (telemetry.locomotion.planned_stance[i] ? planned_stance : planned_swing);
+      g_point_renderer.AddPoint(RV{plan.x, plan.y, plan.z}, plan_c);
+      if (telemetry.locomotion.has_commanded_feet) {
+        const Vec3 cmd = ServerToSceneVec(telemetry.locomotion.commanded_foot_world_m[i]);
+        g_line_renderer.AddSegment(RV{cmd.x, cmd.y, cmd.z}, RV{plan.x, plan.y, plan.z}, RV{0.55f, 0.55f, 0.55f});
+      }
+    }
+  }
+}
+
+void DrawDraftWaypoints(const CommandUiState& command_ui, const AppUiState& ui) {
+  using RV = visualiser::render::Vec3;
+  if (!ui.waypoint_edit_mode || command_ui.draft_waypoints.empty()) {
+    return;
+  }
+  const RV color{0.95f, 0.75f, 0.2f};
+  for (std::size_t i = 0; i < command_ui.draft_waypoints.size(); ++i) {
+    const auto& pose = command_ui.draft_waypoints[i];
+    const Vec3 p = ServerToSceneVec(Vec3{static_cast<float>(pose.x_m), static_cast<float>(pose.y_m), 0.03f});
+    g_point_renderer.AddPoint(RV{p.x, p.y, p.z}, color);
+    if (i > 0) {
+      const auto& prev = command_ui.draft_waypoints[i - 1];
+      const Vec3 a =
+          ServerToSceneVec(Vec3{static_cast<float>(prev.x_m), static_cast<float>(prev.y_m), 0.03f});
+      g_line_renderer.AddSegment(RV{a.x, a.y, a.z}, RV{p.x, p.y, p.z}, color);
+    }
+  }
 }
 
 void DrawScene(const std::map<std::uint32_t, EntityState>& entities,
                const TerrainPatchState& terrain_patch,
                const HexapodTelemetryState& telemetry,
                const AppUiState& ui,
+               const CommandUiState& command_ui,
                const CameraState& camera,
+               bool telemetry_fresh,
                float time_s,
                int viewport_width,
-               int viewport_height) {
+               int viewport_height,
+               ScenePickContext& pick_out) {
   using RM = visualiser::render::Mat4;
   using RV = visualiser::render::Vec3;
 
   g_line_renderer.Clear();
   g_mesh_renderer.Clear();
   g_point_renderer.Clear();
+  pick_out = ScenePickContext{};
 
   // The physics stream contains measured link poses, while the JSON robot is reconstructed
   // from commanded joint angles. Showing both in the same place makes normal servo lag look
@@ -2207,6 +2751,15 @@ void DrawScene(const std::map<std::uint32_t, EntityState>& entities,
         ExpandBounds(bounds, robot_bounds.min);
         ExpandBounds(bounds, robot_bounds.max);
       }
+    }
+  }
+  if (ui.show_nav_path) {
+    for (const auto& pose : telemetry.status.nav_active_segment) {
+      ExpandBounds(bounds, ServerToSceneVec(Vec3{pose[0], pose[1], 0.0f}));
+    }
+    if (telemetry.status.nav_goal_x_m.has_value() && telemetry.status.nav_goal_y_m.has_value()) {
+      ExpandBounds(bounds,
+                   ServerToSceneVec(Vec3{*telemetry.status.nav_goal_x_m, *telemetry.status.nav_goal_y_m, 0.0f}));
     }
   }
 
@@ -2240,9 +2793,24 @@ void DrawScene(const std::map<std::uint32_t, EntityState>& entities,
                                                        camera.pan_x,
                                                        camera.pan_y);
   const RM vp = RM::Mul(proj, view);
+  pick_out.inv_view_proj = RM::Inverse(vp);
+  pick_out.ground_y = terrain_patch.valid ? terrain_patch.plane_height_m : 0.0f;
+  if (!terrain_patch.valid) {
+    for (const auto& [id, entity] : entities) {
+      (void)id;
+      if (entity.has_static && entity.shape == ShapeType::kPlane) {
+        pick_out.ground_y = entity.plane_offset;
+        break;
+      }
+    }
+  }
+  pick_out.viewport_width = viewport_width;
+  pick_out.viewport_height = viewport_height;
+  pick_out.valid = true;
 
   if (ui.show_terrain) {
     DrawTerrainPatch(terrain_patch);
+    DrawGroundReference(terrain_patch, telemetry.body_pose);
   }
 
   if (ui.show_scene) {
@@ -2253,6 +2821,14 @@ void DrawScene(const std::map<std::uint32_t, EntityState>& entities,
       }
 
       if (entity.shape == ShapeType::kPlane) {
+        // The terrain patch already draws the local contact surface. Layering
+        // the infinite blue plane grid over it makes two ground surfaces appear
+        // to sit at different heights as the patch scrolls or deforms.
+        if (ui.show_terrain && terrain_patch.valid && terrain_patch.rows > 0 && terrain_patch.cols > 0
+            && terrain_patch.cell_size_m > 0.0f
+            && terrain_patch.heights.size() >= static_cast<std::size_t>(terrain_patch.rows * terrain_patch.cols)) {
+          continue;
+        }
         DrawPrimitiveShape(
             entity.shape,
             entity.radius,
@@ -2310,10 +2886,15 @@ void DrawScene(const std::map<std::uint32_t, EntityState>& entities,
     }
   }
 
+  DrawLocalMapOverlay(telemetry.local_map, ui);
+  DrawNavPathOverlay(telemetry.status, ui);
+  DrawDraftWaypoints(command_ui, ui);
+
   if (draw_command_robot && telemetry.has_joints) {
     const HexapodGeometryState robot_geometry = telemetry.geometry.valid ? telemetry.geometry : MakeDefaultGeometryState();
     DrawHexapodModel(robot_geometry, telemetry.angles_deg, telemetry.status, telemetry.body_pose);
   }
+  DrawFeetOverlay(telemetry, ui, telemetry_fresh);
 
   const RV light_dir = visualiser::render::Normalize(RV{0.35f, 1.0f, 0.25f});
   g_mesh_renderer.FlushWorld(proj, view, light_dir);
@@ -2328,15 +2909,27 @@ void DrawUi(AppUiState& ui,
             uint64_t packets_received,
             uint64_t packets_rejected,
             double last_packet_age_s,
+            double telemetry_age_s,
             std::size_t entity_count,
             bool measured_scene_available,
-            bool terrain_available) {
+            bool terrain_available,
+            visualiser::net::CommandClient* command_client,
+            CommandUiState& command_ui) {
   if (!ui.show_overlay) {
     return;
   }
 
+  const ImVec2 display_size = ImGui::GetIO().DisplaySize;
+  const float max_width = std::max(200.0f, display_size.x - 20.0f);
+  const float max_height = std::max(180.0f, display_size.y - 20.0f);
+  ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(std::min(440.0f, max_width),
+                                  std::min(620.0f, max_height)), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(320.0f, max_width),
+                                            std::min(260.0f, max_height)),
+                                      ImVec2(max_width, max_height));
   ImGui::SetNextWindowBgAlpha(0.90f);
-  ImGui::Begin("Hexapod Control Room", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+  ImGui::Begin("Hexapod Control Room");
 
   ImGui::Text("Source: %s", source_label.c_str());
   ImGui::Text("Packets: %llu accepted, %llu rejected",
@@ -2349,16 +2942,68 @@ void DrawUi(AppUiState& ui,
   }
   ImGui::Text("Scene entities: %zu", entity_count);
   ImGui::Text("Terrain: %s", terrain_available ? "available" : "none");
+  const bool measured_robot_visible = ui.show_scene && measured_scene_available;
+  const bool command_robot_visible = ui.show_robot && telemetry.has_joints &&
+      (!measured_robot_visible || ui.overlay_command_robot);
+  if (measured_robot_visible && command_robot_visible) {
+    ImGui::TextUnformatted("Robot view: measured + command wireframe");
+  } else if (measured_robot_visible) {
+    ImGui::TextUnformatted("Robot view: measured physics wireframe");
+  } else if (command_robot_visible) {
+    ImGui::TextUnformatted("Robot view: command wireframe fallback");
+  } else {
+    ImGui::TextDisabled("Robot view: waiting for drawable robot data");
+  }
+  if (measured_robot_visible && telemetry.has_joints && !command_robot_visible &&
+      ImGui::Button("Show command wireframe too")) {
+    ui.show_robot = true;
+    ui.overlay_command_robot = true;
+  }
+
+  const bool telemetry_fresh = telemetry.status.valid &&
+      std::isfinite(telemetry_age_s) && telemetry_age_s <= 1.0;
+  if (std::isfinite(telemetry_age_s)) {
+    ImGui::Text("Server telemetry: %.1fs old%s", telemetry_age_s,
+                telemetry_fresh ? "" : " (stale)");
+  } else {
+    ImGui::TextDisabled("Server telemetry: unavailable");
+  }
+  if (command_client != nullptr && command_client->valid()) {
+    const double reply_age_s = std::isfinite(command_ui.last_server_reply_time_s)
+        ? glfwGetTime() - command_ui.last_server_reply_time_s
+        : std::numeric_limits<double>::quiet_NaN();
+    if (std::isfinite(reply_age_s) && reply_age_s <= 5.0) {
+      ImGui::Text("Command server: replied %.1fs ago", reply_age_s);
+    } else {
+      ImGui::TextDisabled("Command server: unconfirmed / stale");
+    }
+    ImGui::Text("Pending commands: %zu", command_client->pendingCount());
+    if (ImGui::Button("Stop scenario")) {
+      ShowCommandSubmission(command_ui, command_client->scenarioStop());
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel navigation")) {
+      ShowCommandSubmission(command_ui, command_client->navCancel());
+    }
+  } else {
+    ImGui::TextDisabled("Command client unavailable");
+  }
+  if (!command_ui.last_result.empty()) {
+    ImGui::TextWrapped("Last command: %s", command_ui.last_result.c_str());
+  }
 
   ImGui::Separator();
-  ImGui::TextUnformatted("View");
+  if (ImGui::CollapsingHeader("View and camera")) {
   ImGui::Checkbox("Show measured scene", &ui.show_scene);
-  ImGui::Checkbox("Show command robot", &ui.show_robot);
+  ImGui::Checkbox("Show command wireframe", &ui.show_robot);
   ImGui::Checkbox("Overlay command on measured scene", &ui.overlay_command_robot);
   if (ui.show_scene && measured_scene_available && ui.show_robot && !ui.overlay_command_robot) {
-    ImGui::TextDisabled("Command robot hidden while measured scene is available");
+    ImGui::TextDisabled("Command wireframe hidden; measured scene is active");
   }
   ImGui::Checkbox("Show terrain", &ui.show_terrain);
+  ImGui::Checkbox("Show nav path/goal", &ui.show_nav_path);
+  ImGui::Checkbox("Show local map", &ui.show_local_map);
+  ImGui::Checkbox("Show planned feet", &ui.show_feet);
   ImGui::Checkbox("Rotate scene", &ui.rotate_scene);
   ImGui::Checkbox("Follow active", &ui.follow_active);
   ImGui::Checkbox("Show debug", &ui.show_debug);
@@ -2371,12 +3016,222 @@ void DrawUi(AppUiState& ui,
   if (ImGui::Button("Reset View")) {
     camera = CameraState{};
   }
+  }
 
   ImGui::Separator();
   ImGui::TextUnformatted("Telemetry");
   if (telemetry.status.valid) {
     ImGui::Text("Mode: %s (%d)", RobotModeName(telemetry.status.active_mode), telemetry.status.active_mode);
-    ImGui::Text("Fault: %s (%d)", FaultCodeName(telemetry.status.active_fault), telemetry.status.active_fault);
+    ImGui::Text("Fault: %s (%d)", visualiser::robot::FaultCodeName(telemetry.status.active_fault),
+                telemetry.status.active_fault);
+  } else {
+    ImGui::TextUnformatted("No server telemetry yet");
+  }
+  if (telemetry_fresh && telemetry.status.command_authority.has_value()) {
+    ImGui::Text("Authority: %s", telemetry.status.command_authority->c_str());
+    if (telemetry.status.command_scenario.has_value()) {
+      ImGui::Text("Scenario: %s", telemetry.status.command_scenario->c_str());
+    }
+    if (telemetry.status.command_nav_active.has_value()) {
+      ImGui::Text("Nav active: %s", *telemetry.status.command_nav_active ? "yes" : "no");
+    }
+  } else {
+    ImGui::TextDisabled("Authority: unknown (stale or missing)");
+  }
+  if (telemetry_fresh && telemetry.status.nav_lifecycle.has_value()) {
+    ImGui::Text("Navigation: %s", NavigationLifecycleName(*telemetry.status.nav_lifecycle));
+    if (telemetry.status.nav_block_reason.has_value() &&
+        *telemetry.status.nav_block_reason != 0) {
+      ImGui::SameLine();
+      ImGui::Text("(%s)", PlannerBlockReasonName(*telemetry.status.nav_block_reason));
+    }
+  }
+
+  ImGui::Separator();
+  if (ImGui::CollapsingHeader("Commands", ImGuiTreeNodeFlags_DefaultOpen)) {
+  if (command_client == nullptr || !command_client->valid()) {
+    ImGui::TextDisabled("Command client unavailable");
+  } else {
+    const bool scenario_auth = telemetry_fresh && ScenarioAuthorityActive(telemetry.status);
+    const bool nav_auth = telemetry_fresh && NavAuthorityActive(telemetry.status);
+    const bool idle_auth = telemetry_fresh && !scenario_auth && !nav_auth;
+
+    if (!telemetry_fresh) {
+      ImGui::TextDisabled("Authority unknown: waiting for fresh server telemetry");
+      ui.click_goal_mode = false;
+      ui.waypoint_edit_mode = false;
+    }
+
+    if (ImGui::CollapsingHeader("Scenarios", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::Button("List scenarios")) {
+      const auto listed = command_client->scenarioList();
+      ShowCommandSubmission(command_ui, listed);
+    }
+    if (!command_ui.scenarios.empty()) {
+      std::vector<const char*> items;
+      items.reserve(command_ui.scenarios.size());
+      for (const auto& id : command_ui.scenarios) {
+        items.push_back(id.c_str());
+      }
+      ImGui::Combo("Scenario",
+                   &command_ui.selected_index,
+                   items.data(),
+                   static_cast<int>(items.size()));
+      if (ImGui::Button("Run")) {
+        const auto& id = command_ui.scenarios[static_cast<std::size_t>(command_ui.selected_index)];
+        const auto ran = command_client->scenarioRun(id);
+        ShowCommandSubmission(command_ui, ran);
+      }
+    } else {
+      ImGui::TextDisabled("No scenarios listed yet");
+    }
+    }
+
+    ImGui::Separator();
+    if (ImGui::CollapsingHeader("Navigation controls")) {
+    if (scenario_auth) {
+      ImGui::TextDisabled("Click-to-goal disabled (scenario authority)");
+      ui.click_goal_mode = false;
+      ui.waypoint_edit_mode = false;
+    } else {
+      ImGui::BeginDisabled(!telemetry_fresh);
+      ImGui::Checkbox("Click ground → nav.goto", &ui.click_goal_mode);
+      if (ui.click_goal_mode && ui.waypoint_edit_mode) {
+        ui.waypoint_edit_mode = false;
+      }
+      ImGui::Checkbox("Click ground → draft waypoints", &ui.waypoint_edit_mode);
+      if (ui.waypoint_edit_mode && ui.click_goal_mode) {
+        ui.click_goal_mode = false;
+      }
+      ImGui::EndDisabled();
+    }
+    ImGui::Text("Draft waypoints: %zu", command_ui.draft_waypoints.size());
+    ImGui::BeginDisabled(!telemetry_fresh || scenario_auth || command_ui.draft_waypoints.size() < 2 ||
+                         !command_ui.pending_waypoints_ref.empty());
+    if (ImGui::Button("Send waypoints")) {
+      const auto sent = command_client->navWaypoints(command_ui.draft_waypoints);
+      ShowCommandSubmission(command_ui, sent);
+      if (sent.ok) {
+        command_ui.pending_waypoints_ref = sent.ref;
+        command_ui.pending_waypoints_revision = command_ui.draft_revision;
+      }
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Clear draft")) {
+      command_ui.draft_waypoints.clear();
+      ++command_ui.draft_revision;
+    }
+    }
+
+    ImGui::Separator();
+    if (ImGui::CollapsingHeader("Motion controls")) {
+    ImGui::BeginDisabled(!idle_auth);
+    ImGui::SliderFloat("Speed m/s", &command_ui.motion_speed_mps, 0.0f, 0.2f);
+    ImGui::SliderFloat("Heading rad", &command_ui.motion_heading_rad, -3.14f, 3.14f);
+    ImGui::SliderFloat("Yaw rate", &command_ui.motion_yaw_rate, -1.0f, 1.0f);
+    ImGui::SliderFloat("Body height m", &command_ui.motion_body_height_m, 0.08f, 0.2f);
+    ImGui::TextDisabled("WALK / TRIPOD; %.3f m/s, heading %.2f rad, yaw %.2f rad/s, height %.3f m",
+                        command_ui.motion_speed_mps, command_ui.motion_heading_rad,
+                        command_ui.motion_yaw_rate, command_ui.motion_body_height_m);
+    if (ImGui::Button("Walk (TRIPOD) with settings")) {
+      visualiser::net::MotionSetCommand motion{};
+      motion.mode = "WALK";
+      motion.gait = "TRIPOD";
+      motion.speed_mps = command_ui.motion_speed_mps;
+      motion.heading_rad = command_ui.motion_heading_rad;
+      motion.yaw_rate_radps = command_ui.motion_yaw_rate;
+      motion.body_height_m = command_ui.motion_body_height_m;
+      const auto applied = command_client->motionSet(motion);
+      ShowCommandSubmission(command_ui, applied);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Stand & hold")) {
+      const auto applied = command_client->standHold(command_ui.motion_body_height_m);
+      ShowCommandSubmission(command_ui, applied);
+    }
+    ImGui::EndDisabled();
+    if (!idle_auth) {
+      ImGui::TextDisabled(telemetry_fresh
+          ? "Motion controls require idle authority"
+          : "Motion controls require fresh server telemetry");
+    }
+    }
+
+    if (ImGui::TreeNode("Recent commands")) {
+      for (const auto& entry : command_ui.history) {
+        ImGui::TextWrapped("%s %s (%s): %s", entry.type.c_str(),
+                           entry.state.c_str(), entry.ref.c_str(), entry.reason.c_str());
+      }
+      ImGui::TreePop();
+    }
+  }
+  }
+
+  if (ImGui::CollapsingHeader("Locomotion observation")) {
+    if (!telemetry_fresh || !telemetry.locomotion.valid) {
+      ImGui::TextDisabled("Foot data: n/a (missing or stale server telemetry)");
+    } else {
+      const auto& loco = telemetry.locomotion;
+      ImGui::Text("Foot data: live (%.2f s old); heights in world frame", telemetry_age_s);
+      if (telemetry.status.requested_planar_speed_mps &&
+          telemetry.status.governed_planar_speed_mps) {
+        ImGui::Text("Requested / governed speed: %.3f / %.3f m/s",
+                    *telemetry.status.requested_planar_speed_mps,
+                    *telemetry.status.governed_planar_speed_mps);
+      } else {
+        ImGui::TextDisabled("Requested / governed speed: n/a");
+      }
+      ImGui::TextDisabled("Actual speed: n/a (not in telemetry)");
+      if (telemetry.status.physics_peak_servo_torque_utilization) {
+        ImGui::Text("Peak servo torque use: %.0f%% (sim aggregate)",
+                    *telemetry.status.physics_peak_servo_torque_utilization * 100.0);
+      } else {
+        ImGui::TextDisabled("Servo torque use: n/a (no physics-sim metric)");
+      }
+      if (loco.max_post_clamp_distortion_m) {
+        ImGui::Text("Max target clamp distortion: %.1f mm",
+                    *loco.max_post_clamp_distortion_m * 1000.0f);
+      } else {
+        ImGui::TextDisabled("Target clamp distortion: n/a");
+      }
+      ImGui::TextDisabled("Foot reach margin: n/a (not in telemetry)");
+      ImGui::TextDisabled("Plan / raw / fused; foot Z in m; tracking error in mm");
+      constexpr std::array<const char*, 6> kInternalLegNames =
+          {"R3", "L3", "R2", "L2", "R1", "L1"};
+      if (ImGui::BeginTable("##foot_observation", 7,
+                            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+        for (const char* label : {"Leg", "Plan", "Raw", "Fused", "Cmd Z", "Meas Z", "Err"}) {
+          ImGui::TableSetupColumn(label);
+        }
+        ImGui::TableHeadersRow();
+        for (std::size_t leg = 0; leg < kInternalLegNames.size(); ++leg) {
+          ImGui::TableNextRow();
+          ImGui::TableSetColumnIndex(0);
+          ImGui::TextUnformatted(kInternalLegNames[leg]);
+          ImGui::TableSetColumnIndex(1);
+          ImGui::TextUnformatted(loco.has_planned_stance ? (loco.planned_stance[leg] ? "stance" : "swing") : "n/a");
+          ImGui::TableSetColumnIndex(2);
+          ImGui::TextUnformatted(loco.has_raw_contact ? (loco.raw_contact[leg] ? "yes" : "no") : "n/a");
+          ImGui::TableSetColumnIndex(3);
+          ImGui::TextUnformatted(loco.has_fused_support ? (loco.fused_support[leg] ? "yes" : "no") : "n/a");
+          ImGui::TableSetColumnIndex(4);
+          if (loco.has_commanded_feet) ImGui::Text("%.3f", loco.commanded_foot_world_m[leg].z);
+          else ImGui::TextUnformatted("n/a");
+          ImGui::TableSetColumnIndex(5);
+          if (loco.has_measured_feet) ImGui::Text("%.3f", loco.measured_foot_world_m[leg].z);
+          else ImGui::TextUnformatted("n/a");
+          ImGui::TableSetColumnIndex(6);
+          if (loco.has_tracking_error) ImGui::Text("%.0f", loco.commanded_tracking_error_m[leg] * 1000.0f);
+          else ImGui::TextUnformatted("n/a");
+        }
+        ImGui::EndTable();
+      }
+    }
+  }
+
+  if (telemetry.status.valid) {
+    ImGui::Separator();
     ImGui::Text("Bus: %s | Estimator: %s",
                 telemetry.status.bus_ok ? "OK" : "FAULT",
                 telemetry.status.estimator_valid ? "valid" : "invalid");
@@ -2384,12 +3239,12 @@ void DrawUi(AppUiState& ui,
                 telemetry.status.loop_counter,
                 static_cast<unsigned long long>(telemetry.status.timestamp_ms));
     ImGui::Text("Voltage: %.2f V | Current: %.2f A", telemetry.status.voltage, telemetry.status.current);
-  } else {
-    ImGui::TextUnformatted("No server telemetry yet");
   }
 
-  if (telemetry.status.nav_lifecycle.has_value() || telemetry.status.nav_planner_status.has_value() ||
-      telemetry.status.nav_block_reason.has_value()) {
+  if (ImGui::CollapsingHeader("Navigation diagnostics") &&
+      (telemetry.status.nav_lifecycle.has_value() ||
+       telemetry.status.nav_planner_status.has_value() ||
+       telemetry.status.nav_block_reason.has_value())) {
     ImGui::Separator();
     ImGui::TextUnformatted("Navigation");
     if (telemetry.status.nav_lifecycle.has_value()) {
@@ -2422,9 +3277,27 @@ void DrawUi(AppUiState& ui,
     if (telemetry.status.nav_nearest_obstacle_distance_m.has_value()) {
       ImGui::Text("Nearest obstacle: %.2fm", *telemetry.status.nav_nearest_obstacle_distance_m);
     }
+    if (telemetry.status.nav_goal_x_m.has_value() && telemetry.status.nav_goal_y_m.has_value()) {
+      ImGui::Text("Goal: (%.2f, %.2f)", *telemetry.status.nav_goal_x_m, *telemetry.status.nav_goal_y_m);
+    }
+    if (telemetry.status.nav_active_waypoint_index.has_value()) {
+      ImGui::Text("Active waypoint idx: %d", *telemetry.status.nav_active_waypoint_index);
+    }
+    if (telemetry.status.nav_distance_to_active_waypoint_m.has_value()) {
+      ImGui::Text("Dist to waypoint: %.2fm", *telemetry.status.nav_distance_to_active_waypoint_m);
+    }
+    if (telemetry.local_map.valid) {
+      ImGui::Text("Local map: %dx%d step=%d %s",
+                  telemetry.local_map.width_cells,
+                  telemetry.local_map.height_cells,
+                  telemetry.local_map.cell_step,
+                  telemetry.local_map.fresh ? "fresh" : "stale");
+    }
   }
 
-  if (telemetry.status.fusion_model_trust.has_value() || telemetry.status.fusion_contact_mismatch_ratio.has_value()) {
+  if (ImGui::CollapsingHeader("Fusion diagnostics") &&
+      (telemetry.status.fusion_model_trust.has_value() ||
+       telemetry.status.fusion_contact_mismatch_ratio.has_value())) {
     ImGui::Separator();
     ImGui::TextUnformatted("Fusion");
     if (telemetry.status.fusion_model_trust.has_value()) {
@@ -2454,7 +3327,7 @@ void DrawUi(AppUiState& ui,
   }
 
   ImGui::Separator();
-  ImGui::TextUnformatted("Robot geometry");
+  if (ImGui::CollapsingHeader("Robot geometry")) {
   if (telemetry.has_geometry) {
     ImGui::Text("Coxa: %.1fmm  Femur: %.1fmm  Tibia: %.1fmm  Body radius: %.1fmm",
                 telemetry.geometry.coxa_mm,
@@ -2467,6 +3340,7 @@ void DrawUi(AppUiState& ui,
     }
   } else {
     ImGui::TextUnformatted("Waiting for geometry packet");
+  }
   }
 
   ImGui::End();
@@ -2564,6 +3438,13 @@ int RunApplication(int argc, char** argv) {
     glfwTerminate();
     return 1;
   }
+  visualiser::net::CommandClient command_client(
+      visualiser::net::CommandClientConfig{options.command_host, options.command_port});
+  CommandUiState command_ui{};
+  if (command_client.valid()) {
+    const auto listed = command_client.scenarioList();
+    ShowCommandSubmission(command_ui, listed);
+  }
 #else
   std::cerr << "UDP receiver is not implemented on Windows in this build\n";
   ImGui_ImplOpenGL3_Shutdown();
@@ -2583,12 +3464,16 @@ int RunApplication(int argc, char** argv) {
   uint64_t rejected_packets = 0;
   std::string last_packet_kind = "waiting";
   double last_packet_time_s = std::numeric_limits<double>::quiet_NaN();
+  double last_status_time_s = std::numeric_limits<double>::quiet_NaN();
+  std::uint64_t last_status_timestamp_ms = 0;
   double last_title_update_s = -1.0;
   double last_joint_log_s = -1.0;
   bool overlay_toggle_down = false;
   bool startup_focus_settled = false;
   const double window_shown_at_s = glfwGetTime();
 
+  ScenePickContext scene_pick{};
+  bool mouse_left_was_down = false;
   // Show only after OpenGL, ImGui, and UDP input are ready. Retry activation for a short period:
   // background launches from run_physics_stack.sh often lose the first focus request to the
   // terminal / Cursor window under WSLg.
@@ -2597,6 +3482,9 @@ int RunApplication(int argc, char** argv) {
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
     PollStartupWindowFocus(window, window_shown_at_s, startup_focus_settled);
+    for (const auto& reply : command_client.poll()) {
+      ApplyCommandReply(ui, command_ui, reply);
+    }
 
     const bool overlay_toggle_now = glfwGetKey(window, GLFW_KEY_F1) == GLFW_PRESS;
     if (overlay_toggle_now && !overlay_toggle_down) {
@@ -2609,14 +3497,34 @@ int RunApplication(int argc, char** argv) {
     if (accepted_this_frame > 0) {
       last_packet_time_s = glfwGetTime();
     }
+    if (telemetry.status.valid &&
+        (!std::isfinite(last_status_time_s) ||
+         telemetry.status.timestamp_ms != last_status_timestamp_ms)) {
+      last_status_time_s = glfwGetTime();
+      last_status_timestamp_ms = telemetry.status.timestamp_ms;
+    }
 
     int framebuffer_width = 0;
     int framebuffer_height = 0;
     glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
 
-    const float time_s = static_cast<float>(glfwGetTime());
-    DrawScene(entities, terrain_patch, telemetry, ui, camera, time_s, framebuffer_width, framebuffer_height);
     const double now_s = glfwGetTime();
+    const float time_s = static_cast<float>(now_s);
+    const double telemetry_age_s = std::isfinite(last_status_time_s) ? now_s - last_status_time_s
+                                                                      : std::numeric_limits<double>::quiet_NaN();
+    const bool telemetry_fresh = telemetry.status.valid &&
+        std::isfinite(telemetry_age_s) && telemetry_age_s <= 1.0;
+    DrawScene(entities,
+              terrain_patch,
+              telemetry,
+              ui,
+              command_ui,
+              camera,
+              telemetry_fresh,
+              time_s,
+              framebuffer_width,
+              framebuffer_height,
+              scene_pick);
     if (options.log_joint_positions
         && telemetry.has_joints
         && (last_joint_log_s < 0.0 || now_s - last_joint_log_s >= 1.0)) {
@@ -2637,9 +3545,47 @@ int RunApplication(int argc, char** argv) {
            accepted_packets,
            rejected_packets,
            packet_age_s,
+           telemetry_age_s,
            entities.size(),
            HasMeasuredSceneGeometry(entities),
-           terrain_patch.valid);
+           terrain_patch.valid,
+           &command_client,
+           command_ui);
+
+    const bool mouse_left_down = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    const bool mouse_clicked = mouse_left_down && !mouse_left_was_down;
+    mouse_left_was_down = mouse_left_down;
+    if (mouse_clicked && !ImGui::GetIO().WantCaptureMouse && command_client.valid() &&
+        std::isfinite(telemetry_age_s) && telemetry_age_s <= 1.0 &&
+        !ScenarioAuthorityActive(telemetry.status) &&
+        (ui.click_goal_mode || ui.waypoint_edit_mode)) {
+      double mx = 0.0;
+      double my = 0.0;
+      glfwGetCursorPos(window, &mx, &my);
+      float sx = 0.0f;
+      float sy = 0.0f;
+      int window_width = 0;
+      int window_height = 0;
+      glfwGetWindowSize(window, &window_width, &window_height);
+      if (PickGroundServerXY(scene_pick, static_cast<float>(mx), static_cast<float>(my),
+                             window_width, window_height, sx, sy)) {
+        if (ui.click_goal_mode) {
+          const auto result = command_client.navGoto(
+              visualiser::net::NavPose2d{sx, sy, telemetry.body_pose.yaw_rad},
+              "TRIPOD", command_ui.motion_body_height_m);
+          ShowCommandSubmission(command_ui, result);
+        } else if (ui.waypoint_edit_mode) {
+          command_ui.draft_waypoints.push_back(
+              visualiser::net::NavPose2d{sx, sy, telemetry.body_pose.yaw_rad});
+          ++command_ui.draft_revision;
+          command_ui.last_result =
+              "draft waypoint #" + std::to_string(command_ui.draft_waypoints.size());
+        }
+      } else {
+        command_ui.last_result = "ground pick missed";
+      }
+    }
+
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 

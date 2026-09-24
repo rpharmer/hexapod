@@ -86,8 +86,18 @@ struct ControlStepTelemetry {
     EpochTelemetry epoch{};
     FusionTelemetrySnapshot fusion{};
     std::optional<NavigationMonitorSnapshot> navigation{};
+    struct CommandAuthorityTelemetry {
+        bool has_data{false};
+        int level{0}; // 0=idle, 1=nav, 2=scenario
+        std::string scenario_name{};
+        bool nav_active{false};
+    };
+    CommandAuthorityTelemetry command_authority{};
+    std::optional<LocalMapSnapshot> local_map{};
     std::optional<resource_monitoring::ProcessResourceSnapshot> process_resources{};
     std::optional<ResourceSectionSummary> resource_sections{};
+    // Aggregate actuator demand from the latest physics-sim step; absent on hardware/sim.
+    std::optional<double> physics_peak_servo_torque_utilization{};
     TimePointUs timestamp_us{};
 };
 

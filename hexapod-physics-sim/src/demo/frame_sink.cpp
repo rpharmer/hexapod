@@ -126,10 +126,22 @@ public:
             packet_pool_.reserve(packet_upper_bound);
         }
 
+        // A visualiser can join after frame 0 or lose a UDP datagram. Frame poses
+        // alone do not contain shape data, so refresh static descriptors periodically.
+        constexpr int kStaticRefreshFrames = 30;
+        // Preview dispatch may drop intermediate frames; an elapsed-frame check
+        // cannot miss the refresh boundary as a modulo check could.
+        const bool refresh_static = last_static_refresh_frame_ < 0 ||
+            frame_index_ < last_static_refresh_frame_ ||
+            frame_index_ - last_static_refresh_frame_ >= kStaticRefreshFrames;
+        if (refresh_static) {
+            last_static_refresh_frame_ = frame_index_;
+        }
         for (const auto& snapshot : bodies_) {
             const BodyStaticDescriptor descriptor = MakeStaticDescriptor(snapshot.body);
             const auto found = last_static_descriptors_.find(snapshot.id);
-            if (found == last_static_descriptors_.end() || !AreDescriptorsEqual(found->second, descriptor)) {
+            if (refresh_static || found == last_static_descriptors_.end() ||
+                !AreDescriptorsEqual(found->second, descriptor)) {
                 append_entity_static(snapshot.id, descriptor);
                 last_static_descriptors_[snapshot.id] = descriptor;
             }
@@ -424,6 +436,7 @@ private:
     sockaddr_in dest_addr_{};
 
     int frame_index_ = 0;
+    int last_static_refresh_frame_ = -1;
     Real sim_time_s_ = 0.0;
     std::uint32_t terrain_seq_{0};
     std::vector<BodySnapshot> bodies_{};

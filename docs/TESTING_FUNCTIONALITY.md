@@ -112,6 +112,7 @@ Use this section as the fast path for before/after motion benchmarking.
   - `hexapod-server/tests/test_motion_performance_suite.cpp`
   - Cases `compass_forward`, `compass_backward`, `compass_strafe_left`, `compass_strafe_right`, `compass_diag_fwd_left`, `compass_diag_fwd_right` (smoke runs forward + strafe-left only; full profile runs all headings).
   - Each walking case in that binary (compass, slow tripod, gait compare, etc.) applies **plausibility gates** on `WALK` samples: FK foot-tip minimum world Z vs ground; global commanded-vs-measured foot error; **stance** contact-anchor drift and stance tracking error (`locomotion_debug`, same idea as the long-walk regression case); measured foot world Z vs ground; plus **stride kinematics** when enough walk samples exist—median horizontal touchdown span vs commanded `step_length_m`, and a lower percentile of per-swing vertical lift vs `swing_height_m`. Touchdown/liftoff are now derived from explicit `fused_support` transitions in `locomotion_debug`, while `planned_stance` remains a diagnostic comparison channel. Limits are **direction-aware** (tighter forward-like vs strafe/diagonal headings) and sized for long **full** profiles on the UDP sim—not the 0.08 m anchor cap from the intentional long-walk stress case.
+  - Walking-case JSON also includes diagnostic-only `directional_progress`: consecutive valid WALK body displacements projected onto the instantaneous body-yaw plus requested body-frame heading, requested and governor-scaled distance over those same intervals, absolute orthogonal travel, and planned-swing raw-contact fraction. It does not affect gates. Raw contact during planned swing is a contact proxy, not a measured toe-drag distance; this projection does not replace net-displacement checks.
 
 ## Physics fidelity: `PhysicsSimBridge` (UDP sim) vs `SimHardwareBridge` (synthetic)
 
@@ -546,9 +547,19 @@ These are the highest-value tests for tracking improvements across commits.
     penetration, actuator work, max |energy delta|, max/p99 compliant
     projected residual (zero on rigid)
 
-Canonical cases now include `long_walk_contact_health` (moderate soak, no
-required safety trip). `long_walk_observability` remains `--profile stress`
-and still expects a late `TIP_OVER`/`BODY_COLLAPSE`.
+Canonical cases include `long_walk_contact_health` (moderate 25 s soak).
+`long_walk_observability` remains `--profile stress` and uses
+`scenarios/05_long_walk_feasible_health.toml`: it requires the entire
+requested 60 s walking window, return to STAND, unchanged path/stride
+and contact-quality limits, and zero faults, failed reads, or held solver
+samples. The separate
+`locomotion_regression_suite_long_walk_tilt_safety` CTest deliberately injects
+one measured over-limit tilt under the same controller configuration and
+requires `TIP_OVER` on that exact sample with zero failed reads/holds. It
+checks safety detection, not the physical response to a push.
+The historical 0.6 m/s lateral-demand scenario is unchanged and can be run
+explicitly as `--case long_walk_aggressive_diagnostic`; it is not the healthy
+60 s criterion.
 
 ### 2) `test_physics_sim_walk_distance` (server)
 
@@ -1144,7 +1155,7 @@ Legend:
 | Foot clearance envelope                           | Strong           | `test_physics_sim_turn_foot_clearance`, `test_physics_sim_*_foot_clearance`                                                                                    | clearance checks in targeted profiles                                                                   |
 | Low-support/sparse-support locomotion             | Strong           | `low_support_walk` case in `test_locomotion_regression_suite`                                                                                                  | support margin + faults tracked                                                                         |
 | Long-horizon contact-solver health                | Strong           | `long_walk_contact_health` (`canonical`)                                                                                                                       | fail on NCP/non-finite holds and impulse cap; SpeedLimit counted not failed                             |
-| Long-horizon observability/late faults            | Strong           | `long_walk_observability` (`stress`)                                                                                                                           | delayed instability envelopes                                                                           |
+| Long-horizon walk and safety response              | Strong           | `long_walk_observability` (`stress`), `locomotion_regression_suite_long_walk_tilt_safety`                                          | full healthy walk and independent exact-sample tilt detection                                            |
 | Navigation + locomotion coupling                  | Partial          | `test_physics_sim_navigation_acceptance`, `test_physics_sim_nav_waypoints`, `test_navigation_runtime`                                                          | coverage exists but fewer rich motion metrics                                                           |
 | Per-leg single-foot placement primitive           | Partial          | `single_leg_masked_stand` in `test_motion_performance_suite` + `scenarios/07_single_leg_probe.toml`                                                            | IK mask via `safety.legs_enabled`; not a full placement primitive                                       |
 | Hardware-in-the-loop real robot metrics           | Gap              | outside CI/unit tests                                                                                                                                          | currently sim-dominant metrics                                                                          |
@@ -1234,6 +1245,7 @@ Quantitative integration binaries emit **one JSON object per case** on stdout (o
 | `passed`         | boolean | Whether gates passed.                                                                                                                                      |
 | `metrics`        | object  | Observed scalars (and nested objects) for analytics and tightening.                                                                                        |
 | `limits_applied` | object  | Numeric floors/ceilings **used for the pass/fail decision** in that run (self-describing baselines). May include `gate_profile` (e.g. forward vs lateral). |
+| `directional_progress` | object | Optional `motion_performance` walking-case diagnostics only: command-aligned measured progress, governor-scaled request, orthogonal travel, and planned-swing raw-contact fraction. Not a pass/fail gate. |
 
 
 Legacy lines may omit `suite` or `limits_applied`; tools should default `suite` from context or infer from binary.

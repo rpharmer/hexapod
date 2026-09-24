@@ -6,6 +6,8 @@ Monorepo for a serial-controlled hexapod robot, containing Linux host control so
 
 - `docs/ALGORITHMS_OVERVIEW.md` — architecture map for simulation and control algorithms.
 - `docs/REFERENCE_FRAMES.md` — frame conventions and transforms across sim/server/visualisers.
+- `docs/VISUALISER.md` — OpenGL visualiser overview (observe + command); grows with UI work.
+- `docs/VISUALISER_COMMAND_CHANNEL.md` — reverse UDP command protocol and authority model.
 - `docs/SERVER_CONFIG_REFERENCE.md` and `docs/PHYSICS_SIM_CONFIG_REFERENCE.md` — complete configuration references.
 
 ## Components
@@ -147,6 +149,12 @@ scripts/run_physics_stack.sh \
   --controller-optional
 ```
 
+Walking now applies the contact-referenced swing-clearance correction by
+default. For an A/B comparison from the repository root, prefix a server or
+stack launch with `HEXAPOD_SWING_CONTACT_CLEARANCE_SCREEN=0` to disable just
+that correction; `=1` explicitly enables it. This does not change the
+Pinocchio physics-solver mode or the safety limits.
+
 For a **serial-connected robot** (or when `hexapod-server` runs on a different machine), run server telemetry with an explicit OpenGL visualiser IP:
 
 ```bash
@@ -211,6 +219,8 @@ done
 - `docs/ALGORITHMS_GLOSSARY.md` — terminology glossary for supervisors, governors, modules, and solver concepts.
 - `docs/ALGORITHMS_TRACEABILITY_CHECKLIST.md` — source-to-doc coverage checklist.
 - `docs/REFERENCE_FRAMES.md` — canonical frame conventions and transforms across sim, server, visualiser, and sensors.
+- `docs/VISUALISER.md` — OpenGL visualiser overview, ports, UI map, and extension guide.
+- `docs/VISUALISER_COMMAND_CHANNEL.md` — visualiser→server UDP command protocol (scenarios / nav / motion).
 - `docs/SERVER_CONFIG_REFERENCE.md` — exhaustive `hexapod-server` TOML key reference, validation ranges, and consumers.
 - `docs/PHYSICS_SIM_CONFIG_REFERENCE.md` — exhaustive `hexapod-physics-sim` CLI/JSON/terrain/serve configuration reference.
 - `docs/CONFIG_DOCS_COVERAGE.md` — parser-to-doc coverage checklist for server and simulator config surfaces.

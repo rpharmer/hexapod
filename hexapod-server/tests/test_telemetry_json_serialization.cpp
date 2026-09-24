@@ -218,6 +218,9 @@ bool test_control_step_packet_includes_fusion_diagnostics()
     telemetry_sample.resource_sections = sections;
 
     telemetry_sample.governor.severity = 0.42;
+    telemetry_sample.governor.requested_planar_speed_mps = 0.12;
+    telemetry_sample.governor.governed_planar_speed_mps = 0.08;
+    telemetry_sample.physics_peak_servo_torque_utilization = 0.57;
     telemetry_sample.governor.body_height_delta_m = -0.008;
     telemetry_sample.governor.command_scale = 0.88;
     telemetry_sample.governor.cadence_scale = 0.91;
@@ -286,6 +289,12 @@ bool test_control_step_packet_includes_fusion_diagnostics()
                   "locomotion debug payload should include active fusion phase state") &&
            expect(payload.find("\"fused_support\":[true,false,false,false,false,false]") != std::string::npos,
                   "locomotion debug payload should preserve fused support compatibility state") &&
+           expect(payload.find("\"requested_planar_speed_mps\":0.12") != std::string::npos &&
+                      payload.find("\"governed_planar_speed_mps\":0.08") != std::string::npos,
+                  "governor payload should identify requested and governed speed") &&
+           expect(payload.find("\"physics_sim\":{\"peak_servo_torque_utilization\":0.57}") !=
+                      std::string::npos,
+                  "physics-sim payload should expose aggregate actuator demand") &&
            expect(payload.find("\"contact_anchor_drift_m\":[0.004") != std::string::npos,
                   "locomotion debug payload should include contact anchor drift") &&
            expect(payload.find("\"max_commanded_tracking_error_m\":0.012") != std::string::npos,

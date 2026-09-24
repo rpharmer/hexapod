@@ -90,6 +90,7 @@ set(HEXAPOD_SERVER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/calibration_probe.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/cli_options.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/command_governor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control/command_channel.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/contact_foot_response.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/control_config.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/control/control_pipeline.cpp"
@@ -166,6 +167,7 @@ set(HEXAPOD_SERVER_SOURCES
 
     # scenario
     "${CMAKE_CURRENT_SOURCE_DIR}/src/scenario/scenario_driver.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/scenario/scenario_session.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/sensors/imu_physics.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/sensors/matrix_lidar_physics.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/sensors/software_imu.cpp"
@@ -582,6 +584,12 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_physics_sim_navigation_acceptance tests/test_physics_sim_navigation_acceptance.cpp)
     target_link_libraries(test_physics_sim_navigation_acceptance PRIVATE hexapod_server_core)
     hexapod_add_live_physics_sim_test(physics_sim_navigation_acceptance test_physics_sim_navigation_acceptance)
+    add_test(
+        NAME physics_sim_navigation_directional
+        COMMAND ${CMAKE_COMMAND} -E env
+                HEXAPOD_PHYSICS_SIM_EXE=${_HEXAPOD_PHYSICS_SIM_EXE}
+                $<TARGET_FILE:test_physics_sim_navigation_acceptance> --interactive-profile-cardinal)
+    set_tests_properties(physics_sim_navigation_directional PROPERTIES TIMEOUT 1800)
 
     add_executable(test_virtual_gamepad_controller tests/test_virtual_gamepad_controller.cpp)
     target_link_libraries(test_virtual_gamepad_controller PRIVATE hexapod_server_core)
@@ -618,6 +626,10 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
     add_executable(test_cli_mode_selection tests/test_cli_mode_selection.cpp)
     target_link_libraries(test_cli_mode_selection PRIVATE hexapod_server_core)
     add_test(NAME cli_mode_selection COMMAND test_cli_mode_selection)
+
+    add_executable(test_command_channel tests/test_command_channel.cpp)
+    target_link_libraries(test_command_channel PRIVATE hexapod_server_core)
+    add_test(NAME command_channel COMMAND test_command_channel)
 
     add_executable(test_interactive_input_mapper tests/test_interactive_input_mapper.cpp)
     target_link_libraries(test_interactive_input_mapper PRIVATE hexapod_server_core)
@@ -688,6 +700,14 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
                 HEXAPOD_PHYSICS_SIM_EXE=${_HEXAPOD_PHYSICS_SIM_EXE}
                 $<TARGET_FILE:test_locomotion_regression_suite> --profile stress)
     set_tests_properties(locomotion_regression_suite_stress PROPERTIES TIMEOUT 3600 LABELS "locomotion-stress")
+
+    add_test(
+        NAME locomotion_regression_suite_long_walk_tilt_safety
+        COMMAND ${CMAKE_COMMAND} -E env
+                HEXAPOD_PHYSICS_SIM_EXE=${_HEXAPOD_PHYSICS_SIM_EXE}
+                $<TARGET_FILE:test_locomotion_regression_suite> --case long_walk_injected_tilt_safety)
+    set_tests_properties(locomotion_regression_suite_long_walk_tilt_safety PROPERTIES
+        TIMEOUT 3600 LABELS "locomotion-safety")
 
     add_executable(test_motion_performance_suite tests/test_motion_performance_suite.cpp)
     target_link_libraries(test_motion_performance_suite PRIVATE hexapod_server_core)
@@ -766,10 +786,12 @@ if(HEXAPOD_SERVER_BUILD_TESTS)
             physics_sim_tripod_support_baseline
             physics_sim_nav_waypoints
             physics_sim_navigation_acceptance
+            physics_sim_navigation_directional
             motion_performance_suite
             motion_performance_suite_long
             locomotion_regression_suite
             locomotion_regression_suite_stress
+            locomotion_regression_suite_long_walk_tilt_safety
         )
         foreach(_hex_ctest_name IN LISTS _HEX_MANIFEST_CTEST_NAMES)
             set_tests_properties(${_hex_ctest_name} PROPERTIES

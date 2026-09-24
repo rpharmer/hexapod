@@ -36,6 +36,7 @@ struct Mat4 {
   static Mat4 FrustumSymmetric(float right, float top, float near_plane, float far_plane);
   static Mat4 Mul(const Mat4& a, const Mat4& b);
   static Mat4 Transpose(const Mat4& a);
+  static Mat4 Inverse(const Mat4& a);
   Vec3 TransformPoint(const Vec3& v) const;
 };
 

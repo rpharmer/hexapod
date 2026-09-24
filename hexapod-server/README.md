@@ -222,6 +222,25 @@ cd <repo-root>
 scripts/run_server_with_telemetry.sh --mode serial --telemetry-host <VISUALISER_IP> --telemetry-port 9870
 ```
 
+### Visualiser command channel (opt-in)
+
+Interactive mode can listen for UDP JSON commands (default port **9872**) so the
+OpenGL visualiser can list/run/stop scenarios and send thin nav/motion commands.
+The binary default is off; stack launchers enable it:
+
+```bash
+# from repo root — command channel on 9872
+scripts/run_physics_stack.sh --controller-optional
+scripts/run_sim_stack.sh
+
+# binary / telemetry helper (explicit)
+cd hexapod-server
+./build/hexapod-server --telemetry-enable --command-enable \
+  --command-port 9872 --command-scenarios-dir scenarios
+```
+
+See [`docs/VISUALISER_COMMAND_CHANNEL.md`](../docs/VISUALISER_COMMAND_CHANNEL.md).
+
 Run one scenario:
 
 ```bash
@@ -458,9 +477,12 @@ python3 tools/analyze_walk_support.py /absolute/output/directory/walk_entry.ndjs
 ```
 
 These are diagnostic traces, **not executable replay fixtures**: motion-suite
-traces do not record bus joint commands. Measured-contact swing clearance is
-enabled by default; `HEXAPOD_SWING_CONTACT_HEIGHT=0` disables only that correction
-for diagnostic comparisons. Normal launches need no experiment flags.
+traces do not record bus joint commands. Both measured-contact swing-height
+correction and the post-reach, contact-referenced liftoff floor are enabled by
+default. `HEXAPOD_SWING_CONTACT_HEIGHT=0` disables only the former;
+`HEXAPOD_SWING_CONTACT_CLEARANCE_SCREEN=0` disables only the latter for
+diagnostic comparisons (`=1` explicitly enables it). Normal launches need no
+experiment flags.
 See [walking campaign §3.26](../docs/SEQUENTIAL_WALK_DISTANCE_LEFTOVERS.md).
 
 Tilt regression reporting distinguishes pre-fault walking from post-fault
@@ -475,6 +497,29 @@ python3 tools/audit_tilt_trip.py /absolute/path/to/tilt_safety_trip/replay.ndjso
 
 The audit also needs the recording's sibling `metrics.json`. See
 [testing reference](../docs/TESTING_FUNCTIONALITY.md) for metric semantics.
+
+The live locomotion regression binary accepts `--perturbation-seed N` for a
+bounded initial-body-pose perturbation and a matching simulator contact-order
+seed. This is **not** the frozen exact-command replay: the live controller and
+simulator still run as separate processes, so a seed does not guarantee
+identical timing or outcomes between repetitions. From the repository root,
+with the Pinocchio environment and `HEXAPOD_PHYSICS_SIM_EXE` set, for example:
+
+```bash
+hexapod-server/build-tests/test_locomotion_regression_suite \
+  --profile stress --case long_walk_observability \
+  --perturbation-seed 1 --artifact-dir /var/tmp/hexapod-walk-seed-1 \
+  --emit-metrics-json
+python3 scripts/analyze_rare_locomotion_failure.py \
+  /var/tmp/hexapod-walk-seed-1/long_walk_observability/replay.ndjson --leg 2
+```
+
+For a traced first held sample, set `HEXAPOD_LOCOMOTION_CHILD_STDIO=1`,
+`HEXAPOD_PROXIMAL_TRACE_FAILURES=1` and
+`HEXAPOD_PROXIMAL_TRACE_SPEED_LIMIT=1`, then pipe combined test output through
+`python3 scripts/extract_first_hold_trace.py` with `set -o pipefail`. The filter
+drains the child stream, retains the immediate pre-hold lines and prints the
+machine-readable suite result; it does not change the test gate.
 
 - Keep robot mechanically unloaded during initial bring-up after calibration edits.
 - Validate E-stop path and relay defaults before enabling walking gaits.

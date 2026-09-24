@@ -28,6 +28,10 @@ struct CliOptions
   std::optional<int> telemetryPortOverride;
   std::optional<double> telemetryPublishRateHzOverride;
   std::optional<double> telemetryGeometryResendIntervalSecOverride;
+  std::optional<bool> commandEnabledOverride;
+  std::optional<std::string> commandHostOverride;
+  std::optional<int> commandPortOverride;
+  std::optional<std::string> commandScenariosDirOverride;
   std::optional<bool> investigationDisableTerrainStanceBiasOverride;
   std::optional<bool> investigationDisableTerrainSwingClearanceOverride;
   std::optional<bool> investigationDisableTerrainSwingXYNudgeOverride;

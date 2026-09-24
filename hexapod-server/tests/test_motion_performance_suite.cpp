@@ -677,6 +677,56 @@ std::string standLimitsAppliedToJson(const std::string& case_name) {
     return o.str();
 }
 
+struct DirectionalProgressSnapshot {
+    std::size_t walk_intervals{0};
+    std::size_t planned_swing_samples{0};
+    std::size_t planned_swing_raw_contact_samples{0};
+    double requested_distance_m{0.0};
+    double governor_scaled_distance_m{0.0};
+    double progress_along_command_m{0.0};
+    double absolute_lateral_travel_m{0.0};
+    double walk_path_m{0.0};
+};
+
+DirectionalProgressSnapshot directionalProgress(const std::vector<MotionSample>& samples) {
+    DirectionalProgressSnapshot out{};
+    const MotionSample* previous = nullptr;
+    for (const MotionSample& sample : samples) {
+        if (sample.status.active_mode != RobotMode::WALK || !sample.estimated.valid
+            || !sample.status.bus_ok || sample.requested_motion.speed_mps <= 0.0) {
+            previous = nullptr;
+            continue;
+        }
+        if (sample.locomotion_debug.valid) {
+            for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+                if (!sample.locomotion_debug.planned_stance[leg]) {
+                    ++out.planned_swing_samples;
+                    if (sample.locomotion_debug.raw_contact[leg]) {
+                        ++out.planned_swing_raw_contact_samples;
+                    }
+                }
+            }
+        }
+        if (previous != nullptr && previous->phase_index == sample.phase_index) {
+            const double dx = sample.position.x - previous->position.x;
+            const double dy = sample.position.y - previous->position.y;
+            const double heading = previous->estimated.body_twist_state.twist_pos_rad.z
+                + previous->requested_motion.heading_rad;
+            const double c = std::cos(heading);
+            const double s = std::sin(heading);
+            out.progress_along_command_m += dx * c + dy * s;
+            out.absolute_lateral_travel_m += std::abs(-dx * s + dy * c);
+            out.walk_path_m += std::hypot(dx, dy);
+            const double requested = previous->requested_motion.speed_mps * sample.sample_period_s;
+            out.requested_distance_m += requested;
+            out.governor_scaled_distance_m += requested * previous->governor.command_scale;
+            ++out.walk_intervals;
+        }
+        previous = &sample;
+    }
+    return out;
+}
+
 void emitMotionPerformanceJsonLine(const std::string& case_name,
                                    const bool passed,
                                    const LocomotionMetrics& metrics,
@@ -686,7 +736,8 @@ void emitMotionPerformanceJsonLine(const std::string& case_name,
                                    const double lim_anchor,
                                    const double lim_stance_track,
                                    const StrideKinematicsSnapshot& stride,
-                                   const double min_fk_foot_tip_world_z_m) {
+                                   const double min_fk_foot_tip_world_z_m,
+                                   const DirectionalProgressSnapshot* progress = nullptr) {
     std::cout << "{\"suite\":\"motion_performance\",\"name\":\"" << jsonEscape(case_name) << "\",\"passed\":"
               << (passed ? "true" : "false") << ",\"metrics\":" << metricsToJson(metrics) << ',';
     if (any_walk) {
@@ -697,6 +748,26 @@ void emitMotionPerformanceJsonLine(const std::string& case_name,
         std::cout << "\"limits_applied\":" << standLimitsAppliedToJson(case_name) << ','
                   << "\"stride_kinematics\":{\"skipped\":true,\"skip_reason\":\"no_walk_samples\"},"
                   << "\"min_fk_foot_tip_world_z_m\":null";
+    }
+    if (progress != nullptr) {
+        std::cout << ",\"directional_progress\":{"
+                  << "\"walk_intervals\":" << progress->walk_intervals
+                  << ",\"requested_distance_m\":" << formatDouble(progress->requested_distance_m)
+                  << ",\"governor_scaled_distance_m\":" << formatDouble(progress->governor_scaled_distance_m)
+                  << ",\"progress_along_command_m\":" << formatDouble(progress->progress_along_command_m)
+                  << ",\"absolute_lateral_travel_m\":" << formatDouble(progress->absolute_lateral_travel_m)
+                  << ",\"walk_path_m\":" << formatDouble(progress->walk_path_m)
+                  << ",\"progress_over_governor_scaled\":"
+                  << formatDouble(progress->governor_scaled_distance_m > 1.0e-9
+                                      ? progress->progress_along_command_m / progress->governor_scaled_distance_m
+                                      : 0.0)
+                  << ",\"planned_swing_samples\":" << progress->planned_swing_samples
+                  << ",\"planned_swing_raw_contact_fraction\":"
+                  << formatDouble(progress->planned_swing_samples > 0
+                                      ? static_cast<double>(progress->planned_swing_raw_contact_samples)
+                                            / static_cast<double>(progress->planned_swing_samples)
+                                      : 0.0)
+                  << '}';
     }
     std::cout << "}\n";
 }
@@ -1015,6 +1086,7 @@ bool runCase(const std::string& sim_exe,
     }
 
     if (emit_metrics_json) {
+        const DirectionalProgressSnapshot progress = directionalProgress(samples);
         emitMotionPerformanceJsonLine(spec.name,
                                       case_ok,
                                       metrics,
@@ -1024,7 +1096,8 @@ bool runCase(const std::string& sim_exe,
                                       lim_anchor,
                                       lim_stance_track,
                                       stride_snap,
-                                      min_foot_tip_world_z_m);
+                                      min_foot_tip_world_z_m,
+                                      any_walk_sample ? &progress : nullptr);
     } else if (case_ok) {
         std::cout << spec.name << " ok samples=" << metrics.sample_count << " path_m=" << formatDouble(metrics.path_length_m)
                   << " strides=" << metrics.stride_count << " tilt_max=" << formatDouble(std::max(metrics.max_abs_roll_rad, metrics.max_abs_pitch_rad))

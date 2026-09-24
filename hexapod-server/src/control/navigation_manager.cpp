@@ -70,6 +70,8 @@ void NavigationManager::startNavigateToPose(MotionIntent walk_base,
     monitor_ = NavigationMonitorSnapshot{};
     monitor_.active = true;
     monitor_.lifecycle = NavigationLifecycleState::Running;
+    monitor_.has_goal = true;
+    monitor_.goal = goal_pose_;
 }
 
 void NavigationManager::startRawFollowWaypoints(MotionIntent walk_base,
@@ -223,7 +225,7 @@ MotionIntent NavigationManager::mergeIntent(const MotionIntent& fallback,
     const bool need_replan =
         !bridge_.active() ||
         monitor_.bridge.lifecycle == NavLocomotionBridge::LifecycleState::Failed ||
-        activeSegmentBlocked(snapshot) ||
+        activeSegmentBlocked(snapshot, pose) ||
         (bridge_.active() &&
          monitor_.bridge.stall_timer_s >=
              std::max(0.25, follow_params_.stall_timeout_s * 0.5));
@@ -258,7 +260,7 @@ MotionIntent NavigationManager::mergeIntent(const MotionIntent& fallback,
         out = makeStopIntent();
     } else if (!bridge_.active() &&
                monitor_.bridge.lifecycle == NavLocomotionBridge::LifecycleState::Completed &&
-               (terminalGoalReached(pose) || !snapshot.has_observations)) {
+               terminalGoalReached(pose)) {
         monitor_.active = false;
         monitor_.lifecycle = NavigationLifecycleState::Completed;
         out = makeStopIntent();
@@ -294,14 +296,18 @@ std::vector<LocalMapObservation> NavigationManager::collectObservations(const Na
     return out;
 }
 
-bool NavigationManager::activeSegmentBlocked(const LocalMapSnapshot& snapshot) const {
+bool NavigationManager::activeSegmentBlocked(const LocalMapSnapshot& snapshot,
+                                             const NavPose2d& current_pose) const {
     if (active_segment_.empty() || snapshot.inflated.empty()) {
         return false;
     }
 
     const double sample_step_m = std::max(0.02, snapshot.inflated.resolution_m * 0.5);
-    for (std::size_t i = 1; i < active_segment_.size(); ++i) {
-        const NavPose2d& a = active_segment_[i - 1];
+    const std::size_t first = std::min(monitor_.bridge.active_waypoint_index, active_segment_.size());
+    for (std::size_t i = first; i < active_segment_.size(); ++i) {
+        // The remaining route begins at the robot, not the preceding path
+        // node. This also checks a direct route with just one destination.
+        const NavPose2d& a = i == first ? current_pose : active_segment_[i - 1];
         const NavPose2d& b = active_segment_[i];
         const double length = std::hypot(b.x_m - a.x_m, b.y_m - a.y_m);
         const int samples = std::max(1, static_cast<int>(std::ceil(length / sample_step_m)));
@@ -324,8 +330,10 @@ bool NavigationManager::activeSegmentBlocked(const LocalMapSnapshot& snapshot) c
 }
 
 bool NavigationManager::terminalGoalReached(const NavPose2d& pose) const {
-    return std::hypot(goal_pose_.x_m - pose.x_m, goal_pose_.y_m - pose.y_m) <=
-           std::max(0.03, local_map_builder_.config().resolution_m);
+    const double position_tol_m = std::max(0.03, local_map_builder_.config().resolution_m);
+    const double yaw_tol_rad = std::max(0.06, follow_params_.go_to.rotate.error_threshold_rad);
+    return std::hypot(goal_pose_.x_m - pose.x_m, goal_pose_.y_m - pose.y_m) <= position_tol_m &&
+           std::abs(navWrapAngleRad(goal_pose_.yaw_rad - pose.yaw_rad)) <= yaw_tol_rad;
 }
 
 void NavigationManager::planOrBlock(const NavPose2d& pose,
@@ -338,15 +346,48 @@ void NavigationManager::planOrBlock(const NavPose2d& pose,
     }
 
     const LocalPlanResult plan = planner_->plan(LocalPlanRequest{pose, goal_pose_, snapshot});
+    // Count a newly blocked route as a replan, but not every control tick
+    // spent retrying the same blocked route.
+    if (plan.status == LocalPlanStatus::Ready ||
+        monitor_.lifecycle != NavigationLifecycleState::Blocked) {
+        monitor_.replan_count += 1;
+    }
     monitor_.planner_status = plan.status;
     monitor_.block_reason = plan.block_reason;
     monitor_.last_plan_timestamp = now;
 
-    if (plan.status == LocalPlanStatus::GoalReached || terminalGoalReached(pose)) {
+    if (plan.status != LocalPlanStatus::Blocked &&
+        plan.status != LocalPlanStatus::MapUnavailable && terminalGoalReached(pose)) {
         bridge_.deactivate();
         active_segment_.clear();
         monitor_.active = false;
         monitor_.lifecycle = NavigationLifecycleState::Completed;
+        return;
+    }
+
+    if (plan.status == LocalPlanStatus::GoalReached) {
+        // A* is an XY planner. At the requested position, the pose goal still
+        // needs its final heading; do not report completion from XY alone.
+        int cell_x = 0;
+        int cell_y = 0;
+        if (!snapshot.inflated.worldToCell(pose.x_m, pose.y_m, cell_x, cell_y) ||
+            snapshot.inflated.stateAtCell(cell_x, cell_y) == LocalMapCellState::Occupied) {
+            bridge_.deactivate();
+            active_segment_.clear();
+            if (blocked_since_.isZero()) blocked_since_ = now;
+            monitor_.planner_status = LocalPlanStatus::Blocked;
+            monitor_.block_reason = PlannerBlockReason::StartOccupied;
+            monitor_.lifecycle = NavigationLifecycleState::Blocked;
+            monitor_.active = true;
+            return;
+        }
+        active_segment_ = {NavPose2d{pose.x_m, pose.y_m, goal_pose_.yaw_rad}};
+        bridge_.startFollowWaypoints(walk_base_, active_segment_, follow_params_);
+        refreshMonitorFromBridge();
+        blocked_since_ = TimePointUs{};
+        monitor_.active = true;
+        monitor_.paused = false;
+        monitor_.lifecycle = NavigationLifecycleState::Running;
         return;
     }
 
@@ -364,15 +405,40 @@ void NavigationManager::planOrBlock(const NavPose2d& pose,
     }
 
     blocked_since_ = TimePointUs{};
-    startBridgeFromPlan(plan);
-    monitor_.replan_count += 1;
+    startBridgeFromPlan(plan, pose);
     monitor_.active = true;
     monitor_.paused = false;
     monitor_.lifecycle = NavigationLifecycleState::Running;
 }
 
-void NavigationManager::startBridgeFromPlan(const LocalPlanResult& plan) {
+void NavigationManager::startBridgeFromPlan(const LocalPlanResult& plan,
+                                            const NavPose2d& current_pose) {
     active_segment_ = plan.waypoints;
+    // A* includes the start cell as a path node. Its yaw points toward the next
+    // cell, so following it as a pose goal can demand a 180-degree turn before
+    // a perfectly valid backwards/sideways translation. It is already reached.
+    if (active_segment_.size() > 1) {
+        const NavPose2d& first = active_segment_.front();
+        const double start_cell_radius_m = 0.75 * local_map_builder_.config().resolution_m;
+        if (std::hypot(first.x_m - current_pose.x_m, first.y_m - current_pose.y_m) <=
+            start_cell_radius_m) {
+            active_segment_.erase(active_segment_.begin());
+        }
+    }
+    if (!follow_params_.go_to.rotate_first && !active_segment_.empty()) {
+        // A holonomic command does not need to face every path tangent. Keep
+        // the current heading at intermediate nodes and reserve the requested
+        // yaw for the actual terminal goal, not a horizon-limited segment end.
+        const NavPose2d& last = active_segment_.back();
+        const double goal_cell_radius_m = 0.75 * local_map_builder_.config().resolution_m;
+        const bool reaches_terminal_cell =
+            std::hypot(last.x_m - goal_pose_.x_m, last.y_m - goal_pose_.y_m) <= goal_cell_radius_m;
+        for (std::size_t i = 0; i < active_segment_.size(); ++i) {
+            if (i + 1 < active_segment_.size() || !reaches_terminal_cell) {
+                active_segment_[i].yaw_rad = current_pose.yaw_rad;
+            }
+        }
+    }
     bridge_.startFollowWaypoints(walk_base_, active_segment_, follow_params_);
     monitor_.active_segment_waypoint_count = active_segment_.size();
     monitor_.active_segment_length_m = pathLength(active_segment_);
@@ -383,6 +449,17 @@ void NavigationManager::refreshMonitorFromBridge() {
     monitor_.bridge = bridge_.monitor();
     monitor_.active_segment_waypoint_count = active_segment_.size();
     monitor_.active_segment_length_m = pathLength(active_segment_);
+    monitor_.active_segment = active_segment_;
+    if (map_aware_mode_) {
+        monitor_.has_goal = monitor_.active;
+        monitor_.goal = goal_pose_;
+    } else if (!active_segment_.empty()) {
+        monitor_.has_goal = monitor_.active;
+        monitor_.goal = active_segment_.back();
+    } else {
+        monitor_.has_goal = false;
+        monitor_.goal = {};
+    }
 }
 
 bool NavigationManager::shouldRefreshTerrainSnapshot(const RobotState& est, const TimePointUs now) const {

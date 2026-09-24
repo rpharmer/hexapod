@@ -123,6 +123,47 @@ bool footInReachAnnulus(const LegGeometry& leg, const Vec3& foot_pos_body_m, con
     return inAnnulus(leg, foot_pos_body_m, inset_m);
 }
 
+std::optional<double> planarTravelToReachBoundaryM(const LegGeometry& leg,
+                                                    const Vec3& foot_pos_body_m,
+                                                    const Vec3& direction_body_xy,
+                                                    const double max_travel_m,
+                                                    const double inset_m) {
+    const double direction_norm = std::hypot(direction_body_xy.x, direction_body_xy.y);
+    if (!std::isfinite(direction_norm) || direction_norm <= 1e-12
+        || !std::isfinite(max_travel_m) || max_travel_m <= 0.0 || max_travel_m > 1.0
+        || !std::isfinite(foot_pos_body_m.x) || !std::isfinite(foot_pos_body_m.y)
+        || !std::isfinite(foot_pos_body_m.z)
+        || !inAnnulus(leg, foot_pos_body_m, inset_m)) {
+        return std::nullopt;
+    }
+    const Vec3 direction{direction_body_xy.x / direction_norm,
+                         direction_body_xy.y / direction_norm, 0.0};
+    // Scan before bisecting: along a radial ray the annulus may have an inner
+    // unreachable interval followed by a second reachable interval. We want
+    // the first boundary of the continuous stroke, not the final reachable point.
+    constexpr double kProbeSpacingM = 0.001;
+    const int probes = static_cast<int>(std::ceil(max_travel_m / kProbeSpacingM));
+    double last_inside_m = 0.0;
+    for (int i = 1; i <= probes; ++i) {
+        const double distance_m = std::min(max_travel_m, i * kProbeSpacingM);
+        if (!inAnnulus(leg, foot_pos_body_m + direction * distance_m, inset_m)) {
+            double lo = last_inside_m;
+            double hi = distance_m;
+            for (int iteration = 0; iteration < 20; ++iteration) {
+                const double mid = 0.5 * (lo + hi);
+                if (inAnnulus(leg, foot_pos_body_m + direction * mid, inset_m)) {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            return lo;
+        }
+        last_inside_m = distance_m;
+    }
+    return max_travel_m;
+}
+
 Vec3 clampFootPositionBody(const LegGeometry& leg, const Vec3& foot_pos_body_m, const double inset_m) {
     const AnnulusLimits lim = annulusLimits(leg, inset_m);
     const FemurPlaneCoords f = toFemurPlane(leg, foot_pos_body_m);

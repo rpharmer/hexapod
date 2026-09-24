@@ -13,9 +13,9 @@ struct HexapodLegLayout {
   std::string key;
   visualiser::math::Vec3 body_coxa_offset{0.0f, 0.0f, 0.0f};
   float mount_angle_rad = 0.0f;
-  float coxa_mm = 35.0f;
-  float femur_mm = 70.0f;
-  float tibia_mm = 110.0f;
+  float coxa_mm = 43.0f;
+  float femur_mm = 60.0f;
+  float tibia_mm = 104.0f;
   float coxa_attach_deg = 0.0f;
   float femur_attach_deg = 0.0f;
   float tibia_attach_deg = 0.0f;
@@ -26,9 +26,9 @@ struct HexapodLegLayout {
 
 struct HexapodGeometryState {
   bool valid = false;
-  float coxa_mm = 35.0f;
-  float femur_mm = 70.0f;
-  float tibia_mm = 110.0f;
+  float coxa_mm = 43.0f;
+  float femur_mm = 60.0f;
+  float tibia_mm = 104.0f;
   float body_radius_mm = 60.0f;
   std::array<HexapodLegLayout, 6> legs{};
 };

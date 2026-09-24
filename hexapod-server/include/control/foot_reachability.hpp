@@ -2,6 +2,8 @@
 
 #include "types.hpp"
 
+#include <optional>
+
 namespace foot_reachability {
 
 /** Femur–tibia plane distance `d = hypot(rho, z)` in the leg frame (same convention as `LegIK`). */
@@ -9,6 +11,16 @@ double femurPlaneDistanceM(const LegGeometry& leg, const Vec3& foot_pos_body_m);
 
 /** True when `d = hypot(rho, z)` lies in the inset femur–tibia annulus. */
 bool footInReachAnnulus(const LegGeometry& leg, const Vec3& foot_pos_body_m, double inset_m = 0.004);
+
+/** Diagnostic query: continuous XY travel from an in-reach foot at fixed body-frame z,
+ * along `direction_body_xy`, up to `max_travel_m`. Returns nullopt for an invalid
+ * direction or an out-of-reach start. This is annulus reach only, not joint limits,
+ * collision clearance, support-polygon margin, or dynamic tracking capacity. */
+std::optional<double> planarTravelToReachBoundaryM(const LegGeometry& leg,
+                                                    const Vec3& foot_pos_body_m,
+                                                    const Vec3& direction_body_xy,
+                                                    double max_travel_m = 0.25,
+                                                    double inset_m = 0.004);
 
 /**
  * If the foot lies outside the femur+tibia annulus (with inset), scale (rho, z) toward the coxa

@@ -1,4 +1,5 @@
 #include "visualiser/parsing/json_packets.hpp"
+#include "visualiser/robot/enum_names.hpp"
 
 #include <cmath>
 #include <cstdlib>
@@ -26,6 +27,10 @@ int main() {
   const std::string joints_with_yaw = R"({"type":"joints","joints":{"LF":{"angles_deg":[4,5,6]}},"body_position":[7,8,9],"body_yaw_rad":1.25})";
 
   bool ok = true;
+  ok = ok && expect(visualiser::robot::ParseFaultCodeName("NONE") == 0 &&
+                        visualiser::robot::ParseFaultCodeName("TIP_OVER") == 3 &&
+                        !visualiser::robot::ParseFaultCodeName("not-a-fault").has_value(),
+                    "named fault codes are not silently treated as NONE");
   ok = ok && expect(visualiser::parsing::ParseHexapodTelemetryPacket(geometry, telemetry), "geometry parsed");
   ok = ok && expect(telemetry.has_geometry, "geometry state");
   ok = ok && expect(visualiser::parsing::ParseHexapodTelemetryPacket(joints_with_orientation, telemetry),

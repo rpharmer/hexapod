@@ -54,9 +54,10 @@ namespace {
  * It does what it claims: swing commanded foot speed p99 falls 8.70 -> 0.735 m/s
  * and no sample steps more than 3.7 mm. It still regressed every screen (isolated
  * reverse 4/5 -> 1/5, sequential 3/5 -> 0/5), and drag stayed at 76-82%. Making
- * the commanded path feasible therefore does not free the dragging legs — with
- * `peak_solver_servo_torque_utilization` at 1.0 the binding constraint is servo
- * torque, not command quality.
+ * the commanded path feasible therefore did not free the dragging legs in that
+ * screen. A later accepted-step motor trace found no torque-envelope clipping
+ * in ordinary forward travel; that earlier peak alone does not establish a
+ * general servo-torque bottleneck.
  */
 bool swingPlanCommitEnabled() {
     static const bool enabled = [] {
@@ -447,6 +448,16 @@ LegTargets BodyController::update(const RobotState& est,
         (intent.requested_mode == RobotMode::WALK) &&
         !safety.inhibit_motion &&
         !safety.torque_cut;
+    static const bool traceFootholdReach = [] {
+        const char* value = std::getenv("HEXAPOD_FOOTHOLD_REACH_TRACE");
+        return value != nullptr && value[0] != '\0' && value[0] != '0';
+    }();
+    static const bool contactClearanceEnabled = [] {
+        const char* value = std::getenv("HEXAPOD_SWING_CONTACT_CLEARANCE_SCREEN");
+        // The screened path is the default. Keep an exact "0" opt-out for
+        // before/after comparisons without changing the installed gait.
+        return value == nullptr || value[0] != '0' || value[1] != '\0';
+    }();
     const double trust_scale = fusionTrustScale(est);
     BodyPoseSetpoint pose =
         computeBodyPoseSetpoint(intent, cmd, gait.static_stability_margin_m, gait.stride_phase_rate_hz.value);
@@ -601,6 +612,11 @@ LegTargets BodyController::update(const RobotState& est,
                                      -intent.twist.body_trans_mps.z};
         bool apply_workspace_clamp = true;
         bool used_stance_kinematics = false;
+        bool trace_planned_stance = false;
+        double trace_swing_tau_raw = -1.0;
+        double trace_swing_tau_used = -1.0;
+        int trace_contact_phase = -1;
+        double trace_contact_screen_delta_z_m = 0.0;
         double swing_lift_m = 0.0;
         double swing_lift_fraction = 0.0;
         if (contact_height_enabled && measured_pose_valid &&
@@ -628,10 +644,12 @@ LegTargets BodyController::update(const RobotState& est,
             const Vec3 v_foot = supportFootVelocityAt(anchor, body_mot);
             const std::size_t leg_index = static_cast<std::size_t>(leg);
             const ContactPhase contact_phase = est.foot_contact_fusion[leg_index].phase;
+            trace_contact_phase = static_cast<int>(contact_phase);
             const LegContactDecision* contact_decision =
                 contact_modes != nullptr ? &(*contact_modes)[leg_index] : nullptr;
             const bool planned_stance =
                 contact_decision != nullptr ? contact_decision->planned_stance : ph < duty;
+            trace_planned_stance = planned_stance;
             if (planned_stance) {
                 // Swing planning is only reachable with `planned_stance` false, so
                 // dropping the commit here yields exactly one commit per swing.
@@ -743,6 +761,8 @@ LegTargets BodyController::update(const RobotState& est,
                             tau_use,
                             swing_extra_down_z,
                             &est.foot_contact_fusion[leg_index]);
+                        trace_swing_tau_raw = tau;
+                        trace_swing_tau_used = tau_use;
                         SwingFootInputs sw{};
                         sw.anchor = anchor;
                         sw.stance_end = stance_end;
@@ -806,6 +826,8 @@ LegTargets BodyController::update(const RobotState& est,
                     tau_use,
                     swing_extra_down_z,
                     &est.foot_contact_fusion[leg_index]);
+                trace_swing_tau_raw = tau;
+                trace_swing_tau_used = tau_use;
 
                 SwingFootInputs sw{};
                 sw.anchor = anchor;
@@ -884,6 +906,7 @@ LegTargets BodyController::update(const RobotState& est,
             target.z += swing_lift_fraction * std::max(0.0, missing_clearance) / measured_rotation.m[2][2];
         }
 
+        const Vec3 pre_reach_trace_target = target;
         if (apply_workspace_clamp) {
             const Vec3 target_before_reach = target;
             target = foot_reachability::clampFootPositionBody(geometry_.legGeometry[leg], target, kFootReachInsetM);
@@ -911,6 +934,39 @@ LegTargets BodyController::update(const RobotState& est,
                 const Vec3 untilted = coxa + (body_rotation.transpose() * (mixed - coxa));
                 latched_stance_pos_[leg_index].x = untilted.x;
                 latched_stance_pos_[leg_index].y = untilted.y;
+            }
+        }
+
+        // Add a smooth contact-referenced liftoff floor after reach projection.
+        // Fade it out as commanded yaw
+        // builds so a mixed-command transition cannot drop the correction in
+        // one tick. Reproject into the same annulus after raising Z.
+        if (contactClearanceEnabled && std::hypot(cmd.vx_mps, cmd.vy_mps) > 1e-9 &&
+            walking && !used_stance_kinematics &&
+            measured_pose_valid && have_support_foot_world_z_[leg] &&
+            trace_swing_tau_raw >= 0.0 && trace_swing_tau_raw < 1.0 &&
+            swing_lift_m > 0.0) {
+            const auto smooth01 = [](const double u) {
+                const double t = std::clamp(u, 0.0, 1.0);
+                return t * t * (3.0 - 2.0 * t);
+            };
+            const double yaw_weight =
+                1.0 - smooth01(std::abs(cmd.yaw_rate_radps) / 0.20);
+            const double alpha = yaw_weight
+                * smooth01(trace_swing_tau_raw / 0.20)
+                * smooth01((1.0 - trace_swing_tau_raw) / 0.20);
+            const double world_z = est.body_twist_state.body_trans_m.z +
+                                   (measured_rotation * target).z;
+            const double desired_world_z = support_foot_world_z_[leg] + swing_lift_m;
+            const double deficit = std::max(0.0, desired_world_z - world_z);
+            if (deficit > 0.0 && alpha > 0.0) {
+                const Vec3 before_correction = target;
+                target.z += alpha * deficit / measured_rotation.m[2][2];
+                target = foot_reachability::clampFootPositionBody(
+                    geometry_.legGeometry[leg], target, kFootReachInsetM);
+                foot_reachability::clipVelocityForReachClamp(
+                    before_correction, target, &target_vel);
+                trace_contact_screen_delta_z_m = target.z - before_correction.z;
             }
         }
 
@@ -942,6 +998,59 @@ LegTargets BodyController::update(const RobotState& est,
 
         out.feet[leg].pos_body_m = target;
         out.feet[leg].vel_body_mps = target_vel;
+        if (traceFootholdReach && walking) {
+            const SwingPlanCommit& plan = committed_swing_plan_[static_cast<std::size_t>(leg)];
+            const auto writeVec = [](const Vec3& p) {
+                std::cerr << '[' << p.x << ',' << p.y << ',' << p.z << ']';
+            };
+            std::cerr << std::setprecision(12)
+                      << "{\"kind\":\"foothold_reach_trace\",\"schema_version\":1"
+                      << ",\"time_us\":" << intent.timestamp_us.value
+                      << ",\"leg\":" << leg
+                      << ",\"phase\":" << gait.phase[leg]
+                      << ",\"duty\":" << duty
+                      << ",\"planned_stance\":" << (trace_planned_stance ? "true" : "false")
+                      << ",\"stance_kinematics\":" << (used_stance_kinematics ? "true" : "false")
+                      << ",\"fused_contact\":" << (est.foot_contacts[leg] ? "true" : "false")
+                      << ",\"contact_phase\":" << trace_contact_phase
+                      << ",\"swing_tau_raw\":" << trace_swing_tau_raw
+                      << ",\"swing_tau_used\":" << trace_swing_tau_used
+                      << ",\"swing_lift_m\":" << swing_lift_m
+                      << ",\"command_yaw_radps\":" << cmd.yaw_rate_radps
+                      << ",\"contact_screen_delta_z_m\":" << trace_contact_screen_delta_z_m
+                      << ",\"workspace_xy_hit\":" << (last_workspace_xy_hit_[leg] ? "true" : "false")
+                      << ",\"effective_height_m\":" << effective_body_height_m
+                      << ",\"height_hold_m\":" << body_height_hold_m
+                      << ",\"pose_pitch_rad\":" << pose.pitch_rad
+                      << ",\"measured_pitch_rad\":" << est.body_twist_state.twist_pos_rad.y
+                      << ",\"support_world_z_m\":";
+            if (have_support_foot_world_z_[leg]) {
+                std::cerr << support_foot_world_z_[leg];
+            } else {
+                std::cerr << "null";
+            }
+            std::cerr << ",\"emitted_world_z_m\":";
+            if (measured_pose_valid) {
+                std::cerr << est.body_twist_state.body_trans_m.z +
+                             (measured_rotation * target).z;
+            } else {
+                std::cerr << "null";
+            }
+            std::cerr
+                      << ",\"nominal_body_m\":";
+            writeVec(nominal[leg]);
+            std::cerr << ",\"swing_p3_xy_m\":";
+            if (plan.valid) {
+                std::cerr << '[' << plan.p3x << ',' << plan.p3y << ']';
+            } else {
+                std::cerr << "null";
+            }
+            std::cerr << ",\"pre_reach_body_m\":";
+            writeVec(pre_reach_trace_target);
+            std::cerr << ",\"emitted_body_m\":";
+            writeVec(target);
+            std::cerr << "}\n";
+        }
         maybeRecordR2SwingPlannerDump(
             leg,
             r2_swing_this_leg,

@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-23",
+  "base_commit": "24cf1c0",
+  "tree_note": "Uncommitted visualiser and command-channel changes preserved; core gait and Pinocchio plant source unchanged.",
+  "physics_sim_binary_sha256": "5234ef1b0fa4c334a13811f20b2a0b7dd19ed779231f5cf1de24df21b1cb0b1c",
+  "walk_test_binary_sha256": "45b64b68b39de93e90039e02531f7833bdbe1be6265849994e7225963c0a8315",
+  "solver": "production pinocchio-proximal; case=forward_walk; 0.14 m body height",
+  "experiment": "One isolated forward walk per torque scale; not a repeatability or hardware-torque measurement.",
+  "motor_model": {
+    "stall_torque_nm": 1.471,
+    "no_load_speed_radps": 7.479982508547127
+  },
+  "runs": [
+    {
+      "stall_torque_scale": 1,
+      "process_exit": 0,
+      "gate_pass": true,
+      "commanded_speed_mps": 0.2,
+      "mean_governed_speed_mps": 0.16224,
+      "mean_forward_speed_mps": 0.088474,
+      "net_horizontal_distance_m": 1.073206,
+      "mean_gait_step_length_m": 0.0423168,
+      "mean_gait_frequency_hz": 0.80179,
+      "peak_servo_torque_fraction_of_scaled_stall": 0.546058654785,
+      "max_target_rate_radps": 7.479983,
+      "rms_joint_tracking_error_rad": 0.172279,
+      "solver_held_steps": 0,
+      "loaded_stance_samples": [
+        1108,
+        1000,
+        1251,
+        1141,
+        1128,
+        1223
+      ],
+      "workspace_limit_samples": [
+        0,
+        0,
+        1009,
+        917,
+        1039,
+        1170
+      ],
+      "workspace_limit_fraction": [
+        0,
+        0,
+        0.8066,
+        0.8037,
+        0.9211,
+        0.9567
+      ],
+      "mean_latched_stroke_m": [
+        0.0966943,
+        0.0995498,
+        0.100218,
+        0.0966566,
+        0.0965849,
+        0.100209
+      ],
+      "mean_used_stroke_m": [
+        0.0305973,
+        0.035739,
+        0.0310134,
+        0.0304456,
+        0.0401473,
+        0.0374959
+      ],
+      "planned_swing_contact_percent": [
+        21.68,
+        9.88526,
+        52.2507,
+        48.24,
+        27.52,
+        30.0971
+      ],
+      "mean_world_slip_mps": [
+        0.00374318,
+        0.0097832,
+        0.00370819,
+        0.000232418,
+        0.0575851,
+        0.0811237
+      ]
+    },
+    {
+      "stall_torque_scale": 0.73,
+      "process_exit": 0,
+      "gate_pass": true,
+      "commanded_speed_mps": 0.2,
+      "mean_governed_speed_mps": 0.161623,
+      "mean_forward_speed_mps": 0.088303,
+      "net_horizontal_distance_m": 1.066857,
+      "mean_gait_step_length_m": 0.0422403,
+      "mean_gait_frequency_hz": 0.799286,
+      "peak_servo_torque_fraction_of_scaled_stall": 0.725813508034,
+      "max_target_rate_radps": 7.479983,
+      "rms_joint_tracking_error_rad": 0.170622,
+      "solver_held_steps": 0,
+      "loaded_stance_samples": [
+        1086,
+        987,
+        1248,
+        1150,
+        1127,
+        1229
+      ],
+      "workspace_limit_samples": [
+        0,
+        0,
+        1006,
+        921,
+        1055,
+        1171
+      ],
+      "workspace_limit_fraction": [
+        0,
+        0,
+        0.8061,
+        0.8009,
+        0.9361,
+        0.9528
+      ],
+      "mean_latched_stroke_m": [
+        0.0984675,
+        0.0970461,
+        0.0975496,
+        0.0987131,
+        0.098628,
+        0.0975329
+      ],
+      "mean_used_stroke_m": [
+        0.0309664,
+        0.0353723,
+        0.030618,
+        0.0303688,
+        0.0394747,
+        0.0368571
+      ],
+      "planned_swing_contact_percent": [
+        21.4343,
+        12.0841,
+        47.8109,
+        47.784,
+        25.4633,
+        29.7723
+      ],
+      "mean_world_slip_mps": [
+        0.00445386,
+        0.0100535,
+        0.00303607,
+        0.000601347,
+        0.059551,
+        0.0795372
+      ]
+    }
+  ]
+}

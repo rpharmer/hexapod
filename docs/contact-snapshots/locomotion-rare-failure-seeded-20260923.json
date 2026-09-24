@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-23",
+  "tree_revision": "24cf1c0c36a00cf6320d92afe1e37bd43935adfb plus dirty worktree",
+  "experiment": "A9 live seeded feasible-walk qualification and aggressive-input first-hold timeline",
+  "solver_mode": "pinocchio-proximal (1)",
+  "binaries_sha256": {
+    "locomotion_regression_test": "d295e6f16afc8b79a757ae9dafaf5602d6ba18435b12a1e09057a20303746b4e",
+    "physics_sim": "386db54c80feb2926530645002634fbaef6feb0f793f61465aaf4231489bd317"
+  },
+  "live_seed_method": {
+    "cli": "--perturbation-seed N",
+    "seeds_inclusive": [0, 99],
+    "body_pose_perturbation_scale": 0.25,
+    "max_horizontal_position_perturbation_m": 0.00075,
+    "max_vertical_position_perturbation_m": 0.000375,
+    "max_roll_and_pitch_perturbation_deg": 0.1875,
+    "max_yaw_perturbation_deg": 0.25,
+    "contact_order_seed": "HEXAPOD_PINOCCHIO_CONTACT_ORDER_SEED=N in simulator child only",
+    "caveat": "This is a live two-process run, not frozen command replay. Repeating one seed can change outcome because runtime timing is not fixed."
+  },
+  "qualification": {
+    "case": "long_walk_observability",
+    "scenario": "hexapod-server/scenarios/05_long_walk_feasible_health.toml",
+    "duration_s_per_run": 60,
+    "walk_samples_per_run": 10800,
+    "sample_period_s": 0.005,
+    "run_order": "For each seed 0..99, clearance-screen off then on",
+    "screen_off": {
+      "passed": 100,
+      "runs": 100,
+      "faults": 0,
+      "failed_reads": 0,
+      "held_samples": 0,
+      "path_m_min": 2.826139,
+      "path_m_median": 2.89367,
+      "path_m_max": 2.961118,
+      "maximum_abs_roll_rad": 0.112247,
+      "maximum_contact_penetration_m": 0.001686333097,
+      "maximum_contact_tracking_error_m": 0.091873,
+      "minimum_measured_foot_world_z_m": 0.016129
+    },
+    "screen_on": {
+      "passed": 100,
+      "runs": 100,
+      "faults": 0,
+      "failed_reads": 0,
+      "held_samples": 0,
+      "path_m_min": 2.966754,
+      "path_m_median": 3.0357165,
+      "path_m_max": 3.106431,
+      "maximum_abs_roll_rad": 0.130387,
+      "maximum_contact_penetration_m": 0.001487519243,
+      "maximum_contact_tracking_error_m": 0.092954,
+      "minimum_measured_foot_world_z_m": 0.015893
+    },
+    "paired_path": {
+      "screen_on_greater_count": 100,
+      "pairs": 100,
+      "mean_on_off_ratio": 1.0500020892,
+      "minimum_on_minus_off_m": 0.045735,
+      "maximum_on_minus_off_m": 0.222337,
+      "interpretation": "This is scored total travel around a mixed route, not pure commanded-direction displacement or a 10 percent capacity gain."
+    },
+    "reversed_order_check": {
+      "seeds_inclusive": [0, 4],
+      "run_order": "screen on then off",
+      "screen_on_passed": 5,
+      "screen_off_passed": 5,
+      "faults": 0,
+      "failed_reads": 0,
+      "held_samples": 0,
+      "screen_on_path_greater_count": 5
+    },
+    "raw_artifact_pattern": "/var/tmp/hexapod-a9-seeds/seed-NNN/{off,on}/long_walk_observability/{summary.json,metrics.json,replay.ndjson}",
+    "reversed_order_artifact_pattern": "/var/tmp/hexapod-a9-reverse-order/seed-NNN/{on,off}/long_walk_observability/{summary.json,metrics.json,replay.ndjson}"
+  },
+  "aggressive_diagnostic": {
+    "case": "long_walk_aggressive_diagnostic",
+    "requested_sideways_speed_mps": 0.6,
+    "screen": "off",
+    "same_seed_repeated_outcomes": "Seed 1 produced healthy completions, a no-hold TIP_OVER, and SpeedLimit held samples across repeated live runs; a seed is not deterministic here.",
+    "traced_failure_artifact": "/var/tmp/hexapod-a9-aggressive-repro/seed-001-run-3/long_walk_aggressive_diagnostic/replay.ndjson",
+    "leg_index": 2,
+    "leg_name": "R2",
+    "first_roll_over_0p3_step": 3197,
+    "first_sustained_planned_stance_without_raw_contact_step": 3217,
+    "longest_planned_stance_without_raw_contact_steps": 77,
+    "first_roll_over_0p5_step": 3227,
+    "first_planned_stance_foot_world_z_over_0p1_m_step": 3232,
+    "first_tracking_error_over_0p1_m_step": 3667,
+    "first_failed_read_step": 3739,
+    "maximum_abs_roll_rad": 0.587693,
+    "maximum_leg_target_body_y_speed_mps": 1.301114,
+    "healthy_seed_1_feasible_maximum_leg_target_body_y_speed_mps": 0.247843,
+    "held_first_attempt": {
+      "reason": "SpeedLimit",
+      "winner_frame": "R2 tibia",
+      "winner_world_aligned_angular_speed_radps": 10.0015,
+      "speed_guard_radps": 10,
+      "chassis_angular_speed_radps": 0.0869921,
+      "femur_joint_rate_radps": -8.66367,
+      "femur_target_error_rad": -0.97487,
+      "iterations": 8,
+      "contacts": 5,
+      "duplicate_contact_ids": 0
+    },
+    "held_retry": {
+      "reason": "SpeedLimit",
+      "winner_world_aligned_angular_speed_radps": 10.0494,
+      "iterations": 6,
+      "contacts": 5
+    },
+    "interpretation": "Under the deliberately aggressive lateral request, large body roll and missed planned support precede the tracking-error increase and speed-limit hold. A preceding NCP retry occurred, but the held rejection itself was SpeedLimit rather than ADMM iteration exhaustion. Five contacts were present after the load-transfer failure; this capture does not show that redundant contact initiated it."
+  },
+  "named_ctests": {
+    "locomotion_regression_suite_stress": {
+      "screen_off": "passed",
+      "screen_on": "passed"
+    },
+    "locomotion_regression_suite_long_walk_tilt_safety": {
+      "screen_off": "passed",
+      "screen_on": "passed"
+    }
+  },
+  "decision": "Keep the clearance screen opt-in and Pinocchio proximal as the production default. Do not change the 10 rad/s speed guard, contact solver, safety policy, or gait from the aggressive diagnostic. The feasible 100-seed health screen is green; the original 0.6 m/s lateral stress case remains explicit-only. A ten-minute feasible soak, 240 Hz p99, and useful-direction progress capacity still need separate qualification."
+}

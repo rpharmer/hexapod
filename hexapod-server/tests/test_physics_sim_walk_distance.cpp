@@ -1,5 +1,7 @@
 #include "control_config.hpp"
 #include "hexapod_dynamics_constants.hpp"
+#include "foot_reachability.hpp"
+#include "geometry_config.hpp"
 #include "locomotion_command.hpp"
 #include "motion_intent_utils.hpp"
 #include "physics_sim_test_utils.hpp"
@@ -44,6 +46,7 @@
 namespace {
 
 constexpr const char* kWalkDistanceSuite = "physics_sim_walk_distance";
+constexpr std::size_t kCapacityPhaseBuckets = 4;
 constexpr std::size_t kSolverFailureReasonCount =
     static_cast<std::size_t>(physics_sim::SolverFailureReason::ExtremePenetration) + 1U;
 
@@ -442,6 +445,27 @@ struct MotionRunResult {
     // change is judged on support and progress, not only on held counts.
     std::array<std::uint64_t, kNumLegs> planned_swing_samples{};
     std::array<std::uint64_t, kNumLegs> planned_swing_contact_samples{};
+    // Four equal bins of the scheduled swing interval. Unlike the aggregate
+    // contact fraction, these distinguish delayed liftoff from early touchdown.
+    std::array<std::array<std::uint64_t, kCapacityPhaseBuckets>, kNumLegs> swing_phase_samples{};
+    std::array<std::array<std::uint64_t, kCapacityPhaseBuckets>, kNumLegs> swing_phase_raw_contact_samples{};
+    std::array<std::array<std::uint64_t, kCapacityPhaseBuckets>, kNumLegs> swing_phase_fused_load_samples{};
+    std::array<std::array<double, kCapacityPhaseBuckets>, kNumLegs> swing_phase_clearance_sum_m{};
+    std::array<std::array<std::uint64_t, kCapacityPhaseBuckets>, kNumLegs> swing_phase_clearance_samples{};
+    std::array<std::uint64_t, kNumLegs> directional_reach_samples{};
+    std::array<double, kNumLegs> mean_stance_directional_reach_m{};
+    std::array<double, kNumLegs> p10_stance_directional_reach_m{};
+    std::array<double, kNumLegs> mean_workspace_hit_directional_reach_m{};
+    std::array<std::uint64_t, kNumLegs> workspace_hit_reach_samples{};
+    std::array<double, kNumLegs> nominal_directional_reach_m{};
+    std::array<double, kNumLegs> mean_stance_entry_directional_reach_m{};
+    std::array<double, kNumLegs> mean_stance_entry_foot_body_x_m{};
+    std::array<double, kNumLegs> mean_stance_entry_foot_body_y_m{};
+    std::array<double, kNumLegs> mean_stance_entry_foot_body_z_m{};
+    std::array<std::uint64_t, kNumLegs> stance_entry_reach_samples{};
+    std::array<double, kNumLegs> mean_loaded_stance_foot_body_z_m{};
+    std::array<double, kNumLegs> mean_stance_reach_at_nominal_height_m{};
+    std::array<std::uint64_t, kNumLegs> nominal_height_reach_samples{};
     std::array<std::uint64_t, kNumLegs> planned_stance_samples{};
     std::array<std::uint64_t, kNumLegs> planned_stance_no_contact_samples{};
     std::array<std::uint64_t, kNumLegs> max_liftoff_delay_samples{};
@@ -1286,6 +1310,74 @@ void appendUintArray(std::ostream& o, const char* key,
     o << ']';
 }
 
+void appendCapacityCensusJson(std::ostream& o, const MotionRunResult& result) {
+    using locomotion_test::formatDouble;
+    o << ",\"capacity_census_schema\":1"
+      << ",\"swing_phase_edges\":[0,0.25,0.5,0.75,1]"
+      << ",\"mean_measured_body_pitch_rad\":" << formatDouble(result.mean_body_pitch_rad)
+      << ",\"min_measured_body_pitch_rad\":" << formatDouble(result.min_body_pitch_rad)
+      << ",\"max_measured_body_pitch_rad\":" << formatDouble(result.max_body_pitch_rad);
+    const auto appendPhaseCounts = [&](const char* key, const auto& counts) {
+        o << key << '[';
+        for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+            o << (leg == 0 ? "[" : ",[");
+            for (std::size_t bin = 0; bin < kCapacityPhaseBuckets; ++bin) {
+                o << (bin == 0 ? "" : ",") << counts[leg][bin];
+            }
+            o << ']';
+        }
+        o << ']';
+    };
+    appendPhaseCounts(",\"swing_phase_samples\":", result.swing_phase_samples);
+    appendPhaseCounts(",\"swing_phase_raw_contact_samples\":",
+                      result.swing_phase_raw_contact_samples);
+    appendPhaseCounts(",\"swing_phase_fused_load_samples\":",
+                      result.swing_phase_fused_load_samples);
+    appendPhaseCounts(",\"swing_phase_clearance_samples\":",
+                      result.swing_phase_clearance_samples);
+    o << ",\"swing_phase_mean_fk_clearance_from_last_stance_m\":[";
+    for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+        o << (leg == 0 ? "[" : ",[");
+        for (std::size_t bin = 0; bin < kCapacityPhaseBuckets; ++bin) {
+            const auto count = result.swing_phase_clearance_samples[leg][bin];
+            o << (bin == 0 ? "" : ",")
+              << formatDouble(count == 0 ? 0.0
+                  : result.swing_phase_clearance_sum_m[leg][bin] / static_cast<double>(count));
+        }
+        o << ']';
+    }
+    o << ']';
+    appendUintArray(o, ",\"directional_reach_samples\":", result.directional_reach_samples);
+    appendUintArray(o, ",\"workspace_hit_reach_samples\":", result.workspace_hit_reach_samples);
+    const auto appendReach = [&](const char* key, const auto& values) {
+        o << key << '[';
+        for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+            o << (leg == 0 ? "" : ",") << formatDouble(values[leg]);
+        }
+        o << ']';
+    };
+    appendReach(",\"mean_stance_directional_reach_m\":", result.mean_stance_directional_reach_m);
+    appendReach(",\"p10_stance_directional_reach_m\":", result.p10_stance_directional_reach_m);
+    appendReach(",\"mean_workspace_hit_directional_reach_m\":",
+                result.mean_workspace_hit_directional_reach_m);
+    appendReach(",\"nominal_directional_reach_m\":", result.nominal_directional_reach_m);
+    appendReach(",\"mean_stance_entry_directional_reach_m\":",
+                result.mean_stance_entry_directional_reach_m);
+    appendReach(",\"mean_stance_entry_foot_body_x_m\":",
+                result.mean_stance_entry_foot_body_x_m);
+    appendReach(",\"mean_stance_entry_foot_body_y_m\":",
+                result.mean_stance_entry_foot_body_y_m);
+    appendReach(",\"mean_stance_entry_foot_body_z_m\":",
+                result.mean_stance_entry_foot_body_z_m);
+    appendUintArray(o, ",\"stance_entry_reach_samples\":", result.stance_entry_reach_samples);
+    appendReach(",\"mean_loaded_stance_foot_body_z_m\":",
+                result.mean_loaded_stance_foot_body_z_m);
+    appendReach(",\"mean_stance_reach_at_nominal_height_m\":",
+                result.mean_stance_reach_at_nominal_height_m);
+    appendUintArray(o, ",\"nominal_height_reach_samples\":",
+                    result.nominal_height_reach_samples);
+}
+
 std::string walkDistanceLimitsTurnJsonDynamic(const std::string& label,
                                               const double max_path_length_m,
                                               const double max_net_horizontal_distance_m,
@@ -1512,7 +1604,9 @@ std::string motionRunResultMetricsJson(const MotionRunResult& result,
       << ",\"start_yaw_rad\":" << formatDouble(result.start_yaw_rad)
       << ",\"end_yaw_rad\":" << formatDouble(result.end_yaw_rad)
       << ",\"final_mode\":" << static_cast<int>(result.final_status.active_mode)
-      << ",\"final_fault\":" << static_cast<int>(result.final_status.active_fault) << '}';
+      << ",\"final_fault\":" << static_cast<int>(result.final_status.active_fault);
+    appendCapacityCensusJson(o, result);
+    o << '}';
     return o.str();
 }
 
@@ -1721,13 +1815,16 @@ std::string motionRunTurnMetricsJson(const MotionRunResult& result,
       << ",\"commanded_yaw_direction_match\":"
       << (commanded_yaw_direction_match ? "true" : "false")
       << ",\"final_mode\":" << static_cast<int>(result.final_status.active_mode)
-      << ",\"final_fault\":" << static_cast<int>(result.final_status.active_fault) << '}';
+      << ",\"final_fault\":" << static_cast<int>(result.final_status.active_fault);
+    appendCapacityCensusJson(o, result);
+    o << '}';
     return o.str();
 }
 
 template <typename MotionT>
 MotionRunResult runMotionSequence(RobotRuntime& runtime,
                                   CapturingPhysicsSimBridge& bridge,
+                                  const char* case_label,
                                   const ScenarioMotionIntent& stand_motion,
                                   const MotionT& motion,
                                   const int bus_loop_period_us,
@@ -1812,6 +1909,29 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
     contact_penetration_samples.reserve(static_cast<std::size_t>(walk_steps));
     JointTargets previous_applied_targets = bridge.applied_targets();
     std::array<std::uint64_t, kNumLegs> liftoff_delay_run{};
+    std::array<double, kNumLegs> last_stance_contact_z_m{};
+    std::array<bool, kNumLegs> have_stance_contact_z{};
+    std::array<std::vector<double>, kNumLegs> directional_reach_samples_m{};
+    const HexapodGeometry& capacity_geometry = geometry_config::activeHexapodGeometry();
+    const auto nominal_footholds = computeNominalStance(
+        capacity_geometry, stand_motion.body_height_m);
+    for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+        const Vec3& p = nominal_footholds[leg];
+        const Vec3 direction{-result.raw_vx_mps + result.raw_wz_radps * p.y,
+                             -result.raw_vy_mps - result.raw_wz_radps * p.x, 0.0};
+        result.nominal_directional_reach_m[leg] =
+            foot_reachability::planarTravelToReachBoundaryM(
+                capacity_geometry.legGeometry[leg], p, direction).value_or(0.0);
+    }
+    const char* capacity_trace_value = std::getenv("HEXAPOD_WALK_CAPACITY_TRACE");
+    const bool capacity_trace = capacity_trace_value != nullptr
+        && capacity_trace_value[0] != '\0' && std::string(capacity_trace_value) != "0";
+    const char* motor_trace_value = std::getenv("HEXAPOD_PROXIMAL_TRACE_SERVO_CAPACITY");
+    const bool motor_trace = motor_trace_value != nullptr
+        && motor_trace_value[0] != '\0' && std::string(motor_trace_value) != "0";
+    const char* foot_physics_trace_value = std::getenv("HEXAPOD_FOOT_PHYSICS_TRACE");
+    const bool foot_physics_trace = foot_physics_trace_value != nullptr
+        && foot_physics_trace_value[0] == '1' && foot_physics_trace_value[1] == '\0';
     telemetry::LocomotionDebugSnapshot previous_locomotion_debug =
         runtime.locomotionDebugSnapshot();
     GaitState previous_gait = runtime.gaitSnapshot();
@@ -1841,6 +1961,10 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
     double body_roll_sum = 0.0;
     double body_pitch_sum = 0.0;
 
+    if (motor_trace || foot_physics_trace) {
+        std::cerr << "{\"kind\":\"walk_capacity_window\",\"case\":\""
+                  << case_label << "\",\"phase\":\"begin\"}\n";
+    }
     for (int i = 0; i < walk_steps; ++i) {
         runControlLoopStep(runtime, motion, advance_command_time());
 
@@ -1854,6 +1978,7 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
         const std::array<bool, kNumLegs> slew_clamp_hits = runtime.slewClampHitSnapshot();
         const std::array<bool, kNumLegs> workspace_hits = runtime.workspaceXyHitSnapshot();
         const std::array<bool, kNumLegs> stroke_hits = runtime.strokeClampHitSnapshot();
+        std::array<std::optional<double>, kNumLegs> directional_reach_m{};
         const CommandGovernorState governor = runtime.commandGovernorSnapshot();
         const GaitState gait = runtime.gaitSnapshot();
         const Vec3 current_position = positionFromState(state);
@@ -2055,6 +2180,27 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
                 result.raw_contact_count_sum += raw_contact ? 1U : 0U;
                 result.planned_stance_count_sum += planned_stance ? 1U : 0U;
                 if (planned_stance) {
+                    if (previous_locomotion_debug.valid
+                        && !previous_locomotion_debug.planned_stance[leg]) {
+                        const Vec3& plant = locomotion_debug.planned_leg_target_body_m[leg];
+                        const Vec3 direction{
+                            -result.raw_vx_mps + result.raw_wz_radps * plant.y,
+                            -result.raw_vy_mps - result.raw_wz_radps * plant.x, 0.0};
+                        const auto reach = foot_reachability::planarTravelToReachBoundaryM(
+                            capacity_geometry.legGeometry[leg], plant, direction);
+                        if (reach.has_value()) {
+                            result.mean_stance_entry_directional_reach_m[leg] += *reach;
+                            result.mean_stance_entry_foot_body_x_m[leg] += plant.x;
+                            result.mean_stance_entry_foot_body_y_m[leg] += plant.y;
+                            result.mean_stance_entry_foot_body_z_m[leg] += plant.z;
+                            ++result.stance_entry_reach_samples[leg];
+                        }
+                    }
+                    if (raw_contact) {
+                        last_stance_contact_z_m[leg] =
+                            locomotion_debug.measured_foot_world_m[leg].z;
+                        have_stance_contact_z[leg] = true;
+                    }
                     ++result.planned_stance_samples[leg];
                     result.planned_stance_no_contact_samples[leg] += raw_contact ? 0U : 1U;
                     liftoff_delay_run[leg] = 0;
@@ -2078,6 +2224,24 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
                         }
                     }
                 } else {
+                    const double swing_span = std::max(1e-6, 1.0 - gait.duty_factor);
+                    const double swing_tau = std::clamp(
+                        (gait.phase[leg] - gait.duty_factor) / swing_span, 0.0, 1.0);
+                    const std::size_t phase_bin = std::min(
+                        kCapacityPhaseBuckets - 1,
+                        static_cast<std::size_t>(swing_tau * kCapacityPhaseBuckets));
+                    ++result.swing_phase_samples[leg][phase_bin];
+                    result.swing_phase_raw_contact_samples[leg][phase_bin] += raw_contact ? 1U : 0U;
+                    result.swing_phase_fused_load_samples[leg][phase_bin] +=
+                        locomotion_debug.fused_load_bearing[leg] ? 1U : 0U;
+                    if (have_stance_contact_z[leg]) {
+                        const double clearance = locomotion_debug.measured_foot_world_m[leg].z
+                            - last_stance_contact_z_m[leg];
+                        if (std::isfinite(clearance)) {
+                            result.swing_phase_clearance_sum_m[leg][phase_bin] += clearance;
+                            ++result.swing_phase_clearance_samples[leg][phase_bin];
+                        }
+                    }
                     ++result.planned_swing_samples[leg];
                     if (raw_contact) {
                         ++result.planned_swing_contact_samples[leg];
@@ -2143,6 +2307,30 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
                     locomotion_debug.latched_stroke_length_m[leg];
                 loaded_stance_used_length_sum[leg] +=
                     locomotion_debug.latched_stroke_used_m[leg];
+                const Vec3& planned = locomotion_debug.planned_leg_target_body_m[leg];
+                result.mean_loaded_stance_foot_body_z_m[leg] += planned.z;
+                const Vec3 stroke_direction{
+                    -result.raw_vx_mps + result.raw_wz_radps * planned.y,
+                    -result.raw_vy_mps - result.raw_wz_radps * planned.x, 0.0};
+                directional_reach_m[leg] = foot_reachability::planarTravelToReachBoundaryM(
+                    capacity_geometry.legGeometry[leg], planned, stroke_direction);
+                if (directional_reach_m[leg].has_value()) {
+                    const double remaining = *directional_reach_m[leg];
+                    directional_reach_samples_m[leg].push_back(remaining);
+                    result.mean_stance_directional_reach_m[leg] += remaining;
+                    ++result.directional_reach_samples[leg];
+                    if (workspace_hits[leg]) {
+                        result.mean_workspace_hit_directional_reach_m[leg] += remaining;
+                        ++result.workspace_hit_reach_samples[leg];
+                    }
+                }
+                const Vec3 at_nominal_height{planned.x, planned.y, -stand_motion.body_height_m};
+                const auto nominal_height_reach = foot_reachability::planarTravelToReachBoundaryM(
+                    capacity_geometry.legGeometry[leg], at_nominal_height, stroke_direction);
+                if (nominal_height_reach.has_value()) {
+                    result.mean_stance_reach_at_nominal_height_m[leg] += *nominal_height_reach;
+                    ++result.nominal_height_reach_samples[leg];
+                }
                 result.loaded_stance_slew_limited_samples[leg] +=
                     slew_clamp_hits[leg] ? 1U : 0U;
                 result.loaded_stance_workspace_limited_samples[leg] +=
@@ -2158,6 +2346,59 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
                         result.loaded_stance_hold_phase_max[leg], gait.phase[leg]);
                 }
                 ++result.loaded_stance_samples[leg];
+            }
+        }
+        if (capacity_trace && locomotion_debug.valid && state.bus_ok
+            && result.final_status.active_mode == RobotMode::WALK) {
+            using locomotion_test::formatDouble;
+            for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+                const auto& commanded = locomotion_debug.post_clamp_fk_body_m[leg];
+                const auto& measured = locomotion_debug.measured_foot_body_m[leg];
+                std::cerr << "{\"kind\":\"walk_capacity_trace\",\"schema_version\":1"
+                          << ",\"case\":\"" << case_label << "\",\"step\":" << i
+                          << ",\"time_s\":" << formatDouble(i * command_step_s)
+                          << ",\"leg\":" << leg
+                          << ",\"phase\":" << formatDouble(gait.phase[leg])
+                          << ",\"duty\":" << formatDouble(gait.duty_factor)
+                          << ",\"planned_stance\":" << (locomotion_debug.planned_stance[leg] ? "true" : "false")
+                          << ",\"hold_stance\":" << (locomotion_debug.hold_stance[leg] ? "true" : "false")
+                          << ",\"raw_contact\":" << (locomotion_debug.raw_contact[leg] ? "true" : "false")
+                          << ",\"fused_load\":" << (locomotion_debug.fused_load_bearing[leg] ? "true" : "false")
+                          << ",\"workspace_xy_hit\":" << (workspace_hits[leg] ? "true" : "false")
+                          << ",\"directional_reach_m\":";
+                if (directional_reach_m[leg]) {
+                    std::cerr << formatDouble(*directional_reach_m[leg]);
+                } else {
+                    std::cerr << "null";
+                }
+                std::cerr << ",\"last_stance_z_m\":";
+                if (have_stance_contact_z[leg]) {
+                    std::cerr << formatDouble(last_stance_contact_z_m[leg]);
+                } else {
+                    std::cerr << "null";
+                }
+                std::cerr << ",\"measured_world_z_m\":" << formatDouble(
+                    locomotion_debug.measured_foot_world_m[leg].z)
+                          << ",\"commanded_body_m\":[" << formatDouble(commanded.x)
+                          << ',' << formatDouble(commanded.y) << ',' << formatDouble(commanded.z)
+                          << "],\"measured_body_m\":[" << formatDouble(measured.x)
+                          << ',' << formatDouble(measured.y) << ',' << formatDouble(measured.z)
+                          << "],\"joint_target_rad\":[";
+                for (std::size_t joint = 0; joint < kJointsPerLeg; ++joint) {
+                    if (joint != 0) std::cerr << ',';
+                    std::cerr << formatDouble(applied_targets.leg_states[leg].joint_state[joint].pos_rad.value);
+                }
+                std::cerr << "],\"joint_measured_rad\":[";
+                for (std::size_t joint = 0; joint < kJointsPerLeg; ++joint) {
+                    if (joint != 0) std::cerr << ',';
+                    std::cerr << formatDouble(state.leg_states[leg].joint_state[joint].pos_rad.value);
+                }
+                std::cerr << "],\"joint_measured_rate_radps\":[";
+                for (std::size_t joint = 0; joint < kJointsPerLeg; ++joint) {
+                    if (joint != 0) std::cerr << ',';
+                    std::cerr << formatDouble(state.leg_states[leg].joint_state[joint].vel_radps.value);
+                }
+                std::cerr << "]}\n";
             }
         }
         if (result.final_status.active_mode == RobotMode::WALK) {
@@ -2448,11 +2689,42 @@ MotionRunResult runMotionSequence(RobotRuntime& runtime,
         previous_locomotion_debug = locomotion_debug;
         previous_gait = gait;
     }
+    if (motor_trace || foot_physics_trace) {
+        std::cerr << "{\"kind\":\"walk_capacity_window\",\"case\":\""
+                  << case_label << "\",\"phase\":\"end\"}\n";
+    }
 
     result.support_divergence_ticks.assign(
         // Preserve the old ring independently of the complete event census.
         support_divergence_ring.begin(), support_divergence_ring.end());
     result.swing_events.finish(walk_steps * command_step_s);
+    for (std::size_t leg = 0; leg < kNumLegs; ++leg) {
+        auto& samples = directional_reach_samples_m[leg];
+        if (!samples.empty()) {
+            result.mean_stance_directional_reach_m[leg] /= static_cast<double>(samples.size());
+            std::sort(samples.begin(), samples.end());
+            result.p10_stance_directional_reach_m[leg] = samples[(samples.size() - 1U) / 10U];
+        }
+        if (result.workspace_hit_reach_samples[leg] > 0) {
+            result.mean_workspace_hit_directional_reach_m[leg] /=
+                static_cast<double>(result.workspace_hit_reach_samples[leg]);
+        }
+        if (result.stance_entry_reach_samples[leg] > 0) {
+            const double entry_count = static_cast<double>(result.stance_entry_reach_samples[leg]);
+            result.mean_stance_entry_directional_reach_m[leg] /= entry_count;
+            result.mean_stance_entry_foot_body_x_m[leg] /= entry_count;
+            result.mean_stance_entry_foot_body_y_m[leg] /= entry_count;
+            result.mean_stance_entry_foot_body_z_m[leg] /= entry_count;
+        }
+        if (result.loaded_stance_samples[leg] > 0) {
+            result.mean_loaded_stance_foot_body_z_m[leg] /=
+                static_cast<double>(result.loaded_stance_samples[leg]);
+        }
+        if (result.nominal_height_reach_samples[leg] > 0) {
+            result.mean_stance_reach_at_nominal_height_m[leg] /=
+                static_cast<double>(result.nominal_height_reach_samples[leg]);
+        }
+    }
 
     if (const auto& failed = bridge.first_failed_solver_telemetry(); failed.has_value()) {
         result.first_read_fail = true;
@@ -2567,7 +2839,7 @@ bool checkWalkCase(const std::string& label,
                    const bool emit_metrics_json) {
     MotionRunResult result{};
     try {
-        result = runMotionSequence(runtime, bridge, stand_motion, walk_motion, bus_loop_period_us);
+        result = runMotionSequence(runtime, bridge, label.c_str(), stand_motion, walk_motion, bus_loop_period_us);
     } catch (const std::exception& ex) {
         if (emit_metrics_json) {
             physics_sim_metrics::emitLine(
@@ -2943,7 +3215,7 @@ bool checkStraightWalkCase(const std::string& label,
                            const bool emit_metrics_json) {
     MotionRunResult result{};
     try {
-        result = runMotionSequence(runtime, bridge, stand_motion, walk_motion, bus_loop_period_us);
+        result = runMotionSequence(runtime, bridge, label.c_str(), stand_motion, walk_motion, bus_loop_period_us);
     } catch (const std::exception& ex) {
         if (emit_metrics_json) {
             physics_sim_metrics::emitLine(
@@ -3123,7 +3395,8 @@ bool checkTurnCase(const std::string& label,
                    const bool emit_metrics_json) {
     MotionRunResult result{};
     try {
-        result = runMotionSequence(runtime, bridge, stand_motion, turn_motion, bus_loop_period_us, true);
+        result = runMotionSequence(runtime, bridge, label.c_str(), stand_motion, turn_motion,
+                                   bus_loop_period_us, true);
     } catch (const std::exception& ex) {
         if (emit_metrics_json) {
             physics_sim_metrics::emitLine(

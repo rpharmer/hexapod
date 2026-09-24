@@ -82,12 +82,6 @@ LocalPlanResult AStarLocalPlanner::plan(const LocalPlanRequest& request) const {
         !(hasObservedOccupiedSpace(grid) && hasObservedFreeSpace(grid));
 
     const NavPose2d planning_goal = projectGoalIntoHorizon(request);
-    if (std::hypot(planning_goal.x_m - request.current_pose.x_m,
-                   planning_goal.y_m - request.current_pose.y_m) <= grid.resolution_m) {
-        out.status = LocalPlanStatus::GoalReached;
-        return out;
-    }
-
     int start_x = 0;
     int start_y = 0;
     int goal_x = 0;
@@ -110,6 +104,15 @@ LocalPlanResult AStarLocalPlanner::plan(const LocalPlanRequest& request) const {
     if (!traversable(grid.stateAtCell(goal_x, goal_y), allow_unknown_traversal)) {
         out.status = LocalPlanStatus::Blocked;
         out.block_reason = PlannerBlockReason::GoalOccupied;
+        return out;
+    }
+
+    // Even a within-cell pose goal must be checked against the current
+    // inflated occupancy. Otherwise a click inside an obstacle is reported
+    // reached without ever validating the start or destination cell.
+    if (std::hypot(planning_goal.x_m - request.current_pose.x_m,
+                   planning_goal.y_m - request.current_pose.y_m) <= grid.resolution_m) {
+        out.status = LocalPlanStatus::GoalReached;
         return out;
     }
 

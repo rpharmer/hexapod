@@ -8,6 +8,7 @@
  */
 
 #include "control_config.hpp"
+#include "command_channel.hpp"
 #include "matrix_lidar_local_map_source.hpp"
 #include "motion_intent_utils.hpp"
 #include "navigation_manager.hpp"
@@ -20,6 +21,7 @@
 #include "locomotion_metrics.hpp"
 #include "test_limits_manifest.hpp"
 
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -191,8 +193,18 @@ struct NavigationRunMetrics {
     double path_length_m{0.0};
     double max_lateral_deviation_m{0.0};
     double max_progress_m{0.0};
+    double max_yaw_excursion_rad{0.0};
+    double final_yaw_error_rad{0.0};
+    double mean_goal_aligned_command_mps{0.0};
+    double peak_goal_aligned_command_mps{0.0};
+    double min_governor_scale{1.0};
+    std::size_t moving_command_samples{0};
     std::size_t peak_replan_count{0};
     std::size_t peak_active_segment_waypoints{0};
+    std::size_t initial_segment_waypoints{0};
+    std::size_t initial_raw_occupied_cells{0};
+    bool late_obstacle_injected{false};
+    double progress_at_injection_m{0.0};
     bool touched_raw_obstacle{false};
     bool saw_obstacle_footprints{false};
     std::size_t peak_obstacle_count{0};
@@ -229,7 +241,13 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
                                                       const double goal_forward_m,
                                                       const double blocked_timeout_s,
                                                       const int max_steps,
-                                                      const int bus_loop_period_us) {
+                                                      const int bus_loop_period_us,
+                                                      const bool interactive_profile = false,
+                                                      const bool interactive_integral = false,
+                                                      const bool interactive_faster = false,
+                                                      const bool interactive_default_follow = false,
+                                                      const double goal_lateral_m = 0.0,
+                                                      const bool interactive_face_path = false) {
     const auto harness = physics_sim_test_utils::loadHarnessSettings();
     const int port = 24000 + (static_cast<int>(::getpid()) % 3000) +
                      static_cast<int>(std::hash<std::string>{}(label) % 1000);
@@ -253,18 +271,22 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
     cfg.gait.foot_estimator_blend = 0.0;
     cfg.locomotion_cmd.enable_first_order_filter = false;
     cfg.locomotion_cmd.enable_chassis_accel_limit = false;
-    cfg.local_map.width_cells = 61;
-    cfg.local_map.height_cells = 61;
-    cfg.local_map.resolution_m = 0.05;
-    cfg.local_map.obstacle_inflation_radius_m = 0.04;
-    cfg.local_map.safety_margin_m = 0.01;
-    cfg.local_planner.search_horizon_m = 1.6;
-    cfg.local_planner.segment_cell_horizon = 14;
-    cfg.local_planner.max_output_waypoints = 8;
+    if (!interactive_profile) {
+        cfg.local_map.width_cells = 61;
+        cfg.local_map.height_cells = 61;
+        cfg.local_map.resolution_m = 0.05;
+        cfg.local_map.obstacle_inflation_radius_m = 0.04;
+        cfg.local_map.safety_margin_m = 0.01;
+        cfg.local_planner.search_horizon_m = 1.6;
+        cfg.local_planner.segment_cell_horizon = 14;
+        cfg.local_planner.max_output_waypoints = 8;
+    }
     cfg.local_planner.blocked_timeout_s = blocked_timeout_s;
-    cfg.nav_bridge.body_frame_integral_ki_fwd_per_s = 0.28;
-    cfg.nav_bridge.body_frame_integral_ki_lat_per_s = 0.24;
-    cfg.nav_bridge.body_frame_integral_abs_cap_m_s = 0.06;
+    if (!interactive_profile || interactive_integral) {
+        cfg.nav_bridge.body_frame_integral_ki_fwd_per_s = 0.28;
+        cfg.nav_bridge.body_frame_integral_ki_lat_per_s = 0.24;
+        cfg.nav_bridge.body_frame_integral_abs_cap_m_s = 0.06;
+    }
 
     RobotRuntime runtime(std::move(bridge), std::make_unique<PhysicsSimEstimator>(), nullptr, cfg);
     if (!expect(runtime.init(), label + ": runtime init should succeed")) {
@@ -294,6 +316,16 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
     }
     navigation_manager->addObservationSource(std::make_shared<PhysicsSimLocalMapObservationSource>(
         *bridge_ptr, std::max(0.02, cfg.local_map.resolution_m * 0.5)));
+    // The scene body's initial velocity is damped by terrain contact and does
+    // not reliably carry it across the route after warm-up. Inject one late
+    // map hit so this case actually exercises a newly blocked active segment.
+    // This is perception-only; the scene body still supplies the live physics
+    // footprint checked below for physical collision avoidance.
+    std::shared_ptr<SyntheticLocalMapObservationSource> late_obstacle_source;
+    if (label == "midrun_intrusion") {
+        late_obstacle_source = std::make_shared<SyntheticLocalMapObservationSource>();
+        navigation_manager->addObservationSource(late_obstacle_source);
+    }
     runtime.setNavigationManager(std::move(navigation_manager));
 
     MotionIntent stand_fallback = makeMotionIntent(RobotMode::STAND, GaitType::TRIPOD, 0.14);
@@ -315,22 +347,21 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
         return std::nullopt;
     }
 
-    FollowWaypoints::Params follow_params{};
-    follow_params.stall_timeout_s = 6.0;
-    follow_params.go_to.rotate_first = false;
-    follow_params.go_to.drive.max_v_mps = 0.05;
-    follow_params.go_to.drive.position_gain = 0.22;
-    follow_params.go_to.drive.position_tol_m = 0.035;
-    follow_params.go_to.drive.settle_cycles_required = 5;
-    follow_params.go_to.drive.yaw_hold_kp = 0.0;
-    follow_params.go_to.rotate.error_threshold_rad = 0.20;
-    follow_params.go_to.rotate.settle_cycles_required = 4;
+    FollowWaypoints::Params follow_params = interactive_default_follow
+        ? FollowWaypoints::Params{} : command_channel::interactiveNavigationParams();
+    if (interactive_faster) {
+        follow_params.go_to.drive.max_v_mps = 0.10;
+        follow_params.go_to.drive.position_gain = 0.75;
+    }
+    if (interactive_face_path) {
+        follow_params.go_to.rotate_first = true;
+    }
 
     const double goal_dir_x = std::cos(start_pose.yaw_rad);
     const double goal_dir_y = std::sin(start_pose.yaw_rad);
     const NavPose2d goal_pose{
-        start_pose.x_m + goal_dir_x * goal_forward_m,
-        start_pose.y_m + goal_dir_y * goal_forward_m,
+        start_pose.x_m + goal_dir_x * goal_forward_m - goal_dir_y * goal_lateral_m,
+        start_pose.y_m + goal_dir_y * goal_forward_m + goal_dir_x * goal_lateral_m,
         start_pose.yaw_rad,
     };
     runtime.navigationManager()->startNavigateToPose(walk_base, goal_pose, follow_params);
@@ -341,8 +372,20 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
     metrics.start_pitch_rad = settled.body_twist_state.twist_pos_rad.y;
     metrics.goal_pose = goal_pose;
     NavPose2d previous_pose = start_pose;
+    double goal_aligned_command_sum = 0.0;
 
     for (int step = 0; step < max_steps; ++step) {
+        if (late_obstacle_source && !metrics.late_obstacle_injected &&
+            metrics.max_progress_m >= 0.04) {
+            late_obstacle_source->setStaticSamples({
+                LocalMapObservationSample{
+                    start_pose.x_m + 0.75 * (goal_pose.x_m - start_pose.x_m),
+                    start_pose.y_m + 0.75 * (goal_pose.y_m - start_pose.y_m),
+                    LocalMapCellState::Occupied},
+            });
+            metrics.late_obstacle_injected = true;
+            metrics.progress_at_injection_m = metrics.max_progress_m;
+        }
         runNavigationStep(runtime, stand_fallback);
 
         const NavPose2d pose = navPose2dFromRobotState(runtime.estimatedSnapshot());
@@ -353,12 +396,48 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
             std::max(metrics.max_lateral_deviation_m, pointToGoalLateralDeviation(start_pose, goal_pose, pose));
         metrics.max_progress_m =
             std::max(metrics.max_progress_m, pointProgressAlongGoal(start_pose, goal_pose, pose));
+        metrics.max_yaw_excursion_rad = std::max(
+            metrics.max_yaw_excursion_rad,
+            std::abs(navWrapAngleRad(pose.yaw_rad - start_pose.yaw_rad)));
+
+        if (interactive_profile) {
+            const MotionIntent effective = runtime.effectiveMotionIntentSnapshot();
+            const double world_vx = effective.cmd_vx_mps.value * std::cos(pose.yaw_rad) -
+                                    effective.cmd_vy_mps.value * std::sin(pose.yaw_rad);
+            const double world_vy = effective.cmd_vx_mps.value * std::sin(pose.yaw_rad) +
+                                    effective.cmd_vy_mps.value * std::cos(pose.yaw_rad);
+            const double goal_length = std::hypot(goal_forward_m, goal_lateral_m);
+            const double aligned = goal_length > 0.0
+                ? (world_vx * (goal_pose.x_m - start_pose.x_m) +
+                   world_vy * (goal_pose.y_m - start_pose.y_m)) / goal_length : 0.0;
+            if (std::hypot(world_vx, world_vy) > 1.0e-5) {
+                goal_aligned_command_sum += aligned;
+                ++metrics.moving_command_samples;
+                metrics.peak_goal_aligned_command_mps =
+                    std::max(metrics.peak_goal_aligned_command_mps, aligned);
+                metrics.min_governor_scale =
+                    std::min(metrics.min_governor_scale, runtime.commandGovernorSnapshot().command_scale);
+            }
+        }
 
         const NavigationMonitorSnapshot monitor = runtime.navigationManager()->monitor();
         metrics.peak_replan_count = std::max(metrics.peak_replan_count, monitor.replan_count);
         metrics.peak_active_segment_waypoints =
             std::max(metrics.peak_active_segment_waypoints, monitor.active_segment_waypoint_count);
         metrics.final_monitor = monitor;
+        if (interactive_profile && (step == 0 || step == 1 || step == 10 || step == 100)) {
+            const MotionIntent effective = runtime.effectiveMotionIntentSnapshot();
+            std::cout << "nav_command_probe step=" << step
+                      << " mode=" << static_cast<int>(effective.requested_mode)
+                      << " vx=" << effective.cmd_vx_mps.value
+                      << " vy=" << effective.cmd_vy_mps.value
+                      << " yaw_rate=" << effective.cmd_yaw_radps.value
+                      << " speed=" << effective.speed_mps.value
+                      << " segment=" << monitor.active_segment_waypoint_count
+                      << " waypoint=" << monitor.bridge.active_waypoint_index
+                      << " waypoint_dist=" << monitor.bridge.distance_to_active_waypoint_m
+                      << " bridge_active=" << monitor.bridge.active << '\n';
+        }
 
         const LocalMapSnapshot snapshot =
             runtime.navigationManager()->latestMapSnapshot(runtime.estimatedSnapshot().timestamp_us);
@@ -373,6 +452,10 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
         }
         metrics.peak_raw_occupied_cells = std::max(metrics.peak_raw_occupied_cells, occupied_cells);
         metrics.peak_raw_free_cells = std::max(metrics.peak_raw_free_cells, free_cells);
+        if (step == 0) {
+            metrics.initial_segment_waypoints = monitor.active_segment_waypoint_count;
+            metrics.initial_raw_occupied_cells = occupied_cells;
+        }
         if (snapshot.nearest_obstacle_distance_m >= 0.0 &&
             (metrics.min_nearest_obstacle_distance_m < 0.0 ||
              snapshot.nearest_obstacle_distance_m < metrics.min_nearest_obstacle_distance_m)) {
@@ -415,6 +498,12 @@ std::optional<NavigationRunMetrics> runNavigationCase(const std::string& label,
 
     metrics.goal_error_m = std::hypot(metrics.end_pose.x_m - goal_pose.x_m,
                                       metrics.end_pose.y_m - goal_pose.y_m);
+    metrics.final_yaw_error_rad =
+        std::abs(navWrapAngleRad(goal_pose.yaw_rad - metrics.end_pose.yaw_rad));
+    if (metrics.moving_command_samples > 0) {
+        metrics.mean_goal_aligned_command_mps =
+            goal_aligned_command_sum / static_cast<double>(metrics.moving_command_samples);
+    }
     metrics.final_monitor = runtime.navigationManager()->monitor();
     return metrics;
 }
@@ -554,6 +643,8 @@ bool checkMidrunIntrusion(const NavigationRunMetrics& baseline,
         metrics.path_length_m >= baseline.path_length_m + completed_path_delta_min;
     return expect(metrics.saw_obstacle_footprints,
                   "midrun_intrusion: live obstacle footprints should be observed") &&
+           expect(metrics.late_obstacle_injected,
+                  "midrun_intrusion: a new map obstacle should appear after 40 mm of progress") &&
            expect(!metrics.touched_raw_obstacle,
                   "midrun_intrusion: body path should stay out of raw obstacle footprints") &&
            expect(replanned_more || blocked_safely_after_progress || blocked_safely_after_observation || completed_detour,
@@ -658,6 +749,10 @@ void emitNavigationCaseJson(const std::string& name,
               << ",\"max_progress_m\":" << locomotion_test::formatDouble(metrics.max_progress_m)
               << ",\"peak_replan_count\":" << metrics.peak_replan_count
               << ",\"peak_active_segment_waypoints\":" << metrics.peak_active_segment_waypoints
+              << ",\"initial_segment_waypoints\":" << metrics.initial_segment_waypoints
+              << ",\"initial_raw_occupied_cells\":" << metrics.initial_raw_occupied_cells
+              << ",\"late_obstacle_injected\":" << (metrics.late_obstacle_injected ? "true" : "false")
+              << ",\"progress_at_injection_m\":" << locomotion_test::formatDouble(metrics.progress_at_injection_m)
               << ",\"touched_raw_obstacle\":" << (metrics.touched_raw_obstacle ? "true" : "false")
               << ",\"saw_obstacle_footprints\":" << (metrics.saw_obstacle_footprints ? "true" : "false")
               << ",\"peak_obstacle_count\":" << metrics.peak_obstacle_count
@@ -685,10 +780,24 @@ void printSummary(const std::string& label, const NavigationRunMetrics& metrics)
               << " lifecycle=" << static_cast<int>(metrics.final_monitor.lifecycle)
               << " block_reason=" << static_cast<int>(metrics.final_monitor.block_reason)
               << " goal_error=" << metrics.goal_error_m
+              << " yaw_error=" << metrics.final_yaw_error_rad
+              << " yaw_excursion=" << metrics.max_yaw_excursion_rad
               << " path=" << metrics.path_length_m
               << " max_progress=" << metrics.max_progress_m
+              << " mean_goal_cmd=" << metrics.mean_goal_aligned_command_mps
+              << " peak_goal_cmd=" << metrics.peak_goal_aligned_command_mps
+              << " moving_cmd_samples=" << metrics.moving_command_samples
+              << " min_governor_scale=" << metrics.min_governor_scale
               << " max_lateral=" << metrics.max_lateral_deviation_m
               << " replans=" << metrics.peak_replan_count
+              << " peak_segment_waypoints=" << metrics.peak_active_segment_waypoints
+              << " initial_segment_waypoints=" << metrics.initial_segment_waypoints
+              << " initial_raw_occupied=" << metrics.initial_raw_occupied_cells
+              << " late_obstacle_injected=" << metrics.late_obstacle_injected
+              << " progress_at_injection=" << metrics.progress_at_injection_m
+              << " final_waypoint_idx=" << metrics.final_monitor.bridge.active_waypoint_index
+              << " final_waypoint_dist=" << metrics.final_monitor.bridge.distance_to_active_waypoint_m
+              << " final_bridge_active=" << metrics.final_monitor.bridge.active
               << " peak_obstacles=" << metrics.peak_obstacle_count
               << " peak_raw_occupied=" << metrics.peak_raw_occupied_cells
               << " peak_raw_free=" << metrics.peak_raw_free_cells
@@ -706,10 +815,37 @@ int main(int argc, char** argv) {
     return EXIT_SUCCESS;
 #else
     bool emit_metrics_json = false;
+    bool interactive_profile_direct = false;
+    bool interactive_profile_cardinal = false;
+    bool interactive_profile_reverse = false;
+    bool interactive_profile_left = false;
+    bool interactive_profile_right = false;
+    bool interactive_profile_face_path = false;
+    bool interactive_profile_integral = false;
+    bool interactive_profile_faster = false;
+    bool interactive_profile_default_follow = false;
     std::string sim_path_arg;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--emit-metrics-json") == 0) {
             emit_metrics_json = true;
+        } else if (std::strcmp(argv[i], "--interactive-profile-direct") == 0) {
+            interactive_profile_direct = true;
+        } else if (std::strcmp(argv[i], "--interactive-profile-cardinal") == 0) {
+            interactive_profile_cardinal = true;
+        } else if (std::strcmp(argv[i], "--interactive-profile-reverse") == 0) {
+            interactive_profile_reverse = true;
+        } else if (std::strcmp(argv[i], "--interactive-profile-left") == 0) {
+            interactive_profile_left = true;
+        } else if (std::strcmp(argv[i], "--interactive-profile-right") == 0) {
+            interactive_profile_right = true;
+        } else if (std::strcmp(argv[i], "--interactive-profile-face-path") == 0) {
+            interactive_profile_face_path = true;
+        } else if (std::strcmp(argv[i], "--interactive-profile-integral") == 0) {
+            interactive_profile_integral = true;
+        } else if (std::strcmp(argv[i], "--interactive-profile-faster") == 0) {
+            interactive_profile_faster = true;
+        } else if (std::strcmp(argv[i], "--interactive-profile-default-follow") == 0) {
+            interactive_profile_default_follow = true;
         } else if (std::strcmp(argv[i], "--limits-manifest") == 0 && i + 1 < argc) {
             ++i;
         } else if (argv[i][0] != '\0' && argv[i][0] != '-') {
@@ -737,6 +873,84 @@ int main(int argc, char** argv) {
     const auto harness = physics_sim_test_utils::loadHarnessSettings();
     const int kBusLoopPeriodUs = harness.bus_loop_period_us;
     constexpr double kGoalForwardM = 0.14;
+
+    if (interactive_profile_cardinal) {
+        struct Direction {
+            const char* name;
+            double forward_m;
+            double lateral_m;
+        };
+        constexpr std::array<Direction, 4> directions{{
+            {"forward", kGoalForwardM, 0.0},
+            {"reverse", -kGoalForwardM, 0.0},
+            {"left", 0.0, kGoalForwardM},
+            {"right", 0.0, -kGoalForwardM},
+        }};
+        constexpr const char* kSuite = "physics_sim_navigation_directional";
+        constexpr const char* kCase = "cardinal";
+        const double progress_min = test_limits::getDouble(kSuite, kCase, "", "signed_progress_m_min", 0.07);
+        const double goal_error_max = test_limits::getDouble(kSuite, kCase, "", "goal_error_m_max", 0.08);
+        const double yaw_error_max = test_limits::getDouble(kSuite, kCase, "", "yaw_error_rad_max", 0.25);
+        const double path_max = test_limits::getDouble(kSuite, kCase, "", "path_length_m_max", 0.50);
+        const double lateral_max = test_limits::getDouble(kSuite, kCase, "", "lateral_deviation_m_max", 0.05);
+        const double aligned_cmd_min = test_limits::getDouble(kSuite, kCase, "", "mean_goal_command_mps_min", 0.005);
+        bool all_passed = true;
+        for (const Direction& direction : directions) {
+            const std::string label = std::string{"cardinal_"} + direction.name;
+            const auto metrics = runNavigationCase(
+                label, sim_exe, std::nullopt, direction.forward_m, 1.2,
+                static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(1800, kBusLoopPeriodUs)),
+                kBusLoopPeriodUs, true, false, false, false, direction.lateral_m);
+            if (!metrics) {
+                all_passed = false;
+                continue;
+            }
+            printSummary(label, *metrics);
+            const bool passed =
+                expect(metrics->final_monitor.lifecycle == NavigationLifecycleState::Completed,
+                       label + ": navigation must complete") &&
+                expect(metrics->max_progress_m >= progress_min,
+                       label + ": insufficient signed goal progress") &&
+                expect(metrics->goal_error_m <= goal_error_max,
+                       label + ": goal position error") &&
+                expect(metrics->final_yaw_error_rad <= yaw_error_max,
+                       label + ": final heading error") &&
+                expect(metrics->path_length_m <= path_max,
+                       label + ": excess wandering") &&
+                expect(metrics->max_lateral_deviation_m <= lateral_max,
+                       label + ": excess cross-track deviation") &&
+                expect(metrics->mean_goal_aligned_command_mps >= aligned_cmd_min,
+                       label + ": command did not point toward the goal");
+            all_passed &= passed;
+        }
+        return all_passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (interactive_profile_direct) {
+        const double goal_forward_m = interactive_profile_left || interactive_profile_right
+            ? 0.0 : (interactive_profile_reverse ? -kGoalForwardM : kGoalForwardM);
+        const double goal_lateral_m = interactive_profile_left ? kGoalForwardM
+            : (interactive_profile_right ? -kGoalForwardM : 0.0);
+        const auto direct = runNavigationCase(
+            "interactive_direct_path", sim_exe, std::nullopt,
+            goal_forward_m, 1.2,
+            static_cast<int>(physics_sim_test_utils::scaledLegacyStepCount(
+                interactive_profile_face_path ? 4000 : 1800, kBusLoopPeriodUs)),
+            kBusLoopPeriodUs, true, interactive_profile_integral, interactive_profile_faster,
+            interactive_profile_default_follow, goal_lateral_m, interactive_profile_face_path);
+        if (direct) printSummary("interactive_direct_path", *direct);
+        // Diagnostic screen is deliberately stricter than the historical
+        // path-length-or-progress acceptance gate: wandering is not progress.
+        if (!direct) return EXIT_FAILURE;
+        const bool healthy = checkDirectPath(*direct);
+        const bool progressed = expect(direct->max_progress_m >= 0.07,
+                                       "interactive_direct_path: signed goal progress below 70 mm");
+        const bool arrived = expect(direct->goal_error_m <= 0.08,
+                                    "interactive_direct_path: final goal error above 80 mm");
+        const bool oriented = expect(direct->final_yaw_error_rad <= 0.25,
+                                     "interactive_direct_path: final heading error above 0.25 rad");
+        return healthy && progressed && arrived && oriented ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
 
     const std::filesystem::path single_box =
         resolveNavigationScene(sim_exe, "nav_single_box.json");

@@ -48,6 +48,26 @@ Options ParseArgs(int argc, char** argv) {
       options.log_joint_positions = true;
       continue;
     }
+    if (arg == "--command-host") {
+      if (i + 1 >= argc) {
+        std::cerr << "Missing value for --command-host\n";
+        std::exit(1);
+      }
+      options.command_host = argv[++i];
+      continue;
+    }
+    if (arg == "--command-port") {
+      if (i + 1 >= argc) {
+        std::cerr << "Missing value for --command-port\n";
+        std::exit(1);
+      }
+      const std::string value = argv[++i];
+      if (!ParseUdpPort(value.c_str(), options.command_port)) {
+        std::cerr << "Invalid command UDP port: " << value << "\n";
+        std::exit(1);
+      }
+      continue;
+    }
   }
   return options;
 }

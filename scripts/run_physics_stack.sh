@@ -17,6 +17,9 @@ VIS_HOST="127.0.0.1"
 UDP_PORT=9870
 PHYSICS_HOST="127.0.0.1"
 PHYSICS_PORT=9871
+COMMAND_ENABLE=1
+COMMAND_PORT=9872
+COMMAND_SCENARIOS_DIR="scenarios"
 SERVER_CONFIG=""
 SCENE_FILE=""
 SCENARIO_FILE=""
@@ -45,17 +48,23 @@ Defaults:
   - Xbox controller device is auto-detected from /dev/input/by-id
   - visualiser + telemetry UDP port = 9870
   - physics serve UDP port = 9871
+  - visualiser command channel = enabled on UDP 9872 (interactive mode)
 
 Options:
   --udp-port <port>           Visualiser ingest and server telemetry UDP port (default: 9870).
   --visualiser-host <host>    Host/IP that receives visualiser UDP packets (default: 127.0.0.1).
   --physics-host <host>       Host/IP that hexapod-server uses for physics IPC (default: 127.0.0.1).
   --physics-port <port>       UDP port for hexapod-physics-sim --serve (default: 9871).
+  --command-enable            Enable visualiser->server command UDP (default for this stack).
+  --command-disable           Disable the command channel.
+  --command-port <port>       Command UDP listen/send port (default: 9872).
+  --command-scenarios-dir <d> Scenario directory relative to hexapod-server/ (default: scenarios).
   --server-config <path>      Base server config to use before physics host/port overrides.
   --scene-file <path>         Optional minphys JSON scene appended into serve mode.
   --scenario <path>           Run a TOML scenario file instead of interactive mode. Path is
                               resolved relative to the repo root, so you can pass e.g.
                               hexapod-server/scenarios/01_nominal_stand_walk.toml directly.
+                              (Command channel is interactive-only; ignored with --scenario.)
   --controller-device <path>  Explicit evdev device path for the Xbox controller.
   --controller-optional       Continue without a controller if auto-detect fails.
   --skip-build                Skip all configure/build steps and launch existing binaries.
@@ -65,6 +74,7 @@ Options:
 Examples:
   scripts/run_physics_stack.sh
   scripts/run_physics_stack.sh --controller-device /dev/input/event12
+  scripts/run_physics_stack.sh --command-disable
   scripts/run_physics_stack.sh --scene-file hexapod-physics-sim/assets/scenes/examples/stack_minimal.json
   scripts/run_physics_stack.sh --scenario hexapod-server/scenarios/01_nominal_stand_walk.toml --controller-optional
   scripts/run_physics_stack.sh -- --console-only
@@ -210,6 +220,22 @@ while [[ $# -gt 0 ]]; do
       PHYSICS_PORT="$2"
       shift 2
       ;;
+    --command-enable)
+      COMMAND_ENABLE=1
+      shift
+      ;;
+    --command-disable)
+      COMMAND_ENABLE=0
+      shift
+      ;;
+    --command-port)
+      COMMAND_PORT="$2"
+      shift 2
+      ;;
+    --command-scenarios-dir)
+      COMMAND_SCENARIOS_DIR="$2"
+      shift 2
+      ;;
     --server-config)
       SERVER_CONFIG="$2"
       shift 2
@@ -275,7 +301,13 @@ fi
 
 validate_port "--udp-port" "$UDP_PORT"
 validate_port "--physics-port" "$PHYSICS_PORT"
+validate_port "--command-port" "$COMMAND_PORT"
 validate_build_jobs
+
+# Command channel is hosted by InteractiveRunner only.
+if [[ -n "$SCENARIO_FILE" && "$COMMAND_ENABLE" -eq 1 ]]; then
+  echo "Note: --scenario selects batch ScenarioRunner; command channel will not listen (interactive-only)."
+fi
 
 if [[ -n "$SCENE_FILE" ]]; then
   SCENE_FILE_PATH="$(resolve_from_root "$SCENE_FILE")"
@@ -345,6 +377,9 @@ prefer_wsl_x11_backend
 warn_if_wslg_copy_mode
 
 VIS_CMD=("$VIS_SCRIPT" --skip-build -- --udp-port "$UDP_PORT")
+if [[ "$COMMAND_ENABLE" -eq 1 && -z "$SCENARIO_FILE_PATH" ]]; then
+  VIS_CMD+=(--command-host "$VIS_HOST" --command-port "$COMMAND_PORT")
+fi
 launch_in_dir VIS_PID "$ROOT_DIR" "${VIS_CMD[@]}"
 
 sleep 0.5
@@ -367,6 +402,9 @@ fi
 
 echo "Visualiser running on UDP ${VIS_HOST}:${UDP_PORT}"
 echo "Physics sim serving on ${PHYSICS_HOST}:${PHYSICS_PORT} with built-in hexapod rig"
+if [[ "$COMMAND_ENABLE" -eq 1 && -z "$SCENARIO_FILE_PATH" ]]; then
+  echo "Command channel enabled on ${VIS_HOST}:${COMMAND_PORT} (scenarios dir: ${COMMAND_SCENARIOS_DIR})"
+fi
 if [[ -n "$SCENE_FILE_PATH" ]]; then
   echo "Physics scene extras loaded from ${SCENE_FILE_PATH}"
 fi
@@ -383,6 +421,14 @@ SERVER_CMD=(
   --telemetry-host "$VIS_HOST"
   --telemetry-port "$UDP_PORT"
 )
+if [[ "$COMMAND_ENABLE" -eq 1 && -z "$SCENARIO_FILE_PATH" ]]; then
+  SERVER_CMD+=(
+    --command-enable
+    --command-host "$VIS_HOST"
+    --command-port "$COMMAND_PORT"
+    --command-scenarios-dir "$COMMAND_SCENARIOS_DIR"
+  )
+fi
 if [[ -n "$CONTROLLER_DEVICE" ]]; then
   SERVER_CMD+=(--controller-device "$CONTROLLER_DEVICE")
 fi

@@ -12,6 +12,10 @@ MODE="serial"
 CONFIG_PATH=""
 TELEMETRY_HOST="127.0.0.1"
 TELEMETRY_PORT=9870
+COMMAND_ENABLE=0
+COMMAND_HOST=""
+COMMAND_PORT=9872
+COMMAND_SCENARIOS_DIR="scenarios"
 SKIP_BUILD=0
 SCENARIO=""
 SERVER_ARGS=()
@@ -28,12 +32,18 @@ Options:
   --config <path>          Config path override (default: config.txt for serial, config.sim.txt for sim).
   --telemetry-host <host>  Destination host/IP for UDP telemetry (default: 127.0.0.1).
   --telemetry-port <port>  Destination UDP port for telemetry (default: 9870).
+  --command-enable         Enable visualiser command UDP listen (interactive mode).
+  --command-disable        Disable command channel (default for this script).
+  --command-host <host>    Bind host for command UDP (default: telemetry host).
+  --command-port <port>    Command UDP port (default: 9872).
+  --command-scenarios-dir <d>  Scenario dir relative to hexapod-server/ (default: scenarios).
   --scenario <path>        Optional scenario file (relative to hexapod-server/ or absolute).
   --skip-build             Skip CMake configure/build.
   -h, --help               Show this help text.
 
 Examples:
   scripts/run_server_with_telemetry.sh --mode serial --telemetry-host 192.168.1.50
+  scripts/run_server_with_telemetry.sh --mode sim --command-enable
   scripts/run_server_with_telemetry.sh --mode sim --scenario scenarios/01_nominal_stand_walk.toml
   scripts/run_server_with_telemetry.sh --config hexapod-server/config.txt -- --console-only
 USAGE
@@ -55,6 +65,26 @@ while [[ $# -gt 0 ]]; do
       ;;
     --telemetry-port)
       TELEMETRY_PORT="$2"
+      shift 2
+      ;;
+    --command-enable)
+      COMMAND_ENABLE=1
+      shift
+      ;;
+    --command-disable)
+      COMMAND_ENABLE=0
+      shift
+      ;;
+    --command-host)
+      COMMAND_HOST="$2"
+      shift 2
+      ;;
+    --command-port)
+      COMMAND_PORT="$2"
+      shift 2
+      ;;
+    --command-scenarios-dir)
+      COMMAND_SCENARIOS_DIR="$2"
       shift 2
       ;;
     --scenario)
@@ -135,6 +165,14 @@ a=()
 a+=("$SERVER_BIN")
 a+=(--config "$CONFIG_PATH")
 a+=(--telemetry-enable --telemetry-host "$TELEMETRY_HOST" --telemetry-port "$TELEMETRY_PORT")
+if [[ "$COMMAND_ENABLE" -eq 1 && ${#SCENARIO_ARGS[@]} -eq 0 ]]; then
+  if [[ -z "$COMMAND_HOST" ]]; then
+    COMMAND_HOST="$TELEMETRY_HOST"
+  fi
+  a+=(--command-enable --command-host "$COMMAND_HOST" --command-port "$COMMAND_PORT")
+  a+=(--command-scenarios-dir "$COMMAND_SCENARIOS_DIR")
+  echo "Command channel enabled on ${COMMAND_HOST}:${COMMAND_PORT}"
+fi
 a+=("${SCENARIO_ARGS[@]}")
 a+=("${SERVER_ARGS[@]}")
 

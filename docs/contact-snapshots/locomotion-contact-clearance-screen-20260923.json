@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "kind": "locomotion_contact_clearance_screen_report",
+  "date": "2026-09-23",
+  "tree_head": "24cf1c0",
+  "tree_note": "Dirty working tree preserved; test-only controller screen and diagnostics on top of pre-existing visualiser and command-channel changes.",
+  "production_default_changed": false,
+  "solver_mode": "pinocchio-proximal",
+  "screen": {
+    "environment": "HEXAPOD_SWING_CONTACT_CLEARANCE_SCREEN=1",
+    "scope": "WALK, swing, pure planar translation with commanded yaw exactly zero",
+    "reference": "last support FK foot-tip world Z; not directly the collision sphere bottom",
+    "stage": "after normal reach projection, followed by another reach projection",
+    "global_variant": "rejected: isolated turn-in-place yaw reversed"
+  },
+  "binaries_sha256": {
+    "walk_distance_test": "b2c1e9acfd7278eea6a1c7eb264eeca0448e5ab5013c0e0686853948b4d1b9cf",
+    "physics_sim": "2990cc8db19e0b18871fbdc2239d4abde76bb6a5b5be02a60b8bd0c473bcb3a7"
+  },
+  "forward_walk": {
+    "repetitions_per_setting": 5,
+    "off": {
+      "body_speed_mps": [0.087809, 0.089316, 0.089282, 0.089508, 0.088929],
+      "net_dx_m": [1.053113, 1.078623, 1.076337, 1.081869, 1.074857],
+      "swing_contact_fraction_range": [0.306, 0.316],
+      "min_body_height_m_range": [0.1425, 0.1442],
+      "solver_held_samples_each": [0, 0, 0, 0, 0]
+    },
+    "on": {
+      "body_speed_mps": [0.099398, 0.099704, 0.098999, 0.099582, 0.099585],
+      "net_dx_m": [1.198293, 1.201648, 1.194005, 1.200659, 1.200336],
+      "swing_contact_fraction_range": [0.208, 0.216],
+      "min_body_height_m_range": [0.1392, 0.1411],
+      "solver_held_samples_each": [0, 0, 0, 0, 0]
+    },
+    "median_body_speed_gain_fraction": 0.1154,
+    "named_gate_results": "10/10 passes"
+  },
+  "reverse_walk": {
+    "repetitions_per_setting": 5,
+    "off": {
+      "body_speed_magnitude_mps": [0.087814, 0.088601, 0.087241, 0.087083, 0.086677],
+      "net_dx_m": [-1.059793, -1.070757, -1.052372, -1.047917, -1.044591],
+      "swing_contact_fraction_range": [0.304, 0.317],
+      "min_body_height_m_range": [0.1426, 0.1441],
+      "solver_held_samples_each": [0, 0, 0, 0, 0]
+    },
+    "on": {
+      "body_speed_magnitude_mps": [0.098527, 0.098730, 0.098905, 0.099421, 0.099726],
+      "net_dx_m": [-1.186969, -1.190369, -1.192575, -1.199076, -1.202638],
+      "swing_contact_fraction_range": [0.211, 0.217],
+      "min_body_height_m_range": [0.1382, 0.1406],
+      "solver_held_samples_each": [0, 0, 0, 0, 0]
+    },
+    "median_body_speed_gain_fraction": 0.1337,
+    "named_gate_results": "10/10 passes"
+  },
+  "other_screens": {
+    "sequential_walk_distance_screen_on": "pass; forward, slow-forward, reverse, straight, and turn-in-place; zero held",
+    "selected_ctests_screen_on": "12/12 pass: exact replay 200/120/240/480 Hz, walk entry, walk stability, oblique clearance, slow-forward clearance, WAVE clearance, slow-forward contact loss, static tripod, canonical locomotion regression",
+    "stand_60_seconds_screen_on": "pass",
+    "strafe_left_full_single_pair": {
+      "off": {"passed": true, "net_displacement_m": 0.131846, "path_m": 0.330890, "solver_held_steps": 0},
+      "on": {"passed": true, "net_displacement_m": 0.148354, "path_m": 0.292710, "solver_held_steps": 0}
+    },
+    "strafe_right_full_single_pair": {
+      "off": {"passed": true, "net_displacement_m": 0.130086, "path_m": 0.315602, "solver_held_steps": 0},
+      "on": {"passed": true, "net_displacement_m": 0.159487, "path_m": 0.304555, "solver_held_steps": 0}
+    },
+    "long_walk_contact_health_screen_on": {
+      "passed": true,
+      "samples": 5000,
+      "path_m": 1.196343,
+      "first_fault": "NONE",
+      "solver_held_steps": 0,
+      "max_contact_penetration_m": 0.000436
+    },
+    "long_walk_observability_stress": {
+      "off": {"passed": true, "first_fault": "TIP_OVER", "first_fault_step": 4236, "path_m": 1.586933, "solver_held_steps": 0},
+      "on": {"passed": false, "first_fault": "NONE", "samples": 12000, "path_m": 3.813678, "solver_held_steps": 0},
+      "test_contract": "An eventual TIP_OVER or BODY_COLLAPSE is required inside the stress window.",
+      "decision": "Gate regression. Do not enable screen by default or reinterpret a no-fault run as a pass."
+    }
+  },
+  "open_qualification": [
+    "Command-transition boundary between pure translation and yaw, including a switch in mid-swing.",
+    "Collision-sphere bottom clearance and support normal forces rather than FK-only reference.",
+    "Repeated strafe and diagonal trials.",
+    "Long-running locomotion stress gate and separate safety-detection verification.",
+    "100-seed campaign, ten-minute feasible-gait soak, and physics-step p99."
+  ],
+  "decision": "keep test-only opt-in; production behavior unchanged"
+}

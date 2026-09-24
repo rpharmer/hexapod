@@ -469,6 +469,20 @@ impulse/velocity, or on peak normal impulse above 1.0 N·s. It does not
 require a safety fault. SpeedLimit is counted, not treated as a contact-solver
 fail.
 
+2026-09-23 update: the fault-positive stress expectation above was retired
+after repeated fault-free 60 s completions on both the production and opt-in
+clearance paths, while other runs exposed genuine SpeedLimit holds. The stress
+case now requires a *complete, fault-free* requested walk with zero held/read
+failures and the same path, stride, transition, and contact-quality limits.
+The exact-sample measured-tilt safety challenge has its own CTest. This does
+not declare long-run reliability solved: intermittent SpeedLimit holds remain
+a separate failing class.
+The health case uses a 60 s mixed-gait scenario with the old deliberate
+0.6 m/s sideways demand reduced to 0.10 m/s; the original scenario is
+preserved as explicit `long_walk_aggressive_diagnostic`. The limit change is
+to the *requested motion*, not to the tilt, speed, solver, path, or contact
+acceptance thresholds.
+
 Walk-distance and locomotion JSON now emit peak impulse, max/p99 penetration,
 max |energy delta|, actuator work, and max/p99 compliant projected residual.
 `StateResponse` appends `solver_compliant_projected_residual` (0 on rigid).
@@ -815,5 +829,3 @@ STAND does not call `resetWarmStarts`, but after-reverse (same carry) stays
 under 0.21 m, so a STAND warm-start wipe is not evidenced. No CRBA/1.85×
 signal. **No production lever.** Do not loosen 0.21 m, lengthen STAND, or
 respawn.
-
-

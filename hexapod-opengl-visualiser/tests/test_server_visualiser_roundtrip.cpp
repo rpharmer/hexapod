@@ -61,6 +61,30 @@ int main() {
   const auto geometry = visualiser::robot::MakeDefaultGeometryState();
 
   bool ok = true;
+  // The server uses calibrated servo angles, then rotates the leg frame by
+  // pi - mount_angle. This independent check catches a visually plausible but
+  // wrong 90-degree mount rotation (and mirrored servo signs).
+  for (const auto& layout : geometry.legs) {
+    const std::array<float, 3> servo{
+        layout.coxa_attach_deg + 13.0f,
+        layout.femur_attach_deg - 21.0f,
+        layout.tibia_attach_deg + 37.0f};
+    const RobotKinematics leg = visualiser::robot::ComputeRobotLeg(layout, servo);
+    const float radians = visualiser::math::kPi / 180.0f;
+    const float q1 = (servo[0] - layout.coxa_attach_deg) * layout.coxa_sign * radians;
+    const float q2 = (servo[1] - layout.femur_attach_deg) * layout.femur_sign * radians;
+    const float q3 = (servo[2] - layout.tibia_attach_deg) * layout.tibia_sign * radians;
+    const float yaw = visualiser::math::kPi - layout.mount_angle_rad + q1;
+    const float radius = 0.001f * (layout.coxa_mm + layout.femur_mm * std::cos(q2)
+                                    + layout.tibia_mm * std::cos(q2 + q3));
+    const Vec3 expected_foot{
+        layout.body_coxa_offset.x + radius * std::cos(yaw),
+        layout.body_coxa_offset.y + radius * std::sin(yaw),
+        layout.body_coxa_offset.z + 0.001f * (layout.femur_mm * std::sin(q2)
+                                                + layout.tibia_mm * std::sin(q2 + q3))};
+    ok = expect(almostEqual(leg.foot, expected_foot),
+                "command wireframe foot must match server FK") && ok;
+  }
 
   const std::array<SamplePose, 3> samples{{
       {HexapodBodyPoseState{true, {0.0f, 0.0f, 0.0f}, 0.0f, {0.0f, 0.0f, 0.0f}},

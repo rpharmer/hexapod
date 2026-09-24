@@ -11,6 +11,9 @@ SERVER_DIR="$ROOT_DIR/hexapod-server"
 
 UDP_PORT=9870
 VIS_HOST="127.0.0.1"
+COMMAND_ENABLE=1
+COMMAND_PORT=9872
+COMMAND_SCENARIOS_DIR="scenarios"
 SKIP_BUILD=0
 SCENARIO=""
 SERVER_MODE="sim"
@@ -23,10 +26,15 @@ Usage: scripts/run_sim_stack.sh [options] [-- <extra server args>]
 
 Launches hexapod-opengl-visualiser and hexapod-server together,
 with server telemetry streamed to the visualiser over UDP.
+Command channel is enabled by default on UDP 9872 (interactive mode).
 
 Options:
   --udp-port <port>        Visualiser UDP ingest port (default: 9870).
   --visualiser-host <host> Telemetry destination host (default: 127.0.0.1).
+  --command-enable         Enable visualiser->server command UDP (default).
+  --command-disable        Disable the command channel.
+  --command-port <port>    Command UDP port (default: 9872).
+  --command-scenarios-dir <d>  Scenario dir relative to hexapod-server/ (default: scenarios).
   --server-mode <mode>     Server mode: sim or serial (default: sim).
   --server-config <path>   Server config override.
   --skip-build             Skip server configure/build.
@@ -36,6 +44,7 @@ Options:
 Examples:
   scripts/run_sim_stack.sh --scenario scenarios/01_nominal_stand_walk.toml
   scripts/run_sim_stack.sh --server-mode serial --visualiser-host 192.168.1.50
+  scripts/run_sim_stack.sh --command-disable
   scripts/run_sim_stack.sh -- --console-only
 USAGE
 }
@@ -48,6 +57,22 @@ while [[ $# -gt 0 ]]; do
       ;;
     --visualiser-host)
       VIS_HOST="$2"
+      shift 2
+      ;;
+    --command-enable)
+      COMMAND_ENABLE=1
+      shift
+      ;;
+    --command-disable)
+      COMMAND_ENABLE=0
+      shift
+      ;;
+    --command-port)
+      COMMAND_PORT="$2"
+      shift 2
+      ;;
+    --command-scenarios-dir)
+      COMMAND_SCENARIOS_DIR="$2"
       shift 2
       ;;
     --server-mode)
@@ -111,11 +136,17 @@ if [[ -n "$SCENARIO" ]]; then
     exit 1
   fi
   SCENARIO_ARG=(--scenario "${SCENARIO_PATH#$SERVER_DIR/}")
+  if [[ "$COMMAND_ENABLE" -eq 1 ]]; then
+    echo "Note: --scenario selects batch ScenarioRunner; command channel will not listen (interactive-only)."
+  fi
 else
   SCENARIO_ARG=()
 fi
 
 VIS_CMD=("$VIS_SCRIPT" -- --udp-port "$UDP_PORT")
+if [[ "$COMMAND_ENABLE" -eq 1 && ${#SCENARIO_ARG[@]} -eq 0 ]]; then
+  VIS_CMD+=(--command-host "$VIS_HOST" --command-port "$COMMAND_PORT")
+fi
 "${VIS_CMD[@]}" &
 VIS_PID="$!"
 
@@ -132,6 +163,9 @@ trap cleanup EXIT
 
 echo "Visualiser running on UDP port ${UDP_PORT}"
 echo "Starting server mode=${SERVER_MODE} with telemetry -> ${VIS_HOST}:${UDP_PORT}"
+if [[ "$COMMAND_ENABLE" -eq 1 && ${#SCENARIO_ARG[@]} -eq 0 ]]; then
+  echo "Command channel enabled on ${VIS_HOST}:${COMMAND_PORT} (scenarios dir: ${COMMAND_SCENARIOS_DIR})"
+fi
 
 SERVER_CMD=("$SERVER_SCRIPT" --mode "$SERVER_MODE" --telemetry-host "$VIS_HOST" --telemetry-port "$UDP_PORT")
 if [[ "$SKIP_BUILD" -eq 1 ]]; then
@@ -142,6 +176,14 @@ if [[ -n "$SERVER_CONFIG" ]]; then
 fi
 if [[ ${#SCENARIO_ARG[@]} -gt 0 ]]; then
   SERVER_CMD+=("${SCENARIO_ARG[@]}")
+fi
+if [[ "$COMMAND_ENABLE" -eq 1 && ${#SCENARIO_ARG[@]} -eq 0 ]]; then
+  SERVER_CMD+=(
+    --command-enable
+    --command-host "$VIS_HOST"
+    --command-port "$COMMAND_PORT"
+    --command-scenarios-dir "$COMMAND_SCENARIOS_DIR"
+  )
 fi
 SERVER_CMD+=(-- "${SERVER_ARGS[@]}")
 

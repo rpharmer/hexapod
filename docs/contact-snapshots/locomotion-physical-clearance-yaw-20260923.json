@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "kind": "locomotion_physical_clearance_yaw_report",
+  "date": "2026-09-23",
+  "tree_head": "24cf1c0",
+  "tree_note": "Dirty worktree preserved; no production default changed.",
+  "solver_mode": "pinocchio-proximal",
+  "trace": {
+    "flag": "HEXAPOD_FOOT_PHYSICS_TRACE=1",
+    "measurement": "Actual compound sphere signed distance to built-in plane and per-leg normal impulse summed over physics substeps in one bus command.",
+    "alignment": "Stream-order pairing with controller foothold trace, 14394 of 14400 leg samples paired per isolated forward case.",
+    "limitations": "Final manifold contact and substep-accumulated normal impulse are sampled at different instants; a positive impulse with no final contact is possible."
+  },
+  "physical_forward_pair": {
+    "repetitions_per_setting": 1,
+    "middle_legs": {
+      "R2_wire_leg_2": {
+        "off": {
+          "early_contact_fraction": 0.794643,
+          "late_contact_fraction": 0.886986,
+          "early_normal_impulse_mean_ns": 0.00657704,
+          "late_normal_impulse_mean_ns": 0.02451848,
+          "mid_swing_sphere_plane_clearance_mean_m": 0.00902347
+        },
+        "on": {
+          "early_contact_fraction": 0.563636,
+          "late_contact_fraction": 0.545151,
+          "early_normal_impulse_mean_ns": 0.00729592,
+          "late_normal_impulse_mean_ns": 0.01277471,
+          "mid_swing_sphere_plane_clearance_mean_m": 0.01439694
+        }
+      },
+      "L2_wire_leg_3": {
+        "off": {
+          "early_contact_fraction": 0.901961,
+          "late_contact_fraction": 0.716667,
+          "early_normal_impulse_mean_ns": 0.02715376,
+          "late_normal_impulse_mean_ns": 0.01673870,
+          "mid_swing_sphere_plane_clearance_mean_m": 0.01353845
+        },
+        "on": {
+          "early_contact_fraction": 0.650000,
+          "late_contact_fraction": 0.529825,
+          "early_normal_impulse_mean_ns": 0.00872638,
+          "late_normal_impulse_mean_ns": 0.01273815,
+          "mid_swing_sphere_plane_clearance_mean_m": 0.01440770
+        }
+      }
+    }
+  },
+  "yaw_transition": {
+    "case": "clearance_yaw_transition_probe",
+    "scope": "Explicit-only; not part of the default regression profiles.",
+    "hard_zero_gate": {
+      "command_yaw_step_radps": 0.04,
+      "worst_mid_swing_target_jump_m": 0.01310448,
+      "same_boundary_default_off_jump_m": 0.00575991,
+      "previous_screen_delta_z_m": 0.00902290
+    },
+    "blended_screen": {
+      "yaw_weight": "1 - smoothstep(abs(command_yaw_radps) / 0.20)",
+      "worst_mid_swing_boundary_jump_m": 0.00310154,
+      "regular_target_jump_p95_m": 0.00298251,
+      "case_result": "pass, no fault or held physics sample"
+    }
+  },
+  "gates_with_blended_opt_in": {
+    "sequential_walk_distance": "pass",
+    "canonical_locomotion_regression": "pass",
+    "tilt_safety_trip": {
+      "passed": true,
+      "first_fault": "TIP_OVER",
+      "first_fault_step": 1097,
+      "prefault_path_m": 0.271188,
+      "solver_held_steps": 0
+    },
+    "tilt_safety_immediate": {
+      "passed": true,
+      "first_fault": "TIP_OVER",
+      "first_fault_step": 470,
+      "solver_held_steps": 0
+    },
+    "long_walk_observability": {
+      "passed": false,
+      "first_fault": "NONE",
+      "samples": 12000,
+      "path_m": 3.524741,
+      "solver_held_steps": 0,
+      "reason": "The unchanged test requires a late TIP_OVER or BODY_COLLAPSE."
+    },
+    "default_off_recheck": "6/6 pass: sequential walk-distance, exact replay 200/120/240/480 Hz, and 60-second proximal stand"
+  },
+  "binaries_sha256": {
+    "physics_sim": "8fd29215aa242d70453568cc8c77723839526bf515373d20a2058b072c9df2cf",
+    "walk_distance_test": "d7c146b556b0a77966b082db22d67400853a8a938f8d4c26cefca54576abf1fe",
+    "locomotion_regression_test": "6814f316b74800f86d7871259d99f47cc8c8026eac2f3a8d480053b0a60b119c"
+  },
+  "post_measurement_build_note": "A later preprocessor guard made the opt-in trace compile in legacy-only builds; the Pinocchio simulator was rebuilt with hash 94c475991a2aa5736ddbd0e03b58b15202c44bb60244d2039a6b60afa0365c73. No physics equation or default setting changed.",
+  "decision": "Keep clearance screen opt-in; production unchanged and fault-positive long-walk gate remains red with the screen."
+}

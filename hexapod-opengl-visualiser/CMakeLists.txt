@@ -57,6 +57,7 @@ set(VISUALISER_SOURCES
   src/app/options.cpp
   src/math/geometry.cpp
   src/net/udp_receiver.cpp
+  src/net/udp_command_client.cpp
   src/parsing/json_extract.cpp
   src/parsing/json_packets.cpp
   src/parsing/packet_dispatch.cpp
@@ -74,6 +75,8 @@ set(VISUALISER_SOURCES
   src/robot/geometry_state.cpp
   src/robot/kinematics.cpp
   src/scene/scene_bounds.cpp
+  src/scene/ground_pick.cpp
+  src/scene/ground_reference.cpp
   src/ui/overlay.cpp
 )
 
@@ -132,6 +135,12 @@ add_executable(test_server_visualiser_roundtrip
 target_link_libraries(test_server_visualiser_roundtrip PRIVATE visualiser_core)
 add_test(NAME test_server_visualiser_roundtrip COMMAND test_server_visualiser_roundtrip)
 
+add_executable(test_command_client
+  tests/test_command_client.cpp
+)
+target_link_libraries(test_command_client PRIVATE visualiser_core)
+add_test(NAME test_command_client COMMAND test_command_client)
+
 add_executable(test_json_extract
   tests/test_json_extract.cpp
 )
@@ -177,3 +186,11 @@ add_executable(test_camera
 )
 target_include_directories(test_camera PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 add_test(NAME test_camera COMMAND test_camera)
+
+add_executable(test_ground_pick tests/test_ground_pick.cpp)
+target_link_libraries(test_ground_pick PRIVATE visualiser_core)
+add_test(NAME test_ground_pick COMMAND test_ground_pick)
+
+add_executable(test_ground_reference tests/test_ground_reference.cpp)
+target_link_libraries(test_ground_reference PRIVATE visualiser_core)
+add_test(NAME test_ground_reference COMMAND test_ground_reference)

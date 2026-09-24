@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-23",
+  "tree_revision": "24cf1c0 plus dirty worktree; production default unchanged",
+  "experiment": "A7 opt-in contact-referenced swing clearance qualification",
+  "solver_mode": "pinocchio-proximal",
+  "screen_environment": "HEXAPOD_SWING_CONTACT_CLEARANCE_SCREEN=1",
+  "binaries_sha256": {
+    "physics_sim": "94c475991a2aa5736ddbd0e03b58b15202c44bb60244d2039a6b60afa0365c73",
+    "walk_distance_test": "d7c146b556b0a77966b082db22d67400853a8a938f8d4c26cefca54576abf1fe",
+    "motion_performance_test": "b885bada96d447ad1ec35c4fb01030d1fc5e515d339f81b4cf7f07dbc68a5ede",
+    "locomotion_regression_test_after_probe_edit": "4b60ea560f3816ea30f219490c3009d573b75c5038949dedacff991c40097bfb"
+  },
+  "isolated_cases": {
+    "paired_repetitions_per_direction": 5,
+    "named_gate_results": "60/60 passed; zero held samples",
+    "forward": {
+      "metric": "median achieved body speed m/s",
+      "screen_off": 0.089149,
+      "screen_on": 0.099385,
+      "change_percent": 11.48,
+      "median_planned_swing_raw_contact_fraction_off": 0.31347,
+      "median_planned_swing_raw_contact_fraction_on": 0.21318,
+      "worst_min_body_height_m_off": 0.142415,
+      "worst_min_body_height_m_on": 0.139056
+    },
+    "reverse": {
+      "metric": "median achieved body speed magnitude m/s",
+      "screen_off": 0.087821,
+      "screen_on": 0.099418,
+      "change_percent": 13.21,
+      "median_planned_swing_raw_contact_fraction_off": 0.31655,
+      "median_planned_swing_raw_contact_fraction_on": 0.21388,
+      "worst_min_body_height_m_off": 0.143199,
+      "worst_min_body_height_m_on": 0.139072
+    },
+    "strafe_left": {
+      "metric": "median net displacement m",
+      "screen_off": 0.131262,
+      "screen_on": 0.156089,
+      "change_percent": 18.91
+    },
+    "strafe_right": {
+      "metric": "median net displacement m",
+      "screen_off": 0.132088,
+      "screen_on": 0.158568,
+      "change_percent": 20.05
+    },
+    "diagonal_left": {
+      "metric": "median net displacement m",
+      "screen_off": 0.165358,
+      "screen_on": 0.188493,
+      "change_percent": 13.99
+    },
+    "diagonal_right": {
+      "metric": "median net displacement m",
+      "screen_off": 0.157787,
+      "screen_on": 0.191055,
+      "change_percent": 21.08
+    }
+  },
+  "long_walk_observability": {
+    "configuration": "same 60 s case and custom gravity feedforward for both modes",
+    "repetitions_per_mode": 3,
+    "screen_off": {
+      "no_fault": 1,
+      "bus_timeout_after_physics_hold": 2,
+      "expected_fault": 0
+    },
+    "screen_on": {
+      "no_fault": 1,
+      "bus_timeout_after_physics_hold": 1,
+      "tip_over_with_physics_read_failure_and_10_held_steps": 1
+    },
+    "interpretation": "The fault-positive stress case is intermittent on both screen states. Its one nominal pass carried held/read-failure telemetry, so it is not evidence of healthy long-run operation. Observed first failed solver reason on the captured BUS_TIMEOUT runs was SpeedLimit. Do not promote or change the existing stress gate from this small sample."
+  },
+  "long_walk_additional_vartmp_pair": {
+    "configuration": "Same 60 s case, with TMPDIR=/var/tmp because /tmp tmpfs was full",
+    "screen_off": {
+      "first_fault": "NONE",
+      "solver_held_steps": 0,
+      "first_read_fail": false,
+      "prefault_path_m": 3.273667
+    },
+    "screen_on": {
+      "first_fault": "NONE",
+      "solver_held_steps": 0,
+      "first_read_fail": false,
+      "prefault_path_m": 3.839292
+    },
+    "interpretation": "Both complete healthily but fail the unchanged fault-positive expectation. This pair does not establish that changing the temporary directory caused the earlier holds to disappear."
+  },
+  "measured_tilt_safety_probe": {
+    "case": "long_walk_injected_tilt_safety",
+    "mode": "explicit-only case with a dedicated CTest; same long-walk controller configuration",
+    "dedicated_ctest_result": "passed with the screen off and on",
+    "injection": "one measured roll sample of 0.90 rad at phase 3 step 300; physics state unchanged",
+    "screen_off": {
+      "passed": true,
+      "first_fault": "TIP_OVER",
+      "first_fault_step": 2700,
+      "first_read_fail": false,
+      "solver_held_steps": 0
+    },
+    "screen_on": {
+      "passed": true,
+      "first_fault": "TIP_OVER",
+      "first_fault_step": 2700,
+      "first_read_fail": false,
+      "solver_held_steps": 0
+    },
+    "limitation": "This verifies the safety response to measured tilt, not the mechanical response to a physical push."
+  },
+  "decision": "Keep the clearance screen opt-in. Do not change the production default or interpret the long-walk stress case as green. Investigate shared long-walk SpeedLimit/read failures before 100-seed, ten-minute soak, or default promotion."
+}

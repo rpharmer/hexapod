@@ -110,6 +110,28 @@ bool parseCliOptions(int argc, char** argv, CliOptions& out, std::string& error)
         return false;
       }
       out.telemetryGeometryResendIntervalSecOverride = value;
+    } else if (arg == "--command-enable") {
+      out.commandEnabledOverride = true;
+    } else if (arg == "--command-disable") {
+      out.commandEnabledOverride = false;
+    } else if (arg == "--command-host") {
+      const char* value = consumeRequiredValue(i, arg, "a host");
+      if (value == nullptr) {
+        return false;
+      }
+      out.commandHostOverride = std::string(value);
+    } else if (arg == "--command-port") {
+      int value = 0;
+      if (!consumeIntValue(i, arg, "an integer port", value)) {
+        return false;
+      }
+      out.commandPortOverride = value;
+    } else if (arg == "--command-scenarios-dir") {
+      const char* value = consumeRequiredValue(i, arg, "a directory path");
+      if (value == nullptr) {
+        return false;
+      }
+      out.commandScenariosDirOverride = std::string(value);
     } else if (arg == "--investigation-disable-terrain-stance-bias") {
       out.investigationDisableTerrainStanceBiasOverride = true;
     } else if (arg == "--investigation-disable-terrain-swing-clearance") {

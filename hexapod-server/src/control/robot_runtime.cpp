@@ -2068,9 +2068,22 @@ void RobotRuntime::maybePublishTelemetry(const ControlInputSnapshot& snapshot) {
     telemetry_sample.fusion.correction = last_fusion_correction_;
     if (navigation_manager_) {
         telemetry_sample.navigation = navigation_manager_->monitor();
+        if (snapshot.now.value >= next_local_map_publish_at_.value) {
+            telemetry_sample.local_map = navigation_manager_->latestMapSnapshot(snapshot.now);
+            next_local_map_publish_at_ = TimePointUs{snapshot.now.value + 200000ULL}; // ~5 Hz
+        }
     }
+    telemetry_sample.command_authority = last_command_authority_;
     telemetry_sample.process_resources = last_process_resources_;
     telemetry_sample.resource_sections = last_resource_sections_;
+    if (auto* physics_sim = telemetry_sample.status.bus_ok
+            ? dynamic_cast<PhysicsSimBridge*>(hw_.get()) : nullptr) {
+        if (const auto solver = physics_sim->latestSolverTelemetry();
+            solver && std::isfinite(solver->peak_servo_torque_utilization)) {
+            telemetry_sample.physics_peak_servo_torque_utilization =
+                solver->peak_servo_torque_utilization;
+        }
+    }
     telemetry_sample.timestamp_us = snapshot.now;
     telemetry_sample.governor = command_governor_state_.read();
     telemetry_sample.governor_config = pipeline_.commandGovernorConfig();
@@ -2428,6 +2441,11 @@ void RobotRuntime::setSafetyLegEnabledTestMask(std::optional<std::array<bool, kN
 void RobotRuntime::setNavigationManager(std::unique_ptr<NavigationManager> navigation_manager) {
     navigation_manager_ = std::move(navigation_manager);
     last_effective_intent_estimator_sample_id_ = 0;
+}
+
+void RobotRuntime::setCommandAuthorityTelemetry(
+    const telemetry::ControlStepTelemetry::CommandAuthorityTelemetry& authority) {
+    last_command_authority_ = authority;
 }
 
 RobotRuntime::FusionControlPolicy RobotRuntime::applyFusionConsistency(const RobotState& est,

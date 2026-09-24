@@ -99,6 +99,11 @@ void RobotControl::setNavigationManager(std::unique_ptr<NavigationManager> navig
     runtime_.setNavigationManager(std::move(navigation_manager));
 }
 
+void RobotControl::setCommandAuthorityTelemetry(
+    const telemetry::ControlStepTelemetry::CommandAuthorityTelemetry& authority) {
+    runtime_.setCommandAuthorityTelemetry(authority);
+}
+
 ControlStatus RobotControl::getStatus() const {
     return runtime_.getStatus();
 }
